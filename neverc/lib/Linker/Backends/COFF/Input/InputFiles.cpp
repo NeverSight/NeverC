@@ -39,6 +39,9 @@ namespace {
 StringRef getBasename(StringRef path) {
   return sys::path::filename(path, sys::path::Style::windows);
 }
+
+constexpr StringLiteral featureOverrideSuffix = "_$fo$";
+constexpr StringLiteral featureOverrideDefaultSuffix = "_$fo_default$";
 } // namespace
 
 // Returns a string in the format of "foo.obj" or "foo.obj(bar.lib)".
@@ -78,10 +81,58 @@ ArchiveFile::ArchiveFile(COFFLinkerContext &ctx, MemoryBufferRef m)
 void ArchiveFile::parse() {
   // Parse a MemoryBufferRef as an archive file.
   file = CHECK(Archive::create(mb), this);
+  const bool useFeatureOverrideDefaults =
+      ctx.config.enclave && ctx.config.guardCFMixed;
 
   // Read the symbol table to construct Lazy objects.
-  for (const Archive::Symbol &sym : file->symbols())
+  SmallVector<std::pair<StringRef, Archive::Symbol>, 4> featureOverrideDefaults;
+  DenseMap<StringRef, StringRef> featureOverrides;
+  for (const Archive::Symbol &sym : file->symbols()) {
+    StringRef name = sym.getName();
+    symbols.try_emplace(name, sym);
     ctx.symtab.addLazyArchive(this, sym);
+    if (!useFeatureOverrideDefaults)
+      continue;
+    if (name.ends_with(featureOverrideDefaultSuffix)) {
+      featureOverrideDefaults.emplace_back(
+          name.drop_back(featureOverrideDefaultSuffix.size()), sym);
+    } else if (name.ends_with(featureOverrideSuffix)) {
+      featureOverrides.try_emplace(name.drop_back(featureOverrideSuffix.size()),
+                                   name);
+    }
+  }
+
+  // Microsoft runtime archives use feature-override groups to replace a DLL
+  // import with an archive-local implementation. Their BDD/RVA metadata
+  // describes loader-time replacements emitted through the type-7 dynamic
+  // relocation table. Mixed enclave reference images have no such selector,
+  // so this mode selects the group's explicit archive default. Normal lazy
+  // resolution selects that member when the base symbol is unresolved. The
+  // special case here is a base symbol that an earlier import library already
+  // resolved: extract the default so its regular definition can replace the
+  // import thunk without eagerly loading the optional implementations.
+  for (const auto &[base, defaultSym] : featureOverrideDefaults) {
+    auto marker = featureOverrides.find(base);
+    if (marker == featureOverrides.end())
+      continue;
+    ctx.symtab.addFeatureOverrideDefault(base, this, defaultSym,
+                                         marker->second);
+  }
+}
+
+const Archive::Symbol *ArchiveFile::findSymbol(StringRef name) const {
+  auto it = symbols.find(name);
+  return it == symbols.end() ? nullptr : &it->second;
+}
+
+bool ArchiveFile::isImportLibraryMember(const Archive::Symbol &sym) const {
+  const Archive::Child &child =
+      CHECK(sym.getMember(),
+            "could not get archive member for " + toCOFFString(ctx, sym));
+  MemoryBufferRef member =
+      CHECK(child.getMemoryBufferRef(),
+            "could not read archive member for " + toCOFFString(ctx, sym));
+  return identify_magic(member.getBuffer()) == file_magic::coff_import_library;
 }
 
 // Returns a buffer pointing to a member file containing a given symbol.
@@ -94,7 +145,7 @@ void ArchiveFile::addMember(const Archive::Symbol &sym) {
   if (!seen.insert(c.getChildOffset()).second)
     return;
 
-  ctx.driver.enqueueArchiveMember(c, sym, getName());
+  ctx.driver.enqueueArchiveMember(c, sym, this);
 }
 
 std::vector<MemoryBufferRef> linker::coff::getArchiveMembers(Archive *file) {
@@ -396,6 +447,12 @@ void ObjFile::initializeSymbols() {
 
 Symbol *ObjFile::createUndefined(COFFSymbolRef sym) {
   StringRef name = check(coffObj->getSymbolName(sym));
+  if (ctx.symtab.isFeatureOverrideMarker(name)) {
+    // `$fo$` is a selection marker, not a link-time reference. Archive
+    // selection has already consumed it; do not extract the BDD member as if
+    // this were an ordinary undefined symbol.
+    return ctx.symtab.addAbsolute(name, 0);
+  }
   return ctx.symtab.addUndefined(name, this, sym.isWeakExternal());
 }
 

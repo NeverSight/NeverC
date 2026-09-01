@@ -6,6 +6,7 @@
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace linker::coff {
@@ -73,6 +74,10 @@ public:
   Symbol *addUndefined(StringRef name, InputFile *f, bool isWeakAlias);
   void addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym);
   void addLazyObject(InputFile *f, StringRef n);
+  void addFeatureOverrideDefault(StringRef base, ArchiveFile *archive,
+                                 const Archive::Symbol &defaultSymbol,
+                                 StringRef marker);
+  bool isFeatureOverrideMarker(StringRef name) const;
   Symbol *addAbsolute(StringRef n, COFFSymbolRef s);
   Symbol *addRegular(InputFile *f, StringRef n,
                      const llvm::object::coff_symbol_generic *s = nullptr,
@@ -115,6 +120,26 @@ private:
   std::pair<Symbol *, bool> insert(StringRef name, InputFile *f);
 
   std::vector<Symbol *> getSymsWithPrefix(StringRef prefix);
+
+  struct ArchiveMember {
+    ArchiveMember(ArchiveFile *archive, const Archive::Symbol &symbol)
+        : archive(archive), symbol(symbol) {}
+
+    ArchiveFile *archive;
+    Archive::Symbol symbol;
+  };
+
+  bool shouldSelectFeatureOverrideDefault(Symbol *symbol) const;
+
+  // Base symbol -> exact `$fo_default$` archive member. The member must take
+  // precedence over a DLL import selected for the base symbol.
+  llvm::DenseMap<llvm::StringRef, ArchiveMember> featureOverrideDefaults;
+  llvm::DenseSet<llvm::StringRef> featureOverrideMarkers;
+
+  // Undefined symbols remain Undefined while their lazy archive member is
+  // queued. Keep the selected provider so feature overrides can distinguish a
+  // pending import from an earlier ordinary static definition.
+  llvm::DenseMap<Symbol *, ArchiveMember> pendingArchiveMembers;
 
   llvm::DenseMap<llvm::CachedHashStringRef, Symbol *> symMap;
   std::unique_ptr<BitcodeCompiler> lto;

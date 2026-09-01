@@ -435,13 +435,76 @@ std::pair<Symbol *, bool> SymbolTable::insert(StringRef name, InputFile *file) {
 Symbol *SymbolTable::addUndefined(StringRef name, InputFile *f,
                                   bool isWeakAlias) {
   auto [s, wasInserted] = insert(name, f);
+
+  // LINK's first search step for a new undefined reference from an archive
+  // member is that same archive. Preserve the member's origin so a lazy symbol
+  // from another library does not win merely because it entered the global
+  // symbol table first.
+  auto loadFromParentArchive = [&]() {
+    if (isWeakAlias || s->pendingArchiveLoad || !f || !f->parentArchive)
+      return false;
+    const Archive::Symbol *member = f->parentArchive->findSymbol(name);
+    if (!member)
+      return false;
+    s->pendingArchiveLoad = true;
+    pendingArchiveMembers.try_emplace(s, f->parentArchive, *member);
+    f->parentArchive->addMember(*member);
+    return true;
+  };
+
   if (wasInserted || (s->isLazy() && isWeakAlias)) {
     replaceSymbol<Undefined>(s, name);
-    return s;
+    if (loadFromParentArchive())
+      return s;
   }
-  if (s->isLazy())
+  if (s->isLazy() && loadFromParentArchive())
+    return s;
+  if (!isWeakAlias) {
+    auto it = featureOverrideDefaults.find(name);
+    if (it != featureOverrideDefaults.end() &&
+        shouldSelectFeatureOverrideDefault(s)) {
+      s->pendingArchiveLoad = true;
+      it->second.archive->addMember(it->second.symbol);
+      return s;
+    }
+  }
+  if (s->isLazy() && !s->pendingArchiveLoad)
     forceLazy(s);
   return s;
+}
+
+bool SymbolTable::shouldSelectFeatureOverrideDefault(Symbol *symbol) const {
+  if (isa<DefinedImportThunk>(symbol) || isa<DefinedImportData>(symbol))
+    return true;
+  if (auto *lazy = dyn_cast<LazyArchive>(symbol))
+    return lazy->file->isImportLibraryMember(lazy->sym);
+  auto *undefined = dyn_cast<Undefined>(symbol);
+  if (!undefined || undefined->weakAlias)
+    return false;
+  if (!symbol->pendingArchiveLoad)
+    return true;
+  auto pending = pendingArchiveMembers.find(symbol);
+  return pending != pendingArchiveMembers.end() &&
+         pending->second.archive->isImportLibraryMember(pending->second.symbol);
+}
+
+void SymbolTable::addFeatureOverrideDefault(
+    StringRef base, ArchiveFile *archive, const Archive::Symbol &defaultSymbol,
+    StringRef marker) {
+  auto selected =
+      featureOverrideDefaults.try_emplace(base, archive, defaultSymbol).first;
+  featureOverrideMarkers.insert(marker);
+
+  Symbol *target = find(base);
+  if (!target || !target->isUsedInRegularObj ||
+      !shouldSelectFeatureOverrideDefault(target))
+    return;
+  target->pendingArchiveLoad = true;
+  selected->second.archive->addMember(selected->second.symbol);
+}
+
+bool SymbolTable::isFeatureOverrideMarker(StringRef name) const {
+  return featureOverrideMarkers.contains(name);
 }
 
 void SymbolTable::addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym) {
@@ -455,6 +518,7 @@ void SymbolTable::addLazyArchive(ArchiveFile *f, const Archive::Symbol &sym) {
   if (!u || u->weakAlias || s->pendingArchiveLoad)
     return;
   s->pendingArchiveLoad = true;
+  pendingArchiveMembers.try_emplace(s, f, sym);
   f->addMember(sym);
 }
 

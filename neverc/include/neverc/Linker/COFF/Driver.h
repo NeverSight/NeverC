@@ -67,7 +67,7 @@ public:
 
   // Used by ArchiveFile to enqueue members.
   void enqueueArchiveMember(const Archive::Child &c, const Archive::Symbol &sym,
-                            StringRef parentName);
+                            ArchiveFile *parentArchive);
 
   MemoryBufferRef takeBuffer(std::unique_ptr<MemoryBuffer> mb);
 
@@ -143,7 +143,8 @@ public:
   void addBuffer(std::unique_ptr<MemoryBuffer> mb, bool wholeArchive,
                  bool lazy);
   void addArchiveBuffer(MemoryBufferRef mbref, StringRef symName,
-                        StringRef parentName, uint64_t offsetInArchive);
+                        StringRef parentName, ArchiveFile *parentArchive,
+                        uint64_t offsetInArchive);
 
   void enqueueTask(std::function<void()> task);
   bool run();

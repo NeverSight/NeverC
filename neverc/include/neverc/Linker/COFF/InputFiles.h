@@ -39,6 +39,7 @@ using llvm::object::COFFObjectFile;
 using llvm::object::COFFSymbolRef;
 
 class Chunk;
+class ArchiveFile;
 class Defined;
 class DefinedImportData;
 class DefinedImportThunk;
@@ -73,6 +74,11 @@ public:
 
   // An archive file name if this file is created from an archive.
   StringRef parentName;
+
+  // The archive that selected this member. Unlike parentName, this preserves
+  // the exact archive when the same path is present more than once and lets
+  // undefined references follow LINK's same-archive-first search rule.
+  ArchiveFile *parentArchive = nullptr;
 
   // Returns .drectve section contents if exist.
   StringRef getDirectives() { return directives; }
@@ -111,8 +117,15 @@ public:
   // which ensures that we don't load the same member more than once.
   void addMember(const Archive::Symbol &sym);
 
+  // Finds the first member advertised by this archive for a symbol.
+  const Archive::Symbol *findSymbol(StringRef name) const;
+
+  // Returns true when a symbol is provided by a short COFF import member.
+  bool isImportLibraryMember(const Archive::Symbol &sym) const;
+
 private:
   std::unique_ptr<Archive> file;
+  llvm::DenseMap<StringRef, Archive::Symbol> symbols;
   llvm::DenseSet<uint64_t> seen;
 };
 

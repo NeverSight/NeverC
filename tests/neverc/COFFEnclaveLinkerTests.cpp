@@ -151,8 +151,8 @@ archiveCOFF(llvm::ArrayRef<InMemoryInput> Objects) {
   return Result;
 }
 
-InMemoryInput importLibraryFor(
-    llvm::StringRef Path, llvm::StringRef Symbol, llvm::StringRef DLL,
+llvm::SmallVector<char, 0> shortImportMemberFor(
+    llvm::StringRef Symbol, llvm::StringRef DLL,
     llvm::COFF::MachineTypes Machine = llvm::COFF::IMAGE_FILE_MACHINE_AMD64) {
   llvm::object::coff_import_header Header{};
   Header.Sig1 = 0;
@@ -169,6 +169,14 @@ InMemoryInput importLibraryFor(
   Member.push_back('\0');
   Member.append(DLL.begin(), DLL.end());
   Member.push_back('\0');
+  return Member;
+}
+
+InMemoryInput importLibraryFor(
+    llvm::StringRef Path, llvm::StringRef Symbol, llvm::StringRef DLL,
+    llvm::COFF::MachineTypes Machine = llvm::COFF::IMAGE_FILE_MACHINE_AMD64) {
+  const llvm::SmallVector<char, 0> Member =
+      shortImportMemberFor(Symbol, DLL, Machine);
   auto Archive = archiveCOFF("import.obj", Member);
   if (!Archive) {
     ADD_FAILURE() << llvm::toString(Archive.takeError()).str().str();
@@ -789,6 +797,292 @@ TEST_F(COFFEnclaveLinkerTest, MixedDoesNotTreatExportsAsAddressTaken) {
   PEImage Image = inspect(Result);
   ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardCountOffset, 8));
   EXPECT_EQ(*Image.loadConfig64(LoadConfigGuardCountOffset), 1U);
+}
+
+TEST_F(COFFEnclaveLinkerTest, FeatureOverrideSelectsDefaultOverEarlierImport) {
+  const InMemoryInput Main = baseObject(X64, "callq feature_target\n  retq");
+  const InMemoryInput Import = importLibraryFor(
+      "/virtual/feature-import.lib", "feature_target", "feature.dll");
+
+  const InMemoryInput Metadata =
+      objectFor("a_metadata.obj", X64,
+                ".section feature_target_$fo_bdd$,\"dr\",discard,"
+                "feature_target_$fo_bdd$\n"
+                ".globl feature_target_$fo_bdd$\nfeature_target_$fo_bdd$:\n"
+                ".globl feature_target_$fo$\nfeature_target_$fo$:\n  .zero 32\n"
+                ".section feature_target_$fo_rvas$,\"dr\",discard,"
+                "feature_target_$fo_rvas$\n"
+                ".globl feature_target_$fo_rvas$\nfeature_target_$fo_rvas$:\n"
+                "  .long candidate_feature\n");
+  const InMemoryInput Default =
+      objectFor("b_default.obj", X64,
+                ".def @feat.00; .scl 3; .type 0; .endef\n"
+                ".globl @feat.00\n.set @feat.00, 0x800\n"
+                ".text\n"
+                ".globl feature_target\nfeature_target:\n  retq\n"
+                ".globl default_helper\ndefault_helper:\n  retq\n"
+                ".globl feature_target_$fo_default$\n"
+                ".set feature_target_$fo_default$, feature_target\n"
+                ".globl feature_target_$fo$\n"
+                ".section .gfids$y,\"dr\"\n"
+                "  .symidx feature_target\n  .symidx default_helper\n");
+  const InMemoryInput Candidate =
+      objectFor("c_candidate.obj", X64,
+                ".def @feat.00; .scl 3; .type 0; .endef\n"
+                ".globl @feat.00\n.set @feat.00, 0x800\n"
+                ".text\n"
+                ".globl candidate_feature\ncandidate_feature:\n  retq\n"
+                ".globl candidate_helper\ncandidate_helper:\n  retq\n"
+                ".section .gfids$y,\"dr\"\n"
+                "  .symidx candidate_feature\n  .symidx candidate_helper\n");
+  const InMemoryInput Members[] = {Metadata, Default, Candidate};
+  auto Archive = archiveCOFF(Members);
+  ASSERT_TRUE(static_cast<bool>(Archive))
+      << llvm::toString(Archive.takeError()).str().str();
+  InMemoryInput FeatureLibrary{"/virtual/feature.lib", std::move(*Archive)};
+
+  auto expectDefault = [&](llvm::ArrayRef<InMemoryInput> Inputs,
+                           llvm::StringRef Order) {
+    SCOPED_TRACE(Order.str());
+    const LinkResult Result =
+        link({"--guard=mixed", "--enclave", "--opt=ref"}, Inputs);
+    PEImage Image = inspect(Result);
+    ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardCountOffset, 8));
+    EXPECT_EQ(*Image.loadConfig64(LoadConfigGuardCountOffset), 3U)
+        << Result.Diagnostics;
+    EXPECT_EQ(Result.Image.find("feature.dll"), std::string::npos)
+        << Result.Diagnostics;
+  };
+
+  const InMemoryInput ReferenceBeforeMetadata[] = {Main, Import,
+                                                   FeatureLibrary};
+  expectDefault(ReferenceBeforeMetadata, "reference, import, feature archive");
+
+  const InMemoryInput ReferenceAfterMetadata[] = {Import, FeatureLibrary, Main};
+  expectDefault(ReferenceAfterMetadata, "import, feature archive, reference");
+
+  const InMemoryInput PendingImportBeforeMetadata[] = {Import, Main,
+                                                       FeatureLibrary};
+  expectDefault(PendingImportBeforeMetadata,
+                "import, reference, feature archive");
+
+  const InMemoryInput FeatureArchiveFirst[] = {FeatureLibrary, Import, Main};
+  expectDefault(FeatureArchiveFirst, "feature archive, import, reference");
+
+  const InMemoryInput MarkerOnly =
+      objectFor("marker-only.obj", X64,
+                ".text\n.globl unrelated_default\nunrelated_default:\n  retq\n"
+                ".globl feature_target_$fo_default$\n"
+                ".set feature_target_$fo_default$, unrelated_default\n");
+  auto MarkerOnlyArchive = archiveCOFF("marker-only.obj", MarkerOnly.Contents);
+  ASSERT_TRUE(static_cast<bool>(MarkerOnlyArchive))
+      << llvm::toString(MarkerOnlyArchive.takeError()).str().str();
+  InMemoryInput MarkerOnlyLibrary{"/virtual/marker-only.lib",
+                                  std::move(*MarkerOnlyArchive)};
+  const InMemoryInput EarlierSameNameMarker[] = {
+      Import, Main, MarkerOnlyLibrary, FeatureLibrary};
+  expectDefault(EarlierSameNameMarker,
+                "earlier unrelated archive has the same default marker");
+
+  const InMemoryInput ExplicitDefinition =
+      objectFor("explicit-definition.obj", X64,
+                ".def @feat.00; .scl 3; .type 0; .endef\n"
+                ".globl @feat.00\n.set @feat.00, 0x800\n"
+                ".text\n.globl feature_target\nfeature_target:\n  retq\n"
+                ".section .gfids$y,\"dr\"\n  .symidx feature_target\n");
+  const InMemoryInput ExplicitDefinitionFirst[] = {ExplicitDefinition,
+                                                   FeatureLibrary, Main};
+  const LinkResult ExplicitResult = link(
+      {"--guard=mixed", "--enclave", "--opt=ref"}, ExplicitDefinitionFirst);
+  PEImage ExplicitImage = inspect(ExplicitResult);
+  ASSERT_TRUE(ExplicitImage.hasLoadConfigField(LoadConfigGuardCountOffset, 8));
+  EXPECT_EQ(*ExplicitImage.loadConfig64(LoadConfigGuardCountOffset), 2U)
+      << ExplicitResult.Diagnostics;
+
+  const InMemoryInput EarlierStatic =
+      objectFor("earlier-static.obj", X64,
+                ".def @feat.00; .scl 3; .type 0; .endef\n"
+                ".globl @feat.00\n.set @feat.00, 0x800\n"
+                ".text\n.globl feature_target\nfeature_target:\n  retq\n"
+                ".globl earlier_static_helper\nearlier_static_helper:\n  retq\n"
+                ".section .rdata,\"dr\"\n  .asciz \"earlier-static-provider\"\n"
+                ".section .gfids$y,\"dr\"\n"
+                "  .symidx feature_target\n  .symidx earlier_static_helper\n");
+  auto EarlierStaticArchive =
+      archiveCOFF("earlier-static.obj", EarlierStatic.Contents);
+  ASSERT_TRUE(static_cast<bool>(EarlierStaticArchive))
+      << llvm::toString(EarlierStaticArchive.takeError()).str().str();
+  InMemoryInput EarlierStaticLibrary{"/virtual/earlier-static.lib",
+                                     std::move(*EarlierStaticArchive)};
+  for (const std::pair<llvm::StringRef, std::vector<InMemoryInput>> &Case :
+       {std::pair<llvm::StringRef, std::vector<InMemoryInput>>{
+            "pending earlier static provider",
+            {Main, EarlierStaticLibrary, FeatureLibrary}},
+        {"lazy earlier static provider",
+         {EarlierStaticLibrary, FeatureLibrary, Main}}}) {
+    SCOPED_TRACE(Case.first.str());
+    const LinkResult Result =
+        link({"--guard=mixed", "--enclave", "--opt=ref"}, Case.second);
+    inspect(Result);
+    EXPECT_NE(Result.Image.find("earlier-static-provider"), std::string::npos)
+        << Result.Diagnostics;
+  }
+
+  llvm::SmallString<128> ThinDirectory;
+  ASSERT_FALSE(llvm::sys::fs::createUniqueDirectory("neverc-coff-thin-import",
+                                                    ThinDirectory));
+  auto RemoveThinDirectory = llvm::make_scope_exit(
+      [&] { (void)llvm::sys::fs::remove_directories(ThinDirectory); });
+  llvm::SmallString<128> ThinMemberPath = ThinDirectory;
+  llvm::sys::path::append(ThinMemberPath, "feature-import.obj");
+  const llvm::SmallVector<char, 0> ThinMember =
+      shortImportMemberFor("feature_target", "feature.dll");
+  {
+    std::error_code WriteError;
+    llvm::raw_fd_ostream MemberStream(ThinMemberPath, WriteError,
+                                      llvm::sys::fs::OF_None);
+    ASSERT_FALSE(WriteError) << WriteError.message();
+    MemberStream.write(ThinMember.data(), ThinMember.size());
+  }
+  auto ThinArchiveMember =
+      llvm::NewArchiveMember::getFile(ThinMemberPath, /*Deterministic=*/true);
+  ASSERT_TRUE(static_cast<bool>(ThinArchiveMember))
+      << llvm::toString(ThinArchiveMember.takeError()).str().str();
+  llvm::SmallVector<llvm::NewArchiveMember, 1> ThinMembers;
+  ThinMembers.push_back(std::move(*ThinArchiveMember));
+  auto ThinArchive = llvm::writeArchiveToBuffer(
+      ThinMembers, llvm::SymtabWritingMode::NormalSymtab,
+      llvm::object::Archive::K_GNU, /*Deterministic=*/true, /*Thin=*/true);
+  ASSERT_TRUE(static_cast<bool>(ThinArchive))
+      << llvm::toString(ThinArchive.takeError()).str().str();
+  llvm::SmallString<128> ThinArchivePath = ThinDirectory;
+  llvm::sys::path::append(ThinArchivePath, "feature-import.lib");
+  InMemoryInput ThinImport{ThinArchivePath.str().str(), {}};
+  ThinImport.Contents.append((*ThinArchive)->getBuffer().begin(),
+                             (*ThinArchive)->getBuffer().end());
+  const InMemoryInput ThinImportBeforeMetadata[] = {ThinImport, Main,
+                                                    FeatureLibrary};
+  expectDefault(ThinImportBeforeMetadata,
+                "thin import, reference, feature archive");
+
+  auto expectImportOutsideMixedEnclave =
+      [&](llvm::ArrayRef<llvm::StringRef> Options, llvm::StringRef Scope) {
+        SCOPED_TRACE(Scope.str());
+        const InMemoryInput Inputs[] = {Import, Main, FeatureLibrary};
+        const LinkResult Result = link(Options, Inputs);
+        inspect(Result);
+        EXPECT_NE(Result.Image.find("feature.dll"), std::string::npos)
+            << Result.Diagnostics;
+      };
+  expectImportOutsideMixedEnclave({"--guard=mixed", "--opt=ref"},
+                                  "mixed non-enclave link");
+  expectImportOutsideMixedEnclave({"--enclave", "--opt=ref"},
+                                  "non-mixed enclave link");
+}
+
+TEST_F(COFFEnclaveLinkerTest,
+       FeatureOverrideSuffixWithoutGroupUsesOrdinaryResolution) {
+  const InMemoryInput Main =
+      baseObject(X64, "callq ordinary_suffix_$fo$\n  retq");
+  const InMemoryInput Provider = objectFor(
+      "ordinary_suffix.obj", X64,
+      ".def @feat.00; .scl 3; .type 0; .endef\n"
+      ".globl @feat.00\n.set @feat.00, 0x800\n"
+      ".text\n.globl ordinary_suffix_$fo$\nordinary_suffix_$fo$:\n  retq\n"
+      ".globl ordinary_suffix_helper\nordinary_suffix_helper:\n  retq\n"
+      ".section .gfids$y,\"dr\"\n"
+      "  .symidx ordinary_suffix_$fo$\n  .symidx ordinary_suffix_helper\n");
+  auto Archive = archiveCOFF("ordinary_suffix.obj", Provider.Contents);
+  ASSERT_TRUE(static_cast<bool>(Archive))
+      << llvm::toString(Archive.takeError()).str().str();
+  const InMemoryInput Library{"/virtual/ordinary-suffix.lib",
+                              std::move(*Archive)};
+
+  for (const std::pair<llvm::StringRef, std::vector<InMemoryInput>> &Case :
+       {std::pair<llvm::StringRef, std::vector<InMemoryInput>>{
+            "reference before archive", {Main, Library}},
+        {"archive before reference", {Library, Main}}}) {
+    SCOPED_TRACE(Case.first.str());
+    const LinkResult Result = link({"--guard=mixed"}, Case.second);
+    PEImage Image = inspect(Result);
+    ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardCountOffset, 8));
+    EXPECT_EQ(*Image.loadConfig64(LoadConfigGuardCountOffset), 3U)
+        << Result.Diagnostics;
+  }
+}
+
+TEST_F(COFFEnclaveLinkerTest,
+       FeatureOverrideSuffixWithoutProviderRemainsUndefined) {
+  const InMemoryInput Main =
+      baseObject(X64, "callq missing_feature_$fo$\n  retq");
+  const LinkResult Result = link({"--guard=mixed"}, {Main});
+  EXPECT_FALSE(Result.Succeeded);
+  EXPECT_NE(Result.Diagnostics.find("undefined symbol: missing_feature_$fo$"),
+            std::string::npos)
+      << Result.Diagnostics;
+}
+
+TEST_F(COFFEnclaveLinkerTest,
+       ArchiveMemberResolvesItsOwnArchiveBeforeEarlierImport) {
+  const InMemoryInput Main =
+      baseObject(X64, "callq archive_root\n  callq queued_root\n  retq");
+  const InMemoryInput Import = importLibraryFor(
+      "/virtual/ordinary-import.lib", "ordinary_target", "ordinary.dll");
+  const InMemoryInput Root =
+      objectFor("a_root.obj", X64,
+                ".def @feat.00; .scl 3; .type 0; .endef\n"
+                ".globl @feat.00\n.set @feat.00, 0x800\n"
+                ".text\n.globl archive_root\narchive_root:\n"
+                "  callq ordinary_target\n  retq\n"
+                ".section .gfids$y,\"dr\"\n  .symidx archive_root\n");
+  const InMemoryInput Local =
+      objectFor("b_local.obj", X64,
+                ".def @feat.00; .scl 3; .type 0; .endef\n"
+                ".globl @feat.00\n.set @feat.00, 0x800\n"
+                ".text\n.globl ordinary_target\nordinary_target:\n  retq\n"
+                ".globl ordinary_helper\nordinary_helper:\n  retq\n"
+                ".section .gfids$y,\"dr\"\n"
+                "  .symidx ordinary_target\n  .symidx ordinary_helper\n");
+  // Put the provider before its referrer to prove this is an indexed archive
+  // rescan, not a one-way walk over later members.
+  const InMemoryInput Members[] = {Local, Root};
+  auto Archive = archiveCOFF(Members);
+  ASSERT_TRUE(static_cast<bool>(Archive))
+      << llvm::toString(Archive.takeError()).str().str();
+  InMemoryInput StaticLibrary{"/virtual/ordinary.lib", std::move(*Archive)};
+
+  const InMemoryInput QueuedRoot =
+      objectFor("queued_root.obj", X64,
+                ".def @feat.00; .scl 3; .type 0; .endef\n"
+                ".globl @feat.00\n.set @feat.00, 0x800\n"
+                ".text\n.globl queued_root\nqueued_root:\n"
+                "  callq ordinary_target\n  retq\n"
+                ".section .gfids$y,\"dr\"\n  .symidx queued_root\n");
+  auto QueuedArchive = archiveCOFF("queued_root.obj", QueuedRoot.Contents);
+  ASSERT_TRUE(static_cast<bool>(QueuedArchive))
+      << llvm::toString(QueuedArchive.takeError()).str().str();
+  InMemoryInput QueuedLibrary{"/virtual/queued.lib", std::move(*QueuedArchive)};
+
+  const LinkResult Result = link({"--guard=mixed", "--opt=ref"},
+                                 {Main, Import, StaticLibrary, QueuedLibrary});
+  PEImage Image = inspect(Result);
+  ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardCountOffset, 8));
+  EXPECT_EQ(*Image.loadConfig64(LoadConfigGuardCountOffset), 5U)
+      << Result.Diagnostics;
+  EXPECT_EQ(Result.Image.find("ordinary.dll"), std::string::npos)
+      << Result.Diagnostics;
+
+  // Same-archive-first applies only while choosing a provider for a new
+  // undefined. It must not replace an import selected by an earlier live
+  // reference.
+  const InMemoryInput EarlierReference =
+      baseObject(X64, "callq ordinary_target\n  callq archive_root\n  retq");
+  const LinkResult EarlierResult =
+      link({"--guard=mixed", "--opt=ref"},
+           {EarlierReference, Import, StaticLibrary});
+  inspect(EarlierResult);
+  EXPECT_NE(EarlierResult.Image.find("ordinary.dll"), std::string::npos)
+      << EarlierResult.Diagnostics;
 }
 
 TEST_F(COFFEnclaveLinkerTest, EnclaveSynthesizesImportIdentityList) {
