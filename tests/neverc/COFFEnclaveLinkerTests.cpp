@@ -1112,6 +1112,96 @@ TEST_F(COFFEnclaveLinkerTest, FeatureOverrideSelectsDefaultOverEarlierImport) {
 }
 
 TEST_F(COFFEnclaveLinkerTest,
+       FeatureOverrideKeepsDirectIATReferenceWithoutImportThunk) {
+  struct Case {
+    llvm::StringRef Triple;
+    llvm::StringRef CallAndReturn;
+    llvm::StringRef ReturnInstruction;
+    llvm::StringRef MachineOption;
+    llvm::COFF::MachineTypes Machine;
+  };
+  const Case Cases[] = {
+      {X64, "callq feature_target\n  retq", "retq", "--machine=x64",
+       llvm::COFF::IMAGE_FILE_MACHINE_AMD64},
+      {Arm64, "bl feature_target\n  ret", "ret", "--machine=arm64",
+       llvm::COFF::IMAGE_FILE_MACHINE_ARM64},
+  };
+
+  for (const Case &C : Cases) {
+    SCOPED_TRACE(C.Triple.str());
+    std::string MainInstructions = C.CallAndReturn.str();
+    MainInstructions +=
+        "\n.section .rdata,\"dr\"\n"
+        ".globl feature_target_iat_reference\n"
+        "feature_target_iat_reference:\n  .quad __imp_feature_target\n";
+    const InMemoryInput Main = baseObject(C.Triple, MainInstructions);
+    const InMemoryInput Import =
+        importLibraryFor("/virtual/feature-import.lib", "feature_target",
+                         "feature.dll", C.Machine);
+
+    const InMemoryInput Metadata = objectFor(
+        "a_metadata.obj", C.Triple,
+        ".section feature_target_$fo_bdd$,\"dr\",discard,"
+        "feature_target_$fo_bdd$\n"
+        ".globl feature_target_$fo_bdd$\nfeature_target_$fo_bdd$:\n"
+        ".globl feature_target_$fo$\nfeature_target_$fo$:\n  .zero 32\n"
+        ".section feature_target_$fo_rvas$,\"dr\",discard,"
+        "feature_target_$fo_rvas$\n"
+        ".globl feature_target_$fo_rvas$\nfeature_target_$fo_rvas$:\n"
+        "  .long candidate_feature\n");
+
+    std::string DefaultAssembly = ".def @feat.00; .scl 3; .type 0; .endef\n"
+                                  ".globl @feat.00\n.set @feat.00, 0x800\n"
+                                  ".text\n"
+                                  ".globl feature_target\nfeature_target:\n  ";
+    DefaultAssembly += C.ReturnInstruction.str();
+    DefaultAssembly += "\n.globl default_helper\ndefault_helper:\n  ";
+    DefaultAssembly += C.ReturnInstruction.str();
+    DefaultAssembly +=
+        "\n.globl feature_target_$fo_default$\n"
+        ".set feature_target_$fo_default$, feature_target\n"
+        ".globl feature_target_$fo$\n"
+        ".section .rdata,\"dr\"\n  .asciz \"native-feature-default\"\n"
+        ".section .gfids$y,\"dr\"\n"
+        "  .symidx feature_target\n  .symidx default_helper\n";
+    const InMemoryInput Default =
+        objectFor("b_default.obj", C.Triple, DefaultAssembly);
+
+    std::string CandidateAssembly =
+        ".def @feat.00; .scl 3; .type 0; .endef\n"
+        ".globl @feat.00\n.set @feat.00, 0x800\n"
+        ".text\n"
+        ".globl candidate_feature\ncandidate_feature:\n  ";
+    CandidateAssembly += C.ReturnInstruction.str();
+    CandidateAssembly +=
+        "\n.section .rdata,\"dr\"\n  .asciz \"optional-feature-candidate\"\n";
+    const InMemoryInput Candidate =
+        objectFor("c_candidate.obj", C.Triple, CandidateAssembly);
+
+    const InMemoryInput Members[] = {Metadata, Default, Candidate};
+    auto Archive = archiveCOFF(Members);
+    ASSERT_TRUE(static_cast<bool>(Archive))
+        << llvm::toString(Archive.takeError()).str().str();
+    InMemoryInput FeatureLibrary{"/virtual/feature.lib", std::move(*Archive)};
+
+    const LinkResult Result =
+        link({C.MachineOption, "--guard=mixed", "--enclave", "--opt=ref"},
+             {Main, Import, FeatureLibrary});
+    PEImage Image = inspect(Result);
+    ASSERT_TRUE(Image.hasLoadConfigField(LoadConfigGuardCountOffset, 8));
+    EXPECT_EQ(*Image.loadConfig64(LoadConfigGuardCountOffset), 3U)
+        << Result.Diagnostics;
+    EXPECT_NE(Result.Image.find("feature.dll"), std::string::npos)
+        << "the direct __imp_ reference must keep the IAT import live";
+    EXPECT_NE(Result.Image.find("native-feature-default"), std::string::npos)
+        << "the direct call must resolve to the feature default";
+    EXPECT_EQ(Result.Image.find("optional-feature-candidate"),
+              std::string::npos)
+        << "the optional feature implementation must remain lazy";
+  }
+}
+
+TEST_F(COFFEnclaveLinkerTest,
        FeatureOverrideSuffixWithoutGroupUsesOrdinaryResolution) {
   const InMemoryInput Main =
       baseObject(X64, "callq ordinary_suffix_$fo$\n  retq");

@@ -1367,10 +1367,10 @@ void OutputWriter::appendImportThunks() {
     if (!file->thunkSym)
       continue;
 
-    if (!isa<DefinedImportThunk>(file->thunkSym))
-      fatal(toString(ctx, *file->thunkSym) + " was replaced");
-    DefinedImportThunk *thunk = cast<DefinedImportThunk>(file->thunkSym);
-    if (file->thunkLive)
+    // A feature default may replace the callable thunk while a direct
+    // __imp_ reference still keeps the import data live.
+    auto *thunk = dyn_cast<DefinedImportThunk>(file->thunkSym);
+    if (thunk && file->thunkLive)
       textSec->addChunk(thunk->getChunk());
   }
 
