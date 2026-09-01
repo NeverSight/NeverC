@@ -17,6 +17,9 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Compiler.h"
 
+#include <atomic>
+#include <cstdint>
+
 namespace llvm {
 
 /// An error handler callback.
@@ -72,6 +75,78 @@ struct ScopedFatalErrorHandler {
                                      bool gen_crash_diag = true);
 [[noreturn]] void report_fatal_error(const Twine &reason,
                                      bool gen_crash_diag = true);
+
+/// A same-thread, nestable fatal-error handler. Thread-local handlers shadow
+/// the process-wide handler installed by install_fatal_error_handler(), but do
+/// not mutate it. This is intended for independent in-process invocations
+/// whose recovery transfer and diagnostics are owned by the calling thread.
+///
+/// The object must be reset or destroyed on the constructing thread. A reset
+/// token identifies the exact registration generation, so an abandoned or
+/// stale cleanup cannot detach a later handler that reuses the same address.
+class ScopedThreadLocalFatalErrorHandler {
+  struct Frame {
+    fatal_error_handler_t Handler = nullptr;
+    void *UserData = nullptr;
+    Frame *Previous = nullptr;
+    uint64_t Generation = 0;
+    bool Active = false;
+  };
+
+public:
+  class ResetToken {
+  public:
+    ResetToken() = default;
+
+  private:
+    friend class ScopedThreadLocalFatalErrorHandler;
+    ResetToken(Frame *RegisteredFrame, Frame **RegisteredOwner,
+               uint64_t RegisteredGeneration)
+        : RegisteredFrame(RegisteredFrame), RegisteredOwner(RegisteredOwner),
+          RegisteredGeneration(RegisteredGeneration) {}
+
+    Frame *RegisteredFrame = nullptr;
+    Frame **RegisteredOwner = nullptr;
+    uint64_t RegisteredGeneration = 0;
+  };
+
+  explicit ScopedThreadLocalFatalErrorHandler(
+      fatal_error_handler_t Handler, void *UserData = nullptr);
+  ~ScopedThreadLocalFatalErrorHandler();
+
+  ScopedThreadLocalFatalErrorHandler(
+      const ScopedThreadLocalFatalErrorHandler &) = delete;
+  ScopedThreadLocalFatalErrorHandler &
+  operator=(const ScopedThreadLocalFatalErrorHandler &) = delete;
+  ScopedThreadLocalFatalErrorHandler(
+      ScopedThreadLocalFatalErrorHandler &&) = delete;
+  ScopedThreadLocalFatalErrorHandler &
+  operator=(ScopedThreadLocalFatalErrorHandler &&) = delete;
+
+  ResetToken resetToken() const noexcept;
+  void reset() noexcept;
+  static void reset(ResetToken Token) noexcept;
+
+private:
+  static uint64_t allocateGeneration();
+  static Frame *&currentFrame() noexcept;
+
+  inline static std::atomic<uint64_t> NextGeneration{1};
+
+  Frame Registration;
+  Frame **Owner = nullptr;
+  uint64_t Generation = 0;
+
+  friend bool has_thread_local_fatal_error_handler();
+  friend bool has_fatal_error_handler();
+  friend void report_fatal_error(const Twine &, bool);
+};
+
+/// Whether the calling thread has a scoped handler.
+bool has_thread_local_fatal_error_handler();
+
+/// Whether the calling thread has a scoped handler or a process-wide fallback.
+bool has_fatal_error_handler();
 
 /// Installs a new bad alloc error handler that should be used whenever a
 /// bad alloc error, e.g. failing malloc/calloc, is encountered by LLVM.
@@ -203,6 +278,98 @@ inline LLVM_MUTEX_T BadAllocErrorHandlerMutex;
 
 namespace llvm {
 
+inline uint64_t ScopedThreadLocalFatalErrorHandler::allocateGeneration() {
+  uint64_t Observed = NextGeneration.load(std::memory_order_relaxed);
+  for (;;) {
+    if (Observed == 0 || Observed == ~uint64_t{0})
+      report_fatal_error(
+          "thread-local fatal-error handler generations are exhausted");
+    if (NextGeneration.compare_exchange_weak(Observed, Observed + 1,
+                                             std::memory_order_relaxed,
+                                             std::memory_order_relaxed))
+      return Observed;
+  }
+}
+
+inline ScopedThreadLocalFatalErrorHandler::Frame *&
+ScopedThreadLocalFatalErrorHandler::currentFrame() noexcept {
+  // LLVM_THREAD_LOCAL may be GCC's __thread, which cannot be combined with
+  // an inline variable. An inline function-local TLS object still denotes one
+  // slot per thread for the whole program, matching CrashRecoveryContext.
+  static LLVM_THREAD_LOCAL Frame *Value = nullptr;
+  return Value;
+}
+
+inline ScopedThreadLocalFatalErrorHandler::ScopedThreadLocalFatalErrorHandler(
+    fatal_error_handler_t Handler, void *UserData) {
+  if (!Handler)
+    report_fatal_error(
+        "cannot install a null thread-local fatal-error handler");
+  Generation = allocateGeneration();
+  Owner = &currentFrame();
+  Registration = {Handler, UserData, currentFrame(), Generation, true};
+  currentFrame() = &Registration;
+}
+
+inline ScopedThreadLocalFatalErrorHandler::
+    ~ScopedThreadLocalFatalErrorHandler() {
+  reset();
+}
+
+inline ScopedThreadLocalFatalErrorHandler::ResetToken
+ScopedThreadLocalFatalErrorHandler::resetToken() const noexcept {
+  return ResetToken(&const_cast<Frame &>(Registration), Owner, Generation);
+}
+
+inline void
+ScopedThreadLocalFatalErrorHandler::reset(ResetToken Token) noexcept {
+  if (!Token.RegisteredFrame || Token.RegisteredGeneration == 0 ||
+      Token.RegisteredOwner != &currentFrame())
+    return;
+
+  Frame **Link = &currentFrame();
+  while (*Link && *Link != Token.RegisteredFrame)
+    Link = &(*Link)->Previous;
+  if (!*Link || (*Link)->Generation != Token.RegisteredGeneration)
+    return;
+
+  Frame *Found = *Link;
+  *Link = Found->Previous;
+  Found->Handler = nullptr;
+  Found->UserData = nullptr;
+  Found->Previous = nullptr;
+  Found->Active = false;
+}
+
+inline void ScopedThreadLocalFatalErrorHandler::reset() noexcept {
+  if (!Registration.Active)
+    return;
+  if (Owner != &currentFrame())
+    report_fatal_error(
+        "thread-local fatal-error handler reset on a different thread");
+  reset(resetToken());
+  if (Registration.Active)
+    report_fatal_error(
+        "thread-local fatal-error handler registration changed before reset");
+}
+
+inline bool has_thread_local_fatal_error_handler() {
+  return ScopedThreadLocalFatalErrorHandler::currentFrame() != nullptr;
+}
+
+inline bool has_fatal_error_handler() {
+  if (has_thread_local_fatal_error_handler())
+    return true;
+#if LLVM_ENABLE_THREADS == 1
+  LLVM_MUTEX_LOCK(&ErrorHandlerMutex);
+#endif
+  const bool Installed = ErrorHandler != nullptr;
+#if LLVM_ENABLE_THREADS == 1
+  LLVM_MUTEX_UNLOCK(&ErrorHandlerMutex);
+#endif
+  return Installed;
+}
+
 inline void install_fatal_error_handler(fatal_error_handler_t handler,
                                         void *user_data) {
 #if LLVM_ENABLE_THREADS == 1
@@ -238,7 +405,10 @@ inline void report_fatal_error(StringRef Reason, bool GenCrashDiag) {
 inline void report_fatal_error(const Twine &Reason, bool GenCrashDiag) {
   llvm::fatal_error_handler_t handler = 0;
   void *handlerData = 0;
-  {
+  if (ScopedThreadLocalFatalErrorHandler::currentFrame()) {
+    handler = ScopedThreadLocalFatalErrorHandler::currentFrame()->Handler;
+    handlerData = ScopedThreadLocalFatalErrorHandler::currentFrame()->UserData;
+  } else {
 #if LLVM_ENABLE_THREADS == 1
     LLVM_MUTEX_LOCK(&ErrorHandlerMutex);
 #endif

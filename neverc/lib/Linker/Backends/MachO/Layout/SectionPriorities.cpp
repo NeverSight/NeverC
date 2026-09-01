@@ -27,9 +27,6 @@ using namespace linker::macho;
 // ===----------------------------------------------------------------------===
 
 namespace {
-
-size_t highestAvailablePriority = std::numeric_limits<size_t>::max();
-
 struct Edge {
   int from;
   uint64_t weight;
@@ -56,7 +53,7 @@ class CallGraphSort {
 public:
   CallGraphSort(const MapVector<SectionPair, uint64_t> &profile);
 
-  DenseMap<const InputSection *, size_t> run();
+  DenseMap<const InputSection *, size_t> run(size_t firstAvailablePriority);
 
 private:
   std::vector<Cluster> clusters;
@@ -160,7 +157,8 @@ void mergeClusters(std::vector<Cluster> &cs, Cluster &into, int intoIdx,
 
 // Group InputSections into clusters using the Call-Chain Clustering heuristic
 // then sort the clusters by density.
-DenseMap<const InputSection *, size_t> CallGraphSort::run() {
+DenseMap<const InputSection *, size_t>
+CallGraphSort::run(size_t firstAvailablePriority) {
   const uint64_t maxClusterSize = target->getPageSize();
 
   // Cluster indices sorted by density.
@@ -214,7 +212,7 @@ DenseMap<const InputSection *, size_t> CallGraphSort::run() {
   // priority 0 and be placed at the end of sections.
   // NB: This is opposite from COFF/ELF to be compatible with the existing
   // order-file code.
-  int curOrder = highestAvailablePriority;
+  size_t curOrder = firstAvailablePriority;
   for (int leader : sorted) {
     for (int i = leader;;) {
       orderMap[sections[i]] = curOrder--;
@@ -347,13 +345,13 @@ void macho::PriorityBuilder::parseOrderFile(StringRef path) {
       SymbolPriorityEntry &entry = priorities[symbol];
       if (!objectFile.empty())
         entry.objectFiles.insert(
-            std::make_pair(objectFile, highestAvailablePriority));
+            std::make_pair(objectFile, nextAvailablePriority));
       else
         entry.anyObjectFile =
-            std::max(entry.anyObjectFile, highestAvailablePriority);
+            std::max(entry.anyObjectFile, nextAvailablePriority);
     }
 
-    --highestAvailablePriority;
+    --nextAvailablePriority;
   }
 }
 
@@ -372,7 +370,8 @@ macho::PriorityBuilder::buildInputSectionPriorities() {
     // sections according to the C³ heuristic. All clusters are then sorted by a
     // density metric to further improve locality.
     TimeTraceScope timeScope("Call graph profile sort");
-    sectionPriorities = CallGraphSort(callGraphProfile).run();
+    sectionPriorities =
+        CallGraphSort(callGraphProfile).run(nextAvailablePriority);
   }
 
   if (priorities.empty())

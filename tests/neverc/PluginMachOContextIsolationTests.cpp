@@ -1,8 +1,12 @@
 #include "Driver/Parallelism.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
+#include "Linker/MachO/Config.h"
 #include "Linker/MachO/Driver.h"
 #include "Linker/MachO/MachOLinkerContext.h"
+#include "Linker/MachO/OutputSegment.h"
+#include "Linker/MachO/SectionPriorities.h"
+#include "Linker/MachO/SymbolTable.h"
 #include "ProcessResourceBrokerInternal.h"
 #include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
@@ -97,6 +101,106 @@ TEST(PluginMachOContextIsolationTest,
       llvm::Triple::COFF, Config));
 }
 
+TEST(PluginMachOContextIsolationTest,
+     NestedOutputSegmentResetDoesNotEraseOuterRegistry) {
+  LinkerExecutionContext OuterExecution;
+  MachOLinkerContext &Outer =
+      OuterExecution.createBackend<MachOLinkerContext>();
+  machoConfig() = std::make_unique<Configuration>();
+  Outer.e.cleanupCallback = [] { resetOutputSegments(); };
+
+  OutputSegment *OuterSegment = getOrCreateOutputSegment("__NESTED");
+  ASSERT_EQ(machoOutputSegments().size(), 1U);
+  EXPECT_EQ(machoOutputSegments().front(), OuterSegment);
+
+  {
+    LinkerExecutionContext InnerExecution;
+    MachOLinkerContext &Inner =
+        InnerExecution.createBackend<MachOLinkerContext>();
+    machoConfig() = std::make_unique<Configuration>();
+    Inner.e.cleanupCallback = [] { resetOutputSegments(); };
+
+    OutputSegment *InnerSegment = getOrCreateOutputSegment("__NESTED");
+    EXPECT_NE(InnerSegment, OuterSegment);
+    ASSERT_EQ(machoOutputSegments().size(), 1U);
+    EXPECT_EQ(machoOutputSegments().front(), InnerSegment);
+
+    resetOutputSegments();
+    EXPECT_TRUE(machoOutputSegments().empty());
+    OutputSegment *RecreatedInner = getOrCreateOutputSegment("__NESTED");
+    EXPECT_NE(RecreatedInner, InnerSegment);
+    ASSERT_EQ(machoOutputSegments().size(), 1U);
+    EXPECT_EQ(machoOutputSegments().front(), RecreatedInner);
+  }
+
+  EXPECT_EQ(currentLinkerContext(), &Outer);
+  EXPECT_EQ(getOrCreateOutputSegment("__NESTED"), OuterSegment);
+  ASSERT_EQ(machoOutputSegments().size(), 1U);
+  EXPECT_EQ(machoOutputSegments().front(), OuterSegment);
+}
+
+TEST(PluginMachOContextIsolationTest,
+     NestedUndefinedReportDoesNotClearOuterPendingDiagnostic) {
+  LinkerExecutionContext OuterExecution;
+  MachOLinkerContext &Outer =
+      OuterExecution.createBackend<MachOLinkerContext>();
+  machoConfig() = std::make_unique<Configuration>();
+  symtab = std::make_unique<SymbolTable>();
+
+  std::string OuterStdout;
+  std::string OuterStderr;
+  llvm::raw_string_ostream OuterStdoutStream(OuterStdout);
+  llvm::raw_string_ostream OuterStderrStream(OuterStderr);
+  Outer.e.initialize(OuterStdoutStream, OuterStderrStream, /*exitEarly=*/false,
+                     /*disableOutput=*/false);
+
+  auto *OuterUndefined = llvm::dyn_cast<Undefined>(
+      symtab->addUndefined("_outer_pending_undefined", /*file=*/nullptr,
+                           /*isWeakRef=*/false));
+  ASSERT_NE(OuterUndefined, nullptr);
+  treatUndefinedSymbol(*OuterUndefined, "outer pending reference");
+
+  {
+    LinkerExecutionContext InnerExecution;
+    MachOLinkerContext &Inner =
+        InnerExecution.createBackend<MachOLinkerContext>();
+    machoConfig() = std::make_unique<Configuration>();
+    symtab = std::make_unique<SymbolTable>();
+
+    std::string InnerStdout;
+    std::string InnerStderr;
+    llvm::raw_string_ostream InnerStdoutStream(InnerStdout);
+    llvm::raw_string_ostream InnerStderrStream(InnerStderr);
+    Inner.e.initialize(InnerStdoutStream, InnerStderrStream,
+                       /*exitEarly=*/false, /*disableOutput=*/false);
+
+    auto *InnerUndefined = llvm::dyn_cast<Undefined>(
+        symtab->addUndefined("_inner_pending_undefined", /*file=*/nullptr,
+                             /*isWeakRef=*/false));
+    ASSERT_NE(InnerUndefined, nullptr);
+    treatUndefinedSymbol(*InnerUndefined, "inner pending reference");
+    reportPendingUndefinedSymbols();
+    InnerStderrStream.flush();
+
+    EXPECT_NE(InnerStderr.find("_inner_pending_undefined"), std::string::npos);
+    EXPECT_EQ(InnerStderr.find("_outer_pending_undefined"), std::string::npos);
+    EXPECT_EQ(Inner.e.errorCount, 1U);
+
+    // Reporting again proves that clearing is scoped to the active inner
+    // SymbolTable; it must not consume the outer context's pending entry.
+    reportPendingUndefinedSymbols();
+    EXPECT_EQ(Inner.e.errorCount, 1U);
+  }
+
+  EXPECT_EQ(currentLinkerContext(), &Outer);
+  EXPECT_EQ(Outer.e.errorCount, 0U);
+  reportPendingUndefinedSymbols();
+  OuterStderrStream.flush();
+  EXPECT_NE(OuterStderr.find("_outer_pending_undefined"), std::string::npos);
+  EXPECT_EQ(OuterStderr.find("_inner_pending_undefined"), std::string::npos);
+  EXPECT_EQ(Outer.e.errorCount, 1U);
+}
+
 TEST(PluginMachOContextIsolationTest, ConcurrentStateDoesNotCrossContexts) {
   std::atomic<unsigned> Ready{0};
   std::atomic<bool> Failed{false};
@@ -106,9 +210,12 @@ TEST(PluginMachOContextIsolationTest, ConcurrentStateDoesNotCrossContexts) {
       LinkerExecutionContext Execution;
       MachOLinkerContext &Context =
           Execution.createBackend<MachOLinkerContext>();
+      machoConfig() = std::make_unique<Configuration>();
+      Context.e.cleanupCallback = [] { resetOutputSegments(); };
       machoLCDylibCount() = DylibCount;
       machoMissingAutolinkWarnings().push_back(Warning);
       detail::incrementalInputWorkload().recordNative(DylibCount * 1024ULL);
+      OutputSegment *Segment = getOrCreateOutputSegment("__CONCURRENT_CONTEXT");
 
       Ready.fetch_add(1, std::memory_order_release);
       while (Ready.load(std::memory_order_acquire) != 2)
@@ -118,6 +225,8 @@ TEST(PluginMachOContextIsolationTest, ConcurrentStateDoesNotCrossContexts) {
           machoLCDylibCount() != DylibCount ||
           machoMissingAutolinkWarnings().size() != 1 ||
           machoMissingAutolinkWarnings().front() != Warning ||
+          machoOutputSegments().size() != 1 ||
+          machoOutputSegments().front() != Segment ||
           detail::incrementalInputWorkload().materializedNative().Bytes !=
               DylibCount * 1024ULL)
         Failed.store(true, std::memory_order_relaxed);
@@ -128,6 +237,52 @@ TEST(PluginMachOContextIsolationTest, ConcurrentStateDoesNotCrossContexts) {
 
   std::thread First([&] { Run(3, "first"); });
   std::thread Second([&] { Run(19, "second"); });
+  First.join();
+  Second.join();
+
+  EXPECT_FALSE(Failed.load(std::memory_order_relaxed));
+}
+
+TEST(PluginMachOContextIsolationTest,
+     ConcurrentOrderFilePrioritiesDoNotShareProcessState) {
+  llvm::SmallString<128> OrderPath;
+  std::error_code EC = llvm::sys::fs::createTemporaryFile(
+      "neverc-macho-context-priority", "order", OrderPath);
+  ASSERT_FALSE(EC) << EC.message();
+  llvm::FileRemover RemoveOrder(OrderPath);
+  {
+    llvm::raw_fd_ostream OrderFile(OrderPath, EC, llvm::sys::fs::OF_None);
+    ASSERT_FALSE(EC) << EC.message();
+    for (unsigned I = 0; I != 1024; ++I)
+      OrderFile << "_priority_symbol_" << I << '\n';
+  }
+
+  std::atomic<unsigned> Ready{0};
+  std::atomic<bool> Failed{false};
+  auto Parse = [&] {
+    LinkerExecutionContext Execution;
+    MachOLinkerContext &Context = Execution.createBackend<MachOLinkerContext>();
+    machoConfig() = std::make_unique<Configuration>();
+
+    std::string Stdout;
+    std::string Stderr;
+    llvm::raw_string_ostream StdoutStream(Stdout);
+    llvm::raw_string_ostream StderrStream(Stderr);
+    Context.e.initialize(StdoutStream, StderrStream, /*exitEarly=*/false,
+                         /*disableOutput=*/false);
+
+    Ready.fetch_add(1, std::memory_order_release);
+    while (Ready.load(std::memory_order_acquire) != 2)
+      std::this_thread::yield();
+
+    machoPriorityBuilder().parseOrderFile(OrderPath);
+    StderrStream.flush();
+    if (Context.e.errorCount != 0 || !Stderr.empty())
+      Failed.store(true, std::memory_order_relaxed);
+  };
+
+  std::thread First(Parse);
+  std::thread Second(Parse);
   First.join();
   Second.join();
 

@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <thread>
 #include <utility>
 
 namespace neverc {
@@ -64,26 +63,11 @@ private:
 
   friend class ProcessResourceBroker;
   friend class ResourceSessionPermit;
-  friend class ResourceSessionScope;
   friend class ResourceWorkerGrant;
 };
 
-/// Installs a session view on another coordinator/worker thread.
-class ResourceSessionScope {
-public:
-  explicit ResourceSessionScope(ResourceSessionView Session);
-  ResourceSessionScope(const ResourceSessionScope &) = delete;
-  ResourceSessionScope &operator=(const ResourceSessionScope &) = delete;
-  ~ResourceSessionScope();
-
-private:
-  ResourceSessionView Installed;
-  ResourceSessionView Previous;
-  std::thread::id OwnerThread;
-};
-
-/// Move-only lifetime for one top-level progress token. Nested acquisitions
-/// inherit the current session and therefore do not own another token.
+/// Move-only lifetime for one top-level progress token. Explicitly nested
+/// acquisitions retain their parent session and do not own another token.
 class ResourceSessionPermit {
 public:
   ResourceSessionPermit() = default;
@@ -98,17 +82,14 @@ public:
   ResourceSessionView session() const { return View; }
 
 private:
-  ResourceSessionPermit(ResourceSessionView View, ResourceSessionView Previous,
-                        bool OwnsAdmission, bool RetainsSession = false)
-      : View(std::move(View)), Previous(std::move(Previous)),
-        OwnerThread(std::this_thread::get_id()), OwnsAdmission(OwnsAdmission),
+  ResourceSessionPermit(ResourceSessionView View, bool OwnsAdmission,
+                        bool RetainsSession = false)
+      : View(std::move(View)), OwnsAdmission(OwnsAdmission),
         RetainsSession(RetainsSession), Active(true) {}
 
   void reset() noexcept;
 
   ResourceSessionView View;
-  ResourceSessionView Previous;
-  std::thread::id OwnerThread;
   bool OwnsAdmission = false;
   bool RetainsSession = false;
   bool Active = false;
@@ -161,12 +142,13 @@ public:
   ResourceSessionPermit
   acquireSession(ResourcePhase Phase,
                  ResourceAdmissionMode Mode = ResourceAdmissionMode::Wait);
+  ResourceSessionPermit
+  acquireSession(ResourceSessionView Parent, ResourcePhase Phase,
+                 ResourceAdmissionMode Mode = ResourceAdmissionMode::Wait);
 
   /// Never waits for the broker mutex or for tokens. With the budget disabled,
   /// this returns DesiredWorkers exactly; a constrained/unadmitted enabled
   /// request gets one progress worker.
-  ResourceWorkerGrant grantWorkers(ResourcePhase Phase,
-                                   unsigned DesiredWorkers) noexcept;
   ResourceWorkerGrant grantWorkers(ResourceSessionView Session,
                                    ResourcePhase Phase,
                                    unsigned DesiredWorkers) noexcept;
@@ -181,8 +163,6 @@ private:
   friend class ProcessResourceBrokerTestAccess;
   friend class ScopedProcessResourceBrokerOverride;
 };
-
-ResourceSessionView currentResourceSession() noexcept;
 
 } // namespace neverc
 

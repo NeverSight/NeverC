@@ -243,7 +243,7 @@ TEST(PluginParallelLinkTest, RepeatedParallelConfigurationIsIdempotent) {
   if (llvm::thread::hardware_concurrency() < 2)
     GTEST_SKIP() << "parallel configuration needs two available CPUs";
 
-  CommonLinkerContext Context;
+  CommonLinkerContext Context(neverc::ResourceSessionView{});
   Context.configureParallel(/*RequestedThreads=*/2);
   ASSERT_EQ(Context.parallelThreadCount(), 2U);
 
@@ -261,7 +261,7 @@ TEST(PluginParallelLinkTest,
   if (llvm::thread::hardware_concurrency() < 2)
     GTEST_SKIP() << "automatic worker selection needs two available CPUs";
 
-  CommonLinkerContext Context;
+  CommonLinkerContext Context(neverc::ResourceSessionView{});
   LinkThreadPolicy Policy;
   Policy.MinParallelBytes = 8ULL * 1024ULL * 1024ULL;
   Policy.BytesPerAdditionalThread = 0;
@@ -535,7 +535,7 @@ TEST(PluginParallelLinkTest,
     neverc::ResourceSessionPermit Permit =
         Broker->acquireSession(neverc::ResourcePhase::LinkParseResolve);
     {
-      CommonLinkerContext Context;
+      CommonLinkerContext Context(Permit.session());
       Context.configureParallel(/*RequestedThreads=*/2);
       linker::detail::runContentHashChunks(
           /*OutputBytes=*/8ULL * 1024ULL * 1024ULL, ChunkCount,
@@ -866,7 +866,7 @@ TEST(PluginParallelLinkTest,
     parallelForWithContext(0, Result.Values.size(), [&](size_t Index) {
       if (currentLinkerContext() != &Context ||
           currentLinkerWorkerSlot() >= Context.parallelShardCount() ||
-          !neverc::currentResourceSession().refersToSameSession(
+          !currentLinkerContext()->resourceSession().refersToSameSession(
               ExpectedSession))
         Result.Failed.store(true, std::memory_order_relaxed);
       Result.Values[Index] = Marker;

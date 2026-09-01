@@ -4,14 +4,40 @@
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include <mutex>
 #include <vector>
 
 namespace linker::elf {
 class Symbol;
+class Undefined;
 class InputSection;
 class InputSectionBase;
 class OutputSection;
 class SectionBase;
+
+namespace detail {
+
+// Undefined diagnostics are collected and emitted once all relocation scans
+// have completed so they can be grouped before emission.
+struct UndefinedDiag {
+  Undefined *sym;
+  struct Loc {
+    InputSectionBase *sec;
+    uint64_t offset;
+  };
+  std::vector<Loc> locs;
+  bool isWarning;
+};
+
+// Shared by relocation workers belonging to one ELF link invocation.
+struct ELFRelocationState {
+  std::vector<UndefinedDiag> undefs;
+  std::mutex mutex;
+};
+
+ELFRelocationState &elfRelocationState();
+
+} // namespace detail
 
 // Represents a relocation type, such as R_X86_64_PC32 or R_AARCH64_CALL26.
 using RelType = uint32_t;

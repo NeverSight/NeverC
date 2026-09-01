@@ -76,10 +76,16 @@
 #ifndef LLVM_SUPPORT_TIMEPROFILER_H
 #define LLVM_SUPPORT_TIMEPROFILER_H
 
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <cstddef>
+#include <cstdint>
 
 namespace llvm {
 
@@ -87,6 +93,40 @@ class raw_pwrite_stream;
 
 struct TimeTraceProfiler;
 TimeTraceProfiler *getTimeTraceProfilerInstance();
+
+/// Opaque identity for one explicitly managed root and its worker profilers.
+/// Zero is reserved for the legacy process-wide API below.
+using TimeTraceProfilerSession = uint64_t;
+
+/// Return the session attached to the calling thread's profiler, or zero for
+/// a legacy/raw profiler and for a thread without a profiler.
+TimeTraceProfilerSession timeTraceProfilerCurrentSession();
+
+/// Initialize an explicitly managed root. A nonzero session cannot start
+/// while a foreign legacy profiler is active. Finished legacy profilers are
+/// preserved and excluded from the managed trace.
+Error timeTraceProfilerInitializeSession(unsigned TimeTraceGranularity,
+                                         StringRef ProcName,
+                                         TimeTraceProfilerSession Session);
+
+/// Join an existing managed root from a worker thread. The session must still
+/// be open and must not have begun its atomic write.
+Error timeTraceProfilerInitializeThread(unsigned TimeTraceGranularity,
+                                        StringRef ProcName,
+                                        TimeTraceProfilerSession Session);
+
+/// Atomically validate and serialize only one managed session. Returns an
+/// Error instead of asserting when a root scope or worker is still active.
+Error timeTraceProfilerWriteSession(raw_pwrite_stream &OS,
+                                    TimeTraceProfilerSession Session);
+
+/// Close and clean only one managed session. Active workers retain their TLS
+/// profiler until they finish, at which point the closed session discards it.
+void timeTraceProfilerCleanupSession(TimeTraceProfilerSession Session);
+
+/// Delete only the profiler attached to the calling thread. This never sweeps
+/// finished profilers belonging to another root or to the legacy API.
+void timeTraceProfilerCleanupCurrentThread();
 
 /// Initialize the time trace profiler.
 /// This sets up the global \p TimeTraceProfilerInstance
@@ -113,8 +153,8 @@ void timeTraceProfilerWrite(raw_pwrite_stream &OS);
 /// Write profiling data to a file.
 /// The function will write to \p PreferredFileName if provided, if not
 /// then will write to \p FallbackFileName appending .time-trace.
-/// Returns a StringError indicating a failure if the function is
-/// unable to open the file for writing.
+/// Returns an Error if the profiler generation is not ready or if the output
+/// cannot be opened, written, flushed, or closed.
 Error timeTraceProfilerWrite(StringRef PreferredFileName,
                              StringRef FallbackFileName);
 
@@ -211,14 +251,55 @@ using microseconds = std::chrono::microseconds;
 // registered by one would be missing from the write-out driven by another.
 namespace time_trace_detail {
 
+struct TimeTraceProfilerInstanceEntry {
+  TimeTraceProfiler *Profiler = nullptr;
+  TimeTraceProfilerSession Session = 0;
+  uint64_t Epoch = 0;
+};
+
+struct TimeTraceProfilerSessionState {
+  TimeTraceProfilerSession Session = 0;
+  uint64_t Epoch = 0;
+  size_t LiveInstances = 0;
+  TimeTraceProfiler *Root = nullptr;
+  bool Closing = false;
+  bool Sealed = false;
+};
+
 struct TimeTraceProfilerInstances {
   LLVM_TP_MUTEX_T Lock = LLVM_TP_MUTEX_INITIALIZER;
-  SmallVector<TimeTraceProfiler *, 8> List;
+  SmallVector<TimeTraceProfilerInstanceEntry, 8> List;
+  SmallVector<TimeTraceProfilerSessionState, 4> Sessions;
+  uint64_t NextLegacyEpoch = 1;
 };
 
 inline TimeTraceProfilerInstances &getTimeTraceProfilerInstances() {
   static TimeTraceProfilerInstances Instances;
   return Instances;
+}
+
+inline TimeTraceProfilerSessionState *
+findSessionState(TimeTraceProfilerInstances &Instances,
+                 TimeTraceProfilerSession Session, uint64_t Epoch) {
+  auto It = llvm::find_if(Instances.Sessions, [=](const auto &State) {
+    return State.Session == Session && State.Epoch == Epoch;
+  });
+  return It == Instances.Sessions.end() ? nullptr : &*It;
+}
+
+inline TimeTraceProfilerSessionState *
+findOpenLegacyState(TimeTraceProfilerInstances &Instances) {
+  auto It = llvm::find_if(Instances.Sessions, [](const auto &State) {
+    return State.Session == 0 && !State.Closing && !State.Sealed;
+  });
+  return It == Instances.Sessions.end() ? nullptr : &*It;
+}
+
+inline size_t countFinished(TimeTraceProfilerInstances &Instances,
+                            TimeTraceProfilerSession Session, uint64_t Epoch) {
+  return llvm::count_if(Instances.List, [=](const auto &Entry) {
+    return Entry.Session == Session && Entry.Epoch == Epoch;
+  });
 }
 
 } // namespace time_trace_detail
@@ -229,9 +310,15 @@ inline TimeTraceProfilerInstances &getTimeTraceProfilerInstances() {
 // and the surviving inline function could reference a different TU's copy
 // than the one that was initialised.
 inline LLVM_THREAD_LOCAL TimeTraceProfiler *TimeTraceProfilerInstance = 0;
+inline LLVM_THREAD_LOCAL TimeTraceProfilerSession
+    TimeTraceProfilerInstanceSession = 0;
 
 inline TimeTraceProfiler *getTimeTraceProfilerInstance() {
   return TimeTraceProfilerInstance;
+}
+
+inline TimeTraceProfilerSession timeTraceProfilerCurrentSession() {
+  return TimeTraceProfilerInstance ? TimeTraceProfilerInstanceSession : 0;
 }
 
 namespace {
@@ -280,10 +367,13 @@ struct TimeTraceProfilerEntry {
 } // anonymous namespace
 
 struct TimeTraceProfiler {
-  TimeTraceProfiler(unsigned TimeTraceGranularity = 0, StringRef ProcName = "")
+  TimeTraceProfiler(unsigned TimeTraceGranularity = 0, StringRef ProcName = "",
+                    TimeTraceProfilerSession Session = 0,
+                    uint64_t Epoch = 0)
       : BeginningOfTime(system_clock::now()), StartTime(ClockType::now()),
         ProcName(ProcName), Pid(sys::Process::getProcessId()),
-        Tid(llvm::get_threadid()), TimeTraceGranularity(TimeTraceGranularity) {
+        Tid(llvm::get_threadid()), TimeTraceGranularity(TimeTraceGranularity),
+        Session(Session), Epoch(Epoch) {
     llvm::get_thread_name(ThreadName);
   }
 
@@ -328,131 +418,184 @@ struct TimeTraceProfiler {
     Stack.pop_back();
   }
 
-  // Write events from this TimeTraceProfilerInstance and
-  // ThreadTimeTraceProfilerInstances.
-  void write(raw_pwrite_stream &OS) {
-    // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
+  // Validate and render one profiler generation while its registry snapshot
+  // is stable. The caller writes the returned bytes only after this function
+  // releases the registry lock, so a custom output stream may safely re-enter
+  // profiler cleanup without deadlocking the non-recursive platform mutex.
+  Expected<SmallVector<char, 0>>
+  render(TimeTraceProfilerSession RequestedSession, uint64_t RequestedEpoch) {
+    SmallVector<char, 0> Bytes;
     auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
     LLVM_TP_MUTEX_LOCK(&Instances.Lock);
-    assert(Stack.empty() &&
-           "All profiler sections should be ended when calling write");
-    assert(llvm::all_of(Instances.List,
-                        [](const auto &TTP) { return TTP->Stack.empty(); }) &&
-           "All profiler sections should be ended when calling write");
-
-    json::OStream J(OS);
-    J.objectBegin();
-    J.attributeBegin("traceEvents");
-    J.arrayBegin();
-
-    // Emit all events for the main flame graph.
-    auto writeEvent = [&](const auto &E, uint64_t Tid) {
-      auto StartUs = E.getFlameGraphStartUs(StartTime);
-      auto DurUs = E.getFlameGraphDurUs();
-
-      J.object([&] {
-        J.attribute("pid", Pid);
-        J.attribute("tid", int64_t(Tid));
-        J.attribute("ph", "X");
-        J.attribute("ts", StartUs);
-        J.attribute("dur", DurUs);
-        J.attribute("name", E.Name);
-        if (!E.Detail.empty()) {
-          J.attributeObject("args", [&] { J.attribute("detail", E.Detail); });
-        }
-      });
+    auto Unlock =
+        llvm::make_scope_exit([&] { LLVM_TP_MUTEX_UNLOCK(&Instances.Lock); });
+    auto Failure = [](const char *Message) -> Error {
+      return createStringError(inconvertibleErrorCode(), Message);
     };
-    for (const TimeTraceProfilerEntry &E : Entries)
-      writeEvent(E, this->Tid);
-    for (const TimeTraceProfiler *TTP : Instances.List)
-      for (const TimeTraceProfilerEntry &E : TTP->Entries)
-        writeEvent(E, TTP->Tid);
 
-    // Emit totals by section name as additional "thread" events, sorted from
-    // longest one.
-    // Find highest used thread id.
-    uint64_t MaxTid = this->Tid;
-    for (const TimeTraceProfiler *TTP : Instances.List)
-      MaxTid = std::max(MaxTid, TTP->Tid);
+    if (Session != RequestedSession || Epoch != RequestedEpoch ||
+        TimeTraceProfilerInstance != this ||
+        TimeTraceProfilerInstanceSession != RequestedSession)
+      return Failure("LLVM time-trace session ownership changed before write");
+    auto *State = time_trace_detail::findSessionState(
+        Instances, RequestedSession, RequestedEpoch);
+    if (!State || State->Root != this || State->Closing)
+      return Failure("LLVM time-trace session is no longer active");
+    if (!Stack.empty())
+      return Failure("LLVM time-trace root still has active scopes");
 
-    // Combine all CountAndTotalPerName from threads into one.
-    StringMap<CountAndDurationType> AllCountAndTotalPerName;
-    auto combineStat = [&](const auto &Stat) {
-      StringRef Key = Stat.getKey();
-      auto Value = Stat.getValue();
-      auto &CountAndTotal = AllCountAndTotalPerName[Key];
-      CountAndTotal.first += Value.first;
-      CountAndTotal.second += Value.second;
-    };
-    for (const auto &Stat : CountAndTotalPerName)
-      combineStat(Stat);
-    for (const TimeTraceProfiler *TTP : Instances.List)
-      for (const auto &Stat : TTP->CountAndTotalPerName)
-        combineStat(Stat);
-
-    SmallVector<NameAndCountAndDurationType, 16> SortedTotals;
-    SortedTotals.reserve(AllCountAndTotalPerName.size());
-    for (const auto &Total : AllCountAndTotalPerName)
-      SortedTotals.emplace_back(Total.getKey(), Total.getValue());
-
-    llvm::sort(SortedTotals, [](const NameAndCountAndDurationType &A,
-                                const NameAndCountAndDurationType &B) {
-      return A.second.second > B.second.second;
-    });
-
-    // Report totals on separate threads of tracing file.
-    uint64_t TotalTid = MaxTid + 1;
-    for (const NameAndCountAndDurationType &Total : SortedTotals) {
-      auto DurUs = duration_cast<microseconds>(Total.second.second).count();
-      auto Count = AllCountAndTotalPerName[Total.first].first;
-
-      J.object([&] {
-        J.attribute("pid", Pid);
-        J.attribute("tid", int64_t(TotalTid));
-        J.attribute("ph", "X");
-        J.attribute("ts", 0);
-        J.attribute("dur", DurUs);
-        J.attribute("name", (Twine("Total ") + Total.first).str());
-        J.attributeObject("args", [&] {
-          J.attribute("count", int64_t(Count));
-          J.attribute("avg ms", int64_t(DurUs / Count / 1000));
-        });
-      });
-
-      ++TotalTid;
+    const size_t FinishedCount = time_trace_detail::countFinished(
+        Instances, RequestedSession, RequestedEpoch);
+    if (State->LiveInstances != FinishedCount + 1)
+      return Failure("LLVM time-trace session has active worker profilers");
+    for (const auto &Entry : Instances.List) {
+      if (Entry.Session == RequestedSession && Entry.Epoch == RequestedEpoch &&
+          !Entry.Profiler->Stack.empty())
+        return Failure("LLVM time-trace worker still has active scopes");
     }
+    // Admission closes atomically with the validated snapshot for both API
+    // flavors. A late legacy initialize starts a new epoch instead of joining
+    // a generation whose trace has already been rendered.
+    State->Sealed = true;
 
-    auto writeMetadataEvent = [&](const char *Name, uint64_t Tid,
-                                  StringRef arg) {
-      J.object([&] {
-        J.attribute("cat", "");
-        J.attribute("pid", Pid);
-        J.attribute("tid", int64_t(Tid));
-        J.attribute("ts", 0);
-        J.attribute("ph", "M");
-        J.attribute("name", Name);
-        J.attributeObject("args", [&] { J.attribute("name", arg); });
+    {
+      raw_svector_ostream BufferOS(Bytes);
+      json::OStream J(BufferOS);
+      J.objectBegin();
+      J.attributeBegin("traceEvents");
+      J.arrayBegin();
+
+      // Emit all events for the main flame graph.
+      auto writeEvent = [&](const auto &E, uint64_t Tid) {
+        auto StartUs = E.getFlameGraphStartUs(StartTime);
+        auto DurUs = E.getFlameGraphDurUs();
+
+        J.object([&] {
+          J.attribute("pid", Pid);
+          J.attribute("tid", int64_t(Tid));
+          J.attribute("ph", "X");
+          J.attribute("ts", StartUs);
+          J.attribute("dur", DurUs);
+          J.attribute("name", E.Name);
+          if (!E.Detail.empty()) {
+            J.attributeObject("args", [&] { J.attribute("detail", E.Detail); });
+          }
+        });
+      };
+      for (const TimeTraceProfilerEntry &E : Entries)
+        writeEvent(E, this->Tid);
+      for (const auto &Entry : Instances.List) {
+        if (Entry.Session != RequestedSession || Entry.Epoch != RequestedEpoch)
+          continue;
+        const TimeTraceProfiler *TTP = Entry.Profiler;
+        for (const TimeTraceProfilerEntry &E : TTP->Entries)
+          writeEvent(E, TTP->Tid);
+      }
+
+      // Emit totals by section name as additional "thread" events, sorted from
+      // longest one.
+      // Find highest used thread id.
+      uint64_t MaxTid = this->Tid;
+      for (const auto &Entry : Instances.List)
+        if (Entry.Session == RequestedSession && Entry.Epoch == RequestedEpoch)
+          MaxTid = std::max(MaxTid, Entry.Profiler->Tid);
+
+      // Combine all CountAndTotalPerName from threads into one.
+      StringMap<CountAndDurationType> AllCountAndTotalPerName;
+      auto combineStat = [&](const auto &Stat) {
+        StringRef Key = Stat.getKey();
+        auto Value = Stat.getValue();
+        auto &CountAndTotal = AllCountAndTotalPerName[Key];
+        CountAndTotal.first += Value.first;
+        CountAndTotal.second += Value.second;
+      };
+      for (const auto &Stat : CountAndTotalPerName)
+        combineStat(Stat);
+      for (const auto &Entry : Instances.List) {
+        if (Entry.Session != RequestedSession || Entry.Epoch != RequestedEpoch)
+          continue;
+        for (const auto &Stat : Entry.Profiler->CountAndTotalPerName)
+          combineStat(Stat);
+      }
+
+      SmallVector<NameAndCountAndDurationType, 16> SortedTotals;
+      SortedTotals.reserve(AllCountAndTotalPerName.size());
+      for (const auto &Total : AllCountAndTotalPerName)
+        SortedTotals.emplace_back(Total.getKey(), Total.getValue());
+
+      llvm::sort(SortedTotals, [](const NameAndCountAndDurationType &A,
+                                  const NameAndCountAndDurationType &B) {
+        return A.second.second > B.second.second;
       });
-    };
 
-    writeMetadataEvent("process_name", Tid, ProcName);
-    writeMetadataEvent("thread_name", Tid, ThreadName);
-    for (const TimeTraceProfiler *TTP : Instances.List)
-      writeMetadataEvent("thread_name", TTP->Tid, TTP->ThreadName);
+      // Report totals on separate threads of tracing file.
+      uint64_t TotalTid = MaxTid + 1;
+      for (const NameAndCountAndDurationType &Total : SortedTotals) {
+        auto DurUs = duration_cast<microseconds>(Total.second.second).count();
+        auto Count = AllCountAndTotalPerName[Total.first].first;
 
-    J.arrayEnd();
-    J.attributeEnd();
+        J.object([&] {
+          J.attribute("pid", Pid);
+          J.attribute("tid", int64_t(TotalTid));
+          J.attribute("ph", "X");
+          J.attribute("ts", 0);
+          J.attribute("dur", DurUs);
+          J.attribute("name", (Twine("Total ") + Total.first).str());
+          J.attributeObject("args", [&] {
+            J.attribute("count", int64_t(Count));
+            J.attribute("avg ms", int64_t(DurUs / Count / 1000));
+          });
+        });
 
-    // Emit the absolute time when this TimeProfiler started.
-    // This can be used to combine the profiling data from
-    // multiple processes and preserve actual time intervals.
-    J.attribute("beginningOfTime",
-                time_point_cast<microseconds>(BeginningOfTime)
-                    .time_since_epoch()
-                    .count());
+        ++TotalTid;
+      }
 
-    J.objectEnd();
-    LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
+      auto writeMetadataEvent = [&](const char *Name, uint64_t Tid,
+                                    StringRef arg) {
+        J.object([&] {
+          J.attribute("cat", "");
+          J.attribute("pid", Pid);
+          J.attribute("tid", int64_t(Tid));
+          J.attribute("ts", 0);
+          J.attribute("ph", "M");
+          J.attribute("name", Name);
+          J.attributeObject("args", [&] { J.attribute("name", arg); });
+        });
+      };
+
+      writeMetadataEvent("process_name", Tid, ProcName);
+      writeMetadataEvent("thread_name", Tid, ThreadName);
+      for (const auto &Entry : Instances.List)
+        if (Entry.Session == RequestedSession && Entry.Epoch == RequestedEpoch)
+          writeMetadataEvent("thread_name", Entry.Profiler->Tid,
+                             Entry.Profiler->ThreadName);
+
+      J.arrayEnd();
+      J.attributeEnd();
+
+      // Emit the absolute time when this TimeProfiler started.
+      // This can be used to combine the profiling data from
+      // multiple processes and preserve actual time intervals.
+      J.attribute("beginningOfTime",
+                  time_point_cast<microseconds>(BeginningOfTime)
+                      .time_since_epoch()
+                      .count());
+
+      J.objectEnd();
+    }
+    return Bytes;
+  }
+
+  // Write events from this TimeTraceProfilerInstance and its finished worker
+  // profilers. Registry validation and JSON construction happen in render();
+  // the caller-provided stream is touched only after the lock is released.
+  Error write(raw_pwrite_stream &OS, TimeTraceProfilerSession RequestedSession,
+              uint64_t RequestedEpoch) {
+    auto Bytes = render(RequestedSession, RequestedEpoch);
+    if (!Bytes)
+      return Bytes.takeError();
+    OS.write(Bytes->data(), Bytes->size());
+    return Error::success();
   }
 
   SmallVector<TimeTraceProfilerEntry, 16> Stack;
@@ -469,43 +612,313 @@ struct TimeTraceProfiler {
 
   // Minimum time granularity (in microseconds)
   const unsigned TimeTraceGranularity;
+  const TimeTraceProfilerSession Session;
+  uint64_t Epoch;
 };
 
 inline void timeTraceProfilerInitialize(unsigned TimeTraceGranularity,
                                         StringRef ProcName) {
   assert(TimeTraceProfilerInstance == 0 &&
          "Profiler should not be initialized");
-  TimeTraceProfilerInstance = new TimeTraceProfiler(
-      TimeTraceGranularity, llvm::sys::path::filename(ProcName));
+  auto *Profiler = new TimeTraceProfiler(
+      TimeTraceGranularity, llvm::sys::path::filename(ProcName), 0, 0);
+  auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
+  LLVM_TP_MUTEX_LOCK(&Instances.Lock);
+  auto *State = time_trace_detail::findOpenLegacyState(Instances);
+  if (!State) {
+    if (Instances.NextLegacyEpoch == ~uint64_t{0}) {
+      LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
+      delete Profiler;
+      report_fatal_error("LLVM legacy time-trace epochs are exhausted");
+    }
+    time_trace_detail::TimeTraceProfilerSessionState NewState;
+    NewState.Epoch = Instances.NextLegacyEpoch++;
+    Instances.Sessions.push_back(std::move(NewState));
+    State = &Instances.Sessions.back();
+  }
+  Profiler->Epoch = State->Epoch;
+  if (!State->Root)
+    State->Root = Profiler;
+  ++State->LiveInstances;
+  TimeTraceProfilerInstance = Profiler;
+  TimeTraceProfilerInstanceSession = 0;
+  LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
 }
 
-// Removes all TimeTraceProfilerInstances.
-// Called from main thread.
-inline void timeTraceProfilerCleanup() {
-  delete TimeTraceProfilerInstance;
-  TimeTraceProfilerInstance = 0;
+inline Error timeTraceProfilerInitializeSession(
+    unsigned TimeTraceGranularity, StringRef ProcName,
+    TimeTraceProfilerSession Session) {
+  if (Session == 0)
+    return createStringError(inconvertibleErrorCode(),
+                             "managed LLVM time-trace session is zero");
+  if (TimeTraceProfilerInstance)
+    return createStringError(inconvertibleErrorCode(),
+                             "LLVM time-trace profiler is already active");
+
+  auto *Profiler = new TimeTraceProfiler(
+      TimeTraceGranularity, llvm::sys::path::filename(ProcName), Session);
+  auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
+  LLVM_TP_MUTEX_LOCK(&Instances.Lock);
+  auto Unlock = llvm::make_scope_exit(
+      [&] { LLVM_TP_MUTEX_UNLOCK(&Instances.Lock); });
+
+  if (time_trace_detail::findSessionState(Instances, Session, 0)) {
+    delete Profiler;
+    return createStringError(inconvertibleErrorCode(),
+                             "LLVM time-trace session is already registered");
+  }
+  for (const auto &Legacy : Instances.Sessions) {
+    // A closing legacy generation can only discard its late workers. Its
+    // epoch cannot contribute to this managed session, so it need not block a
+    // fresh root after the old root has already relinquished ownership.
+    if (Legacy.Session != 0 || Legacy.Closing)
+      continue;
+    const size_t Finished =
+        time_trace_detail::countFinished(Instances, 0, Legacy.Epoch);
+    if (Legacy.LiveInstances != Finished) {
+      delete Profiler;
+      return createStringError(
+          inconvertibleErrorCode(),
+          "a foreign legacy LLVM time-trace profiler is active");
+    }
+  }
+  for (const auto &State : Instances.Sessions) {
+    if (State.Session != 0 && State.Root && !State.Closing) {
+      delete Profiler;
+      return createStringError(inconvertibleErrorCode(),
+                               "another LLVM time-trace root is active");
+    }
+  }
+
+  time_trace_detail::TimeTraceProfilerSessionState State;
+  State.Session = Session;
+  State.Epoch = 0;
+  State.LiveInstances = 1;
+  State.Root = Profiler;
+  Instances.Sessions.push_back(State);
+  TimeTraceProfilerInstance = Profiler;
+  TimeTraceProfilerInstanceSession = Session;
+  return Error::success();
+}
+
+inline Error timeTraceProfilerInitializeThread(
+    unsigned TimeTraceGranularity, StringRef ProcName,
+    TimeTraceProfilerSession Session) {
+  if (Session == 0)
+    return createStringError(inconvertibleErrorCode(),
+                             "managed LLVM worker session is zero");
+  if (TimeTraceProfilerInstance)
+    return createStringError(inconvertibleErrorCode(),
+                             "LLVM time-trace profiler is already active");
+
+  auto *Profiler = new TimeTraceProfiler(
+      TimeTraceGranularity, llvm::sys::path::filename(ProcName), Session);
+  auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
+  LLVM_TP_MUTEX_LOCK(&Instances.Lock);
+  auto Unlock = llvm::make_scope_exit(
+      [&] { LLVM_TP_MUTEX_UNLOCK(&Instances.Lock); });
+  auto *State = time_trace_detail::findSessionState(Instances, Session, 0);
+  if (!State || !State->Root || State->Closing || State->Sealed) {
+    delete Profiler;
+    return createStringError(inconvertibleErrorCode(),
+                             "LLVM time-trace session is not open");
+  }
+  ++State->LiveInstances;
+  TimeTraceProfilerInstance = Profiler;
+  TimeTraceProfilerInstanceSession = Session;
+  return Error::success();
+}
+
+inline void timeTraceProfilerCleanupCurrentThread() {
+  TimeTraceProfiler *Profiler = TimeTraceProfilerInstance;
+  if (!Profiler)
+    return;
+  const TimeTraceProfilerSession Session = TimeTraceProfilerInstanceSession;
 
   auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
   LLVM_TP_MUTEX_LOCK(&Instances.Lock);
-  for (auto *TTP : Instances.List)
-    delete TTP;
-  Instances.List.clear();
+  auto *State = time_trace_detail::findSessionState(Instances, Session,
+                                                     Profiler->Epoch);
+  if (State) {
+    if (State->Root == Profiler)
+      State->Root = nullptr;
+    assert(State->LiveInstances != 0 &&
+           "LLVM time-trace live count underflow");
+    --State->LiveInstances;
+    if (State->LiveInstances == 0) {
+      auto It = llvm::find_if(Instances.Sessions, [State](const auto &Entry) {
+        return &Entry == State;
+      });
+      Instances.Sessions.erase(It);
+    }
+  }
+  TimeTraceProfilerInstance = nullptr;
+  TimeTraceProfilerInstanceSession = 0;
   LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
+  delete Profiler;
+}
+
+inline void
+timeTraceProfilerCleanupSession(TimeTraceProfilerSession Session) {
+  if (Session == 0)
+    return;
+  SmallVector<TimeTraceProfiler *, 8> DeleteAfterUnlock;
+  auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
+  LLVM_TP_MUTEX_LOCK(&Instances.Lock);
+  auto *State = time_trace_detail::findSessionState(Instances, Session, 0);
+  if (!State) {
+    LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
+    return;
+  }
+  State->Closing = true;
+
+  if (TimeTraceProfilerInstance &&
+      TimeTraceProfilerInstanceSession == Session) {
+    if (State->Root == TimeTraceProfilerInstance)
+      State->Root = nullptr;
+    DeleteAfterUnlock.push_back(TimeTraceProfilerInstance);
+    TimeTraceProfilerInstance = nullptr;
+    TimeTraceProfilerInstanceSession = 0;
+    assert(State->LiveInstances != 0 &&
+           "LLVM time-trace live count underflow");
+    --State->LiveInstances;
+  }
+
+  for (auto It = Instances.List.begin(); It != Instances.List.end();) {
+    if (It->Session != Session || It->Epoch != 0) {
+      ++It;
+      continue;
+    }
+    DeleteAfterUnlock.push_back(It->Profiler);
+    assert(State->LiveInstances != 0 &&
+           "LLVM time-trace live count underflow");
+    --State->LiveInstances;
+    It = Instances.List.erase(It);
+  }
+  if (State->LiveInstances == 0) {
+    auto It = llvm::find_if(Instances.Sessions, [State](const auto &Entry) {
+      return &Entry == State;
+    });
+    Instances.Sessions.erase(It);
+  }
+  LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
+  for (TimeTraceProfiler *Profiler : DeleteAfterUnlock)
+    delete Profiler;
+}
+
+// Removes only legacy/raw TimeTraceProfilerInstances. Called from the legacy
+// root thread; explicitly managed sessions are isolated from this API.
+inline void timeTraceProfilerCleanup() {
+  SmallVector<TimeTraceProfiler *, 8> DeleteAfterUnlock;
+  auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
+  LLVM_TP_MUTEX_LOCK(&Instances.Lock);
+  TimeTraceProfiler *Current =
+      TimeTraceProfilerInstanceSession == 0 ? TimeTraceProfilerInstance
+                                            : nullptr;
+  const uint64_t CurrentEpoch = Current ? Current->Epoch : 0;
+  auto *State = Current
+                    ? time_trace_detail::findSessionState(Instances, 0,
+                                                          CurrentEpoch)
+                    : nullptr;
+  if (State)
+    State->Closing = true;
+  if (Current) {
+    if (State && State->Root == TimeTraceProfilerInstance)
+      State->Root = nullptr;
+    DeleteAfterUnlock.push_back(TimeTraceProfilerInstance);
+    TimeTraceProfilerInstance = nullptr;
+    TimeTraceProfilerInstanceSession = 0;
+    if (State && State->LiveInstances)
+      --State->LiveInstances;
+  }
+  for (auto It = Instances.List.begin(); It != Instances.List.end();) {
+    if (It->Session != 0 || (Current && It->Epoch != CurrentEpoch)) {
+      ++It;
+      continue;
+    }
+    if (!Current) {
+      auto *EntryState =
+          time_trace_detail::findSessionState(Instances, 0, It->Epoch);
+      if (!EntryState || EntryState->Root ||
+          EntryState->LiveInstances !=
+              time_trace_detail::countFinished(Instances, 0, It->Epoch)) {
+        ++It;
+        continue;
+      }
+      EntryState->Closing = true;
+    }
+    DeleteAfterUnlock.push_back(It->Profiler);
+    auto *EntryState =
+        time_trace_detail::findSessionState(Instances, 0, It->Epoch);
+    if (EntryState && EntryState->LiveInstances)
+      --EntryState->LiveInstances;
+    It = Instances.List.erase(It);
+  }
+  for (auto It = Instances.Sessions.begin(); It != Instances.Sessions.end();) {
+    if (It->Session == 0 && It->LiveInstances == 0 &&
+        (It->Closing || (!It->Root && !Current))) {
+      It = Instances.Sessions.erase(It);
+      continue;
+    }
+    ++It;
+  }
+  LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
+  for (TimeTraceProfiler *Profiler : DeleteAfterUnlock)
+    delete Profiler;
 }
 
 // Finish TimeTraceProfilerInstance on a worker thread.
 // This doesn't remove the instance, just moves the pointer to global vector.
 inline void timeTraceProfilerFinishThread() {
+  TimeTraceProfiler *Profiler = TimeTraceProfilerInstance;
+  assert(Profiler && "Profiler should be initialized before finishing");
+  const TimeTraceProfilerSession Session = TimeTraceProfilerInstanceSession;
+  const uint64_t Epoch = Profiler->Epoch;
   auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
   LLVM_TP_MUTEX_LOCK(&Instances.Lock);
-  Instances.List.push_back(TimeTraceProfilerInstance);
+  auto *State =
+      time_trace_detail::findSessionState(Instances, Session, Epoch);
+  const bool Publish =
+      State && !State->Closing && (Session == 0 || State->Root != Profiler);
+  if (Publish) {
+    if (State->Root == Profiler)
+      State->Root = nullptr;
+    Instances.List.push_back({Profiler, Session, Epoch});
+  } else if (State) {
+    if (State->Root == Profiler)
+      State->Root = nullptr;
+    assert(State->LiveInstances != 0 &&
+           "LLVM time-trace live count underflow");
+    --State->LiveInstances;
+    if (State->LiveInstances == 0) {
+      auto It = llvm::find_if(Instances.Sessions, [State](const auto &Entry) {
+        return &Entry == State;
+      });
+      Instances.Sessions.erase(It);
+    }
+  }
   TimeTraceProfilerInstance = 0;
+  TimeTraceProfilerInstanceSession = 0;
   LLVM_TP_MUTEX_UNLOCK(&Instances.Lock);
+  if (!Publish)
+    delete Profiler;
 }
 
 inline void timeTraceProfilerWrite(raw_pwrite_stream &OS) {
   assert(TimeTraceProfilerInstance != 0 && "Profiler object can't be null");
-  TimeTraceProfilerInstance->write(OS);
+  if (Error WriteError = TimeTraceProfilerInstance->write(
+          OS, 0, TimeTraceProfilerInstance->Epoch))
+    report_fatal_error(Twine("cannot write LLVM time trace: ") +
+                           toString(std::move(WriteError)),
+                       /*gen_crash_diag=*/false);
+}
+
+inline Error timeTraceProfilerWriteSession(raw_pwrite_stream &OS,
+                                           TimeTraceProfilerSession Session) {
+  if (!TimeTraceProfilerInstance || Session == 0)
+    return createStringError(inconvertibleErrorCode(),
+                             "managed LLVM time-trace profiler is not active");
+  return TimeTraceProfilerInstance->write(OS, Session, 0);
 }
 
 inline Error timeTraceProfilerWrite(StringRef PreferredFileName,
@@ -518,12 +931,30 @@ inline Error timeTraceProfilerWrite(StringRef PreferredFileName,
     Path += ".time-trace";
   }
 
+  // Render before opening the destination. A validation failure must not
+  // create or truncate the requested trace file.
+  auto Bytes = TimeTraceProfilerInstance->render(
+      /*RequestedSession=*/0, TimeTraceProfilerInstance->Epoch);
+  if (!Bytes)
+    return Bytes.takeError();
+
   std::error_code EC;
   raw_fd_ostream OS(Path, EC, sys::fs::OF_TextWithCRLF);
   if (EC)
     return createStringError(EC, "Could not open " + Path);
 
-  timeTraceProfilerWrite(OS);
+  OS.write(Bytes->data(), Bytes->size());
+  if (Path == "-")
+    OS.flush();
+  else
+    OS.close();
+  if (OS.has_error()) {
+    std::error_code WriteError = OS.error();
+    OS.clear_error();
+    return createStringError(
+        WriteError, llvm::Twine("Could not write LLVM time trace ") + Path +
+                        ": " + WriteError.message());
+  }
   return Error::success();
 }
 

@@ -175,12 +175,9 @@ void macho::sortOutputSegments() {
                     compareByOrder<OutputSegment *>(segmentOrder));
 }
 
-namespace {
-DenseMap<StringRef, OutputSegment *> nameToOutputSegment;
-} // namespace
 void macho::resetOutputSegments() {
   outputSegments.clear();
-  nameToOutputSegment.clear();
+  machoOutputSegmentsByName().clear();
 }
 
 namespace {
@@ -195,7 +192,7 @@ StringRef maybeRenameSegment(StringRef name) {
 OutputSegment *macho::getOrCreateOutputSegment(StringRef name) {
   name = maybeRenameSegment(name);
 
-  OutputSegment *&segRef = nameToOutputSegment[name];
+  OutputSegment *&segRef = machoOutputSegmentsByName()[name];
   if (segRef)
     return segRef;
 

@@ -3,6 +3,7 @@
 #include "Linker/MachO/Config.h"
 #include "Linker/MachO/Driver.h"
 #include "Linker/MachO/InputFiles.h"
+#include "Linker/MachO/MachOLinkerContext.h"
 #include "Linker/MachO/Symbols.h"
 
 #include "Linker/Core/Driver/CommonLTOConfig.h"
@@ -32,7 +33,8 @@ constexpr char ltoCacheBackendTag[] = "macho";
 bool emitAddrsig() { return config->icfLevel == ICFLevel::safe; }
 
 lto::Config createConfig() {
-  return createLTOConfig(*config->driverCfg, diagnosticHandler, emitAddrsig());
+  return createLTOConfig(*config->driverCfg, diagnosticHandler, emitAddrsig(),
+                         machoContext().resourceSession());
 }
 
 } // namespace

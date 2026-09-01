@@ -20,6 +20,7 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -386,6 +387,10 @@ struct Ctx {
   // Symbols in a non-prevailing COMDAT group which should be changed to an
   // Undefined.
   SmallVector<std::pair<Symbol *, unsigned>, 0> nonPrevailingSyms;
+  // ObjFile::postParse runs in parallel and appends to duplicates and
+  // nonPrevailingSyms. Keep the synchronization with the link session instead
+  // of sharing a function-local mutex across independent links.
+  std::mutex inputFilePostParseMutex;
   // A tuple of (reference, extractedFile, sym). Used by --why-extract=.
   SmallVector<std::tuple<std::string, const InputFile *, const Symbol &>, 0>
       whyExtractRecords;

@@ -3,6 +3,7 @@
 #include "Linker/ELF/LinkerScript.h"
 #include "Linker/ELF/LTO.h"
 #include "Linker/ELF/OutputSections.h"
+#include "Linker/ELF/Relocations.h"
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
@@ -28,6 +29,7 @@ struct ELFLinkerContext::Impl {
   bool InputFileIsInGroup = false;
   uint32_t NextGroupId = 0;
   unsigned VernauxNum = 0;
+  detail::ELFRelocationState Relocations;
 };
 
 ELFLinkerContext::ELFLinkerContext() : State(std::make_unique<Impl>()) {}
@@ -69,5 +71,11 @@ bool &elfInputFileIsInGroup() {
 }
 uint32_t &elfNextGroupId() { return elfContext().state().NextGroupId; }
 unsigned &elfVernauxNum() { return elfContext().state().VernauxNum; }
+
+namespace detail {
+ELFRelocationState &elfRelocationState() {
+  return elfContext().state().Relocations;
+}
+} // namespace detail
 
 } // namespace linker::elf

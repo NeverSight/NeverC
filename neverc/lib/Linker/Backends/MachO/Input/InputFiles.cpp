@@ -545,7 +545,7 @@ bool validateRelocationInfo(InputFile *file, const SectionHeader &sec,
     error(message("not allowed in thread-local section, must be UNSIGNED"));
   if (rel.r_length < 2 || rel.r_length > 3 ||
       !relocAttrs.hasAttr(static_cast<RelocAttrBits>(1 << rel.r_length))) {
-    static SmallVector<StringRef, 4> widths{"0", "4", "8", "4 or 8"};
+    constexpr StringLiteral widths[]{"0", "4", "8", "4 or 8"};
     error(message("has width " + std::to_string(1 << rel.r_length) +
                   " bytes, but must be " +
                   widths[(static_cast<int>(relocAttrs.bits) >> 2) & 3] +

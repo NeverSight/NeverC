@@ -1,5 +1,10 @@
-# Install latest LLVM release (NSIS) on Windows CI.
+# Install an LLVM release (NSIS) on Windows CI.
 # Usage: pwsh -File .github/scripts/install-llvm-windows.ps1
+#
+# Optional environment contracts:
+#   LLVM_VER        exact release to install (otherwise resolve latest)
+#   LLVM_SHA256     expected installer digest
+#   LLVM_TOOLS_ONLY add LLVM tools to PATH without selecting clang as CC/CXX
 $ErrorActionPreference = 'Stop'
 
 function Resolve-LlvmVersion {
@@ -51,10 +56,24 @@ if (Test-Path $clang) {
         --connect-timeout 30 --max-time 1800 `
         -o $installer `
         $url
+    if ($LASTEXITCODE -ne 0) {
+        throw "LLVM installer download failed with curl exit code $LASTEXITCODE"
+    }
 
     $size = (Get-Item -LiteralPath $installer).Length
     if ($expectedSize -gt 0 -and $size -lt [int64]($expectedSize * 0.99)) {
         throw "LLVM download incomplete: $size bytes (expected ~$expectedSize)"
+    }
+    if ($env:LLVM_SHA256) {
+        $expectedSha256 = $env:LLVM_SHA256.Trim().ToLowerInvariant()
+        if ($expectedSha256 -notmatch '^[0-9a-f]{64}$') {
+            throw "LLVM_SHA256 must be exactly 64 hexadecimal characters"
+        }
+        $actualSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualSha256 -ne $expectedSha256) {
+            throw "LLVM installer SHA-256 mismatch: got $actualSha256, expected $expectedSha256"
+        }
+        Write-Host "Verified LLVM installer SHA-256: $actualSha256"
     }
 
     if (Test-Path $LLVM_ROOT) {
@@ -76,14 +95,18 @@ if (Test-Path $clang) {
 
 $clangUnix = ($clang -replace '\\', '/')
 $clangxxUnix = ($clangUnix -replace 'clang\.exe$', 'clang++.exe')
+$toolsOnly = $env:LLVM_TOOLS_ONLY -in @('1', 'true', 'True', 'TRUE')
 
-foreach ($line in @(
+$environment = @("LLVM_ROOT=$($LLVM_ROOT -replace '\\', '/')")
+if (-not $toolsOnly) {
+    $environment += @(
         "PGO_CLANG=$clangUnix",
         "PGO_CLANGXX=$clangxxUnix",
         "CC=$clangUnix",
-        "CXX=$clangxxUnix",
-        "LLVM_ROOT=$($LLVM_ROOT -replace '\\', '/')"
-    )) {
+        "CXX=$clangxxUnix"
+    )
+}
+foreach ($line in $environment) {
     Add-Content -Path $env:GITHUB_ENV -Value $line
 }
 Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $LLVM_ROOT 'bin')

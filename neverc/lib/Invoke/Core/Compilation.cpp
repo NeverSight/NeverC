@@ -11,13 +11,11 @@
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Invoke/Util.h"
 #include "neverc/Plugin/Host/LinkExecutionHooksBridge.h"
-#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptSpecifier.h"
 #include "llvm/Option/Option.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
@@ -470,7 +468,12 @@ void Compilation::ExecuteJobs(const JobList &Jobs,
     }
   }
 
-  if (CompileJobs.size() < 2 || haveInterdependentJobs(CompileJobs))
+  // LLVM stores finished worker time-trace profilers in one process-global
+  // registry. Preserve every explicitly requested per-TU artifact by keeping
+  // only traced in-process frontends serial; untraced auto-LTO and traced
+  // subprocess jobs retain their existing parallel scheduling.
+  if (CompileJobs.size() < 2 || haveInterdependentJobs(CompileJobs) ||
+      (allInMemory && !TimeTraceFiles.empty()))
     return ExecuteJobsSingle(Jobs, FailingCommands, LogOnly);
 
   unsigned NumThreads = std::min(llvm::thread::hardware_concurrency(),
@@ -495,13 +498,9 @@ void Compilation::ExecuteJobs(const JobList &Jobs,
 
   if (allInMemory) {
     // In-process parallel compilation: bitcode stays in InMemoryFileStore.
-    // LLVM cl options are reset once before threading; each worker skips
-    // global-state operations via ParallelSafe flag.
-    {
-      plugin::PluginLLVMOptionExclusiveLease Lock(
-          plugin::pluginLLVMOptionGate());
-      llvm::cl::ResetAllOptionOccurrences();
-    }
+    // Each worker classifies its own invocation before entering LLVM's option
+    // gate. Parallel-safe invocations without process-global option mutations
+    // take shared leases and must not reset the caller's option registry.
 
     for (const auto *Job : CompileJobs) {
       auto *FC = const_cast<FrontendCommand *>(

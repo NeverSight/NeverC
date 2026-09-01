@@ -22,6 +22,9 @@ bool ExecuteCompilerInvocation(CompilerInstance *CI);
 /// binary or internal forwarding mechanism.  Argv matches the slice a
 /// subprocess compiler would get; DirectOpts overlays option domains
 /// ConstructJob already resolved.
+/// The caller must execute crash recovery on this same thread. Recovery owns
+/// thread-affine LLVM option leases and frontend timers whose cleanup may not
+/// be transferred to a RunSafelyOnThread worker.
 ///
 /// \param Argv   Compiler arguments (without the executable path).
 /// \param Argv0  Path to the driver executable.

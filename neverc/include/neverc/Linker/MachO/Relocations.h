@@ -109,8 +109,6 @@ inline void writeAddress(uint8_t *loc, uint64_t addr, uint8_t length) {
 
 InputSection *offsetToInputSection(uint64_t *);
 
-extern const RelocAttrs invalidRelocAttrs;
-
 } // namespace linker::macho
 
 #endif

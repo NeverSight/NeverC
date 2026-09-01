@@ -4,6 +4,8 @@
 #include "Linker/MachO/InputSection.h"
 #include "llvm/ADT/DenseMap.h"
 
+#include <limits>
+
 namespace linker::macho {
 
 using SectionPair = std::pair<const InputSection *, const InputSection *>;
@@ -62,6 +64,10 @@ private:
   };
 
   std::optional<size_t> getSymbolPriority(const Defined *sym);
+  // Order-file entries consume the highest priorities first; call-graph-only
+  // sections start immediately below them. The builder is invocation-owned,
+  // so a fresh Mach-O link naturally starts a fresh priority sequence.
+  size_t nextAvailablePriority = std::numeric_limits<size_t>::max();
   llvm::DenseMap<llvm::StringRef, SymbolPriorityEntry> priorities;
   llvm::MapVector<SectionPair, uint64_t> callGraphProfile;
 };

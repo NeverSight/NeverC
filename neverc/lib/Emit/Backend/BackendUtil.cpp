@@ -14,7 +14,6 @@
 #include "neverc/Foundation/LangOpts/CodeGenOptions.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetOptions.h"
-#include "neverc/Invoke/LLVMCommandLine.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/CallingConventionMaterialize.h"
 #include "neverc/Plugin/Host/CodeGenRoutePlanner.h"
@@ -29,6 +28,7 @@
 #include "neverc/Plugin/Host/PluginCodeGenPipeline.h"
 #include "neverc/Plugin/Host/PluginCodeGenProvider.h"
 #include "neverc/Plugin/Host/PluginIOBridge.h"
+#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTargetDescriptor.h"
 #include "neverc/Plugin/Host/PluginTargetRegistry.h"
@@ -66,6 +66,7 @@
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/TimeProfiler.h"
@@ -84,20 +85,91 @@
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 using namespace neverc;
 using namespace llvm;
 
 namespace llvm {
 extern cl::opt<bool> PrintPipelinePasses;
-
-// Re-link builtin bitcodes after optimization
-cl::opt<bool> ClRelinkBuiltinBitcodePostop(
-    "relink-builtin-bitcode-postop", cl::Optional,
-    cl::desc("Re-link builtin bitcodes after optimization."), cl::init(false));
 } // namespace llvm
 
 namespace {
+
+/// Keeps a stack-scoped backend owner recoverable across setjmp/longjmp.
+/// Active crash-recovery contexts own the value on the heap and register that
+/// aggregate exactly once; ordinary invocations keep the value inline.
+template <typename T> class CrashRecoveryOwnedValue {
+public:
+  template <typename... Args>
+  explicit CrashRecoveryOwnedValue(Args &&...Arguments) {
+    if (llvm::CrashRecoveryContext::GetCurrent()) {
+      CrashOwned =
+          std::make_unique<T>(std::forward<Args>(Arguments)...);
+      Active = CrashOwned.get();
+      CrashCleanup.emplace(Active);
+    } else {
+      Local.emplace(std::forward<Args>(Arguments)...);
+      Active = &*Local;
+    }
+  }
+
+  CrashRecoveryOwnedValue(const CrashRecoveryOwnedValue &) = delete;
+  CrashRecoveryOwnedValue &operator=(const CrashRecoveryOwnedValue &) = delete;
+  CrashRecoveryOwnedValue(CrashRecoveryOwnedValue &&) = delete;
+  CrashRecoveryOwnedValue &operator=(CrashRecoveryOwnedValue &&) = delete;
+
+  T &get() const { return *Active; }
+
+private:
+  std::optional<T> Local;
+  std::unique_ptr<T> CrashOwned;
+  std::optional<llvm::CrashRecoveryContextCleanupRegistrar<T>> CrashCleanup;
+  T *Active = nullptr;
+};
+
+/// Owns the complete new-pass-manager execution graph as one recoverable
+/// aggregate. A backend fatal can bypass every automatic destructor in
+/// runBuiltinOptimizationPipeline; registering only StandardInstrumentations
+/// would leak pass models, analysis caches, callbacks, and pass-builder state.
+/// Member order mirrors the normal stack lifetime so reverse destruction drops
+/// the pass pipeline and its analysis graph before the instrumentation that
+/// observes them.
+class BuiltinOptimizationPipelineState {
+  const void *PrettyStackBaseline;
+
+public:
+  BuiltinOptimizationPipelineState(
+      LLVMContext &Context, bool DebugLogging, bool VerifyEach,
+      PrintPassOptions PrintPassOpts, TargetMachine *TM,
+      PipelineTuningOptions PTO, std::optional<PGOOptions> PGOOpt)
+      : PrettyStackBaseline(llvm::SavePrettyStackState()),
+        SI(Context, DebugLogging, VerifyEach, std::move(PrintPassOpts)),
+        PB(TM, PTO, std::move(PGOOpt), &PIC) {
+    SI.registerCallbacks(PIC, &MAM);
+  }
+
+  ~BuiltinOptimizationPipelineState() {
+    // A recovery transfer can abandon Optimizer and pass-provided pretty-stack
+    // entries on stack frames whose destructors will never run. Restore the
+    // entry baseline before any member teardown; public direct invocations do
+    // not necessarily pass through Job.cpp's outer recovery wrapper.
+    llvm::RestorePrettyStackState(PrettyStackBaseline);
+  }
+
+  StandardInstrumentations SI;
+  DebugInfoPerPass DebugInfoBeforePass;
+  DebugifyEachInstrumentation Debugify;
+  PassInstrumentationCallbacks PIC;
+  std::unique_ptr<plugin::IRPassPlan> PluginPasses;
+  PassBuilder PB;
+  std::unique_ptr<TargetLibraryInfoImpl> TLII;
+  LoopAnalysisManager LAM;
+  FunctionAnalysisManager FAM;
+  CGSCCAnalysisManager CGAM;
+  ModuleAnalysisManager MAM;
+  ModulePassManager MPM;
+};
 
 // Default filename used for profile generation.
 std::string getDefaultProfileGenName() { return "default_%m.profraw"; }
@@ -206,6 +278,11 @@ public:
         TargetTriple(TheModule->getTargetTriple()) {}
 
   ~GenAssemblyHelper() {
+    // A backend fatal bypasses the TimeRegion destructor in genAssembly().
+    // Stop the aggregate timer before crash recovery destroys this owner so
+    // the default timer group never retains a running or dangling member.
+    if (CodeGenerationTime.isRunning())
+      CodeGenerationTime.stopTimer();
     if (CodeGenOpts.DisableFree)
       BuryPointer(std::move(TM));
   }
@@ -385,23 +462,39 @@ bool initTargetOptions(DiagnosticsEngine &Diags, llvm::TargetOptions &Options,
 }
 
 void setCommandLineOpts(const CodeGenOptions &CodeGenOpts) {
-  llvm::SmallVector<const char *, 16> BackendArgs;
-  BackendArgs.push_back("neverc"); // Fake program name.
-  if (!CodeGenOpts.DebugPass.empty()) {
-    BackendArgs.push_back("-debug-pass");
-    BackendArgs.push_back(CodeGenOpts.DebugPass.c_str());
-  }
-  if (!CodeGenOpts.LimitFloatPrecision.empty()) {
-    BackendArgs.push_back("-limit-float-precision");
-    BackendArgs.push_back(CodeGenOpts.LimitFloatPrecision.c_str());
-  }
-  // Check for the default "neverc" invocation that won't set any cl::opt
-  // values. Skip trying to parse the command line invocation to avoid the
-  // issues described below.
-  if (BackendArgs.size() == 1)
+  if (CodeGenOpts.DebugPass.empty() &&
+      CodeGenOpts.LimitFloatPrecision.empty())
     return;
-  BackendArgs.push_back(nullptr);
-  neverc::parseLLVMCommandLineOptions(BackendArgs.size() - 1, BackendArgs.data());
+
+  if (!plugin::pluginLLVMOptionGateHeldExclusivelyByCurrentThread())
+    llvm::report_fatal_error(
+        "backend LLVM options require an exclusive option snapshot", false);
+
+  auto SetOption = [](llvm::StringRef Name, llvm::StringRef Value) {
+    auto &Options = llvm::cl::getRegisteredOptions();
+    const auto It = Options.find(Name);
+    if (It == Options.end())
+      llvm::report_fatal_error(
+          llvm::Twine("required backend LLVM option is unavailable: -") +
+              Name,
+          false);
+
+    llvm::cl::Option &Option = *It->second;
+    Option.reset();
+    if (Option.addOccurrence(/*pos=*/0, Name, Value))
+      llvm::report_fatal_error(
+          llvm::Twine("invalid value for backend LLVM option -") + Name,
+          false);
+  };
+
+  // These dedicated frontend options intentionally override the same option
+  // when it was also supplied through -mllvm. Reset only their own typed
+  // storage; reparsing a partial argv here would clear every earlier -mllvm
+  // option and the invocation's pass-timing state.
+  if (!CodeGenOpts.DebugPass.empty())
+    SetOption("debug-pass", CodeGenOpts.DebugPass);
+  if (!CodeGenOpts.LimitFloatPrecision.empty())
+    SetOption("limit-float-precision", CodeGenOpts.LimitFloatPrecision);
 }
 
 } // namespace
@@ -527,12 +620,11 @@ bool GenAssemblyHelper::prepareMachinePasses() {
       Hooks.push_back(MachinePasses);
   }
 
-  dyncode::DynCodeOptions DisabledDynCode;
-  const dyncode::DynCodeOptions &DynCodeOptsRef =
-      DynCodeOpts ? *DynCodeOpts : DisabledDynCode;
-  if (auto DynCodeHooks =
-          dyncode::createDynCodeMachinePipelineHooks(DynCodeOptsRef))
-    Hooks.push_back(std::move(DynCodeHooks));
+  if (DynCodeOpts) {
+    if (auto DynCodeHooks =
+            dyncode::createDynCodeMachinePipelineHooks(*DynCodeOpts))
+      Hooks.push_back(std::move(DynCodeHooks));
+  }
 
   std::shared_ptr<MachinePipelineHooks> Combined;
   if (!Hooks.empty())
@@ -634,8 +726,6 @@ toPluginOptimizationLevel(OptimizationLevel Level) {
 
 Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
     BackendAction Action, EmitterConsumer *BC) {
-  std::optional<PGOOptions> PGOOpt;
-
   PipelineTuningOptions PTO;
   PTO.LoopUnrolling = CodeGenOpts.UnrollLoops;
   // For historical reasons, loop interleaving is set to mirror setting for loop
@@ -647,24 +737,22 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
   // non-integrated assemblers don't recognize .cgprofile section.
   PTO.CallGraphProfile = !CodeGenOpts.DisableIntegratedAS;
 
-  LoopAnalysisManager LAM;
-  FunctionAnalysisManager FAM;
-  CGSCCAnalysisManager CGAM;
-  ModuleAnalysisManager MAM;
-
   bool DebugPassStructure = CodeGenOpts.DebugPass == "Structure";
-  PassInstrumentationCallbacks PIC;
   PrintPassOptions PrintPassOpts;
   PrintPassOpts.Indent = DebugPassStructure;
   PrintPassOpts.SkipAnalyses = DebugPassStructure;
-  StandardInstrumentations SI(
+  CrashRecoveryOwnedValue<BuiltinOptimizationPipelineState> PipelineOwner(
       TheModule->getContext(),
       (CodeGenOpts.DebugPassManager || DebugPassStructure),
-      CodeGenOpts.VerifyEach, PrintPassOpts);
-  SI.registerCallbacks(PIC, &MAM);
-  PassBuilder PB(TM.get(), PTO, PGOOpt, &PIC);
-
-  std::unique_ptr<plugin::IRPassPlan> PluginPasses;
+      CodeGenOpts.VerifyEach, PrintPassOpts, TM.get(), PTO, std::nullopt);
+  BuiltinOptimizationPipelineState &Pipeline = PipelineOwner.get();
+  LoopAnalysisManager &LAM = Pipeline.LAM;
+  FunctionAnalysisManager &FAM = Pipeline.FAM;
+  CGSCCAnalysisManager &CGAM = Pipeline.CGAM;
+  ModuleAnalysisManager &MAM = Pipeline.MAM;
+  PassInstrumentationCallbacks &PIC = Pipeline.PIC;
+  PassBuilder &PB = Pipeline.PB;
+  std::unique_ptr<plugin::IRPassPlan> &PluginPasses = Pipeline.PluginPasses;
   if (PluginTask) {
     auto Plan = plugin::IRPassPlan::create(*PluginTask);
     if (!Plan)
@@ -751,8 +839,8 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
   }
 
   // Enable verify-debuginfo-preserve-each for new PM.
-  DebugifyEachInstrumentation Debugify;
-  DebugInfoPerPass DebugInfoBeforePass;
+  DebugifyEachInstrumentation &Debugify = Pipeline.Debugify;
+  DebugInfoPerPass &DebugInfoBeforePass = Pipeline.DebugInfoBeforePass;
   if (CodeGenOpts.EnableDIPreservationVerify) {
     Debugify.setDebugifyMode(DebugifyMode::OriginalDebugInfo);
     Debugify.setDebugInfoBeforePass(DebugInfoBeforePass);
@@ -766,13 +854,13 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
   // registration.
   for (const auto &PassCallback : CodeGenOpts.PassBuilderCallbacks)
     PassCallback(PB);
-  dyncode::DynCodeOptions DisabledDynCode;
-  dyncode::registerDynCodePasses(
-      PB, DynCodeOpts ? *DynCodeOpts : DisabledDynCode);
+  if (DynCodeOpts)
+    dyncode::registerDynCodePasses(PB, *DynCodeOpts);
 
   // Register the target library analysis directly and give it a customized
   // preset TLI.
-  std::unique_ptr<TargetLibraryInfoImpl> TLII(
+  std::unique_ptr<TargetLibraryInfoImpl> &TLII = Pipeline.TLII;
+  TLII.reset(
       llvm::driver::createTLII(TargetTriple, CodeGenOpts.getVecLib()));
   FAM.registerPass([&] { return TargetLibraryAnalysis(*TLII); });
 
@@ -783,7 +871,7 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
   PB.registerLoopAnalyses(LAM);
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-  ModulePassManager MPM;
+  ModulePassManager &MPM = Pipeline.MPM;
   NevercIROptimizationLevel PluginOptimizationLevel =
       toPluginOptimizationLevel(mapToLevel(CodeGenOpts));
 #ifndef NDEBUG
@@ -855,7 +943,7 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
   // Re-link against any bitcodes supplied via the -mlink-builtin-bitcode
   // option. Some optimizations may generate new function calls that would not
   // have been linked pre-optimization.
-  if (ClRelinkBuiltinBitcodePostop)
+  if (CodeGenOpts.RelinkBuiltinBitcodePostop)
     MPM.addPass(LinkInModulesPass(BC, false));
 
   // Add a verifier pass if requested. We don't have to do this if the action
@@ -1435,12 +1523,16 @@ bool GenAssemblyHelper::runPluginObjectPipeline(
 }
 
 void GenAssemblyHelper::genAssembly(BackendAction Action,
-                                    std::unique_ptr<raw_pwrite_stream> OS,
+                                    std::unique_ptr<raw_pwrite_stream> Output,
                                     EmitterConsumer *BC) {
+  // Keep the output transaction inside the crash-owned helper. A recovery
+  // transfer can bypass this frame, but deleting GenAssemblyHelper must still
+  // close and release the stream exactly once.
+  OS = std::move(Output);
   TimeRegion Region(CodeGenOpts.TimePasses ? &CodeGenerationTime : nullptr);
-  // setCommandLineOpts may reset option occurrences while reparsing backend
-  // diagnostics controls. Freeze PCG's complete request policy first so no
-  // later phase reads those process-global options.
+  // Backend diagnostics controls still write typed LLVM command-line state.
+  // Freeze PCG's complete request policy first so no later phase reads those
+  // process-global options.
   const neverc::ParallelCodeGenTuning PCGTuning =
       neverc::captureParallelCodeGenTuning();
   const NevercPipelineTuningOptions PipelineTuning =
@@ -1611,8 +1703,10 @@ void neverc::genBackendOutput(
 
   llvm::TimeTraceScope TimeScope("Backend");
 
-  GenAssemblyHelper AsmHelper(Diags, HeaderOpts, CGOpts, TOpts, LOpts, M, VFS,
-                              PluginTask, DynCodeOpts);
+  CrashRecoveryOwnedValue<GenAssemblyHelper> AsmHelperOwner(
+      Diags, HeaderOpts, CGOpts, TOpts, LOpts, M, VFS, PluginTask,
+      DynCodeOpts);
+  GenAssemblyHelper &AsmHelper = AsmHelperOwner.get();
   AsmHelper.genAssembly(Action, std::move(OS), BC);
 
   if (AsmHelper.TM) {

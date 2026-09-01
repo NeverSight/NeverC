@@ -39,16 +39,20 @@ struct DirectInvocationOpts {
   // InMemoryFileStore instead of hitting the filesystem.
   bool InMemoryLTOOutput = false;
 
-  // When true, ExecuteFrontendDirect skips LLVM global-state operations
-  // (cl::Reset, fatal-error-handler, TimerGroup) that are not thread-safe.
-  // The caller is responsible for handling those before/after the
-  // parallel region.
+  // When true, an invocation that does not mutate LLVM command-line options
+  // may share the process option gate with other parallel frontends. Any
+  // mutating invocation still takes an exclusive restoring snapshot inside
+  // ExecuteFrontendDirect; callers must not reset LLVM options around the
+  // parallel region. Fatal recovery is scoped to the invoking thread in this
+  // host image; it does not propagate into plugin DSOs or asynchronous LLVM
+  // workers.
   bool ParallelSafe = false;
 };
 
 inline bool hasAnyDirectOpts(const DirectInvocationOpts &D) {
   return D.TargetOpts || D.LangOpts || D.CodeGenOpts || D.HeaderIdxOpts ||
-         D.PPOpts || D.FrontendOpts || D.PluginSession || D.DynCode || D.Outputs;
+         D.PPOpts || D.FrontendOpts || D.PluginSession || D.DynCode ||
+         D.Outputs || D.InMemoryLTOOutput || D.ParallelSafe;
 }
 
 } // namespace driver

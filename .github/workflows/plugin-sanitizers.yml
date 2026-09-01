@@ -28,6 +28,8 @@ on:
       - "neverc/include/neverc/Linker/**"
       - "neverc/include/neverc/Plugin/**"
       - "neverc/include/neverc/Foundation/Core/ProcessResourceBroker.h"
+      - "neverc/include/neverc/Foundation/Core/LLVMTimeTraceRootLease.h"
+      - "neverc/lib/Foundation/Core/LLVMTimeTraceRootLease.cpp"
       - "neverc/lib/Foundation/Core/ProcessResourceBroker.cpp"
       - "neverc/lib/Foundation/Core/ProcessResourceBrokerInternal.h"
       - "neverc/lib/Foundation/CMakeLists.txt"
@@ -40,7 +42,10 @@ on:
       - "neverc/lib/Emit/CMakeLists.txt"
       - "tests/neverc/ConcurrentLTOOptionIsolationTests.cpp"
       - "tests/neverc/ParallelCodeGenCacheTests.cpp"
+      - "tests/neverc/PluginFrontendTimeTraceInteropTests.cpp"
+      - "tests/neverc/PluginLLVMOptionOrdinaryErrorTests.cpp"
       - "tests/neverc/PluginLinkContextTests.cpp"
+      - "tests/neverc/PluginLinkTimeTraceConcurrencyTests.cpp"
       - "tests/neverc/PluginParallelLinkTests.cpp"
       - "tests/neverc/ProcessResourceBudgetTests.cpp"
       - "tests/neverc/SupportThreadTests.cpp"
@@ -155,13 +160,13 @@ jobs:
             --gtest_filter='SupportThreadTest.TryCreateHandlesMoveOnlyCallable:SupportThreadTest.ConcurrentBLAKE3DispatchIsStable:SupportThreadTest.TryCreateFailureDoesNotRunOrLeakCallable' \
             --gtest_color=no
           build/bin/neverc-plugin-link-tests \
-            --gtest_filter='ConcurrentLTOOptionIsolationTest.*:LTOParallelHookContractTest.*:LTOBufferedOutputTest.*:LTOTransactionalSpoolTest.*:LTOTransactionalOwnedOutputTest.*:LTOBackendSafetyBoundaryTest.*:PluginLinkContextTest.NestedExecutionRestoresOuterWorkerSlot:PluginParallelLinkTest.*:PluginCOFFContextIsolationTest.*:PluginMachOContextIsolationTest.*' \
+            --gtest_filter='ConcurrentLTOOptionIsolationTest.*:LTOParallelHookContractTest.*:LTOBufferedOutputTest.*:LTOTransactionalSpoolTest.*:LTOTransactionalOwnedOutputTest.*:LTOBackendSafetyBoundaryTest.*:PluginLinkContextTest.NestedExecutionRestoresOuterWorkerSlot:PluginParallelLinkTest.*:PluginCOFFContextIsolationTest.*:PluginMachOContextIsolationTest.*:PluginLinkTimeTraceConcurrencyTest.*' \
             --gtest_color=no
           build/bin/neverc-plugin-link-tests \
             --gtest_filter='PluginBinaryImageTest.MainPublishFailureRestoresTheOldBundle:PluginBinaryImageTest.AbortReportsStagingCleanupFailure:PluginBinaryImageTest.PrepareFailureDiscardsEveryStagedOutput' \
             --gtest_color=no
           build/bin/neverc-merge-tests \
-            --gtest_filter='ParallelCodeGenCacheTest.ProcessBudgetClampsPhysicalWorkersWithoutChangingObject:ParallelCodeGenCacheTest.RejectsTypeMetadataIntrinsicInjectedByPartitionPostOptHook:ParallelCodeGenCacheTest.WholeModuleBarrierMayLegitimatelyLowerTypeMetadataIntrinsic:ParallelCodeGenCacheTest.WholeModuleDiagnosticDoesNotPublishObjectOrOptimizedIRCache:ParallelCodeGenCacheTest.ExhaustedWholeModuleCodeGenRoutesReportErrorWithoutAborting:ParallelCodeGenCacheTest.WholeModuleBarrierRunsStatefulMachineHooksExactlyOnce:ParallelCodeGenCacheTest.PreExistingDiagnosticDoesNotRunHooksOrPublishObjectCache' \
+            --gtest_filter='ParallelCodeGenCacheTest.ProcessBudgetClampsPhysicalWorkersWithoutChangingObject:ParallelCodeGenCacheTest.RejectsTypeMetadataIntrinsicInjectedByPartitionPostOptHook:ParallelCodeGenCacheTest.WholeModuleBarrierMayLegitimatelyLowerTypeMetadataIntrinsic:ParallelCodeGenCacheTest.WholeModuleDiagnosticDoesNotPublishObjectOrOptimizedIRCache:ParallelCodeGenCacheTest.ExhaustedWholeModuleCodeGenRoutesReportErrorWithoutAborting:ParallelCodeGenCacheTest.WholeModuleBarrierRunsStatefulMachineHooksExactlyOnce:ParallelCodeGenCacheTest.PreExistingDiagnosticDoesNotRunHooksOrPublishObjectCache:ParallelFrontendTiming.*' \
             --gtest_color=no
 
       - name: Build and smoke fuzzers under ${{ matrix.label }}

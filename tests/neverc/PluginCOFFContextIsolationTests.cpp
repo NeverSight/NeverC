@@ -213,7 +213,6 @@ TEST(PluginCOFFContextIsolationTest,
   llvm::CrashRecoveryContext::Enable();
   auto DisableCrashRecovery =
       llvm::make_scope_exit([] { llvm::CrashRecoveryContext::Disable(); });
-  ASSERT_FALSE(neverc::currentResourceSession());
   int FatalResult = 0;
   {
     llvm::CrashRecoveryContext CRC;
@@ -229,7 +228,6 @@ TEST(PluginCOFFContextIsolationTest,
   EXPECT_EQ(FatalResult, 0);
   EXPECT_FALSE(llvm::timeTraceProfilerEnabled());
   EXPECT_EQ(currentLinkerContext(), nullptr);
-  EXPECT_FALSE(neverc::currentResourceSession());
   EXPECT_FALSE(llvm::sys::fs::exists(TracePath));
   const neverc::ProcessResourceBrokerSnapshot Recovered =
       neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
@@ -243,7 +241,6 @@ TEST(PluginCOFFContextIsolationTest,
                                  Args, StdoutStream, StderrStream, Config),
             0);
   EXPECT_FALSE(llvm::timeTraceProfilerEnabled());
-  EXPECT_FALSE(neverc::currentResourceSession());
 
   auto Trace = llvm::MemoryBuffer::getFile(TracePath);
   ASSERT_TRUE(static_cast<bool>(Trace)) << Trace.getError().message();
@@ -272,7 +269,7 @@ TEST(PluginCOFFContextIsolationTest,
     LinkerDriverConfig ExternalConfig = Config;
     ExternalConfig.executionContext = &ExternalExecution;
     const neverc::ResourceSessionView ExpectedSession =
-        neverc::currentResourceSession();
+        ExternalExecution.resourceSession();
     ASSERT_TRUE(ExpectedSession);
     const neverc::ProcessResourceBrokerSnapshot BeforeFatal =
         neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
@@ -294,15 +291,14 @@ TEST(PluginCOFFContextIsolationTest,
     EXPECT_EQ(ExternalFatalResult, 0);
     EXPECT_FALSE(llvm::timeTraceProfilerEnabled());
     EXPECT_EQ(currentLinkerContext(), nullptr);
-    EXPECT_TRUE(
-        neverc::currentResourceSession().refersToSameSession(ExpectedSession));
+    EXPECT_TRUE(ExternalExecution.resourceSession().refersToSameSession(
+        ExpectedSession));
     const neverc::ProcessResourceBrokerSnapshot AfterFatal =
         neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
     EXPECT_EQ(AfterFatal.ActiveTokens, 1U);
     EXPECT_EQ(AfterFatal.ActiveSessions, 1U);
     EXPECT_EQ(AfterFatal.AvailableTokens, 0U);
   }
-  EXPECT_FALSE(neverc::currentResourceSession());
   const neverc::ProcessResourceBrokerSnapshot Final =
       neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
   EXPECT_EQ(Final.ActiveTokens, 0U);
@@ -419,7 +415,7 @@ coff_trace_entry:
     LinkerDriverConfig ExternalConfig = Config;
     ExternalConfig.executionContext = &ExternalExecution;
     const neverc::ResourceSessionView ExpectedSession =
-        neverc::currentResourceSession();
+        ExternalExecution.resourceSession();
     ASSERT_TRUE(ExpectedSession);
 
     {
@@ -435,11 +431,10 @@ coff_trace_entry:
     EXPECT_FALSE(llvm::timeTraceProfilerEnabled());
     EXPECT_EQ(currentLinkerContext(), nullptr);
     EXPECT_EQ(ExternalExecution.common(), nullptr);
-    EXPECT_TRUE(
-        neverc::currentResourceSession().refersToSameSession(ExpectedSession));
+    EXPECT_TRUE(ExternalExecution.resourceSession().refersToSameSession(
+        ExpectedSession));
     EXPECT_FALSE(llvm::sys::fs::exists(TracePath));
   }
-  EXPECT_FALSE(neverc::currentResourceSession());
 }
 
 TEST(PluginCOFFContextIsolationTest,

@@ -17,6 +17,8 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
+#include <functional>
+#include <utility>
 
 using namespace llvm;
 
@@ -25,12 +27,40 @@ static OptBisect &getOptBisector() {
   return OptBisector;
 }
 
-static cl::opt<int> OptBisectLimit("opt-bisect-limit", cl::Hidden,
-                                   cl::init(OptBisect::Disabled), cl::Optional,
-                                   cl::cb<void, int>([](int Limit) {
-                                     getOptBisector().setLimit(Limit);
-                                   }),
-                                   cl::desc("Maximum optimization to perform"));
+namespace {
+
+class OptBisectLimitOption final : public cl::opt<int> {
+  using Base = cl::opt<int>;
+
+public:
+  using Base::Base;
+
+  void setDefault() override {
+    const cl::OptionValue<int> &Default = this->getDefault();
+    this->setValue(Default.hasValue() ? Default.getValue() : int());
+    getOptBisector().setLimit(getValue());
+  }
+
+  std::function<void()> createStateRestorer() override {
+    cl::Option::OccurrenceState Occurrences =
+        this->captureOccurrenceState();
+    int SavedValue = this->getValue();
+    OptBisect SavedBisector = getOptBisector();
+    return [this, Occurrences, SavedValue, SavedBisector]() mutable {
+      this->setValue(SavedValue);
+      this->restoreOccurrenceState(Occurrences);
+      getOptBisector() = SavedBisector;
+    };
+  }
+};
+
+} // namespace
+
+static OptBisectLimitOption OptBisectLimit(
+    "opt-bisect-limit", cl::Hidden, cl::init(OptBisect::Disabled),
+    cl::Optional,
+    cl::cb<void, int>([](int Limit) { getOptBisector().setLimit(Limit); }),
+    cl::desc("Maximum optimization to perform"));
 
 static void printPassMessage(const StringRef &Name, int PassNum,
                              StringRef TargetDesc, bool Running) {

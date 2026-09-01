@@ -30,6 +30,9 @@ class Undefined;
  */
 class SymbolTable {
 public:
+  SymbolTable();
+  ~SymbolTable();
+
   Defined *addDefined(StringRef name, InputFile *, InputSection *,
                       uint64_t value, uint64_t size, bool isWeakDef,
                       bool isPrivateExtern, bool isReferencedDynamically,
@@ -60,9 +63,18 @@ public:
   void reserve(size_t additional);
 
 private:
+  friend void reportPendingUndefinedSymbols();
+  friend void reportPendingDuplicateSymbols();
+  friend void treatUndefinedSymbol(const Undefined &, StringRef source);
+  friend void treatUndefinedSymbol(const Undefined &, const InputSection *,
+                                   uint64_t offset);
+
+  struct Diagnostics;
+
   std::pair<Symbol *, bool> insert(StringRef name, const InputFile *);
   llvm::DenseMap<llvm::CachedHashStringRef, int> symMap;
   std::vector<Symbol *> symVector;
+  std::unique_ptr<Diagnostics> diagnostics;
 };
 
 void reportPendingUndefinedSymbols();

@@ -29,6 +29,7 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "neverc/Foundation/AndroidKernelRuntimeContract.h"
 #include "llvm/ADT/StringMap.h"
@@ -67,7 +68,9 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
   // (diagnostics, bump allocator, parallel codegen pool).  The plugin link
   // bridge runs before any backend driver has installed one, so establish a
   // self-contained context for the duration of this LTO run.
-  CommonLinkerContext Context;
+  CommonLinkerContext Context(
+      Config.executionContext ? Config.executionContext->resourceSession()
+                              : neverc::ResourceSessionView{});
   LinkerContextGuard ContextGuard(Context);
   Context.configureParallel(Config.threadCount, 16);
   Context.e.initialize(llvm::outs(), llvm::errs(), /*exitEarly=*/false,
@@ -79,7 +82,8 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
   Context.e.suppressWarnings = Config.suppressWarnings;
 
   lto::Config LtoConfig =
-      createLTOConfig(Config, diagnosticHandler, EmitAddrsig);
+      createLTOConfig(Config, diagnosticHandler, EmitAddrsig,
+                      Context.resourceSession());
   if (Context.e.errorCount != 0)
     return createStringError(
         inconvertibleErrorCode(),

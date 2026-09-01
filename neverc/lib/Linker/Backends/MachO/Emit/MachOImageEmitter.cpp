@@ -28,6 +28,7 @@
 #include "llvm/Support/xxhash.h"
 
 #include <algorithm>
+#include <future>
 #if defined(__unix__) || defined(__APPLE__)
 #include <unistd.h>
 #endif
@@ -1292,20 +1293,52 @@ template <class LP> void OutputWriter::run() {
   assignSegmentAddresses();
 
   // Phase 3: finalize and emit. Map file runs concurrently with LINKEDIT.
+  std::future<std::string> MapTraceInitialization;
   if (!config->mapFile.empty()) {
-    workers.spawn([&] {
+    std::promise<std::string> Initialization;
+    MapTraceInitialization = Initialization.get_future();
+    const TimeTraceProfilerSession TimeTraceSession =
+        timeTraceProfilerCurrentSession();
+    workers.spawn([&, TimeTraceSession,
+                   Initialization = std::move(Initialization)]() mutable {
+      const bool hasTimeTraceProfiler = timeTraceProfilerEnabled();
       const bool ownsTimeTraceProfiler = LLVM_ENABLE_THREADS &&
                                          config->driverCfg->timeTraceEnabled &&
-                                         !timeTraceProfilerEnabled();
-      if (ownsTimeTraceProfiler)
-        timeTraceProfilerInitialize(config->driverCfg->timeTraceGranularity,
-                                    "mapFile");
+                                         !hasTimeTraceProfiler;
+      std::string InitializationError;
+      if (hasTimeTraceProfiler &&
+          timeTraceProfilerCurrentSession() != TimeTraceSession) {
+        InitializationError =
+            "the Mach-O map worker has a foreign time-trace session";
+      } else if (ownsTimeTraceProfiler) {
+        if (TimeTraceSession == 0) {
+          InitializationError =
+              "the Mach-O map worker has no managed time-trace session";
+        } else if (Error E = timeTraceProfilerInitializeThread(
+                       config->driverCfg->timeTraceGranularity, "mapFile",
+                       TimeTraceSession)) {
+          SmallString<256> ErrorText = toString(std::move(E));
+          InitializationError.assign(ErrorText.begin(), ErrorText.end());
+        }
+      }
+      Initialization.set_value(InitializationError);
+      if (!InitializationError.empty())
+        return;
       auto finishTimeTraceProfiler = make_scope_exit([&] {
         if (ownsTimeTraceProfiler)
           timeTraceProfilerFinishThread();
       });
       writeMapFile();
     });
+  }
+  if (MapTraceInitialization.valid()) {
+    std::string InitializationError = MapTraceInitialization.get();
+    if (!InitializationError.empty()) {
+      workers.sync();
+      error("failed to initialize Mach-O map time trace: " +
+            InitializationError);
+      return;
+    }
   }
   finalizeLinkEdit();
   writeImage();

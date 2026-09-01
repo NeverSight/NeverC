@@ -18,9 +18,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/BinaryFormat/MachO.h"
-#include "llvm/Support/ErrorHandling.h"
 
-#include <csetjmp>
 #include <cstdint>
 
 namespace neverc::merge::detail {
@@ -290,41 +288,6 @@ struct DedupStrTab {
     return Off;
   }
 };
-
-/// Run a merge callable under a fatal-error recovery guard.
-///
-/// LLVM's MachO and COFF object parsers call report_fatal_error() → abort()
-/// on some malformed-input paths instead of returning Error through Expected<>.
-/// The canonical example is getStruct() in MachOObjectFile.cpp (whose FIXME
-/// reads "Replace all uses of this function with getStructOrErr").
-///
-/// This wrapper installs a temporary fatal-error handler that longjmp's back
-/// here so the merge returns false (= caller falls back to serial codegen /
-/// a real linker) instead of killing the process.  If another handler is
-/// already installed (e.g. the compiler frontend's directLLVMErrorHandler
-/// during !parallelSafe compilation), we skip installation and rely on the
-/// caller's CrashRecoveryContext for crash isolation.
-///
-/// Caution: longjmp across C++ stack frames with non-trivial destructors is
-/// technically UB.  In practice it only leaks memory (the objects are not
-/// destructed), which is acceptable because (a) report_fatal_error's default
-/// alternative -- abort() -- is strictly worse, and (b) malformed-input paths
-/// that trigger this are rare.
-template <typename F> inline bool runMergeSafely(F &&Fn) {
-  if (ErrorHandler != nullptr)
-    return Fn();
-
-  static thread_local std::jmp_buf FatalBuf;
-  llvm::install_fatal_error_handler(
-      +[](void *, const char *, bool) { std::longjmp(FatalBuf, 1); }, nullptr);
-  if (setjmp(FatalBuf) != 0) {
-    llvm::remove_fatal_error_handler();
-    return false;
-  }
-  bool Result = Fn();
-  llvm::remove_fatal_error_handler();
-  return Result;
-}
 
 } // namespace neverc::merge::detail
 

@@ -3,6 +3,7 @@
 #include "Linker/MachO/SyntheticSections.h"
 #include "Linker/MachO/Target.h"
 
+#include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "mach-o/compact_unwind_encoding.h"
 #include "llvm/BinaryFormat/MachO.h"
@@ -211,8 +212,7 @@ X86_64::X86_64() : TargetInfo(LP64()) {
 }
 
 TargetInfo *macho::createX86_64TargetInfo() {
-  static X86_64 t;
-  return &t;
+  return linker::make<X86_64>();
 }
 
 // ===----------------------------------------------------------------------===

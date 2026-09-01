@@ -1,8 +1,9 @@
 #include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "ProcessResourceBrokerInternal.h"
-#include "neverc/Foundation/Core/ThreadLocalStorage.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
@@ -15,7 +16,7 @@
 #include <cstdlib>
 #include <deque>
 #include <mutex>
-#include <type_traits>
+#include <thread>
 #include <utility>
 
 namespace neverc::resource_broker_detail {
@@ -55,37 +56,48 @@ using neverc::resource_broker_detail::SessionState;
 namespace neverc {
 namespace {
 
-thread_local ScopedThreadLocalValue<ResourceSessionView> CurrentSession;
-static_assert(std::is_trivially_destructible_v<decltype(CurrentSession)>);
 thread_local unsigned ObserverDepth = 0;
 std::atomic<bool> GlobalOverrideActive{false};
 
-ResourceSessionView installedResourceSession() noexcept {
-  if (!CurrentSession.hasValue())
-    return {};
-  return CurrentSession.get();
-}
+/// Crash recovery skips stack destructors, so register the stable TLS depth
+/// address itself before incrementing it. The cleanup captures the exact
+/// prior nesting value and thread; normal exceptions use the scope-exit below.
+/// RunSafelyOnThread joins its worker before the caller destroys the recovery
+/// context, so that cross-thread cleanup must not dereference the exited
+/// worker's TLS address.
+class ObserverDepthCrashCleanup final
+    : public llvm::CrashRecoveryContextCleanupBase<ObserverDepthCrashCleanup,
+                                                   unsigned> {
+public:
+  ObserverDepthCrashCleanup(llvm::CrashRecoveryContext *Context,
+                            unsigned *Depth)
+      : llvm::CrashRecoveryContextCleanupBase<ObserverDepthCrashCleanup,
+                                              unsigned>(Context, Depth),
+        PreviousDepth(*Depth), OwnerThread(std::this_thread::get_id()) {}
 
-void installResourceSession(ResourceSessionView Session) {
-  if (!Session) {
-    CurrentSession.reset();
-    return;
+  void recoverResources() override {
+    if (OwnerThread != std::this_thread::get_id())
+      return;
+    *this->resource = PreviousDepth;
   }
-  CurrentSession.set(std::move(Session));
-}
 
-bool sameSession(const ResourceSessionView &Left,
-                 const ResourceSessionView &Right) {
-  return Left.refersToSameSession(Right);
-}
+private:
+  unsigned PreviousDepth;
+  std::thread::id OwnerThread;
+};
 
 void emitEvent(const std::shared_ptr<BrokerState> &State,
                const ProcessResourceBrokerEvent &Event) {
   if (!State->Observe || ObserverDepth != 0)
     return;
+  llvm::CrashRecoveryContextCleanupRegistrar<unsigned,
+                                             ObserverDepthCrashCleanup>
+      CrashCleanup(&ObserverDepth);
+  const unsigned PreviousDepth = ObserverDepth;
+  auto RestoreDepth = llvm::make_scope_exit(
+      [&] { ObserverDepth = PreviousDepth; });
   ++ObserverDepth;
   State->Observe(Event);
-  --ObserverDepth;
 }
 
 bool retainSessionUser(const std::shared_ptr<SessionState> &Session) {
@@ -184,30 +196,9 @@ bool ResourceSessionView::refersToSameSession(
          Bypass == Other.Bypass && Constrained == Other.Constrained;
 }
 
-ResourceSessionView currentResourceSession() noexcept {
-  return installedResourceSession();
-}
-
-ResourceSessionScope::ResourceSessionScope(ResourceSessionView Session)
-    : Installed(std::move(Session)), Previous(installedResourceSession()),
-      OwnerThread(std::this_thread::get_id()) {
-  installResourceSession(Installed);
-}
-
-ResourceSessionScope::~ResourceSessionScope() {
-  if (OwnerThread != std::this_thread::get_id())
-    llvm::report_fatal_error(
-        "resource session scope destroyed on a different thread");
-  if (!sameSession(installedResourceSession(), Installed))
-    llvm::report_fatal_error(
-        "resource session scopes must be destroyed in nesting order");
-  installResourceSession(Previous);
-}
-
 ResourceSessionPermit::ResourceSessionPermit(
     ResourceSessionPermit &&Other) noexcept
-    : View(std::move(Other.View)), Previous(std::move(Other.Previous)),
-      OwnerThread(Other.OwnerThread),
+    : View(std::move(Other.View)),
       OwnsAdmission(std::exchange(Other.OwnsAdmission, false)),
       RetainsSession(std::exchange(Other.RetainsSession, false)),
       Active(std::exchange(Other.Active, false)) {}
@@ -217,13 +208,6 @@ ResourceSessionPermit::~ResourceSessionPermit() { reset(); }
 void ResourceSessionPermit::reset() noexcept {
   if (!Active)
     return;
-  if (OwnerThread != std::this_thread::get_id())
-    llvm::report_fatal_error(
-        "resource session permit destroyed on a different thread");
-  if (!sameSession(installedResourceSession(), View))
-    llvm::report_fatal_error(
-        "resource session permits must be destroyed in nesting order");
-  installResourceSession(Previous);
   Active = false;
   if (RetainsSession && View.Session) {
     const std::shared_ptr<SessionState> Session = View.Session;
@@ -313,15 +297,19 @@ bool ProcessResourceBroker::enabled() const {
 ResourceSessionPermit
 ProcessResourceBroker::acquireSession(ResourcePhase Phase,
                                       ResourceAdmissionMode Mode) {
+  return acquireSession({}, Phase, Mode);
+}
+
+ResourceSessionPermit ProcessResourceBroker::acquireSession(
+    ResourceSessionView Parent, ResourcePhase Phase,
+    ResourceAdmissionMode Mode) {
   const std::shared_ptr<BrokerState> State =
       std::atomic_load_explicit(&this->State, std::memory_order_acquire);
-  const ResourceSessionView Previous = installedResourceSession();
-  if (Previous.Broker == State) {
+  if (Parent.Broker == State) {
     const bool Retained =
-        Previous.Session && retainSessionUser(Previous.Session);
-    if (!Previous.Session || Retained) {
-      installResourceSession(Previous);
-      return ResourceSessionPermit(Previous, Previous,
+        Parent.Session && retainSessionUser(Parent.Session);
+    if (!Parent.Session || Retained) {
+      return ResourceSessionPermit(std::move(Parent),
                                    /*OwnsAdmission=*/false,
                                    /*RetainsSession=*/Retained);
     }
@@ -330,17 +318,13 @@ ProcessResourceBroker::acquireSession(ResourcePhase Phase,
   if (!State->Enabled) {
     ResourceSessionView View(State, nullptr, /*Bypass=*/true,
                              /*Constrained=*/false);
-    installResourceSession(View);
-    return ResourceSessionPermit(std::move(View), Previous,
-                                 /*OwnsAdmission=*/false);
+    return ResourceSessionPermit(std::move(View), /*OwnsAdmission=*/false);
   }
 
   auto Constrained = [&] {
     ResourceSessionView View(State, nullptr, /*Bypass=*/false,
                              /*Constrained=*/true);
-    installResourceSession(View);
-    return ResourceSessionPermit(std::move(View), Previous,
-                                 /*OwnsAdmission=*/false);
+    return ResourceSessionPermit(std::move(View), /*OwnsAdmission=*/false);
   };
 
   if (ObserverDepth != 0)
@@ -392,15 +376,7 @@ ProcessResourceBroker::acquireSession(ResourcePhase Phase,
 
   ResourceSessionView View(State, std::move(Session), /*Bypass=*/false,
                            /*Constrained=*/false);
-  installResourceSession(View);
-  return ResourceSessionPermit(std::move(View), Previous,
-                               /*OwnsAdmission=*/true);
-}
-
-ResourceWorkerGrant
-ProcessResourceBroker::grantWorkers(ResourcePhase Phase,
-                                    unsigned DesiredWorkers) noexcept {
-  return grantWorkers(installedResourceSession(), Phase, DesiredWorkers);
+  return ResourceSessionPermit(std::move(View), /*OwnsAdmission=*/true);
 }
 
 ResourceWorkerGrant
@@ -476,6 +452,13 @@ void ProcessResourceBrokerTestAccess::withMutexHeld(
       std::atomic_load_explicit(&Broker.State, std::memory_order_acquire);
   std::lock_guard<std::mutex> Lock(State->Mutex);
   Callback();
+}
+
+void ProcessResourceBrokerTestAccess::emitSyntheticEvent(
+    ProcessResourceBroker &Broker, const ProcessResourceBrokerEvent &Event) {
+  const std::shared_ptr<BrokerState> State =
+      std::atomic_load_explicit(&Broker.State, std::memory_order_acquire);
+  emitEvent(State, Event);
 }
 
 ScopedProcessResourceBrokerOverride::ScopedProcessResourceBrokerOverride(

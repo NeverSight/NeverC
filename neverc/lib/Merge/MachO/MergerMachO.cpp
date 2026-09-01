@@ -191,11 +191,32 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
     auto &Obj = **ObjOrErr;
 
+    // The implementation below deliberately uses section_64/nlist_64 and
+    // emits a little-endian MH_OBJECT.  MachOObjectFile also parses 32-bit,
+    // big-endian, and linked-image containers; reject those before the first
+    // 64-bit accessor so they cannot be misinterpreted or reach an LLVM
+    // report_fatal_error path.
+    if (!Obj.is64Bit() || !Obj.isLittleEndian() ||
+        !Obj.isRelocatableObject()) {
+      errs() << "neverc: Mach-O relocatable merge: input is not a "
+                "little-endian 64-bit MH_OBJECT; refusing to merge\n";
+      return false;
+    }
+
+    const auto &InputHeader = Obj.getHeader();
+    if (InputHeader.cputype != MO::CPU_TYPE_X86_64 &&
+        InputHeader.cputype != MO::CPU_TYPE_ARM64) {
+      errs() << "neverc: Mach-O relocatable merge: unsupported 64-bit "
+                "architecture "
+             << InputHeader.cputype << "; refusing to merge\n";
+      return false;
+    }
+
     if (!HaveArch) {
       HaveArch = true;
-      CPUType = Obj.getHeader().cputype;
-      CPUSubType = Obj.getHeader().cpusubtype;
-    } else if (Obj.getHeader().cputype != CPUType) {
+      CPUType = InputHeader.cputype;
+      CPUSubType = InputHeader.cpusubtype;
+    } else if (InputHeader.cputype != CPUType) {
       // All inputs must share one CPU type.  Mixing (e.g. arm64 + x86_64) would
       // emit one valid mach_header (the first input's cputype) over a body whose
       // later partitions are the wrong ISA, and would also corrupt the
@@ -204,7 +225,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // general `-r` path over arbitrary objects can, and `ld -r` refuses it
       // too.  Refuse rather than emit a cross-ISA object.
       errs() << "neverc: Mach-O relocatable merge: input has cputype "
-             << Obj.getHeader().cputype << " but an earlier input had "
+             << InputHeader.cputype << " but an earlier input had "
              << CPUType << " (mixed architectures); refusing to merge\n";
       return false;
     }
@@ -847,14 +868,12 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
 bool mergeMachO64Objects(ArrayRef<SmallVector<char, 0>> Buffers,
                          raw_pwrite_stream &OS, const Options &Opts) {
-  return detail::runMergeSafely(
-      [&]() { return mergeMachO64Impl(Buffers, OS, Opts); });
+  return mergeMachO64Impl(Buffers, OS, Opts);
 }
 
 bool mergeMachO64Objects(ArrayRef<StringRef> Buffers, raw_pwrite_stream &OS,
                          const Options &Opts) {
-  return detail::runMergeSafely(
-      [&]() { return mergeMachO64Impl(Buffers, OS, Opts); });
+  return mergeMachO64Impl(Buffers, OS, Opts);
 }
 
 } // namespace neverc::merge

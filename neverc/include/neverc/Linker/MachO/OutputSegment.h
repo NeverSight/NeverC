@@ -4,6 +4,7 @@
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "Linker/MachO/OutputSection.h"
 #include "Linker/MachO/Symbols.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/TinyPtrVector.h"
 
 #include <limits>
@@ -58,6 +59,7 @@ private:
 };
 
 std::vector<OutputSegment *> &machoOutputSegments();
+llvm::DenseMap<StringRef, OutputSegment *> &machoOutputSegmentsByName();
 
 void sortOutputSegments();
 void resetOutputSegments();

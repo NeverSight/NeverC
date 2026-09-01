@@ -22,6 +22,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
+#include <mutex>
 #include <optional>
 
 using namespace llvm;
@@ -39,20 +40,11 @@ using namespace linker::elf;
 
 // Returns "<internal>", "foo.a(bar.o)" or "baz.o".
 std::string linker::toString(const InputFile *f) {
-  static std::mutex mu;
   if (!f)
     return "<internal>";
-
-  {
-    std::lock_guard<std::mutex> lock(mu);
-    if (f->toStringCache.empty()) {
-      if (f->archiveName.empty())
-        f->toStringCache = f->getName();
-      else
-        (f->archiveName + "(" + f->getName() + ")").toVector(f->toStringCache);
-    }
-  }
-  return std::string(f->toStringCache);
+  if (f->archiveName.empty())
+    return f->getName().str();
+  return (f->archiveName + "(" + f->getName() + ")").str();
 }
 
 namespace {
@@ -1130,7 +1122,6 @@ void ObjFile<ELFT>::prepareSectionsAndLocals(bool ignoreComdats) {
 // Called after all ObjFile::parse is called for all ObjFiles. This checks
 // duplicate symbols and may do symbol property merge in the future.
 template <class ELFT> void ObjFile<ELFT>::postParse() {
-  static std::mutex mu;
   ArrayRef<Elf_Sym> eSyms = this->getELFSyms<ELFT>();
   for (size_t i = firstGlobal, end = eSyms.size(); i != end; ++i) {
     const Elf_Sym &eSym = eSyms[i];
@@ -1171,7 +1162,8 @@ template <class ELFT> void ObjFile<ELFT>::postParse() {
                          sym.getName());
       }
       if (sym.file == this) {
-        std::lock_guard<std::mutex> lock(mu);
+        std::lock_guard<std::mutex> lock(
+            elfState().inputFilePostParseMutex);
         elfState().nonPrevailingSyms.emplace_back(&sym, secIdx);
       }
       continue;
@@ -1184,7 +1176,7 @@ template <class ELFT> void ObjFile<ELFT>::postParse() {
 
     if (sym.binding == STB_WEAK || binding == STB_WEAK)
       continue;
-    std::lock_guard<std::mutex> lock(mu);
+    std::lock_guard<std::mutex> lock(elfState().inputFilePostParseMutex);
     elfState().duplicates.push_back({&sym, this, sec, eSym.st_value});
   }
 }

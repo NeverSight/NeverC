@@ -437,21 +437,7 @@ template <class ELFT> static std::string maybeReportDiscarded(Undefined &sym) {
 }
 
 namespace {
-// Undefined diagnostics are collected in a vector and emitted once all of
-// them are known, so that some postprocessing on the list of undefined symbols
-// can happen before the linker emits diagnostics.
-struct UndefinedDiag {
-  Undefined *sym;
-  struct Loc {
-    InputSectionBase *sec;
-    uint64_t offset;
-  };
-  std::vector<Loc> locs;
-  bool isWarning;
-};
-
-std::vector<UndefinedDiag> undefs;
-std::mutex relocMutex;
+using UndefinedDiag = linker::elf::detail::UndefinedDiag;
 } // namespace
 
 // Suggest an alternative spelling of an "undefined symbol" diagnostic. Returns
@@ -627,6 +613,8 @@ void reportUndefinedSymbol(const UndefinedDiag &undef, bool correctSpelling) {
 // ===----------------------------------------------------------------------===
 
 void elf::reportUndefinedSymbols() {
+  std::vector<UndefinedDiag> &undefs =
+      linker::elf::detail::elfRelocationState().undefs;
   // Find the first "undefined symbol" diagnostic for each diagnostic, and
   // collect all "referenced from" lines at the first diagnostic.
   DenseMap<Symbol *, UndefinedDiag *> firstRef;
@@ -651,11 +639,13 @@ void elf::reportUndefinedSymbols() {
 namespace {
 bool maybeReportUndefined(Undefined &sym, InputSectionBase &sec,
                           uint64_t offset) {
-  std::lock_guard<std::mutex> lock(relocMutex);
+  linker::elf::detail::ELFRelocationState &state =
+      linker::elf::detail::elfRelocationState();
+  std::lock_guard<std::mutex> lock(state.mutex);
   // If versioned, issue an error (even if the symbol is weak) because we don't
   // know the defining filename which is required to construct a Verneed entry.
   if (sym.hasVersionSuffix) {
-    undefs.push_back({&sym, {{&sec, offset}}, false});
+    state.undefs.push_back({&sym, {{&sec, offset}}, false});
     return true;
   }
   if (sym.isWeak())
@@ -668,7 +658,7 @@ bool maybeReportUndefined(Undefined &sym, InputSectionBase &sec,
   bool isWarning =
       (config->unresolvedSymbols == UnresolvedPolicy::Warn && canBeExternal) ||
       config->noinhibitExec;
-  undefs.push_back({&sym, {{&sec, offset}}, isWarning});
+  state.undefs.push_back({&sym, {{&sec, offset}}, isWarning});
   return !isWarning;
 }
 
@@ -678,7 +668,8 @@ void addRelativeReloc(InputSectionBase &isec, uint64_t offsetInSec, Symbol &sym,
   Partition &part = isec.getPartition();
 
   if (sym.isTagged()) {
-    std::lock_guard<std::mutex> lock(relocMutex);
+    std::lock_guard<std::mutex> lock(
+        linker::elf::detail::elfRelocationState().mutex);
     part.relaDyn->addRelativeReloc(target->relativeRel, isec, offsetInSec, sym,
                                    addend, type, expr);
     // With MTE globals, we always want to derive the address tag by `ldg`-ing
@@ -876,7 +867,8 @@ void RelocationScanner::processAux(RelExpr expr, RelType type, uint64_t offset,
   // We were asked not to generate PLT entries for ifuncs. Instead, pass the
   // direct relocation on through.
   if (LLVM_UNLIKELY(isIfunc) && config->zIfuncNoplt) {
-    std::lock_guard<std::mutex> lock(relocMutex);
+    std::lock_guard<std::mutex> lock(
+        linker::elf::detail::elfRelocationState().mutex);
     sym.exportDynamic = true;
     mainPart->relaDyn->addSymbolReloc(type, *sec, offset, sym, addend, type);
     return;
@@ -923,7 +915,8 @@ void RelocationScanner::processAux(RelExpr expr, RelType type, uint64_t offset,
       addRelativeReloc<true>(*sec, offset, sym, addend, expr, type);
       return;
     } else if (rel != 0) {
-      std::lock_guard<std::mutex> lock(relocMutex);
+      std::lock_guard<std::mutex> lock(
+          linker::elf::detail::elfRelocationState().mutex);
       sec->getPartition().relaDyn->addSymbolReloc(rel, *sec, offset, sym,
                                                   addend, type);
       return;
@@ -1378,13 +1371,13 @@ void elf::postScanRelocations() {
   GotSection *got = in.got.get();
   if (elfState().needsTlsLd.load(std::memory_order_relaxed) &&
       got->addTlsIndex()) {
-    static Undefined dummy(nullptr, "", STB_LOCAL, 0, 0);
+    Undefined *dummy = make<Undefined>(nullptr, "", STB_LOCAL, 0, 0);
     if (config->shared)
       mainPart->relaDyn->addReloc(
           {target->tlsModuleIndexRel, got, got->getTlsIndexOff()});
     else
       got->addConstant(
-          {R_ADDEND, target->symbolicRel, got->getTlsIndexOff(), 1, &dummy});
+          {R_ADDEND, target->symbolicRel, got->getTlsIndexOff(), 1, dummy});
   }
 
   assert(symAux.size() == 1);

@@ -1835,8 +1835,9 @@ add_executable(neverc-plugin-frontend-tests
   PluginASTReadTests.cpp
   PluginASTSchemaTests.cpp
   PluginCompilerInstanceOutputTests.cpp
-  PluginLLVMOptionOrdinaryErrorTests.cpp
+  PluginFrontendTimeTraceInteropTests.cpp
   PluginFrontendABICompileTests.cpp
+  PluginLLVMOptionOrdinaryErrorTests.cpp
   PluginFrontendTestSupport.cpp
   PluginMacroTests.cpp
   PluginPrepObserverTests.cpp
@@ -1851,6 +1852,7 @@ target_link_libraries(neverc-plugin-frontend-tests PRIVATE
   GTest::gtest_main
   nevercCompiler
   nevercEmit
+  linkerCore
   nevercPluginCore
   nevercPluginFrontend
   # nevercInvoke's Compilation constructs LinkExecutionHooksBridge, defined in
@@ -1865,6 +1867,14 @@ if("AArch64" IN_LIST LLVM_TARGETS_TO_BUILD)
     LLVMAArch64Desc
     LLVMAArch64Info
     LLVMAArch64Utils
+  )
+endif()
+if("X86" IN_LIST LLVM_TARGETS_TO_BUILD)
+  target_link_libraries(neverc-plugin-frontend-tests PRIVATE
+    LLVMX86AsmParser
+    LLVMX86CodeGen
+    LLVMX86Desc
+    LLVMX86Info
   )
 endif()
 target_include_directories(neverc-plugin-frontend-tests PRIVATE
@@ -2097,6 +2107,7 @@ add_executable(neverc-plugin-link-tests
   PluginLinkInputTests.cpp
   PluginLinkLayoutTests.cpp
   PluginLinkMutationTests.cpp
+  PluginLinkTimeTraceConcurrencyTests.cpp
   PluginMachOContextIsolationTests.cpp
   PluginParallelLinkTests.cpp
   PluginLinkPhaseTests.cpp

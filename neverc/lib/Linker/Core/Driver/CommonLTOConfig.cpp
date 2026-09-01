@@ -97,7 +97,8 @@ private:
 };
 
 struct LTOHostContext {
-  explicit LTOHostContext(const linker::LinkerDriverConfig &Cfg)
+  LTOHostContext(const linker::LinkerDriverConfig &Cfg,
+                 neverc::ResourceSessionView ResourceSession)
       : OptionProfile(Cfg),
         PCGTuning(neverc::overlayOccurredParallelCodeGenTuning(
             Cfg.parallelCodeGenTuning)),
@@ -105,7 +106,8 @@ struct LTOHostContext {
             Cfg.ltoPipelineTuning)),
         ResolvedSCEVHugeExprThreshold(PCGTuning.SCEVHugeExprThreshold != 0
                                           ? PCGTuning.SCEVHugeExprThreshold
-                                          : llvm::getScevHugeExprThreshold()) {}
+                                          : llvm::getScevHugeExprThreshold()),
+        ResourceSession(std::move(ResourceSession)) {}
 
   ~LTOHostContext() {
     // BackendDoneHook covers normal codegen, but cache hits and pre-backend
@@ -126,6 +128,7 @@ struct LTOHostContext {
   // process-global option lease. Every later serial, partition, cache-hit, and
   // nested-codegen context receives this exact value.
   const unsigned ResolvedSCEVHugeExprThreshold;
+  const neverc::ResourceSessionView ResourceSession;
   std::shared_ptr<LTOPluginContext> Plugin;
 };
 
@@ -151,7 +154,14 @@ bool linker::ltoBasicBlockSectionsIsListFile(StringRef BBS) {
 lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
                                     DiagnosticHandlerFunction DiagHandler,
                                     bool EmitAddrsig) {
-  auto HostContext = std::make_shared<LTOHostContext>(Cfg);
+  return createLTOConfig(Cfg, std::move(DiagHandler), EmitAddrsig, {});
+}
+
+lto::Config linker::createLTOConfig(
+    const LinkerDriverConfig &Cfg, DiagnosticHandlerFunction DiagHandler,
+    bool EmitAddrsig, neverc::ResourceSessionView ParentSession) {
+  auto HostContext = std::make_shared<LTOHostContext>(
+      Cfg, std::move(ParentSession));
   lto::Config c;
   c.HostContext = HostContext;
 
@@ -517,7 +527,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     return neverc::runParallelCodeGenWithTunings(
         M, TM, neverc::ParallelCodeGenOutputs{OS}, HostContext->PCGTuning,
         HostContext->PipelineTuning, pcgCache.get(),
-        HostContext->ResolvedSCEVHugeExprThreshold);
+        HostContext->ResolvedSCEVHugeExprThreshold,
+        /*Observers=*/nullptr, HostContext->ResourceSession);
   };
   c.ParallelOptCodeGenHook = [HostContext, pcgCache, PluginContext,
                               ParallelHooks](Module &M, TargetMachine &TM,
@@ -533,7 +544,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     return neverc::runParallelOptAndCodeGenWithTunings(
         M, TM, neverc::ParallelCodeGenOutputs{OS}, OL, HostContext->PCGTuning,
         HostContext->PipelineTuning, pcgCache.get(), Hooks,
-        /*Observers=*/nullptr, HostContext->ResolvedSCEVHugeExprThreshold);
+        /*Observers=*/nullptr, HostContext->ResolvedSCEVHugeExprThreshold,
+        HostContext->ResourceSession);
   };
   c.LTOParallelOpt = true;
 

@@ -1,79 +1,60 @@
 #ifndef LINKER_CORE_RUNTIME_CRASHRECOVERY_H
 #define LINKER_CORE_RUNTIME_CRASHRECOVERY_H
 
-#include "llvm/ADT/StringRef.h"
+#include "neverc/Foundation/Core/LLVMTimeTraceRootLease.h"
 #include "llvm/Support/CrashRecoveryContext.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/TimeProfiler.h"
 
 #include <memory>
 #include <optional>
-#include <string>
 
 namespace linker::crash_recovery_detail {
 
-class TimeTraceProfilerCrashCleanup final
-    : public llvm::CrashRecoveryContextCleanupBase<
-          TimeTraceProfilerCrashCleanup, llvm::TimeTraceProfiler> {
+/// Owns one process-exclusive root time-trace profiler or borrows a
+/// same-thread root already managed by an outer owner. Concurrent roots and
+/// unmanaged ambient profilers are rejected because LLVM stores finished
+/// worker profilers in one process-global registry. Construct this before
+/// backend ownership so crash-recovery cleanup tears down backend workers
+/// before the profiler. The protected work and recovery context must run on
+/// the same thread because LLVM profiler TLS is thread-affine, so
+/// RunSafelyOnThread is intentionally unsupported.
+class CrashRecoveryTimeTraceOwner
+    : public neverc::LLVMTimeTraceProfilerOwner {
 public:
-  TimeTraceProfilerCrashCleanup(llvm::CrashRecoveryContext *Context,
-                                llvm::TimeTraceProfiler *Profiler)
-      : llvm::CrashRecoveryContextCleanupBase<TimeTraceProfilerCrashCleanup,
-                                              llvm::TimeTraceProfiler>(
-            Context, Profiler) {}
+  CrashRecoveryTimeTraceOwner(unsigned Granularity,
+                              llvm::StringRef ProcessName)
+      : neverc::LLVMTimeTraceProfilerOwner(Granularity, ProcessName) {}
 
-  void recoverResources() override {
-    if (llvm::getTimeTraceProfilerInstance() == this->resource)
-      llvm::timeTraceProfilerCleanup();
+  /// Returns a stable user-facing diagnostic when the requested root trace
+  /// could not be acquired. Linker diagnostics remain stable even though the
+  /// underlying lease is shared with the frontend.
+  llvm::StringRef acquisitionError() const {
+    switch (state()) {
+    case neverc::LLVMTimeTraceRootLeaseState::Busy:
+      return "neverc: error: cannot start linker time trace: another traced "
+             "in-process link is already active";
+    case neverc::LLVMTimeTraceRootLeaseState::UnmanagedAmbient:
+      return "neverc: error: cannot start linker time trace: the current "
+             "thread has an unmanaged LLVM time-trace profiler";
+    case neverc::LLVMTimeTraceRootLeaseState::Inconsistent:
+      return "neverc: error: cannot start linker time trace: managed profiler "
+             "state is inconsistent";
+    case neverc::LLVMTimeTraceRootLeaseState::Owned:
+      if (!neverc::LLVMTimeTraceProfilerOwner::acquisitionError().empty())
+        return "neverc: error: cannot start linker time trace: profiler "
+               "initialization failed";
+      return {};
+    case neverc::LLVMTimeTraceRootLeaseState::Borrowed:
+    case neverc::LLVMTimeTraceRootLeaseState::Released:
+      return {};
+    }
+    return "neverc: error: cannot start linker time trace: managed profiler "
+           "state is inconsistent";
   }
-};
-
-/// Owns a newly initialized time-trace profiler while preserving any profiler
-/// supplied by an outer caller. Construct this before backend ownership so
-/// crash-recovery cleanup tears down backend workers before the profiler. An
-/// outer profiler that permits nested fatal recovery must itself be owned by a
-/// cleanup registered with the same crash-recovery context.
-class CrashRecoveryTimeTraceOwner {
-public:
-  CrashRecoveryTimeTraceOwner(bool Enable, unsigned Granularity,
-                              llvm::StringRef ProcessName) {
-    if (!Enable || llvm::timeTraceProfilerEnabled())
-      return;
-    llvm::timeTraceProfilerInitialize(Granularity, ProcessName);
-    Profiler = llvm::getTimeTraceProfilerInstance();
-    CrashCleanup.emplace(Profiler);
-  }
-
-  ~CrashRecoveryTimeTraceOwner() {
-    CrashCleanup.reset();
-    if (Profiler && llvm::getTimeTraceProfilerInstance() == Profiler)
-      llvm::timeTraceProfilerCleanup();
-  }
-
-  CrashRecoveryTimeTraceOwner(const CrashRecoveryTimeTraceOwner &) = delete;
-  CrashRecoveryTimeTraceOwner &
-  operator=(const CrashRecoveryTimeTraceOwner &) = delete;
-  CrashRecoveryTimeTraceOwner(CrashRecoveryTimeTraceOwner &&) = delete;
-  CrashRecoveryTimeTraceOwner &
-  operator=(CrashRecoveryTimeTraceOwner &&) = delete;
-
-  bool ownsProfiler() const { return Profiler != nullptr; }
 
   llvm::Error write(llvm::StringRef OutputFile) const {
-    if (!ownsProfiler())
-      return llvm::Error::success();
-    if (llvm::getTimeTraceProfilerInstance() != Profiler)
-      return llvm::createStringError(
-          llvm::inconvertibleErrorCode(),
-          "linker time-trace profiler ownership changed before write");
-    return llvm::timeTraceProfilerWrite(std::string(), OutputFile);
+    return neverc::LLVMTimeTraceProfilerOwner::write(/*PreferredFile=*/{},
+                                                      OutputFile);
   }
-
-private:
-  llvm::TimeTraceProfiler *Profiler = nullptr;
-  std::optional<llvm::CrashRecoveryContextCleanupRegistrar<
-      llvm::TimeTraceProfiler, TimeTraceProfilerCrashCleanup>>
-      CrashCleanup;
 };
 
 /// Borrows an external resource when supplied. Otherwise, owns a local

@@ -50,7 +50,7 @@ void linker::prefaultBuffer(uint8_t *buf, size_t size, bool fileBacked) {
 #else
   (void)fileBacked;
 #endif
-  static const size_t pageSize = [] {
+  const size_t pageSize = [] {
     long p = ::sysconf(_SC_PAGESIZE);
     return p > 0 ? static_cast<size_t>(p) : size_t(4096);
   }();

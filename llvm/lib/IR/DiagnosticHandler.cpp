@@ -11,6 +11,7 @@
 #include "llvm/IR/DiagnosticHandler.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Regex.h"
+#include <utility>
 
 using namespace llvm;
 
@@ -27,13 +28,32 @@ struct PassRemarksOpt {
   void operator=(const std::string &Val) {
     // Create a regexp object to match pass names for emitOptimizationRemark.
     if (!Val.empty()) {
-      Pattern = std::make_shared<Regex>(Val);
+      auto Candidate = std::make_shared<Regex>(Val);
       SmallString<256> RegexError;
-      if (!Pattern->isValid(RegexError))
-        report_fatal_error(Twine("Invalid regular expression '") + Val +
-                               "' in -pass-remarks: " + RegexError,
-                           false);
+      if (!Candidate->isValid(RegexError))
+        return;
+      Pattern = std::move(Candidate);
     }
+  }
+};
+
+struct PassRemarksParser final : cl::parser<std::string> {
+  explicit PassRemarksParser(cl::Option &O) : cl::parser<std::string>(O) {}
+
+  bool parse(cl::Option &O, StringRef ArgName, StringRef Arg,
+             std::string &Value) {
+    if (cl::parser<std::string>::parse(O, ArgName, Arg, Value))
+      return true;
+    if (Value.empty())
+      return false;
+    Regex Candidate(Value);
+    SmallString<256> RegexError;
+    if (Candidate.isValid(RegexError))
+      return false;
+    return O.error((Twine("invalid regular expression '") + Arg + "': " +
+                    RegexError)
+                       .str(),
+                   ArgName);
   }
 };
 
@@ -43,7 +63,7 @@ static PassRemarksOpt PassRemarksAnalysisOptLoc;
 
 // -pass-remarks
 //    Command line flag to enable emitOptimizationRemark()
-static cl::opt<PassRemarksOpt, true, cl::parser<std::string>> PassRemarks(
+static cl::opt<PassRemarksOpt, true, PassRemarksParser> PassRemarks(
     "pass-remarks", cl::value_desc("pattern"),
     cl::desc("Enable optimization remarks from passes whose name match "
              "the given regular expression"),
@@ -51,7 +71,7 @@ static cl::opt<PassRemarksOpt, true, cl::parser<std::string>> PassRemarks(
 
 // -pass-remarks-missed
 //    Command line flag to enable emitOptimizationRemarkMissed()
-static cl::opt<PassRemarksOpt, true, cl::parser<std::string>> PassRemarksMissed(
+static cl::opt<PassRemarksOpt, true, PassRemarksParser> PassRemarksMissed(
     "pass-remarks-missed", cl::value_desc("pattern"),
     cl::desc("Enable missed optimization remarks from passes whose name match "
              "the given regular expression"),
@@ -59,7 +79,7 @@ static cl::opt<PassRemarksOpt, true, cl::parser<std::string>> PassRemarksMissed(
 
 // -pass-remarks-analysis
 //    Command line flag to enable emitOptimizationRemarkAnalysis()
-static cl::opt<PassRemarksOpt, true, cl::parser<std::string>>
+static cl::opt<PassRemarksOpt, true, PassRemarksParser>
     PassRemarksAnalysis(
         "pass-remarks-analysis", cl::value_desc("pattern"),
         cl::desc(

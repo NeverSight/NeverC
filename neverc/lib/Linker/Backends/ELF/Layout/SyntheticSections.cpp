@@ -38,8 +38,6 @@ using llvm::support::endian::read32le;
 using llvm::support::endian::write32le;
 using llvm::support::endian::write64le;
 
-constexpr size_t MergeNoTailSection::numShards;
-
 namespace {
 uint64_t readUint(uint8_t *buf) { return read64(buf); }
 void writeUint(uint8_t *buf, uint64_t val) { write64(buf, val); }

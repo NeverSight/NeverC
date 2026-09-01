@@ -1,3 +1,4 @@
+#include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/ELF/OutputSections.h"
 #include "Linker/ELF/Relocations.h"
@@ -50,22 +51,6 @@ public:
 };
 } // namespace
 
-// This is vector of NOP instructions of sizes from 1 to 8 bytes.  The
-// appropriately sized instructions are used to fill the gaps between sections
-// which are executed during fall through.
-namespace {
-const std::vector<std::vector<uint8_t>> nopInstructions = {
-    {0x90},
-    {0x66, 0x90},
-    {0x0f, 0x1f, 0x00},
-    {0x0f, 0x1f, 0x40, 0x00},
-    {0x0f, 0x1f, 0x44, 0x00, 0x00},
-    {0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00},
-    {0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00},
-    {0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00},
-    {0x66, 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00}};
-} // namespace
-
 X86_64::X86_64() {
   copyRel = R_X86_64_COPY;
   gotRel = R_X86_64_GLOB_DAT;
@@ -83,7 +68,17 @@ X86_64::X86_64() {
   pltEntrySize = 16;
   ipltEntrySize = 16;
   trapInstr = {0xcc, 0xcc, 0xcc, 0xcc}; // 0xcc = INT3
-  nopInstrs = nopInstructions;
+  // NOP instructions of sizes 1 through 8, owned by this link's target.
+  nopInstrs = std::vector<std::vector<uint8_t>>{
+      {0x90},
+      {0x66, 0x90},
+      {0x0f, 0x1f, 0x00},
+      {0x0f, 0x1f, 0x40, 0x00},
+      {0x0f, 0x1f, 0x44, 0x00, 0x00},
+      {0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00},
+      {0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00},
+      {0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00},
+      {0x66, 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00}};
 
   // Align to the large page size (known as a superpage or huge page).
   defaultImageBase = 0x200000;
@@ -1216,20 +1211,16 @@ namespace {
 TargetInfo *getTargetInfo() {
   if (config->zRetpolineplt) {
     if (config->zNow) {
-      static RetpolineZNow t;
-      return &t;
+      return linker::make<RetpolineZNow>();
     }
-    static Retpoline t;
-    return &t;
+    return linker::make<Retpoline>();
   }
 
   if (config->andFeatures & GNU_PROPERTY_X86_FEATURE_1_IBT) {
-    static IntelIBT t;
-    return &t;
+    return linker::make<IntelIBT>();
   }
 
-  static X86_64 t;
-  return &t;
+  return linker::make<X86_64>();
 }
 } // namespace
 

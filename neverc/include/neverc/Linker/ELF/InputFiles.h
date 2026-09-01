@@ -122,8 +122,6 @@ public:
   // If not empty, this stores the name of the archive containing this file.
   // We use this string for creating error messages.
   SmallString<0> archiveName;
-  // Cache for toString(). Only toString() should use this member.
-  mutable SmallString<0> toStringCache;
 
 private:
   // Cache for getNameForScript().

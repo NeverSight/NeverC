@@ -66,7 +66,7 @@ $ nasm -fbin /tmp/DOSProgram.asm -o /tmp/DOSProgram.bin
 $ xxd -i /tmp/DOSProgram.bin
 */
 namespace {
-unsigned char dosProgram[] = {
+const unsigned char dosProgram[] = {
     0x0e, 0x1f, 0xba, 0x0e, 0x00, 0xb4, 0x09, 0xcd, 0x21, 0xb8, 0x01, 0x4c,
     0xcd, 0x21, 0x54, 0x68, 0x69, 0x73, 0x20, 0x70, 0x72, 0x6f, 0x67, 0x72,
     0x61, 0x6d, 0x20, 0x63, 0x61, 0x6e, 0x6e, 0x6f, 0x74, 0x20, 0x62, 0x65,
@@ -2207,7 +2207,7 @@ void markChunkAsDontNeed(ArrayRef<uint8_t> arr) {
 #if defined(MADV_DONTNEED) && (defined(__unix__) || defined(__APPLE__))
   if (arr.empty())
     return;
-  static size_t pageSize = [] {
+  const size_t pageSize = [] {
     long p = ::sysconf(_SC_PAGESIZE);
     return p > 0 ? static_cast<size_t>(p) : size_t(0);
   }();

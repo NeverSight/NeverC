@@ -24,6 +24,7 @@
 #include "llvm/Transforms/InstCombine/InstCombiner.h"
 #include "llvm/Transforms/Vectorize/LoopVectorizationLegality.h"
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 using namespace llvm;
 using namespace llvm::PatternMatch;
@@ -101,21 +102,44 @@ class TailFoldingOption {
     return Bits;
   }
 
-  void reportError(std::string Opt) {
-    errs() << "invalid argument '" << Opt
-           << "' to -sve-tail-folding=; the option should be of the form\n"
-              "  (disabled|all|default|simple)[+(reductions|recurrences"
-              "|reverse|noreductions|norecurrences|noreverse)]\n";
-    report_fatal_error("Unrecognised tail-folding option");
+public:
+  std::uint32_t stateForTesting() const {
+    return static_cast<std::uint32_t>(InitialBits) |
+           (static_cast<std::uint32_t>(EnableBits) << 8) |
+           (static_cast<std::uint32_t>(DisableBits) << 16) |
+           (static_cast<std::uint32_t>(NeedsDefault) << 24);
   }
 
-public:
-  void operator=(const std::string &Val) {
-    // If the user explicitly sets -sve-tail-folding= then treat as an error.
-    if (Val.empty()) {
-      reportError("");
-      return;
+  static bool isValid(StringRef Val) {
+    if (Val.empty())
+      return false;
+
+    SmallVector<StringRef, 4> TailFoldTypes;
+    Val.split(TailFoldTypes, '+', -1, true);
+    if (TailFoldTypes.empty())
+      return false;
+
+    unsigned StartIdx = 0;
+    if (TailFoldTypes[0] == "disabled" || TailFoldTypes[0] == "all" ||
+        TailFoldTypes[0] == "default" || TailFoldTypes[0] == "simple")
+      StartIdx = 1;
+    for (unsigned I = StartIdx; I < TailFoldTypes.size(); ++I) {
+      StringRef Flag = TailFoldTypes[I];
+      if (Flag.empty() ||
+          (Flag != "reductions" && Flag != "recurrences" &&
+           Flag != "reverse" && Flag != "noreductions" &&
+           Flag != "norecurrences" && Flag != "noreverse"))
+        return false;
     }
+    return true;
+  }
+
+  void operator=(const std::string &Val) {
+    // Command-line assignment is preceded by TailFoldingOptionParser. Keep a
+    // defensive no-op for direct programmatic assignment so malformed input
+    // can never partially mutate this process-global option.
+    if (!isValid(Val))
+      return;
 
     // Since the user is explicitly setting the option we don't automatically
     // need the default unless they require it.
@@ -151,8 +175,6 @@ public:
         setDisableBit(TailFoldingOpts::Recurrences);
       else if (TailFoldTypes[I] == "noreverse")
         setDisableBit(TailFoldingOpts::Reverse);
-      else
-        reportError(Val);
     }
   }
 
@@ -160,11 +182,38 @@ public:
     return (getBits(DefaultBits) & Required) == Required;
   }
 };
+
+struct TailFoldingOptionParser final : cl::parser<std::string> {
+  explicit TailFoldingOptionParser(cl::Option &O)
+      : cl::parser<std::string>(O) {}
+
+  bool parse(cl::Option &O, StringRef ArgName, StringRef Arg,
+             std::string &Value) {
+    if (cl::parser<std::string>::parse(O, ArgName, Arg, Value))
+      return true;
+    if (TailFoldingOption::isValid(Value))
+      return false;
+    return O.error(
+        (Twine("invalid argument '") + Arg +
+         "' to -sve-tail-folding=; expected an optional initial mode "
+         "(disabled, all, default, or simple) and/or a plus-separated list "
+         "of reductions, recurrences, reverse, noreductions, "
+         "norecurrences, or noreverse")
+            .str(),
+        ArgName);
+  }
+};
 } // namespace
 
 TailFoldingOption TailFoldingOptionLoc;
 
-cl::opt<TailFoldingOption, true, cl::parser<std::string>> SVETailFolding(
+namespace llvm {
+std::uint32_t getAArch64TailFoldingOptionStateForTesting() {
+  return ::TailFoldingOptionLoc.stateForTesting();
+}
+} // namespace llvm
+
+cl::opt<TailFoldingOption, true, TailFoldingOptionParser> SVETailFolding(
     "sve-tail-folding",
     cl::desc(
         "Control the use of vectorisation using tail-folding for SVE where the"

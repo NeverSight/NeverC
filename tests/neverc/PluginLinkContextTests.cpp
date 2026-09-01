@@ -49,10 +49,12 @@ TEST(PluginLinkContextTest, NestedExecutionRestoresOuterContext) {
   ASSERT_EQ(currentLinkerContext(), &Outer);
 
   {
-    LinkerExecutionContext InnerExecution;
+    LinkerExecutionContext InnerExecution(OuterExecution.resourceSession());
     CommonLinkerContext &Inner =
         InnerExecution.createBackend<CommonLinkerContext>();
     ASSERT_EQ(currentLinkerContext(), &Inner);
+    EXPECT_TRUE(Inner.resourceSession().refersToSameSession(
+        Outer.resourceSession()));
   }
 
   EXPECT_EQ(currentLinkerContext(), &Outer);
@@ -71,19 +73,31 @@ TEST(PluginLinkContextTest, NestedExecutionRestoresOuterWorkerSlot) {
   Outer.configureParallel(/*RequestedThreads=*/2);
 
   unsigned BeforeNested = 0;
+  unsigned BeforeNestedActiveTokens = 0;
   unsigned InsideNested = 1;
   unsigned AfterNested = 0;
   std::thread::id OuterWorker;
   std::thread::id NestedTaskWorker;
   unsigned NestedTaskSlot = 0;
+  unsigned NestedActiveTokens = 0;
+  bool NestedSharesResourceSession = false;
   LinkerTaskGroup Group;
   Group.spawn([&] {
     OuterWorker = std::this_thread::get_id();
     BeforeNested = currentLinkerWorkerSlot();
+    BeforeNestedActiveTokens =
+        neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker)
+            .ActiveTokens;
     {
-      LinkerExecutionContext InnerExecution;
-      InnerExecution.createBackend<CommonLinkerContext>();
+      LinkerExecutionContext InnerExecution(OuterExecution.resourceSession());
+      CommonLinkerContext &Inner =
+          InnerExecution.createBackend<CommonLinkerContext>();
       InsideNested = currentLinkerWorkerSlot();
+      NestedActiveTokens =
+          neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker)
+              .ActiveTokens;
+      NestedSharesResourceSession = Inner.resourceSession().refersToSameSession(
+          Outer.resourceSession());
     }
     AfterNested = currentLinkerWorkerSlot();
     LinkerTaskGroup NestedGroup;
@@ -97,6 +111,11 @@ TEST(PluginLinkContextTest, NestedExecutionRestoresOuterWorkerSlot) {
 
   EXPECT_GT(BeforeNested, 0U);
   EXPECT_EQ(InsideNested, 0U);
+  // The outer session's baseline token and this running worker's grant remain
+  // active. Entering the nested execution must not acquire a third token.
+  EXPECT_EQ(BeforeNestedActiveTokens, 2U);
+  EXPECT_EQ(NestedActiveTokens, BeforeNestedActiveTokens);
+  EXPECT_TRUE(NestedSharesResourceSession);
   EXPECT_EQ(AfterNested, BeforeNested);
   EXPECT_EQ(NestedTaskWorker, OuterWorker);
   EXPECT_EQ(NestedTaskSlot, BeforeNested);

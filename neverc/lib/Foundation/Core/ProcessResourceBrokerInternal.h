@@ -53,6 +53,12 @@ public:
   /// prove that worker grants take the try-lock path and return immediately.
   static void withMutexHeld(ProcessResourceBroker &Broker,
                             const std::function<void()> &Callback);
+
+  /// Invokes the broker observer without mutating admission state. Tests use
+  /// this to exercise observer unwinding and crash-recovery cleanup without
+  /// leaking a partially completed session or worker-token transition.
+  static void emitSyntheticEvent(ProcessResourceBroker &Broker,
+                                 const ProcessResourceBrokerEvent &Event);
 };
 
 class ScopedProcessResourceBrokerOverride {

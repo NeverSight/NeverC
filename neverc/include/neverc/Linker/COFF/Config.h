@@ -28,8 +28,8 @@ class Symbol;
 class InputFile;
 class SectionChunk;
 
-static const auto AMD64 = llvm::COFF::IMAGE_FILE_MACHINE_AMD64;
-static const auto ARM64 = llvm::COFF::IMAGE_FILE_MACHINE_ARM64;
+static constexpr auto AMD64 = llvm::COFF::IMAGE_FILE_MACHINE_AMD64;
+static constexpr auto ARM64 = llvm::COFF::IMAGE_FILE_MACHINE_ARM64;
 
 enum class ExportSource {
   Unset,

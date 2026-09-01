@@ -1,12 +1,18 @@
 #include "ProcessResourceBrokerInternal.h"
 #include "neverc/Foundation/Core/ProcessResourceBroker.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include "gtest/gtest.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <future>
 #include <mutex>
 #include <optional>
+#if defined(__cpp_exceptions)
+#include <stdexcept>
+#endif
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -34,6 +40,17 @@ ProcessResourceBrokerSnapshot snapshot(const ProcessResourceBroker &Broker) {
   return ProcessResourceBrokerTestAccess::snapshot(Broker);
 }
 
+void expectSnapshotEq(const ProcessResourceBrokerSnapshot &Left,
+                      const ProcessResourceBrokerSnapshot &Right) {
+  EXPECT_EQ(Left.Capacity, Right.Capacity);
+  EXPECT_EQ(Left.AvailableTokens, Right.AvailableTokens);
+  EXPECT_EQ(Left.ActiveTokens, Right.ActiveTokens);
+  EXPECT_EQ(Left.ActiveSessions, Right.ActiveSessions);
+  EXPECT_EQ(Left.WaitingSessions, Right.WaitingSessions);
+  EXPECT_EQ(Left.HighWaterTokens, Right.HighWaterTokens);
+  EXPECT_EQ(Left.WaitEpoch, Right.WaitEpoch);
+}
+
 static_assert(!std::is_copy_constructible_v<ResourceSessionPermit>);
 static_assert(!std::is_copy_constructible_v<ResourceWorkerGrant>);
 static_assert(std::is_nothrow_move_constructible_v<ResourceSessionPermit>);
@@ -44,7 +61,8 @@ static_assert(std::is_nothrow_move_constructible_v<ResourceWorkerGrant>);
 TEST(ProcessResourceBrokerTest, DisabledBrokerPreservesDesiredWorkers) {
   auto Broker = ProcessResourceBrokerTestAccess::create({});
   auto Session = Broker->acquireSession(ResourcePhase::LinkParseResolve);
-  auto Grant = Broker->grantWorkers(ResourcePhase::LinkParseResolve, 7);
+  auto Grant = Broker->grantWorkers(Session.session(),
+                                    ResourcePhase::LinkParseResolve, 7);
 
   EXPECT_FALSE(Session.ownsAdmission());
   EXPECT_FALSE(Session.constrained());
@@ -63,13 +81,14 @@ TEST(ProcessResourceBrokerTest, NestedSessionInheritsOneProgressToken) {
   EXPECT_TRUE(Outer.ownsAdmission());
 
   {
-    auto Inner = Broker->acquireSession(ResourcePhase::PCGOptCodeGen);
+    auto Inner = Broker->acquireSession(
+        Outer.session(), ResourcePhase::PCGOptCodeGen);
     EXPECT_FALSE(Inner.ownsAdmission());
     EXPECT_EQ(Inner.session().id(), SessionID);
     EXPECT_EQ(snapshot(*Broker).ActiveTokens, 1U);
   }
 
-  EXPECT_EQ(currentResourceSession().id(), SessionID);
+  EXPECT_EQ(Outer.session().id(), SessionID);
 }
 
 TEST(ProcessResourceBrokerTest, ExpiredSessionViewCannotBypassAdmission) {
@@ -84,9 +103,9 @@ TEST(ProcessResourceBrokerTest, ExpiredSessionViewCannotBypassAdmission) {
   auto Occupied = Broker->acquireSession(ResourcePhase::LinkParseResolve);
   ASSERT_TRUE(Occupied.ownsAdmission());
   {
-    ResourceSessionScope InstallExpired(Expired);
-    auto Reacquired = Broker->acquireSession(ResourcePhase::PCGOptCodeGen,
-                                             ResourceAdmissionMode::DoNotWait);
+    auto Reacquired = Broker->acquireSession(
+        Expired, ResourcePhase::PCGOptCodeGen,
+        ResourceAdmissionMode::DoNotWait);
     EXPECT_FALSE(Reacquired.ownsAdmission());
     EXPECT_TRUE(Reacquired.constrained());
     EXPECT_NE(Reacquired.session().id(), Expired.id());
@@ -98,7 +117,8 @@ TEST(ProcessResourceBrokerTest, WorkerGrantMoveReleasesEveryTokenExactlyOnce) {
   auto Broker = makeBroker(4);
   auto Session = Broker->acquireSession(ResourcePhase::LinkParseResolve);
   {
-    auto Original = Broker->grantWorkers(ResourcePhase::PCGPrepare, 4);
+    auto Original = Broker->grantWorkers(Session.session(),
+                                         ResourcePhase::PCGPrepare, 4);
     ASSERT_EQ(Original.workerCount(), 4U);
     EXPECT_EQ(snapshot(*Broker).ActiveTokens, 4U);
     auto Moved = std::move(Original);
@@ -176,7 +196,8 @@ TEST(ProcessResourceBrokerTest,
 
   auto First = Broker->acquireSession(ResourcePhase::LinkParseResolve);
   std::optional<ResourceWorkerGrant> Extra;
-  Extra.emplace(Broker->grantWorkers(ResourcePhase::LinkParseResolve, 2));
+  Extra.emplace(Broker->grantWorkers(
+      First.session(), ResourcePhase::LinkParseResolve, 2));
   ASSERT_EQ(Extra->workerCount(), 2U);
 
   std::thread Second([&] {
@@ -192,7 +213,8 @@ TEST(ProcessResourceBrokerTest,
   }
 
   Extra.reset();
-  auto Regrant = Broker->grantWorkers(ResourcePhase::LinkParseResolve, 2);
+  auto Regrant = Broker->grantWorkers(
+      First.session(), ResourcePhase::LinkParseResolve, 2);
   EXPECT_EQ(Regrant.workerCount(), 1U);
   {
     std::unique_lock<std::mutex> Lock(Mutex);
@@ -212,8 +234,10 @@ TEST(ProcessResourceBrokerTest, NonBlockingAdmissionFallsBackToSerialProgress) {
     auto Session = Broker->acquireSession(ResourcePhase::PCGOptCodeGen,
                                           ResourceAdmissionMode::DoNotWait);
     Constrained = Session.constrained();
-    Workers =
-        Broker->grantWorkers(ResourcePhase::PCGOptCodeGen, 8).workerCount();
+    Workers = Broker
+                  ->grantWorkers(Session.session(),
+                                 ResourcePhase::PCGOptCodeGen, 8)
+                  .workerCount();
   });
   Second.join();
 
@@ -257,7 +281,8 @@ TEST(ProcessResourceBrokerTest,
   std::optional<ResourceSessionPermit> Session;
   Session.emplace(Broker->acquireSession(ResourcePhase::LinkParseResolve));
   std::optional<ResourceWorkerGrant> Workers;
-  Workers.emplace(Broker->grantWorkers(ResourcePhase::PCGOptCodeGen, 3));
+  Workers.emplace(Broker->grantWorkers(
+      Session->session(), ResourcePhase::PCGOptCodeGen, 3));
   ASSERT_EQ(snapshot(*Broker).ActiveTokens, 3U);
 
   Session.reset();
@@ -278,7 +303,8 @@ TEST(ProcessResourceBrokerTest,
   std::optional<ResourceSessionPermit> Session;
   Session.emplace(Broker->acquireSession(ResourcePhase::LinkParseResolve));
   std::optional<ResourceWorkerGrant> Worker;
-  Worker.emplace(Broker->grantWorkers(ResourcePhase::PCGOptCodeGen, 1));
+  Worker.emplace(Broker->grantWorkers(
+      Session->session(), ResourcePhase::PCGOptCodeGen, 1));
   ASSERT_EQ(Worker->workerCount(), 1U);
 
   Session.reset();
@@ -305,9 +331,124 @@ TEST(ProcessResourceBrokerTest, ObserverMayReenterSnapshotWithoutDeadlock) {
   ObservedBroker = Broker.get();
 
   auto Session = Broker->acquireSession(ResourcePhase::LinkParseResolve);
-  auto Workers = Broker->grantWorkers(ResourcePhase::PCGPrepare, 2);
+  auto Workers = Broker->grantWorkers(Session.session(),
+                                      ResourcePhase::PCGPrepare, 2);
   EXPECT_EQ(Workers.workerCount(), 2U);
   EXPECT_EQ(WorkerGrantEvents, 1U);
+}
+
+#if defined(__cpp_exceptions)
+TEST(ProcessResourceBrokerTest,
+     ObserverDepthRestoresAfterNestedOrdinaryException) {
+  const ProcessResourceBrokerEvent Event{
+      ProcessResourceBrokerEventKind::WorkersGranted,
+      ResourcePhase::PCGPrepare,
+      /*Sequence=*/1,
+      /*SessionID=*/0,
+      /*RequestedWorkers=*/2,
+      /*GrantedWorkers=*/2};
+  ProcessResourceBroker *ObservedBroker = nullptr;
+  unsigned Calls = 0;
+  auto Broker = makeBroker(2, [&](const ProcessResourceBrokerEvent &) {
+    ++Calls;
+    if (Calls != 1)
+      return;
+    ProcessResourceBrokerTestAccess::emitSyntheticEvent(*ObservedBroker,
+                                                        Event);
+    throw std::runtime_error("synthetic observer failure");
+  });
+  ObservedBroker = Broker.get();
+  const ProcessResourceBrokerSnapshot Before = snapshot(*Broker);
+
+  EXPECT_THROW(ProcessResourceBrokerTestAccess::emitSyntheticEvent(*Broker,
+                                                                   Event),
+               std::runtime_error);
+  EXPECT_NO_THROW(
+      ProcessResourceBrokerTestAccess::emitSyntheticEvent(*Broker, Event));
+
+  EXPECT_EQ(Calls, 2U);
+  expectSnapshotEq(snapshot(*Broker), Before);
+}
+#endif
+
+TEST(ProcessResourceBrokerTest,
+     ObserverDepthRestoresAfterNestedCrashRecoveryExit) {
+  const ProcessResourceBrokerEvent Event{
+      ProcessResourceBrokerEventKind::WorkersGranted,
+      ResourcePhase::PCGPrepare,
+      /*Sequence=*/1,
+      /*SessionID=*/0,
+      /*RequestedWorkers=*/2,
+      /*GrantedWorkers=*/2};
+  ProcessResourceBroker *ObservedBroker = nullptr;
+  unsigned Calls = 0;
+  auto Broker = makeBroker(2, [&](const ProcessResourceBrokerEvent &) {
+    ++Calls;
+    if (Calls != 1)
+      return;
+    ProcessResourceBrokerTestAccess::emitSyntheticEvent(*ObservedBroker,
+                                                        Event);
+    llvm::CrashRecoveryContext::GetCurrent()->HandleExit(37);
+  });
+  ObservedBroker = Broker.get();
+  const ProcessResourceBrokerSnapshot Before = snapshot(*Broker);
+
+  llvm::CrashRecoveryContext::Enable();
+  auto DisableCrashRecovery =
+      llvm::make_scope_exit([] { llvm::CrashRecoveryContext::Disable(); });
+  {
+    llvm::CrashRecoveryContext CRC;
+    EXPECT_FALSE(CRC.RunSafely([&] {
+      ProcessResourceBrokerTestAccess::emitSyntheticEvent(*Broker, Event);
+    }));
+    EXPECT_EQ(CRC.RetCode, 37);
+  }
+  ProcessResourceBrokerTestAccess::emitSyntheticEvent(*Broker, Event);
+
+  EXPECT_EQ(Calls, 2U);
+  expectSnapshotEq(snapshot(*Broker), Before);
+}
+
+TEST(ProcessResourceBrokerTest,
+     ObserverDepthCleanupIgnoresExitedRunSafelyWorkerTLS) {
+  const ProcessResourceBrokerEvent Event{
+      ProcessResourceBrokerEventKind::WorkersGranted,
+      ResourcePhase::PCGPrepare,
+      /*Sequence=*/1,
+      /*SessionID=*/0,
+      /*RequestedWorkers=*/2,
+      /*GrantedWorkers=*/2};
+  ProcessResourceBroker *ObservedBroker = nullptr;
+  std::atomic<unsigned> Calls{0};
+  auto Broker = makeBroker(2, [&](const ProcessResourceBrokerEvent &) {
+    const unsigned Call = Calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (Call != 1)
+      return;
+    ProcessResourceBrokerTestAccess::emitSyntheticEvent(*ObservedBroker, Event);
+    llvm::CrashRecoveryContext::GetCurrent()->HandleExit(37);
+  });
+  ObservedBroker = Broker.get();
+  const ProcessResourceBrokerSnapshot Before = snapshot(*Broker);
+
+  llvm::CrashRecoveryContext::Enable();
+  auto DisableCrashRecovery =
+      llvm::make_scope_exit([] { llvm::CrashRecoveryContext::Disable(); });
+  {
+    llvm::CrashRecoveryContext CRC;
+    EXPECT_FALSE(CRC.RunSafelyOnThread([&] {
+      ProcessResourceBrokerTestAccess::emitSyntheticEvent(*Broker, Event);
+    }));
+    EXPECT_EQ(CRC.RetCode, 37);
+  }
+
+  ProcessResourceBrokerTestAccess::emitSyntheticEvent(*Broker, Event);
+  std::thread NewWorker([&] {
+    ProcessResourceBrokerTestAccess::emitSyntheticEvent(*Broker, Event);
+  });
+  NewWorker.join();
+
+  EXPECT_EQ(Calls.load(std::memory_order_relaxed), 3U);
+  expectSnapshotEq(snapshot(*Broker), Before);
 }
 
 TEST(ProcessResourceBrokerTest,

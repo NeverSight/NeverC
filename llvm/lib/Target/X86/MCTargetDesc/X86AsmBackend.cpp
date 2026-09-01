@@ -34,6 +34,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstdint>
 
 using namespace llvm;
 
@@ -44,8 +45,26 @@ private:
   uint8_t AlignBranchKind = 0;
 
 public:
-  void operator=(const std::string &Val) {
+  static bool isValid(StringRef Val) {
     if (Val.empty())
+      return true;
+    SmallVector<StringRef, 6> BranchTypes;
+    Val.split(BranchTypes, '+', -1, true);
+    for (StringRef BranchType : BranchTypes) {
+      if (BranchType.empty() ||
+          (BranchType != "fused" && BranchType != "jcc" &&
+           BranchType != "jmp" && BranchType != "call" &&
+           BranchType != "ret" && BranchType != "indirect"))
+        return false;
+    }
+    return true;
+  }
+
+  void operator=(const std::string &Val) {
+    // X86AlignBranchKindParser rejects malformed values before assignment.
+    // Keep direct programmatic assignment fail-closed as well, so a valid
+    // prefix can never partially update this process-global option.
+    if (!isValid(Val) || Val.empty())
       return;
     SmallVector<StringRef, 6> BranchTypes;
     StringRef(Val).split(BranchTypes, '+', -1, false);
@@ -62,16 +81,30 @@ public:
         addKind(X86::AlignBranchRet);
       else if (BranchType == "indirect")
         addKind(X86::AlignBranchIndirect);
-      else {
-        errs() << "invalid argument " << BranchType.str()
-               << " to -x86-align-branch=; each element must be one of: fused, "
-                  "jcc, jmp, call, ret, indirect.(plus separated)\n";
-      }
     }
   }
 
   operator uint8_t() const { return AlignBranchKind; }
   void addKind(X86::AlignBranchBoundaryKind Value) { AlignBranchKind |= Value; }
+};
+
+struct X86AlignBranchKindParser final : cl::parser<std::string> {
+  explicit X86AlignBranchKindParser(cl::Option &O)
+      : cl::parser<std::string>(O) {}
+
+  bool parse(cl::Option &O, StringRef ArgName, StringRef Arg,
+             std::string &Value) {
+    if (cl::parser<std::string>::parse(O, ArgName, Arg, Value))
+      return true;
+    if (X86AlignBranchKind::isValid(Value))
+      return false;
+    return O.error(
+        (Twine("invalid argument '") + Arg +
+         "' to -x86-align-branch=; expected a plus-separated list of "
+         "fused, jcc, jmp, call, ret, or indirect")
+            .str(),
+        ArgName);
+  }
 };
 
 X86AlignBranchKind X86AlignBranchKindLoc;
@@ -85,7 +118,7 @@ cl::opt<unsigned> X86AlignBranchBoundary(
         "against the boundary of specified size. The default value 0 does not "
         "align branches."));
 
-cl::opt<X86AlignBranchKind, true, cl::parser<std::string>> X86AlignBranch(
+cl::opt<X86AlignBranchKind, true, X86AlignBranchKindParser> X86AlignBranch(
     "x86-align-branch",
     cl::desc(
         "Specify types of branches to align (plus separated list of types):"
@@ -209,6 +242,12 @@ public:
                     const MCSubtargetInfo *STI) const override;
 };
 } // end anonymous namespace
+
+namespace llvm {
+std::uint8_t getX86AlignBranchKindStateForTesting() {
+  return static_cast<std::uint8_t>(::X86AlignBranchKindLoc);
+}
+} // namespace llvm
 
 static bool isRelaxableBranch(unsigned Opcode) {
   return Opcode == X86::JCC_1 || Opcode == X86::JMP_1;

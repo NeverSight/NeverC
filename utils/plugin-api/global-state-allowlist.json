@@ -1,9 +1,11 @@
 {
-  "_comment": "Allowlist for check-global-state.py. Each `entries` item documents a thread-local declaration in the plugin/dyncode/linker trees that is NOT plugin-related process-global mutable *compilation* state. The source scan is the only layer that judges thread-local storage, so every thread_local belongs here and never in `binary_symbols`; the gate is run with --strict, which makes an undocumented one a hard failure. Only stack-scoped RAII facades and option-lease owner/depth/digest TLS (no option values) are eligible. A const interface or lookup table is never eligible anywhere in this file: make it `constexpr` so it is constant-initialized into read-only storage. Writable process-storage symbols in the linked compiler are a separate list; see `_binary_symbols_comment`. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER be allowlisted.",
+  "_comment": "Allowlist for check-global-state.py. Each `entries` item documents a thread-local declaration in the plugin/dyncode/linker trees that is NOT plugin-related process-global mutable *compilation* state. The source scan is the only layer that judges thread-local storage, so every thread_local belongs here and never in `binary_symbols`; the gate is run with --strict, which makes an undocumented one a hard failure. Only stack-scoped RAII facades and owner/depth/digest bookkeeping for process synchronization leases (no option values or compilation payload) are eligible. Complex immutable interface and lookup tables require an exact path, identifier, and normalized declaration in the dedicated header/source manifests below; writable binary storage is never excused merely for being a lookup table. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER be allowlisted.",
   "entries": [
     {
       "files": ["neverc/lib/Plugin/Core/PluginPhaseExecutor.cpp"],
       "symbol": "ActivePhases",
+      "declaration": "thread_local ScopedThreadLocalStack<ActivePhaseInvocation, 4> ActivePhases",
+      "definition_sha256": "acde8e960e66d8e6038ecb304ffd75e35568b17d7b62f03c1b807972da67bcdf",
       "owner": "PluginPhaseExecutor",
       "lifetime": "stack-scoped per callback dynamic extent",
       "justification": "Callback ancestry / re-entrancy depth stack held by a trivially destructible thread-local wrapper. Existing invocation-scope RAII explicitly releases stored elements as it unwinds through the outermost pop; empty between invocations. Carries no Session/Task/artifact payload.",
@@ -12,6 +14,8 @@
     {
       "files": ["neverc/lib/Plugin/Core/PluginProcessServices.cpp"],
       "symbol": "CallbackScopes",
+      "declaration": "thread_local ScopedThreadLocalStack<CallbackScope, 4> CallbackScopes",
+      "definition_sha256": "b18087411db7a5dd79cd3f55a3f6d870769cda7441c2b215c0a99bb430463829",
       "owner": "PluginProcessServices",
       "lifetime": "stack-scoped per callback dynamic extent",
       "justification": "Callback scope stack used only to detect nested callback ancestry and held by a trivially destructible thread-local wrapper. Existing callback-scope RAII explicitly releases stored elements as it unwinds through the outermost pop; empty at rest.",
@@ -20,6 +24,8 @@
     {
       "files": ["neverc/lib/Plugin/Core/PluginSession.cpp"],
       "symbol": "ActivePluginCallbacks",
+      "declaration": "thread_local ScopedThreadLocalStack<const PluginModule *> ActivePluginCallbacks",
+      "definition_sha256": "e24a23a5c857e40659f15a253e4e0ba4d47de0d051e9b130c85b35223df15aaa",
       "owner": "PluginSession",
       "lifetime": "stack-scoped per callback dynamic extent",
       "justification": "Active-plugin re-entrancy stack held by a trivially destructible thread-local wrapper. Existing callback-scope RAII explicitly releases stored elements as it unwinds through the outermost pop; empty at rest and carries no compilation payload.",
@@ -28,6 +34,8 @@
     {
       "files": ["neverc/lib/Plugin/IO/PluginFileSystem.cpp"],
       "symbol": "ActiveRoutes",
+      "declaration": "thread_local ScopedThreadLocalStack<ActiveRoute, 4> ActiveRoutes",
+      "definition_sha256": "3d22f1b82b9d91065fe768b4a75584271d633560be90d965085c85456033c239",
       "owner": "PluginFileSystem",
       "lifetime": "stack-scoped per VFS query dynamic extent",
       "justification": "VFS route/recursion-budget stack held by a trivially destructible thread-local wrapper. Existing query-scope RAII explicitly releases stored elements as it unwinds through the outermost pop; empty at rest and prevents infinite provider recursion. No cached FS state.",
@@ -36,6 +44,8 @@
     {
       "files": ["neverc/lib/Linker/Core/Runtime/Session.cpp"],
       "symbol": "ActiveLinkerContext",
+      "declaration": "thread_local CommonLinkerContext *ActiveLinkerContext",
+      "definition_sha256": "b67267bd166fdda55f0d821e965ac001bef42e3e6679b4ea96aa6f5ff40c950f",
       "owner": "LinkerExecutionContext",
       "lifetime": "stack-scoped RAII guard per LinkTask/worker scope",
       "justification": "Legacy allocator/diagnostic facade guard. Installed/restored by nestable RAII; cleared on worker join and thread-pool reuse. Never queried by plugin callbacks (they receive explicit task/context handles).",
@@ -44,14 +54,38 @@
     {
       "files": ["neverc/lib/Linker/Core/Runtime/Session.cpp"],
       "symbol": "CurrentWorkerSlot",
+      "declaration": "thread_local unsigned CurrentWorkerSlot",
+      "definition_sha256": "582ddc33f47bf28223abc4f9b55594555f793c6579e406ce677954d50c700caf",
       "owner": "LinkerParallel",
       "lifetime": "stack-scoped per worker scope",
       "justification": "Worker-slot index for context-owned allocator shard selection; set/reset by worker wrapper, zero at rest. No link state.",
       "cleared_by_test": "PluginParallelLinkTests"
     },
     {
+      "files": ["neverc/lib/Foundation/Core/LLVMTimeTraceRootLease.cpp"],
+      "symbol": "ManagedLLVMTimeTraceRootState",
+      "declaration": "thread_local ManagedRootThreadState ManagedLLVMTimeTraceRootState",
+      "definition_sha256": "7d23b51112b37f77090da603c8f88662f8d48e78d90621a70f80f5609c7a7378",
+      "owner": "LLVMTimeTraceRootLease",
+      "lifetime": "same-thread token/depth/closing/invalidation and bound-profiler identity for one managed LLVM time-trace generation",
+      "justification": "Ownership bookkeeping used to balance nested same-thread participants and reject stale crash cleanups by generation token plus profiler identity. The pointer identifies only LLVM's active TLS profiler; it carries no path, option, Session/Task, graph, symbol, output, or cache payload. The last participant clears the TLS record before atomically publishing the next idle generation.",
+      "cleared_by_test": "PluginLinkTimeTraceConcurrencyTest.OwnerReleaseWaitsForLastBorrowerAndBlocksNewGeneration, PluginLinkTimeTraceConcurrencyTest.StaleCrashBindingCannotInvalidateNewGeneration, PluginLinkTimeTraceConcurrencyTest.BorrowedWriteRejectsInvalidatedGeneration, PluginLinkTimeTraceConcurrencyTest.RawLeaseFatalAndNestedRecoveryBalanceGenerationExactlyOnce, PluginLinkTimeTraceConcurrencyTest.NestedBorrowerFatalInvalidatesOuterRootAndAllowsFreshRetry, PluginLinkTimeTraceConcurrencyTest.NoTraceDispatcherFatalInvalidatesManagedAmbientRoot, PluginLinkTimeTraceConcurrencyTest.NoTraceDirectCOFFFatalInvalidatesManagedAmbientRoot, PluginLinkTimeTraceConcurrencyTest.NoTraceDispatcherDoesNotContendWithOtherThreadRoot, PluginFrontendTimeTraceInteropTest.NoTraceFrontendFatalInvalidatesManagedAmbientRoot, and PluginFrontendTimeTraceInteropTest.FoundationRootLeaseBlocksFrontendAndLinkerUntilRelease"
+    },
+    {
+      "files": ["neverc/lib/Foundation/Core/ProcessResourceBroker.cpp"],
+      "symbol": "ObserverDepth",
+      "declaration": "thread_local unsigned ObserverDepth",
+      "definition_sha256": "2a319103b56997aaccfc41f6bc2f66cc72f1f7963fb8129a48e835dc61b9eacf",
+      "owner": "ProcessResourceBroker event observer recursion guard",
+      "lifetime": "same-thread callback nesting depth, restored to the exact prior value on ordinary unwind and CrashRecoveryContext exit",
+      "justification": "Unsigned depth bookkeeping suppresses recursive observer notification and forces observer-initiated admission to be non-blocking. It stores no ResourceSessionView, task, option, graph, symbol, output, or cache payload. A crash-recovery cleanup is registered before every increment and is bound to the originating thread.",
+      "cleared_by_test": "ProcessResourceBrokerTest.ObserverDepthRestoresAfterNestedOrdinaryException and ProcessResourceBrokerTest.ObserverDepthRestoresAfterNestedCrashRecoveryExit"
+    },
+    {
       "files": ["neverc/lib/Linker/Backends/MachO/Input/InputFiles.cpp"],
       "symbol": "ArchiveMemberParseObserver",
+      "declaration": "thread_local ArchiveMemberParseObserverState ArchiveMemberParseObserver",
+      "definition_sha256": "9ea2d6479aff2b40e518ed574f443a753988583a4c90199faadc1fc41a3f2b54",
       "owner": "PluginMachOContextIsolationTest archive observation scope",
       "lifetime": "stack-scoped per test link invocation on the calling thread",
       "justification": "Test-only callback and opaque context pointer installed immediately before a synchronous Mach-O link and cleared by make_scope_exit on every normal or early return. TLS prevents concurrent test threads from sharing the observation. The hook is not forwarded to linker workers and carries no Session/Task/options/graph/symbol/output/cache-journal payload.",
@@ -60,84 +94,333 @@
     {
       "files": ["neverc/lib/Plugin/Core/PluginLLVMOptionSnapshot.cpp"],
       "symbol": "GateOwnership",
+      "declaration": "thread_local ThreadGateOwnership GateOwnership",
+      "definition_sha256": "640dd7e41db94970fa094234798c06367c18b2bf765ac10ba1920c7e93cf5c70",
       "owner": "LLVMOptionLease",
       "lifetime": "stack-scoped per option-lease dynamic extent",
       "justification": "LLVMOptionLease owner/depth/digest bookkeeping only. Holds no actual cl::opt values; used to enforce shared-default / exclusive-nondefault nesting rules.",
       "cleared_by_test": "PluginLLVMOptionIsolationTests"
-    },
-    {
-      "files": ["neverc/lib/Merge/Common/MergerCommon.h"],
-      "symbol": "FatalBuf",
-      "owner": "Merger",
-      "lifetime": "stack-scoped per merge invocation",
-      "justification": "Per-thread longjmp buffer for merge fatal-error recovery; installed/cleared around each merge, carries no cross-invocation compilation state.",
-      "cleared_by_test": "MergeTests"
     }
   ],
-  "_binary_symbols_comment": "Writable *process* data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose name is under neverc::plugin/neverc::dyncode but which are NOT process-global mutable compilation state. Thread-local symbols never belong here: the binary layer skips them, because ELF names one `.tbss` object where Mach-O emits a `__thread_vars` descriptor plus a `$tlv$init` storage symbol, and judging that here made the gate pass on one host and fail on another for identical sources. Put them in `entries` instead. Eligible categories: (a) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), (b) const objects whose vtable pointer forces a relocation into writable storage, (c) synchronization primitives with no compilation state, and (d) foreign-runtime descriptors that the foreign ABI requires to have static writable lifetime but that contain no NeverC compilation payload. A const interface or lookup table is NOT eligible: make it `constexpr` so it is constant-initialized into read-only storage instead of adding it here. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",
+  "_header_constants_comment": "Complex const/constexpr objects with internal linkage in audited headers. These are not automatically exempt because records can contain mutable subobjects and pointers require pointee review. Every entry is exact-path/exact-identifier and documents why every per-TU copy is immutable value data.",
+  "header_constants": [
+    {
+      "file": "llvm/include/llvm/Analysis/VectorUtils.h",
+      "symbol": "_LLVM_",
+      "declaration": "static constexpr char const *_LLVM_",
+      "definition_sha256": "17132f58d60127a3f6b9caa174f0e19bda3d0d80031a363208c635b3babe9157",
+      "owner": "LLVM VFABI token spelling",
+      "justification": "Constexpr pointer whose value is the address of an immutable string literal; the pointer is never reassigned and exposes no writable pointee. Per-TU copies have identical value semantics."
+    },
+    {
+      "file": "llvm/include/llvm/Analysis/VectorUtils.h",
+      "symbol": "_LLVM_Scalarize_",
+      "declaration": "static constexpr char const *_LLVM_Scalarize_",
+      "definition_sha256": "556937f36758c269358de973f3f1d24e8848136b8d6dcb61b8c249e7e0fe002c",
+      "owner": "LLVM VFABI scalarize token spelling",
+      "justification": "Constexpr pointer whose value is the address of an immutable string literal; the pointer is never reassigned and exposes no writable pointee. Per-TU copies have identical value semantics."
+    },
+    {
+      "file": "llvm/include/llvm/Analysis/VectorUtils.h",
+      "symbol": "MappingsAttrName",
+      "declaration": "static constexpr char const *MappingsAttrName",
+      "definition_sha256": "7b19633a9636e23ec5db96c7d98642a39d2b1774ad794464f2442db4fe6aea19",
+      "owner": "LLVM VFABI mapping attribute spelling",
+      "justification": "Constexpr pointer whose value is the address of an immutable string literal; the pointer is never reassigned and exposes no writable pointee. Per-TU copies have identical value semantics."
+    },
+    {
+      "file": "llvm/include/llvm/IR/IntrinsicImpl.inc",
+      "symbol": "TargetInfos",
+      "declaration": "static constexpr IntrinsicTargetInfo TargetInfos[]",
+      "definition_sha256": "e3669b1e6b6f953e77de049605ff6455493c783cd6361f9a7b0418a1af2a3d6d",
+      "owner": "generated LLVM intrinsic target metadata",
+      "justification": "Constexpr array of StringLiteral plus size_t metadata generated as a lookup table. Its element type has no mutable subobjects and no code writes the table."
+    },
+    {
+      "file": "llvm/include/llvm/Support/ELFAttributeParser.h",
+      "symbol": "tagNames",
+      "declaration": "inline static constexpr EnumEntry<unsigned> tagNames[]",
+      "definition_sha256": "dead4b41809dca6c62c4b5856f66bb6f4271594323f3edbb0e02fa0accc9c042",
+      "owner": "LLVM ELF attribute parser",
+      "justification": "Constexpr array of EnumEntry values containing immutable string views and unsigned enum values; it is read-only parser lookup data with no mutable subobjects."
+    },
+    {
+      "file": "llvm/include/llvm/Support/MemoryBuffer.h",
+      "symbol": "Mapmode",
+      "declaration": "inline const sys::fs::mapped_file_region::mapmode Mapmode",
+      "definition_sha256": "93f2e4f9c11f9e9d6b3f87e2a48b4fe1d5a84cb4dc1b20c161de8045d34a9381",
+      "owner": "LLVM MemoryBuffer mapping policy",
+      "justification": "Const variable template whose value is a mapped_file_region::mapmode enumeration. Each specialization is immutable scalar policy data and carries no mutable state."
+    },
+    {
+      "file": "llvm/include/llvm/TargetParser/AArch64TargetParser.h",
+      "symbol": "ArchInfos",
+      "declaration": "static constexpr std::array<const ArchInfo *, 17> ArchInfos",
+      "definition_sha256": "3ac7831ae56b703d925f1d39256c8bd209790cff059e0b97c8451ebda91fd1d3",
+      "owner": "LLVM AArch64 target parser",
+      "justification": "Constexpr std::array of pointers to inline constexpr ArchInfo records. The array and all referenced records are immutable target-description lookup data."
+    },
+    {
+      "file": "neverc/include/neverc/Linker/COFF/Config.h",
+      "symbol": "AMD64",
+      "declaration": "static constexpr auto AMD64",
+      "definition_sha256": "1fb2bf2424931a9f434b026c63b237b96a1ea58d82b9c5a46da106bf0584fb94",
+      "owner": "NeverC COFF configuration",
+      "justification": "Constexpr auto deduces the IMAGE_FILE_MACHINE enum value; it is immutable scalar target-dispatch data and has no mutable subobjects."
+    },
+    {
+      "file": "neverc/include/neverc/Linker/COFF/Config.h",
+      "symbol": "ARM64",
+      "declaration": "static constexpr auto ARM64",
+      "definition_sha256": "46f1b1f642c74153e308bf633b3be15d10a8ca3a37d81e36a413fbdd3eb9be9a",
+      "owner": "NeverC COFF configuration",
+      "justification": "Constexpr auto deduces the IMAGE_FILE_MACHINE enum value; it is immutable scalar target-dispatch data and has no mutable subobjects."
+    }
+  ],
+  "_source_objects_comment": "Exact path-provenanced implementation-file objects whose unqualified/anonymous final symbol cannot be safely attributed by nm. Only immutable lookup data, address-only sentinels, and one-time process registry bootstrap objects are eligible. Link request/session/options/graph/symbol/output/diagnostic payloads are forbidden.",
+  "source_objects": [
+    {
+      "file": "neverc/lib/Foundation/Core/ProcessResourceBroker.cpp",
+      "symbol": "GlobalOverrideActive",
+      "declaration": "std::atomic<bool> GlobalOverrideActive",
+      "definition_sha256": "65e1a8c98082f67a052782f72adc0edbe0cabf08a43b1a75483c7dbfa155bbdc",
+      "owner": "ScopedProcessResourceBrokerOverride",
+      "kind": "test-override synchronization primitive (no compilation state)",
+      "justification": "Atomic ownership bit rejects nested installation of the process-broker test override. The selected broker state is owned by the stack-scoped override object, not this flag; it carries no session, task, option, graph, symbol, output, or cache payload."
+    },
+    {
+      "file": "neverc/lib/Linker/Backends/COFF/Input/InputFiles.cpp",
+      "symbol": "pendingComdat",
+      "declaration": "SectionChunk *const pendingComdat",
+      "definition_sha256": "356cc5e23dd00355847fbb294d209bfa368180502bb2ba9243f46b54efedce3b",
+      "owner": "COFF ObjFile parser",
+      "kind": "address-only sentinel",
+      "justification": "Const pointer value 1 is used only as an impossible identity marker in a per-object sparseChunks vector; it is never dereferenced or reassigned and carries no link payload."
+    },
+    {
+      "file": "neverc/lib/Linker/Backends/ELF/Driver/ElfCommandLine.cpp",
+      "symbol": "optInfo",
+      "declaration": "constexpr opt::OptTable::Info optInfo[]",
+      "definition_sha256": "bcd0a87343cbfa259a4995f2b366f28afba02f94f578ef21a9df7eaf02235904",
+      "owner": "ELF option table",
+      "kind": "generated constexpr lookup table",
+      "justification": "Constexpr records generated from Options.td; the table is read-only parser metadata and contains no mutable request state."
+    },
+    {
+      "file": "neverc/lib/Linker/Backends/ELF/Driver/ElfDriver.cpp",
+      "symbol": "knownZFlags",
+      "declaration": "constexpr const char *knownZFlags[]",
+      "definition_sha256": "18171407b97b327dfa2316feb5def6a32f43711577fd14763a58da9ba3687630",
+      "owner": "ELF -z option validation",
+      "kind": "constexpr string table",
+      "justification": "Constexpr array of pointers to immutable string literals used only for spelling validation; no element or pointee is writable."
+    },
+    {
+      "file": "neverc/lib/Linker/Backends/ELF/Layout/ScriptParser.cpp",
+      "symbol": "typeMap",
+      "declaration": "constexpr std::pair<const char *, unsigned> typeMap[]",
+      "definition_sha256": "924aa42f17d86de4f7b18102bedb02e5d9ab9f3146a4f9ff1e28f8fe520411e2",
+      "owner": "ELF linker-script parser",
+      "kind": "constexpr section-type table",
+      "justification": "Constexpr array of string-literal pointers and unsigned ELF constants; it is immutable lookup data."
+    },
+    {
+      "file": "neverc/lib/Linker/Backends/MachO/Driver/MachOCommandLine.cpp",
+      "symbol": "optInfo",
+      "declaration": "constexpr OptTable::Info optInfo[]",
+      "definition_sha256": "fd734e6e6e82d53b6a4c5efd933326412191d654f6ffdd2c5e884a6022637360",
+      "owner": "Mach-O option table",
+      "kind": "generated constexpr lookup table",
+      "justification": "Constexpr records generated from Options.td; the table is read-only parser metadata and contains no mutable request state."
+    },
+    {
+      "file": "neverc/lib/Linker/Backends/MachO/Input/InputFiles.cpp",
+      "symbol": "skipPlatformChecks",
+      "declaration": "constexpr std::array<StringRef, 3> skipPlatformChecks",
+      "definition_sha256": "f7bc79dc1f3f5d11acfdcd72ff62ca441bd452d54505e0397ea7418ca2fb8976",
+      "owner": "Mach-O text-stub compatibility policy",
+      "kind": "constexpr path table",
+      "justification": "Constexpr std::array of immutable StringRef values naming three fixed system paths; no element or referenced string is writable."
+    },
+    {
+      "file": "neverc/lib/Linker/Backends/MachO/Targets/ARM64.cpp",
+      "symbol": "relocAttrsArray",
+      "declaration": "constexpr std::array<RelocAttrs, 11> relocAttrsArray",
+      "definition_sha256": "1535453c70bb654f611e75a67d5a6104d7ee48e9533d3155878b4ffefb1c449b",
+      "owner": "Mach-O ARM64 target",
+      "kind": "constexpr relocation table",
+      "justification": "Constexpr std::array of RelocAttrs values used only to decode relocation kinds; the records contain immutable names and bit flags."
+    },
+    {
+      "file": "neverc/lib/Linker/Backends/MachO/Targets/X86_64.cpp",
+      "symbol": "relocAttrsArray",
+      "declaration": "constexpr std::array<RelocAttrs, 10> relocAttrsArray",
+      "definition_sha256": "e87555dc065072f21357a74e0c482d5151ae71e093039db0e6aeeeecb953a003",
+      "owner": "Mach-O x86_64 target",
+      "kind": "constexpr relocation table",
+      "justification": "Constexpr std::array of RelocAttrs values used only to decode relocation kinds; the records contain immutable names and bit flags."
+    },
+    {
+      "file": "neverc/lib/Linker/Core/Driver/CommonLTOConfig.cpp",
+      "symbol": "CodeGenFlags",
+      "declaration": "static llvm::codegen::RegisterCodeGenFlags CodeGenFlags",
+      "definition_sha256": "3bbd805fba9d3acb139f86dd3275cff72a96bb53b3ab4522160cf88b4203f251",
+      "owner": "LTOGlobalOptionProfile",
+      "kind": "one-time LLVM option registry bootstrap",
+      "justification": "The function-local object exists only to run LLVM's idempotent code-generation option registration before a guarded snapshot. Its value is never read or mutated and it carries no invocation options or link payload."
+    },
+    {
+      "file": "neverc/lib/Plugin/IR/IRPluginInterfaces.cpp",
+      "symbol": "InterfaceIDs",
+      "declaration": "constexpr std::array<NevercInterfaceID, 9> InterfaceIDs",
+      "definition_sha256": "b4f3050b6b56fc5949637c96bbc37fa48f9f4164f3e81b05433befbbb0c9674a",
+      "owner": "NeverC IR/MIR C ABI interface registry",
+      "kind": "constexpr interface-ID table",
+      "justification": "Constexpr array of fixed 128-bit interface identifiers used for compile-time uniqueness and read-only lookup; it has no mutable subobjects."
+    }
+  ],
+  "_binary_symbols_comment": "Writable *process* data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose owner is under neverc::plugin, neverc::dyncode, neverc::time_trace_detail, or linker, but which are NOT process-global mutable compilation state. Every entry is required to appear exactly once. Thread-local symbols never belong here: the binary layer skips them, because ELF names one `.tbss` object where Mach-O emits a `__thread_vars` descriptor plus a `$tlv$init` storage symbol, and judging that here made the gate pass on one host and fail on another for identical sources. Put them in `entries` instead. Eligible categories: (a) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), (b) const objects whose vtable pointer forces a relocation into writable storage, (c) synchronization primitives with no compilation state, and (d) foreign-runtime descriptors that the foreign ABI requires to have static writable lifetime but that contain no NeverC compilation payload. A const interface or lookup table is NOT eligible: make it `constexpr` so it is constant-initialized into read-only storage instead of adding it here. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",
   "binary_symbols": [
     {
       "symbol": "neverc::dyncode::(anonymous namespace)::DynCodeMIRTransformPass::ID",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/DynCode/Pipeline/BuiltinMIRTransformProvider.cpp",
+      "source_symbol": "ID",
+      "declaration": "char DynCodeMIRTransformPass::ID",
+      "definition_sha256": "98a3ddb5676a7dd9fa960357d01f002a439d6ee5b9990a51feab427be19d74b1",
       "owner": "dyncode BuiltinMIRTransformProvider",
       "kind": "legacy-pass identity token",
       "justification": "`char DynCodeMIRTransformPass::ID` -- address-only LLVM legacy machine-pass identity for the built-in MIR transform provider; only its address is taken, never its value written."
     },
     {
       "symbol": "neverc::dyncode::(anonymous namespace)::DynCodeMIRVerifierPass::ID",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/DynCode/Pipeline/DynCodeMIRVerifier.cpp",
+      "source_symbol": "ID",
+      "declaration": "char DynCodeMIRVerifierPass::ID",
+      "definition_sha256": "cf21e5fea828590586af08aacd709006839ce223a2f687ff58c68477d330b490",
       "owner": "dyncode DynCodeMIRVerifier",
       "kind": "legacy-pass identity token",
       "justification": "`char DynCodeMIRVerifierPass::ID` -- address-only LLVM legacy machine-pass identity for the sealed MIR final-verify gate; only its address is taken, never its value written."
     },
     {
       "symbol": "neverc::plugin::(anonymous namespace)::IRToMIRPipelinePass::ID",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Plugin/MIR/MIRPipelineHooks.cpp",
+      "source_symbol": "ID",
+      "declaration": "char IRToMIRPipelinePass::ID",
+      "definition_sha256": "47d5765cc1235c467acebc0c7d2a1e9a5e633717c2447926c1bd569ccbdb6707",
       "owner": "plugin MIRPipelineHooks",
       "kind": "legacy-pass identity token",
       "justification": "`char IRToMIRPipelinePass::ID` -- address-only LLVM legacy pass identity."
     },
     {
       "symbol": "neverc::plugin::(anonymous namespace)::MIRToMCPipelinePass::ID",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Plugin/MIR/MIRPipelineHooks.cpp",
+      "source_symbol": "ID",
+      "declaration": "char MIRToMCPipelinePass::ID",
+      "definition_sha256": "7aac5d6aaa8e6d4c8529deda7e81136ee87592646b496e9f177e7c51a2997d24",
       "owner": "plugin MIRPipelineHooks",
       "kind": "legacy-pass identity token",
       "justification": "`char MIRToMCPipelinePass::ID` -- address-only LLVM legacy pass identity."
     },
     {
       "symbol": "neverc::plugin::(anonymous namespace)::PluginMachinePass::ID",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Plugin/MIR/MIRPassPlugin.cpp",
+      "source_symbol": "ID",
+      "declaration": "char PluginMachinePass::ID",
+      "definition_sha256": "7807e1f3b46cbc2864e380dcc66abeaeeabb8044aa03de96b41e0b35a42abf51",
       "owner": "plugin MIRPassPlugin",
       "kind": "legacy-pass identity token",
       "justification": "`char PluginMachinePass::ID` -- address-only LLVM legacy pass identity."
     },
     {
       "symbol": "neverc::plugin::(anonymous namespace)::PluginMachineModulePass::ID",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Plugin/MIR/MIRPassPlugin.cpp",
+      "source_symbol": "ID",
+      "declaration": "char PluginMachineModulePass::ID",
+      "definition_sha256": "9f63cc9d85ad650aec98886fa09e22b1353cb2ef407f64bf93ba60899f77a600",
       "owner": "plugin MIRPassPlugin",
       "kind": "legacy-pass identity token",
       "justification": "`char PluginMachineModulePass::ID` -- address-only LLVM legacy pass identity."
     },
     {
       "symbol": "neverc::plugin::builtinLinkerScriptProvider()::Provider",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Plugin/Link/LinkerScriptProvider.cpp",
+      "source_symbol": "Provider",
+      "declaration": "static const BuiltinLinkerScriptProvider Provider",
+      "definition_sha256": "5d617cae687c002e9cbc358d949a768cedde18ea1277b69fa371c3c547508947",
       "owner": "plugin LinkerScriptProvider",
       "kind": "vtable-relocated const object",
       "justification": "`static const BuiltinLinkerScriptProvider Provider` -- a stateless const provider singleton holding no data members. It cannot be made `constexpr`: LinkerScriptProvider has a virtual destructor, so the type is not a literal type, and the vtable pointer needs a relocation regardless. Writable-section placement is the vtable pointer, not compilation state."
     },
     {
       "symbol": "neverc::plugin::pluginLLVMOptionGate()::Gate",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Plugin/Core/PluginLLVMOptionSnapshot.cpp",
+      "source_symbol": "Gate",
+      "declaration": "static std::shared_mutex Gate",
+      "definition_sha256": "1e96ae415d10a6ede824a41b9bdcc219a4813bd7e9768f50564bae6acc9b9a61",
       "owner": "plugin PluginLLVMOptionSnapshot",
       "kind": "synchronization primitive (no compilation state)",
       "justification": "`static std::shared_mutex Gate` -- the process-serial gate guarding LLVM cl::opt install/restore. A lock, not compilation state; the spec explicitly permits sync primitives without compilation state."
     },
     {
+      "symbol": "neverc::time_trace_detail::LLVMTimeTraceRootGeneration",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Foundation/Core/LLVMTimeTraceRootLease.cpp",
+      "source_symbol": "LLVMTimeTraceRootGeneration",
+      "declaration": "std::atomic<std::uint64_t> LLVMTimeTraceRootGeneration",
+      "definition_sha256": "6223a2e9f2b7a6be8b030893920608d626b566c4d6d6667104988b56a7e3e3f2",
+      "owner": "LLVMTimeTraceRootLease",
+      "kind": "synchronization primitive (no compilation state)",
+      "justification": "The atomic uint64_t is an even-idle/odd-active monotonic generation token for LLVM's global finished-worker profiler registry. It stores no profiler pointer, path, option, Session/Task, graph, symbol, output, or cache payload; the generation prevents stale crash cleanups from acting on address-reused profilers."
+    },
+    {
       "symbol": "neverc::plugin::(anonymous namespace)::ExclusiveWaitEpoch",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Plugin/Core/PluginLLVMOptionSnapshot.cpp",
+      "source_symbol": "ExclusiveWaitEpoch",
+      "declaration": "std::atomic<std::uint64_t> ExclusiveWaitEpoch",
+      "definition_sha256": "679dcfc4b3995795d19fb1f575f878e5cb9cb8e64910c9a35d3cb786e4d967f1",
       "owner": "plugin PluginLLVMOptionSnapshot",
       "kind": "synchronization diagnostic counter (no compilation state)",
       "justification": "Monotonic atomic counter used only to observe entry into the option gate's blocking path in concurrency tests. It carries no option, session, task, graph, artifact, or compiler payload and never affects compilation behavior."
     },
     {
       "symbol": "neverc::plugin::(anonymous namespace)::InterpreterOnce",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Plugin/Python/PythonPluginLoader.cpp",
+      "source_symbol": "InterpreterOnce",
+      "declaration": "std::once_flag InterpreterOnce",
+      "definition_sha256": "e1e0874bee0765aa8d95809c202e27788a8c79a58461929d2f1c96f2fb65b929",
       "owner": "PythonPluginLoader",
       "kind": "synchronization primitive (no compilation state)",
       "justification": "`std::once_flag InterpreterOnce` serializes CPython initialization. It stores no session, task, plugin, option, graph, artifact, or compiler payload."
     },
     {
       "symbol": "neverc::plugin::(anonymous namespace)::BridgeModule",
+      "min_count": 1,
+      "max_count": 1,
+      "file": "neverc/lib/Plugin/Python/PythonPluginLoader.cpp",
+      "source_symbol": "BridgeModule",
+      "declaration": "PyModuleDef BridgeModule",
+      "definition_sha256": "e953fde17654b9f84a400dabb073cf66460a975d8d4226c2d18aae2ce131a8bd",
       "owner": "PythonPluginLoader",
       "kind": "CPython-required static module descriptor",
       "justification": "CPython's `PyModuleDef` ABI requires a static writable descriptor because CPython owns its internal reference-count base. Its method table is allocated once from CPython's heap under the GIL; neither object contains NeverC compilation payload."

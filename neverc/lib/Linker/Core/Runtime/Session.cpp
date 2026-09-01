@@ -42,12 +42,25 @@ unsigned linker::selectAdaptiveLinkThreadCount(unsigned RequestedThreads,
 }
 
 CommonLinkerContext::CommonLinkerContext()
-    : ResourceSession(neverc::currentResourceSession()),
-      PreviousContext(ActiveLinkerContext),
+    : PreviousContext(ActiveLinkerContext),
       PreviousWorkerSlot(CurrentWorkerSlot) {
   ActiveLinkerContext = this;
   CurrentWorkerSlot = 0;
   WorkerSlots.emplace(std::this_thread::get_id(), 0);
+}
+
+CommonLinkerContext::CommonLinkerContext(
+    neverc::ResourceSessionView ResourceSession)
+    : CommonLinkerContext() {
+  bindResourceSession(std::move(ResourceSession));
+}
+
+void CommonLinkerContext::bindResourceSession(
+    neverc::ResourceSessionView Session) {
+  assert((StateFlags & ResourceSessionBoundFlag) == 0 &&
+         "linker resource session bound twice");
+  ResourceSession = std::move(Session);
+  StateFlags |= ResourceSessionBoundFlag;
 }
 
 CommonLinkerContext::~CommonLinkerContext() {
@@ -147,8 +160,8 @@ bool linker::hasContext() { return ActiveLinkerContext != nullptr; }
 
 LinkerContextGuard::LinkerContextGuard(CommonLinkerContext &Context,
                                        unsigned WorkerSlot)
-    : ResourceScope(Context.resourceSession()), Previous(ActiveLinkerContext),
-      PreviousWorkerSlot(CurrentWorkerSlot) {
+    : Previous(ActiveLinkerContext), PreviousWorkerSlot(CurrentWorkerSlot) {
+  (void)Context.resourceSession();
   ActiveLinkerContext = &Context;
   CurrentWorkerSlot = WorkerSlot;
 }

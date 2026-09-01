@@ -494,6 +494,7 @@ add_neverc_library(nevercFoundation
   Core/FileManager.cpp
   Core/IdentifierTable.cpp
   Core/LangOptions.cpp
+  Core/LLVMTimeTraceRootLease.cpp
   Core/OutputBundleTransaction.cpp
   Core/OutputCoordinator.cpp
   Core/OutputDigest.cpp

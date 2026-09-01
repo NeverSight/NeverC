@@ -2,6 +2,7 @@
 #define NEVERC_LIB_EMIT_BACKEND_PARALLELCODEGENMERGEINTERNAL_H
 
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
+#include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "neverc/Foundation/LangOpts/ParallelCodeGenTuning.h"
 
 #include "llvm/Support/NevercPipelineTuning.h"
@@ -119,6 +120,16 @@ bool runParallelCodeGenWithTunings(
     std::optional<unsigned> ResolvedSCEVHugeExprThreshold = std::nullopt,
     const ParallelCodeGenObservers *Observers = nullptr);
 
+/// Explicit-parent variant used by in-process linker/LTO requests. The legacy
+/// overload above remains a top-level ABI entry point.
+bool runParallelCodeGenWithTunings(
+    llvm::Module &Mod, llvm::TargetMachine &TM, ParallelCodeGenOutputs Outputs,
+    const ParallelCodeGenTuning &Tuning,
+    const llvm::NevercPipelineTuningOptions &PipelineTuning,
+    const PartitionCacheHooks *Cache,
+    std::optional<unsigned> ResolvedSCEVHugeExprThreshold,
+    const ParallelCodeGenObservers *Observers, ResourceSessionView Parent);
+
 /// Parallel partition optimization plus codegen with an explicit PCG policy.
 /// The module context supplies the matching pipeline policy.
 bool runParallelOptAndCodeGenWithTuning(
@@ -138,6 +149,17 @@ bool runParallelOptAndCodeGenWithTunings(
     const ParallelOptimizationHooks *Hooks = nullptr,
     const ParallelCodeGenObservers *Observers = nullptr,
     std::optional<unsigned> ResolvedSCEVHugeExprThreshold = std::nullopt);
+
+/// Explicit-parent variant used by in-process linker/LTO requests. The legacy
+/// overload above remains a top-level ABI entry point.
+bool runParallelOptAndCodeGenWithTunings(
+    llvm::Module &Mod, llvm::TargetMachine &TM, ParallelCodeGenOutputs Outputs,
+    unsigned OptLevel, const ParallelCodeGenTuning &Tuning,
+    const llvm::NevercPipelineTuningOptions &PipelineTuning,
+    const PartitionCacheHooks *Cache, const ParallelOptimizationHooks *Hooks,
+    const ParallelCodeGenObservers *Observers,
+    std::optional<unsigned> ResolvedSCEVHugeExprThreshold,
+    ResourceSessionView Parent);
 
 } // namespace neverc
 

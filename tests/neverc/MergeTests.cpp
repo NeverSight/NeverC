@@ -24,6 +24,7 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
+#include "llvm/Object/COFF.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/raw_ostream.h"
@@ -2734,6 +2735,13 @@ uint32_t getU32(const char *P) {
          ((uint32_t)(uint8_t)P[2] << 16) | ((uint32_t)(uint8_t)P[3] << 24);
 }
 
+void putBE32(SmallVectorImpl<char> &B, uint32_t V) {
+  B.push_back((char)((V >> 24) & 0xff));
+  B.push_back((char)((V >> 16) & 0xff));
+  B.push_back((char)((V >> 8) & 0xff));
+  B.push_back((char)(V & 0xff));
+}
+
 struct CoffSecSpec {
   std::string Name; // <= 8 chars for these tests
   uint32_t Size;
@@ -3280,6 +3288,84 @@ SmallVector<char, 0> buildMachO(uint32_t CpuType, uint32_t CpuSubType,
     memcpy(Buf.data() + SymOff, NList.data(),
            NList.size() * sizeof(MO::nlist_64));
   memcpy(Buf.data() + StrOff, StrTab.data(), StrTab.size());
+  return Buf;
+}
+
+// A header-only object is sufficient to exercise the format contract before
+// any section or symbol accessor runs.  Keep this deliberately independent of
+// buildMachO(), which always emits little-endian Mach-O 64.
+SmallVector<char, 0> buildHeaderOnlyMachO(bool Is64, bool LittleEndian,
+                                         uint32_t FileType,
+                                         bool WithSection = false) {
+  namespace MO = llvm::MachO;
+  SmallVector<char, 0> Buf;
+  auto Put = [&](uint32_t V) {
+    if (LittleEndian)
+      putU32(Buf, V);
+    else
+      putBE32(Buf, V);
+  };
+  auto Put64 = [&](uint64_t V) {
+    if (LittleEndian) {
+      for (unsigned I = 0; I != 8; ++I)
+        Buf.push_back((char)((V >> (I * 8)) & 0xff));
+    } else {
+      for (unsigned I = 0; I != 8; ++I)
+        Buf.push_back((char)((V >> ((7 - I) * 8)) & 0xff));
+    }
+  };
+  const uint32_t SegmentSize =
+      Is64 ? sizeof(MO::segment_command_64) + sizeof(MO::section_64)
+           : sizeof(MO::segment_command) + sizeof(MO::section);
+  Put(Is64 ? MO::MH_MAGIC_64 : MO::MH_MAGIC);
+  Put(Is64 ? MO::CPU_TYPE_X86_64 : MO::CPU_TYPE_X86);
+  Put(Is64 ? MO::CPU_SUBTYPE_X86_64_ALL : 3u); // CPU_SUBTYPE_I386_ALL
+  Put(FileType);
+  Put(WithSection ? 1 : 0);           // ncmds
+  Put(WithSection ? SegmentSize : 0); // sizeofcmds
+  Put(0); // flags
+  if (Is64)
+    Put(0); // reserved
+  if (!WithSection)
+    return Buf;
+
+  Put(Is64 ? MO::LC_SEGMENT_64 : MO::LC_SEGMENT);
+  Put(SegmentSize);
+  Buf.append(16, 0); // segment name
+  if (Is64) {
+    Put64(0); // vmaddr
+    Put64(0); // vmsize
+    Put64(0); // fileoff
+    Put64(0); // filesize
+  } else {
+    Put(0); // vmaddr
+    Put(0); // vmsize
+    Put(0); // fileoff
+    Put(0); // filesize
+  }
+  Put(7); // maxprot
+  Put(7); // initprot
+  Put(1); // nsects
+  Put(0); // flags
+
+  Buf.append(16, 0); // section name
+  Buf.append(16, 0); // section segment name
+  if (Is64) {
+    Put64(0); // addr
+    Put64(0); // size
+  } else {
+    Put(0); // addr
+    Put(0); // size
+  }
+  Put(0);             // offset
+  Put(0);             // align
+  Put(0);             // reloff
+  Put(0);             // nreloc
+  Put(MO::S_REGULAR); // flags
+  Put(0);             // reserved1
+  Put(0);             // reserved2
+  if (Is64)
+    Put(0); // reserved3
   return Buf;
 }
 
@@ -11080,6 +11166,143 @@ TEST(MergeCOFF, RefusesOutOfBoundsAuxRecordGracefully) {
       << "merger accepted a COFF symbol whose aux records run past the object";
 }
 
+// File-bound checks are not enough: a last symbol can claim an aux slot that
+// lies beyond NumberOfSymbols yet still falls inside a following, large string
+// table.  Such bytes are not symbol records and must never be copied as aux.
+TEST(MergeCOFF, RefusesAuxRecordPastSymbolTableInsideObject) {
+  using namespace COFF;
+  uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  CoffSecSpec S0{".text", 0x20, TextChars, 0x90};
+  CoffSymSpec P0{"p0", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffSymSpec P1{"p1", 0x4, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  auto Obj = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {P0, P1}, {});
+
+  const uint32_t SymPtr = getU32(Obj.data() + 8);
+  const uint32_t NumSyms = getU32(Obj.data() + 12);
+  ASSERT_EQ(NumSyms, 2u);
+  const size_t StringTableOffset =
+      static_cast<size_t>(SymPtr) + static_cast<size_t>(NumSyms) * 18;
+  ASSERT_EQ(StringTableOffset + 4, Obj.size());
+  Obj[StringTableOffset] = 40;
+  Obj[StringTableOffset + 1] = Obj[StringTableOffset + 2] =
+      Obj[StringTableOffset + 3] = 0;
+  Obj.append(36, 0);
+  const size_t LastAuxCountOff =
+      static_cast<size_t>(SymPtr) + static_cast<size_t>(NumSyms - 1) * 18 + 17;
+  Obj[LastAuxCountOff] = 1;
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  SmallVector<char, 0> Out{'k', 'e', 'e', 'p'};
+  raw_svector_ostream OS(Out);
+  Options Opts;
+  Opts.verify = false;
+  EXPECT_FALSE(mergeCOFFObjects(Bufs, OS, Opts));
+  EXPECT_EQ(StringRef(Out.data(), Out.size()), "keep");
+}
+
+TEST(MergeCOFF, RefusesNonRelocatableContainersWithoutWritingOutput) {
+  using namespace COFF;
+
+  auto ExpectRejected = [](SmallVector<char, 0> Obj, StringRef Case) {
+    SmallVector<SmallVector<char, 0>, 1> Bufs;
+    Bufs.push_back(std::move(Obj));
+    SmallVector<char, 0> Out{'k', 'e', 'e', 'p'};
+    raw_svector_ostream OS(Out);
+    Options Opts;
+    Opts.verify = false;
+    EXPECT_FALSE(mergeCOFFObjects(Bufs, OS, Opts)) << Case.str();
+    EXPECT_EQ(StringRef(Out.data(), Out.size()), "keep")
+        << Case.str() << " modified the output before rejecting the input";
+  };
+
+  // A real MZ/PE image is a parser-supported COFF container, but never a
+  // relocatable .obj.
+  SmallVector<char, 0> PEImage;
+  llvm::object::dos_header DOS{};
+  DOS.Magic[0] = 'M';
+  DOS.Magic[1] = 'Z';
+  DOS.AddressOfNewExeHeader = sizeof(DOS);
+  PEImage.append(reinterpret_cast<const char *>(&DOS),
+                 reinterpret_cast<const char *>(&DOS) + sizeof(DOS));
+  PEImage.append(llvm::COFF::PEMagic,
+                 llvm::COFF::PEMagic + sizeof(llvm::COFF::PEMagic));
+  llvm::object::coff_file_header PEHeader{};
+  PEHeader.Machine = IMAGE_FILE_MACHINE_AMD64;
+  PEHeader.SizeOfOptionalHeader = sizeof(llvm::object::pe32plus_header);
+  PEHeader.Characteristics = IMAGE_FILE_EXECUTABLE_IMAGE;
+  PEImage.append(reinterpret_cast<const char *>(&PEHeader),
+                 reinterpret_cast<const char *>(&PEHeader) + sizeof(PEHeader));
+  llvm::object::pe32plus_header OptionalHeader{};
+  OptionalHeader.Magic = llvm::COFF::PE32Header::PE32_PLUS;
+  OptionalHeader.NumberOfRvaAndSize = 0;
+  PEImage.append(reinterpret_cast<const char *>(&OptionalHeader),
+                 reinterpret_cast<const char *>(&OptionalHeader) +
+                     sizeof(OptionalHeader));
+  ExpectRejected(std::move(PEImage), "MZ/PE image");
+
+  // A header carrying executable-image characteristics is also invalid even
+  // when the rest of its bytes happen to look object-like.
+  auto Image = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {}, {}, {});
+  ASSERT_GE(Image.size(), (size_t)20);
+  Image[18] = (char)(IMAGE_FILE_EXECUTABLE_IMAGE & 0xff);
+  Image[19] = (char)(IMAGE_FILE_EXECUTABLE_IMAGE >> 8);
+  ExpectRejected(std::move(Image), "IMAGE_FILE_EXECUTABLE_IMAGE");
+
+  // SizeOfOptionalHeader is zero for relocatable COFF.  Keep this synthetic
+  // container parseable by inserting the declared bytes and moving the empty
+  // symbol/string-table position past them.
+  auto Optional = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {}, {}, {});
+  ASSERT_EQ(getU32(Optional.data() + 8), 20u);
+  Optional.insert(Optional.begin() + 20, 2, 0);
+  Optional[8] = 22;
+  Optional[9] = Optional[10] = Optional[11] = 0;
+  Optional[16] = 2;
+  Optional[17] = 0;
+  ExpectRejected(std::move(Optional), "non-empty optional header");
+
+  // The import-library header shares COFF's prefix but is an archive member
+  // descriptor, not an object whose sections and symbols may be merged.
+  SmallVector<char, 0> Import;
+  Import.resize(20, 0);
+  Import[2] = Import[3] = (char)0xff; // NumberOfSections import sentinel
+  ExpectRejected(std::move(Import), "import-library member");
+}
+
+TEST(MergeCOFF, RefusesMissingLoadedSymbolTableWithoutWritingOutput) {
+  using namespace COFF;
+  uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
+                       IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  CoffSecSpec S0{".text", 0x10, TextChars, 0x90};
+  CoffSymSpec P0{"p0", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
+  CoffRelSpec R0{0, 0, "p0", IMAGE_REL_AMD64_ADDR64};
+  auto Obj = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {P0}, {R0});
+
+  // COFFObjectFile::initialize deliberately consumes a symbol-table loading
+  // error and returns a live object with the raw header count intact but a null
+  // table pointer.  The merger must compare those two facts before getSymbol
+  // or silently dropping every symbol. Keep the symbol and string-table size
+  // fields themselves in-bounds, but make the final table claim one byte past
+  // EOF; this exercises the recovery state without fixture-side invalid pointer
+  // arithmetic.
+  ASSERT_GE(Obj.size(), 4u);
+  const size_t StringTableSizeOffset = Obj.size() - 4;
+  Obj[StringTableSizeOffset] = 5;
+  Obj[StringTableSizeOffset + 1] = 0;
+  Obj[StringTableSizeOffset + 2] = 0;
+  Obj[StringTableSizeOffset + 3] = 0;
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  SmallVector<char, 0> Out{'k', 'e', 'e', 'p'};
+  raw_svector_ostream OS(Out);
+  Options Opts;
+  Opts.verify = false;
+  EXPECT_FALSE(mergeCOFFObjects(Bufs, OS, Opts));
+  EXPECT_EQ(StringRef(Out.data(), Out.size()), "keep");
+}
+
 TEST(MergeMachOSemantic, CrossPartitionSymbolOffsets) {
   namespace MO = llvm::MachO;
   uint32_t TextFlags =
@@ -11280,6 +11503,44 @@ TEST(MergeMachO, RefusesHugeNcmdsWithoutOOM) {
       << "a header claiming more load commands than the object can hold must "
          "be "
          "refused before the Mach-O parser allocates one entry per command";
+}
+
+TEST(MergeMachO, RefusesWrongContainerKindsWithoutWritingOutput) {
+  namespace MO = llvm::MachO;
+
+  auto ExpectRejected = [](SmallVector<char, 0> Obj, StringRef Case) {
+    SmallVector<SmallVector<char, 0>, 1> Bufs;
+    Bufs.push_back(std::move(Obj));
+    SmallVector<char, 0> Out{'k', 'e', 'e', 'p'};
+    raw_svector_ostream OS(Out);
+    Options Opts;
+    Opts.verify = false;
+    EXPECT_FALSE(mergeMachO64Objects(Bufs, OS, Opts)) << Case.str();
+    EXPECT_EQ(StringRef(Out.data(), Out.size()), "keep")
+        << Case.str() << " modified the output before rejecting the input";
+  };
+
+  // The implementation uses section_64/nlist_64 and emits little-endian
+  // MH_OBJECT.  Reject every other parser-supported container before those
+  // accessors run; accepting one would reinterpret its layout as Mach-O 64 LE.
+  ExpectRejected(buildHeaderOnlyMachO(/*Is64=*/false,
+                                      /*LittleEndian=*/true, MO::MH_OBJECT,
+                                      /*WithSection=*/true),
+                 "32-bit Mach-O");
+  ExpectRejected(buildHeaderOnlyMachO(/*Is64=*/true,
+                                      /*LittleEndian=*/false, MO::MH_OBJECT,
+                                      /*WithSection=*/true),
+                 "big-endian Mach-O");
+  ExpectRejected(buildHeaderOnlyMachO(/*Is64=*/true,
+                                      /*LittleEndian=*/true, MO::MH_EXECUTE),
+                 "non-relocatable Mach-O");
+
+  auto UnsupportedArch = buildHeaderOnlyMachO(
+      /*Is64=*/true, /*LittleEndian=*/true, MO::MH_OBJECT);
+  const uint32_t Unknown64CPU = MO::CPU_ARCH_ABI64 | 18u;
+  for (unsigned I = 0; I != 4; ++I)
+    UnsupportedArch[4 + I] = (char)((Unknown64CPU >> (I * 8)) & 0xff);
+  ExpectRejected(std::move(UnsupportedArch), "unsupported 64-bit architecture");
 }
 
 // An S_ZEROFILL section declares a size backed by *no* file bytes, so an
@@ -13329,11 +13590,116 @@ TEST(ParallelFrontendTiming, MultiFileTimePassesUsesExclusiveOptionLease) {
   EXPECT_EQ(runExeCapture(Dir, Exe, Output), 0);
 
   std::string LLVMExe = Dir.file("llvm_timing_exe");
-  StringRef LLVMArgs[] = {"-O0", "-mllvm", "-time-passes"};
+  StringRef LLVMArgs[] = {"-O0", "-mllvm", "-time-passes",
+                          "-mdebug-pass", "Structure",
+                          "-mlimit-float-precision", "12"};
   ASSERT_TRUE(compileLinkMulti(Dir, Paths, LLVMArgs, LLVMExe));
   CheckTimingLog();
   Output.clear();
   EXPECT_EQ(runExeCapture(Dir, LLVMExe, Output), 0);
+}
+
+TEST(ParallelFrontendTiming, MultiFileTimeTracePreservesEveryRootArtifact) {
+  Triple Host(sys::getProcessTriple());
+  if (!Host.isOSBinFormatMachO() && !Host.isOSBinFormatELF())
+    GTEST_SKIP() << "host object format not exercised by this test";
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "parallel frontend requires at least two hardware threads";
+
+  ScratchDir Dir;
+  if (!Dir.Ok)
+    GTEST_SKIP() << "could not create scratch directory";
+  ScopedEnv ParallelTrace("NEVERC_TEST_PARALLEL_COMPILE_TRACE", "1");
+
+  const std::array<std::pair<StringRef, StringRef>, 3> Sources = {{
+      {"trace_a.c", "int trace_a(int x) { return x + 3; }\n"},
+      {"trace_b.c", "int trace_b(int x) { return x * 5; }\n"},
+      {"trace_main.c",
+       "int trace_a(int); int trace_b(int);\n"
+       "int main(void) { return trace_a(1) + trace_b(2) == 14 ? 0 : 1; }\n"},
+  }};
+
+  SmallVector<std::string, 3> Paths;
+  for (const auto &[Name, Contents] : Sources) {
+    std::string Path = Dir.file(Name);
+    ASSERT_TRUE(
+        writeBytes(Path, ArrayRef<char>(Contents.data(), Contents.size())));
+    Paths.push_back(std::move(Path));
+  }
+
+  const std::string TraceDirectory = Dir.file("frontend-traces");
+  ASSERT_FALSE(sys::fs::create_directory(TraceDirectory));
+  const std::string TraceDirectoryArg =
+      std::string("-ftime-trace=") + TraceDirectory;
+  const std::string Exe = Dir.file("trace_exe");
+  const StringRef Args[] = {"-O0", TraceDirectoryArg,
+                            "-ftime-trace-granularity=0"};
+  ASSERT_TRUE(compileLinkMulti(Dir, Paths, Args, Exe));
+
+  SmallVector<char, 0> LogBytes;
+  ASSERT_TRUE(readObj(Dir.file("spawn.log"), LogBytes));
+  const StringRef Log(LogBytes.data(), LogBytes.size());
+  EXPECT_FALSE(Log.contains("[parallel compile:")) << Log.str();
+
+  auto CountCompleteEvents = [](StringRef Path, StringRef Name) -> unsigned {
+    auto Buffer = MemoryBuffer::getFile(Path);
+    if (!Buffer)
+      return 0;
+    auto Parsed = json::parse((*Buffer)->getBuffer());
+    if (!Parsed)
+      return 0;
+    const json::Object *Root = Parsed->getAsObject();
+    const json::Array *Events = Root ? Root->getArray("traceEvents") : nullptr;
+    if (!Events)
+      return 0;
+    unsigned Count = 0;
+    for (const json::Value &Value : *Events) {
+      const json::Object *Event = Value.getAsObject();
+      if (Event && Event->getString("ph") == "X" &&
+          Event->getString("name") == Name)
+        ++Count;
+    }
+    return Count;
+  };
+
+  std::array<std::vector<std::string>, 3> FrontendTraces;
+  unsigned TraceFileCount = 0;
+  std::error_code DirectoryError;
+  for (sys::fs::directory_iterator It(TraceDirectory, DirectoryError), End;
+       !DirectoryError && It != End; It.increment(DirectoryError)) {
+    const StringRef FileName = sys::path::filename(It->path());
+    if (!FileName.ends_with(".json"))
+      continue;
+    ++TraceFileCount;
+    bool Matched = false;
+    for (size_t I = 0; I != Sources.size(); ++I) {
+      SmallString<32> Prefix(sys::path::stem(Sources[I].first));
+      Prefix += '-';
+      if (!FileName.starts_with(Prefix))
+        continue;
+      FrontendTraces[I].push_back(It->path());
+      Matched = true;
+      break;
+    }
+    EXPECT_TRUE(Matched) << FileName.str();
+  }
+  ASSERT_FALSE(DirectoryError) << DirectoryError.message();
+  EXPECT_EQ(TraceFileCount, Sources.size());
+
+  for (size_t I = 0; I != Sources.size(); ++I) {
+    ASSERT_EQ(FrontendTraces[I].size(), 1U) << Sources[I].first.str();
+    const StringRef TracePath = FrontendTraces[I].front();
+    ASSERT_TRUE(sys::fs::is_regular_file(TracePath)) << TracePath.str();
+    EXPECT_EQ(CountCompleteEvents(TracePath, "ExecuteCompiler"), 1U)
+        << TracePath.str();
+    EXPECT_EQ(CountCompleteEvents(TracePath, "neverc.link.dispatch"), 0U)
+        << TracePath.str();
+  }
+
+  const std::string LinkTrace = Exe + ".time-trace";
+  ASSERT_TRUE(sys::fs::is_regular_file(LinkTrace));
+  EXPECT_EQ(CountCompleteEvents(LinkTrace, "neverc.link.dispatch"), 1U);
+  EXPECT_EQ(CountCompleteEvents(LinkTrace, "ExecuteCompiler"), 0U);
 }
 
 // A module that, beyond heavy .text, defines a cross-module-referenced

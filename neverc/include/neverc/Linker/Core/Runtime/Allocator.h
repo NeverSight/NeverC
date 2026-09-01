@@ -36,12 +36,9 @@ template <class T> struct SpecificAlloc : public SpecificAllocBase {
   }
   void destroy() noexcept override { this->~SpecificAlloc(); }
   llvm::SpecificBumpPtrAllocator<T> alloc;
-  static const unsigned char tag;
+  // Only the program-unique address is used as the context map's type key.
+  inline static constexpr unsigned char tag = 0;
 };
-
-// The address of this static member is only used as the key inside
-// `CommonLinkerContext::instances`.  Its value does not matter.
-template <class T> const unsigned char SpecificAlloc<T>::tag = 0;
 
 // Look up (and create on the first call) the arena backing type `T`.
 template <typename T>

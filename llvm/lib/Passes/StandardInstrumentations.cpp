@@ -350,7 +350,9 @@ bool isInteresting(Any IR, StringRef PassID, StringRef PassName) {
 } // namespace
 
 template <typename T> ChangeReporter<T>::~ChangeReporter() {
-  assert(BeforeStack.empty() && "Problem with Change Printer stack.");
+  assert((BeforeStack.empty() ||
+          CrashRecoveryContext::isRecoveringFromCrash()) &&
+         "Problem with Change Printer stack.");
 }
 
 template <typename T>
@@ -697,7 +699,8 @@ bool IRComparer<T>::generateFunctionData(IRDataT<T> &Data, const Function &F) {
 }
 
 PrintIRInstrumentation::~PrintIRInstrumentation() {
-  assert(PassRunDescriptorStack.empty() &&
+  assert((PassRunDescriptorStack.empty() ||
+          CrashRecoveryContext::isRecoveringFromCrash()) &&
          "PassRunDescriptorStack is not empty at exit");
 }
 

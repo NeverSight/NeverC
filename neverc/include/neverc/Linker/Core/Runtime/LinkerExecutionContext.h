@@ -14,6 +14,7 @@ namespace linker {
 class LinkerExecutionContext {
 public:
   LinkerExecutionContext();
+  explicit LinkerExecutionContext(neverc::ResourceSessionView ParentSession);
   LinkerExecutionContext(const LinkerExecutionContext &) = delete;
   LinkerExecutionContext &operator=(const LinkerExecutionContext &) = delete;
   ~LinkerExecutionContext();
@@ -26,6 +27,7 @@ public:
       llvm::report_fatal_error("LinkerExecutionContext already owns a backend");
     auto Created =
         std::make_unique<BackendContext>(std::forward<Args>(Arguments)...);
+    Created->bindResourceSession(ResourcePermit.session());
     BackendContext &Result = *Created;
     Backend = std::move(Created);
     return Result;
@@ -33,6 +35,9 @@ public:
 
   bool hasBackend() const { return static_cast<bool>(Backend); }
   CommonLinkerContext *common() const { return Backend.get(); }
+  neverc::ResourceSessionView resourceSession() const {
+    return ResourcePermit.session();
+  }
   void destroyBackend();
 
 private:

@@ -3,6 +3,7 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Runtime/Session.h"
+#include "ProcessResourceBrokerInternal.h"
 #include "TransactionalOutputStream.h"
 #include "neverc/Plugin/Host/IRGenProvider.h"
 #include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
@@ -49,6 +50,7 @@
 #include "gtest/gtest.h"
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -215,6 +217,25 @@ using PluralParallelOptAndCodeGenFunction =
              const neverc::PartitionCacheHooks *,
              const neverc::ParallelOptimizationHooks *,
              const neverc::ParallelCodeGenObservers *, std::optional<unsigned>);
+using ExplicitPluralParallelCodeGenFunction = bool (*)(
+    Module &, TargetMachine &, neverc::ParallelCodeGenOutputs,
+    const neverc::ParallelCodeGenTuning &,
+    const llvm::NevercPipelineTuningOptions &,
+    const neverc::PartitionCacheHooks *, std::optional<unsigned>,
+    const neverc::ParallelCodeGenObservers *, neverc::ResourceSessionView);
+using ExplicitPluralParallelOptAndCodeGenFunction = bool (*)(
+    Module &, TargetMachine &, neverc::ParallelCodeGenOutputs, unsigned,
+    const neverc::ParallelCodeGenTuning &,
+    const llvm::NevercPipelineTuningOptions &,
+    const neverc::PartitionCacheHooks *,
+    const neverc::ParallelOptimizationHooks *,
+    const neverc::ParallelCodeGenObservers *, std::optional<unsigned>,
+    neverc::ResourceSessionView);
+using LegacyCreateLTOConfigFunction = llvm::lto::Config (*)(
+    const linker::LinkerDriverConfig &, llvm::DiagnosticHandlerFunction, bool);
+using ExplicitCreateLTOConfigFunction = llvm::lto::Config (*)(
+    const linker::LinkerDriverConfig &, llvm::DiagnosticHandlerFunction, bool,
+    neverc::ResourceSessionView);
 
 // The legacy entry point accepts this concrete hooks object through a pointer,
 // so preserving only the function's mangled name is not sufficient: an old
@@ -261,6 +282,23 @@ static_assert(
     std::is_same_v<decltype(static_cast<PluralParallelOptAndCodeGenFunction>(
                        &neverc::runParallelOptAndCodeGenWithTunings)),
                    PluralParallelOptAndCodeGenFunction>);
+static_assert(
+    std::is_same_v<decltype(static_cast<ExplicitPluralParallelCodeGenFunction>(
+                       &neverc::runParallelCodeGenWithTunings)),
+                   ExplicitPluralParallelCodeGenFunction>);
+static_assert(
+    std::is_same_v<
+        decltype(static_cast<ExplicitPluralParallelOptAndCodeGenFunction>(
+            &neverc::runParallelOptAndCodeGenWithTunings)),
+        ExplicitPluralParallelOptAndCodeGenFunction>);
+static_assert(
+    std::is_same_v<decltype(static_cast<LegacyCreateLTOConfigFunction>(
+                       &linker::createLTOConfig)),
+                   LegacyCreateLTOConfigFunction>);
+static_assert(
+    std::is_same_v<decltype(static_cast<ExplicitCreateLTOConfigFunction>(
+                       &linker::createLTOConfig)),
+                   ExplicitCreateLTOConfigFunction>);
 
 // Compile real calls (not only decltype expressions) so both source
 // compatibility and the old mangled link symbols remain pinned. These helpers
@@ -685,7 +723,7 @@ public:
   }
 
   Error run() {
-    linker::CommonLinkerContext Context;
+    linker::CommonLinkerContext Context(neverc::ResourceSessionView{});
     linker::LinkerContextGuard ContextGuard(Context);
     Context.configureParallel(/*RequestedThreads=*/2,
                               /*DefaultThreadLimit=*/2);
@@ -708,7 +746,7 @@ public:
   }
 
   Error runBuffered(bool FailPublisher = false) {
-    linker::CommonLinkerContext Context;
+    linker::CommonLinkerContext Context(neverc::ResourceSessionView{});
     linker::LinkerContextGuard ContextGuard(Context);
     Context.configureParallel(/*RequestedThreads=*/2,
                               /*DefaultThreadLimit=*/2);
@@ -1124,6 +1162,87 @@ TEST(ParallelCodeGenABICompatibilityTest,
   EXPECT_TRUE(&linker::parseMllvmOptions != nullptr);
   EXPECT_TRUE(&callLegacyParallelCodeGenWithBracedPartitionCount != nullptr);
   EXPECT_TRUE(&callLegacyParallelOptAndCodeGenWithBracedArguments != nullptr);
+}
+
+enum class LTOParallelHookKind { CodeGen, OptCodeGen };
+
+void expectLTOParallelHookRetainsParentSession(LTOParallelHookKind Kind) {
+  std::unique_ptr<TargetMachine> Machine = createNativeTargetMachine();
+  ASSERT_TRUE(Machine);
+
+  std::atomic<unsigned> SessionGrants{0};
+  neverc::ProcessResourceBrokerConfig BrokerConfig;
+  BrokerConfig.Enabled = true;
+  BrokerConfig.CpuTokens = 2;
+  auto Broker = neverc::ProcessResourceBrokerTestAccess::create(
+      BrokerConfig, [&](const neverc::ProcessResourceBrokerEvent &Event) {
+        if (Event.Kind ==
+            neverc::ProcessResourceBrokerEventKind::SessionGranted)
+          SessionGrants.fetch_add(1, std::memory_order_relaxed);
+      });
+  neverc::ScopedProcessResourceBrokerOverride Override(*Broker);
+
+  {
+    neverc::ResourceSessionPermit Outer =
+        Broker->acquireSession(neverc::ResourcePhase::LTOSerial);
+    ASSERT_TRUE(Outer.ownsAdmission());
+    ASSERT_EQ(SessionGrants.load(std::memory_order_relaxed), 1u);
+
+    linker::LinkerDriverConfig DriverConfig;
+    DriverConfig.ltoPartitions = 2;
+    lto::Config Config = linker::createLTOConfig(
+        DriverConfig, [](const DiagnosticInfo &) {}, /*EmitAddrsig=*/true,
+        Outer.session());
+
+    LLVMContext Context;
+    Module M("lto-parent-session-hook", Context);
+    M.setTargetTriple(Machine->getTargetTriple().str());
+    M.setDataLayout(Machine->createDataLayout());
+    SmallString<0> Output;
+    raw_svector_ostream OS(Output);
+
+    bool Accepted = false;
+    if (Kind == LTOParallelHookKind::CodeGen) {
+      ASSERT_TRUE(Config.ParallelCodeGenHook);
+      Accepted = Config.ParallelCodeGenHook(M, *Machine, OS,
+                                            /*NumPartitions=*/2);
+    } else {
+      ASSERT_TRUE(Config.ParallelOptCodeGenHook);
+      Accepted = Config.ParallelOptCodeGenHook(
+          M, *Machine, OS, /*NumPartitions=*/2, /*OptLevel=*/2);
+    }
+    EXPECT_FALSE(Accepted);
+
+    // The hook enters PCG's admission path before this empty module declines.
+    // An omitted parent would therefore consume the broker's second token and
+    // emit another SessionGranted even though that short-lived permit is gone
+    // by the time the hook returns.
+    EXPECT_EQ(SessionGrants.load(std::memory_order_relaxed), 1u);
+    const neverc::ProcessResourceBrokerSnapshot During =
+        neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
+    EXPECT_EQ(During.Capacity, 2u);
+    EXPECT_EQ(During.AvailableTokens, 1u);
+    EXPECT_EQ(During.ActiveTokens, 1u);
+    EXPECT_EQ(During.ActiveSessions, 1u);
+    EXPECT_EQ(During.HighWaterTokens, 1u);
+  }
+
+  const neverc::ProcessResourceBrokerSnapshot After =
+      neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
+  EXPECT_EQ(SessionGrants.load(std::memory_order_relaxed), 1u);
+  EXPECT_EQ(After.AvailableTokens, 2u);
+  EXPECT_EQ(After.ActiveTokens, 0u);
+  EXPECT_EQ(After.ActiveSessions, 0u);
+}
+
+TEST(LTOParallelHookResourceSessionTest,
+     ParallelCodeGenHookRetainsOuterSessionWithoutSecondAdmission) {
+  expectLTOParallelHookRetainsParentSession(LTOParallelHookKind::CodeGen);
+}
+
+TEST(LTOParallelHookResourceSessionTest,
+     ParallelOptCodeGenHookRetainsOuterSessionWithoutSecondAdmission) {
+  expectLTOParallelHookRetainsParentSession(LTOParallelHookKind::OptCodeGen);
 }
 
 TEST(LTOParallelHookContractTest,

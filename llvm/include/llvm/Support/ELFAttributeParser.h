@@ -79,7 +79,7 @@ public:
 
 namespace llvm {
 
-inline static const EnumEntry<unsigned> tagNames[] = {
+inline static constexpr EnumEntry<unsigned> tagNames[] = {
     {"Tag_File", ELFAttrs::File},
     {"Tag_Section", ELFAttrs::Section},
     {"Tag_Symbol", ELFAttrs::Symbol},

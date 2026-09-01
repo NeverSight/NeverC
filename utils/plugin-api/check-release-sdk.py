@@ -50,7 +50,10 @@ def main() -> int:
     args = ap.parse_args()
 
     build = args.build_dir.resolve()
-    compiler = build / "bin" / "neverc"
+    compiler_candidates = (build / "bin" / "neverc",
+                           build / "bin" / "neverc.exe")
+    compiler = next((path for path in compiler_candidates if path.exists()),
+                    compiler_candidates[0])
     failures: list[str] = []
 
     tmp: Path | None = None
@@ -98,16 +101,28 @@ def main() -> int:
                  ["--compiler", str(compiler)]),
                 (HERE / "check-phase-inventory.py",
                  ["--compiler", str(compiler)]),
-                (HERE / "check-coverage.py",
-                 [str(REPO / "docs/plugin-api/coverage.json")]),
-                (HERE / "check-global-state.py",
-                 ["--build-dir", str(build)]),
             ]
             for script, extra in compiler_gates:
                 if run([sys.executable, str(script)] + extra, cwd=REPO) != 0:
                     failures.append(script.name)
+
+        coverage = HERE / "check-coverage.py"
+        if run([sys.executable, str(coverage),
+                str(REPO / "docs/plugin-api/coverage.json")],
+               cwd=REPO) != 0:
+            failures.append(coverage.name)
+
+        if compiler.exists():
+            global_state = HERE / "check-global-state.py"
+            if run([sys.executable, str(global_state),
+                    "--build-dir", str(build), "--strict"],
+                   cwd=REPO) != 0:
+                failures.append(global_state.name)
         else:
-            print(f"note: {compiler} not found; skipping compiler-based gates")
+            tried = ", ".join(str(path) for path in compiler_candidates)
+            print(f"error: built compiler not found (tried: {tried})",
+                  file=sys.stderr)
+            failures.append("built compiler")
     finally:
         if tmp is not None and not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)

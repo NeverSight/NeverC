@@ -56,9 +56,21 @@ namespace linker::coff {
 bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
           const LinkerDriverConfig &driverCfg) {
-  linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner TraceProfiler(
-      driverCfg.timeTraceEnabled, driverCfg.timeTraceGranularity,
-      args.empty() ? "neverc" : args.front());
+  std::optional<linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner>
+      TraceProfiler;
+  const bool GuardAmbientTimeTrace =
+      !driverCfg.timeTraceEnabled &&
+      llvm::CrashRecoveryContext::GetCurrent() &&
+      llvm::timeTraceProfilerEnabled();
+  if (driverCfg.timeTraceEnabled || GuardAmbientTimeTrace)
+    TraceProfiler.emplace(driverCfg.timeTraceGranularity,
+                          args.empty() ? "neverc" : args.front());
+  if (llvm::StringRef Error = TraceProfiler ? TraceProfiler->acquisitionError()
+                                            : llvm::StringRef();
+      !Error.empty()) {
+    stderrOS << Error << '\n';
+    return false;
+  }
   linker::crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
       ExecutionOwner(driverCfg.executionContext);
   LinkerExecutionContext &Execution = ExecutionOwner.get();
@@ -83,8 +95,9 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
 
   ctx.driver.run(args, driverCfg);
 
-  if (!ctx.config.outputFile.empty())
-    checkError(TraceProfiler.write(ctx.config.outputFile));
+  if (driverCfg.timeTraceEnabled && TraceProfiler &&
+      !ctx.config.outputFile.empty())
+    checkError(TraceProfiler->write(ctx.config.outputFile));
 
   return errorCount() == 0;
 }

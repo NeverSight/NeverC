@@ -18,6 +18,7 @@ struct MachOLinkerContext::Impl {
   OutputSection *FirstTLVDataSection = nullptr;
   PriorityBuilder Priorities;
   std::vector<OutputSegment *> OutputSegmentList;
+  llvm::DenseMap<StringRef, OutputSegment *> OutputSegmentsByName;
   std::vector<ConcatInputSection *> InputSectionList;
   llvm::SetVector<InputFile *> InputFileList;
   llvm::DenseMap<llvm::CachedHashStringRef, MemoryBufferRef> CachedReadMap;
@@ -67,6 +68,9 @@ PriorityBuilder &machoPriorityBuilder() {
 }
 std::vector<OutputSegment *> &machoOutputSegments() {
   return machoContext().state().OutputSegmentList;
+}
+llvm::DenseMap<StringRef, OutputSegment *> &machoOutputSegmentsByName() {
+  return machoContext().state().OutputSegmentsByName;
 }
 std::vector<ConcatInputSection *> &machoInputSections() {
   return machoContext().state().InputSectionList;

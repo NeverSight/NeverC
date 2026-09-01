@@ -1,3 +1,4 @@
+#include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/OutputSections.h"
@@ -971,11 +972,9 @@ namespace {
 TargetInfo *getTargetInfo() {
   if ((config->andFeatures & GNU_PROPERTY_AARCH64_FEATURE_1_BTI) ||
       config->zPacPlt) {
-    static AArch64BtiPac t;
-    return &t;
+    return linker::make<AArch64BtiPac>();
   }
-  static AArch64 t;
-  return &t;
+  return linker::make<AArch64>();
 }
 
 template <class ELFT>

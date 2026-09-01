@@ -43,6 +43,7 @@ class PrepEngine;
 class Sema;
 class SourceManager;
 class TargetInfo;
+class OutputTransactionCrashCleanup;
 namespace plugin {
 class PluginSourcePhaseRuntime;
 class PluginTaskContext;
@@ -98,12 +99,21 @@ class CompilerInstance {
     std::string Filename;
     std::optional<llvm::sys::fs::TempFile> File;
     std::shared_ptr<OutputTransaction> Transaction;
+    // Declared after Transaction so normal destruction unregisters the raw
+    // transaction cleanup before releasing the shared owner.
+    std::unique_ptr<OutputTransactionCrashCleanup> CrashCleanup;
 
     OutputFile(std::string filename,
                std::optional<llvm::sys::fs::TempFile> file,
-               std::shared_ptr<OutputTransaction> transaction = {})
-        : Filename(std::move(filename)), File(std::move(file)),
-          Transaction(std::move(transaction)) {}
+               std::shared_ptr<OutputTransaction> transaction = {},
+               std::unique_ptr<OutputTransactionCrashCleanup> crashCleanup =
+                   {});
+    ~OutputFile();
+
+    OutputFile(const OutputFile &) = delete;
+    OutputFile &operator=(const OutputFile &) = delete;
+    OutputFile(OutputFile &&) noexcept;
+    OutputFile &operator=(OutputFile &&) = delete;
   };
 
   std::list<OutputFile> OutputFiles;
@@ -387,6 +397,11 @@ public:
   void createSema();
 
   void createFrontendTimer();
+
+  /// Stops and removes the per-invocation frontend timer and its group.
+  /// Crash recovery uses this without destroying the abandoned
+  /// CompilerInstance and its unrelated resources.
+  void clearFrontendTimer();
 
   std::unique_ptr<raw_pwrite_stream> createDefaultOutputFile(
       bool Binary = true, llvm::StringRef BaseInput = "",

@@ -75,7 +75,15 @@ public:
   TimePassesHandler(bool Enabled, bool PerRun = false);
 
   /// Destructor handles the print action if it has not been handled before.
-  ~TimePassesHandler() { print(); }
+  ~TimePassesHandler() {
+    // A recovery boundary can abandon a pass between its before/after
+    // callbacks. Printing a running timer with reset enabled would stop,
+    // clear, and restart it; its later destructor would then emit a second
+    // zero-valued record and leave the signpost interval open. Teardown must
+    // close every active interval without restarting its suspended parent.
+    stopActiveTimersForDestruction();
+    print();
+  }
 
   /// Prints out timing information and then resets the timers.
   void print();
@@ -90,6 +98,18 @@ public:
   void setOutStream(raw_ostream &OutStream);
 
 private:
+  void stopActiveTimersForDestruction() {
+    auto StopStack = [](SmallVectorImpl<Timer *> &Stack) {
+      while (!Stack.empty()) {
+        Timer *Active = Stack.pop_back_val();
+        if (Active && Active->isRunning())
+          Active->stopTimer();
+      }
+    };
+    StopStack(AnalysisActiveTimerStack);
+    StopStack(PassActiveTimerStack);
+  }
+
   /// Dumps information for running/triggered timers, useful for debugging
   LLVM_DUMP_METHOD void dump() const;
 

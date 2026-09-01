@@ -5,6 +5,10 @@
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/LTO/Config.h"
 
+namespace neverc {
+class ResourceSessionView;
+}
+
 namespace linker {
 
 struct LinkerDriverConfig;
@@ -24,6 +28,13 @@ bool ltoBasicBlockSectionsIsListFile(llvm::StringRef bbs);
 llvm::lto::Config createLTOConfig(const LinkerDriverConfig &Cfg,
                                   llvm::DiagnosticHandlerFunction DiagHandler,
                                   bool EmitAddrsig = true);
+
+/// Explicit-parent variant used by linker executions. The legacy overload
+/// above remains a top-level ABI entry point.
+llvm::lto::Config createLTOConfig(
+    const LinkerDriverConfig &Cfg,
+    llvm::DiagnosticHandlerFunction DiagHandler, bool EmitAddrsig,
+    neverc::ResourceSessionView ParentSession);
 
 /// Legacy compatibility entry point. New callers should use createLTOConfig(),
 /// which owns and restores the parsed LLVM option profile for the complete LTO

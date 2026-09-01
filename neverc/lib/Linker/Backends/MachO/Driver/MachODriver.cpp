@@ -41,6 +41,7 @@
 
 #include "neverc/Merge/Merger.h"
 #include <algorithm>
+#include <optional>
 #include <vector>
 
 // MachOContextAccess defines short accessor macros such as `in`. Keep every
@@ -1388,9 +1389,25 @@ namespace macho {
 bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
           const LinkerDriverConfig &driverCfg) {
-  linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner TraceProfiler(
-      driverCfg.timeTraceEnabled, driverCfg.timeTraceGranularity,
-      argsArr.empty() ? "neverc" : argsArr.front());
+  std::optional<linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner>
+      TraceProfiler;
+  const bool GuardAmbientTimeTrace =
+      !driverCfg.timeTraceEnabled &&
+      llvm::CrashRecoveryContext::GetCurrent() &&
+      llvm::timeTraceProfilerEnabled();
+  if (driverCfg.timeTraceEnabled || GuardAmbientTimeTrace)
+    TraceProfiler.emplace(driverCfg.timeTraceGranularity,
+                          argsArr.empty() ? "neverc" : argsArr.front());
+  if (llvm::StringRef Error = TraceProfiler ? TraceProfiler->acquisitionError()
+                                            : llvm::StringRef();
+      !Error.empty()) {
+    stderrOS << Error << '\n';
+    return false;
+  }
+  auto WriteTrace = [&](llvm::StringRef OutputFile) {
+    if (driverCfg.timeTraceEnabled && TraceProfiler)
+      checkError(TraceProfiler->write(OutputFile));
+  };
   linker::crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
       ExecutionOwner(driverCfg.executionContext);
   LinkerExecutionContext &Execution = ExecutionOwner.get();
@@ -1445,8 +1462,10 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   depTracker = std::make_unique<DependencyTracker>(
       args.getLastArgValue(OPT_dependency_info));
 
-  if (errorCount())
+  if (errorCount()) {
+    WriteTrace(driverCfg.outputFile);
     return false;
+  }
 
   if (args.hasArg(OPT_pagezero_size)) {
     uint64_t pagezeroSize = args::getHex(args, OPT_pagezero_size, 0);
@@ -1729,7 +1748,7 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
 
   config->progName = argsArr[0];
 
-  {
+  const bool finishedRelocatable = [&] {
     TimeTraceScope timeScope("ExecuteLinker");
 
     initLLVM(); // must be run before any call to addFile()
@@ -1785,25 +1804,25 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     replaceCommonSymbols();
 
     if (config->outputType == MH_OBJECT) {
-      TimeTraceScope mergeScope("Relocatable merge");
-      SmallVector<StringRef, 32> buffers;
-      for (InputFile *f : inputFiles)
-        if (isa<ObjFile>(f))
-          buffers.push_back(f->mb.getBuffer());
+      {
+        TimeTraceScope mergeScope("Relocatable merge");
+        SmallVector<StringRef, 32> buffers;
+        for (InputFile *f : inputFiles)
+          if (isa<ObjFile>(f))
+            buffers.push_back(f->mb.getBuffer());
 
-      neverc::merge::Options mergeOpts;
-      mergeOpts.pureC = true;
+        neverc::merge::Options mergeOpts;
+        mergeOpts.pureC = true;
 
-      std::error_code ec;
-      raw_fd_ostream out(config->outputFile, ec, sys::fs::OF_None);
-      if (ec) {
-        error("cannot open " + config->outputFile + ": " + ec.message());
-        return errorCount() == 0;
+        std::error_code ec;
+        raw_fd_ostream out(config->outputFile, ec, sys::fs::OF_None);
+        if (ec)
+          error("cannot open " + config->outputFile + ": " + ec.message());
+        else if (!neverc::merge::mergeObjects(
+                     buffers, out, neverc::merge::Format::MachO64, mergeOpts))
+          error("relocatable merge failed");
       }
-      if (!neverc::merge::mergeObjects(
-              buffers, out, neverc::merge::Format::MachO64, mergeOpts))
-        error("relocatable merge failed");
-      return errorCount() == 0;
+      return true;
     }
 
     StringRef orderFile = args.getLastArgValue(OPT_order_file);
@@ -1846,13 +1865,20 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     writeOutput<LP64>();
 
     depTracker->write(inputFiles, config->outputFile);
+    return false;
+  }();
+
+  if (finishedRelocatable) {
+    // LLVM requires every time-trace scope to be balanced before writing.
+    WriteTrace(config->outputFile);
+    return errorCount() == 0;
   }
 
   if (errorCount() != 0 || config->strictAutoLink)
     for (const auto &warning : missingAutolinkWarnings)
       warn(warning);
 
-  checkError(TraceProfiler.write(config->outputFile));
+  WriteTrace(config->outputFile);
   return errorCount() == 0;
 }
 } // namespace macho

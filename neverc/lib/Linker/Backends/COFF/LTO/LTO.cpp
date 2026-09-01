@@ -26,7 +26,7 @@ static constexpr bool emitAddrsig = true;
 
 lto::Config BitcodeCompiler::createConfig() {
   return createLTOConfig(*ctx.config.driverCfg, diagnosticHandler,
-                         emitAddrsig);
+                         emitAddrsig, ctx.resourceSession());
 }
 
 // ===----------------------------------------------------------------------===

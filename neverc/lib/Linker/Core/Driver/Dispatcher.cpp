@@ -1,7 +1,6 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/CrashRecovery.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
-#include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/CrashRecoveryContext.h"
@@ -36,35 +35,42 @@ StringRef phaseTraceFormat(Flavor Flavor) {
 int dispatchLink(ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
                  ArrayRef<const char *> Args, raw_ostream &Stdout,
                  raw_ostream &Stderr, const LinkerDriverConfig &Config) {
-  crash_recovery_detail::CrashRecoveryTimeTraceOwner TraceProfiler(
-      Config.timeTraceEnabled, Config.timeTraceGranularity,
-      Args.empty() ? "neverc" : Args.front());
+  std::optional<crash_recovery_detail::CrashRecoveryTimeTraceOwner>
+      TraceProfiler;
+  const bool GuardAmbientTimeTrace =
+      !Config.timeTraceEnabled &&
+      CrashRecoveryContext::GetCurrent() && timeTraceProfilerEnabled();
+  if (Config.timeTraceEnabled || GuardAmbientTimeTrace)
+    TraceProfiler.emplace(Config.timeTraceGranularity,
+                          Args.empty() ? "neverc" : Args.front());
+  bool Success = false;
+  if (StringRef Error = TraceProfiler ? TraceProfiler->acquisitionError()
+                                      : StringRef();
+      !Error.empty()) {
+    Stderr << Error << '\n';
+    if (Config.executionHooks)
+      Config.executionHooks->complete(/*Success=*/false);
+    return 1;
+  }
+
+  crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
+      ExecutionOwner(Config.executionContext);
+  LinkerExecutionContext &Execution = ExecutionOwner.get();
   CrashRecoveryContextCleanupRegistrar<
       LinkerExecutionContext,
       crash_recovery_detail::CrashRecoveryDestroyBackendCleanup<
           LinkerExecutionContext>>
-      CrashBackend(Config.executionContext);
-
-  const StringRef Format = timeTraceProfilerEnabled()
-                               ? phaseTraceFormat(RequestedFlavor)
-                               : StringRef();
-  auto ResourceSession = neverc::ProcessResourceBroker::global().acquireSession(
-      neverc::ResourcePhase::LinkParseResolve);
-  std::unique_ptr<neverc::ResourceSessionPermit> CrashOwnedResourceSession;
-  std::optional<
-      CrashRecoveryContextCleanupRegistrar<neverc::ResourceSessionPermit>>
-      CrashResourceSession;
-  if (CrashRecoveryContext::GetCurrent()) {
-    CrashOwnedResourceSession = std::make_unique<neverc::ResourceSessionPermit>(
-        std::move(ResourceSession));
-    CrashResourceSession.emplace(CrashOwnedResourceSession.get());
-  }
-  bool Success = false;
+      CrashBackend(&Execution);
+  LinkerDriverConfig EffectiveConfig = Config;
+  EffectiveConfig.executionContext = &Execution;
   auto Finish = make_scope_exit([&] {
     if (Config.executionHooks)
       Config.executionHooks->complete(Success);
   });
 
+  const StringRef Format = timeTraceProfilerEnabled()
+                               ? phaseTraceFormat(RequestedFlavor)
+                               : StringRef();
   int Result = 1;
   {
     TimeTraceScope DispatchScope("neverc.link.dispatch", Format);
@@ -76,7 +82,7 @@ int dispatchLink(ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
           return 1;
         }
         auto HookResult = Config.executionHooks->execute(
-            *Config.executionRequest, Config, Stdout, Stderr);
+            *Config.executionRequest, EffectiveConfig, Stdout, Stderr);
         if (!HookResult) {
           Stderr << "neverc: error: linker hook failed: "
                  << toString(HookResult.takeError()) << "\n";
@@ -99,13 +105,16 @@ int dispatchLink(ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
 
       TimeTraceScope BackendScope("neverc.link.backend", Format);
       return It->d(Args, Stdout, Stderr,
-                   /*exitEarly=*/false, /*disableOutput=*/false, Config)
+                   /*exitEarly=*/false, /*disableOutput=*/false,
+                   EffectiveConfig)
                  ? 0
                  : 1;
     }();
   }
 
-  if (Error E = TraceProfiler.write(Config.outputFile)) {
+  if (Error E = Config.timeTraceEnabled && TraceProfiler
+                    ? TraceProfiler->write(Config.outputFile)
+                    : Error::success()) {
     Stderr << "neverc: error: could not write linker time trace: "
            << toString(std::move(E)) << "\n";
     Result = 1;

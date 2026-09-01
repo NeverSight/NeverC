@@ -197,6 +197,30 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       return false;
     }
     auto &Obj = **ObjOrErr;
+
+    // COFFObjectFile accepts several containers that share the COFF prefix.
+    // This merger implements relocatable .obj semantics only: PE images,
+    // import-library member descriptors, and objects carrying an optional
+    // image header must go through their native linker instead of being
+    // reinterpreted as section-relative input.
+    if ((Obj.getCOFFHeader() && Obj.getCOFFHeader()->isImportLibrary()) ||
+        !Obj.isRelocatableObject() || Obj.getSizeOfOptionalHeader() != 0 ||
+        (Obj.getCharacteristics() &
+         (IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_DLL | IMAGE_FILE_SYSTEM))) {
+      errs() << "neverc: COFF relocatable merge: input is not a relocatable "
+                "COFF object; refusing to merge\n";
+      return false;
+    }
+
+    // initialize() intentionally recovers from a malformed symbol-table extent
+    // by clearing its loaded table pointer while retaining the raw header
+    // count.  Continuing would either discard all symbols or let a relocation
+    // manufacture a SymbolRef over a null/out-of-range table.
+    if (Obj.getRawNumberOfSymbols() != 0 && Obj.getSymbolTable() == 0) {
+      errs() << "neverc: COFF relocatable merge: object declares symbols but "
+                "its symbol table could not be loaded; refusing to merge\n";
+      return false;
+    }
     const size_t SymEntrySize = Obj.getSymbolTableEntrySize();
     uint16_t ThisMachine = Obj.getMachine();
     if (ThisMachine != IMAGE_FILE_MACHINE_UNKNOWN) {
@@ -405,10 +429,18 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         return false;
       }
       unsigned OrigIdx = SymIndex;
+      const unsigned AuxCount = CSym.getNumberOfAuxSymbols();
+      if (AuxCount > NumSyms - OrigIdx - 1) {
+        errs() << "neverc: COFF relocatable merge: symbol table entry "
+               << OrigIdx << " declares " << AuxCount
+               << " auxiliary records past the declared symbol table; "
+                  "refusing to merge\n";
+        return false;
+      }
       // Advance past this primary record and its declared aux records up front,
       // so every loop exit (including the `continue` below) keeps the walk
       // moving; the aux *contents* are still bounds-checked before any read.
-      SymIndex += 1 + CSym.getNumberOfAuxSymbols();
+      SymIndex += 1 + AuxCount;
       coff_symbol16 OutSym;
       memset(&OutSym, 0, sizeof(OutSym));
 
@@ -802,14 +834,12 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
 bool mergeCOFFObjects(ArrayRef<SmallVector<char, 0>> Buffers,
                       raw_pwrite_stream &OS, const Options &Opts) {
-  return detail::runMergeSafely(
-      [&]() { return mergeCOFFImpl(Buffers, OS, Opts); });
+  return mergeCOFFImpl(Buffers, OS, Opts);
 }
 
 bool mergeCOFFObjects(ArrayRef<StringRef> Buffers, raw_pwrite_stream &OS,
                       const Options &Opts) {
-  return detail::runMergeSafely(
-      [&]() { return mergeCOFFImpl(Buffers, OS, Opts); });
+  return mergeCOFFImpl(Buffers, OS, Opts);
 }
 
 } // namespace neverc::merge

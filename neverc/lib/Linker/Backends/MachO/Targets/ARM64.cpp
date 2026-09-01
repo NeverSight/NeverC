@@ -4,6 +4,7 @@
 #include "Linker/MachO/Target.h"
 #include "Linker/MachO/Targets/ARM64Common.h"
 
+#include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "mach-o/compact_unwind_encoding.h"
 #include "llvm/ADT/SmallVector.h"
@@ -697,6 +698,5 @@ void ARM64::applyOptimizationHints(uint8_t *outBuf, const ObjFile &obj) const {
 }
 
 TargetInfo *macho::createARM64TargetInfo() {
-  static ARM64 t;
-  return &t;
+  return linker::make<ARM64>();
 }

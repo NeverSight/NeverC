@@ -2466,7 +2466,7 @@ void computeHash(
 #if defined(MADV_DONTNEED) && (defined(__unix__) || defined(__APPLE__))
     if (arr.empty())
       return;
-    static size_t pageSize = [] {
+    const size_t pageSize = [] {
       long p = ::sysconf(_SC_PAGESIZE);
       return p > 0 ? static_cast<size_t>(p) : size_t(0);
     }();

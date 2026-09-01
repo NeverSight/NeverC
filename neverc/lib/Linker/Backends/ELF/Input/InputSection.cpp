@@ -14,7 +14,6 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/xxhash.h"
 #include <algorithm>
-#include <mutex>
 #include <optional>
 #include <vector>
 #include "Linker/ELF/ELFContextAccess.h"
@@ -122,12 +121,7 @@ void decompressAux(const InputSectionBase &sec, uint8_t *out, size_t size) {
 } // namespace
 
 void InputSectionBase::decompress() const {
-  uint8_t *uncompressedBuf;
-  {
-    static std::mutex mu;
-    std::lock_guard<std::mutex> lock(mu);
-    uncompressedBuf = bAlloc().Allocate<uint8_t>(size);
-  }
+  uint8_t *uncompressedBuf = makeThreadLocalN<uint8_t>(size);
 
   dispatchByFormat(decompressAux, *this, uncompressedBuf, size);
   content_ = uncompressedBuf;
@@ -307,8 +301,6 @@ std::string InputSectionBase::getObjMsg(uint64_t off) const {
   return (filename + ":(" + name + "+0x" + utohexstr(off) + ")" + archive)
       .str();
 }
-
-InputSection InputSection::discarded(nullptr, 0, 0, 0, ArrayRef<uint8_t>(), "");
 
 InputSection::InputSection(InputFile *f, uint64_t flags, uint32_t type,
                            uint32_t addralign, ArrayRef<uint8_t> data,

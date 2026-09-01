@@ -106,5 +106,3 @@ void macho::reportRangeError(void *loc, SymbolDiagnostic d, const Twine &v,
   error(d.reason + " is out of range: " + v + " is not in [" + Twine(min) +
         ", " + Twine(max) + "]" + hint);
 }
-
-const RelocAttrs macho::invalidRelocAttrs{"INVALID", RelocAttrBits::_0};

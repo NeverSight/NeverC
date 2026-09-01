@@ -16,6 +16,7 @@ CODEGENOPT(DisableIntegratedAS, 1, 0) ///< -no-integrated-as
 CODEGENOPT(TreatWarningsAsErrors, 1, 0) ///< Treat warnings as errors
 CODEGENOPT(AutoGenerateBitcode, 1, 0) ///< Automatically generate bitcode
 CODEGENOPT(AutoGenerateIR, 1, 0) ///< Automatically generate ir
+CODEGENOPT(RelinkBuiltinBitcodePostop, 1, 0) ///< Re-link builtin bitcode after optimization.
 CODEGENOPT(RelaxELFRelocations, 1, 1) ///< -Wa,-mrelax-relocations={yes,no}
 CODEGENOPT(AsmVerbose        , 1, 0) ///< -dA, -fverbose-asm.
 CODEGENOPT(PreserveAsmComments, 1, 1) ///< -dA, -fno-preserve-as-comments.

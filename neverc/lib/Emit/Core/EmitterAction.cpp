@@ -46,10 +46,6 @@ using namespace llvm;
 
 #define DEBUG_TYPE "emitter-action"
 
-namespace llvm {
-extern cl::opt<bool> ClRelinkBuiltinBitcodePostop;
-}
-
 // ===----------------------------------------------------------------------===
 // NeverCDiagnosticHandler
 // ===----------------------------------------------------------------------===
@@ -335,7 +331,7 @@ bool EmitterConsumer::LinkInModules(llvm::Module *M, bool ShouldLinkFiles) {
         Err = Linker::linkModules(*M, std::move(Mod), LM.LinkFlags);
     };
 
-    if (ClRelinkBuiltinBitcodePostop) {
+    if (CodeGenOpts.RelinkBuiltinBitcodePostop) {
       std::unique_ptr<llvm::Module> Clone = llvm::CloneModule(*LM.Module);
       DoLink(Clone);
     } else {

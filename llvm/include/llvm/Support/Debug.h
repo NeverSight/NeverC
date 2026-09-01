@@ -33,6 +33,8 @@
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/circular_raw_ostream.h"
+#include <functional>
+#include <utility>
 
 // Forward-declare dbgs() before pulling in CommandLine.h: lcommand_lline.h
 // (included at the bottom of CommandLine.h) uses LLVM_DEBUG/dbgs() inline,
@@ -191,10 +193,38 @@ struct DebugOnlyOpt {
       CurrentDebugType->push_back(SmallString<32>(dbgType));
   }
 };
+
+class DebugOnlyOption final
+    : public cl::opt<DebugOnlyOpt, true, cl::parser<std::string>> {
+  using Base = cl::opt<DebugOnlyOpt, true, cl::parser<std::string>>;
+
+public:
+  using Base::Base;
+
+  void setDefault() override {
+    const cl::OptionValue<DebugOnlyOpt> &Default = this->getDefault();
+    this->setValue(Default.hasValue() ? Default.getValue() : DebugOnlyOpt());
+    getCurrentDebugType()->clear();
+  }
+
+  std::function<void()> createStateRestorer() override {
+    cl::Option::OccurrenceState Occurrences =
+        this->captureOccurrenceState();
+    DebugOnlyOpt SavedValue = this->getValue();
+    SmallVector<SmallString<32>, 4> SavedTypes = *getCurrentDebugType();
+    return [this, Occurrences, SavedValue,
+            SavedTypes = std::move(SavedTypes)]() mutable {
+      this->setValue(SavedValue);
+      this->restoreOccurrenceState(Occurrences);
+      *getCurrentDebugType() = SavedTypes;
+    };
+  }
+};
+
 struct CreateDebugOnly {
   static void *call() {
     static DebugOnlyOpt DebugOnlyOptLoc;
-    return new cl::opt<DebugOnlyOpt, true, cl::parser<std::string>>(
+    return new DebugOnlyOption(
         "debug-only",
         cl::desc("Enable a specific type of debug output (comma separated list "
                  "of types)"),

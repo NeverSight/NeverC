@@ -29,6 +29,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/BuryPointer.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
@@ -96,6 +97,47 @@ llvm::StringRef outputTransactionResultName(OutputTransactionResult Result) {
 }
 
 } // namespace
+
+namespace neverc {
+
+class OutputTransactionCrashCleanup {
+  class AbortCleanup final
+      : public llvm::CrashRecoveryContextCleanupBase<AbortCleanup,
+                                                     OutputTransaction> {
+  public:
+    AbortCleanup(llvm::CrashRecoveryContext *Context,
+                 OutputTransaction *Transaction)
+        : llvm::CrashRecoveryContextCleanupBase<AbortCleanup,
+                                                OutputTransaction>(
+              Context, Transaction) {}
+
+    void recoverResources() override { (void)this->resource->abort(); }
+  };
+
+  using Registrar =
+      llvm::CrashRecoveryContextCleanupRegistrar<OutputTransaction,
+                                                 AbortCleanup>;
+
+public:
+  explicit OutputTransactionCrashCleanup(OutputTransaction *Transaction)
+      : Registration(Transaction) {}
+
+private:
+  Registrar Registration;
+};
+
+CompilerInstance::OutputFile::OutputFile(
+    std::string FilenameValue, std::optional<llvm::sys::fs::TempFile> FileValue,
+    std::shared_ptr<OutputTransaction> TransactionValue,
+    std::unique_ptr<OutputTransactionCrashCleanup> CrashCleanupValue)
+    : Filename(std::move(FilenameValue)), File(std::move(FileValue)),
+      Transaction(std::move(TransactionValue)),
+      CrashCleanup(std::move(CrashCleanupValue)) {}
+
+CompilerInstance::OutputFile::~OutputFile() = default;
+CompilerInstance::OutputFile::OutputFile(OutputFile &&) noexcept = default;
+
+} // namespace neverc
 
 CompilerInstance::CompilerInstance() : Invocation(new CompilerInvocation()) {}
 
@@ -397,6 +439,13 @@ void CompilerInstance::createFrontendTimer() {
                                       *FrontendTimerGroup));
 }
 
+void CompilerInstance::clearFrontendTimer() {
+  if (FrontendTimer && FrontendTimer->isRunning())
+    FrontendTimer->stopTimer();
+  FrontendTimer.reset();
+  FrontendTimerGroup.reset();
+}
+
 void CompilerInstance::createSema() {
   TheSema.reset(new Sema(getPrepEngine(), getTreeContext(), getTreeConsumer()));
   if (PluginSourcePhases) {
@@ -414,6 +463,11 @@ void CompilerInstance::createSema() {
 void CompilerInstance::clearOutputFiles(bool EraseFiles) {
   assert(!hasTreeConsumer() && "TreeConsumer should be reset");
   for (OutputFile &OF : OutputFiles) {
+    // Normal teardown owns this transaction again. Unregister the raw-pointer
+    // crash cleanup before finish/commit/abort can change its state and before
+    // releasing the shared owner below. A crash-abandoned CompilerInstance is
+    // intentionally never destroyed after its CRC has fired the registrar.
+    OF.CrashCleanup.reset();
     if (OF.Transaction) {
       if (EraseFiles) {
         OutputTransactionResult Result = OF.Transaction->abort();
@@ -583,7 +637,12 @@ CompilerInstance::createOutputFileImpl(llvm::StringRef OutputPath, bool Binary,
     if (!Transaction)
       return Transaction.takeError();
 
-    OutputFiles.emplace_back(OutputPath.str(), std::nullopt, *Transaction);
+    std::unique_ptr<OutputTransactionCrashCleanup> CrashCleanup;
+    if (llvm::CrashRecoveryContext::GetCurrent())
+      CrashCleanup =
+          std::make_unique<OutputTransactionCrashCleanup>(Transaction->get());
+    OutputFiles.emplace_back(OutputPath.str(), std::nullopt, *Transaction,
+                             std::move(CrashCleanup));
     return std::make_unique<OutputTransactionStream>(std::move(*Transaction));
   }
 

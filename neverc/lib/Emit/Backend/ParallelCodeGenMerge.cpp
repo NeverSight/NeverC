@@ -640,6 +640,7 @@ struct ParallelCodeGenRequestSnapshot {
   explicit ParallelCodeGenRequestSnapshot(
       const ParallelCodeGenTuning &RequestTuning,
       const NevercPipelineTuningOptions &RequestPipelineTuning,
+      ResourceSessionView ResourceSession,
       std::optional<unsigned> ResolvedThreshold = std::nullopt)
       : Tuning(RequestTuning), PipelineTuning(RequestPipelineTuning),
         ResolvedSCEVHugeExprThreshold(
@@ -648,7 +649,7 @@ struct ParallelCodeGenRequestSnapshot {
                                      ? RequestTuning.SCEVHugeExprThreshold
                                      : llvm::getScevHugeExprThreshold())),
         EagerReclaim(eagerlyReclaimPCGIntermediates()),
-        ResourceSession(currentResourceSession()) {
+        ResourceSession(std::move(ResourceSession)) {
     assert((!ResolvedThreshold || RequestTuning.SCEVHugeExprThreshold == 0 ||
             RequestTuning.SCEVHugeExprThreshold == *ResolvedThreshold) &&
            "resolved SCEV threshold disagrees with explicit request tuning");
@@ -1228,10 +1229,7 @@ void ParallelCGContext::preparePartitions(
   // thread.
   std::vector<llvm::thread> PrepWorkers;
   PrepWorkers.reserve(PrepThreadCount);
-  const ResourceSessionView WorkerSession = ResourceSession;
-
-  auto PrepWorker = [&, WorkerSession]() {
-    ResourceSessionScope ResourceScope(WorkerSession);
+  auto PrepWorker = [&]() {
     while (true) {
       unsigned WorkIndex = PrepNextWork.fetch_add(1, std::memory_order_relaxed);
       if (WorkIndex >= ExecutionOrder.size())
@@ -2110,9 +2108,7 @@ runParallelCodeGenImpl(Module &Mod, TargetMachine &TM,
     // adversarial IR.
     std::vector<llvm::thread> Workers;
     Workers.reserve(ThreadCount);
-    const ResourceSessionView WorkerSession = Ctx.ResourceSession;
-    auto Worker = [&, WorkerSession]() {
-      ResourceSessionScope ResourceScope(WorkerSession);
+    auto Worker = [&]() {
       while (true) {
         unsigned WorkIndex = NextWork.fetch_add(1, std::memory_order_relaxed);
         if (WorkIndex >= Ctx.ExecutionOrder.size())
@@ -2172,9 +2168,23 @@ bool runParallelCodeGenWithTunings(
     const PartitionCacheHooks *Cache,
     std::optional<unsigned> ResolvedSCEVHugeExprThreshold,
     const ParallelCodeGenObservers *Observers) {
+  return runParallelCodeGenWithTunings(
+      Mod, TM, Outputs, Tuning, PipelineTuning, Cache,
+      ResolvedSCEVHugeExprThreshold, Observers, {});
+}
+
+bool runParallelCodeGenWithTunings(
+    Module &Mod, TargetMachine &TM, ParallelCodeGenOutputs Outputs,
+    const ParallelCodeGenTuning &Tuning,
+    const NevercPipelineTuningOptions &PipelineTuning,
+    const PartitionCacheHooks *Cache,
+    std::optional<unsigned> ResolvedSCEVHugeExprThreshold,
+    const ParallelCodeGenObservers *Observers, ResourceSessionView Parent) {
   auto ResourcePermit = ProcessResourceBroker::global().acquireSession(
-      ResourcePhase::PCGCodeGen, ResourceAdmissionMode::DoNotWait);
+      std::move(Parent), ResourcePhase::PCGCodeGen,
+      ResourceAdmissionMode::DoNotWait);
   const ParallelCodeGenRequestSnapshot Request(Tuning, PipelineTuning,
+                                               ResourcePermit.session(),
                                                ResolvedSCEVHugeExprThreshold);
   installRequestTuning(Mod.getContext(), Request);
   return runParallelCodeGenImpl(Mod, TM, Outputs, Request, Cache, Observers);
@@ -2246,12 +2256,27 @@ bool runParallelOptAndCodeGenWithTunings(
     const PartitionCacheHooks *Cache, const ParallelOptimizationHooks *Hooks,
     const ParallelCodeGenObservers *Observers,
     std::optional<unsigned> ResolvedSCEVHugeExprThreshold) {
+  return runParallelOptAndCodeGenWithTunings(
+      Mod, TM, Outputs, OptLevel, Tuning, PipelineTuning, Cache, Hooks,
+      Observers, ResolvedSCEVHugeExprThreshold, {});
+}
+
+bool runParallelOptAndCodeGenWithTunings(
+    Module &Mod, TargetMachine &TM, ParallelCodeGenOutputs Outputs,
+    unsigned OptLevel, const ParallelCodeGenTuning &Tuning,
+    const NevercPipelineTuningOptions &PipelineTuning,
+    const PartitionCacheHooks *Cache, const ParallelOptimizationHooks *Hooks,
+    const ParallelCodeGenObservers *Observers,
+    std::optional<unsigned> ResolvedSCEVHugeExprThreshold,
+    ResourceSessionView Parent) {
   if (hasReportedError(Mod))
     return false;
 
   auto ResourcePermit = ProcessResourceBroker::global().acquireSession(
-      ResourcePhase::PCGOptCodeGen, ResourceAdmissionMode::DoNotWait);
+      std::move(Parent), ResourcePhase::PCGOptCodeGen,
+      ResourceAdmissionMode::DoNotWait);
   const ParallelCodeGenRequestSnapshot Request(Tuning, PipelineTuning,
+                                               ResourcePermit.session(),
                                                ResolvedSCEVHugeExprThreshold);
   installRequestTuning(Mod.getContext(), Request);
   if (OptLevel == 0)
@@ -2470,9 +2495,7 @@ bool runParallelOptAndCodeGenWithTunings(
     // adversarial IR.
     std::vector<llvm::thread> Workers;
     Workers.reserve(ThreadCount);
-    const ResourceSessionView WorkerSession = Ctx.ResourceSession;
-    auto Worker = [&, WorkerSession]() {
-      ResourceSessionScope ResourceScope(WorkerSession);
+    auto Worker = [&]() {
       while (true) {
         unsigned WorkIndex = NextWork.fetch_add(1, std::memory_order_relaxed);
         if (WorkIndex >= Ctx.ExecutionOrder.size())

@@ -5,12 +5,46 @@
 #include "Linker/MachO/Config.h"
 #include "Linker/MachO/InputFiles.h"
 #include "Linker/MachO/InputSection.h"
+#include "Linker/MachO/MachOContextAccess.h"
 #include "Linker/MachO/Symbols.h"
 #include "Linker/MachO/SyntheticSections.h"
-#include "Linker/MachO/MachOContextAccess.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SmallVector.h"
 using namespace llvm;
 using namespace linker;
 using namespace linker::macho;
+
+namespace {
+struct DuplicateSymbolDiag {
+  // Pair containing source location and source file
+  const std::pair<std::string, std::string> src1;
+  const std::pair<std::string, std::string> src2;
+  const Symbol *sym;
+
+  DuplicateSymbolDiag(const std::pair<std::string, std::string> src1,
+                      const std::pair<std::string, std::string> src2,
+                      const Symbol *sym)
+      : src1(src1), src2(src2), sym(sym) {}
+};
+
+struct UndefinedDiag {
+  struct SectionAndOffset {
+    const InputSection *isec;
+    uint64_t offset;
+  };
+
+  std::vector<SectionAndOffset> codeReferences;
+  std::vector<std::string> otherReferences;
+};
+} // namespace
+
+struct SymbolTable::Diagnostics {
+  SmallVector<DuplicateSymbolDiag> duplicateSymbols;
+  MapVector<const Undefined *, UndefinedDiag> undefinedSymbols;
+};
+
+SymbolTable::SymbolTable() : diagnostics(std::make_unique<Diagnostics>()) {}
+SymbolTable::~SymbolTable() = default;
 
 // ===----------------------------------------------------------------------===
 // Symbol resolution
@@ -49,21 +83,6 @@ std::pair<Symbol *, bool> SymbolTable::insert(StringRef name,
   sym->isUsedInRegularObj |= !file || isa<ObjFile>(file);
   return {sym, p.second};
 }
-
-namespace {
-struct DuplicateSymbolDiag {
-  // Pair containing source location and source file
-  const std::pair<std::string, std::string> src1;
-  const std::pair<std::string, std::string> src2;
-  const Symbol *sym;
-
-  DuplicateSymbolDiag(const std::pair<std::string, std::string> src1,
-                      const std::pair<std::string, std::string> src2,
-                      const Symbol *sym)
-      : src1(src1), src2(src2), sym(sym) {}
-};
-SmallVector<DuplicateSymbolDiag> dupSymDiags;
-} // namespace
 
 // Move symbols at \p fromOff in \p fromIsec into \p toIsec, unless that symbol
 // is \p skip.
@@ -148,8 +167,9 @@ Defined *SymbolTable::addDefined(StringRef name, InputFile *file,
           std::string srcLoc2 = isec ? isec->getSourceLocation(value) : "";
           std::string srcFile1 = toString(defined->getFile());
           std::string srcFile2 = toString(file);
-          dupSymDiags.push_back({make_pair(srcLoc1, srcFile1),
-                                 make_pair(srcLoc2, srcFile2), defined});
+          diagnostics->duplicateSymbols.push_back({make_pair(srcLoc1, srcFile1),
+                                                   make_pair(srcLoc2, srcFile2),
+                                                   defined});
           return defined;
         }
       } else if (isWeakDef) {
@@ -186,8 +206,9 @@ Defined *SymbolTable::addDefined(StringRef name, InputFile *file,
         std::string srcFile1 = toString(defined->getFile());
         std::string srcFile2 = toString(file);
 
-        dupSymDiags.push_back({make_pair(srcLoc1, srcFile1),
-                               make_pair(srcLoc2, srcFile2), defined});
+        diagnostics->duplicateSymbols.push_back({make_pair(srcLoc1, srcFile1),
+                                                 make_pair(srcLoc2, srcFile2),
+                                                 defined});
       }
 
     } else if (auto *dysym = dyn_cast<DylibSymbol>(s)) {
@@ -495,22 +516,9 @@ bool recoverFromUndefinedSymbol(const Undefined &sym) {
 }
 } // namespace
 
-namespace {
-struct UndefinedDiag {
-  struct SectionAndOffset {
-    const InputSection *isec;
-    uint64_t offset;
-  };
-
-  std::vector<SectionAndOffset> codeReferences;
-  std::vector<std::string> otherReferences;
-};
-
-MapVector<const Undefined *, UndefinedDiag> undefs;
-} // namespace
-
 void macho::reportPendingDuplicateSymbols() {
-  for (const auto &duplicate : dupSymDiags) {
+  auto &duplicates = symtab->diagnostics->duplicateSymbols;
+  for (const auto &duplicate : duplicates) {
     if (config->overrideSymbols.count(duplicate.sym->getName()))
       continue;
     if (!config->deadStripDuplicates || duplicate.sym->isLive()) {
@@ -524,6 +532,7 @@ void macho::reportPendingDuplicateSymbols() {
       error(message + duplicate.src2.second);
     }
   }
+  duplicates.clear();
 }
 
 // Suggest an alternative spelling of an "undefined symbol" diagnostic. Returns
@@ -663,6 +672,8 @@ void reportUndefinedSymbol(const Undefined &sym, const UndefinedDiag &locations,
 } // namespace
 
 void macho::reportPendingUndefinedSymbols() {
+  auto &undefs = symtab->diagnostics->undefinedSymbols;
+
   // Enable spell corrector for the first 2 diagnostics.
   for (const auto &[i, undef] : llvm::enumerate(undefs))
     reportUndefinedSymbol(*undef.first, undef.second, i < 2);
@@ -676,7 +687,8 @@ void macho::treatUndefinedSymbol(const Undefined &sym, StringRef source) {
   if (recoverFromUndefinedSymbol(sym))
     return;
 
-  undefs[&sym].otherReferences.push_back(source.str());
+  symtab->diagnostics->undefinedSymbols[&sym].otherReferences.push_back(
+      source.str());
 }
 
 void macho::treatUndefinedSymbol(const Undefined &sym, const InputSection *isec,
@@ -684,5 +696,6 @@ void macho::treatUndefinedSymbol(const Undefined &sym, const InputSection *isec,
   if (recoverFromUndefinedSymbol(sym))
     return;
 
-  undefs[&sym].codeReferences.push_back({isec, offset});
+  symtab->diagnostics->undefinedSymbols[&sym].codeReferences.push_back(
+      {isec, offset});
 }

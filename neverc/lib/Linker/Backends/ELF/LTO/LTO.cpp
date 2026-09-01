@@ -33,7 +33,8 @@ constexpr char ltoCacheBackendTag[] = "elf";
 constexpr bool emitAddrsig = true;
 
 lto::Config createConfig() {
-  return createLTOConfig(*config->driverCfg, diagnosticHandler, emitAddrsig);
+  return createLTOConfig(*config->driverCfg, diagnosticHandler, emitAddrsig,
+                         elfContext().resourceSession());
 }
 
 } // namespace

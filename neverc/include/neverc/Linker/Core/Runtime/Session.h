@@ -17,6 +17,7 @@
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "llvm/Support/StringSaver.h"
+#include <cassert>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -32,6 +33,7 @@ class ThreadPool;
 namespace linker {
 
 struct SpecificAllocBase;
+class LinkerExecutionContext;
 
 struct LinkThreadPolicy {
   uint64_t MinParallelBytes = 16ULL * 1024ULL * 1024ULL;
@@ -55,6 +57,7 @@ private:
 
 public:
   CommonLinkerContext();
+  explicit CommonLinkerContext(neverc::ResourceSessionView ResourceSession);
   virtual ~CommonLinkerContext();
   CommonLinkerContext(const CommonLinkerContext &) = delete;
   CommonLinkerContext &operator=(const CommonLinkerContext &) = delete;
@@ -79,6 +82,8 @@ public:
   bool parallelEnabled() const { return ParallelPool != nullptr; }
   llvm::ThreadPool *parallelPool() const { return ParallelPool.get(); }
   neverc::ResourceSessionView resourceSession() const {
+    assert((StateFlags & ResourceSessionBoundFlag) != 0 &&
+           "linker resource session must be bound before use");
     return ResourceSession;
   }
   unsigned workerSlotForCurrentThread();
@@ -97,7 +102,13 @@ private:
   enum StateFlag : uint8_t {
     FinalizedFlag = 1U << 0,
     ParallelConfiguredFlag = 1U << 1,
+    ResourceSessionBoundFlag = 1U << 2,
   };
+
+  /// Backend constructors must not read the resource session or start worker
+  /// threads. LinkerExecutionContext binds the session exactly once after
+  /// construction and before the backend is exposed to callers.
+  void bindResourceSession(neverc::ResourceSessionView Session);
 
   CommonLinkerContext *PreviousContext = nullptr;
   unsigned PreviousWorkerSlot = 0;
@@ -111,6 +122,8 @@ private:
       WorkerInstances;
   std::unique_ptr<llvm::ThreadPool> ParallelPool;
   unsigned ParallelThreadCount = 1;
+
+  friend class LinkerExecutionContext;
 };
 
 class LinkerContextGuard {
@@ -122,7 +135,6 @@ public:
   ~LinkerContextGuard();
 
 private:
-  neverc::ResourceSessionScope ResourceScope;
   CommonLinkerContext *Previous = nullptr;
   unsigned PreviousWorkerSlot = 0;
 };
