@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('Static', 'Runtime')]
+  [ValidateSet('Certificate', 'Static', 'Runtime')]
   [string]$Phase = 'Static',
   [string]$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
   [string]$BuildDirectory = 'build-vbs',
@@ -47,6 +47,105 @@ function Invoke-Logged {
     throw "command failed with exit code $exitCode; see '$LogPath'"
   }
   return [int]$exitCode
+}
+
+function Invoke-TimedLogged {
+  param([Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [Parameter(Mandatory = $true)][ValidateRange(1, 3600)]
+        [int]$TimeoutSeconds,
+        [switch]$AllowFailure)
+  $rendered = @($FilePath) + $Arguments
+  $commandLine = "COMMAND: $($rendered -join ' ')"
+  $commandLine | Set-Content -LiteralPath $LogPath -Encoding utf8
+  Write-Host $commandLine
+
+  $startInfo = [Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = $FilePath
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  foreach ($argument in $Arguments) {
+    [void]$startInfo.ArgumentList.Add($argument)
+  }
+
+  $process = [Diagnostics.Process]::new()
+  $process.StartInfo = $startInfo
+  $timedOut = $false
+  try {
+    if (-not $process.Start()) {
+      throw "failed to start '$FilePath'"
+    }
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
+    if ($timedOut) {
+      try {
+        $process.Kill($true)
+      } catch {
+        Write-Host "failed to kill timed-out process $($process.Id): $($_.Exception.Message)"
+      }
+      [void]$process.WaitForExit(5000)
+    } else {
+      $process.WaitForExit()
+    }
+
+    if ($process.HasExited) {
+      $stdout = $stdoutTask.GetAwaiter().GetResult()
+      $stderr = $stderrTask.GetAwaiter().GetResult()
+      if ($stdout) {
+        $stdout | Tee-Object -FilePath $LogPath -Append | Out-Host
+      }
+      if ($stderr) {
+        $stderr | Tee-Object -FilePath $LogPath -Append | Out-Host
+      }
+    }
+
+    if ($timedOut) {
+      $timeoutLine = "PROCESS_TIMEOUT_SECONDS=$TimeoutSeconds"
+      $timeoutLine | Tee-Object -FilePath $LogPath -Append | Out-Host
+      if (-not $AllowFailure) {
+        throw "command timed out after $TimeoutSeconds seconds; see '$LogPath'"
+      }
+      return 124
+    }
+    $exitCode = $process.ExitCode
+  } finally {
+    $process.Dispose()
+  }
+
+  if ($exitCode -ne 0 -and -not $AllowFailure) {
+    throw "command failed with exit code $exitCode; see '$LogPath'"
+  }
+  return [int]$exitCode
+}
+
+function New-EphemeralVbsCertificate {
+  param([Parameter(Mandatory = $true)][string]$HelperPath,
+        [Parameter(Mandatory = $true)][string]$CertificatePath,
+        [Parameter(Mandatory = $true)][string]$ThumbprintPath,
+        [Parameter(Mandatory = $true)][string]$StageLogPath,
+        [Parameter(Mandatory = $true)][string]$ProcessLogPath)
+  $pwsh = (Get-Command pwsh.exe -ErrorAction Stop).Source
+  Invoke-TimedLogged $pwsh @(
+    '-NoLogo', '-NoProfile', '-NonInteractive', '-File', $HelperPath,
+    '-CertificatePath', $CertificatePath,
+    '-ThumbprintPath', $ThumbprintPath,
+    '-StageLogPath', $StageLogPath
+  ) $ProcessLogPath -TimeoutSeconds 90 | Out-Null
+
+  $thumbprint = (Get-Content -LiteralPath $ThumbprintPath -Raw).Trim()
+  if ($thumbprint -notmatch '^[0-9A-Fa-f]{40}$') {
+    throw "certificate helper returned an invalid thumbprint '$thumbprint'"
+  }
+  $certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint" `
+    -ErrorAction Stop
+  if (-not $certificate.HasPrivateKey) {
+    throw 'certificate helper installed a certificate without its private key'
+  }
+  return $certificate
 }
 
 function Resolve-Toolchain {
@@ -151,9 +250,39 @@ $logRoot = Join-Path $artifactRoot 'logs'
 New-Item -ItemType Directory -Force -Path $artifactRoot, $logRoot | Out-Null
 $fixtureRoot = Join-Path $repository 'tests\neverc\Inputs\VBSEnclave'
 $verifier = Require-File (Join-Path $repository 'utils\ci\verify-vbs-enclave-pe.py') 'PE verifier'
-$python = (Get-Command python.exe -ErrorAction Stop).Source
+$certificateHelper = Require-File `
+  (Join-Path $repository 'utils\ci\new-vbs-enclave-test-certificate.ps1') `
+  'VBS enclave test-certificate helper'
+
+if ($Phase -eq 'Certificate') {
+  $tools = Resolve-Toolchain
+  $certificatePath = Join-Path $artifactRoot 'ephemeral-vbs-enclave-ci.cer'
+  $thumbprintPath = Join-Path $artifactRoot 'certificate-thumbprint.txt'
+  $certificate = New-EphemeralVbsCertificate `
+    -HelperPath $certificateHelper `
+    -CertificatePath $certificatePath `
+    -ThumbprintPath $thumbprintPath `
+    -StageLogPath (Join-Path $logRoot 'certificate-stages.log') `
+    -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log')
+
+  $smokeImage = Join-Path $artifactRoot 'certificate-smoke.exe'
+  Invoke-TimedLogged $tools.cl @(
+    '/nologo', '/std:c++17', (Join-Path $fixtureRoot 'host.cpp'),
+    "/Fe$smokeImage", '/link', '/INCREMENTAL:NO', $tools.onecore
+  ) (Join-Path $logRoot 'certificate-build-host.log') -TimeoutSeconds 120 | Out-Null
+  Invoke-TimedLogged $tools.signtool @(
+    'sign', '/ph', '/fd', 'SHA256', '/sha1', $certificate.Thumbprint,
+    $smokeImage
+  ) (Join-Path $logRoot 'certificate-sign.log') -TimeoutSeconds 60 | Out-Null
+  Invoke-TimedLogged $tools.signtool @(
+    'verify', '/pa', '/v', $smokeImage
+  ) (Join-Path $logRoot 'certificate-verify.log') -TimeoutSeconds 60 | Out-Null
+  Write-Host 'CERTIFICATE PASS: non-interactive creation, trust, signing, and verification succeeded'
+  exit 0
+}
 
 if ($Phase -eq 'Static') {
+  $python = (Get-Command python.exe -ErrorAction Stop).Source
   Invoke-Logged $python @($verifier, 'self-test') (Join-Path $logRoot 'verifier-self-test.log') | Out-Null
   $tools = Resolve-Toolchain -IncludeArm64
   $tools.GetEnumerator() | ForEach-Object { Write-Host ("{0}: {1}" -f $_.Key, $_.Value) }
@@ -369,16 +498,14 @@ try {
   } elseif ($RequireRuntime) {
     throw 'required runtime needs a preinstalled VBS_ENCLAVE_CERT_THUMBPRINT certificate'
   } else {
-    $certificate = New-SelfSignedCertificate `
-      -CertStoreLocation 'Cert:\CurrentUser\My' `
-      -DnsName 'NeverC ephemeral VBS enclave CI' `
-      -KeyUsage DigitalSignature -KeySpec Signature -KeyLength 2048 `
-      -KeyAlgorithm RSA -HashAlgorithm SHA256 `
-      -TextExtension @(
-        '2.5.29.37={text}1.3.6.1.5.5.7.3.3,1.3.6.1.4.1.311.76.57.1.15,1.3.6.1.4.1.311.97.814040577.346743379.4783502.105532346')
     $certificatePath = Join-Path $artifactRoot 'ephemeral-vbs-enclave-ci.cer'
-    Export-Certificate -Cert $certificate -FilePath $certificatePath -Force | Out-Null
-    Import-Certificate -FilePath $certificatePath -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
+    $thumbprintPath = Join-Path $artifactRoot 'certificate-thumbprint.txt'
+    $certificate = New-EphemeralVbsCertificate `
+      -HelperPath $certificateHelper `
+      -CertificatePath $certificatePath `
+      -ThumbprintPath $thumbprintPath `
+      -StageLogPath (Join-Path $logRoot 'certificate-stages.log') `
+      -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log')
   }
 
   foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll')) {
@@ -388,25 +515,35 @@ try {
     $signArguments = @('sign', '/ph', '/fd', 'SHA256')
     if ($certificateInMachineStore) { $signArguments += '/sm' }
     $signArguments += @('/sha1', $certificate.Thumbprint, $signed)
-    Invoke-Logged $tools.signtool $signArguments (Join-Path $logRoot "sign-$name.log") | Out-Null
-    Invoke-Logged $tools.signtool @('verify', '/pa', '/v', $signed) (Join-Path $logRoot "verify-signature-$name.log") | Out-Null
+    Invoke-TimedLogged $tools.signtool $signArguments `
+      (Join-Path $logRoot "sign-$name.log") -TimeoutSeconds 60 | Out-Null
+    Invoke-TimedLogged $tools.signtool @('verify', '/pa', '/v', $signed) `
+      (Join-Path $logRoot "verify-signature-$name.log") `
+      -TimeoutSeconds 60 | Out-Null
   }
 
   function Invoke-RuntimeImage {
     param([string]$Name)
     $image = Join-Path $signedRoot $Name
     $log = Join-Path $logRoot "runtime-$Name.log"
-    $exitCode = Invoke-Logged $runtimeHost @($image) $log -AllowFailure
+    $exitCode = Invoke-TimedLogged $runtimeHost @($image) $log `
+      -TimeoutSeconds 180 -AllowFailure
     $stage = 'Complete'
     $errorCode = 0
     if ($exitCode -ne 0) {
-      $failureLine = Get-Content -LiteralPath $log |
-        Where-Object { $_ -match 'VBS_STAGE=(\S+) STATUS=FAIL ERROR=(\d+)' } |
-        Select-Object -Last 1
-      if ($failureLine -and $failureLine -match 'VBS_STAGE=(\S+) STATUS=FAIL ERROR=(\d+)') {
+      if ($exitCode -eq 124) {
+        $stage = 'HostTimeout'
+        $errorCode = 1460
+      } else {
+        $failureLine = Get-Content -LiteralPath $log |
+          Where-Object { $_ -match 'VBS_STAGE=(\S+) STATUS=FAIL ERROR=(\d+)' } |
+          Select-Object -Last 1
+      }
+      if ($exitCode -ne 124 -and $failureLine -and
+          $failureLine -match 'VBS_STAGE=(\S+) STATUS=FAIL ERROR=(\d+)') {
         $stage = $Matches[1]
         $errorCode = [int]$Matches[2]
-      } else {
+      } elseif ($exitCode -ne 124) {
         $stage = 'HostProcess'
         $errorCode = $exitCode
       }

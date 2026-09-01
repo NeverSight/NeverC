@@ -13,6 +13,7 @@ on:
       - neverc/lib/Linker/**
       - runtime/windows/**
       - tests/neverc/**
+      - utils/ci/new-vbs-enclave-test-certificate.ps1
       - utils/ci/run-vbs-enclave-ci.ps1
       - utils/ci/verify-vbs-enclave-pe.py
       - .github/workflows/vbs-enclave.yml
@@ -27,6 +28,7 @@ on:
       - neverc/lib/Linker/**
       - runtime/windows/**
       - tests/neverc/**
+      - utils/ci/new-vbs-enclave-test-certificate.ps1
       - utils/ci/run-vbs-enclave-ci.ps1
       - utils/ci/verify-vbs-enclave-pe.py
       - .github/workflows/vbs-enclave.yml
@@ -45,11 +47,42 @@ on:
 permissions:
   contents: read
 
+# Cancel stale runs on the same ref when a newer commit is pushed. Set repo
+# variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
 concurrency:
-  group: vbs-enclave-${{ github.ref }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
 
 jobs:
+  certificate:
+    name: Non-interactive VBS signing bootstrap
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up MSVC x64 and Windows SDK tools
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - name: Generate, trust, sign, and verify without prompts
+        shell: pwsh
+        run: >-
+          & .\utils\ci\run-vbs-enclave-ci.ps1
+          -Phase Certificate
+          -ArtifactDirectory artifacts\vbs-enclave-certificate
+
+      - name: Publish certificate-bootstrap evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vbs-enclave-certificate-${{ github.run_attempt }}
+          path: artifacts/vbs-enclave-certificate
+          if-no-files-found: warn
+          retention-days: 14
+
   static:
     name: Static PE and Microsoft-reference gate
     runs-on: windows-2022
@@ -128,7 +161,7 @@ jobs:
 
   runtime:
     name: Differential runtime (${{ inputs.runtime_runner || 'windows-2025' }})
-    needs: static
+    needs: [certificate, static]
     runs-on: ${{ inputs.runtime_runner || 'windows-2025' }}
     timeout-minutes: 30
     steps:
@@ -188,6 +221,7 @@ jobs:
             artifacts/vbs-enclave/runtime-result.json
             artifacts/vbs-enclave/runtime-environment.txt
             artifacts/vbs-enclave/runtime-signed
+            artifacts/vbs-enclave/logs/certificate-*.log
             artifacts/vbs-enclave/logs/runtime-*.log
             artifacts/vbs-enclave/logs/sign-*.log
             artifacts/vbs-enclave/logs/verify-signature-*.log
