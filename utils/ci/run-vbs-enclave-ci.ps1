@@ -127,8 +127,7 @@ function New-EphemeralVbsCertificate {
         [Parameter(Mandatory = $true)][string]$CertificatePath,
         [Parameter(Mandatory = $true)][string]$ThumbprintPath,
         [Parameter(Mandatory = $true)][string]$StageLogPath,
-        [Parameter(Mandatory = $true)][string]$ProcessLogPath,
-        [Parameter(Mandatory = $true)][string]$TrustLogPath)
+        [Parameter(Mandatory = $true)][string]$ProcessLogPath)
   $pwsh = (Get-Command pwsh.exe -ErrorAction Stop).Source
   Invoke-TimedLogged $pwsh @(
     '-NoLogo', '-NoProfile', '-NonInteractive', '-File', $HelperPath,
@@ -146,21 +145,41 @@ function New-EphemeralVbsCertificate {
   if (-not $certificate.HasPrivateKey) {
     throw 'certificate helper installed a certificate without its private key'
   }
-
-  'CERTIFICATE_STAGE=InstallTrustedRoot' |
-    Tee-Object -FilePath $StageLogPath -Append | Out-Host
-  $certutil = (Get-Command certutil.exe -ErrorAction Stop).Source
-  Invoke-TimedLogged $certutil @(
-    '-user', '-f', '-addstore', 'Root', $CertificatePath
-  ) $TrustLogPath -TimeoutSeconds 60 | Out-Null
-  $trustedCertificate = Get-Item -LiteralPath `
-    "Cert:\CurrentUser\Root\$thumbprint" -ErrorAction Stop
-  if ($trustedCertificate.Thumbprint -ne $thumbprint) {
-    throw 'trusted-root certificate does not match the signing certificate'
-  }
   'CERTIFICATE_STAGE=Complete' |
     Tee-Object -FilePath $StageLogPath -Append | Out-Host
   return $certificate
+}
+
+function Assert-AuthenticodeSignature {
+  param([Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string]$ExpectedThumbprint,
+        [Parameter(Mandatory = $true)][string]$LogPath)
+  $signature = Get-AuthenticodeSignature -LiteralPath $FilePath
+  $actualThumbprint = if ($signature.SignerCertificate) {
+    $signature.SignerCertificate.Thumbprint
+  } else {
+    ''
+  }
+  $result = [ordered]@{
+    path = $FilePath
+    signature_type = $signature.SignatureType.ToString()
+    status = $signature.Status.ToString()
+    status_message = $signature.StatusMessage
+    expected_thumbprint = $ExpectedThumbprint
+    actual_thumbprint = $actualThumbprint
+  }
+  $result | ConvertTo-Json | Set-Content -LiteralPath $LogPath -Encoding utf8
+  $result | ConvertTo-Json | Out-Host
+
+  if ($result.signature_type -ne 'Authenticode') {
+    throw "'$FilePath' does not contain an Authenticode signature"
+  }
+  if ($actualThumbprint -ne $ExpectedThumbprint) {
+    throw "'$FilePath' was not signed by the expected certificate"
+  }
+  if ($result.status -notin @('Valid', 'NotTrusted', 'UnknownError')) {
+    throw "'$FilePath' has invalid Authenticode status '$($result.status)'"
+  }
 }
 
 function Resolve-Toolchain {
@@ -272,8 +291,7 @@ if ($Phase -eq 'Certificate') {
     -CertificatePath $certificatePath `
     -ThumbprintPath $thumbprintPath `
     -StageLogPath (Join-Path $logRoot 'certificate-stages.log') `
-    -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log') `
-    -TrustLogPath (Join-Path $logRoot 'certificate-trust.log')
+    -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log')
 
   $smokeImage = Join-Path $artifactRoot 'certificate-smoke.exe'
   Invoke-TimedLogged $tools.cl @(
@@ -284,10 +302,9 @@ if ($Phase -eq 'Certificate') {
     'sign', '/ph', '/fd', 'SHA256', '/sha1', $certificate.Thumbprint,
     $smokeImage
   ) (Join-Path $logRoot 'certificate-sign.log') -TimeoutSeconds 60 | Out-Null
-  Invoke-TimedLogged $tools.signtool @(
-    'verify', '/pa', '/v', $smokeImage
-  ) (Join-Path $logRoot 'certificate-verify.log') -TimeoutSeconds 60 | Out-Null
-  Write-Host 'CERTIFICATE PASS: non-interactive creation, trust, signing, and verification succeeded'
+  Assert-AuthenticodeSignature $smokeImage $certificate.Thumbprint `
+    (Join-Path $logRoot 'certificate-verify.log')
+  Write-Host 'CERTIFICATE PASS: non-interactive creation, signing, and inspection succeeded'
   exit 0
 }
 
@@ -476,8 +493,7 @@ try {
       -CertificatePath $certificatePath `
       -ThumbprintPath $thumbprintPath `
       -StageLogPath (Join-Path $logRoot 'certificate-stages.log') `
-      -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log') `
-      -TrustLogPath (Join-Path $logRoot 'certificate-trust.log')
+      -ProcessLogPath (Join-Path $logRoot 'certificate-bootstrap.log')
   }
 
   foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll')) {
@@ -489,9 +505,8 @@ try {
     $signArguments += @('/sha1', $certificate.Thumbprint, $signed)
     Invoke-TimedLogged $tools.signtool $signArguments `
       (Join-Path $logRoot "sign-$name.log") -TimeoutSeconds 60 | Out-Null
-    Invoke-TimedLogged $tools.signtool @('verify', '/pa', '/v', $signed) `
-      (Join-Path $logRoot "verify-signature-$name.log") `
-      -TimeoutSeconds 60 | Out-Null
+    Assert-AuthenticodeSignature $signed $certificate.Thumbprint `
+      (Join-Path $logRoot "verify-signature-$name.log")
   }
 
   function Invoke-RuntimeImage {
