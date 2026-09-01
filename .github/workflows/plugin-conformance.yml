@@ -305,6 +305,9 @@ jobs:
       # thread_local would pass unnoticed on every host.
       - name: Plugin global state
         run: |
+          if [ "${{ runner.os }}" = Windows ]; then
+            export PATH="/c/LLVM/bin:$PATH"
+          fi
           ${{ matrix.python }} neverc/utils/plugin-api/check-global-state.py \
             --build-dir build --strict
 

@@ -4,7 +4,7 @@
 # Optional environment contracts:
 #   LLVM_VER        exact release to install (otherwise resolve latest)
 #   LLVM_SHA256     expected installer digest
-#   LLVM_TOOLS_ONLY add LLVM tools to PATH without selecting clang as CC/CXX
+#   LLVM_TOOLS_ONLY expose LLVM_ROOT without selecting clang or changing PATH
 $ErrorActionPreference = 'Stop'
 
 function Resolve-LlvmVersion {
@@ -105,8 +105,8 @@ if (-not $toolsOnly) {
         "CC=$clangUnix",
         "CXX=$clangxxUnix"
     )
+    Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $LLVM_ROOT 'bin')
 }
 foreach ($line in $environment) {
     Add-Content -Path $env:GITHUB_ENV -Value $line
 }
-Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $LLVM_ROOT 'bin')
