@@ -208,7 +208,8 @@ void LinkerDriver::addBuffer(std::unique_ptr<MemoryBuffer> mb,
 
       int memberIndex = 0;
       for (MemoryBufferRef m : getArchiveMembers(archive))
-        addArchiveBuffer(m, "<whole-archive>", filename, memberIndex++);
+        addArchiveBuffer(m, "<whole-archive>", filename,
+                         /*parentArchive=*/nullptr, memberIndex++);
       return;
     }
     ctx.symtab.addFile(make<ArchiveFile>(ctx, mbref));
@@ -326,11 +327,13 @@ void LinkerDriver::enqueuePath(StringRef path, bool wholeArchive, bool lazy) {
 
 void LinkerDriver::addArchiveBuffer(MemoryBufferRef mb, StringRef symName,
                                     StringRef parentName,
+                                    ArchiveFile *parentArchive,
                                     uint64_t offsetInArchive) {
   file_magic magic = identify_magic(mb.getBuffer());
   if (magic == file_magic::coff_import_library) {
     InputFile *imp = make<ImportFile>(ctx, mb);
     imp->parentName = parentName;
+    imp->parentArchive = parentArchive;
     ctx.symtab.addFile(imp);
     return;
   }
@@ -351,13 +354,15 @@ void LinkerDriver::addArchiveBuffer(MemoryBufferRef mb, StringRef symName,
   }
 
   obj->parentName = parentName;
+  obj->parentArchive = parentArchive;
   ctx.symtab.addFile(obj);
   log("Loaded " + toString(obj) + " for " + symName);
 }
 
 void LinkerDriver::enqueueArchiveMember(const Archive::Child &c,
                                         const Archive::Symbol &sym,
-                                        StringRef parentName) {
+                                        ArchiveFile *parentArchive) {
+  StringRef parentName = parentArchive->getName();
 
   auto reportBufferError = [=](Error &&e, StringRef childName) {
     fatal("could not get the buffer for the member defining symbol " +
@@ -374,7 +379,7 @@ void LinkerDriver::enqueueArchiveMember(const Archive::Child &c,
     enqueueTask([=]() {
       llvm::TimeTraceScope timeScope("Archive: ", mb.getBufferIdentifier());
       ctx.driver.addArchiveBuffer(mb, toCOFFString(ctx, sym), parentName,
-                                  offsetInArchive);
+                                  parentArchive, offsetInArchive);
     });
     return;
   }
@@ -383,13 +388,13 @@ void LinkerDriver::enqueueArchiveMember(const Archive::Child &c,
   std::string childName = CHECK(
       c.getFullName(),
       "could not get the filename for the member defining symbol " + symStr);
-  enqueueTask([this, childName, symStr, reportBufferError]() {
+  enqueueTask([this, childName, symStr, reportBufferError, parentArchive]() {
     auto [mb, ec] = readFileSync(childName);
     if (ec)
       reportBufferError(errorCodeToError(ec), childName);
     llvm::TimeTraceScope timeScope("Archive: ", mb->getBufferIdentifier());
     ctx.driver.addArchiveBuffer(takeBuffer(std::move(mb)), symStr, "",
-                                /*OffsetInArchive=*/0);
+                                parentArchive, /*OffsetInArchive=*/0);
   });
 }
 
