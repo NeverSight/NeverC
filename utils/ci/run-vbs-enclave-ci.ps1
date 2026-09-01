@@ -149,10 +149,11 @@ function New-EphemeralVbsCertificate {
 
   # Trusted Root is protected by an interactive Windows consent prompt on
   # hosted runners. Trust this exact ephemeral leaf through TrustedPeople
-  # instead; it remains scoped to the current user and expires after two days.
+  # instead; the hosted runner is disposable and the leaf expires after two
+  # days. Required-runtime jobs use their preinstalled certificate instead.
   $certutil = (Get-Command certutil.exe -ErrorAction Stop).Source
   Invoke-TimedLogged $certutil @(
-    '-user', '-f', '-addstore', 'TrustedPeople', $CertificatePath
+    '-f', '-addstore', 'TrustedPeople', $CertificatePath
   ) $TrustLogPath -TimeoutSeconds 30 | Out-Null
   'CERTIFICATE_STAGE=InstallTrustedPeople' |
     Tee-Object -FilePath $StageLogPath -Append | Out-Host
