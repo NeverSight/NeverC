@@ -1252,28 +1252,36 @@ TEST_F(DriverTest, WindowsVbsEnclaveUsesBundledRuntimeByDefault) {
 TEST_F(DriverTest, WindowsVbsEnclaveHonorsExplicitVCToolsDir) {
   auto src = (testDir() / "test_basic.c").string();
   const fs::path foreignToolchain = tmp() / "foreign-vc";
-  fs::create_directories(foreignToolchain / "lib" / "x64" / "enclave");
-
-  auto image = tmpFile("vbs-enclave-explicit-vctools.dll");
-  auto r =
-      ncc({"-###", "--target=x86_64-pc-windows-msvc", "-vctoolsdir",
-           foreignToolchain.string(), "-nostdlib", "-shared", "-Xmslink",
-           "/NODEFAULTLIB", "-Xmslink", "/ENCLAVE", src, "-o", image.string()});
-  ASSERT_EQ(r.exitCode, 0) << r.err;
-
-  const std::string all = collapseSeparators(r.err + r.out);
   const std::string explicitRoot =
       collapseSeparators(foreignToolchain.string());
-  EXPECT_NE(all.find(explicitRoot + "/lib/x64/enclave"), std::string::npos)
-      << "the explicit MSVC enclave runtime was not selected\n"
-      << all;
-  EXPECT_EQ(all.find("\"--libpath=" + explicitRoot + "/lib/x64\""),
-            std::string::npos)
-      << "the explicit enclave link fell back to the ordinary MSVC CRT\n"
-      << all;
-  EXPECT_EQ(all.find("/runtime/windows/x64/msvc/"), std::string::npos)
-      << "the bundled runtime overrode an explicit -vctoolsdir\n"
-      << all;
+
+  for (const auto &[target, arch] :
+       {std::pair{"x86_64-pc-windows-msvc", "x64"},
+        std::pair{"aarch64-pc-windows-msvc", "arm64"}}) {
+    SCOPED_TRACE(target);
+    fs::create_directories(foreignToolchain / "lib" / arch / "enclave");
+
+    auto image =
+        tmpFile(std::string("vbs-enclave-explicit-vctools-") + arch + ".dll");
+    auto r = ncc({"-###", std::string("--target=") + target, "-vctoolsdir",
+                  foreignToolchain.string(), "-nostdlib", "-shared", "-Xmslink",
+                  "/NODEFAULTLIB", "-Xmslink", "/ENCLAVE", src, "-o",
+                  image.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string all = collapseSeparators(r.err + r.out);
+    EXPECT_NE(all.find(explicitRoot + "/lib/" + arch + "/enclave"),
+              std::string::npos)
+        << "the explicit MSVC enclave runtime was not selected\n"
+        << all;
+    EXPECT_EQ(all.find("\"--libpath=" + explicitRoot + "/lib/" + arch + "\""),
+              std::string::npos)
+        << "the explicit enclave link fell back to the ordinary MSVC CRT\n"
+        << all;
+    EXPECT_EQ(all.find("/runtime/windows/"), std::string::npos)
+        << "the bundled runtime overrode an explicit -vctoolsdir\n"
+        << all;
+  }
 }
 
 TEST_F(DriverTest, WindowsVbsEnclaveHonorsExplicitWinSysRoot) {
@@ -1282,37 +1290,44 @@ TEST_F(DriverTest, WindowsVbsEnclaveHonorsExplicitWinSysRoot) {
   const fs::path vcRoot = winSysRoot / "VC" / "Tools" / "MSVC" / "14.99.99999";
   const fs::path sdkRoot = winSysRoot / "Windows Kits" / "10";
   const fs::path sdkVersion = sdkRoot / "Include" / "10.0.99999.0";
-  const fs::path enclaveUcrt =
-      sdkRoot / "Lib" / "10.0.99999.0" / "ucrt_enclave" / "x64";
-  const fs::path userMode = sdkRoot / "Lib" / "10.0.99999.0" / "um" / "x64";
-  fs::create_directories(vcRoot / "lib" / "x64" / "enclave");
   fs::create_directories(sdkVersion);
-  fs::create_directories(enclaveUcrt);
-  fs::create_directories(userMode);
 
-  auto image = tmpFile("vbs-enclave-explicit-winsysroot.dll");
-  auto r =
-      ncc({"-###", "--target=x86_64-pc-windows-msvc", "-winsysroot",
-           winSysRoot.string(), "-nostdlib", "-shared", "-Xmslink",
-           "/NODEFAULTLIB", "-Xmslink", "/ENCLAVE", src, "-o", image.string()});
-  ASSERT_EQ(r.exitCode, 0) << r.err;
+  for (const auto &[target, arch] :
+       {std::pair{"x86_64-pc-windows-msvc", "x64"},
+        std::pair{"aarch64-pc-windows-msvc", "arm64"}}) {
+    SCOPED_TRACE(target);
+    const fs::path enclaveUcrt =
+        sdkRoot / "Lib" / "10.0.99999.0" / "ucrt_enclave" / arch;
+    const fs::path userMode = sdkRoot / "Lib" / "10.0.99999.0" / "um" / arch;
+    fs::create_directories(vcRoot / "lib" / arch / "enclave");
+    fs::create_directories(enclaveUcrt);
+    fs::create_directories(userMode);
 
-  const std::string all = collapseSeparators(r.err + r.out);
-  for (const fs::path &expected :
-       {vcRoot / "lib" / "x64" / "enclave", enclaveUcrt, userMode}) {
-    EXPECT_NE(all.find(collapseSeparators(expected.string())),
-              std::string::npos)
-        << "the explicit Windows sysroot path was not selected\n"
+    auto image = tmpFile(std::string("vbs-enclave-explicit-winsysroot-") +
+                         arch + ".dll");
+    auto r = ncc({"-###", std::string("--target=") + target, "-winsysroot",
+                  winSysRoot.string(), "-nostdlib", "-shared", "-Xmslink",
+                  "/NODEFAULTLIB", "-Xmslink", "/ENCLAVE", src, "-o",
+                  image.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string all = collapseSeparators(r.err + r.out);
+    for (const fs::path &expected :
+         {vcRoot / "lib" / arch / "enclave", enclaveUcrt, userMode}) {
+      EXPECT_NE(all.find(collapseSeparators(expected.string())),
+                std::string::npos)
+          << "the explicit Windows sysroot path was not selected\n"
+          << all;
+    }
+    const std::string ordinaryUcrt = collapseSeparators(
+        (sdkRoot / "Lib" / "10.0.99999.0" / "ucrt" / arch).string());
+    EXPECT_EQ(all.find("\"--libpath=" + ordinaryUcrt + "\""), std::string::npos)
+        << "the explicit enclave link fell back to the ordinary UCRT\n"
+        << all;
+    EXPECT_EQ(all.find("/runtime/windows/"), std::string::npos)
+        << "the bundled runtime overrode an explicit -winsysroot\n"
         << all;
   }
-  const std::string ordinaryUcrt = collapseSeparators(
-      (sdkRoot / "Lib" / "10.0.99999.0" / "ucrt" / "x64").string());
-  EXPECT_EQ(all.find("\"--libpath=" + ordinaryUcrt + "\""), std::string::npos)
-      << "the explicit enclave link fell back to the ordinary UCRT\n"
-      << all;
-  EXPECT_EQ(all.find("/runtime/windows/x64/msvc/"), std::string::npos)
-      << "the bundled runtime overrode an explicit -winsysroot\n"
-      << all;
 }
 
 TEST_F(DriverTest, WindowsVbsEnclaveDoesNotSelectEnclaveLibrariesImplicitly) {
