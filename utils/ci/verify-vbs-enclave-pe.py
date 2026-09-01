@@ -7,7 +7,7 @@ import pathlib
 import re
 import struct
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, NamedTuple, Optional, Set, Tuple
 
 
 class VerificationError(Exception):
@@ -47,6 +47,7 @@ LOAD_CONFIG_DIRECTORY = 10
 BASE_RELOCATION_DIRECTORY = 5
 CERTIFICATE_DIRECTORY = 4
 IAT_DIRECTORY = 12
+DELAY_IMPORT_DIRECTORY = 13
 LOAD_CONFIG_GUARD_CHECK_POINTER_OFFSET = 0x70
 LOAD_CONFIG_GUARD_DISPATCH_POINTER_OFFSET = 0x78
 LOAD_CONFIG_GFID_TABLE_OFFSET = 0x80
@@ -99,37 +100,53 @@ MAP_SYMBOL_LINE = re.compile(
     r"(\S+)\s+([0-9A-Fa-f]{8,16})(?:\s|$)")
 
 
+class COFFMapSymbols(NamedTuple):
+    required: Dict[str, int]
+    unique_aliases_by_va: Dict[int, FrozenSet[str]]
+
+
 def _checked_product(left: int, right: int, limit: int, what: str) -> int:
     if left < 0 or right < 0 or (left and right > limit // left):
         raise VerificationError("%s size overflows the image" % what)
     return left * right
 
 
-def parse_coff_map_text(text: str, label: str) -> Dict[str, int]:
-    symbols: Dict[str, int] = {}
+def parse_coff_map_text(text: str, label: str) -> COFFMapSymbols:
+    required: Dict[str, int] = {}
+    aliases_by_va: Dict[int, Set[str]] = {}
+    vas_by_alias: Dict[str, Set[int]] = {}
     for line in text.splitlines():
         match = MAP_SYMBOL_LINE.match(line)
         if match is None:
             continue
         name, encoded_va = match.groups()
-        if name not in REQUIRED_MAP_SYMBOLS:
-            continue
         va = int(encoded_va, 16)
-        previous = symbols.get(name)
-        if previous is not None and previous != va:
-            raise VerificationError(
-                "%s: COFF map symbol %s has ambiguous VAs 0x%x and 0x%x" %
-                (label, name, previous, va))
-        symbols[name] = va
-    missing = sorted(REQUIRED_MAP_SYMBOLS - symbols.keys())
+        # Compiler bookkeeping labels do not identify semantic CFG targets.
+        # A name is usable only when the map binds it to exactly one VA.
+        if not name.startswith((".", "$", "@")):
+            aliases_by_va.setdefault(va, set()).add(name)
+            vas_by_alias.setdefault(name, set()).add(va)
+        if name in REQUIRED_MAP_SYMBOLS:
+            previous = required.get(name)
+            if previous is not None and previous != va:
+                raise VerificationError(
+                    "%s: COFF map symbol %s has ambiguous VAs 0x%x and 0x%x" %
+                    (label, name, previous, va))
+            required[name] = va
+    missing = sorted(REQUIRED_MAP_SYMBOLS - required.keys())
     if missing:
         raise VerificationError(
             "%s: COFF map is missing required symbols: %s" %
             (label, ", ".join(missing)))
-    return symbols
+    unique_aliases_by_va = {
+        va: frozenset(name for name in names
+                      if len(vas_by_alias[name]) == 1)
+        for va, names in aliases_by_va.items()
+    }
+    return COFFMapSymbols(required, unique_aliases_by_va)
 
 
-def parse_coff_map_path(path: pathlib.Path) -> Dict[str, int]:
+def parse_coff_map_path(path: pathlib.Path) -> COFFMapSymbols:
     try:
         text = path.read_bytes().decode("utf-8-sig", errors="replace")
     except OSError as error:
@@ -206,12 +223,13 @@ class PEImage:
                                     (self.label, what))
         return va - self.image_base
 
-    def map_symbol_rva(self, map_symbols: Dict[str, int], name: str) -> int:
-        if name not in map_symbols:
+    def map_symbol_rva(self, map_symbols: COFFMapSymbols, name: str) -> int:
+        if name not in map_symbols.required:
             raise VerificationError(
                 "%s: COFF map is missing required symbol %s" %
                 (self.label, name))
-        rva = self.va_to_rva(map_symbols[name], "COFF map symbol %s" % name)
+        rva = self.va_to_rva(map_symbols.required[name],
+                             "COFF map symbol %s" % name)
         if rva >= self.size_of_image:
             raise VerificationError(
                 "%s: COFF map symbol %s is outside SizeOfImage" %
@@ -321,7 +339,7 @@ class PEImage:
             return (0, 0)
         return self.directories[index]
 
-    def inspect(self, map_symbols: Dict[str, int],
+    def inspect(self, map_symbols: COFFMapSymbols,
                 expected_machine: Optional[str] = None,
                 expected_export_name: Optional[str] = None) -> Dict[str, Any]:
         self.need(0, 0x40, "DOS header")
@@ -425,6 +443,10 @@ class PEImage:
             raise VerificationError("%s: malformed certificate directory" % self.label)
         if certificate_size:
             self.need(certificate_offset, certificate_size, "certificate table")
+
+        if any(self.directory(DELAY_IMPORT_DIRECTORY)):
+            raise VerificationError("%s: unexpected delay import directory" %
+                                    self.label)
 
         standard_imports = self.inspect_standard_imports()
 
@@ -542,6 +564,7 @@ class PEImage:
                                           "CFG function table")
         gfids = []
         gfid_metadata = []
+        gfid_symbol_aliases = []
         for index in range(guard_count):
             gfid = self.u32(guard_offset + index * guard_stride,
                             "CFG function entry")
@@ -559,6 +582,13 @@ class PEImage:
                     "%s: GFID metadata must be zero for this fixture" %
                     self.label)
             gfid_metadata.append(metadata.hex())
+            aliases = map_symbols.unique_aliases_by_va.get(
+                self.image_base + gfid, frozenset())
+            if not aliases:
+                raise VerificationError(
+                    "%s: GFID 0x%x has no unique COFF map symbol identity" %
+                    (self.label, gfid))
+            gfid_symbol_aliases.append(sorted(aliases))
 
         gfid_set = set(gfids)
 
@@ -1013,6 +1043,11 @@ class PEImage:
             "gfids": gfids,
             "gfid_metadata": gfid_metadata,
             "gfid_flags": [0] * len(gfids),
+            "gfid_symbol_aliases": gfid_symbol_aliases,
+            "unique_map_symbol_names": sorted(
+                name
+                for names in map_symbols.unique_aliases_by_va.values()
+                for name in names),
             "giat": {
                 "table_rva": giat_table_rva,
                 "entry_size": guard_stride,
@@ -1062,6 +1097,37 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
             "gfid_covered": entry["gfid_covered"],
         } for entry in image["exports"]}
 
+    def gfid_target_identities_match() -> bool:
+        # Linkers may emit different one-sided aliases.  Compare the common,
+        # globally unique names, including both their GFID coverage and their
+        # co-location partition, so target relocation is harmless but target
+        # replacement or alias splitting fails closed.
+        common_names = (set(reference["unique_map_symbol_names"]) &
+                        set(candidate["unique_map_symbol_names"]))
+
+        def signature(image: Dict[str, Any]) -> Optional[Tuple[
+                FrozenSet[str], FrozenSet[Tuple[FrozenSet[str], int]]]]:
+            gfids = image["gfids"]
+            flags = image["gfid_flags"]
+            aliases = image["gfid_symbol_aliases"]
+            if (len(gfids) != len(flags) or len(gfids) != len(aliases) or
+                    len(set(gfids)) != len(gfids)):
+                return None
+            blocks = []
+            for entry_aliases, entry_flags in zip(aliases, flags):
+                block = frozenset(set(entry_aliases) & common_names)
+                if not block:
+                    return None
+                blocks.append((block, entry_flags))
+            covered_names = frozenset(
+                name for block, _ in blocks for name in block)
+            return covered_names, frozenset(blocks)
+
+        reference_signature = signature(reference)
+        candidate_signature = signature(candidate)
+        return (reference_signature is not None and
+                reference_signature == candidate_signature)
+
     checks = [
         ("machine", reference["machine"], candidate["machine"]),
         ("DLL flag", reference["is_dll"], candidate["is_dll"]),
@@ -1072,6 +1138,8 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
          candidate["load_config"]["guard_semantics"]),
         ("GFID cardinality", len(reference["gfids"]),
          len(candidate["gfids"])),
+        ("GFID semantic target identities", True,
+         gfid_target_identities_match()),
         ("export GFID coverage", export_gfid_coverage(reference),
          export_gfid_coverage(candidate)),
         ("GIAT safety semantics", reference["giat"]["semantics"],
@@ -1216,12 +1284,17 @@ def _synthetic_image() -> bytes:
     return bytes(data)
 
 
-def _synthetic_map_text() -> str:
+def _synthetic_map_text(
+        symbol_overrides: Optional[Dict[str, int]] = None,
+        omitted_symbols: Optional[Set[str]] = None,
+        extra_symbols: Optional[List[Tuple[str, int]]] = None) -> str:
     image_base = 0x180000000
     symbol_rvas = {
         "GuardedExercise": 0x1020,
         "GuardedIndirectCall": 0x1010,
         "GuardedTarget": 0x1000,
+        "InternalTargetA": 0x1018,
+        "InternalTargetB": 0x1028,
         "LegacyAddressTaken": 0x25E0,
         "LegacyExercise": 0x1040,
         "LegacyTarget": 0x1030,
@@ -1230,13 +1303,17 @@ def _synthetic_map_text() -> str:
         "_guard_check_icall_nop": 0x1060,
         "_guard_dispatch_icall_nop": 0x1070,
     }
+    symbol_rvas.update(symbol_overrides or {})
+    for name in omitted_symbols or set():
+        symbol_rvas.pop(name, None)
     lines = [
         " fixture",
         "",
         "  Address         Publics by Value              Rva+Base",
         "",
     ]
-    for name, rva in sorted(symbol_rvas.items()):
+    symbols = list(symbol_rvas.items()) + list(extra_symbols or [])
+    for name, rva in sorted(symbols):
         section = 2 if rva >= 0x2000 else 1
         section_offset = rva - (0x2000 if section == 2 else 0x1000)
         suffix = " f   fixture.obj" if section == 1 else "     <linker-defined>"
@@ -1322,6 +1399,13 @@ def self_test() -> None:
         "missing FORCE_INTEGRITY")
     add("missing GUARD_CF", optional + 70, "<H", DYNAMIC_BASE | FORCE_INTEGRITY,
         "missing GUARD_CF")
+
+    add("unexpected delay import RVA",
+        optional + 112 + DELAY_IMPORT_DIRECTORY * 8, "<I", 0x2200,
+        "unexpected delay import directory")
+    add("unexpected delay import size",
+        optional + 112 + DELAY_IMPORT_DIRECTORY * 8 + 4, "<I", 32,
+        "unexpected delay import directory")
 
     add("missing standard imports", optional + 112 + IMPORT_DIRECTORY * 8,
         "<I", 0, "missing or short standard import directory")
@@ -1556,8 +1640,13 @@ def self_test() -> None:
         "GuardFlags contain unsupported fixture bits 0x4000")
     add("deleted required export GFID", 0x600 + 0x88, "<Q", 1,
         "required export GFID coverage differs from fixture contract")
-    add("replaced required export GFID", 0x8A5, "<I", 0x1050,
+    add("replaced required export GFID", 0x8A5, "<I", 0x1028,
         "required export GFID coverage differs from fixture contract")
+    mutate("unmapped internal GFID",
+           "GFID 0x1050 has no unique COFF map symbol identity",
+           [(0x600 + 0x88, "<Q", 3)],
+           [(0x8A0, struct.pack("<IBIBIB", 0x1000, 0,
+                               0x1030, 0, 0x1050, 0))])
     add("GIAT pointer without count",
         0x600 + LOAD_CONFIG_GIAT_COUNT_OFFSET, "<Q", 0,
         "GIAT table pointer and count are inconsistent")
@@ -1690,13 +1779,18 @@ def self_test() -> None:
     relocated = bytearray(valid)
     struct.pack_into("<I", relocated, 0x8A0, 0x1028)
     struct.pack_into("<I", relocated, 0xA30, 0x1028)
-    relocated_map_symbols = dict(map_symbols)
-    relocated_map_symbols["GuardedTarget"] = 0x180001028
+    relocated_map_symbols = parse_coff_map_text(
+        _synthetic_map_text({
+            "GuardedTarget": 0x1028,
+            "InternalTargetB": 0x1050,
+        }),
+        "synthetic-relocated-target.map")
     compare(reference, PEImage(bytes(relocated),
                                "synthetic-relocated-target").inspect(
                                    relocated_map_symbols))
 
     compare_cases = []
+    compare_references = {}
     changed_coverage = json.loads(json.dumps(reference))
     changed_coverage["exports"][0]["gfid_covered"] = True
     compare_cases.append(("export coverage change", changed_coverage,
@@ -1727,6 +1821,131 @@ def self_test() -> None:
         PEImage(bytes(extra_gfid), "self-test/extra valid GFID").inspect(
             map_symbols),
         "GFID cardinality"))
+    internal_reference = bytearray(valid)
+    struct.pack_into("<Q", internal_reference, 0x600 + 0x88, 3)
+    struct.pack_into("<IBIBIB", internal_reference, 0x8A0,
+                     0x1000, 0, 0x1018, 0, 0x1030, 0)
+    internal_candidate = bytearray(valid)
+    struct.pack_into("<Q", internal_candidate, 0x600 + 0x88, 3)
+    struct.pack_into("<IBIBIB", internal_candidate, 0x8A0,
+                     0x1000, 0, 0x1028, 0, 0x1030, 0)
+    compare_cases.append((
+        "replaced internal GFID target",
+        PEImage(bytes(internal_candidate),
+                "self-test/replaced internal GFID target").inspect(
+                    map_symbols),
+        "GFID semantic target identities"))
+    internal_reference_image = PEImage(
+        bytes(internal_reference),
+        "self-test/internal GFID reference").inspect(map_symbols)
+    compare_references["replaced internal GFID target"] = (
+        internal_reference_image)
+
+    static_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_symbols=[("StaticInternalTarget", 0x1018)]),
+        "self-test/static-reference.map")
+    static_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_symbols=[("StaticInternalTarget", 0x1028)]),
+        "self-test/static-candidate.map")
+    compare(
+        PEImage(bytes(internal_reference),
+                "self-test/static relocated reference").inspect(
+                    static_reference_map),
+        PEImage(bytes(internal_candidate),
+                "self-test/static relocated candidate").inspect(
+                    static_candidate_map))
+
+    one_sided_alias_map = parse_coff_map_text(
+        _synthetic_map_text(
+            extra_symbols=[("ReferenceOnlyAlias", 0x1000)]),
+        "self-test/one-sided-alias.map")
+    compare(
+        PEImage(valid, "self-test/one-sided alias reference").inspect(
+            one_sided_alias_map),
+        reference)
+
+    duplicate_alias_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_symbols=[("DuplicateStaticAlias", 0x1018),
+                           ("DuplicateStaticAlias", 0x1018)]),
+        "self-test/duplicate-same-VA-alias.map")
+    single_alias_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_symbols=[("DuplicateStaticAlias", 0x1018)]),
+        "self-test/single-same-VA-alias.map")
+    compare(
+        PEImage(bytes(internal_reference),
+                "self-test/duplicate same-VA alias").inspect(
+                    duplicate_alias_map),
+        PEImage(bytes(internal_reference),
+                "self-test/single same-VA alias").inspect(single_alias_map))
+
+    ambiguous_identity_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA"},
+            extra_symbols=[("AmbiguousInternal", 0x1018),
+                           ("AmbiguousInternal", 0x1028)]),
+        "self-test/ambiguous-internal-identity.map")
+    bookkeeping_only_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA"},
+            extra_symbols=[(".bf", 0x1018), (".ef", 0x1018),
+                           ("$$000000", 0x1018), ("@vol.md", 0x1018)]),
+        "self-test/bookkeeping-only-identity.map")
+    identity_inspect_cases = [
+        ("ambiguous internal GFID identity", ambiguous_identity_map),
+        ("bookkeeping-only internal GFID identity", bookkeeping_only_map),
+    ]
+    for name, identity_map in identity_inspect_cases:
+        try:
+            PEImage(bytes(internal_reference), "self-test/%s" % name).inspect(
+                identity_map)
+            failures.append("%s (unexpectedly passed)" % name)
+        except VerificationError as error:
+            expected_error = "GFID 0x1018 has no unique COFF map symbol identity"
+            if expected_error not in str(error):
+                failures.append("%s (expected %r, got %r)" %
+                                (name, expected_error, str(error)))
+
+    split_reference_map = parse_coff_map_text(
+        _synthetic_map_text(extra_symbols=[("SplitAliasA", 0x1000),
+                                           ("SplitAliasB", 0x1000)]),
+        "self-test/split-alias-reference.map")
+    split_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(extra_symbols=[("SplitAliasA", 0x1000),
+                                           ("SplitAliasB", 0x1030)]),
+        "self-test/split-alias-candidate.map")
+    split_case_name = "split aliases across GFIDs"
+    compare_cases.append((
+        split_case_name,
+        PEImage(valid, "self-test/split alias candidate").inspect(
+            split_candidate_map),
+        "GFID semantic target identities"))
+    compare_references[split_case_name] = PEImage(
+        valid, "self-test/split alias reference").inspect(
+            split_reference_map)
+
+    covered_alias_map = parse_coff_map_text(
+        _synthetic_map_text(extra_symbols=[("CoverageAlias", 0x1000)]),
+        "self-test/covered-alias.map")
+    uncovered_alias_map = parse_coff_map_text(
+        _synthetic_map_text(extra_symbols=[("CoverageAlias", 0x1018)]),
+        "self-test/uncovered-alias.map")
+    moved_off_case_name = "common alias moved off GFID"
+    compare_cases.append((
+        moved_off_case_name,
+        PEImage(valid, "self-test/common alias moved off GFID").inspect(
+            uncovered_alias_map),
+        "GFID semantic target identities"))
+    compare_references[moved_off_case_name] = PEImage(
+        valid, "self-test/common alias covered reference").inspect(
+            covered_alias_map)
     fewer_giats = bytearray(valid)
     struct.pack_into("<Q", fewer_giats,
                      0x600 + LOAD_CONFIG_GIAT_COUNT_OFFSET, 1)
@@ -1738,7 +1957,8 @@ def self_test() -> None:
 
     for name, candidate, expected_error in compare_cases:
         try:
-            compare(reference, candidate)
+            comparison_reference = compare_references.get(name, reference)
+            compare(comparison_reference, candidate)
             failures.append("%s (unexpectedly compared equal)" % name)
         except VerificationError as error:
             if expected_error not in str(error):
@@ -1750,7 +1970,8 @@ def self_test() -> None:
                                 "\n  ".join(failures))
     print("PASS: VBS enclave PE verifier self-test (%d negative mutations; "
           "representation-independent 5-byte comparison)" %
-          (2 + len(map_cases) + len(cases) + len(compare_cases)))
+          (2 + len(map_cases) + len(cases) + len(identity_inspect_cases) +
+           len(compare_cases)))
 
 
 def main(argv: Optional[List[str]] = None) -> int:
