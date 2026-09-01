@@ -1200,6 +1200,9 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any],
         candidate_groups = groups(candidate)
         if reference_groups is None or candidate_groups is None:
             return False
+        if any(aliases and not aliases & common_names
+               for aliases, _ in reference_groups):
+            return False
         reference_signature = common_signature(reference_groups)
         candidate_signature = common_signature(candidate_groups)
         if reference_signature[:2] != candidate_signature[:2]:
@@ -2043,6 +2046,25 @@ def self_test() -> None:
                 "self-test/expected opaque candidate").inspect(
                     opaque_candidate_map),
         frozenset({expected_opaque_identity}))
+
+    named_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_symbols=[("UnexpectedReferencePublic", 0x1018)]),
+        "self-test/named-reference-not-opaque.map")
+    named_reference_case = "reference-only identity is not opaque"
+    compare_cases.append((
+        named_reference_case,
+        PEImage(bytes(internal_candidate),
+                "self-test/candidate for named reference").inspect(
+                    opaque_candidate_map),
+        "GFID semantic target identities"))
+    compare_references[named_reference_case] = PEImage(
+        bytes(internal_reference),
+        "self-test/reference-only named target").inspect(
+            named_reference_map)
+    compare_expected_identities[named_reference_case] = frozenset(
+        {expected_opaque_identity})
 
     wrong_opaque_candidate_map = parse_coff_map_text(
         _synthetic_map_text(
