@@ -1735,7 +1735,8 @@ TEST_F(LTOTest, ParallelCodegenPreservesLinkerOptionsExactlyOnce) {
   std::string code =
       "#pragma comment(lib, \"advapi32.lib\")\n"
       "#pragma comment(linker, \"/INCLUDE:pcg_metadata_anchor\")\n"
-      "int pcg_metadata_anchor(void) { return 7; }\n";
+      "#pragma detect_mismatch(\"pcg.contract\", \"1\")\n"
+      "__declspec(dllexport) int pcg_metadata_anchor(void) { return 7; }\n";
   for (unsigned I = 0; I < 32; ++I)
     code += "__attribute__((noinline)) int pcg_metadata_user_" +
             std::to_string(I) + "(int x) { return x * " +
@@ -1774,8 +1775,13 @@ TEST_F(LTOTest, ParallelCodegenPreservesLinkerOptionsExactlyOnce) {
       ++result;
     return result;
   };
-  EXPECT_EQ(count("--defaultlib=advapi32.lib"), 1u);
+  EXPECT_EQ(count("/DEFAULTLIB:advapi32.lib"), 1u);
+  EXPECT_EQ(count("/FAILIFMISMATCH:\"pcg.contract=1\""), 1u);
+  EXPECT_EQ(count("/EXPORT:pcg_metadata_anchor"), 1u);
   EXPECT_EQ(count("/INCLUDE:pcg_metadata_anchor"), 1u);
+  EXPECT_EQ(count("--defaultlib=advapi32.lib"), 0u);
+  EXPECT_EQ(count("--failifmismatch=\"pcg.contract=1\""), 0u);
+  EXPECT_EQ(count("--export=pcg_metadata_anchor"), 0u);
 }
 
 // Auto-LTO compile-time cliff guard for the two cooperating valves that tame

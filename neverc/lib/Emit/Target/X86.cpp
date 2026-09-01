@@ -457,13 +457,13 @@ public:
 
   void getDependentLibraryOption(llvm::StringRef Lib,
                                  llvm::SmallString<24> &Opt) const override {
-    Opt = "--defaultlib=";
+    Opt = "/DEFAULTLIB:";
     Opt += qualifyWindowsLibrary(Lib);
   }
 
   void getDetectMismatchOption(llvm::StringRef Name, llvm::StringRef Value,
                                llvm::SmallString<32> &Opt) const override {
-    Opt = "--failifmismatch=\"" + Name.str() + "=" + Value.str() + "\"";
+    Opt = "/FAILIFMISMATCH:\"" + Name.str() + "=" + Value.str() + "\"";
   }
 };
 } // namespace
