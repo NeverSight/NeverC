@@ -78,10 +78,6 @@ SAMPLES = ROOT / "examples"
 # full set of translations. examples/ is one of them even though its index
 # lives in docs/, which is why a tree and its index are named separately.
 TRANSLATED_TREES = [DOCS, SAMPLES]
-# Agent implementation plans are repository-local working artifacts rather
-# than shipped user guides. They deliberately have no translation/navigation
-# surface and must not make a public-doc localization check absorb them.
-IGNORED_GUIDE_TREES = {DOCS / "superpowers"}
 # a README indexes the subtree it sits on top of, so which tree an index
 # reaches is discovered rather than listed. This one reaches a tree that lives
 # somewhere else entirely, which no amount of looking around it would reveal.
@@ -243,7 +239,6 @@ def guide_pages() -> list[Path]:
                 d
                 for d in subdirectories
                 if d != "__pycache__"
-                and Path(directory, d) not in IGNORED_GUIDE_TREES
             ]
             pages.extend(
                 Path(directory) / n for n in sorted(names) if n.endswith(".md"))
@@ -264,7 +259,6 @@ def indexed_trees() -> list[tuple[Path, Path]]:
                 d
                 for d in subdirectories
                 if d != "__pycache__"
-                and Path(directory, d) not in IGNORED_GUIDE_TREES
             ]
             if "README.md" in names:
                 here = Path(directory)
