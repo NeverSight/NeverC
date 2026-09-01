@@ -24,6 +24,9 @@ DELAYLOAD_IAT_IN_ITS_OWN_SECTION = 0x2000
 CF_LONGJUMP_TABLE_PRESENT = 0x10000
 CF_FUNCTION_TABLE_SIZE_MASK = 0xF0000000
 CF_FUNCTION_TABLE_SIZE_5BYTES = 0x10000000
+EXPECTED_GUARD_FLAGS = (
+    CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT | PROTECT_DELAYLOAD_IAT |
+    DELAYLOAD_IAT_IN_ITS_OWN_SECTION | CF_FUNCTION_TABLE_SIZE_5BYTES)
 DIR64 = 10
 EXPORT_DIRECTORY = 0
 LOAD_CONFIG_DIRECTORY = 10
@@ -31,6 +34,9 @@ BASE_RELOCATION_DIRECTORY = 5
 CERTIFICATE_DIRECTORY = 4
 IAT_DIRECTORY = 12
 FID_SUPPRESSED = 0x01
+LOAD_CONFIG_GUARD_CHECK_POINTER_OFFSET = 0x70
+LOAD_CONFIG_GUARD_DISPATCH_POINTER_OFFSET = 0x78
+LOAD_CONFIG_GFID_TABLE_OFFSET = 0x80
 LOAD_CONFIG_GIAT_TABLE_OFFSET = 0xA0
 LOAD_CONFIG_GIAT_COUNT_OFFSET = 0xA8
 LOAD_CONFIG_ENCLAVE_POINTER_OFFSET = 0xF8
@@ -117,7 +123,8 @@ class PEImage:
             return rva
         matches = []
         for section in self.sections:
-            span = max(section["virtual_size"], section["raw_size"])
+            virtual_size = section["virtual_size"] or section["raw_size"]
+            span = min(virtual_size, section["raw_size"])
             start = section["rva"]
             if rva >= start and rva + size <= start + span:
                 matches.append(section)
@@ -144,15 +151,13 @@ class PEImage:
         if not rva:
             raise VerificationError("%s: zero RVA for %s" % (self.label, what))
         offset = self.rva_to_offset(rva, 1, what)
-        containing = [
-            section for section in self.sections
-            if section["rva"] <= rva < section["rva"] + section["raw_size"]
-        ]
-        if len(containing) != 1:
+        section = self.initialized_section_for_rva(rva)
+        if section is None:
             raise VerificationError("%s: %s RVA is not backed by raw section data" %
                                     (self.label, what))
-        section = containing[0]
-        remaining = section["raw_size"] - (rva - section["rva"])
+        virtual_size = section["virtual_size"] or section["raw_size"]
+        initialized_size = min(virtual_size, section["raw_size"])
+        remaining = initialized_size - (rva - section["rva"])
         terminator = self.data.find(b"\0", offset, offset + remaining)
         if terminator < 0:
             raise VerificationError("%s: unterminated %s" % (self.label, what))
@@ -162,19 +167,25 @@ class PEImage:
         return encoded.decode("ascii")
 
     def executable_rva(self, rva: int) -> bool:
+        section = self.initialized_section_for_rva(rva)
+        return bool(section and section["characteristics"] & 0x20000000)
+
+    def initialized_section_for_rva(self, rva: int) -> Optional[Dict[str, int]]:
+        matches = []
         for section in self.sections:
-            span = max(section["virtual_size"], section["raw_size"])
-            if (section["rva"] <= rva < section["rva"] + span and
-                    section["characteristics"] & 0x20000000):
-                return True
-        return False
+            virtual_size = section["virtual_size"] or section["raw_size"]
+            initialized_size = min(virtual_size, section["raw_size"])
+            if section["rva"] <= rva < section["rva"] + initialized_size:
+                matches.append(section)
+        return matches[0] if len(matches) == 1 else None
 
     def directory(self, index: int) -> Tuple[int, int]:
         if index >= len(self.directories):
             return (0, 0)
         return self.directories[index]
 
-    def inspect(self) -> Dict[str, Any]:
+    def inspect(self, expected_machine: Optional[str] = None,
+                expected_export_name: Optional[str] = None) -> Dict[str, Any]:
         self.need(0, 0x40, "DOS header")
         if self.data[:2] != b"MZ":
             raise VerificationError("%s: missing MZ signature" % self.label)
@@ -189,6 +200,11 @@ class PEImage:
         if machine not in machines:
             raise VerificationError("%s: unsupported machine 0x%04x" %
                                     (self.label, machine))
+        machine_name = machines[machine]
+        if expected_machine is not None and machine_name != expected_machine:
+            raise VerificationError(
+                "%s: machine is %s, expected %s" %
+                (self.label, machine_name, expected_machine))
         section_count = self.u16(coff + 2, "NumberOfSections")
         if section_count == 0 or section_count > 96:
             raise VerificationError("%s: invalid section count %d" %
@@ -282,19 +298,52 @@ class PEImage:
         self.rva_to_offset(load_rva, load_declared_size,
                            "declared load configuration")
 
-        guard_table_va = self.u64(load_offset + 0x80, "GuardCFFunctionTable")
+        guard_dispatch_slots = []
+        for field_offset, field_name in (
+                (LOAD_CONFIG_GUARD_CHECK_POINTER_OFFSET,
+                 "GuardCFCheckFunctionPointer"),
+                (LOAD_CONFIG_GUARD_DISPATCH_POINTER_OFFSET,
+                 "GuardCFDispatchFunctionPointer")):
+            slot_va = self.u64(load_offset + field_offset, field_name)
+            if not slot_va:
+                raise VerificationError("%s: zero %s" %
+                                        (self.label, field_name))
+            slot_rva = self.va_to_rva(slot_va, field_name)
+            if slot_rva & 7:
+                raise VerificationError("%s: %s slot is not 8-byte aligned" %
+                                        (self.label, field_name))
+            slot_offset = self.rva_to_offset(
+                slot_rva, 8, "%s slot" % field_name)
+            target_va = self.u64(slot_offset, "%s target" % field_name)
+            if not target_va:
+                raise VerificationError("%s: zero %s target" %
+                                        (self.label, field_name))
+            target_rva = self.va_to_rva(target_va, "%s target" % field_name)
+            if not self.executable_rva(target_rva):
+                raise VerificationError(
+                    "%s: %s target is not initialized executable image data" %
+                    (self.label, field_name))
+            guard_dispatch_slots.append({
+                "field_offset": field_offset,
+                "name": field_name,
+                "slot_rva": slot_rva,
+                "target_rva": target_rva,
+            })
+        if (guard_dispatch_slots[0]["slot_rva"] ==
+                guard_dispatch_slots[1]["slot_rva"]):
+            raise VerificationError(
+                "%s: GuardCF check and dispatch pointers alias one slot" %
+                self.label)
+
+        guard_table_va = self.u64(
+            load_offset + LOAD_CONFIG_GFID_TABLE_OFFSET,
+            "GuardCFFunctionTable")
         guard_count = self.u64(load_offset + 0x88, "GuardCFFunctionCount")
         guard_flags = self.u32(load_offset + 0x90, "GuardFlags")
-        required_guard_flags = (CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT |
-                                PROTECT_DELAYLOAD_IAT |
-                                DELAYLOAD_IAT_IN_ITS_OWN_SECTION |
-                                CF_FUNCTION_TABLE_SIZE_5BYTES)
-        if guard_flags & required_guard_flags != required_guard_flags:
-            raise VerificationError("%s: GuardFlags lack /GUARD:MIXED metadata" %
-                                    self.label)
-        if guard_flags & CF_LONGJUMP_TABLE_PRESENT:
-            raise VerificationError("%s: /GUARD:MIXED unexpectedly enabled longjmp metadata" %
-                                    self.label)
+        if guard_flags != EXPECTED_GUARD_FLAGS:
+            raise VerificationError(
+                "%s: GuardFlags are 0x%08x, expected 0x%08x" %
+                (self.label, guard_flags, EXPECTED_GUARD_FLAGS))
         if not guard_table_va or not guard_count:
             raise VerificationError("%s: empty CFG function table" % self.label)
         guard_stride = 4 + ((guard_flags & CF_FUNCTION_TABLE_SIZE_MASK) >> 28)
@@ -320,12 +369,9 @@ class PEImage:
             gfids.append(gfid)
             metadata = self.data[guard_offset + index * guard_stride + 4:
                                  guard_offset + (index + 1) * guard_stride]
-            if metadata[0] & ~0x03:
-                raise VerificationError("%s: GFID entry has undefined flags" %
-                                        self.label)
-            if any(metadata[1:]):
-                raise VerificationError("%s: GFID entry has undefined metadata" %
-                                        self.label)
+            if any(metadata):
+                raise VerificationError(
+                    "%s: fixture GFID entry has nonzero metadata" % self.label)
             gfid_flags.append(metadata[0])
 
         effective_gfids = {
@@ -389,6 +435,9 @@ class PEImage:
                                     self.label)
         export_offset = self.rva_to_offset(export_rva, export_size,
                                            "export directory")
+        if self.u32(export_offset, "export Characteristics") != 0:
+            raise VerificationError("%s: export Characteristics is nonzero" %
+                                    self.label)
         export_name_rva = self.u32(export_offset + 12, "export DLL Name")
         export_base = self.u32(export_offset + 16, "export ordinal Base")
         function_count = self.u32(export_offset + 20,
@@ -439,18 +488,12 @@ class PEImage:
                     target["forwarder"] = self.c_string_at_rva(
                         target_rva, "export forwarder")
                 else:
-                    containing = [
-                        section for section in self.sections
-                        if section["rva"] <= target_rva <
-                        section["rva"] + max(section["virtual_size"],
-                                             section["raw_size"])
-                    ]
-                    if len(containing) != 1:
+                    containing = self.initialized_section_for_rva(target_rva)
+                    if containing is None:
                         raise VerificationError(
-                            "%s: export target 0x%x is outside the image" %
+                            "%s: export target 0x%x is not backed by initialized image data" %
                             (self.label, target_rva))
-                    executable = bool(containing[0]["characteristics"] &
-                                      0x20000000)
+                    executable = bool(containing["characteristics"] & 0x20000000)
                     target["kind"] = "function" if executable else "data"
                     target["gfid_covered"] = target_rva in effective_gfids
             export_targets.append(target)
@@ -469,6 +512,10 @@ class PEImage:
             name_rva = self.u32(names_offset + index * 4,
                                 "export name pointer")
             name = self.c_string_at_rva(name_rva, "export name")
+            if exports and name <= exports[-1]["name"]:
+                raise VerificationError(
+                    "%s: export name pointer table is not strictly lexical" %
+                    self.label)
             if name in seen_export_names:
                 raise VerificationError("%s: duplicate export name %s" %
                                         (self.label, name))
@@ -503,6 +550,11 @@ class PEImage:
                                     self.label)
         export_dll_name = self.c_string_at_rva(export_name_rva,
                                                "export DLL name")
+        if (expected_export_name is not None and
+                export_dll_name.lower() != expected_export_name.lower()):
+            raise VerificationError(
+                "%s: export DLL name is %s, expected %s" %
+                (self.label, export_dll_name, expected_export_name))
 
         enclave_pointer_offset = load_offset + LOAD_CONFIG_ENCLAVE_POINTER_OFFSET
         enclave_va = self.u64(enclave_pointer_offset,
@@ -617,6 +669,21 @@ class PEImage:
         if (enclave_pointer_rva, DIR64) not in relocations:
             raise VerificationError("%s: enclave pointer lacks a DIR64 base relocation" %
                                     self.label)
+        guard_pointer_rva = load_rva + LOAD_CONFIG_GFID_TABLE_OFFSET
+        if (guard_pointer_rva, DIR64) not in relocations:
+            raise VerificationError(
+                "%s: nonempty GFID pointer lacks a DIR64 base relocation" %
+                self.label)
+        for entry in guard_dispatch_slots:
+            field_rva = load_rva + entry["field_offset"]
+            if (field_rva, DIR64) not in relocations:
+                raise VerificationError(
+                    "%s: %s field lacks a DIR64 base relocation" %
+                    (self.label, entry["name"]))
+            if (entry["slot_rva"], DIR64) not in relocations:
+                raise VerificationError(
+                    "%s: %s slot lacks a DIR64 base relocation" %
+                    (self.label, entry["name"]))
         giat_pointer_rva = load_rva + LOAD_CONFIG_GIAT_TABLE_OFFSET
         if giat_count and (giat_pointer_rva, DIR64) not in relocations:
             raise VerificationError(
@@ -625,7 +692,7 @@ class PEImage:
 
         return {
             "path": self.label,
-            "machine": machines[machine],
+            "machine": machine_name,
             "file_characteristics": characteristics,
             "dll_characteristics": dll_characteristics,
             "is_dll": True,
@@ -641,6 +708,11 @@ class PEImage:
                 "guard_table_rva": guard_rva,
                 "guard_entry_size": guard_stride,
                 "guard_function_count": guard_count,
+                "guard_check_slot_rva": guard_dispatch_slots[0]["slot_rva"],
+                "guard_check_target_rva": guard_dispatch_slots[0]["target_rva"],
+                "guard_dispatch_slot_rva": guard_dispatch_slots[1]["slot_rva"],
+                "guard_dispatch_target_rva":
+                    guard_dispatch_slots[1]["target_rva"],
                 "enclave_pointer_rva": enclave_rva,
             },
             "enclave": {
@@ -670,12 +742,15 @@ class PEImage:
             "exports": exports,
             "export_dll_name": export_dll_name,
             "enclave_pointer_dir64_relocation": True,
+            "guard_dispatch_dir64_relocations": True,
+            "guard_pointer_dir64_relocation": True,
             "section_count": section_count,
         }
 
 
-def inspect_path(path: pathlib.Path) -> Dict[str, Any]:
-    return PEImage.from_path(path).inspect()
+def inspect_path(path: pathlib.Path,
+                 expected_machine: Optional[str] = None) -> Dict[str, Any]:
+    return PEImage.from_path(path).inspect(expected_machine, path.name)
 
 
 def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
@@ -731,6 +806,12 @@ def compare(reference: Dict[str, Any], candidate: Dict[str, Any]) -> None:
         ("enclave pointer DIR64 relocation",
          reference["enclave_pointer_dir64_relocation"],
          candidate["enclave_pointer_dir64_relocation"]),
+        ("GFID pointer DIR64 relocation",
+         reference["guard_pointer_dir64_relocation"],
+         candidate["guard_pointer_dir64_relocation"]),
+        ("CFG check/dispatch DIR64 relocations",
+         reference["guard_dispatch_dir64_relocations"],
+         candidate["guard_dispatch_dir64_relocations"]),
     ]
     mismatches = ["%s: reference=%r candidate=%r" % item
                   for item in checks if item[1] != item[2]]
@@ -764,12 +845,12 @@ def _synthetic_image() -> bytes:
     struct.pack_into("<II", data, optional + 112 + LOAD_CONFIG_DIRECTORY * 8,
                      0x2000, 0x100)
     struct.pack_into("<II", data, optional + 112 + BASE_RELOCATION_DIRECTORY * 8,
-                     0x3000, 12)
+                     0x3000, 24)
     struct.pack_into("<II", data, optional + 112 + IAT_DIRECTORY * 8,
                      0x2100, 16)
     sections = optional + 0xF0
     for index, values in enumerate((
-            (b".text", 0x200, 0x1000, 0x200, 0x400, 0x60000020),
+            (b".text", 0x300, 0x1000, 0x200, 0x400, 0x60000020),
             (b".rdata", 0x400, 0x2000, 0x400, 0x600, 0x40000040),
             (b".reloc", 0x200, 0x3000, 0x200, 0xA00, 0x42000040))):
         offset = sections + index * 40
@@ -779,6 +860,9 @@ def _synthetic_image() -> bytes:
                          raw_size, raw_pointer, 0, 0, 0, 0, flags)
     load = 0x600
     struct.pack_into("<I", data, load, 0x100)
+    struct.pack_into("<QQ", data,
+                     load + LOAD_CONFIG_GUARD_CHECK_POINTER_OFFSET,
+                     0x180002100, 0x180002108)
     struct.pack_into("<Q", data, load + 0x80, 0x180002260)
     struct.pack_into("<Q", data, load + 0x88, 2)
     struct.pack_into("<I", data, load + 0x90,
@@ -826,16 +910,40 @@ def _synthetic_image() -> bytes:
         struct.pack_into("<H", data, 0x958 + index * 2, index)
         data[string_offset:string_offset + len(encoded_name)] = encoded_name
         string_offset += len(encoded_name)
-    struct.pack_into("<IIHH", data, 0xA00, 0x2000, 12,
-                     (DIR64 << 12) | 0xF8,
-                     (DIR64 << 12) | LOAD_CONFIG_GIAT_TABLE_OFFSET)
+    struct.pack_into("<IIHHHHHHHH", data, 0xA00, 0x2000, 24,
+                     (DIR64 << 12) |
+                     LOAD_CONFIG_GUARD_CHECK_POINTER_OFFSET,
+                     (DIR64 << 12) |
+                     LOAD_CONFIG_GUARD_DISPATCH_POINTER_OFFSET,
+                     (DIR64 << 12) | LOAD_CONFIG_GFID_TABLE_OFFSET,
+                     (DIR64 << 12) | LOAD_CONFIG_GIAT_TABLE_OFFSET,
+                     (DIR64 << 12) | LOAD_CONFIG_ENCLAVE_POINTER_OFFSET,
+                     (DIR64 << 12) | 0x100, (DIR64 << 12) | 0x108, 0)
     return bytes(data)
 
 
 def self_test() -> None:
     valid = _synthetic_image()
-    PEImage(valid, "synthetic-valid").inspect()
+    PEImage(valid, "synthetic-valid").inspect(
+        expected_machine="x86_64", expected_export_name="fixture.dll")
     cases = []
+    failures = []
+
+    try:
+        PEImage(valid, "self-test/wrong expected machine").inspect("arm64")
+        failures.append("wrong expected machine")
+    except VerificationError:
+        pass
+
+    wrong_export_name = bytearray(valid)
+    wrong_export_name[0x968] = ord("x")
+    try:
+        PEImage(bytes(wrong_export_name),
+                "self-test/wrong export DLL name").inspect(
+                    expected_export_name="fixture.dll")
+        failures.append("wrong export DLL name")
+    except VerificationError:
+        pass
 
     def add(name: str, offset: int, fmt: str, value: int) -> None:
         mutated = bytearray(valid)
@@ -887,12 +995,26 @@ def self_test() -> None:
     add("missing primary-image flag", 0x800 + 76, "<I", 0)
     add("zero guard table", 0x600 + 0x80, "<Q", 0)
     add("wrong guard table", 0x600 + 0x80, "<Q", 0x180005000)
+    add("zero GuardCF check pointer",
+        0x600 + LOAD_CONFIG_GUARD_CHECK_POINTER_OFFSET, "<Q", 0)
+    add("zero GuardCF dispatch pointer",
+        0x600 + LOAD_CONFIG_GUARD_DISPATCH_POINTER_OFFSET, "<Q", 0)
+    add("GuardCF check pointer outside image",
+        0x600 + LOAD_CONFIG_GUARD_CHECK_POINTER_OFFSET,
+        "<Q", 0x180005000)
+    add("aliased GuardCF check and dispatch slots",
+        0x600 + LOAD_CONFIG_GUARD_DISPATCH_POINTER_OFFSET,
+        "<Q", 0x180002100)
+    add("zero GuardCF check target", 0x700, "<Q", 0)
+    add("nonexecutable GuardCF check target", 0x700, "<Q", 0x180002000)
     add("zero guard count", 0x600 + 0x88, "<Q", 0)
     add("oversized guard count", 0x600 + 0x88, "<Q", 0xFFFFFFFFFFFFFFFF)
     add("missing GuardFlags", 0x600 + 0x90, "<I", 0)
     add("four-byte GFID stride", 0x600 + 0x90, "<I",
         CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT |
         PROTECT_DELAYLOAD_IAT | DELAYLOAD_IAT_IN_ITS_OWN_SECTION)
+    add("extra GuardFlags", 0x600 + 0x90, "<I",
+        EXPECTED_GUARD_FLAGS | 0x8000)
     add("implicit longjmp metadata", 0x600 + 0x90, "<I",
         CF_INSTRUMENTED | CF_FUNCTION_TABLE_PRESENT | CF_LONGJUMP_TABLE_PRESENT)
     add("invalid GFID", 0x860, "<I", 0x2000)
@@ -900,11 +1022,25 @@ def self_test() -> None:
     add("suppressed required GFID", 0x864, "<B", FID_SUPPRESSED)
     add("unsorted GFIDs", 0x865, "<I", 0x1000)
     add("wrong export Base", 0x910, "<I", 7)
+    add("nonzero export Characteristics", 0x900, "<I", 1)
     swapped_ordinals = bytearray(valid)
     struct.pack_into("<HH", swapped_ordinals, 0x958, 1, 0)
     cases.append(("swapped export ordinals", bytes(swapped_ordinals)))
     add("aliased export ordinal", 0x95A, "<H", 0)
     add("aliased export target", 0x92C, "<I", 0x1020)
+    virtual_tail_export = bytearray(valid)
+    struct.pack_into("<I", virtual_tail_export, 0x860, 0x1250)
+    struct.pack_into("<I", virtual_tail_export, 0x930, 0x1250)
+    cases.append(("export and GFID in executable virtual tail",
+                  bytes(virtual_tail_export)))
+    unsorted_exports = bytearray(valid)
+    first_name, second_name = struct.unpack_from("<II", unsorted_exports, 0x940)
+    first_ordinal, second_ordinal = struct.unpack_from(
+        "<HH", unsorted_exports, 0x958)
+    struct.pack_into("<II", unsorted_exports, 0x940, second_name, first_name)
+    struct.pack_into("<HH", unsorted_exports, 0x958,
+                     second_ordinal, first_ordinal)
+    cases.append(("unsorted export name table", bytes(unsorted_exports)))
     unnamed_export = bytearray(valid)
     unnamed_export[0x870:0x888] = valid[0x928:0x940]
     struct.pack_into("<I", unnamed_export, 0x888, 0x1050)
@@ -927,14 +1063,31 @@ def self_test() -> None:
     struct.pack_into("<II", four_byte_giat, 0x720, 0x2100, 0x2108)
     cases.append(("four-byte GIAT packing", bytes(four_byte_giat)))
     add("section raw data out of bounds", 0x188 + 20, "<I", 0xC00)
+    add("export directory in raw alignment padding", 0x1B0 + 8, "<I", 0x300)
     add("missing relocations", optional + 112 + BASE_RELOCATION_DIRECTORY * 8,
         "<I", 0)
     add("invalid relocation block", 0xA04, "<I", 10)
-    add("wrong enclave relocation type", 0xA08, "<H", (3 << 12) | 0xF8)
-    add("missing GIAT pointer relocation", 0xA0A, "<H", 0)
-    add("wrong GIAT pointer relocation", 0xA0A, "<H",
+    add("missing GuardCF check field relocation", 0xA08, "<H", 0)
+    add("wrong GuardCF check field relocation", 0xA08, "<H",
+        (DIR64 << 12) | 0x88)
+    add("missing GuardCF dispatch field relocation", 0xA0A, "<H", 0)
+    add("wrong GuardCF dispatch field relocation", 0xA0A, "<H",
+        (DIR64 << 12) | 0x90)
+    add("missing GFID pointer relocation", 0xA0C, "<H", 0)
+    add("wrong GFID pointer relocation", 0xA0C, "<H",
+        (DIR64 << 12) | 0x88)
+    add("missing GIAT pointer relocation", 0xA0E, "<H", 0)
+    add("wrong GIAT pointer relocation", 0xA0E, "<H",
         (DIR64 << 12) | LOAD_CONFIG_GIAT_COUNT_OFFSET)
-    failures = []
+    add("wrong enclave relocation type", 0xA10, "<H",
+        (3 << 12) | LOAD_CONFIG_ENCLAVE_POINTER_OFFSET)
+    add("missing GuardCF check slot relocation", 0xA12, "<H", 0)
+    add("missing GuardCF dispatch slot relocation", 0xA14, "<H", 0)
+    data_export_virtual_tail = bytearray(valid)
+    struct.pack_into("<I", data_export_virtual_tail, 0x1B0 + 8, 0x500)
+    struct.pack_into("<I", data_export_virtual_tail, 0x934, 0x2450)
+    cases.append(("data export in virtual-only section tail",
+                  bytes(data_export_virtual_tail)))
     for name, image in cases:
         try:
             PEImage(image, "self-test/%s" % name).inspect()
@@ -962,13 +1115,19 @@ def self_test() -> None:
     compare(reference, PEImage(bytes(relocated),
                                "synthetic-relocated-target").inspect())
     compare_cases = []
-    for name, offset, fmt, value in (
-            ("deleted exported GFID", 0x600 + 0x88, "<Q", 1),
-            ("replaced exported GFID", 0x865, "<I", 0x1050),
-            ("export target without GFID", 0x930, "<I", 0x1050)):
-        mutated = bytearray(valid)
-        struct.pack_into(fmt, mutated, offset, value)
-        compare_cases.append((name, bytes(mutated)))
+    extra_gfid = bytearray(valid)
+    struct.pack_into("<Q", extra_gfid, 0x600 + 0x88, 3)
+    struct.pack_into("<I", extra_gfid, 0x86A, 0x1050)
+    compare_cases.append(("extra valid GFID", bytes(extra_gfid)))
+    fewer_giats = bytearray(valid)
+    struct.pack_into("<Q", fewer_giats,
+                     0x600 + LOAD_CONFIG_GIAT_COUNT_OFFSET, 1)
+    compare_cases.append(("fewer valid GIAT entries", bytes(fewer_giats)))
+    larger_load_directory = bytearray(valid)
+    struct.pack_into("<I", larger_load_directory,
+                     optional + 112 + LOAD_CONFIG_DIRECTORY * 8 + 4, 0x108)
+    compare_cases.append(("different valid load-config directory size",
+                          bytes(larger_load_directory)))
     for name, image in compare_cases:
         try:
             compare(reference, PEImage(image, "self-test/%s" % name).inspect())
@@ -979,7 +1138,7 @@ def self_test() -> None:
         raise VerificationError("self-test mutations unexpectedly passed: " +
                                 ", ".join(failures))
     print("PASS: VBS enclave PE verifier self-test (%d mutations)" %
-          (len(cases) + len(compare_cases)))
+          (2 + len(cases) + len(compare_cases)))
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -987,7 +1146,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     inspect_parser = subparsers.add_parser("inspect")
     inspect_parser.add_argument("image", type=pathlib.Path)
-    inspect_parser.add_argument("--machine", choices=("x86_64", "arm64"))
+    inspect_parser.add_argument("--machine", required=True,
+                                choices=("x86_64", "arm64"))
     inspect_parser.add_argument("--json", dest="json_path", type=pathlib.Path)
     compare_parser = subparsers.add_parser("compare")
     compare_parser.add_argument("reference", type=pathlib.Path)
@@ -998,11 +1158,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.command == "self-test":
             self_test()
         elif args.command == "inspect":
-            result = inspect_path(args.image)
-            if args.machine and result["machine"] != args.machine:
-                raise VerificationError(
-                    "%s: machine %s does not match expected %s" %
-                    (args.image, result["machine"], args.machine))
+            result = inspect_path(args.image, args.machine)
             encoded = json.dumps(result, indent=2, sort_keys=True)
             print(encoded)
             if args.json_path:

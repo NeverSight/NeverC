@@ -50,6 +50,8 @@ function Invoke-Logged {
 }
 
 function Resolve-Toolchain {
+  param([switch]$IncludeArm64)
+
   if (-not $env:VCToolsInstallDir) {
     throw 'VCToolsInstallDir is unset; run from an MSVC developer environment'
   }
@@ -61,6 +63,7 @@ function Resolve-Toolchain {
   $sdkRoot = $env:WindowsSdkDir.TrimEnd('\', '/')
   $sdkVersion = $env:WindowsSDKVersion.TrimEnd('\', '/')
   $vcBin = Join-Path $vcRoot 'bin\Hostx64\x64'
+  $vcBinArm64 = Join-Path $vcRoot 'bin\Hostx64\arm64'
   $sdkLib = Join-Path $sdkRoot "Lib\$sdkVersion"
   $sdkBin = Join-Path $sdkRoot "Bin\$sdkVersion\x64"
 
@@ -71,6 +74,9 @@ function Resolve-Toolchain {
     onecore = Require-File (Join-Path $sdkLib 'um\x64\onecore.lib') 'onecore.lib'
     veiid = Require-File (Join-Path $sdkBin 'veiid.exe') 'VEIID'
     signtool = Require-File (Join-Path $sdkBin 'signtool.exe') 'SignTool'
+  }
+  if ($IncludeArm64) {
+    $paths['link_arm64'] = Require-File (Join-Path $vcBinArm64 'link.exe') 'MSVC ARM64 linker'
   }
   return $paths
 }
@@ -149,7 +155,7 @@ $python = (Get-Command python.exe -ErrorAction Stop).Source
 
 if ($Phase -eq 'Static') {
   Invoke-Logged $python @($verifier, 'self-test') (Join-Path $logRoot 'verifier-self-test.log') | Out-Null
-  $tools = Resolve-Toolchain
+  $tools = Resolve-Toolchain -IncludeArm64
   $tools.GetEnumerator() | ForEach-Object { Write-Host ("{0}: {1}" -f $_.Key, $_.Value) }
   $tools | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactRoot 'tool-paths.json') -Encoding utf8
   $tools.GetEnumerator() | ForEach-Object {
@@ -204,20 +210,12 @@ if ($Phase -eq 'Static') {
   # Keep the Microsoft-link and integrated-link comparisons on the exact same
   # runtime bits. Host toolchain paths are still recorded above for diagnosis,
   # but must not change the reference image's object selection or CFG table.
-  $libraries = @(
+  $x64Libraries = @(
     $bundledRuntime.x64_vertdll,
     $bundledRuntime.x64_bcrypt,
     $bundledRuntime.x64_enclave_libcmt,
     $bundledRuntime.x64_enclave_libvcruntime,
     $bundledRuntime.x64_enclave_ucrt
-  )
-  $neverCObjectExports = @(
-    '/EXPORT:GuardedTarget',
-    '/EXPORT:GuardedIndirectCall',
-    '/EXPORT:GuardedExercise',
-    '/EXPORT:LegacyTarget',
-    '/EXPORT:LegacyExercise',
-    '/EXPORT:LegacyAddressTaken,DATA'
   )
   $msLinkFlags = @('/NOLOGO', '/DLL', '/INCREMENTAL:NO', '/NODEFAULTLIB',
                    '/ENCLAVE', '/INTEGRITYCHECK', '/GUARD:MIXED',
@@ -232,15 +230,29 @@ if ($Phase -eq 'Static') {
   }
   foreach ($entry in $outputs.GetEnumerator()) {
     $output = Join-Path $unsignedRoot $entry.Key
-    $arguments = @($msLinkFlags) + @("/OUT:$output", "/IMPLIB:$output.lib") + $entry.Value + $libraries
-    # NeverC's COFF directives use the integrated linker's canonical spelling;
-    # pass the same source-level exports explicitly to link.exe so both sides
-    # compare identical semantics rather than parser dialects.
-    if ($entry.Key -eq 'neverc-msvc.dll') {
-      $arguments += $neverCObjectExports
-    }
+    $arguments = @($msLinkFlags) + @("/OUT:$output", "/IMPLIB:$output.lib") + $entry.Value + $x64Libraries
     Invoke-Logged $tools.link $arguments (Join-Path $logRoot ("link-{0}.log" -f $entry.Key)) | Out-Null
   }
+
+  # Use link.exe as the ARM64 reference linker over the exact NeverC objects
+  # and bundled runtime bits consumed by the integrated linker below.
+  $arm64Libraries = @(
+    $bundledRuntime.arm64_vertdll,
+    $bundledRuntime.arm64_bcrypt,
+    $bundledRuntime.arm64_enclave_libcmt,
+    $bundledRuntime.arm64_enclave_libvcruntime,
+    $bundledRuntime.arm64_enclave_ucrt
+  )
+  $arm64Reference = Join-Path $unsignedRoot 'neverc-msvc-arm64.dll'
+  $arm64ReferenceArguments = @(
+    '/NOLOGO', '/DLL', '/INCREMENTAL:NO', '/NODEFAULTLIB', '/ENCLAVE',
+    '/INTEGRITYCHECK', '/GUARD:MIXED', '/DYNAMICBASE', '/MACHINE:ARM64',
+    "/OUT:$arm64Reference", "/IMPLIB:$arm64Reference.lib",
+    (Join-Path $nevercArm64ObjectRoot 'enclave.cpp.obj'),
+    (Join-Path $nevercArm64ObjectRoot 'guarded.cpp.obj'),
+    $legacyNeverCArm64
+  ) + $arm64Libraries
+  Invoke-Logged $tools.link_arm64 $arm64ReferenceArguments (Join-Path $logRoot 'link-neverc-msvc-arm64.dll.log') | Out-Null
 
   $bundledLibraries = @('-lvertdll', '-lbcrypt', '-llibcmt',
                         '-llibvcruntime', '-lucrt')
@@ -276,21 +288,26 @@ if ($Phase -eq 'Static') {
   Assert-BundledRuntimeTrace $candidateArm64Trace 'arm64' $bundledRuntime
   Invoke-Logged $neverc $candidateArm64Arguments (Join-Path $logRoot 'link-neverc-neverc-arm64.dll.log') | Out-Null
 
-  foreach ($name in @('msvc-msvc.dll', 'neverc-msvc.dll', 'neverc-neverc.dll',
-                      'neverc-neverc-arm64.dll')) {
+  $imageMachines = [ordered]@{
+    'msvc-msvc.dll' = 'x86_64'
+    'neverc-msvc.dll' = 'x86_64'
+    'neverc-neverc.dll' = 'x86_64'
+    'neverc-msvc-arm64.dll' = 'arm64'
+    'neverc-neverc-arm64.dll' = 'arm64'
+  }
+  foreach ($entry in $imageMachines.GetEnumerator()) {
+    $name = $entry.Key
     $image = Join-Path $unsignedRoot $name
-    $expectedMachine = if ($name -eq 'neverc-neverc-arm64.dll') {
-      'arm64'
-    } else {
-      'x86_64'
-    }
     Invoke-Logged $python @($verifier, 'inspect', $image, '--machine',
-      $expectedMachine, '--json', (Join-Path $jsonRoot "$name.json")) (Join-Path $logRoot "verify-$name.log") | Out-Null
+      $entry.Value, '--json', (Join-Path $jsonRoot "$name.json")) (Join-Path $logRoot "verify-$name.log") | Out-Null
     Invoke-Logged $tools.dumpbin @('/headers', '/loadconfig', $image) (Join-Path $artifactRoot "$name.dumpbin.txt") | Out-Null
   }
   Invoke-Logged $python @($verifier, 'compare',
     (Join-Path $unsignedRoot 'neverc-msvc.dll'),
     (Join-Path $unsignedRoot 'neverc-neverc.dll')) (Join-Path $logRoot 'compare-neverc-linkers.log') | Out-Null
+  Invoke-Logged $python @($verifier, 'compare',
+    (Join-Path $unsignedRoot 'neverc-msvc-arm64.dll'),
+    (Join-Path $unsignedRoot 'neverc-neverc-arm64.dll')) (Join-Path $logRoot 'compare-neverc-linkers-arm64.log') | Out-Null
 
   # Static semantics are checked on the untouched images. Only then do we make
   # runtime copies and let VEIID mutate them. Signing happens last in Runtime.
@@ -299,7 +316,7 @@ if ($Phase -eq 'Static') {
     Copy-Item -LiteralPath (Join-Path $unsignedRoot $name) -Destination $runtimeImage -Force
     Invoke-Logged $tools.veiid @($runtimeImage) (Join-Path $logRoot "veiid-$name.log") | Out-Null
   }
-  Write-Host "STATIC PASS: x64 reference semantics match, bundled x64/ARM64 links pass, and VEIID runtime copies are ready in '$runtimeRoot'"
+  Write-Host "STATIC PASS: x64 and ARM64 Microsoft-link semantics match the integrated linker, and VEIID runtime copies are ready in '$runtimeRoot'"
   exit 0
 }
 
