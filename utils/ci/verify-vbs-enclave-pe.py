@@ -102,6 +102,9 @@ PUBLIC_IDENTITY_PREFIX = "public|"
 STATIC_IDENTITY_PREFIX = "static|"
 DLLMAIN_CRT_DISPATCH = (
     "?dllmain_crt_dispatch@@YAHQEAUHINSTANCE__@@KQEAX@Z")
+VBS_CRT_MEMBER_ROOT = (
+    "Intermediate/crt/vcstartup/build/mt/"
+    "libcmt_mt_enclave.vcxproj/objr")
 # The bundled enclave CRT contributes one live local GFID.  link.exe's public
 # MAP omits its private identity, so this is an explicit fixture-specific
 # residual contract, not proof that the reference MAP named that target.  The
@@ -109,11 +112,13 @@ DLLMAIN_CRT_DISPATCH = (
 EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES = {
     "x86_64": frozenset({
         STATIC_IDENTITY_PREFIX +
-        "libcmt:objr/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+        "libcmt:" + VBS_CRT_MEMBER_ROOT +
+        "/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
     }),
     "arm64": frozenset({
         STATIC_IDENTITY_PREFIX +
-        "libcmt:objr/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+        "libcmt:" + VBS_CRT_MEMBER_ROOT +
+        "/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
     }),
 }
 
@@ -144,10 +149,16 @@ def _normalize_map_origin(origin: str) -> str:
     if re.match(r"^[A-Za-z]:/", member):
         member = member[2:]
     parts = [part for part in member.split("/") if part not in ("", ".")]
-    objr_indexes = [index for index, part in enumerate(parts)
-                    if part.lower() == "objr"]
-    if objr_indexes:
-        parts = parts[objr_indexes[-1]:]
+    # The checked-in enclave CRT archives embed an absolute Microsoft build
+    # root.  Canonicalize only their complete, pinned project suffix; keeping
+    # every component for all other members avoids collapsing distinct paths.
+    vbs_root_parts = VBS_CRT_MEMBER_ROOT.split("/")
+    root_width = len(vbs_root_parts)
+    for index in range(len(parts) - root_width, -1, -1):
+        if ([part.lower() for part in parts[index:index + root_width]] ==
+                [part.lower() for part in vbs_root_parts]):
+            parts = vbs_root_parts + parts[index + root_width:]
+            break
     member = "/".join(parts)
     if not member:
         return ""
@@ -1463,30 +1474,48 @@ def self_test() -> None:
     cases: List[Tuple[str, bytes, str]] = []
     failures = []
 
+    if DLLMAIN_CRT_DISPATCH != (
+            "?dllmain_crt_dispatch@@YAHQEAUHINSTANCE__@@KQEAX@Z"):
+        failures.append("opaque GFID symbol contract drifted")
+    if DELAY_IMPORT_DIRECTORY != 13:
+        failures.append("delay-import directory index drifted")
     expected_fixture_identities = {
         "x86_64": frozenset({
             STATIC_IDENTITY_PREFIX +
-            "libcmt:objr/amd64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+            "libcmt:Intermediate/crt/vcstartup/build/mt/"
+            "libcmt_mt_enclave.vcxproj/objr/amd64/dll_dllmain.obj|" +
+            DLLMAIN_CRT_DISPATCH,
         }),
         "arm64": frozenset({
             STATIC_IDENTITY_PREFIX +
-            "libcmt:objr/arm64/dll_dllmain.obj|" + DLLMAIN_CRT_DISPATCH,
+            "libcmt:Intermediate/crt/vcstartup/build/mt/"
+            "libcmt_mt_enclave.vcxproj/objr/arm64/dll_dllmain.obj|" +
+            DLLMAIN_CRT_DISPATCH,
         }),
     }
     if EXPECTED_VBS_CANDIDATE_ONLY_IDENTITIES != expected_fixture_identities:
         failures.append("per-machine opaque GFID contract drifted")
     normalized_fixture_origins = {
         _normalize_map_origin(
-            "libcmt:C:\\agent\\objr\\amd64\\dll_dllmain.obj"),
+            "libcmt:C:\\agent\\Intermediate\\crt\\vcstartup\\build\\mt\\"
+            "libcmt_mt_enclave.vcxproj\\objr\\amd64\\"
+            "dll_dllmain.obj"),
         _normalize_map_origin(
-            "libcmt:C:\\agent\\objr\\arm64\\dll_dllmain.obj"),
+            "libcmt:C:\\agent\\Intermediate\\crt\\vcstartup\\build\\mt\\"
+            "libcmt_mt_enclave.vcxproj\\objr\\arm64\\"
+            "dll_dllmain.obj"),
         _normalize_map_origin(
-            "libcmt:C:\\agent\\objr\\arm64ec\\dll_dllmain.obj"),
+            "libcmt:C:\\agent\\Intermediate\\crt\\vcstartup\\build\\mt\\"
+            "libcmt_mt_enclave.vcxproj\\objr\\arm64ec\\"
+            "dll_dllmain.obj"),
     }
     if normalized_fixture_origins != {
-            "libcmt:objr/amd64/dll_dllmain.obj",
-            "libcmt:objr/arm64/dll_dllmain.obj",
-            "libcmt:objr/arm64ec/dll_dllmain.obj"}:
+            "libcmt:Intermediate/crt/vcstartup/build/mt/"
+            "libcmt_mt_enclave.vcxproj/objr/amd64/dll_dllmain.obj",
+            "libcmt:Intermediate/crt/vcstartup/build/mt/"
+            "libcmt_mt_enclave.vcxproj/objr/arm64/dll_dllmain.obj",
+            "libcmt:Intermediate/crt/vcstartup/build/mt/"
+            "libcmt_mt_enclave.vcxproj/objr/arm64ec/dll_dllmain.obj"}:
         failures.append("architecture-qualified map origins are not distinct")
 
     map_cases = [
@@ -2007,7 +2036,9 @@ def self_test() -> None:
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
             extra_static_symbols=[(
                 "StaticInternalTarget", 0x1018,
-                "C:\\build\\libcmt.lib:D:\\agent-a\\objr\\amd64\\"
+                "C:\\build\\libcmt.lib:D:\\agent-a\\Intermediate\\crt\\"
+                "vcstartup\\build\\mt\\libcmt_mt_enclave.vcxproj\\objr\\"
+                "amd64\\"
                 "dll_dllmain.obj")]),
         "self-test/static-reference.map")
     static_candidate_map = parse_coff_map_text(
@@ -2015,7 +2046,9 @@ def self_test() -> None:
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
             extra_static_symbols=[(
                 "StaticInternalTarget", 0x1028,
-                "libcmt:E:\\agent-b\\objr\\amd64\\dll_dllmain.obj")]),
+                "libcmt:E:\\agent-b\\Intermediate\\crt\\vcstartup\\build\\"
+                "mt\\libcmt_mt_enclave.vcxproj\\objr\\amd64\\"
+                "dll_dllmain.obj")]),
         "self-test/static-candidate.map")
     compare(
         PEImage(bytes(internal_reference),
@@ -2046,6 +2079,34 @@ def self_test() -> None:
         bytes(internal_reference),
         "self-test/static wrong-origin reference").inspect(
             wrong_origin_reference_map)
+
+    wrong_member_reference_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "SameLocal", 0x1018,
+                "libcmt:C:\\tree-a\\project-A.vcxproj\\objr\\arm64\\"
+                "same.obj")]),
+        "self-test/static-wrong-member-reference.map")
+    wrong_member_candidate_map = parse_coff_map_text(
+        _synthetic_map_text(
+            omitted_symbols={"InternalTargetA", "InternalTargetB"},
+            extra_static_symbols=[(
+                "SameLocal", 0x1028,
+                "libcmt:D:\\tree-b\\project-B.vcxproj\\objr\\arm64\\"
+                "same.obj")]),
+        "self-test/static-wrong-member-candidate.map")
+    wrong_member_case_name = "same static name from different member paths"
+    compare_cases.append((
+        wrong_member_case_name,
+        PEImage(bytes(internal_candidate),
+                "self-test/static wrong-member candidate").inspect(
+                    wrong_member_candidate_map),
+        "GFID semantic target identities"))
+    compare_references[wrong_member_case_name] = PEImage(
+        bytes(internal_reference),
+        "self-test/static wrong-member reference").inspect(
+            wrong_member_reference_map)
 
     public_scope_map = parse_coff_map_text(
         _synthetic_map_text(
@@ -2080,7 +2141,9 @@ def self_test() -> None:
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
             extra_static_symbols=[(
                 DLLMAIN_CRT_DISPATCH, 0x1028,
-                "libcmt:D:\\archive\\objr\\arm64\\dll_dllmain.obj")]),
+                "libcmt:D:\\archive\\Intermediate\\crt\\vcstartup\\build\\"
+                "mt\\libcmt_mt_enclave.vcxproj\\objr\\arm64\\"
+                "dll_dllmain.obj")]),
         "self-test/opaque-candidate.map")
     opaque_reference_image = PEImage(
         bytes(internal_reference), "self-test/opaque reference").inspect(
@@ -2116,7 +2179,9 @@ def self_test() -> None:
             omitted_symbols={"InternalTargetA", "InternalTargetB"},
             extra_static_symbols=[(
                 DLLMAIN_CRT_DISPATCH, 0x1028,
-                "libcmt:D:\\archive\\objr\\arm64ec\\dll_dllmain.obj")]),
+                "libcmt:D:\\archive\\Intermediate\\crt\\vcstartup\\build\\"
+                "mt\\libcmt_mt_enclave.vcxproj\\objr\\arm64ec\\"
+                "dll_dllmain.obj")]),
         "self-test/wrong-opaque-candidate.map")
     wrong_opaque_case_name = "ARM64EC member cannot satisfy ARM64 opaque GFID"
     compare_cases.append((
