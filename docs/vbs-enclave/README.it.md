@@ -50,7 +50,7 @@ Un collegamento di enclave deve fornire entrambe queste definizioni di dati dell
 
 NeverC mantiene attivo `__enclave_config` durante l’eliminazione del codice inutilizzato, lo estrae da un archivio quando necessario e verifica che il puntatore load-config rilocato finale sia uguale all’indirizzo virtuale di quell’oggetto di configurazione. Una definizione mancante, assoluta, eliminata, troncata o rilocata in modo errato causa un errore di collegamento.
 
-`/GUARD:MIXED` abilita l’output CFG per una combinazione di file oggetto protetti e legacy. Genera voci GFID e GIAT di cinque byte: un RVA di quattro byte seguito da un byte di metadati, pari a zero per i normali target correnti. I `GuardFlags` contengono i bit per CFG, delay-IAT protetto e dimensione della voce. Gli oggetti legacy forniscono i target il cui indirizzo viene acquisito mediante una scansione conservativa delle rilocazioni, escludendo i metadati di unwind.
+`/GUARD:MIXED` abilita l’output CFG per una combinazione di file oggetto protetti e legacy. Genera voci GFID e GIAT di cinque byte: un RVA di quattro byte seguito da un byte di metadati, pari a zero per i normali target correnti. I `GuardFlags` contengono i bit per CFG e dimensione della voce. Gli oggetti legacy forniscono i target il cui indirizzo viene acquisito mediante una scansione conservativa delle rilocazioni, escludendo i metadati di unwind.
 
 Una richiesta esplicita di collegamento incrementale è incompatibile con `/ENCLAVE` e viene rifiutata. Viene usata l’ultima opzione `/INCREMENTAL` effettiva, comprese le opzioni provenienti dalle direttive dei file oggetto.
 

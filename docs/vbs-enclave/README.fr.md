@@ -50,7 +50,7 @@ Une liaison d’enclave doit fournir ces deux définitions de données d’image
 
 NeverC maintient `__enclave_config` en vie lors de l’élimination du code mort, l’extrait d’une archive si nécessaire et vérifie que le pointeur load-config finalement relocalisé est égal à l’adresse virtuelle de cet objet de configuration. Une définition manquante, absolue, éliminée, tronquée ou incorrectement relocalisée provoque une erreur de liaison.
 
-`/GUARD:MIXED` active la sortie CFG pour un mélange de fichiers objets protégés et hérités. Il émet des entrées GFID et GIAT de cinq octets : une RVA de quatre octets suivie d’un octet de métadonnées, nul pour les cibles ordinaires actuelles. Les `GuardFlags` portent les bits CFG, delay-IAT protégé et taille d’entrée. Les objets hérités apportent les cibles dont l’adresse est prise en parcourant les relocalisations de manière prudente, à l’exclusion des métadonnées d’unwind.
+`/GUARD:MIXED` active la sortie CFG pour un mélange de fichiers objets protégés et hérités. Il émet des entrées GFID et GIAT de cinq octets : une RVA de quatre octets suivie d’un octet de métadonnées, nul pour les cibles ordinaires actuelles. Les `GuardFlags` portent les bits CFG et taille d’entrée. Les objets hérités apportent les cibles dont l’adresse est prise en parcourant les relocalisations de manière prudente, à l’exclusion des métadonnées d’unwind.
 
 Une demande explicite de liaison incrémentale est incompatible avec `/ENCLAVE` et est donc rejetée. La dernière option `/INCREMENTAL` effective est utilisée, y compris les options provenant des directives des fichiers objets.
 

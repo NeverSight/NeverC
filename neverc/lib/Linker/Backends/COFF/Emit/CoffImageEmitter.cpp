@@ -2020,12 +2020,12 @@ void OutputWriter::createGuardCFTables() {
   // Add the longjmp target table unless the user told us not to.
   if (config->guardCF & GuardCFLevel::LongJmp)
     maybeAddRVATable(std::move(longJmpTargets), "__guard_longjmp_table",
-                     "__guard_longjmp_count");
+                     "__guard_longjmp_count", config->guardCFMixed);
 
   // Add the ehcont target table unless the user told us not to.
   if (config->guardCF & GuardCFLevel::EHCont)
     maybeAddRVATable(std::move(ehContTargets), "__guard_eh_cont_table",
-                     "__guard_eh_cont_count");
+                     "__guard_eh_cont_count", config->guardCFMixed);
 
   // Set __guard_flags, which will be used in the load config to indicate that
   // /guard:cf was enabled.
@@ -2036,9 +2036,7 @@ void OutputWriter::createGuardCFTables() {
   if (config->guardCF & GuardCFLevel::EHCont)
     guardFlags |= uint32_t(GuardFlags::EH_CONTINUATION_TABLE_PRESENT);
   if (config->guardCFMixed)
-    guardFlags |= uint32_t(GuardFlags::PROTECT_DELAYLOAD_IAT) |
-                  uint32_t(GuardFlags::DELAYLOAD_IAT_IN_ITS_OWN_SECTION) |
-                  uint32_t(GuardFlags::CF_FUNCTION_TABLE_SIZE_5BYTES);
+    guardFlags |= uint32_t(GuardFlags::CF_FUNCTION_TABLE_SIZE_5BYTES);
   Symbol *flagSym = ctx.symtab.findUnderscore("__guard_flags");
   cast<DefinedAbsolute>(flagSym)->setVA(guardFlags);
 }
@@ -2632,6 +2630,11 @@ template <typename T> void OutputWriter::prepareLoadConfig(T *loadConfig) {
   if (configSize > configChunk->getSize() - chunkOffset ||
       configSize > configSection->getRawSize() - sectionOffset) {
     error("'__enclave_config' is too large for its image data");
+    return;
+  }
+  if (read32le(configBuf + 12) || read32le(configBuf + 16) ||
+      read32le(configBuf + 20)) {
+    error("'__enclave_config' import metadata must be zero before linking");
     return;
   }
   if (enclaveImports.size() > UINT32_MAX) {
