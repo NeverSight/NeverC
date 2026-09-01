@@ -161,7 +161,7 @@ bool applyBadByteProfile(const llvm::opt::Arg *A, DynCodeOptions &Out) {
       0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
       0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x7F};
 
-  static const BadByteProfile Profiles[] = {
+  static const BadByteProfile kBadByteProfiles[] = {
       {"null", NullBytes},
       {"c-string", NullBytes},
       {"http-newline", HttpNewlineBytes},
@@ -171,7 +171,7 @@ bool applyBadByteProfile(const llvm::opt::Arg *A, DynCodeOptions &Out) {
   };
 
   StringRef Name = A->getValue();
-  for (const BadByteProfile &P : Profiles) {
+  for (const BadByteProfile &P : kBadByteProfiles) {
     if (Name == P.Name) {
       Out.BadByteProfile = P.Name.str();
       for (uint8_t Byte : P.Bytes)

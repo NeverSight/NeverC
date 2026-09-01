@@ -128,6 +128,15 @@ def main() -> int:
                                  "definition_sha256", "owner", "kind",
                                  "justification")),
                f"incomplete source-object entry: {entry}", failures)
+    pe_source_report = mod.Report()
+    mod.scan_translation_unit_state(
+        pe_source_report, allowlist, binary_backstop=True,
+        preserve_function_locals=True)
+    expect(not pe_source_report.source_globals and
+           not pe_source_report.unscannable,
+           "PE source-provenance backstop rejected reviewed immutable "
+           f"objects: source={pe_source_report.source_globals}, "
+           f"unscannable={pe_source_report.unscannable}", failures)
     audited_keys = set(mod.audited_source_files())
     documented_tls_paths = {
         path.replace("\\", "/")

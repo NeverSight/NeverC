@@ -96,8 +96,8 @@ private:
                                                   NevercStringView *OutDigest) {
     if (!Context || !OutDigest)
       return schemaStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-    static constexpr StringLiteral Digest = NEVERC_MIR_SCHEMA_DIGEST;
-    *OutDigest = {Digest.data(), Digest.size()};
+    static constexpr StringLiteral kSchemaDigest = NEVERC_MIR_SCHEMA_DIGEST;
+    *OutDigest = {kSchemaDigest.data(), kSchemaDigest.size()};
     return neverc_status_ok();
   }
 

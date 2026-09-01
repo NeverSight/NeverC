@@ -50,13 +50,13 @@ bool isDynCodeInternalRuntimeName(StringRef Name) {
 }
 
 bool isDefaultEntryName(StringRef Bare) {
-  static constexpr StringRef kNames[] = {
+  static constexpr StringRef kDefaultEntryNames[] = {
 #define NEVERC_DEFAULT_ENTRY(name) StringRef(#name),
 #include "neverc/DynCode/Tables/DefaultEntryNames.def"
 #include "neverc/DynCode/Tables/UserExtra_DefaultEntryNames.def"
 #undef NEVERC_DEFAULT_ENTRY
   };
-  for (StringRef N : kNames)
+  for (StringRef N : kDefaultEntryNames)
     if (Bare == N)
       return true;
   return false;
@@ -393,90 +393,90 @@ bool nameInTable(StringRef Bare, const StringRef (&Table)[N]) {
 } // namespace
 
 bool isReservedMemStdlibName(StringRef Bare) {
-  static constexpr StringRef kNames[] = {
+  static constexpr StringRef kReservedMemStdlibNames[] = {
 #define NEVERC_NAME(name) StringRef(#name),
 #include "neverc/DynCode/Tables/ReservedMemStdlibNames.def"
 #include "neverc/DynCode/Tables/UserExtra_ReservedMemStdlibNames.def"
 #undef NEVERC_NAME
   };
-  return nameInTable(Bare, kNames);
+  return nameInTable(Bare, kReservedMemStdlibNames);
 }
 
 namespace {
 
 bool isComplexLibcall(StringRef Bare) {
-  static constexpr StringRef kNames[] = {
+  static constexpr StringRef kComplexLibcallNames[] = {
 #define NEVERC_NAME(name) StringRef(#name),
 #include "neverc/DynCode/Tables/ComplexLibcallNames.def"
 #include "neverc/DynCode/Tables/UserExtra_ComplexLibcallNames.def"
 #undef NEVERC_NAME
   };
-  return nameInTable(Bare, kNames);
+  return nameInTable(Bare, kComplexLibcallNames);
 }
 
 } // namespace
 
 bool isLibmTranscendentalName(StringRef Bare) {
-  static constexpr StringRef kNames[] = {
+  static constexpr StringRef kLibmTranscendentalNames[] = {
 #define NEVERC_NAME(name) StringRef(#name),
 #include "neverc/DynCode/Tables/LibmTranscendentalNames.def"
 #include "neverc/DynCode/Tables/UserExtra_LibmTranscendentalNames.def"
 #undef NEVERC_NAME
   };
-  return nameInTable(Bare, kNames);
+  return nameInTable(Bare, kLibmTranscendentalNames);
 }
 
 bool isStdioCallName(StringRef Bare) {
-  static constexpr StringRef kNames[] = {
+  static constexpr StringRef kStdioCallNames[] = {
 #define NEVERC_NAME(name) StringRef(#name),
 #include "neverc/DynCode/Tables/StdioCallNames.def"
 #include "neverc/DynCode/Tables/UserExtra_StdioCallNames.def"
 #undef NEVERC_NAME
   };
-  return nameInTable(Bare, kNames);
+  return nameInTable(Bare, kStdioCallNames);
 }
 
 bool isScalarSoftFloatHelperName(StringRef Bare) {
-  static constexpr StringRef kNames[] = {
+  static constexpr StringRef kScalarSoftFloatNames[] = {
 #define NEVERC_NAME(name) StringRef(#name),
 #include "neverc/DynCode/Tables/ScalarSoftFloatNames.def"
 #include "neverc/DynCode/Tables/UserExtra_ScalarSoftFloatNames.def"
 #undef NEVERC_NAME
   };
-  return nameInTable(Bare, kNames);
+  return nameInTable(Bare, kScalarSoftFloatNames);
 }
 
 bool isLongIntegerCompilerRtHelperName(StringRef Bare) {
-  static constexpr StringRef kPrefixes[] = {
+  static constexpr StringRef kLongIntegerHelperPrefixes[] = {
 #define NEVERC_PREFIX(prefix) StringRef(#prefix),
 #include "neverc/DynCode/Tables/LongIntegerHelperPrefixes.def"
 #include "neverc/DynCode/Tables/UserExtra_LongIntegerHelperPrefixes.def"
 #undef NEVERC_PREFIX
   };
-  for (StringRef P : kPrefixes)
+  for (StringRef P : kLongIntegerHelperPrefixes)
     if (Bare.starts_with(P))
       return true;
   return false;
 }
 
 bool isBinary128HelperName(StringRef Bare) {
-  static constexpr StringRef kNames[] = {
+  static constexpr StringRef kBinary128HelperNames[] = {
 #define NEVERC_NAME(name) StringRef(#name),
 #include "neverc/DynCode/Tables/Binary128HelperNames.def"
 #include "neverc/DynCode/Tables/UserExtra_Binary128HelperNames.def"
 #undef NEVERC_NAME
   };
-  return nameInTable(Bare, kNames);
+  return nameInTable(Bare, kBinary128HelperNames);
 }
 
 bool isHeapAllocatorName(StringRef Bare) {
-  static constexpr StringRef kNames[] = {
+  static constexpr StringRef kHeapAllocatorNames[] = {
 #define NEVERC_NAME(name) StringRef(#name),
 #include "neverc/DynCode/Tables/HeapAllocatorNames.def"
 #include "neverc/DynCode/Tables/UserExtra_HeapAllocatorNames.def"
 #undef NEVERC_NAME
   };
-  return nameInTable(Bare, kNames);
+  return nameInTable(Bare, kHeapAllocatorNames);
 }
 
 bool isBuiltinStringRuntimeName(StringRef Bare) {
@@ -484,13 +484,13 @@ bool isBuiltinStringRuntimeName(StringRef Bare) {
 }
 
 bool isSetjmpName(StringRef Bare) {
-  static constexpr StringRef kNames[] = {
+  static constexpr StringRef kSetjmpNames[] = {
 #define NEVERC_NAME(name) StringRef(#name),
 #include "neverc/DynCode/Tables/SetjmpNames.def"
 #include "neverc/DynCode/Tables/UserExtra_SetjmpNames.def"
 #undef NEVERC_NAME
   };
-  return nameInTable(Bare, kNames);
+  return nameInTable(Bare, kSetjmpNames);
 }
 
 bool isCompilerRtRuntimeHelperName(StringRef Bare) {
@@ -579,13 +579,13 @@ std::string exactCompilerGeneratedExternHint(StringRef Name) {
     StringRef Name;
     StringRef Hint;
   };
-  static constexpr Row kRows[] = {
+  static constexpr Row kCompilerGeneratedExternHints[] = {
 #define NEVERC_EXTERN_HINT(name, message) {#name, message},
 #include "neverc/DynCode/Tables/CompilerGeneratedExternHints.def"
 #include "neverc/DynCode/Tables/UserExtra_CompilerGeneratedExternHints.def"
 #undef NEVERC_EXTERN_HINT
   };
-  for (const Row &R : kRows)
+  for (const Row &R : kCompilerGeneratedExternHints)
     if (Name == R.Name)
       return R.Hint.str();
   return {};

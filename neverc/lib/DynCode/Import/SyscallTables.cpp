@@ -193,13 +193,13 @@ SyscallCompat lookupSyscallCompat(const TargetDesc &T, StringRef Name) {
 
 bool isLikelySyscallName(StringRef Name) {
   StringRef Bare = stripLeadingUnderscore(Name);
-  static constexpr StringRef kCandidates[] = {
+  static constexpr StringRef kLikelySyscallNames[] = {
 #define NEVERC_SYSCALL_LIKELY(name) StringRef(#name),
 #include "neverc/DynCode/Tables/SyscallLikelyNames.def"
 #include "neverc/DynCode/Tables/UserExtra_SyscallLikelyNames.def"
 #undef NEVERC_SYSCALL_LIKELY
   };
-  for (StringRef C : kCandidates)
+  for (StringRef C : kLikelySyscallNames)
     if (Bare == C)
       return true;
   return false;

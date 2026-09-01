@@ -177,7 +177,7 @@
       "justification": "Constexpr auto deduces the IMAGE_FILE_MACHINE enum value; it is immutable scalar target-dispatch data and has no mutable subobjects."
     }
   ],
-  "_source_objects_comment": "Exact path-provenanced implementation-file objects whose unqualified/anonymous final symbol cannot be safely attributed by nm. Only immutable lookup data, address-only sentinels, and one-time process registry bootstrap objects are eligible. Link request/session/options/graph/symbol/output/diagnostic payloads are forbidden.",
+  "_source_objects_comment": "Exact path-provenanced implementation-file objects whose unqualified/anonymous or function-local final symbol cannot be safely attributed by the platform symbol reader. Only immutable lookup data, address-only sentinels, synchronization primitives without compilation state, and one-time process registry bootstrap objects are eligible. Link request/session/options/graph/symbol/output/diagnostic payloads are forbidden.",
   "source_objects": [
     {
       "file": "neverc/lib/Foundation/Core/ProcessResourceBroker.cpp",
@@ -277,6 +277,168 @@
       "owner": "NeverC IR/MIR C ABI interface registry",
       "kind": "constexpr interface-ID table",
       "justification": "Constexpr array of fixed 128-bit interface identifiers used for compile-time uniqueness and read-only lookup; it has no mutable subobjects."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kDefaultEntryNames",
+      "declaration": "static constexpr StringRef kDefaultEntryNames[]",
+      "definition_sha256": "7344fc9331b7f90890b934efebc26736e6a24331e175ca175f6c35990898a174",
+      "owner": "DynCode default-entry classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the default-entry .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kReservedMemStdlibNames",
+      "declaration": "static constexpr StringRef kReservedMemStdlibNames[]",
+      "definition_sha256": "53a3e1acf494817bf59f045eb9fb09fbefe671c9c7a23d24bc2eab42cda98ffd",
+      "owner": "DynCode reserved-memory stdlib classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the reserved-memory stdlib .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kComplexLibcallNames",
+      "declaration": "static constexpr StringRef kComplexLibcallNames[]",
+      "definition_sha256": "fdcbc59070236621b88dcedfd3b3f8a2039d6625862e8fba588b78911094673b",
+      "owner": "DynCode complex-libcall classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the complex-libcall .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kLibmTranscendentalNames",
+      "declaration": "static constexpr StringRef kLibmTranscendentalNames[]",
+      "definition_sha256": "02682ee586a3fd8924176a5729ec00fa433200df446ca56c3a857b0225a055a2",
+      "owner": "DynCode libm classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the libm-transcendental .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kStdioCallNames",
+      "declaration": "static constexpr StringRef kStdioCallNames[]",
+      "definition_sha256": "83df7e59ce06d49b5d0c004f35cf4b52352547591d3696ef0b962b9bea23efb1",
+      "owner": "DynCode stdio-call classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the stdio-call .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kScalarSoftFloatNames",
+      "declaration": "static constexpr StringRef kScalarSoftFloatNames[]",
+      "definition_sha256": "a4371f36af48c6edbb11fc227662661888e2bb7ee17247fecefaf62294d2e883",
+      "owner": "DynCode soft-float classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the scalar soft-float .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kLongIntegerHelperPrefixes",
+      "declaration": "static constexpr StringRef kLongIntegerHelperPrefixes[]",
+      "definition_sha256": "d733cbcee10f91ebf4e78d670548dc73a8bd143e074fb96006b5299b8f50d77d",
+      "owner": "DynCode long-integer helper classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the long-integer helper .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kBinary128HelperNames",
+      "declaration": "static constexpr StringRef kBinary128HelperNames[]",
+      "definition_sha256": "14f10426c591242b3f5e83a11d10f31330803c0b1d1d1a1a2d63fc5f7550441e",
+      "owner": "DynCode binary128 helper classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the binary128 helper .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kHeapAllocatorNames",
+      "declaration": "static constexpr StringRef kHeapAllocatorNames[]",
+      "definition_sha256": "0a396488359e8891b93a559cd9ea54da726176a5e897266ae32ed247cc373436",
+      "owner": "DynCode heap-allocator classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the heap-allocator .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kSetjmpNames",
+      "declaration": "static constexpr StringRef kSetjmpNames[]",
+      "definition_sha256": "61d63d223600466be36d77d4265f57b2508baeda22f2b572fe23d59c7c0a0042",
+      "owner": "DynCode setjmp classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the setjmp .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ExtractorCommon.cpp",
+      "symbol": "kCompilerGeneratedExternHints",
+      "declaration": "static constexpr Row kCompilerGeneratedExternHints[]",
+      "definition_sha256": "d0373d6aad7f79d92d63b0e3c282b86ea73c2a158a8a2b75ba5596a8c96f4faf",
+      "owner": "DynCode external-symbol diagnostic hints",
+      "kind": "function-local constexpr string-view record table",
+      "justification": "Each constexpr Row contains only two StringRef values backed by immutable string literals generated from the compiler-generated extern hint .def tables; the record has no mutable subobjects."
+    },
+    {
+      "file": "neverc/lib/DynCode/Extractor/ObjectGraphExtractor.cpp",
+      "symbol": "ZeroPage",
+      "declaration": "static constexpr std::array<uint8_t, 4096> ZeroPage",
+      "definition_sha256": "759d13611db595634e3012ac14e795cd90a14bb64329ff185bcce91e1306ad8c",
+      "owner": "DynCode image zero-padding",
+      "kind": "function-local constexpr byte array",
+      "justification": "Compile-time zero-filled std::array of uint8_t used only as a bounded immutable input view while appending padding; it has no mutable subobjects or writable pointees."
+    },
+    {
+      "file": "neverc/lib/DynCode/IR/CompilerRtPass.cpp",
+      "symbol": "kStackProbeNames",
+      "declaration": "static constexpr StringLiteral kStackProbeNames[]",
+      "definition_sha256": "f4c657b7b40c9cbf78d1b7b3cc0202e0a1a7658dc0228bb9447249d2e58d900c",
+      "owner": "DynCode compiler-rt stack-probe cleanup",
+      "kind": "function-local constexpr string-literal table",
+      "justification": "Constexpr array of StringLiteral views backed only by immutable literals generated from the stack-probe .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/IR/StringRuntimePass.cpp",
+      "symbol": "kRuntimeAllocatorRoles",
+      "declaration": "static constexpr Row kRuntimeAllocatorRoles[]",
+      "definition_sha256": "f5ce3b8264d38efc6d3ff6704e0cf69941af44e73bfa6139a76eb117eae9c213",
+      "owner": "DynCode string-runtime allocator classifier",
+      "kind": "function-local constexpr allocator-role table",
+      "justification": "Each constexpr Row contains one immutable StringRef plus one RuntimeAllocatorRole enum generated from the string-runtime allocator .def tables; the record has no mutable subobjects."
+    },
+    {
+      "file": "neverc/lib/DynCode/Import/SyscallTables.cpp",
+      "symbol": "kLikelySyscallNames",
+      "declaration": "static constexpr StringRef kLikelySyscallNames[]",
+      "definition_sha256": "e580ac33282841654022d088b49c75c46ace521ef2b4f14b1bb8bc68152e8a3a",
+      "owner": "DynCode syscall-name classifier",
+      "kind": "function-local constexpr string-view table",
+      "justification": "Constexpr array of StringRef values backed only by immutable string literals generated from the likely-syscall .def tables; neither the views nor their pointees are writable."
+    },
+    {
+      "file": "neverc/lib/DynCode/Pipeline/DriverIntegration.cpp",
+      "symbol": "kBadByteProfiles",
+      "declaration": "static const BadByteProfile kBadByteProfiles[]",
+      "definition_sha256": "125a7906a7cbb1d627bb3099d1c4aa7495c5094f26bc24621f4f98d0014ca59d",
+      "owner": "DynCode bad-byte profile parser",
+      "kind": "function-local immutable profile table",
+      "justification": "Each const BadByteProfile contains a StringRef into an immutable literal and an ArrayRef into one of four static constexpr byte arrays. The record exposes no writable pointee and is never modified."
+    },
+    {
+      "file": "neverc/lib/Plugin/Link/COFF/COFFBinaryImageAdapter.cpp",
+      "symbol": "kPEDirectoryNames",
+      "declaration": "static constexpr std::array<const char *, 16> kPEDirectoryNames",
+      "definition_sha256": "7717428d100a93d7bbaa8771d76f9fe50c82ac9b4ba96e20118de1b25b2d2009",
+      "owner": "COFF binary-image PE directory decoder",
+      "kind": "function-local constexpr PE directory-name table",
+      "justification": "Constexpr std::array whose pointer elements all target immutable string literals naming the fixed PE data-directory slots; neither the array nor the pointees are writable."
+    },
+    {
+      "file": "neverc/lib/Plugin/MIR/MIRSchemaBridge.cpp",
+      "symbol": "kSchemaDigest",
+      "declaration": "static constexpr StringLiteral kSchemaDigest",
+      "definition_sha256": "0ffe6272e202eba8b06cc7edf206f6675c3853ad886f355992f94e3b7ce47ae7",
+      "owner": "NeverC MIR schema bridge",
+      "kind": "function-local constexpr schema digest",
+      "justification": "Constexpr StringLiteral view of the generated immutable MIR schema digest literal; the view and its pointee are read-only and contain no request state."
     }
   ],
   "_binary_symbols_comment": "Writable *process* data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose owner is under neverc::plugin, neverc::dyncode, neverc::time_trace_detail, or linker, but which are NOT process-global mutable compilation state. Every entry is required to appear exactly once. Thread-local symbols never belong here: the binary layer skips them, because ELF names one `.tbss` object where Mach-O emits a `__thread_vars` descriptor plus a `$tlv$init` storage symbol, and judging that here made the gate pass on one host and fail on another for identical sources. Put them in `entries` instead. Eligible categories: (a) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), (b) const objects whose vtable pointer forces a relocation into writable storage, (c) synchronization primitives with no compilation state, and (d) foreign-runtime descriptors that the foreign ABI requires to have static writable lifetime but that contain no NeverC compilation payload. A const interface or lookup table is NOT eligible: make it `constexpr` so it is constant-initialized into read-only storage instead of adding it here. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",

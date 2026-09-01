@@ -247,7 +247,7 @@ Error COFFLinkGraphAdapter::publishImage(ArrayRef<uint8_t> Bytes) {
           validRange(OptionalOffset, OptionalSize, Bytes.size())) {
         const uint32_t Count = std::min<uint32_t>(
             16, support::endian::read32le(Bytes.data() + OptionalOffset + 108));
-        static constexpr std::array<const char *, 16> Names = {
+        static constexpr std::array<const char *, 16> kPEDirectoryNames = {
             "exports",    "imports",       "resources",
             "exceptions", "certificates",  "base-relocations",
             "debug",      "architecture",  "global-pointer",
@@ -268,7 +268,8 @@ Error COFFLinkGraphAdapter::publishImage(ArrayRef<uint8_t> Bytes) {
           if (std::optional<uint64_t> FileOffset =
                   rvaToFileOffset(Context, RVA, Size))
             Data.Directories.push_back(
-                {("pe." + Twine(Names[Index])).str(), *FileOffset, Size});
+                {("pe." + Twine(kPEDirectoryNames[Index])).str(), *FileOffset,
+                 Size});
         }
       }
     }

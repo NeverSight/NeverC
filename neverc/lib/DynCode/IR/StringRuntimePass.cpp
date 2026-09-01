@@ -94,7 +94,7 @@ RuntimeAllocatorClassification classifyRuntimeAllocator(StringRef Name) {
   };
 #define NEVERC_STRING_RUNTIME_ALLOCATOR_ROLE_alloc RuntimeAllocatorRole::Alloc
 #define NEVERC_STRING_RUNTIME_ALLOCATOR_ROLE_free RuntimeAllocatorRole::Free
-  static constexpr Row kRows[] = {
+  static constexpr Row kRuntimeAllocatorRoles[] = {
 #define NEVERC_STRING_RUNTIME_ALLOCATOR(name, role)                            \
   {#name, NEVERC_STRING_RUNTIME_ALLOCATOR_ROLE_##role},
 #include "neverc/DynCode/Tables/StringRuntimeAllocatorNames.def"
@@ -103,7 +103,7 @@ RuntimeAllocatorClassification classifyRuntimeAllocator(StringRef Name) {
   };
 #undef NEVERC_STRING_RUNTIME_ALLOCATOR_ROLE_alloc
 #undef NEVERC_STRING_RUNTIME_ALLOCATOR_ROLE_free
-  for (const Row &R : kRows)
+  for (const Row &R : kRuntimeAllocatorRoles)
     if (Canon == R.Name)
       return {/*Matched=*/true, R.Role};
   return {};
