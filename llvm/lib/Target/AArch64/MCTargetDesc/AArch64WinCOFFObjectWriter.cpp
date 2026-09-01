@@ -48,6 +48,8 @@ unsigned AArch64WinCOFFObjectWriter::getRelocType(
     MCContext &Ctx, const MCValue &Target, const MCFixup &Fixup,
     bool IsCrossSection, const MCAsmBackend &MAB) const {
   unsigned FixupKind = Fixup.getKind();
+  if (FixupKind >= FirstLiteralRelocationKind)
+    return FixupKind - FirstLiteralRelocationKind;
   if (IsCrossSection) {
     // IMAGE_REL_ARM64_REL64 does not exist. We treat FK_Data_8 as FK_PCRel_4 so
     // that .xword a-b can lower to IMAGE_REL_ARM64_REL32. This allows generic

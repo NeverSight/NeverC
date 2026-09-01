@@ -1,4 +1,5 @@
 #include "BuiltinLLVMObjectWriter.h"
+#include "neverc/Plugin/Host/AssemblySymbolName.h"
 #include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/NativeELFSectionFacts.h"
@@ -367,8 +368,17 @@ bool isSyntheticAssemblerSymbol(const ObjectFile &Object, StringRef Name,
     return true;
   if ((NativeFlags & (SymbolRef::SF_Global | SymbolRef::SF_Weak)) != 0)
     return false;
-  // Mach-O's assembler mints "ltmp<n>" for section starts. Match the minted
-  // shape rather than the prefix, so a program's own "ltmpBuffer" survives.
+  // An assembler-private label is a coordinate inside a section, not a
+  // program symbol.  Keeping one in the graph makes the portable writer try
+  // to spell a name the assembler deliberately drops (for example x86's
+  // .LCPI0_0 constant-pool labels).  Drop it here and let relocation import
+  // retain the exact section-relative coordinate through
+  // targetForDroppedSymbol().
+  if (isPrivateLabelName(Name, Object.makeTriple()))
+    return true;
+  // Mach-O also mints lowercase "ltmp<n>" section-start labels. They are not
+  // covered by the uppercase-L private-label convention, so match the exact
+  // minted shape rather than the prefix; a program's "ltmpBuffer" survives.
   if (isa<MachOObjectFile>(Object) && Name.starts_with("ltmp")) {
     unsigned TemporaryIndex = 0;
     if (!Name.drop_front(4).getAsInteger(10, TemporaryIndex))

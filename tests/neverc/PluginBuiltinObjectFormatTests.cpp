@@ -3588,6 +3588,87 @@ TEST(PluginBuiltinObjectFormatTest, ReaderHandlesTheRelocationsRealCodeEmits) {
   }
 }
 
+TEST(PluginBuiltinObjectFormatTest,
+     WriterRoundTripsNativeCOFFInstructionRelocations) {
+  initializeBuiltinTargets();
+
+  struct Case {
+    Triple::ArchType Arch;
+    const char *Source;
+  };
+  const std::array<Case, 2> Cases = {{{Triple::x86_64, "\t.text\n"
+                                                       "\t.globl\tcaller\n"
+                                                       "caller:\n"
+                                                       "\tcallq\tcallee\n"
+                                                       "\tretq\n"},
+                                      {Triple::aarch64, "\t.text\n"
+                                                        "\t.globl\tcaller\n"
+                                                        "caller:\n"
+                                                        "\tbl\tcallee\n"
+                                                        "\tret\n"}}};
+
+  for (const Case &Value : Cases) {
+    BuiltinObjectTaskScope Scope;
+    ASSERT_TRUE(Scope.initialize());
+    auto Snapshot = PluginTargetRegistry::freeze(
+        ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+    ASSERT_TRUE(static_cast<bool>(Snapshot));
+    auto Reader = ObjectReaderProvider::create(*Snapshot);
+    ASSERT_TRUE(static_cast<bool>(Reader));
+    auto Writer = ObjectWriterProvider::create(*Snapshot);
+    ASSERT_TRUE(static_cast<bool>(Writer));
+    const BuiltinTargetRoute *Route =
+        routeFor(BuiltinObjectFormat::COFF, Value.Arch);
+    ASSERT_NE(Route, nullptr);
+    SCOPED_TRACE(Route->CanonicalName.str());
+
+    auto Input = assembleSource(*Route, Value.Source);
+    ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+    auto Target = makeBuiltinTargetKey(*Route);
+    ASSERT_TRUE(static_cast<bool>(Target));
+    OwnedTargetKey ReadTarget = *Target;
+    auto Graph =
+        (*Reader)->read(Scope.task(), *Input, "native-reloc.o", *Target);
+    ASSERT_TRUE(static_cast<bool>(Graph)) << errorText(Graph.takeError());
+    ASSERT_EQ((*Graph)->relocationCount(), 1U);
+    const PluginObjectRelocation &Before = (*Graph)->relocations().front();
+    EXPECT_TRUE(Before.IsPCRelative);
+    const PluginObjectSection *BeforeSection =
+        (*Graph)->findSection(Before.SectionID);
+    ASSERT_NE(BeforeSection, nullptr);
+    const std::vector<uint8_t> BeforeBytes = BeforeSection->Data;
+
+    (*Graph)->issueLayoutProof();
+    auto Candidate = (*Writer)->write(
+        Scope.task(), **Graph,
+        ObjectOutputDestination::memory("native-reloc.o", UINT64_C(1) << 20));
+    ASSERT_TRUE(static_cast<bool>(Candidate))
+        << errorText(Candidate.takeError());
+    ASSERT_FALSE((*Candidate)->verify());
+    auto Committed = (*Candidate)->commit();
+    ASSERT_TRUE(static_cast<bool>(Committed))
+        << errorText(Committed.takeError());
+    auto Output = findPluginMemoryOutput(Scope.task(), "native-reloc.o");
+    ASSERT_TRUE(Output.has_value());
+
+    auto Restored = (*Reader)->read(Scope.task(), Output->Bytes,
+                                    "restored-native-reloc.o", ReadTarget);
+    ASSERT_TRUE(static_cast<bool>(Restored)) << errorText(Restored.takeError());
+    ASSERT_EQ((*Restored)->relocationCount(), 1U);
+    const PluginObjectRelocation &After = (*Restored)->relocations().front();
+    EXPECT_EQ(After.Kind, Before.Kind);
+    EXPECT_EQ(After.Width, Before.Width);
+    EXPECT_EQ(After.IsPCRelative, Before.IsPCRelative);
+    EXPECT_EQ(After.IsSigned, Before.IsSigned);
+    EXPECT_EQ(After.Addend, Before.Addend);
+    const PluginObjectSection *AfterSection =
+        (*Restored)->findSection(After.SectionID);
+    ASSERT_NE(AfterSection, nullptr);
+    EXPECT_EQ(AfterSection->Data, BeforeBytes)
+        << "native .reloc passthrough changed instruction bytes";
+  }
+}
+
 TEST(PluginBuiltinObjectFormatTest, WriterAcceptsManglingsThatNeedQuoting) {
   initializeBuiltinTargets();
   auto Snapshot = PluginTargetRegistry::freeze(

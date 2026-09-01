@@ -884,9 +884,10 @@ NevercStatus relocationTargetExpression(const RelocationRecord &Relocation,
                                         ArrayRef<SectionRecord> Sections,
                                         const GraphIndex &Index,
                                         const Triple &Target,
-                                        std::string &TargetExpression) {
+                                        std::string &TargetExpression,
+                                        bool IncludeRelocationAddend = true) {
   raw_string_ostream Expression(TargetExpression);
-  int64_t EffectiveAddend = Relocation.Addend;
+  int64_t EffectiveAddend = IncludeRelocationAddend ? Relocation.Addend : 0;
   if (Relocation.TargetKind == NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL) {
     const SymbolRecord *Symbol =
         lookupHandle(Index.Symbols, Relocation.TargetSymbol);
@@ -915,7 +916,7 @@ NevercStatus relocationTargetExpression(const RelocationRecord &Relocation,
     if (Relocation.TargetValue >
             static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
         AddOverflow(static_cast<int64_t>(Relocation.TargetValue),
-                    Relocation.Addend, EffectiveAddend))
+                    EffectiveAddend, EffectiveAddend))
       return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
                           detail(DetailRelocationTargetValueOverflow));
     const size_t SectionIndex = static_cast<size_t>(Section - Sections.data());
@@ -938,30 +939,92 @@ StringRef nativeRelocationName(const RelocationRecord &Relocation) {
   return builtinext::relocationName(Relocation.Extension);
 }
 
-// ELF states a relocation as a .reloc directive over bytes that stay exactly as
-// they were read. Patching the covered bytes with a .long instead only works
-// when the relocated field occupies whole bytes of its own; for a field that
-// lives inside an instruction -- AArch64 CALL26, ADR_PREL_PG_HI21, the LO12
-// forms -- it overwrites the opcode along with the field and silently produces
-// a different instruction. Naming the relocation also removes the need to infer
-// its width or PC-relativeness, which no name-derived guess gets right for the
-// GOT, PLT and TLS forms every real translation unit contains.
+// ELF and reader-originated COFF relocations can be stated as a .reloc
+// directive over bytes that stay exactly as they were read. Patching the
+// covered bytes with a .long instead only works when the relocated field
+// occupies whole bytes of its own; for a field that lives inside an instruction
+// -- AArch64 CALL26, ADR_PREL_PG_HI21, the LO12 forms -- it overwrites the
+// opcode along with the field and silently produces a different instruction.
+// Naming the relocation also removes the need to infer its width or
+// PC-relativeness, which no name-derived guess gets right for the GOT, PLT and
+// TLS forms every real translation unit contains.
 NevercStatus emitRelocDirective(raw_ostream &OS,
                                 const RelocationRecord &Relocation,
                                 size_t SectionIndex,
                                 ArrayRef<SectionRecord> Sections,
-                                const GraphIndex &Index, const Triple &Target) {
+                                const GraphIndex &Index, const Triple &Target,
+                                bool IncludeRelocationAddend = true) {
   const StringRef Name = nativeRelocationName(Relocation);
   if (Name.empty())
     return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
                         detail(DetailRelocationNameMissing));
   std::string TargetExpression;
-  NevercStatus Status = relocationTargetExpression(Relocation, Sections, Index,
-                                                   Target, TargetExpression);
+  NevercStatus Status =
+      relocationTargetExpression(Relocation, Sections, Index, Target,
+                                 TargetExpression, IncludeRelocationAddend);
   if (!neverc_status_is_ok(Status))
     return Status;
   OS << "\t.reloc\t" << sectionLabel(SectionIndex, Target) << '+'
      << Relocation.Offset << ", " << Name << ", " << TargetExpression << '\n';
+  return neverc_status_ok();
+}
+
+// A COFF relocation stores its addend in the bytes it covers.  The reader
+// deliberately records that addend in the stable graph as well, so native
+// .reloc passthrough is safe only while the two representations still agree.
+// Instruction-field relocations keep opcode bits in those bytes and therefore
+// carry no separately editable graph addend.
+std::optional<int64_t> coffImplicitAddend(const SectionRecord &Section,
+                                          const RelocationRecord &Relocation) {
+  if (Relocation.Width == 0 || Relocation.Width > 64 ||
+      (Relocation.Width % 8) != 0)
+    return std::nullopt;
+  const uint64_t Width = Relocation.Width / 8;
+  if (Relocation.Offset > Section.Data.size() ||
+      Width > Section.Data.size() - Relocation.Offset)
+    return std::nullopt;
+  uint64_t Raw = 0;
+  for (uint32_t I = 0; I != Relocation.Width / 8; ++I)
+    Raw |= static_cast<uint64_t>(Section.Data[Relocation.Offset + I])
+           << (I * 8);
+  if (Relocation.Width < 64) {
+    const uint64_t SignBit = UINT64_C(1) << (Relocation.Width - 1);
+    if ((Raw & SignBit) != 0)
+      Raw |= ~((UINT64_C(1) << Relocation.Width) - 1);
+  }
+  return static_cast<int64_t>(Raw);
+}
+
+NevercStatus validateNativeCOFFRelocation(const RelocationRecord &Relocation,
+                                          const SectionRecord &Section,
+                                          const Triple &Target,
+                                          bool &OutNative) {
+  OutNative = false;
+  const std::optional<uint64_t> Type = nativeRelocationType(Relocation);
+  if (!Type)
+    return neverc_status_ok();
+  const std::optional<NativeRelocationFacts> Facts =
+      nativeRelocationFacts(Target, *Type);
+  if (!Facts || Facts->IsNoOp || nativeRelocationName(Relocation).empty())
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                        detail(DetailRelocationKindUnsupported));
+  if (Facts->Width != Relocation.Width ||
+      Facts->IsPCRelative != Relocation.IsPCRelative ||
+      Facts->IsSigned != Relocation.IsSigned || Facts->Kind != Relocation.Kind)
+    return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                        detail(DetailRelocationKindUnsupported));
+  if (Facts->IsInstructionField) {
+    if (Relocation.Addend != 0)
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detail(DetailRelocationNotExpressible));
+  } else {
+    const std::optional<int64_t> Addend =
+        coffImplicitAddend(Section, Relocation);
+    if (!Addend || *Addend != Relocation.Addend)
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detail(DetailRelocationNotExpressible));
+  }
+  OutNative = true;
   return neverc_status_ok();
 }
 
@@ -1314,10 +1377,28 @@ NevercStatus emitSectionContents(raw_ostream &OS, const SectionRecord &Section,
         Defined[SymbolIndex]->Value < Offset + Width)
       return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
                           detail(DetailRelocationOverlapsSymbol));
-    Status = emitRelocationValue(OS, *Relocation, Sections, Index, Target);
+    bool NativeCOFF = false;
+    if (Target.isOSBinFormatCOFF()) {
+      Status = validateNativeCOFFRelocation(*Relocation, Section, Target,
+                                            NativeCOFF);
+      if (!neverc_status_is_ok(Status))
+        return Status;
+    }
+    if (NativeCOFF) {
+      emitBytes(OS, ArrayRef<uint8_t>(Section.Data)
+                        .slice(static_cast<size_t>(Offset),
+                               static_cast<size_t>(Width)));
+      Offset += Width;
+      // The preserved COFF field already carries the implicit addend.
+      Status = emitRelocDirective(OS, *Relocation, SectionIndex, Sections,
+                                  Index, Target,
+                                  /*IncludeRelocationAddend=*/false);
+    } else {
+      Status = emitRelocationValue(OS, *Relocation, Sections, Index, Target);
+      Offset += Width;
+    }
     if (!neverc_status_is_ok(Status))
       return Status;
-    Offset += Width;
   }
 
   NevercStatus Status = emitSymbolsThrough(TotalSize);

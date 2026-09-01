@@ -10,6 +10,8 @@
 #include "MCTargetDesc/AArch64MCExpr.h"
 #include "MCTargetDesc/AArch64MCTargetDesc.h"
 #include "Utils/AArch64BaseInfo.h"
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAssembler.h"
@@ -352,6 +354,37 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, const MCValue &Target,
 
 std::optional<MCFixupKind>
 AArch64AsmBackend::getFixupKind(StringRef Name) const {
+  if (TheTriple.isOSBinFormatCOFF()) {
+    unsigned Type =
+        StringSwitch<unsigned>(Name)
+            .Case("IMAGE_REL_ARM64_ADDR32", COFF::IMAGE_REL_ARM64_ADDR32)
+            .Case("IMAGE_REL_ARM64_ADDR32NB", COFF::IMAGE_REL_ARM64_ADDR32NB)
+            .Case("IMAGE_REL_ARM64_BRANCH26", COFF::IMAGE_REL_ARM64_BRANCH26)
+            .Case("IMAGE_REL_ARM64_PAGEBASE_REL21",
+                  COFF::IMAGE_REL_ARM64_PAGEBASE_REL21)
+            .Case("IMAGE_REL_ARM64_REL21", COFF::IMAGE_REL_ARM64_REL21)
+            .Case("IMAGE_REL_ARM64_PAGEOFFSET_12A",
+                  COFF::IMAGE_REL_ARM64_PAGEOFFSET_12A)
+            .Case("IMAGE_REL_ARM64_PAGEOFFSET_12L",
+                  COFF::IMAGE_REL_ARM64_PAGEOFFSET_12L)
+            .Case("IMAGE_REL_ARM64_SECREL", COFF::IMAGE_REL_ARM64_SECREL)
+            .Case("IMAGE_REL_ARM64_SECREL_LOW12A",
+                  COFF::IMAGE_REL_ARM64_SECREL_LOW12A)
+            .Case("IMAGE_REL_ARM64_SECREL_HIGH12A",
+                  COFF::IMAGE_REL_ARM64_SECREL_HIGH12A)
+            .Case("IMAGE_REL_ARM64_SECREL_LOW12L",
+                  COFF::IMAGE_REL_ARM64_SECREL_LOW12L)
+            .Case("IMAGE_REL_ARM64_TOKEN", COFF::IMAGE_REL_ARM64_TOKEN)
+            .Case("IMAGE_REL_ARM64_SECTION", COFF::IMAGE_REL_ARM64_SECTION)
+            .Case("IMAGE_REL_ARM64_ADDR64", COFF::IMAGE_REL_ARM64_ADDR64)
+            .Case("IMAGE_REL_ARM64_BRANCH19", COFF::IMAGE_REL_ARM64_BRANCH19)
+            .Case("IMAGE_REL_ARM64_BRANCH14", COFF::IMAGE_REL_ARM64_BRANCH14)
+            .Case("IMAGE_REL_ARM64_REL32", COFF::IMAGE_REL_ARM64_REL32)
+            .Default(~0U);
+    if (Type == ~0U)
+      return std::nullopt;
+    return static_cast<MCFixupKind>(FirstLiteralRelocationKind + Type);
+  }
   if (!TheTriple.isOSBinFormatELF())
     return std::nullopt;
 

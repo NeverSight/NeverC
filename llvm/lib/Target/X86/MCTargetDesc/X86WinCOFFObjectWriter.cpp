@@ -42,6 +42,8 @@ unsigned X86WinCOFFObjectWriter::getRelocType(MCContext &Ctx,
                                               bool IsCrossSection,
                                               const MCAsmBackend &MAB) const {
   unsigned FixupKind = Fixup.getKind();
+  if (FixupKind >= FirstLiteralRelocationKind)
+    return FixupKind - FirstLiteralRelocationKind;
   if (IsCrossSection) {
     // IMAGE_REL_AMD64_REL64 does not exist. We treat FK_Data_8 as FK_PCRel_4 so
     // that .quad a-b can lower to IMAGE_REL_AMD64_REL32. This allows generic

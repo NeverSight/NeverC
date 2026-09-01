@@ -10,6 +10,7 @@
 #include "MCTargetDesc/X86EncodingOptimization.h"
 #include "MCTargetDesc/X86FixupKinds.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/MC/MCAsmBackend.h"
@@ -1054,6 +1055,26 @@ public:
       : X86AsmBackend(T, STI) {}
 
   std::optional<MCFixupKind> getFixupKind(StringRef Name) const override {
+    unsigned Type =
+        StringSwitch<unsigned>(Name)
+            .Case("IMAGE_REL_AMD64_ADDR64", COFF::IMAGE_REL_AMD64_ADDR64)
+            .Case("IMAGE_REL_AMD64_ADDR32", COFF::IMAGE_REL_AMD64_ADDR32)
+            .Case("IMAGE_REL_AMD64_ADDR32NB", COFF::IMAGE_REL_AMD64_ADDR32NB)
+            .Case("IMAGE_REL_AMD64_REL32", COFF::IMAGE_REL_AMD64_REL32)
+            .Case("IMAGE_REL_AMD64_REL32_1", COFF::IMAGE_REL_AMD64_REL32_1)
+            .Case("IMAGE_REL_AMD64_REL32_2", COFF::IMAGE_REL_AMD64_REL32_2)
+            .Case("IMAGE_REL_AMD64_REL32_3", COFF::IMAGE_REL_AMD64_REL32_3)
+            .Case("IMAGE_REL_AMD64_REL32_4", COFF::IMAGE_REL_AMD64_REL32_4)
+            .Case("IMAGE_REL_AMD64_REL32_5", COFF::IMAGE_REL_AMD64_REL32_5)
+            .Case("IMAGE_REL_AMD64_SECTION", COFF::IMAGE_REL_AMD64_SECTION)
+            .Case("IMAGE_REL_AMD64_SECREL", COFF::IMAGE_REL_AMD64_SECREL)
+            .Case("IMAGE_REL_AMD64_SECREL7", COFF::IMAGE_REL_AMD64_SECREL7)
+            .Case("IMAGE_REL_AMD64_TOKEN", COFF::IMAGE_REL_AMD64_TOKEN)
+            .Case("IMAGE_REL_AMD64_SREL32", COFF::IMAGE_REL_AMD64_SREL32)
+            .Case("IMAGE_REL_AMD64_SSPAN32", COFF::IMAGE_REL_AMD64_SSPAN32)
+            .Default(~0U);
+    if (Type != ~0U)
+      return static_cast<MCFixupKind>(FirstLiteralRelocationKind + Type);
     return StringSwitch<std::optional<MCFixupKind>>(Name)
         .Case("dir32", FK_Data_4)
         .Case("secrel32", FK_SecRel_4)
