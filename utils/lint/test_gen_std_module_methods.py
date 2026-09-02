@@ -76,6 +76,21 @@ class GenStdModuleMethodsTest(unittest.TestCase):
                 }
             )
 
+    def test_core_collection_modules_map_every_registered_symbol(self):
+        with GEN.DEFAULT_MANIFEST.open(encoding="utf-8") as source:
+            modules = json.load(source)["modules"]
+
+        for module_key in ("sort", "slices", "container/vector"):
+            with self.subTest(module=module_key):
+                module = modules[module_key]
+                registered = set(module["symbols"])
+                mapped = set(module.get("dot_methods", {}).values())
+                self.assertEqual(
+                    registered - mapped,
+                    set(),
+                    f"{module_key} has registered symbols without dot methods",
+                )
+
     def test_check_mode_detects_a_stale_file(self):
         manifest = {
             "modules": {
