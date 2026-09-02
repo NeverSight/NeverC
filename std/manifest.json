@@ -319,7 +319,12 @@
         "strings_are_sorted": "neverc_sort_strings_are_sorted",
         "search_strings": "neverc_sort_search_strings",
         "reverse": "neverc_sort_reverse",
-        "ints_are_sorted": "neverc_sort_ints_are_sorted"
+        "ints_are_sorted": "neverc_sort_ints_are_sorted",
+        "doubles_are_sorted": "neverc_sort_doubles_are_sorted",
+        "find": "neverc_sort_find",
+        "slice": "neverc_sort_slice",
+        "slice_is_sorted": "neverc_sort_slice_is_sorted",
+        "slice_stable": "neverc_sort_slice_stable"
       }
     },
     "encoding/hex": {
@@ -3414,7 +3419,19 @@
         "contains_int": "neverc_slices_contains_int",
         "index_int": "neverc_slices_index_int",
         "reverse_ints": "neverc_slices_reverse_ints",
-        "sort_ints": "neverc_slices_sort_ints"
+        "sort_ints": "neverc_slices_sort_ints",
+        "binary_search_int": "neverc_slices_binary_search_int",
+        "concat": "neverc_slices_concat",
+        "contains_func": "neverc_slices_contains_func",
+        "delete": "neverc_slices_delete",
+        "delete_func": "neverc_slices_delete_func",
+        "index_func": "neverc_slices_index_func",
+        "insert": "neverc_slices_insert",
+        "is_sorted_ints": "neverc_slices_is_sorted_ints",
+        "max_int": "neverc_slices_max_int",
+        "min_int": "neverc_slices_min_int",
+        "replace": "neverc_slices_replace",
+        "sort_stable": "neverc_slices_sort_stable"
       }
     },
     "maps": {
@@ -4493,7 +4510,22 @@
         "any": "neverc_vector_any",
         "all": "neverc_vector_all",
         "begin": "neverc_vector_begin",
-        "end": "neverc_vector_end"
+        "end": "neverc_vector_end",
+        "equal_range": "neverc_vector_equal_range",
+        "includes": "neverc_vector_includes",
+        "inplace_merge": "neverc_vector_inplace_merge",
+        "minmax_element": "neverc_vector_minmax_element",
+        "next_permutation": "neverc_vector_next_permutation",
+        "nth_element": "neverc_vector_nth_element",
+        "partition_point": "neverc_vector_partition_point",
+        "prev_permutation": "neverc_vector_prev_permutation",
+        "sample": "neverc_vector_sample",
+        "set_difference": "neverc_vector_set_difference",
+        "set_intersection": "neverc_vector_set_intersection",
+        "set_symmetric_difference": "neverc_vector_set_symmetric_difference",
+        "set_union": "neverc_vector_set_union",
+        "shuffle": "neverc_vector_shuffle",
+        "stable_partition": "neverc_vector_stable_partition"
       }
     },
     "net/tcp": {
