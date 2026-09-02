@@ -539,6 +539,23 @@ def main() -> int:
     expect(len(macho_hits) == 1 and rogue in macho_hits[0],
            f"Mach-O listing should report only the rogue global, "
            f"got {macho_hits}", failures)
+
+    # ThinLTO promotes local Mach-O TLS names before the Darwin demangler
+    # renders them.  Both the descriptor and its initializer must still bind
+    # to the exact source-level TLS allowlist entry.
+    thinlto_macho_listing = [
+        ("neverc::plugin::(anonymous namespace)::GateOwnership "
+         "(.llvm.15867881918568419973)", "s", "__DATA,__thread_vars"),
+        ("neverc::plugin::(anonymous namespace)::GateOwnership "
+         "(.llvm.15867881918568419973$tlv$init)", "s",
+         "__DATA,__thread_bss"),
+    ]
+    thinlto_macho_hits = mod.audit_symbols(
+        thinlto_macho_listing, listing_allowlist, {"__DATA": False},
+        {"__DATA,__thread_vars", "__DATA,__thread_bss"})
+    expect(not thinlto_macho_hits,
+           f"Mach-O ThinLTO-promoted allowlisted TLS escaped: "
+           f"{thinlto_macho_hits}", failures)
     for sym_class, section in (
         ("V", ".bss"),
         ("v", ".data"),
