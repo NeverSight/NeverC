@@ -1943,17 +1943,38 @@ def symbol_is_thread_local(name: str, section: str) -> bool:
 
 def allowlisted_binary_tls_symbol(name: str, allowlist: dict) -> bool:
     """Bind an nm TLS spelling to one exact source-manifest identifier."""
+    normalized = name
+    if normalized.endswith("$tlv$init"):
+        normalized = normalized[:-len("$tlv$init")]
+    elif normalized.endswith("$tlv$init)"):
+        normalized = normalized[:-len("$tlv$init)")] + ")"
+
     for entry in allowlist.get("entries", []):
         symbol = entry.get("symbol")
         if not isinstance(symbol, str) or not symbol:
             continue
-        if name == symbol or name.endswith("::" + symbol):
+        if normalized == symbol or normalized.endswith("::" + symbol):
             return True
-        # Mach-O nm may leave the Itanium name mangled when it appends the
-        # non-Itanium ``$tlv$init`` suffix. Match the final length-prefixed
-        # identifier only, never a substring in an ordinary user symbol.
-        marker = rf"{len(symbol)}{re.escape(symbol)}E(?:\$tlv\$init)?$"
-        if re.search(marker, name):
+
+        # ThinLTO promotes local Mach-O symbols with a canonical ``.llvm.N``
+        # suffix.  Darwin demanglers render that suffix in parentheses, while
+        # an undecorated Itanium name retains it after the terminal ``E``.
+        # Reuse the same strict promotion validator as process-global binary
+        # exceptions so a TLS-looking name cannot manufacture an exemption.
+        qualified = "::" + symbol
+        position = normalized.rfind(qualified)
+        if position >= 0:
+            marker = normalized[:position + len(qualified)]
+            if matches_llvm_promoted_symbol(normalized, marker):
+                return True
+
+        # Mach-O nm may leave the Itanium name mangled. Match the final
+        # length-prefixed identifier exactly, then validate any promotion
+        # suffix rather than accepting a substring in an ordinary user name.
+        mangled = re.search(rf"{len(symbol)}{re.escape(symbol)}E", normalized)
+        if (mangled is not None and
+                matches_llvm_promoted_symbol(
+                    normalized, normalized[:mangled.end()])):
             return True
     return False
 
