@@ -1950,7 +1950,9 @@
         "limit_reader_init": "neverc_io_limit_reader_init",
         "tee_reader_init": "neverc_io_tee_reader_init",
         "mem_reader_init": "neverc_io_mem_reader_init",
+        "mem_reader_read": "neverc_io_mem_reader_read",
         "mem_writer_init": "neverc_io_mem_writer_init",
+        "mem_writer_write": "neverc_io_mem_writer_write",
         "mem_writer_free": "neverc_io_mem_writer_free",
         "multi_reader_read": "neverc_io_multi_reader_read",
         "multi_writer_write": "neverc_io_multi_writer_write"
@@ -3220,7 +3222,13 @@
         "getppid": "neverc_os_getppid",
         "getuid": "neverc_os_getuid",
         "getgid": "neverc_os_getgid",
-        "create_temp": "neverc_os_create_temp"
+        "create_temp": "neverc_os_create_temp",
+        "chown": "neverc_os_chown",
+        "lchown": "neverc_os_lchown",
+        "pipe": "neverc_os_pipe",
+        "stderr": "neverc_os_stderr",
+        "stdin": "neverc_os_stdin",
+        "stdout": "neverc_os_stdout"
       }
     },
     "os/exec": {
