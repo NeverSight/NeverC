@@ -509,7 +509,13 @@
         "is_graphic": "neverc_unicode_is_graphic",
         "is_print": "neverc_unicode_is_print",
         "to_upper": "neverc_unicode_to_upper",
-        "to_lower": "neverc_unicode_to_lower"
+        "to_lower": "neverc_unicode_to_lower",
+        "is_mark": "neverc_unicode_is_mark",
+        "is_number": "neverc_unicode_is_number",
+        "is_symbol": "neverc_unicode_is_symbol",
+        "is_title": "neverc_unicode_is_title",
+        "simple_fold": "neverc_unicode_simple_fold",
+        "to_title": "neverc_unicode_to_title"
       }
     },
     "encoding/binary": {
@@ -2080,7 +2086,17 @@
         "default_print": "neverc_log_default_print",
         "default_printf": "neverc_log_default_printf",
         "default_println": "neverc_log_default_println",
-        "default_fatal": "neverc_log_default_fatal"
+        "default_fatal": "neverc_log_default_fatal",
+        "default_fatalf": "neverc_log_default_fatalf",
+        "default_panic": "neverc_log_default_panic",
+        "default_panicf": "neverc_log_default_panicf",
+        "fatalln": "neverc_log_fatalln",
+        "flags": "neverc_log_flags",
+        "panic": "neverc_log_panic",
+        "panicf": "neverc_log_panicf",
+        "panicln": "neverc_log_panicln",
+        "prefix": "neverc_log_prefix",
+        "writer": "neverc_log_writer"
       }
     },
     "time": {
@@ -2169,7 +2185,12 @@
         "parse_duration": "neverc_time_parse_duration",
         "format_duration": "neverc_time_format_duration",
         "format_rfc3339": "neverc_time_format_rfc3339",
-        "parse_rfc3339": "neverc_time_parse_rfc3339"
+        "parse_rfc3339": "neverc_time_parse_rfc3339",
+        "format": "neverc_time_format",
+        "parse": "neverc_time_parse",
+        "round": "neverc_time_round",
+        "truncate": "neverc_time_truncate",
+        "unix_milli_to_time": "neverc_time_unix_milli_to_time"
       }
     },
     "uuid": {
