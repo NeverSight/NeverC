@@ -14,6 +14,7 @@
 
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/ADT/Any.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StableHashing.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
@@ -40,8 +41,9 @@
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
+#include <memory>
+#include <optional>
 #include <unordered_map>
-#include "llvm/ADT/SmallPtrSet.h"
 #include <utility>
 #include <vector>
 
@@ -704,6 +706,65 @@ PrintIRInstrumentation::~PrintIRInstrumentation() {
          "PassRunDescriptorStack is not empty at exit");
 }
 
+namespace {
+
+struct BeforePassDumpState {
+  explicit BeforePassDumpState(Any IR) : IR(std::move(IR)) {}
+
+  Any IR;
+  std::string Filename;
+};
+
+struct AfterPassDumpState {
+  AfterPassDumpState(Any IR, std::string Filename, std::string IRName)
+      : IR(std::move(IR)), Filename(std::move(Filename)),
+        IRName(std::move(IRName)) {}
+
+  Any IR;
+  std::string Filename;
+  std::string IRName;
+};
+
+struct InvalidatedPassDumpState {
+  InvalidatedPassDumpState(const Module *M, std::string Filename,
+                           std::string IRName)
+      : M(M), Filename(std::move(Filename)), IRName(std::move(IRName)) {}
+
+  const Module *M;
+  std::string Filename;
+  std::string IRName;
+};
+
+template <typename T> class CrashRecoveryOwnedValue {
+public:
+  template <typename... Args>
+  explicit CrashRecoveryOwnedValue(Args &&...Values) {
+    if (CrashRecoveryContext::GetCurrent()) {
+      CrashOwned = std::make_unique<T>(std::forward<Args>(Values)...);
+      Active = CrashOwned.get();
+      CrashCleanup.emplace(Active);
+    } else {
+      Local.emplace(std::forward<Args>(Values)...);
+      Active = &*Local;
+    }
+  }
+
+  CrashRecoveryOwnedValue(const CrashRecoveryOwnedValue &) = delete;
+  CrashRecoveryOwnedValue &operator=(const CrashRecoveryOwnedValue &) = delete;
+  CrashRecoveryOwnedValue(CrashRecoveryOwnedValue &&) = delete;
+  CrashRecoveryOwnedValue &operator=(CrashRecoveryOwnedValue &&) = delete;
+
+  T &get() const { return *Active; }
+
+private:
+  std::optional<T> Local;
+  std::unique_ptr<T> CrashOwned;
+  std::optional<CrashRecoveryContextCleanupRegistrar<T>> CrashCleanup;
+  T *Active = nullptr;
+};
+
+} // namespace
+
 static SmallString<32> getIRFileDisplayName(Any IR) {
   SmallString<32> Result;
   raw_svector_ostream ResultStream(Result);
@@ -801,45 +862,60 @@ void PrintIRInstrumentation::printBeforePass(StringRef PassID, Any IR) {
   if (isIgnored(PassID))
     return;
 
-  std::string DumpIRFilename;
-  if (!IRDumpDirectory.empty() &&
-      (shouldPrintBeforePass(PassID) || shouldPrintAfterPass(PassID)))
-    DumpIRFilename = fetchDumpFilename(PassID, IR);
+  const bool NeedsDumpFilename =
+      !IRDumpDirectory.empty() &&
+      (shouldPrintBeforePass(PassID) || shouldPrintAfterPass(PassID));
+  const bool NeedsCrashOwnedBeforeDump =
+      !IRDumpDirectory.empty() && shouldPrintBeforePass(PassID);
 
-  // Saving Module for AfterPassInvalidated operations.
-  // Note: here we rely on a fact that we do not change modules while
-  // traversing the pipeline, so the latest captured module is good
-  // for all print operations that has not happen yet.
-  if (shouldPrintPassNumbers() || shouldPrintAtPassNumber() ||
-      shouldPrintAfterPass(PassID))
-    pushPassRunDescriptor(PassID, IR, DumpIRFilename);
+  auto Run = [&](Any &ActiveIR, std::string &DumpIRFilename) {
+    if (NeedsDumpFilename)
+      DumpIRFilename = fetchDumpFilename(PassID, ActiveIR);
 
-  if (!shouldPrintIR(IR))
-    return;
+    // Saving Module for AfterPassInvalidated operations.
+    // Note: here we rely on a fact that we do not change modules while
+    // traversing the pipeline, so the latest captured module is good
+    // for all print operations that has not happen yet.
+    if (shouldPrintPassNumbers() || shouldPrintAtPassNumber() ||
+        shouldPrintAfterPass(PassID))
+      pushPassRunDescriptor(PassID, ActiveIR, DumpIRFilename);
 
-  ++CurrentPassNumber;
+    if (!shouldPrintIR(ActiveIR))
+      return;
 
-  if (shouldPrintPassNumbers())
-    dbgs() << " Running pass " << CurrentPassNumber << " " << PassID << " on "
-           << getIRName(IR) << "\n";
+    ++CurrentPassNumber;
 
-  if (!shouldPrintBeforePass(PassID))
-    return;
+    if (shouldPrintPassNumbers())
+      dbgs() << " Running pass " << CurrentPassNumber << " " << PassID << " on "
+             << getIRName(ActiveIR) << "\n";
 
-  auto WriteIRToStream = [&](raw_ostream &Stream) {
-    Stream << "; *** IR Dump Before " << PassID << " on " << getIRName(IR)
-           << " ***\n";
-    unwrapAndPrint(Stream, IR);
+    if (!shouldPrintBeforePass(PassID))
+      return;
+
+    auto WriteIRToStream = [&](raw_ostream &Stream) {
+      Stream << "; *** IR Dump Before " << PassID << " on "
+             << getIRName(ActiveIR) << " ***\n";
+      unwrapAndPrint(Stream, ActiveIR);
+    };
+
+    if (!DumpIRFilename.empty()) {
+      DumpIRFilename += getFileSuffix(IRDumpFileSuffixType::Before);
+      llvm::raw_fd_ostream DumpIRFileStream{
+          prepareDumpIRFileDescriptor(DumpIRFilename), /* shouldClose */ true};
+      WriteIRToStream(DumpIRFileStream);
+    } else {
+      WriteIRToStream(dbgs());
+    }
   };
 
-  if (!DumpIRFilename.empty()) {
-    DumpIRFilename += getFileSuffix(IRDumpFileSuffixType::Before);
-    llvm::raw_fd_ostream DumpIRFileStream{
-        prepareDumpIRFileDescriptor(DumpIRFilename), /* shouldClose */ true};
-    WriteIRToStream(DumpIRFileStream);
-  } else {
-    WriteIRToStream(dbgs());
+  if (NeedsCrashOwnedBeforeDump) {
+    CrashRecoveryOwnedValue<BeforePassDumpState> State(std::move(IR));
+    Run(State.get().IR, State.get().Filename);
+    return;
   }
+
+  std::string DumpIRFilename;
+  Run(IR, DumpIRFilename);
 }
 
 void PrintIRInstrumentation::printAfterPass(StringRef PassID, Any IR) {
@@ -850,33 +926,43 @@ void PrintIRInstrumentation::printAfterPass(StringRef PassID, Any IR) {
       !shouldPrintAtPassNumber())
     return;
 
-  auto [M, DumpIRFilename, IRName, StoredPassID] = popPassRunDescriptor(PassID);
-  assert(StoredPassID == PassID && "mismatched PassID");
-
-  if (!shouldPrintIR(IR) || !shouldPrintAfterPass(PassID))
-    return;
-
-  auto WriteIRToStream = [&](raw_ostream &Stream, const StringRef IRName) {
+  auto WriteIRToStream = [&](raw_ostream &Stream, const StringRef IRName,
+                             Any &ActiveIR) {
     Stream << "; *** IR Dump "
            << (shouldPrintAtPassNumber()
                    ? StringRef(formatv("At {0}-{1}", CurrentPassNumber, PassID))
                    : StringRef(formatv("After {0}", PassID)))
            << " on " << IRName << " ***\n";
-    unwrapAndPrint(Stream, IR);
+    unwrapAndPrint(Stream, ActiveIR);
   };
 
-  if (!IRDumpDirectory.empty()) {
+  std::optional<CrashRecoveryOwnedValue<AfterPassDumpState>> DumpState;
+  {
+    auto [M, DumpIRFilename, IRName, StoredPassID] =
+        popPassRunDescriptor(PassID);
+    assert(StoredPassID == PassID && "mismatched PassID");
+
+    if (!shouldPrintIR(IR) || !shouldPrintAfterPass(PassID))
+      return;
+
+    if (IRDumpDirectory.empty()) {
+      WriteIRToStream(dbgs(), IRName, IR);
+      return;
+    }
+
     assert(!DumpIRFilename.empty() && "DumpIRFilename must not be empty and "
                                       "should be set in printBeforePass");
-    const std::string DumpIRFilenameWithSuffix =
-        DumpIRFilename + getFileSuffix(IRDumpFileSuffixType::After).str();
-    llvm::raw_fd_ostream DumpIRFileStream{
-        prepareDumpIRFileDescriptor(DumpIRFilenameWithSuffix),
-        /* shouldClose */ true};
-    WriteIRToStream(DumpIRFileStream, IRName);
-  } else {
-    WriteIRToStream(dbgs(), IRName);
+    DumpState.emplace(std::move(IR), DumpIRFilename, IRName);
   }
+
+  // PassRunDescriptor owns const strings, so the copies above cannot be moved
+  // out of it. Its scope must end before file creation can report a fatal
+  // error and bypass stack unwinding.
+  AfterPassDumpState &State = DumpState->get();
+  State.Filename += getFileSuffix(IRDumpFileSuffixType::After);
+  llvm::raw_fd_ostream DumpIRFileStream{
+      prepareDumpIRFileDescriptor(State.Filename), /* shouldClose */ true};
+  WriteIRToStream(DumpIRFileStream, State.IRName, State.IR);
 }
 
 void PrintIRInstrumentation::printAfterPassInvalidated(StringRef PassID) {
@@ -885,13 +971,6 @@ void PrintIRInstrumentation::printAfterPassInvalidated(StringRef PassID) {
 
   if (!shouldPrintAfterPass(PassID) && !shouldPrintPassNumbers() &&
       !shouldPrintAtPassNumber())
-    return;
-
-  auto [M, DumpIRFilename, IRName, StoredPassID] = popPassRunDescriptor(PassID);
-  assert(StoredPassID == PassID && "mismatched PassID");
-  // Additional filtering (e.g. -filter-print-func) can lead to module
-  // printing being skipped.
-  if (!M || !shouldPrintAfterPass(PassID))
     return;
 
   auto WriteIRToStream = [&](raw_ostream &Stream, const Module *M,
@@ -907,18 +986,33 @@ void PrintIRInstrumentation::printAfterPassInvalidated(StringRef PassID) {
     printIR(Stream, M);
   };
 
-  if (!IRDumpDirectory.empty()) {
+  std::optional<CrashRecoveryOwnedValue<InvalidatedPassDumpState>> DumpState;
+  {
+    auto [M, DumpIRFilename, IRName, StoredPassID] =
+        popPassRunDescriptor(PassID);
+    assert(StoredPassID == PassID && "mismatched PassID");
+    // Additional filtering (e.g. -filter-print-func) can lead to module
+    // printing being skipped.
+    if (!M || !shouldPrintAfterPass(PassID))
+      return;
+
+    if (IRDumpDirectory.empty()) {
+      WriteIRToStream(dbgs(), M, IRName);
+      return;
+    }
+
     assert(!DumpIRFilename.empty() && "DumpIRFilename must not be empty and "
                                       "should be set in printBeforePass");
-    const std::string DumpIRFilenameWithSuffix =
-        DumpIRFilename + getFileSuffix(IRDumpFileSuffixType::Invalidated).str();
-    llvm::raw_fd_ostream DumpIRFileStream{
-        prepareDumpIRFileDescriptor(DumpIRFilenameWithSuffix),
-        /* shouldClose */ true};
-    WriteIRToStream(DumpIRFileStream, M, IRName);
-  } else {
-    WriteIRToStream(dbgs(), M, IRName);
+    DumpState.emplace(M, DumpIRFilename, IRName);
   }
+
+  // See printAfterPass: no descriptor-owned string may remain on the stack at
+  // the first operation that can report a fatal file-system error.
+  InvalidatedPassDumpState &State = DumpState->get();
+  State.Filename += getFileSuffix(IRDumpFileSuffixType::Invalidated);
+  llvm::raw_fd_ostream DumpIRFileStream{
+      prepareDumpIRFileDescriptor(State.Filename), /* shouldClose */ true};
+  WriteIRToStream(DumpIRFileStream, State.M, State.IRName);
 }
 
 bool PrintIRInstrumentation::shouldPrintBeforePass(StringRef PassID) {
@@ -956,14 +1050,15 @@ void PrintIRInstrumentation::registerCallbacks(
   // for later use in AfterPassInvalidated.
   if (shouldPrintPassNumbers() || shouldPrintAtPassNumber() ||
       shouldPrintBeforeSomePass() || shouldPrintAfterSomePass())
-    PIC.registerBeforeNonSkippedPassCallback(
-        [this](StringRef P, Any IR) { this->printBeforePass(P, IR); });
+    PIC.registerBeforeNonSkippedPassCallback([this](StringRef P, Any IR) {
+      this->printBeforePass(P, std::move(IR));
+    });
 
   if (shouldPrintPassNumbers() || shouldPrintAtPassNumber() ||
       shouldPrintAfterSomePass()) {
     PIC.registerAfterPassCallback(
         [this](StringRef P, Any IR, const PreservedAnalyses &) {
-          this->printAfterPass(P, IR);
+          this->printAfterPass(P, std::move(IR));
         });
     PIC.registerAfterPassInvalidatedCallback(
         [this](StringRef P, const PreservedAnalyses &) {
