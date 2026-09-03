@@ -162,7 +162,7 @@ void parallelForEachWithContext(Range &&Values, Function &&Fn) {
                              std::forward<Function>(Fn));
 }
 
-namespace detail {
+namespace linker_parallel_detail {
 
 constexpr std::ptrdiff_t MinParallelSortSize = 1024;
 
@@ -227,12 +227,13 @@ void parallelSort(RandomAccessIterator Begin, RandomAccessIterator End,
   Group.sync();
 }
 
-} // namespace detail
+} // namespace linker_parallel_detail
 
 template <typename Range> void parallelSortWithContext(Range &&Values) {
   using Iterator = decltype(std::begin(Values));
   using Value = typename std::iterator_traits<Iterator>::value_type;
-  detail::parallelSort(std::begin(Values), std::end(Values), std::less<Value>());
+  linker_parallel_detail::parallelSort(std::begin(Values), std::end(Values),
+                                       std::less<Value>());
 }
 
 template <typename First, typename Second>
@@ -241,8 +242,9 @@ void parallelSortWithContext(First &&FirstValue, Second &&SecondValue) {
     using Element =
         decltype(*std::begin(std::declval<std::decay_t<First> &>()));
     if constexpr (std::is_invocable_v<std::decay_t<Second>, Element, Element>) {
-      detail::parallelSort(std::begin(FirstValue), std::end(FirstValue),
-                           std::forward<Second>(SecondValue));
+      linker_parallel_detail::parallelSort(
+          std::begin(FirstValue), std::end(FirstValue),
+          std::forward<Second>(SecondValue));
     } else {
       llvm::sort(std::forward<First>(FirstValue),
                  std::forward<Second>(SecondValue));
@@ -250,16 +252,17 @@ void parallelSortWithContext(First &&FirstValue, Second &&SecondValue) {
   } else {
     using Iterator = std::decay_t<First>;
     using Value = typename std::iterator_traits<Iterator>::value_type;
-    detail::parallelSort(std::forward<First>(FirstValue),
-                         std::forward<Second>(SecondValue),
-                         std::less<Value>());
+    linker_parallel_detail::parallelSort(
+        std::forward<First>(FirstValue), std::forward<Second>(SecondValue),
+        std::less<Value>());
   }
 }
 
 template <typename Iterator, typename Comparator>
 void parallelSortWithContext(Iterator Begin, Iterator End,
                              Comparator &&Compare) {
-  detail::parallelSort(Begin, End, std::forward<Comparator>(Compare));
+  linker_parallel_detail::parallelSort(
+      Begin, End, std::forward<Comparator>(Compare));
 }
 
 } // namespace linker
