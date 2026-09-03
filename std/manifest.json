@@ -1371,7 +1371,10 @@
         "min_float64": "neverc_cmp_min_float64",
         "max_float64": "neverc_cmp_max_float64",
         "clamp_int64": "neverc_cmp_clamp_int64",
-        "clamp_float64": "neverc_cmp_clamp_float64"
+        "clamp_float64": "neverc_cmp_clamp_float64",
+        "or_float64": "neverc_cmp_or_float64",
+        "or_int": "neverc_cmp_or_int",
+        "or_int64": "neverc_cmp_or_int64"
       }
     },
     "container/heap": {
