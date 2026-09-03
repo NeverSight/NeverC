@@ -67,7 +67,7 @@ jobs:
         run: |
           cmake --build build --config "${{ env.BUILD_TYPE }}" --target \
             neverc-plugin-conformance \
-            neverc-plugin-link-tests
+            neverc-plugin-frontend-tests
 
       - name: Require all frontend fatal-recovery contracts
         env:
@@ -76,7 +76,7 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
           TSAN_OPTIONS: halt_on_error=1
         run: |
-          build/bin/neverc-plugin-link-tests \
+          build/bin/neverc-plugin-frontend-tests \
             --gtest_filter='PluginFrontendTimeTraceInteropTest.*' \
             --gtest_color=no
 
