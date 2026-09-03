@@ -1065,6 +1065,59 @@ TEST_F(LTOTest, RejectsUnloweredTypeMetadataBeforeNativeCodegen) {
   }
 }
 
+TEST_F(LTOTest, AutoLtoGlobalOptHandlesSelfReferentialGlobal) {
+  const fs::path Input = tmpFile("globalopt_self_reference.bc");
+  const fs::path Output = tmpFile("globalopt_self_reference.o");
+
+  llvm::LLVMContext Context;
+  llvm::Module Module("globalopt_self_reference", Context);
+  Module.setTargetTriple("x86_64-unknown-linux-gnu");
+  Module.setDataLayout(
+      "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-"
+      "n8:16:32:64-S128");
+
+  llvm::PointerType *PointerType = llvm::PointerType::getUnqual(Context);
+  auto *SelfReference = new llvm::GlobalVariable(
+      Module, PointerType, /*isConstant=*/false,
+      llvm::GlobalValue::ExternalLinkage, /*Initializer=*/nullptr,
+      "self_reference");
+  SelfReference->setInitializer(SelfReference);
+  auto *StoredOnce = new llvm::GlobalVariable(
+      Module, PointerType, /*isConstant=*/false,
+      llvm::GlobalValue::InternalLinkage,
+      llvm::ConstantPointerNull::get(PointerType), "stored_once");
+
+  llvm::Function *Function = llvm::Function::Create(
+      llvm::FunctionType::get(llvm::Type::getVoidTy(Context), false),
+      llvm::GlobalValue::ExternalLinkage, "globalopt_probe", Module);
+  llvm::BasicBlock *Entry =
+      llvm::BasicBlock::Create(Context, "entry", Function);
+  llvm::BasicBlock *Loop = llvm::BasicBlock::Create(Context, "loop", Function);
+  llvm::IRBuilder<> Builder(Entry);
+  Builder.CreateStore(SelfReference, StoredOnce);
+  Builder.CreateBr(Loop);
+  Builder.SetInsertPoint(Loop);
+  llvm::Value *Loaded = Builder.CreateLoad(PointerType, StoredOnce);
+  Builder.CreateStore(Loaded, Loaded);
+  Builder.CreateBr(Loop);
+
+  llvm::SmallVector<char, 0> Bitcode;
+  llvm::raw_svector_ostream Stream(Bitcode);
+  llvm::WriteBitcodeToFile(Module, Stream);
+  writeFile(Input, std::string(Bitcode.begin(), Bitcode.end()));
+
+  CmdResult Build = ncc({"--target=x86_64-linux-gnu", "-O1", "-nostdlib",
+                         "-r", "-mllvm", "-neverc-pcg-min-funcs=1",
+                         "-mllvm", "-neverc-pcg-weight-floor=0", "-mllvm",
+                         "-neverc-pcg-opt-weight-div=1", Input.string(), "-o",
+                         Output.string()});
+  ASSERT_TRUE(Build.ok())
+      << "GlobalOpt crashed while rewriting a self-referential global\n"
+      << Build.err;
+  ASSERT_TRUE(fs::is_regular_file(Output));
+  EXPECT_GT(fileSize(Output), 0U);
+}
+
 TEST_F(LTOTest, AllowsNativeICallBranchFunnelCodegen) {
   auto Bitcode = tmpFile("icall_branch_funnel.bc");
   llvm::LLVMContext Context;
