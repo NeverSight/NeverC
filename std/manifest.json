@@ -1901,6 +1901,13 @@
         "scan": "neverc_fmt_scan",
         "fscanf": "neverc_fmt_fscanf",
         "appendf": "neverc_fmt_appendf",
+        "append": "neverc_fmt_append",
+        "appendln": "neverc_fmt_appendln",
+        "fscan": "neverc_fmt_fscan",
+        "fscanln": "neverc_fmt_fscanln",
+        "scanln": "neverc_fmt_scanln",
+        "sprintfln": "neverc_fmt_sprintfln",
+        "sscanln": "neverc_fmt_sscanln",
         "vsprintf": "neverc_fmt_vsprintf"
       }
     },
