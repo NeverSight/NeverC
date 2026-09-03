@@ -212,6 +212,165 @@ void routedFatalHandler(void *UserData, const char *, bool) {
   std::_Exit(Probe.RecoveryCode);
 }
 
+class CountingCrashCleanup final
+    : public llvm::CrashRecoveryContextCleanupBase<CountingCrashCleanup,
+                                                   unsigned> {
+public:
+  CountingCrashCleanup(llvm::CrashRecoveryContext *Context,
+                       unsigned *Recoveries)
+      : llvm::CrashRecoveryContextCleanupBase<CountingCrashCleanup, unsigned>(
+            Context, Recoveries) {}
+
+  void recoverResources() override { ++*this->resource; }
+};
+
+using CountingCrashCleanupRegistrar =
+    llvm::CrashRecoveryContextCleanupRegistrar<unsigned, CountingCrashCleanup>;
+
+struct ObservedCleanupState {
+  unsigned Recoveries = 0;
+  unsigned Destructions = 0;
+};
+
+class ObservedCrashCleanup final
+    : public llvm::CrashRecoveryContextCleanupBase<ObservedCrashCleanup,
+                                                   ObservedCleanupState> {
+public:
+  ObservedCrashCleanup(llvm::CrashRecoveryContext *Context,
+                       ObservedCleanupState *State)
+      : llvm::CrashRecoveryContextCleanupBase<ObservedCrashCleanup,
+                                              ObservedCleanupState>(Context,
+                                                                    State) {}
+
+  ~ObservedCrashCleanup() override { ++this->resource->Destructions; }
+  void recoverResources() override {
+    ++this->resource->Recoveries;
+    // Direct unregister is also fail-safe after the node has fired; ownership
+    // remains with the CRC's retired list until all callbacks have completed.
+    this->getContext()->unregisterCleanup(this);
+  }
+};
+
+using ObservedCrashCleanupRegistrar =
+    llvm::CrashRecoveryContextCleanupRegistrar<ObservedCleanupState,
+                                               ObservedCrashCleanup>;
+
+class FiredCleanupRegistrarOwner {
+public:
+  FiredCleanupRegistrarOwner(ObservedCleanupState &InnerState,
+                             bool &DestroyedBeforeOwner,
+                             unsigned &Destructions)
+      : InnerState(InnerState), DestroyedBeforeOwner(DestroyedBeforeOwner),
+        Destructions(Destructions) {}
+
+  ~FiredCleanupRegistrarOwner() {
+    DestroyedBeforeOwner = InnerState.Destructions != 0;
+    ++Destructions;
+  }
+
+  void registerInner() { Inner.emplace(&InnerState); }
+
+private:
+  ObservedCleanupState &InnerState;
+  bool &DestroyedBeforeOwner;
+  unsigned &Destructions;
+  std::optional<ObservedCrashCleanupRegistrar> Inner;
+};
+
+int runFiredCleanupRegistrarRetirementProbe() {
+  llvm::CrashRecoveryContext::Enable();
+  auto DisableCrashRecovery =
+      llvm::make_scope_exit([] { llvm::CrashRecoveryContext::Disable(); });
+
+  ObservedCleanupState InnerState;
+  bool DestroyedBeforeOwner = false;
+  unsigned OwnerDestructions = 0;
+  bool CompletedNormally = true;
+  int RecoveryCode = 0;
+  {
+    llvm::CrashRecoveryContext CRC;
+    CompletedNormally = CRC.RunSafely([&] {
+      auto *Owner = new FiredCleanupRegistrarOwner(
+          InnerState, DestroyedBeforeOwner, OwnerDestructions);
+      llvm::CrashRecoveryContextCleanupRegistrar<FiredCleanupRegistrarOwner>
+          OwnerCleanup(Owner);
+      // Register this after the owner so it fires first. Deleting Owner later
+      // destroys a registrar that must still be able to observe this fired
+      // cleanup without reading freed storage.
+      Owner->registerInner();
+      CRC.HandleExit(237);
+    });
+    RecoveryCode = CRC.RetCode;
+  }
+
+  if (CompletedNormally || RecoveryCode != 237)
+    return recoveryProbeFailure(237, "cleanup retirement recovery contract");
+  if (InnerState.Recoveries != 1 || InnerState.Destructions != 1 ||
+      DestroyedBeforeOwner || OwnerDestructions != 1)
+    return recoveryProbeFailure(238, "fired cleanup registrar lifetime");
+  return 0;
+}
+
+class ActiveCleanupRegistrarOwner {
+public:
+  ActiveCleanupRegistrarOwner(llvm::CrashRecoveryContext &Context,
+                              unsigned &VictimRecoveries,
+                              unsigned &RegisteredDuringRecovery,
+                              unsigned &Destructions)
+      : Context(Context), RegisteredDuringRecovery(RegisteredDuringRecovery),
+        Destructions(Destructions),
+        Victim(std::make_unique<CountingCrashCleanupRegistrar>(
+            &VictimRecoveries)) {}
+
+  ~ActiveCleanupRegistrarOwner() {
+    ++Destructions;
+    // GetCurrent() is intentionally no longer this context after RunSafely
+    // transfers control. Register directly through the cleanup's owning CRC;
+    // its destructor must re-read head and process this new node too.
+    Context.registerCleanup(
+        new CountingCrashCleanup(&Context, &RegisteredDuringRecovery));
+  }
+
+private:
+  llvm::CrashRecoveryContext &Context;
+  unsigned &RegisteredDuringRecovery;
+  unsigned &Destructions;
+  std::unique_ptr<CountingCrashCleanupRegistrar> Victim;
+};
+
+int runCleanupHeadMutationProbe() {
+  llvm::CrashRecoveryContext::Enable();
+  auto DisableCrashRecovery =
+      llvm::make_scope_exit([] { llvm::CrashRecoveryContext::Disable(); });
+
+  unsigned VictimRecoveries = 0;
+  unsigned RegisteredDuringRecovery = 0;
+  unsigned OwnerDestructions = 0;
+  bool CompletedNormally = true;
+  int RecoveryCode = 0;
+  {
+    llvm::CrashRecoveryContext CRC;
+    CompletedNormally = CRC.RunSafely([&] {
+      // Victim is registered first. The later owner cleanup deletes its
+      // registrar, removing Victim from the active list during recovery, and
+      // registers a replacement cleanup that must join the same recovery.
+      auto *Owner = new ActiveCleanupRegistrarOwner(
+          CRC, VictimRecoveries, RegisteredDuringRecovery, OwnerDestructions);
+      llvm::CrashRecoveryContextCleanupRegistrar<ActiveCleanupRegistrarOwner>
+          OwnerCleanup(Owner);
+      CRC.HandleExit(239);
+    });
+    RecoveryCode = CRC.RetCode;
+  }
+
+  if (CompletedNormally || RecoveryCode != 239)
+    return recoveryProbeFailure(239, "cleanup head mutation recovery contract");
+  if (OwnerDestructions != 1 || VictimRecoveries != 0 ||
+      RegisteredDuringRecovery != 1)
+    return recoveryProbeFailure(240, "mutated cleanup list was not honored");
+  return 0;
+}
+
 int runThreadLocalFatalHandlerNestingProbe() {
   if (::ErrorHandler || ::ErrorHandlerUserData ||
       llvm::has_thread_local_fatal_error_handler() ||
@@ -1381,6 +1540,18 @@ TEST(PluginFrontendTimeTraceInteropTest,
 TEST(PluginFrontendTimeTraceInteropTest,
      AnalysisFatalClosesPassTimingDuringCrashCleanup) {
   EXPECT_EXIT(std::exit(runAnalysisFatalTimingRecoveryProbe()),
+              ::testing::ExitedWithCode(0), "");
+}
+
+TEST(PluginFrontendTimeTraceInteropTest,
+     FiredCleanupRemainsObservableUntilRegistrarOwnerIsDestroyed) {
+  EXPECT_EXIT(std::exit(runFiredCleanupRegistrarRetirementProbe()),
+              ::testing::ExitedWithCode(0), "");
+}
+
+TEST(PluginFrontendTimeTraceInteropTest,
+     RecoveryRereadsHeadAfterCleanupUnregistersItsSuccessor) {
+  EXPECT_EXIT(std::exit(runCleanupHeadMutationProbe()),
               ::testing::ExitedWithCode(0), "");
 }
 
