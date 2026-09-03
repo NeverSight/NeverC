@@ -161,7 +161,7 @@ jobs:
             --gtest_filter='PluginBinaryImageTest.MainPublishFailureRestoresTheOldBundle:PluginBinaryImageTest.AbortReportsStagingCleanupFailure:PluginBinaryImageTest.PrepareFailureDiscardsEveryStagedOutput' \
             --gtest_color=no
           build/bin/neverc-merge-tests \
-            --gtest_filter='ParallelCodeGenCacheTest.ProcessBudgetClampsPhysicalWorkersWithoutChangingObject:ParallelCodeGenCacheTest.RejectsTypeMetadataIntrinsicInjectedByPartitionPostOptHook:ParallelCodeGenCacheTest.WholeModuleBarrierMayLegitimatelyLowerTypeMetadataIntrinsic:ParallelCodeGenCacheTest.WholeModuleDiagnosticDoesNotPublishObjectOrOptimizedIRCache:ParallelCodeGenCacheTest.ExhaustedWholeModuleCodeGenRoutesReportErrorWithoutAborting:ParallelCodeGenCacheTest.WholeModuleBarrierRunsStatefulMachineHooksExactlyOnce:ParallelCodeGenCacheTest.PreExistingDiagnosticDoesNotRunHooksOrPublishObjectCache' \
+            --gtest_filter='ParallelCodeGenCacheTest.ProcessBudgetClampsPhysicalWorkersWithoutChangingObject:ParallelCodeGenCacheTest.RejectsTypeMetadataIntrinsicInjectedByPartitionPostOptHook:ParallelCodeGenCacheTest.WholeModuleBarrierMayLegitimatelyLowerTypeMetadataIntrinsic:ParallelCodeGenCacheTest.WholeModuleDiagnosticDoesNotPublishObjectOrOptimizedIRCache:ParallelCodeGenCacheTest.ExhaustedWholeModuleCodeGenRoutesReportErrorWithoutAborting:ParallelCodeGenCacheTest.WholeModuleBarrierRunsStatefulMachineHooksExactlyOnce:ParallelCodeGenCacheTest.PreExistingDiagnosticDoesNotRunHooksOrPublishObjectCache:MergeRuntime.OrdinaryMergesDoNotInstallProcessFatalHandler' \
             --gtest_color=no
 
       - name: Build and smoke fuzzers under ${{ matrix.label }}

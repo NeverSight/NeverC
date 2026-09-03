@@ -26,6 +26,7 @@
 #include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
 // Used only by the NEVERC_BINARY-gated differential suite at end of file, but
@@ -3281,6 +3282,65 @@ SmallVector<char, 0> buildMachO(uint32_t CpuType, uint32_t CpuSubType,
            NList.size() * sizeof(MO::nlist_64));
   memcpy(Buf.data() + StrOff, StrTab.data(), StrTab.size());
   return Buf;
+}
+
+class FatalHandlerObservingStream final : public raw_pwrite_stream {
+public:
+  FatalHandlerObservingStream() : raw_pwrite_stream(/*Unbuffered=*/true) {}
+
+  bool sawProcessFatalHandler() const { return SawProcessFatalHandler; }
+
+private:
+  uint64_t current_pos() const override { return Bytes.size(); }
+
+  void observeHandler() { SawProcessFatalHandler |= ::ErrorHandler != nullptr; }
+
+  void write_impl(const char *Ptr, size_t Size) override {
+    observeHandler();
+    Bytes.append(Ptr, Ptr + Size);
+  }
+
+  void pwrite_impl(const char *Ptr, size_t Size, uint64_t Offset) override {
+    observeHandler();
+    assert(Offset + Size <= Bytes.size() &&
+           "merge stream pwrite exceeds emitted bytes");
+    for (size_t I = 0; I != Size; ++I)
+      Bytes[Offset + I] = Ptr[I];
+  }
+
+  SmallVector<char, 0> Bytes;
+  bool SawProcessFatalHandler = false;
+};
+
+// A valid merge must not mutate LLVM's process-global fatal handler.  The old
+// runMergeSafely wrapper installed one around every invocation, even when no
+// error was possible; observing the unbuffered output makes that behavior a
+// deterministic RED without malformed input, longjmp, or a data race.
+TEST(MergeRuntime, OrdinaryMergesDoNotInstallProcessFatalHandler) {
+  ASSERT_EQ(::ErrorHandler, nullptr);
+
+  auto ExpectCleanMerge = [](SmallVector<char, 0> Object, Format Kind,
+                             StringRef Case) {
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(std::move(Object));
+    FatalHandlerObservingStream Output;
+    Options Opts;
+    Opts.verify = false;
+    EXPECT_TRUE(mergeObjects(Inputs, Output, Kind)) << Case.str();
+    EXPECT_FALSE(Output.sawProcessFatalHandler())
+        << Case.str() << " installed a process-global fatal handler";
+    EXPECT_EQ(::ErrorHandler, nullptr)
+        << Case.str() << " left a process-global fatal handler installed";
+  };
+
+  ExpectCleanMerge(buildMinimalELF({"elf_probe"}, {}), Format::ELF64LE,
+                   "ELF");
+  ExpectCleanMerge(
+      buildCOFF(llvm::COFF::IMAGE_FILE_MACHINE_AMD64, {}, {}, {}),
+      Format::COFF, "COFF");
+  ExpectCleanMerge(buildMachO(llvm::MachO::CPU_TYPE_X86_64,
+                              llvm::MachO::CPU_SUBTYPE_X86_64_ALL, {}, {}),
+                   Format::MachO64, "Mach-O");
 }
 
 struct MachoParsedSec {
