@@ -550,6 +550,66 @@ constexpr llvm::StringLiteral AnalysisFatalTimerName =
     "NevercAnalysisFatalTimerRecord";
 constexpr llvm::StringLiteral AnalysisFreshTimerName =
     "NevercAnalysisFreshTimerRecord";
+constexpr int InvalidatedPrintIRRecoveryCode = 111;
+
+class NevercInvalidatedPrintIRPass
+    : public llvm::PassInfoMixin<NevercInvalidatedPrintIRPass> {
+public:
+  static bool isRequired() { return true; }
+};
+
+int runInvalidatedPrintIRFatalProbe() {
+  auto *PrintBefore = findTopLevelOption<bool>("print-before-all");
+  auto *PrintAfter = findTopLevelOption<bool>("print-after-all");
+  auto *DumpDirectory =
+      findTopLevelOption<std::string>("ir-dump-directory");
+  if (!PrintBefore || !PrintAfter || !DumpDirectory)
+    return recoveryProbeFailure(111, "missing PrintIR options");
+
+  llvm::SmallString<128> DumpBlocker;
+  if (llvm::sys::fs::createTemporaryFile(
+          "neverc-invalidated-ir-dump-blocker", "file", DumpBlocker))
+    return recoveryProbeFailure(112, "could not create dump blocker");
+  llvm::FileRemover RemoveDumpBlocker(DumpBlocker);
+  const std::string DumpRoot = DumpBlocker.str().str() + "/child";
+
+  *PrintBefore = false;
+  *PrintAfter = true;
+  *DumpDirectory = DumpRoot;
+
+  llvm::LLVMContext Context;
+  llvm::Module Module("neverc-invalidated-print-ir-module", Context);
+  llvm::PrintIRInstrumentation Printer;
+  llvm::PassInstrumentationCallbacks Callbacks;
+  Printer.registerCallbacks(Callbacks);
+  llvm::PassInstrumentation Instrumentation(&Callbacks);
+  NevercInvalidatedPrintIRPass ProbePass;
+
+  llvm::CrashRecoveryContext::Enable();
+  auto DisableCrashRecovery = llvm::make_scope_exit(
+      [] { llvm::CrashRecoveryContext::Disable(); });
+  RoutedFatalHandlerProbe FatalProbe{InvalidatedPrintIRRecoveryCode};
+  llvm::ScopedThreadLocalFatalErrorHandler FatalHandler(routedFatalHandler,
+                                                        &FatalProbe);
+
+  bool CompletedNormally = false;
+  int RecoveryCode = 0;
+  {
+    llvm::CrashRecoveryContext CRC;
+    CompletedNormally = CRC.RunSafely([&] {
+      if (!Instrumentation.runBeforePass<llvm::Module>(ProbePass, Module))
+        CRC.HandleExit(113);
+      Instrumentation.runAfterPassInvalidated<llvm::Module>(
+          ProbePass, llvm::PreservedAnalyses::none());
+    });
+    RecoveryCode = CRC.RetCode;
+  }
+
+  if (CompletedNormally || RecoveryCode != InvalidatedPrintIRRecoveryCode ||
+      FatalProbe.Calls != 1)
+    return recoveryProbeFailure(114, "invalidated PrintIR recovery changed");
+  return 0;
+}
 
 class NevercPassBodyFatalTimerPass
     : public llvm::PassInfoMixin<NevercPassBodyFatalTimerPass> {
@@ -1600,6 +1660,12 @@ TEST(PluginFrontendTimeTraceInteropTest,
                   /*VerifyAmbientThreadLocalHandler=*/false,
                   /*EnableBeforePrinting=*/false)),
               ::testing::ExitedWithCode(0), "Failed to create directory");
+}
+
+TEST(PluginFrontendTimeTraceInteropTest,
+     InvalidatedPassFatalRestoresDumpStateWithoutLeaks) {
+  EXPECT_EXIT(std::exit(runInvalidatedPrintIRFatalProbe()),
+              ::testing::ExitedWithCode(0), "");
 }
 
 TEST(PluginFrontendTimeTraceInteropTest,
