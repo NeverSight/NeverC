@@ -27,15 +27,11 @@ jobs:
     env:
       BUILD_TYPE: RelWithDebInfo
       LLVM_APT_VER: "22"
-      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Checkout diagnostic commit
         uses: actions/checkout@v4
         with:
           path: neverc
-
-      - name: Setup sccache
-        uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
 
       - name: Setup build dependencies
         run: |
@@ -53,8 +49,6 @@ jobs:
           cmake -GNinja -Bbuild \
             -DCMAKE_C_COMPILER="$CC" \
             -DCMAKE_CXX_COMPILER="$CXX" \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DLLVM_ENABLE_ASSERTIONS=ON \
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
             -DLLVM_USE_SANITIZER="${{ matrix.sanitizer }}" \
@@ -75,7 +69,3 @@ jobs:
           build/bin/neverc-merge-tests \
             --gtest_filter='MergeRuntime.OrdinaryMergesDoNotInstallProcessFatalHandler' \
             --gtest_color=no
-
-      - name: Show sccache statistics
-        if: always()
-        run: sccache --show-stats || true
