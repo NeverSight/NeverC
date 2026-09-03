@@ -36,6 +36,33 @@ llvm::Expected<uint64_t> findELFSymbolAddress(llvm::StringRef Bytes,
                                  "ELF symbol not found: " + Name);
 }
 
+llvm::Expected<uint64_t> findMachOSymbolAddress(llvm::StringRef Bytes,
+                                                llvm::StringRef Name) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "macho-linker-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isMachO())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected a Mach-O image");
+
+  for (const llvm::object::SymbolRef &Symbol : (*Object)->symbols()) {
+    llvm::Expected<llvm::StringRef> SymbolName = Symbol.getName();
+    if (!SymbolName)
+      return SymbolName.takeError();
+    if (*SymbolName != Name)
+      continue;
+    llvm::Expected<uint32_t> Flags = Symbol.getFlags();
+    if (!Flags)
+      return Flags.takeError();
+    if (*Flags & llvm::object::SymbolRef::SF_Undefined)
+      continue;
+    return Symbol.getAddress();
+  }
+  return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                 "Mach-O symbol not found: " + Name);
+}
+
 llvm::Expected<bool> hasELFSection(llvm::StringRef Bytes,
                                    llvm::StringRef Name) {
   auto Object = llvm::object::ObjectFile::createObjectFile(
@@ -176,6 +203,16 @@ protected:
   uint64_t requireELFSymbolAddress(llvm::StringRef Bytes,
                                    llvm::StringRef Name) const {
     llvm::Expected<uint64_t> Address = findELFSymbolAddress(Bytes, Name);
+    if (!Address) {
+      ADD_FAILURE() << llvm::toString(Address.takeError()).str().str();
+      return 0;
+    }
+    return *Address;
+  }
+
+  uint64_t requireMachOSymbolAddress(llvm::StringRef Bytes,
+                                     llvm::StringRef Name) const {
+    llvm::Expected<uint64_t> Address = findMachOSymbolAddress(Bytes, Name);
     if (!Address) {
       ADD_FAILURE() << llvm::toString(Address.takeError()).str().str();
       return 0;
