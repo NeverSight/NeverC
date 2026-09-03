@@ -918,6 +918,133 @@ TEST(PluginParallelLinkTest, BudgetedNestedTaskGroupRunsInlineOnOuterWorker) {
 }
 
 TEST(PluginParallelLinkTest,
+     ParallelSortUsesSessionWorkersAndPreservesContext) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "parallel sort needs two available CPUs";
+
+  auto Broker = makeResourceBroker(/*Tokens=*/4);
+  neverc::ScopedProcessResourceBrokerOverride Override(*Broker);
+  LinkerExecutionContext Execution;
+  CommonLinkerContext &Context = Execution.createBackend<CommonLinkerContext>();
+  Context.configureParallel(/*RequestedThreads=*/4);
+
+  constexpr size_t ValueCount = 32U * 1024U;
+  std::vector<uint64_t> Values(ValueCount);
+  for (size_t Index = 0; Index != Values.size(); ++Index)
+    Values[Index] = Values.size() - Index;
+
+  std::atomic<bool> SawWorker{false};
+  std::atomic<bool> LostContext{false};
+  parallelSortWithContext(Values, [&](uint64_t Left, uint64_t Right) {
+    if (currentLinkerContext() != &Context ||
+        currentLinkerWorkerSlot() >= Context.parallelShardCount())
+      LostContext.store(true, std::memory_order_relaxed);
+    if (currentLinkerWorkerSlot() != 0)
+      SawWorker.store(true, std::memory_order_relaxed);
+    return Left < Right;
+  });
+
+  EXPECT_TRUE(std::is_sorted(Values.begin(), Values.end()));
+  EXPECT_FALSE(LostContext.load(std::memory_order_relaxed));
+  EXPECT_TRUE(SawWorker.load(std::memory_order_relaxed))
+      << "parallelSortWithContext kept a large sort on the caller thread";
+  EXPECT_EQ(currentLinkerContext(), &Context);
+  EXPECT_EQ(currentLinkerWorkerSlot(), 0U);
+
+  const neverc::ProcessResourceBrokerSnapshot Snapshot =
+      neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
+  EXPECT_EQ(Snapshot.ActiveTokens, 1U)
+      << "parallel sort leaked a worker grant after joining";
+  EXPECT_LE(Snapshot.HighWaterTokens, 4U)
+      << "parallel sort exceeded the process worker budget";
+}
+
+TEST(PluginParallelLinkTest, ParallelSortKeepsSmallInputsOnCallerThread) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "parallel sort needs two available CPUs";
+
+  auto Broker = makeResourceBroker(/*Tokens=*/4);
+  neverc::ScopedProcessResourceBrokerOverride Override(*Broker);
+  LinkerExecutionContext Execution;
+  CommonLinkerContext &Context = Execution.createBackend<CommonLinkerContext>();
+  Context.configureParallel(/*RequestedThreads=*/4);
+
+  std::vector<unsigned> Values(128);
+  for (size_t Index = 0; Index != Values.size(); ++Index)
+    Values[Index] = Values.size() - Index;
+
+  std::atomic<bool> SawWorker{false};
+  parallelSortWithContext(Values, [&](unsigned Left, unsigned Right) {
+    if (currentLinkerWorkerSlot() != 0)
+      SawWorker.store(true, std::memory_order_relaxed);
+    return Left < Right;
+  });
+
+  EXPECT_TRUE(std::is_sorted(Values.begin(), Values.end()));
+  EXPECT_FALSE(SawWorker.load(std::memory_order_relaxed));
+}
+
+TEST(PluginParallelLinkTest, ParallelSortHonorsAnExhaustedWorkerBudget) {
+  auto Broker = makeResourceBroker(/*Tokens=*/1);
+  neverc::ScopedProcessResourceBrokerOverride Override(*Broker);
+  LinkerExecutionContext Execution;
+  CommonLinkerContext &Context = Execution.createBackend<CommonLinkerContext>();
+  Context.configureParallel(/*RequestedThreads=*/4);
+
+  constexpr size_t ValueCount = 32U * 1024U;
+  std::vector<unsigned> Values(ValueCount);
+  for (size_t Index = 0; Index != Values.size(); ++Index)
+    Values[Index] = Values.size() - Index;
+
+  std::atomic<bool> SawWorker{false};
+  parallelSortWithContext(Values.begin(), Values.end(),
+                          [&](unsigned Left, unsigned Right) {
+                            if (currentLinkerWorkerSlot() != 0)
+                              SawWorker.store(true, std::memory_order_relaxed);
+                            return Left < Right;
+                          });
+
+  EXPECT_TRUE(std::is_sorted(Values.begin(), Values.end()));
+  EXPECT_FALSE(SawWorker.load(std::memory_order_relaxed));
+  const neverc::ProcessResourceBrokerSnapshot Snapshot =
+      neverc::ProcessResourceBrokerTestAccess::snapshot(*Broker);
+  EXPECT_EQ(Snapshot.ActiveTokens, 1U);
+  EXPECT_EQ(Snapshot.HighWaterTokens, 1U);
+}
+
+TEST(PluginParallelLinkTest, ParallelSortRunsInlineInsideSessionWorker) {
+  auto Broker = makeResourceBroker(/*Tokens=*/4);
+  neverc::ScopedProcessResourceBrokerOverride Override(*Broker);
+  LinkerExecutionContext Execution;
+  CommonLinkerContext &Context = Execution.createBackend<CommonLinkerContext>();
+  Context.configureParallel(/*RequestedThreads=*/4);
+
+  std::vector<unsigned> Values(4096);
+  for (size_t Index = 0; Index != Values.size(); ++Index)
+    Values[Index] = Values.size() - Index;
+
+  std::atomic<bool> ChangedWorker{false};
+  unsigned OuterSlot = 0;
+  LinkerTaskGroup Outer;
+  Outer.spawn([&] {
+    OuterSlot = currentLinkerWorkerSlot();
+    parallelSortWithContext(Values, [&](unsigned Left, unsigned Right) {
+      if (currentLinkerContext() != &Context ||
+          currentLinkerWorkerSlot() != OuterSlot)
+        ChangedWorker.store(true, std::memory_order_relaxed);
+      return Left < Right;
+    });
+  });
+  Outer.sync();
+
+  ASSERT_NE(OuterSlot, 0U);
+  EXPECT_TRUE(std::is_sorted(Values.begin(), Values.end()));
+  EXPECT_FALSE(ChangedWorker.load(std::memory_order_relaxed));
+  EXPECT_EQ(currentLinkerContext(), &Context);
+  EXPECT_EQ(currentLinkerWorkerSlot(), 0U);
+}
+
+TEST(PluginParallelLinkTest,
      BudgetedNestedCompressionKeepsOneAsynchronousWorker) {
   {
     neverc::ProcessResourceBrokerConfig Config;
