@@ -46,12 +46,14 @@ jobs:
       - name: Install deps
         # Keep clang and the ThinLTO linker on the same upstream LLVM release;
         # Apple Clang 17's LTO linker can crash on otherwise valid debug IR.
-        run: brew install ninja cmake p7zip llvm lld
+        # Keep this aligned with build-macos-arm64.yml. The unversioned LLVM
+        # formulas can advance independently of the vendored LLVM source.
+        run: brew install ninja cmake p7zip llvm@22 lld@22
 
-      - name: Select matching Homebrew LLVM toolchain
+      - name: Select matching Homebrew LLVM 22 toolchain
         run: |
-          LLVM_PREFIX="$(brew --prefix llvm)"
-          LLD_PREFIX="$(brew --prefix lld)"
+          LLVM_PREFIX="$(brew --prefix llvm@22)"
+          LLD_PREFIX="$(brew --prefix lld@22)"
           echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
           echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"

@@ -68,12 +68,15 @@ jobs:
         # macOS system LibreSSL rejects host:port -accept and lacks -ciphersuites.
         # Keep clang and the ThinLTO linker on the same upstream LLVM release;
         # Apple Clang 17's LTO linker can crash on otherwise valid debug IR.
-        run: brew install ninja cmake p7zip openssl@3 llvm lld
+        # Pin the major: the unversioned formulas moved from 22.1.8 to 23.1.0
+        # during a dev gate and Clang 23 could not compile the vendored LLVM
+        # headers against the macos-15 runner's CommandLineTools SDK.
+        run: brew install ninja cmake p7zip openssl@3 llvm@22 lld@22
 
-      - name: Select matching Homebrew LLVM toolchain
+      - name: Select matching Homebrew LLVM 22 toolchain
         run: |
-          LLVM_PREFIX="$(brew --prefix llvm)"
-          LLD_PREFIX="$(brew --prefix lld)"
+          LLVM_PREFIX="$(brew --prefix llvm@22)"
+          LLD_PREFIX="$(brew --prefix lld@22)"
           echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
           echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
           echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
