@@ -399,9 +399,15 @@ public:
   void createFrontendTimer();
 
   /// Stops and removes the per-invocation frontend timer and its group.
-  /// Crash recovery uses this without destroying the abandoned
-  /// CompilerInstance and its unrelated resources.
+  /// Crash recovery invokes this before retiring the remaining frontend
+  /// ownership graph so no abandoned TimerGroup node survives teardown.
   void clearFrontendTimer();
+
+  /// Breaks the frontend ownership graph after a recoverable fatal so the
+  /// instance can be destroyed without running normal end-of-source callbacks.
+  /// The active FrontendAction must remain alive until this returns because an
+  /// emitter consumer can still refer to the action-owned LLVMContext.
+  void prepareForCrashRecoveryDestruction() noexcept;
 
   std::unique_ptr<raw_pwrite_stream> createDefaultOutputFile(
       bool Binary = true, llvm::StringRef BaseInput = "",

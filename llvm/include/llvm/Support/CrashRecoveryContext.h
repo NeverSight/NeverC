@@ -414,14 +414,30 @@ inline CrashRecoveryContext::CrashRecoveryContext() {
 }
 
 inline CrashRecoveryContext::~CrashRecoveryContext() {
-  CrashRecoveryContextCleanup *i = head;
+  // A cleanup may destroy an object that owns cleanup registrars of its own.
+  // Keep fired nodes alive until every recovery callback has finished so such
+  // registrars can observe cleanupFired without dereferencing freed storage.
+  // Also unlink one node at a time and re-read head after recoverResources():
+  // the callback may unregister another active node or register a new one.
+  CrashRecoveryContextCleanup *RetiredHead = nullptr;
+  CrashRecoveryContextCleanup **RetiredTail = &RetiredHead;
   const CrashRecoveryContext *PC = crc_detail::recoveringFromCrashSlot();
   crc_detail::recoveringFromCrashSlot() = this;
-  while (i) {
-    CrashRecoveryContextCleanup *tmp = i;
-    i = tmp->next;
+  while (head) {
+    CrashRecoveryContextCleanup *tmp = head;
+    head = tmp->next;
+    if (head)
+      head->prev = nullptr;
+    tmp->prev = nullptr;
+    tmp->next = nullptr;
+    *RetiredTail = tmp;
+    RetiredTail = &tmp->next;
     tmp->cleanupFired = true;
     tmp->recoverResources();
+  }
+  while (RetiredHead) {
+    CrashRecoveryContextCleanup *tmp = RetiredHead;
+    RetiredHead = tmp->next;
     delete tmp;
   }
   crc_detail::recoveringFromCrashSlot() = PC;
@@ -487,7 +503,10 @@ CrashRecoveryContext::registerCleanup(CrashRecoveryContextCleanup *cleanup) {
 
 inline void
 CrashRecoveryContext::unregisterCleanup(CrashRecoveryContextCleanup *cleanup) {
-  if (!cleanup)
+  // Once recovery begins the context retains ownership until the retired list
+  // is drained. A registrar (or a defensive callback) may still try to detach
+  // that node while destroying an enclosing owner; make that a safe no-op.
+  if (!cleanup || cleanup->cleanupFired)
     return;
   if (cleanup == head) {
     head = cleanup->next;

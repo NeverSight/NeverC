@@ -446,6 +446,39 @@ void CompilerInstance::clearFrontendTimer() {
   FrontendTimerGroup.reset();
 }
 
+void CompilerInstance::prepareForCrashRecoveryDestruction() noexcept {
+  // Do not run FrontendAction::EndSourceFile() from a recovery cleanup: it can
+  // invoke user/plugin callbacks and commit outputs from a partially executed
+  // backend. Break the same ownership edges without performing normal-finalize
+  // work. The action remains alive while Consumer is destroyed, preserving an
+  // emitter consumer's reference to the action-owned LLVMContext.
+  if (TheSema)
+    TheSema->ForgetSemaConsumer();
+  PluginSourcePhases.reset();
+  TheSema.reset();
+  Consumer.reset();
+  Context.reset();
+  OutputStream.reset();
+
+  // Output transaction recovery runs earlier in the CRC's LIFO order. Abort is
+  // idempotent, so this also covers partial setup that did not register a
+  // transaction cleanup. Never diagnose from this crash-only path: doing so
+  // could allocate or recursively fail while the frontend graph is retiring.
+  for (OutputFile &OF : OutputFiles) {
+    OF.CrashCleanup.reset();
+    if (OF.Transaction) {
+      (void)OF.Transaction->abort();
+      continue;
+    }
+    if (OF.File)
+      llvm::consumeError(OF.File->discard());
+    if (!OF.Filename.empty())
+      (void)llvm::sys::fs::remove(OF.Filename);
+  }
+  OutputFiles.clear();
+  clearFrontendTimer();
+}
+
 void CompilerInstance::createSema() {
   TheSema.reset(new Sema(getPrepEngine(), getTreeContext(), getTreeConsumer()));
   if (PluginSourcePhases) {
@@ -465,8 +498,8 @@ void CompilerInstance::clearOutputFiles(bool EraseFiles) {
   for (OutputFile &OF : OutputFiles) {
     // Normal teardown owns this transaction again. Unregister the raw-pointer
     // crash cleanup before finish/commit/abort can change its state and before
-    // releasing the shared owner below. A crash-abandoned CompilerInstance is
-    // intentionally never destroyed after its CRC has fired the registrar.
+    // releasing the shared owner below. During crash teardown, fired cleanup
+    // nodes remain retired and observable until this registrar is reset.
     OF.CrashCleanup.reset();
     if (OF.Transaction) {
       if (EraseFiles) {

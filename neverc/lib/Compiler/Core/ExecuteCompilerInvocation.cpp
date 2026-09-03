@@ -29,6 +29,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/BuryPointer.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
@@ -80,6 +81,63 @@ std::unique_ptr<FrontendAction> CreateFrontendAction(CompilerInstance &CI) {
 // ===----------------------------------------------------------------------===
 
 namespace {
+/// Keeps crash-recovered resources on the heap because setjmp/longjmp abandons
+/// the protected stack frame. Outside a recovery context the same resource
+/// stays inline and introduces no allocation.
+template <typename T> class CrashRecoveryOwnedValue {
+public:
+  template <typename... Args>
+  explicit CrashRecoveryOwnedValue(Args &&...Arguments) {
+    if (llvm::CrashRecoveryContext::GetCurrent()) {
+      CrashOwned =
+          std::make_unique<T>(std::forward<Args>(Arguments)...);
+      Active = CrashOwned.get();
+      CrashCleanup.emplace(Active);
+    } else {
+      Local.emplace(std::forward<Args>(Arguments)...);
+      Active = &*Local;
+    }
+  }
+
+  CrashRecoveryOwnedValue(const CrashRecoveryOwnedValue &) = delete;
+  CrashRecoveryOwnedValue &operator=(const CrashRecoveryOwnedValue &) = delete;
+  CrashRecoveryOwnedValue(CrashRecoveryOwnedValue &&) = delete;
+  CrashRecoveryOwnedValue &operator=(CrashRecoveryOwnedValue &&) = delete;
+
+  T &get() const { return *Active; }
+
+private:
+  std::optional<T> Local;
+  std::unique_ptr<T> CrashOwned;
+  std::optional<llvm::CrashRecoveryContextCleanupRegistrar<T>> CrashCleanup;
+  T *Active = nullptr;
+};
+
+class FrontendActionCrashState {
+public:
+  FrontendActionCrashState(CompilerInstance &Instance,
+                           std::unique_ptr<FrontendAction> Action)
+      : Instance(Instance), Action(std::move(Action)) {}
+
+  ~FrontendActionCrashState() {
+    if (llvm::CrashRecoveryContext::isRecoveringFromCrash())
+      Instance.prepareForCrashRecoveryDestruction();
+  }
+
+  FrontendActionCrashState(const FrontendActionCrashState &) = delete;
+  FrontendActionCrashState &operator=(const FrontendActionCrashState &) =
+      delete;
+
+  FrontendAction *get() const { return Action.get(); }
+  std::unique_ptr<FrontendAction> take() { return std::move(Action); }
+
+private:
+  CompilerInstance &Instance;
+  // Its destructor runs after this class's body, so crash preparation destroys
+  // the emitter consumer while the action-owned LLVMContext is still alive.
+  std::unique_ptr<FrontendAction> Action;
+};
+
 bool extractInvocationScopedLLVMOptions(CompilerInstance &CI);
 }
 
@@ -117,12 +175,13 @@ bool ExecuteCompilerInvocation(CompilerInstance *CI) {
   if (CI->getDiagnostics().hasErrorOccurred())
     return false;
 
-  std::unique_ptr<FrontendAction> Act(CreateFrontendAction(*CI));
-  if (!Act)
+  CrashRecoveryOwnedValue<FrontendActionCrashState> ActionState(
+      *CI, CreateFrontendAction(*CI));
+  if (!ActionState.get().get())
     return false;
-  bool Success = CI->ExecuteAction(*Act);
+  bool Success = CI->ExecuteAction(*ActionState.get().get());
   if (CI->getFrontendOpts().DisableFree)
-    llvm::BuryPointer(std::move(Act));
+    llvm::BuryPointer(ActionState.get().take());
   return Success;
 }
 
@@ -179,45 +238,13 @@ struct DirectLLVMFatalErrorHandlerContext {
 void directLLVMErrorHandler(void *UserData, const char *Message,
                             bool GenCrashDiag);
 
-/// Keeps crash-recovered resources on the heap because setjmp/longjmp abandons
-/// the protected stack frame. Outside a recovery context the same resource
-/// stays inline and introduces no allocation.
-template <typename T> class CrashRecoveryOwnedValue {
-public:
-  template <typename... Args>
-  explicit CrashRecoveryOwnedValue(Args &&...Arguments) {
-    if (llvm::CrashRecoveryContext::GetCurrent()) {
-      CrashOwned =
-          std::make_unique<T>(std::forward<Args>(Arguments)...);
-      Active = CrashOwned.get();
-      CrashCleanup.emplace(Active);
-    } else {
-      Local.emplace(std::forward<Args>(Arguments)...);
-      Active = &*Local;
-    }
-  }
-
-  CrashRecoveryOwnedValue(const CrashRecoveryOwnedValue &) = delete;
-  CrashRecoveryOwnedValue &operator=(const CrashRecoveryOwnedValue &) = delete;
-  CrashRecoveryOwnedValue(CrashRecoveryOwnedValue &&) = delete;
-  CrashRecoveryOwnedValue &operator=(CrashRecoveryOwnedValue &&) = delete;
-
-  T &get() const { return *Active; }
-
-private:
-  std::optional<T> Local;
-  std::unique_ptr<T> CrashOwned;
-  std::optional<llvm::CrashRecoveryContextCleanupRegistrar<T>> CrashCleanup;
-  T *Active = nullptr;
-};
-
 /// Ends a frontend plugin task without taking ownership of the object. The
-/// owning unique_ptr lives in a stack frame that crash recovery abandons, so
-/// deleting CompilerInstance here would be unsafe when an output transaction
-/// is still open. Ending the child and parent tasks is nevertheless required
-/// to release their PluginSession registrations. This cleanup covers a
-/// backend fatal after task creation and before task teardown; it is not a
-/// crash-abandon state machine for a fatal inside a task callback or end().
+/// crash-owned resource aggregate destroys the task object later, after this
+/// cleanup has released its PluginSession registration. Keeping transition and
+/// ownership separate also preserves child-before-parent task ordering. This
+/// cleanup covers a backend fatal after task creation and before task teardown;
+/// it is not a crash-abandon state machine for a fatal inside a task callback
+/// or end().
 class CrashRecoveryEndPluginTaskCleanup final
     : public llvm::CrashRecoveryContextCleanupBase<
           CrashRecoveryEndPluginTaskCleanup, plugin::PluginTaskContext> {
@@ -297,8 +324,17 @@ private:
 /// storage require their own restoration contract before in-process use.
 class FrontendProcessGlobalStateOwner {
 public:
+  FrontendProcessGlobalStateOwner() { FatalHandlerContext.Owner = this; }
+
   FrontendProcessGlobalStateOwner(bool MutatesLLVMOptions,
-                                  bool RequiresExclusiveLease) {
+                                  bool RequiresExclusiveLease)
+      : FrontendProcessGlobalStateOwner() {
+    acquire(MutatesLLVMOptions, RequiresExclusiveLease);
+  }
+
+  void acquire(bool MutatesLLVMOptions, bool RequiresExclusiveLease) {
+    assert(!OptionSnapshot && !WriteLease && !ReadLease && !Released &&
+           "frontend process-global owner acquired twice");
     if (MutatesLLVMOptions) {
       OptionSnapshot.emplace(plugin::pluginLLVMOptionGate());
     } else if (RequiresExclusiveLease) {
@@ -306,7 +342,6 @@ public:
     } else {
       ReadLease.emplace(plugin::pluginLLVMOptionGate());
     }
-    FatalHandlerContext.Owner = this;
   }
 
   ~FrontendProcessGlobalStateOwner() { release(); }
@@ -360,6 +395,39 @@ private:
   DirectLLVMFatalErrorHandlerContext FatalHandlerContext;
   std::optional<llvm::ScopedThreadLocalFatalErrorHandler> FatalHandler;
   bool Released = false;
+};
+
+/// Owns every outer ExecuteFrontendDirect resource whose automatic destructor
+/// a recovery transfer can skip. Process-global state is deliberately owned by
+/// a separate, earlier-registered CrashRecoveryOwnedValue so this aggregate is
+/// destroyed first on both normal and fatal paths.
+class FrontendDirectResources {
+public:
+  FrontendDirectResources()
+      : DiagnosticID(new DiagnosticIDs()),
+        DiagnosticOpts(new DiagnosticOptions()),
+        DiagnosticBuffer(new TextDiagnosticBuffer()),
+        ParseDiagnostics(DiagnosticID, DiagnosticOpts, DiagnosticBuffer),
+        Instance(std::make_unique<CompilerInstance>()) {}
+
+  ~FrontendDirectResources() {
+    if (llvm::CrashRecoveryContext::isRecoveringFromCrash() && Instance)
+      Instance->prepareForCrashRecoveryDestruction();
+  }
+
+  FrontendDirectResources(const FrontendDirectResources &) = delete;
+  FrontendDirectResources &operator=(const FrontendDirectResources &) = delete;
+  FrontendDirectResources(FrontendDirectResources &&) = delete;
+  FrontendDirectResources &operator=(FrontendDirectResources &&) = delete;
+
+  llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagnosticID;
+  llvm::IntrusiveRefCntPtr<DiagnosticOptions> DiagnosticOpts;
+  // Owned by ParseDiagnostics; retained only for the one explicit flush.
+  TextDiagnosticBuffer *DiagnosticBuffer = nullptr;
+  DiagnosticsEngine ParseDiagnostics;
+  std::unique_ptr<plugin::PluginTaskContext> PluginInvocationTask;
+  std::unique_ptr<CompilerInstance> Instance;
+  std::optional<neverc::LLVMTimeTraceProfilerOwner> TimeTraceProfiler;
 };
 
 void directLLVMErrorHandler(void *UserData, const char *Message,
@@ -431,8 +499,19 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   // overlays domains ConstructJob already resolved canonically.
   bool parallelSafe = DirectOpts && DirectOpts->ParallelSafe;
 
-  std::unique_ptr<plugin::PluginTaskContext> PluginInvocationTask;
-  std::unique_ptr<CompilerInstance> CI(new CompilerInstance());
+  // Registration order is part of the recovery contract. The process-global
+  // owner is registered first, so every frontend object and plugin task is
+  // retired before the option snapshot is restored and its gate is unlocked.
+  CrashRecoveryOwnedValue<FrontendProcessGlobalStateOwner> ProcessGlobals;
+  CrashRecoveryOwnedValue<FrontendDirectResources> ResourceOwner;
+  FrontendDirectResources &Resources = ResourceOwner.get();
+  std::unique_ptr<plugin::PluginTaskContext> &PluginInvocationTask =
+      Resources.PluginInvocationTask;
+  std::unique_ptr<CompilerInstance> &CI = Resources.Instance;
+  DiagnosticsEngine &Diags = Resources.ParseDiagnostics;
+  TextDiagnosticBuffer *DiagsBuffer = Resources.DiagnosticBuffer;
+  std::optional<neverc::LLVMTimeTraceProfilerOwner> &TimeTraceProfiler =
+      Resources.TimeTraceProfiler;
   if (DirectOpts && DirectOpts->Outputs)
     CI->setOutputCoordinator(*DirectOpts->Outputs);
   if (DirectOpts && DirectOpts->PluginSession) {
@@ -451,15 +530,6 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
     }
     CI->setPluginTaskContext(std::move(*TranslationUnit));
   }
-  llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-
-  llvm::IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts =
-      new DiagnosticOptions();
-  TextDiagnosticBuffer *DiagsBuffer = new TextDiagnosticBuffer;
-  DiagnosticsEngine Diags(DiagID, &*DiagOpts, DiagsBuffer);
-  std::optional<CrashRecoveryOwnedValue<FrontendProcessGlobalStateOwner>>
-      ProcessGlobals;
-
   llvm::ArrayRef<const char *> InvocationArgs = Argv;
   if (DirectOpts && DirectOpts->FrontendOpts &&
       DirectOpts->FrontendOpts->ProgramAction == frontend::Assemble)
@@ -517,21 +587,13 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
       !CI->getCodeGenOpts().LimitFloatPrecision.empty() || ConfiguresPassTiming;
   const bool RequestsTimeTrace =
       !CI->getFrontendOpts().TimeTracePath.empty();
-  ProcessGlobals.emplace(MutatesLLVMOptions, /*RequiresExclusiveLease=*/
-                                                 !parallelSafe ||
-                                                     RequestsTimeTrace);
-  // CI and both plugin task levels can consult LLVM process globals during
-  // teardown. Destroy them while the option lease and its fatal handler are
-  // still active; this guard is declared after ProcessGlobals so it runs
-  // before the owner restores the snapshot and unlocks the gate.
-  auto TeardownFrontendState = llvm::make_scope_exit([&] {
-    CI.reset();
-    PluginInvocationTask.reset();
-  });
-  // CompilerInstance itself cannot be deleted from a recovery cleanup while
-  // other crash-owned resources still refer to it. Its -ftime-report timer is
-  // independently safe to stop and detach, and otherwise leaves a dangling
-  // TimerGroup node when the stack frame is abandoned.
+  ProcessGlobals.get().acquire(MutatesLLVMOptions,
+                               /*RequiresExclusiveLease=*/
+                                   !parallelSafe || RequestsTimeTrace);
+  // These narrower cleanups are registered after the aggregate owner, so LIFO
+  // recovery first detaches the frontend timer and ends child/parent plugin
+  // tasks. The aggregate can then break the remaining ownership graph and
+  // safely destroy CompilerInstance before releasing process-global state.
   FrontendPluginTaskCrashCleanups PluginTaskCrashCleanups(
       PluginInvocationTask.get(), CI->getPluginTaskContext());
   // CrashRecoveryContext runs cleanups in reverse registration order. Detach
@@ -539,7 +601,7 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   // execution where the frontend timing scope ends before task teardown.
   FrontendTimerCrashCleanupRegistrar FrontendTimerCrashCleanup(CI.get());
   if (MutatesLLVMOptions) {
-    assert(ProcessGlobals->get().ownsOptionSnapshot() &&
+    assert(ProcessGlobals.get().ownsOptionSnapshot() &&
            "LLVM option mutation requires a restoring snapshot");
     std::vector<const char *> Args;
     Args.reserve(LLVMArgs.size() + 1);
@@ -596,7 +658,6 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
     return 1;
   }
 
-  std::optional<neverc::LLVMTimeTraceProfilerOwner> TimeTraceProfiler;
   // A fatal can abandon ExecuteCompiler's scope. Join a managed ambient root
   // so recovery invalidates it, or reject an unmanaged root before entering
   // that scope; a normal invocation without a recovery context may borrow the
@@ -617,8 +678,8 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
   }
 
   const bool HoldsExclusiveProcessGlobals =
-      ProcessGlobals->get().holdsExclusiveLease();
-  ProcessGlobals->get().installFatalErrorHandler(CI->getDiagnostics());
+      ProcessGlobals.get().holdsExclusiveLease();
+  ProcessGlobals.get().installFatalErrorHandler(CI->getDiagnostics());
 
   {
     llvm::TimeTraceScope TimeScope("ExecuteCompiler");

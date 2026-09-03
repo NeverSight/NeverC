@@ -19,6 +19,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
+#include <string>
 
 namespace llvm {
 
@@ -256,6 +258,7 @@ void PrintStackTrace(raw_ostream &OS, int Depth);
 
 /*== Inline implementations (moved from cpp_bridge.cpp) ==*/
 
+#include "llvm/Support/CrashRecoveryContext.h"
 #include <new>
 #include <string.h>
 #if defined(_MSC_VER)
@@ -420,7 +423,17 @@ inline void report_fatal_error(const Twine &Reason, bool GenCrashDiag) {
   }
 
   if (handler) {
-    handler(handlerData, Reason.str().c_str(), GenCrashDiag);
+    // A recovery handler may transfer control with setjmp/longjmp, bypassing
+    // this frame's automatic destructors. Give the rendered message an
+    // explicit CRC owner for that path; if the handler returns normally, first
+    // unregister that owner and then release the message after the callback
+    // has finished consuming its C string.
+    auto Message = std::make_unique<std::string>(Reason.str());
+    CrashRecoveryContextCleanupRegistrar<std::string> MessageCleanup(
+        Message.get());
+    handler(handlerData, Message->c_str(), GenCrashDiag);
+    MessageCleanup.unregister();
+    Message.reset();
   } else {
     const char prefix[] = "LLVM ERROR: ";
     (void)!::write(2, prefix, sizeof(prefix) - 1);
