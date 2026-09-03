@@ -17,7 +17,6 @@ namespace linker {
 namespace elf {
 
 class InputFile;
-class DiscardedInputSectionTag;
 class Symbol;
 
 class Defined;
@@ -379,11 +378,6 @@ public:
   // Called by ICF to merge two input sections.
   void replace(InputSection *other);
 
-  // Address-only sentinel for discarded entries in InputFile::sections. The
-  // tag has immutable static storage and yields the same typed token as the
-  // former InputSection object, but it cannot carry mutable linker state.
-  static const DiscardedInputSectionTag discarded;
-
 private:
   template <class ELFT, class RelTy> void copyRelocations(uint8_t *buf);
 
@@ -393,18 +387,10 @@ private:
   template <class ELFT> void copyShtGroup(uint8_t *buf);
 };
 
-// All users store or compare &InputSection::discarded; none dereference it.
-// Give the tag InputSection alignment so converting its address to the typed
-// token preserves the address on every supported host ABI.
-class alignas(InputSection) DiscardedInputSectionTag final {
-public:
-  InputSection *operator&() const noexcept {
-    return static_cast<InputSection *>(
-        static_cast<void *>(const_cast<DiscardedInputSectionTag *>(this)));
-  }
-};
-
-inline constexpr DiscardedInputSectionTag InputSection::discarded{};
+// Returns the real InputSection object used as the discarded-entry identity
+// for the active ELF invocation. It is owned by ELFLinkerContext and must only
+// be stored or compared, never interpreted as an input section.
+InputSectionBase *discardedInputSection();
 
 static_assert(sizeof(InputSection) <= 160, "InputSection is too big");
 

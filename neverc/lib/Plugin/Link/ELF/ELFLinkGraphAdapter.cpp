@@ -495,7 +495,7 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       CaptureOutputSection(Section);
 
   const auto CaptureSection = [&](InputSectionBase *Native) {
-    if (!Native || Native == &InputSection::discarded)
+    if (!Native || Native == discardedInputSection())
       return;
     const auto *Synthetic = dyn_cast<SyntheticSection>(Native);
     // prepareLayout() removes synthetic sections whose isNeeded() predicate
@@ -712,7 +712,7 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
     CaptureSymbol(SymbolValue);
 
   for (InputSectionBase *Native : elfState().inputSections) {
-    if (!Native || Native == &InputSection::discarded)
+    if (!Native || Native == discardedInputSection())
       continue;
     const uint64_t SourceAtomID = AtomIDs.lookup(Native);
     if (SourceAtomID == 0)

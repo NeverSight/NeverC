@@ -453,7 +453,7 @@ const Symbol *getAlternativeSpelling(const Undefined &sym,
     // If sym is a symbol defined in a discarded section, maybeReportDiscarded()
     // will give an error. Don't suggest an alternative spelling.
     if (file && sym.discardedSecIdx != 0 &&
-        file->getSections()[sym.discardedSecIdx] == &InputSection::discarded)
+        file->getSections()[sym.discardedSecIdx] == discardedInputSection())
       return nullptr;
 
     for (const Symbol *s : sym.file->getSymbols())

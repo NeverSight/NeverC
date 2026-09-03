@@ -66,7 +66,7 @@ uint64_t getSymVA(const Symbol &sym, int64_t addend) {
     if (!isec)
       return d.value;
 
-    assert(isec != &InputSection::discarded);
+    assert(isec != discardedInputSection());
 
     uint64_t offset = d.value;
 
