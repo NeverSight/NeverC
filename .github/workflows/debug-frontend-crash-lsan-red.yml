@@ -55,7 +55,7 @@ jobs:
       - name: Build focused test binary
         run: |
           cmake --build build --config "${{ env.BUILD_TYPE }}" --target \
-            neverc-plugin-link-tests
+            neverc-plugin-frontend-tests
 
       - name: Reproduce mutable cleanup-list failure
         env:
@@ -63,6 +63,6 @@ jobs:
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/neverc/.github/plugin-sanitizers.lsan
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
-          build/bin/neverc-plugin-link-tests \
+          build/bin/neverc-plugin-frontend-tests \
             --gtest_filter='PluginFrontendTimeTraceInteropTest.FiredCleanupRemainsObservableUntilRegistrarOwnerIsDestroyed:PluginFrontendTimeTraceInteropTest.RecoveryRereadsHeadAfterCleanupUnregistersItsSuccessor' \
             --gtest_color=no
