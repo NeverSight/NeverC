@@ -2021,6 +2021,8 @@
       "dot_methods": {
         "scanner_init": "neverc_bufio_scanner_init",
         "scanner_scan": "neverc_bufio_scanner_scan",
+        "scanner_bytes": "neverc_bufio_scanner_bytes",
+        "scanner_text": "neverc_bufio_scanner_text",
         "scanner_err": "neverc_bufio_scanner_err",
         "scanner_free": "neverc_bufio_scanner_free",
         "scanner_split": "neverc_bufio_scanner_split",
