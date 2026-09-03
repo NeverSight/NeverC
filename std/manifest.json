@@ -3642,7 +3642,11 @@
         "url_escape": "neverc_html_url_query_escape",
         "free": "neverc_html_template_free",
         "execute": "neverc_html_template_execute",
-        "attr_escape": "neverc_html_attr_escape"
+        "attr_escape": "neverc_html_attr_escape",
+        "data_free": "neverc_html_template_data_free",
+        "data_get": "neverc_html_template_data_get",
+        "data_init": "neverc_html_template_data_init",
+        "data_set": "neverc_html_template_data_set"
       }
     },
     "net/textproto": {
