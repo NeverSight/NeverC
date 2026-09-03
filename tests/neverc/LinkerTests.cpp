@@ -35,6 +35,33 @@ llvm::Expected<uint64_t> findELFSymbolAddress(llvm::StringRef Bytes,
                                  "ELF symbol not found: " + Name);
 }
 
+llvm::Expected<uint64_t> findMachOSymbolAddress(llvm::StringRef Bytes,
+                                                llvm::StringRef Name) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "macho-linker-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isMachO())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected a Mach-O image");
+
+  for (const llvm::object::SymbolRef &Symbol : (*Object)->symbols()) {
+    llvm::Expected<llvm::StringRef> SymbolName = Symbol.getName();
+    if (!SymbolName)
+      return SymbolName.takeError();
+    if (*SymbolName != Name)
+      continue;
+    llvm::Expected<uint32_t> Flags = Symbol.getFlags();
+    if (!Flags)
+      return Flags.takeError();
+    if (*Flags & llvm::object::SymbolRef::SF_Undefined)
+      continue;
+    return Symbol.getAddress();
+  }
+  return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                 "Mach-O symbol not found: " + Name);
+}
+
 llvm::Expected<bool> hasELFSection(llvm::StringRef Bytes,
                                    llvm::StringRef Name) {
   auto Object = llvm::object::ObjectFile::createObjectFile(
@@ -143,6 +170,16 @@ protected:
   uint64_t requireELFSymbolAddress(llvm::StringRef Bytes,
                                    llvm::StringRef Name) const {
     llvm::Expected<uint64_t> Address = findELFSymbolAddress(Bytes, Name);
+    if (!Address) {
+      ADD_FAILURE() << llvm::toString(Address.takeError()).str().str();
+      return 0;
+    }
+    return *Address;
+  }
+
+  uint64_t requireMachOSymbolAddress(llvm::StringRef Bytes,
+                                     llvm::StringRef Name) const {
+    llvm::Expected<uint64_t> Address = findMachOSymbolAddress(Bytes, Name);
     if (!Address) {
       ADD_FAILURE() << llvm::toString(Address.takeError()).str().str();
       return 0;
@@ -529,6 +566,78 @@ strict_alignment:
   EXPECT_LT(prefix, low);
   EXPECT_GE(low - prefix, 4096u)
       << "the strict alignment must affect placement after prior text";
+}
+
+TEST_F(LinkerTest, MachOIcfDistinguishesOffsetsWithinOneReferentSection) {
+  const fs::path dataSource = tmpFile("macho_icf_referent_data.s");
+  const fs::path textSource = tmpFile("macho_icf_referent_text.s");
+  const fs::path dataObject = tmpFile("macho_icf_referent_data.o");
+  const fs::path textObject = tmpFile("macho_icf_referent_text.o");
+  const fs::path image = tmpFile("macho_icf_referent.dylib");
+
+  // Keep all four referents in one input section. Their offsets deliberately
+  // form two pairs with the same sum, so the coarse ICF hash collides while
+  // the ordered relocation targets remain semantically different.
+  writeFile(dataSource, R"(
+.section __TEXT,__const
+.globl _a, _b, _c, _d
+.p2align 3
+_a:
+  .quad 1
+_b:
+  .quad 2
+_c:
+  .quad 3
+_d:
+  .quad 4
+)");
+  writeFile(textSource, R"(
+.section __TEXT,__text,regular,pure_instructions
+.globl _f1, _f2, _f3
+.p2align 2
+_f1:
+  adrp x0, _a@PAGE
+  add x0, x0, _a@PAGEOFF
+  adrp x1, _d@PAGE
+  add x1, x1, _d@PAGEOFF
+  ret
+_f2:
+  adrp x0, _b@PAGE
+  add x0, x0, _b@PAGEOFF
+  adrp x1, _c@PAGE
+  add x1, x1, _c@PAGEOFF
+  ret
+_f3:
+  adrp x0, _a@PAGE
+  add x0, x0, _a@PAGEOFF
+  adrp x1, _d@PAGE
+  add x1, x1, _d@PAGEOFF
+  ret
+.subsections_via_symbols
+)");
+
+  const std::string Target = "--target=arm64-apple-macosx11.0";
+  CmdResult assembleData =
+      ncc({Target, "-x", "assembler", "-c", dataSource.string(), "-o",
+           dataObject.string()});
+  ASSERT_EQ(assembleData.exitCode, 0) << assembleData.err;
+  CmdResult assembleText =
+      ncc({Target, "-x", "assembler", "-c", textSource.string(), "-o",
+           textObject.string()});
+  ASSERT_EQ(assembleText.exitCode, 0) << assembleText.err;
+
+  CmdResult link =
+      ncc({Target, "-nostdlib", "-fno-lto", "-dynamiclib", "-ficf=all",
+           dataObject.string(), textObject.string(), "-o", image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(image);
+  const uint64_t f1 = requireMachOSymbolAddress(bytes, "_f1");
+  const uint64_t f2 = requireMachOSymbolAddress(bytes, "_f2");
+  const uint64_t f3 = requireMachOSymbolAddress(bytes, "_f3");
+  EXPECT_NE(f1, f2)
+      << "ICF must compare each relocation's referent offset, not their sum";
+  EXPECT_EQ(f1, f3) << "truly identical functions must remain foldable";
 }
 
 TEST_F(LinkerTest, IcfDistinguishesPreemptibleRelocations) {
