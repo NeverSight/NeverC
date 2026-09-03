@@ -1,4 +1,4 @@
-name: debug-linker-autolto-red
+name: debug-elf-fde-red
 
 permissions:
   contents: read
@@ -6,22 +6,14 @@ permissions:
 on:
   push:
     tags:
-      - "debug-linker-autolto-red-*"
+      - "debug-elf-fde-red-*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  red-contracts:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - sanitizer: "Address;Undefined"
-            label: asan-ubsan
-          - sanitizer: "Thread"
-            label: tsan
+  red-contract:
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     env:
@@ -44,14 +36,17 @@ jobs:
           echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
           echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
 
-      - name: Configure ${{ matrix.label }}
+      - name: Setup sccache
+        uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
+
+      - name: Configure asan-ubsan
         run: |
           cmake -GNinja -Bbuild \
             -DCMAKE_C_COMPILER="$CC" \
             -DCMAKE_CXX_COMPILER="$CXX" \
             -DLLVM_ENABLE_ASSERTIONS=ON \
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
-            -DLLVM_USE_SANITIZER="${{ matrix.sanitizer }}" \
+            -DLLVM_USE_SANITIZER="Address;Undefined" \
             -DNEVERC_INCLUDE_TESTS=ON \
             -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}" \
             -C neverc/neverc/cmake/caches/NeverC.cmake \
@@ -60,10 +55,9 @@ jobs:
       - name: Build focused test binaries
         run: |
           cmake --build build --config "${{ env.BUILD_TYPE }}" --target \
-            neverc-tests \
-            neverc-plugin-link-tests
+            neverc-tests
 
-      - name: Require three independent RED contracts
+      - name: Require behavioral RED after successful link
         env:
           LSAN_OPTIONS: suppressions=${{ github.workspace }}/neverc/.github/plugin-sanitizers.lsan
         run: |
@@ -75,7 +69,7 @@ jobs:
 
             set +e
             "$binary" --gtest_filter="$filter" --gtest_color=no \
-              2>&1 | tee "${name}-${{ matrix.label }}.log"
+              2>&1 | tee "${name}.log"
             local status=${PIPESTATUS[0]}
             set -e
 
@@ -83,25 +77,13 @@ jobs:
               echo "expected RED but ${name} exited successfully" >&2
               exit 1
             fi
-            grep -F '[ RUN      ]' "${name}-${{ matrix.label }}.log"
-            grep -F "$marker" "${name}-${{ matrix.label }}.log"
+            grep -F '[ RUN      ]' "${name}.log"
+            grep -F "$marker" "${name}.log"
             echo "VALID_RED ${name} exit=${status}"
           }
 
           expect_red \
-            macho-icf \
+            elf-zero-fde \
             build/bin/neverc-tests \
-            LinkerTest.MachOIcfDistinguishesOffsetsWithinOneReferentSection \
-            "ICF must compare each relocation's referent offset"
-
-          expect_red \
-            parallel-sort \
-            build/bin/neverc-plugin-link-tests \
-            'PluginParallelLinkTest.ParallelSort*' \
-            'parallelSortWithContext kept a large sort on the caller thread'
-
-          expect_red \
-            globalopt \
-            build/bin/neverc-tests \
-            LTOTest.AutoLtoGlobalOptHandlesSelfReferentialGlobal \
-            'GlobalOpt crashed while rewriting a self-referential global'
+            LinkerTest.ElfEhFrameHeaderOmitsZeroRangeFdes \
+            'zero-range FDEs must not displace the real function entry'
