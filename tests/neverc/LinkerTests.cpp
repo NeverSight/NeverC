@@ -1,4 +1,5 @@
 #include "NeverCTestFixture.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Endian.h"
@@ -53,6 +54,38 @@ llvm::Expected<bool> hasELFSection(llvm::StringRef Bytes,
       return true;
   }
   return false;
+}
+
+struct ELFSectionData {
+  std::string Contents;
+  uint64_t Address;
+  bool IsLittleEndian;
+};
+
+llvm::Expected<ELFSectionData> findELFSectionData(llvm::StringRef Bytes,
+                                                  llvm::StringRef Name) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "elf-linker-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected an ELF image");
+
+  for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
+    llvm::Expected<llvm::StringRef> SectionName = Section.getName();
+    if (!SectionName)
+      return SectionName.takeError();
+    if (*SectionName != Name)
+      continue;
+    llvm::Expected<llvm::StringRef> Contents = Section.getContents();
+    if (!Contents)
+      return Contents.takeError();
+    return ELFSectionData{Contents->str(), Section.getAddress(),
+                          (*Object)->isLittleEndian()};
+  }
+  return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                 "ELF section not found: " + Name);
 }
 
 llvm::Expected<std::string> findELFBuildId(llvm::StringRef Bytes) {
@@ -251,6 +284,65 @@ fat_lto_second:
       << llvm::toString(hasFatLTO.takeError()).str().str();
   EXPECT_FALSE(*hasFatLTO)
       << "unused raw FatLTO payloads must not be concatenated by -r";
+}
+
+TEST_F(LinkerTest, ElfEhFrameHeaderOmitsZeroRangeFdes) {
+  const fs::path source = tmpFile("eh_frame_zero_range.s");
+  const fs::path object = tmpFile("eh_frame_zero_range.o");
+  const fs::path output = tmpFile("eh_frame_zero_range");
+
+  writeFile(source, R"(
+.text
+zero_before:
+  .cfi_startproc
+  .cfi_endproc
+
+.globl _start
+.type _start,@function
+_start:
+  .cfi_startproc
+  ret
+  .cfi_endproc
+.size _start, .-_start
+
+zero_after:
+  .cfi_startproc
+  .cfi_endproc
+)");
+
+  CmdResult assemble =
+      ncc({"--target=x86_64-linux-gnu", "-x", "assembler", "-c",
+           source.string(), "-o", object.string()});
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  CmdResult link =
+      ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-fno-lto",
+           "-Wl,--eh-frame-hdr", "-Wl,--entry=_start", object.string(),
+           "-o", output.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(output);
+  llvm::Expected<ELFSectionData> header =
+      findELFSectionData(bytes, ".eh_frame_hdr");
+  ASSERT_TRUE(static_cast<bool>(header))
+      << llvm::toString(header.takeError()).str().str();
+  ASSERT_TRUE(header->IsLittleEndian);
+  ASSERT_GE(header->Contents.size(), 20U);
+
+  const char *data = header->Contents.data();
+  EXPECT_EQ(static_cast<unsigned char>(data[0]), 1U);
+  EXPECT_EQ(static_cast<unsigned char>(data[2]),
+            llvm::dwarf::DW_EH_PE_udata4);
+  EXPECT_EQ(static_cast<unsigned char>(data[3]),
+            llvm::dwarf::DW_EH_PE_datarel | llvm::dwarf::DW_EH_PE_sdata4);
+  EXPECT_EQ(llvm::support::endian::read32le(data + 8), 1U)
+      << "zero-range FDEs must not displace the real function entry";
+
+  const int32_t pcRelative =
+      static_cast<int32_t>(llvm::support::endian::read32le(data + 12));
+  EXPECT_EQ(static_cast<uint64_t>(static_cast<int64_t>(header->Address) +
+                                  pcRelative),
+            requireELFSymbolAddress(bytes, "_start"));
 }
 
 TEST_F(LinkerTest, AutorouteObjectInput) {
