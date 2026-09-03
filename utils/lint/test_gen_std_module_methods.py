@@ -181,6 +181,18 @@ class GenStdModuleMethodsTest(unittest.TestCase):
             "flag has registered symbols without dot methods",
         )
 
+    def test_bufio_module_maps_every_registered_symbol(self):
+        with GEN.DEFAULT_MANIFEST.open(encoding="utf-8") as source:
+            module = json.load(source)["modules"]["bufio"]
+
+        registered = set(module["symbols"])
+        mapped = set(module.get("dot_methods", {}).values())
+        self.assertEqual(
+            registered - mapped,
+            set(),
+            "bufio has registered symbols without dot methods",
+        )
+
     def test_check_mode_detects_a_stale_file(self):
         manifest = {
             "modules": {
