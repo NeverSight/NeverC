@@ -1,5 +1,6 @@
 #include "Linker/ELF/ELFLinkerContext.h"
 #include "Linker/ELF/Config.h"
+#include "Linker/ELF/InputSection.h"
 #include "Linker/ELF/LinkerScript.h"
 #include "Linker/ELF/LTO.h"
 #include "Linker/ELF/OutputSections.h"
@@ -13,6 +14,11 @@
 namespace linker::elf {
 
 struct ELFLinkerContext::Impl {
+  // Keep a valid object, rather than a forged typed pointer, as the discarded
+  // section identity. Declaring it first keeps it alive until all other
+  // invocation-owned state has been destroyed.
+  InputSection DiscardedInputSection{nullptr, 0, 0, 0,
+                                     llvm::ArrayRef<uint8_t>{}, ""};
   ConfigWrapper Config;
   Ctx BackendState;
   SymbolTable Symbols;
@@ -37,6 +43,10 @@ ELFLinkerContext::~ELFLinkerContext() { finalizeOwnedState(); }
 
 ELFLinkerContext &elfContext() {
   return static_cast<ELFLinkerContext &>(commonContext());
+}
+
+InputSectionBase *discardedInputSection() {
+  return &elfContext().state().DiscardedInputSection;
 }
 
 ConfigWrapper &elfConfig() { return elfContext().state().Config; }

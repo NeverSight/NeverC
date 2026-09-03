@@ -284,7 +284,7 @@ void handleSectionGroup(ArrayRef<InputSectionBase *> sections,
     if (index >= sections.size())
       return;
     if (InputSectionBase *s = sections[index])
-      if (s != &InputSection::discarded && s->flags & SHF_ALLOC)
+      if (s != discardedInputSection() && s->flags & SHF_ALLOC)
         hasAlloc = true;
   }
 
@@ -300,7 +300,7 @@ void handleSectionGroup(ArrayRef<InputSectionBase *> sections,
   InputSectionBase *prev = nullptr;
   for (uint32_t index : entries.slice(1)) {
     InputSectionBase *s = sections[index];
-    if (!s || s == &InputSection::discarded)
+    if (!s || s == discardedInputSection())
       continue;
     if (prev)
       prev->nextInSectionGroup = s;
@@ -457,7 +457,7 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
           d += s.size() + 1;
         }
       }
-      this->sections[i] = &InputSection::discarded;
+      this->sections[i] = discardedInputSection();
       continue;
     }
 
@@ -467,7 +467,7 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
     // executables.
     if (sec.sh_type == SHT_AARCH64_MEMTAG_GLOBALS_STATIC &&
         !canHaveMemtagGlobals()) {
-      this->sections[i] = &InputSection::discarded;
+      this->sections[i] = discardedInputSection();
       continue;
     }
 
@@ -499,7 +499,7 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
       if (secIndex >= size)
         fatal(toString(this) +
               ": invalid section index in group: " + Twine(secIndex));
-      this->sections[secIndex] = &InputSection::discarded;
+      this->sections[secIndex] = discardedInputSection();
     }
   }
 
@@ -689,7 +689,7 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
   uint64_t size = objSections.size();
   SmallVector<ArrayRef<Elf_Word>, 0> selectedGroups;
   for (size_t i = 0; i != size; ++i) {
-    if (this->sections[i] == &InputSection::discarded)
+    if (this->sections[i] == discardedInputSection())
       continue;
     const Elf_Shdr &sec = objSections[i];
 
@@ -714,14 +714,14 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
                "] with sh_link=0 "
                "(likely created using objcopy or ld -r)");
       }
-      this->sections[i] = &InputSection::discarded;
+      this->sections[i] = discardedInputSection();
       continue;
     }
 
     switch (sec.sh_type) {
     case SHT_GROUP: {
       if (!config->relocatable)
-        sections[i] = &InputSection::discarded;
+        sections[i] = discardedInputSection();
       StringRef signature =
           cantFail(this->getELFSyms<ELFT>()[sec.sh_info].getName(stringTable));
       ArrayRef<Elf_Word> entries =
@@ -758,7 +758,7 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
   //    section that has not yet been created. For simplicity, delay creation of
   //    relocation sections until now.
   for (size_t i = 0; i != size; ++i) {
-    if (this->sections[i] == &InputSection::discarded)
+    if (this->sections[i] == discardedInputSection())
       continue;
     const Elf_Shdr &sec = objSections[i];
 
@@ -912,7 +912,7 @@ InputSectionBase *ObjFile<ELFT>::getRelocTarget(uint32_t idx,
     // Strictly speaking, a relocation section must be included in the
     // group of the section it relocates. However, LLVM 3.3 and earlier
     // would fail to do so, so we gracefully handle that case.
-    if (target == &InputSection::discarded)
+    if (target == discardedInputSection())
       return nullptr;
 
     if (target != nullptr)
@@ -945,7 +945,7 @@ InputSectionBase *ObjFile<ELFT>::createInputSection(uint32_t idx,
     // executable-ness is controlled solely by command line options,
     // .note.GNU-stack sections are simply ignored.
     if (name == ".note.GNU-stack")
-      return &InputSection::discarded;
+      return discardedInputSection();
 
     // Object files that use processor features such as Intel Control-Flow
     // Enforcement (CET) or AArch64 Branch Target Identification BTI, use a
@@ -957,7 +957,7 @@ InputSectionBase *ObjFile<ELFT>::createInputSection(uint32_t idx,
     // file's .note.gnu.property section.
     if (name == ".note.gnu.property") {
       this->andFeatures = readAndFeatures<ELFT>(InputSection(*this, sec, name));
-      return &InputSection::discarded;
+      return discardedInputSection();
     }
 
     // Split stacks is a feature to support a discontiguous stack,
@@ -968,10 +968,10 @@ InputSectionBase *ObjFile<ELFT>::createInputSection(uint32_t idx,
       if (config->relocatable) {
         error(
             "cannot mix split-stack and non-split-stack in a relocatable link");
-        return &InputSection::discarded;
+        return discardedInputSection();
       }
       this->splitStack = true;
-      return &InputSection::discarded;
+      return discardedInputSection();
     }
 
     // An object file compiled for split stack, but where some of the
@@ -979,14 +979,14 @@ InputSectionBase *ObjFile<ELFT>::createInputSection(uint32_t idx,
     // include a .note.GNU-no-split-stack section.
     if (name == ".note.GNU-no-split-stack") {
       this->someNoSplitStack = true;
-      return &InputSection::discarded;
+      return discardedInputSection();
     }
 
     // Drop any inbound .note.gnu.build-id so the output ends up with a
     // single synthesised one. Relocatable links (`-r --build-id`) are the
     // common way these creep into otherwise pristine object files.
     if (name == ".note.gnu.build-id")
-      return &InputSection::discarded;
+      return discardedInputSection();
   }
 
   // `.neverc.overrides` content is parsed eagerly during ObjFile::parse(),
@@ -994,7 +994,7 @@ InputSectionBase *ObjFile<ELFT>::createInputSection(uint32_t idx,
   // reaches the final binary.
   if (name == neverc::OverrideNames::ELFSectionName ||
       name == neverc::OverrideNames::ELFMarkerSectionName)
-    return &InputSection::discarded;
+    return discardedInputSection();
 
   // The linker merges EH (exception handling) frames and creates a
   // .eh_frame_hdr section for runtime. So we handle them with a special
@@ -1108,7 +1108,7 @@ void ObjFile<ELFT>::prepareSectionsAndLocals(bool ignoreComdats) {
     StringRef name(stringTable.data() + eSym.st_name);
 
     symbols[i] = reinterpret_cast<Symbol *>(locals + i);
-    if (eSym.st_shndx == SHN_UNDEF || sec == &InputSection::discarded)
+    if (eSym.st_shndx == SHN_UNDEF || sec == discardedInputSection())
       new (symbols[i]) Undefined(this, name, STB_LOCAL, eSym.st_other, type,
                                  /*discardedSecIdx=*/secIdx);
     else
@@ -1155,7 +1155,7 @@ template <class ELFT> void ObjFile<ELFT>::postParse() {
     if (LLVM_UNLIKELY(secIdx >= sections.size()))
       fatal(toString(this) + ": invalid section index: " + Twine(secIdx));
     InputSectionBase *sec = sections[secIdx];
-    if (sec == &InputSection::discarded) {
+    if (sec == discardedInputSection()) {
       if (sym.traced) {
         printTraceSymbol(Undefined{this, sym.getName(), sym.binding,
                                    sym.stOther, sym.type, secIdx},

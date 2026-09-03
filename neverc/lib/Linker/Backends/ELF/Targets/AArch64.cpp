@@ -1036,7 +1036,7 @@ void linker::elf::createTaggedSymbols(
       continue;
     for (InputSectionBase *section : file->getSections()) {
       if (!section || section->type != SHT_AARCH64_MEMTAG_GLOBALS_STATIC ||
-          section == &InputSection::discarded)
+          section == discardedInputSection())
         continue;
       dispatchByFormat(addTaggedSymbolReferences, *section,
                        taggedSymbolReferenceCount);

@@ -1938,7 +1938,7 @@ readAddressAreas(DWARFContext &dwarf, InputSection *sec) {
         continue;
       // Range list with zero size has no effect.
       InputSectionBase *s = sections[r.SectionIndex];
-      if (s && s != &InputSection::discarded && s->isLive())
+      if (s && s != discardedInputSection() && s->isLive())
         if (r.LowPC != r.HighPC)
           ret.push_back({cast<InputSection>(s), r.LowPC, r.HighPC, cuIdx});
     }
