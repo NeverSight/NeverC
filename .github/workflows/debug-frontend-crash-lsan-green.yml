@@ -66,7 +66,6 @@ jobs:
       - name: Build focused binaries
         run: |
           cmake --build build --config "${{ env.BUILD_TYPE }}" --target \
-            neverc-plugin-conformance \
             neverc-plugin-frontend-tests
 
       - name: Require all frontend fatal-recovery contracts
@@ -80,7 +79,9 @@ jobs:
             --gtest_filter='PluginFrontendTimeTraceInteropTest.*' \
             --gtest_color=no
 
-      - name: Require strict global-state contract
+      # Sanitizer executables do not retain the complete writable-symbol
+      # sentinels required by the binary audit. Run the checker's own contract
+      # suite here; the full artifact audit remains in plugin-conformance CI.
+      - name: Require global-state checker self-tests
         run: |
-          python3 neverc/utils/plugin-api/check-global-state.py \
-            --build-dir build --strict
+          python3 neverc/utils/plugin-api/tests/test-check-global-state.py
