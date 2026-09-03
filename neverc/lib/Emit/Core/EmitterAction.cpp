@@ -33,6 +33,7 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/LTO/LTOBackend.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TimeProfiler.h"
@@ -41,6 +42,7 @@
 #include "llvm/Transforms/IPO/Internalize.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include <optional>
+#include <utility>
 using namespace neverc;
 using namespace llvm;
 
@@ -81,6 +83,54 @@ private:
 };
 
 namespace {
+
+template <typename T> class CrashRecoveryOwnedValue {
+public:
+  template <typename... Args>
+  explicit CrashRecoveryOwnedValue(Args &&...Arguments) {
+    if (llvm::CrashRecoveryContext::GetCurrent()) {
+      CrashOwned = std::make_unique<T>(std::forward<Args>(Arguments)...);
+      Active = CrashOwned.get();
+      CrashCleanup.emplace(Active);
+    } else {
+      Local.emplace(std::forward<Args>(Arguments)...);
+      Active = &*Local;
+    }
+  }
+
+  CrashRecoveryOwnedValue(const CrashRecoveryOwnedValue &) = delete;
+  CrashRecoveryOwnedValue &operator=(const CrashRecoveryOwnedValue &) = delete;
+  CrashRecoveryOwnedValue(CrashRecoveryOwnedValue &&) = delete;
+  CrashRecoveryOwnedValue &operator=(CrashRecoveryOwnedValue &&) = delete;
+
+  T &get() const { return *Active; }
+
+private:
+  std::optional<T> Local;
+  std::unique_ptr<T> CrashOwned;
+  std::optional<llvm::CrashRecoveryContextCleanupRegistrar<T>> CrashCleanup;
+  T *Active = nullptr;
+};
+
+class DiagnosticHandlerScope {
+public:
+  DiagnosticHandlerScope(LLVMContext &Context,
+                         std::unique_ptr<DiagnosticHandler> Handler)
+      : Context(Context), Previous(Context.getDiagnosticHandler()) {
+    Context.setDiagnosticHandler(std::move(Handler));
+  }
+
+  ~DiagnosticHandlerScope() noexcept {
+    Context.setDiagnosticHandler(std::move(Previous));
+  }
+
+  DiagnosticHandlerScope(const DiagnosticHandlerScope &) = delete;
+  DiagnosticHandlerScope &operator=(const DiagnosticHandlerScope &) = delete;
+
+private:
+  LLVMContext &Context;
+  std::unique_ptr<DiagnosticHandler> Previous;
+};
 
 void reportOptRecordError(Error E, DiagnosticsEngine &Diags,
                           const CodeGenOptions &CodeGenOpts) {
@@ -396,10 +446,8 @@ void EmitterConsumer::ProcessTranslationUnit(TreeContext &C) {
     return;
 
   LLVMContext &Ctx = getModule()->getContext();
-  std::unique_ptr<DiagnosticHandler> OldDiagnosticHandler =
-      Ctx.getDiagnosticHandler();
-  Ctx.setDiagnosticHandler(
-      std::make_unique<NeverCDiagnosticHandler>(CodeGenOpts, this));
+  CrashRecoveryOwnedValue<DiagnosticHandlerScope> DiagnosticScope(
+      Ctx, std::make_unique<NeverCDiagnosticHandler>(CodeGenOpts, this));
 
   llvm::Expected<std::unique_ptr<llvm::ToolOutputFile>> OptRecordFileOrErr =
       setupLLVMOptimizationRemarks(
@@ -437,8 +485,6 @@ void EmitterConsumer::ProcessTranslationUnit(TreeContext &C) {
                    C.getTargetInfo().getDataLayoutString(), getModule(), Action,
                    FS, std::move(AsmOutStream), this, PluginTask,
                    DynCodeCtx ? &DynCodeCtx->options() : nullptr);
-
-  Ctx.setDiagnosticHandler(std::move(OldDiagnosticHandler));
 
   if (OptRecordFile)
     OptRecordFile->keep();

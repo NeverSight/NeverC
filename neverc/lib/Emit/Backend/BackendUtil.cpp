@@ -1704,7 +1704,7 @@ void neverc::genBackendOutput(
   llvm::TimeTraceScope TimeScope("Backend");
 
   CrashRecoveryOwnedValue<GenAssemblyHelper> AsmHelperOwner(
-      Diags, HeaderOpts, CGOpts, TOpts, LOpts, M, VFS, PluginTask,
+      Diags, HeaderOpts, CGOpts, TOpts, LOpts, M, std::move(VFS), PluginTask,
       DynCodeOpts);
   GenAssemblyHelper &AsmHelper = AsmHelperOwner.get();
   AsmHelper.genAssembly(Action, std::move(OS), BC);

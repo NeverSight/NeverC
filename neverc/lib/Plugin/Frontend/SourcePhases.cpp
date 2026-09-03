@@ -1322,6 +1322,9 @@ Error PluginSourcePhaseRuntime::runParserPhase(Sema &SemanticAnalyzer,
   if (!Stream.Payload)
     return createStringError(inconvertibleErrorCode(),
                              "parser phase has no token-stream input");
+  const void *StreamPayload = Stream.Payload;
+  const uint64_t StreamGeneration = Stream.Generation;
+  Stream.Type.reset();
   PrepPluginHooks *SavedPrepHooks = nullptr;
   bool RestorePrepHooks = false;
   bool ParserInputInitialized = false;
@@ -1332,7 +1335,7 @@ Error PluginSourcePhaseRuntime::runParserPhase(Sema &SemanticAnalyzer,
     auto &MutableStream =
         *const_cast<prep_bridge_detail::PrepTokenStreamArtifact *>(
             static_cast<const prep_bridge_detail::PrepTokenStreamArtifact *>(
-                Stream.Payload));
+                StreamPayload));
     std::vector<Token> Tokens;
     Tokens.reserve(MutableStream.Tokens.size());
     State->AttachedPrep->InitMainInput();
@@ -1366,8 +1369,8 @@ Error PluginSourcePhaseRuntime::runParserPhase(Sema &SemanticAnalyzer,
           State->Executor->hasBindings(prepTokenPhaseID()));
   });
   auto StreamView = State->Executor->createArtifactView(
-      State->Task, prepTokenStreamArtifactID(), Stream.Payload,
-      Stream.Generation);
+      State->Task, prepTokenStreamArtifactID(), StreamPayload,
+      StreamGeneration);
   if (!StreamView)
     return StreamView.takeError();
   auto ReleaseStream = make_scope_exit([&] {
@@ -1396,8 +1399,11 @@ Error PluginSourcePhaseRuntime::runParserPhase(Sema &SemanticAnalyzer,
   if (!Published.Payload)
     return createStringError(inconvertibleErrorCode(),
                              "parser phase published no AST unit");
+  const void *PublishedPayload = Published.Payload;
+  const uint64_t PublishedGeneration = Published.Generation;
+  Published.Type.reset();
   auto &AST = *const_cast<ASTUnitArtifact *>(
-      static_cast<const ASTUnitArtifact *>(Published.Payload));
+      static_cast<const ASTUnitArtifact *>(PublishedPayload));
   if (AST.Context != &SemanticAnalyzer.getTreeContext() ||
       AST.TranslationUnit !=
           SemanticAnalyzer.getTreeContext().getTranslationUnitDecl())
@@ -1405,8 +1411,7 @@ Error PluginSourcePhaseRuntime::runParserPhase(Sema &SemanticAnalyzer,
                              "parser AST unit belongs to another tree context");
 
   auto ASTView = State->Executor->createArtifactView(
-      State->Task, astUnitArtifactID(), Published.Payload,
-      Published.Generation);
+      State->Task, astUnitArtifactID(), PublishedPayload, PublishedGeneration);
   if (!ASTView)
     return ASTView.takeError();
   auto ReleaseAST = make_scope_exit([&] {
@@ -1434,6 +1439,7 @@ Error PluginSourcePhaseRuntime::runParserPhase(Sema &SemanticAnalyzer,
                              "Sema phase published no semantic unit");
   const auto &Analyzed =
       *static_cast<const SemanticUnitArtifact *>(Semantic.Payload);
+  Semantic.Type.reset();
   if (Analyzed.Context != AST.Context ||
       Analyzed.TranslationUnit != AST.TranslationUnit)
     return createStringError(
