@@ -14,6 +14,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Config/config.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
@@ -27,6 +28,9 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <memory>
+#include <string>
+
 #include <sys/stat.h>
 #if defined(HAVE_UNISTD_H)
 #include <unistd.h>
@@ -38,6 +42,53 @@
 using namespace llvm;
 
 namespace llvm {
+
+void report_fatal_error(const Twine &Reason, bool GenCrashDiag) {
+  llvm::fatal_error_handler_t Handler = nullptr;
+  void *HandlerData = nullptr;
+  if (ScopedThreadLocalFatalErrorHandler::currentFrame()) {
+    Handler = ScopedThreadLocalFatalErrorHandler::currentFrame()->Handler;
+    HandlerData =
+        ScopedThreadLocalFatalErrorHandler::currentFrame()->UserData;
+  } else {
+#if LLVM_ENABLE_THREADS == 1
+    LLVM_MUTEX_LOCK(&ErrorHandlerMutex);
+#endif
+    Handler = ErrorHandler;
+    HandlerData = ErrorHandlerUserData;
+#if LLVM_ENABLE_THREADS == 1
+    LLVM_MUTEX_UNLOCK(&ErrorHandlerMutex);
+#endif
+  }
+
+  if (Handler) {
+    // A recovery handler may transfer control with setjmp/longjmp, bypassing
+    // this frame's automatic destructors. Give the rendered message an
+    // explicit CRC owner for that path; if the handler returns normally, first
+    // unregister that owner and then release the message after the callback
+    // has finished consuming its C string.
+    auto Message = std::make_unique<std::string>(Reason.str());
+    CrashRecoveryContextCleanupRegistrar<std::string> MessageCleanup(
+        Message.get());
+    Handler(HandlerData, Message->c_str(), GenCrashDiag);
+    MessageCleanup.unregister();
+    Message.reset();
+  } else {
+    const char Prefix[] = "LLVM ERROR: ";
+    (void)!::write(2, Prefix, sizeof(Prefix) - 1);
+    std::string Message = Reason.str();
+    (void)!::write(2, Message.data(), Message.size());
+    (void)!::write(2, "\n", 1);
+  }
+
+  sys::RunInterruptHandlers();
+
+  if (GenCrashDiag)
+    abort();
+  else
+    exit(1);
+}
+
 namespace cl {
 
 template class basic_parser<bool>;

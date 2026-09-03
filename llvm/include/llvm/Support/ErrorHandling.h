@@ -19,7 +19,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
 #include <string>
 
 namespace llvm {
@@ -258,7 +257,6 @@ void PrintStackTrace(raw_ostream &OS, int Depth);
 
 /*== Inline implementations (moved from cpp_bridge.cpp) ==*/
 
-#include "llvm/Support/CrashRecoveryContext.h"
 #include <new>
 #include <string.h>
 #if defined(_MSC_VER)
@@ -403,51 +401,6 @@ inline void report_fatal_error(const char *Reason, bool GenCrashDiag) {
 
 inline void report_fatal_error(StringRef Reason, bool GenCrashDiag) {
   report_fatal_error(Twine(Reason), GenCrashDiag);
-}
-
-inline void report_fatal_error(const Twine &Reason, bool GenCrashDiag) {
-  llvm::fatal_error_handler_t handler = 0;
-  void *handlerData = 0;
-  if (ScopedThreadLocalFatalErrorHandler::currentFrame()) {
-    handler = ScopedThreadLocalFatalErrorHandler::currentFrame()->Handler;
-    handlerData = ScopedThreadLocalFatalErrorHandler::currentFrame()->UserData;
-  } else {
-#if LLVM_ENABLE_THREADS == 1
-    LLVM_MUTEX_LOCK(&ErrorHandlerMutex);
-#endif
-    handler = ErrorHandler;
-    handlerData = ErrorHandlerUserData;
-#if LLVM_ENABLE_THREADS == 1
-    LLVM_MUTEX_UNLOCK(&ErrorHandlerMutex);
-#endif
-  }
-
-  if (handler) {
-    // A recovery handler may transfer control with setjmp/longjmp, bypassing
-    // this frame's automatic destructors. Give the rendered message an
-    // explicit CRC owner for that path; if the handler returns normally, first
-    // unregister that owner and then release the message after the callback
-    // has finished consuming its C string.
-    auto Message = std::make_unique<std::string>(Reason.str());
-    CrashRecoveryContextCleanupRegistrar<std::string> MessageCleanup(
-        Message.get());
-    handler(handlerData, Message->c_str(), GenCrashDiag);
-    MessageCleanup.unregister();
-    Message.reset();
-  } else {
-    const char prefix[] = "LLVM ERROR: ";
-    (void)!::write(2, prefix, sizeof(prefix) - 1);
-    std::string msg = Reason.str();
-    (void)!::write(2, msg.data(), msg.size());
-    (void)!::write(2, "\n", 1);
-  }
-
-  sys::RunInterruptHandlers();
-
-  if (GenCrashDiag)
-    abort();
-  else
-    exit(1);
 }
 
 inline void install_bad_alloc_error_handler(fatal_error_handler_t handler,
