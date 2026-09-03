@@ -2075,7 +2075,14 @@
         "print_defaults": "neverc_flag_print_defaults",
         "reset": "neverc_flag_reset",
         "arg": "neverc_flag_arg",
-        "parsed": "neverc_flag_parsed"
+        "parsed": "neverc_flag_parsed",
+        "int64": "neverc_flag_int64",
+        "lookup": "neverc_flag_lookup",
+        "nflag": "neverc_flag_nflag",
+        "set": "neverc_flag_set",
+        "uint64": "neverc_flag_uint64",
+        "visit": "neverc_flag_visit",
+        "visit_all": "neverc_flag_visit_all"
       }
     },
     "log": {
