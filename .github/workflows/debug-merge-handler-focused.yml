@@ -1,0 +1,81 @@
+name: debug-merge-handler-focused
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags:
+      - "debug-merge-handler-focused-*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanitize:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sanitizer: "Address;Undefined"
+            label: asan-ubsan
+          - sanitizer: "Thread"
+            label: tsan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      LLVM_APT_VER: "22"
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - name: Checkout diagnostic commit
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Setup sccache
+        uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
+
+      - name: Setup build dependencies
+        run: |
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+
+      - name: Configure ${{ matrix.label }}
+        run: |
+          cmake -GNinja -Bbuild \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+            -DLLVM_USE_SANITIZER="${{ matrix.sanitizer }}" \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DCMAKE_BUILD_TYPE="${{ env.BUILD_TYPE }}" \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+
+      - name: Build merge tests
+        run: |
+          cmake --build build --config "${{ env.BUILD_TYPE }}" \
+            --target neverc-merge-tests
+
+      - name: Run fatal-handler isolation test
+        env:
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/neverc/.github/plugin-sanitizers.lsan
+        run: |
+          build/bin/neverc-merge-tests \
+            --gtest_filter='MergeRuntime.OrdinaryMergesDoNotInstallProcessFatalHandler' \
+            --gtest_color=no
+
+      - name: Show sccache statistics
+        if: always()
+        run: sccache --show-stats || true
