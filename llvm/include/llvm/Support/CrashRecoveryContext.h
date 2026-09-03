@@ -261,6 +261,10 @@ public:
 
   ~CrashRecoveryContextCleanupRegistrar() { unregister(); }
 
+  bool cleanupFired() const noexcept {
+    return cleanup && cleanup->cleanupFired;
+  }
+
   void unregister() {
     if (cleanup && !cleanup->cleanupFired)
       cleanup->getContext()->unregisterCleanup(cleanup);

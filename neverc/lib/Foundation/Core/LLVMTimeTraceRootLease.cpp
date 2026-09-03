@@ -258,10 +258,18 @@ LLVMTimeTraceRootLease::LLVMTimeTraceRootLease() {
 
 LLVMTimeTraceRootLease::~LLVMTimeTraceRootLease() {
   // The normal path must unregister before deleting the resource. On a fatal
-  // path this frame is abandoned and the recovery context's delete cleanup is
-  // the sole owner of the heap participant.
+  // path this frame is usually abandoned and the recovery context's delete
+  // cleanup is the sole owner of the heap participant. An enclosing
+  // crash-owned aggregate can nevertheless destroy this lease from a later
+  // cleanup. In that case the participant cleanup may already have fired, so
+  // release the stale unique_ptr instead of deleting the participant twice.
+  const bool ParticipantWasRecovered =
+      ParticipantCleanup && ParticipantCleanup->cleanupFired();
   ParticipantCleanup.reset();
-  CrashParticipant.reset();
+  if (ParticipantWasRecovered)
+    (void)CrashParticipant.release();
+  else
+    CrashParticipant.reset();
   Active = nullptr;
 }
 
