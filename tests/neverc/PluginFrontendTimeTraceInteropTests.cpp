@@ -82,8 +82,7 @@ struct BackendFatalOptionState {
 std::optional<BackendFatalOptionState> captureBackendFatalOptions() {
   auto *PrintBefore = findTopLevelOption<bool>("print-before-all");
   auto *PrintAfter = findTopLevelOption<bool>("print-after-all");
-  auto *DumpDirectory =
-      findTopLevelOption<std::string>("ir-dump-directory");
+  auto *DumpDirectory = findTopLevelOption<std::string>("ir-dump-directory");
   if (!PrintBefore || !PrintAfter || !DumpDirectory)
     return std::nullopt;
   return BackendFatalOptionState{
@@ -550,6 +549,68 @@ constexpr llvm::StringLiteral AnalysisFatalTimerName =
     "NevercAnalysisFatalTimerRecord";
 constexpr llvm::StringLiteral AnalysisFreshTimerName =
     "NevercAnalysisFreshTimerRecord";
+constexpr int InvalidatedPrintIRRecoveryCode = 111;
+
+class NevercInvalidatedPrintIRPass
+    : public llvm::PassInfoMixin<NevercInvalidatedPrintIRPass> {
+public:
+  static bool isRequired() { return true; }
+};
+
+int runInvalidatedPrintIRFatalProbe() {
+  auto *PrintBefore = findTopLevelOption<bool>("print-before-all");
+  auto *PrintAfter = findTopLevelOption<bool>("print-after-all");
+  auto *DumpDirectory = findTopLevelOption<std::string>("ir-dump-directory");
+  if (!PrintBefore || !PrintAfter || !DumpDirectory)
+    return recoveryProbeFailure(111, "missing PrintIR options");
+
+  llvm::SmallString<128> DumpBlocker;
+  if (llvm::sys::fs::createTemporaryFile("neverc-invalidated-ir-dump-blocker",
+                                         "file", DumpBlocker))
+    return recoveryProbeFailure(112, "could not create dump blocker");
+  llvm::FileRemover RemoveDumpBlocker(DumpBlocker);
+  const std::string DumpRoot = DumpBlocker.str().str() + "/child";
+
+  // This helper runs only inside EXPECT_EXIT. Keep these process-global option
+  // mutations child-local; an in-process caller would need the option gate and
+  // an exact value/occurrence snapshot.
+  *PrintBefore = false;
+  *PrintAfter = true;
+  *DumpDirectory = DumpRoot;
+
+  llvm::LLVMContext Context;
+  llvm::Module Module("neverc-invalidated-print-ir-module", Context);
+  llvm::PrintIRInstrumentation Printer;
+  llvm::PassInstrumentationCallbacks Callbacks;
+  Printer.registerCallbacks(Callbacks);
+  llvm::PassInstrumentation Instrumentation(&Callbacks);
+  NevercInvalidatedPrintIRPass ProbePass;
+
+  llvm::CrashRecoveryContext::Enable();
+  auto DisableCrashRecovery =
+      llvm::make_scope_exit([] { llvm::CrashRecoveryContext::Disable(); });
+  RoutedFatalHandlerProbe FatalProbe{InvalidatedPrintIRRecoveryCode};
+  llvm::ScopedThreadLocalFatalErrorHandler FatalHandler(routedFatalHandler,
+                                                        &FatalProbe);
+
+  bool CompletedNormally = false;
+  int RecoveryCode = 0;
+  {
+    llvm::CrashRecoveryContext CRC;
+    CompletedNormally = CRC.RunSafely([&] {
+      if (!Instrumentation.runBeforePass<llvm::Module>(ProbePass, Module))
+        CRC.HandleExit(113);
+      Instrumentation.runAfterPassInvalidated<llvm::Module>(
+          ProbePass, llvm::PreservedAnalyses::none());
+    });
+    RecoveryCode = CRC.RetCode;
+  }
+
+  if (CompletedNormally || RecoveryCode != InvalidatedPrintIRRecoveryCode ||
+      FatalProbe.Calls != 1)
+    return recoveryProbeFailure(114, "invalidated PrintIR recovery changed");
+  return 0;
+}
 
 class NevercPassBodyFatalTimerPass
     : public llvm::PassInfoMixin<NevercPassBodyFatalTimerPass> {
@@ -886,7 +947,8 @@ int runBackendFatalRecoveryProbe(bool EnableAfterPrinting,
                                  bool UsePluginSession = false,
                                  bool VerifyOutputRecovery = false,
                                  bool VerifyAmbientHandlerIsolation = false,
-                                 bool VerifyAmbientThreadLocalHandler = false) {
+                                 bool VerifyAmbientThreadLocalHandler = false,
+                                 bool EnableBeforePrinting = true) {
   if (!initializeNativeCodegen())
     return recoveryProbeFailure(237, "could not initialize native target");
   if (llvm::timeTraceProfilerEnabled())
@@ -1061,19 +1123,15 @@ int runBackendFatalRecoveryProbe(bool EnableAfterPrinting,
   const std::string HostTriple = llvm::sys::getDefaultTargetTriple();
   const char *const DebugPassValue =
       UseInvalidBackendOption ? "neverc-invalid-debug-pass" : "Structure";
-  std::vector<const char *> FatalArgs = {"-triple",
-                                         HostTriple.c_str(),
-                                         "-emit-obj",
-                                         "-O1",
-                                         "-ftime-report",
-                                         "-mdebug-pass",
-                                         DebugPassValue,
-                                         "-mlimit-float-precision",
-                                         "12",
-                                         "-o",
-                                         FailedFiles.Output.c_str(),
-                                         "-mllvm",
-                                         "-print-before-all"};
+  std::vector<const char *> FatalArgs = {
+      "-triple",      HostTriple.c_str(),        "-emit-obj",
+      "-O1",          "-ftime-report",           "-mdebug-pass",
+      DebugPassValue, "-mlimit-float-precision", "12",
+      "-o",           FailedFiles.Output.c_str()};
+  if (EnableBeforePrinting) {
+    FatalArgs.push_back("-mllvm");
+    FatalArgs.push_back("-print-before-all");
+  }
   if (EnableAfterPrinting) {
     FatalArgs.push_back("-mllvm");
     FatalArgs.push_back("-print-after-all");
@@ -1590,6 +1648,26 @@ TEST(PluginFrontendTimeTraceInteropTest,
   EXPECT_EXIT(std::exit(runBackendFatalRecoveryProbe(
                   /*EnableAfterPrinting=*/true)),
               ::testing::ExitedWithCode(0), "Failed to create directory");
+}
+
+TEST(PluginFrontendTimeTraceInteropTest,
+     BackendFatalAfterOnlyRestoresPassStateWithoutLeaks) {
+  EXPECT_EXIT(std::exit(runBackendFatalRecoveryProbe(
+                  /*EnableAfterPrinting=*/true,
+                  /*ParallelSafe=*/false,
+                  /*UseInvalidBackendOption=*/false,
+                  /*UsePluginSession=*/false,
+                  /*VerifyOutputRecovery=*/false,
+                  /*VerifyAmbientHandlerIsolation=*/false,
+                  /*VerifyAmbientThreadLocalHandler=*/false,
+                  /*EnableBeforePrinting=*/false)),
+              ::testing::ExitedWithCode(0), "Failed to create directory");
+}
+
+TEST(PluginFrontendTimeTraceInteropTest,
+     InvalidatedPassFatalRestoresDumpStateWithoutLeaks) {
+  EXPECT_EXIT(std::exit(runInvalidatedPrintIRFatalProbe()),
+              ::testing::ExitedWithCode(0), "");
 }
 
 TEST(PluginFrontendTimeTraceInteropTest,
