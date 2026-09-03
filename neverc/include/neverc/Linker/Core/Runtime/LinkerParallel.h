@@ -7,6 +7,7 @@
 #include "llvm/Support/Parallel.h"
 #include "llvm/Support/ThreadPool.h"
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <iterator>
 #include <memory>
@@ -161,8 +162,77 @@ void parallelForEachWithContext(Range &&Values, Function &&Fn) {
                              std::forward<Function>(Fn));
 }
 
+namespace detail {
+
+constexpr std::ptrdiff_t MinParallelSortSize = 1024;
+
+template <typename RandomAccessIterator, typename Comparator>
+RandomAccessIterator medianOfThree(RandomAccessIterator Begin,
+                                   RandomAccessIterator End,
+                                   const Comparator &Compare) {
+  RandomAccessIterator Middle = Begin + std::distance(Begin, End) / 2;
+  return Compare(*Begin, *(End - 1))
+             ? (Compare(*Middle, *(End - 1))
+                    ? (Compare(*Begin, *Middle) ? Middle : Begin)
+                    : End - 1)
+             : (Compare(*Middle, *Begin)
+                    ? (Compare(*(End - 1), *Middle) ? Middle : End - 1)
+                    : Begin);
+}
+
+template <typename RandomAccessIterator, typename Comparator>
+void parallelQuickSort(RandomAccessIterator Begin, RandomAccessIterator End,
+                       const Comparator &Compare, LinkerTaskGroup &Group,
+                       size_t Depth) {
+  if (std::distance(Begin, End) < MinParallelSortSize || Depth == 0) {
+    llvm::sort(Begin, End, Compare);
+    return;
+  }
+
+  RandomAccessIterator Pivot = medianOfThree(Begin, End, Compare);
+  std::swap(*(End - 1), *Pivot);
+  Pivot = std::partition(Begin, End - 1,
+                         [&Compare, End](decltype(*Begin) Value) {
+                           return Compare(Value, *(End - 1));
+                         });
+  std::swap(*Pivot, *(End - 1));
+
+  Group.spawn([Begin, Pivot, &Compare, &Group, Depth] {
+    parallelQuickSort(Begin, Pivot, Compare, Group, Depth - 1);
+  });
+  parallelQuickSort(Pivot + 1, End, Compare, Group, Depth - 1);
+}
+
+template <typename RandomAccessIterator, typename Comparator>
+void parallelSort(RandomAccessIterator Begin, RandomAccessIterator End,
+                  Comparator &&Compare) {
+  const auto ItemCount = std::distance(Begin, End);
+  if (ItemCount < MinParallelSortSize || !parallelEnabled() ||
+      currentLinkerWorkerSlot() != 0) {
+    llvm::sort(Begin, End, std::forward<Comparator>(Compare));
+    return;
+  }
+
+  std::decay_t<Comparator> CompareOwner(std::forward<Comparator>(Compare));
+  LinkerTaskGroup Group;
+  if (!Group.isParallel()) {
+    llvm::sort(Begin, End, CompareOwner);
+    return;
+  }
+
+  size_t Depth = 0;
+  for (auto Remaining = ItemCount; Remaining > 1; Remaining >>= 1)
+    ++Depth;
+  parallelQuickSort(Begin, End, CompareOwner, Group, Depth);
+  Group.sync();
+}
+
+} // namespace detail
+
 template <typename Range> void parallelSortWithContext(Range &&Values) {
-  llvm::sort(std::begin(Values), std::end(Values));
+  using Iterator = decltype(std::begin(Values));
+  using Value = typename std::iterator_traits<Iterator>::value_type;
+  detail::parallelSort(std::begin(Values), std::end(Values), std::less<Value>());
 }
 
 template <typename First, typename Second>
@@ -171,22 +241,25 @@ void parallelSortWithContext(First &&FirstValue, Second &&SecondValue) {
     using Element =
         decltype(*std::begin(std::declval<std::decay_t<First> &>()));
     if constexpr (std::is_invocable_v<std::decay_t<Second>, Element, Element>) {
-      llvm::sort(std::begin(FirstValue), std::end(FirstValue),
-                 std::forward<Second>(SecondValue));
+      detail::parallelSort(std::begin(FirstValue), std::end(FirstValue),
+                           std::forward<Second>(SecondValue));
     } else {
       llvm::sort(std::forward<First>(FirstValue),
                  std::forward<Second>(SecondValue));
     }
   } else {
-    llvm::sort(std::forward<First>(FirstValue),
-               std::forward<Second>(SecondValue));
+    using Iterator = std::decay_t<First>;
+    using Value = typename std::iterator_traits<Iterator>::value_type;
+    detail::parallelSort(std::forward<First>(FirstValue),
+                         std::forward<Second>(SecondValue),
+                         std::less<Value>());
   }
 }
 
 template <typename Iterator, typename Comparator>
 void parallelSortWithContext(Iterator Begin, Iterator End,
                              Comparator &&Compare) {
-  llvm::sort(Begin, End, std::forward<Comparator>(Compare));
+  detail::parallelSort(Begin, End, std::forward<Comparator>(Compare));
 }
 
 } // namespace linker
