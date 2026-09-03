@@ -886,7 +886,8 @@ int runBackendFatalRecoveryProbe(bool EnableAfterPrinting,
                                  bool UsePluginSession = false,
                                  bool VerifyOutputRecovery = false,
                                  bool VerifyAmbientHandlerIsolation = false,
-                                 bool VerifyAmbientThreadLocalHandler = false) {
+                                 bool VerifyAmbientThreadLocalHandler = false,
+                                 bool EnableBeforePrinting = true) {
   if (!initializeNativeCodegen())
     return recoveryProbeFailure(237, "could not initialize native target");
   if (llvm::timeTraceProfilerEnabled())
@@ -1061,19 +1062,14 @@ int runBackendFatalRecoveryProbe(bool EnableAfterPrinting,
   const std::string HostTriple = llvm::sys::getDefaultTargetTriple();
   const char *const DebugPassValue =
       UseInvalidBackendOption ? "neverc-invalid-debug-pass" : "Structure";
-  std::vector<const char *> FatalArgs = {"-triple",
-                                         HostTriple.c_str(),
-                                         "-emit-obj",
-                                         "-O1",
-                                         "-ftime-report",
-                                         "-mdebug-pass",
-                                         DebugPassValue,
-                                         "-mlimit-float-precision",
-                                         "12",
-                                         "-o",
-                                         FailedFiles.Output.c_str(),
-                                         "-mllvm",
-                                         "-print-before-all"};
+  std::vector<const char *> FatalArgs = {
+      "-triple", HostTriple.c_str(), "-emit-obj", "-O1", "-ftime-report",
+      "-mdebug-pass", DebugPassValue, "-mlimit-float-precision", "12", "-o",
+      FailedFiles.Output.c_str()};
+  if (EnableBeforePrinting) {
+    FatalArgs.push_back("-mllvm");
+    FatalArgs.push_back("-print-before-all");
+  }
   if (EnableAfterPrinting) {
     FatalArgs.push_back("-mllvm");
     FatalArgs.push_back("-print-after-all");
@@ -1589,6 +1585,20 @@ TEST(PluginFrontendTimeTraceInteropTest,
      BackendFatalWithAfterPrintingClearsPendingInstrumentation) {
   EXPECT_EXIT(std::exit(runBackendFatalRecoveryProbe(
                   /*EnableAfterPrinting=*/true)),
+              ::testing::ExitedWithCode(0), "Failed to create directory");
+}
+
+TEST(PluginFrontendTimeTraceInteropTest,
+     BackendFatalAfterOnlyRestoresPassStateWithoutLeaks) {
+  EXPECT_EXIT(std::exit(runBackendFatalRecoveryProbe(
+                  /*EnableAfterPrinting=*/true,
+                  /*ParallelSafe=*/false,
+                  /*UseInvalidBackendOption=*/false,
+                  /*UsePluginSession=*/false,
+                  /*VerifyOutputRecovery=*/false,
+                  /*VerifyAmbientHandlerIsolation=*/false,
+                  /*VerifyAmbientThreadLocalHandler=*/false,
+                  /*EnableBeforePrinting=*/false)),
               ::testing::ExitedWithCode(0), "Failed to create directory");
 }
 
