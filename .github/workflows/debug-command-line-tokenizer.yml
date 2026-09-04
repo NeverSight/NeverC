@@ -21,6 +21,7 @@ jobs:
       BUILD_TYPE: RelWithDebInfo
       LLVM_APT_VER: "22"
       TEST_COMMIT: d79c75d95c1913704835ef5980b2be865892c946
+      SOURCE_COMMIT: 7becdbc79e7590e9a1c14b5a2eb7fa6903369649
       BASE_COMMIT: f782a6ff7716912223e2df6cc2d6552c814b9747
     steps:
       - name: Checkout diagnostic tag
@@ -35,14 +36,19 @@ jobs:
           set -euo pipefail
           test "$(git -C audit branch --show-current)" = ""
           test "$(git -C audit rev-parse "$TEST_COMMIT^")" = "$BASE_COMMIT"
-          git -C audit merge-base --is-ancestor "$TEST_COMMIT" HEAD
+          git -C audit merge-base --is-ancestor "$TEST_COMMIT" "$SOURCE_COMMIT"
+          git -C audit merge-base --is-ancestor "$SOURCE_COMMIT" HEAD
           git -C audit diff --exit-code
           git -C audit diff --cached --exit-code
           test "$(git -C audit diff-tree --no-commit-id --name-only -r \
             "$BASE_COMMIT" "$TEST_COMMIT")" = \
             'tests/neverc/SupportCommandLineTests.cpp'
+          test "$(git -C audit diff-tree --no-commit-id --name-only -r \
+            "$SOURCE_COMMIT^" "$SOURCE_COMMIT")" = \
+            'llvm/lib/CSupport/CommandLine.c'
           printf '%s\n' \
             '.github/workflows/debug-command-line-tokenizer.yml' \
+            'llvm/lib/CSupport/CommandLine.c' \
             'tests/neverc/SupportCommandLineTests.cpp' |
             sort -u > expected-range-files.txt
           git -C audit diff --name-only "$BASE_COMMIT"..HEAD |
@@ -54,26 +60,29 @@ jobs:
           test "$(git -C audit rev-parse \
             HEAD:llvm/lib/CSupport/CommandLine.c)" = \
             "$(git -C audit rev-parse \
+            "$SOURCE_COMMIT":llvm/lib/CSupport/CommandLine.c)"
+          test "$(git -C audit rev-parse \
+            "$TEST_COMMIT":llvm/lib/CSupport/CommandLine.c)" = \
+            "$(git -C audit rev-parse \
             "$BASE_COMMIT":llvm/lib/CSupport/CommandLine.c)"
 
-      - name: Checkout exact test-only source
+      - name: Checkout exact production source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: d79c75d95c1913704835ef5980b2be865892c946
+          ref: 7becdbc79e7590e9a1c14b5a2eb7fa6903369649
           path: neverc
           fetch-depth: 2
 
-      - name: Verify exact test-only source
+      - name: Verify exact production source
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C neverc branch --show-current)" = ""
-          test "$(git -C neverc rev-parse HEAD)" = "$TEST_COMMIT"
-          test "$(git -C neverc rev-parse HEAD^)" = "$BASE_COMMIT"
+          test "$(git -C neverc rev-parse HEAD)" = "$SOURCE_COMMIT"
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
           test "$(git -C neverc diff-tree --no-commit-id --name-only -r \
-            HEAD^ HEAD)" = 'tests/neverc/SupportCommandLineTests.cpp'
+            HEAD^ HEAD)" = 'llvm/lib/CSupport/CommandLine.c'
 
       - name: Setup sccache
         uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
@@ -143,4 +152,7 @@ jobs:
           diff -u expected-tests.txt actual-tests.txt
           build/bin/neverc-support-tests \
             --gtest_filter='SupportCommandLineTest.CGNUTokenizer*' \
+            --gtest_color=no
+          build/bin/neverc-support-tests \
+            --gtest_filter='SupportCommandLineTest.*' \
             --gtest_color=no
