@@ -27,17 +27,20 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: audit
-          fetch-depth: 3
+          fetch-depth: 0
 
       - name: Verify exact diagnostic tree
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C audit branch --show-current)" = ""
-          test "$(git -C audit rev-parse HEAD^)" = "$TEST_COMMIT"
-          test "$(git -C audit rev-parse HEAD^^)" = "$BASE_COMMIT"
+          test "$(git -C audit rev-parse "$TEST_COMMIT^")" = "$BASE_COMMIT"
+          git -C audit merge-base --is-ancestor "$TEST_COMMIT" HEAD
           git -C audit diff --exit-code
           git -C audit diff --cached --exit-code
+          test "$(git -C audit diff-tree --no-commit-id --name-only -r \
+            "$BASE_COMMIT" "$TEST_COMMIT")" = \
+            'tests/neverc/SupportCommandLineTests.cpp'
           printf '%s\n' \
             '.github/workflows/debug-command-line-tokenizer.yml' \
             'tests/neverc/SupportCommandLineTests.cpp' |
