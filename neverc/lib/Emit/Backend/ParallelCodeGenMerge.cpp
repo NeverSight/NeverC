@@ -35,6 +35,7 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/ModuleSymbolTable.h"
 #include "llvm/Object/SymbolicFile.h"
+#include "llvm/Pass.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Target/TargetMachine.h"
@@ -794,6 +795,13 @@ struct ParallelCGContext {
 
 bool ParallelCGContext::init(Module &Mod, TargetMachine &TM,
                              bool WithSplitDwarf) {
+  // LLVM's legacy pass timers share process-global NamedRegionTimer objects.
+  // Even one parallel-codegen root would race those timers across its worker
+  // threads. Decline before target/split/work analysis, cache access, observer
+  // callbacks, or IR mutation; the caller will use the serial pipeline.
+  if (llvm::TimePassesIsEnabled)
+    return false;
+
   TheTarget = &TM.getTarget();
   TripleStr = Mod.getTargetTriple();
   TT = Triple(TripleStr);

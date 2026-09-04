@@ -2,6 +2,7 @@
 
 #include "Backend/ParallelCodeGenMergeInternal.h"
 #include "ProcessResourceBrokerInternal.h"
+#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
@@ -23,6 +24,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBufferRef.h"
@@ -172,6 +174,38 @@ createLoopDenseModule(LLVMContext &Context, TargetMachine &Machine,
     Builder.CreateRet(Result);
   }
   return M;
+}
+
+std::string moduleIRText(const Module &M) {
+  std::string Text;
+  raw_string_ostream Stream(Text);
+  M.print(Stream, nullptr);
+  Stream.flush();
+  return Text;
+}
+
+void countAllObservations(neverc::ParallelCodeGenObservers &Observers,
+                          std::atomic<unsigned> &Count) {
+  auto Note = [&] { Count.fetch_add(1, std::memory_order_relaxed); };
+  Observers.ObservePartitionExecutionOrder =
+      [Note](neverc::ParallelCodeGenWorkerPhase, ArrayRef<unsigned>) {
+        Note();
+      };
+  Observers.ObserveResourceWorkerGrant =
+      [Note](neverc::ParallelCodeGenWorkerPhase, unsigned, unsigned) {
+        Note();
+      };
+  Observers.ObserveResolvedFinalCodeGenPartitions = [Note](unsigned) {
+    Note();
+  };
+  Observers.ObserveResolvedFinalCodeGenSCEVThreshold = [Note](unsigned) {
+    Note();
+  };
+  Observers.ObserveFinalCodeGenPartitionPipelineTuning =
+      [Note](unsigned, const NevercPipelineTuningOptions &) { Note(); };
+  Observers.ObserveRetention =
+      [Note](neverc::ParallelCodeGenRetentionPoint,
+             neverc::ParallelCodeGenRetentionSnapshot) { Note(); };
 }
 
 class InjectUnloweredTypeTestPass
@@ -2530,4 +2564,201 @@ TEST(ParallelCodeGenCacheTest,
   EXPECT_TRUE(Output.empty());
   EXPECT_EQ(pipelineTuningValues(Context.getNevercPipelineTuningOptions()),
             pipelineTuningValues(PipelineTuning));
+}
+
+TEST(ParallelFrontendTiming,
+     AmbientPassTimingDeclinesConcurrentDirectRootsWithoutIRMutation) {
+  auto &RegisteredOptions = cl::getRegisteredOptions();
+  cl::Option *TimePassesOption = RegisteredOptions.lookup("time-passes");
+  cl::Option *TimePassesPerRunOption =
+      RegisteredOptions.lookup("time-passes-per-run");
+  ASSERT_NE(TimePassesOption, nullptr);
+  ASSERT_NE(TimePassesPerRunOption, nullptr);
+
+  ScopedEnvironmentVariable PCGWorkers("NEVERC_PCG_THREADS", "2");
+  const neverc::ParallelCodeGenTuning Tuning =
+      overlapTuning(/*MaxPartitions=*/2, /*SCEVThreshold=*/41);
+
+  for (bool PerRun : {false, true}) {
+    SCOPED_TRACE(PerRun ? "time-passes-per-run" : "time-passes");
+
+    std::unique_ptr<TargetMachine> CodeGenMachine = createNativeTargetMachine();
+    std::unique_ptr<TargetMachine> OptCodeGenMachine =
+        createNativeTargetMachine();
+    ASSERT_TRUE(CodeGenMachine);
+    ASSERT_TRUE(OptCodeGenMachine);
+
+    LLVMContext CodeGenContext;
+    LLVMContext OptCodeGenContext;
+    std::atomic<unsigned> CodeGenErrors{0};
+    std::atomic<unsigned> OptCodeGenErrors{0};
+    auto CountErrors = [](const DiagnosticInfo &Diagnostic, void *Opaque) {
+      if (Diagnostic.getSeverity() == DS_Error)
+        static_cast<std::atomic<unsigned> *>(Opaque)->fetch_add(
+            1, std::memory_order_relaxed);
+    };
+    CodeGenContext.setDiagnosticHandlerCallBack(CountErrors, &CodeGenErrors);
+    OptCodeGenContext.setDiagnosticHandlerCallBack(CountErrors,
+                                                   &OptCodeGenErrors);
+
+    const char *ModeName = PerRun ? "per-run" : "aggregate";
+    std::unique_ptr<Module> CodeGenModule = createLoopDenseModule(
+        CodeGenContext, *CodeGenMachine,
+        (Twine("ambient-direct-codegen-") + ModeName).str());
+    std::unique_ptr<Module> OptCodeGenModule = createLoopDenseModule(
+        OptCodeGenContext, *OptCodeGenMachine,
+        (Twine("ambient-direct-opt-codegen-") + ModeName).str());
+    const std::string CodeGenBefore = moduleIRText(*CodeGenModule);
+    const std::string OptCodeGenBefore = moduleIRText(*OptCodeGenModule);
+
+    SmallVector<char, 0> CodeGenOutput;
+    SmallVector<char, 0> OptCodeGenOutput;
+    raw_svector_ostream CodeGenStream(CodeGenOutput);
+    raw_svector_ostream OptCodeGenStream(OptCodeGenOutput);
+    RecordingCache CodeGenCache(CodeGenOutput);
+    RecordingCache OptCodeGenCache(OptCodeGenOutput);
+    neverc::PartitionCacheHooks CodeGenCacheHooks = CodeGenCache.hooks();
+    neverc::PartitionCacheHooks OptCodeGenCacheHooks = OptCodeGenCache.hooks();
+
+    std::atomic<unsigned> CodeGenObserverCalls{0};
+    std::atomic<unsigned> OptCodeGenObserverCalls{0};
+    neverc::ParallelCodeGenObservers CodeGenObservers;
+    neverc::ParallelCodeGenObservers OptCodeGenObservers;
+    countAllObservations(CodeGenObservers, CodeGenObserverCalls);
+    countAllObservations(OptCodeGenObservers, OptCodeGenObserverCalls);
+
+    std::atomic<unsigned> OptimizationHookCalls{0};
+    auto NoteOptimizationHook = [&] {
+      OptimizationHookCalls.fetch_add(1, std::memory_order_relaxed);
+    };
+    neverc::ParallelOptimizationHooks OptimizationHooks;
+    OptimizationHooks.ConfigurePassBuilder = [&](PassBuilder &) {
+      NoteOptimizationHook();
+    };
+    OptimizationHooks.PreOpt = [&](ModulePassManager &) {
+      NoteOptimizationHook();
+    };
+    OptimizationHooks.PostOpt = [&](ModulePassManager &) {
+      NoteOptimizationHook();
+    };
+    OptimizationHooks.WholeModulePostOpt = [&](ModulePassManager &) {
+      NoteOptimizationHook();
+    };
+
+    bool SavedTimePasses = false;
+    bool SavedTimePassesPerRun = false;
+    int SavedTimePassesOccurrences = 0;
+    int SavedTimePassesPerRunOccurrences = 0;
+    std::function<void()> RestoreTimePassesState;
+    std::function<void()> RestoreTimePassesPerRunState;
+    {
+      neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+          neverc::plugin::pluginLLVMOptionGate());
+      SavedTimePasses = llvm::TimePassesIsEnabled;
+      SavedTimePassesPerRun = llvm::TimePassesPerRun;
+      SavedTimePassesOccurrences = TimePassesOption->getNumOccurrences();
+      SavedTimePassesPerRunOccurrences =
+          TimePassesPerRunOption->getNumOccurrences();
+      RestoreTimePassesState = TimePassesOption->createStateRestorer();
+      RestoreTimePassesPerRunState =
+          TimePassesPerRunOption->createStateRestorer();
+      llvm::TimePassesIsEnabled = true;
+      llvm::TimePassesPerRun = PerRun;
+    }
+
+    bool TimingStateRestored = false;
+    auto RestoreTimingState = [&] {
+      if (TimingStateRestored)
+        return;
+      neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+          neverc::plugin::pluginLLVMOptionGate());
+      RestoreTimePassesPerRunState();
+      RestoreTimePassesState();
+      llvm::TimePassesIsEnabled = SavedTimePasses;
+      llvm::TimePassesPerRun = SavedTimePassesPerRun;
+      TimingStateRestored = true;
+    };
+    auto TimingStateGuard = make_scope_exit(RestoreTimingState);
+
+    std::mutex StartMutex;
+    std::condition_variable StartCondition;
+    unsigned Ready = 0;
+    bool Start = false;
+    bool CodeGenResult = true;
+    bool OptCodeGenResult = true;
+    auto WaitForStart = [&] {
+      std::unique_lock<std::mutex> Lock(StartMutex);
+      ++Ready;
+      StartCondition.notify_all();
+      StartCondition.wait(Lock, [&] { return Start; });
+    };
+
+    std::thread CodeGenThread([&] {
+      WaitForStart();
+      CodeGenResult = neverc::runParallelCodeGenWithTuning(
+          *CodeGenModule, *CodeGenMachine,
+          neverc::ParallelCodeGenOutputs{CodeGenStream}, Tuning,
+          &CodeGenCacheHooks, &CodeGenObservers);
+    });
+    std::thread OptCodeGenThread([&] {
+      WaitForStart();
+      OptCodeGenResult = neverc::runParallelOptAndCodeGenWithTuning(
+          *OptCodeGenModule, *OptCodeGenMachine,
+          neverc::ParallelCodeGenOutputs{OptCodeGenStream}, /*OptLevel=*/2,
+          Tuning, &OptCodeGenCacheHooks, &OptimizationHooks,
+          &OptCodeGenObservers);
+    });
+    auto JoinThreads = make_scope_exit([&] {
+      {
+        std::lock_guard<std::mutex> Lock(StartMutex);
+        Start = true;
+      }
+      StartCondition.notify_all();
+      if (CodeGenThread.joinable())
+        CodeGenThread.join();
+      if (OptCodeGenThread.joinable())
+        OptCodeGenThread.join();
+    });
+    {
+      std::unique_lock<std::mutex> Lock(StartMutex);
+      ASSERT_TRUE(StartCondition.wait_for(Lock, std::chrono::seconds(10),
+                                          [&] { return Ready == 2; }));
+      Start = true;
+    }
+    StartCondition.notify_all();
+    CodeGenThread.join();
+    OptCodeGenThread.join();
+    JoinThreads.release();
+
+    RestoreTimingState();
+    {
+      neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+          neverc::plugin::pluginLLVMOptionGate());
+      EXPECT_EQ(llvm::TimePassesIsEnabled, SavedTimePasses);
+      EXPECT_EQ(llvm::TimePassesPerRun, SavedTimePassesPerRun);
+      EXPECT_EQ(TimePassesOption->getNumOccurrences(),
+                SavedTimePassesOccurrences);
+      EXPECT_EQ(TimePassesPerRunOption->getNumOccurrences(),
+                SavedTimePassesPerRunOccurrences);
+    }
+
+    // The public wrappers may acquire a request-local resource session and
+    // install request tuning on their private LLVMContexts before init. The
+    // fail-closed boundary is no IR/artifact/cache/observer work.
+    EXPECT_FALSE(CodeGenResult);
+    EXPECT_FALSE(OptCodeGenResult);
+    EXPECT_TRUE(CodeGenOutput.empty());
+    EXPECT_TRUE(OptCodeGenOutput.empty());
+    EXPECT_TRUE(CodeGenCache.lookupTags().empty());
+    EXPECT_TRUE(CodeGenCache.stores().empty());
+    EXPECT_TRUE(OptCodeGenCache.lookupTags().empty());
+    EXPECT_TRUE(OptCodeGenCache.stores().empty());
+    EXPECT_EQ(CodeGenObserverCalls.load(std::memory_order_relaxed), 0u);
+    EXPECT_EQ(OptCodeGenObserverCalls.load(std::memory_order_relaxed), 0u);
+    EXPECT_EQ(OptimizationHookCalls.load(std::memory_order_relaxed), 0u);
+    EXPECT_EQ(CodeGenErrors.load(std::memory_order_relaxed), 0u);
+    EXPECT_EQ(OptCodeGenErrors.load(std::memory_order_relaxed), 0u);
+    EXPECT_EQ(moduleIRText(*CodeGenModule), CodeGenBefore);
+    EXPECT_EQ(moduleIRText(*OptCodeGenModule), OptCodeGenBefore);
+  }
 }

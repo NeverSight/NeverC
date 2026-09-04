@@ -13623,9 +13623,6 @@ TEST(ParallelFrontendTiming, MultiFileTimePassesUsesExclusiveOptionLease) {
 // scheduling contract under test.
 TEST(ParallelFrontendTiming,
      AmbientTimePassesSerializesOtherwiseParallelSafeFrontends) {
-  if (llvm::thread::hardware_concurrency() < 2)
-    GTEST_SKIP() << "parallel frontend requires at least two hardware threads";
-
   static const bool NativeTargetInitialized =
       !llvm::InitializeNativeTarget() &&
       !llvm::InitializeNativeTargetAsmPrinter();
@@ -13682,6 +13679,19 @@ TEST(ParallelFrontendTiming,
         Dir.file("ambient-time-passes.log");
   }
 
+  // The exclusive upgrade synchronizes LLVM's ambient timers; it does not
+  // transfer ownership of the embedder's existing profile to this invocation.
+  // A plain-exclusive implementation that calls TimerGroup::clearAll() after
+  // each frontend clears this sentinel and deterministically fails below.
+  llvm::TimerGroup HostTimerGroup("neverc-ambient-host-timer-group",
+                                  "NeverC ambient host timer group");
+  llvm::Timer HostTimer("neverc-ambient-host-timer",
+                        "NeverC ambient host timer", HostTimerGroup);
+  HostTimer.startTimer();
+  HostTimer.stopTimer();
+  ASSERT_TRUE(HostTimer.hasTriggered());
+  const llvm::TimeRecord HostTimeBefore = HostTimer.getTotalTime();
+
   std::string SourceText;
   {
     raw_string_ostream Source(SourceText);
@@ -13705,6 +13715,8 @@ TEST(ParallelFrontendTiming,
 
   constexpr unsigned WorkerCount = 4;
   constexpr unsigned RoundCount = 4;
+  ScopedEnv PCGWorkers("NEVERC_PCG_THREADS", "4");
+  static int SessionIdentity;
   const std::string HostTriple = llvm::sys::getDefaultTargetTriple();
   for (unsigned Round = 0; Round != RoundCount; ++Round) {
     std::array<int, WorkerCount> Results;
@@ -13726,6 +13738,7 @@ TEST(ParallelFrontendTiming,
                               HostTriple.c_str(),
                               "-emit-obj",
                               "-O1",
+                              "-fparallel-codegen=2",
                               "-o",
                               Outputs[Worker].c_str(),
                               SourcePath.c_str()};
@@ -13738,10 +13751,7 @@ TEST(ParallelFrontendTiming,
         neverc::driver::DirectInvocationOpts DirectOpts;
         DirectOpts.ParallelSafe = true;
         Results[Worker] = neverc::ExecuteFrontendDirect(
-            Args, "neverc-test-frontend",
-            reinterpret_cast<void *>(
-                reinterpret_cast<std::uintptr_t>(&compileLinkMulti)),
-            &DirectOpts);
+            Args, "neverc-test-frontend", &SessionIdentity, &DirectOpts);
       });
     }
     auto JoinWorkers = llvm::make_scope_exit([&] {
@@ -13783,6 +13793,19 @@ TEST(ParallelFrontendTiming,
     EXPECT_EQ(TimePassesPerRunOption->getNumOccurrences(),
               SavedTimePassesPerRunOccurrences);
   }
+
+  EXPECT_TRUE(HostTimer.hasTriggered())
+      << "ambient frontend consumed the embedder's pass-timing profile";
+  const llvm::TimeRecord HostTimeAfter = HostTimer.getTotalTime();
+  EXPECT_EQ(HostTimeAfter.getWallTime(), HostTimeBefore.getWallTime());
+  EXPECT_EQ(HostTimeAfter.getUserTime(), HostTimeBefore.getUserTime());
+  EXPECT_EQ(HostTimeAfter.getSystemTime(), HostTimeBefore.getSystemTime());
+  EXPECT_EQ(HostTimeAfter.getMemUsed(), HostTimeBefore.getMemUsed());
+  EXPECT_EQ(HostTimeAfter.getInstructionsExecuted(),
+            HostTimeBefore.getInstructionsExecuted());
+  // This test is the simulated embedder and owns the ambient profile. Retire
+  // it only after proving that every nested frontend left it untouched.
+  llvm::TimerGroup::clearAll();
 }
 
 TEST(ParallelFrontendTiming, MultiFileTimeTracePreservesEveryRootArtifact) {

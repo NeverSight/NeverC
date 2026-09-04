@@ -366,10 +366,6 @@ public:
   FrontendProcessGlobalStateOwner &
   operator=(FrontendProcessGlobalStateOwner &&) = delete;
 
-  bool holdsExclusiveLease() const noexcept {
-    return OptionSnapshot.has_value() || WriteLease.has_value();
-  }
-
   bool ownsOptionSnapshot() const noexcept {
     return OptionSnapshot.has_value();
   }
@@ -689,8 +685,12 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
     }
   }
 
-  const bool HoldsExclusiveProcessGlobals =
-      ProcessGlobals.get().holdsExclusiveLease();
+  // An exclusive lease can be synchronization-only: non-parallel invocations
+  // and ambient pass timing both use it without owning the host's accumulated
+  // TimerGroup state. Only a restoring option snapshot whose invocation
+  // actually enabled timing may publish and clear that profile.
+  const bool OwnsPassTimingProfile =
+      ProcessGlobals.get().ownsOptionSnapshot() && llvm::TimePassesIsEnabled;
   ProcessGlobals.get().installFatalErrorHandler(CI->getDiagnostics());
 
   {
@@ -698,7 +698,7 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
     Success = ExecuteCompilerInvocation(CI.get());
   }
 
-  if (HoldsExclusiveProcessGlobals) {
+  if (OwnsPassTimingProfile) {
     llvm::TimerGroup::printAll(llvm::errs());
     llvm::TimerGroup::clearAll();
   }
