@@ -25,23 +25,30 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
-          fetch-depth: 2
+          fetch-depth: 3
 
       - name: Verify exact diagnostic tree
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C neverc branch --show-current)" = ""
-          test "$(git -C neverc rev-parse HEAD^)" = "7d7a6ee2ebdadd12d9b39f5465d9246fb64ede1c"
+          test "$(git -C neverc rev-parse HEAD^)" = "e5ebe189198d27ef59275408b39e0f5aa7e11690"
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
           printf '%s\n' \
             '.github/workflows/debug-lto-strict-cache.yml' \
-            'neverc/lib/Linker/Core/Driver/LTOCache.cpp' \
             'tests/neverc/MergeTests.cpp' | sort -u > expected-files.txt
           git -C neverc diff-tree --no-commit-id --name-only -r HEAD^ HEAD |
             sort -u > actual-files.txt
           diff -u expected-files.txt actual-files.txt
+          printf '%s\n' \
+            '.github/workflows/debug-lto-strict-cache.yml' \
+            'neverc/lib/Linker/Core/Driver/LTOCache.cpp' \
+            'tests/neverc/MergeTests.cpp' | sort -u > expected-range-files.txt
+          git -C neverc diff --name-only \
+            7d7a6ee2ebdadd12d9b39f5465d9246fb64ede1c..HEAD |
+            sort -u > actual-range-files.txt
+          diff -u expected-range-files.txt actual-range-files.txt
 
       - name: Setup build dependencies
         shell: bash

@@ -14437,7 +14437,7 @@ TEST(MergeParallelCodegenStrict,
   ASSERT_TRUE(readObj(Dir.file("spawn.log"), StrictLogBytes))
       << "strict failure did not write spawn.log";
   EXPECT_EQ(std::string(StrictLogBytes.begin(), StrictLogBytes.end()),
-            ExpectedStrictFatal.str().str());
+            ExpectedStrictFatal.str());
 }
 #endif // _WIN32
 
