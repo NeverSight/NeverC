@@ -36,12 +36,18 @@ jobs:
           test "$(git -C neverc branch --show-current)" = ""
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
-          test "$(git -C neverc rev-parse HEAD^)" = "ec76a4decfc82f8f4127fc82c1ee1eeecf5e096e"
+          test "$(git -C neverc rev-parse HEAD^)" = "32ef130d443df27b7058e6df0b4f5c5ce8929be0"
           printf '%s\n' '.github/workflows/debug-frontend-ambient-pass-timing.yml' | sort -u > expected-files.txt
           git -C neverc diff-tree --no-commit-id --name-only -r HEAD^ HEAD |
             sort -u > actual-files.txt
           diff -u expected-files.txt actual-files.txt
-          printf '%s\n' '.github/workflows/debug-frontend-ambient-pass-timing.yml' 'neverc/lib/Compiler/Core/ExecuteCompilerInvocation.cpp' 'tests/neverc/MergeTests.cpp' | sort -u > expected-range-files.txt
+          printf '%s\n' \
+            '.github/workflows/debug-frontend-ambient-pass-timing.yml' \
+            'neverc/lib/Compiler/Core/ExecuteCompilerInvocation.cpp' \
+            'neverc/lib/Emit/Backend/ParallelCodeGenMerge.cpp' \
+            'tests/neverc/MergeTests.cpp' \
+            'tests/neverc/ParallelCodeGenCacheTests.cpp' |
+            sort -u > expected-range-files.txt
           git -C neverc diff --name-only f782a6ff7716912223e2df6cc2d6552c814b9747..HEAD |
             sort -u > actual-range-files.txt
           diff -u expected-range-files.txt actual-range-files.txt
@@ -85,15 +91,53 @@ jobs:
           set -euo pipefail
           cmake --build build --config "$BUILD_TYPE" --target neverc-merge-tests
 
-      - name: Require ambient pass-timing GREEN
+      - name: Require direct PCG serial fallback
         shell: bash
         env:
           TSAN_OPTIONS: halt_on_error=1 history_size=7 second_deadlock_stack=1
         run: |
           set -euo pipefail
-          test_args=(
-            "--gtest_filter=ParallelFrontendTiming.AmbientTimePassesSerializesOtherwiseParallelSafeFrontends"
-            --gtest_repeat=3
-            --gtest_color=no
-          )
-          build/bin/neverc-merge-tests "${test_args[@]}"
+          filter='ParallelFrontendTiming.AmbientPassTimingDeclinesConcurrentDirectRootsWithoutIRMutation'
+          set +e
+          build/bin/neverc-merge-tests \
+            "--gtest_filter=$filter" \
+            --gtest_color=no 2>&1 | tee direct-pcg.log
+          test_status=${PIPESTATUS[0]}
+          set -e
+          test "$test_status" -eq 0
+          test "$(grep -Fc "[ RUN      ] $filter" direct-pcg.log)" -eq 1
+          test "$(grep -Fc "[       OK ] $filter" direct-pcg.log)" -eq 1
+          test "$(grep -Fc '[  PASSED  ] 1 test.' direct-pcg.log)" -eq 1
+          if grep -F '[  SKIPPED ]' direct-pcg.log; then
+            exit 1
+          fi
+          if grep -E 'ThreadSanitizer|WARNING: data race|SUMMARY: ThreadSanitizer' \
+            direct-pcg.log; then
+            exit 1
+          fi
+
+      - name: Require ambient frontend serialization
+        shell: bash
+        env:
+          TSAN_OPTIONS: halt_on_error=1 history_size=7 second_deadlock_stack=1
+        run: |
+          set -euo pipefail
+          filter='ParallelFrontendTiming.AmbientTimePassesSerializesOtherwiseParallelSafeFrontends'
+          set +e
+          build/bin/neverc-merge-tests \
+            "--gtest_filter=$filter" \
+            --gtest_repeat=3 \
+            --gtest_color=no 2>&1 | tee ambient-frontend.log
+          test_status=${PIPESTATUS[0]}
+          set -e
+          test "$test_status" -eq 0
+          test "$(grep -Fc "[ RUN      ] $filter" ambient-frontend.log)" -eq 3
+          test "$(grep -Fc "[       OK ] $filter" ambient-frontend.log)" -eq 3
+          test "$(grep -Fc '[  PASSED  ] 1 test.' ambient-frontend.log)" -eq 3
+          if grep -F '[  SKIPPED ]' ambient-frontend.log; then
+            exit 1
+          fi
+          if grep -E 'ThreadSanitizer|WARNING: data race|SUMMARY: ThreadSanitizer' \
+            ambient-frontend.log; then
+            exit 1
+          fi
