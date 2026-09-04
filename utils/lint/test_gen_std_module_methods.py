@@ -110,7 +110,7 @@ class GenStdModuleMethodsTest(unittest.TestCase):
         with GEN.DEFAULT_MANIFEST.open(encoding="utf-8") as source:
             modules = json.load(source)["modules"]
 
-        for module_key in ("io", "os"):
+        for module_key in ("io", "io/fs", "os"):
             with self.subTest(module=module_key):
                 module = modules[module_key]
                 registered = set(module["symbols"])
