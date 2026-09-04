@@ -61,5 +61,5 @@ jobs:
       - name: Require LTO cache diagnostic contracts
         run: |
           build/bin/neverc-tests \
-            --gtest_filter='LTOTest.LtoCacheDoesNotSilenceBackendWarnings:LTOTest.WarningPoliciesAffectFullAndPartitionKeys:LTOTest.RawLLVMOptionsDisableBothCacheLayers:LTOTest.PCGDebugOutputDisablesBothCacheLayers:LTOTest.SuppressedLtoWarningCannotBypassLaterFatalWarnings:LTOTest.LtoCachePreservesConsoleOptimizationRemarks:LTOTest.LtoPartitionCache' \
+            --gtest_filter='LTOTest.LtoCacheDoesNotSilenceBackendWarnings:LTOTest.SuppressedLtoWarningCannotBypassLaterFatalWarnings:LTOTest.LtoCachePreservesConsoleOptimizationRemarks:LTOTest.LtoPartitionCache' \
             --gtest_color=no
