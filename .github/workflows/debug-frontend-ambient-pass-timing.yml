@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
-          fetch-depth: 2
+          fetch-depth: 4
 
       - name: Setup sccache
         uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
