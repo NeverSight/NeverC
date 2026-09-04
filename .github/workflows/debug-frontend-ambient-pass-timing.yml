@@ -1,0 +1,95 @@
+name: debug-frontend-ambient-pass-timing
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags:
+      - "debug-frontend-ambient-pass-timing-*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  red:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      LLVM_APT_VER: "22"
+    steps:
+      - name: Checkout diagnostic tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: neverc
+          fetch-depth: 2
+
+      - name: Setup sccache
+        uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
+
+      - name: Verify exact diagnostic tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C neverc branch --show-current)" = ""
+          git -C neverc diff --exit-code
+          git -C neverc diff --cached --exit-code
+          test "$(git -C neverc rev-parse HEAD^)" = "f782a6ff7716912223e2df6cc2d6552c814b9747"
+          printf '%s\n' '.github/workflows/debug-frontend-ambient-pass-timing.yml' 'tests/neverc/MergeTests.cpp' | sort -u > expected-files.txt
+          git -C neverc diff-tree --no-commit-id --name-only -r HEAD^ HEAD |
+            sort -u > actual-files.txt
+          diff -u expected-files.txt actual-files.txt
+
+      - name: Setup build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          echo "CC=clang-$LLVM_APT_VER" >> "$GITHUB_ENV"
+          echo "CXX=clang++-$LLVM_APT_VER" >> "$GITHUB_ENV"
+
+      - name: Configure focused TSan build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake_args=(
+            -GNinja
+            -Bbuild
+            "-DCMAKE_C_COMPILER=$CC"
+            "-DCMAKE_CXX_COMPILER=$CXX"
+            -DLLVM_ENABLE_ASSERTIONS=ON
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off
+            -DLLVM_USE_SANITIZER=Thread
+            -DNEVERC_INCLUDE_TESTS=ON
+            "-DCMAKE_BUILD_TYPE=$BUILD_TYPE"
+            -C
+            neverc/neverc/cmake/caches/NeverC.cmake
+            neverc/llvm
+          )
+          cmake "${cmake_args[@]}"
+
+      - name: Build focused frontend timing test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --config "$BUILD_TYPE" --target neverc-merge-tests
+
+      - name: Require ambient pass-timing RED
+        shell: bash
+        env:
+          TSAN_OPTIONS: halt_on_error=1 history_size=7 second_deadlock_stack=1
+        run: |
+          set -euo pipefail
+          test_args=(
+            "--gtest_filter=ParallelFrontendTiming.AmbientTimePassesSerializesOtherwiseParallelSafeFrontends"
+            --gtest_repeat=3
+            --gtest_color=no
+          )
+          build/bin/neverc-merge-tests "${test_args[@]}"
