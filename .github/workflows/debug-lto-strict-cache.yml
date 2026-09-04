@@ -25,22 +25,26 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
-          fetch-depth: 3
+          fetch-depth: 4
 
       - name: Verify exact diagnostic tree
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C neverc branch --show-current)" = ""
-          test "$(git -C neverc rev-parse HEAD^)" = "e5ebe189198d27ef59275408b39e0f5aa7e11690"
+          test "$(git -C neverc rev-parse HEAD^)" = "a001198a7310ecc5a8419fd31d9d82a5832368ad"
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
           printf '%s\n' \
-            '.github/workflows/debug-lto-strict-cache.yml' \
-            'tests/neverc/MergeTests.cpp' | sort -u > expected-files.txt
+            '.github/workflows/debug-lto-strict-cache.yml' |
+            sort -u > expected-files.txt
           git -C neverc diff-tree --no-commit-id --name-only -r HEAD^ HEAD |
             sort -u > actual-files.txt
           diff -u expected-files.txt actual-files.txt
+          git -C neverc checkout --detach \
+            a001198a7310ecc5a8419fd31d9d82a5832368ad
+          test "$(git -C neverc rev-parse HEAD)" = \
+            "a001198a7310ecc5a8419fd31d9d82a5832368ad"
           printf '%s\n' \
             '.github/workflows/debug-lto-strict-cache.yml' \
             'neverc/lib/Linker/Core/Driver/LTOCache.cpp' \
@@ -75,6 +79,7 @@ jobs:
             -DCMAKE_CXX_COMPILER="$CXX" \
             -DLLVM_ENABLE_ASSERTIONS=ON \
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+            '-DLLVM_USE_SANITIZER=Address;Undefined' \
             -DNEVERC_INCLUDE_TESTS=ON \
             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
             -C neverc/neverc/cmake/caches/NeverC.cmake \
@@ -89,8 +94,26 @@ jobs:
 
       - name: Require fault-injected strict-cache contract
         shell: bash
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
           set -euo pipefail
+          set +e
           build/bin/neverc-merge-tests \
             --gtest_filter='MergeParallelCodegenStrict.MultiFileAutoLtoSerialFallbackProducesCorrectBinary' \
-            --gtest_color=no
+            --gtest_color=no 2>&1 | tee strict-cache-sanitizer.log
+          test_status=${PIPESTATUS[0]}
+          set -e
+          test "$test_status" -eq 0
+          grep -F '[ RUN      ] MergeParallelCodegenStrict.MultiFileAutoLtoSerialFallbackProducesCorrectBinary' \
+            strict-cache-sanitizer.log
+          grep -F '[       OK ] MergeParallelCodegenStrict.MultiFileAutoLtoSerialFallbackProducesCorrectBinary' \
+            strict-cache-sanitizer.log
+          if grep -F '[  SKIPPED ]' strict-cache-sanitizer.log; then
+            exit 1
+          fi
+          if grep -E 'AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|runtime error:|ERROR: .*Sanitizer' \
+            strict-cache-sanitizer.log; then
+            exit 1
+          fi
