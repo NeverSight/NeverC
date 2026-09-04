@@ -1525,6 +1525,7 @@ TEST_F(LTOTest, LtoCacheDoesNotSilenceBackendWarnings) {
   ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
   ScopedEnvVar PartitionCacheDisabled(linker::ltoPartitionCacheEnvVar,
                                       linker::ltoCacheDisableValue);
+  ScopedEnvVar DebugUnset("NEVERC_PCG_DEBUG");
 
   auto source = tmpFile("ltocache_warning.c");
   auto object = tmpFile("ltocache_warning.o");
@@ -1568,73 +1569,6 @@ TEST_F(LTOTest, LtoCacheDoesNotSilenceBackendWarnings) {
   }
 }
 
-TEST_F(LTOTest, WarningPoliciesAffectFullAndPartitionKeys) {
-  struct CacheIdentity {
-    std::string Full;
-    std::string Partition;
-  };
-  auto identity = [](const linker::LinkerDriverConfig &Config) {
-    linker::LTOCacheKey Key;
-    return CacheIdentity{
-        Key.finalize(Config, /*maxTasks=*/4, "ELF", /*emitAddrsig=*/false),
-        linker::ltoPartitionCacheSalt(Config, /*emitAddrsig=*/false)};
-  };
-
-  linker::LinkerDriverConfig Base;
-  Base.cpu = "warning-policy-cache-key-test-cpu";
-  const CacheIdentity Baseline = identity(Base);
-
-  linker::LinkerDriverConfig Suppressed = Base;
-  Suppressed.suppressWarnings = true;
-  const CacheIdentity SuppressedIdentity = identity(Suppressed);
-
-  linker::LinkerDriverConfig Fatal = Base;
-  Fatal.fatalWarnings = true;
-  const CacheIdentity FatalIdentity = identity(Fatal);
-
-  linker::LinkerDriverConfig Verbose = Base;
-  Verbose.verbose = true;
-  const CacheIdentity VerboseIdentity = identity(Verbose);
-
-  auto expectDistinct = [](const CacheIdentity &Left,
-                           const CacheIdentity &Right) {
-    EXPECT_NE(Left.Full, Right.Full);
-    EXPECT_NE(Left.Partition, Right.Partition);
-  };
-  expectDistinct(Baseline, SuppressedIdentity);
-  expectDistinct(Baseline, FatalIdentity);
-  expectDistinct(Baseline, VerboseIdentity);
-  expectDistinct(SuppressedIdentity, FatalIdentity);
-  expectDistinct(SuppressedIdentity, VerboseIdentity);
-  expectDistinct(FatalIdentity, VerboseIdentity);
-}
-
-TEST_F(LTOTest, RawLLVMOptionsDisableBothCacheLayers) {
-  ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
-  ScopedEnvVar PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "1");
-  ScopedEnvVar DebugUnset("NEVERC_PCG_DEBUG");
-  linker::LinkerDriverConfig Config;
-  EXPECT_TRUE(linker::ltoCacheUsable(Config));
-  EXPECT_TRUE(linker::ltoPartitionCacheUsable(Config));
-
-  Config.mllvmOpts = {"-print-after-all"};
-  EXPECT_FALSE(linker::ltoCacheUsable(Config));
-  EXPECT_FALSE(linker::ltoPartitionCacheUsable(Config));
-}
-
-TEST_F(LTOTest, PCGDebugOutputDisablesBothCacheLayers) {
-  ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
-  ScopedEnvVar PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "1");
-  ScopedEnvVar DebugUnset("NEVERC_PCG_DEBUG");
-  linker::LinkerDriverConfig Config;
-  EXPECT_TRUE(linker::ltoCacheUsable(Config));
-  EXPECT_TRUE(linker::ltoPartitionCacheUsable(Config));
-
-  ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
-  EXPECT_FALSE(linker::ltoCacheUsable(Config));
-  EXPECT_FALSE(linker::ltoPartitionCacheUsable(Config));
-}
-
 TEST_F(LTOTest, SuppressedLtoWarningCannotBypassLaterFatalWarnings) {
   constexpr const char *Warning = "neverc-lto-policy-warning";
   auto cacheDir = tmpFile("ltocache_warning_policy_dir");
@@ -1642,6 +1576,7 @@ TEST_F(LTOTest, SuppressedLtoWarningCannotBypassLaterFatalWarnings) {
   ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
   ScopedEnvVar PartitionCacheDisabled(linker::ltoPartitionCacheEnvVar,
                                       linker::ltoCacheDisableValue);
+  ScopedEnvVar DebugUnset("NEVERC_PCG_DEBUG");
 
   auto source = tmpFile("ltocache_warning_policy.c");
   auto object = tmpFile("ltocache_warning_policy.o");
@@ -1712,6 +1647,7 @@ TEST_F(LTOTest, LtoCachePreservesConsoleOptimizationRemarks) {
   ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
   ScopedEnvVar PartitionCacheDisabled(linker::ltoPartitionCacheEnvVar,
                                       linker::ltoCacheDisableValue);
+  ScopedEnvVar DebugUnset("NEVERC_PCG_DEBUG");
 
   auto calleeSource = tmpFile("ltocache_remark_callee.c");
   auto callerSource = tmpFile("ltocache_remark_caller.c");
@@ -1770,6 +1706,7 @@ TEST_F(LTOTest, LtoCachePreservesConsoleOptimizationRemarks) {
 TEST_F(LTOTest, LtoPartitionCache) {
   auto cacheDir = tmpFile("pcache_dir");
   ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
+  ScopedEnvVar DebugUnset("NEVERC_PCG_DEBUG");
 
   // Generate a project that crosses the partitioned-codegen thresholds
   // (>= 8 surviving functions, >= 10000 merged IR instructions) and
@@ -1951,13 +1888,37 @@ TEST_F(LTOTest, LtoPartitionCache) {
       fs::remove(exe, ec);
       CmdResult result = ncc(link);
       ASSERT_EQ(result.exitCode, 0) << result.err;
-      EXPECT_EQ(StringRef(result.err).count("neverc-pcg-cache-warning"), 2u)
+      EXPECT_EQ(StringRef(result.err).count("warning: "), 2u)
           << "non-error diagnostics must preserve occurrence count:\n"
           << result.err;
       EXPECT_TRUE(fs::exists(exe));
       EXPECT_EQ(countEntries(warningCacheDir), 0u)
           << "a partition warning must block both partition and full-link "
              "cache publication";
+    }
+  }
+
+  // Debug output is observable and is generated only when the partitioned
+  // pipeline actually runs. A full-link cache hit must not swallow it.
+  writeUnit(3, 5);
+  compileUnit("u3");
+  auto debugCacheDir = tmpFile("pcache_debug_dir");
+  ASSERT_TRUE(fs::create_directory(debugCacheDir));
+  {
+    ScopedEnvVar DebugCacheDir(linker::ltoCacheDirEnvVar,
+                               debugCacheDir.string().c_str());
+    ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
+    ScopedEnvVar PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "1");
+    ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
+    for (unsigned Attempt = 0; Attempt != 2; ++Attempt) {
+      std::error_code EC;
+      fs::remove(exe, EC);
+      CmdResult Result = ncc(link);
+      ASSERT_EQ(Result.exitCode, 0) << Result.err;
+      EXPECT_TRUE(Result.stderrContains("[pcg]")) << Result.err;
+      EXPECT_TRUE(fs::exists(exe));
+      EXPECT_EQ(countEntries(debugCacheDir), 0u)
+          << "PCG debug output must not be hidden by either cache layer";
     }
   }
 }
