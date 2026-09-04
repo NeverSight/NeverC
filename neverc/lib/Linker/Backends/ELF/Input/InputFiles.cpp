@@ -15,6 +15,7 @@
 #include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
 #include "llvm/ADT/CachedHashString.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Object/IRObjectFile.h"
@@ -688,8 +689,10 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
   StringRef shstrtab = CHECK(obj.getSectionStringTable(objSections), this);
   uint64_t size = objSections.size();
   SmallVector<ArrayRef<Elf_Word>, 0> selectedGroups;
+  InputSectionBase *const discarded = discardedInputSection();
+  SmallDenseMap<size_t, SmallVector<size_t, 1>, 4> linkOrderFollowers;
   for (size_t i = 0; i != size; ++i) {
-    if (this->sections[i] == discardedInputSection())
+    if (this->sections[i] == discarded)
       continue;
     const Elf_Shdr &sec = objSections[i];
 
@@ -748,6 +751,39 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
       this->sections[i] =
           createInputSection(i, sec, check(obj.getSectionName(sec, shstrtab)));
     }
+
+    // Relocation sections use sh_link for the symbol table and sh_info for the
+    // relocated section. They are handled separately in the second loop.
+    if ((sec.sh_flags & SHF_LINK_ORDER) && sec.sh_link && sec.sh_link < size &&
+        sec.sh_type != SHT_REL && sec.sh_type != SHT_RELA) {
+      InputSectionBase *section = this->sections[i];
+      if (section && section != discarded)
+        linkOrderFollowers[sec.sh_link].push_back(i);
+    }
+  }
+
+  // Compute the transitive closure of SHF_LINK_ORDER sections whose targets
+  // were discarded in the first loop before registering any dependencies.
+  // In particular, never attach a dependency to discardedInputSection(): the
+  // sentinel is shared by every object in this link and may be reached from
+  // concurrent file-initialization workers.
+  SmallVector<size_t, 0> discardedLinkOrderTargets;
+  for (const auto &entry : linkOrderFollowers)
+    if (this->sections[entry.first] == discarded)
+      discardedLinkOrderTargets.push_back(entry.first);
+
+  while (!discardedLinkOrderTargets.empty()) {
+    size_t target = discardedLinkOrderTargets.pop_back_val();
+    auto followers = linkOrderFollowers.find(target);
+    assert(followers != linkOrderFollowers.end());
+    for (size_t follower : followers->second) {
+      InputSectionBase *&section = this->sections[follower];
+      if (!section || section == discarded)
+        continue;
+      section = discarded;
+      if (linkOrderFollowers.find(follower) != linkOrderFollowers.end())
+        discardedLinkOrderTargets.push_back(follower);
+    }
   }
 
   // We have a second loop. It is used to:
@@ -758,7 +794,7 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
   //    section that has not yet been created. For simplicity, delay creation of
   //    relocation sections until now.
   for (size_t i = 0; i != size; ++i) {
-    if (this->sections[i] == discardedInputSection())
+    if (this->sections[i] == discarded)
       continue;
     const Elf_Shdr &sec = objSections[i];
 
@@ -819,6 +855,10 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
 
     // A SHF_LINK_ORDER section is discarded if its linked-to section is
     // discarded.
+    if (linkSec == discarded) {
+      this->sections[i] = discarded;
+      continue;
+    }
     InputSection *isec = cast<InputSection>(this->sections[i]);
     linkSec->dependentSections.push_back(isec);
     if (!isa<InputSection>(linkSec))
