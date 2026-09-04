@@ -5211,7 +5211,10 @@
         "stream_try_read": "neverc_quic_stream_try_read",
         "stream_reset": "neverc_quic_stream_reset",
         "stream_stop_sending": "neverc_quic_stream_stop_sending",
-        "stream_write": "neverc_quic_stream_write"
+        "stream_write": "neverc_quic_stream_write",
+        "varint_decode": "neverc_quic_varint_decode",
+        "varint_encode": "neverc_quic_varint_encode",
+        "varint_len": "neverc_quic_varint_len"
       }
     },
     "net/http3": {
