@@ -56,13 +56,24 @@ int dispatchLink(ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
   crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
       ExecutionOwner(Config.executionContext);
   LinkerExecutionContext &Execution = ExecutionOwner.get();
+
+  std::optional<
+      crash_recovery_detail::CrashRecoveryLocalOwner<LinkerDriverConfig>>
+      EffectiveConfigOwner;
+  const LinkerDriverConfig *EffectiveConfig = &Config;
+  if (!Config.executionContext) {
+    EffectiveConfigOwner.emplace(nullptr);
+    LinkerDriverConfig &OwnedConfig = EffectiveConfigOwner->get();
+    OwnedConfig = Config;
+    OwnedConfig.executionContext = &Execution;
+    EffectiveConfig = &OwnedConfig;
+  }
+
   CrashRecoveryContextCleanupRegistrar<
       LinkerExecutionContext,
       crash_recovery_detail::CrashRecoveryDestroyBackendCleanup<
           LinkerExecutionContext>>
       CrashBackend(&Execution);
-  LinkerDriverConfig EffectiveConfig = Config;
-  EffectiveConfig.executionContext = &Execution;
   auto Finish = make_scope_exit([&] {
     if (Config.executionHooks)
       Config.executionHooks->complete(Success);
@@ -82,7 +93,7 @@ int dispatchLink(ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
           return 1;
         }
         auto HookResult = Config.executionHooks->execute(
-            *Config.executionRequest, EffectiveConfig, Stdout, Stderr);
+            *Config.executionRequest, *EffectiveConfig, Stdout, Stderr);
         if (!HookResult) {
           Stderr << "neverc: error: linker hook failed: "
                  << toString(HookResult.takeError()) << "\n";
@@ -106,7 +117,7 @@ int dispatchLink(ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
       TimeTraceScope BackendScope("neverc.link.backend", Format);
       return It->d(Args, Stdout, Stderr,
                    /*exitEarly=*/false, /*disableOutput=*/false,
-                   EffectiveConfig)
+                   *EffectiveConfig)
                  ? 0
                  : 1;
     }();

@@ -71,6 +71,28 @@ bool fatalTraceBackend(llvm::ArrayRef<const char *>, llvm::raw_ostream &,
   Context->HandleExit(1);
 }
 
+class ConfigIdentityHooks final : public LinkExecutionHooks {
+public:
+  explicit ConfigIdentityHooks(const LinkerDriverConfig *ExpectedConfig)
+      : ExpectedConfig(ExpectedConfig) {}
+
+  llvm::Expected<LinkHookResult> execute(const LinkExecutionRequest &,
+                                         const LinkerDriverConfig &Config,
+                                         llvm::raw_ostream &,
+                                         llvm::raw_ostream &) override {
+    SawExpectedConfig = &Config == ExpectedConfig;
+    return LinkHookResult{};
+  }
+
+  void complete(bool) noexcept override {}
+
+  bool sawExpectedConfig() const { return SawExpectedConfig; }
+
+private:
+  const LinkerDriverConfig *ExpectedConfig;
+  bool SawExpectedConfig = false;
+};
+
 std::optional<size_t> findPEChecksumOffset(llvm::StringRef Image) {
   const auto *Bytes = reinterpret_cast<const uint8_t *>(Image.data());
   if (Image.size() < 0x40 || Bytes[0] != 'M' || Bytes[1] != 'Z')
@@ -274,6 +296,8 @@ TEST(PluginCOFFContextIsolationTest,
     LinkerExecutionContext ExternalExecution;
     LinkerDriverConfig ExternalConfig = Config;
     ExternalConfig.executionContext = &ExternalExecution;
+    auto IdentityHooks = std::make_shared<ConfigIdentityHooks>(&ExternalConfig);
+    ExternalConfig.executionHooks = IdentityHooks;
     const long OwnersWithExternalConfig = StableRequestOwners + 1;
     ASSERT_EQ(ExecutionRequest.use_count(), OwnersWithExternalConfig);
     const neverc::ResourceSessionView ExpectedSession =
@@ -297,6 +321,7 @@ TEST(PluginCOFFContextIsolationTest,
       EXPECT_EQ(CRC.RetCode, 1);
     }
     EXPECT_EQ(ExternalFatalResult, 0);
+    EXPECT_TRUE(IdentityHooks->sawExpectedConfig());
     EXPECT_EQ(ExecutionRequest.use_count(), OwnersWithExternalConfig);
     EXPECT_FALSE(llvm::timeTraceProfilerEnabled());
     EXPECT_EQ(currentLinkerContext(), nullptr);
