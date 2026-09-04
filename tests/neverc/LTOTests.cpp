@@ -63,6 +63,12 @@ class ScopedEnvVar {
   std::optional<std::string> OldValue;
 
 public:
+  explicit ScopedEnvVar(const char *Name) : Name(Name) {
+    if (const char *Old = std::getenv(Name))
+      OldValue = Old;
+    unsetEnvVar(Name);
+  }
+
   ScopedEnvVar(const char *Name, const char *Value) : Name(Name) {
     if (const char *Old = std::getenv(Name))
       OldValue = Old;
@@ -838,6 +844,18 @@ readELFSymbolSectionOffset(llvm::StringRef Bytes, llvm::StringRef SymbolName,
 
 class LTOTest : public NeverCTest {
 protected:
+  static size_t countLtoCacheEntries(const fs::path &Dir) {
+    size_t Count = 0;
+    std::error_code EC;
+    for (fs::directory_iterator It(Dir, EC), End; !EC && It != End;
+         It.increment(EC))
+      if (It->path().filename().string().rfind(linker::ltoCacheEntryPrefix,
+                                               0) == 0 &&
+          It->path().extension() != linker::ltoCacheTmpSuffix)
+        ++Count;
+    return Count;
+  }
+
   std::vector<std::string> writeAutoLtoLoopDenseProject(const std::string &Stem,
                                                         bool RuntimeSeed) {
     constexpr int NFiles = 12;
@@ -1500,6 +1518,249 @@ TEST_F(LTOTest, LtoLinkCache) {
   EXPECT_GT(countEntries(), afterCold) << "flag change must be a cache miss";
 }
 
+TEST_F(LTOTest, LtoCacheDoesNotSilenceBackendWarnings) {
+  constexpr const char *Warning = "neverc-lto-cache-warning";
+  auto cacheDir = tmpFile("ltocache_warning_dir");
+  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
+  ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
+  ScopedEnvVar PartitionCacheDisabled(linker::ltoPartitionCacheEnvVar,
+                                      linker::ltoCacheDisableValue);
+
+  auto source = tmpFile("ltocache_warning.c");
+  auto object = tmpFile("ltocache_warning.o");
+  auto output = tmpFile("ltocache_warning_exe");
+  writeFile(
+      source,
+      "__attribute__((noinline)) int warned(void) {\n"
+      "  __asm__ volatile(\".warning \\\"neverc-lto-cache-warning\\\"\");\n"
+      "  return 0;\n"
+      "}\n"
+      "int main(void) { return warned(); }\n");
+
+  std::vector<std::string> compile = {"-std=c11"};
+  for (auto &flag : sysrootFlags())
+    compile.push_back(flag);
+  for (auto &flag : archFlags())
+    compile.push_back(flag);
+  compile.insert(compile.end(),
+                 {"-flto", "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(ncc(compile).exitCode, 0);
+
+  std::vector<std::string> link;
+  for (auto &flag : sysrootFlags())
+    link.push_back(flag);
+  for (auto &flag : archFlags())
+    link.push_back(flag);
+  link.insert(link.end(), {"-flto", object.string(), "-o", output.string()});
+  if (isWindows())
+    link.push_back("-mno-incremental-linker-compatible");
+
+  for (unsigned attempt = 0; attempt != 2; ++attempt) {
+    std::error_code ec;
+    fs::remove(output, ec);
+    CmdResult result = ncc(link);
+    ASSERT_EQ(result.exitCode, 0) << result.err;
+    EXPECT_TRUE(result.stderrContains(Warning)) << result.err;
+    EXPECT_TRUE(fs::exists(output));
+    EXPECT_GT(fs::file_size(output), 0u);
+    EXPECT_EQ(countLtoCacheEntries(cacheDir), 0u)
+        << "a cache entry would let a warm link silently skip the warning";
+  }
+}
+
+TEST_F(LTOTest, WarningPoliciesAffectFullAndPartitionKeys) {
+  struct CacheIdentity {
+    std::string Full;
+    std::string Partition;
+  };
+  auto identity = [](const linker::LinkerDriverConfig &Config) {
+    linker::LTOCacheKey Key;
+    return CacheIdentity{
+        Key.finalize(Config, /*maxTasks=*/4, "ELF", /*emitAddrsig=*/false),
+        linker::ltoPartitionCacheSalt(Config, /*emitAddrsig=*/false)};
+  };
+
+  linker::LinkerDriverConfig Base;
+  Base.cpu = "warning-policy-cache-key-test-cpu";
+  const CacheIdentity Baseline = identity(Base);
+
+  linker::LinkerDriverConfig Suppressed = Base;
+  Suppressed.suppressWarnings = true;
+  const CacheIdentity SuppressedIdentity = identity(Suppressed);
+
+  linker::LinkerDriverConfig Fatal = Base;
+  Fatal.fatalWarnings = true;
+  const CacheIdentity FatalIdentity = identity(Fatal);
+
+  linker::LinkerDriverConfig Verbose = Base;
+  Verbose.verbose = true;
+  const CacheIdentity VerboseIdentity = identity(Verbose);
+
+  auto expectDistinct = [](const CacheIdentity &Left,
+                           const CacheIdentity &Right) {
+    EXPECT_NE(Left.Full, Right.Full);
+    EXPECT_NE(Left.Partition, Right.Partition);
+  };
+  expectDistinct(Baseline, SuppressedIdentity);
+  expectDistinct(Baseline, FatalIdentity);
+  expectDistinct(Baseline, VerboseIdentity);
+  expectDistinct(SuppressedIdentity, FatalIdentity);
+  expectDistinct(SuppressedIdentity, VerboseIdentity);
+  expectDistinct(FatalIdentity, VerboseIdentity);
+}
+
+TEST_F(LTOTest, RawLLVMOptionsDisableBothCacheLayers) {
+  ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
+  ScopedEnvVar PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "1");
+  ScopedEnvVar DebugUnset("NEVERC_PCG_DEBUG");
+  linker::LinkerDriverConfig Config;
+  EXPECT_TRUE(linker::ltoCacheUsable(Config));
+  EXPECT_TRUE(linker::ltoPartitionCacheUsable(Config));
+
+  Config.mllvmOpts = {"-print-after-all"};
+  EXPECT_FALSE(linker::ltoCacheUsable(Config));
+  EXPECT_FALSE(linker::ltoPartitionCacheUsable(Config));
+}
+
+TEST_F(LTOTest, PCGDebugOutputDisablesBothCacheLayers) {
+  ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
+  ScopedEnvVar PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "1");
+  ScopedEnvVar DebugUnset("NEVERC_PCG_DEBUG");
+  linker::LinkerDriverConfig Config;
+  EXPECT_TRUE(linker::ltoCacheUsable(Config));
+  EXPECT_TRUE(linker::ltoPartitionCacheUsable(Config));
+
+  ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
+  EXPECT_FALSE(linker::ltoCacheUsable(Config));
+  EXPECT_FALSE(linker::ltoPartitionCacheUsable(Config));
+}
+
+TEST_F(LTOTest, SuppressedLtoWarningCannotBypassLaterFatalWarnings) {
+  constexpr const char *Warning = "neverc-lto-policy-warning";
+  auto cacheDir = tmpFile("ltocache_warning_policy_dir");
+  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
+  ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
+  ScopedEnvVar PartitionCacheDisabled(linker::ltoPartitionCacheEnvVar,
+                                      linker::ltoCacheDisableValue);
+
+  auto source = tmpFile("ltocache_warning_policy.c");
+  auto object = tmpFile("ltocache_warning_policy.o");
+  auto output = tmpFile("ltocache_warning_policy_exe");
+  writeFile(
+      source,
+      "__attribute__((noinline)) int warned(void) {\n"
+      "  __asm__ volatile(\".warning \\\"neverc-lto-policy-warning\\\"\");\n"
+      "  return 0;\n"
+      "}\n"
+      "int main(void) { return warned(); }\n");
+
+  std::vector<std::string> compile = {"-std=c11"};
+  for (auto &flag : sysrootFlags())
+    compile.push_back(flag);
+  for (auto &flag : archFlags())
+    compile.push_back(flag);
+  compile.insert(compile.end(),
+                 {"-flto", "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(ncc(compile).exitCode, 0);
+
+  std::vector<std::string> link;
+  for (auto &flag : sysrootFlags())
+    link.push_back(flag);
+  for (auto &flag : archFlags())
+    link.push_back(flag);
+  link.insert(link.end(), {"-flto", object.string()});
+  if (isWindows())
+    link.push_back("-mno-incremental-linker-compatible");
+
+  auto suppressed = link;
+  suppressed.insert(suppressed.end(), {"-w", "-o", output.string()});
+  CmdResult first = ncc(suppressed);
+  ASSERT_EQ(first.exitCode, 0) << first.err;
+  EXPECT_FALSE(first.stderrContains(Warning)) << first.err;
+  ASSERT_TRUE(fs::exists(output));
+  const std::string ColdOutput = readFile(output);
+  EXPECT_EQ(countLtoCacheEntries(cacheDir), 1u)
+      << "suppressed diagnostics may populate their policy-specific cache";
+
+  std::error_code ec;
+  fs::remove(output, ec);
+  CmdResult warm = ncc(suppressed);
+  ASSERT_EQ(warm.exitCode, 0) << warm.err;
+  EXPECT_FALSE(warm.stderrContains(Warning)) << warm.err;
+  ASSERT_TRUE(fs::exists(output));
+  EXPECT_EQ(readFile(output), ColdOutput);
+  EXPECT_EQ(countLtoCacheEntries(cacheDir), 1u)
+      << "a warm suppressed-warning link must reuse its cache entry";
+
+  fs::remove(output, ec);
+  auto fatal = link;
+  fatal.insert(fatal.end(), {"-Werror", "-o", output.string()});
+  CmdResult fatalResult = ncc(fatal);
+  EXPECT_NE(fatalResult.exitCode, 0)
+      << "a cache entry created under -w bypassed fatal-warning policy";
+  EXPECT_TRUE(fatalResult.stderrContains(Warning)) << fatalResult.err;
+  EXPECT_FALSE(fs::exists(output))
+      << "a fatal LTO warning must not publish a linker output";
+  EXPECT_EQ(countLtoCacheEntries(cacheDir), 1u)
+      << "fatal diagnostics must not publish another cache entry";
+}
+
+TEST_F(LTOTest, LtoCachePreservesConsoleOptimizationRemarks) {
+  constexpr const char *Callee = "neverc_lto_cache_remark_callee";
+  auto cacheDir = tmpFile("ltocache_remark_dir");
+  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
+  ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
+  ScopedEnvVar PartitionCacheDisabled(linker::ltoPartitionCacheEnvVar,
+                                      linker::ltoCacheDisableValue);
+
+  auto calleeSource = tmpFile("ltocache_remark_callee.c");
+  auto callerSource = tmpFile("ltocache_remark_caller.c");
+  auto calleeObject = tmpFile("ltocache_remark_callee.o");
+  auto callerObject = tmpFile("ltocache_remark_caller.o");
+  auto output = tmpFile("ltocache_remark_exe");
+  writeFile(calleeSource, "__attribute__((always_inline)) int " +
+                              std::string(Callee) +
+                              "(int value) { return value + 1; }\n");
+  writeFile(callerSource, "extern __attribute__((always_inline)) int " +
+                              std::string(Callee) +
+                              "(int);\nint main(void) { return " +
+                              std::string(Callee) + "(41) != 42; }\n");
+
+  std::vector<std::string> base = {"-std=c11", "-O2", "-flto"};
+  for (auto &flag : sysrootFlags())
+    base.push_back(flag);
+  for (auto &flag : archFlags())
+    base.push_back(flag);
+  auto compile = [&](const fs::path &source, const fs::path &object) {
+    auto args = base;
+    args.insert(args.end(), {"-c", source.string(), "-o", object.string()});
+    return ncc(args);
+  };
+  ASSERT_EQ(compile(calleeSource, calleeObject).exitCode, 0);
+  ASSERT_EQ(compile(callerSource, callerObject).exitCode, 0);
+
+  auto link = base;
+  link.insert(link.end(), {calleeObject.string(), callerObject.string(),
+                           "-Rpass=^inline$", "-o", output.string()});
+  if (isWindows())
+    link.push_back("-mno-incremental-linker-compatible");
+
+  for (unsigned attempt = 0; attempt != 2; ++attempt) {
+    std::error_code ec;
+    fs::remove(output, ec);
+    CmdResult result = ncc(link);
+    ASSERT_EQ(result.exitCode, 0) << result.err;
+    EXPECT_TRUE(result.contains(Callee) || result.stderrContains(Callee))
+        << "stdout:\n"
+        << result.out << "\nstderr:\n"
+        << result.err;
+    EXPECT_TRUE(fs::exists(output));
+    EXPECT_EQ(countLtoCacheEntries(cacheDir), 0u)
+        << "raw LLVM options can have observable side effects and must bypass "
+           "the cache";
+  }
+}
+
 // Per-partition object cache (LTOCache.cpp + ParallelCodeGenMerge.cpp):
 // partition assignment is a stable name hash, and each partition's object
 // is cached keyed on its post-IPO bitcode.  Editing one function must
@@ -1518,7 +1779,8 @@ TEST_F(LTOTest, LtoPartitionCache) {
   auto srcDir = tmpFile("pcache_src");
   fs::create_directories(srcDir);
 
-  auto fnBody = [&](int fi, int fj, int extra, bool emitCodegenError) {
+  auto fnBody = [&](int fi, int fj, int extra, bool emitCodegenError,
+                    bool emitCodegenWarning) {
     std::string b;
     b += "__attribute__((noinline)) unsigned f_" + std::to_string(fi) + "_" +
          std::to_string(fj) + "(unsigned a) {\n";
@@ -1533,15 +1795,18 @@ TEST_F(LTOTest, LtoPartitionCache) {
     }
     if (emitCodegenError)
       b += "  __asm__ volatile(\".error\");\n";
+    if (emitCodegenWarning && fj >= NFuncs - 2)
+      b += "  __asm__ volatile(\".warning "
+           "\\\"neverc-pcg-cache-warning\\\"\");\n";
     b += "  return x;\n}\n";
     return b;
   };
-  auto writeUnit = [&](int fi, int extraInLastFn,
-                       bool emitCodegenError = false) {
+  auto writeUnit = [&](int fi, int extraInLastFn, bool emitCodegenError = false,
+                       bool emitCodegenWarning = false) {
     std::string src = "extern volatile unsigned g_seed;\n";
     for (int fj = 0; fj < NFuncs; ++fj)
       src += fnBody(fi, fj, fj == NFuncs - 1 ? extraInLastFn : 0,
-                    emitCodegenError && fj == NFuncs - 1);
+                    emitCodegenError && fj == NFuncs - 1, emitCodegenWarning);
     writeFile(srcDir / ("u" + std::to_string(fi) + ".c"), src);
   };
   for (int fi = 0; fi < NFiles; ++fi)
@@ -1665,6 +1930,35 @@ TEST_F(LTOTest, LtoPartitionCache) {
         << secondFailure.err;
     EXPECT_EQ(countEntries(failureCacheDir), 0u)
         << "retry of a failed partitioned link must leave the cache empty";
+  }
+
+  // A non-fatal partition diagnostic is just as observable as an error. It
+  // must reach the request's diagnostic policy on every link, and neither the
+  // partition layer nor the full-link layer may cache across it.
+  writeUnit(3, 4, /*emitCodegenError=*/false,
+            /*emitCodegenWarning=*/true);
+  compileUnit("u3");
+  auto warningCacheDir = tmpFile("pcache_warning_dir");
+  ASSERT_TRUE(fs::create_directory(warningCacheDir));
+  ASSERT_EQ(countEntries(warningCacheDir), 0u);
+  {
+    ScopedEnvVar WarningCacheDir(linker::ltoCacheDirEnvVar,
+                                 warningCacheDir.string().c_str());
+    ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
+    ScopedEnvVar PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "1");
+    for (unsigned attempt = 0; attempt != 2; ++attempt) {
+      std::error_code ec;
+      fs::remove(exe, ec);
+      CmdResult result = ncc(link);
+      ASSERT_EQ(result.exitCode, 0) << result.err;
+      EXPECT_EQ(StringRef(result.err).count("neverc-pcg-cache-warning"), 2u)
+          << "non-error diagnostics must preserve occurrence count:\n"
+          << result.err;
+      EXPECT_TRUE(fs::exists(exe));
+      EXPECT_EQ(countEntries(warningCacheDir), 0u)
+          << "a partition warning must block both partition and full-link "
+             "cache publication";
+    }
   }
 }
 
