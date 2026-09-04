@@ -31,15 +31,20 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C neverc branch --show-current)" = ""
-          test "$(git -C neverc rev-parse HEAD^)" = "7678168a880fa09b4171f1a81a444fba9a1acda3"
+          test "$(git -C neverc rev-parse HEAD^)" = "718b7b37b160494bc51158accc3ee444dfe37534"
+          test "$(git -C neverc rev-parse HEAD^^)" = "d17684892e3616764cca0a1123a4c3752b31498b"
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
-          printf '%s\n' '.github/workflows/debug-eh-frame-zero-range.yml' \
-            'tests/neverc/LinkerTests.cpp' |
+          printf '%s\n' '.github/workflows/debug-eh-frame-zero-range.yml' |
             sort -u > expected-files.txt
           git -C neverc diff-tree --no-commit-id --name-only -r HEAD^ HEAD |
             sort -u > actual-files.txt
           diff -u expected-files.txt actual-files.txt
+          printf '%s\n' 'tests/neverc/LinkerTests.cpp' |
+            sort -u > expected-test-files.txt
+          git -C neverc diff-tree --no-commit-id --name-only -r HEAD^^ HEAD^ |
+            sort -u > actual-test-files.txt
+          diff -u expected-test-files.txt actual-test-files.txt
           printf '%s\n' '.github/workflows/debug-eh-frame-zero-range.yml' \
             'tests/neverc/LinkerTests.cpp' |
             sort -u > expected-range-files.txt
