@@ -17,6 +17,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileOutputBuffer.h"
+#include <atomic>
 #include <mutex>
 
 namespace llvm {
@@ -58,6 +59,10 @@ public:
   void message(const Twine &msg, llvm::raw_ostream &s);
   void warn(const Twine &msg);
 
+  uint64_t observableOutputEpoch() const noexcept {
+    return ObservableOutputEpoch.load(std::memory_order_relaxed);
+  }
+
   raw_ostream &outs();
   raw_ostream &errs();
   void flushStreams();
@@ -80,6 +85,7 @@ private:
   // with a mutex.  In the future, when several concurrent linker contexts
   // become supported, this mutex will be naturally scoped to this context.
   std::mutex mu;
+  std::atomic<uint64_t> ObservableOutputEpoch{0};
   llvm::raw_ostream *stdoutOS{};
   llvm::raw_ostream *stderrOS{};
 };

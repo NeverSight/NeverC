@@ -402,15 +402,24 @@ constexpr StringLiteral PCGOriginalLocalAttr = "neverc.pcg.original-local";
 constexpr StringLiteral PCGOriginalAddressTakenAttr =
     "neverc.pcg.original-address-taken";
 
+struct ParallelCodeGenTransactionState {
+  std::atomic<bool> HadDiagnostic{false};
+};
+
+struct PartitionDiagnostic {
+  DiagnosticSeverity Severity;
+  std::string Text;
+};
+
 struct PartitionResult {
   SmallVector<char, 0> ObjBuffer;
   SmallVector<char, 0> DwoBuffer;
   bool Success = false;
-  /// Errors raised against this partition's own context, carried back to the
-  /// caller's thread instead of being reported where they happen.  See
-  /// PartitionDiagnosticHandler.  Written by the one worker that owns this
+  /// Diagnostics raised against this partition's own context, carried back to
+  /// the caller's thread instead of being reported where they happen. See
+  /// PartitionDiagnosticHandler. Written by the one worker that owns this
   /// partition, read after the workers join.
-  SmallVector<std::string, 0> Errors;
+  SmallVector<PartitionDiagnostic, 0> Diagnostics;
 };
 
 /// A partition is optimized and codegen'd on a worker thread, against an
@@ -421,31 +430,69 @@ struct PartitionResult {
 /// runs the handlers while the other waits on a lock the first will not
 /// release.
 ///
-/// Recording the error keeps it on the only path that can report it properly.
-/// The partition counts as failed, and finalizeResults re-raises the text
-/// against the module the caller owns -- the one context here with a diagnostic
-/// consumer behind it.
+/// Recording diagnostics keeps them on the only path that can report them
+/// properly. An error makes the partition fail; every delivered severity is
+/// replayed against the module the caller owns -- the one context here with a
+/// diagnostic consumer behind it.
 class PartitionDiagnosticHandler final : public DiagnosticHandler {
 public:
-  explicit PartitionDiagnosticHandler(PartitionResult &Result)
-      : Result(Result) {}
+  PartitionDiagnosticHandler(PartitionResult &Result,
+                             ParallelCodeGenTransactionState &Transaction)
+      : Result(Result), Transaction(Transaction) {}
 
   bool handleDiagnostics(const DiagnosticInfo &DI) override {
-    // Only an error takes the exit() path, so only an error has to be taken off
-    // it; anything milder keeps the route it already had.
-    if (DI.getSeverity() != DS_Error)
-      return false;
+    Transaction.HadDiagnostic.store(true, std::memory_order_relaxed);
     std::string Text;
-    raw_string_ostream Stream(Text);
-    DiagnosticPrinterRawOStream Printer(Stream);
-    DI.print(Printer);
-    Result.Errors.push_back(std::move(Text));
+    {
+      raw_string_ostream Stream(Text);
+      DiagnosticPrinterRawOStream Printer(Stream);
+      DI.print(Printer);
+      Stream.flush();
+    }
+    Result.Diagnostics.push_back({DI.getSeverity(), std::move(Text)});
     return true;
   }
 
 private:
   PartitionResult &Result;
+  ParallelCodeGenTransactionState &Transaction;
 };
+
+class ReplayedPartitionDiagnostic final : public DiagnosticInfo {
+public:
+  ReplayedPartitionDiagnostic(DiagnosticSeverity Severity, StringRef Text)
+      : DiagnosticInfo(DK_FirstPluginKind, Severity), Text(Text) {}
+
+  void print(DiagnosticPrinter &Printer) const override { Printer << Text; }
+
+private:
+  StringRef Text;
+};
+
+static bool hasErrorDiagnostic(const PartitionResult &Result) {
+  return llvm::any_of(Result.Diagnostics, [](const PartitionDiagnostic &Diag) {
+    return Diag.Severity == DS_Error;
+  });
+}
+
+/// Replay diagnostics on the coordinator in deterministic partition and
+/// occurrence order. Preserve every non-error occurrence; only errors retain
+/// the historical cross-partition text de-duplication.
+static unsigned replayPartitionDiagnostics(Module &Mod,
+                                           ArrayRef<PartitionResult> Results) {
+  StringSet<> ReportedErrors;
+  unsigned ErrorCount = 0;
+  for (const PartitionResult &Result : Results) {
+    for (const PartitionDiagnostic &Diag : Result.Diagnostics) {
+      if (Diag.Severity == DS_Error && !ReportedErrors.insert(Diag.Text).second)
+        continue;
+      ReplayedPartitionDiagnostic Replay(Diag.Severity, Diag.Text);
+      Mod.getContext().diagnose(Replay);
+      ErrorCount += Diag.Severity == DS_Error;
+    }
+  }
+  return ErrorCount;
+}
 
 struct PreparedPartition {
   std::unique_ptr<LLVMContext> Ctx;
@@ -635,11 +682,13 @@ struct ParallelCodeGenRequestSnapshot {
   const NevercPipelineTuningOptions PipelineTuning;
   const unsigned ResolvedSCEVHugeExprThreshold;
   const bool EagerReclaim;
+  ParallelCodeGenTransactionState &Transaction;
   const ResourceSessionView ResourceSession;
 
   explicit ParallelCodeGenRequestSnapshot(
       const ParallelCodeGenTuning &RequestTuning,
       const NevercPipelineTuningOptions &RequestPipelineTuning,
+      ParallelCodeGenTransactionState &Transaction,
       ResourceSessionView ResourceSession,
       std::optional<unsigned> ResolvedThreshold = std::nullopt)
       : Tuning(RequestTuning), PipelineTuning(RequestPipelineTuning),
@@ -649,7 +698,7 @@ struct ParallelCodeGenRequestSnapshot {
                                      ? RequestTuning.SCEVHugeExprThreshold
                                      : llvm::getScevHugeExprThreshold())),
         EagerReclaim(eagerlyReclaimPCGIntermediates()),
-        ResourceSession(std::move(ResourceSession)) {
+        Transaction(Transaction), ResourceSession(std::move(ResourceSession)) {
     assert((!ResolvedThreshold || RequestTuning.SCEVHugeExprThreshold == 0 ||
             RequestTuning.SCEVHugeExprThreshold == *ResolvedThreshold) &&
            "resolved SCEV threshold disagrees with explicit request tuning");
@@ -695,12 +744,13 @@ struct ParallelCGContext {
   const NevercPipelineTuningOptions PipelineTuning;
   const unsigned ResolvedSCEVHugeExprThreshold;
   const bool EagerReclaim;
+  ParallelCodeGenTransactionState &Transaction;
   const ResourceSessionView ResourceSession;
 
   explicit ParallelCGContext(const ParallelCodeGenRequestSnapshot &Request)
       : Tuning(Request.Tuning), PipelineTuning(Request.PipelineTuning),
         ResolvedSCEVHugeExprThreshold(Request.ResolvedSCEVHugeExprThreshold),
-        EagerReclaim(Request.EagerReclaim),
+        EagerReclaim(Request.EagerReclaim), Transaction(Request.Transaction),
         ResourceSession(Request.ResourceSession) {}
 
   const Target *TheTarget;
@@ -1247,7 +1297,8 @@ void ParallelCGContext::preparePartitions(
           ResolvedSCEVHugeExprThreshold);
       PP->Ctx->setDiscardValueNames(true);
       PP->Ctx->setDiagnosticHandler(
-          std::make_unique<PartitionDiagnosticHandler>(Results[p]));
+          std::make_unique<PartitionDiagnosticHandler>(Results[p], Transaction),
+          /*RespectFilters=*/true);
       auto MOrErr =
           getLazyBitcodeModule(MemoryBufferRef(BCRef, "lto-pcg"), *PP->Ctx);
       if (!MOrErr) {
@@ -1464,12 +1515,24 @@ void ParallelCGContext::preparePartitions(
               ResolvedSCEVHugeExprThreshold);
           CachedContext->setDiscardValueNames(true);
           CachedContext->setDiagnosticHandler(
-              std::make_unique<PartitionDiagnosticHandler>(Results[p]));
+              std::make_unique<PartitionDiagnosticHandler>(Results[p],
+                                                           Transaction),
+              /*RespectFilters=*/true);
           auto Parsed = parseBitcodeFile(
               MemoryBufferRef(StringRef(CachedIR.data(), CachedIR.size()),
                               "lto-pcg-cached-optimized"),
               *CachedContext);
-          if (Parsed && !verifyModule(**Parsed, &errs())) {
+          bool CachedModuleIsValid = false;
+          if (Parsed) {
+            // A corrupt semantic cache entry is a silent miss. Do not let a
+            // worker write verifier text directly to process stderr: the
+            // original partition below will regenerate and overwrite it.
+            std::string IgnoredVerifierOutput;
+            raw_string_ostream VerifierStream(IgnoredVerifierOutput);
+            CachedModuleIsValid = !verifyModule(**Parsed, &VerifierStream);
+            VerifierStream.flush();
+          }
+          if (Parsed && CachedModuleIsValid) {
             // Module must die before the LLVMContext that owns all of its
             // uniqued types/constants.  Replacing the context first leaves the
             // old Module briefly pointing into freed context storage.
@@ -1564,12 +1627,7 @@ void ParallelCGContext::observeRetention(
 
 std::unique_ptr<Module>
 ParallelCGContext::reassembleOptimizedPartitions(Module &Mod) {
-  StringSet<> Reported;
-  for (unsigned I = 0; I != NumPartitions; ++I)
-    for (const std::string &Message : Results[I].Errors)
-      if (Reported.insert(Message).second)
-        Mod.getContext().emitError(Message);
-  if (!Reported.empty())
+  if (replayPartitionDiagnostics(Mod, Results) != 0)
     return nullptr;
 
   for (unsigned I = 0; I != NumPartitions; ++I)
@@ -1653,7 +1711,8 @@ ParallelCGContext::reassembleOptimizedPartitions(Module &Mod) {
 }
 
 void ParallelCGContext::commitObjectCacheEntries() const {
-  if (!Cache || !Cache->enabled() || CacheStoresOptimizedIR || EmitSplitDwarf)
+  if (Transaction.HadDiagnostic.load(std::memory_order_relaxed) || !Cache ||
+      !Cache->enabled() || CacheStoresOptimizedIR || EmitSplitDwarf)
     return;
 
   for (unsigned I = 0; I != NumPartitions; ++I) {
@@ -1670,7 +1729,8 @@ void ParallelCGContext::commitObjectCacheEntries() const {
 }
 
 void ParallelCGContext::commitOptimizedIRCacheEntries() const {
-  if (!Cache || !Cache->enabled() || !CacheStoresOptimizedIR || EmitSplitDwarf)
+  if (Transaction.HadDiagnostic.load(std::memory_order_relaxed) || !Cache ||
+      !Cache->enabled() || !CacheStoresOptimizedIR || EmitSplitDwarf)
     return;
 
   for (unsigned I = 0; I != NumPartitions; ++I) {
@@ -1718,22 +1778,17 @@ bool ParallelCGContext::finalizeResults(
   // What the partitions recorded is re-raised here and nowhere else: this is
   // the thread the caller is waiting on, and its module carries the only
   // context in the parallel path with a diagnostic consumer behind it (see
-  // PartitionDiagnosticHandler).  The partitions are one module split N ways,
-  // so N copies of one message describe one problem; each distinct text is
-  // reported once rather than once per partition that ran into it.
-  StringSet<> Reported;
-  for (unsigned i = 0; i < NumPartitions; ++i)
-    for (const std::string &Message : Results[i].Errors)
-      if (Reported.insert(Message).second)
-        Mod.getContext().emitError(Message);
+  // PartitionDiagnosticHandler). Error text duplicated across ownership
+  // partitions is reported once; non-errors retain every occurrence.
+  const unsigned ReportedErrors = replayPartitionDiagnostics(Mod, Results);
 
   // Standing down because the compilation failed, not because the parallel path
   // did.  This deliberately does not go through bail(): NEVERC_PCG_STRICT is
   // there to catch the merge quietly degrading into the serial fallback, and an
   // error in the program being compiled is not that.
-  if (!Reported.empty()) {
+  if (ReportedErrors != 0) {
     if (Dbg)
-      errs() << "[pcg] standing down: " << Reported.size()
+      errs() << "[pcg] standing down: " << ReportedErrors
              << " partition error(s) reported\n";
     restoreLinkage(Mod);
     return false;
@@ -2140,7 +2195,7 @@ runParallelCodeGenImpl(Module &Mod, TargetMachine &TM,
         // A recorded error condemns whatever the pipeline went on to produce,
         // however finished the object looks.
         if (CanEmit)
-          Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
+          Ctx.Results[p].Success = !hasErrorDiagnostic(Ctx.Results[p]);
         if (Ctx.EagerReclaim)
           PP.releaseIRAndTarget();
         if (Ctx.EagerReclaim)
@@ -2183,9 +2238,10 @@ bool runParallelCodeGenWithTunings(
   auto ResourcePermit = ProcessResourceBroker::global().acquireSession(
       std::move(Parent), ResourcePhase::PCGCodeGen,
       ResourceAdmissionMode::DoNotWait);
-  const ParallelCodeGenRequestSnapshot Request(Tuning, PipelineTuning,
-                                               ResourcePermit.session(),
-                                               ResolvedSCEVHugeExprThreshold);
+  ParallelCodeGenTransactionState Transaction;
+  const ParallelCodeGenRequestSnapshot Request(
+      Tuning, PipelineTuning, Transaction, ResourcePermit.session(),
+      ResolvedSCEVHugeExprThreshold);
   installRequestTuning(Mod.getContext(), Request);
   return runParallelCodeGenImpl(Mod, TM, Outputs, Request, Cache, Observers);
 }
@@ -2275,9 +2331,10 @@ bool runParallelOptAndCodeGenWithTunings(
   auto ResourcePermit = ProcessResourceBroker::global().acquireSession(
       std::move(Parent), ResourcePhase::PCGOptCodeGen,
       ResourceAdmissionMode::DoNotWait);
-  const ParallelCodeGenRequestSnapshot Request(Tuning, PipelineTuning,
-                                               ResourcePermit.session(),
-                                               ResolvedSCEVHugeExprThreshold);
+  ParallelCodeGenTransactionState Transaction;
+  const ParallelCodeGenRequestSnapshot Request(
+      Tuning, PipelineTuning, Transaction, ResourcePermit.session(),
+      ResolvedSCEVHugeExprThreshold);
   installRequestTuning(Mod.getContext(), Request);
   if (OptLevel == 0)
     return false;
@@ -2402,7 +2459,7 @@ bool runParallelOptAndCodeGenWithTunings(
     }
 
     if (NeedsWholeModuleBarrier) {
-      Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
+      Ctx.Results[p].Success = !hasErrorDiagnostic(Ctx.Results[p]);
       if (Ctx.Results[p].Success && Ctx.Cache && !PP.CacheKey.empty() &&
           !PP.SkipOptimization) {
         raw_svector_ostream Stream(PP.PendingOptimizedIR);
@@ -2434,7 +2491,7 @@ bool runParallelOptAndCodeGenWithTunings(
     // A recorded error condemns whatever the pipeline went on to produce,
     // however finished the object looks.
     if (CanEmit)
-      Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
+      Ctx.Results[p].Success = !hasErrorDiagnostic(Ctx.Results[p]);
     if (Ctx.EagerReclaim) {
       PP.releaseIRAndTarget();
       Ctx.notePreparedPartitionReleased();
