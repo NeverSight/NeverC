@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <iterator>
 #include <limits>
 #include <string>
@@ -31,6 +32,54 @@ struct TokenStorage {
   BumpPtrAllocator Alloc;
   StringSaver Saver{Alloc};
 };
+
+struct CapturedGnuToken {
+  const char *Data = nullptr;
+  std::string Text;
+  bool Transient = false;
+};
+
+struct GnuTokenCapture {
+  SmallVector<CapturedGnuToken, 16> Tokens;
+  size_t EndOfLineCount = 0;
+};
+
+void captureGnuToken(const char *Data, size_t Length, int Transient,
+                     void *Opaque) {
+  auto &Capture = *static_cast<GnuTokenCapture *>(Opaque);
+  Capture.Tokens.push_back({Data, std::string(Data, Length), Transient != 0});
+}
+
+void captureGnuEndOfLine(void *Opaque) {
+  ++static_cast<GnuTokenCapture *>(Opaque)->EndOfLineCount;
+}
+
+uint64_t extendTokenDigest(uint64_t Digest, StringRef Token) {
+  constexpr uint64_t FnvPrime = 1099511628211ULL;
+  for (unsigned Byte = 0; Byte != sizeof(size_t); ++Byte) {
+    Digest ^= (Token.size() >> (Byte * 8)) & 0xff;
+    Digest *= FnvPrime;
+  }
+  for (unsigned char Byte : Token.bytes()) {
+    Digest ^= Byte;
+    Digest *= FnvPrime;
+  }
+  return Digest;
+}
+
+uint64_t capturedTokenDigest(ArrayRef<CapturedGnuToken> Tokens) {
+  uint64_t Digest = 14695981039346656037ULL;
+  for (const CapturedGnuToken &Token : Tokens)
+    Digest = extendTokenDigest(Digest, Token.Text);
+  return Digest;
+}
+
+uint64_t expectedTokenDigest(ArrayRef<std::string> Tokens) {
+  uint64_t Digest = 14695981039346656037ULL;
+  for (const std::string &Token : Tokens)
+    Digest = extendTokenDigest(Digest, Token);
+  return Digest;
+}
 
 } // namespace
 
@@ -57,6 +106,92 @@ TEST(SupportCommandLineTest, GNUTokenizerPreservesLongAndEmptyArguments) {
   EXPECT_EQ(StringRef(Arguments[0]), LongArgument);
   EXPECT_EQ(StringRef(Arguments[1]), "");
   EXPECT_EQ(StringRef(Arguments[2]), "");
+}
+
+TEST(SupportCommandLineTest, CGNUTokenizerBorrowsLargeSimpleArguments) {
+  constexpr size_t TokenCount = 4096;
+  std::string Input;
+  SmallVector<std::string, 0> Expected;
+  SmallVector<size_t, 0> Offsets;
+  size_t ExpectedEndOfLines = 0;
+  Expected.reserve(TokenCount);
+  Offsets.reserve(TokenCount);
+
+  for (size_t I = 0; I != TokenCount; ++I) {
+    if (I != 0) {
+      const bool UseNewline = I % 17 == 0;
+      Input.push_back(UseNewline ? '\n' : ' ');
+      ExpectedEndOfLines += UseNewline;
+    }
+    Offsets.push_back(Input.size());
+    Expected.push_back("argument-" + std::to_string(I) + "=" +
+                       std::string(24, static_cast<char>('a' + I % 26)));
+    Input += Expected.back();
+  }
+
+  GnuTokenCapture Capture;
+  ASSERT_TRUE(csupport_cl_tokenize_gnu_impl(Input.data(), Input.size(),
+                                            captureGnuToken,
+                                            captureGnuEndOfLine, &Capture));
+
+  ASSERT_EQ(Capture.Tokens.size(), TokenCount);
+  EXPECT_EQ(Capture.EndOfLineCount, ExpectedEndOfLines);
+  EXPECT_EQ(capturedTokenDigest(Capture.Tokens), expectedTokenDigest(Expected));
+  for (size_t I = 0; I != TokenCount; ++I) {
+    EXPECT_EQ(Capture.Tokens[I].Text, Expected[I]);
+    ASSERT_FALSE(Capture.Tokens[I].Transient);
+    ASSERT_EQ(Capture.Tokens[I].Data, Input.data() + Offsets[I]);
+  }
+}
+
+TEST(SupportCommandLineTest,
+     CGNUTokenizerOnlyCopiesArgumentsThatNeedTransformation) {
+  std::string Input =
+      "plain \"two words\" '' escaped\\ value # ignored \"'\\\\\n"
+      "next raw#hash continued\\\nline";
+  Input.push_back('\0');
+  Input += "after-nul \"unterminated";
+
+  GnuTokenCapture Capture;
+  ASSERT_TRUE(csupport_cl_tokenize_gnu_impl(Input.data(), Input.size(),
+                                            captureGnuToken,
+                                            captureGnuEndOfLine, &Capture));
+
+  const StringRef Expected[] = {"plain",         "two words", "",
+                                "escaped value", "next",      "raw#hash",
+                                "continuedline", "after-nul", "unterminated"};
+  const bool ExpectedTransient[] = {false, true, true,  true, false,
+                                    false, true, false, true};
+  ASSERT_EQ(Capture.Tokens.size(), std::size(Expected));
+  EXPECT_EQ(Capture.EndOfLineCount, 1U)
+      << "a backslash-newline continuation is not an end-of-line marker";
+  for (size_t I = 0; I != std::size(Expected); ++I) {
+    EXPECT_EQ(Capture.Tokens[I].Text, Expected[I]);
+    EXPECT_EQ(Capture.Tokens[I].Transient, ExpectedTransient[I]);
+  }
+
+  ASSERT_FALSE(Capture.Tokens[0].Transient);
+  ASSERT_FALSE(Capture.Tokens[4].Transient);
+  ASSERT_FALSE(Capture.Tokens[5].Transient);
+  ASSERT_FALSE(Capture.Tokens[7].Transient);
+  EXPECT_EQ(Capture.Tokens[0].Data, Input.data() + Input.find("plain"));
+  EXPECT_EQ(Capture.Tokens[4].Data, Input.data() + Input.find("next"));
+  EXPECT_EQ(Capture.Tokens[5].Data, Input.data() + Input.find("raw#hash"));
+  EXPECT_EQ(Capture.Tokens[7].Data, Input.data() + Input.find("after-nul"));
+}
+
+TEST(SupportCommandLineTest, CGNUTokenizerBorrowsAnUnescapedTrailingBackslash) {
+  const std::string Input = "literal-backslash\\";
+  GnuTokenCapture Capture;
+
+  ASSERT_TRUE(csupport_cl_tokenize_gnu_impl(Input.data(), Input.size(),
+                                            captureGnuToken,
+                                            /*mark_eol=*/nullptr, &Capture));
+
+  ASSERT_EQ(Capture.Tokens.size(), 1U);
+  EXPECT_EQ(Capture.Tokens.front().Text, Input);
+  ASSERT_FALSE(Capture.Tokens.front().Transient);
+  EXPECT_EQ(Capture.Tokens.front().Data, Input.data());
 }
 
 TEST(SupportCommandLineTest, CTokenizerNeverPublishesTruncatedToken) {
