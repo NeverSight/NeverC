@@ -478,7 +478,7 @@ zero_after:
   llvm::Expected<ELFEhFrameHeaderEntry> Entry =
       readFirstELFEhFrameHeaderEntry(bytes);
   ASSERT_TRUE(static_cast<bool>(Entry))
-      << llvm::toString(Entry.takeError());
+      << llvm::toString(Entry.takeError()).str().str();
   const uint64_t Start = requireELFSymbolAddress(bytes, "_start");
   EXPECT_EQ(Entry->Count, 1U)
       << "zero-range FDEs must not occupy binary-search table entries";
