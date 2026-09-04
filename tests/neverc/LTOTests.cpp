@@ -1855,6 +1855,12 @@ TEST_F(LTOTest, LtoPartitionCache) {
     EXPECT_TRUE(firstFailure.stderrContains(".error directive invoked"))
         << "link did not reach the intentional backend diagnostic:\n"
         << firstFailure.err;
+    EXPECT_EQ(llvm::StringRef(firstFailure.err)
+                  .count("lto-pcg <inline asm>"),
+              1u)
+        << "parallel codegen dropped the module prefix from the backend "
+           "error:\n"
+        << firstFailure.err;
     EXPECT_EQ(countEntries(failureCacheDir), 0u)
         << "a failed partitioned link must not commit successful sibling "
            "partitions";
@@ -1864,6 +1870,11 @@ TEST_F(LTOTest, LtoPartitionCache) {
         << "a cached failed partition made an invalid link succeed";
     EXPECT_TRUE(secondFailure.stderrContains(".error directive invoked"))
         << "retry did not regenerate the failed partition:\n"
+        << secondFailure.err;
+    EXPECT_EQ(llvm::StringRef(secondFailure.err)
+                  .count("lto-pcg <inline asm>"),
+              1u)
+        << "the regenerated backend error lost its module identity:\n"
         << secondFailure.err;
     EXPECT_EQ(countEntries(failureCacheDir), 0u)
         << "retry of a failed partitioned link must leave the cache empty";
@@ -1890,6 +1901,17 @@ TEST_F(LTOTest, LtoPartitionCache) {
       ASSERT_EQ(result.exitCode, 0) << result.err;
       EXPECT_EQ(llvm::StringRef(result.err).count("warning: "), 2u)
           << "non-error diagnostics must preserve occurrence count:\n"
+          << result.err;
+      EXPECT_EQ(llvm::StringRef(result.err).count("warning: <inline asm>"),
+                0u)
+          << "parallel codegen dropped the module prefix while replaying an "
+             "inline-assembly diagnostic:\n"
+          << result.err;
+      EXPECT_EQ(llvm::StringRef(result.err)
+                    .count("lto-pcg <inline asm>"),
+                2u)
+          << "every replayed inline-assembly warning must retain its module "
+             "identity:\n"
           << result.err;
       EXPECT_TRUE(fs::exists(exe));
       EXPECT_EQ(countEntries(warningCacheDir), 0u)
