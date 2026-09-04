@@ -446,6 +446,9 @@ public:
     {
       raw_string_ostream Stream(Text);
       DiagnosticPrinterRawOStream Printer(Stream);
+      if (auto *D = dyn_cast<DiagnosticInfoSrcMgr>(&DI))
+        if (D->isInlineAsmDiag())
+          Stream << D->getModuleName() << ' ';
       DI.print(Printer);
       Stream.flush();
     }
