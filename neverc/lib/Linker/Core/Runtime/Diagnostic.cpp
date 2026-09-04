@@ -152,6 +152,8 @@ std::string linker::ErrorHandler::getLocation(const Twine &msg) {
 void linker::ErrorHandler::reportDiagnostic(StringRef location, Colors c,
                                             StringRef diagKind,
                                             const Twine &msg) {
+  if (disableOutput)
+    return;
   SmallString<256> buf;
   raw_svector_ostream os(buf);
   os << sep << location << ": ";
@@ -164,6 +166,7 @@ void linker::ErrorHandler::reportDiagnostic(StringRef location, Colors c,
     }
   }
   os << msg << '\n';
+  ObservableOutputEpoch.fetch_add(1, std::memory_order_relaxed);
   linker::errs() << buf;
 }
 
@@ -178,6 +181,7 @@ void linker::ErrorHandler::message(const Twine &msg, llvm::raw_ostream &s) {
   if (disableOutput)
     return;
   std::lock_guard<std::mutex> lock(mu);
+  ObservableOutputEpoch.fetch_add(1, std::memory_order_relaxed);
   s << msg << "\n";
   s.flush();
 }

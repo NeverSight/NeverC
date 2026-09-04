@@ -88,7 +88,7 @@ void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
   // files, strip level, build-id, ...) are deliberately excluded; fields
   // that trigger a cache bypass (remarks, save-temps, plugins) never reach
   // this point with interesting values.
-  appendStr(material, "neverc-lto-config-schema-v3");
+  appendStr(material, "neverc-lto-config-schema-v4");
   appendStr(material, cfg.cpu);
   appendU64(material, uint64_t(int64_t(cfg.ltoOptLevel)));
   appendU64(material, uint64_t(int64_t(cfg.ltoCGOLevel)));
@@ -102,6 +102,12 @@ void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
   appendU64(material, cfg.jmcInstrument);
   appendU64(material, cfg.emulatedTLS);
   appendU64(material, cfg.stackSizeSection);
+  appendStr(material, "suppressWarnings");
+  appendU64(material, cfg.suppressWarnings);
+  appendStr(material, "fatalWarnings");
+  appendU64(material, cfg.fatalWarnings);
+  appendStr(material, "verbose");
+  appendU64(material, cfg.verbose);
   // Encode the schema field names and values explicitly. Never hash the struct
   // representation: padding, layout, and addresses are not stable cache
   // material. Keep raw -mllvm argv below as an independent, ordered input so
@@ -155,7 +161,7 @@ std::string linker::ltoPartitionCacheSalt(const LinkerDriverConfig &cfg,
   // already covers.
   LTOCacheKey k;
   k.appendConfig(cfg);
-  appendStr(k.material, "neverc-pcg-salt-v3");
+  appendStr(k.material, "neverc-pcg-salt-v4");
   appendU64(k.material, emitAddrsig);
   return hexKeyFromMaterial(k.material);
 }
@@ -168,6 +174,11 @@ bool linker::ltoCacheUsable(const LinkerDriverConfig &cfg) {
   if (const char *env = getenv(ltoCacheEnvVar))
     if (StringRef(env) == ltoCacheDisableValue)
       return false;
+  // Raw LLVM options and PCG debug mode can emit request-specific remarks or
+  // debug output. A cache hit would skip those observable side effects, and a
+  // partition hit would skip their worker-side origin entirely.
+  if (!cfg.mllvmOpts.empty() || ::getenv("NEVERC_PCG_DEBUG"))
+    return false;
   // Features with side effects (extra output files, loaded plugin code)
   // that a cache hit would silently skip.
   if (cfg.saveTemps || cfg.timeTraceEnabled || !cfg.optRemarksFilename.empty())
@@ -421,6 +432,11 @@ void linker::runLTOWithCache(lto::LTO &ltoObj, LTOCacheKey &cacheKey,
                              bool usable, const LinkerDriverConfig &cfg,
                              StringRef backendTag, bool emitAddrsig,
                              MutableArrayRef<SmallString<0>> bufs) {
+  // A quiet embedding must not populate a full-link entry that a later visible
+  // request could hit and use to skip diagnostics. Partition publication is
+  // independently guarded by the PCG diagnostic transaction.
+  if (usable && errorHandler().disableOutput)
+    usable = false;
   // A default-seed finalizer intentionally produces a new key stream at each
   // real link boundary. A full-link cache hit would skip that boundary and
   // replay the old object verbatim. Fixed-seed builds remain cacheable.
@@ -433,6 +449,7 @@ void linker::runLTOWithCache(lto::LTO &ltoObj, LTOCacheKey &cacheKey,
       return;
   }
   const uint64_t errorsBeforeRun = errorCount();
+  const uint64_t outputBeforeRun = errorHandler().observableOutputEpoch();
   checkError(ltoObj.runBuffered(
       [&](size_t task, const Twine &,
           SmallVector<char, 0> &&output) -> Error {
@@ -447,6 +464,7 @@ void linker::runLTOWithCache(lto::LTO &ltoObj, LTOCacheKey &cacheKey,
   // error and leaves bytes in one or more task buffers.  Those bytes are not a
   // valid cache result; replaying them would skip the diagnostic and can turn
   // an identical failed link into a successful one.
-  if (usable && errorCount() == errorsBeforeRun)
+  if (usable && errorCount() == errorsBeforeRun &&
+      errorHandler().observableOutputEpoch() == outputBeforeRun)
     ltoCacheStore(key, bufs);
 }
