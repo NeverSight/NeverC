@@ -32,11 +32,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C neverc branch --show-current)" = ""
-          test "$(git -C neverc rev-parse HEAD^)" = "b76a0d60435342a4fcd09d6bd646f00799b8d233"
+          test "$(git -C neverc rev-parse HEAD^)" = "7d7a6ee2ebdadd12d9b39f5465d9246fb64ede1c"
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
           printf '%s\n' \
             '.github/workflows/debug-lto-strict-cache.yml' \
+            'neverc/lib/Linker/Core/Driver/LTOCache.cpp' \
             'tests/neverc/MergeTests.cpp' | sort -u > expected-files.txt
           git -C neverc diff-tree --no-commit-id --name-only -r HEAD^ HEAD |
             sort -u > actual-files.txt
@@ -79,7 +80,7 @@ jobs:
           cmake --build build --config "$BUILD_TYPE" \
             --target neverc-merge-tests
 
-      - name: Require strict-cache fail-closed contract
+      - name: Require fault-injected strict-cache contract
         shell: bash
         run: |
           set -euo pipefail

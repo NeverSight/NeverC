@@ -432,6 +432,12 @@ void linker::runLTOWithCache(lto::LTO &ltoObj, LTOCacheKey &cacheKey,
                              bool usable, const LinkerDriverConfig &cfg,
                              StringRef backendTag, bool emitAddrsig,
                              MutableArrayRef<SmallString<0>> bufs) {
+  // The test-only merger fault injector must reach the post-IPO merge boundary
+  // on every request. A full-link hit would hide the injected failure, while
+  // storing its serial fallback would let a later injected request do the same.
+  // Keep this bypass here so the independent per-partition cache remains usable.
+  if (usable && ::getenv("NEVERC_PCG_FORCE_MERGE_FAIL"))
+    usable = false;
   // A quiet embedding must not populate a full-link entry that a later visible
   // request could hit and use to skip diagnostics. Partition publication is
   // independently guarded by the PCG diagnostic transaction.
