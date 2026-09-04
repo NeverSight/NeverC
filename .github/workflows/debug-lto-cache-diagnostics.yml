@@ -7,6 +7,7 @@ on:
   push:
     tags:
       - "debug-lto-cache-diagnostics-red-*"
+      - "debug-lto-cache-diagnostics-green-*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
