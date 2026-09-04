@@ -31,8 +31,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C neverc branch --show-current)" = ""
-          test "$(git -C neverc rev-parse HEAD^)" = "718b7b37b160494bc51158accc3ee444dfe37534"
-          test "$(git -C neverc rev-parse HEAD^^)" = "d17684892e3616764cca0a1123a4c3752b31498b"
+          test "$(git -C neverc rev-parse 718b7b37b160494bc51158accc3ee444dfe37534^)" = "d17684892e3616764cca0a1123a4c3752b31498b"
+          git -C neverc merge-base --is-ancestor \
+            718b7b37b160494bc51158accc3ee444dfe37534 HEAD
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
           printf '%s\n' '.github/workflows/debug-eh-frame-zero-range.yml' |
@@ -42,7 +43,9 @@ jobs:
           diff -u expected-files.txt actual-files.txt
           printf '%s\n' 'tests/neverc/LinkerTests.cpp' |
             sort -u > expected-test-files.txt
-          git -C neverc diff-tree --no-commit-id --name-only -r HEAD^^ HEAD^ |
+          git -C neverc diff-tree --no-commit-id --name-only -r \
+            718b7b37b160494bc51158accc3ee444dfe37534^ \
+            718b7b37b160494bc51158accc3ee444dfe37534 |
             sort -u > actual-test-files.txt
           diff -u expected-test-files.txt actual-test-files.txt
           printf '%s\n' '.github/workflows/debug-eh-frame-zero-range.yml' \
