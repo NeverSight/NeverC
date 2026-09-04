@@ -1657,10 +1657,12 @@ TEST_F(LTOTest, LtoCachePreservesConsoleOptimizationRemarks) {
   writeFile(calleeSource, "__attribute__((always_inline)) int " +
                               std::string(Callee) +
                               "(int value) { return value + 1; }\n");
-  writeFile(callerSource, "extern __attribute__((always_inline)) int " +
-                              std::string(Callee) +
-                              "(int);\nint main(void) { return " +
-                              std::string(Callee) + "(41) != 42; }\n");
+  writeFile(callerSource,
+            "extern __attribute__((always_inline)) int " + std::string(Callee) +
+                "(int);\nstatic volatile int "
+                "neverc_lto_cache_remark_input;\n"
+                "int main(void) { return " +
+                std::string(Callee) + "(neverc_lto_cache_remark_input); }\n");
 
   std::vector<std::string> base = {"-std=c11", "-O2", "-flto"};
   for (auto &flag : sysrootFlags())
