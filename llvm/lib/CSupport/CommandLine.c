@@ -1194,18 +1194,61 @@ int csupport_cl_tokenize_windows_impl(const char *src, size_t src_len,
   return 1;
 }
 
+// Bits for NUL, horizontal whitespace, newlines, quotes, and backslash. A
+// compact table keeps the common unquoted-token scan to one indexed load and
+// one bit test without relying on non-portable C array designators.
+static const uint64_t csupport_cl_gnu_token_boundary_bits[4] = {
+    UINT64_C(0x0000008500002601), UINT64_C(0x0000000010000000), UINT64_C(0),
+    UINT64_C(0)};
+
+static int csupport_cl_is_gnu_token_boundary(char c) {
+  unsigned char uc = (unsigned char)c;
+  return (int)((csupport_cl_gnu_token_boundary_bits[uc >> 6] >> (uc & 63)) &
+               UINT64_C(1));
+}
+
+static void csupport_cl_gnu_make_token_transient(const char *src,
+                                                 size_t token_start,
+                                                 size_t current, char *token,
+                                                 size_t *token_len,
+                                                 int *token_transient) {
+  if (*token_transient)
+    return;
+  *token_len = current - token_start;
+  if (*token_len != 0)
+    memcpy(token, src + token_start, *token_len);
+  *token_transient = 1;
+}
+
+static void csupport_cl_gnu_emit_token(const char *src, size_t token_start,
+                                       size_t current, const char *token,
+                                       size_t token_len, int token_transient,
+                                       csupport_cl_token_cb add_token,
+                                       void *ctx) {
+  if (token_transient)
+    add_token(token, token_len, 1, ctx);
+  else
+    add_token(src + token_start, current - token_start, 0, ctx);
+}
+
 int csupport_cl_tokenize_gnu_impl(const char *src, size_t src_len,
                                   csupport_cl_token_cb add_token,
                                   csupport_cl_eol_cb mark_eol, void *ctx) {
   if ((!src && src_len != 0) || !add_token)
     return 0;
+
   char local[256];
   char *token = src_len <= sizeof(local) ? local : (char *)malloc(src_len);
+  // Allocate before publishing any token so an OOM cannot expose a partial
+  // argv. The allocation is untouched when every token can borrow its source
+  // slice, while transformed tokens share this request-sized scratch buffer.
   if (!token)
     return 0;
 
+  size_t token_start = 0;
   size_t tok_len = 0;
   int in_token = 0;
+  int token_transient = 0;
   char quote_char = 0;
 
   for (size_t i = 0; i < src_len; ++i) {
@@ -1231,18 +1274,33 @@ int csupport_cl_tokenize_gnu_impl(const char *src, size_t src_len,
     }
 
     if (c == '\\' && i + 1 < src_len) {
+      size_t escape_position = i;
       ++i;
       if (src[i] == '\n') {
+        if (in_token)
+          csupport_cl_gnu_make_token_transient(src, token_start,
+                                               escape_position, token, &tok_len,
+                                               &token_transient);
         continue;
       }
+      if (!in_token) {
+        token_start = escape_position;
+        in_token = 1;
+      }
+      csupport_cl_gnu_make_token_transient(src, token_start, escape_position,
+                                           token, &tok_len, &token_transient);
       token[tok_len++] = src[i];
-      in_token = 1;
       continue;
     }
 
     if (c == '\'' || c == '"') {
+      if (!in_token) {
+        token_start = i;
+        in_token = 1;
+      }
+      csupport_cl_gnu_make_token_transient(src, token_start, i, token, &tok_len,
+                                           &token_transient);
       quote_char = c;
-      in_token = 1;
       continue;
     }
 
@@ -1256,20 +1314,45 @@ int csupport_cl_tokenize_gnu_impl(const char *src, size_t src_len,
 
     if (csupport_cl_is_whitespace(c) || c == '\0') {
       if (in_token) {
-        add_token(token, tok_len, 1, ctx);
+        csupport_cl_gnu_emit_token(src, token_start, i, token, tok_len,
+                                   token_transient, add_token, ctx);
         tok_len = 0;
         in_token = 0;
+        token_transient = 0;
       }
       if (c == '\n' && mark_eol) mark_eol(ctx);
       continue;
     }
 
-    token[tok_len++] = c;
-    in_token = 1;
+    if (!in_token) {
+      token_start = i;
+      size_t end = i + 1;
+      while (end < src_len && !csupport_cl_is_gnu_token_boundary(src[end]))
+        ++end;
+      if (end == src_len) {
+        add_token(src + token_start, end - token_start, 0, ctx);
+        break;
+      }
+      if (csupport_cl_is_whitespace_or_null(src[end])) {
+        add_token(src + token_start, end - token_start, 0, ctx);
+        if (src[end] == '\n' && mark_eol)
+          mark_eol(ctx);
+        i = end;
+        continue;
+      }
+      // Revisit the quote or backslash on the next iteration. Its handler
+      // promotes the source prefix into scratch exactly once.
+      i = end - 1;
+      in_token = 1;
+      continue;
+    }
+    if (token_transient)
+      token[tok_len++] = c;
   }
 
   if (in_token)
-    add_token(token, tok_len, 1, ctx);
+    csupport_cl_gnu_emit_token(src, token_start, src_len, token, tok_len,
+                               token_transient, add_token, ctx);
   if (token != local)
     free(token);
   return 1;
