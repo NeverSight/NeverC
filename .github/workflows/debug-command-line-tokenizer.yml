@@ -1,0 +1,127 @@
+name: debug-command-line-tokenizer
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags:
+      - "debug-command-line-tokenizer-red-*"
+      - "debug-command-line-tokenizer-green-*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      LLVM_APT_VER: "22"
+      TEST_COMMIT: d79c75d95c1913704835ef5980b2be865892c946
+      BASE_COMMIT: f782a6ff7716912223e2df6cc2d6552c814b9747
+    steps:
+      - name: Checkout diagnostic tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: audit
+          fetch-depth: 3
+
+      - name: Verify exact diagnostic tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C audit branch --show-current)" = ""
+          test "$(git -C audit rev-parse HEAD^)" = "$TEST_COMMIT"
+          test "$(git -C audit rev-parse HEAD^^)" = "$BASE_COMMIT"
+          git -C audit diff --exit-code
+          git -C audit diff --cached --exit-code
+          printf '%s\n' \
+            '.github/workflows/debug-command-line-tokenizer.yml' \
+            'tests/neverc/SupportCommandLineTests.cpp' |
+            sort -u > expected-range-files.txt
+          git -C audit diff --name-only "$BASE_COMMIT"..HEAD |
+            sort -u > actual-range-files.txt
+          diff -u expected-range-files.txt actual-range-files.txt
+          test "$(git -C audit diff-tree --no-commit-id --name-only -r \
+            HEAD^ HEAD)" = \
+            '.github/workflows/debug-command-line-tokenizer.yml'
+          test "$(git -C audit rev-parse \
+            HEAD:llvm/lib/CSupport/CommandLine.c)" = \
+            "$(git -C audit rev-parse \
+            "$BASE_COMMIT":llvm/lib/CSupport/CommandLine.c)"
+
+      - name: Checkout exact test-only source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: d79c75d95c1913704835ef5980b2be865892c946
+          path: neverc
+          fetch-depth: 2
+
+      - name: Verify exact test-only source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C neverc branch --show-current)" = ""
+          test "$(git -C neverc rev-parse HEAD)" = "$TEST_COMMIT"
+          test "$(git -C neverc rev-parse HEAD^)" = "$BASE_COMMIT"
+          git -C neverc diff --exit-code
+          git -C neverc diff --cached --exit-code
+          test "$(git -C neverc diff-tree --no-commit-id --name-only -r \
+            HEAD^ HEAD)" = 'tests/neverc/SupportCommandLineTests.cpp'
+
+      - name: Setup sccache
+        uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
+
+      - name: Setup build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          echo "CC=clang-$LLVM_APT_VER" >> "$GITHUB_ENV"
+          echo "CXX=clang++-$LLVM_APT_VER" >> "$GITHUB_ENV"
+
+      - name: Configure focused ASan and UBSan build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake_args=(
+            -GNinja
+            -Bbuild
+            "-DCMAKE_C_COMPILER=$CC"
+            "-DCMAKE_CXX_COMPILER=$CXX"
+            -DLLVM_ENABLE_ASSERTIONS=ON
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off
+            "-DLLVM_USE_SANITIZER=Address;Undefined"
+            -DNEVERC_INCLUDE_TESTS=ON
+            "-DCMAKE_BUILD_TYPE=$BUILD_TYPE"
+            -C
+            neverc/neverc/cmake/caches/NeverC.cmake
+            neverc/llvm
+          )
+          cmake "${cmake_args[@]}"
+
+      - name: Build focused command-line tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build --config "$BUILD_TYPE" \
+            --target neverc-tests --parallel 2
+
+      - name: Run GNU tokenizer source-slice contracts
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          build/bin/neverc-tests \
+            --gtest_filter='SupportCommandLineTest.CGNUTokenizer*' \
+            --gtest_color=no
