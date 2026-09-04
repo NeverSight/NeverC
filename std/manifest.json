@@ -3654,6 +3654,8 @@
         "read_dir": "neverc_fs_read_dir",
         "glob": "neverc_fs_glob",
         "walk_dir": "neverc_fs_walk_dir",
+        "free_entries": "neverc_fs_free_entries",
+        "free_matches": "neverc_fs_free_matches",
         "lstat": "neverc_fs_lstat"
       }
     },
