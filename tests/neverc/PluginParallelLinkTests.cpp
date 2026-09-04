@@ -12,10 +12,13 @@
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Object/ArchiveWriter.h"
+#include "llvm/Object/ELF.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/JSON.h"
@@ -27,10 +30,12 @@
 #include <array>
 #include <atomic>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <thread>
 #include <vector>
 #if LLVM_ENABLE_ZSTD
@@ -86,6 +91,97 @@ void initializeAssemblyTargets() {
     llvm::InitializeAllTargetMCs();
     llvm::InitializeAllAsmParsers();
   });
+}
+
+struct ELF64LESectionFacts {
+  size_t Index = 0;
+  uint32_t Type = 0;
+  uint64_t Flags = 0;
+  uint32_t Link = 0;
+  uint32_t Info = 0;
+};
+
+llvm::Expected<ELF64LESectionFacts>
+findUniqueELF64LESection(llvm::StringRef Object, llvm::StringRef SectionName) {
+  auto Parsed = llvm::object::ELFFile<llvm::object::ELF64LE>::create(Object);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+
+  std::optional<ELF64LESectionFacts> Result;
+  for (size_t Index = 0; Index != Sections->size(); ++Index) {
+    const llvm::object::ELF64LE::Shdr &Section = (*Sections)[Index];
+    auto Name = Parsed->getSectionName(Section);
+    if (!Name)
+      return Name.takeError();
+    if (*Name != SectionName)
+      continue;
+    if (Result)
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "ELF section name is not unique: " +
+                                         SectionName);
+    Result = ELF64LESectionFacts{Index, Section.sh_type, Section.sh_flags,
+                                 Section.sh_link, Section.sh_info};
+  }
+  if (!Result)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "ELF section is absent: " + SectionName);
+  return *Result;
+}
+
+llvm::Error patchELF64LESectionLink(llvm::SmallVectorImpl<char> &Object,
+                                    llvm::StringRef SectionName,
+                                    llvm::StringRef LinkedSectionName) {
+  auto Section = findUniqueELF64LESection(
+      llvm::StringRef(Object.data(), Object.size()), SectionName);
+  if (!Section)
+    return Section.takeError();
+  auto LinkedSection = findUniqueELF64LESection(
+      llvm::StringRef(Object.data(), Object.size()), LinkedSectionName);
+  if (!LinkedSection)
+    return LinkedSection.takeError();
+  if (LinkedSection->Index > std::numeric_limits<uint32_t>::max())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "linked ELF section index overflows");
+
+  auto Parsed = llvm::object::ELFFile<llvm::object::ELF64LE>::create(
+      llvm::StringRef(Object.data(), Object.size()));
+  if (!Parsed)
+    return Parsed.takeError();
+  const llvm::object::ELF64LE::Ehdr &Header = Parsed->getHeader();
+  if (Header.e_shentsize != sizeof(llvm::object::ELF64LE::Shdr))
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "ELF sh_link mutation requires native section headers");
+
+  static_assert(sizeof(llvm::ELF::Elf64_Shdr) ==
+                sizeof(llvm::object::ELF64LE::Shdr));
+  constexpr uint64_t LinkOffset = offsetof(llvm::ELF::Elf64_Shdr, sh_link);
+  static_assert(LinkOffset + sizeof(uint32_t) <=
+                sizeof(llvm::object::ELF64LE::Shdr));
+
+  const uint64_t SectionTableOffset = Header.e_shoff;
+  if (SectionTableOffset > Object.size() ||
+      Section->Index > std::numeric_limits<uint64_t>::max() /
+                           static_cast<uint64_t>(Header.e_shentsize))
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "ELF section header offset overflows");
+  const uint64_t SectionDelta =
+      static_cast<uint64_t>(Section->Index) * Header.e_shentsize;
+  if (SectionDelta > Object.size() - SectionTableOffset)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "ELF section header is out of range");
+  const uint64_t SectionOffset = SectionTableOffset + SectionDelta;
+  if (sizeof(llvm::object::ELF64LE::Shdr) > Object.size() - SectionOffset)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "ELF section header is truncated");
+
+  llvm::support::endian::write32le(
+      Object.data() + static_cast<size_t>(SectionOffset + LinkOffset),
+      static_cast<uint32_t>(LinkedSection->Index));
+  return llvm::Error::success();
 }
 
 #if LLVM_ENABLE_ZSTD
@@ -835,13 +931,90 @@ _start:
 
   llvm::SmallVector<char, 0> FollowerObject;
   if (llvm::Error Error = assemble(R"(
+.section .reloc_carrier,"a",@progbits
+.quad _start
+.section .link_order_anchor,"a",@progbits
+.byte 0x7f
+.section .link_order_hop3,"ao",@progbits,.link_order_anchor
+.byte 3
+.section .link_order_hop2,"ao",@progbits,.link_order_anchor
+.byte 2
+.section .link_order_hop1,"ao",@progbits,.link_order_anchor
+.byte 1
+.section .link_order_cycle_a,"ao",@progbits,.link_order_anchor
+.byte 0xa1
+.section .link_order_cycle_b,"ao",@progbits,.link_order_anchor
+.byte 0xb2
+.section .link_order_self,"ao",@progbits,.link_order_anchor
+.byte 0x5e
 .section .discarded_target,"ae",@progbits
 .byte 0
-.section .link_order_follower,"ao",@progbits,.discarded_target
-.byte 1
 )",
                                    "link-order-follower.s", FollowerObject))
     FAIL() << llvm::toString(std::move(Error)).str().str();
+
+  auto patchLink = [&](llvm::StringRef Section, llvm::StringRef LinkedSection) {
+    if (llvm::Error Error =
+            patchELF64LESectionLink(FollowerObject, Section, LinkedSection)) {
+      ADD_FAILURE() << llvm::toString(std::move(Error)).str().str();
+      return false;
+    }
+    return true;
+  };
+  ASSERT_TRUE(patchLink(".link_order_hop1", ".discarded_target"));
+  ASSERT_TRUE(patchLink(".link_order_hop2", ".link_order_hop1"));
+  ASSERT_TRUE(patchLink(".link_order_hop3", ".link_order_hop2"));
+  ASSERT_TRUE(patchLink(".link_order_cycle_a", ".link_order_cycle_b"));
+  ASSERT_TRUE(patchLink(".link_order_cycle_b", ".link_order_cycle_a"));
+  ASSERT_TRUE(patchLink(".link_order_self", ".link_order_self"));
+
+  llvm::StringRef FollowerBytes(FollowerObject.data(), FollowerObject.size());
+  auto Relocation =
+      findUniqueELF64LESection(FollowerBytes, ".rela.reloc_carrier");
+  ASSERT_TRUE(static_cast<bool>(Relocation))
+      << llvm::toString(Relocation.takeError()).str().str();
+  auto Carrier = findUniqueELF64LESection(FollowerBytes, ".reloc_carrier");
+  ASSERT_TRUE(static_cast<bool>(Carrier))
+      << llvm::toString(Carrier.takeError()).str().str();
+  auto Hop3 = findUniqueELF64LESection(FollowerBytes, ".link_order_hop3");
+  ASSERT_TRUE(static_cast<bool>(Hop3))
+      << llvm::toString(Hop3.takeError()).str().str();
+  auto Hop2 = findUniqueELF64LESection(FollowerBytes, ".link_order_hop2");
+  ASSERT_TRUE(static_cast<bool>(Hop2))
+      << llvm::toString(Hop2.takeError()).str().str();
+  auto Hop1 = findUniqueELF64LESection(FollowerBytes, ".link_order_hop1");
+  ASSERT_TRUE(static_cast<bool>(Hop1))
+      << llvm::toString(Hop1.takeError()).str().str();
+  auto CycleA = findUniqueELF64LESection(FollowerBytes, ".link_order_cycle_a");
+  ASSERT_TRUE(static_cast<bool>(CycleA))
+      << llvm::toString(CycleA.takeError()).str().str();
+  auto CycleB = findUniqueELF64LESection(FollowerBytes, ".link_order_cycle_b");
+  ASSERT_TRUE(static_cast<bool>(CycleB))
+      << llvm::toString(CycleB.takeError()).str().str();
+  auto Self = findUniqueELF64LESection(FollowerBytes, ".link_order_self");
+  ASSERT_TRUE(static_cast<bool>(Self))
+      << llvm::toString(Self.takeError()).str().str();
+  auto Discarded = findUniqueELF64LESection(FollowerBytes, ".discarded_target");
+  ASSERT_TRUE(static_cast<bool>(Discarded))
+      << llvm::toString(Discarded.takeError()).str().str();
+
+  ASSERT_EQ(Relocation->Type, llvm::ELF::SHT_RELA);
+  ASSERT_NE(Relocation->Flags & llvm::ELF::SHF_INFO_LINK, 0U);
+  ASSERT_EQ(Relocation->Flags & llvm::ELF::SHF_LINK_ORDER, 0U);
+  ASSERT_EQ(Relocation->Info, Carrier->Index);
+  for (const ELF64LESectionFacts *Section :
+       {&*Hop3, &*Hop2, &*Hop1, &*CycleA, &*CycleB, &*Self})
+    ASSERT_NE(Section->Flags & llvm::ELF::SHF_LINK_ORDER, 0U);
+  ASSERT_LT(Relocation->Index, Hop3->Index);
+  ASSERT_LT(Hop3->Index, Hop2->Index);
+  ASSERT_LT(Hop2->Index, Hop1->Index);
+  ASSERT_LT(Hop1->Index, Discarded->Index);
+  ASSERT_EQ(Hop1->Link, Discarded->Index);
+  ASSERT_EQ(Hop2->Link, Hop1->Index);
+  ASSERT_EQ(Hop3->Link, Hop2->Index);
+  ASSERT_EQ(Self->Link, Self->Index);
+  ASSERT_EQ(CycleA->Link, CycleB->Index);
+  ASSERT_EQ(CycleB->Link, CycleA->Index);
 
   neverc::InMemoryFileStore &Store = neverc::InMemoryFileStore::instance();
   Store.clear();
@@ -908,16 +1081,20 @@ _start:
       llvm::object::ObjectFile::createObjectFile((*Output)->getMemBufferRef());
   ASSERT_TRUE(static_cast<bool>(Object))
       << llvm::toString(Object.takeError()).str().str();
-  bool FoundText = false;
+  std::set<std::string> OutputSections;
   for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
     llvm::Expected<llvm::StringRef> Name = Section.getName();
     ASSERT_TRUE(static_cast<bool>(Name))
         << llvm::toString(Name.takeError()).str().str();
-    FoundText |= *Name == ".text";
-    EXPECT_NE(*Name, ".discarded_target");
-    EXPECT_NE(*Name, ".link_order_follower");
+    OutputSections.insert(Name->str());
   }
-  EXPECT_TRUE(FoundText);
+  for (const char *Name :
+       {".text", ".reloc_carrier", ".link_order_anchor", ".link_order_self",
+        ".link_order_cycle_a", ".link_order_cycle_b"})
+    EXPECT_EQ(OutputSections.count(Name), 1U) << Name;
+  for (const char *Name : {".discarded_target", ".link_order_hop1",
+                           ".link_order_hop2", ".link_order_hop3"})
+    EXPECT_EQ(OutputSections.count(Name), 0U) << Name;
 }
 
 TEST(PluginParallelLinkTest,
