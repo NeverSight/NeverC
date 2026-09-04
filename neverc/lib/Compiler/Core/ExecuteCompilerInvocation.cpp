@@ -341,6 +341,18 @@ public:
       WriteLease.emplace(plugin::pluginLLVMOptionGate());
     } else {
       ReadLease.emplace(plugin::pluginLLVMOptionGate());
+      // A host may have enabled LLVM pass timing before entering NeverC.
+      // Although this invocation does not mutate that option, LLVM codegen's
+      // NamedRegionTimer instances reuse process-global Timer objects whose
+      // start/stop operations are not thread-safe. Inspect the ambient value
+      // while holding the shared gate, then conservatively upgrade without
+      // snapshotting or resetting the host's option state. The upgrade gap is
+      // safe: a concurrent writer may only make the exclusive lease
+      // unnecessary, never make shared execution safe again behind our lock.
+      if (llvm::TimePassesIsEnabled) {
+        ReadLease.reset();
+        WriteLease.emplace(plugin::pluginLLVMOptionGate());
+      }
     }
   }
 
