@@ -15,6 +15,7 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -456,9 +457,14 @@ void ProcessResourceBrokerTestAccess::withMutexHeld(
 
 void ProcessResourceBrokerTestAccess::emitSyntheticEvent(
     ProcessResourceBroker &Broker, const ProcessResourceBrokerEvent &Event) {
-  const std::shared_ptr<BrokerState> State =
-      std::atomic_load_explicit(&Broker.State, std::memory_order_acquire);
-  emitEvent(State, Event);
+  // A synthetic observer may deliberately leave through crash recovery. Keep
+  // the loaded strong reference in CRC-owned storage so that non-local exit
+  // cannot skip its destructor and retain the broker state indefinitely.
+  auto StateOwner = std::make_unique<std::shared_ptr<BrokerState>>(
+      std::atomic_load_explicit(&Broker.State, std::memory_order_acquire));
+  llvm::CrashRecoveryContextCleanupRegistrar<std::shared_ptr<BrokerState>>
+      StateCleanup(StateOwner.get());
+  emitEvent(*StateOwner, Event);
 }
 
 ScopedProcessResourceBrokerOverride::ScopedProcessResourceBrokerOverride(
