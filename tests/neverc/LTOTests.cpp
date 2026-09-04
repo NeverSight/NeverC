@@ -1562,7 +1562,7 @@ TEST_F(LTOTest, LtoCacheDoesNotSilenceBackendWarnings) {
     CmdResult result = ncc(link);
     ASSERT_EQ(result.exitCode, 0) << result.err;
     EXPECT_TRUE(result.stderrContains(Warning)) << result.err;
-    EXPECT_TRUE(fs::exists(output));
+    ASSERT_TRUE(fs::exists(output));
     EXPECT_GT(fs::file_size(output), 0u);
     EXPECT_EQ(countLtoCacheEntries(cacheDir), 0u)
         << "a cache entry would let a warm link silently skip the warning";
@@ -1888,7 +1888,7 @@ TEST_F(LTOTest, LtoPartitionCache) {
       fs::remove(exe, ec);
       CmdResult result = ncc(link);
       ASSERT_EQ(result.exitCode, 0) << result.err;
-      EXPECT_EQ(StringRef(result.err).count("warning: "), 2u)
+      EXPECT_EQ(llvm::StringRef(result.err).count("warning: "), 2u)
           << "non-error diagnostics must preserve occurrence count:\n"
           << result.err;
       EXPECT_TRUE(fs::exists(exe));
