@@ -113,7 +113,7 @@ jobs:
         run: |
           set -euo pipefail
           cmake --build build --config "$BUILD_TYPE" \
-            --target neverc-tests --parallel 2
+            --target neverc-support-tests --parallel 2
 
       - name: Run GNU tokenizer source-slice contracts
         shell: bash
@@ -122,6 +122,22 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
           set -euo pipefail
-          build/bin/neverc-tests \
+          build/bin/neverc-support-tests \
+            --gtest_list_tests \
+            --gtest_filter='SupportCommandLineTest.CGNUTokenizer*' \
+            --gtest_color=no |
+            awk '
+              /^[^ ]/ { suite = $1; next }
+              /^  / { print suite $1 }
+            ' |
+            sort -u > actual-tests.txt
+          printf '%s\n' \
+            'SupportCommandLineTest.CGNUTokenizerBorrowsAnUnescapedTrailingBackslash' \
+            'SupportCommandLineTest.CGNUTokenizerBorrowsLargeSimpleArguments' \
+            'SupportCommandLineTest.CGNUTokenizerOnlyCopiesArgumentsThatNeedTransformation' \
+            | sort -u > expected-tests.txt
+          test "$(wc -l < actual-tests.txt)" -eq 3
+          diff -u expected-tests.txt actual-tests.txt
+          build/bin/neverc-support-tests \
             --gtest_filter='SupportCommandLineTest.CGNUTokenizer*' \
             --gtest_color=no
