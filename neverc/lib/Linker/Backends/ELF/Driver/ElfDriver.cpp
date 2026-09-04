@@ -2680,7 +2680,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
 
     parallelFor(0, numFiles, [&](size_t i) {
       for (InputSectionBase *s : elfState().objectFiles[i]->getSections()) {
-        if (!s || s == &InputSection::discarded)
+        if (!s || s == discardedInputSection())
           continue;
         if (LLVM_UNLIKELY(isa<EhInputSection>(s)))
           perFileEh[i].push_back(cast<EhInputSection>(s));
