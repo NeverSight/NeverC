@@ -8,6 +8,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <optional>
 #if defined(__cpp_exceptions)
@@ -382,14 +383,19 @@ TEST(ProcessResourceBrokerTest,
       /*GrantedWorkers=*/2};
   ProcessResourceBroker *ObservedBroker = nullptr;
   unsigned Calls = 0;
-  auto Broker = makeBroker(2, [&](const ProcessResourceBrokerEvent &) {
-    ++Calls;
-    if (Calls != 1)
-      return;
-    ProcessResourceBrokerTestAccess::emitSyntheticEvent(*ObservedBroker,
-                                                        Event);
-    llvm::CrashRecoveryContext::GetCurrent()->HandleExit(37);
-  });
+  auto ObserverLifetime = std::make_shared<unsigned>(0);
+  std::weak_ptr<unsigned> WeakObserverLifetime = ObserverLifetime;
+  auto Broker =
+      makeBroker(2, [&, ObserverLifetime](const ProcessResourceBrokerEvent &) {
+        (void)ObserverLifetime;
+        ++Calls;
+        if (Calls != 1)
+          return;
+        ProcessResourceBrokerTestAccess::emitSyntheticEvent(*ObservedBroker,
+                                                            Event);
+        llvm::CrashRecoveryContext::GetCurrent()->HandleExit(37);
+      });
+  ObserverLifetime.reset();
   ObservedBroker = Broker.get();
   const ProcessResourceBrokerSnapshot Before = snapshot(*Broker);
 
@@ -407,6 +413,9 @@ TEST(ProcessResourceBrokerTest,
 
   EXPECT_EQ(Calls, 2U);
   expectSnapshotEq(snapshot(*Broker), Before);
+  ASSERT_FALSE(WeakObserverLifetime.expired());
+  Broker.reset();
+  EXPECT_TRUE(WeakObserverLifetime.expired());
 }
 
 TEST(ProcessResourceBrokerTest,
@@ -420,13 +429,19 @@ TEST(ProcessResourceBrokerTest,
       /*GrantedWorkers=*/2};
   ProcessResourceBroker *ObservedBroker = nullptr;
   std::atomic<unsigned> Calls{0};
-  auto Broker = makeBroker(2, [&](const ProcessResourceBrokerEvent &) {
-    const unsigned Call = Calls.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (Call != 1)
-      return;
-    ProcessResourceBrokerTestAccess::emitSyntheticEvent(*ObservedBroker, Event);
-    llvm::CrashRecoveryContext::GetCurrent()->HandleExit(37);
-  });
+  auto ObserverLifetime = std::make_shared<unsigned>(0);
+  std::weak_ptr<unsigned> WeakObserverLifetime = ObserverLifetime;
+  auto Broker =
+      makeBroker(2, [&, ObserverLifetime](const ProcessResourceBrokerEvent &) {
+        (void)ObserverLifetime;
+        const unsigned Call = Calls.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (Call != 1)
+          return;
+        ProcessResourceBrokerTestAccess::emitSyntheticEvent(*ObservedBroker,
+                                                            Event);
+        llvm::CrashRecoveryContext::GetCurrent()->HandleExit(37);
+      });
+  ObserverLifetime.reset();
   ObservedBroker = Broker.get();
   const ProcessResourceBrokerSnapshot Before = snapshot(*Broker);
 
@@ -449,6 +464,9 @@ TEST(ProcessResourceBrokerTest,
 
   EXPECT_EQ(Calls.load(std::memory_order_relaxed), 3U);
   expectSnapshotEq(snapshot(*Broker), Before);
+  ASSERT_FALSE(WeakObserverLifetime.expired());
+  Broker.reset();
+  EXPECT_TRUE(WeakObserverLifetime.expired());
 }
 
 TEST(ProcessResourceBrokerTest,
