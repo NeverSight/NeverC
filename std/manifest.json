@@ -4970,6 +4970,7 @@
         "settings_init": "neverc_h2_settings_init",
         "hpack_decode": "neverc_hpack_decode",
         "hpack_decoder_create": "neverc_hpack_decoder_create",
+        "hpack_decoder_set_max_list_size": "neverc_hpack_decoder_set_max_list_size",
         "hpack_decoder_destroy": "neverc_hpack_decoder_destroy",
         "hpack_encode": "neverc_hpack_encode",
         "hpack_encoder_create": "neverc_hpack_encoder_create",
