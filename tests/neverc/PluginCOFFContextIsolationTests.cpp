@@ -28,6 +28,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -204,6 +205,10 @@ TEST(PluginCOFFContextIsolationTest,
   Config.outputFile = OutputPath.str().str();
   Config.timeTraceEnabled = true;
   Config.timeTraceGranularity = 0;
+  auto ExecutionRequest = std::make_shared<LinkExecutionRequest>();
+  Config.executionRequest = ExecutionRequest;
+  const long StableRequestOwners = ExecutionRequest.use_count();
+  ASSERT_EQ(StableRequestOwners, 2);
   const char *Args[] = {"neverc-test-linker"};
   std::string Stdout;
   std::string Stderr;
@@ -226,6 +231,7 @@ TEST(PluginCOFFContextIsolationTest,
     EXPECT_EQ(CRC.RetCode, 1);
   }
   EXPECT_EQ(FatalResult, 0);
+  EXPECT_EQ(ExecutionRequest.use_count(), StableRequestOwners);
   EXPECT_FALSE(llvm::timeTraceProfilerEnabled());
   EXPECT_EQ(currentLinkerContext(), nullptr);
   EXPECT_FALSE(llvm::sys::fs::exists(TracePath));
@@ -268,6 +274,8 @@ TEST(PluginCOFFContextIsolationTest,
     LinkerExecutionContext ExternalExecution;
     LinkerDriverConfig ExternalConfig = Config;
     ExternalConfig.executionContext = &ExternalExecution;
+    const long OwnersWithExternalConfig = StableRequestOwners + 1;
+    ASSERT_EQ(ExecutionRequest.use_count(), OwnersWithExternalConfig);
     const neverc::ResourceSessionView ExpectedSession =
         ExternalExecution.resourceSession();
     ASSERT_TRUE(ExpectedSession);
@@ -289,6 +297,7 @@ TEST(PluginCOFFContextIsolationTest,
       EXPECT_EQ(CRC.RetCode, 1);
     }
     EXPECT_EQ(ExternalFatalResult, 0);
+    EXPECT_EQ(ExecutionRequest.use_count(), OwnersWithExternalConfig);
     EXPECT_FALSE(llvm::timeTraceProfilerEnabled());
     EXPECT_EQ(currentLinkerContext(), nullptr);
     EXPECT_TRUE(ExternalExecution.resourceSession().refersToSameSession(
@@ -304,6 +313,7 @@ TEST(PluginCOFFContextIsolationTest,
   EXPECT_EQ(Final.ActiveTokens, 0U);
   EXPECT_EQ(Final.ActiveSessions, 0U);
   EXPECT_EQ(Final.AvailableTokens, 1U);
+  EXPECT_EQ(ExecutionRequest.use_count(), StableRequestOwners);
 }
 
 TEST(PluginCOFFContextIsolationTest,
