@@ -11,20 +11,27 @@
 #include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "ELF/ExtendedSectionNumbering.h"
+#include "neverc/Compiler/FrontendTool.h"
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
 #include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
+#include "neverc/Invoke/DirectInvocationOpts.h"
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 #include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/Host/NativeRelocationFacts.h"
+#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
 #include "llvm/Object/COFF.h"
+#include "llvm/Pass.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/raw_ostream.h"
@@ -39,6 +46,8 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SHA256.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/Support/thread.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
@@ -49,10 +58,14 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <limits>
+#include <mutex>
 #include <random>
 #include <string>
 #include <vector>
@@ -13597,6 +13610,179 @@ TEST(ParallelFrontendTiming, MultiFileTimePassesUsesExclusiveOptionLease) {
   CheckTimingLog();
   Output.clear();
   EXPECT_EQ(runExeCapture(Dir, LLVMExe, Output), 0);
+}
+
+// Embedders may enter NeverC with LLVM's process-global pass timing already
+// enabled. Such an invocation has no option mutation of its own, but codegen
+// still creates NamedRegionTimer objects that share one Timer per name. Their
+// start/stop operations are not synchronized, so ParallelSafe frontends must
+// upgrade from the shared option lease to a plain exclusive lease without
+// resetting the embedder's option state. A fixed start barrier and repeated
+// direct frontend calls make the old shared-Timer race visible to TSan (and
+// commonly to Timer's running-state assertions) while keeping the production
+// scheduling contract under test.
+TEST(ParallelFrontendTiming,
+     AmbientTimePassesSerializesOtherwiseParallelSafeFrontends) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "parallel frontend requires at least two hardware threads";
+
+  static const bool NativeTargetInitialized =
+      !llvm::InitializeNativeTarget() &&
+      !llvm::InitializeNativeTargetAsmPrinter();
+  ASSERT_TRUE(NativeTargetInitialized);
+
+  auto &RegisteredOptions = llvm::cl::getRegisteredOptions();
+  llvm::cl::Option *TimePassesOption =
+      RegisteredOptions.lookup("time-passes");
+  llvm::cl::Option *TimePassesPerRunOption =
+      RegisteredOptions.lookup("time-passes-per-run");
+  ASSERT_NE(TimePassesOption, nullptr);
+  ASSERT_NE(TimePassesPerRunOption, nullptr);
+
+  ScratchDir Dir;
+  ASSERT_TRUE(Dir.Ok);
+
+  bool SavedTimePasses = false;
+  bool SavedTimePassesPerRun = false;
+  int SavedTimePassesOccurrences = 0;
+  int SavedTimePassesPerRunOccurrences = 0;
+  std::string SavedInfoOutput;
+  std::function<void()> RestoreTimePassesState;
+  std::function<void()> RestoreTimePassesPerRunState;
+  {
+    neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+        neverc::plugin::pluginLLVMOptionGate());
+    SavedTimePasses = llvm::TimePassesIsEnabled;
+    SavedTimePassesPerRun = llvm::TimePassesPerRun;
+    SavedTimePassesOccurrences = TimePassesOption->getNumOccurrences();
+    SavedTimePassesPerRunOccurrences =
+        TimePassesPerRunOption->getNumOccurrences();
+    SavedInfoOutput =
+        llvm::timer_detail::getLibSupportInfoOutputFilename().str().str();
+    RestoreTimePassesState = TimePassesOption->createStateRestorer();
+    RestoreTimePassesPerRunState =
+        TimePassesPerRunOption->createStateRestorer();
+  }
+  auto RestoreAmbientTiming = llvm::make_scope_exit([&] {
+    neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+        neverc::plugin::pluginLLVMOptionGate());
+    RestoreTimePassesPerRunState();
+    RestoreTimePassesState();
+    llvm::TimePassesIsEnabled = SavedTimePasses;
+    llvm::TimePassesPerRun = SavedTimePassesPerRun;
+    llvm::timer_detail::getLibSupportInfoOutputFilename() = SavedInfoOutput;
+  });
+
+  {
+    neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+        neverc::plugin::pluginLLVMOptionGate());
+    llvm::TimePassesIsEnabled = true;
+    llvm::TimePassesPerRun = false;
+    llvm::timer_detail::getLibSupportInfoOutputFilename() =
+        Dir.file("ambient-time-passes.log");
+  }
+
+  std::string SourceText;
+  {
+    raw_string_ostream Source(SourceText);
+    for (unsigned I = 0; I != 96; ++I)
+      Source << "__attribute__((noinline)) unsigned long long ambient_" << I
+             << "(unsigned long long x) { for (unsigned i = 0; i != 19; ++i) "
+                "x = x * 6364136223846793005ULL + "
+                "1442695040888963407ULL + i; return x; }\n";
+    Source << "unsigned long long ambient_entry(unsigned long long x) {\n";
+    for (unsigned I = 0; I != 96; ++I)
+      Source << "  x ^= ambient_" << I << "(x + " << I << ");\n";
+    Source << "  return x;\n}\n";
+  }
+  const std::string SourcePath = Dir.file("ambient-time-passes.c");
+  {
+    std::error_code Error;
+    raw_fd_ostream Source(SourcePath, Error);
+    ASSERT_FALSE(Error) << Error.message();
+    Source << SourceText;
+  }
+
+  constexpr unsigned WorkerCount = 4;
+  constexpr unsigned RoundCount = 4;
+  const std::string HostTriple = llvm::sys::getDefaultTargetTriple();
+  for (unsigned Round = 0; Round != RoundCount; ++Round) {
+    std::array<int, WorkerCount> Results;
+    Results.fill(-1);
+    std::array<std::string, WorkerCount> Outputs;
+    for (unsigned Worker = 0; Worker != WorkerCount; ++Worker)
+      Outputs[Worker] = Dir.file("ambient-" + Twine(Round) + "-" +
+                                 Twine(Worker) + ".o");
+
+    std::mutex StartMutex;
+    std::condition_variable StartCondition;
+    unsigned Ready = 0;
+    bool Start = false;
+    std::vector<llvm::thread> Workers;
+    Workers.reserve(WorkerCount);
+    for (unsigned Worker = 0; Worker != WorkerCount; ++Worker) {
+      Workers.emplace_back([&, Worker] {
+        const char *Args[] = {"-triple",
+                              HostTriple.c_str(),
+                              "-emit-obj",
+                              "-O1",
+                              "-o",
+                              Outputs[Worker].c_str(),
+                              SourcePath.c_str()};
+        {
+          std::unique_lock<std::mutex> Lock(StartMutex);
+          ++Ready;
+          StartCondition.notify_all();
+          StartCondition.wait(Lock, [&] { return Start; });
+        }
+        neverc::driver::DirectInvocationOpts DirectOpts;
+        DirectOpts.ParallelSafe = true;
+        Results[Worker] = neverc::ExecuteFrontendDirect(
+            Args, "neverc-test-frontend",
+            reinterpret_cast<void *>(
+                reinterpret_cast<std::uintptr_t>(&compileLinkMulti)),
+            &DirectOpts);
+      });
+    }
+    auto JoinWorkers = llvm::make_scope_exit([&] {
+      {
+        std::lock_guard<std::mutex> Lock(StartMutex);
+        Start = true;
+      }
+      StartCondition.notify_all();
+      for (llvm::thread &Worker : Workers)
+        if (Worker.joinable())
+          Worker.join();
+    });
+    {
+      std::unique_lock<std::mutex> Lock(StartMutex);
+      ASSERT_TRUE(StartCondition.wait_for(
+          Lock, std::chrono::seconds(10), [&] { return Ready == WorkerCount; }));
+      Start = true;
+    }
+    StartCondition.notify_all();
+    for (llvm::thread &Worker : Workers)
+      Worker.join();
+    JoinWorkers.release();
+
+    for (unsigned Worker = 0; Worker != WorkerCount; ++Worker) {
+      EXPECT_EQ(Results[Worker], 0)
+          << "round " << Round << ", worker " << Worker;
+      EXPECT_TRUE(llvm::sys::fs::is_regular_file(Outputs[Worker]))
+          << "round " << Round << ", worker " << Worker;
+    }
+  }
+
+  {
+    neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+        neverc::plugin::pluginLLVMOptionGate());
+    EXPECT_TRUE(llvm::TimePassesIsEnabled);
+    EXPECT_FALSE(llvm::TimePassesPerRun);
+    EXPECT_EQ(TimePassesOption->getNumOccurrences(),
+              SavedTimePassesOccurrences);
+    EXPECT_EQ(TimePassesPerRunOption->getNumOccurrences(),
+              SavedTimePassesPerRunOccurrences);
+  }
 }
 
 TEST(ParallelFrontendTiming, MultiFileTimeTracePreservesEveryRootArtifact) {
