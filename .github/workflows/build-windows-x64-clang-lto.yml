@@ -25,6 +25,10 @@ jobs:
     # Same pin as the MSVC Windows x64 jobs: do not float on windows-latest
     # (currently Server 2025 + VS 2026).
     runs-on: windows-2022
+    env:
+      # ThinLTO can leave the compiler cache idle for longer than sccache's
+      # default ten-minute daemon timeout before install resumes compilation.
+      SCCACHE_IDLE_TIMEOUT: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -77,8 +81,11 @@ jobs:
       - name: Verify sccache
         shell: bash
         run: |
+          set -euo pipefail
           echo "sccache location: $(which sccache || echo 'NOT FOUND')"
-          sccache --version || true
+          sccache --version
+          sccache --start-server
+          sccache --show-stats
 
       # ── Build ────────────────────────────────────────────────
       - name: Build neverc (Clang + LTO)

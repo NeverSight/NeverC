@@ -26,6 +26,10 @@ jobs:
        (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name != github.repository))
     runs-on: windows-11-arm
+    env:
+      # ThinLTO can leave the compiler cache idle for longer than sccache's
+      # default ten-minute daemon timeout before install resumes compilation.
+      SCCACHE_IDLE_TIMEOUT: "0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -81,8 +85,11 @@ jobs:
       - name: Verify sccache
         shell: bash
         run: |
+          set -euo pipefail
           echo "sccache location: $(which sccache || echo 'NOT FOUND')"
-          sccache --version || true
+          sccache --version
+          sccache --start-server
+          sccache --show-stats
 
       # ── Build ────────────────────────────────────────────────
       - name: Build neverc (Clang + LTO)
