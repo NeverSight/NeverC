@@ -470,7 +470,7 @@ zero_after:
   ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
 
   CmdResult link = ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-fno-lto",
-                        "-Wl,-e,_start,--eh-frame-hdr", object.string(), "-o",
+                        "-Wl,-e,_start", object.string(), "-o",
                         image.string()});
   ASSERT_EQ(link.exitCode, 0) << link.err;
 
