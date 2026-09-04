@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
-          fetch-depth: 4
+          fetch-depth: 0
 
       - name: Verify exact test-only tree
         shell: bash
