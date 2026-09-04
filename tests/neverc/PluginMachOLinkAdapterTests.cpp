@@ -234,6 +234,116 @@ bool hasMachOMagic(const std::string &Bytes) {
   return Magic64 || Magic32;
 }
 
+llvm::Expected<uint64_t> findMachOSymbolAddress(llvm::StringRef Bytes,
+                                                llvm::StringRef Name) {
+  llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> ObjectOrErr =
+      llvm::object::ObjectFile::createObjectFile(
+          llvm::MemoryBufferRef(Bytes, "macho-linker-test"));
+  if (!ObjectOrErr)
+    return ObjectOrErr.takeError();
+  const auto *Object =
+      llvm::dyn_cast<llvm::object::MachOObjectFile>(ObjectOrErr->get());
+  if (!Object)
+    return machoIdentityError("expected a Mach-O output image");
+
+  for (const llvm::object::SymbolRef &Symbol : Object->symbols()) {
+    llvm::Expected<llvm::StringRef> SymbolName = Symbol.getName();
+    if (!SymbolName)
+      return SymbolName.takeError();
+    if (*SymbolName != Name)
+      continue;
+    llvm::Expected<uint32_t> Flags = Symbol.getFlags();
+    if (!Flags)
+      return Flags.takeError();
+    if (*Flags & llvm::object::SymbolRef::SF_Undefined)
+      continue;
+    return Symbol.getAddress();
+  }
+  return machoIdentityError("Mach-O symbol not found: " + Name);
+}
+
+TEST_F(PluginMachOLinkAdapterTest,
+       IcfDistinguishesReferentOffsetsWithinOneSection) {
+  const fs::path DataSource = tmpFile("macho-icf-referent-data.s");
+  const fs::path TextSource = tmpFile("macho-icf-referent-text.s");
+  const fs::path DataObject = tmpFile("macho-icf-referent-data.o");
+  const fs::path TextObject = tmpFile("macho-icf-referent-text.o");
+  const fs::path Image = tmpFile("macho-icf-referent.dylib");
+
+  // All four data symbols deliberately share one input section. The first and
+  // second function reference swapped offsets whose sums collide in the ICF
+  // hash; the full equality check must still distinguish their semantics.
+  writeFile(DataSource, ".section __TEXT,__const\n"
+                        ".globl _a, _b, _c, _d\n"
+                        ".p2align 3\n"
+                        "_a:\n"
+                        "  .quad 1\n"
+                        "_b:\n"
+                        "  .quad 2\n"
+                        "_c:\n"
+                        "  .quad 3\n"
+                        "_d:\n"
+                        "  .quad 4\n");
+  writeFile(TextSource,
+            ".section __TEXT,__text,regular,pure_instructions\n"
+            ".globl _f1, _f2, _f3\n"
+            ".p2align 2\n"
+            "_f1:\n"
+            "  adrp x0, _a@PAGE\n"
+            "  add x0, x0, _a@PAGEOFF\n"
+            "  adrp x1, _d@PAGE\n"
+            "  add x1, x1, _d@PAGEOFF\n"
+            "  ret\n"
+            "_f2:\n"
+            "  adrp x0, _b@PAGE\n"
+            "  add x0, x0, _b@PAGEOFF\n"
+            "  adrp x1, _c@PAGE\n"
+            "  add x1, x1, _c@PAGEOFF\n"
+            "  ret\n"
+            "_f3:\n"
+            "  adrp x0, _a@PAGE\n"
+            "  add x0, x0, _a@PAGEOFF\n"
+            "  adrp x1, _d@PAGE\n"
+            "  add x1, x1, _d@PAGEOFF\n"
+            "  ret\n"
+            ".subsections_via_symbols\n");
+
+  constexpr const char *Target = "aarch64-apple-macosx13.0";
+  CmdResult CompileData =
+      ncc({"--no-default-config", std::string("--target=") + Target,
+           "-fno-lto", "-c", DataSource.string(), "-o",
+           DataObject.string()});
+  ASSERT_EQ(CompileData.exitCode, 0) << CompileData.err;
+  CmdResult CompileText =
+      ncc({"--no-default-config", std::string("--target=") + Target,
+           "-fno-lto", "-c", TextSource.string(), "-o",
+           TextObject.string()});
+  ASSERT_EQ(CompileText.exitCode, 0) << CompileText.err;
+
+  CmdResult Link = ncc(
+      {"--no-default-config", std::string("--target=") + Target, "-fno-lto",
+       "-nostdlib", "-shared", "-ficf=all", "-Wl,--no-uuid",
+       "-Wl,--no-adhoc-codesign", DataObject.string(), TextObject.string(),
+       "-o", Image.string()});
+  ASSERT_EQ(Link.exitCode, 0) << Link.err;
+
+  const std::string Bytes = readFile(Image);
+  ASSERT_TRUE(hasMachOMagic(Bytes));
+  llvm::Expected<uint64_t> F1 = findMachOSymbolAddress(Bytes, "_f1");
+  ASSERT_TRUE(static_cast<bool>(F1))
+      << llvm::toString(F1.takeError()).str().str();
+  llvm::Expected<uint64_t> F2 = findMachOSymbolAddress(Bytes, "_f2");
+  ASSERT_TRUE(static_cast<bool>(F2))
+      << llvm::toString(F2.takeError()).str().str();
+  llvm::Expected<uint64_t> F3 = findMachOSymbolAddress(Bytes, "_f3");
+  ASSERT_TRUE(static_cast<bool>(F3))
+      << llvm::toString(F3.takeError()).str().str();
+
+  EXPECT_EQ(*F1, *F3) << "identical functions were not folded";
+  EXPECT_NE(*F1, *F2)
+      << "ICF folded functions with different referent offsets";
+}
+
 // Activating a plugin session routes the built-in Mach-O linker through the
 // LinkGraph adapter. With no user providers registered the projection must be
 // a faithful no-op, so the emitted image stays byte-identical to the baseline.
