@@ -25,14 +25,14 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
-          fetch-depth: 4
+          fetch-depth: 5
 
       - name: Verify exact diagnostic tree
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C neverc branch --show-current)" = ""
-          test "$(git -C neverc rev-parse HEAD^)" = "a001198a7310ecc5a8419fd31d9d82a5832368ad"
+          test "$(git -C neverc rev-parse HEAD^)" = "091ae5389d7f3b22433a51c4d84aee3d55659d1e"
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
           printf '%s\n' \
@@ -92,10 +92,43 @@ jobs:
           cmake --build build --config "$BUILD_TYPE" \
             --target neverc-merge-tests
 
+      - name: Diagnose child compiler leak policy
+        shell: bash
+        env:
+          ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:strict_string_checks=1
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'int main(void) { return 0; }' > sanitizer-probe.c
+
+          set +e
+          env -u LSAN_OPTIONS build/bin/neverc \
+            -fno-builtin-mimalloc -fno-lto -O2 sanitizer-probe.c \
+            -o sanitizer-probe-raw 2>&1 | tee child-unsuppressed.log
+          raw_status=${PIPESTATUS[0]}
+          set -e
+          printf 'unsuppressed_status=%s\n' "$raw_status"
+          if test "$raw_status" -ne 0; then
+            grep -E 'AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|runtime error:|ERROR: .*Sanitizer' \
+              child-unsuppressed.log
+          fi
+
+          export LSAN_OPTIONS="suppressions=$GITHUB_WORKSPACE/neverc/.github/plugin-sanitizers.lsan"
+          set +e
+          build/bin/neverc \
+            -fno-builtin-mimalloc -fno-lto -O2 sanitizer-probe.c \
+            -o sanitizer-probe-suppressed 2>&1 | tee child-suppressed.log
+          suppressed_status=${PIPESTATUS[0]}
+          set -e
+          printf 'suppressed_status=%s\n' "$suppressed_status"
+          test "$suppressed_status" -eq 0
+          test -x sanitizer-probe-suppressed
+          ./sanitizer-probe-suppressed
+
       - name: Require fault-injected strict-cache contract
         shell: bash
         env:
           ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:strict_string_checks=1
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/neverc/.github/plugin-sanitizers.lsan
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
           set -euo pipefail
