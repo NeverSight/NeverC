@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
+          fetch-depth: 2
 
       - name: Setup sccache
         uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
@@ -35,8 +36,9 @@ jobs:
           test "$(git -C neverc branch --show-current)" = ""
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
+          test "$(git -C neverc rev-parse HEAD^)" = "f782a6ff7716912223e2df6cc2d6552c814b9747"
           printf '%s\n' '.github/workflows/debug-frontend-ambient-pass-timing.yml' 'tests/neverc/MergeTests.cpp' | sort -u > expected-files.txt
-          git -C neverc show --format= --name-only HEAD |
+          git -C neverc diff-tree --no-commit-id --name-only -r HEAD^ HEAD |
             sort -u > actual-files.txt
           diff -u expected-files.txt actual-files.txt
 
