@@ -14371,22 +14371,21 @@ TEST(MergeParallelCodegenStrict,
   ASSERT_EQ(countLTOCacheEntries(CacheDir), 0u);
   {
     // Strict OFF (CI sets it globally, so explicitly unset for the duration)
-    // so the forced failure is allowed to fall back.  Both cache layers are
-    // enabled in a fresh directory: only the validated serial fallback may be
-    // committed, never the partition objects rejected by the forced failure.
+    // so the forced failure is allowed to fall back. Keep both cache layers
+    // off: this leg proves only that the fallback is correct, without allowing
+    // a later strict invocation to skip the merger through a warm full-cache
+    // hit.
     ScopedUnsetEnv NoStrict("NEVERC_PCG_STRICT");
     ScopedEnv ForceFail("NEVERC_PCG_FORCE_MERGE_FAIL", "1");
     ScopedEnv CacheDirectory(linker::ltoCacheDirEnvVar, CacheDir.c_str());
-    ScopedEnv CacheEnabled(linker::ltoCacheEnvVar, "1");
-    ScopedEnv PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "1");
+    ScopedEnv CacheEnabled(linker::ltoCacheEnvVar, "0");
+    ScopedEnv PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "0");
     StringRef LtoArgs[] = {"-O2"};
     ASSERT_TRUE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
         << "auto-LTO link did not recover via serial codegen when the merge "
            "was forced to fail — the safety net is broken";
   }
-  EXPECT_EQ(countLTOCacheEntries(CacheDir), 1u)
-      << "forced merge failure may cache only the valid full-link serial "
-         "fallback result, not eager partition entries";
+  EXPECT_EQ(countLTOCacheEntries(CacheDir), 0u);
   std::string OutLto;
   ASSERT_EQ(runExeCapture(Dir, ExeLto, OutLto), 0)
       << "serial-fallback executable did not exit cleanly";
@@ -14394,6 +14393,41 @@ TEST(MergeParallelCodegenStrict,
       << "serial-fallback program output diverged from the -fno-lto build — "
          "restoreLinkage() left the module polluted after the forced merge "
          "failure";
+
+  // Populate one ordinary full-link cache entry for these exact inputs. A
+  // subsequent strict request must still execute the PCG merger: strict mode
+  // is a fail-closed validation policy, not merely a spelling that can reuse a
+  // result produced by a non-strict request.
+  ASSERT_FALSE(sys::fs::remove(ExeLto));
+  {
+    ScopedUnsetEnv NoStrict("NEVERC_PCG_STRICT");
+    ScopedUnsetEnv NoForceFail("NEVERC_PCG_FORCE_MERGE_FAIL");
+    ScopedEnv CacheDirectory(linker::ltoCacheDirEnvVar, CacheDir.c_str());
+    ScopedEnv CacheEnabled(linker::ltoCacheEnvVar, "1");
+    ScopedEnv PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "0");
+    StringRef LtoArgs[] = {"-O2"};
+    ASSERT_TRUE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
+        << "ordinary auto-LTO link could not populate the full cache";
+  }
+  ASSERT_EQ(countLTOCacheEntries(CacheDir), 1u)
+      << "ordinary auto-LTO link did not publish one full-cache entry";
+  ASSERT_FALSE(sys::fs::remove(ExeLto));
+
+  {
+    ScopedEnv Strict("NEVERC_PCG_STRICT", "1");
+    ScopedEnv ForceFail("NEVERC_PCG_FORCE_MERGE_FAIL", "1");
+    ScopedEnv CacheDirectory(linker::ltoCacheDirEnvVar, CacheDir.c_str());
+    ScopedEnv CacheEnabled(linker::ltoCacheEnvVar, "1");
+    ScopedEnv PartitionCacheEnabled(linker::ltoPartitionCacheEnvVar, "0");
+    StringRef LtoArgs[] = {"-O2"};
+    EXPECT_FALSE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
+        << "a warm full-cache hit bypassed NEVERC_PCG_STRICT and hid the "
+           "forced merger failure";
+  }
+  EXPECT_FALSE(sys::fs::exists(ExeLto))
+      << "a strict merger failure published an executable";
+  EXPECT_EQ(countLTOCacheEntries(CacheDir), 1u)
+      << "the strict failed request must not publish another cache entry";
 }
 #endif // _WIN32
 
