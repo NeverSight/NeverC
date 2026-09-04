@@ -24,14 +24,14 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
-          fetch-depth: 2
+          fetch-depth: 3
 
       - name: Verify exact test-only tree
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C neverc branch --show-current)" = ""
-          test "$(git -C neverc rev-parse HEAD^)" = "f782a6ff7716912223e2df6cc2d6552c814b9747"
+          test "$(git -C neverc rev-parse HEAD^)" = "5f0e9cff740196486b162b46a06c456960dba7f3"
           git -C neverc diff --exit-code
           git -C neverc diff --cached --exit-code
           printf '%s\n' '.github/workflows/debug-eh-frame-zero-range.yml' \
@@ -40,8 +40,15 @@ jobs:
           git -C neverc diff-tree --no-commit-id --name-only -r HEAD^ HEAD |
             sort -u > actual-files.txt
           diff -u expected-files.txt actual-files.txt
+          printf '%s\n' '.github/workflows/debug-eh-frame-zero-range.yml' \
+            'tests/neverc/LinkerTests.cpp' |
+            sort -u > expected-range-files.txt
+          git -C neverc diff --name-only \
+            f782a6ff7716912223e2df6cc2d6552c814b9747..HEAD |
+            sort -u > actual-range-files.txt
+          diff -u expected-range-files.txt actual-range-files.txt
           if git -C neverc cat-file -e \
-              HEAD^:.github/workflows/debug-eh-frame-zero-range.yml 2>/dev/null
+              f782a6ff7716912223e2df6cc2d6552c814b9747:.github/workflows/debug-eh-frame-zero-range.yml 2>/dev/null
           then
             echo "temporary workflow unexpectedly exists in the parent" >&2
             exit 1
