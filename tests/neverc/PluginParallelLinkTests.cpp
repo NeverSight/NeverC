@@ -14,6 +14,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Object/ArchiveWriter.h"
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
@@ -797,6 +798,126 @@ TEST(PluginParallelLinkTest,
       << Stderr;
   ASSERT_NE(Execution.common(), nullptr);
   EXPECT_EQ(Execution.common()->parallelThreadCount(), 2U);
+}
+
+TEST(PluginParallelLinkTest, DiscardsLinkOrderFollowersOfPreDiscardedTargets) {
+  initializeAssemblyTargets();
+  const neverc::plugin::BuiltinTargetRoute *Route =
+      neverc::plugin::findBuiltinTargetRoute("x86_64-unknown-linux-gnu");
+  ASSERT_NE(Route, nullptr);
+  auto Target = neverc::plugin::lookupBuiltinLLVMTarget(*Route);
+  ASSERT_TRUE(static_cast<bool>(Target))
+      << llvm::toString(Target.takeError()).str().str();
+
+  auto assemble = [&](llvm::StringRef Assembly, llvm::StringRef Name,
+                      llvm::SmallVectorImpl<char> &Object) {
+    llvm::raw_svector_ostream ObjectStream(Object);
+    neverc::plugin::BuiltinLLVMAsmParserRequest Request;
+    Request.Target = *Target;
+    Request.TargetTriple =
+        llvm::Triple(llvm::Triple::normalize(Route->CanonicalTriple));
+    Request.CPU = Route->DefaultCPU;
+    Request.Input = llvm::MemoryBufferRef(Assembly, Name);
+    Request.Output = &ObjectStream;
+    return neverc::plugin::runBuiltinLLVMAsmParser(Request);
+  };
+
+  llvm::SmallVector<char, 0> EntryObject;
+  if (llvm::Error Error = assemble(R"(
+.text
+.globl _start
+.type _start,@function
+_start:
+  ret
+)",
+                                   "link-order-entry.s", EntryObject))
+    FAIL() << llvm::toString(std::move(Error)).str().str();
+
+  llvm::SmallVector<char, 0> FollowerObject;
+  if (llvm::Error Error = assemble(R"(
+.section .discarded_target,"ae",@progbits
+.byte 0
+.section .link_order_follower,"ao",@progbits,.discarded_target
+.byte 1
+)",
+                                   "link-order-follower.s", FollowerObject))
+    FAIL() << llvm::toString(std::move(Error)).str().str();
+
+  neverc::InMemoryFileStore &Store = neverc::InMemoryFileStore::instance();
+  Store.clear();
+  auto ClearStore = llvm::make_scope_exit([&] { Store.clear(); });
+  constexpr llvm::StringLiteral EntryPath = "/virtual/link-order-entry.o";
+  llvm::SmallString<0> &EntryBytes =
+      Store.create(EntryPath, EntryObject.size());
+  EntryBytes.append(EntryObject.begin(), EntryObject.end());
+
+  constexpr size_t FollowerCount = 128;
+  std::vector<std::string> FollowerPaths;
+  FollowerPaths.reserve(FollowerCount);
+  for (size_t Index = 0; Index != FollowerCount; ++Index) {
+    FollowerPaths.push_back("/virtual/link-order-" + std::to_string(Index) +
+                            ".o");
+    llvm::SmallString<0> &Bytes =
+        Store.create(FollowerPaths.back(), FollowerObject.size());
+    Bytes.append(FollowerObject.begin(), FollowerObject.end());
+  }
+  Store.freeze();
+
+  llvm::SmallString<128> OutputPath;
+  std::error_code EC = llvm::sys::fs::createTemporaryFile(
+      "neverc-link-order-discarded", "elf", OutputPath);
+  ASSERT_FALSE(EC) << EC.message();
+  llvm::FileRemover RemoveOutput(OutputPath);
+
+  LinkerExecutionContext Execution;
+  LinkerDriverConfig Config;
+  Config.executionContext = &Execution;
+  Config.outputFile = OutputPath.str().str();
+  Config.emulation = "elf_x86_64";
+  Config.endianness = 1;
+  Config.staticLink = true;
+  Config.noDynamicLinker = true;
+  Config.ehFrameHdr = false;
+  Config.threadCount = 2;
+
+  llvm::SmallVector<const char *, FollowerCount + 4> Args;
+  Args.push_back("neverc-test-linker");
+  Args.push_back("-e");
+  Args.push_back("_start");
+  Args.push_back(EntryPath.data());
+  for (const std::string &Path : FollowerPaths)
+    Args.push_back(Path.c_str());
+
+  std::string Stdout;
+  std::string Stderr;
+  llvm::raw_string_ostream StdoutStream(Stdout);
+  llvm::raw_string_ostream StderrStream(Stderr);
+  ASSERT_TRUE(linker::elf::link(Args, StdoutStream, StderrStream,
+                                /*exitEarly=*/false,
+                                /*disableOutput=*/false, Config))
+      << Stderr;
+  ASSERT_NE(Execution.common(), nullptr);
+  EXPECT_EQ(Execution.common()->parallelThreadCount(), 2U);
+  EXPECT_EQ(Stderr.find("sh_link points to discarded section"),
+            std::string::npos)
+      << Stderr;
+
+  auto Output = llvm::MemoryBuffer::getFile(OutputPath);
+  ASSERT_TRUE(static_cast<bool>(Output)) << Output.getError().message();
+  auto Object =
+      llvm::object::ObjectFile::createObjectFile((*Output)->getMemBufferRef());
+  ASSERT_TRUE(static_cast<bool>(Object))
+      << llvm::toString(Object.takeError()).str().str();
+  bool FoundText = false;
+  for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
+    llvm::Expected<llvm::StringRef> Name = Section.getName();
+    ASSERT_TRUE(static_cast<bool>(Name))
+        << llvm::toString(Name.takeError()).str().str();
+    FoundText |= *Name == ".text";
+    EXPECT_NE(*Name, ".discarded_target");
+    EXPECT_NE(*Name, ".link_order_follower");
+  }
+  EXPECT_TRUE(FoundText);
 }
 
 TEST(PluginParallelLinkTest,
