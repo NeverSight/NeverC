@@ -4,6 +4,7 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
+#include <cstdint>
 #include <cstdlib>
 
 namespace {
@@ -33,6 +34,96 @@ llvm::Expected<uint64_t> findELFSymbolAddress(llvm::StringRef Bytes,
   }
   return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                  "ELF symbol not found: " + Name);
+}
+
+struct ELFEhFrameHeaderEntry {
+  uint32_t Count = 0;
+  uint64_t InitialLocation = 0;
+  uint64_t FDEAddress = 0;
+  uint32_t FDERange = 0;
+};
+
+llvm::Expected<ELFEhFrameHeaderEntry>
+readFirstELFEhFrameHeaderEntry(llvm::StringRef Bytes) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "elf-eh-frame-header-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF() || !(*Object)->isLittleEndian())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected a little-endian ELF image");
+
+  llvm::StringRef HeaderContents;
+  llvm::StringRef EhFrameContents;
+  uint64_t HeaderAddress = 0;
+  uint64_t EhFrameAddress = 0;
+  bool FoundHeader = false;
+  bool FoundEhFrame = false;
+  for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
+    llvm::Expected<llvm::StringRef> Name = Section.getName();
+    if (!Name)
+      return Name.takeError();
+    if (*Name != ".eh_frame_hdr" && *Name != ".eh_frame")
+      continue;
+    llvm::Expected<llvm::StringRef> Contents = Section.getContents();
+    if (!Contents)
+      return Contents.takeError();
+    if (*Name == ".eh_frame_hdr") {
+      HeaderContents = *Contents;
+      HeaderAddress = Section.getAddress();
+      FoundHeader = true;
+    } else {
+      EhFrameContents = *Contents;
+      EhFrameAddress = Section.getAddress();
+      FoundEhFrame = true;
+    }
+  }
+  if (!FoundHeader || !FoundEhFrame)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "ELF unwind sections not found");
+  if (HeaderContents.size() < 20)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "truncated .eh_frame_hdr table");
+
+  const auto *Header =
+      reinterpret_cast<const uint8_t *>(HeaderContents.data());
+  // x86-64 NeverC emits version 1, pcrel|sdata4 for the .eh_frame pointer,
+  // udata4 for the count, and datarel|sdata4 for both table columns.
+  if (Header[0] != 1 || Header[1] != 0x1b || Header[2] != 0x03 ||
+      Header[3] != 0x3b)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "unexpected .eh_frame_hdr encoding");
+
+  ELFEhFrameHeaderEntry Result;
+  Result.Count = llvm::support::endian::read32le(Header + 8);
+  if (Result.Count == 0)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "empty .eh_frame_hdr table");
+  const int64_t InitialLocationDelta = static_cast<int32_t>(
+      llvm::support::endian::read32le(Header + 12));
+  const int64_t FDEAddressDelta =
+      static_cast<int32_t>(llvm::support::endian::read32le(Header + 16));
+  Result.InitialLocation = static_cast<uint64_t>(
+      static_cast<int64_t>(HeaderAddress) + InitialLocationDelta);
+  Result.FDEAddress = static_cast<uint64_t>(
+      static_cast<int64_t>(HeaderAddress) + FDEAddressDelta);
+
+  if (Result.FDEAddress < EhFrameAddress)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   ".eh_frame_hdr points before .eh_frame");
+  const uint64_t FDEOffset = Result.FDEAddress - EhFrameAddress;
+  if (FDEOffset > EhFrameContents.size() ||
+      EhFrameContents.size() - FDEOffset < 16)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   ".eh_frame_hdr points outside .eh_frame");
+  const auto *FDE = reinterpret_cast<const uint8_t *>(
+      EhFrameContents.data() + static_cast<size_t>(FDEOffset));
+  const uint32_t FDELength = llvm::support::endian::read32le(FDE);
+  if (FDELength < 12 || FDELength > EhFrameContents.size() - FDEOffset - 4)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "malformed .eh_frame FDE");
+  Result.FDERange = llvm::support::endian::read32le(FDE + 12);
+  return Result;
 }
 
 llvm::Expected<bool> hasELFSection(llvm::StringRef Bytes,
@@ -346,6 +437,56 @@ plain_b:
       << "functions with distinct unwind personalities must not be folded";
   EXPECT_EQ(plainA, plainB)
       << "ordinary FDEs must remain eligible for identical-code folding";
+}
+
+TEST_F(LinkerTest, EhFrameHeaderOmitsZeroRangeFDEs) {
+  const fs::path source = tmpFile("eh_frame_zero_range.s");
+  const fs::path object = tmpFile("eh_frame_zero_range.o");
+  const fs::path image = tmpFile("eh_frame_zero_range.elf");
+
+  writeFile(source, R"(
+.text
+.type zero_before,@function
+zero_before:
+.cfi_startproc
+.cfi_endproc
+
+.globl _start
+.type _start,@function
+_start:
+.cfi_startproc
+  ret
+.cfi_endproc
+
+.type zero_after,@function
+zero_after:
+.cfi_startproc
+.cfi_endproc
+)");
+
+  CmdResult assemble =
+      ncc({"--target=x86_64-linux-gnu", "-x", "assembler", "-c",
+           source.string(), "-o", object.string()});
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  CmdResult link = ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-fno-lto",
+                        "-Wl,-e,_start,--eh-frame-hdr", object.string(), "-o",
+                        image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(image);
+  llvm::Expected<ELFEhFrameHeaderEntry> Entry =
+      readFirstELFEhFrameHeaderEntry(bytes);
+  ASSERT_TRUE(static_cast<bool>(Entry))
+      << llvm::toString(Entry.takeError()).str().str();
+  const uint64_t Start = requireELFSymbolAddress(bytes, "_start");
+  EXPECT_EQ(Entry->Count, 1U)
+      << "zero-range FDEs must not occupy binary-search table entries";
+  EXPECT_EQ(Entry->InitialLocation, Start)
+      << "the surviving entry must describe the real function";
+  EXPECT_EQ(Entry->FDERange, 1U)
+      << "the table must point at the one-byte _start FDE, not its "
+         "zero-range predecessor";
 }
 
 TEST_F(LinkerTest, IcfPreservesAbsoluteExceptionPersonalities) {
