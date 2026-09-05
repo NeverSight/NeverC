@@ -254,6 +254,11 @@ TEST_F(LinkerTest, ELFVersionedDefinitionsUseOnlyOwnVersionNodePatterns) {
 foreign_exact:
   .byte 1
 
+.globl foreign_wild_hidden
+.symver foreign_wild_hidden, foreign_wild_hidden@NEW
+foreign_wild_hidden:
+  .byte 5
+
 .globl own_global_exact
 .symver own_global_exact, own_global_exact@@NEW
 own_global_exact:
@@ -268,14 +273,19 @@ hidden_single:
 .symver own_local_wild, own_local_wild@@NEW
 own_local_wild:
   .byte 4
+
+.globl own_exact_local
+.symver own_exact_local, own_exact_local@@NEW
+own_exact_local:
+  .byte 6
 )");
   writeFile(Script, R"(
 OLD {
-  local: foreign_exact;
+  local: foreign_exact; foreign_wild_*;
 };
 NEW {
   global: own_global_*; hidden_*;
-  local: own_global_exact; hidden_single; own_local_*;
+  local: own_global_exact; hidden_single; own_local_*; own_exact_local;
 };
 )");
 
@@ -299,9 +309,11 @@ NEW {
     EXPECT_EQ(It->second.second, IsDefault);
   };
   ExpectVersion("foreign_exact", "NEW", true);
+  ExpectVersion("foreign_wild_hidden", "NEW", false);
   ExpectVersion("own_global_exact", "NEW", true);
   ExpectVersion("hidden_single", "NEW", false);
   EXPECT_EQ(Versions->count("own_local_wild"), 0U);
+  EXPECT_EQ(Versions->count("own_exact_local"), 0U);
 }
 
 TEST_F(LinkerTest, ELFQuotedVersionScriptNamesAreLiteral) {
@@ -399,7 +411,8 @@ LOCAL { local: local_only_*; *; };
   ASSERT_GT(fileSize(Object), 16U * 1024U * 1024U);
 
   auto Link = [&](const fs::path &Output) {
-    return ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-shared", "-fno-lto",
+    return ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-shared",
+                "-fno-lto", "-fno-build-id",
                 "-Wl,--version-script=" + Script.string(), Object.string(),
                 "-o", Output.string()});
   };
