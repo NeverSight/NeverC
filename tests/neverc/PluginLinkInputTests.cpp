@@ -1,4 +1,6 @@
 #include "Link/LinkInputReader.h"
+#include "Linker/Core/Runtime/LinkerExecutionContext.h"
+#include "Linker/Core/Support/Strings.h"
 #include "neverc/Plugin/Host/BuiltinLLVMAsmParser.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/ObjectReaderProvider.h"
@@ -6,8 +8,8 @@
 #include "neverc/Plugin/Host/PluginProcessServices.h"
 #include "neverc/Plugin/Host/PluginRegistration.h"
 #include "neverc/Plugin/Host/PluginSession.h"
-#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Plugin/Host/PluginTargetRegistry.h"
+#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Object/COFF.h"
@@ -22,6 +24,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <string>
 #include <vector>
@@ -38,6 +41,43 @@ constexpr NevercObjectFormatID TestFormatID{
 
 std::string errorText(Error Value) {
   return toString(std::move(Value)).str().str();
+}
+
+TEST(PluginLinkInputMatcherTest, MalformedGlobPatternFailsClosed) {
+  std::string Diagnostics;
+  raw_string_ostream DiagnosticStream(Diagnostics);
+  linker::LinkerExecutionContext Execution;
+  linker::CommonLinkerContext &Context =
+      Execution.createBackend<linker::CommonLinkerContext>();
+  Context.e.initialize(llvm::nulls(), DiagnosticStream,
+                       /*exitEarly=*/false, /*disableOutput=*/false);
+
+  // Keep the legacy uninitialized discriminator byte deterministic. Before
+  // the production fix, zero makes a failed construction look like a default
+  // GlobPattern, which incorrectly matches the empty string.
+  alignas(linker::SingleStringMatcher) unsigned char
+      Storage[sizeof(linker::SingleStringMatcher)] = {};
+  auto *Matcher = ::new (static_cast<void *>(Storage))
+      linker::SingleStringMatcher("broken[");
+
+  EXPECT_EQ(Context.e.errorCount, 1U);
+  EXPECT_FALSE(Matcher->match(""));
+  EXPECT_FALSE(Matcher->match("anything"));
+  EXPECT_FALSE(Matcher->isTrivialMatchAll());
+  Matcher->~SingleStringMatcher();
+
+  DiagnosticStream.flush();
+  EXPECT_EQ(llvm::StringRef(Diagnostics).count("unmatched '['"), 1U);
+  EXPECT_NE(Diagnostics.find("invalid glob pattern, unmatched '[': broken["),
+            std::string::npos);
+
+  linker::SingleStringMatcher Exact("\"literal[abc]\"");
+  EXPECT_TRUE(Exact.match("literal[abc]"));
+  EXPECT_FALSE(Exact.match("literala"));
+  linker::SingleStringMatcher Glob("prefix*");
+  EXPECT_TRUE(Glob.match("prefix"));
+  EXPECT_TRUE(Glob.match("prefix-suffix"));
+  EXPECT_FALSE(Glob.match("other"));
 }
 
 NevercStringView view(const char *Value) {
