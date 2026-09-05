@@ -1,10 +1,12 @@
 #include "NeverCTestFixture.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 #include <cstdlib>
+#include <map>
 
 namespace {
 
@@ -98,6 +100,46 @@ llvm::Expected<std::string> findELFBuildId(llvm::StringRef Bytes) {
                                  "GNU build-id note not found");
 }
 
+using ELFDynamicSymbolVersions =
+    std::map<std::string, std::pair<std::string, bool>>;
+
+llvm::Expected<ELFDynamicSymbolVersions>
+readELFDynamicSymbolVersions(llvm::StringRef Bytes) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "elf-version-script-test"));
+  if (!Object)
+    return Object.takeError();
+  const auto *ELFObject =
+      llvm::dyn_cast<llvm::object::ELFObjectFileBase>(Object->get());
+  if (!ELFObject)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected an ELF image");
+
+  llvm::Expected<std::vector<llvm::object::VersionEntry>> Versions =
+      ELFObject->readDynsymVersions();
+  if (!Versions)
+    return Versions.takeError();
+
+  ELFDynamicSymbolVersions Result;
+  size_t Index = 0;
+  for (llvm::object::ELFSymbolRef Symbol :
+       ELFObject->getDynamicSymbolIterators()) {
+    if (Index == Versions->size())
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "missing dynamic symbol version entry");
+    llvm::Expected<llvm::StringRef> Name = Symbol.getName();
+    if (!Name)
+      return Name.takeError();
+    Result[Name->str()] = {(*Versions)[Index].Name,
+                           (*Versions)[Index].IsVerDef};
+    ++Index;
+  }
+  if (Index != Versions->size())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "extra dynamic symbol version entry");
+  return Result;
+}
+
 class ScopedEnvironmentVariable {
 public:
   ScopedEnvironmentVariable(const char *Name, const char *Value) : Name(Name) {
@@ -162,6 +204,12 @@ protected:
     return ncc(args);
   }
 
+  CmdResult assembleELFObject(const fs::path &source,
+                              const fs::path &object) const {
+    return ncc({"--target=x86_64-linux-gnu", "-fno-lto", "-x", "assembler",
+                "-c", source.string(), "-o", object.string()});
+  }
+
   std::vector<std::string> baseLinkArgs() const {
     std::vector<std::string> args;
     for (const std::string &flag : sysrootFlags())
@@ -191,6 +239,211 @@ TEST_F(LinkerTest, EmbeddedLinkerDefault) {
   auto all = dr.err + dr.out;
   EXPECT_TRUE(all.find("(in-process)") != std::string::npos)
       << "embedded linker: missing (in-process) marker\n" << all;
+}
+
+TEST_F(LinkerTest, ELFVersionedDefinitionsUseOnlyOwnVersionNodePatterns) {
+  const fs::path Source = tmpFile("versioned_own_node.s");
+  const fs::path Object = tmpFile("versioned_own_node.o");
+  const fs::path Script = tmpFile("versioned_own_node.map");
+  const fs::path Image = tmpFile("versioned_own_node.so");
+
+  writeFile(Source, R"(
+.data
+.globl foreign_exact
+.symver foreign_exact, foreign_exact@@NEW
+foreign_exact:
+  .byte 1
+
+.globl own_global_exact
+.symver own_global_exact, own_global_exact@@NEW
+own_global_exact:
+  .byte 2
+
+.globl hidden_single
+.symver hidden_single, hidden_single@NEW
+hidden_single:
+  .byte 3
+
+.globl own_local_wild
+.symver own_local_wild, own_local_wild@@NEW
+own_local_wild:
+  .byte 4
+)");
+  writeFile(Script, R"(
+OLD {
+  local: foreign_exact;
+};
+NEW {
+  global: own_global_*; hidden_*;
+  local: own_global_exact; hidden_single; own_local_*;
+};
+)");
+
+  CmdResult Assemble = assembleELFObject(Source, Object);
+  ASSERT_EQ(Assemble.exitCode, 0) << Assemble.err;
+  CmdResult Link = ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-shared",
+                        "-fno-lto", "-Wl,--version-script=" + Script.string(),
+                        Object.string(), "-o", Image.string()});
+  ASSERT_EQ(Link.exitCode, 0) << Link.err;
+
+  llvm::Expected<ELFDynamicSymbolVersions> Versions =
+      readELFDynamicSymbolVersions(readFile(Image));
+  ASSERT_TRUE(static_cast<bool>(Versions))
+      << llvm::toString(Versions.takeError()).str().str();
+  auto ExpectVersion = [&](llvm::StringRef Name, llvm::StringRef Version,
+                           bool IsDefault) {
+    SCOPED_TRACE(Name.str());
+    auto It = Versions->find(Name.str());
+    ASSERT_NE(It, Versions->end());
+    EXPECT_EQ(It->second.first, Version);
+    EXPECT_EQ(It->second.second, IsDefault);
+  };
+  ExpectVersion("foreign_exact", "NEW", true);
+  ExpectVersion("own_global_exact", "NEW", true);
+  ExpectVersion("hidden_single", "NEW", false);
+  EXPECT_EQ(Versions->count("own_local_wild"), 0U);
+}
+
+TEST_F(LinkerTest, ELFQuotedVersionScriptNamesAreLiteral) {
+  const fs::path Source = tmpFile("version_quoted_literal.s");
+  const fs::path Object = tmpFile("version_quoted_literal.o");
+  const fs::path Script = tmpFile("version_quoted_literal.map");
+  const fs::path Image = tmpFile("version_quoted_literal.so");
+
+  writeFile(Source, R"(
+.data
+.globl "literal[abc]"
+"literal[abc]":
+  .byte 1
+.globl literala
+literala:
+  .byte 2
+)");
+  writeFile(Script, R"(
+LITERAL {
+  global: "literal[abc]";
+  local: *;
+};
+)");
+
+  CmdResult Assemble = assembleELFObject(Source, Object);
+  ASSERT_EQ(Assemble.exitCode, 0) << Assemble.err;
+  CmdResult Link = ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-shared",
+                        "-fno-lto", "-Wl,--version-script=" + Script.string(),
+                        Object.string(), "-o", Image.string()});
+  ASSERT_EQ(Link.exitCode, 0) << Link.err;
+
+  llvm::Expected<ELFDynamicSymbolVersions> Versions =
+      readELFDynamicSymbolVersions(readFile(Image));
+  ASSERT_TRUE(static_cast<bool>(Versions))
+      << llvm::toString(Versions.takeError()).str().str();
+  auto It = Versions->find("literal[abc]");
+  ASSERT_NE(It, Versions->end());
+  EXPECT_EQ(It->second.first, "LITERAL");
+  EXPECT_TRUE(It->second.second);
+  EXPECT_EQ(Versions->count("literala"), 0U);
+}
+
+TEST_F(LinkerTest,
+       ELFLargeVersionScriptWildcardAssignmentIsDeterministicAcrossBudgets) {
+  const fs::path Source = tmpFile("large_version_wildcards.s");
+  const fs::path Object = tmpFile("large_version_wildcards.o");
+  const fs::path Script = tmpFile("large_version_wildcards.map");
+  const fs::path SerialImage = tmpFile("large_version_serial.so");
+  const fs::path ParallelImage = tmpFile("large_version_parallel.so");
+
+  std::string Assembly = ".data\n.space 17825792, 0\n";
+  for (unsigned Group = 0; Group != 64; ++Group) {
+    for (unsigned Index = 0; Index != 64; ++Index) {
+      const std::string Name =
+          "group" + std::to_string(Group) + "_symbol" + std::to_string(Index);
+      Assembly += ".globl " + Name + "\n" + Name + ":\n  .byte 0\n";
+    }
+  }
+  Assembly += R"(
+.globl exact_wins
+exact_wins:
+  .byte 1
+.globl overlap_item
+overlap_item:
+  .byte 2
+.globl suffix_tail
+suffix_tail:
+  .byte 3
+.globl bracket_7
+bracket_7:
+  .byte 4
+.globl local_only_symbol
+local_only_symbol:
+  .byte 5
+)";
+  writeFile(Source, Assembly);
+
+  std::string VersionScript;
+  for (unsigned Group = 0; Group != 64; ++Group)
+    VersionScript += "V" + std::to_string(Group) + " { global: group" +
+                     std::to_string(Group) + "_*; };\n";
+  VersionScript += R"(
+EXACT { global: exact_wins; };
+WILD_LATE { global: exact_*; };
+OVER_OLD { global: overlap_*; };
+OVER_NEW { global: overlap_*; };
+SUFFIX { global: *_tail; };
+BRACKET { global: bracket_[0-9]; };
+LOCAL { local: local_only_*; *; };
+)";
+  writeFile(Script, VersionScript);
+
+  CmdResult Assemble = assembleELFObject(Source, Object);
+  ASSERT_EQ(Assemble.exitCode, 0) << Assemble.err;
+  ASSERT_GT(fileSize(Object), 16U * 1024U * 1024U);
+
+  auto Link = [&](const fs::path &Output) {
+    return ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-shared", "-fno-lto",
+                "-Wl,--version-script=" + Script.string(), Object.string(),
+                "-o", Output.string()});
+  };
+  ScopedEnvironmentVariable Budget("NEVERC_RESOURCE_BUDGET", "1");
+  {
+    ScopedEnvironmentVariable Tokens("NEVERC_RESOURCE_CPU_TOKENS", "1");
+    CmdResult SerialLink = Link(SerialImage);
+    ASSERT_EQ(SerialLink.exitCode, 0) << SerialLink.err;
+  }
+  {
+    ScopedEnvironmentVariable Tokens("NEVERC_RESOURCE_CPU_TOKENS", "4");
+    CmdResult ParallelLink = Link(ParallelImage);
+    ASSERT_EQ(ParallelLink.exitCode, 0) << ParallelLink.err;
+  }
+
+  const std::string SerialBytes = readFile(SerialImage);
+  const std::string ParallelBytes = readFile(ParallelImage);
+  EXPECT_TRUE(SerialBytes == ParallelBytes)
+      << "version-script output changed under a larger worker grant";
+  llvm::Expected<ELFDynamicSymbolVersions> SerialVersions =
+      readELFDynamicSymbolVersions(SerialBytes);
+  ASSERT_TRUE(static_cast<bool>(SerialVersions))
+      << llvm::toString(SerialVersions.takeError()).str().str();
+  llvm::Expected<ELFDynamicSymbolVersions> ParallelVersions =
+      readELFDynamicSymbolVersions(ParallelBytes);
+  ASSERT_TRUE(static_cast<bool>(ParallelVersions))
+      << llvm::toString(ParallelVersions.takeError()).str().str();
+  EXPECT_TRUE(*SerialVersions == *ParallelVersions)
+      << "dynamic symbol versions changed under a larger worker grant";
+
+  auto ExpectVersion = [&](llvm::StringRef Name, llvm::StringRef Version) {
+    SCOPED_TRACE(Name.str());
+    auto It = SerialVersions->find(Name.str());
+    ASSERT_NE(It, SerialVersions->end());
+    EXPECT_EQ(It->second.first, Version);
+    EXPECT_TRUE(It->second.second);
+  };
+  ExpectVersion("group0_symbol0", "V0");
+  ExpectVersion("group63_symbol63", "V63");
+  ExpectVersion("exact_wins", "EXACT");
+  ExpectVersion("overlap_item", "OVER_NEW");
+  ExpectVersion("suffix_tail", "SUFFIX");
+  ExpectVersion("bracket_7", "BRACKET");
+  EXPECT_EQ(SerialVersions->count("local_only_symbol"), 0U);
 }
 
 TEST_F(LinkerTest, ElfRelocatableDropsUnusedFatLTOSections) {
