@@ -54,6 +54,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <future>
 #include <memory>
@@ -185,6 +186,41 @@ LTOCacheIdentity cacheIdentity(const linker::LinkerDriverConfig &Config) {
                            /*EmitAddrsig=*/true),
           linker::ltoPartitionCacheSalt(Config, /*EmitAddrsig=*/true)};
 }
+
+
+int setLTOCacheTestEnvironment(const char *Name, const char *Value) {
+#ifdef _WIN32
+  return ::_putenv_s(Name, Value ? Value : "");
+#else
+  if (Value)
+    return ::setenv(Name, Value, 1);
+  return ::unsetenv(Name);
+#endif
+}
+
+class ScopedLTOCacheTestEnvironment {
+  std::string Name;
+  std::optional<std::string> Previous;
+
+public:
+  ScopedLTOCacheTestEnvironment(const char *Name, const char *Value)
+      : Name(Name) {
+    if (const char *Old = ::getenv(Name))
+      Previous = Old;
+    EXPECT_EQ(setLTOCacheTestEnvironment(Name, Value), 0);
+  }
+
+  ScopedLTOCacheTestEnvironment(const ScopedLTOCacheTestEnvironment &) =
+      delete;
+  ScopedLTOCacheTestEnvironment &
+  operator=(const ScopedLTOCacheTestEnvironment &) = delete;
+
+  ~ScopedLTOCacheTestEnvironment() {
+    EXPECT_EQ(setLTOCacheTestEnvironment(
+                  Name.c_str(), Previous ? Previous->c_str() : nullptr),
+              0);
+  }
+};
 
 using LegacyParallelCodeGenFunction =
     bool (*)(Module &, TargetMachine &, neverc::ParallelCodeGenOutputs,
@@ -2568,6 +2604,50 @@ TEST(LTOCacheTest, NevercPipelineTuningTypedRawConflictsCannotAlias) {
   EXPECT_NE(ConflictA.Partition, ConflictB.Partition);
   EXPECT_NE(ConflictB.Full, NoRawArgument.Full);
   EXPECT_NE(ConflictB.Partition, NoRawArgument.Partition);
+}
+
+
+TEST(ConcurrentLTOOptionIsolationTest,
+     ObservableParallelCodegenEnvironmentBypassesBothCaches) {
+  // Strict mode is set globally in some CI jobs. Isolate every control so the
+  // baseline remains cacheable and each assertion identifies one variable.
+  ScopedLTOCacheTestEnvironment NoStrict("NEVERC_PCG_STRICT", nullptr);
+  ScopedLTOCacheTestEnvironment NoForcedFailure(
+      "NEVERC_PCG_FORCE_MERGE_FAIL", nullptr);
+  ScopedLTOCacheTestEnvironment NoDebug("NEVERC_PCG_DEBUG", nullptr);
+  ScopedLTOCacheTestEnvironment NoReclaimPolicy(
+      "NEVERC_PCG_BENCH_EAGER_RECLAIM", nullptr);
+  ScopedLTOCacheTestEnvironment CacheEnabled(linker::ltoCacheEnvVar, "1");
+  ScopedLTOCacheTestEnvironment PartitionCacheEnabled(
+      linker::ltoPartitionCacheEnvVar, "1");
+
+  linker::LinkerDriverConfig Config;
+  Config.ltoPartitions = 2;
+  ASSERT_TRUE(linker::ltoCacheUsable(Config));
+  ASSERT_TRUE(linker::ltoPartitionCacheUsable(Config));
+
+  for (const char *Name : {"NEVERC_PCG_STRICT",
+                           "NEVERC_PCG_FORCE_MERGE_FAIL",
+                           "NEVERC_PCG_DEBUG",
+                           "NEVERC_PCG_BENCH_EAGER_RECLAIM"}) {
+    SCOPED_TRACE(Name);
+    // All four controls use presence semantics; "0" deliberately proves the
+    // cache gate does not silently reinterpret them as boolean values.
+    ScopedLTOCacheTestEnvironment ObservableControl(Name, "0");
+    EXPECT_FALSE(linker::ltoCacheUsable(Config));
+    EXPECT_FALSE(linker::ltoPartitionCacheUsable(Config));
+
+    linker::LinkerDriverConfig SerialConfig;
+    SerialConfig.ltoPartitions = 1;
+    EXPECT_TRUE(linker::ltoCacheUsable(SerialConfig));
+    EXPECT_TRUE(linker::ltoPartitionCacheUsable(SerialConfig));
+  }
+
+  // Worker count changes scheduling, not the emitted object. Keeping it
+  // cacheable preserves reuse across explicit performance budgets.
+  ScopedLTOCacheTestEnvironment Threads("NEVERC_PCG_THREADS", "2");
+  EXPECT_TRUE(linker::ltoCacheUsable(Config));
+  EXPECT_TRUE(linker::ltoPartitionCacheUsable(Config));
 }
 
 TEST(ConcurrentLTOOptionIsolationTest,
