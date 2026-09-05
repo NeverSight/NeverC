@@ -25,62 +25,160 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
-  elf-version-script-red:
+  elf-version-script-artifact-probe:
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 30
     env:
-      BUILD_TYPE: RelWithDebInfo
-      LLVM_APT_VER: "22"
+      SOURCE_RUN_ID: "33930621240"
+      SOURCE_SHA: "f1cc957c64e63427c56e86e28a5309918c07c8b1"
+      SOURCE_ARTIFACT_ID: "9959802944"
+      SOURCE_ARTIFACT_NAME: linux-x64-neverc-compiler
     steps:
-      - name: Checkout diagnostic commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify exact formal-green artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
+          test "$(jq -r '.head_sha' <<<"$run_json")" = "$SOURCE_SHA"
+          test "$(jq -r '.conclusion' <<<"$run_json")" = success
+          test "$(jq -r '.head_repository.full_name' <<<"$run_json")" = "$GITHUB_REPOSITORY"
+
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts?per_page=100")"
+          matching_count="$(jq --arg name "$SOURCE_ARTIFACT_NAME" \
+            '[.artifacts[] | select(.name == $name and (.expired | not))] | length' \
+            <<<"$artifacts_json")"
+          test "$matching_count" = 1
+          artifact_id="$(jq -r --arg name "$SOURCE_ARTIFACT_NAME" \
+            '.artifacts[] | select(.name == $name and (.expired | not)) | .id' \
+            <<<"$artifacts_json")"
+          test "$artifact_id" = "$SOURCE_ARTIFACT_ID"
+          echo "carrier_sha=${GITHUB_SHA}"
+          echo "source_sha=${SOURCE_SHA} source_run=${SOURCE_RUN_ID} artifact_id=${artifact_id}"
+
+      - name: Download exact formal-green compiler artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          path: neverc
+          name: linux-x64-neverc-compiler
+          path: artifact
+          repository: NeverSight/NeverC
+          run-id: 33930621240
+          github-token: ${{ github.token }}
 
-      - name: Verify exact checkout
-        working-directory: neverc
-        run: |
-          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
-          git show -s --format='%H %s' HEAD
-
-      - name: Install build dependencies
-        run: |
-          bash neverc/.github/scripts/configure-apt-ubuntu.sh
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh "$LLVM_APT_VER"
-          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
-          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
-
-      - name: Configure assertions build
-        run: |
-          cmake -GNinja -Bbuild \
-            -DCMAKE_C_COMPILER="$CC" \
-            -DCMAKE_CXX_COMPILER="$CXX" \
-            -DLLVM_ENABLE_ASSERTIONS=ON \
-            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
-            -DNEVERC_INCLUDE_TESTS=ON \
-            -DNEVERC_ENABLE_LTO=OFF \
-            -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-            -C neverc/neverc/cmake/caches/NeverC.cmake \
-            neverc/llvm
-
-      - name: Build linker test binary
-        run: cmake --build build --config "$BUILD_TYPE" --target neverc-tests
-
-      - name: Run exact RED contract
+      - name: Extract relocated compiler
         shell: bash
         run: |
-          set +e
-          build/bin/neverc-tests \
-            --gtest_color=no \
-            --gtest_filter='LinkerTest.ELFVersionedDefinitionsUseOnlyOwnVersionNodePatterns:LinkerTest.ELFQuotedVersionScriptNamesAreLiteral:LinkerTest.ELFLargeVersionScriptWildcardAssignmentIsDeterministicAcrossBudgets' \
-            2>&1 | tee version-script-red.log
-          test_status=${PIPESTATUS[0]}
-          set -e
-          echo "EXACT_GTEST_EXIT=$test_status"
-          exit "$test_status"
+          set -euo pipefail
+          test -f artifact/linux-x64-neverc-compiler.zip
+          7z x -y artifact/linux-x64-neverc-compiler.zip -ocompiler-root
+          test -f compiler-root/install/bin/neverc
+          chmod +x compiler-root/install/bin/neverc
+          echo "$PWD/compiler-root/install/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$PWD/compiler-root/install/lib:$PWD/compiler-root/install/lib/neverc:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          compiler-root/install/bin/neverc --version
+
+      - name: Compare normalized one-token and four-token ELF output
+        shell: bash
+        env:
+          PROBE_ROOT: ${{ runner.temp }}/elf-version-artifact-probe
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROBE_ROOT/serial" "$PROBE_ROOT/parallel"
+          python3 <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["PROBE_ROOT"])
+          assembly = [".data", ".space 17825792, 0"]
+          for group in range(64):
+              for index in range(64):
+                  name = f"group{group}_symbol{index}"
+                  assembly.extend((f".globl {name}", f"{name}:", "  .byte 0"))
+          for name, value in (
+              ("exact_wins", 1),
+              ("overlap_item", 2),
+              ("suffix_tail", 3),
+              ("bracket_7", 4),
+              ("local_only_symbol", 5),
+          ):
+              assembly.extend((f".globl {name}", f"{name}:", f"  .byte {value}"))
+          (root / "large_version_wildcards.s").write_text(
+              "\n".join(assembly) + "\n", encoding="utf-8"
+          )
+
+          script = [f"V{group} {{ global: group{group}_*; }};" for group in range(64)]
+          script.extend(
+              (
+                  "EXACT { global: exact_wins; };",
+                  "WILD_LATE { global: exact_*; };",
+                  "OVER_OLD { global: overlap_*; };",
+                  "OVER_NEW { global: overlap_*; };",
+                  "SUFFIX { global: *_tail; };",
+                  "BRACKET { global: bracket_[0-9]; };",
+                  "LOCAL { local: local_only_*; *; };",
+              )
+          )
+          (root / "large_version_wildcards.map").write_text(
+              "\n".join(script) + "\n", encoding="utf-8"
+          )
+          PY
+
+          neverc \
+            --target=x86_64-linux-gnu \
+            -fno-lto \
+            -x assembler \
+            -c "$PROBE_ROOT/large_version_wildcards.s" \
+            -o "$PROBE_ROOT/large_version_wildcards.o"
+          test "$(stat -c %s "$PROBE_ROOT/large_version_wildcards.o")" -gt 16777216
+
+          common_args=(
+            --target=x86_64-linux-gnu
+            -nostdlib
+            -shared
+            -fno-lto
+            -fno-build-id
+            -Wl,--soname=large_version.so
+            "-Wl,--version-script=$PROBE_ROOT/large_version_wildcards.map"
+            "$PROBE_ROOT/large_version_wildcards.o"
+          )
+          NEVERC_RESOURCE_BUDGET=1 NEVERC_RESOURCE_CPU_TOKENS=1 \
+            neverc "${common_args[@]}" -o "$PROBE_ROOT/serial/out.so"
+          NEVERC_RESOURCE_BUDGET=1 NEVERC_RESOURCE_CPU_TOKENS=4 \
+            neverc "${common_args[@]}" -o "$PROBE_ROOT/parallel/out.so"
+
+          sha256sum "$PROBE_ROOT/serial/out.so" "$PROBE_ROOT/parallel/out.so" \
+            | tee "$PROBE_ROOT/sha256.txt"
+          stat -c '%n %s bytes' "$PROBE_ROOT/serial/out.so" "$PROBE_ROOT/parallel/out.so" \
+            | tee "$PROBE_ROOT/sizes.txt"
+
+          for mode in serial parallel; do
+            readelf -W -h -l -S -d -s --dyn-syms -V -r -n -p .dynstr \
+              "$PROBE_ROOT/$mode/out.so" > "$PROBE_ROOT/$mode/readelf.txt" 2>&1
+            if grep -Fq 'Build ID:' "$PROBE_ROOT/$mode/readelf.txt"; then
+              echo "unexpected build ID in $mode output" >&2
+              exit 1
+            fi
+          done
+
+          if ! cmp -s "$PROBE_ROOT/serial/out.so" "$PROBE_ROOT/parallel/out.so"; then
+            cmp -l "$PROBE_ROOT/serial/out.so" "$PROBE_ROOT/parallel/out.so" \
+              | sed -n '1,64p' > "$PROBE_ROOT/cmp-first-64.txt" || true
+            diff -u "$PROBE_ROOT/serial/readelf.txt" "$PROBE_ROOT/parallel/readelf.txt" \
+              > "$PROBE_ROOT/readelf.diff" || true
+            echo "normalized output differs across token grants" >&2
+            exit 1
+          fi
+          echo "normalized output is byte-identical across token grants" \
+            | tee "$PROBE_ROOT/cmp.txt"
+
+      - name: Upload probe evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: elf-version-script-artifact-probe-${{ github.run_id }}
+          path: ${{ runner.temp }}/elf-version-artifact-probe
+          if-no-files-found: warn
+          retention-days: 5
