@@ -431,6 +431,16 @@ LOCAL { local: local_only_*; *; };
 
   const std::string SerialBytes = readFile(SerialImage);
   const std::string ParallelBytes = readFile(ParallelImage);
+  auto ExpectNoBuildId = [&](llvm::StringRef Bytes, llvm::StringRef Mode) {
+    SCOPED_TRACE(Mode.str());
+    llvm::Expected<bool> HasBuildId =
+        hasELFSection(Bytes, ".note.gnu.build-id");
+    ASSERT_TRUE(static_cast<bool>(HasBuildId))
+        << llvm::toString(HasBuildId.takeError()).str().str();
+    EXPECT_FALSE(*HasBuildId);
+  };
+  ExpectNoBuildId(SerialBytes, "serial output");
+  ExpectNoBuildId(ParallelBytes, "parallel output");
   EXPECT_TRUE(SerialBytes == ParallelBytes)
       << "version-script output changed under a larger worker grant";
   llvm::Expected<ELFDynamicSymbolVersions> SerialVersions =
@@ -445,14 +455,22 @@ LOCAL { local: local_only_*; *; };
       << "dynamic symbol versions changed under a larger worker grant";
 
   auto ExpectVersion = [&](llvm::StringRef Name, llvm::StringRef Version) {
-    SCOPED_TRACE(Name.str());
-    auto It = SerialVersions->find(Name.str());
-    ASSERT_NE(It, SerialVersions->end());
-    EXPECT_EQ(It->second.first, Version);
-    EXPECT_TRUE(It->second.second);
+    auto Check = [&](const ELFDynamicSymbolVersions &Versions,
+                     llvm::StringRef Mode) {
+      SCOPED_TRACE((Mode + ": " + Name).str());
+      auto It = Versions.find(Name.str());
+      ASSERT_NE(It, Versions.end());
+      EXPECT_EQ(It->second.first, Version);
+      EXPECT_TRUE(It->second.second);
+    };
+    Check(*SerialVersions, "serial");
+    Check(*ParallelVersions, "parallel");
   };
-  ExpectVersion("group0_symbol0", "V0");
-  ExpectVersion("group63_symbol63", "V63");
+  for (unsigned Group = 0; Group != 64; ++Group)
+    for (unsigned Index = 0; Index != 64; ++Index)
+      ExpectVersion("group" + std::to_string(Group) + "_symbol" +
+                        std::to_string(Index),
+                    "V" + std::to_string(Group));
   ExpectVersion("exact_wins", "EXACT");
   ExpectVersion("overlap_item", "OVER_NEW");
   ExpectVersion("suffix_tail", "SUFFIX");
