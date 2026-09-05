@@ -174,6 +174,118 @@ jobs:
           echo "normalized output is byte-identical across token grants" \
             | tee "$PROBE_ROOT/cmp.txt"
 
+      - name: Run exact own-node and quoted-literal RED contracts
+        shell: bash
+        env:
+          PROBE_ROOT: ${{ runner.temp }}/elf-version-artifact-probe
+        run: |
+          set -euo pipefail
+          semantic_root="$PROBE_ROOT/semantics"
+          mkdir -p "$semantic_root"
+
+          cat > "$semantic_root/own-node.s" <<'EOF'
+          .data
+          .globl foreign_exact
+          .symver foreign_exact, foreign_exact@@NEW
+          foreign_exact:
+            .byte 1
+          .globl foreign_wild_hidden
+          .symver foreign_wild_hidden, foreign_wild_hidden@NEW
+          foreign_wild_hidden:
+            .byte 5
+          .globl own_global_exact
+          .symver own_global_exact, own_global_exact@@NEW
+          own_global_exact:
+            .byte 2
+          .globl hidden_single
+          .symver hidden_single, hidden_single@NEW
+          hidden_single:
+            .byte 3
+          .globl own_local_wild
+          .symver own_local_wild, own_local_wild@@NEW
+          own_local_wild:
+            .byte 4
+          .globl own_exact_local
+          .symver own_exact_local, own_exact_local@@NEW
+          own_exact_local:
+            .byte 6
+          EOF
+          cat > "$semantic_root/own-node.map" <<'EOF'
+          OLD {
+            local: foreign_exact; foreign_wild_*;
+          };
+          NEW {
+            global: own_global_*; hidden_*;
+            local: own_global_exact; hidden_single; own_local_*; own_exact_local;
+          };
+          EOF
+          neverc --target=x86_64-linux-gnu -fno-lto -x assembler \
+            -c "$semantic_root/own-node.s" -o "$semantic_root/own-node.o"
+          neverc --target=x86_64-linux-gnu -nostdlib -shared -fno-lto \
+            -fno-build-id -Wl,--soname=own-node.so \
+            "-Wl,--version-script=$semantic_root/own-node.map" \
+            "$semantic_root/own-node.o" -o "$semantic_root/own-node.so"
+          readelf -W --dyn-syms -V "$semantic_root/own-node.so" \
+            > "$semantic_root/own-node.readelf.txt"
+
+          cat > "$semantic_root/quoted.s" <<'EOF'
+          .data
+          .globl "literal[abc]"
+          "literal[abc]":
+            .byte 1
+          .globl literala
+          literala:
+            .byte 2
+          EOF
+          cat > "$semantic_root/quoted.map" <<'EOF'
+          LITERAL {
+            global: "literal[abc]";
+            local: *;
+          };
+          EOF
+          neverc --target=x86_64-linux-gnu -fno-lto -x assembler \
+            -c "$semantic_root/quoted.s" -o "$semantic_root/quoted.o"
+          neverc --target=x86_64-linux-gnu -nostdlib -shared -fno-lto \
+            -fno-build-id -Wl,--soname=quoted.so \
+            "-Wl,--version-script=$semantic_root/quoted.map" \
+            "$semantic_root/quoted.o" -o "$semantic_root/quoted.so"
+          readelf -W --dyn-syms -V "$semantic_root/quoted.so" \
+            > "$semantic_root/quoted.readelf.txt"
+
+          failures=0
+          expect_present() {
+            local report="$1"
+            local symbol="$2"
+            if grep -Fq "$symbol" "$report"; then
+              echo "PASS present: $symbol" | tee -a "$semantic_root/result.txt"
+            else
+              echo "FAIL missing: $symbol" | tee -a "$semantic_root/result.txt"
+              failures=$((failures + 1))
+            fi
+          }
+          expect_absent() {
+            local report="$1"
+            local symbol="$2"
+            if grep -Fq "$symbol" "$report"; then
+              echo "FAIL unexpectedly present: $symbol" \
+                | tee -a "$semantic_root/result.txt"
+              failures=$((failures + 1))
+            else
+              echo "PASS absent: $symbol" | tee -a "$semantic_root/result.txt"
+            fi
+          }
+
+          expect_present "$semantic_root/own-node.readelf.txt" 'foreign_exact@@NEW'
+          expect_present "$semantic_root/own-node.readelf.txt" 'foreign_wild_hidden@NEW'
+          expect_present "$semantic_root/own-node.readelf.txt" 'own_global_exact@@NEW'
+          expect_present "$semantic_root/own-node.readelf.txt" 'hidden_single@NEW'
+          expect_absent "$semantic_root/own-node.readelf.txt" 'own_local_wild'
+          expect_absent "$semantic_root/own-node.readelf.txt" 'own_exact_local'
+          expect_present "$semantic_root/quoted.readelf.txt" 'literal[abc]@@LITERAL'
+          expect_absent "$semantic_root/quoted.readelf.txt" 'literala'
+          echo "SEMANTIC_FAILURES=$failures" | tee -a "$semantic_root/result.txt"
+          test "$failures" -eq 0
+
       - name: Upload probe evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
