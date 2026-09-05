@@ -26,8 +26,11 @@ void saveBuffer(llvm::StringRef buffer, const llvm::Twine &path);
 
 // A single pattern to match against.  A pattern is either a double-quoted
 // string (matched exactly after removing the quotes) or a glob pattern in
-// the sense of `llvm::GlobPattern`.
+// the sense of `llvm::GlobPattern`. Invalid glob patterns are diagnosed and
+// match nothing.
 class SingleStringMatcher {
+  enum class MatchKind : uint8_t { Glob = 0, Exact = 1, Invalid = 2 };
+
 public:
   SingleStringMatcher(llvm::StringRef Pattern);
 
@@ -35,11 +38,11 @@ public:
 
   // Returns true for the trivial pattern "*".
   bool isTrivialMatchAll() const {
-    return !ExactMatch && GlobPatternMatcher.isTrivialMatchAll();
+    return Kind == MatchKind::Glob && GlobPatternMatcher.isTrivialMatchAll();
   }
 
 private:
-  bool ExactMatch;
+  MatchKind Kind = MatchKind::Invalid;
   llvm::GlobPattern GlobPatternMatcher;
   llvm::StringRef ExactPattern;
 };

@@ -63,21 +63,25 @@ void linker::saveBuffer(StringRef buffer, const Twine &path) {
 SingleStringMatcher::SingleStringMatcher(StringRef Pattern) {
   if (Pattern.size() > 2 && Pattern.starts_with("\"") &&
       Pattern.ends_with("\"")) {
-    ExactMatch = true;
     ExactPattern = Pattern.substr(1, Pattern.size() - 2);
+    Kind = MatchKind::Exact;
   } else {
     Expected<GlobPattern> Glob = GlobPattern::create(Pattern);
     if (!Glob) {
       error(toString(Glob.takeError()) + ": " + Pattern);
       return;
     }
-    ExactMatch = false;
     GlobPatternMatcher = *Glob;
+    Kind = MatchKind::Glob;
   }
 }
 
 bool SingleStringMatcher::match(StringRef s) const {
-  return ExactMatch ? (ExactPattern == s) : GlobPatternMatcher.match(s);
+  if (Kind == MatchKind::Exact)
+    return ExactPattern == s;
+  if (Kind == MatchKind::Glob)
+    return GlobPatternMatcher.match(s);
+  return false;
 }
 
 bool StringMatcher::match(StringRef s) const {
