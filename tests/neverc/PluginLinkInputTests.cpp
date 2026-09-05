@@ -24,7 +24,6 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
-#include <new>
 #include <optional>
 #include <string>
 #include <vector>
@@ -52,19 +51,14 @@ TEST(PluginLinkInputMatcherTest, MalformedGlobPatternFailsClosed) {
   Context.e.initialize(llvm::nulls(), DiagnosticStream,
                        /*exitEarly=*/false, /*disableOutput=*/false);
 
-  // Keep the legacy uninitialized discriminator byte deterministic. Before
-  // the production fix, zero makes a failed construction look like a default
-  // GlobPattern, which incorrectly matches the empty string.
-  alignas(linker::SingleStringMatcher) unsigned char
-      Storage[sizeof(linker::SingleStringMatcher)] = {};
-  auto *Matcher = ::new (static_cast<void *>(Storage))
-      linker::SingleStringMatcher("broken[");
+  // A malformed matcher remains safe to retain after the diagnostic, but it
+  // must fail closed for every input.
+  linker::SingleStringMatcher Matcher("broken[");
 
   EXPECT_EQ(Context.e.errorCount, 1U);
-  EXPECT_FALSE(Matcher->match(""));
-  EXPECT_FALSE(Matcher->match("anything"));
-  EXPECT_FALSE(Matcher->isTrivialMatchAll());
-  Matcher->~SingleStringMatcher();
+  EXPECT_FALSE(Matcher.match(""));
+  EXPECT_FALSE(Matcher.match("anything"));
+  EXPECT_FALSE(Matcher.isTrivialMatchAll());
 
   DiagnosticStream.flush();
   EXPECT_EQ(llvm::StringRef(Diagnostics).count("unmatched '['"), 1U);
@@ -74,10 +68,15 @@ TEST(PluginLinkInputMatcherTest, MalformedGlobPatternFailsClosed) {
   linker::SingleStringMatcher Exact("\"literal[abc]\"");
   EXPECT_TRUE(Exact.match("literal[abc]"));
   EXPECT_FALSE(Exact.match("literala"));
+  EXPECT_FALSE(Exact.isTrivialMatchAll());
   linker::SingleStringMatcher Glob("prefix*");
   EXPECT_TRUE(Glob.match("prefix"));
   EXPECT_TRUE(Glob.match("prefix-suffix"));
   EXPECT_FALSE(Glob.match("other"));
+  linker::SingleStringMatcher MatchAll("*");
+  EXPECT_TRUE(MatchAll.isTrivialMatchAll());
+  EXPECT_TRUE(MatchAll.match(""));
+  EXPECT_TRUE(MatchAll.match("anything"));
 }
 
 NevercStringView view(const char *Value) {
