@@ -14371,9 +14371,9 @@ TEST(MergeParallelCodegenStrict,
   ASSERT_EQ(countLTOCacheEntries(CacheDir), 0u);
   {
     // Strict OFF (CI sets it globally, so explicitly unset for the duration)
-    // so the forced failure is allowed to fall back.  Both cache layers are
-    // enabled in a fresh directory: only the validated serial fallback may be
-    // committed, never the partition objects rejected by the forced failure.
+    // so the forced failure is allowed to fall back. Both cache layers remain
+    // explicitly enabled, but FORCE_MERGE_FAIL is observable and must override
+    // them: neither rejected partitions nor the serial fallback may be cached.
     ScopedUnsetEnv NoStrict("NEVERC_PCG_STRICT");
     ScopedEnv ForceFail("NEVERC_PCG_FORCE_MERGE_FAIL", "1");
     ScopedEnv CacheDirectory(linker::ltoCacheDirEnvVar, CacheDir.c_str());
@@ -14384,9 +14384,9 @@ TEST(MergeParallelCodegenStrict,
         << "auto-LTO link did not recover via serial codegen when the merge "
            "was forced to fail — the safety net is broken";
   }
-  EXPECT_EQ(countLTOCacheEntries(CacheDir), 1u)
-      << "forced merge failure may cache only the valid full-link serial "
-         "fallback result, not eager partition entries";
+  EXPECT_EQ(countLTOCacheEntries(CacheDir), 0u)
+      << "forced merge failure must bypass both partition and full-link "
+         "caches so a hit cannot hide the requested failure";
   std::string OutLto;
   ASSERT_EQ(runExeCapture(Dir, ExeLto, OutLto), 0)
       << "serial-fallback executable did not exit cleanly";

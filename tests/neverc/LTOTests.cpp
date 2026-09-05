@@ -63,10 +63,15 @@ class ScopedEnvVar {
   std::optional<std::string> OldValue;
 
 public:
+  // A null value temporarily removes the variable while preserving it for
+  // restoration. Cache tests use this to isolate CI-wide PCG controls.
   ScopedEnvVar(const char *Name, const char *Value) : Name(Name) {
     if (const char *Old = std::getenv(Name))
       OldValue = Old;
-    setEnvVar(Name, Value);
+    if (Value)
+      setEnvVar(Name, Value);
+    else
+      unsetEnvVar(Name);
   }
 
   ScopedEnvVar(const ScopedEnvVar &) = delete;
@@ -1418,6 +1423,13 @@ TEST_F(LTOTest, MllvmReachesLinkJob) {
 // via NEVERC_LTO_CACHE=0 must not write entries; changing a flag that
 // affects codegen must miss.
 TEST_F(LTOTest, LtoLinkCache) {
+  // Cacheability itself is under test. Some CI jobs set strict mode globally;
+  // isolate every observable PCG control that intentionally bypasses caching.
+  ScopedEnvVar NoStrict("NEVERC_PCG_STRICT", nullptr);
+  ScopedEnvVar NoForcedFailure("NEVERC_PCG_FORCE_MERGE_FAIL", nullptr);
+  ScopedEnvVar NoDebug("NEVERC_PCG_DEBUG", nullptr);
+  ScopedEnvVar NoReclaimPolicy("NEVERC_PCG_BENCH_EAGER_RECLAIM", nullptr);
+
   auto ltoDir = testDir() / "lto";
   auto cacheDir = tmpFile("ltocache_dir");
   ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
@@ -1507,6 +1519,13 @@ TEST_F(LTOTest, LtoLinkCache) {
 // contains the function; the relink mixing cached and fresh partitions
 // must be byte-identical to a cache-disabled clean relink.
 TEST_F(LTOTest, LtoPartitionCache) {
+  // See LtoLinkCache: ambient diagnostic/failure controls deliberately make
+  // both cache layers unusable and must not leak into this cache contract.
+  ScopedEnvVar NoStrict("NEVERC_PCG_STRICT", nullptr);
+  ScopedEnvVar NoForcedFailure("NEVERC_PCG_FORCE_MERGE_FAIL", nullptr);
+  ScopedEnvVar NoDebug("NEVERC_PCG_DEBUG", nullptr);
+  ScopedEnvVar NoReclaimPolicy("NEVERC_PCG_BENCH_EAGER_RECLAIM", nullptr);
+
   auto cacheDir = tmpFile("pcache_dir");
   ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
 
