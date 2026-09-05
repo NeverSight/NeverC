@@ -2,61 +2,169 @@ name: debug-std-quick-check
 
 on:
   workflow_dispatch:
-    inputs:
-      tests:
-        description: 'space-separated STD_TEST names'
-        required: true
-      sanitize:
-        description: "-fsanitize= value, or 'none'"
-        required: false
-        default: 'address,undefined'
-      defines:
-        description: 'space-separated extra -D macros'
-        required: false
-        default: ''
-      timeout:
-        description: 'per-test run timeout in seconds'
-        required: false
-        default: '60'
-      extra:
-        description: 'space-separated extra compiler flags'
-        required: false
-        default: ''
 
 permissions:
   contents: read
 
 jobs:
-  quick-check:
+  malformed-linker-glob-green:
+    name: malformed-linker-glob-green-${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: assertions
+            sanitizer: ""
+          - label: asan-ubsan
+            sanitizer: "Address;Undefined"
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 180
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      LLVM_APT_VER: "22"
+      BASE_SHA: f1cc957c64e63427c56e86e28a5309918c07c8b1
+      VERSION_SHA: de283a6bc2c3d6ff428c74b8f23eb091eb133a34
+      RED_TEST_SHA: 9fa94234b88af355cbe24e39dda9f2d3837e043f
+      FIX_SHA: 43f4228842ea9e53cab7d5f3fb5b9004653ab97f
+      CANDIDATE_SHA: 98e12ff403a4c471fdffa54bea0bf6bfee7cb6ee
+      CANDIDATE_TREE: 0b0640c3422dffefe577807f7e1f86859846fbf2
     steps:
-      - name: Checkout repository
+      - name: Checkout exact diagnostic carrier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: neverc
+          fetch-depth: 10
 
-      - name: Install toolchain
+      - name: Verify candidate and carrier boundaries
+        working-directory: neverc
+        shell: bash
         run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          for revision in \
+            "$BASE_SHA" "$VERSION_SHA" "$RED_TEST_SHA" \
+            "$FIX_SHA" "$CANDIDATE_SHA"; do
+            git cat-file -e "${revision}^{commit}"
+          done
+
+          test "$(git rev-parse HEAD^)" = "$CANDIDATE_SHA"
+          test "$(git rev-parse "$CANDIDATE_SHA^")" = "$FIX_SHA"
+          test "$(git rev-parse "$FIX_SHA^")" = "$RED_TEST_SHA"
+          test "$(git rev-parse "$RED_TEST_SHA^")" = "$VERSION_SHA"
+          test "$(git rev-parse "$CANDIDATE_SHA^{tree}")" = "$CANDIDATE_TREE"
+          test "$(git merge-base "$BASE_SHA" "$CANDIDATE_SHA")" = "$BASE_SHA"
+          test "$(git rev-list --count "$BASE_SHA..$VERSION_SHA")" = 5
+          test "$(git rev-list --count "$BASE_SHA..$CANDIDATE_SHA")" = 8
+          test -z "$(git rev-list --min-parents=2 "$BASE_SHA..$CANDIDATE_SHA")"
+
+          expected_paths="$(printf '%s\n' \
+            neverc/include/neverc/Linker/Core/Support/Strings.h \
+            neverc/include/neverc/Linker/ELF/SymbolTable.h \
+            neverc/lib/Linker/Backends/ELF/Layout/ScriptParser.cpp \
+            neverc/lib/Linker/Backends/ELF/Symbols/SymbolTable.cpp \
+            neverc/lib/Linker/Backends/ELF/Symbols/Symbols.cpp \
+            neverc/lib/Linker/Core/Support/Strings.cpp \
+            tests/neverc/LinkerTests.cpp \
+            tests/neverc/PluginLinkInputTests.cpp)"
+          test "$(git diff --name-only "$BASE_SHA..$CANDIDATE_SHA")" = \
+            "$expected_paths"
+          test "$(git diff --name-only "$VERSION_SHA..$RED_TEST_SHA")" = \
+            "tests/neverc/PluginLinkInputTests.cpp"
+
+          expected_fix_paths="$(printf '%s\n' \
+            neverc/include/neverc/Linker/Core/Support/Strings.h \
+            neverc/lib/Linker/Core/Support/Strings.cpp)"
+          test "$(git diff --name-only "$RED_TEST_SHA..$FIX_SHA")" = \
+            "$expected_fix_paths"
+          test "$(git diff --name-only "$FIX_SHA..$CANDIDATE_SHA")" = \
+            "tests/neverc/PluginLinkInputTests.cpp"
+          test "$(git diff --name-status "$CANDIDATE_SHA..HEAD")" = \
+            $'M\t.github/workflows/debug-std-quick-check.yml'
+
+          git diff --check "$BASE_SHA..$CANDIDATE_SHA"
+          git diff --check "$CANDIDATE_SHA..HEAD"
+          git show -s --format='%H %P %s' HEAD
+          git show -s --format='%H %P %s' "$CANDIDATE_SHA"
+          git show -s --format='%H %P %s' "$FIX_SHA"
+
+      - name: Install build dependencies
+        run: |
+          bash neverc/.github/scripts/configure-apt-ubuntu.sh
           sudo apt-get update
-          sudo apt-get install -y clang
+          sudo apt-get install -y ninja-build cmake
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
 
-      - name: Compile and run std tests with clang
-        env:
-          QUICK_TESTS: ${{ inputs.tests }}
-          QUICK_SANITIZE: ${{ inputs.sanitize }}
-          QUICK_DEFINES: ${{ inputs.defines }}
-          QUICK_TIMEOUT: ${{ inputs.timeout }}
-          QUICK_EXTRA: ${{ inputs.extra }}
+      - name: Configure ${{ matrix.label }} build
+        shell: bash
         run: |
-          define_args=()
-          for macro in $QUICK_DEFINES; do
-            define_args+=(--define "$macro")
-          done
-          for flag in $QUICK_EXTRA; do
-            define_args+=("--extra=$flag")
-          done
-          python3 utils/ci/std-quick-check.py \
-            --cc clang \
-            --sanitize "$QUICK_SANITIZE" \
-            --timeout "$QUICK_TIMEOUT" \
-            --tests "$QUICK_TESTS" \
-            "${define_args[@]}"
+          set -euo pipefail
+          sanitizer_args=()
+          if [[ -n '${{ matrix.sanitizer }}' ]]; then
+            sanitizer_args+=("-DLLVM_USE_SANITIZER=${{ matrix.sanitizer }}")
+          fi
+          cmake -GNinja -Bbuild \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_ENABLE_LTO=OFF \
+            -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+            "${sanitizer_args[@]}" \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+
+      - name: Build exact plugin-link test binary
+        run: |
+          cmake --build build --config "$BUILD_TYPE" \
+            --target neverc-plugin-link-tests
+
+      - name: Run exact GREEN contract under ${{ matrix.label }}
+        shell: bash
+        env:
+          ASAN_OPTIONS: abort_on_error=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/neverc/.github/plugin-sanitizers.lsan
+        run: |
+          set -uo pipefail
+          log="malformed-linker-glob-${{ matrix.label }}.log"
+          set +e
+          build/bin/neverc-plugin-link-tests \
+            --gtest_color=no \
+            --gtest_filter='PluginLinkInputMatcherTest.MalformedGlobPatternFailsClosed' \
+            2>&1 | tee "$log"
+          test_status=${PIPESTATUS[0]}
+          set -e
+          printf 'EXACT_GTEST_EXIT=%s\n' "$test_status" | tee -a "$log"
+
+          test "$test_status" -eq 0
+          test -s "$log"
+          grep -Fq '[==========] Running 1 test from 1 test suite.' "$log"
+          grep -Fq '[ RUN      ] PluginLinkInputMatcherTest.MalformedGlobPatternFailsClosed' "$log"
+          grep -Fq '[       OK ] PluginLinkInputMatcherTest.MalformedGlobPatternFailsClosed' "$log"
+          grep -Fq '[==========] 1 test from 1 test suite ran.' "$log"
+          grep -Fq '[  PASSED  ] 1 test.' "$log"
+          grep -Fq 'EXACT_GTEST_EXIT=0' "$log"
+          if grep -Eq '^\[  (FAILED|SKIPPED) \]' "$log"; then
+            echo 'unexpected failed or skipped test' >&2
+            exit 1
+          fi
+          if grep -Eiq \
+            'AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|ThreadSanitizer|runtime error:|CHECK failed|Assertion.*failed|assertion.*failed' \
+            "$log"; then
+            echo 'sanitizer or assertion signature found' >&2
+            exit 1
+          fi
+
+      - name: Upload exact GREEN log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: malformed-linker-glob-green-${{ matrix.label }}-${{ github.run_id }}
+          path: malformed-linker-glob-${{ matrix.label }}.log
+          if-no-files-found: error
+          retention-days: 5
