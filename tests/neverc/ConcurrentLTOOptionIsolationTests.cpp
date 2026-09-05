@@ -187,7 +187,6 @@ LTOCacheIdentity cacheIdentity(const linker::LinkerDriverConfig &Config) {
           linker::ltoPartitionCacheSalt(Config, /*EmitAddrsig=*/true)};
 }
 
-
 int setLTOCacheTestEnvironment(const char *Name, const char *Value) {
 #ifdef _WIN32
   return ::_putenv_s(Name, Value ? Value : "");
@@ -210,8 +209,7 @@ public:
     EXPECT_EQ(setLTOCacheTestEnvironment(Name, Value), 0);
   }
 
-  ScopedLTOCacheTestEnvironment(const ScopedLTOCacheTestEnvironment &) =
-      delete;
+  ScopedLTOCacheTestEnvironment(const ScopedLTOCacheTestEnvironment &) = delete;
   ScopedLTOCacheTestEnvironment &
   operator=(const ScopedLTOCacheTestEnvironment &) = delete;
 
@@ -2606,14 +2604,13 @@ TEST(LTOCacheTest, NevercPipelineTuningTypedRawConflictsCannotAlias) {
   EXPECT_NE(ConflictB.Partition, NoRawArgument.Partition);
 }
 
-
 TEST(ConcurrentLTOOptionIsolationTest,
      ObservableParallelCodegenEnvironmentBypassesBothCaches) {
   // Strict mode is set globally in some CI jobs. Isolate every control so the
   // baseline remains cacheable and each assertion identifies one variable.
   ScopedLTOCacheTestEnvironment NoStrict("NEVERC_PCG_STRICT", nullptr);
-  ScopedLTOCacheTestEnvironment NoForcedFailure(
-      "NEVERC_PCG_FORCE_MERGE_FAIL", nullptr);
+  ScopedLTOCacheTestEnvironment NoForcedFailure("NEVERC_PCG_FORCE_MERGE_FAIL",
+                                                nullptr);
   ScopedLTOCacheTestEnvironment NoDebug("NEVERC_PCG_DEBUG", nullptr);
   ScopedLTOCacheTestEnvironment NoReclaimPolicy(
       "NEVERC_PCG_BENCH_EAGER_RECLAIM", nullptr);
@@ -2626,13 +2623,13 @@ TEST(ConcurrentLTOOptionIsolationTest,
   ASSERT_TRUE(linker::ltoCacheUsable(Config));
   ASSERT_TRUE(linker::ltoPartitionCacheUsable(Config));
 
-  for (const char *Name : {"NEVERC_PCG_STRICT",
-                           "NEVERC_PCG_FORCE_MERGE_FAIL",
-                           "NEVERC_PCG_DEBUG",
-                           "NEVERC_PCG_BENCH_EAGER_RECLAIM"}) {
+  for (const char *Name :
+       {"NEVERC_PCG_STRICT", "NEVERC_PCG_FORCE_MERGE_FAIL", "NEVERC_PCG_DEBUG",
+        "NEVERC_PCG_BENCH_EAGER_RECLAIM"}) {
     SCOPED_TRACE(Name);
-    // All four controls use presence semantics; "0" deliberately proves the
-    // cache gate does not silently reinterpret them as boolean values.
+    // The first three controls use presence semantics. For EAGER_RECLAIM, "0"
+    // is a valid non-default lifetime policy; any explicit value must bypass
+    // reuse so invalid values cannot lose their diagnostic either.
     ScopedLTOCacheTestEnvironment ObservableControl(Name, "0");
     EXPECT_FALSE(linker::ltoCacheUsable(Config));
     EXPECT_FALSE(linker::ltoPartitionCacheUsable(Config));
