@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: neverc
-          fetch-depth: 2
+          fetch-depth: 3
 
       - name: Verify test-only boundary
         working-directory: neverc
@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
-          test "$(git rev-parse HEAD^)" = "$TEST_SHA"
+          test "$(git rev-parse HEAD~2)" = "$TEST_SHA"
           test "$(git diff --name-only "$TEST_SHA"..HEAD)" = ".github/workflows/debug-std-quick-check.yml"
           test "$(git diff --name-only "$TEST_SHA^".."$TEST_SHA")" = "tests/neverc/PluginLinkInputTests.cpp"
           git show -s --format='%H %P %s' HEAD
