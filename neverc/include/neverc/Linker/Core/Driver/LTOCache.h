@@ -91,7 +91,11 @@ void ltoPartitionCacheStore(llvm::StringRef key, llvm::ArrayRef<char> obj);
 /// False when caching is disabled (NEVERC_LTO_CACHE=0) or the link uses
 /// features whose side effects a cache hit cannot reproduce: save-temps,
 /// optimization remarks, time-trace, neverc plugins, or a
-/// basic-block-sections list file.
+/// basic-block-sections list file. NEVERC_PCG_STRICT,
+/// NEVERC_PCG_FORCE_MERGE_FAIL, NEVERC_PCG_DEBUG, and
+/// NEVERC_PCG_BENCH_EAGER_RECLAIM also bypass both cache layers when parallel
+/// codegen is enabled because their behavior cannot be replayed by a hit; the
+/// scheduling-only NEVERC_PCG_THREADS override does not.
 bool ltoCacheUsable(const LinkerDriverConfig &cfg);
 
 /// Runs ltoObj with the link cache wrapped around it.  bufs must already

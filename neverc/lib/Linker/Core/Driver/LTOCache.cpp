@@ -168,6 +168,16 @@ bool linker::ltoCacheUsable(const LinkerDriverConfig &cfg) {
   if (const char *env = getenv(ltoCacheEnvVar))
     if (StringRef(env) == ltoCacheDisableValue)
       return false;
+  // These controls make parallel codegen observably different: they inject a
+  // failure, reject or diagnose a fallback, or select benchmark-only lifetime
+  // behavior. A cache hit would skip that behavior (and even suppress an
+  // invalid reclaim-policy diagnostic), so neither cache layer may replay an
+  // older object while any control is present. NEVERC_PCG_THREADS is excluded:
+  // it changes scheduling only and cached objects are thread-count independent.
+  if (cfg.ltoPartitions > 1 &&
+      (getenv("NEVERC_PCG_STRICT") || getenv("NEVERC_PCG_FORCE_MERGE_FAIL") ||
+       getenv("NEVERC_PCG_DEBUG") || getenv("NEVERC_PCG_BENCH_EAGER_RECLAIM")))
+    return false;
   // Features with side effects (extra output files, loaded plugin code)
   // that a cache hit would silently skip.
   if (cfg.saveTemps || cfg.timeTraceEnabled || !cfg.optRemarksFilename.empty())
