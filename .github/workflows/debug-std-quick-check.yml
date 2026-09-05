@@ -47,6 +47,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: neverc
+          fetch-depth: 3
 
       - name: Verify candidate boundary
         working-directory: neverc
@@ -54,8 +55,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.sha }}"
-          test "$(git rev-parse HEAD^)" = "$CANDIDATE_SHA"
-          test "$(git diff-tree --no-commit-id --name-only -r HEAD)" = \
+          test "$(git rev-parse HEAD~2)" = "$CANDIDATE_SHA"
+          test "$(git diff --name-only "$CANDIDATE_SHA"..HEAD)" = \
             ".github/workflows/debug-std-quick-check.yml"
           git show -s --format='%H %P %s' HEAD
           git show -s --format='%H %P %s' "$CANDIDATE_SHA"
