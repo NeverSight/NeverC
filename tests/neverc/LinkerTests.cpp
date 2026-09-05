@@ -413,6 +413,7 @@ LOCAL { local: local_only_*; *; };
   auto Link = [&](const fs::path &Output) {
     return ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-shared",
                 "-fno-lto", "-fno-build-id",
+                "-Wl,--soname=large_version.so",
                 "-Wl,--version-script=" + Script.string(), Object.string(),
                 "-o", Output.string()});
   };
