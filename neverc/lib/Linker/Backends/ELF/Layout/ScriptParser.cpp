@@ -1667,7 +1667,7 @@ ScriptParser::readSymbols() {
       v->insert(v->end(), ext.begin(), ext.end());
     } else {
       StringRef tok = next();
-      v->push_back({unquote(tok), hasWildcard(tok)});
+      v->push_back({unquote(tok), !tok.starts_with("\"") && hasWildcard(tok)});
     }
     expect(";");
   }

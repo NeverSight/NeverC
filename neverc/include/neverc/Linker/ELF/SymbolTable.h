@@ -57,10 +57,8 @@ private:
   SmallVector<Symbol *, 0> findAllByVersion(SymbolVersion ver,
                                             bool includeNonDefault);
 
-  bool assignExactVersion(SymbolVersion ver, uint16_t versionId,
-                          StringRef versionName, bool includeNonDefault);
-  void assignWildcardVersion(SymbolVersion ver, uint16_t versionId,
-                             bool includeNonDefault);
+  bool assignExactVersion(SymbolVersion ver, uint16_t versionId);
+  void assignWildcardVersion(SymbolVersion ver, uint16_t versionId);
 
   // Global symbols and a map from symbol name to the index. The order is not
   // defined. We can use an arbitrary order, but it has to be deterministic even

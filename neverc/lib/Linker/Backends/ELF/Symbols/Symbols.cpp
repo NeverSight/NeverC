@@ -1,5 +1,6 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Support/Strings.h"
 #include "Linker/ELF/Driver.h"
 #include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/Emit.h"
@@ -208,10 +209,21 @@ void Symbol::parseSymbolVersion() {
     if (ver.name != verstr)
       continue;
 
-    if (isDefault)
-      versionId = ver.id;
+    // Like GNU ld, only patterns in a versioned definition's own node govern
+    // whether it is global or local. A matching global pattern wins over a
+    // matching local pattern, regardless of whether either match is exact.
+    StringRef base = s.take_front(pos);
+    auto matches = [&](ArrayRef<SymbolVersion> patterns) {
+      for (const SymbolVersion &pat : patterns)
+        if (pat.hasWildcard ? SingleStringMatcher(pat.name).match(base)
+                            : pat.name == base)
+          return true;
+      return false;
+    };
+    if (!matches(ver.nonLocalPatterns) && matches(ver.localPatterns))
+      versionId = VER_NDX_LOCAL;
     else
-      versionId = ver.id | VERSYM_HIDDEN;
+      versionId = isDefault ? ver.id : ver.id | VERSYM_HIDDEN;
     return;
   }
 
