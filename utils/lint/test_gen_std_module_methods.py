@@ -269,6 +269,43 @@ class GenStdModuleMethodsTest(unittest.TestCase):
             "crypto/mldsa public dot-method names drifted",
         )
 
+    def test_mlkem_module_maps_every_registered_symbol(self):
+        with GEN.DEFAULT_MANIFEST.open(encoding="utf-8") as source:
+            module = json.load(source)["modules"]["crypto/mlkem"]
+
+        registered = set(module["symbols"])
+        mapped = set(module.get("dot_methods", {}).values())
+        self.assertEqual(
+            registered - mapped,
+            set(),
+            "crypto/mlkem has registered symbols without dot methods",
+        )
+
+        expected_methods = {
+            "dk_bytes1024": "neverc_mlkem1024_dk_bytes",
+            "dk_bytes768": "neverc_mlkem768_dk_bytes",
+            "dk_encapsulation_key1024": (
+                "neverc_mlkem1024_dk_encapsulation_key"
+            ),
+            "dk_encapsulation_key768": (
+                "neverc_mlkem768_dk_encapsulation_key"
+            ),
+            "ek_bytes1024": "neverc_mlkem1024_ek_bytes",
+            "ek_bytes768": "neverc_mlkem768_ek_bytes",
+            "new_dk1024": "neverc_mlkem1024_new_dk",
+            "new_dk768": "neverc_mlkem768_new_dk",
+            "new_ek1024": "neverc_mlkem1024_new_ek",
+            "new_ek768": "neverc_mlkem768_new_ek",
+        }
+        self.assertEqual(
+            {
+                name: module["dot_methods"].get(name)
+                for name in expected_methods
+            },
+            expected_methods,
+            "crypto/mlkem public dot-method names drifted",
+        )
+
     def test_http2_module_maps_every_registered_symbol(self):
         with GEN.DEFAULT_MANIFEST.open(encoding="utf-8") as source:
             module = json.load(source)["modules"]["net/http2"]
