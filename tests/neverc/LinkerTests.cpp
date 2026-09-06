@@ -5,6 +5,7 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
+#include <cstdint>
 #include <cstdlib>
 #include <map>
 
@@ -55,6 +56,36 @@ llvm::Expected<bool> hasELFSection(llvm::StringRef Bytes,
       return true;
   }
   return false;
+}
+
+struct ELFSectionImage {
+  uint64_t Address;
+  std::string Contents;
+};
+
+llvm::Expected<ELFSectionImage>
+findELFSectionImage(llvm::StringRef Bytes, llvm::StringRef Name) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "elf-linker-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected an ELF image");
+
+  for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
+    llvm::Expected<llvm::StringRef> SectionName = Section.getName();
+    if (!SectionName)
+      return SectionName.takeError();
+    if (*SectionName != Name)
+      continue;
+    llvm::Expected<llvm::StringRef> Contents = Section.getContents();
+    if (!Contents)
+      return Contents.takeError();
+    return ELFSectionImage{Section.getAddress(), Contents->str()};
+  }
+  return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                 "ELF section not found: " + Name);
 }
 
 llvm::Expected<std::string> findELFBuildId(llvm::StringRef Bytes) {
@@ -766,6 +797,112 @@ lsda_plain_b:
       << "functions with distinct exception tables must not be folded";
   EXPECT_EQ(plainA, plainB)
       << "ordinary FDEs must remain eligible for identical-code folding";
+}
+
+TEST_F(LinkerTest, EhFrameHeaderOmitsZeroRangeFdes) {
+  const fs::path source = tmpFile("eh_frame_zero_range.s");
+  const fs::path object = tmpFile("eh_frame_zero_range.o");
+  const fs::path image = tmpFile("eh_frame_zero_range.so");
+
+  writeFile(source, R"(
+.text
+f1:
+  .cfi_startproc
+  .cfi_endproc
+
+.globl _start
+.type _start,@function
+_start:
+  .cfi_startproc
+  ret
+  .cfi_endproc
+.size _start, .-_start
+
+f2:
+  .cfi_startproc
+  .cfi_endproc
+)");
+
+  CmdResult assemble = assembleELFObject(source, object);
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  CmdResult link =
+      ncc({"--target=x86_64-linux-gnu", "-nostdlib", "-shared", "-fno-lto",
+           "-fno-build-id", object.string(), "-o",
+           image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(image);
+  llvm::Expected<ELFSectionImage> frame =
+      findELFSectionImage(bytes, ".eh_frame");
+  ASSERT_TRUE(static_cast<bool>(frame))
+      << llvm::toString(frame.takeError()).str().str();
+  llvm::Expected<ELFSectionImage> header =
+      findELFSectionImage(bytes, ".eh_frame_hdr");
+  ASSERT_TRUE(static_cast<bool>(header))
+      << llvm::toString(header.takeError()).str().str();
+
+  size_t fdeCount = 0;
+  size_t zeroRangeCount = 0;
+  uint64_t nonZeroFdeAddress = 0;
+  uint32_t nonZeroRange = 0;
+  size_t offset = 0;
+  while (true) {
+    ASSERT_LE(offset + 4, frame->Contents.size())
+        << "missing .eh_frame terminator";
+    const char *record = frame->Contents.data() + offset;
+    const uint32_t length = llvm::support::endian::read32le(record);
+    if (length == 0)
+      break;
+    ASSERT_NE(length, UINT32_MAX) << "unexpected extended CFI record";
+    ASSERT_GE(length, 4u) << "truncated CFI record header";
+    ASSERT_LE(static_cast<size_t>(length) + 4,
+              frame->Contents.size() - offset)
+        << "CFI record extends past .eh_frame";
+
+    const uint32_t ciePointer =
+        llvm::support::endian::read32le(record + 4);
+    if (ciePointer != 0) {
+      ASSERT_GE(length, 12u) << "truncated sdata4 FDE";
+      const uint32_t range = llvm::support::endian::read32le(record + 12);
+      ++fdeCount;
+      if (range == 0) {
+        ++zeroRangeCount;
+      } else {
+        nonZeroFdeAddress = frame->Address + offset;
+        nonZeroRange = range;
+      }
+    }
+    offset += static_cast<size_t>(length) + 4;
+  }
+
+  EXPECT_EQ(fdeCount, 3u)
+      << "zero-range FDEs must remain present in .eh_frame";
+  EXPECT_EQ(zeroRangeCount, 2u);
+  EXPECT_EQ(nonZeroRange, 1u);
+
+  ASSERT_GE(header->Contents.size(), 20u);
+  const uint8_t *headerBytes =
+      reinterpret_cast<const uint8_t *>(header->Contents.data());
+  EXPECT_EQ(headerBytes[0], 1u);
+  EXPECT_EQ(headerBytes[1], 0x1bu);
+  EXPECT_EQ(headerBytes[2], 0x03u);
+  EXPECT_EQ(headerBytes[3], 0x3bu);
+  EXPECT_EQ(llvm::support::endian::read32le(headerBytes + 8), 1u)
+      << "zero-range FDEs must not enter the binary-search table";
+
+  auto decodeDataRelative = [&](size_t entryOffset) {
+    const int32_t relative = static_cast<int32_t>(
+        llvm::support::endian::read32le(headerBytes + entryOffset));
+    return static_cast<uint64_t>(static_cast<int64_t>(header->Address) +
+                                 relative);
+  };
+  EXPECT_EQ(decodeDataRelative(12),
+            requireELFSymbolAddress(bytes, "_start"));
+  EXPECT_EQ(decodeDataRelative(16), nonZeroFdeAddress)
+      << ".eh_frame_hdr must reference the live non-zero-range FDE";
+  EXPECT_EQ(header->Contents.size(), 20u)
+      << ".eh_frame_hdr must contain exactly one binary-search entry";
 }
 
 TEST_F(LinkerTest, IcfKeepsStrictestFoldedAlignment) {
