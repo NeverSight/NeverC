@@ -2499,7 +2499,11 @@
         "sign": "neverc_ecdsa_sign",
         "verify": "neverc_ecdsa_verify",
         "public_key_init": "neverc_ecdsa_public_key_init",
-        "private_key_init": "neverc_ecdsa_private_key_init"
+        "public_key_free": "neverc_ecdsa_public_key_free",
+        "private_key_init": "neverc_ecdsa_private_key_init",
+        "private_key_free": "neverc_ecdsa_private_key_free",
+        "signature_init": "neverc_ecdsa_signature_init",
+        "signature_free": "neverc_ecdsa_signature_free"
       }
     },
     "crypto/dsa": {
