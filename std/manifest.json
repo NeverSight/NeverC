@@ -5621,7 +5621,17 @@
         "encapsulate768": "neverc_mlkem768_encapsulate",
         "decapsulate768": "neverc_mlkem768_decapsulate",
         "encapsulate1024": "neverc_mlkem1024_encapsulate",
-        "decapsulate1024": "neverc_mlkem1024_decapsulate"
+        "decapsulate1024": "neverc_mlkem1024_decapsulate",
+        "new_dk768": "neverc_mlkem768_new_dk",
+        "dk_encapsulation_key768": "neverc_mlkem768_dk_encapsulation_key",
+        "new_ek768": "neverc_mlkem768_new_ek",
+        "dk_bytes768": "neverc_mlkem768_dk_bytes",
+        "ek_bytes768": "neverc_mlkem768_ek_bytes",
+        "new_dk1024": "neverc_mlkem1024_new_dk",
+        "dk_encapsulation_key1024": "neverc_mlkem1024_dk_encapsulation_key",
+        "new_ek1024": "neverc_mlkem1024_new_ek",
+        "dk_bytes1024": "neverc_mlkem1024_dk_bytes",
+        "ek_bytes1024": "neverc_mlkem1024_ek_bytes"
       }
     },
     "weak": {
