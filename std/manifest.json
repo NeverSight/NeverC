@@ -5585,8 +5585,13 @@
       },
       "dot_methods": {
         "generate_key44": "neverc_mldsa44_generate_key",
+        "new_sk44": "neverc_mldsa44_new_sk",
+        "sk_public_key44": "neverc_mldsa44_sk_public_key",
+        "new_pk44": "neverc_mldsa44_new_pk",
         "sign44": "neverc_mldsa44_sign",
-        "verify44": "neverc_mldsa44_verify"
+        "verify44": "neverc_mldsa44_verify",
+        "sk_bytes44": "neverc_mldsa44_sk_bytes",
+        "pk_bytes44": "neverc_mldsa44_pk_bytes"
       }
     },
     "crypto/mlkem": {
