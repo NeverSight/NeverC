@@ -229,6 +229,18 @@ class GenStdModuleMethodsTest(unittest.TestCase):
             "crypto/ecdsa has registered symbols without dot methods",
         )
 
+    def test_dsa_module_maps_every_registered_symbol(self):
+        with GEN.DEFAULT_MANIFEST.open(encoding="utf-8") as source:
+            module = json.load(source)["modules"]["crypto/dsa"]
+
+        registered = set(module["symbols"])
+        mapped = set(module.get("dot_methods", {}).values())
+        self.assertEqual(
+            registered - mapped,
+            set(),
+            "crypto/dsa has registered symbols without dot methods",
+        )
+
     def test_http2_module_maps_every_registered_symbol(self):
         with GEN.DEFAULT_MANIFEST.open(encoding="utf-8") as source:
             module = json.load(source)["modules"]["net/http2"]
