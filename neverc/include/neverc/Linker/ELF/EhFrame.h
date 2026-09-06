@@ -8,6 +8,7 @@ struct EhSectionPiece;
 
 uint8_t getFdeEncoding(EhSectionPiece *p);
 bool hasLSDAOrPersonality(const EhSectionPiece &p);
+bool hasZeroPcRange(const EhSectionPiece &p, uint8_t enc);
 } // namespace linker::elf
 
 #endif

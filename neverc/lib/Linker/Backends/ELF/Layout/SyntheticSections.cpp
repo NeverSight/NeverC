@@ -290,14 +290,21 @@ void EhFrameSection::finalizeContents() {
     break;
   }
 
+  const bool hasEhFrameHdr = getPartition().ehFrameHdr &&
+                             getPartition().ehFrameHdr->getParent();
   size_t off = 0;
   for (CieRecord *rec : cieRecords) {
     rec->cie->outputOff = off;
     off += rec->cie->size;
 
+    uint8_t enc = hasEhFrameHdr ? getFdeEncoding(rec->cie) : 0;
     for (EhSectionPiece *fde : rec->fdes) {
       fde->outputOff = off;
       off += fde->size;
+      if (hasEhFrameHdr && hasZeroPcRange(*fde, enc)) {
+        assert(numFdes != 0);
+        --numFdes;
+      }
     }
   }
 
@@ -321,6 +328,10 @@ SmallVector<EhFrameSection::FdeData, 0> EhFrameSection::getFdeData() const {
   for (CieRecord *rec : cieRecords) {
     uint8_t enc = getFdeEncoding(rec->cie);
     for (EhSectionPiece *fde : rec->fdes) {
+      // A zero-range FDE can share its PC with the next live function and win
+      // the stable uniquify step, making that function impossible to unwind.
+      if (hasZeroPcRange(*fde, enc))
+        continue;
       uint64_t pc = getFdePc(buf, fde->outputOff, enc);
       uint64_t fdeVA = getParent()->addr + fde->outputOff;
       if (!isInt<32>(pc - va))

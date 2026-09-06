@@ -905,6 +905,80 @@ f2:
       << ".eh_frame_hdr must contain exactly one binary-search entry";
 }
 
+TEST_F(LinkerTest, EhFrameHeaderDiagnosesUnsupportedZeroRangeEncodings) {
+  struct UnsupportedEncodingCase {
+    const char *name;
+    const char *records;
+    const char *diagnostic;
+  };
+  const UnsupportedEncodingCase cases[] = {
+      {"pcrel-signed", R"(
+.byte 0x18
+.byte 0xff
+.byte 0
+.long 20
+.long 0x16
+.quad _start - .
+.quad 0
+.long 0
+)",
+       "unknown FDE size encoding"},
+      {"textrel-sdata4", R"(
+.byte 0x2b
+.byte 0xff
+.byte 0
+.long 12
+.long 0x16
+.long _start - .
+.long 0
+.long 0
+)",
+       "unknown FDE size relative encoding"},
+  };
+
+  const std::string prefix = R"(
+.text
+.globl _start
+.hidden _start
+.type _start,@function
+_start:
+  ret
+.size _start, .-_start
+
+.section .eh_frame,"a",@unwind
+.long 14
+.long 0
+.byte 1
+.byte 0x52
+.byte 0x53
+.byte 0
+.byte 1
+.byte 1
+.byte 1
+)";
+
+  for (const UnsupportedEncodingCase &testCase : cases) {
+    SCOPED_TRACE(testCase.name);
+    const fs::path source = tmpFile(std::string(testCase.name) + ".s");
+    const fs::path object = tmpFile(std::string(testCase.name) + ".o");
+    const fs::path image = tmpFile(std::string(testCase.name) + ".elf");
+    writeFile(source, prefix + testCase.records);
+
+    CmdResult assemble = assembleELFObject(source, object);
+    ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+    CmdResult link = ncc({"--target=x86_64-linux-gnu", "-nostdlib",
+                          "-fno-lto", "-fno-build-id", "-Wl,-e,_start",
+                          object.string(), "-o", image.string()});
+    EXPECT_NE(link.exitCode, 0) << link.out << link.err;
+    EXPECT_TRUE(link.contains(testCase.diagnostic))
+        << "missing diagnostic: " << testCase.diagnostic << "\n"
+        << link.out << link.err;
+    EXPECT_FALSE(fs::exists(image))
+        << "a failed link left an output image behind";
+  }
+}
+
 TEST_F(LinkerTest, IcfKeepsStrictestFoldedAlignment) {
   const fs::path source = tmpFile("icf_alignment.s");
   const fs::path object = tmpFile("icf_alignment.o");

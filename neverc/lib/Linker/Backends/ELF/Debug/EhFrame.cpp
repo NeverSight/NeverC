@@ -132,6 +132,36 @@ bool elf::hasLSDAOrPersonality(const EhSectionPiece &p) {
   return EhReader(p.sec, p.data()).hasLSDAOrPersonality();
 }
 
+// pc_range follows the 4-byte length, 4-byte CIE pointer, and pc_begin, and
+// uses the same storage width as pc_begin. Its value does not use pc_begin's
+// application bits. Preserve the existing diagnostic path for encodings that
+// getFdePc cannot decode.
+bool elf::hasZeroPcRange(const EhSectionPiece &p, uint8_t enc) {
+  uint8_t application = enc & 0x70;
+  if (application != DW_EH_PE_absptr && application != DW_EH_PE_pcrel)
+    return false;
+
+  switch (enc & 0x0f) {
+  case DW_EH_PE_absptr:
+  case DW_EH_PE_udata2:
+  case DW_EH_PE_sdata2:
+  case DW_EH_PE_udata4:
+  case DW_EH_PE_sdata4:
+  case DW_EH_PE_udata8:
+  case DW_EH_PE_sdata8:
+    break;
+  default:
+    return false;
+  }
+
+  size_t pSize = getAugPSize(enc);
+  ArrayRef<uint8_t> d = p.data();
+  if (pSize == 0 || d.size() < 8 + 2 * pSize)
+    return false;
+  return llvm::all_of(d.slice(8 + pSize, pSize),
+                      [](uint8_t c) { return !c; });
+}
+
 StringRef EhReader::getAugmentation() {
   skipBytes(8);
   int version = readByte();
