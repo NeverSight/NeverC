@@ -971,7 +971,7 @@ _start:
                           "-fno-lto", "-fno-build-id", "-Wl,-e,_start",
                           object.string(), "-o", image.string()});
     EXPECT_NE(link.exitCode, 0) << link.out << link.err;
-    EXPECT_TRUE(link.contains(testCase.diagnostic))
+    EXPECT_TRUE(link.stderrContains(testCase.diagnostic))
         << "missing diagnostic: " << testCase.diagnostic << "\n"
         << link.out << link.err;
     EXPECT_FALSE(fs::exists(image))
