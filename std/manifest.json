@@ -2523,7 +2523,11 @@
         "sign": "neverc_dsa_sign",
         "verify": "neverc_dsa_verify",
         "public_key_init": "neverc_dsa_public_key_init",
-        "private_key_init": "neverc_dsa_private_key_init"
+        "public_key_free": "neverc_dsa_public_key_free",
+        "private_key_init": "neverc_dsa_private_key_init",
+        "private_key_free": "neverc_dsa_private_key_free",
+        "signature_init": "neverc_dsa_signature_init",
+        "signature_free": "neverc_dsa_signature_free"
       }
     },
     "net/url": {
