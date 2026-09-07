@@ -354,6 +354,11 @@ static void test_parse_idna_alabels(void) {
     ASSERT_INT_EQ(
         neverc_url_parse(&u, "http://b\xc3\xbc""cher.de/"), 0);
     ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
+    /* RFC 3492 section 7.1(B): the simplified-Chinese example exercises
+     * repeated decoded-code-point insertions rather than a single umlaut. */
+    ASSERT_INT_EQ(neverc_url_parse(
+        &u, "http://xn--ihqwcrb4cv8a8dqg056pqjye.example/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--ihqwcrb4cv8a8dqg056pqjye.example");
 
     /* UTS #46 section 4, Punycode step 3: an ACE label whose decoded form
      * is empty or entirely ASCII records an error.  ToASCII must therefore
@@ -366,6 +371,27 @@ static void test_parse_idna_alabels(void) {
     /* Validate every label even when another label takes the Unicode path. */
     ASSERT_INT_EQ(neverc_url_parse(
         &u, "http://b\xc3\xbc""cher.xn--example-.com/"), -1);
+
+    /* UTS #46 section 4 Punycode step 2 records decode failures; step 3
+     * separately rejects an empty decoded label. */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://xn--/"), -1);
+    /* Unicode's UTS #46 conformance example identifies xn--0 as invalid. */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://xn--0.pt/"), -1);
+    /* Go x/net/idna/punycode_test.go: "9" is a truncated delta. */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://xn--9.example/"), -1);
+    /* RFC 3492 section 5 limits digits to [0-9A-Za-z].  '_' remains valid
+     * URL-host text here, so this reaches the Punycode decoder itself. */
+    ASSERT_INT_EQ(
+        neverc_url_parse(&u, "http://xn--foo_bar.example/"), -1);
+    /* Go's decoder vectors cover Unicode-range and arithmetic overflow. */
+    ASSERT_INT_EQ(
+        neverc_url_parse(&u, "http://xn--99999a.example/"), -1);
+    ASSERT_INT_EQ(
+        neverc_url_parse(&u, "http://xn--9999999999a.example/"), -1);
+    /* RFC 3492 section 5 excludes UTF-16 surrogates; ib9b decodes to
+     * U+D800 using the section 6.2 state machine. */
+    ASSERT_INT_EQ(
+        neverc_url_parse(&u, "http://xn--ib9b.example/"), -1);
 }
 
 static void test_string(void) {
