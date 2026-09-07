@@ -5,6 +5,7 @@
 #include "_http_internal.h"
 #include "../idna_inc.h"
 #include "neverc/std/crypto/tls.h"
+#include "neverc/std/net/netip.h"
 #include "neverc/std/time.h"
 #include <limits.h>
 #include <stdint.h>
@@ -361,6 +362,7 @@ static int client_valid_host(const char *value, size_t length) {
         const char *close = (const char *)memchr(value, ']', length);
         if (!close || close == value + 1) return 0;
         size_t inner = (size_t)(close - value - 1);
+        int has_ipvfuture_prefix = value[1] == 'v' || value[1] == 'V';
         int has_colon = 0;
         for (size_t i = 0; i < inner; i++) {
             unsigned char c = (unsigned char)value[1 + i];
@@ -369,8 +371,25 @@ static int client_valid_host(const char *value, size_t length) {
                 return 0;
         }
         if (!has_colon &&
-            !(inner > 2 && (value[1] == 'v' || value[1] == 'V')))
+            !(inner > 2 && has_ipvfuture_prefix))
             return 0;
+        if (!has_ipvfuture_prefix) {
+            /* Validate the IPv6 address without changing the client's
+             * existing raw spelling and length rules for a zone suffix. */
+            const char *literal = value + 1;
+            const char *zone = (const char *)memchr(literal, '%', inner);
+            size_t address_length = zone
+                ? (size_t)(zone - literal) : inner;
+            char address[256];
+            neverc_netip_addr_t parsed;
+            if (address_length == 0 || address_length >= sizeof(address))
+                return 0;
+            memcpy(address, literal, address_length);
+            address[address_length] = '\0';
+            if (neverc_netip_parse_addr(address, &parsed) != 0 ||
+                !neverc_netip_addr_is6(&parsed))
+                return 0;
+        }
         size_t after = length - (size_t)(close - value) - 1;
         if (after == 0) return 1;
         return close[1] == ':' && client_valid_port(close + 2, after - 1);
