@@ -181,6 +181,19 @@ TEST_F(TranslateCppSdkTest,
   EXPECT_EQ(approvedCppSdkCatalog().find("/opt/"), llvm::StringRef::npos);
 }
 
+TEST_F(TranslateCppSdkTest, CompiledCatalogPreservesSourceBytesAndTrailingNul) {
+  const auto Path = testDir().parent_path().parent_path() /
+                    "utils/translate-frontends/cpp/sdk/approved-sdk.json";
+  ASSERT_TRUE(fs::is_regular_file(Path));
+  const auto Source = readFile(Path);
+  const auto Compiled = approvedCppSdkCatalog();
+  ASSERT_FALSE(Source.empty());
+  EXPECT_EQ(Compiled, llvm::StringRef(Source));
+  EXPECT_EQ(Compiled.data()[Compiled.size()], '\0');
+  EXPECT_EQ(approvedCppSdkCatalogSHA256(),
+            "0c72f368ab38180821ca5c51fdab9f7fd2c3e9d6106d5c327fa09a8c8c795fa4");
+}
+
 TEST_F(TranslateCppSdkTest,
        ForgedMappingNamesDeclarationsTypesAndLocationsFailWithoutLibraryTrust) {
   Context.DistributionID = CppMathSDKID;

@@ -2,7 +2,11 @@ set(LLVM_LINK_COMPONENTS Support TargetParser Core BitReader)
 
 set(_cpp_sdk_catalog "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/translate-frontends/cpp/sdk/approved-sdk.json")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_cpp_sdk_catalog}")
-file(READ "${_cpp_sdk_catalog}" _cpp_sdk_catalog_text)
+# Numeric byte initializers avoid MSVC's string-literal limits and preserve
+# the catalog bytes without source-encoding or line-ending interpretation.
+file(READ "${_cpp_sdk_catalog}" _cpp_sdk_catalog_hex HEX)
+string(REGEX REPLACE "([0-9a-fA-F][0-9a-fA-F])" "char(0x\\1),\n"
+  _cpp_sdk_catalog_bytes "${_cpp_sdk_catalog_hex}")
 configure_file(Cpp/CppSdkCatalog.inc.in CppSdkCatalog.inc @ONLY)
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 

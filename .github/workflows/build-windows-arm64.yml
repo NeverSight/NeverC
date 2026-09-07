@@ -80,6 +80,12 @@ jobs:
         neverc/llvm
         cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-embed-runtime-bitcode
 
+    - name: Verify compiled C++ SDK catalog bytes
+      shell: bash
+      run: |
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-translate-tests
+        build/bin/neverc-translate-tests.exe --gtest_filter=TranslateCppSdkTest.CompiledCatalogPreservesSourceBytesAndTrailingNul
+
     - name: Build bundled Windows runtime
       shell: bash
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-runtime-arm64-msvc neverc-runtime-shared-msvc
