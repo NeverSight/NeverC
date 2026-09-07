@@ -19,6 +19,21 @@ class ArchiveAuditTests(unittest.TestCase):
     # byte grammar. Real compiler+nm coverage lives in the CI toolchain test.
     llvm_literal = ('??_C@_06BCDEFGHI@llvm?3?3?$AA@', 'R', '"llvm::"')
     clang_literal = ('??_C@_07CDEFGHIJ@clang?3?3?$AA@', 'R', '"clang::"')
+    # Complete LLVM 20 demangling from the 984608 Windows Clang x64 audit.
+    # Nested local declarations retain their own return and parameter types.
+    microsoft_gcd_lambda = (
+        "public: <auto> __cdecl `unsigned int __cdecl std::gcd<unsigned int, "
+        "unsigned int>(unsigned int, unsigned int)'::`1'::<lambda_1>::operator()<"
+        "class `decltype(auto) __cdecl std::_Select_countr_zero_impl<unsigned int, "
+        "class `unsigned int __cdecl std::gcd<unsigned int, unsigned int>"
+        "(unsigned int, unsigned int)'::`1'::<lambda_1>>(class `unsigned int "
+        "__cdecl std::gcd<unsigned int, unsigned int>(unsigned int, unsigned int)'"
+        "::`1'::<lambda_1>)'::`1'::<lambda_1>>(class `decltype(auto) __cdecl "
+        "std::_Select_countr_zero_impl<unsigned int, class `unsigned int __cdecl "
+        "std::gcd<unsigned int, unsigned int>(unsigned int, unsigned int)'::`1'"
+        "::<lambda_1>>(class `unsigned int __cdecl std::gcd<unsigned int, "
+        "unsigned int>(unsigned int, unsigned int)'::`1'::<lambda_1>)'::`1'"
+        "::<lambda_1>) const")
 
     def audit_inventory(self, private, host=None, host_format="nm", coff_readobj=None,
                         prefix_header=None):
@@ -71,6 +86,32 @@ class ArchiveAuditTests(unittest.TestCase):
                             [(name, "T", name), (name, "U", name)],
                             [("HandleAbort", "T", "HandleAbort")], host_format,
                             prefix_header=header)
+
+    def test_windows_default_fenv_object_requires_private_definition_and_references(self):
+        with tempfile.TemporaryDirectory(prefix="neverc-fenv-prefix-") as temporary:
+            header = Path(temporary) / "PrivatePrefix.h"
+            header.write_text("#define _Fenv1 neverc_cpp__Fenv1\n", encoding="utf-8")
+            original, renamed = "_Fenv1", "neverc_cpp__Fenv1"
+            host = [(original, "R", original)]
+            unrelated_host = [("host_only", "T", "host_only")]
+            for host_format in ("nm", "coff-index"):
+                with self.subTest(host_format=host_format):
+                    for kind in ("T", "R", "W", "U"):
+                        with self.subTest(original_kind=kind):
+                            with self.assertRaisesRegex(ValueError, "_Fenv1"):
+                                # An unrelated host keeps the prefix check from
+                                # passing merely because of an intersection.
+                                self.audit_inventory([(original, kind, original)],
+                                                     unrelated_host, host_format,
+                                                     prefix_header=header)
+                    for kind in ("T", "R"):
+                        with self.subTest(renamed_kind=kind):
+                            self.audit_inventory(
+                                [(renamed, kind, renamed), (renamed, "U", renamed)],
+                                host, host_format, prefix_header=header)
+                    with self.assertRaisesRegex(ValueError, "unresolved private dependency"):
+                        self.audit_inventory([(renamed, "U", renamed)], host, host_format,
+                                             prefix_header=header)
 
     def test_complete_failure_list_includes_count_and_private_symbol_identity(self):
         names = [f"host_collision_{index:03d}" for index in range(105)]
@@ -451,6 +492,175 @@ class ArchiveAuditTests(unittest.TestCase):
         self.assertTrue(AuditArchive.standard_shared_symbol(
             "??_Gbad_alloc@std@@fake",
             "public: virtual void * __cdecl std::bad_alloc::`scalar deleting destructor'(unsigned int)"))
+
+    def test_microsoft_all_19_ci_standard_declarations_have_standard_owners(self):
+        declarations = [self.microsoft_gcd_lambda]
+        for category in ("_Future_error_category2", "_Generic_error_category",
+                         "_Iostream_error_category2", "_System_error_category"):
+            function = (f"class std::{category} const & __cdecl "
+                        f"std::_Immortalize_memcpy_image<class std::{category}>(void)")
+            declarations.extend((f"int `{function}'::`2'::$TSS0",
+                                 f"class std::{category} `{function}'::`2'::_Static"))
+        for facet in (
+                "std::codecvt<char, char, struct _Mbstatet>",
+                "std::ctype<char>",
+                "std::num_put<char, class std::ostreambuf_iterator<char, "
+                "struct std::char_traits<char>>>",
+                "std::numpunct<char>"):
+            # The real demangler attaches the pointer '*' to the entity name.
+            declarations.append("public: static class std::locale::facet const *"
+                                f"std::_Facetptr<class {facet}>::_Psave")
+        for facet in (
+                "std::codecvt<char, char, struct _Mbstatet>",
+                "std::num_put<char, class std::ostreambuf_iterator<char, "
+                "struct std::char_traits<char>>>",
+                "std::numpunct<char>"):
+            declarations.append("void __cdecl `dynamic initializer for `public: "
+                                f"static class std::locale::id {facet}::id''(void)")
+        declarations.extend((
+            "char const *const `public: virtual class std::basic_string<char, "
+            "struct std::char_traits<char>, class std::allocator<char>> __cdecl "
+            "std::_Iostream_error_category2::message(int) const'::`5'::_Iostream_error",
+            "struct _Mbstatet `protected: void __cdecl std::basic_filebuf<char, "
+            "struct std::char_traits<char>>::_Init(struct _iobuf *, enum "
+            "std::basic_filebuf<char, struct std::char_traits<char>>::_Initfl)'"
+            "::`2'::_Stinit",
+            "char const *const `public: virtual class std::basic_string<char, "
+            "struct std::char_traits<char>, class std::allocator<char>> __cdecl "
+            "std::_System_error_category::message(int) const'::`7'::_Unknown_error"))
+        self.assertEqual(len(declarations), 19)
+        for declaration in declarations:
+            with self.subTest(declaration=declaration):
+                self.assertTrue(AuditArchive.microsoft_std_entity(declaration))
+
+    def test_microsoft_standard_owner_reaches_the_existing_intersection_policy(self):
+        declarations = (
+            ("?_Psave@?$_Facetptr@V?$ctype@D@std@@@std@@2PEBVfacet@locale@2@EB", "B",
+             "public: static class std::locale::facet const "
+             "*std::_Facetptr<class std::ctype<char>>::_Psave"),
+            ("??__E?id@?$numpunct@D@std@@2V0locale@2@A@@YAXXZ", "T",
+             "void __cdecl `dynamic initializer for `public: static class "
+             "std::locale::id std::numpunct<char>::id''(void)"))
+        for name, kind, declaration in declarations:
+            with self.subTest(name=name):
+                self.assertTrue(AuditArchive.standard_shared_symbol(name, declaration))
+                self.audit_inventory([(name, kind, declaration)],
+                                     [(name, "W", declaration)])
+
+    def test_microsoft_nonstandard_owners_cannot_hide_in_nested_quotes(self):
+        declarations = (
+            "int `class std::string __cdecl Host::get(void)'::`2'::$TSS0",
+            "class std::string `class std::string __cdecl Host::get(void)'"
+            "::`2'::_Static",
+            "public: <auto> __cdecl `class std::vector<int> __cdecl Host::run(void)'"
+            "::`1'::<lambda_1>::operator()(void) const",
+            "class `void __cdecl std::run(void)'::`1'::<lambda_1> "
+            "`void __cdecl Host::run(void)'::`2'::callback",
+            "public: static class std::vector<int> "
+            "`void __cdecl Host::run(void)'::`2'::Local::state",
+            # std owns a nested argument's implementation, but not this lambda.
+            self.microsoft_gcd_lambda.replace("std::gcd<", "Host::gcd<"),
+            "int `class std::shared_ptr<struct Concurrency::scheduler_interface> "
+            "* __cdecl Concurrency::details::_GetStaticAmbientSchedulerStorage(void)'"
+            "::`2'::$TSS0")
+        for declaration in declarations:
+            with self.subTest(declaration=declaration):
+                self.assertFalse(AuditArchive.microsoft_std_entity(declaration))
+
+    def test_microsoft_variable_type_and_pointer_punctuation_do_not_change_owner(self):
+        for declaration in (
+                "public: static class std::string *Host::state",
+                "public: static class std::string &Host::state",
+                "public: static class std::string *Host<class std::string>::state",
+                "public: static int vendor::std::state",
+                "public: static int std_extra::state",
+                "public: static int Host<std::vector<int>>::state",
+                "public: void __cdecl Host<std::vector<int>>::method(void)",
+                "public: __cdecl Host<std::vector<int>>::operator class std::string(void)",
+                "class std::string __cdecl Host::method(class std::vector<int>)"):
+            with self.subTest(declaration=declaration):
+                self.assertFalse(AuditArchive.microsoft_std_entity(declaration))
+
+    def test_microsoft_compound_operator_tokens_preserve_the_declared_owner(self):
+        # These operator spellings/signatures occur in LLVM's ms-operators.test.
+        for operator, parameters in (("->", "void"), ("->*", "int"),
+                                     ("&&", "int"), ("||", "int"),
+                                     ("++", "void"), ("++", "int"),
+                                     ("--", "void"), ("--", "int")):
+            for owner, expected in (("std::Box", True), ("Host", False)):
+                declaration = f"int __cdecl {owner}::operator{operator}({parameters})"
+                with self.subTest(declaration=declaration):
+                    self.assertEqual(AuditArchive.microsoft_std_entity(declaration), expected)
+
+    def test_microsoft_function_suffix_requires_separate_ordered_qualifiers(self):
+        declaration = "public: void __cdecl std::Box::f(void)"
+        # MicrosoftDemangleNodes.cpp emits noexcept before the ref qualifier.
+        for suffix in ("const noexcept &",
+                       "const volatile __restrict __unaligned noexcept &&"):
+            with self.subTest(suffix=suffix):
+                self.assertTrue(AuditArchive.microsoft_std_entity(declaration + " " + suffix))
+        for suffix in ("constvolatile", "const const", "&&&", "noexcept const",
+                       "const & noexcept"):
+            with self.subTest(suffix=suffix):
+                self.assertFalse(AuditArchive.microsoft_std_entity(declaration + " " + suffix))
+
+    def test_microsoft_dynamic_wrappers_follow_the_variable_owner(self):
+        for operation in ("dynamic initializer", "dynamic atexit destructor"):
+            standard = (f"void __cdecl `{operation} for `public: static "
+                        "class std::locale::id std::numpunct<char>::id''(void)")
+            host = (f"void __cdecl `{operation} for `public: static "
+                    "class std::vector<int> Host::state''(void)")
+            with self.subTest(operation=operation):
+                self.assertTrue(AuditArchive.microsoft_std_entity(standard))
+                self.assertFalse(AuditArchive.microsoft_std_entity(host))
+        # Real negative from LLVM 20 llvm/test/Demangle/ms-operators.test.
+        self.assertFalse(AuditArchive.microsoft_std_entity(
+            "void __cdecl `dynamic atexit destructor for `private: static class "
+            "std::vector<class antlr4::dfa::DFA, class std::allocator<class "
+            "antlr4::dfa::DFA>> XPathLexer::_decisionToDFA''(void)"))
+
+    def test_microsoft_malformed_standard_declarations_fail_closed(self):
+        for declaration in (
+                "", "std::", "void __cdecl std::f(",
+                "int std::A:::value",
+                "int `void __cdecl std::f(void)'::::value",
+                "void __cdecl std::vector<int::clear(void)",
+                "void __cdecl std::vector<int>>::clear(void)",
+                "void __cdecl std::f(void))",
+                "void __cdecl std::f(void) trailing_garbage",
+                "void __cdecl std::f(void); void __cdecl Host::f(void)",
+                "int `void __cdecl std::f(void)::`2'::state",
+                "int `void __cdecl std::f(void)'::`2::state",
+                "int `void __cdecl std::f(void)'::`2'::",
+                "void __cdecl `dynamic initializer for `int std::state'(void)",
+                "void __cdecl `dynamic initializer for `int std::state''(void) garbage",
+                "void __cdecl std::f(void)\n",
+                "void __cdecl std::f(void)\x00"):
+            with self.subTest(declaration=declaration):
+                self.assertFalse(AuditArchive.microsoft_std_entity(declaration))
+
+    def test_microsoft_input_length_boundary_is_enforced(self):
+        prefix, suffix = "int std::", "::value"
+        declaration = prefix + "X" * (65536 - len(prefix) - len(suffix)) + suffix
+        self.assertEqual(len(declaration), 65536)
+        self.assertTrue(AuditArchive.microsoft_std_entity(declaration))
+        self.assertFalse(AuditArchive.microsoft_std_entity(declaration + "x"))
+
+    def test_microsoft_template_nesting_boundary_is_enforced(self):
+        for depth, expected in ((32, True), (33, False)):
+            declaration = "int " + "std::Box<" * depth + "int" + ">" * depth + "::value"
+            with self.subTest(depth=depth):
+                self.assertEqual(AuditArchive.microsoft_std_entity(declaration), expected)
+
+    def test_microsoft_nested_quotes_and_parentheses_are_bounded(self):
+        parent = "void __cdecl std::root(void)"
+        for _ in range(40):
+            parent = ("void __cdecl `" + parent + "'::`1'::<lambda_1>"
+                      "::operator()(void)")
+        self.assertFalse(AuditArchive.microsoft_std_entity(parent))
+        # Parentheses count even when they occur in a template argument's type.
+        self.assertFalse(AuditArchive.microsoft_std_entity(
+            "void __cdecl std::function<" + "(" * 33 + "int" + ")" * 33 + ">::f(void)"))
 
     def test_scan_excludes_private_dependency_tree(self):
         with tempfile.TemporaryDirectory() as temporary:

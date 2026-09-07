@@ -86,61 +86,176 @@ def host_archives(directory, private_archive):
     return result
 
 
-def microsoft_std_entity(demangled):
-    """Find the declared entity, ignoring its return and argument types.
+MICROSOFT_DECLARATION_LIMIT = 65536
+MICROSOFT_NESTING_LIMIT = 32
+_MICROSOFT_OPERATOR = re.compile(
+    r"\boperator(?:<=>|->\*?|<<=?|>>=?|<=?|>=?|==|!=|&&|\|\||\+\+|--|"
+    r"\(\)|\[\]|,|[-+*/%&|^~!=]=?)")
+_MICROSOFT_CALLING_CONVENTIONS = frozenset((
+    "__cdecl", "__thiscall", "__stdcall", "__fastcall", "__vectorcall", "__clrcall"))
 
-    MSVC demangling prefixes a declaration with access/calling-convention and
-    return-type tokens. The last token before its parameter list is the name;
-    spaces inside template arguments and conversion operators belong to it.
-    A free function merely taking/returning a std type therefore cannot pass.
-    Unknown spellings are deliberately not exempted from the collision check.
+
+def _microsoft_group_end(text, start):
+    """Return the end of one balanced demangler group, or None.
+
+    Local scopes nest Microsoft backtick/apostrophe groups, including inside
+    template arguments. Treating quotes as a boolean loses the outer scope.
+    Operator punctuation is a name, not a template or parameter delimiter.
     """
-    # Compiler metadata suffixes describe the named class, not another entity.
-    demangled = demangled.split("::`RTTI ", 1)[0]
+    closes = {"<": ">", "(": ")", "[": "]", "{": "}", "`": "'"}
+    stack = []
+    index = start
+    while index < len(text):
+        operator = _MICROSOFT_OPERATOR.match(text, index)
+        if operator:
+            index = operator.end()
+            continue
+        char = text[index]
+        if char in closes:
+            stack.append(closes[char])
+            if len(stack) > MICROSOFT_NESTING_LIMIT:
+                return None
+        elif char in ">)]}'":
+            if not stack or stack.pop() != char:
+                return None
+            if not stack:
+                return index + 1
+        index += 1
+    return None
+
+
+def _microsoft_qualified_std_owner(entity, nesting):
+    if not entity or entity.endswith("::"):
+        return False
+    # Check scope separators outside templates and quoted enclosing functions.
+    # A nonempty suffix alone is insufficient for a local such as ::`2'::::x.
+    index = component_start = 0
+    while index < len(entity):
+        operator = _MICROSOFT_OPERATOR.match(entity, index)
+        if operator:
+            index = operator.end()
+            continue
+        if entity[index] in "<([`":
+            end = _microsoft_group_end(entity, index)
+            if end is None:
+                return False
+            index = end
+            continue
+        if entity.startswith("::", index):
+            if index == component_start:
+                return False
+            index += 2
+            component_start = index
+            continue
+        if entity[index] == ":":
+            return False
+        index += 1
+    if entity.startswith("std::"):
+        # A missing member is not a declaration. Groups have already been
+        # checked by the declaration scanner; std in their types is irrelevant.
+        return bool(re.match(r"std::[A-Za-z_$~`<]", entity))
+    if not entity.startswith("`"):
+        return False
+    end = _microsoft_group_end(entity, 0)
+    if end is None:
+        return False
+    parent = entity[1:end - 1]
+    suffix = entity[end:]
+    for wrapper in ("dynamic initializer for ", "dynamic atexit destructor for "):
+        if parent.startswith(wrapper):
+            payload = parent[len(wrapper):]
+            if (suffix or not payload.startswith("`") or
+                    _microsoft_group_end(payload, 0) != len(payload)):
+                return False
+            return _microsoft_declaration_std_owner(payload[1:-1], nesting + 1)
+    # The quote introducing a local entity must contain its complete enclosing
+    # function declaration. A quoted type or a std type in a Host signature
+    # cannot supply ownership for that entity.
+    if not suffix.startswith("::") or len(suffix) == 2:
+        return False
+    return _microsoft_declaration_std_owner(parent, nesting + 1, function_only=True)
+
+
+def _microsoft_function_suffix(suffix):
+    # MSVC member cv/ref qualifiers follow the complete parameter list. Do not
+    # silently discard another declaration or arbitrary trailing text.
+    # This is FunctionSignatureNode::outputPost's order in the pinned LLVM
+    # demangler, including noexcept before the reference qualifier.
+    return bool(re.fullmatch(
+        r"(?:\s+const)?(?:\s+volatile)?(?:\s+__restrict)?"
+        r"(?:\s+__unaligned)?(?:\s+noexcept)?(?:\s+&&|\s+&)?\s*", suffix))
+
+
+def _microsoft_declaration_std_owner(declaration, nesting=0, function_only=False):
+    if nesting >= MICROSOFT_NESTING_LIMIT:
+        return False
     descriptor = " `RTTI Type Descriptor'"
-    if demangled.endswith(descriptor):
-        demangled = demangled[:-len(descriptor)]
-    demangled = demangled.split("{for ", 1)[0].rstrip()
-    depth = 0
-    token = ""
-    previous = ""
+    if declaration.endswith(descriptor):
+        declaration = declaration[:-len(descriptor)]
+    token, previous = "", ""
     conversion = False
     calling_convention = False
-    quoted = False
-    for char in demangled:
-        # Microsoft special members have a single backtick/apostrophe name,
-        # e.g. `scalar deleting destructor'. Its spaces are not token breaks.
-        if char == "`":
-            quoted = True
-        if quoted:
-            token += char
-            if char == "'":
-                quoted = False
+    index = 0
+    while index < len(declaration):
+        char = declaration[index]
+        operator = _MICROSOFT_OPERATOR.match(declaration, index)
+        if operator:
+            token += operator.group()
+            index = operator.end()
             continue
-        if char == "(" and depth == 0:
-            # A function-pointer return type opens parentheses before the
-            # function's name. Do not mistake its std return type for a scope.
-            if not calling_convention:
+        if char in "<([`{":
+            end = _microsoft_group_end(declaration, index)
+            if end is None:
                 return False
-            break
-        if char.isspace() and depth == 0:
-            if token in {"__cdecl", "__thiscall", "__stdcall", "__fastcall",
-                         "__vectorcall", "__clrcall"}:
+            if char == "(":
+                # A parenthesis in a function-pointer return type precedes
+                # the declared function. Its return type is not its owner.
+                if not calling_convention or not token:
+                    return False
+                return (_microsoft_function_suffix(declaration[end:]) and
+                        _microsoft_qualified_std_owner(token, nesting))
+            if char == "{":
+                # A vftable adjustment names a base after the actual entity.
+                if (function_only or end != len(declaration) or
+                        not declaration[index + 1:end - 1].startswith("for ")):
+                    return False
+                return _microsoft_qualified_std_owner(token, nesting)
+            token += declaration[index:end]
+            index = end
+            continue
+        if char in ">)]}'":
+            return False
+        if char.isspace():
+            if token in _MICROSOFT_CALLING_CONVENTIONS:
                 calling_convention = True
             if token.endswith("::operator"):
                 conversion = True
             if conversion:
-                token += "_"
+                token += " "
             elif token:
                 previous, token = token, ""
-            continue
-        if char == "<":
-            depth += 1
-        elif char == ">" and depth:
-            depth -= 1
-        token += char
-    entity = token or previous
-    return entity.startswith("std::")
+        elif char in "*&" and not conversion:
+            # A pointer/reference declarator need not have whitespace before
+            # its name: e.g. const *std::_Facetptr<...>::_Psave.
+            previous, token = token, ""
+        else:
+            token += char
+        index += 1
+    return (not function_only and
+            _microsoft_qualified_std_owner(token or previous, nesting))
+
+
+def microsoft_std_entity(demangled):
+    """Recognize the declared std owner under the existing shared-std policy.
+
+    This identifies declarations, including their local scopes; it does not
+    establish ABI equivalence or authorize another vendor runtime namespace.
+    Unknown, malformed and excessively nested spellings fail closed.
+    """
+    if (not demangled or len(demangled) > MICROSOFT_DECLARATION_LIMIT or
+            any(ord(char) < 32 or ord(char) == 127 for char in demangled)):
+        return False
+    return _microsoft_declaration_std_owner(demangled.strip())
 
 
 def microsoft_string_literal(name, demangled):

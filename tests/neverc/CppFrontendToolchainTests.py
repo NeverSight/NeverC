@@ -2,6 +2,7 @@
 """Exercise the frontend ABI audit with real, tiny Microsoft COFF archives."""
 
 import argparse
+import os
 from pathlib import Path
 import re
 import shutil
@@ -49,7 +50,7 @@ class CppFrontendToolchainTests(unittest.TestCase):
         return result.stdout
 
     def archive(self, directory, name, source, *, msvc=False, assembly=None,
-                extra_sources=(), prefix_header=None):
+                extra_sources=(), prefix_header=None, static_runtime=False):
         directory.mkdir(parents=True, exist_ok=True)
         library = directory / (name + ".lib")
         objects = []
@@ -60,14 +61,17 @@ class CppFrontendToolchainTests(unittest.TestCase):
             cpp.write_text(text, encoding="utf-8")
             if msvc:
                 prefix = ["/FI" + str(prefix_header)] if prefix_header else []
-                self.require_success([self.msvc, "/nologo", "/c", "/Od", "/GL-",
-                                      "/GR-", "/EHsc", *prefix, "/Fo" + str(obj), cpp])
+                runtime = ["/MT"] if static_runtime else []
+                self.require_success([self.msvc, "/nologo", "/std:c++17", "/c", "/Od", "/GL-",
+                                      "/GR-", "/EHsc", *runtime, *prefix,
+                                      "/Fo" + str(obj), cpp])
             else:
                 prefix = ["-include", prefix_header] if prefix_header else []
+                runtime = ["-fms-runtime-lib=static"] if static_runtime else []
                 self.require_success([
                     self.clang, "--target=" + self.target, "-std=c++17", "-O2",
                     "-fms-extensions", "-fmerge-all-constants", "-fno-exceptions",
-                    "-fno-rtti", *prefix, "-c", cpp, "-o", obj,
+                    "-fno-rtti", *runtime, *prefix, "-c", cpp, "-o", obj,
                 ])
             objects.append(obj)
         if assembly is not None:
@@ -103,6 +107,323 @@ class CppFrontendToolchainTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, output)
             self.assertIn(error, output)
             self.assertFalse(private.exists(), "A rejected aggregate must be removed")
+
+    def defined_declarations(self, archive):
+        # Pair actual raw and demangled definitions without depending on sort
+        # order or splitting declarations that contain spaces. No fabricated
+        # Microsoft spelling is passed to the audit in these fixtures.
+        inventories = []
+        for decoding in ((), ("--demangle",)):
+            output = self.require_success([
+                self.nm, "--extern-only", "--defined-only", "--no-sort",
+                "--format=just-symbols", *decoding, archive,
+            ])
+            inventories.append([line for line in output.splitlines()
+                                if line and not line.endswith(":")])
+        self.assertEqual(len(inventories[0]), len(inventories[1]))
+        return dict(zip(*inventories))
+
+    def check_owner_fixture(self, source, patterns, *, msvc=False, rejected=False,
+                            case="owner"):
+        compiler = "msvc" if msvc else "clang"
+        directory = self.root / case / compiler
+        private = self.archive(
+            directory / "private", "private",
+            ENTRY + source.replace("FIXTURE_ANCHOR", "neverc_cpp_owner_anchor"),
+            msvc=msvc)
+        host = directory / "host"
+        host_archive = self.archive(
+            host, "host", source.replace("FIXTURE_ANCHOR", "host_owner_anchor"),
+            msvc=msvc)
+        private_declarations = self.defined_declarations(private)
+        host_declarations = self.defined_declarations(host_archive)
+        shared = private_declarations.keys() & host_declarations.keys()
+        selected = set()
+        for pattern in patterns:
+            matches = {name for name in shared if name.startswith("?") and
+                       re.search(pattern, private_declarations[name])}
+            self.assertTrue(
+                matches,
+                f"The {compiler} fixture must emit shared external definitions "
+                f"matching {pattern!r}; actual private declarations: "
+                f"{private_declarations!r}; host declarations: {host_declarations!r}")
+            selected.update(matches)
+        for name in selected:
+            self.assertEqual(private_declarations[name], host_declarations[name])
+        for host_format in ("nm", "coff-index"):
+            with self.subTest(compiler=compiler, host_format=host_format):
+                # Rejection deletes its input: each path gets a fresh copy of
+                # the real aggregate, so both readers must reach the same gate.
+                checked = directory / (host_format + ".lib")
+                shutil.copyfile(private, checked)
+                if rejected:
+                    self.check_audit(
+                        checked, host, host_format,
+                        error="private/host symbol intersection: " + sorted(selected)[0])
+                else:
+                    self.check_audit(checked, host, host_format)
+
+    def test_std_local_static_and_guard_follow_the_enclosing_function(self):
+        source = """
+namespace std {
+int owner_seed();
+__declspec(noinline) inline int *local_owner() {
+  static int local_value = owner_seed();
+  return &local_value;
+}
+}
+extern "C" int *FIXTURE_ANCHOR() { return std::local_owner(); }
+"""
+        # Unknown initialization forces a guard; escaping the address prevents
+        # removal of the local. Inline linkage makes both COFF entities public.
+        for msvc in (False, True):
+            self.check_owner_fixture(source, (
+                r"std::local_owner.*::local_value$",
+                r"std::local_owner.*(?:::\$TSS[0-9]+$|"
+                r"`local static(?: thread)? guard')",
+            ), msvc=msvc)
+
+    def test_std_static_pointer_field_has_no_required_space_after_star(self):
+        source = """
+namespace std {
+struct PointerOwner { static int *field; };
+int *PointerOwner::field = nullptr;
+}
+extern "C" int **FIXTURE_ANCHOR() { return &std::PointerOwner::field; }
+"""
+        # The out-of-line definition and escaped address require storage. The
+        # demangler prints '*std::', which is a declarator boundary, not a token
+        # whose namespace may be inferred from the preceding pointer type.
+        for msvc in (False, True):
+            self.check_owner_fixture(
+                source, (r"public: static int \*std::PointerOwner::field$",),
+                msvc=msvc)
+
+    def test_std_dynamic_initializer_follows_the_initialized_field(self):
+        source = """
+namespace std {
+int *owner_pointer_seed();
+template<class T> struct DynamicOwner { static T *field; };
+template<class T> T *DynamicOwner<T>::field = owner_pointer_seed();
+template struct DynamicOwner<int>;
+}
+extern "C" int **FIXTURE_ANCHOR() { return &std::DynamicOwner<int>::field; }
+"""
+        # MSVC emits a public dynamic initializer for this instantiated static
+        # field. Clang's initializer can be internal, so it is not a substitute
+        # for this real external-definition collision. No EH objects are used.
+        self.check_owner_fixture(source, (
+            r"dynamic initializer for .*std::DynamicOwner<int>::field",
+        ), msvc=True)
+
+    def test_std_nested_lambda_method_follows_its_enclosing_declarations(self):
+        source = """
+namespace std {
+inline auto lambda_owner() {
+  return []() { return [](int value) { return value + 7; }; };
+}
+}
+using OwnerInnerLambda = decltype(std::lambda_owner()());
+extern "C" {
+int (OwnerInnerLambda::*FIXTURE_ANCHOR)(int) const =
+    &OwnerInnerLambda::operator();
+}
+"""
+        # Taking the inner operator's address in an externally visible variable
+        # forces an out-of-line method even under the Clang fixture's -O2.
+        for msvc in (False, True):
+            self.check_owner_fixture(source, (
+                r"std::lambda_owner.*<lambda_[^>]+>.*operator\(\).*"
+                r"<lambda_[^>]+>.*operator\(\)",
+            ), msvc=msvc)
+
+    def test_host_entities_do_not_inherit_std_ownership_from_their_types(self):
+        declarations = "namespace std { struct OwnerPayload { int value; }; }\n"
+        cases = (
+            ("return", declarations + """
+namespace Host {
+std::OwnerPayload *return_owner() { return nullptr; }
+}
+""", r"std::OwnerPayload \*.*Host::return_owner\("),
+            ("parameter", declarations + """
+namespace Host {
+int parameter_owner(std::OwnerPayload *value) { return value != nullptr; }
+}
+""", r"Host::parameter_owner\(struct std::OwnerPayload \*"),
+            ("field", declarations + """
+namespace Host {
+struct TypedOwner { static std::OwnerPayload *field; };
+std::OwnerPayload *TypedOwner::field = nullptr;
+}
+""", r"std::OwnerPayload \*Host::TypedOwner::field$"),
+            ("quoted_type", """
+namespace std {
+inline auto quoted_type_owner() { return []() { return 7; }; }
+}
+namespace Host {
+using ForeignLambda = decltype(std::quoted_type_owner());
+ForeignLambda *quoted_pointer = nullptr;
+}
+""", r"`[^\n]*std::quoted_type_owner.*<lambda_[^>]+>.*\*Host::quoted_pointer$"),
+        )
+        for name, source, pattern in cases:
+            for msvc in (False, True):
+                with self.subTest(case=name, compiler="msvc" if msvc else "clang"):
+                    # Each negative archive contains only this Host collision;
+                    # another rejected declaration cannot make the case pass.
+                    self.check_owner_fixture(
+                        source, (pattern,), msvc=msvc, rejected=True, case=name)
+
+    def test_sdk_fenv1_definition_reference_and_runtime_are_isolated(self):
+        # Separate from the std-owner cases: this proves only the single UCRT
+        # object selected by the runner's actual fenv.h. No copied fenv_t layout,
+        # initializer constants, renamed CRT function, or pointer sentinel is
+        # used. The __midl header branch suppresses just its compound definition;
+        # corecrt.h/float.h have already been included in ordinary compiler mode.
+        definition = ENTRY + """
+#include <fenv.h>
+extern "C" { const fenv_t *neverc_cpp_fenv_anchor = FE_DFL_ENV; }
+"""
+        reference = """
+#include <corecrt.h>
+#include <float.h>
+#ifdef __midl
+#error The fixture must start in ordinary C++ compilation mode
+#endif
+#define __midl
+#include <fenv.h>
+#undef __midl
+extern "C" const fenv_t _Fenv1;
+extern "C" const fenv_t *neverc_cpp_fenv_env() { return FE_DFL_ENV; }
+"""
+        host_source = """
+#include <fenv.h>
+extern "C" const fenv_t *host_fenv_env() { return FE_DFL_ENV; }
+"""
+        probe_source = """
+#include <fenv.h>
+extern "C" const fenv_t *host_fenv_env();
+extern "C" const fenv_t *neverc_cpp_fenv_env();
+
+static int compare_environments(const fenv_t *host, const fenv_t *isolated,
+                                const fenv_t *saved) {
+  // Exercise a distinct private address, rather than an ICF-merged constant.
+  if (!host || !isolated || host == isolated) return 2;
+  if (host->_Fe_ctl != isolated->_Fe_ctl ||
+      host->_Fe_stat != isolated->_Fe_stat) return 3;
+  fenv_t host_after, isolated_after;
+  // Start from a nondefault mode on both paths, so a successful no-op cannot
+  // impersonate applying the default environment from the supplied object.
+  if (fesetround(FE_UPWARD) != 0 || fegetround() != FE_UPWARD) return 10;
+  const int host_result = fesetenv(host);
+  const int host_round = fegetround();
+  if (fegetenv(&host_after) != 0) return 4;
+  if (fesetenv(saved) != 0) return 5;
+  if (fesetround(FE_UPWARD) != 0 || fegetround() != FE_UPWARD) return 10;
+  const int isolated_result = fesetenv(isolated);
+  const int isolated_round = fegetround();
+  if (fegetenv(&isolated_after) != 0) return 6;
+  if (host_result != 0 || isolated_result != host_result) return 7;
+  if (host_round != FE_TONEAREST || isolated_round != FE_TONEAREST) return 11;
+  if (host_after._Fe_ctl != isolated_after._Fe_ctl ||
+      host_after._Fe_stat != isolated_after._Fe_stat) return 8;
+  return 0;
+}
+
+int main() {
+  fenv_t saved;
+  if (fegetenv(&saved) != 0) return 1;
+  const int result = compare_environments(
+      host_fenv_env(), neverc_cpp_fenv_env(), &saved);
+  // Every path after the first successful save restores the caller's state.
+  const int restore_result = fesetenv(&saved);
+  return restore_result == 0 ? result : 9;
+}
+"""
+        header = self.root / "FenvPrivatePrefix.h"
+        header.write_text("#define _Fenv1 neverc_cpp__Fenv1\n", encoding="utf-8")
+        # These are the developer-environment paths selected by the workflow's
+        # MSVC setup for its native target, not hard-coded SDK installation paths.
+        library_dirs = [Path(value.strip().strip('"'))
+                        for value in os.environ.get("LIB", "").split(";")
+                        if value.strip()]
+        self.assertTrue(library_dirs, "The native MSVC LIB environment is required")
+        library_dirs = [path for path in library_dirs if path.is_dir()]
+        for library in ("libcmt.lib", "libucrt.lib", "libvcruntime.lib",
+                        "oldnames.lib", "kernel32.lib"):
+            self.assertTrue(any((path / library).is_file() for path in library_dirs),
+                            f"The runner's native CRT/SDK must provide {library}")
+        linker = self.llvm_root / "bin/lld-link.exe"
+        self.assertTrue(linker.is_file(), "The GNU Clang runtime probe requires lld-link")
+        for msvc in (False, True):
+            compiler = "msvc" if msvc else "clang"
+            with self.subTest(compiler=compiler):
+                directory = self.root / "fenv1" / compiler
+                host = directory / "host"
+                host_archive = self.archive(
+                    host, "host", host_source, msvc=msvc, static_runtime=True)
+                unisolated = self.archive(
+                    directory / "unisolated", "private", definition,
+                    extra_sources=(reference,), msvc=msvc, static_runtime=True)
+                isolated = self.archive(
+                    directory / "isolated", "private", definition,
+                    extra_sources=(reference,), prefix_header=header,
+                    msvc=msvc, static_runtime=True)
+                for archive, symbol in ((unisolated, "_Fenv1"),
+                                        (isolated, "neverc_cpp__Fenv1")):
+                    inventory = self.require_success([
+                        self.nm, "--extern-only", "--format=posix", archive,
+                    ])
+                    self.assertRegex(inventory, r"(?m)^" + symbol + r" R\s")
+                    self.assertRegex(inventory, r"(?m)^" + symbol + r" U\s")
+                    if archive == isolated:
+                        self.assertNotRegex(inventory, r"(?m)^_Fenv1\s")
+                host_inventory = self.require_success([
+                    self.nm, "--extern-only", "--format=posix", host_archive,
+                ])
+                self.assertRegex(host_inventory, r"(?m)^_Fenv1 R\s")
+                for host_format in ("nm", "coff-index"):
+                    with self.subTest(compiler=compiler, host_format=host_format):
+                        rejected = directory / (host_format + "-unisolated.lib")
+                        shutil.copyfile(unisolated, rejected)
+                        self.check_audit(
+                            rejected, host, host_format, prefix_header=header,
+                            error="private/host symbol intersection: _Fenv1")
+                        self.check_audit(isolated, host, host_format,
+                                         prefix_header=header)
+                        missing = self.archive(
+                            directory / (host_format + "-missing"), "private",
+                            ENTRY + reference, prefix_header=header,
+                            msvc=msvc, static_runtime=True)
+                        self.check_audit(
+                            missing, host, host_format, prefix_header=header,
+                            error="unresolved private dependency: neverc_cpp__Fenv1")
+                source = directory / "fenv-probe.cpp"
+                source.write_text(probe_source, encoding="utf-8")
+                executable = directory / "fenv-probe.exe"
+                if msvc:
+                    self.require_success([
+                        self.msvc, "/nologo", "/std:c++17", "/Od", "/GL-",
+                        "/MT", "/EHsc", "/fp:strict", source,
+                        isolated, host_archive, "/Fe" + str(executable),
+                        "/Fo" + str(directory / "fenv-probe.obj"), "/link",
+                        "/OPT:NOICF",
+                        *("/libpath:" + str(path) for path in library_dirs),
+                    ])
+                else:
+                    # GNU-mode clang needs an explicit MSVC CRT choice. Its
+                    # -fms-runtime-lib=static maps to libcmt; -Xlinker preserves
+                    # each native LIB directory, including spaces, as one arg.
+                    link_paths = [argument for path in library_dirs
+                                  for argument in ("-Xlinker", "/libpath:" + str(path))]
+                    self.require_success([
+                        self.clang, "--target=" + self.target, "-std=c++17",
+                        "-O2", "-fno-lto", "-fms-extensions",
+                        "-fms-runtime-lib=static", "-ffp-model=strict",
+                        "-fuse-ld=" + str(linker), source, isolated, host_archive,
+                        "-Xlinker", "/OPT:NOICF", *link_paths, "-o", executable,
+                    ])
+                self.require_success([executable])
 
     def test_windows_abort_handler_definition_and_references_are_private(self):
         # Like Windows Signals.inc, this C-linkage function is declared inside
