@@ -495,6 +495,146 @@ int main() {
                         unresolved, host, host_format, prefix_header=header,
                         error="unresolved private dependency: neverc_cpp_HandleAbort")
 
+    def test_pointer_bounds_model_rename_and_alias_preserve_private_closure(self):
+        # This tiny model checks mangled owners and archive closure only. Its
+        # integer handle does not model LLVM TrackingVH lifetime semantics.
+        # Separate translation units require real references to both methods;
+        # their out-of-line definitions must appear as strong external text.
+        prefix = self.root / "PointerBoundsModelPrefix.h"
+        prefix.write_text("#define llvm neverc_cpp_llvm\n", encoding="utf-8")
+
+        def sources(isolated, anchor):
+            record = "neverc_cpp_PointerBounds" if isolated else "PointerBounds"
+            declaration = """
+namespace llvm {
+struct ModelHandle {
+  int value;
+  ModelHandle &operator=(ModelHandle &&other);
+};
+}
+""" + f"""
+struct {record} {{
+  llvm::ModelHandle handle;
+  {record} &operator=({record} &&other);
+}};
+"""
+            if isolated:
+                declaration += "using PointerBounds = neverc_cpp_PointerBounds;\n"
+            reference = declaration + f"""
+extern "C" PointerBounds *{anchor}(PointerBounds *target, PointerBounds *source) {{
+  *target = static_cast<PointerBounds &&>(*source);
+  return target;
+}}
+"""
+            record_body = declaration + """
+PointerBounds &PointerBounds::operator=(PointerBounds &&other) {
+  handle = static_cast<llvm::ModelHandle &&>(other.handle);
+  return *this;
+}
+"""
+            handle_body = declaration + """
+llvm::ModelHandle &llvm::ModelHandle::operator=(llvm::ModelHandle &&other) {
+  value = other.value;
+  return *this;
+}
+"""
+            return reference, record_body, handle_body
+
+        def inventory(library):
+            return self.require_success([
+                self.nm, "--extern-only", "--format=posix", library])
+
+        def require_method(library, raw_prefix, owner):
+            declarations = self.defined_declarations(library)
+            matches = [raw for raw, decoded in declarations.items()
+                       if raw.startswith(raw_prefix) and
+                       owner + "::operator=(" in decoded]
+            self.assertEqual(len(matches), 1, declarations)
+            return matches[0]
+
+        def require_kinds(output, raw, *, definition, reference):
+            for kind, present in (("T", definition), ("U", reference)):
+                pattern = r"(?m)^" + re.escape(raw) + " " + kind + r"\s"
+                if present:
+                    self.assertRegex(output, pattern)
+                else:
+                    self.assertNotRegex(output, pattern)
+
+        for msvc in (False, True):
+            compiler = "msvc" if msvc else "clang"
+            with self.subTest(compiler=compiler):
+                directory = self.root / "pointer-bounds-model" / compiler
+                host = directory / "host"
+                host_sources = sources(False, "host_bounds_assign")
+                host_archive = self.archive(
+                    host, "host", host_sources[0], extra_sources=host_sources[1:],
+                    msvc=msvc)
+                original_sources = sources(False, "neverc_cpp_bounds_assign")
+                isolated_sources = sources(True, "neverc_cpp_bounds_assign")
+
+                def build(case, selected):
+                    return self.archive(
+                        directory / case, "private", ENTRY + selected[0],
+                        extra_sources=selected[1:], prefix_header=prefix, msvc=msvc)
+
+                original = build("original", original_sources)
+                isolated = build("isolated", isolated_sources)
+                original_raw = require_method(
+                    original, "??4PointerBounds@@", "PointerBounds")
+                self.assertEqual(original_raw, require_method(
+                    host_archive, "??4PointerBounds@@", "PointerBounds"))
+                isolated_raw = require_method(
+                    isolated, "??4neverc_cpp_PointerBounds@@", "neverc_cpp_PointerBounds")
+                handle_raw = require_method(
+                    isolated, "??4ModelHandle@neverc_cpp_llvm@@",
+                    "neverc_cpp_llvm::ModelHandle")
+                require_kinds(inventory(original), original_raw,
+                              definition=True, reference=True)
+                isolated_inventory = inventory(isolated)
+                require_kinds(isolated_inventory, isolated_raw,
+                              definition=True, reference=True)
+                require_kinds(isolated_inventory, handle_raw,
+                              definition=True, reference=True)
+                self.assertNotIn(original_raw, isolated_inventory)
+
+                # Original definitions and reference-only leaks are rejected
+                # even without any matching host symbol.
+                no_host = directory / "original-no-host.lib"
+                shutil.copyfile(original, no_host)
+                self.check_audit(no_host, prefix_header=prefix,
+                                 error=original_raw + " => ")
+                original_reference = build("original-reference", original_sources[:1])
+                require_kinds(inventory(original_reference), original_raw,
+                              definition=False, reference=True)
+                self.check_audit(original_reference, prefix_header=prefix,
+                                 error=original_raw + " => ")
+
+                for host_format in ("nm", "coff-index"):
+                    with self.subTest(compiler=compiler, host_format=host_format):
+                        rejected = directory / (host_format + "-original.lib")
+                        shutil.copyfile(original, rejected)
+                        self.check_audit(rejected, host, host_format,
+                                         prefix_header=prefix, error=original_raw + " => ")
+                        self.check_audit(isolated, host, host_format,
+                                         prefix_header=prefix)
+                        missing_record = build(host_format + "-missing-record", (
+                            isolated_sources[0], isolated_sources[2]))
+                        require_kinds(inventory(missing_record), isolated_raw,
+                                      definition=False, reference=True)
+                        self.check_audit(
+                            missing_record, host, host_format, prefix_header=prefix,
+                            error="unresolved private dependency: " + isolated_raw)
+                        missing_handle = build(host_format + "-missing-handle",
+                                               isolated_sources[:2])
+                        missing_inventory = inventory(missing_handle)
+                        require_kinds(missing_inventory, isolated_raw,
+                                      definition=True, reference=True)
+                        require_kinds(missing_inventory, handle_raw,
+                                      definition=False, reference=True)
+                        self.check_audit(
+                            missing_handle, host, host_format, prefix_header=prefix,
+                            error="unresolved private dependency: " + handle_raw)
+
     def test_msvc_vector_destructor_fallback_is_resolved_from_actual_aux_record(self):
         source = ENTRY + """
 namespace neverc_cpp_llvm {

@@ -258,6 +258,53 @@ def microsoft_std_entity(demangled):
     return _microsoft_declaration_std_owner(demangled.strip())
 
 
+def global_cpp_record_entity(symbol, declaration, record):
+    """Recognize explicit global record identities, never a name substring.
+
+    MSVC spells record types with a tag. Itanium omits tags, so only use
+    unambiguous owners, RTTI names and simple function parameter lists there.
+    A bare Itanium template argument can instead name a non-type argument.
+    """
+    if (not declaration or declaration == symbol or
+            len(declaration) > MICROSOFT_DECLARATION_LIMIT or
+            any(ord(char) < 32 or ord(char) == 127 for char in declaration)):
+        return False
+    microsoft = symbol.startswith("?")
+    itanium = symbol.startswith(("_Z", "__Z"))
+    if not (microsoft or itanium):
+        return False
+    name = re.escape(record)
+    # Positive delimiters avoid guessing the full Unicode identifier alphabet
+    # (including combining marks) or treating MSVC's '$' as a separator.
+    boundary = r"(?:^|[\s(<,>*&])"
+    if re.search(boundary + name + r"::", declaration):
+        return True
+    if microsoft:
+        return bool(re.search(
+            boundary + r"(?:struct|class) " + name +
+            r"(?=$|[\s*&,)>:\[])", declaration))
+    if re.fullmatch(r"(?:vtable|VTT|typeinfo|typeinfo name) for " + name,
+                    declaration):
+        return True
+    if re.search(r"::operator " + name + r"(?: const)?\s*[*&]*\(\)",
+                 declaration):
+        return True
+    # Function parameter names are absent from nm demangling. Do not interpret
+    # a bare function/data name, a nested template expression, or a parameter's
+    # identifier in a declaration as a record type.
+    function = re.fullmatch(
+        r"[^<>()]+\(([^<>()]*)\)(?: const| volatile| &| &&| noexcept)*",
+        declaration)
+    if not function:
+        return False
+    parameter = r"\s*(?:(?:const|volatile)\s+)*" + name + (
+        r"(?:\s+(?:const|volatile)\b)*"
+        r"(?:\s*\*\s*(?:(?:const|volatile)\b\s*)*)*"
+        r"(?:\s*&{1,2})?\s*")
+    return any(re.fullmatch(parameter, part)
+               for part in function.group(1).split(","))
+
+
 def microsoft_string_literal(name, demangled):
     # MicrosoftMangle.cpp::mangleStringLiteral encodes the character kind,
     # byte length, CRC and leading bytes in a COMDAT name. Require the entire
@@ -362,12 +409,16 @@ def audit(args):
     bad_private_names, bad_host_names = set(), set()
     host_evidence_batches = []
     private_decoded = decoded_symbols(nm, [args.archive])
+    private_record_symbols = set()
     for name, declaration in private_decoded.items():
         if microsoft_string_literal(name, declaration):
             continue
+        if global_cpp_record_entity(name, declaration, "neverc_cpp_PointerBounds"):
+            private_record_symbols.add(name)
         if (re.search(r"(?<![A-Za-z0-9_])llvm::", declaration)
                 or re.search(r"(?<![A-Za-z0-9_:])(?:mangledNameForMallocFamily|isVPIntrinsic|deserializeSanitizerMetadata)\(", declaration)
-                or re.search(r"(?<![A-Za-z0-9_])DebugInfoPerPass\b", declaration)):
+                or re.search(r"(?<![A-Za-z0-9_])DebugInfoPerPass\b", declaration)
+                or global_cpp_record_entity(name, declaration, "PointerBounds")):
             bad.append(name + " => " + declaration)
             bad_private_names.add(name)
     definitions, references = set(), set()
@@ -386,6 +437,7 @@ def audit(args):
         plain = name[1:] if name.startswith("_") else name
         return ("neverc_cpp_llvm" in name or "5clang" in name
                 or "@clang@@" in name
+                or name in private_record_symbols
                 or name in renamed.values() or plain in renamed.values())
 
     resolved_aliases = set()

@@ -4,6 +4,7 @@
 import argparse
 import io
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import types
@@ -112,6 +113,248 @@ class ArchiveAuditTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "unresolved private dependency"):
                         self.audit_inventory([(renamed, "U", renamed)], host, host_format,
                                              prefix_header=header)
+
+    def test_pointer_bounds_patch_runs_real_script_with_checked_source_states(self):
+        # This synthetic source tree tests the transformation script's input
+        # contract. It does not model or compile the LLVM implementation.
+        original_record = ("struct PointerBounds {\n"
+                           "  TrackingVH<Value> Start;\n"
+                           "  TrackingVH<Value> End;\n"
+                           "  Value *StrideToCheck;\n"
+                           "};")
+        renamed_record = ("struct neverc_cpp_PointerBounds {\n"
+                          "  TrackingVH<Value> Start;\n"
+                          "  TrackingVH<Value> End;\n"
+                          "  Value *StrideToCheck;\n"
+                          "};\n"
+                          "using PointerBounds = neverc_cpp_PointerBounds;")
+        # Retain the six type uses from the pinned LoopUtils.cpp declarations
+        # and lambda; the omitted first function body is irrelevant to rewriting.
+        uses = """static PointerBounds expandBounds(const RuntimeCheckingPtrGroup *CG,
+                                  Loop *TheLoop, Instruction *Loc,
+                                  SCEVExpander &Exp, bool HoistRuntimeChecks);
+static SmallVector<std::pair<PointerBounds, PointerBounds>, 4>
+expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
+             Instruction *Loc, SCEVExpander &Exp, bool HoistRuntimeChecks) {
+  SmallVector<std::pair<PointerBounds, PointerBounds>, 4> ChecksWithBounds;
+  transform(PointerChecks, std::back_inserter(ChecksWithBounds),
+            [&](const RuntimePointerCheck &Check) {
+              PointerBounds First = expandBounds(Check.first, L, Loc, Exp,
+                                                 HoistRuntimeChecks),
+                            Second = expandBounds(Check.second, L, Loc, Exp,
+                                                  HoistRuntimeChecks);
+              return std::make_pair(First, Second);
+            });
+  return ChecksWithBounds;
+}
+"""
+        original_loop = original_record + "\n\n" + uses
+        expected_loop = renamed_record + "\n\n" + uses
+        notice_names = (
+            "MD5.cpp", "xxhash.cpp", "UnicodeNameToCodepointGenerated.cpp",
+            "ConvertUTF.cpp", "regex2.h", "regutils.h", "regex_impl.h",
+            "regcomp.c", "regexec.c", "regerror.c", "regfree.c",
+        )
+        intrinsic = ("constexpr bool isVPIntrinsic(int id) { return id != 0; }\n"
+                     "bool fixture_query(int id) {\n"
+                     "  if (::isVPIntrinsic(id)) return true;\n"
+                     "  return ::isVPIntrinsic(id);\n"
+                     "}\n")
+        expected_intrinsic = (
+            "constexpr bool neverc_cpp_isVPIntrinsic(int id) { return id != 0; }\n"
+            "bool fixture_query(int id) {\n"
+            "  if (::neverc_cpp_isVPIntrinsic(id)) return true;\n"
+            "  return ::neverc_cpp_isVPIntrinsic(id);\n"
+            "}\n")
+        debugify = ("#ifndef LLVM_TRANSFORMS_UTILS_DEBUGIFY_H\n"
+                    "#define LLVM_TRANSFORMS_UTILS_DEBUGIFY_H\n"
+                    "struct DebugInfoPerPass {};\n#endif\n")
+        expected_debugify = (
+            "#ifndef LLVM_TRANSFORMS_UTILS_DEBUGIFY_H\n"
+            "#define LLVM_TRANSFORMS_UTILS_DEBUGIFY_H\n"
+            "// Private NeverC frontend ABI: this upstream type is global.\n"
+            "#define DebugInfoPerPass neverc_cpp_DebugInfoPerPass\n"
+            "struct DebugInfoPerPass {};\n#endif\n")
+        files = {
+            "llvm/lib/IR/IntrinsicInst.cpp": intrinsic,
+            "llvm/include/llvm/Transforms/Utils/Debugify.h": debugify,
+            "llvm/lib/Transforms/Utils/LoopUtils.cpp": original_loop,
+            "llvm/include/llvm-c/Core.h": (
+                "#define LLVM_FOR_EACH_VALUE_SUBCLASS(macro) \\\n"
+                "  macro(Argument)\n\n" +
+                "".join(f"void LLVMFixture{index:04d}(void);\n"
+                        for index in range(900))),
+            "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h": (
+                "#define blake3_compress_in_place llvm_blake3_compress_in_place\n"),
+        }
+        for name in notice_names:
+            files["llvm/lib/Support/" + name] = (
+                "// Controlled transformation fixture notice.\nint fixture_value;\n")
+
+        with tempfile.TemporaryDirectory(prefix="neverc-isolate-source-") as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            for name, contents in files.items():
+                path = source / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents, encoding="utf-8")
+            output = root / "generated" / "PrivatePrefix.h"
+            command = [sys.executable, "-I", "-B",
+                       str(Path(__file__).resolve().with_name("IsolateSymbols.py")),
+                       "--source", str(source), "--output", str(output)]
+
+            def run_script(success):
+                try:
+                    result = subprocess.run(
+                        command, cwd=root, capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", timeout=30, check=False)
+                except subprocess.TimeoutExpired as error:
+                    self.fail(f"IsolateSymbols timed out: {command!r}\n"
+                              f"stdout: {error.stdout!r}\nstderr: {error.stderr!r}")
+                diagnostic = (f"{command!r}\nexit: {result.returncode}\n"
+                              f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
+                if success:
+                    self.assertEqual(result.returncode, 0, diagnostic)
+                    self.assertIn("Isolated llvm namespace and", result.stdout, diagnostic)
+                else:
+                    self.assertNotEqual(result.returncode, 0, diagnostic)
+                    self.assertIn("Unexpected pinned LLVM PointerBounds", result.stderr,
+                                  diagnostic)
+
+            run_script(True)
+            loop = source / "llvm/lib/Transforms/Utils/LoopUtils.cpp"
+            self.assertEqual(loop.read_text(encoding="utf-8"), expected_loop)
+            self.assertEqual((source / "llvm/lib/IR/IntrinsicInst.cpp").read_text(
+                encoding="utf-8"), expected_intrinsic)
+            self.assertEqual((source / "llvm/include/llvm/Transforms/Utils/Debugify.h").read_text(
+                encoding="utf-8"), expected_debugify)
+            prefix = output.read_text(encoding="utf-8")
+            for name in ("llvm", "LLVMFixture0000", "LLVMFixture0899", "LLVMIsAArgument",
+                         "llvm_blake3_compress_in_place"):
+                self.assertIn(f"#define {name} neverc_cpp_{name}\n", prefix)
+            self.assertNotIn("#define PointerBounds", prefix)
+            notices = output.parent / "NeverCCppThirdPartyNotices.txt"
+            expected_notices = "Additional notices from the pinned LLVM 20.1.8 sources.\n"
+            for name in notice_names:
+                expected_notices += ("\n\n===== llvm/lib/Support/" + name + " =====\n\n"
+                                     "// Controlled transformation fixture notice.\n")
+            self.assertEqual(notices.read_text(encoding="utf-8"), expected_notices)
+            stable = {path: path.read_bytes() for path in (
+                loop, output, notices, source / "llvm/lib/IR/IntrinsicInst.cpp",
+                source / "llvm/include/llvm/Transforms/Utils/Debugify.h")}
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            missing_use = original_loop.replace("static PointerBounds expandBounds(",
+                                                "static int expandBounds(", 1)
+            invalid = {
+                "missing declaration": uses,
+                "duplicate original": original_record + "\n" + original_loop,
+                "duplicate rewritten": renamed_record + "\n" + expected_loop,
+                "mixed declarations": original_record + "\n" + expected_loop,
+                "partial rename": original_loop.replace(
+                    "struct PointerBounds", "struct neverc_cpp_PointerBounds", 1),
+                "changed member": original_loop.replace(
+                    "Value *StrideToCheck;", "Value *Changed;", 1),
+                "extra use": original_loop + "PointerBounds Unexpected;\n",
+                "missing use": missing_use,
+                # Preserve the count of six uses so these exercise the specific
+                # declaration/alias/macro checks rather than just the count.
+                "unknown declaration": missing_use + "struct [[nodiscard]] PointerBounds;\n",
+                "extra alias": missing_use + "using PointerBounds = Unrelated;\n",
+                "extra macro": missing_use + "#define PointerBounds Unrelated\n",
+                "unexpected private name": original_loop + "neverc_cpp_PointerBounds *Unexpected;\n",
+            }
+            for name, contents in invalid.items():
+                with self.subTest(state=name):
+                    before = contents.encode("utf-8")
+                    loop.write_bytes(before)
+                    run_script(False)
+                    self.assertEqual(loop.read_bytes(), before)
+
+    def test_global_pointer_bounds_record_identity_has_explicit_type_context(self):
+        for record in ("PointerBounds", "neverc_cpp_PointerBounds"):
+            cases = [
+                ("?controlled@@", f"public: struct {record} & __cdecl "
+                 f"{record}::operator=(struct {record} &&)"),
+                ("?controlled@@", f"void __cdecl consume(struct {record} const &)"),
+                ("?controlled@@", f"class {record} `RTTI Type Descriptor'"),
+                ("_Zcontrolled", f"{record}::operator=({record}&&)"),
+                ("_Zcontrolled", f"consume({record} const&)"),
+                ("_Zcontrolled", f"consume({record}* const&)"),
+                ("_Zcontrolled", f"consume({record} const* volatile* const&&)"),
+                ("_Zcontrolled", f"typeinfo for {record}"),
+                ("_Zcontrolled", f"Host::operator {record}() const"),
+            ]
+            for symbol, declaration in cases:
+                with self.subTest(record=record, declaration=declaration):
+                    self.assertTrue(AuditArchive.global_cpp_record_entity(
+                        symbol, declaration, record))
+
+    def test_global_record_identity_does_not_use_identifier_substrings(self):
+        for record in ("PointerBounds", "neverc_cpp_PointerBounds"):
+            for symbol in ("?controlled@@", "_Zcontrolled"):
+                for declaration in (
+                    f"Host::{record}::f()", f"struct Host::{record}",
+                    f"Host::${record}::f()", f"More${record}::f()",
+                    f"Ω{record}::f()", f"A\u0301{record}::f()", f"{record}Extra::f()",
+                    f"void f(int {record})", f"{record}()", record,
+                    f"void f<{record}>()", f"consume({record}&&&)",
+                    f"consume({record}* constSuffix&)",
+                ):
+                    with self.subTest(symbol=symbol, declaration=declaration):
+                        self.assertFalse(AuditArchive.global_cpp_record_entity(
+                            symbol, declaration, record))
+
+    def test_original_global_record_definitions_and_references_are_rejected(self):
+        # Actual MSVC ARM64 984608 spelling from LoopUtils.cpp.obj. Its global
+        # record contains version-specific LLVM TrackingVH<Value> members.
+        msvc = "??4PointerBounds@@QEAAAEAU0@$$QEAU0@@Z"
+        declaration = ("public: struct PointerBounds & __cdecl "
+                       "PointerBounds::operator=(struct PointerBounds &&)")
+        for raw, decoded in (
+            (msvc, declaration),
+            ("_ZN13PointerBoundsaSEOS_", "PointerBounds::operator=(PointerBounds&&)"),
+        ):
+            for kind in ("T", "W", "U"):
+                with self.subTest(raw=raw, kind=kind):
+                    with self.assertRaisesRegex(ValueError, "PointerBounds"):
+                        self.audit_inventory([(raw, kind, decoded)])
+
+    def test_private_global_record_methods_require_a_closed_definition(self):
+        original = "??4PointerBounds@@QEAAAEAU0@$$QEAU0@@Z"
+        renamed = original.replace("PointerBounds", "neverc_cpp_PointerBounds")
+        original_decoded = ("public: struct PointerBounds & __cdecl "
+                            "PointerBounds::operator=(struct PointerBounds &&)")
+        renamed_decoded = original_decoded.replace(
+            "PointerBounds", "neverc_cpp_PointerBounds")
+        host = [(original, "T", original_decoded)]
+        for host_format in ("nm", "coff-index"):
+            with self.subTest(host_format=host_format):
+                self.audit_inventory(
+                    [(renamed, "T", renamed_decoded), (renamed, "U", renamed_decoded)],
+                    host, host_format)
+                with self.assertRaisesRegex(ValueError, "unresolved private dependency"):
+                    self.audit_inventory([(renamed, "U", renamed_decoded)], host,
+                                         host_format)
+                # Isolating the global record must not hide an unresolved
+                # method of the private LLVM value-handle implementation.
+                handle = "?assign@ValueHandleBase@neverc_cpp_llvm@@QEAAXXZ"
+                with self.assertRaisesRegex(ValueError, "unresolved private dependency"):
+                    self.audit_inventory(
+                        [(renamed, "T", renamed_decoded),
+                         (handle, "U", "void __cdecl neverc_cpp_llvm::ValueHandleBase::assign(void)")],
+                        host, host_format)
+
+    def test_record_reference_closure_keeps_nested_host_types_separate(self):
+        nested = "?f@neverc_cpp_PointerBounds@Host@@QEAAXXZ"
+        self.audit_inventory(
+            [(nested, "U", "void __cdecl Host::neverc_cpp_PointerBounds::f(void)")])
+        raw = "_Z7consumeRKP24neverc_cpp_PointerBounds"
+        with self.assertRaisesRegex(ValueError, "unresolved private dependency"):
+            self.audit_inventory(
+                [(raw, "U", "consume(neverc_cpp_PointerBounds* const&)")])
 
     def test_complete_failure_list_includes_count_and_private_symbol_identity(self):
         names = [f"host_collision_{index:03d}" for index in range(105)]

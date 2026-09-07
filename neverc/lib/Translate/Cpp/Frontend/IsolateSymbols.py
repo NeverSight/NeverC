@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the private LLVM prefix from the hash-pinned release headers."""
+"""Isolate frontend globals in the hash-pinned LLVM release sources."""
 
 import argparse
 from pathlib import Path
@@ -10,10 +10,10 @@ parser.add_argument("--source", required=True, type=Path)
 parser.add_argument("--output", required=True, type=Path)
 args = parser.parse_args()
 
-# Two global C++ identifiers cannot be renamed with a whole-file definition:
-# the intrinsic helper shares a spelling with a class member, and Debugify's
-# global type occurs in public signatures. Apply narrowly checked, idempotent
-# substitutions only inside the extracted private release source.
+# These global C++ identifiers need file-specific handling: the intrinsic
+# helper shares a spelling with a class member, Debugify's type occurs in public
+# signatures, and PointerBounds shares a spelling with unrelated analysis
+# members and parameters. Patch only the extracted private release source.
 def replace_once(path, before, after):
     text = path.read_text(encoding="utf-8")
     if after in text:
@@ -21,6 +21,42 @@ def replace_once(path, before, after):
     if text.count(before) != 1:
         raise SystemExit("Unexpected pinned LLVM source while isolating " + str(path))
     path.write_text(text.replace(before, after), encoding="utf-8")
+
+
+def isolate_pointer_bounds(path):
+    before = ("struct PointerBounds {\n"
+              "  TrackingVH<Value> Start;\n"
+              "  TrackingVH<Value> End;\n"
+              "  Value *StrideToCheck;\n"
+              "};")
+    after = ("struct neverc_cpp_PointerBounds {\n"
+             "  TrackingVH<Value> Start;\n"
+             "  TrackingVH<Value> End;\n"
+             "  Value *StrideToCheck;\n"
+             "};\n"
+             "using PointerBounds = neverc_cpp_PointerBounds;")
+    text = path.read_text(encoding="utf-8")
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        block = before
+    elif counts == (0, 1):
+        block = after
+    else:
+        raise SystemExit("Unexpected pinned LLVM PointerBounds declaration in " + str(path))
+
+    # The pinned file has six uses after the record declaration. An alias keeps
+    # those uses intact while changing the actual record's mangled identity.
+    # Neither an additional declaration nor a partial previous rewrite is valid.
+    remainder = text.replace(block, "", 1)
+    if (len(re.findall(r"\bPointerBounds\b", remainder)) != 6
+            or re.search(r"\b(?:struct|class|union)\b[^;{}]*\bPointerBounds\b", remainder)
+            or re.search(r"\bneverc_cpp_PointerBounds\b", remainder)
+            or re.search(r"\busing\s+PointerBounds\s*=", remainder)
+            or re.search(r"^\s*#\s*(?:define|undef)\s+PointerBounds\b", remainder, re.M)):
+        raise SystemExit("Unexpected pinned LLVM PointerBounds uses in " + str(path))
+    if block == before:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [
@@ -34,6 +70,7 @@ replace_once(debugify, "#define LLVM_TRANSFORMS_UTILS_DEBUGIFY_H",
              "#define LLVM_TRANSFORMS_UTILS_DEBUGIFY_H\n"
              "// Private NeverC frontend ABI: this upstream type is global.\n"
              "#define DebugInfoPerPass neverc_cpp_DebugInfoPerPass")
+isolate_pointer_bounds(args.source / "llvm/lib/Transforms/Utils/LoopUtils.cpp")
 
 symbols = set()
 for header in sorted((args.source / "llvm/include/llvm-c").glob("*.h")):

@@ -11,7 +11,8 @@ SHA256 is required. No upstream executable or shared library is installed.
 
 The isolated build renames namespace llvm and selected global C/C++ symbols.
 IsolateSymbols.py applies checked, idempotent changes to the extracted
-IntrinsicInst.cpp and Debugify.h to isolate otherwise global identifiers.
+IntrinsicInst.cpp, Debugify.h, and LoopUtils.cpp to isolate otherwise global
+identifiers.
 Other symbol changes use compilation definitions. NoCrashReporter.h disables
 the private PrettyStackTrace.cpp Darwin process annotation; NeverC owns it.
 The exact scripts and compilation rules are part of the NeverC source tree at
