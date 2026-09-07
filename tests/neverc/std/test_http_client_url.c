@@ -78,6 +78,17 @@ int main(void) {
         "invalid-lower-https", "https://xn--example-.com/");
     failed |= test_valid_url_reaches_controlled_dial(
         "valid-ipv6-http", "http://[2001:db8::1]/", "[2001:db8::1]:80");
+    failed |= test_valid_url_reaches_controlled_dial(
+        "valid-ipv6-raw-zone-http", "http://[fe80::1%eth0]/",
+        "[fe80::1%eth0]:80");
+    failed |= test_valid_url_reaches_controlled_dial(
+        "valid-ipv6-encoded-zone-http", "http://[fe80::1%25eth0]/",
+        "[fe80::1%25eth0]:80");
+    failed |= test_valid_url_reaches_controlled_dial(
+        "valid-ipvfuture-http", "http://[v1.example]/", "v1.example:80");
+    failed |= test_valid_url_reaches_controlled_dial(
+        "valid-ipv6-port-http", "http://[2001:db8::1]:8080/",
+        "[2001:db8::1]:8080");
     failed |= test_invalid_url_is_rejected_before_dial(
         "invalid-ipv6-http", "http://[2001:::1]/");
     if (failed) return 1;
