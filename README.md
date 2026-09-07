@@ -216,3 +216,12 @@ git checkout dev
 [AGPL-3.0](LICENSE)
 
 LLVM components retain their [Apache-2.0 WITH LLVM-exception](llvm/LICENSE.TXT) license.
+
+When copying or adapting code, including AI/LLM-assisted and LLVM-related reuse,
+comply with the applicable license and retain the required copyright, license,
+and attribution notices. Separately, we ask that anyone using NeverC as a
+reference cite the project and original source; this is a project citation
+request, not an additional license condition.
+
+See [notices](NOTICE), the [attribution guide (English/Chinese)](ATTRIBUTION.md),
+and the [machine-readable citation](CITATION.cff).

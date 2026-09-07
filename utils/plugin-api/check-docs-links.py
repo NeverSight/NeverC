@@ -85,6 +85,8 @@ INDEXED_ELSEWHERE = {DOCS / "examples": SAMPLES}
 # pages that ship in English only. They have no language bar and no
 # translations, but a reader still follows their links, so those are checked.
 STANDALONE = ["SECURITY.md", "development.md", "pluginsdk/README.md"]
+# The bilingual attribution guide is one canonical page for every locale.
+STANDALONE += ["ATTRIBUTION.md"]
 # Translator implementation contracts are English developer references beside
 # the tools. The public command guide under docs/translate remains localized.
 STANDALONE += [

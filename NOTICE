@@ -1,0 +1,22 @@
+NeverC
+Copyright (C) 2026 NeverC contributors.
+Project and source: https://github.com/NeverSight/NeverC
+
+NeverC is a C23 compiler built on LLVM. The repository's default license is
+the GNU Affero General Public License, version 3 (see LICENSE). Explicit
+file and component licenses continue to apply to the material they cover.
+
+LLVM-origin material retains its upstream copyrights and license notices,
+including the Apache License 2.0 with LLVM Exceptions and applicable legacy
+notices reproduced in llvm/LICENSE.TXT. Other third-party material retains
+its own copyright holders and licenses. NeverC does not claim authorship of
+that upstream material. Credit NeverC for NeverC contributions and retain
+the relevant upstream credits when reusing material containing both.
+LLVM project: https://llvm.org/
+LLVM source: https://github.com/llvm/llvm-project
+
+This file supplies project attribution and provenance information; it does
+not modify any license. Preserve the notices required by the applicable
+license, including when code is copied or adapted with AI/LLM tools.
+ATTRIBUTION.md provides citation guidance and examples. CITATION.cff
+provides machine-readable project citation metadata.

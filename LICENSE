@@ -1,3 +1,25 @@
+NeverC licensing notice
+======================
+
+NeverC
+Copyright (C) 2026 NeverC contributors.
+Project and source: https://github.com/NeverSight/NeverC
+
+The repository's default license is GNU AGPL version 3, reproduced verbatim
+below. Explicit file and component licenses continue to apply to their
+material. LLVM-origin material retains its upstream copyrights and license
+notices; see llvm/LICENSE.TXT. Other third-party licenses also remain intact.
+
+When copying or adapting code, including through AI/LLM tools or in LLVM
+projects, preserve the notices required by the applicable license. See
+NOTICE for project attribution, ATTRIBUTION.md for citation guidance and
+examples, and CITATION.cff for machine-readable citation metadata. A source
+citation does not replace any obligation to provide a license or source code.
+This project notice does not add license restrictions.
+
+The following GNU AGPL license text is unmodified.
+================================================
+
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 

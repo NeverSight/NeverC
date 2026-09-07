@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use NeverC or refer to its code, please cite this project and identify the files and revision used. See ATTRIBUTION.md for license obligations and examples."
+type: software
+title: NeverC
+authors:
+  - name: "NeverC contributors"
+repository-code: "https://github.com/NeverSight/NeverC"
+url: "https://github.com/NeverSight/NeverC"
+abstract: "A C23 compiler built on LLVM."
