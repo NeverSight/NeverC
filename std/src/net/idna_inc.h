@@ -4,7 +4,8 @@
 /*
  * RFC 3492 Punycode + RFC 5890 ToASCII for a single DNS name.
  * Used by url host parsing and DNS lookups. ASCII names are copied as-is
- * (matching Go idnaASCII); non-ASCII labels become xn-- A-labels.
+ * after existing xn-- A-labels are validated; non-ASCII labels become xn--
+ * A-labels.
  */
 
 #include "neverc/std/unicode.h"
@@ -164,6 +165,104 @@ static int neverc_idna_puny_encode(const uint32_t *cps, int n, char *out,
     return 0;
 }
 
+static int neverc_idna_puny_decode_digit(unsigned char c, unsigned *digit) {
+    if (c >= 'a' && c <= 'z') {
+        *digit = (unsigned)(c - 'a');
+        return 0;
+    }
+    if (c >= 'A' && c <= 'Z') {
+        *digit = (unsigned)(c - 'A');
+        return 0;
+    }
+    if (c >= '0' && c <= '9') {
+        *digit = (unsigned)(c - '0') + 26u;
+        return 0;
+    }
+    return -1;
+}
+
+/* UTS #46 section 4, Punycode step 2 records an error when decoding fails;
+ * step 3 rejects an empty or all-ASCII decoded label.  Validation only needs
+ * the decoded code-point count: RFC 3492 insertion positions never affect
+ * later code-point values, so no decoded output buffer is required. */
+static int neverc_idna_validate_alabel(const char *label, size_t length) {
+    if (length < 4 ||
+        (label[0] != 'x' && label[0] != 'X') ||
+        (label[1] != 'n' && label[1] != 'N') ||
+        label[2] != '-' || label[3] != '-')
+        return 0;
+
+    const unsigned char *encoded = (const unsigned char *)label + 4;
+    size_t encoded_length = length - 4;
+    size_t delimiter = encoded_length;
+    for (size_t j = 0; j < encoded_length; j++)
+        if (encoded[j] == '-')
+            delimiter = j;
+
+    size_t output_points = delimiter == encoded_length ? 0 : delimiter;
+    size_t pos = delimiter == encoded_length ? 0 : delimiter + 1;
+    for (size_t j = 0; j < output_points; j++)
+        if (encoded[j] >= 0x80)
+            return -1;
+
+    /* Empty payloads and a trailing delimiter decode to no non-ASCII code
+     * point, so their decoded label is empty or entirely ASCII. */
+    if (pos == encoded_length)
+        return -1;
+
+    uint32_t index = 0;
+    uint32_t codepoint = 128;
+    int bias = 72;
+    int saw_non_ascii = 0;
+    while (pos < encoded_length) {
+        uint32_t old_index = index;
+        uint32_t weight = 1;
+        for (unsigned k = 36;; k += 36u) {
+            unsigned digit;
+            if (pos == encoded_length ||
+                neverc_idna_puny_decode_digit(encoded[pos], &digit) != 0)
+                return -1;
+            pos++;
+            if (digit > (UINT32_MAX - index) / weight)
+                return -1;
+            index += digit * weight;
+
+            unsigned threshold;
+            if (k <= (unsigned)bias)
+                threshold = 1;
+            else if (k >= (unsigned)bias + 26u)
+                threshold = 26;
+            else
+                threshold = k - (unsigned)bias;
+            if (digit < threshold)
+                break;
+
+            unsigned factor = 36u - threshold;
+            if (weight > UINT32_MAX / factor || k > UINT32_MAX - 36u)
+                return -1;
+            weight *= factor;
+        }
+
+        if (output_points >= UINT32_MAX)
+            return -1;
+        uint32_t count = (uint32_t)output_points + 1u;
+        bias = neverc_idna_puny_adapt(index - old_index, count,
+                                      old_index == 0);
+        uint32_t increase = index / count;
+        if (increase > 0x10FFFFu - codepoint)
+            return -1;
+        codepoint += increase;
+        index %= count;
+        if (codepoint >= 0xD800u && codepoint <= 0xDFFFu)
+            return -1;
+
+        output_points++;
+        index++;
+        saw_non_ascii = 1;
+    }
+    return saw_non_ascii ? 0 : -1;
+}
+
 /* RFC 3490 3.1 / UTS #46 4.5: these separate labels wherever U+002E does.
  * Splitting on the ASCII dot alone folds "good.com\u3002evil.com" into one
  * label, so the host produced here is not the one a browser or x/net/idna
@@ -188,6 +287,16 @@ static int neverc_idna_to_ascii(const char *in, char *out, size_t cap) {
     if (!non_ascii) {
         if (inlen >= cap)
             return -1;
+        size_t label_start = 0;
+        for (size_t i = 0; i <= inlen; i++) {
+            if (i != inlen && in[i] != '.')
+                continue;
+            if (neverc_idna_validate_alabel(in + label_start,
+                                             i - label_start) != 0)
+                return -1;
+            if (i < inlen)
+                label_start = i + 1;
+        }
         memcpy(out, in, inlen + 1);
         return 0;
     }
@@ -234,6 +343,9 @@ static int neverc_idna_to_ascii(const char *in, char *out, size_t cap) {
                 return -1;
             for (int i = 0; i < ncp; i++)
                 out[used++] = (char)cps[i];
+            if (neverc_idna_validate_alabel(out + label_out_start,
+                                             used - label_out_start) != 0)
+                return -1;
         }
         if (has_unicode) {
             size_t alen = used - label_out_start;
