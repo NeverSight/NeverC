@@ -212,4 +212,4 @@ Les composants LLVM conservent la licence [Apache-2.0 WITH LLVM-exception](../..
 
 Lors de la copie ou de l’adaptation de code, y compris avec l’aide d’une IA ou d’un LLM ou dans le cadre d’une réutilisation liée à LLVM, respectez la licence applicable et conservez les mentions de droits d’auteur, de licence et d’attribution requises. Par ailleurs, nous demandons aux personnes utilisant NeverC comme référence de citer le projet et la source d’origine ; cette demande du projet ne constitue pas une condition de licence supplémentaire.
 
-Consultez les [mentions](../../NOTICE), le [guide d’attribution (anglais/chinois)](../../ATTRIBUTION.md) et la [référence bibliographique lisible par machine](../../CITATION.cff).
+Consultez les [mentions](../../NOTICE), le [guide d’attribution](../attribution/README.fr.md) et la [référence bibliographique lisible par machine](../../CITATION.cff).

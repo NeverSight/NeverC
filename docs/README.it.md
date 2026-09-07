@@ -130,3 +130,9 @@ Compilare NeverC dal codice sorgente e configurare l'ambiente di sviluppo locale
 Esempi compilabili che dimostrano le capacità di cross-compilazione di NeverC. Tutti compilano da macOS / Linux.
 
 **[Esempi →](examples/README.it.md)**
+
+---
+
+## Attribuzione e citazione delle fonti
+
+**[guida all’attribuzione →](attribution/README.it.md)**

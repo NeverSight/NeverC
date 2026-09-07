@@ -130,3 +130,9 @@ NeverC をソースからビルドし、PATH 設定を含むローカル開発�
 NeverC のクロスプラットフォームコンパイル機能を示すビルド可能なサンプル。macOS / Linux からクロスコンパイル可能。
 
 **[サンプル →](examples/README.ja.md)**
+
+---
+
+## 帰属表示と出典の引用
+
+**[帰属表示ガイド →](attribution/README.ja.md)**

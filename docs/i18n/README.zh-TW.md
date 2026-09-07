@@ -209,4 +209,4 @@ LLVM 元件保留 [Apache-2.0 WITH LLVM-exception](../../llvm/LICENSE.TXT) 授�
 
 複製或改編程式碼時，包括藉助 AI/LLM 或在 LLVM 相關專案中重用，必須遵守適用的授權條款，並保留其要求的著作權、授權和署名聲明。此外，我們請求以 NeverC 為參考的使用者註明專案及原始出處；這是專案的引用請求，不是額外的授權條件。
 
-請參閱[聲明](../../NOTICE)、[署名與引用指南（中英文）](../../ATTRIBUTION.md)和[機器可讀的引用資訊](../../CITATION.cff)。
+請參閱[聲明](../../NOTICE)、[署名與引用指南](../attribution/README.zh-TW.md)和[機器可讀的引用資訊](../../CITATION.cff)。

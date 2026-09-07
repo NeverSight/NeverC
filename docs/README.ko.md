@@ -130,3 +130,9 @@ NeverC 프로젝트의 주요 계획 방향: 표준 라이브러리, EVM 스마�
 NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 샘플. macOS / Linux에서 크로스 컴파일 가능.
 
 **[예제 →](examples/README.ko.md)**
+
+---
+
+## 출처 표시와 인용
+
+**[출처 표시 안내 →](attribution/README.ko.md)**

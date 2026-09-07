@@ -223,5 +223,5 @@ and attribution notices. Separately, we ask that anyone using NeverC as a
 reference cite the project and original source; this is a project citation
 request, not an additional license condition.
 
-See [notices](NOTICE), the [attribution guide (English/Chinese)](ATTRIBUTION.md),
+See [notices](NOTICE), the [attribution guide](docs/attribution/README.md),
 and the [machine-readable citation](CITATION.cff).

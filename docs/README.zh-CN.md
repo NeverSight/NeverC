@@ -130,3 +130,9 @@ NeverC 项目的主要规划方向：标准库、EVM 智能合约后端和 Solan
 完整的可构建示例，展示 NeverC 的跨平台编译能力。所有示例均可从 macOS / Linux 交叉编译。
 
 **[示例 →](examples/README.zh-CN.md)**
+
+---
+
+## 署名与引用
+
+**[署名与引用指南 →](attribution/README.zh-CN.md)**

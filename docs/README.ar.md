@@ -133,4 +133,10 @@
 
 **[أمثلة →](examples/README.ar.md)**
 
+---
+
+## نسب العمل وتوثيق المصادر
+
+**[دليل نسب العمل →](attribution/README.ar.md)**
+
 </div>

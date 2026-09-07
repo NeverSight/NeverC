@@ -130,3 +130,9 @@ Compiler NeverC à partir des sources et configurer l'environnement de développ
 Exemples compilables démontrant les capacités de compilation croisée de NeverC. Tous compilent depuis macOS / Linux.
 
 **[Exemples →](examples/README.fr.md)**
+
+---
+
+## Attribution et citation des sources
+
+**[guide d’attribution →](attribution/README.fr.md)**

@@ -130,3 +130,9 @@ NeverC 專案的主要規劃方向：標準函式庫、EVM 智慧合約後端和
 完整的可建置範例，展示 NeverC 的跨平台編譯能力。所有範例均可從 macOS / Linux 交叉編譯。
 
 **[範例 →](examples/README.zh-TW.md)**
+
+---
+
+## 署名與引用
+
+**[署名與引用指南 →](attribution/README.zh-TW.md)**

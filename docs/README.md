@@ -130,3 +130,9 @@ Build NeverC from source and set up the local development environment with PATH 
 Complete buildable samples demonstrating NeverC's cross-platform compilation capabilities. All examples cross-compile from macOS / Linux.
 
 **[Examples →](examples/README.md)**
+
+---
+
+## Source attribution
+
+**[attribution guide →](attribution/README.md)**

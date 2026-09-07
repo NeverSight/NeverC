@@ -130,3 +130,9 @@ NeverC aus dem Quellcode kompilieren und die lokale Entwicklungsumgebung einrich
 Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilierung mit NeverC. Cross-Kompilierung von macOS / Linux.
 
 **[Beispiele →](examples/README.de.md)**
+
+---
+
+## Urheber- und Quellenangaben
+
+**[Leitfaden zur Quellenangabe →](attribution/README.de.md)**
