@@ -19,6 +19,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FileSystem.h"
 
 using llvm::ArrayRef;
 using llvm::StringRef;
@@ -91,9 +92,15 @@ std::optional<int> dispatchSubcommand(ArrayRef<const char *> Args,
                            Context.PrependArg);
   case SubcommandKind::Runtime:
     return runtime::runRuntime(CommandArgc, CommandArgs.data(), Argv0);
-  case SubcommandKind::Translate:
+  case SubcommandKind::Translate: {
+    // Reinvoke this process image even when a launcher supplies another argv[0].
+    // A null program name also prevents a PATH fallback if OS discovery fails.
+    static int ExecutableAnchor;
+    const std::string Executable =
+        llvm::sys::fs::getMainExecutable(nullptr, &ExecutableAnchor);
     return translate::runTranslate(CommandArgc, CommandArgs.data(),
-                                   Context.ExecutablePath);
+                                   Executable.c_str());
+  }
   case SubcommandKind::None:
     llvm_unreachable("unhandled NeverC subcommand");
   }

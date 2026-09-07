@@ -2,6 +2,7 @@
 #include "../../neverc/lib/Translate/FrontendProcess.h"
 #include "NeverCTestFixture.h"
 #include "neverc/Translate/TranslateDriver.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include "llvm/Support/Error.h"
@@ -349,6 +350,28 @@ TEST_F(TranslateTest, MissingSelfExecutableFailsWithoutGeneratedOutput) {
                               tmpFile("missing-neverc")),
              "TR0402");
   expectNoArtifacts(Output);
+}
+
+TEST_F(TranslateTest, UsesRunningExecutableWhenArgvZeroIsUnrelated) {
+  const auto Source = source(), Output = tmpFile("output.nc");
+  const auto Unrelated = tmpFile("not-the-running-compiler");
+  ASSERT_FALSE(fs::exists(Unrelated));
+  auto Storage = args(Source, {"-o", Output.string()});
+  Storage.insert(Storage.begin(), Unrelated.string());
+  llvm::SmallVector<llvm::StringRef, 16> Arguments;
+  for (const auto &Argument : Storage)
+    Arguments.push_back(Argument);
+  const auto Stdout = tmpFile("argv-zero.stdout").string();
+  const auto Stderr = tmpFile("argv-zero.stderr").string();
+  const llvm::StringRef Redirects[] = {"", Stdout, Stderr};
+  llvm::SmallVector<char, 128> ExecutionError;
+  // Program selects the real process; the first argument is only its name.
+  const int Status = llvm::sys::ExecuteAndWait(
+      neverc().string(), Arguments, {}, Redirects, 120, 0, &ExecutionError);
+  ASSERT_EQ(Status, 0)
+      << llvm::StringRef(ExecutionError.data(), ExecutionError.size()).str()
+      << readFile(Stdout) << readFile(Stderr);
+  expectMetadata(Output, Source);
 }
 
 TEST_F(TranslateTest, ExistingSourceMapIsNeverOverwritten) {
