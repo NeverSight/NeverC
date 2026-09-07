@@ -3,6 +3,7 @@
  * Split from http.c to avoid large-TU compiler issue.
  */
 #include "_http_internal.h"
+#include "../idna_inc.h"
 #include "neverc/std/crypto/tls.h"
 #include "neverc/std/time.h"
 #include <limits.h>
@@ -381,6 +382,15 @@ static int client_valid_host(const char *value, size_t length) {
     for (size_t i = 0; i < host_length; i++) {
         if (!client_host_reg_name_byte((unsigned char)value[i]))
             return 0;
+    }
+    size_t label_start = 0;
+    for (size_t i = 0; i <= host_length; i++) {
+        if (i != host_length && value[i] != '.')
+            continue;
+        if (neverc_idna_validate_alabel(value + label_start,
+                                         i - label_start) != 0)
+            return 0;
+        label_start = i + 1;
     }
     if (!colon) return 1;
     if (memchr(colon + 1, ':', length - host_length - 1)) return 0;
