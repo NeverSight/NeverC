@@ -896,6 +896,16 @@ TEST_F(StdLibTest, HttpClientAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 #endif
+TEST_F(StdLibTest, HttpClientUrlValidation) {
+  auto r = compileAndRunStdTest(
+      "http_client_url",
+      {"src/net/http/http.c", "src/net/http/http2/http2.c",
+       "src/net/http/http2/http2_server.c",
+       "src/net/http/http2/http2_client.c", "src/time/time.c", TCP_DEPS,
+       URL_DEPS, HTTP_TLS_DEPS});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
     "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", "src/time/time.c", URL_DEPS, HTTP_TLS_DEPS)
 STD_TEST(url, URL_DEPS)
