@@ -203,18 +203,19 @@ extern "C" int **FIXTURE_ANCHOR() { return &std::PointerOwner::field; }
         source = """
 namespace std {
 int *owner_pointer_seed();
-template<class T> struct DynamicOwner { static T *field; };
-template<class T> T *DynamicOwner<T>::field = owner_pointer_seed();
-template struct DynamicOwner<int>;
+struct DynamicOwner { static int *field; };
+__declspec(selectany) int *DynamicOwner::field = owner_pointer_seed();
 }
-extern "C" int **FIXTURE_ANCHOR() { return &std::DynamicOwner<int>::field; }
+extern "C" int **FIXTURE_ANCHOR() { return &std::DynamicOwner::field; }
 """
-        # MSVC emits a public dynamic initializer for this instantiated static
-        # field. Clang's initializer can be internal, so it is not a substitute
-        # for this real external-definition collision. No EH objects are used.
+        # Clang's Microsoft ABI promotes this nonlocal weak variable's guarded
+        # initializer to linkonce_odr with its own COMDAT (MicrosoftCXXABI.cpp,
+        # EmitCXXGuardedInit; CodeGenCXX/microsoft-abi-static-initializers.cpp).
+        # The unknown seed and escaped field require dynamic initialization.
+        # Require the real external initializer, not merely the shared field.
         self.check_owner_fixture(source, (
-            r"dynamic initializer for .*std::DynamicOwner<int>::field",
-        ), msvc=True)
+            r"dynamic initializer for .*std::DynamicOwner::field",
+        ))
 
     def test_std_nested_lambda_method_follows_its_enclosing_declarations(self):
         source = """
@@ -231,11 +232,16 @@ int (OwnerInnerLambda::*FIXTURE_ANCHOR)(int) const =
 """
         # Taking the inner operator's address in an externally visible variable
         # forces an out-of-line method even under the Clang fixture's -O2.
-        for msvc in (False, True):
-            self.check_owner_fixture(source, (
-                r"std::lambda_owner.*<lambda_[^>]+>.*operator\(\).*"
-                r"<lambda_[^>]+>.*operator\(\)",
-            ), msvc=msvc)
+        self.check_owner_fixture(source, (
+            r"std::lambda_owner.*<lambda_[^>]+>.*operator\(\).*"
+            r"<lambda_[^>]+>.*operator\(\)",
+        ))
+        # MSVC emits only the lambda hash, losing the enclosing declarations.
+        # That spelling cannot establish std ownership: require the real shared
+        # operator to be emitted and explicitly rejected by both host readers.
+        self.check_owner_fixture(source, (
+            r"^public: (?:__cdecl )?<lambda_[0-9a-f]+>::operator\(\)\(int\) const$",
+        ), msvc=True, rejected=True)
 
     def test_host_entities_do_not_inherit_std_ownership_from_their_types(self):
         declarations = "namespace std { struct OwnerPayload { int value; }; }\n"
@@ -269,10 +275,18 @@ ForeignLambda *quoted_pointer = nullptr;
         for name, source, pattern in cases:
             for msvc in (False, True):
                 with self.subTest(case=name, compiler="msvc" if msvc else "clang"):
+                    selected_pattern = pattern
+                    if name == "quoted_type" and msvc:
+                        # MSVC retains the foreign lambda type as a hash, not
+                        # Clang's quoted enclosing std declaration. Its owner
+                        # is still Host, and the exact raw collision must fail.
+                        selected_pattern = (
+                            r"^class <lambda_[0-9a-f]+> \*Host::quoted_pointer$")
                     # Each negative archive contains only this Host collision;
                     # another rejected declaration cannot make the case pass.
                     self.check_owner_fixture(
-                        source, (pattern,), msvc=msvc, rejected=True, case=name)
+                        source, (selected_pattern,), msvc=msvc,
+                        rejected=True, case=name)
 
     def test_sdk_fenv1_definition_reference_and_runtime_are_isolated(self):
         # Separate from the std-owner cases: this proves only the single UCRT
@@ -354,6 +368,7 @@ int main() {
             self.assertTrue(any((path / library).is_file() for path in library_dirs),
                             f"The runner's native CRT/SDK must provide {library}")
         linker = self.llvm_root / "bin/lld-link.exe"
+        print(f"Fenv probe linker: {linker}; exists={linker.is_file()}", flush=True)
         self.assertTrue(linker.is_file(), "The GNU Clang runtime probe requires lld-link")
         for msvc in (False, True):
             compiler = "msvc" if msvc else "clang"
@@ -412,17 +427,34 @@ int main() {
                     ])
                 else:
                     # GNU-mode clang needs an explicit MSVC CRT choice. Its
-                    # -fms-runtime-lib=static maps to libcmt; -Xlinker preserves
-                    # each native LIB directory, including spaces, as one arg.
-                    link_paths = [argument for path in library_dirs
-                                  for argument in ("-Xlinker", "/libpath:" + str(path))]
-                    self.require_success([
+                    # -fms-runtime-lib=static maps to libcmt. Compile separately
+                    # and call the checked absolute linker: the Windows driver
+                    # does not use --ld-path to select this tool. Match its
+                    # GNU-mode libcmt/oldnames defaults and preserve each native
+                    # LIB directory, including spaces, as one argument.
+                    obj = directory / "fenv-probe.obj"
+                    compile_command = [
                         self.clang, "--target=" + self.target, "-std=c++17",
                         "-O2", "-fno-lto", "-fms-extensions",
                         "-fms-runtime-lib=static", "-ffp-model=strict",
-                        "-fuse-ld=" + str(linker), source, isolated, host_archive,
-                        "-Xlinker", "/OPT:NOICF", *link_paths, "-o", executable,
-                    ])
+                        "-v", "-c", source, "-o", obj,
+                    ]
+                    machine = ("x64" if self.target.startswith("x86_64-")
+                               else "arm64")
+                    link_command = [
+                        linker, "/nologo", "/out:" + str(executable),
+                        "/machine:" + machine, "/subsystem:console", "/OPT:NOICF",
+                        "/defaultlib:libcmt", "/defaultlib:oldnames",
+                        *("/libpath:" + str(path) for path in library_dirs),
+                        obj, isolated, host_archive,
+                    ]
+                    for command in (compile_command, link_command):
+                        print("Fenv probe command: " + subprocess.list2cmdline(
+                            [str(argument) for argument in command]), flush=True)
+                        result = self.run_command(command)
+                        print(result.stdout + result.stderr, end="", flush=True)
+                        self.assertEqual(result.returncode, 0,
+                                         f"{command!r}\n{result.stdout}\n{result.stderr}")
                 self.require_success([executable])
 
     def test_windows_abort_handler_definition_and_references_are_private(self):
