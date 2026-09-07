@@ -10,7 +10,7 @@ El comando experimental `neverc translate` genera código `.nc` revisable con `c
 
 ## Instalación y traducción escalar
 
-Compile o instale el programa auxiliar basado en la versión fijada Clang 20.1.8 siguiendo las [instrucciones del frontend](../../utils/translate-frontends/cpp/README.md). Colóquelo junto a NeverC, configure `NEVERC_CPP_FRONTEND` o use `--frontend PATH`. Es necesario para traducir, pero no para compilar las salidas escalares o de proyecto ya generadas.
+Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).
 
 ```sh
 neverc translate --from cpp input.cpp -o output.nc
@@ -21,7 +21,7 @@ El perfil `cpp-core-v1` acepta un único archivo C++17 autónomo sin includes. A
 
 ## Proyectos de varios archivos
 
-Seleccione explícitamente las unidades de traducción en una base de datos de compilación y especifique el directorio raíz del proyecto. El auxiliar analiza cada unidad por separado; la fusión verifica definiciones, enlace, tipos compartidos y el cumplimiento de la regla de una sola definición (ODR) mediante comprobaciones conservadoras.
+Seleccione explícitamente las unidades de traducción en una base de datos de compilación y especifique el directorio raíz del proyecto. El frontend integrado analiza cada unidad por separado; la fusión verifica definiciones, enlace, tipos compartidos y el cumplimiento de la regla de una sola definición (ODR) mediante comprobaciones conservadoras.
 
 ```sh
 neverc translate --from cpp --profile cpp-project-v1 \
@@ -33,16 +33,16 @@ La salida del proyecto es `translated.nc` más `translated.h`. Solo se admiten c
 
 ## Matemáticas limitadas de doble precisión
 
-`cpp-math-v1` añade a los proyectos `double`, las conversiones/comparaciones documentadas y exactamente `std::fabs(double)` y `std::floor(double)`. Requiere Clang 20.1.8 / libc++ 200100 / SDK macOS 15.5, un descriptor del SDK y un destino macOS 15.0 explícito (arm64 o x86_64). La aritmética general de coma flotante sigue excluida. Las excepciones deben estar enmascaradas y la conversión de subnormales a cero desactivada; se prueban los cuatro modos estándar de redondeo.
+`cpp-math-v1` añade a los proyectos `double`, las conversiones/comparaciones documentadas y exactamente `std::fabs(double)` y `std::floor(double)`. Utiliza las cabeceras integradas de Clang 20.1.8 / libc++ 200100 / macOS 15.5 y requiere un destino macOS 15.0 explícito (arm64 o x86_64). La aritmética general de coma flotante sigue excluida. Las excepciones deben estar enmascaradas y la conversión de subnormales a cero desactivada; se prueban los cuatro modos estándar de redondeo.
 
 ```sh
 neverc translate --from cpp --profile cpp-math-v1 \
-  --target arm64-apple-macosx15.0.0 --cpp-sdk /path/to/neverc-cpp-sdk.json \
+  --target arm64-apple-macosx15.0.0 \
   --project-root "$PWD" --compdb build/compile_commands.json \
   src/math.cpp --out-dir generated-math
 ```
 
-La traducción matemática también verifica las cabeceras NeverC instaladas, la identidad de las implementaciones integradas y un enlace real. Los módulos generados usan el runtime NeverC sin auxiliar C++ ni SDK. Con `-fno-builtin-std`, la traducción solo falla antes de escribir los archivos si el código final requiere las correspondencias `fabs`/`floor`. El código matemático que no las necesita puede seguir traduciéndose.
+La traducción matemática también verifica las cabeceras NeverC instaladas, la identidad de las implementaciones integradas y un enlace real. Los módulos generados usan el runtime NeverC. Con `-fno-builtin-std`, la traducción solo falla antes de escribir los archivos si el código final requiere las correspondencias `fabs`/`floor`. El código matemático que no las necesita puede seguir traduciéndose.
 
 ## Validación y salida
 
@@ -50,4 +50,4 @@ Use `--check` en lugar de una opción de salida para realizar el mismo análisis
 
 Las salidas y los archivos auxiliares nunca se sobrescriben. `--out-dir` requiere un directorio nuevo con un padre existente; `-o` requiere una ruta `.nc` nueva. El manifiesto registra requisitos del destino, hashes de entrada y salida y el procedimiento de compilación; el mapa fuente relaciona las líneas generadas con las ubicaciones originales.
 
-La ejecución se ha verificado en macOS arm64 nativo y en macOS x86_64 mediante Rosetta. Esto no valida la ejecución nativa en Mac Intel ni la compatibilidad con Linux, Windows u otros destinos. El alcance anunciado no incluye C++/STL completo, punteros, referencias, arrays, excepciones, plantillas, cadenas ni `std::vector`. Consulte la [matriz de compatibilidad](../../utils/translate-frontends/docs/support-matrix.md), el [protocolo y las reglas de recuperación](../../utils/translate-frontends/docs/protocol.md) y el [proyecto de ejemplo](../../tests/neverc/Inputs/translate/cpp/project/).
+Las verificaciones de ejecución e instalación se documentan por separado para macOS arm64 nativo y macOS x86_64 mediante Rosetta. Esto no valida la ejecución nativa en Mac Intel ni la compatibilidad con Linux, Windows u otros destinos. El alcance anunciado no incluye C++/STL completo, punteros, referencias, arrays, excepciones, plantillas, cadenas ni `std::vector`. Consulte la [matriz de compatibilidad](../../utils/translate-frontends/docs/support-matrix.md), el [protocolo y las reglas de recuperación](../../utils/translate-frontends/docs/protocol.md) y el [proyecto de ejemplo](../../tests/neverc/Inputs/translate/cpp/project/).

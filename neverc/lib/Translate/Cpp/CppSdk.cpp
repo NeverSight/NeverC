@@ -1,23 +1,16 @@
 #include "CppSdk.h"
-#include "../ArtifactWriter.h"
 #include "../JSON.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/Support/FileSystem.h"
+#include "BuiltinCppSdkData.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SHA256.h"
 #include "llvm/TargetParser/Triple.h"
 #include <algorithm>
-#include <map>
 #include <set>
 
 namespace neverc::translate {
 namespace {
 using namespace llvm;
-constexpr std::size_t MaxDescriptorBytes = 64 * 1024;
-constexpr std::size_t MaxSDKFileBytes = 4 * 1024 * 1024;
-constexpr char Catalog[] =
-#include "CppSdkCatalog.inc"
-    ;
+constexpr auto &Catalog = neverc_cpp_sdk::CatalogJSON;
 
 std::string digest(StringRef Bytes) {
   SHA256 Hash;
@@ -33,20 +26,9 @@ std::string digest(StringRef Bytes) {
 bool error(Diagnostics &D, StringRef File, StringRef Why,
            StringRef Code = "TR0101") {
   D.push_back(driverDiagnostic(
-      Code, File, "approved C++ SDK", Why,
-      "Select the pinned external SDK descriptor for "
-      "clang20.1.8-libcxx200100-macos15.5 and keep its files unchanged."));
+      Code, File, "built-in C++ SDK", Why,
+      "Use the matching NeverC executable and its built-in C++ frontend."));
   return false;
-}
-bool readFile(StringRef Path, std::size_t Limit, std::string &Out,
-              std::string &Why) {
-  auto Bytes = neverc::translate::readFile(Path, Limit);
-  if (!Bytes) {
-    Why = toString(Bytes.takeError()).str().str();
-    return false;
-  }
-  Out = std::move(*Bytes);
-  return true;
 }
 bool rootName(StringRef Name) {
   return Name == "libcxx" || Name == "resource" || Name == "platform";
@@ -63,23 +45,9 @@ bool relativePath(StringRef Path) {
       return false;
   return true;
 }
-bool inside(StringRef Root, StringRef Path) {
-  auto R = sys::path::begin(Root), RE = sys::path::end(Root);
-  auto P = sys::path::begin(Path), PE = sys::path::end(Path);
-  for (; R != RE; ++R, ++P)
-    if (P == PE || *R != *P)
-      return false;
-  return true;
-}
 bool validHash(StringRef Hash) {
   return Hash.size() == 64 &&
          Hash.find_first_not_of("0123456789abcdef") == StringRef::npos;
-}
-const CppSdkRoot *findRoot(const CppSdkContext &C, StringRef Name) {
-  for (const auto &Root : C.Roots)
-    if (Root.Name == Name)
-      return &Root;
-  return nullptr;
 }
 bool approvedFile(const CppSdkContext &C, const SDKDependency &Input) {
   return std::any_of(C.ApprovedFiles.begin(), C.ApprovedFiles.end(),
@@ -89,27 +57,18 @@ bool approvedFile(const CppSdkContext &C, const SDKDependency &Input) {
                               Approved.SHA256 == Input.SHA256;
                      });
 }
-bool verifyFile(const CppSdkContext &C, const SDKDependency &Input,
+bool verifyFile(const CppSdkContext &, const SDKDependency &Input,
                 Diagnostics &D) {
-  const auto *Root = findRoot(C, Input.Root);
-  if (!Root || !relativePath(Input.Path) || !validHash(Input.SHA256))
-    return error(D, Input.Path, "invalid SDK dependency identity", "TR0103");
-  SmallString<256> Path(Root->AbsolutePath), Real;
-  sys::path::append(Path, Input.Path);
-  if (auto EC = sys::fs::real_path(Path, Real))
-    return error(D, Input.Path, "SDK file is unavailable: " + EC.message());
-  if (!inside(Root->AbsolutePath, Real) || Real != Path)
-    return error(
-        D, Input.Path,
-        "SDK file is not the canonical declared root-relative identity");
-  std::string Bytes, Why;
-  if (!readFile(Real, MaxSDKFileBytes, Bytes, Why))
-    return error(D, Input.Path, "cannot read SDK file: " + Why);
-  if (digest(Bytes) != Input.SHA256)
-    return error(
-        D, Input.Path,
-        "SDK file does not match the implementation-owned approved hash");
-  return true;
+  for (const auto &File : neverc_cpp_sdk::Files) {
+    if (Input.Root != File.Root || Input.Path != File.Path)
+      continue;
+    if (Input.SHA256 != File.SHA256 ||
+        digest(StringRef(File.Contents, File.Size)) != Input.SHA256)
+      return error(D, Input.Path,
+                   "embedded SDK bytes do not match the catalog");
+    return true;
+  }
+  return error(D, Input.Path, "file is not part of the embedded SDK", "TR0103");
 }
 bool catalogInputs(const json::Object &O, StringRef Key,
                    std::vector<SDKDependency> &Inputs, Diagnostics &D) {
@@ -145,33 +104,13 @@ bool parseCatalog(CppSdkContext &C, std::vector<SDKDependency> &Metadata,
       O->getString("distribution_id") != CppMathSDKID ||
       O->getString("clang_version") != "20.1.8" ||
       !O->getInteger("libcxx_version", Libcxx) || Libcxx != 200100 ||
-      O->getString("platform_sdk_version") != "15.5")
+      O->getString("platform_sdk_version") != "15.5" ||
+      digest(Catalog) != neverc_cpp_sdk::CatalogSHA256)
     return error(D, "<sdk-catalog>", "incompatible compiled SDK catalog");
   C.DistributionID = CppMathSDKID;
   C.CatalogSHA256 = digest(Catalog);
   return catalogInputs(*O, "headers", C.ApprovedFiles, D) &&
          catalogInputs(*O, "metadata", Metadata, D);
-}
-bool boundedJSONDepth(StringRef Text) {
-  unsigned Depth = 0;
-  bool Quoted = false, Escaped = false;
-  for (char Ch : Text) {
-    if (Quoted) {
-      if (Escaped)
-        Escaped = false;
-      else if (Ch == '\\')
-        Escaped = true;
-      else if (Ch == '"')
-        Quoted = false;
-    } else if (Ch == '"')
-      Quoted = true;
-    else if (Ch == '{' || Ch == '[') {
-      if (++Depth > 16)
-        return false;
-    } else if ((Ch == '}' || Ch == ']') && Depth)
-      --Depth;
-  }
-  return true;
 }
 } // namespace
 
@@ -197,8 +136,8 @@ bool validateCppMathTarget(llvm::StringRef Target, Diagnostics &D) {
   return true;
 }
 
-bool loadCppSdk(llvm::StringRef Descriptor, llvm::StringRef Target,
-                CppSdkContext &Result, Diagnostics &D) {
+bool loadBuiltinCppSdk(llvm::StringRef Target, CppSdkContext &Result,
+                       Diagnostics &D) {
   Result = {};
   if (!validateCppMathTarget(Target, D))
     return false;
@@ -206,59 +145,10 @@ bool loadCppSdk(llvm::StringRef Descriptor, llvm::StringRef Target,
   std::vector<SDKDependency> Metadata;
   if (!parseCatalog(Parsed, Metadata, D))
     return false;
+  if (Parsed.ApprovedFiles.size() + Metadata.size() !=
+      neverc_cpp_sdk::FileCount)
+    return error(D, "<sdk-catalog>", "embedded SDK inventory is inconsistent");
   Parsed.TargetTriple = llvm::Triple::normalize(Target);
-  llvm::SmallString<256> Real;
-  if (Descriptor.empty() || Descriptor.contains('\0') ||
-      llvm::sys::fs::real_path(Descriptor, Real))
-    return error(D, Descriptor,
-                 "SDK descriptor is missing or cannot be resolved");
-  Parsed.DescriptorPath = Real.str().str();
-  std::string Bytes, Why;
-  if (!readFile(Real, MaxDescriptorBytes, Bytes, Why))
-    return error(D, Descriptor, "cannot read SDK descriptor: " + Why);
-  if (!boundedJSONDepth(Bytes))
-    return error(D, Descriptor, "SDK descriptor nesting limit exceeded");
-  auto V = llvm::json::parse(Bytes);
-  if (!V) {
-    llvm::consumeError(V.takeError());
-    return error(D, Descriptor, "invalid SDK descriptor JSON");
-  }
-  const auto *O = V->getAsObject();
-  int64_t Version = 0;
-  if (!O || O->size() != 4 || O->getString("schema") != "neverc.cpp.sdk" ||
-      !O->getInteger("version", Version) || Version != 1 ||
-      O->getString("distribution_id") != CppMathSDKID)
-    return error(D, Descriptor,
-                 "descriptor must select exactly "
-                 "schema/version/distribution_id/roots for the approved SDK");
-  const auto *Roots = O->getObject("roots");
-  if (!Roots || Roots->size() != 3)
-    return error(
-        D, Descriptor,
-        "descriptor needs exactly libcxx, resource, and platform roots");
-  for (llvm::StringRef Name : {"libcxx", "resource", "platform"}) {
-    llvm::StringRef Path = Roots->getString(Name);
-    if (!Path.data() || Path.empty() || Path.contains('\0') ||
-        Path.contains('\n') || Path.contains('\r'))
-      return error(D, Descriptor, "invalid SDK root path for " + Name.str());
-    llvm::SmallString<256> Absolute;
-    if (llvm::sys::path::is_absolute(Path))
-      Absolute = Path;
-    else {
-      Absolute = llvm::sys::path::parent_path(Parsed.DescriptorPath);
-      llvm::sys::path::append(Absolute, Path);
-    }
-    if (llvm::sys::fs::real_path(Absolute, Real) ||
-        !llvm::sys::fs::is_directory(Real))
-      return error(D, Descriptor,
-                   "SDK root is not an accessible directory: " + Name.str());
-    for (const auto &Other : Parsed.Roots)
-      if (inside(Other.AbsolutePath, Real) || inside(Real, Other.AbsolutePath))
-        return error(D, Descriptor,
-                     "SDK roots overlap and would make provenance ambiguous");
-    Parsed.Roots.push_back({Name.str(), Real.str().str()});
-  }
-  Parsed.DescriptorSHA256 = digest(Bytes);
   for (const auto &Input : Parsed.ApprovedFiles)
     if (!verifyFile(Parsed, Input, D))
       return false;
@@ -270,12 +160,8 @@ bool loadCppSdk(llvm::StringRef Descriptor, llvm::StringRef Target,
 }
 
 llvm::json::Object cppSdkRequestJSON(const CppSdkContext &C) {
-  llvm::json::Object Roots;
-  for (const auto &Root : C.Roots)
-    Roots[Root.Name] = jsonString(Root.AbsolutePath);
   return llvm::json::Object{{"distribution_id", jsonString(C.DistributionID)},
-                            {"catalog_sha256", jsonString(C.CatalogSHA256)},
-                            {"roots", std::move(Roots)}};
+                            {"catalog_sha256", jsonString(C.CatalogSHA256)}};
 }
 
 bool verifyCppSdkDependencies(const CppSdkContext &C,
@@ -285,13 +171,9 @@ bool verifyCppSdkDependencies(const CppSdkContext &C,
     return error(D, "<sdk>",
                  "SDK context was not approved by this implementation",
                  "TR0103");
-  std::string Bytes, Why;
-  if (!readFile(C.DescriptorPath, MaxDescriptorBytes, Bytes, Why) ||
-      digest(Bytes) != C.DescriptorSHA256)
-    return error(D, C.DescriptorPath,
-                 "SDK descriptor changed during translation");
-  // Reconstruct the immutable catalog instead of trusting mutable caller-owned
-  // ApprovedFiles as authority for a helper-supplied dependency.
+  if (!validateCppMathTarget(C.TargetTriple, D))
+    return false;
+  // Reconstruct immutable authority instead of trusting caller-owned lists.
   CppSdkContext Approved;
   std::vector<SDKDependency> Metadata;
   if (!parseCatalog(Approved, Metadata, D))
@@ -319,6 +201,8 @@ bool verifyCppSdkMappings(const CppSdkContext &C,
   if (C.DistributionID != CppMathSDKID || C.CatalogSHA256 != digest(Catalog) ||
       !parseCatalog(Approved, Metadata, D))
     return error(D, "<sdk>", "mapping has no approved SDK context", "TR0103");
+  if (!validateCppMathTarget(C.TargetTriple, D))
+    return false;
   std::set<std::string> Seen;
   for (const auto &M : Mappings) {
     const auto *Spec = findMappingSpec(M.ID);

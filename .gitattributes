@@ -18,6 +18,10 @@ runtime/linux/arm64/**   -text
 runtime/linux/x64/**     -text
 runtime/android/arm64/** -text
 runtime/android/x64/**   -text
+# Immutable builtin C++ SDK inputs retain upstream whitespace and exact hashes.
+neverc/lib/Translate/Cpp/SDK/libcxx/**   -text -whitespace
+neverc/lib/Translate/Cpp/SDK/resource/** -text -whitespace
+neverc/lib/Translate/Cpp/SDK/platform/** -text -whitespace
 
 # --- Binary file types: never apply text conversion ---
 *.ko     binary

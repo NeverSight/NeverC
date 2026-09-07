@@ -11,10 +11,6 @@ namespace {
 using neverc::translate::jsonString;
 class TranslateProjectTest : public NeverCTest {
 protected:
-  std::string frontend() {
-    const char *Value = std::getenv("NEVERC_CPP_FRONTEND");
-    return Value ? Value : "";
-  }
   std::string referenceCompiler() {
     const char *Value = std::getenv("NEVERC_CPP_REFERENCE_COMPILER");
     return Value ? Value : "";
@@ -74,8 +70,6 @@ protected:
         Root.string(),
         "--compdb",
         (Root / "build" / "compile_commands.json").string(),
-        "--frontend",
-        frontend(),
         "--target",
         target(),
         (Root / "src" / "first.cpp").string(),
@@ -110,7 +104,7 @@ protected:
 };
 
 TEST_F(TranslateProjectTest, ProgramAndSharedHeaderCompileAtBothOptimizations) {
-  if (frontend().empty() || referenceCompiler().empty())
+  if (referenceCompiler().empty())
     GTEST_SKIP();
   const auto Root = project("program", true), Output = Root / "generated";
   auto Translation = translate(Root, Output, true);
@@ -145,7 +139,7 @@ TEST_F(TranslateProjectTest, ProgramAndSharedHeaderCompileAtBothOptimizations) {
 }
 
 TEST_F(TranslateProjectTest, LibraryMatchesSeparateCppObjectsAndCClient) {
-  if (frontend().empty() || referenceCompiler().empty())
+  if (referenceCompiler().empty())
     GTEST_SKIP();
   const auto Root = project("library"), Output = Root / "generated";
   auto Translation = translate(Root, Output);
@@ -194,8 +188,6 @@ TEST_F(TranslateProjectTest, LibraryMatchesSeparateCppObjectsAndCClient) {
 
 TEST_F(TranslateProjectTest,
        AmbiguityRequiresExplicitSelectionAndCheckPublishesOnlyReport) {
-  if (frontend().empty())
-    GTEST_SKIP();
   const auto Root = project("configuration"), Output = Root / "generated";
   database(Root, false, true);
   rejects(translate(Root, Output), Output, "TR0602");
@@ -213,8 +205,6 @@ TEST_F(TranslateProjectTest,
 }
 
 TEST_F(TranslateProjectTest, MissingOwnedHeaderAndForeignCallNeverPublish) {
-  if (frontend().empty())
-    GTEST_SKIP();
   const auto Root = project("dependencies"), Output = Root / "generated";
   fs::remove(Root / "include" / "compute.hpp");
   rejects(translate(Root, Output), Output, "TR0203");
@@ -227,8 +217,6 @@ TEST_F(TranslateProjectTest, MissingOwnedHeaderAndForeignCallNeverPublish) {
 }
 
 TEST_F(TranslateProjectTest, AllOwnedHeaderDeclarationsAreChecked) {
-  if (frontend().empty())
-    GTEST_SKIP();
   const auto Root = project("unsupported-header"), Output = Root / "generated";
   writeFile(Root / "include" / "compute.hpp",
             readFile(fixture("compute.hpp")) +
@@ -237,8 +225,6 @@ TEST_F(TranslateProjectTest, AllOwnedHeaderDeclarationsAreChecked) {
 }
 
 TEST_F(TranslateProjectTest, RelocationPreservesSourceMapsAndSemanticContext) {
-  if (frontend().empty())
-    GTEST_SKIP();
   const auto First = project("first project"),
              Second = project("second project");
   for (const auto &Root : {First, Second}) {

@@ -1,13 +1,21 @@
 set(LLVM_LINK_COMPONENTS Support TargetParser Core BitReader)
 
-set(_cpp_sdk_catalog "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/translate-frontends/cpp/sdk/approved-sdk.json")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/modules/BuiltinCppFrontend.cmake")
+neverc_setup_builtin_cpp_frontend()
+
+set(_cpp_sdk_root "${CMAKE_CURRENT_SOURCE_DIR}/Cpp/SDK")
+set(_cpp_sdk_catalog "${_cpp_sdk_root}/catalog.json")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_cpp_sdk_catalog}")
-# Numeric byte initializers avoid MSVC's string-literal limits and preserve
-# the catalog bytes without source-encoding or line-ending interpretation.
-file(READ "${_cpp_sdk_catalog}" _cpp_sdk_catalog_hex HEX)
-string(REGEX REPLACE "([0-9a-fA-F][0-9a-fA-F])" "char(0x\\1),\n"
-  _cpp_sdk_catalog_bytes "${_cpp_sdk_catalog_hex}")
-configure_file(Cpp/CppSdkCatalog.inc.in CppSdkCatalog.inc @ONLY)
+file(GLOB_RECURSE _cpp_sdk_files CONFIGURE_DEPENDS
+  "${_cpp_sdk_root}/libcxx/*" "${_cpp_sdk_root}/resource/*"
+  "${_cpp_sdk_root}/platform/*")
+set(_cpp_sdk_data "${CMAKE_CURRENT_BINARY_DIR}/BuiltinCppSdkData.h")
+add_custom_command(OUTPUT "${_cpp_sdk_data}"
+  COMMAND "${Python3_EXECUTABLE}" "${_cpp_sdk_root}/embed.py"
+    --catalog "${_cpp_sdk_catalog}" --root "${_cpp_sdk_root}"
+    --output "${_cpp_sdk_data}"
+  DEPENDS "${_cpp_sdk_root}/embed.py" "${_cpp_sdk_catalog}" ${_cpp_sdk_files}
+  VERBATIM)
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
 set(NEVERC_TRANSLATE_SOURCES
@@ -26,6 +34,7 @@ set(NEVERC_TRANSLATE_SOURCES
 
 add_neverc_library(nevercTranslate
   ${NEVERC_TRANSLATE_SOURCES}
+  "${_cpp_sdk_data}"
   LINK_LIBS nevercFoundation
 )
 

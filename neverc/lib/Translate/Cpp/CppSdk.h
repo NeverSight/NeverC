@@ -7,35 +7,27 @@
 
 namespace neverc::translate {
 inline constexpr const char *CppMathSDKID =
-    "clang20.1.8-libcxx200100-macos15.5";
-
-struct CppSdkRoot {
-  std::string Name;
-  std::string AbsolutePath;
-};
+    "neverc-embedded-clang20.1.8-libcxx200100-macos15.5";
 struct CppSdkContext {
   std::string DistributionID;
   std::string CatalogSHA256;
-  std::string DescriptorPath;
-  std::string DescriptorSHA256;
   std::string TargetTriple;
-  std::vector<CppSdkRoot> Roots;
   std::vector<SDKDependency> ApprovedFiles;
 };
 
-/// Both binaries compile the same implementation-owned catalog JSON bytes.
+/// The driver and internal frontend embed the same approved header bytes.
 llvm::StringRef approvedCppSdkCatalog();
 std::string approvedCppSdkCatalogSHA256();
 bool validateCppMathTarget(llvm::StringRef Target, Diagnostics &Errors);
 
-/// Descriptor roots locate already installed external files; descriptor hashes
-/// cannot approve another SDK. Result is empty on failure.
-bool loadCppSdk(llvm::StringRef Descriptor, llvm::StringRef Target,
-                CppSdkContext &Result, Diagnostics &Errors);
+/// Approve only the immutable built-in distribution. No filesystem lookup or
+/// caller-supplied descriptor can select different headers.
+bool loadBuiltinCppSdk(llvm::StringRef Target, CppSdkContext &Result,
+                       Diagnostics &Errors);
 llvm::json::Object cppSdkRequestJSON(const CppSdkContext &Context);
 
-/// Checks admitted root/path/hash identities and current bytes, including the
-/// descriptor snapshot. SDK dependencies are distinct from owned source paths.
+/// Checks admitted root/path/hash identities against the embedded bytes.
+/// SDK dependencies are distinct from owned source paths.
 bool verifyCppSdkDependencies(const CppSdkContext &Context,
                               llvm::ArrayRef<SDKDependency> Dependencies,
                               Diagnostics &Errors);

@@ -7,6 +7,7 @@
 namespace neverc::translate {
 inline constexpr uint32_t FrontendProtocolMajor = 1;
 inline constexpr const char *CppFrontendName = "neverc-cpp-frontend";
+inline constexpr const char *CppFrontendCommand = "__neverc_cpp_frontend";
 inline constexpr const char *CppFrontendVersion = "20.1.8";
 inline constexpr std::size_t MaxFrontendResponseBytes = 32u * 1024u * 1024u;
 inline constexpr std::size_t MaxProtocolDepth = 64;

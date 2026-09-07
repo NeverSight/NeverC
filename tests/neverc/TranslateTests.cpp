@@ -1,6 +1,8 @@
 #include "../../neverc/lib/Translate/ArtifactWriter.h"
 #include "../../neverc/lib/Translate/FrontendProcess.h"
 #include "NeverCTestFixture.h"
+#include "neverc/Translate/TranslateDriver.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
@@ -14,6 +16,7 @@
 #ifndef _WIN32
 #include <cerrno>
 #include <csignal>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -23,11 +26,6 @@ namespace {
 
 class TranslateTest : public NeverCTest {
 protected:
-  static std::string frontend() {
-    const char *Value = std::getenv("NEVERC_CPP_FRONTEND");
-    return Value ? Value : "";
-  }
-
   static std::string referenceCompiler() {
     const char *Value = std::getenv("NEVERC_CPP_REFERENCE_COMPILER");
     return Value ? Value : "";
@@ -44,22 +42,100 @@ protected:
   }
 
   std::vector<std::string> args(const fs::path &Source,
-                                const std::vector<std::string> &Output,
-                                bool ActualFrontend = false) {
+                                const std::vector<std::string> &Output) {
     std::vector<std::string> Args = {"translate", "--from", "cpp",
                                      Source.string()};
     Args.insert(Args.end(), Output.begin(), Output.end());
-    Args.push_back("--frontend");
-    Args.push_back(ActualFrontend ? frontend()
-                                  : tmpFile("missing-frontend").string());
     return Args;
   }
 
   CmdResult translate(const fs::path &Source,
                       const std::vector<std::string> &Output) {
-    auto Args = args(Source, Output, true);
+    auto Args = args(Source, Output);
     Args.insert(Args.end(), {"--", "-std=c++17"});
     return ncc(Args);
+  }
+
+  // Exercise corrupt/failed subprocess handling through the existing C++ API.
+  // Production CLI always supplies its own executable; it exposes no override.
+#ifndef _WIN32
+  llvm::sys::ProcessInfo
+  spawnControlledDriver(const fs::path &Source,
+                        const std::vector<std::string> &Output,
+                        const fs::path &Compiler, const fs::path &Stdout,
+                        const fs::path &Stderr) {
+    auto Storage = args(Source, Output);
+    std::vector<const char *> Arguments;
+    for (const auto &Argument : Storage)
+      Arguments.push_back(Argument.c_str());
+    const auto Executable = Compiler.string();
+    const int OutFD =
+        ::open(Stdout.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    const int ErrFD =
+        ::open(Stderr.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    llvm::sys::ProcessInfo Child;
+    if (OutFD < 0 || ErrFD < 0) {
+      if (OutFD >= 0)
+        ::close(OutFD);
+      if (ErrFD >= 0)
+        ::close(ErrFD);
+      return Child;
+    }
+    llvm::outs().flush();
+    llvm::errs().flush();
+    // The translator test binary runs these fixtures sequentially. Fork keeps
+    // signal/error tests isolated from gtest without adding a production hook.
+    Child.Pid = ::fork();
+    if (Child.Pid == 0) {
+      if (::dup2(OutFD, STDOUT_FILENO) < 0 || ::dup2(ErrFD, STDERR_FILENO) < 0)
+        ::_exit(125);
+      ::close(OutFD);
+      ::close(ErrFD);
+      const int Status = neverc::translate::runTranslate(
+          Arguments.size(), Arguments.data(), Executable.c_str());
+      llvm::outs().flush();
+      llvm::errs().flush();
+      ::_exit(Status);
+    }
+    ::close(OutFD);
+    ::close(ErrFD);
+    return Child;
+  }
+#endif
+
+  CmdResult controlledDriver(const fs::path &Source,
+                             const std::vector<std::string> &Output,
+                             const fs::path &Compiler) {
+    CmdResult Result;
+#ifndef _WIN32
+    const auto Stdout = tmpFile("controlled.stdout");
+    const auto Stderr = tmpFile("controlled.stderr");
+    auto Child =
+        spawnControlledDriver(Source, Output, Compiler, Stdout, Stderr);
+    if (Child.Pid <= 0)
+      return Result;
+    auto Ended = llvm::sys::Wait(Child, 3);
+    Result.exitCode = Ended.ReturnCode;
+    Result.out = readFile(Stdout);
+    Result.err = readFile(Stderr);
+#else
+    auto Storage = args(Source, Output);
+    std::vector<const char *> Arguments;
+    for (const auto &Argument : Storage)
+      Arguments.push_back(Argument.c_str());
+    const auto Executable = Compiler.string();
+    llvm::outs().flush();
+    llvm::errs().flush();
+    ::testing::internal::CaptureStdout();
+    ::testing::internal::CaptureStderr();
+    Result.exitCode = neverc::translate::runTranslate(
+        Arguments.size(), Arguments.data(), Executable.c_str());
+    llvm::outs().flush();
+    llvm::errs().flush();
+    Result.out = ::testing::internal::GetCapturedStdout();
+    Result.err = ::testing::internal::GetCapturedStderr();
+#endif
+    return Result;
   }
 
   void expectCode(const CmdResult &Result, const std::string &Code) {
@@ -209,12 +285,15 @@ protected:
   }
 };
 
-TEST_F(TranslateTest, HelpDoesNotRequireAFrontend) {
+TEST_F(TranslateTest, HelpDescribesTheBuiltInFrontend) {
   auto Result = ncc({"translate", "--help"});
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
   EXPECT_TRUE(Result.contains("--from")) << Result.out;
   EXPECT_TRUE(Result.contains("--check")) << Result.out;
   EXPECT_TRUE(Result.contains("--profile")) << Result.out;
+  EXPECT_TRUE(Result.contains("built into")) << Result.out;
+  EXPECT_FALSE(Result.contains("--frontend")) << Result.out;
+  EXPECT_FALSE(Result.contains("--cpp-sdk")) << Result.out;
 }
 
 TEST_F(TranslateTest, RequiresExplicitLanguageAndKnownProfile) {
@@ -255,9 +334,20 @@ TEST_F(TranslateTest, RejectsUnsupportedSourceOptionsBeforeStartingFrontend) {
   }
 }
 
-TEST_F(TranslateTest, MissingFrontendFailsWithoutGeneratedOutput) {
+TEST_F(TranslateTest, RejectsExternalFrontendSelection) {
+  const auto Source = source(), Output = tmpFile("output.nc");
+  auto Args = args(Source, {"-o", Output.string()});
+  Args.insert(Args.end(),
+              {"--frontend", tmpFile("unavailable-helper").string()});
+  expectCode(ncc(Args), "TR0001");
+  expectNoArtifacts(Output);
+}
+
+TEST_F(TranslateTest, MissingSelfExecutableFailsWithoutGeneratedOutput) {
   const auto Output = tmpFile("output.nc");
-  expectCode(ncc(args(source(), {"-o", Output.string()})), "TR0101");
+  expectCode(controlledDriver(source(), {"-o", Output.string()},
+                              tmpFile("missing-neverc")),
+             "TR0402");
   expectNoArtifacts(Output);
 }
 
@@ -339,15 +429,14 @@ TEST_F(TranslateTest, MalformedAndIncompatibleFrontendResponsesAreRejected) {
     const auto Helper = tmpFile("protocol-helper");
     writeFile(HelperSource,
               "#include <stdio.h>\nint main(int argc, char **argv) {\n"
-              "if (argc != 5) return 2; FILE *file = fopen(argv[4], \"wb\");\n"
+              "if (argc != 6) return 2; FILE *file = fopen(argv[5], \"wb\");\n"
               "if (!file) return 3; fputs(\"" +
                   std::string(Response) +
                   "\", file); return fclose(file); }\n");
     auto Build = compileGenerated(HelperSource, Helper, "-O0");
     ASSERT_EQ(Build.exitCode, 0) << Build.err;
     const auto Output = tmpFile("output.nc");
-    auto Result = ncc({"translate", "--from", "cpp", Source.string(), "-o",
-                       Output.string(), "--frontend", Helper.string()});
+    auto Result = controlledDriver(Source, {"-o", Output.string()}, Helper);
     expectCode(Result, "TR0103");
     expectNoArtifacts(Output);
   }
@@ -362,9 +451,8 @@ TEST_F(TranslateTest, FrontendProcessFailureIsDistinctFromInvalidSource) {
   const auto Source = source();
   const auto Output = tmpFile("output.nc");
   const auto Report = tmpFile("failed.json");
-  auto Result =
-      ncc({"translate", "--from", "cpp", Source.string(), "-o", Output.string(),
-           "--frontend", Helper.string(), "--report", Report.string()});
+  auto Result = controlledDriver(
+      Source, {"-o", Output.string(), "--report", Report.string()}, Helper);
   expectCode(Result, "TR0102");
   expectNoArtifacts(Output);
   expectReport(Report, "failed");
@@ -373,17 +461,13 @@ TEST_F(TranslateTest, FrontendProcessFailureIsDistinctFromInvalidSource) {
 #ifndef _WIN32
 TEST_F(TranslateTest, FifoSourceFailsPromptlyWithoutFrontendExecution) {
   const auto Source = tmpFile("input.cpp"), Output = tmpFile("output.nc");
-  const auto Report = tmpFile("failed.json"), Helper = tmpFile("unused-helper");
-  writeFile(Helper, "#!/bin/sh\n: > \"$0.executed\"\nexit 17\n");
-  fs::permissions(Helper, fs::perms::owner_read | fs::perms::owner_write |
-                              fs::perms::owner_exec);
+  const auto Report = tmpFile("failed.json");
   ASSERT_EQ(::mkfifo(Source.c_str(), 0600), 0);
   const auto Stdout = tmpFile("stdout"), Stderr = tmpFile("stderr");
   neverc::translate::TranslationCancellation Cancellation;
   auto Result = neverc::translate::runProcess(
       {neverc().string(), "translate", "--from", "cpp", Source.string(), "-o",
-       Output.string(), "--frontend", Helper.string(), "--report",
-       Report.string()},
+       Output.string(), "--report", Report.string()},
       Stdout.string(), Stderr.string(), 3);
   ASSERT_NE(Result.ExitCode, -2) << "FIFO input blocked until the test timeout";
   EXPECT_NE(Result.ExitCode, 0);
@@ -391,7 +475,6 @@ TEST_F(TranslateTest, FifoSourceFailsPromptlyWithoutFrontendExecution) {
       << readFile(Stderr);
   EXPECT_NE(readFile(Stderr).find("regular file"), std::string::npos)
       << readFile(Stderr);
-  EXPECT_FALSE(fs::exists(Helper.string() + ".executed"));
   expectNoArtifacts(Output);
   expectReport(Report, "failed");
   for (const auto &Entry : fs::directory_iterator(tmp()))
@@ -401,21 +484,16 @@ TEST_F(TranslateTest, FifoSourceFailsPromptlyWithoutFrontendExecution) {
 TEST_F(TranslateTest, FifoFrontendResponseFailsPromptlyAndCleansStaging) {
   const auto Source = source(), Output = tmpFile("output.nc");
   const auto Report = tmpFile("failed.json"), Helper = tmpFile("fifo-helper");
-  writeFile(Helper, "#!/bin/sh\nmkfifo \"$4\"\n");
+  writeFile(Helper, "#!/bin/sh\nmkfifo \"$5\"\n");
   fs::permissions(Helper, fs::perms::owner_read | fs::perms::owner_write |
                               fs::perms::owner_exec);
-  const auto Stdout = tmpFile("stdout"), Stderr = tmpFile("stderr");
-  neverc::translate::TranslationCancellation Cancellation;
-  auto Result = neverc::translate::runProcess(
-      {neverc().string(), "translate", "--from", "cpp", Source.string(), "-o",
-       Output.string(), "--frontend", Helper.string(), "--report",
-       Report.string()},
-      Stdout.string(), Stderr.string(), 3);
-  ASSERT_NE(Result.ExitCode, -2)
+  auto Result = controlledDriver(
+      Source, {"-o", Output.string(), "--report", Report.string()}, Helper);
+  ASSERT_NE(Result.exitCode, -2)
       << "FIFO response blocked until the test timeout";
-  EXPECT_NE(Result.ExitCode, 0);
-  EXPECT_NE(readFile(Stderr).find("TR0103"), std::string::npos);
-  EXPECT_NE(readFile(Stderr).find("regular file"), std::string::npos);
+  EXPECT_NE(Result.exitCode, 0);
+  EXPECT_NE(Result.err.find("TR0103"), std::string::npos);
+  EXPECT_NE(Result.err.find("regular file"), std::string::npos);
   expectNoArtifacts(Output);
   expectReport(Report, "failed");
   for (const auto &Entry : fs::directory_iterator(tmp()))
@@ -429,24 +507,19 @@ TEST_F(TranslateTest, DeepFrontendResponsesAreRejectedBeforeJSONRecursion) {
             std::string(20000, '[') + "0" + std::string(20000, ']'));
   for (int ExitStatus : {0, 1}) {
     SCOPED_TRACE(ExitStatus);
-    writeFile(Helper, "#!/bin/sh\ncp \"$0.json\" \"$4\"\nexit " +
+    writeFile(Helper, "#!/bin/sh\ncp \"$0.json\" \"$5\"\nexit " +
                           std::to_string(ExitStatus) + "\n");
     fs::permissions(Helper, fs::perms::owner_read | fs::perms::owner_write |
                                 fs::perms::owner_exec);
     const auto Report =
         tmpFile("failed-" + std::to_string(ExitStatus) + ".json");
-    const auto Stdout = tmpFile("stdout"), Stderr = tmpFile("stderr");
-    neverc::translate::TranslationCancellation Cancellation;
-    auto Result = neverc::translate::runProcess(
-        {neverc().string(), "translate", "--from", "cpp", Source.string(), "-o",
-         Output.string(), "--frontend", Helper.string(), "--report",
-         Report.string()},
-        Stdout.string(), Stderr.string(), 3);
-    ASSERT_GT(Result.ExitCode, 0) << "deep response must produce a diagnostic, "
+    auto Result = controlledDriver(
+        Source, {"-o", Output.string(), "--report", Report.string()}, Helper);
+    ASSERT_GT(Result.exitCode, 0) << "deep response must produce a diagnostic, "
                                      "not crash or reach timeout";
-    EXPECT_NE(readFile(Stderr).find(ExitStatus ? "TR0102" : "TR0103"),
+    EXPECT_NE(Result.err.find(ExitStatus ? "TR0102" : "TR0103"),
               std::string::npos)
-        << readFile(Stderr);
+        << Result.err;
     expectNoArtifacts(Output);
     expectReport(Report, "failed");
     for (const auto &Entry : fs::directory_iterator(tmp()))
@@ -454,14 +527,15 @@ TEST_F(TranslateTest, DeepFrontendResponsesAreRejectedBeforeJSONRecursion) {
   }
 }
 
-TEST_F(TranslateTest, CancellationTerminatesTheHelperAndCleansStaging) {
+TEST_F(TranslateTest,
+       CancellationTerminatesTheInternalProcessAndCleansStaging) {
   const auto HelperSource = tmpFile("waiting-helper.c");
   const auto Helper = tmpFile("waiting-helper");
   writeFile(HelperSource,
             "#include <stdio.h>\n#include <unistd.h>\n"
             "int main(int argc, char **argv) {\n"
-            "if (argc != 5) return 2; char path[4096];\n"
-            "snprintf(path, sizeof(path), \"%s.pid\", argv[4]);\n"
+            "if (argc != 6) return 2; char path[4096];\n"
+            "snprintf(path, sizeof(path), \"%s.pid\", argv[5]);\n"
             "FILE *file = fopen(path, \"w\"); if (!file) return 3;\n"
             "fprintf(file, \"%ld\\n\", (long)getpid()); fclose(file);\n"
             "for (;;) sleep(1); }\n");
@@ -490,21 +564,12 @@ TEST_F(TranslateTest, CancellationTerminatesTheHelperAndCleansStaging) {
     const auto Output = tmpFile("cancelled.nc");
     const auto Report =
         tmpFile("cancelled-" + std::to_string(Signal) + ".json");
-    std::vector<std::string> Storage = {
-        neverc().string(), "translate", "--from",        "cpp",
-        Source.string(),   "-o",        Output.string(), "--frontend",
-        Helper.string(),   "--report",  Report.string()};
-    llvm::SmallVector<llvm::StringRef, 16> Arguments;
-    for (const auto &Argument : Storage)
-      Arguments.push_back(Argument);
     const auto Stdout = tmpFile("cancel-stdout.txt").string();
     const auto Stderr = tmpFile("cancel-stderr.txt").string();
-    llvm::StringRef Redirects[] = {"", Stdout, Stderr};
     llvm::SmallVector<char, 256> Message;
-    bool Failed = false;
-    auto Driver = llvm::sys::ExecuteNoWait(Storage.front(), Arguments, {},
-                                           Redirects, 0, &Message, &Failed);
-    ASSERT_FALSE(Failed) << std::string(Message.begin(), Message.end());
+    auto Driver = spawnControlledDriver(
+        Source, {"-o", Output.string(), "--report", Report.string()}, Helper,
+        Stdout, Stderr);
     ASSERT_GT(Driver.Pid, 0);
     ChildCleanup Cleanup;
     Cleanup.Driver = Driver.Pid;
@@ -552,8 +617,6 @@ TEST_F(TranslateTest, CancellationTerminatesTheHelperAndCleansStaging) {
 
 TEST_F(TranslateTest,
        ScalarProgramPublishesSidecarsAndRunsAtBothOptimizations) {
-  if (frontend().empty())
-    GTEST_SKIP() << "set NEVERC_CPP_FRONTEND to the full-Clang helper";
   const auto Output = tmpFile("program.nc");
   auto Result = translate(fixture("program.cpp"), {"-o", Output.string()});
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
@@ -569,8 +632,6 @@ TEST_F(TranslateTest,
 }
 
 TEST_F(TranslateTest, CheckModeRunsValidationAndPublishesOnlyItsReport) {
-  if (frontend().empty())
-    GTEST_SKIP() << "set NEVERC_CPP_FRONTEND to the full-Clang helper";
   const auto Source = source();
   const auto Report = tmpFile("check-report.json");
   auto Result = translate(Source, {"--check", "--report", Report.string()});
@@ -585,8 +646,6 @@ TEST_F(TranslateTest, CheckModeRunsValidationAndPublishesOnlyItsReport) {
 
 TEST_F(TranslateTest,
        HandlesSpacesAndUnicodeAndPublishesACleanOutputDirectory) {
-  if (frontend().empty())
-    GTEST_SKIP() << "set NEVERC_CPP_FRONTEND to the full-Clang helper";
   const auto Source = tmpFile(u8"源 input.cpp");
   writeFile(Source, "int main() { return 0; }\n");
   const auto Directory = tmpFile(u8"生成 output");
@@ -605,8 +664,6 @@ TEST_F(TranslateTest,
 }
 
 TEST_F(TranslateTest, RejectsUnsupportedOwnedCodeWithoutPublishingArtifacts) {
-  if (frontend().empty())
-    GTEST_SKIP() << "set NEVERC_CPP_FRONTEND to the full-Clang helper";
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -655,8 +712,9 @@ TEST_F(TranslateTest, RejectsUnsupportedOwnedCodeWithoutPublishingArtifacts) {
 
 TEST_F(TranslateTest,
        ScalarModuleMatchesFullReferenceValuesAtBothOptimizations) {
-  if (frontend().empty() || referenceCompiler().empty())
-    GTEST_SKIP() << "set NEVERC_CPP_FRONTEND and NEVERC_CPP_REFERENCE_COMPILER";
+  if (referenceCompiler().empty())
+    GTEST_SKIP()
+        << "set NEVERC_CPP_REFERENCE_COMPILER for independent comparison";
   const auto Output = tmpFile("module.nc");
   auto Result = translate(fixture("module.cpp"), {"-o", Output.string()});
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
@@ -705,8 +763,6 @@ TEST_F(TranslateTest,
 
 TEST_F(TranslateTest,
        UnspecifiedArgumentOrderStaysInsideThePermittedResultSet) {
-  if (frontend().empty())
-    GTEST_SKIP() << "set NEVERC_CPP_FRONTEND to the full-Clang helper";
   const auto Output = tmpFile("order.nc");
   auto Result =
       translate(fixture("unspecified-order.cpp"), {"-o", Output.string()});
@@ -729,8 +785,6 @@ TEST_F(TranslateTest,
 }
 
 TEST_F(TranslateTest, RelocatingTheInputRootPreservesNormalizedArtifacts) {
-  if (frontend().empty())
-    GTEST_SKIP() << "set NEVERC_CPP_FRONTEND to the full-Clang helper";
   const auto FirstRoot = tmpFile("first root");
   const auto SecondRoot = tmpFile("second root");
   fs::create_directory(FirstRoot);

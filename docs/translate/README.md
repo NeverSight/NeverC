@@ -10,7 +10,7 @@ Experimental `neverc translate` emits reviewable `.nc` source through `cpp-core-
 
 ## Setup and scalar translation
 
-Build or install the pinned Clang 20.1.8 helper using the [frontend instructions](../../utils/translate-frontends/cpp/README.md). Place it beside NeverC, set `NEVERC_CPP_FRONTEND`, or pass `--frontend PATH`. Translation requires that helper; compiling generated scalar/project output does not.
+Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../../utils/translate-frontends/cpp/README.md).
 
 ```sh
 neverc translate --from cpp input.cpp -o output.nc
@@ -21,7 +21,7 @@ The `cpp-core-v1` profile accepts one self-contained C++17 source without includ
 
 ## Multi-file projects
 
-Select the translation units explicitly from a compilation database and set the project root directory. The helper analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).
+Select the translation units explicitly from a compilation database and set the project root directory. The built-in frontend analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).
 
 ```sh
 neverc translate --from cpp --profile cpp-project-v1 \
@@ -33,16 +33,16 @@ Project output is `translated.nc` plus `translated.h`. Only project headers with
 
 ## Bounded double math
 
-`cpp-math-v1` extends projects with `double`, documented conversions/comparisons, and exactly `std::fabs(double)` and `std::floor(double)`. It requires the pinned Clang 20.1.8 / libc++ 200100 / macOS SDK 15.5 distribution, an SDK descriptor, and an explicit macOS 15.0 target (arm64 or x86_64). General floating arithmetic remains unsupported. The floating environment requires masked traps and no flush-to-zero mode; all four standard rounding modes are tested.
+`cpp-math-v1` extends projects with `double`, documented conversions/comparisons, and exactly `std::fabs(double)` and `std::floor(double)`. It uses the built-in Clang 20.1.8 / libc++ 200100 / macOS 15.5 header set and requires an explicit macOS 15.0 target (arm64 or x86_64). General floating arithmetic remains unsupported. The floating environment requires masked traps and no flush-to-zero mode; all four standard rounding modes are tested.
 
 ```sh
 neverc translate --from cpp --profile cpp-math-v1 \
-  --target arm64-apple-macosx15.0.0 --cpp-sdk /path/to/neverc-cpp-sdk.json \
+  --target arm64-apple-macosx15.0.0 \
   --project-root "$PWD" --compdb build/compile_commands.json \
   src/math.cpp --out-dir generated-math
 ```
 
-Math translation also verifies installed NeverC math headers, embedded implementation identities and an actual link probe. Generated math modules use the NeverC runtime without requiring the C++ helper or SDK. With `-fno-builtin-std`, translation fails before writing output only if the final code needs `fabs`/`floor` mappings. Math code requiring neither can still be translated.
+Math translation also verifies installed NeverC math headers, embedded implementation identities and an actual link probe. Generated math modules use the NeverC runtime. With `-fno-builtin-std`, translation fails before writing output only if the final code needs `fabs`/`floor` mappings. Math code requiring neither can still be translated.
 
 ## Validation and output
 
@@ -50,4 +50,4 @@ Use `--check` instead of an output option to run the same analysis, emission, sy
 
 Outputs and sidecars are never overwritten. `--out-dir` requires a new directory with an existing parent; `-o` requires a new `.nc` path. The manifest records target requirements, input/output hashes and the compilation recipe; the source map relates generated lines to original locations.
 
-Execution has been verified on native macOS arm64 and on macOS x86_64 under Rosetta. This does not establish support for native Intel Macs, Linux, Windows or other targets. General C++/STL support, pointers, references, arrays, exceptions, templates, strings and `std::vector` are outside the advertised contract. See the [support matrix](../../utils/translate-frontends/docs/support-matrix.md), [protocol and recovery rules](../../utils/translate-frontends/docs/protocol.md), and [project fixture](../../tests/neverc/Inputs/translate/cpp/project/).
+Execution and installation evidence is recorded separately for native macOS arm64 and macOS x86_64 under Rosetta. This does not establish support for native Intel Macs, Linux, Windows or other targets. General C++/STL support, pointers, references, arrays, exceptions, templates, strings and `std::vector` are outside the advertised contract. See the [support matrix](../../utils/translate-frontends/docs/support-matrix.md), [protocol and recovery rules](../../utils/translate-frontends/docs/protocol.md), and [project fixture](../../tests/neverc/Inputs/translate/cpp/project/).

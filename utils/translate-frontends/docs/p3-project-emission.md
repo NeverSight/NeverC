@@ -9,8 +9,8 @@ compilation-context workstream.
 
 ## Delivery shape and boundaries
 
-Run the pinned helper separately for every explicitly selected translation
-unit, preserving its selected compilation directory and validated arguments.
+Run the current NeverC executable’s built-in frontend mode separately for every
+explicitly selected translation unit, preserving its selected compilation directory and validated arguments.
 Merge resolved semantic data after those independent source analyses succeed.
 Emit one `translated.nc` containing the project's definitions and one
 `translated.h` containing its shared type and external declaration interface.
@@ -38,7 +38,7 @@ arbitrary original linker recipes. Unsupported linkage attributes remain
 source diagnostics. The original program's `main` is retained only when
 present; a selected library remains a library.
 
-## Minimal helper request and response extension
+## Internal frontend request and response extension
 
 The request keeps protocol major 1 and the existing `root`, `source`, `target`
 and `arguments` fields. A project request adds:
@@ -55,7 +55,7 @@ and `arguments` fields. A project request adds:
 
 The absolute root/source/working-directory strings are process context. They
 never become semantic identifiers or deterministic artifact paths. The driver
-matches each response to the expected source, configuration, target and helper
+matches each response to the expected source, configuration, target and frontend
 build; worker completion order has no effect on merging.
 
 The response keeps the existing typed `records`, `globals` and `functions`
@@ -122,7 +122,7 @@ Each unit records the exact bytes consumed for its source and every owned
 header in the existing `dependencies` array. All dependency and location paths
 are normalized relative to the declared project root. Hash header buffers
 actually parsed, rather than rereading changed files afterward. A shared path
-with different consumed byte hashes across helper jobs fails the invocation.
+with different consumed byte hashes across frontend jobs fails the invocation.
 Different supported macro contexts are recorded separately; they cannot erase
 ODR conflicts caused by different expanded definitions.
 
@@ -199,9 +199,9 @@ The bounded merger applies the following rules:
 5. Token digests preserve preprocessing-token kinds/spellings and order, while
    ignoring whitespace/comments and source coordinates. Binding digests cover
    resolved identities before lowering discards unused expressions or folds
-   constants. A helper may normalize a proven non-ODR-used internal constant by
+   constants. The frontend may normalize a proven non-ODR-used internal constant by
    its canonical type and folded value; otherwise different private bindings
-   differ. The helper must not erase a binding merely because its final IR has
+   differ. The frontend must not erase a binding merely because its final IR has
    no effect.
 6. The consumer computes canonical typed body/shape comparisons, excluding
    locations and consistently renaming function-local temporaries/labels.
@@ -334,7 +334,7 @@ generated-byte SHA-256. Header maps point to original owned-header locations;
 combined-source maps retain every original source identity. Deduplicated
 definitions use the canonical origin for emitted lines and retain all contributing
 origins in project metadata. Neither source locations nor origin sets depend on
-helper completion order.
+frontend completion order.
 
 Both normal mode and check mode stage all generated files together, run syntax
 and object validation on `translated.nc` with the recorded target, and then
@@ -375,7 +375,7 @@ changed declared control inputs.
 - Artifact tests: header/source collisions, cancellation, syntax/object failure
   and report handling publish no incomplete directory. Validate target guards
   and generated-header use from a separate client.
-- Retain the installed-helper/package checks and existing compiler/subcommand
+- Retain the installed built-in frontend/package checks and existing compiler/subcommand
   regressions. Runtime coverage is advertised only for matching runners that
   execute both original and generated fixtures. Passing P3A does not enable
   `<cmath>`, arbitrary SDKs, string/vector support or subsequent languages.

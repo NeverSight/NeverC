@@ -1,7 +1,7 @@
 # Translation artifact schemas
 
 These version-1 schemas describe core, project, and gated math artifacts independently of the
-[semantic helper protocol](../protocol.md). A change to the helper protocol does
+[internal frontend protocol](../protocol.md). A change to the frontend protocol does
 not automatically change manifest, report, or source-map versions. Consumers
 must reject incompatible major versions.
 
@@ -30,9 +30,14 @@ unrelated output files are not an atomic transaction. New output directories are
 published with an exclusive rename.
 
 Math manifests require a separate floating-point contract, the approved source
-SDK distribution/catalog and consumed named-root dependencies, and exact runtime
-capability evidence. Mappings contain resolved declaration identities and typed
+SDK distribution/catalog with `delivery: "builtin"`, consumed named-root
+dependencies, and exact runtime capability evidence. Mappings contain resolved declaration identities and typed
 signatures; their emitted symbols are selected by the consumer's fixed table.
 Core/project manifests and reports continue to require an empty mapping list.
 A schema-valid math artifact is not itself capability approval: the driver must
 validate SDK bytes, runtime identities, generated code, and linkage first.
+
+The private request supplies only the built-in SDK distribution ID and catalog
+hash. SDK roots identify embedded virtual trees; external descriptor paths and
+root overrides are not accepted. The driver always runs the current NeverC
+executable’s internal frontend mode.

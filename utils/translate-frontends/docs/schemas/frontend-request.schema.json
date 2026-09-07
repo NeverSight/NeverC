@@ -42,37 +42,16 @@
       "type": "object",
       "properties": {
         "distribution_id": {
-          "const": "clang20.1.8-libcxx200100-macos15.5"
+          "const": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5"
         },
         "catalog_sha256": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
-        },
-        "roots": {
-          "type": "object",
-          "properties": {
-            "libcxx": {
-              "type": "string"
-            },
-            "resource": {
-              "type": "string"
-            },
-            "platform": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "libcxx",
-            "resource",
-            "platform"
-          ],
-          "additionalProperties": false
         }
       },
       "required": [
         "distribution_id",
-        "catalog_sha256",
-        "roots"
+        "catalog_sha256"
       ],
       "additionalProperties": false
     }

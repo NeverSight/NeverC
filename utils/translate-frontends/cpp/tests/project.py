@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent cpp-project-v1 helper evidence and isolation regression tests."""
+"""Independent cpp-project-v1 frontend evidence and isolation regression tests."""
 import argparse
 import hashlib
 import json
@@ -15,11 +15,11 @@ def sha(text):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--helper", required=True, type=Path)
+    parser.add_argument("--neverc", required=True, type=Path)
     parser.add_argument("--target", default="x86_64-apple-darwin24.6.0")
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
-    args.helper = args.helper.resolve()
+    args.neverc = args.neverc.resolve()
     args.output_dir.mkdir(parents=True, exist_ok=False)
     count = 0
 
@@ -32,17 +32,21 @@ def main():
             file.write_text(text)
         return root
 
-    def check(root, source="a.cpp", code=None, options=(), env=None, suffix=""):
+    def check(root, source="a.cpp", code=None, options=(), env=None, suffix="",
+              working_directory=None, path_spelling=None):
         nonlocal count
+        spell = path_spelling or (lambda text: text)
+        arguments = [spell(option) if index and options[index - 1] in ("-I", "-iquote", "-isystem")
+                     else option for index, option in enumerate(options)]
         request = root / (source.replace("/", "_") + suffix + ".request.json")
         response = root / (source.replace("/", "_") + suffix + ".response.json")
         request.write_text(json.dumps({"protocol": 1, "profile": "cpp-project-v1",
-            "root": str(root.resolve()), "source": str((root / source).resolve()),
-            "translation_unit": source, "working_directory": str(root.resolve()),
+            "root": spell(str(root.resolve())), "source": spell(str((root / source).resolve())),
+            "translation_unit": source, "working_directory": spell(str((working_directory or root).resolve())),
             "configuration_id": sha(source + repr(tuple(options))),
-            "target": args.target, "arguments": ["-std=c++17", *options]}))
-        process = subprocess.run([str(args.helper), "--request", str(request),
-            "--output", str(response)], text=True, capture_output=True, env=env)
+            "target": args.target, "arguments": ["-std=c++17", *arguments]}))
+        process = subprocess.run([str(args.neverc), "__neverc_cpp_frontend", "--request", str(request),
+            "--output", str(response)], text=True, capture_output=True, env=env, timeout=120)
         assert response.exists(), (source, process.returncode, process.stderr)
         result = json.loads(response.read_text())
         codes = {d["code"] for d in result["diagnostics"]}
@@ -56,6 +60,7 @@ def main():
             for item in result["dependencies"]:
                 assert item["sha256"] == hashlib.sha256((root / item["path"]).read_bytes()).hexdigest()
                 assert not Path(item["path"]).is_absolute()
+                assert "\\" not in item["path"]
             for item in [*result["odr"], *result["function_declarations"], *result["global_declarations"]]:
                 assert len(item["semantic_id"]) == 64 and all(c in "0123456789abcdef" for c in item["semantic_id"])
         count += 1
@@ -91,6 +96,39 @@ inline unsigned int twice(unsigned int value) {
     assert private_a[0]["owner_tu"] == "a.cpp" and private_b[0]["owner_tu"] == "b.cpp"
     inline = next(e["name"] for e in a["odr"] if e["inline"])
     assert next(f for f in a["functions"] if f["name"] == inline) == next(f for f in b["functions"] if f["name"] == inline)
+
+    paths = project("canonical-paths", {
+        "src/nested/main.cpp": '#include <angle.hpp>\n#include "quoted.hpp"\n#include <system.hpp>\n#include <root.hpp>\nint main(){return angle()+quoted()+system_value()+root_value()-10;}',
+        "include/angle/angle.hpp": "static int angle(){return 1;}\n",
+        "include/quoted/quoted.hpp": "inline int quoted(){return 2;}\n",
+        "include/system/system.hpp": "inline int system_value(){return 3;}\n",
+        "root.hpp": "static int root_value(){return 4;}\n",
+        "work/nested/placeholder": ""})
+    working = paths / "work/nested"
+    path_options = ("-I", str((paths / "include/angle").resolve()),
+                    "-iquote", str((paths / "include/quoted").resolve()),
+                    "-isystem", str((paths / "include/system").resolve()), "-I", str(paths.resolve()))
+    canonical = check(paths, "src/nested/main.cpp", options=path_options, working_directory=working)
+    assert {item["path"] for item in canonical["dependencies"]} == {
+        "src/nested/main.cpp", "include/angle/angle.hpp", "include/quoted/quoted.hpp",
+        "include/system/system.hpp", "root.hpp"}
+    spellings = [("forward", lambda text: Path(text).as_posix())]
+    if os.name == "nt":
+        spellings += [("backslash", lambda text: text.replace("/", "\\")),
+                      ("mixed", lambda text: text.replace("\\", "/").replace("/", "\\", 1))]
+    for label, spelling in spellings:
+        assert check(paths, "src/nested/main.cpp", options=path_options, working_directory=working,
+                     suffix="-" + label, path_spelling=spelling) == canonical
+    relative = check(paths, "src/nested/main.cpp", options=("-I", "../../include/angle",
+        "-iquote", "../../include/quoted", "-isystem", "../../include/system", "-I", "../.."),
+        working_directory=working, suffix="-relative")
+    assert relative == dict(canonical, configuration_id=relative["configuration_id"])
+    path_sibling = project("canonical-paths-sibling", {"outside.hpp": "int outside(){return 0;}"})
+    check(paths, "src/nested/main.cpp", code="TR0103", options=path_options,
+          working_directory=path_sibling, suffix="-working-sibling")
+    for label, flag in (("include", "-I"), ("quote", "-iquote"), ("system", "-isystem")):
+        check(paths, "src/nested/main.cpp", code="TR0203", options=(flag, str(path_sibling.resolve())),
+              suffix="-" + label + "-sibling")
 
     # Pure token spelling can violate ODR while resolved values and lowered IR
     # remain identical. Both evidence layers are required.

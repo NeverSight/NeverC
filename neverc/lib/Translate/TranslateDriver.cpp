@@ -28,9 +28,9 @@ namespace neverc::translate {
 namespace {
 constexpr size_t MaxProjectResponseBytes = 64u * 1024u * 1024u;
 struct Invocation {
-  std::string Source, Profile = "cpp-core-v1", Frontend;
+  std::string Source, Profile = "cpp-core-v1";
   std::vector<std::string> Sources, EntrySelectors;
-  std::string Database, ProjectRoot, Target, Quoting, CppSdk;
+  std::string Database, ProjectRoot, Target, Quoting;
   ArtifactOptions Artifacts;
   std::vector<std::string> Arguments;
   bool Help = false, Check = false, BuiltinStdEnabled = true;
@@ -77,10 +77,6 @@ bool parseInvocation(int Argc, const char **Argv, Invocation &I,
       Value = &Language;
     else if (A == "--profile")
       Value = &I.Profile;
-    else if (A == "--frontend")
-      Value = &I.Frontend;
-    else if (A == "--cpp-sdk")
-      Value = &I.CppSdk;
     else if (A == "--compdb")
       Value = &I.Database;
     else if (A == "--project-root")
@@ -133,8 +129,8 @@ bool parseInvocation(int Argc, const char **Argv, Invocation &I,
   if (I.Profile == "cpp-math-v1") {
     if (I.Target.empty())
       return error("cpp-math-v1 requires an explicit --target");
-  } else if (!I.CppSdk.empty() || !I.BuiltinStdEnabled) {
-    return error("--cpp-sdk and -fno-builtin-std require cpp-math-v1");
+  } else if (!I.BuiltinStdEnabled) {
+    return error("-fno-builtin-std requires cpp-math-v1");
   }
   if (I.Source.empty())
     return error("a source file is required");
@@ -202,28 +198,22 @@ void help() {
          "source F\n"
          "  --compdb-quoting MODE gnu or windows; defaults to the host "
          "convention\n"
-         "  --frontend PATH       Full-Clang 20.1.8 helper (development "
-         "override)\n"
-         "  --cpp-sdk PATH        Pinned SDK descriptor for cpp-math-v1\n"
          "  -fno-builtin-std      Disable embedded std; math mappings then "
          "fail capability checks\n"
          "  --report PATH         Write a JSON validation report without "
          "overwriting\n"
          "  --check               Analyze, emit temporarily, syntax/object "
          "validate, discard\n"
-         "  --help                Show this help without requiring the "
-         "helper\n\n"
+         "  --help                Show this help\n\n"
          "Core source options: -std=c++17, supported -D/-U macros. No "
          "includes.\n"
          "Projects accept explicitly selected sources and owned headers; use "
          "--out-dir or --check.\n"
          "Output parents must exist; generated files and sidecars are never "
          "overwritten.\n"
-         "The default helper is adjacent to neverc, or NEVERC_CPP_FRONTEND.\n"
-         "Math requires an explicit macOS 15.0 target, a pinned SDK, and "
-         "approved runtime payloads.\n"
-         "The default SDK descriptor is neverc-cpp-sdk.json beside the "
-         "helper.\n"
+         "C++ source analysis is built into this NeverC executable.\n"
+         "Math requires an explicit macOS 15.0 target and approved runtime "
+         "payloads. Its pinned C++ headers are built in.\n"
          "Translation does not execute source programs.\n";
 }
 
@@ -306,7 +296,7 @@ Expected<std::string> executable(StringRef Path) {
   return Real.str().str();
 }
 
-bool helperDiagnostics(StringRef Text, Diagnostics &D) {
+bool frontendDiagnostics(StringRef Text, Diagnostics &D) {
   if (!jsonWithinLimits(Text, MaxFrontendResponseBytes, MaxProtocolDepth))
     return false;
   auto V = json::parse(Text);
@@ -504,7 +494,7 @@ std::string manifest(const Invocation &I, const Module &M,
     Manifest["sdk"] =
         json::Object{{"distribution_id", jsonString(SDK->DistributionID)},
                      {"catalog_sha256", jsonString(SDK->CatalogSHA256)},
-                     {"descriptor_sha256", jsonString(SDK->DescriptorSHA256)},
+                     {"delivery", "builtin"},
                      {"dependencies", sdkDependenciesJSON(M.SDKDependencies)}};
     json::Array Modules, RequiredModules;
     for (const auto &Module : Capabilities->Modules) {
@@ -598,18 +588,6 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
          "Run the installed NeverC executable.");
     return failed();
   }
-  if (I.Frontend.empty()) {
-    if (auto Env = sys::Process::GetEnv("NEVERC_CPP_FRONTEND"))
-      I.Frontend = Env->str().str();
-    else {
-      SmallString<256> Helper(sys::path::parent_path(*Compiler));
-      sys::path::append(Helper, CppFrontendName);
-#ifdef _WIN32
-      Helper += ".exe";
-#endif
-      I.Frontend = Helper.str().str();
-    }
-  }
   VerificationContext Context;
   Context.Profile = I.Profile;
   Context.TargetTriple = Triple::normalize(
@@ -636,41 +614,14 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
     Unit.FrontendArguments = I.Arguments;
     Jobs.push_back(std::move(Unit));
   }
-  auto Frontend = executable(I.Frontend);
-  if (!Frontend) {
-    fail(D, "TR0101", I.Source, "C++ frontend", toString(Frontend.takeError()),
-         "Build/install the pinned neverc-cpp-frontend helper, then use "
-         "--frontend PATH.");
-    return failed();
-  }
   const bool Math = I.Profile == "cpp-math-v1";
   CppSdkContext SDK;
   MathRuntimeCapabilities Capabilities;
   std::string ResourceDirectory;
   if (Math) {
     Stage = "sdk";
-    if (I.CppSdk.empty()) {
-      SmallString<256> Descriptor(sys::path::parent_path(*Frontend));
-      sys::path::append(Descriptor, "neverc-cpp-sdk.json");
-      I.CppSdk = Descriptor.str().str();
-    }
-    if (!loadCppSdk(I.CppSdk, Context.TargetTriple, SDK, D))
+    if (!loadBuiltinCppSdk(Context.TargetTriple, SDK, D))
       return failed();
-    auto contains = [](StringRef Parent, StringRef Child) {
-      return Child == Parent ||
-             (Child.starts_with(Parent) &&
-              (sys::path::is_separator(Parent.back()) ||
-               sys::path::is_separator(Child[Parent.size()])));
-    };
-    for (const auto &SDKRoot : SDK.Roots)
-      if (contains(Root, SDKRoot.AbsolutePath) ||
-          contains(SDKRoot.AbsolutePath, Root)) {
-        fail(D, "TR0101", I.Source, "SDK ownership",
-             "owned project and SDK roots overlap",
-             "Keep the owned project and approved external SDK in separate "
-             "roots.");
-        return failed();
-      }
     Context.FPContractID = CppMathFPContractID;
     Context.ApprovedSDKIDs = {SDK.DistributionID};
     Stage = "runtime";
@@ -755,7 +706,7 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
       recordError(std::move(E), D, Job.SourceRelative, "frontend request");
       return failed();
     }
-    auto R = runProcess({*Frontend, "--request",
+    auto R = runProcess({*Compiler, CppFrontendCommand, "--request",
                          Writer->stagePath(Prefix + "request.json"), "--output",
                          Writer->stagePath(Prefix + "response.json")},
                         Writer->stagePath(Prefix + "frontend.stdout"),
@@ -767,22 +718,21 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
     if (R.ExitCode != 0) {
       bool HadDiagnostics = false;
       if (Response)
-        HadDiagnostics = helperDiagnostics(*Response, D);
+        HadDiagnostics = frontendDiagnostics(*Response, D);
       else
         consumeError(Response.takeError());
       if (!HadDiagnostics)
-        fail(
-            D, "TR0102", Job.SourceRelative, "C++ frontend process",
-            R.Error.empty()
-                ? "helper failed with exit code " + std::to_string(R.ExitCode)
-                : R.Error,
-            "Check the pinned helper installation and supported source input.");
+        fail(D, "TR0102", Job.SourceRelative, "C++ frontend process",
+             R.Error.empty() ? "built-in frontend failed with exit code " +
+                                   std::to_string(R.ExitCode)
+                             : R.Error,
+             "Check the NeverC installation and supported source input.");
       return failed();
     }
     if (!Response) {
       fail(D, "TR0103", Job.SourceRelative, "frontend response",
            toString(Response.takeError()),
-           "The helper must return a bounded protocol-v1 response.");
+           "The built-in frontend must return a bounded protocol-v1 response.");
       return failed();
     }
     ResponseBytes += Response->size();
@@ -804,7 +754,8 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
         fail(D, "TR0103", Job.SourceRelative, "frontend context",
              "response does not match the selected translation unit and "
              "configuration",
-             "Use the matching pinned helper.");
+             "Use a consistent NeverC installation with its built-in C++ "
+             "frontend.");
         return failed();
       }
       Definitions = &Unit.Definitions;
@@ -813,8 +764,9 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
         if (Definitions->SDKDistributionID != SDK.DistributionID ||
             Definitions->SDKCatalogSHA256 != SDK.CatalogSHA256) {
           fail(D, "TR0103", Job.SourceRelative, "SDK identity",
-               "helper SDK identity does not match the approved request",
-               "Use a matching frontend and the pinned SDK descriptor.");
+               "built-in frontend SDK identity does not match the approved "
+               "request",
+               "Use the matching built-in frontend and SDK.");
           return failed();
         }
         if (!verifyCppSdkDependencies(SDK, Definitions->SDKDependencies, D) ||
@@ -849,8 +801,9 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
         FoundSource = true;
     if (!FoundSource) {
       fail(D, "TR0103", Job.SourceRelative, "source dependency",
-           "helper did not record the selected source hash",
-           "Use the matching pinned helper.");
+           "built-in frontend did not record the selected source hash",
+           "Use a consistent NeverC installation with its built-in C++ "
+           "frontend.");
       return failed();
     }
   }

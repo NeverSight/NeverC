@@ -10,7 +10,7 @@
 
 ## 安装与标量转译
 
-按照[前端说明](../../utils/translate-frontends/cpp/README.md)构建或安装固定版本 Clang 20.1.8 辅助程序。将其放在 NeverC 旁边，设置 `NEVERC_CPP_FRONTEND`，或传入 `--frontend PATH`。转译需要该程序；编译已生成的标量／项目代码不再需要它。
+使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。
 
 ```sh
 neverc translate --from cpp input.cpp -o output.nc
@@ -21,7 +21,7 @@ neverc output.nc -c -o output.o
 
 ## 多文件项目
 
-从编译数据库中明确选择翻译单元，并指定项目根目录。辅助程序逐个分析翻译单元，合并器检查定义的完整性、链接属性及共享类型，并保守验证单一定义规则（ODR）。
+从编译数据库中明确选择翻译单元，并指定项目根目录。内置前端逐个分析翻译单元，合并器检查定义的完整性、链接属性及共享类型，并保守验证单一定义规则（ODR）。
 
 ```sh
 neverc translate --from cpp --profile cpp-project-v1 \
@@ -33,16 +33,16 @@ neverc translate --from cpp --profile cpp-project-v1 \
 
 ## 有限的双精度数学支持
 
-`cpp-math-v1` 在项目支持上增加 `double`、文档列出的转换／比较，以及精确签名 `std::fabs(double)` 和 `std::floor(double)`。它要求固定的 Clang 20.1.8／libc++ 200100／macOS SDK 15.5、SDK 描述文件和明确的 macOS 15.0 目标（arm64 或 x86_64）。暂不支持通用浮点算术。浮点环境要求屏蔽异常陷阱且禁用非正规数归零模式；四种标准舍入模式均已测试。
+`cpp-math-v1` 在项目支持上增加 `double`、文档列出的转换／比较，以及精确签名 `std::fabs(double)` 和 `std::floor(double)`。它使用内置的 Clang 20.1.8／libc++ 200100／macOS 15.5 头文件集合，要求明确的 macOS 15.0 目标（arm64 或 x86_64）。暂不支持通用浮点算术。浮点环境要求屏蔽异常陷阱且禁用非正规数归零模式；四种标准舍入模式均已测试。
 
 ```sh
 neverc translate --from cpp --profile cpp-math-v1 \
-  --target arm64-apple-macosx15.0.0 --cpp-sdk /path/to/neverc-cpp-sdk.json \
+  --target arm64-apple-macosx15.0.0 \
   --project-root "$PWD" --compdb build/compile_commands.json \
   src/math.cpp --out-dir generated-math
 ```
 
-数学转译还会验证已安装的 NeverC 数学头文件、嵌入实现的身份，并实际执行链接探测。生成的数学模块使用 NeverC 运行库，不再需要 C++ 辅助程序或 SDK。使用 `-fno-builtin-std` 时，仅当最终输出需要 `fabs`／`floor` 映射才会在写入前失败；无需这些映射的数学代码仍可转译。
+数学转译还会验证已安装的 NeverC 数学头文件、嵌入实现的身份，并实际执行链接探测。生成的数学模块使用 NeverC 运行库。使用 `-fno-builtin-std` 时，仅当最终输出需要 `fabs`／`floor` 映射才会在写入前失败；无需这些映射的数学代码仍可转译。
 
 ## 验证与输出
 
@@ -50,4 +50,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 输出及附属文件不会覆盖已有文件。`--out-dir` 要求父目录已存在且目标目录不存在；`-o` 要求新的 `.nc` 路径。清单记录目标要求、输入／输出哈希和编译方式，源码映射将生成行关联到原始位置。
 
-执行验证已覆盖原生 macOS arm64，以及通过 Rosetta 运行的 macOS x86_64。这不代表已验证原生 Intel Mac、Linux、Windows 或其他目标。完整 C++／STL、指针、引用、数组、异常、模板、字符串及 `std::vector` 不在已公布的支持范围内。详见[支持矩阵](../../utils/translate-frontends/docs/support-matrix.md)、[协议与恢复规则](../../utils/translate-frontends/docs/protocol.md)及[项目示例](../../tests/neverc/Inputs/translate/cpp/project/)。
+原生 macOS arm64 与通过 Rosetta 运行的 macOS x86_64 的执行及安装验证记录分别列出。这不代表已验证原生 Intel Mac、Linux、Windows 或其他目标。完整 C++／STL、指针、引用、数组、异常、模板、字符串及 `std::vector` 不在已公布的支持范围内。详见[支持矩阵](../../utils/translate-frontends/docs/support-matrix.md)、[协议与恢复规则](../../utils/translate-frontends/docs/protocol.md)及[项目示例](../../tests/neverc/Inputs/translate/cpp/project/)。

@@ -1,11 +1,13 @@
 # C++ frontend feasibility prototype (P0)
 
-This directory is an isolated experiment for issue #16. It is not the production
-helper protocol and does not advertise `cpp-core-v1` support. A pinned full Clang
+This directory is a historical isolated experiment for issue #16. Current
+translation uses the [built-in frontend](../translate-frontends/cpp/README.md)
+and [embedded SDK catalog](../../neverc/lib/Translate/Cpp/SDK/catalog.json).
+The experiment is not the production frontend protocol and does not advertise `cpp-core-v1` support. A pinned full Clang
 parses and resolves C++; a deliberately bounded emitter checks the difficult
 scalar sequencing boundary by compiling its generated `.nc` with NeverC.
 
-## Reproduce on the measured macOS arm64 host
+## Reproduce the historical experiment on macOS arm64
 
 Prerequisites are CMake 3.20+, Ninja, Python 3, LLVM/Clang **20.1.8** development
 headers/libraries, and an existing NeverC build. The measured installation is

@@ -1,31 +1,32 @@
 # C++ translation design and contracts
 
 Status: experimental C++ development implementation for
-[issue #16](https://github.com/NeverSight/NeverC/issues/16). The builtin command,
-full-Clang helper, typed IR, artifact checks, owned-project translation and bounded
-math mappings are implemented. All 126 integrated translation tests pass on native arm64 and Rosetta x86_64.
-Installed output execution is verified after removing the helper and SDK
-descriptor; the support matrix records broader repository regression results. The versioned contracts
-below do not claim a self-contained released frontend/SDK package. Consult the
-[support matrix](support-matrix.md) for the difference between feasibility
+[issue #16](https://github.com/NeverSight/NeverC/issues/16). NeverC contains the
+full-Clang frontend, typed IR, artifact checks, owned-project translation and
+bounded math mappings. The approved math SDK headers are embedded as well;
+translation requires no separate frontend executable, Clang installation or SDK
+descriptor. Consult the [support matrix](support-matrix.md) for the difference between feasibility
 evidence and accepted translation inputs.
 
-## P0 decisions
+## Implementation decisions
 
-1. Use a separate full-Clang helper process. Pin the initial implementation to
-   LLVM/Clang **20.1.8**; do not link its AST/Sema libraries into NeverC's stripped
-   frontend. Keep NeverC's existing C++17 build configuration; the helper has a
-   separate CMake configuration and the language standard its Clang headers need.
+1. Statically embed LLVM/Clang **20.1.8** in NeverC behind a C ABI. A private
+   upstream build and mandatory symbol-isolation audit keep its C++ namespaces,
+   C symbols and support libraries separate from NeverC's modified LLVM. No
+   upstream AST/Sema types cross that boundary. Each analysis job invokes the
+   current NeverC executable in its private frontend mode, preserving process
+   limits and isolation without a separately installed frontend.
 2. Use a structured, versioned semantic protocol across the process boundary.
    The feasibility prototype has its own explicitly nonproduction format. It
    does not establish production protocol compatibility.
 3. Start with one native, hosted C++17 translation unit and the immutable
    `cpp-core-v1` profile. No standard library, includes, allocator, or foreign
    runtime is needed by this scalar/aggregate profile.
-4. The measured development host is macOS arm64. External Homebrew LLVM 20.1.8
-   and the locally installed Apple SDK are development dependencies. They are
-   not part of a validated NeverC release package. The [SDK inventory and
-   reproduction steps](p0-sdk-probes.md) record exactly what was tested.
+4. The embedded distribution contains 209 original approved SDK headers and
+   NeverC-authored SDK version metadata. Its immutable catalog, source provenance
+   and license notices are under [Cpp/SDK](../../../neverc/lib/Translate/Cpp/SDK/README.md).
+   The [P0 SDK probes](p0-sdk-probes.md) retain the historical external-toolchain
+   feasibility evidence; they are not installation instructions.
 5. Enable no C++ runtime mappings in P0–P2. P3B now implements the two explicitly
    approved math mappings; the [mapping inventory](runtime-mapping.md) records
    their numeric, error, capability, and installation evidence and remaining gates.
@@ -34,11 +35,24 @@ Production integration follows the prototype's build, resolved-AST, sequencing,
 dependency-isolation, and measurement checks. Parsing a header or one example
 does not satisfy a complete language profile or close issue #16.
 
+The normal NeverC build uses [BuiltinCppFrontend.cmake](../../../neverc/cmake/modules/BuiltinCppFrontend.cmake)
+to obtain the upstream 20.1.8 source archive with a pinned SHA-256.
+`NEVERC_CPP_LLVM_SOURCE_ARCHIVE` can supply the same archive offline;
+`NEVERC_CPP_BUILD_JOBS` bounds its private build concurrency. These are build
+inputs, not translation-time tool selectors. Before linking, the audit compares
+every private definition and reference with the host libraries' definitions.
+The pinned LLVM reader checks private objects; a compiler-compatible host reader
+handles newer Clang/GCC LTO, while MSVC uses validated COFF linker indexes for
+LTCG archives. `NEVERC_CPP_HOST_NM` overrides the host reader at build time. A
+failed inspection stops the link. Installed translation does not load external Clang/LLVM
+libraries. Existing NeverC runtime and optional plugin dependencies are separate
+from this frontend contract.
+
 ## Pipeline and ownership
 
 ```text
 source + explicit source compiler options
-  -> pinned full-Clang process: parse, resolve, enforce source subset
+  -> current NeverC's built-in full-Clang child: parse, resolve, enforce source subset
   -> C++ adapter: explicit evaluation, conversions, semantic identities
   -> versioned typed Translate IR
   -> language-neutral verifier -> NC emitter
@@ -91,7 +105,7 @@ neverc translate --from cpp --profile cpp-project-v1 \
   project/src/a.cpp project/src/b.cpp --out-dir generated
 neverc translate --from cpp --profile cpp-math-v1 \
   --project-root project --compdb project/compile_commands.json \
-  --target arm64-apple-macosx15.0.0 --cpp-sdk /path/to/neverc-cpp-sdk.json \
+  --target arm64-apple-macosx15.0.0 \
   project/src/math.cpp --check --report report.json
 ```
 
@@ -102,12 +116,12 @@ Both require `--project-root` and `--compdb`, and accept only `--out-dir` or
 to the build host's convention. The [context contract](p3-compilation-context.md)
 defines accepted arguments and input limits.
 
-In a development checkout, select the separately built helper with
-`--frontend /path/to/neverc-cpp-frontend` or `NEVERC_CPP_FRONTEND`. The installed
-default is a helper beside the NeverC executable; an unavailable helper fails
-with `TR0101`. Help remains available without the helper.
+The driver always invokes its current NeverC executable. The old `--frontend`
+and `--cpp-sdk` options are rejected; `NEVERC_CPP_FRONTEND` and `NEVERC_CPP_SDK`
+do not select external tools or SDK inputs. The public command uses the same
+built-in frontend and catalog in development and installed builds.
 
-`--from` is required. `cpp` defaults to `cpp-core-v1`; `--profile` selects a
+`--from` is required. `cpp` defaults to `cpp-core-v1`; `--profile` selects an
 available profile explicitly. Other language names and unimplemented profiles
 fail. Core takes exactly one source; project profiles take an explicit list.
 Arguments after `--` are parsed as source
@@ -133,11 +147,11 @@ execute the user's program. A module without `main` receives no synthetic entry
 point. Successful translation establishes completion of those checks; executable
 and library link/run evidence is additionally required by profile release tests.
 
-Math additionally loads the pinned external SDK descriptor, checks actual
+Math additionally loads the immutable built-in SDK catalog, checks actual
 consumed-header and declaration evidence, verifies the precise installed runtime
 header and embedded implementation identities, and links a separate capability
-probe. `--cpp-sdk` defaults to `neverc-cpp-sdk.json` beside the helper. Required
-mappings fail with `TR0403` when `-fno-builtin-std` disables their runtime.
+probe. Required mappings fail with `TR0403` when `-fno-builtin-std` disables their
+runtime; math code requiring no final mapping remains admissible.
 Generated-code validation isolates implicit compiler environment/configuration;
 the recorded recipe includes `--no-default-config`. Neither a header search
 environment variable nor a default configuration may replace an approved input.
@@ -156,9 +170,9 @@ requirements; the manifest also records the exact triple and deployment/build
 requirements. An incompatible compilation fails and requires retranslating the
 source. P0's macOS arm64 probe target is `arm64-apple-macosx15.0.0` using SDK 15.5;
 that experiment does not advertise cross-target support or a minimum supported
-release OS for the helper. A NeverC build running under Rosetta may instead have
-an x86_64 default target: the driver must explicitly request its validated
-target from the helper rather than infer arm64 from the machine's hardware.
+release OS for the built-in frontend. A NeverC build running under Rosetta may
+instead have an x86_64 default target: the driver must explicitly request its validated
+target from the frontend rather than infer arm64 from the machine's hardware.
 
 P3A implements explicit `--target` and compilation-database selection. Resolve
 paths relative to each entry's `directory`; prefer its structured `arguments`.
@@ -170,8 +184,8 @@ is not a complete link graph.
 
 An omitted project target defaults to NeverC's normalized native target. Math
 requires an explicit x86_64/arm64 macOS 15.0 target and the approved Clang 20.1.8,
-libc++ 200100, Apple SDK 15.5 distribution. Equivalent Darwin spellings are
-checked by their effective deployment version. Compilation-database target
+libc++ 200100, macOS 15.5 header distribution embedded in NeverC. Equivalent
+Darwin spellings are checked by their effective deployment version. Compilation-database target
 options must agree; SDK/resource/sysroot overrides are rejected. The
 [SDK/runtime contract](p3-math-capabilities.md) defines separate SDK dependency
 identities, the approved catalog and canonical implementation fingerprints.
@@ -197,7 +211,7 @@ output directory is an independent publication and is not covered by the
 directory rename. Do not claim a filesystem-wide atomic transaction.
 
 Cancellation is scoped to the entire translation invocation. Check it between
-stages and before publication/commit, request termination of any running helper
+stages and before publication/commit, request termination of any running frontend
 or validation process, and roll back newly published files before retaining an
 external failure report. Termination targets the owned child only. The runner
 polls for at most 200 ms to reap a terminated child; an OS process that remains
@@ -222,7 +236,7 @@ The following information is mandatory; no prototype JSON can substitute for it.
 
 | Format | Required information |
 | --- | --- |
-| Helper semantic protocol | Protocol version, frontend name/version/build ID, requested profile, normalized source options, target/data model, source/dependency identities and hashes, typed IR and references, source locations, mapping operation IDs/preconditions, diagnostics/status. |
+| Internal frontend semantic protocol | Protocol version, frontend name/version/build ID, requested profile, normalized source options, target/data model, source/dependency identities and hashes, typed IR and references, source locations, mapping operation IDs/preconditions, diagnostics/status. |
 | Manifest | Manifest/profile version, input/dependency hashes, normalized options, frontend and NeverC build IDs, target/data model, mappings, required headers/modules/options, exports/linkage, generated file paths and SHA-256 hashes, reproducible compilation recipe. Empty mapping/dependency requirements are recorded explicitly for the scalar profile. |
 | Report | Report version, profile, stage, success/failure status, diagnostics, applied mappings, unresolved mapping gaps. Operational timings and machine-specific diagnostic context may appear here, not in deterministic manifests. |
 | Source map | Map version, project-relative input identities, generated-relative file identities and hashes, generated location ranges mapped to original file/line/column ranges, semantic symbol or operation identity where available. |
@@ -236,12 +250,14 @@ response-file inputs. Reject `__DATE__`, `__TIME__`, `__TIMESTAMP__`, `__FILE__`
 must survive relocation of that root. Reproducibility requires the same declared
 inputs, profile, toolchain, and target.
 
-Compilation databases, response files and SDK descriptors also retain their raw
+Compilation databases and response files also retain their raw
 byte hashes. Rewriting their absolute paths during relocation changes those
 declared inputs and their provenance hashes intentionally. Normalized context
 IDs and generated code remain stable for equivalent supported contexts; complete
 manifest byte identity is promised only when the declared raw inputs also match.
 Source and owned/SDK header hashes always describe exact consumed bytes.
+The SDK catalog hash identifies the embedded inventory and metadata; manifests
+record `sdk.delivery: "builtin"`, with no machine-specific SDK roots or descriptor.
 
 ## Stable diagnostic meanings
 
@@ -284,7 +300,10 @@ P0 selects and measures the full frontend and SDK arrangement, including the
 sequencing experiment. P1 establishes the driver/IR/artifact infrastructure with
 synthetic semantic input. P2 ships the experimental scalar profile only after
 complete positive/negative, differential `-O0`/`-O2`, deterministic-input,
-failure-publication, and installed-frontend checks. P3A adds bounded project
+failure-publication, and installed-frontend checks. Built-in delivery additionally
+requires a symbol-isolated static archive, installation without external
+Clang/LLVM or SDK inputs, embedded-header provenance checks, and the same complete
+profile regressions. P3A adds bounded project
 support; P3B adds the explicitly verified math operations. String/vector and
 later languages remain separate profile work. The parent roadmap remains open
 until its P0–P3 acceptance and linked follow-up conditions are met.

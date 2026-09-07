@@ -1,10 +1,17 @@
 # Translate semantic protocol v1
 
-This is the private, versioned semantic interchange between the full-Clang helper and NeverC. It is independent of manifest, diagnostic-report, and source-map schema versions. JSON is UTF-8; no source snippets, AST pointers, absolute paths, or platform binary structures are executable protocol content. Maximum response size is 32 MiB; structural nesting and instruction counts are bounded by the consumer.
+This is the private, versioned semantic interchange between NeverC’s built-in full-Clang frontend child and its translation driver. It is independent of manifest, diagnostic-report, and source-map schema versions. JSON is UTF-8; no source snippets, AST pointers, absolute paths, or platform binary structures are executable protocol content. Maximum response size is 32 MiB; structural nesting and instruction counts are bounded by the consumer.
 
-The helper accepts `--request request.json` and `--output response.json`. A request contains `protocol: 1`, `profile: "cpp-core-v1"`, absolute `root` and `source` paths, a native `target` triple, and `arguments` (a JSON string array). Absolute request paths are diagnostic/process context only. Normalized artifact paths are relative to root. The driver validates source options before invocation; the helper independently validates them before Clang. It never runs source programs or commands from a compilation database.
+The driver invokes its current executable as `neverc __neverc_cpp_frontend --request request.json --output response.json`. This is a private mode, not a separately installed tool. A request contains `protocol: 1`, `profile: "cpp-core-v1"`, absolute `root` and `source` paths, a native `target` triple, and `arguments` (a JSON string array). Absolute request paths are diagnostic/process context only. Normalized artifact paths are relative to root. The driver validates source options before invocation; the frontend independently validates them before Clang. It never runs source programs or commands from a compilation database.
 
-Both successful and failed helper responses are checked against the 32 MiB
+Requests are bounded regular files of at most 1 MiB and JSON nesting depth 32;
+the main source is limited to 8 MiB. The request envelope is closed: unknown or
+profile-inapplicable fields fail. Core has exactly the six fields above, project
+adds `translation_unit`, `configuration_id` and `working_directory`, and math
+also adds the two-field `sdk` object defined below. Existing response files are
+never overwritten.
+
+Both successful and failed frontend responses are checked against the 32 MiB
 size limit and a structural nesting limit of 64 before recursive JSON parsing.
 Malformed or over-deep failure responses cannot bypass the normal protocol
 checks. Driver file inputs must be regular files; the bounded reader checks the
@@ -13,7 +20,7 @@ reading. FIFOs, directories and devices are rejected without waiting for input.
 
 ## Compiler execution environment
 
-Every manifest declares `compiler_environment_policy: "neverc.translate.execution-env.v1"`. This driver-owned policy applies to every translator child process, including the frontend helper, compiler resource lookup, generated-source validation, and runtime link probe. The child environment starts empty and inherits only these variables when they are present in the parent environment: `PATH`, `HOME`, `USERPROFILE`, `SystemRoot`, `SystemDrive`, `COMSPEC`, `PATHEXT`, `TMPDIR`, `TMP`, and `TEMP`. Their names are spelled exactly as listed. The driver then supplies `LC_ALL=C` and `NEVERC_NO_DEFAULT_CONFIG=1` with fixed values. All other inherited variables are omitted, including compiler include paths, deployment-target overrides, and loader overrides.
+Every manifest declares `compiler_environment_policy: "neverc.translate.execution-env.v1"`. This driver-owned policy applies to every translator child process, including the frontend child, compiler resource lookup, generated-source validation, and runtime link probe. The child environment starts empty and inherits only these variables when they are present in the parent environment: `PATH`, `HOME`, `USERPROFILE`, `SystemRoot`, `SystemDrive`, `COMSPEC`, `PATHEXT`, `TMPDIR`, `TMP`, and `TEMP`. Their names are spelled exactly as listed. The driver then supplies `LC_ALL=C` and `NEVERC_NO_DEFAULT_CONFIG=1` with fixed values. All other inherited variables are omitted, including compiler include paths, deployment-target overrides, and loader overrides.
 
 Compiler invocations and the manifest's `compiler_options` and `compilation_recipe` also include `--no-default-config`. A generated recipe is an argument vector and must be replayed with the declared environment policy, the recorded target and options, and the validated compiler/runtime inputs. Replaying it under a later user-supplied compiler environment is outside translation validation; the recipe's argument vector alone does not reproduce the validated environment. The environment policy is manifest metadata controlled by the driver, not frontend-provided authorization or semantic IR.
 
@@ -47,6 +54,8 @@ A successful response contains:
 }
 ```
 
+The wire frontend name `neverc-cpp-frontend` remains a semantic identity; it does not name an installed executable. The build ID carries a digest of the embedded frontend/build inputs.
+
 Failure returns nonzero and a response containing protocol/profile/frontend and diagnostics when possible. No partially valid module is consumed. Each diagnostic has string `code`, `file`, `construct`, `reason`, `guidance` and positive integer `line`, `column`; driver-level diagnostics use the input path and location 1:1 when no more precise source location exists.
 
 ## Types, declarations and identity
@@ -55,7 +64,7 @@ Types are strings: `int`, `uint`, `bool`, `void`, or the identifier of a record.
 
 Identifiers are ASCII C identifiers. Non-C-export declarations use an `nct_` prefix and a deterministic digest of their semantic identity. Internal-linkage identities include the normalized relative source path. Native C exports retain their explicit source name and must use scalar signatures; `main` retains its spelling, int return, and empty argument list. All emitted identifiers reject NC keywords and reserved runtime/compiler spellings, including the emitter-private `nct_emit_` prefix. Record typedefs, globals and functions occupy one disjoint ordinary-identifier namespace; parameters and locals are mutually distinct and cannot shadow module declarations. Field names are distinct within each record. Source C exports may not use the generated `nct_` namespace. Identifiers never depend on AST addresses or absolute roots.
 
-Globals are `{name,type,value,loc}`. Their values must be fully folded literal/aggregate trees: the helper resolves constant references, operators and conversions before serialization. They represent only checked compile-time constants and are never assignable. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. This is sound only for the admitted trivial value types without references, addresses, destructors or variable-sized objects.
+Globals are `{name,type,value,loc}`. Their values must be fully folded literal/aggregate trees: the frontend resolves constant references, operators and conversions before serialization. They represent only checked compile-time constants and are never assignable. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. This is sound only for the admitted trivial value types without references, addresses, destructors or variable-sized objects.
 
 ## Pure expressions
 
@@ -90,7 +99,7 @@ The consumer validates the entire module and all referenced symbols, types, fiel
 
 ## Emission, validation and metadata
 
-NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record helper and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
+NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record frontend and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
 
 ## Gated mathematics extension
 
@@ -124,7 +133,7 @@ Every math unit includes these fields:
 ```json
 {
   "fp_contract": "cpp.math.binary64.masked.v1",
-  "sdk_distribution_id": "clang20.1.8-libcxx200100-macos15.5",
+  "sdk_distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5",
   "sdk_catalog_sha256": "<64 lowercase hex digits>",
   "sdk_dependencies": [
     {"root":"platform","path":"usr/include/math.h","sha256":"<64 lowercase hex digits>"}
@@ -143,7 +152,10 @@ Every math unit includes these fields:
 ```
 
 SDK roots are exactly `libcxx`, `resource`, and `platform`; their paths are
-normalized relative to the explicitly approved external root. These entries do
+normalized relative to their approved embedded VFS trees. No host SDK root is
+accepted. The request SDK envelope has only `distribution_id` and
+`catalog_sha256`; the [SDK contract](p3-math-capabilities.md) defines the immutable
+source inventory and the manifest’s `sdk.delivery: "builtin"` record. These entries do
 not weaken owned-dependency path checks. A mapping's origin must match a consumed
 SDK dependency, and mapped `std` calls also require the consumed `libcxx/cmath`
 entry. The example omits unrelated SDK dependencies for space; actual responses
@@ -160,7 +172,7 @@ and runtime module names. Every evidence entry must correspond to a mapped call.
 `VerificationContext` separately authorizes the FP contract, SDK distribution,
 and operation IDs. The driver sets those authorizations after checking its
 compiled SDK inventory, exact consumed files, resolved declarations, and runtime
-capability registry. Helper-reported fields are evidence to validate, never
+capability registry. Frontend-reported fields are evidence to validate, never
 self-authorizing capability claims. The merger compares SDK/catalog/FP identity,
 merges SDK dependencies and mapping evidence deterministically, and verifies the
 closed result again.

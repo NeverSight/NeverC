@@ -10,7 +10,7 @@
 
 ## 설치와 스칼라 변환
 
-[프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)에 따라 고정 버전 Clang 20.1.8 보조 프로그램을 빌드하거나 설치하세요. NeverC 옆에 두거나 `NEVERC_CPP_FRONTEND` 또는 `--frontend PATH`로 지정합니다. 변환에는 필요하지만 생성된 스칼라／프로젝트 출력의 컴파일에는 필요하지 않습니다.
+일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.
 
 ```sh
 neverc translate --from cpp input.cpp -o output.nc
@@ -21,7 +21,7 @@ neverc output.nc -c -o output.o
 
 ## 여러 파일로 구성된 프로젝트
 
-컴파일 데이터베이스에서 번역 단위를 명시적으로 선택하고 프로젝트 루트 디렉터리를 지정합니다. 보조 프로그램은 각 단위를 따로 분석하며 병합기는 정의의 완전성, 링크 속성과 공유 타입을 검사하고 단일 정의 규칙(ODR) 준수 여부를 보수적으로 검증합니다.
+컴파일 데이터베이스에서 번역 단위를 명시적으로 선택하고 프로젝트 루트 디렉터리를 지정합니다. 내장 프런트엔드는 각 단위를 따로 분석하며 병합기는 정의의 완전성, 링크 속성과 공유 타입을 검사하고 단일 정의 규칙(ODR) 준수 여부를 보수적으로 검증합니다.
 
 ```sh
 neverc translate --from cpp --profile cpp-project-v1 \
@@ -33,16 +33,16 @@ neverc translate --from cpp --profile cpp-project-v1 \
 
 ## 제한된 배정밀도 수학 지원
 
-`cpp-math-v1`은 프로젝트에 `double`, 문서에 명시된 변환과 비교, 정확한 시그니처의 `std::fabs(double)` 및 `std::floor(double)`을 추가합니다. 고정된 Clang 20.1.8 / libc++ 200100 / macOS SDK 15.5, SDK 설명 파일, 명시적인 macOS 15.0 대상(arm64 또는 x86_64)이 필요합니다. 일반적인 부동소수점 산술은 지원하지 않습니다. 예외 트랩은 마스킹하고 비정규수를 0으로 만드는 모드는 꺼야 합니다. 네 가지 표준 반올림 모드를 테스트했습니다.
+`cpp-math-v1`은 프로젝트에 `double`, 문서에 명시된 변환과 비교, 정확한 시그니처의 `std::fabs(double)` 및 `std::floor(double)`을 추가합니다. 내장된 Clang 20.1.8 / libc++ 200100 / macOS 15.5 헤더 모음을 사용하며 macOS 15.0 대상(arm64 또는 x86_64)을 명시해야 합니다. 일반적인 부동소수점 산술은 지원하지 않습니다. 예외 트랩은 마스킹하고 비정규수를 0으로 만드는 모드는 꺼야 합니다. 네 가지 표준 반올림 모드를 테스트했습니다.
 
 ```sh
 neverc translate --from cpp --profile cpp-math-v1 \
-  --target arm64-apple-macosx15.0.0 --cpp-sdk /path/to/neverc-cpp-sdk.json \
+  --target arm64-apple-macosx15.0.0 \
   --project-root "$PWD" --compdb build/compile_commands.json \
   src/math.cpp --out-dir generated-math
 ```
 
-수학 변환은 설치된 NeverC 수학 헤더, 내장 구현의 식별 정보와 실제 링크도 검증합니다. 생성된 수학 모듈은 NeverC 런타임을 사용하며 C++ 도우미나 SDK가 필요하지 않습니다. `-fno-builtin-std`를 지정하면 최종 출력에 `fabs`/`floor` 매핑이 필요한 경우에만 파일을 쓰기 전에 변환이 실패합니다. 이 매핑이 필요 없는 수학 코드는 계속 변환할 수 있습니다.
+수학 변환은 설치된 NeverC 수학 헤더, 내장 구현의 식별 정보와 실제 링크도 검증합니다. 생성된 수학 모듈은 NeverC 런타임을 사용합니다. `-fno-builtin-std`를 지정하면 최종 출력에 `fabs`/`floor` 매핑이 필요한 경우에만 파일을 쓰기 전에 변환이 실패합니다. 이 매핑이 필요 없는 수학 코드는 계속 변환할 수 있습니다.
 
 ## 검증과 출력
 
@@ -50,4 +50,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 출력과 부속 파일은 덮어쓰지 않습니다. `--out-dir`는 기존 부모 디렉터리 아래 새 디렉터리를, `-o`는 새 `.nc` 경로를 요구합니다. 매니페스트는 대상 요구 사항, 입출력 해시와 컴파일 절차를 기록하며 소스 맵은 생성된 행을 원래 위치에 연결합니다.
 
-실행은 네이티브 macOS arm64와 Rosetta에서 구동하는 macOS x86_64에서 검증했습니다. Intel Mac의 네이티브 실행, Linux, Windows 및 다른 대상을 지원한다는 의미는 아닙니다. 전체 C++／STL, 포인터, 참조, 배열, 예외, 템플릿, 문자열과 `std::vector`는 공개된 지원 범위에 포함되지 않습니다. [지원 표](../../utils/translate-frontends/docs/support-matrix.md), [프로토콜 및 복구 규칙](../../utils/translate-frontends/docs/protocol.md), [프로젝트 예제](../../tests/neverc/Inputs/translate/cpp/project/)를 참고하세요.
+실행 및 설치 검증 기록은 네이티브 macOS arm64와 Rosetta에서 구동하는 macOS x86_64를 구분해 제공합니다. Intel Mac의 네이티브 실행, Linux, Windows 및 다른 대상을 지원한다는 의미는 아닙니다. 전체 C++／STL, 포인터, 참조, 배열, 예외, 템플릿, 문자열과 `std::vector`는 공개된 지원 범위에 포함되지 않습니다. [지원 표](../../utils/translate-frontends/docs/support-matrix.md), [프로토콜 및 복구 규칙](../../utils/translate-frontends/docs/protocol.md), [프로젝트 예제](../../tests/neverc/Inputs/translate/cpp/project/)를 참고하세요.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Approved SDK provenance and bounded binary64 helper regression tests.
+"""Approved SDK provenance and bounded binary64 internal frontend regression tests.
 
 Keep this filename distinct from Python's math standard-library module.
 """
@@ -7,7 +7,6 @@ import argparse
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -24,34 +23,39 @@ def walk(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--helper", required=True, type=Path)
-    parser.add_argument("--sdk", required=True, type=Path, help="neverc.cpp.sdk descriptor")
+    parser.add_argument("--neverc", required=True, type=Path)
     parser.add_argument("--target", default="x86_64-apple-macosx15.0.0")
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
-    args.helper = args.helper.resolve()
+    args.neverc = args.neverc.resolve()
     args.output_dir.mkdir(parents=True, exist_ok=False)
     repository = Path(__file__).resolve().parents[4]
-    catalog_path = repository / "utils/translate-frontends/cpp/sdk/approved-sdk.json"
+    catalog_path = repository / "neverc/lib/Translate/Cpp/SDK/catalog.json"
     catalog = json.loads(catalog_path.read_text())
-    descriptor = json.loads(args.sdk.read_text())
-    sdk = {"distribution_id": descriptor["distribution_id"],
-           "catalog_sha256": hashlib.sha256(catalog_path.read_bytes()).hexdigest(),
-           "roots": {k: str(Path(v).resolve()) for k, v in descriptor["roots"].items()}}
+    sdk = {"distribution_id": catalog["distribution_id"],
+           "catalog_sha256": hashlib.sha256(catalog_path.read_bytes()).hexdigest()}
     count = 0
 
-    def check(name, source, code=None, options=(), selected_sdk=None, target=None, env=None):
+    def check(name, source, code=None, options=(), selected_sdk=None, target=None, env=None, files=None,
+              filesystem_root=False):
         nonlocal count
         root = args.output_dir / name
         root.mkdir()
         (root / "input.cpp").write_text(source)
+        for path, contents in (files or {}).items():
+            file = root / path
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text(contents)
         request = {"protocol": 1, "profile": "cpp-math-v1", "root": str(root.resolve()),
             "source": str((root / "input.cpp").resolve()), "translation_unit": "input.cpp",
             "configuration_id": "a" * 64, "working_directory": str(root.resolve()),
             "target": target or args.target, "arguments": ["-std=c++17", *options], "sdk": selected_sdk or sdk}
+        if filesystem_root:
+            request["root"] = Path(request["source"]).anchor
+            request["translation_unit"] = Path(request["source"]).relative_to(request["root"]).as_posix()
         (root / "request.json").write_text(json.dumps(request))
-        p = subprocess.run([str(args.helper), "--request", str(root / "request.json"),
-            "--output", str(root / "response.json")], capture_output=True, text=True, env=env)
+        p = subprocess.run([str(args.neverc), "__neverc_cpp_frontend", "--request", str(root / "request.json"),
+            "--output", str(root / "response.json")], capture_output=True, text=True, env=env, timeout=120)
         assert (root / "response.json").exists(), (name, p.returncode, p.stderr)
         data = json.loads((root / "response.json").read_text())
         codes = {d["code"] for d in data["diagnostics"]}
@@ -59,6 +63,7 @@ def main():
             assert p.returncode and code in codes, (name, code, data)
         else:
             assert not p.returncode and not codes, (name, p.returncode, data)
+            assert data["translation_unit"] == request["translation_unit"]
             assert data["fp_contract"] == "cpp.math.binary64.masked.v1"
             assert data["sdk_distribution_id"] == sdk["distribution_id"]
             assert data["sdk_catalog_sha256"] == sdk["catalog_sha256"]
@@ -134,36 +139,47 @@ def main():
     check("wrong-catalog", module, "TR0203", selected_sdk=wrong)
     wrong = json.loads(json.dumps(sdk)); wrong["distribution_id"] = "not-approved"
     check("wrong-distribution", module, "TR0203", selected_sdk=wrong)
+    # The reserved VFS root is selected by the host filesystem, independently
+    # of the macOS target. Only '/' or the Windows Z: drive root overlaps it;
+    # a project rooted on another Windows drive/UNC share remains admissible.
+    overlaps_sdk = os.name != "nt" or args.output_dir.resolve().drive.upper() == "Z:"
+    rooted = check("filesystem-root", module, "TR0203" if overlaps_sdk else None,
+                   filesystem_root=True)
+    if overlaps_sdk:
+        assert any(d["construct"] == "C++ SDK" and "overlaps" in d["reason"]
+                   for d in rooted["diagnostics"]), rooted
 
-    # Copy only cataloged inputs; never mutate the installed SDK. A request
-    # cannot bless edited bytes by supplying its own file hashes.
-    clone = args.output_dir / "sdk-copy"
-    copied = json.loads(json.dumps(sdk))
-    for root in sdk["roots"]:
-        (clone / root).mkdir(parents=True)
-        copied["roots"][root] = str((clone / root).resolve())
-    for entry in [*catalog["headers"], *catalog.get("metadata", [])]:
-        path = clone / entry["root"] / entry["path"]
-        path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(Path(sdk["roots"][entry["root"]]) / entry["path"], path)
-    relocated = check("sdk-relocated", module, selected_sdk=copied)
-    assert relocated == main, "SDK absolute paths leaked into semantic metadata"
-    math_header = clone / "platform/usr/include/math.h"
-    math_header.write_text(math_header.read_text() + "\n// changed SDK bytes\n")
-    check("sdk-tampered", module, "TR0203", selected_sdk=copied)
-    math_header.unlink()
-    check("sdk-missing", module, "TR0203", selected_sdk=copied)
-    environment = dict(os.environ, CPATH=str(clone), CPLUS_INCLUDE_PATH=str(clone), SDKROOT=str(clone))
+    # Embedded identities cannot be overridden by physical roots or new hashes.
+    poison = args.output_dir / "sdk-poison"
+    poison.mkdir()
+    (poison / "cmath").write_text("#error external environment header was loaded\n")
+    wrong = dict(sdk, roots={key: str(poison) for key in ("libcxx", "resource", "platform")})
+    check("physical-roots-rejected", module, "TR0203", selected_sdk=wrong)
+    assert check("relocated", module) == main, "absolute paths leaked into semantic metadata"
+    macro = check("preserved-macros", "#include <cmath>\nconst double pi=M_PI;const int library=_LIBCPP_VERSION;const int deployment=__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__;const int sdk=__MAC_OS_X_VERSION_MAX_ALLOWED;")
+    literals = [node for node in walk(macro["globals"]) if node.get("kind") == "literal"]
+    assert {node["bits"] for node in literals if node["type"] == "double"} == {"400921fb54442d18"}
+    assert {node["value"] for node in literals if node["type"] == "int"} == {"200100", "150000", "150500"}
+    # Identical owned copies still cannot acquire trusted SDK declaration identity.
+    sdk_source = repository / "neverc/lib/Translate/Cpp/SDK"
+    for name, filename, contents, code in (
+        ("fake-cmath", "cmath", "namespace std {double fabs(double);}", "TR0201"),
+        ("owned-import", "cmath", 'extern "C" double fabs(double);namespace std {using ::fabs;}', "TR0203"),
+        ("fake-math", "math.h", 'extern "C" double fabs(double);extern "C" double floor(double);', "TR0202"),
+        ("exact-cmath", "cmath", (sdk_source / "libcxx/cmath").read_text(), "TR0201"),
+        ("exact-math", "math.h", (sdk_source / "platform/usr/include/math.h").read_text(), "TR0201"),
+    ):
+        check(name, '#include <cmath>\ndouble f(double x){return std::fabs(x);}', code,
+              options=("-I", str((args.output_dir / name).resolve())), files={filename: contents})
+    environment = dict(os.environ, CPATH=str(poison), CPLUS_INCLUDE_PATH=str(poison), SDKROOT=str(poison),
+                       NEVERC_CPP_FRONTEND=str(poison / "missing-frontend"), NEVERC_CPP_SDK=str(poison / "missing-sdk"))
     assert check("environment", module, env=environment) == main
-    isolated_helper = args.output_dir / "isolated-helper"
-    isolated_helper.mkdir()
-    helper_copy = isolated_helper / "neverc-cpp-frontend"
-    shutil.copy2(args.helper, helper_copy)
-    for filename in ("clang-tool.cfg", "neverc-cpp-frontend.cfg", "clang++.cfg", "x86_64-apple-macosx15.0.0-clang++.cfg"):
-        (isolated_helper / filename).write_text("--invalid-config-must-not-be-loaded\n")
-    args.helper = helper_copy
-    config_environment = dict(os.environ, HOME=str(isolated_helper), CLANG_CONFIG_FILE_USER_DIR=str(isolated_helper),
-                              CLANG_CONFIG_FILE_SYSTEM_DIR=str(isolated_helper))
+    configuration = args.output_dir / "poison-config"
+    configuration.mkdir()
+    for filename in ("clang-tool.cfg", "neverc.cfg", "clang++.cfg", "x86_64-apple-macosx15.0.0-clang++.cfg"):
+        (configuration / filename).write_text("--invalid-config-must-not-be-loaded\n")
+    config_environment = dict(os.environ, HOME=str(configuration), CLANG_CONFIG_FILE_USER_DIR=str(configuration),
+                              CLANG_CONFIG_FILE_SYSTEM_DIR=str(configuration))
     assert check("default-config-isolation", module, env=config_environment) == main
     print(json.dumps({"status": "passed", "cases": count, "target": args.target,
         "module_response": str(args.output_dir / "module/response.json")}, indent=2))

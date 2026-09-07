@@ -2865,6 +2865,29 @@ gtest_discover_tests(neverc-translate-tests
   DISCOVERY_TIMEOUT 300
 )
 
+# Exercise the private protocol through this build's NeverC, including request
+# limits and platform path handling that synthetic IR tests cannot cover.
+# check-neverc already builds NeverC and runs all tests registered in this tree.
+function(add_neverc_cpp_protocol_test suite)
+  set(_test_name "neverc-translate.protocol.${suite}")
+  add_test(
+    NAME ${_test_name}
+    COMMAND "${Python3_EXECUTABLE}" -I -B
+            "${CMAKE_CURRENT_SOURCE_DIR}/TranslateCppProtocolRunner.py"
+            --neverc "${_NEVERC_BINARY}" --suite "${suite}"
+  )
+  set_tests_properties(${_test_name} PROPERTIES
+    TIMEOUT 660
+    LABELS "translate;cpp;protocol"
+  )
+endfunction()
+
+add_neverc_cpp_protocol_test(core)
+add_neverc_cpp_protocol_test(project)
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+  add_neverc_cpp_protocol_test(math)
+endif()
+
 add_executable(neverc-run-tests RunDriverTests.cpp)
 
 target_link_libraries(neverc-run-tests PRIVATE

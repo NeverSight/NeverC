@@ -1,26 +1,24 @@
 # C++ translation support matrix
 
-Status: experimental C++ P0–P3 implementation of `cpp-core-v1`,
-`cpp-project-v1`, and `cpp-math-v1`. Both native macOS arm64 and Rosetta x86_64
-passed all 126 integrated translation tests, including environment isolation,
-SDK/runtime verification, O0/O2 execution, and full-value differential checks.
-Fresh-prefix installation and generated-code independence are verified with the
-declared external LLVM/Clang 20.1.8 and Apple SDK dependencies. This is an
-external-toolchain installation, not a self-contained frontend/SDK release.
+Status: experimental built-in C++ implementation of `cpp-core-v1`,
+`cpp-project-v1`, and `cpp-math-v1`. NeverC statically contains the pinned full
+Clang frontend and approved SDK headers. No separate frontend executable,
+Clang/LLVM installation or SDK descriptor is needed for translation. Only C++
+input translation is implemented; other language adapters remain future work.
 The [design](design.md) defines commands, diagnostics, and artifacts.
 
 ## Implementation status
 
 | Capability | Evidence/status |
 | --- | --- |
-| Full-Clang frontend candidate | Separate LLVM/Clang 20.1.8 feasibility prototype under `utils/translate-prototype/`; its README records build and measurements. |
-| C++ SDK parsing | Reproduced `<cmath>`, `<string>`, and `<vector>` syntax probes with libc++ headers from the 20.1.8 distribution and Apple SDK 15.5. See [measured inventory](p0-sdk-probes.md). |
+| Built-in full-Clang frontend | Private LLVM/Clang 20.1.8 static build, isolated symbols and C ABI, invoked through the current NeverC executable. The separate `utils/translate-prototype/` experiment is historical feasibility evidence. |
+| C++ SDK parsing | The approved `<cmath>` header union and minimal SDK version metadata are embedded. Historical `<string>` and `<vector>` syntax probes establish no translation support. See [source provenance](../../../neverc/lib/Translate/Cpp/SDK/README.md). |
 | Builtin driver, semantic protocol, artifact checks | Implemented with CLI/IR/artifact tests; production protocol is separate from the P0 prototype format. |
-| Experimental `cpp-core-v1` | Implemented and locally exercised through the actual helper and NeverC: programs/modules, `-O0`/`-O2` full-value comparison, rejection, relocation, output ownership, and cancellation tests. Installed helper discovery and independent generated-code builds are verified; platform coverage is listed below. |
-| Multi-file project translation | P3A implemented: compilation-database selection, owned headers, per-unit semantic analysis, ODR/linkage checks, combined source/header emission, and actual-helper program/library comparison at `-O0`/`-O2`. |
+| Experimental `cpp-core-v1` | Implemented: programs/modules, `-O0`/`-O2` full-value comparison, rejection, relocation, output ownership and cancellation tests. Platform and delivery evidence is listed below. |
+| Multi-file project translation | P3A implemented: compilation-database selection, owned headers, per-unit semantic analysis, ODR/linkage checks, combined source/header emission, and original/generated program/library comparison at `-O0`/`-O2`. |
 | NeverC math mappings | P3B implemented behind explicit `cpp-math-v1`, pinned SDK/declaration provenance, exact runtime capability checks, and a runtime link probe. The [mapping gates](runtime-mapping.md) include numeric/environment differentials and installed output execution. |
 | C++ byte strings / trivial vectors | Follow-up profiles; no translation support implied by parsing their headers. |
-| Self-contained frontend/SDK distribution | Unvalidated. Current probes require an external development toolchain and Apple SDK. |
+| Built-in frontend/SDK delivery | Implemented in normal NeverC builds; upstream Clang is a pinned build-time source input. Runtime and installation evidence is tracked separately below. |
 
 ## `cpp-core-v1` acceptance contract — P2
 
@@ -58,8 +56,8 @@ Naïve source-to-source printing is not an accepted implementation.
 
 | Profile | Extension | Status |
 | --- | --- | --- |
-| `cpp-project-v1` | `cpp-core-v1` plus explicitly selected compilation-database inputs, owned project headers, dependency closure, shared types/linkage, scalar C ABI boundaries, and explicit target validation. | Implemented and integrated on both measured macOS architectures. |
-| `cpp-math-v1` | `cpp-project-v1` plus the bounded binary64 operations below and approved `std::fabs(double)`/`std::floor(double)` mappings. | Implemented; 126-test integrated suite and installed output execution verified. |
+| `cpp-project-v1` | `cpp-core-v1` plus explicitly selected compilation-database inputs, owned project headers, dependency closure, shared types/linkage, scalar C ABI boundaries, and explicit target validation. | Implemented; host and delivery evidence below. |
+| `cpp-math-v1` | `cpp-project-v1` plus the bounded binary64 operations below and approved `std::fabs(double)`/`std::floor(double)` mappings. | Implemented; SDK/runtime gates and host evidence below. |
 | String follow-up | Exact byte operations with encoding/NUL/aliasing/ownership/lifetime/allocation-error contract. NeverC UTF-8 `string` is not automatically `std::string`. | Unversioned and unimplemented until the operation list is fixed. |
 | Trivial-vector follow-up | Exact element/operation list with bounds, invalidation, storage, lifetime, growth/overflow, and allocation-error behavior. | Unversioned and unimplemented. |
 
@@ -82,11 +80,11 @@ FP contract `cpp.math.binary64.masked.v1` requires masked traps and the document
 binary64 environment; it does not authorize arbitrary FP options or operations.
 
 Math requires an explicit x86_64 or arm64 macOS 15.0 target and the approved
-Clang 20.1.8 / libc++ 200100 / macOS SDK 15.5 distribution. Equivalent Darwin
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5` distribution. Equivalent Darwin
 target spellings are accepted only when their effective deployment is macOS
-15.0. The descriptor `--cpp-sdk PATH` defaults to `neverc-cpp-sdk.json` beside
-the helper. It locates external roots; only the compiled catalog approves their
-contents. Standard-library overloads or distributions outside this boundary fail.
+15.0. The immutable built-in catalog approves the 209 original headers and
+NeverC-authored version metadata; there is no external SDK selection or host
+discovery. Standard-library overloads or distributions outside this boundary fail.
 
 P3B uses P3A include/context handling. Full Clang may parse standard-library
 internals to resolve approved operations, but those bodies are not recursively
@@ -95,25 +93,43 @@ or unapproved calls. Broader profiles are never inferred from an include.
 
 ## Host/target evidence
 
-| Host / source target | Development evidence | Released translation support |
+The original process-separated implementation passed 126 integrated tests on
+both native arm64 and Rosetta x86_64, including SDK/runtime gates, environment
+isolation, O0/O2 execution and full-value differentials. Its installed generated
+output also ran independently of the old frontend and SDK descriptor. Those
+runs are a semantic regression baseline, not proof of the new built-in delivery.
+
+| Host / source target | Built-in implementation evidence | Support boundary |
 | --- | --- | --- |
-| macOS arm64 / `arm64-apple-macosx15.0.0` | 126 integrated tests, real SDK/runtime gates, generated module numeric/environment comparison, and fresh-prefix O0/O2 execution with default mimalloc enabled. | External-LLVM/SDK installation verified; no self-contained SDK package claim. |
-| macOS under Rosetta x86_64 / `x86_64-apple-darwin24.6.0` | 126 integrated tests and actual-helper program/project/math differential execution at `-O0`/`-O2`; the development compiler disables mimalloc. The arm64 helper receives an explicit x86_64 source target. | External-LLVM/SDK installation only; math target is explicitly macOS 15.0. |
-| Linux x64 / arm64 | No frontend/SDK/differential installation evidence in this P0 measurement. | Not advertised. |
-| Windows x64 / arm64 | No frontend/SDK/differential installation evidence in this P0 measurement. | Not advertised. |
+| macOS arm64 / `arm64-apple-macosx15.0.0` | Latest recorded built-in core protocol suite: 73 passed. Earlier built-in project and math suites passed 33 and 49 cases respectively. Isolated fresh-prefix installation, translation and O0/O2 execution passed with default mimalloc, Python plugins and bundled Python enabled. Full integrated-suite status is recorded below. | Native macOS runner; bounded profiles only. |
+| macOS under Rosetta x86_64 / `x86_64-apple-darwin24.6.0` | Prior 126-test process-separated baseline above. Local built-in validation was not completed. | Math target is explicitly macOS 15.0; built-in and native Intel execution are not established. |
+| Linux x64 / arm64 | No completed built-in frontend/runtime/installation evidence recorded here. | Not advertised. |
+| Windows x64 / arm64 | Full built-in build and regression validation assigned to GitHub CI; results pending. | Not advertised until matching CI evidence is available; the math profile remains restricted to its approved macOS targets. |
 | Android, kernel, freestanding, dyncode | Outside initial hosted translation profile. Existing NeverC support for such modes is not translator validation. | Not advertised. |
 
 The arm64 SDK probes explicitly select their target. A NeverC build under Rosetta
 can default to x86_64 on the same arm64 machine; its source and generated targets
 must be aligned explicitly and its execution evidence recorded separately.
 
-An additional arm64-compiler → x86_64-target probe with default mimalloc enabled
+The passing arm64 installation smoke used the real CMake installation components
+for NeverC, resource headers, standard resources and the macOS arm64 runtime.
+Its sandbox denied both development source/build trees, Homebrew and the system
+developer directory. Inside that sandbox, the installed compiler translated
+core, project and math fixtures, built and executed their output at `-O0` and
+`-O2`, and linked separate C clients for the generated modules. Recursive dynamic
+dependency inspection found no external Clang/LLVM libraries. Installed license
+notices and all 210 catalog source entries were verified by hash: 209 original
+headers and NeverC's version metadata. The installed compiler retained its
+bundled Python and ordinary system dependencies. This smoke does not substitute
+for a complete regression run on every advertised host.
+
+Before built-in integration, an additional arm64-compiler → x86_64-target probe with default mimalloc enabled
 could not complete its runtime link on this host. This combination is not in the
 accepted matrix. After the process-cleanup fix, the driver returned `TR0404` at
 the link stage in about 60 seconds, published a failure report, and removed staging
 without publishing generated artifacts. The OS kept the killed compiler child
 unreapable; the driver reported that condition instead of waiting indefinitely.
-The x86_64 evidence above uses the matching Rosetta compiler with mimalloc off.
+The old x86_64 baseline used the matching Rosetta compiler with mimalloc off.
 
 NeverC's existing compiler target matrix must not be copied into the translator's
 support claims. Each advertised combination requires matching source/generated
@@ -126,29 +142,45 @@ through the existing direct NeverC path.
 
 ## Repository regression validation
 
-Run the native repository gate with the default mimalloc and Python-plugin
-options enabled. `PluginGlobalState` validates symbols from the enabled Python
-plugin implementation; a development build with that option disabled does not
+The first built-in arm64 integrated run passed 131 of 132 tests. The remaining
+test correctly rejected an owned shadow header, but its new assertion expected
+the wrong diagnostic code. That assertion is corrected. The second run was
+stopped when full validation moved to GitHub CI, so there is no completed
+132-test passing run for this revision.
+
+Remaining full regression and platform validation now run in GitHub CI,
+including Windows x64 and arm64; their results are pending. The earlier local
+protocol and installation evidence above is retained separately. It predates
+the numeric byte initializer for MSVC, Windows path normalization, and the
+automated full-host symbol audit; those changes require the GitHub gates.
+The separate `cpp-frontend-tools` workflow exercises the archive-index parser
+and ABI collision checks on Linux, Windows and macOS before the full compiler
+builds finish. Compiler builds also run those checks against their real archives,
+including Clang LTO and MSVC LTCG inputs.
+The macOS workflow also runs the fresh-prefix installation smoke with reads of
+the checkout, selected Xcode developer directory and installed Homebrew/developer
+roots denied to NeverC and its generated programs. This gate verifies the current
+build's installed core, project and math translation at O0/O2.
+
+The repository gate requires default mimalloc and Python-plugin options enabled,
+with bundled Python for the installed configuration. `PluginGlobalState`
+validates symbols from the enabled Python plugin implementation; a development build with that option disabled does not
 satisfy that artifact check. Python plugins are an existing compiler extension
 mechanism and do not provide Python-to-NeverC source translation.
 
-```sh
-NEVERC_CPP_FRONTEND=/path/to/neverc-cpp-frontend \
-NEVERC_CPP_REFERENCE_COMPILER=/path/to/clang++ \
-NEVERC_CPP_SDK=/path/to/neverc-cpp-sdk.json \
-CTEST_PARALLEL_LEVEL=4 \
-cmake --build build-neverc --target check-neverc
-```
-
-Use the pinned Clang reference compiler and approved SDK described above.
-Configure and run arm64 builds from a native shell so CMake's recorded host
+The external Clang reference compiler and its own headers/SDK are independent
+test oracles only. Production translation and built-in SDK admission tests do
+not select an external frontend or require an SDK environment variable.
+Arm64 CI builds must use a native execution environment so CMake's recorded host
 architecture matches the compiler and managed Python runtime. The DynCode test
 loader also explicitly selects arm64 when its test harness is arm64.
 
 The focused translation suite covers source/IR equivalence, SDK/runtime
 admission, project closure, bounded file and JSON input, process cancellation,
-artifact publication and environment isolation. The separate helper suites
+artifact publication and environment isolation. The frontend protocol suites
 exercise all owned declarations, including unreachable unsupported source, and
 ensure pruned mapped calls leave no unused mapping metadata. Installed-prefix
-checks verify generated project/math execution at O0/O2 after removing the C++
-helper and SDK descriptor. No repository test exclusion is added by this change.
+checks use normal CMake installation components and verify translation plus
+generated project/math execution at O0/O2 with development Clang/SDK/source paths
+unavailable. They also inspect symbols and dependencies outside that sandbox.
+No repository test exclusion is added by this change.

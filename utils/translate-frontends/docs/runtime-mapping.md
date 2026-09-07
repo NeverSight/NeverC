@@ -3,7 +3,7 @@
 Status: `cpp-math-v1` implements the two bounded mappings below. Core and project
 profiles enable no library mappings. SDK admission, resolved declaration checks,
 typed IR verification, exact runtime capability checks, and a separate link
-probe now run in the driver. Environment-isolation regressions and installed output execution pass; the
+probe run in the driver. The
 [support matrix](support-matrix.md) records exact platform coverage. These two
 mappings do not establish a general C++ library contract.
 
@@ -15,7 +15,7 @@ contract cannot be preserved. Never copy library implementation sources into
 generated projects, match only by spelling, or retain an undeclared foreign
 runtime dependency.
 
-The helper resolves the exact operation, signature, imported declaration and
+The built-in frontend resolves the exact operation, signature, imported declaration and
 all redeclarations while Clang retains their source semantics. The shared IR
 carries an operation ID and source evidence. A consumer-owned table selects the
 runtime symbol and header; incoming data cannot supply arbitrary emitted names.
@@ -32,7 +32,8 @@ applied mappings. Empty requirements are explicit for mapping-free inputs.
 
 Do not generalize to `std::abs`, other overloads, arbitrary `<cmath>` functions,
 or another library distribution. The approved source context is Clang 20.1.8,
-libc++ 200100, and Apple SDK 15.5, with explicit x86_64/arm64 macOS 15.0 targets.
+libc++ 200100, and the approved macOS 15.5 headers embedded in NeverC, with
+explicit x86_64/arm64 macOS 15.0 targets.
 The libc++ `cmath` using declarations import platform `math.h` declarations;
 approval checks both boundaries. Owned replacements, redeclarations, namespace
 aliases, and lookalikes cannot acquire approval by sharing their spelling.
@@ -76,7 +77,7 @@ both zeros, subnormals, infinities, quiet/signaling NaNs, integer-precision
 boundaries, and deterministic seeded bit patterns. Tests preserve a preexisting
 divide-by-zero flag and exercise all four standard rounding modes.
 
-The runtime candidate passed 32,944 observations for each x86_64/arm64 and
+Before built-in frontend integration, the runtime candidate passed 32,944 observations for each x86_64/arm64 and
 `-O0`/`-O2` pair. The native arm64 integrated suite also executed the real
 C++-to-NC module through the same 32,944-case harness at both optimization levels.
 Externally supplied parameters prevent constant folding from removing tested
@@ -91,13 +92,14 @@ these checks but does not replace translation differential tests.
 
 ## SDK and runtime capabilities
 
-[CppSdk.cpp](../../../neverc/lib/Translate/Cpp/CppSdk.cpp) loads the descriptor
-only for math, validates its three canonical external roots against a compiled
-209-header union catalog, and separately verifies every consumed SDK dependency.
-The source/helper and consumer share the same data inventory. Descriptor claims
-or user-supplied hashes cannot approve a different SDK. Source, owned headers,
-compilation database, response files, descriptor, SDK dependencies and runtime
-header are rechecked before publication. See the [capability contract](p3-math-capabilities.md).
+[CppSdk.cpp](../../../neverc/lib/Translate/Cpp/CppSdk.cpp) loads the built-in SDK
+only for math, validates its immutable 209-header inventory and version metadata,
+and separately verifies every consumed SDK dependency. The frontend and consumer
+use the same catalog and embedded bytes. Caller-supplied context or hashes cannot
+approve a different SDK. Source, owned headers, compilation database, response
+files, SDK evidence and the installed runtime header are rechecked before
+publication. The SDK [source provenance and notices](../../../neverc/lib/Translate/Cpp/SDK/README.md)
+accompany the embedded distribution. See the [capability contract](p3-math-capabilities.md).
 
 [LibraryMappings.cpp](../../../neverc/lib/Translate/Cpp/LibraryMappings.cpp)
 checks the exact installed math header, builtin-std policy, target payload,
@@ -123,19 +125,24 @@ must not replace the header or policy whose identity was checked.
 
 ## Installation boundary
 
-A fresh-prefix development smoke found the helper and SDK descriptor beside the
-installed NeverC executable, translated math, and compiled generated output at
-`-O0`/`-O2`. A separate C client used the generated header. After removing both
-the installed helper copy and SDK descriptor, generated project/math compilation,
-linking, and execution still succeeded at O0/O2. Both the initial allocator-disabled
-configuration and native ARM64 default-mimalloc configuration were checked. Symbol
-and library inspection found no C++ standard library, exception, Clang or LLVM
-dependency; the default allocator uses Darwin’s libSystem cleanup registration. The helper itself continues to use
-external pinned LLVM libraries and the descriptor locates an external Apple SDK.
-This is not a self-contained SDK distribution or Apple SDK redistribution.
+Translation uses the installed NeverC executable's built-in frontend and SDK.
+No separate frontend, Clang/LLVM library installation or SDK descriptor is used.
+The approved headers retain their original bytes and notices; NeverC supplies
+minimal version metadata rather than redistributing the original complete SDK
+metadata. Generated math code still requires the ordinary NeverC math resources
+whose identities the driver verifies. Moving or copying only the executable does
+not supply a missing installed runtime header.
 
-Installation execution must be recorded for each advertised target. A copied
-SDK descriptor, successful header parse, or syntax-only run is insufficient.
+Fresh-prefix checks must translate and execute program/module output at O0/O2
+with development frontend and SDK paths unavailable, and exercise a separate C
+client through the generated header. Dependency inspection must verify that
+generated output has no C++ standard library, exception, Clang or LLVM dependency,
+and that NeverC itself does not depend on external Clang/LLVM libraries. Existing
+NeverC allocator or optional plugin dependencies remain separate. The
+[support matrix](support-matrix.md) records completed runs.
+
+Installation execution must be recorded for each advertised target. A successful
+header parse or syntax-only run is insufficient.
 Final acceptance also checks runtime-call emission, unresolved symbols, program
 and module execution, wrapper overhead, binary size, and platform dependencies.
 

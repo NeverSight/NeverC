@@ -37,7 +37,7 @@ paths against the original compilation directory, preserving symlink semantics
 before reducing `..`. The database, selected source, compilation directory,
 response files and owned include directories must resolve within the explicit
 project root. An encompassing workspace root can include an out-of-tree build.
-Approved SDK roots have separate distribution-relative identities and never
+Built-in SDK trees have separate distribution-relative identities and never
 become owned project code. Marking an include path `-isystem` does not exempt
 its declarations from source-subset checks.
 
@@ -46,7 +46,7 @@ its declarations from source-subset checks.
 The parser follows the [Clang compilation-database format](https://releases.llvm.org/20.1.0/tools/clang/docs/JSONCompilationDatabase.html).
 A structured `arguments` array takes precedence over `command`. The declared
 compiler executable is provenance only: it is classified, never executed. The
-pinned helper receives the validated arguments instead. Shell expansion,
+built-in frontend receives the validated arguments instead. Shell expansion,
 environment assignments, compiler wrappers and unknown driver forms are rejected.
 
 `--compdb-quoting gnu|windows` chooses command/response tokenization. Its default
@@ -68,7 +68,7 @@ Preserve macro and include order. The accepted options are deliberately narrow:
 | Options | Handling |
 | --- | --- |
 | `-std=c++17`, `-x c++` | Normalize the supported language; reject other standards/languages. |
-| `-D`, `-U` | Preserve values and order; the helper rejects unsupported macro observations. |
+| `-D`, `-U` | Preserve values and order; the frontend rejects unsupported macro observations. |
 | `-I`, `-iquote`, `-isystem` | Preserve category/order and normalize owned paths. Reject sysroot-relative forms. |
 | `-target`, `--target`, `-arch`, `-m32`, `-m64` | Require agreement with the authoritative target before consuming redundant flags. |
 | `-O0`, `-O2` | Preserve source optimization context, including preprocessing observations. |
@@ -76,7 +76,7 @@ Preserve macro and include order. The accepted options are deliberately narrow:
 | `-c`, `-o`, `-MD`, `-MMD`, `-MF`, `-MT`, `-MQ`, `-MP` | Consume recognized operands without producing the original build outputs. Require exactly the selected source operand. |
 | SDK/resource overrides, fast math, packing, plugins, PCH/modules, linker/assembler forwarding, other flags | Reject; these are not silently dropped. |
 
-The helper independently checks the resulting option envelope. The driver-owned
+The frontend independently checks the resulting option envelope. The driver-owned
 [execution environment policy](protocol.md#compiler-execution-environment)
 excludes ambient include paths, deployment overrides and compiler defaults.
 
@@ -91,7 +91,7 @@ Each `ConfigurationID` hashes a length-framed domain version, normalized source
 identity, normalized compilation directory, target and normalized argument
 sequence. It excludes the database array index and generated output directory.
 Database and response inputs retain separate hashes of their exact bytes; SDK
-identity and consumed headers are independently validated by the driver/helper.
+identity and consumed headers are independently validated by the driver/frontend.
 
 Recheck database, response, source and consumed dependency bytes before artifact
 publication. Normalized context and semantic IDs survive relocation. Regenerating
@@ -109,5 +109,5 @@ cover structured and quoted commands, ambiguous selection, targets, response
 nesting/cycles/limits, symlinks, relocation, input mutation and nonexecution of
 stored commands. Integrated project tests also compile, link and execute the
 merged output, verify C ABI clients and ODR rejection, and exercise installation
-without the source frontend. See the [support matrix](support-matrix.md) for
+using an installed NeverC with no external frontend or SDK inputs. See the [support matrix](support-matrix.md) for
 verified host/target/runtime combinations.

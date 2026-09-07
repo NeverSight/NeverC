@@ -154,6 +154,20 @@ jobs:
           name: macos-arm64-neverc-runtime
           path: macos-arm64-neverc-runtime.zip
 
+      - name: Verify installed builtin C++ translation without developer files
+        run: |
+          smoke_root="$(mktemp -d "$RUNNER_TEMP/neverc-cpp-install.XXXXXX")"
+          deny_paths=(--deny-read "$GITHUB_WORKSPACE" --deny-read "$(xcode-select -p)")
+          for development_root in /opt/homebrew /Library/Developer; do
+            if [[ -d "$development_root" ]]; then
+              deny_paths+=(--deny-read "$development_root")
+            fi
+          done
+          "${{ steps.python.outputs.python-path }}" -I -B \
+            neverc/utils/translate-frontends/cpp/tests/install.py \
+            --neverc "$PWD/build/bin/neverc" --neverc-build "$PWD/build" \
+            --prefix "$smoke_root/install" "${deny_paths[@]}"
+
       - name: Build Plugin SDK
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
 

@@ -91,6 +91,7 @@ STANDALONE += ["ATTRIBUTION.md"]
 # the tools. The public command guide under docs/translate remains localized.
 STANDALONE += [
     "utils/translate-frontends/cpp/README.md",
+    "neverc/lib/Translate/Cpp/SDK/README.md",
     "utils/translate-prototype/README.md",
     *[p.relative_to(ROOT).as_posix()
       for p in sorted((ROOT / "utils/translate-frontends/docs").rglob("*.md"))],

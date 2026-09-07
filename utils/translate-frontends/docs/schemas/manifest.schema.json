@@ -348,13 +348,9 @@
       "type": "object",
       "properties": {
         "distribution_id": {
-          "const": "clang20.1.8-libcxx200100-macos15.5"
+          "const": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5"
         },
         "catalog_sha256": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "descriptor_sha256": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
@@ -385,12 +381,15 @@
             ],
             "additionalProperties": false
           }
+        },
+        "delivery": {
+          "const": "builtin"
         }
       },
       "required": [
         "distribution_id",
         "catalog_sha256",
-        "descriptor_sha256",
+        "delivery",
         "dependencies"
       ],
       "additionalProperties": false

@@ -1,12 +1,16 @@
 # P0 C++ SDK feasibility measurements
 
+Historical P0 feasibility record. Current translation uses NeverC's built-in
+frontend and [embedded SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json);
+the external tools and paths below reproduce the earlier experiment only.
+
 Measured on macOS with Clang 20.1.8 for the C++ frontend evaluation. These are
 translation-time **syntax/header-discovery** probes, not library translation,
 numeric-equivalence, executable-link, or installed-package tests. The separate
 [prototype README](../../translate-prototype/README.md) records the
 full-Clang helper experiment and its build/size/latency evidence.
 
-## Selected development configuration
+## Historical development configuration
 
 | Input | Measured identity |
 | --- | --- |
@@ -110,40 +114,39 @@ Apple's alternative libc++ headers, libstdc++, MSVC STL, and Android libc++ have
 no approved translation/mapping status. A new library/version requires an
 inventory, source-operation identity checks, and profile acceptance tests.
 
-## Licenses and deployment decision
+## Historical license and deployment evaluation
 
 The installed LLVM `LICENSE.TXT` identifies Apache-2.0 with LLVM exceptions; its
 SHA-256 is `8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee`.
-The sampled libc++ headers carry that SPDX identifier. A future helper/resource
-package must retain applicable notices and license texts, inventory component
-exceptions and transitive libraries, and record any modifications. LLVM's
+The sampled libc++ headers carry that SPDX identifier. Redistribution must
+retain applicable notices and license texts, inventory component exceptions and
+transitive libraries, and record any modifications. LLVM's
 published policy also notes legacy-covered portions; do not replace a component
 inventory with the assumption that every file has one license. See the
 [LLVM 20 license policy](https://releases.llvm.org/20.1.0/docs/DeveloperPolicy.html#copyright-license-and-patents).
 
-The Apple SDK remains an external development prerequisite in this configuration.
-The [Xcode and Apple SDKs agreement](https://www.apple.com/legal/sla/docs/xcode.pdf)
-defines SDK headers as Apple Software and restricts redistribution except where
-expressly permitted. This probe does not copy SDK contents into the repository
-or authorize packaging them. Selecting and validating an approved release
-arrangement is a separate distribution gate.
+The Apple SDK was an external prerequisite for these probes. The experiment did
+not distribute SDK content. The later built-in implementation inventories the
+209 approved headers individually under their LLVM, APSL and Berkeley licenses,
+retains their original notices, and supplies corresponding source provenance.
+See the [embedded SDK license inventory](../../../neverc/lib/Translate/Cpp/SDK/README.md),
+including the three project-level license sources and the APSL-2.0 selection for
+`math.h`. The original complete `SDKSettings.json` is not distributed; its hash
+above remains historical provenance for the replacement version metadata.
 
-The helper stays a separate executable. That isolates full-Clang C++ symbols
-from NeverC, but its dependent libraries still need an installed-package
-inventory and relocatable discovery. A Homebrew-linked development helper is
-not automatically portable to a host without Homebrew. Exact helper build
-requirements and dependency sizes belong to the prototype measurement.
-These probes and the helper select arm64 explicitly. A separate NeverC build
+The prototype used a separate executable with external Homebrew libraries.
+That deployment decision was superseded by the symbol-isolated static frontend
+inside NeverC. Prototype dependency sizes do not describe the installed built-in
+binary. These probes select arm64 explicitly. A separate NeverC build
 launched under Rosetta can use x86_64 by default; arm64 header parsing must not
 be reported as source/generated execution coverage for that compiler target.
 
-Translation-time requirements (helper, resource headers, libc++ headers, platform
-SDK) are distinct from generated-program requirements (NeverC and its declared
-platform/runtime payloads). Removing the C++ runtime from generated output does
-not remove the SDK needed to understand the original C++ input. No self-contained
-release or “no SDK needed” claim is made here. P2's no-include profile may have a
-smaller frontend runtime requirement than these P3 header probes, but that must
-be established by its own installation test.
+Translation-time frontend/header inputs remain distinct from generated-program
+requirements (NeverC and its declared platform/runtime payloads). Current
+translation embeds the required frontend and approved header inputs; generated
+code uses only its declared NeverC/runtime dependencies. The
+[support matrix](support-matrix.md) records installation evidence for that
+arrangement separately from these syntax probes.
 
 ## Relationship to the implemented translator
 
@@ -157,7 +160,6 @@ Those later tests, rather than syntax-only header probes, establish the currentl
 published C++ profiles.
 
 The string/vector fixtures above are frontend feasibility probes only. Neither
-profile supports those library types or operations yet. A self-contained SDK
-package and any new host, target or source-library distribution still require
-separate installation and semantic validation. No Linux, Windows or alternate
+profile supports those library types or operations yet. Any new host, target or
+source-library distribution still requires separate installation and semantic validation. No Linux, Windows or alternate
 SDK support follows from this macOS experiment.

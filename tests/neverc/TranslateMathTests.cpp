@@ -51,22 +51,25 @@ protected:
                ? "arm64-apple-macosx15.0.0"
                : "x86_64-apple-macosx15.0.0";
   }
-  bool configured() {
-    return !environment("NEVERC_CPP_FRONTEND").empty() &&
-           !environment("NEVERC_CPP_SDK").empty() && !target().empty();
-  }
+  bool configured() { return !target().empty(); }
   fs::path fixture(const std::string &Name) {
     return testDir() / "Inputs" / "translate" / "cpp" / "stdlib" / Name;
   }
-  fs::path project(const std::string &Name) {
+  fs::path project(const std::string &Name, const std::string &Source = "",
+                   const std::vector<std::string> &Options = {}) {
     const auto Root = tmpFile(Name);
     fs::create_directory(Root);
-    writeFile(Root / "math.cpp", readFile(fixture("math.cpp")));
-    llvm::json::Array Entries{llvm::json::Object{
-        {"directory", jsonString(Root.string())},
-        {"file", "math.cpp"},
-        {"arguments", llvm::json::Array{"clang++", "-std=c++17", "-c",
-                                        "math.cpp", "-o", "math.o"}}}};
+    writeFile(Root / "math.cpp",
+              Source.empty() ? readFile(fixture("math.cpp")) : Source);
+    llvm::json::Array Command{"clang++", "-std=c++17"};
+    for (const auto &Option : Options)
+      Command.push_back(jsonString(Option));
+    for (const char *Argument : {"-c", "math.cpp", "-o", "math.o"})
+      Command.push_back(Argument);
+    llvm::json::Array Entries{
+        llvm::json::Object{{"directory", jsonString(Root.string())},
+                           {"file", "math.cpp"},
+                           {"arguments", std::move(Command)}}};
     std::string Text;
     llvm::raw_string_ostream OS(Text);
     OS << llvm::formatv("{0:2}", llvm::json::Value(std::move(Entries)));
@@ -85,10 +88,6 @@ protected:
             Root.string(),
             "--compdb",
             (Root / "compile_commands.json").string(),
-            "--frontend",
-            environment("NEVERC_CPP_FRONTEND"),
-            "--cpp-sdk",
-            environment("NEVERC_CPP_SDK"),
             (Root / "math.cpp").string()};
   }
   void reject(const CmdResult &Result, const fs::path &Output,
@@ -102,7 +101,7 @@ protected:
 TEST_F(TranslateMathTest,
        SourceToStandaloneModuleMatchesPinnedCppAndFloatingEnvironment) {
   if (!configured() || environment("NEVERC_CPP_REFERENCE_COMPILER").empty())
-    GTEST_SKIP();
+    GTEST_SKIP() << "requires macOS and an independent C++ reference compiler";
   const auto Root = project("math-contract"), Output = Root / "generated";
   auto Args = args(Root);
   Args.insert(Args.end(), {"--out-dir", Output.string()});
@@ -115,6 +114,9 @@ TEST_F(TranslateMathTest,
   ASSERT_NE(Object, nullptr);
   EXPECT_EQ(Object->getString("fp_contract"), CppMathFPContractID);
   ASSERT_NE(Object->getObject("sdk"), nullptr);
+  EXPECT_EQ(Object->getObject("sdk")->getString("distribution_id"),
+            CppMathSDKID);
+  EXPECT_EQ(Object->getObject("sdk")->getString("delivery"), "builtin");
   EXPECT_EQ(Object->getObject("sdk")->getString("catalog_sha256"),
             approvedCppSdkCatalogSHA256());
   ASSERT_NE(Object->getArray("mappings"), nullptr);
@@ -124,12 +126,19 @@ TEST_F(TranslateMathTest,
   ASSERT_NE(Runtime->getArray("modules"), nullptr);
   EXPECT_EQ(Runtime->getArray("modules")->size(), 2u);
   EXPECT_EQ(Object->getArray("required_headers")->size(), 2u);
-  CppSdkContext SDK;
-  Diagnostics D;
-  ASSERT_TRUE(loadCppSdk(environment("NEVERC_CPP_SDK"), target(), SDK, D));
-  for (const auto &SDKRoot : SDK.Roots)
-    EXPECT_EQ(readFile(Output / "translated.nc").find(SDKRoot.AbsolutePath),
-              std::string::npos);
+  EXPECT_EQ(
+      readFile(Output / "translated.nc").find("__neverc_cpp_builtin_sdk__"),
+      std::string::npos);
+  // Reference compilation deliberately uses the external compiler's real C++
+  // headers and the host SDK, never the embedded VFS or former SDK descriptor.
+  const auto ReferenceSource = Root / "reference.cpp";
+  writeFile(ReferenceSource,
+            "#include <cmath>\n"
+            "#if _LIBCPP_VERSION != 200100\n"
+            "#error The independent reference requires libc++ 20.1\n"
+            "#endif\n" +
+                readFile(Root / "math.cpp"));
+  const auto ReferenceSysroot = sysrootFlags();
   for (const std::string Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto ReferenceObject = Root / ("reference" + Optimization + ".o");
@@ -137,23 +146,14 @@ TEST_F(TranslateMathTest,
         "--target=" + target(),
         "-std=c++17",
         Optimization,
-        "-nostdinc++",
+        "-fno-fast-math",
+        "-ffp-contract=off",
         "-Dtranslate_math_abs=reference_abs",
         "-Dtranslate_math_floor=reference_floor"};
-    for (const auto &SDKRoot : SDK.Roots) {
-      if (SDKRoot.Name == "libcxx")
-        ReferenceArgs.insert(ReferenceArgs.end(),
-                             {"-isystem", SDKRoot.AbsolutePath});
-      if (SDKRoot.Name == "resource")
-        ReferenceArgs.insert(ReferenceArgs.end(),
-                             {"-resource-dir", SDKRoot.AbsolutePath});
-      if (SDKRoot.Name == "platform")
-        ReferenceArgs.insert(ReferenceArgs.end(),
-                             {"-isysroot", SDKRoot.AbsolutePath});
-    }
-    ReferenceArgs.insert(
-        ReferenceArgs.end(),
-        {"-c", (Root / "math.cpp").string(), "-o", ReferenceObject.string()});
+    ReferenceArgs.insert(ReferenceArgs.end(), ReferenceSysroot.begin(),
+                         ReferenceSysroot.end());
+    ReferenceArgs.insert(ReferenceArgs.end(), {"-c", ReferenceSource.string(),
+                                               "-o", ReferenceObject.string()});
     auto Reference =
         exec(environment("NEVERC_CPP_REFERENCE_COMPILER"), ReferenceArgs);
     ASSERT_EQ(Reference.exitCode, 0) << Reference.err;
@@ -201,17 +201,138 @@ TEST_F(TranslateMathTest, DisabledRuntimeRejectsBeforePublication) {
   reject(ncc(Args), Output, "TR0403");
 }
 
-TEST_F(TranslateMathTest, MissingSdkAndUnapprovedTargetNeverPublish) {
+TEST_F(TranslateMathTest, MappingFreeMathDoesNotRequireBuiltinStdRuntime) {
   if (!configured())
-    GTEST_SKIP();
-  const auto Root = project("math-missing"), Output = Root / "generated";
+    GTEST_SKIP() << "math runtime targets macOS";
+  const auto Root =
+      project("math-no-mappings",
+              "extern \"C\" double identity(double x) { return x; }\n");
+  const auto Output = Root / "generated";
   auto Args = args(Root);
-  for (size_t I = 0; I + 1 < Args.size(); ++I)
-    if (Args[I] == "--cpp-sdk")
-      Args[I + 1] = (Root / "missing.json").string();
+  Args.insert(Args.end(), {"--out-dir", Output.string(), "-fno-builtin-std"});
+  const auto Result = ncc(Args);
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  auto Manifest =
+      llvm::json::parse(readFile(Output / "translate-manifest.json"));
+  ASSERT_TRUE(bool(Manifest));
+  const auto *Object = Manifest->getAsObject();
+  ASSERT_NE(Object, nullptr);
+  ASSERT_NE(Object->getArray("mappings"), nullptr);
+  EXPECT_TRUE(Object->getArray("mappings")->empty());
+  EXPECT_EQ(Object->getBoolean("builtin_std_enabled"), 0);
+}
+
+TEST_F(TranslateMathTest, ExternalFrontendAndSdkEnvironmentCannotSelectInputs) {
+  if (!configured())
+    GTEST_SKIP() << "math runtime targets macOS";
+  const auto Root = project("math-external-environment");
+  const auto Helper = Root / "external-frontend";
+  const auto Descriptor = Root / "external-sdk.json";
+  writeFile(Helper, "#!/bin/sh\nprintf invoked > \"${0}.invoked\"\nexit 93\n");
+  fs::permissions(Helper, fs::perms::owner_all);
+  writeFile(Descriptor, "this is not an SDK descriptor\n");
+  ScopedMathEnvironment FrontendEnvironment("NEVERC_CPP_FRONTEND",
+                                            Helper.string());
+  ScopedMathEnvironment SdkEnvironment("NEVERC_CPP_SDK", Descriptor.string());
+  const auto Output = Root / "generated";
+  auto Args = args(Root);
   Args.insert(Args.end(), {"--out-dir", Output.string()});
-  reject(ncc(Args), Output, "TR0101");
-  Args = args(Root);
+  const auto Result = ncc(Args);
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_FALSE(fs::exists(Helper.string() + ".invoked"));
+  auto Manifest =
+      llvm::json::parse(readFile(Output / "translate-manifest.json"));
+  ASSERT_TRUE(bool(Manifest));
+  const auto *Object = Manifest->getAsObject();
+  ASSERT_NE(Object, nullptr);
+  const auto *SDK = Object->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  EXPECT_EQ(SDK->getString("distribution_id"), CppMathSDKID);
+  EXPECT_EQ(SDK->getString("delivery"), "builtin");
+  EXPECT_EQ(SDK->getString("descriptor_sha256").data(), nullptr);
+  EXPECT_EQ(SDK->getObject("roots"), nullptr);
+  const auto Text = readFile(Output / "translate-manifest.json");
+  EXPECT_EQ(Text.find(Helper.string()), std::string::npos);
+  EXPECT_EQ(Text.find(Descriptor.string()), std::string::npos);
+}
+
+TEST_F(TranslateMathTest,
+       OwnedShadowHeadersCannotSupplyApprovedMathDeclarations) {
+  if (!configured())
+    GTEST_SKIP() << "math runtime targets macOS";
+  for (const char *Header : {"cmath", "math.h"}) {
+    SCOPED_TRACE(Header);
+    const auto Root = project(
+        std::string("math-shadow-") + Header,
+        std::string("#include <") + Header +
+            ">\n#include <cmath>\n"
+            "extern \"C\" double value(double x) { return std::fabs(x); }\n",
+        {"-I."});
+    writeFile(
+        Root / Header,
+        std::string(Header) == "cmath"
+            ? "namespace std { double fabs(double); double floor(double); }\n"
+            : "extern \"C\" double fabs(double);\n"
+              "extern \"C\" double floor(double);\n");
+    const auto Output = Root / "generated";
+    auto Args = args(Root);
+    Args.insert(Args.end(), {"--out-dir", Output.string()});
+    // Owned std declarations fail the namespace allowlist; a fake math.h
+    // fails libc++'s own required-header check before mapping admission.
+    reject(ncc(Args), Output,
+           std::string(Header) == "cmath" ? "TR0201" : "TR0202");
+  }
+}
+
+TEST_F(TranslateMathTest,
+       OriginalMathConstantsAndLibcxxMacroBranchesArePreserved) {
+  if (!configured())
+    GTEST_SKIP() << "math runtime targets macOS";
+  const auto Root =
+      project("math-sdk-macros",
+              "#include <cmath>\n"
+              "#if !defined(_LIBCPP_VERSION) || _LIBCPP_VERSION != 200100\n"
+              "#error The original libc++ version macro changed\n"
+              "#endif\n"
+              "const double pi = M_PI;\n"
+              "int main() { return std::floor(pi) == 3.0 &&\n"
+              "  std::fabs(-pi) == 0x1.921fb54442d18p+1 ? 0 : 1; }\n");
+  const auto Output = Root / "generated";
+  auto Args = args(Root);
+  Args.insert(Args.end(), {"--out-dir", Output.string()});
+  const auto Translation = ncc(Args);
+  ASSERT_EQ(Translation.exitCode, 0) << Translation.err;
+  for (const std::string Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = Root / ("macros" + Optimization);
+    const auto Compile =
+        ncc({"--no-default-config", "--target=" + target(), "-std=c23",
+             Optimization, "-fno-lto", (Output / "translated.nc").string(),
+             "-o", Executable.string()});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+    const auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateMathTest,
+       RemovedExternalOptionsAndUnapprovedTargetNeverPublish) {
+  if (!configured())
+    GTEST_SKIP() << "math runtime targets macOS";
+  const auto Root = project("math-removed-options");
+  for (const char *Option : {"--frontend", "--cpp-sdk"}) {
+    SCOPED_TRACE(Option);
+    const auto Output = Root / (std::string(Option) + "-output");
+    auto Args = args(Root);
+    Args.insert(Args.end(), {"--out-dir", Output.string(), Option,
+                             (Root / "external-tool-or-sdk").string()});
+    const auto Result = ncc(Args);
+    reject(Result, Output, "TR0001");
+    EXPECT_TRUE(Result.stderrContains(std::string("unknown option: ") + Option))
+        << Result.err;
+  }
+  const auto Output = Root / "unapproved-target";
+  auto Args = args(Root);
   for (size_t I = 0; I + 1 < Args.size(); ++I)
     if (Args[I] == "--target")
       Args[I + 1] = "x86_64-apple-macosx14.0.0";
@@ -262,6 +383,62 @@ TEST_F(TranslateMathTest, AmbientIncludePathsCannotAdmitUnownedSourceHeaders) {
   auto Args = args(Root);
   Args.insert(Args.end(), {"--out-dir", Output.string()});
   reject(ncc(Args), Output, "TR0203");
+}
+
+TEST_F(TranslateMathTest,
+       StandaloneCompilerStillValidatesInstalledMathResources) {
+  if (!configured())
+    GTEST_SKIP() << "math runtime targets macOS";
+  const auto Root = project("math-install-resources");
+  const auto Toolchain = tmpFile("standalone-toolchain");
+  fs::create_directories(Toolchain / "bin");
+  const auto Compiler = Toolchain / "bin" / "neverc";
+  std::error_code Error;
+  fs::create_hard_link(neverc(), Compiler, Error);
+  if (Error) {
+    Error.clear();
+    fs::copy_file(neverc(), Compiler, fs::copy_options::none, Error);
+  }
+  ASSERT_FALSE(Error) << Error.message();
+  const auto InstalledResources =
+      ncc({"--no-default-config", "-print-resource-dir"});
+  const auto IsolatedResources =
+      exec(Compiler.string(), {"--no-default-config", "-print-resource-dir"});
+  ASSERT_EQ(InstalledResources.exitCode, 0) << InstalledResources.err;
+  ASSERT_EQ(IsolatedResources.exitCode, 0) << IsolatedResources.err;
+  const fs::path Installed =
+      llvm::StringRef(InstalledResources.out).trim().str();
+  const fs::path Isolated = llvm::StringRef(IsolatedResources.out).trim().str();
+  ASSERT_NE(Installed, Isolated);
+  ASSERT_FALSE(fs::exists(Isolated));
+
+  const auto Output = Root / "generated";
+  auto Args = args(Root);
+  Args.insert(Args.end(), {"--out-dir", Output.string()});
+  const auto Missing = exec(Compiler.string(), Args);
+  reject(Missing, Output, "TR0403");
+  EXPECT_TRUE(Missing.stderrContains("required installed math header"))
+      << Missing.err;
+
+  const auto Header = Isolated / "include" / "neverc" / "std" / "math.h";
+  fs::create_directories(Header.parent_path());
+  writeFile(Header, "#error UNAPPROVED_INSTALLED_MATH_HEADER\n");
+  const auto Changed = exec(Compiler.string(), Args);
+  reject(Changed, Output, "TR0403");
+  EXPECT_TRUE(Changed.stderrContains("approved header identity"))
+      << Changed.err;
+
+  fs::copy(Installed / "include", Isolated / "include",
+           fs::copy_options::recursive | fs::copy_options::overwrite_existing,
+           Error);
+  ASSERT_FALSE(Error) << Error.message();
+  Args = args(Root);
+  Args.push_back("--check");
+  const auto Restored = exec(Compiler.string(), Args);
+  EXPECT_EQ(Restored.exitCode, 0) << Restored.err;
+  EXPECT_FALSE(fs::exists(Output));
+  EXPECT_FALSE(fs::exists(Toolchain / "bin" / "neverc-cpp-frontend"));
+  EXPECT_FALSE(fs::exists(Toolchain / "bin" / "neverc-cpp-sdk.json"));
 }
 
 TEST_F(TranslateMathTest,

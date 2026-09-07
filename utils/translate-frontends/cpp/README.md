@@ -1,52 +1,43 @@
-# Pinned C++ frontend profiles
+# Builtin C++ frontend profiles
 
-`neverc-cpp-frontend` is the separate full-Clang adapter for NeverC's experimental
-`cpp-core-v1`, owned-project `cpp-project-v1`, and bounded `cpp-math-v1`
-translation pipelines. It reads `--request request.json`, writes a new
-`--output response.json`, and returns nonzero on source/protocol/subset errors.
-The [protocol](../docs/protocol.md) is independent of generated
-manifest/report/map schemas. Existing output files are never overwritten.
+NeverC includes the full C++17 frontend for its experimental `cpp-core-v1`,
+owned-project `cpp-project-v1`, and bounded `cpp-math-v1` translation profiles.
+Only C++ translation is implemented. The [support matrix](../docs/support-matrix.md)
+defines the language subset, approved targets and measured runtime coverage.
 
-## Development build and installation
+## Build and installation
 
-LLVM and Clang **20.1.8** development packages are mandatory and checked by CMake.
-The helper builds as C++17, independently of NeverC's stripped frontend. On the
-tested macOS arm64 development host:
+Build and install NeverC through the repository's normal CMake configuration.
+The build pins upstream LLVM/Clang **20.1.8**, builds its required frontend
+libraries statically, isolates their symbols from NeverC's own LLVM, and links
+that frontend into the NeverC executable. Source and build dependencies are
+needed while building NeverC; installed C++ translation does not launch a
+separate helper or load an external Clang/LLVM library.
 
-```sh
-cmake -S utils/translate-frontends/cpp -B /tmp/neverc-cpp-frontend-build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DCMAKE_C_COMPILER=/opt/homebrew/opt/llvm@20/bin/clang \
-  -DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm@20/bin/clang++ \
-  -DLLVM_DIR=/opt/homebrew/opt/llvm@20/lib/cmake/llvm \
-  -DClang_DIR=/opt/homebrew/opt/llvm@20/lib/cmake/clang
-cmake --build /tmp/neverc-cpp-frontend-build
-cmake --install /tmp/neverc-cpp-frontend-build --prefix /tmp/neverc-cpp-frontend-install
-```
+Before linking, the build checks the private frontend's definitions and references
+against all host-library definitions. Clang builds use their matching `llvm-nm`
+for host LTO archives; GCC builds use `gcc-nm`. MSVC builds read the COFF linker
+indexes, including LTCG objects. AppleClang can use the private reader for ordinary
+Mach-O archives; an incompatible LTO format fails the check. The build-only
+`NEVERC_CPP_HOST_NM` CMake option selects a compatible host reader when needed.
 
-On other build hosts select that host's supported compiler/package paths; omit
-the macOS architecture setting. Their release installation/execution acceptance
-is separate from this measured host. An arm64 helper process can parse the exact
-requested x86_64 target; executable architecture and source target are distinct.
+The implementation lives in
+[`neverc/lib/Translate/Cpp/Frontend`](../../../neverc/lib/Translate/Cpp/Frontend).
+Its C ABI entry runs only in a private child invocation of the same NeverC
+executable. This preserves request timeouts, crash isolation and bounded protocol
+files without a second executable. `NEVERC_CPP_FRONTEND` has no effect.
+The [internal protocol](../docs/protocol.md) reads a request file and creates a
+new response file; existing response files are never overwritten. This is an
+implementation interface, separate from public manifest/report/map schemas.
+Requests must be regular files of at most 1 MiB, with JSON nesting at most 32;
+main source files are limited to 8 MiB. Reads are bounded on the opened file
+descriptor, and unknown or profile-inapplicable request fields are rejected.
 
-The installed executable currently retains external LLVM20 `libclang-cpp`,
-`libLLVM`, their system dependencies, and the Homebrew zstd dependency. Installing
-this target does **not** copy or relocate those libraries. This is an explicit
-external-toolchain development installation, not a self-contained release.
-The [P0 measurements](../../translate-prototype/README.md) record that dependency
-closure and its size. Clang/runtime library versions must remain pinned.
-
-Core translation passes `--no-default-config -nostdinc -nostdinc++` and admits no
-includes. It requires no C++ standard-library headers, Clang resource headers, or
-platform SDK at translation time. Building the helper still needs its development
-headers and a platform toolchain. Broader profiles require the separately tracked
-SDK inventory and licensing/packaging work. Generated scalar NC needs only the
-ordinary NeverC distribution and declared platform runtime, and contains no
-full-Clang or C++ standard-library dependency.
-
-The `frontend.build` identifier includes SHA-256 of the adapter sources, header,
-CMake configuration source, and the Clang version pin. CMake reconfigures when
-those source files change so manifests distinguish adapter revisions.
+The `frontend.build` identity includes the pinned version and implementation,
+build-isolation and embedded-SDK inputs. CMake updates it when those inputs
+change. The installed compiler retains NeverC's ordinary configured runtime,
+including bundled Python when enabled. Generated user programs contain no
+Clang/LLVM or C++ standard-library dependency.
 
 ## Scope and semantic handling
 
@@ -81,7 +72,7 @@ library-name guessing or fallback source emission.
 
 `cpp-project-v1` retains the scalar/aggregate language subset and accepts the
 per-unit request fields in the [project protocol](../docs/p3-project-emission.md).
-The helper analyzes one selected unit at a time. NeverC's shared project merger
+The internal frontend analyzes one selected unit at a time. NeverC's shared project merger
 owns definition closure, ODR rejection and combined `translated.nc`/`translated.h`
 emission; this adapter never concatenates original source units.
 
@@ -102,11 +93,11 @@ the exact SourceManager buffer consumed by Clang, and source locations report
 the actual normalized relative source/header path. Standard-library/system
 headers and runtime mappings are not boundaries in this profile.
 
-Before constructing Clang's driver, the single-request helper process clears
+Before constructing Clang's driver, the single-request NeverC frontend process clears
 implicit compiler configuration variables, including `CPATH`,
 `CPLUS_INCLUDE_PATH`, `C_INCLUDE_PATH`, `SDKROOT`, deployment-target variables,
 Clang configuration-directory variables and `CCC_OVERRIDE_OPTIONS`. It still
-passes `--no-default-config -nostdinc -nostdinc++`. This isolates the helper's
+passes `--no-default-config -nostdinc -nostdinc++`. This isolates the internal
 child process without changing its caller's environment; project translation
 needs no platform SDK or C++ library header search path.
 
@@ -161,162 +152,117 @@ rounding modes. The mapped boundary preserves errno and preexisting exception
 flags, with newly raised exceptions and signaling-NaN quieting matching the
 approved source operations. The separate C-client differential tests exercise
 these observations. Source fenv/errno APIs and pragmas are not admitted.
-The helper explicitly passes `-fno-fast-math -ffp-contract=off` and cannot accept
+The frontend explicitly passes `-fno-fast-math -ffp-contract=off` and cannot accept
 source options that weaken this contract. Source `__builtin_nan`,
 `__builtin_nans`, `__builtin_inf`, bit casts, unions, pointers and
 `numeric_limits` constructions remain unsupported; in particular, a folded
 signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
-The approved translation SDK is
-`clang20.1.8-libcxx200100-macos15.5`, with catalog SHA-256
-`0c72f368ab38180821ca5c51fdab9f7fd2c3e9d6106d5c327fa09a8c8c795fa4`.
-The exact catalog is compiled into the helper. It covers 209 headers in the
-union consumed by the two approved target probes, plus separate
-`SDKSettings.json` metadata. Each typical `<cmath>` module consumes 201 headers.
-Before parsing, the helper checks the complete catalog against the configured
-SDK, so a missing header cannot silently alter an SDK `__has_include` branch.
-It then hashes the actual consumed buffers again and records them separately
-as SDK dependencies. SDK and owned-project roots must not contain each other;
-every owned header still receives the complete source allowlist check.
+The immutable translation headers are embedded in NeverC as distribution
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5`. The
+[SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
+209 approved header files and separate SDK metadata. The original header bytes
+are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.
+The [SDK notices](../../../neverc/lib/Translate/Cpp/SDK/README.md) document
+origins, redistribution terms and the minimal owned SDK configuration.
+A typical `<cmath>` module consumes 201 embedded headers.
 
+Before parsing, the frontend verifies the complete compiled file inventory and
+its hashes. It maps those bytes into a reserved in-memory filesystem and
+checks each consumed buffer again. Library declaration provenance requires the
+controlled virtual file identity as well as its original source position and
+hash. An owned copy of a header, even with identical bytes, cannot authorize a
+library mapping. Owned headers still receive the complete source allowlist
+check. SDK dependencies remain separate from owned project dependencies.
+
+The SDK request contains only its distribution and catalog identities. External
+SDK roots, descriptor files and SDK discovery are not part of translation.
+No installed Apple SDK, libc++ headers or Clang resource directory is needed.
 Only Apple macOS 15.0 x86_64/arm64 targets, including equivalent Darwin spellings
-resolved by LLVM's target API, are approved for math. The helper can analyze both
-from the measured arm64 host; runtime acceptance is supplied separately by the
-matching NeverC target builds. Other SDK distributions and target families are
-not enabled by this catalog.
-
-The descriptor [example](sdk/neverc-cpp-sdk.example.json) declares the external
-libc++ header root, Clang resource root, and Apple SDK root. CMake installs this
-example under `share/neverc`; it does not install or redistribute the SDK.
-Set its paths for the exact approved local installation, then either pass it to
-NeverC with `--cpp-sdk PATH` or place it beside the installed helper as
-`neverc-cpp-sdk.json`. The helper receives a validated descriptor identity and
-canonical roots through its request, and independently verifies the catalog.
-After translation, generated code uses only NeverC's installed headers,
-embedded runtime payload and normal platform runtime. The C++ SDK and helper
-are not generated-code build dependencies.
+resolved by LLVM's target API, are approved for math. Embedding these headers
+does not broaden that target or language contract.
 
 ## Verification
 
+Run each protocol suite against the NeverC binary, using a new output directory:
+
 ```sh
 python3 utils/translate-frontends/cpp/tests/verify.py \
-  --helper /tmp/neverc-cpp-frontend-build/neverc-cpp-frontend \
-  --target arm64-apple-darwin24.6.0 \
-  --output-dir /tmp/neverc-cpp-frontend-tests
-```
-
-Use a new output directory. Repeat with the actual NeverC native target, for
-example `x86_64-apple-darwin24.6.0` for the tested Rosetta compiler build. This
-suite checks source admission, structured diagnostics, target metadata, folded
-globals, resolved fixtures, byte-identical relocated responses, field-only and
-discarded-value behavior, and response collision protection. It does not execute
-translated user code. The repository `TranslateTests` suite additionally checks
-shared protocol/NC validation, generated program and C ABI harness execution at
-`-O0`/`-O2`, permitted unspecified-order results, driver failures and artifacts.
-
-The independent project suite adds owned-header hashes and diagnostic locations,
-shared inline/field identities, private C/C++ identities, const declarations,
-strong/signature conflict evidence, missing per-unit inline definitions,
-macro-token/binding differences, relocation and hostile include environments:
-
-```sh
+  --neverc build/bin/neverc \
+  --target arm64-apple-macosx15.0.0 \
+  --output-dir /tmp/neverc-cpp-core-tests
 python3 utils/translate-frontends/cpp/tests/project.py \
-  --helper /tmp/neverc-cpp-frontend-build/neverc-cpp-frontend \
-  --target x86_64-apple-darwin24.6.0 \
+  --neverc build/bin/neverc \
+  --target arm64-apple-macosx15.0.0 \
   --output-dir /tmp/neverc-cpp-project-tests
-```
-
-The project suite passes **33 cases**. The shared consumer independently
-parses, verifies and merges actual helper responses, emits the combined
-program/header, and builds/runs that program at O0/O2. Macro-token and
-private-binding disagreement pairs fail with `TR0301`; missing external
-definitions fail with `TR0203`. `TranslateProjectTests` and the installation
-checks below additionally cover the complete driver and generated runtime use.
-
-Run the math SDK/provenance and source-admission suite with the approved local
-descriptor and a fresh output directory:
-
-```sh
 python3 utils/translate-frontends/cpp/tests/math_profile.py \
-  --helper /tmp/neverc-cpp-frontend-build/neverc-cpp-frontend \
-  --sdk utils/translate-frontends/cpp/sdk/neverc-cpp-sdk.example.json \
-  --target x86_64-apple-macosx15.0.0 \
+  --neverc build/bin/neverc \
+  --target arm64-apple-macosx15.0.0 \
   --output-dir /tmp/neverc-cpp-math-tests
 ```
 
-The final helper build
-`cpp-frontend-1-e73e074bd48f85a3bc0c70a70b57c52ed06a5220291ae1f8252d23832746c8dc`
-passed **44 math cases**, **33 project cases** and **52 core cases for each of
-arm64 and x86_64** on 2026-09-07. Math checks include exact zero/subnormal/maximal
-finite bits, casts/comparisons, member-only loads and sequencing, unsupported
-floating operations and NaN builtins, fake library declarations, SDK copying
-and tampering/missing files, environment include poisoning, and default Clang
-configuration poisoning from HOME and adjacent files. Unreachable approved
-calls are still checked during source admission but leave mapping metadata only
-when a lowered call remains; unreachable unsupported calls still fail. The latter checks verify
-that the explicit `--no-default-config` survives the LibTooling path.
+These scripts invoke NeverC's internal protocol entry. The core suite checks
+source admission, structured diagnostics, target metadata, folded globals,
+relocation, field-only reads, discarded values, response collision protection,
+closed request fields and rejection of oversized, deeply nested or special-file
+inputs without blocking.
+The project suite adds owned-header hashes and locations, shared inline/field
+identities, private C/C++ identities, declaration and ODR evidence, relocation
+and hostile include environments.
+
+The math suite checks exact binary64 bits, casts/comparisons, sequencing,
+unsupported floating operations and NaN builtins, library declaration
+provenance, macro compatibility, owned shadow headers, rejected external SDK
+overrides, environment poisoning and disabled implicit Clang configurations.
+Unreachable approved calls are still checked during source admission and leave
+mapping metadata only when a lowered call remains; unreachable unsupported
+calls still fail. The integrated `TranslateTests`, `TranslateProjectTests` and
+math tests additionally verify merging, NC validation and runtime differentials
+at O0/O2, including the documented floating-environment behavior.
 
 ## Installed-prefix verification
 
-Run the installation test with a fresh output prefix and your configured SDK
-descriptor. This example uses a native arm64 NeverC build; substitute the path
-of the compiler configuration being tested:
+The installation test installs the configured `neverc`,
+`neverc-resource-headers`, `neverc-std` and native runtime CMake components into
+a fresh prefix. It verifies the installed SDK source snapshot and licenses.
+Use the compiler and build directory from the same completed configuration:
 
 ```sh
 python3 utils/translate-frontends/cpp/tests/install.py \
-  --neverc build-translate-arm64/bin/neverc \
-  --neverc-build build-translate-arm64 \
-  --helper-build /tmp/neverc-cpp-frontend-build \
-  --cpp-sdk /path/to/neverc-cpp-sdk.json \
+  --neverc build/bin/neverc \
+  --neverc-build build \
   --prefix /tmp/neverc-cpp-installed-smoke
 ```
 
-With `--neverc-build`, the script installs the build's `neverc` CMake component
-into the new prefix, including the configured bundled Python runtime and the
-installed executable's relative runtime search paths. Use this mode for the
-default configuration with Python plugins and Python bundling enabled. The
-`--neverc` path must name the compiler from that build. Omitting `--neverc-build`
-retains the executable-copy mode for development configurations, such as the
-tested build with Python plugins disabled; copying a build-tree executable does
-not validate a relocatable Python installation.
+This includes the configured bundled Python runtime and installed relative
+runtime search paths when enabled. The script installs no frontend helper or
+SDK descriptor. With a minimal PATH and deliberately unavailable external
+frontend/SDK environment settings, it translates core programs, C exports and
+a three-unit project. On the approved macOS targets it also translates the two
+math mappings. All generated programs and separate C clients compile, link and
+run at both O0 and O2. The math client covers ordinary values, signed zero,
+subnormals, infinity and quiet NaN.
 
-Both modes copy NeverC's resource directory and install the independently built
-helper. With
-`NEVERC_CPP_FRONTEND` unset and a minimal PATH, it checks adjacent helper and SDK
-descriptor discovery, translates the core executable and C ABI module, and tests
-a three-unit project plus the approved math mappings.
+The test recursively inspects the installed compiler's dynamic dependencies,
+rejects Clang/LLVM dynamic libraries and requires non-platform dependencies to
+resolve inside the new prefix. It also inspects generated objects and programs
+for C++ ABI/exception imports. On macOS, generated executables must link only
+libSystem; the exact C cleanup-registration symbol `___cxa_atexit` is permitted
+because the default mimalloc runtime uses it.
 
-It then removes the installed helper and descriptor from discovery. Another
-translation must fail with `TR0101`, while the already generated project and
-math module plus a separately compiled C client must still compile, link and run
-at both O0 and O2. The math client checks ordinary values, signed zero, a negative
-subnormal, infinity and a quiet NaN. The broader integrated differential suite
-checks the complete documented binary64 and floating-environment contract.
+On macOS, repeat `--deny-read PATH` for development source/build directories and
+external LLVM/SDK installations to run NeverC and all generated programs under
+an OS sandbox that denies reads from those paths. Read-only binary inspection
+uses the test harness outside the sandbox. The script verifies the denial
+before translating, compiling or running artifacts. It requires working
+`sandbox-exec` support and fails rather than silently skipping isolation. The
+new prefix must be outside every denied path. No developer or system directory
+is renamed or modified.
 
-The native arm64 default configuration passed the CMake-component installation
-check with mimalloc, Python plugins and bundled CPython enabled. The installed
-compiler uses the adjacent Python runtime through its relative search path.
-The Rosetta x86_64 development compiler, with mimalloc and Python plugins
-disabled, passed the executable-copy check. This is an
-external-LLVM/SDK installation test; it does not establish a self-contained SDK
-package, a physical Intel-host installation, or additional cross-target/runtime
-combinations. See the [support matrix](../docs/support-matrix.md).
-
-The generated executables link only the platform libSystem dependency, without
-C++ standard-library, Clang or LLVM dynamic dependencies. The default allocator
-adds ordinary platform imports, including `___cxa_atexit` for cleanup
-registration. This exact Darwin symbol is allowed because mimalloc's C destructor
-attribute uses NeverC's C ABI cleanup registration and the platform exports it.
-All other C++ ABI/exception symbols and C++/Clang/LLVM dynamic dependencies remain
-rejected by the inspection.
-
-`smoke-report.json` in the chosen prefix records commands, compiler/helper
-identities, executable hashes, artifact sizes, runtime configuration and symbol
-inspection. The installed helper and descriptor remain renamed to `.disabled`
-so compilation without translation dependencies can be inspected. These reports
-contain machine-specific paths and belong outside version control.
-
-External LLVM libraries and the approved SDK remain translation-time
-prerequisites. The descriptor locates an existing approved SDK and does not
-redistribute it.
+`smoke-report.json` in the chosen prefix records commands, identities, artifact
+sizes, runtime configuration, dependency inspection and sandbox coverage.
+Reports contain machine-specific paths and belong outside version control.
+A passing installation on one measured host does not establish additional
+platform or cross-target support; consult the
+[support matrix](../docs/support-matrix.md).

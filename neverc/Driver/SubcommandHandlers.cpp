@@ -7,12 +7,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "SubcommandHandlers.h"
+#include "../lib/Translate/Cpp/Frontend/FrontendEntry.h"
 
 #include "neverc/Build/AndroidKernelBuildCommands.h"
 #include "neverc/Build/BuildDriver.h"
 #include "neverc/Run/RunDriver.h"
-#include "neverc/Translate/TranslateDriver.h"
 #include "neverc/Runtime/RuntimeManager.h"
+#include "neverc/Translate/TranslateDriver.h"
 #include "neverc/Update/UpdateManager.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -32,6 +33,7 @@ enum class SubcommandKind {
   // Private commands used by a detached helper or generated build recipes.
   ApplyUpdate,
   AndroidKernelBuild,
+  CppFrontend,
 
   // User-facing commands.
   Update,
@@ -48,6 +50,7 @@ SubcommandKind classifySubcommand(StringRef Command) {
 
   return llvm::StringSwitch<SubcommandKind>(Command)
       .Case("__neverc_apply_update", SubcommandKind::ApplyUpdate)
+      .Case("__neverc_cpp_frontend", SubcommandKind::CppFrontend)
       .Cases("update", "upgrade", SubcommandKind::Update)
       .Case("run", SubcommandKind::Run)
       .Cases("build", "make", SubcommandKind::Build)
@@ -76,6 +79,8 @@ std::optional<int> dispatchSubcommand(ArrayRef<const char *> Args,
     return update::runUpdateHelper(CommandArgc, CommandArgs.data(), Argv0);
   case SubcommandKind::AndroidKernelBuild:
     return build::dispatchAndroidKernelBuildCommand(Args);
+  case SubcommandKind::CppFrontend:
+    return neverc_cpp_frontend_main(CommandArgc, CommandArgs.data());
   case SubcommandKind::Update:
     return update::runUpdate(CommandArgc, CommandArgs.data(), Argv0);
   case SubcommandKind::Run:
@@ -88,7 +93,7 @@ std::optional<int> dispatchSubcommand(ArrayRef<const char *> Args,
     return runtime::runRuntime(CommandArgc, CommandArgs.data(), Argv0);
   case SubcommandKind::Translate:
     return translate::runTranslate(CommandArgc, CommandArgs.data(),
-                                    Context.ExecutablePath);
+                                   Context.ExecutablePath);
   case SubcommandKind::None:
     llvm_unreachable("unhandled NeverC subcommand");
   }

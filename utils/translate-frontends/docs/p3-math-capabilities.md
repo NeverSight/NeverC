@@ -1,24 +1,23 @@
 # P3B mathematics SDK and runtime capabilities
 
 Status: implemented in `Cpp/CppSdk` and `Cpp/LibraryMappings`, integrated with
-the full-Clang helper, shared typed IR and translation driver. The 21 focused
-SDK/runtime tests pass, including real external SDK admission and both actual
-bootstrapped architecture payloads. The expanded integrated suite passes all 126 tests on native arm64 and
-Rosetta x86_64, including ambient-header/default-config isolation. Fresh-prefix
-math output builds and runs at O0/O2 after removing the helper and SDK descriptor. This document describes implementation
-contracts, not a self-contained frontend/SDK release.
+the built-in full-Clang frontend, shared typed IR and translation driver. SDK
+headers and their approval catalog are embedded in NeverC. This document defines
+the source, provenance and runtime contracts; the [support matrix](support-matrix.md)
+records execution evidence separately from delivery architecture.
 
 ## Source and execution boundary
 
 The shared mapping table owns `cpp.math.fabs.f64.v1` and
 `cpp.math.floor.f64.v1`, which map binary64 to binary64 through
 `neverc_math_abs`/`math_abs` and `neverc_math_floor`/`math_floor`. Both require
-`neverc/std/math.h`; the helper cannot provide an arbitrary emitted symbol.
+`neverc/std/math.h`; the frontend cannot provide an arbitrary emitted symbol.
 The [support matrix](support-matrix.md) specifies accepted double operations,
 source options and rejected constructs. `cpp.math.binary64.masked.v1` is an
 independent FP contract, not inferred from the existence of either mapping.
 
-SDK admission is restricted to Clang 20.1.8, libc++ 200100 and Apple SDK 15.5.
+SDK admission is restricted to the embedded Clang 20.1.8, libc++ 200100 and
+macOS 15.5 header distribution.
 Math requires an explicit x86_64 or arm64 macOS 15.0 target. LLVM target parsing
 and actual Clang deployment macros verify equivalent spellings: Darwin 24.6.0
 and Darwin 24.0.0 both select macOS 15.0 in this pinned toolchain. Other effective
@@ -32,58 +31,47 @@ source builtin NaN/infinity constructors are therefore rejected. Dynamic values
 continue through the tested module boundary. No general floating arithmetic or
 source `fenv` API is implied by the runtime probes.
 
-## External SDK descriptor and approved catalog
+## Built-in SDK and approved catalog
 
-`--cpp-sdk PATH` overrides `neverc-cpp-sdk.json` beside the selected helper. Only
-`cpp-math-v1` consults it. There is no automatic host SDK discovery. Missing or
-mismatched SDK admission uses `TR0101` with the required distribution identity.
+`cpp-math-v1` always uses distribution
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5`. No SDK descriptor, host SDK
+discovery or external root selection is involved. The removed `--cpp-sdk` option
+is rejected; `NEVERC_CPP_SDK` is ignored. Failed built-in SDK integrity checks use
+`TR0101` with the required distribution identity.
 
-```json
-{
-  "schema": "neverc.cpp.sdk",
-  "version": 1,
-  "distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-  "roots": {
-    "libcxx": "/path/to/llvm/include/c++/v1",
-    "resource": "/path/to/llvm/lib/clang/20",
-    "platform": "/path/to/MacOSX15.5.sdk"
-  }
-}
-```
+The implementation-owned [catalog.json](../../../neverc/lib/Translate/Cpp/SDK/catalog.json)
+and its source files are compiled into NeverC. The `<cmath>` dependency union
+contains 209 original headers: 127 libc++ headers, one Clang resource header and
+81 platform headers. The original full Apple `SDKSettings.json` is not distributed.
+NeverC supplies only `Version: "15.5"` and
+`MaximumDeploymentTarget: "15.5.99"`, the required version facts for the admitted
+macOS targets. Its metadata SHA-256 is
+`58499bbeb3eb1aa9ca96358a097bc237a9beb14cfd3db9876d986534e59ea17e`.
+Catalog SHA-256 is
+`e9e2be353baded7be350900ae52d5c1a5f0fc7724e29c2dbe18c9c5fdef5dbe3`.
+The [SDK provenance and license inventory](../../../neverc/lib/Translate/Cpp/SDK/README.md)
+records original byte hashes, public upstream sources and retained notices.
+This is a bounded header distribution, not a complete Apple SDK.
 
-These are exactly the four permitted descriptor fields and three named roots.
-Roots may instead be relative to the descriptor directory. They must resolve
-to existing, canonical, disjoint directories separate from the owned project.
-Descriptor JSON is limited to 64 KiB and depth 16; admitted SDK files are bounded
-regular files of at most 4 MiB. A symlink changing a root-relative file identity
-cannot silently import a different path. Descriptor claims and self-supplied
-hashes cannot approve files.
-
-The implementation-owned [approved-sdk.json](../cpp/sdk/approved-sdk.json) is
-compiled into both binaries. It contains the actual `<cmath>` dependency union
-for both accepted targets: each probe consumed 201 headers, and the union has
-209 entries, plus `SDKSettings.json` metadata. Catalog SHA-256 is
-`0c72f368ab38180821ca5c51fdab9f7fd2c3e9d6106d5c327fa09a8c8c795fa4`.
-Its paths and hashes contain no machine paths or Apple SDK content.
-
-Loading validates the complete approved inventory. Each helper job also hashes
-exact consumed Clang buffers; the consumer independently verifies those reported
-root/path/hash identities against its compiled catalog and actual files.
+Loading validates the complete embedded inventory. Read-only VFS buffers supply
+the approved files under a reserved synthetic root; a physical root collision or
+an overlap with owned sources is rejected. Each frontend job hashes the exact
+consumed Clang buffers. The consumer independently verifies their named-root,
+path and hash identities against its embedded catalog and bytes.
 `CppSdkContext::ApprovedFiles` is convenience data, not an authority a caller can
 mutate to approve a new dependency. Rechecks reconstruct the immutable catalog.
-The descriptor and `SDKSettings.json` snapshots are verified before publication.
 
 Compilation database options cannot override SDK/resource/sysroot settings.
 Owned `-I`, `-iquote`, and `-isystem` inputs retain the owned-code policy. The
-helper uses explicit approved search paths with `--no-default-config`,
+frontend uses explicit approved search paths with `--no-default-config`,
 `-nostdinc`, and `-nostdinc++`, and clears implicit compiler configuration.
 Generated-code validation must likewise isolate inherited include/configuration
 state so the approved runtime header is the one actually consumed.
 
-The helper installation supplies a descriptor template and catalog data; a
-configured descriptor may locate an existing external SDK for development.
-It does not package that SDK. LLVM redistribution notices and Apple SDK limits
-remain as recorded in [P0](p0-sdk-probes.md).
+Normal NeverC installation supplies the built-in frontend and SDK together.
+Corresponding header sources, provenance and licenses accompany distribution;
+they are not runtime search paths. A system Clang and its own SDK may be used as
+an independent regression oracle, but cannot replace translation inputs.
 
 ## Wire evidence and declaration approval
 
@@ -92,9 +80,8 @@ The request adds a single SDK envelope:
 ```json
 {
   "sdk": {
-    "distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-    "catalog_sha256": "<compiled catalog SHA-256>",
-    "roots": {"libcxx": "<absolute>", "resource": "<absolute>", "platform": "<absolute>"}
+    "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5",
+    "catalog_sha256": "<compiled catalog SHA-256>"
   }
 }
 ```
@@ -102,12 +89,14 @@ The request adds a single SDK envelope:
 Response fields `sdk_distribution_id`, `sdk_catalog_sha256`, and
 `sdk_dependencies` use separate named-root-relative SDK identities. An SDK
 entry has `root`, `path`, and `sha256`. Owned dependencies retain their original
-project-relative guard. Host SDK root locations are process context and do not
-become generated identifiers or artifact paths.
+project-relative guard. The three root names `libcxx`, `resource` and `platform`
+identify virtual embedded trees, not host directories. The request permits only
+the two SDK fields above. Manifests add `sdk.delivery: "builtin"` and record
+consumed dependencies, without an external descriptor hash or physical roots.
 
 Mapping evidence contains `id`, `declaration_id`, `result: "double"`,
 `parameters: ["double"]`, and `origin: {root,path,sha256,line,column}`. The pinned
-libc++ `cmath` imports global functions through using declarations. The helper
+libc++ `cmath` imports global functions through using declarations. The frontend
 checks the resolved `std` import chain, exact overload and all redeclarations;
 canonical function spelling alone is insufficient. Owned redeclarations,
 lookalike namespaces, aliases and replacement headers fail.
@@ -120,8 +109,8 @@ distribution ID, root name, relative path, canonical Clang USR, `double(double)`
 
 | Operation | Canonical USR | Declaration ID |
 | --- | --- | --- |
-| fabs | `c:@F@fabs` | `f3ca0fb6a3bcfcc5dc17c1c23aa24f17ca350364ec3f88fb2ee305011ba67c3e` |
-| floor | `c:@F@floor` | `6bf45a2f8a4b03ce7d791a0c8425efecaf9afa3f0cef99a9cc084d408fc7e6e9` |
+| fabs | `c:@F@fabs` | `3b5582378dc6c99969ded4259e116878bc30c63d238676286b4729b7ab12a5ce` |
+| floor | `c:@F@floor` | `60841fa6c87218b07cc6556af6e977abac151c2cc1ca59104bb25cb8006df30a` |
 
 The consumer checks these fixed origins/signatures/IDs, requires matching SDK
 dependency evidence, then independently constructs a runtime capability ID.
@@ -177,21 +166,24 @@ program is executed by translation.
 
 ## Component interfaces and tests
 
-[CppSdk.h](../../../neverc/lib/Translate/Cpp/CppSdk.h) exposes `loadCppSdk`,
+[CppSdk.h](../../../neverc/lib/Translate/Cpp/CppSdk.h) exposes `loadBuiltinCppSdk`,
 `cppSdkRequestJSON`, `verifyCppSdkDependencies`, and `verifyCppSdkMappings` using
 owning context records and shared `SDKDependency`/`MappingEvidence` types.
 [LibraryMappings.h](../../../neverc/lib/Translate/Cpp/LibraryMappings.h) exposes
 `inspectMathRuntime`, fixed approval lookup, and identity computation. The shared
 `findMappingSpec` table also serves the verifier/emitter, avoiding duplicate
 symbol mappings. Capability inspection links LLVM `Core` and `BitReader` plus
-their transitive support components; it adds no full-Clang dependency to NeverC.
+their transitive support components from NeverC's LLVM. The built-in full-Clang
+frontend remains in its separate, symbol-isolated static archive.
 
 Optional controlled header/module providers are a unit-test seam, never user
-configuration. Eleven SDK tests and ten runtime tests cover actual inventory and
-payload approval, missing/modified headers, forged catalog data, provenance,
-descriptor mutation, malformed/empty/duplicate payloads, wrong symbols/types/
+configuration. SDK and runtime tests cover actual inventory and
+payload approval, missing/modified runtime headers, forged catalog data,
+provenance, caller-mutated SDK evidence, malformed/empty/duplicate payloads, wrong symbols/types/
 calling conventions/targets, unexpected dependencies, disabled std and stale
 implementation identities. Failures return no partial approval. The integrated
-suite exercises actual helper output, generated NC, runtime linking, numeric
-module comparison and disabled-runtime rejection. These tests complement the
+suite exercises actual built-in frontend output, generated NC, runtime linking,
+numeric module comparison, preserved SDK macro branches, owned shadow-header
+rejection, ignored external-tool environment variables, rejected legacy options,
+installed runtime resources and disabled-runtime rejection. These tests complement the
 installed-prefix checks and source-subset tests rather than replacing them.

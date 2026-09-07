@@ -455,6 +455,8 @@ add_neverc_tool(neverc
   GENERATE_DRIVER
   )
 
+neverc_check_builtin_cpp_frontend(neverc)
+
 if(NEVERC_BUNDLE_PYTHON_RUNTIME)
   # add_neverc_tool installs the executable first in this directory. Keep the
   # bundler directly after it so component and full installs always operate on
@@ -489,6 +491,7 @@ neverc_target_link_libraries(neverc
   nevercBuild
   nevercRun
   nevercTranslate
+  nevercCppFrontend
   nevercRuntime
   nevercUpdate
   nevercEmit
