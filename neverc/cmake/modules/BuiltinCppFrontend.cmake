@@ -97,6 +97,11 @@ function(neverc_setup_builtin_cpp_frontend)
   set(_private_config "$<IF:$<CONFIG:Debug>,Debug,Release>")
   set(_archive_name "${CMAKE_STATIC_LIBRARY_PREFIX}nevercCppFrontend${CMAKE_STATIC_LIBRARY_SUFFIX}")
   set(_archive "${_build}/lib/${_private_config}/${_archive_name}")
+  set(_private_audit_arguments)
+  if(WIN32)
+    list(APPEND _private_audit_arguments --coff-readobj-file
+      "${_build}/neverc-cpp-readobj-${_private_config}.txt")
+  endif()
   set(_url "https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/llvm-project-20.1.8.src.tar.xz")
   if(NEVERC_CPP_LLVM_SOURCE_ARCHIVE)
     get_filename_component(_url "${NEVERC_CPP_LLVM_SOURCE_ARCHIVE}" ABSOLUTE)
@@ -192,6 +197,7 @@ function(neverc_setup_builtin_cpp_frontend)
     NEVERC_CPP_AUDIT_PYTHON "${Python3_EXECUTABLE}"
     NEVERC_CPP_AUDIT_SCRIPT "${_frontend}/AuditArchive.py"
     NEVERC_CPP_AUDIT_HOST_ARGUMENTS "${_host_audit_arguments}"
+    NEVERC_CPP_AUDIT_PRIVATE_ARGUMENTS "${_private_audit_arguments}"
     NEVERC_CPP_AUDIT_NM_FILE "${_build}/neverc-cpp-nm-${_private_config}.txt"
     NEVERC_CPP_AUDIT_PREFIX "${_prefix}")
   # Cover built-in and user-provided host configurations, including the empty
@@ -238,7 +244,7 @@ function(neverc_check_builtin_cpp_frontend target)
   if(NOT TARGET "${target}" OR NOT TARGET nevercCppFrontend OR NOT TARGET LLVMCore)
     message(FATAL_ERROR "Builtin C++ ABI audit requires the executable and both LLVM builds")
   endif()
-  foreach(_property PYTHON SCRIPT NM_FILE PREFIX HOST_ARGUMENTS)
+  foreach(_property PYTHON SCRIPT NM_FILE PREFIX HOST_ARGUMENTS PRIVATE_ARGUMENTS)
     get_target_property(_audit_${_property} nevercCppFrontend
       "NEVERC_CPP_AUDIT_${_property}")
   endforeach()
@@ -248,9 +254,11 @@ function(neverc_check_builtin_cpp_frontend target)
       --archive "$<TARGET_FILE:nevercCppFrontend>"
       --prefix-header "${_audit_PREFIX}"
       --host-lib-dir "$<TARGET_FILE_DIR:LLVMCore>"
+      ${_audit_PRIVATE_ARGUMENTS}
       ${_audit_HOST_ARGUMENTS}
     VERBATIM)
   set_property(TARGET "${target}" APPEND PROPERTY LINK_DEPENDS
     "${_audit_SCRIPT}"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../lib/Translate/Cpp/Frontend/CoffWeakAliases.py"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../lib/Translate/Cpp/Frontend/HostCoffSymbols.py")
 endfunction()

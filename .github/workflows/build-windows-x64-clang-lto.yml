@@ -74,6 +74,13 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Verify builtin C++ audit with real COFF archives
+        shell: bash
+        run: |
+          "${{ steps.python.outputs.python-path }}" -I -B \
+            tests/neverc/CppFrontendToolchainTests.py \
+            --llvm-root "$LLVM_ROOT" --target x86_64-pc-windows-msvc
+
       # ── sccache ──────────────────────────────────────────────
       - name: Setup sccache
         uses: mozilla/sccache-action@v0.0.7

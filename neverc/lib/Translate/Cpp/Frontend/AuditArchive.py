@@ -11,14 +11,34 @@ import sys
 sys.dont_write_bytecode = True
 
 
-def symbol_rows(output):
+STRDUP_SYMBOLS = frozenset(("strdup", "_strdup"))
+
+
+def symbol_records(output):
+    member_header = None
     for line in output.splitlines():
-        if not line or line.endswith(":"):
+        if not line:
+            continue
+        if line.endswith(":"):
+            member_header = line
             continue
         fields = line.split()
         if len(fields) < 2 or len(fields[1]) != 1:
             raise ValueError("Unexpected llvm-nm output during ABI isolation audit")
-        yield fields[0], fields[1]
+        yield fields[0], fields[1], member_header, line
+
+
+def symbol_rows(output):
+    for name, kind, _, _ in symbol_records(output):
+        yield name, kind
+
+
+def report_strdup_records(side, archive, records):
+    for name, kind, member_header, raw in records:
+        if name in STRDUP_SYMBOLS:
+            print(f"strdup provenance: {side} nm archive={str(archive)!r} "
+                  f"member_header={member_header!r} symbol={name!r} "
+                  f"kind={kind!r} raw={raw!r}", flush=True)
 
 
 def is_undefined(kind):
@@ -111,6 +131,20 @@ def microsoft_std_entity(demangled):
     return entity.startswith("std::")
 
 
+def microsoft_string_literal(name, demangled):
+    # MicrosoftMangle.cpp::mangleStringLiteral encodes the character kind,
+    # byte length, CRC and leading bytes in a COMDAT name. Require the entire
+    # raw spelling as well as successful literal demangling: a quoted substring
+    # in an ordinary function/type name must never hide its namespace.
+    number = r"(?:[0-9]|[A-P]{1,16}@)"
+    crc = r"(?:[0-9]|[A-P]{1,8}@)"
+    byte = r"(?:[A-Za-z0-9_$]|\?[A-Za-z0-9]|\?\$[A-P]{2})"
+    return bool(re.fullmatch(
+        r"\?\?_C@_[01](?!A@)" + number + crc + byte + r"+@", name)
+        and re.fullmatch(r'(?:L|u|U)?"(?:[^"\\\r\n]|\\[^\r\n])*"(?:\.\.\.)?',
+                         demangled))
+
+
 def standard_shared_symbol(name, demangled=""):
     # Mach-O adds one underscore to the Itanium mangling and C identifiers.
     normalized = name[1:] if name.startswith("__Z") else name
@@ -128,6 +162,11 @@ def standard_shared_symbol(name, demangled=""):
             r"d[al]Pv(?:[mjy])?(?:St11align_val_t)?(?:RKSt9nothrow_t)?)",
             normalized))
     if name.startswith("?"):
+        # COFF's immutable string COMDATs intentionally coalesce by this exact
+        # mangled identity (CodeGenModule.cpp::GetAddrOfConstantStringFromLiteral).
+        # This exception is only applied to a name present in both inventories.
+        if microsoft_string_literal(name, demangled):
+            return True
         if microsoft_std_entity(demangled):
             return True
         # Microsoft ABI global new/new[]/delete/delete[]. Their signatures
@@ -154,13 +193,16 @@ def standard_shared_symbol(name, demangled=""):
     return name in runtime_symbols or plain in runtime_symbols
 
 
-def decoded_symbols(nm, archive):
+def decoded_symbols(nm, paths, *options, output=None):
     # --no-sort preserves identical object/symbol order in the two invocations;
     # this also works for Microsoft names containing spaces when demangled.
+    if output is None:
+        def output(paths, *flags):
+            return nm_output(nm, paths, *flags)
     outputs = []
-    for options in ((), ("--demangle",)):
-        outputs.append([line for line in nm_output(
-            nm, [archive], "--format=just-symbols", "--no-sort", *options
+    for decoding in ((), ("--demangle",)):
+        outputs.append([line for line in output(
+            paths, "--format=just-symbols", "--no-sort", *options, *decoding
         ).splitlines() if line and not line.endswith(":")])
     if len(outputs[0]) != len(outputs[1]):
         raise ValueError("Inconsistent llvm-nm symbol inventory")
@@ -190,26 +232,47 @@ def audit(args):
     for name in ("PrintBranchProbFuncName", "ScalePartialSampleProfileWorkingSetSize"):
         renamed[name] = "neverc_cpp_" + name
     bad = []
-    for line in nm_output(nm, [args.archive], "--demangle").splitlines():
-        if line.endswith(":"):
+    private_decoded = decoded_symbols(nm, [args.archive])
+    for name, declaration in private_decoded.items():
+        if microsoft_string_literal(name, declaration):
             continue
-        if (re.search(r"(?<![A-Za-z0-9_])llvm::", line)
-                or re.search(r"(?<![A-Za-z0-9_:])(?:mangledNameForMallocFamily|isVPIntrinsic|deserializeSanitizerMetadata)\(", line)
-                or re.search(r"(?<![A-Za-z0-9_])DebugInfoPerPass\b", line)):
-            bad.append(line)
+        if (re.search(r"(?<![A-Za-z0-9_])llvm::", declaration)
+                or re.search(r"(?<![A-Za-z0-9_:])(?:mangledNameForMallocFamily|isVPIntrinsic|deserializeSanitizerMetadata)\(", declaration)
+                or re.search(r"(?<![A-Za-z0-9_])DebugInfoPerPass\b", declaration)):
+            bad.append(name + " => " + declaration)
     definitions, references = set(), set()
-    for name, kind in symbol_rows(nm_output(
+    for record in symbol_records(nm_output(
             nm, [args.archive], "--format=posix")):
+        name, kind, _, _ = record
+        report_strdup_records("private", args.archive, (record,))
         plain = name[1:] if name.startswith("_") else name
         if (re.match(r"^_?(?:LLVM[A-Z]|llvm_|UseNewDbgInfoFormat$)", name)
                 or name in renamed or plain in renamed):
             bad.append(name)
         (references if is_undefined(kind) else definitions).add(name)
-    for name in sorted(references - definitions):
+    def private_dependency(name):
         plain = name[1:] if name.startswith("_") else name
-        if ("neverc_cpp_llvm" in name or "5clang" in name
+        return ("neverc_cpp_llvm" in name or "5clang" in name
                 or "@clang@@" in name
-                or name in renamed.values() or plain in renamed.values()):
+                or name in renamed.values() or plain in renamed.values())
+
+    resolved_aliases = set()
+    coff_readobj = getattr(args, "coff_readobj", None)
+    coff_readobj_file = getattr(args, "coff_readobj_file", None)
+    if coff_readobj_file:
+        coff_readobj = coff_readobj_file.read_text(encoding="utf-8").strip()
+        if not coff_readobj or "\n" in coff_readobj or "\r" in coff_readobj:
+            raise ValueError("Invalid private llvm-readobj path manifest")
+    if coff_readobj:
+        from CoffWeakAliases import read_resolved_aliases
+        # Include W/V aliases as well as undefined references. A COFF alias can
+        # appear defined to nm while its auxiliary fallback remains unresolved.
+        private_names = {name for name in definitions | references
+                         if private_dependency(name)}
+        resolved_aliases = read_resolved_aliases(
+            coff_readobj, args.archive, definitions, private_names)
+    for name in sorted(references - definitions - resolved_aliases):
+        if private_dependency(name):
             bad.append("unresolved private dependency: " + name)
     if not {"neverc_cpp_frontend_main", "_neverc_cpp_frontend_main"} & definitions:
         bad.append("missing builtin C++ frontend C entry point definition")
@@ -217,10 +280,16 @@ def audit(args):
     if args.host_lib_dir:
         archives = host_archives(args.host_lib_dir, args.archive)
         host_definitions = set()
-        if getattr(args, "host_format", "nm") == "coff-index":
+        host_format = getattr(args, "host_format", "nm")
+        if host_format == "coff-index":
             from HostCoffSymbols import read_defined_symbols
             for archive in archives:
-                host_definitions.update(read_defined_symbols(archive))
+                indexed = read_defined_symbols(archive)
+                host_definitions.update(indexed)
+                for name in sorted(indexed & STRDUP_SYMBOLS):
+                    print(f"strdup provenance: host coff-index archive={str(archive)!r} "
+                          f"symbol={name!r} index-only; object kind, member and raw "
+                          "nm row unavailable; strdup exception disabled", flush=True)
             for name in sorted(host_definitions):
                 if has_raw_clang_name(name):
                     bad.append("unexpected host Clang definition: " + name)
@@ -242,18 +311,48 @@ def audit(args):
             # Bound command line size; every discovered archive is read.
             for first in range(0, len(archives), 16):
                 batch = archives[first:first + 16]
-                for name, kind in symbol_rows(host_output(batch, "--format=posix")):
+                strdup_records = []
+                for record in symbol_records(host_output(batch, "--format=posix")):
+                    name, kind, _, _ = record
                     if not is_undefined(kind):
                         host_definitions.add(name)
-                for line in host_output(batch, "--defined-only", "--demangle").splitlines():
-                    if not line.endswith(":") and re.search(
-                            r"(?<![A-Za-z0-9_])clang::", line):
-                        bad.append("unexpected host Clang definition: " + line)
+                    if name in STRDUP_SYMBOLS:
+                        strdup_records.append(record)
+                expected_strdup = sorted((name, kind) for name, kind, _, _ in strdup_records)
+                if expected_strdup:
+                    # Default POSIX output labels archive members, but LLVM can
+                    # omit their parent archive name. Re-read only an affected
+                    # batch one archive at a time to report exact provenance.
+                    observed_strdup = []
+                    for archive in batch:
+                        selected = strdup_records if len(batch) == 1 else [
+                            record for record in symbol_records(host_output([archive], "--format=posix"))
+                            if record[0] in STRDUP_SYMBOLS]
+                        report_strdup_records("host", archive, selected)
+                        observed_strdup.extend((name, kind) for name, kind, _, _ in selected
+                                               if name in STRDUP_SYMBOLS)
+                    if sorted(observed_strdup) != expected_strdup:
+                        for name, kind, member_header, raw in strdup_records:
+                            print(f"strdup provenance: host nm batch_archives={list(map(str, batch))!r} "
+                                  f"member_header={member_header!r} symbol={name!r} "
+                                  f"kind={kind!r} raw={raw!r}", flush=True)
+                        raise ValueError("Host strdup symbol inventory changed during provenance read")
+                for name, declaration in decoded_symbols(
+                        host_nm, batch, "--defined-only", output=host_output).items():
+                    if (not microsoft_string_literal(name, declaration)
+                            and re.search(r"(?<![A-Za-z0-9_])clang::", declaration)):
+                        bad.append("unexpected host Clang definition: " + name +
+                                   " => " + declaration)
         shared = (definitions | references) & host_definitions
-        microsoft = decoded_symbols(nm, args.archive) if any(
-            name.startswith("?") for name in shared) else {}
         for name in sorted(shared):
-            if not standard_shared_symbol(name, microsoft.get(name, "")):
+            # Only a platform strdup reference may bind the host allocator.
+            # A private strong OR weak definition is never exempted. The COFF
+            # index cannot supply observed object kinds, so it grants no such
+            # exception until equivalent evidence is available.
+            if (host_format == "nm" and name in STRDUP_SYMBOLS
+                    and name in references and name not in definitions):
+                continue
+            if not standard_shared_symbol(name, private_decoded.get(name, "")):
                 bad.append("private/host symbol intersection: " + name)
     if bad:
         raise ValueError("Unisolated symbols in builtin C++ frontend:\n" +
@@ -271,6 +370,9 @@ def main():
     parser.add_argument("--host-lib-dir", type=Path)
     parser.add_argument("--host-format", choices=("nm", "coff-index"), default="nm")
     parser.add_argument("--host-nm")
+    coff_reader = parser.add_mutually_exclusive_group()
+    coff_reader.add_argument("--coff-readobj")
+    coff_reader.add_argument("--coff-readobj-file", type=Path)
     args = parser.parse_args()
     try:
         audit(args)

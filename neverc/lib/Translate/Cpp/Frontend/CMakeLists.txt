@@ -107,6 +107,16 @@ set(_inputs "${CMAKE_CURRENT_BINARY_DIR}/archives-$<CONFIG>.txt")
 file(GENERATE OUTPUT "${_inputs}" CONTENT "${_manifest}")
 file(GENERATE OUTPUT "${LLVM_BINARY_DIR}/neverc-cpp-nm-$<CONFIG>.txt"
   CONTENT "$<TARGET_FILE:llvm-nm>\n")
+set(_audit_tools llvm-nm)
+set(_coff_audit_arguments)
+if(WIN32)
+  # COFF weak externals carry a fallback symbol in auxiliary records that nm's
+  # one-character type cannot represent. This reader is a build tool only.
+  list(APPEND _audit_tools llvm-readobj)
+  list(APPEND _coff_audit_arguments --coff-readobj "$<TARGET_FILE:llvm-readobj>")
+  file(GENERATE OUTPUT "${LLVM_BINARY_DIR}/neverc-cpp-readobj-$<CONFIG>.txt"
+    CONTENT "$<TARGET_FILE:llvm-readobj>\n")
+endif()
 set(_output "${LLVM_BINARY_DIR}/lib/$<CONFIG>/${CMAKE_STATIC_LIBRARY_PREFIX}nevercCppFrontend${CMAKE_STATIC_LIBRARY_SUFFIX}")
 if(APPLE)
   find_program(_bundle_tool NAMES libtool REQUIRED)
@@ -125,13 +135,16 @@ add_custom_command(OUTPUT "${_output}"
   DEPENDS ${_archives}
     "${CMAKE_CURRENT_SOURCE_DIR}/BundleArchive.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/AuditArchive.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/CoffWeakAliases.py"
   VERBATIM)
 add_custom_target(nevercCppFrontendBundle
   COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/AuditArchiveTests.py"
+  COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/CoffWeakAliasesTests.py"
   COMMAND "${Python3_EXECUTABLE}" -E -B
     "${NEVERC_CPP_REPOSITORY_ROOT}/tests/neverc/HostCoffSymbolsTests.py"
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/AuditArchive.py"
     --nm "$<TARGET_FILE:llvm-nm>" --archive "${_output}"
     --prefix-header "${LLVM_BINARY_DIR}/NeverCCppPrivatePrefix.h"
-  DEPENDS "${_output}" llvm-nm
+    ${_coff_audit_arguments}
+  DEPENDS "${_output}" ${_audit_tools}
   VERBATIM)

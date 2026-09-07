@@ -38,6 +38,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verify COFF linker indexes and ABI collision checks
+        shell: bash
         run: |
           python -I -B tests/neverc/HostCoffSymbolsTests.py
           python -E -B neverc/lib/Translate/Cpp/Frontend/AuditArchiveTests.py
+          python -E -B neverc/lib/Translate/Cpp/Frontend/CoffWeakAliasesTests.py
