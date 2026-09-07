@@ -340,6 +340,34 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, long_url), -1);
 }
 
+static void test_parse_idna_alabels(void) {
+    printf("[parse_idna_alabels]\n");
+    neverc_url_t u;
+
+    /* UTS #46 ToASCII accepts a valid A-label and maps its prefix and
+     * payload case-insensitively.  The equivalent U-label must resolve to
+     * the same canonical ASCII host. */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://xn--bcher-kva.de/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://XN--BCHER-KVA.DE/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
+    ASSERT_INT_EQ(
+        neverc_url_parse(&u, "http://b\xc3\xbc""cher.de/"), 0);
+    ASSERT_STR_EQ(u.host, "xn--bcher-kva.de");
+
+    /* UTS #46 section 4, Punycode step 3: an ACE label whose decoded form
+     * is empty or entirely ASCII records an error.  ToASCII must therefore
+     * fail instead of returning a host that a later DNS lookup could use. */
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://xn--example-.com/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://xn--ASCII-/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://xn--unicode-.org/"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "http://XN--EXAMPLE-.COM/"), -1);
+
+    /* Validate every label even when another label takes the Unicode path. */
+    ASSERT_INT_EQ(neverc_url_parse(
+        &u, "http://b\xc3\xbc""cher.xn--example-.com/"), -1);
+}
+
 static void test_string(void) {
     printf("[string]\n");
     neverc_url_t u;
@@ -807,6 +835,7 @@ int main(void) {
     test_parse_no_path();
     test_parse_relative();
     test_parse_edges();
+    test_parse_idna_alabels();
     test_string();
     test_values();
     test_values_encoded();
