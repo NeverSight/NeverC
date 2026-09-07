@@ -85,6 +85,14 @@ INDEXED_ELSEWHERE = {DOCS / "examples": SAMPLES}
 # pages that ship in English only. They have no language bar and no
 # translations, but a reader still follows their links, so those are checked.
 STANDALONE = ["SECURITY.md", "development.md", "pluginsdk/README.md"]
+# Translator implementation contracts are English developer references beside
+# the tools. The public command guide under docs/translate remains localized.
+STANDALONE += [
+    "utils/translate-frontends/cpp/README.md",
+    "utils/translate-prototype/README.md",
+    *[p.relative_to(ROOT).as_posix()
+      for p in sorted((ROOT / "utils/translate-frontends/docs").rglob("*.md"))],
+]
 # docs/i18n translates the repository README, so its original sits outside
 # DOCS and the group has no English page of its own.
 FOREIGN_ORIGINAL = {DOCS / "i18n": ROOT / "README.md"}

@@ -101,6 +101,7 @@ NeverC 项目的主要规划方向：标准库、EVM 智能合约后端和 Solan
 | 文档 | 说明 |
 |------|------|
 | [`neverc run`](run/README.zh-CN.md) | 编译、在本机运行并删除临时二进制（类似 `go run`） |
+| [`neverc translate`](translate/README.zh-CN.md) | 将 C++ 转译为 NeverC |
 | [`neverc update`](update/README.zh-CN.md) | 升级或降级 release 安装（编译器与已装 runtime 同步到同一标签） |
 | [`neverc runtime`](runtime/README.zh-CN.md) | 安装、列出、更新或移除交叉编译 sysroot |
 | [`neverc build` / `neverc make`](build/README.zh-CN.md) | 面向示例与项目 Makefile 的 GNU Make 兼容驱动 |

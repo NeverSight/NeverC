@@ -493,8 +493,10 @@ fs::path NeverCTest::buildDynCodeLoader() {
     auto loaderSrc = testDir() / "dyncode" / "loader_arm64_macos.c";
     loaderPath_ = tmpFile("dyncode_loader");
 
-    auto r =
-        exec("cc", {"-O2", "-o", loaderPath_.string(), loaderSrc.string()});
+    // A native arm64 harness may be launched from a Rosetta shell, whose cc
+    // default is x86_64. The loader must match the code it is about to execute.
+    auto r = exec("cc", {"-arch", "arm64", "-O2", "-o",
+                          loaderPath_.string(), loaderSrc.string()});
     EXPECT_EQ(r.exitCode, 0) << "dyncode loader build failed\n" << r.err;
 
     if (r.exitCode == 0) {

@@ -31,12 +31,16 @@ on:
       - 'neverc/lib/Foundation/**'
       - 'neverc/lib/Invoke/**'
       - 'neverc/lib/Plugin/**'
+      - 'neverc/lib/Translate/**'
+      - 'std/**'
       - 'llvm/LICENSE.TXT'
       - 'llvm/include/llvm/CodeGen/NeverCCallConv.h'
       - 'llvm/include/llvm/IR/Intrinsic*'
       - 'llvm/lib/Target/X86/**'
       - 'tests/**'
       - 'utils/plugin-api/**'
+      - 'utils/translate-frontends/**'
+      - 'utils/translate-prototype/**'
       - '.github/workflows/lint-docs.yml'
   pull_request:
     paths:
@@ -53,12 +57,16 @@ on:
       - 'neverc/lib/Foundation/**'
       - 'neverc/lib/Invoke/**'
       - 'neverc/lib/Plugin/**'
+      - 'neverc/lib/Translate/**'
+      - 'std/**'
       - 'llvm/LICENSE.TXT'
       - 'llvm/include/llvm/CodeGen/NeverCCallConv.h'
       - 'llvm/include/llvm/IR/Intrinsic*'
       - 'llvm/lib/Target/X86/**'
       - 'tests/**'
       - 'utils/plugin-api/**'
+      - 'utils/translate-frontends/**'
+      - 'utils/translate-prototype/**'
       - '.github/workflows/lint-docs.yml'
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo

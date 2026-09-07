@@ -11,6 +11,7 @@
 #include "neverc/Build/AndroidKernelBuildCommands.h"
 #include "neverc/Build/BuildDriver.h"
 #include "neverc/Run/RunDriver.h"
+#include "neverc/Translate/TranslateDriver.h"
 #include "neverc/Runtime/RuntimeManager.h"
 #include "neverc/Update/UpdateManager.h"
 #include "llvm/ADT/SmallVector.h"
@@ -37,6 +38,7 @@ enum class SubcommandKind {
   Run,
   Build,
   Runtime,
+  Translate,
 };
 
 SubcommandKind classifySubcommand(StringRef Command) {
@@ -50,6 +52,7 @@ SubcommandKind classifySubcommand(StringRef Command) {
       .Case("run", SubcommandKind::Run)
       .Cases("build", "make", SubcommandKind::Build)
       .Case("runtime", SubcommandKind::Runtime)
+      .Case("translate", SubcommandKind::Translate)
       .Default(SubcommandKind::None);
 }
 
@@ -83,6 +86,9 @@ std::optional<int> dispatchSubcommand(ArrayRef<const char *> Args,
                            Context.PrependArg);
   case SubcommandKind::Runtime:
     return runtime::runRuntime(CommandArgc, CommandArgs.data(), Argv0);
+  case SubcommandKind::Translate:
+    return translate::runTranslate(CommandArgc, CommandArgs.data(),
+                                    Context.ExecutablePath);
   case SubcommandKind::None:
     llvm_unreachable("unhandled NeverC subcommand");
   }

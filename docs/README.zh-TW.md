@@ -101,6 +101,7 @@ NeverC 專案的主要規劃方向：標準函式庫、EVM 智慧合約後端和
 | 文件 | 說明 |
 |------|------|
 | [`neverc run`](run/README.zh-TW.md) | 編譯、在本機執行並刪除暫存二進位檔（類似 `go run`） |
+| [`neverc translate`](translate/README.zh-TW.md) | 將 C++ 轉譯為 NeverC |
 | [`neverc update`](update/README.zh-TW.md) | 升級或降級 release 安裝（編譯器與已裝 runtime 同步到同一標籤） |
 | [`neverc runtime`](runtime/README.zh-TW.md) | 安裝、列出、更新或移除交叉編譯 sysroot |
 | [`neverc build` / `neverc make`](build/README.zh-TW.md) | 面向範例與專案 Makefile 的 GNU Make 相容驅動 |

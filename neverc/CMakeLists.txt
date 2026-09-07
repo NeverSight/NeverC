@@ -488,6 +488,7 @@ neverc_target_link_libraries(neverc
   PRIVATE
   nevercBuild
   nevercRun
+  nevercTranslate
   nevercRuntime
   nevercUpdate
   nevercEmit
@@ -889,6 +890,7 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
     neverc-build-tests
     neverc-update-tests
     neverc-run-tests
+    neverc-translate-tests
     neverc-foundation-tests
     neverc-merge-tests
     neverc-std-tests
@@ -903,6 +905,7 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
       neverc-plugin-object-merge-tests
       neverc-plugin-lto-input-tests
       neverc-support-tests
+      neverc-pipeline-option-registration-smoke
       neverc-plugin-io-tests
       neverc-plugin-conformance)
     if(TARGET ${_neverc_test_target})

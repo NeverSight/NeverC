@@ -2832,6 +2832,39 @@ gtest_discover_tests(neverc-update-tests
 
 # Focused tests for the script-like compile-and-run command. Keep these out of
 # neverc-tests so argument-parser changes do not rebuild the full suite.
+add_executable(neverc-translate-tests
+  NeverCTestFixture.cpp
+  TranslateTests.cpp
+  TranslateArtifactTests.cpp
+  TranslateIRTests.cpp
+  TranslateCompilationContextTests.cpp
+  TranslateProjectIRTests.cpp
+  TranslateProjectTests.cpp
+  TranslateMathIRTests.cpp
+  TranslateMathTests.cpp
+  TranslateCppSdkTests.cpp
+  TranslateRuntimeCapabilityTests.cpp
+  TranslateProcessTests.cpp
+)
+target_link_libraries(neverc-translate-tests PRIVATE
+  GTest::gtest GTest::gtest_main nevercTranslate LLVMBitWriter
+)
+target_include_directories(neverc-translate-tests PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Translate"
+)
+target_compile_features(neverc-translate-tests PRIVATE cxx_std_17)
+target_compile_definitions(neverc-translate-tests PRIVATE
+  NEVERC_BINARY="${_NEVERC_BINARY}"
+  TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+  TEST_C_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../c"
+)
+neverc_tests_link_neverc(neverc-translate-tests)
+gtest_discover_tests(neverc-translate-tests
+  TEST_PREFIX "neverc-translate."
+  PROPERTIES TIMEOUT 180
+  DISCOVERY_TIMEOUT 300
+)
+
 add_executable(neverc-run-tests RunDriverTests.cpp)
 
 target_link_libraries(neverc-run-tests PRIVATE
@@ -2877,6 +2910,7 @@ elseif(CMAKE_HOST_WIN32)
 endif()
 if(_neverc_run_sdk_deps)
   add_dependencies(neverc-run-tests ${_neverc_run_sdk_deps})
+  add_dependencies(neverc-translate-tests ${_neverc_run_sdk_deps})
 endif()
 unset(_neverc_run_sdk_deps)
 
@@ -3217,6 +3251,7 @@ set(_neverc_llvm_test_targets
   neverc-plugin-io-tests
   neverc-build-tests
   neverc-run-tests
+  neverc-translate-tests
   neverc-merge-tests
   neverc-merge-fuzzer
   neverc-tls-protocol-fuzzer

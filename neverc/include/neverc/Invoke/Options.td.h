@@ -4195,6 +4195,10 @@ OPTION(prefix_2, "-traditional-cpp", traditional_cpp, Flag, INVALID, INVALID,
        nullptr, nullptr)
 OPTION(prefix_2, "-traditional", traditional, Flag, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_0, "translate", command_translate, RemainingArgs, Command_Group,
+       INVALID, nullptr, 0, DriverHelpOption, 0,
+       "Translate the experimental C++17 subset to verified NeverC source",
+       "--from cpp <source> [options]", nullptr)
 OPTION(prefix_2, "-trigraphs", trigraphs, Flag, INVALID, ftrigraphs, nullptr, 0,
        DefaultVis, 0, "Process trigraph sequences", nullptr, nullptr)
 OPTION(prefix_1, "-triple=", triple_EQ, Joined, INVALID, triple, nullptr,

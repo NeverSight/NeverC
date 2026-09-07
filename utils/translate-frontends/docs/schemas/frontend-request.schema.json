@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neversight.github.io/NeverC/translate/frontend-request.schema.json",
+  "type": "object",
+  "properties": {
+    "protocol": {
+      "const": 1
+    },
+    "profile": {
+      "enum": [
+        "cpp-core-v1",
+        "cpp-project-v1",
+        "cpp-math-v1"
+      ]
+    },
+    "root": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "arguments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "translation_unit": {
+      "type": "string"
+    },
+    "configuration_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "working_directory": {
+      "type": "string"
+    },
+    "sdk": {
+      "type": "object",
+      "properties": {
+        "distribution_id": {
+          "const": "clang20.1.8-libcxx200100-macos15.5"
+        },
+        "catalog_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "roots": {
+          "type": "object",
+          "properties": {
+            "libcxx": {
+              "type": "string"
+            },
+            "resource": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "libcxx",
+            "resource",
+            "platform"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "distribution_id",
+        "catalog_sha256",
+        "roots"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "protocol",
+    "profile",
+    "root",
+    "source",
+    "target",
+    "arguments"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "enum": [
+              "cpp-project-v1",
+              "cpp-math-v1"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "translation_unit",
+          "configuration_id",
+          "working_directory"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "translation_unit"
+              ]
+            },
+            {
+              "required": [
+                "configuration_id"
+              ]
+            },
+            {
+              "required": [
+                "working_directory"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "cpp-math-v1"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "sdk"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "sdk"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -241,6 +241,7 @@ TEST(NeverCCommandHelpIntegrationTest, TopLevelListsEveryPublicCommand) {
       "build [options] [target...]",
       "make [options] [target...]",
       "run [compiler options] <file...> [program arguments...]",
+      "translate --from cpp <source> [options]",
       "runtime <install|update|remove|list> [options]",
       "update [version]",
       "upgrade [version]",
@@ -267,6 +268,7 @@ TEST(NeverCCommandHelpIntegrationTest, EveryAdvertisedCommandAndAliasHasHelp) {
   };
   const HelpCase Cases[] = {
       {"run", "neverc run [compiler flags]"},
+      {"translate", "neverc translate --from cpp"},
       {"build", "Usage: neverc build"},
       {"make", "neverc make  [options]"},
       {"runtime", "neverc runtime — manage cross-compilation runtimes"},

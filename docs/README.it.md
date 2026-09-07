@@ -101,6 +101,7 @@ Comandi utente oltre a una singola compilazione.
 | Documento | Descrizione |
 |-----------|-------------|
 | [`neverc run`](run/README.it.md) | Compila, esegue localmente ed elimina un binario temporaneo (stile `go run`) |
+| [`neverc translate`](translate/README.it.md) | Tradurre C++ in NeverC |
 | [`neverc update`](update/README.it.md) | Aggiornare o declassare un'installazione release (compilatore + runtime installati a un tag) |
 | [`neverc runtime`](runtime/README.it.md) | Installare, elencare, aggiornare o rimuovere sysroot di cross-compilazione |
 | [`neverc build` / `neverc make`](build/README.it.md) | Driver compatibile GNU Make per Makefile di esempi e progetti |

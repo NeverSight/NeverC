@@ -1,0 +1,623 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neversight.github.io/NeverC/translate/manifest.schema.json",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "neverc.translate.manifest"
+    },
+    "version": {
+      "const": 1
+    },
+    "protocol": {
+      "const": 1
+    },
+    "profile": {
+      "enum": [
+        "cpp-core-v1",
+        "cpp-project-v1",
+        "cpp-math-v1"
+      ]
+    },
+    "profile_version": {
+      "const": 1
+    },
+    "source_options": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "compiler_options": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "compiler_environment_policy": {
+      "const": "neverc.translate.execution-env.v1",
+      "description": "Replay compilation_recipe with the execution environment defined in protocol.md: only the documented OS launch variables are inherited, LC_ALL=C and NEVERC_NO_DEFAULT_CONFIG=1 are fixed, and compiler commands disable default configuration."
+    },
+    "frontend": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "neverc-cpp-frontend"
+        },
+        "version": {
+          "const": "20.1.8"
+        },
+        "build": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "build"
+      ],
+      "additionalProperties": false
+    },
+    "neverc": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "build": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "build"
+      ],
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "triple": {
+          "type": "string"
+        },
+        "int_bits": {
+          "const": 32
+        },
+        "pointer_bits": {
+          "enum": [
+            32,
+            64
+          ]
+        },
+        "little_endian": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "triple",
+        "int_bits",
+        "pointer_bits",
+        "little_endian"
+      ],
+      "additionalProperties": false
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "exports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "c_export": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "result",
+          "parameters",
+          "c_export"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "generated_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": [
+              "cpp.math.fabs.f64.v1",
+              "cpp.math.floor.f64.v1"
+            ]
+          },
+          "declaration_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "result": {
+            "const": "double"
+          },
+          "parameters": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "const": "double"
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "origin": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "enum": [
+                  "libcxx",
+                  "resource",
+                  "platform"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              },
+              "column": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              }
+            },
+            "required": [
+              "root",
+              "path",
+              "sha256",
+              "line",
+              "column"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "declaration_id",
+          "result",
+          "parameters",
+          "origin"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 2
+    },
+    "required_headers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_modules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "compilation_recipe": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "compilation_database": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "translation_units": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "working_directory": {
+            "type": "string"
+          },
+          "entry_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "configuration_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "source_options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "response_files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "source",
+          "working_directory",
+          "entry_index",
+          "configuration_id",
+          "source_options",
+          "response_files"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "fp_contract": {
+      "const": "cpp.math.binary64.masked.v1"
+    },
+    "sdk": {
+      "type": "object",
+      "properties": {
+        "distribution_id": {
+          "const": "clang20.1.8-libcxx200100-macos15.5"
+        },
+        "catalog_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "descriptor_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "enum": [
+                  "libcxx",
+                  "resource",
+                  "platform"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "root",
+              "path",
+              "sha256"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "distribution_id",
+        "catalog_sha256",
+        "descriptor_sha256",
+        "dependencies"
+      ],
+      "additionalProperties": false
+    },
+    "runtime_capabilities": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "fingerprint_policy": {
+          "const": "neverc.math.canonical-ir.v1"
+        },
+        "target": {
+          "type": "string"
+        },
+        "header": {
+          "enum": [
+            "",
+            "neverc/std/math.h"
+          ]
+        },
+        "header_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "const": ""
+            }
+          ]
+        },
+        "mapping_ids": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "cpp.math.fabs.f64.v1",
+              "cpp.math.floor.f64.v1"
+            ]
+          },
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "enum": [
+                  "math_abs",
+                  "math_floor"
+                ]
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "implementation_identity": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "defined_symbols": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "required_symbols": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "name",
+              "sha256",
+              "implementation_identity",
+              "defined_symbols",
+              "required_symbols"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "id",
+        "fingerprint_policy",
+        "target",
+        "header",
+        "header_sha256",
+        "mapping_ids",
+        "modules"
+      ],
+      "additionalProperties": false
+    },
+    "builtin_std_enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema",
+    "version",
+    "protocol",
+    "profile",
+    "profile_version",
+    "source_options",
+    "compiler_options",
+    "compiler_environment_policy",
+    "frontend",
+    "neverc",
+    "target",
+    "dependencies",
+    "exports",
+    "generated_files",
+    "mappings",
+    "required_headers",
+    "required_modules",
+    "compilation_recipe"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "enum": [
+              "cpp-project-v1",
+              "cpp-math-v1"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "compilation_database",
+          "translation_units"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "enum": [
+              "cpp-core-v1",
+              "cpp-project-v1"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "mappings": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "cpp-math-v1"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "fp_contract",
+          "sdk",
+          "runtime_capabilities",
+          "builtin_std_enabled"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "fp_contract"
+              ]
+            },
+            {
+              "required": [
+                "sdk"
+              ]
+            },
+            {
+              "required": [
+                "runtime_capabilities"
+              ]
+            },
+            {
+              "required": [
+                "builtin_std_enabled"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "cpp-math-v1"
+          },
+          "mappings": {
+            "minItems": 1
+          }
+        },
+        "required": [
+          "mappings"
+        ]
+      },
+      "then": {
+        "properties": {
+          "builtin_std_enabled": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}

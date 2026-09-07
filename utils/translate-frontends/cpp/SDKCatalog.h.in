@@ -1,0 +1,5 @@
+#ifndef NEVERC_CPP_SDK_CATALOG_H
+#define NEVERC_CPP_SDK_CATALOG_H
+inline constexpr char NeverCCppSDKCatalogHash[] = "@NEVERC_CPP_SDK_CATALOG_HASH@";
+inline constexpr char NeverCCppSDKCatalog[] = R"nct_catalog(@NEVERC_CPP_SDK_CATALOG@)nct_catalog";
+#endif

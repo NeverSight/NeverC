@@ -101,6 +101,7 @@ Benutzerbefehle jenseits einer einzelnen Kompilierung.
 | Dokument | Beschreibung |
 |----------|--------------|
 | [`neverc run`](run/README.de.md) | Temporäres Binary kompilieren, lokal ausführen und löschen (`go run`-Stil) |
+| [`neverc translate`](translate/README.de.md) | C++ nach NeverC übersetzen |
 | [`neverc update`](update/README.de.md) | Release-Installation up-/downgraden (Compiler + installierte Runtimes auf einen Tag) |
 | [`neverc runtime`](runtime/README.de.md) | Cross-Compile-Sysroots installieren, auflisten, aktualisieren oder entfernen |
 | [`neverc build` / `neverc make`](build/README.de.md) | GNU-Make-kompatibler Treiber für Beispiel- und Projekt-Makefiles |

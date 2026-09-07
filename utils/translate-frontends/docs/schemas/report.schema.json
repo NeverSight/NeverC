@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neversight.github.io/NeverC/translate/report.schema.json",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "neverc.translate.report"
+    },
+    "version": {
+      "const": 1
+    },
+    "profile": {
+      "enum": [
+        "cpp-core-v1",
+        "cpp-project-v1",
+        "cpp-math-v1"
+      ]
+    },
+    "stage": {
+      "enum": [
+        "context",
+        "sdk",
+        "runtime",
+        "frontend",
+        "protocol",
+        "ir",
+        "syntax",
+        "object",
+        "link",
+        "publication",
+        "complete"
+      ]
+    },
+    "status": {
+      "enum": [
+        "success",
+        "failed"
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^TR[0-9]{4}$"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          },
+          "construct": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "guidance": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "file",
+          "line",
+          "column",
+          "construct",
+          "reason",
+          "guidance"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": [
+              "cpp.math.fabs.f64.v1",
+              "cpp.math.floor.f64.v1"
+            ]
+          },
+          "declaration_id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "result": {
+            "const": "double"
+          },
+          "parameters": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "const": "double"
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "origin": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "enum": [
+                  "libcxx",
+                  "resource",
+                  "platform"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              },
+              "column": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              }
+            },
+            "required": [
+              "root",
+              "path",
+              "sha256",
+              "line",
+              "column"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "declaration_id",
+          "result",
+          "parameters",
+          "origin"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 2
+    }
+  },
+  "required": [
+    "schema",
+    "version",
+    "profile",
+    "stage",
+    "status",
+    "diagnostics",
+    "mappings"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "enum": [
+              "cpp-core-v1",
+              "cpp-project-v1"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "mappings": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

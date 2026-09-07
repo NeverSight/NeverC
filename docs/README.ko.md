@@ -101,6 +101,7 @@ NeverC 프로젝트의 주요 계획 방향: 표준 라이브러리, EVM 스마�
 | 문서 | 설명 |
 |------|------|
 | [`neverc run`](run/README.ko.md) | 임시 바이너리 컴파일, 로컬 실행, 삭제 (`go run` 스타일) |
+| [`neverc translate`](translate/README.ko.md) | C++를 NeverC로 변환 |
 | [`neverc update`](update/README.ko.md) | 릴리스 설치 업/다운그레이드(컴파일러와 설치된 runtime을 한 태그로) |
 | [`neverc runtime`](runtime/README.ko.md) | 교차 컴파일 sysroot 설치·목록·갱신·제거 |
 | [`neverc build` / `neverc make`](build/README.ko.md) | 예제/프로젝트 Makefile용 GNU Make 호환 드라이버 |

@@ -1,0 +1,10 @@
+{
+  "schema": "neverc.cpp.sdk",
+  "version": 1,
+  "distribution_id": "clang20.1.8-libcxx200100-macos15.5",
+  "roots": {
+    "libcxx": "/opt/homebrew/Cellar/llvm@20/20.1.8/include/c++/v1",
+    "resource": "/opt/homebrew/Cellar/llvm@20/20.1.8/lib/clang/20",
+    "platform": "/Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk"
+  }
+}
