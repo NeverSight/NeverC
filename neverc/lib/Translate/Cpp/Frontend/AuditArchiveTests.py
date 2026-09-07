@@ -20,11 +20,12 @@ class ArchiveAuditTests(unittest.TestCase):
     llvm_literal = ('??_C@_06BCDEFGHI@llvm?3?3?$AA@', 'R', '"llvm::"')
     clang_literal = ('??_C@_07CDEFGHIJ@clang?3?3?$AA@', 'R', '"clang::"')
 
-    def audit_inventory(self, private, host=None, host_format="nm", coff_readobj=None):
+    def audit_inventory(self, private, host=None, host_format="nm", coff_readobj=None,
+                        prefix_header=None):
         private = [("neverc_cpp_frontend_main", "T", "neverc_cpp_frontend_main"),
                    *private]
         args = argparse.Namespace(nm="controlled-nm", nm_file=None,
-                                  archive=Path("private.lib"), prefix_header=None,
+                                  archive=Path("private.lib"), prefix_header=prefix_header,
                                   host_lib_dir=Path("host-libs") if host is not None else None,
                                   host_format=host_format, host_nm=None,
                                   coff_readobj=coff_readobj, coff_readobj_file=None)
@@ -50,6 +51,152 @@ class ArchiveAuditTests(unittest.TestCase):
                 mock.patch.object(AuditArchive, "host_archives",
                                   return_value=[Path("host.lib")]):
             AuditArchive.audit(args)
+
+    def test_windows_abort_handler_prefix_checks_definitions_and_references(self):
+        with tempfile.TemporaryDirectory(prefix="neverc-abort-prefix-") as temporary:
+            header = Path(temporary) / "PrivatePrefix.h"
+            header.write_text("#define HandleAbort neverc_cpp_HandleAbort\n",
+                              encoding="utf-8")
+            for name in ("HandleAbort", "_HandleAbort"):
+                for kind in ("T", "U"):
+                    with self.subTest(name=name, kind=kind):
+                        with self.assertRaisesRegex(ValueError, "HandleAbort"):
+                            self.audit_inventory([(name, kind, name)], prefix_header=header)
+            for name in ("neverc_cpp_HandleAbort", "_neverc_cpp_HandleAbort"):
+                with self.subTest(name=name):
+                    with self.assertRaisesRegex(ValueError, "unresolved private dependency"):
+                        self.audit_inventory([(name, "U", name)], prefix_header=header)
+                    for host_format in ("nm", "coff-index"):
+                        self.audit_inventory(
+                            [(name, "T", name), (name, "U", name)],
+                            [("HandleAbort", "T", "HandleAbort")], host_format,
+                            prefix_header=header)
+
+    def test_complete_failure_list_includes_count_and_private_symbol_identity(self):
+        names = [f"host_collision_{index:03d}" for index in range(105)]
+        names[0] = "?collision@private_detail@@YAXXZ"
+        decoded = {name: name for name in names}
+        decoded[names[0]] = "void __cdecl private_detail::collision(void)"
+        private = [(name, "T", decoded[name]) for name in names]
+        private.append((names[0], "U", decoded[names[0]]))
+        host = [(name, "T", decoded[name]) for name in names]
+        with mock.patch.object(sys, "stdout", new_callable=io.StringIO) as output:
+            with self.assertRaises(ValueError) as failure:
+                self.audit_inventory(private, host)
+        message = str(failure.exception)
+        self.assertIn("Unisolated symbols in builtin C++ frontend (total=105):", message)
+        for name in names:
+            self.assertIn("private/host symbol intersection: " + name + ";", message)
+        self.assertIn("private_demangled='void __cdecl private_detail::collision(void)'; "
+                      "private_definition=True; private_reference=True", message)
+        evidence = output.getvalue()
+        self.assertIn("ABI audit provenance: private nm archive='private.lib' "
+                      "member_header='private.cpp.obj:' symbol='host_collision_104' "
+                      "kind='T' raw='host_collision_104 T 0 0'", evidence)
+        self.assertIn("ABI audit provenance: host nm archive='host.lib' "
+                      "member_header='host.cpp.obj:' symbol='host_collision_104' "
+                      "kind='T' raw='host_collision_104 T 0 0'", evidence)
+
+    def test_failure_provenance_assigns_each_host_member_to_its_actual_archive(self):
+        args = argparse.Namespace(nm="controlled-nm", nm_file=None,
+                                  archive=Path("private.a"), prefix_header=None,
+                                  host_lib_dir=Path("host-libs"), host_format="nm", host_nm=None)
+        hosts = [Path("first.a"), Path("second.a"), Path("unrelated.a")]
+        inventories = {
+            args.archive: [("neverc_cpp_frontend_main", "T"),
+                           ("shared_left", "U"), ("shared_right", "T")],
+            hosts[0]: [("shared_left", "T")],
+            hosts[1]: [("shared_right", "D")],
+            hosts[2]: [("unrelated_symbol", "T")],
+        }
+
+        def inventory(_reader, paths, *options):
+            rows = [(path, name, kind) for path in paths for name, kind in inventories[path]]
+            if "--defined-only" in options:
+                rows = [row for row in rows if not AuditArchive.is_undefined(row[2])]
+            if "--format=posix" in options:
+                # Equal member basenames in different archives must not be
+                # attributed from the batch's filename-less header alone.
+                return "".join(f"same-member.obj:\n{name} {kind} 1 2\n"
+                               for _, name, kind in rows)
+            return "".join(name + "\n" for _, name, _ in rows)
+
+        with mock.patch.object(AuditArchive, "nm_output", side_effect=inventory) as reader, \
+                mock.patch.object(AuditArchive, "host_archives", return_value=hosts), \
+                mock.patch.object(sys, "stdout", new_callable=io.StringIO) as output:
+            with self.assertRaisesRegex(ValueError, "total=2"):
+                AuditArchive.audit(args)
+        evidence = output.getvalue()
+        self.assertIn("ABI audit provenance: host nm archive='first.a' "
+                      "member_header='same-member.obj:' symbol='shared_left' "
+                      "kind='T' raw='shared_left T 1 2'", evidence)
+        self.assertIn("ABI audit provenance: host nm archive='second.a' "
+                      "member_header='same-member.obj:' symbol='shared_right' "
+                      "kind='D' raw='shared_right D 1 2'", evidence)
+        self.assertNotIn("archive='unrelated.a'", evidence)
+        self.assertNotIn("archive='first.a' member_header='same-member.obj:' "
+                         "symbol='shared_right'", evidence)
+        for archive in hosts[:2]:
+            reader.assert_any_call("controlled-nm", [archive], "--format=posix")
+
+    def test_coff_collision_provenance_never_invents_object_kind_or_member(self):
+        with mock.patch.object(sys, "stdout", new_callable=io.StringIO) as output:
+            with self.assertRaises(ValueError) as failure:
+                self.audit_inventory([("HandleAbort", "U", "HandleAbort")],
+                                     [("HandleAbort", "T", "HandleAbort")], "coff-index")
+        self.assertIn("private_demangled='HandleAbort'; private_definition=False; "
+                      "private_reference=True", str(failure.exception))
+        evidence = output.getvalue()
+        self.assertIn("ABI audit provenance: private nm archive='private.lib' "
+                      "member_header='private.cpp.obj:' symbol='HandleAbort' "
+                      "kind='U' raw='HandleAbort U 0 0'", evidence)
+        self.assertIn("ABI audit provenance: host coff-index archive='host.lib' "
+                      "symbol='HandleAbort' index-only; object kind, member and "
+                      "raw nm row unavailable", evidence)
+        self.assertNotIn("ABI audit provenance: host nm", evidence)
+        for line in evidence.splitlines():
+            if "ABI audit provenance: host coff-index" in line:
+                self.assertNotIn("kind=", line)
+                self.assertNotIn("member_header=", line)
+                self.assertNotIn("raw=", line)
+
+    def test_provenance_read_failure_preserves_the_original_complete_diagnostic(self):
+        args = argparse.Namespace(nm="controlled-nm", nm_file=None,
+                                  archive=Path("private.a"), prefix_header=None,
+                                  host_lib_dir=Path("host-libs"), host_format="nm", host_nm=None)
+        for change in ("read-error", "type-change"):
+            with self.subTest(change=change):
+                private_reads = 0
+
+                def inventory(_reader, paths, *options):
+                    nonlocal private_reads
+                    if paths == [args.archive]:
+                        if "--format=posix" in options:
+                            private_reads += 1
+                            if private_reads > 1 and change == "read-error":
+                                raise OSError("evidence reader unavailable")
+                            kind = "T" if private_reads > 1 else "U"
+                            return ("private.obj:\nneverc_cpp_frontend_main T 0 0\n"
+                                    f"blocked_symbol {kind} 0 0\n")
+                        return "neverc_cpp_frontend_main\nblocked_symbol\n"
+                    if "--format=posix" in options:
+                        return "host.obj:\nblocked_symbol T 0 0\n"
+                    return "blocked_symbol\n"
+
+                with mock.patch.object(AuditArchive, "nm_output", side_effect=inventory), \
+                        mock.patch.object(AuditArchive, "host_archives",
+                                          return_value=[Path("host.a")]), \
+                        mock.patch.object(sys, "stdout", new_callable=io.StringIO):
+                    with self.assertRaises(ValueError) as failure:
+                        AuditArchive.audit(args)
+                message = str(failure.exception)
+                self.assertIn("Unisolated symbols in builtin C++ frontend (total=1):", message)
+                self.assertIn("private/host symbol intersection: blocked_symbol; "
+                              "private_demangled='blocked_symbol'; private_definition=False; "
+                              "private_reference=True", message)
+                self.assertIn("ABI audit provenance collection failed:", message)
+                self.assertIn("evidence reader unavailable" if change == "read-error" else
+                              "Private symbol inventory changed", message)
 
     def test_microsoft_literal_requires_raw_identity_and_literal_decoding(self):
         # Wide and truncated spellings are from LLVM's ms-string-literals.test.
@@ -412,7 +559,8 @@ class ArchiveAuditTests(unittest.TestCase):
                                   return_value=[Path("host.lib")]):
             with self.assertRaisesRegex(ValueError, "intersection: host_counter"):
                 AuditArchive.audit(args)
-        reader.read_defined_symbols.assert_called_once_with(Path("host.lib"))
+        self.assertEqual(reader.read_defined_symbols.call_args_list,
+                         [mock.call(Path("host.lib")), mock.call(Path("host.lib"))])
 
     def test_corrupt_coff_index_is_never_treated_as_no_definitions(self):
         args = argparse.Namespace(nm="private-llvm-nm20", nm_file=None,

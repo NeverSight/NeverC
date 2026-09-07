@@ -53,6 +53,9 @@ symbols.update({
     "UseNewDbgInfoFormat", "WriteNewDbgInfoFormat", "WriteNewDbgInfoFormatToBitcode",
     "WriteNewDbgInfoFormatToBitcode2", "PreserveInputDbgFormat", "UseDerefAtPointSemantics",
     "__crashreporter_info__",
+    # Windows Signals.inc defines/registers this with C linkage inside llvm.
+    # Renaming the namespace alone leaves its process-wide symbol unchanged.
+    "HandleAbort",
 })
 if len(symbols) < 900:
     raise SystemExit("Unexpected LLVM 20.1.8 symbol inventory; review the pinned source")

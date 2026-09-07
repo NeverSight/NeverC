@@ -48,22 +48,28 @@ class CppFrontendToolchainTests(unittest.TestCase):
                          f"{command!r}\n{result.stdout}\n{result.stderr}")
         return result.stdout
 
-    def archive(self, directory, name, source, *, msvc=False, assembly=None):
+    def archive(self, directory, name, source, *, msvc=False, assembly=None,
+                extra_sources=(), prefix_header=None):
         directory.mkdir(parents=True, exist_ok=True)
-        cpp = directory / (name + ".cpp")
-        obj = directory / (name + ".obj")
         library = directory / (name + ".lib")
-        cpp.write_text(source, encoding="utf-8")
-        if msvc:
-            self.require_success([self.msvc, "/nologo", "/c", "/Od", "/GL-",
-                                  "/GR-", "/EHsc", "/Fo" + str(obj), cpp])
-        else:
-            self.require_success([
-                self.clang, "--target=" + self.target, "-std=c++17", "-O2",
-                "-fms-extensions", "-fmerge-all-constants", "-fno-exceptions",
-                "-fno-rtti", "-c", cpp, "-o", obj,
-            ])
-        objects = [obj]
+        objects = []
+        for index, text in enumerate((source, *extra_sources)):
+            stem = name if index == 0 else f"{name}-{index}"
+            cpp = directory / (stem + ".cpp")
+            obj = directory / (stem + ".obj")
+            cpp.write_text(text, encoding="utf-8")
+            if msvc:
+                prefix = ["/FI" + str(prefix_header)] if prefix_header else []
+                self.require_success([self.msvc, "/nologo", "/c", "/Od", "/GL-",
+                                      "/GR-", "/EHsc", *prefix, "/Fo" + str(obj), cpp])
+            else:
+                prefix = ["-include", prefix_header] if prefix_header else []
+                self.require_success([
+                    self.clang, "--target=" + self.target, "-std=c++17", "-O2",
+                    "-fms-extensions", "-fmerge-all-constants", "-fno-exceptions",
+                    "-fno-rtti", *prefix, "-c", cpp, "-o", obj,
+                ])
+            objects.append(obj)
         if assembly is not None:
             asm = directory / (name + ".s")
             asm_obj = directory / (name + "-asm.obj")
@@ -75,11 +81,13 @@ class CppFrontendToolchainTests(unittest.TestCase):
         return library
 
     def check_audit(self, private, host=None, host_format="nm", error=None,
-                    *, coff_reader=True):
+                    *, coff_reader=True, prefix_header=None):
         command = [sys.executable, "-E", "-B", self.audit,
                    "--nm", self.nm, "--archive", private]
         if coff_reader:
             command.extend(["--coff-readobj", self.readobj])
+        if prefix_header is not None:
+            command.extend(["--prefix-header", prefix_header])
         if host is not None:
             command.extend(["--host-lib-dir", host, "--host-format", host_format])
             if host_format == "nm":
@@ -95,6 +103,44 @@ class CppFrontendToolchainTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, output)
             self.assertIn(error, output)
             self.assertFalse(private.exists(), "A rejected aggregate must be removed")
+
+    def test_windows_abort_handler_definition_and_references_are_private(self):
+        # Like Windows Signals.inc, this C-linkage function is declared inside
+        # namespace llvm. A namespace prefix alone cannot isolate its ABI name.
+        definition = ('namespace llvm { extern "C" void HandleAbort(int signal) '
+                      '{ (void)signal; } }\n')
+        reference = (ENTRY + 'namespace llvm { extern "C" void HandleAbort(int); }\n'
+                     'extern "C" { void (*neverc_cpp_abort_handler)(int) = '
+                     'llvm::HandleAbort; }\n')
+        header = self.root / "PrivatePrefix.h"
+        header.write_text("#define llvm neverc_cpp_llvm\n"
+                          "#define HandleAbort neverc_cpp_HandleAbort\n", encoding="utf-8")
+        for msvc in (False, True):
+            compiler = "msvc" if msvc else "clang"
+            host = self.root / compiler / "host"
+            self.archive(host, "host", definition, msvc=msvc)
+            for host_format in ("nm", "coff-index"):
+                with self.subTest(compiler=compiler, host_format=host_format):
+                    directory = self.root / compiler / host_format
+                    unisolated = self.archive(directory / "unisolated", "private",
+                                              definition, extra_sources=(reference,), msvc=msvc)
+                    self.check_audit(
+                        unisolated, host, host_format,
+                        error="private/host symbol intersection: HandleAbort")
+                    isolated = self.archive(directory / "isolated", "private",
+                                            definition, extra_sources=(reference,),
+                                            msvc=msvc, prefix_header=header)
+                    inventory = self.require_success(
+                        [self.nm, "--extern-only", "--format=posix", isolated])
+                    self.assertRegex(inventory, r"(?m)^neverc_cpp_HandleAbort T\s")
+                    self.assertRegex(inventory, r"(?m)^neverc_cpp_HandleAbort U\s")
+                    self.assertNotRegex(inventory, r"(?m)^HandleAbort\s")
+                    self.check_audit(isolated, host, host_format, prefix_header=header)
+                    unresolved = self.archive(directory / "unresolved", "private",
+                                              reference, msvc=msvc, prefix_header=header)
+                    self.check_audit(
+                        unresolved, host, host_format, prefix_header=header,
+                        error="unresolved private dependency: neverc_cpp_HandleAbort")
 
     def test_msvc_vector_destructor_fallback_is_resolved_from_actual_aux_record(self):
         source = ENTRY + """

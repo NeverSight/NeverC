@@ -41,6 +41,18 @@ def report_strdup_records(side, archive, records):
                   f"kind={kind!r} raw={raw!r}", flush=True)
 
 
+def report_failure_nm_records(side, archive, records, selected):
+    definitions, references = set(), set()
+    for name, kind, member_header, raw in records:
+        if name not in selected:
+            continue
+        print(f"ABI audit provenance: {side} nm archive={str(archive)!r} "
+              f"member_header={member_header!r} symbol={name!r} "
+              f"kind={kind!r} raw={raw!r}", flush=True)
+        (references if is_undefined(kind) else definitions).add(name)
+    return definitions, references
+
+
 def is_undefined(kind):
     # Lowercase w/v denote undefined weak symbols, unlike defined W/V.
     return kind in ("U", "w", "v")
@@ -232,6 +244,8 @@ def audit(args):
     for name in ("PrintBranchProbFuncName", "ScalePartialSampleProfileWorkingSetSize"):
         renamed[name] = "neverc_cpp_" + name
     bad = []
+    bad_private_names, bad_host_names = set(), set()
+    host_evidence_batches = []
     private_decoded = decoded_symbols(nm, [args.archive])
     for name, declaration in private_decoded.items():
         if microsoft_string_literal(name, declaration):
@@ -240,6 +254,7 @@ def audit(args):
                 or re.search(r"(?<![A-Za-z0-9_:])(?:mangledNameForMallocFamily|isVPIntrinsic|deserializeSanitizerMetadata)\(", declaration)
                 or re.search(r"(?<![A-Za-z0-9_])DebugInfoPerPass\b", declaration)):
             bad.append(name + " => " + declaration)
+            bad_private_names.add(name)
     definitions, references = set(), set()
     for record in symbol_records(nm_output(
             nm, [args.archive], "--format=posix")):
@@ -249,7 +264,9 @@ def audit(args):
         if (re.match(r"^_?(?:LLVM[A-Z]|llvm_|UseNewDbgInfoFormat$)", name)
                 or name in renamed or plain in renamed):
             bad.append(name)
+            bad_private_names.add(name)
         (references if is_undefined(kind) else definitions).add(name)
+    private_inventory = definitions | references
     def private_dependency(name):
         plain = name[1:] if name.startswith("_") else name
         return ("neverc_cpp_llvm" in name or "5clang" in name
@@ -274,6 +291,7 @@ def audit(args):
     for name in sorted(references - definitions - resolved_aliases):
         if private_dependency(name):
             bad.append("unresolved private dependency: " + name)
+            bad_private_names.add(name)
     if not {"neverc_cpp_frontend_main", "_neverc_cpp_frontend_main"} & definitions:
         bad.append("missing builtin C++ frontend C entry point definition")
 
@@ -286,6 +304,12 @@ def audit(args):
             for archive in archives:
                 indexed = read_defined_symbols(archive)
                 host_definitions.update(indexed)
+                # Keep only symbol identities potentially needing failure
+                # evidence, not the raw inventory of every host archive.
+                selected = indexed & private_inventory
+                selected.update(name for name in indexed if has_raw_clang_name(name))
+                if selected:
+                    host_evidence_batches.append(([archive], selected))
                 for name in sorted(indexed & STRDUP_SYMBOLS):
                     print(f"strdup provenance: host coff-index archive={str(archive)!r} "
                           f"symbol={name!r} index-only; object kind, member and raw "
@@ -293,6 +317,7 @@ def audit(args):
             for name in sorted(host_definitions):
                 if has_raw_clang_name(name):
                     bad.append("unexpected host Clang definition: " + name)
+                    bad_host_names.add(name)
         else:
             # A separate tool must understand the *host compiler's* bitcode.
             # The private pinned reader remains responsible for its own ABI.
@@ -312,10 +337,13 @@ def audit(args):
             for first in range(0, len(archives), 16):
                 batch = archives[first:first + 16]
                 strdup_records = []
+                batch_candidates = set()
                 for record in symbol_records(host_output(batch, "--format=posix")):
                     name, kind, _, _ = record
                     if not is_undefined(kind):
                         host_definitions.add(name)
+                        if name in private_inventory:
+                            batch_candidates.add(name)
                     if name in STRDUP_SYMBOLS:
                         strdup_records.append(record)
                 expected_strdup = sorted((name, kind) for name, kind, _, _ in strdup_records)
@@ -343,6 +371,10 @@ def audit(args):
                             and re.search(r"(?<![A-Za-z0-9_])clang::", declaration)):
                         bad.append("unexpected host Clang definition: " + name +
                                    " => " + declaration)
+                        bad_host_names.add(name)
+                        batch_candidates.add(name)
+                if batch_candidates:
+                    host_evidence_batches.append((batch, batch_candidates))
         shared = (definitions | references) & host_definitions
         for name in sorted(shared):
             # Only a platform strdup reference may bind the host allocator.
@@ -353,10 +385,54 @@ def audit(args):
                     and name in references and name not in definitions):
                 continue
             if not standard_shared_symbol(name, private_decoded.get(name, "")):
-                bad.append("private/host symbol intersection: " + name)
+                bad.append("private/host symbol intersection: " + name +
+                           f"; private_demangled={private_decoded.get(name, '')!r}" +
+                           f"; private_definition={name in definitions}" +
+                           f"; private_reference={name in references}")
+                bad_private_names.add(name)
+                bad_host_names.add(name)
     if bad:
-        raise ValueError("Unisolated symbols in builtin C++ frontend:\n" +
-                         "\n".join(bad[:100]))
+        diagnostic = (f"Unisolated symbols in builtin C++ frontend (total={len(bad)}):\n" +
+                      "\n".join(bad))
+        # Failure evidence is read one archive at a time. LLVM's default POSIX
+        # member header can omit the parent archive, so a batch row alone is
+        # insufficient to attribute a collision. Normal successful audits do
+        # not retain all raw rows or run these additional inspections.
+        try:
+            if bad_private_names:
+                observed_definitions, observed_references = report_failure_nm_records(
+                    "private", args.archive,
+                    symbol_records(nm_output(nm, [args.archive], "--format=posix")),
+                    bad_private_names)
+                if (observed_definitions != definitions & bad_private_names or
+                        observed_references != references & bad_private_names):
+                    raise ValueError("Private symbol inventory changed during provenance read")
+            for batch, candidates in host_evidence_batches:
+                selected = candidates & bad_host_names
+                if not selected:
+                    continue
+                observed_definitions = set()
+                for archive in batch:
+                    if host_format == "coff-index":
+                        observed = read_defined_symbols(archive) & selected
+                        for name in sorted(observed):
+                            print(f"ABI audit provenance: host coff-index archive={str(archive)!r} "
+                                  f"symbol={name!r} index-only; object kind, member and raw "
+                                  "nm row unavailable", flush=True)
+                    else:
+                        observed, _ = report_failure_nm_records(
+                            "host", archive,
+                            symbol_records(host_output([archive], "--format=posix")),
+                            selected)
+                    observed_definitions.update(observed)
+                if observed_definitions != selected:
+                    raise ValueError("Host symbol inventory changed during provenance read")
+        except (OSError, UnicodeError, ValueError, subprocess.CalledProcessError) as error:
+            # Preserve every original finding even when its additional evidence
+            # cannot be read. The archive remains rejected in either case.
+            raise ValueError(diagnostic + "\nABI audit provenance collection failed: " +
+                             str(error)) from error
+        raise ValueError(diagnostic)
     print("Builtin C++ frontend: defined and undefined symbols use the private LLVM ABI")
 
 
