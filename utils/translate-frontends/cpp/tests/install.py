@@ -40,7 +40,8 @@ def main():
     installed = prefix / "bin" / args.neverc.name
     source_neverc = args.neverc.resolve()
     source_sha256 = hashlib.sha256(source_neverc.read_bytes()).hexdigest()
-    environment = os.environ.copy()
+    host_environment = os.environ.copy()
+    environment = host_environment.copy()
     missing = prefix / "unavailable-external-toolchain"
     environment.update(NEVERC_CPP_FRONTEND=str(missing / "frontend"),
                        NEVERC_CPP_SDK=str(missing / "sdk.json"), SDKROOT=str(missing / "sdk"),
@@ -51,7 +52,12 @@ def main():
                 "neverc_installation": "cmake-component", "denied_read_paths": denied}
     sandbox = []
 
-    def run(command, env=environment, expected=0, isolated=True):
+    def run(command, env=None, expected=0, isolated=True):
+        # Host inspection shims need the original SDK and PATH. Isolated calls
+        # keep the poisoned environment even before the sandbox is configured;
+        # an explicit environment, such as the CMake install one, takes priority.
+        if env is None:
+            env = environment if isolated else host_environment
         command = [*(sandbox if isolated else []), *(str(x) for x in command)]
         result = subprocess.run(command, env=env, cwd=prefix, text=True,
                                 capture_output=True, timeout=300)
@@ -62,7 +68,7 @@ def main():
             raise RuntimeError(f"unexpected exit {result.returncode}: {command}")
         return result.stdout + result.stderr
 
-    install_environment = os.environ.copy()
+    install_environment = host_environment.copy()
     install_environment.pop("DESTDIR", None)
     components = ["neverc", "neverc-resource-headers", "neverc-std"]
     if sys.platform == "darwin":
