@@ -1,4 +1,4 @@
-**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+**Languages**: [English](README.md) | [简体中文](../zh-CN/dyncode-compiler/README.md) | [繁體中文](../zh-TW/dyncode-compiler/README.md) | [日本語](../ja/dyncode-compiler/README.md) | [한국어](../ko/dyncode-compiler/README.md) | [Français](../fr/dyncode-compiler/README.md) | [Deutsch](../de/dyncode-compiler/README.md) | [Español](../es/dyncode-compiler/README.md) | [Italiano](../it/dyncode-compiler/README.md) | [Русский](../ru/dyncode-compiler/README.md) | [العربية](../ar/dyncode-compiler/README.md)
 
 [← Documentation index](../README.md) · [← NeverC project](../../README.md)
 
@@ -8,15 +8,15 @@ Compile C source code directly into **position-independent, zero-relocation, zer
 
 ## Guides
 
-- [ARM64 (AArch64) Assembly Tutorial — DynCode Perspective](arm64-assembly-tutorial/README.md)
-- [NeverC DynCode Cross-Platform Architecture Overview](cross-platform-architecture/README.md)
-- [IR Pass Design — Principles, Pipeline, and Before/After Examples](ir-pass-design/README.md)
-- [Kernel-Mode (Ring-0) DynCode Support](kernel-mode-dyncode/README.md)
-- [MIR Pass Design — Principles and Interpose Points](mir-pass-design/README.md)
-- [DynCode Pipeline, MIR & PIC Strategy (Design Notes)](pipeline-and-pic/README.md)
-- [Platform Extension Guide](platform-extension-guide/README.md)
-- [DynCode Compiler — Progress Tracker](progress/README.md)
-- [Roadmap](roadmap/README.md)
+- [ARM64 (AArch64) Assembly Tutorial — DynCode Perspective](arm64-assembly-tutorial.md)
+- [NeverC DynCode Cross-Platform Architecture Overview](cross-platform-architecture.md)
+- [IR Pass Design — Principles, Pipeline, and Before/After Examples](ir-pass-design.md)
+- [Kernel-Mode (Ring-0) DynCode Support](kernel-mode-dyncode.md)
+- [MIR Pass Design — Principles and Interpose Points](mir-pass-design.md)
+- [DynCode Pipeline, MIR & PIC Strategy (Design Notes)](pipeline-and-pic.md)
+- [Platform Extension Guide](platform-extension-guide.md)
+- [DynCode Compiler — Progress Tracker](progress.md)
+- [Roadmap](roadmap.md)
 
 ---
 
@@ -44,7 +44,7 @@ Compile C source code directly into **position-independent, zero-relocation, zer
 | `aarch64-pc-windows-msvc` | PE/COFF | **PEB walk** (`ldr xN, [x18, #0x60]`) | `WindowsKernelResolverShim` | User-mode PEB read byte sentinel `32 40 f9` validated; ring-0 uses loader resolver |
 | `x86_64-pc-windows-msvc` | PE/COFF | **PEB module walk + PE export-table lookup** | `WindowsKernelResolverShim` | User-mode resolver is full IR-level PEB walk; ring-0 does not reuse PEB |
 
-All eight (OS, arch) triples are driven by **the same set of passes**. Differences are isolated in `TargetDesc.cpp` table entries + three extractor arch switches. Adding a new platform = fill one more table row + add one case in each extractor. The `ExecutionLevel` dimension is orthogonal: `User` uses the user-mode syscall / PEB pipeline; `Kernel` disables both and injects `KernelImportPass` to rewrite extern calls through resolver shims. See [kernel-mode-dyncode.md](kernel-mode-dyncode/README.md).
+All eight (OS, arch) triples are driven by **the same set of passes**. Differences are isolated in `TargetDesc.cpp` table entries + three extractor arch switches. Adding a new platform = fill one more table row + add one case in each extractor. The `ExecutionLevel` dimension is orthogonal: `User` uses the user-mode syscall / PEB pipeline; `Kernel` disables both and injects `KernelImportPass` to rewrite extern calls through resolver shims. See [kernel-mode-dyncode.md](kernel-mode-dyncode.md).
 
 ---
 
@@ -110,8 +110,8 @@ neverc -v -fdyncode -target arm64-apple-macos fib.c -o fib.bin
 | `-fdyncode-entry=<name>` | Override default entry name. Defaults accept `main` / `_main` / `dyncode_entry` / `_dyncode_entry`. |
 | `-fdyncode-bad-bytes=<hex-list>` | Comma-separated forbidden byte list, e.g. `00,0a,0d` or `0x00,0x0a`. Extractor scans the final `.bin` after post-extract interposes; hits cause failure with no file written. |
 | `-fdyncode-bad-byte-profile=<name>` | Built-in forbidden byte profiles: `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. Combinable with `-fdyncode-bad-bytes=`. |
-| `-fdyncode-obfuscate=<spec>` | Passed through to registered **IR-level** plugin interposes via the [Plugin API](../plugin-api/README.md). No-op when no plugin is loaded. See [ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design/README.md#9-obfuscation-interposes). |
-| `-fdyncode-mir-obfuscate=<spec>` | Passed through to **MIR-level** obfuscation interposes (`RunBeforePreEmit` / `RunAfterPreEmit`). Falls back to `-fdyncode-obfuscate=` value if unset. See [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.md#3-user-obfuscation-interposes). |
+| `-fdyncode-obfuscate=<spec>` | Passed through to registered **IR-level** plugin interposes via the [Plugin API](../plugin-api/README.md). No-op when no plugin is loaded. See [ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design.md#9-obfuscation-interposes). |
+| `-fdyncode-mir-obfuscate=<spec>` | Passed through to **MIR-level** obfuscation interposes (`RunBeforePreEmit` / `RunAfterPreEmit`). Falls back to `-fdyncode-obfuscate=` value if unset. See [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design.md#3-user-obfuscation-interposes). |
 
 ---
 
@@ -322,8 +322,8 @@ The pipeline exposes **11 interpose points** across three layers, all accessible
 
 See the [Plugin API documentation](../plugin-api/README.md) for the full interpose list, pass registration, and code examples.
 
-- IR-level design: [ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design/README.md#9-obfuscation-interposes).
-- MIR-level design: [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.md#3-user-obfuscation-interposes)
+- IR-level design: [ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design.md#9-obfuscation-interposes).
+- MIR-level design: [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design.md#3-user-obfuscation-interposes)
 ---
 
 ## Current Limitations

@@ -1,6 +1,6 @@
 **Lingue**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Esempi NeverC](../../docs/examples/README.it.md)
+[← Esempi NeverC](../../docs/it/examples.md)
 
 # Dispositivo a caratteri kernel Android
 
@@ -36,7 +36,7 @@ address (indirizzo del kernel a runtime). NeverC non memorizza le forme riservat
 
 Per i nomi da conservare esattamente, la vista `extern` sintetica di IDA, i limiti
 di sicurezza e l'ordine tra finalizzazione e firma, consulta la
-[policy di rilascio e strip](../../docs/release-builds/README.it.md).
+[policy di rilascio e strip](../../docs/it/release-builds.md).
 
 ## Distribuzione ed esecuzione
 

@@ -1,6 +1,6 @@
 **Языки**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Примеры NeverC](../../docs/examples/README.ru.md)
+[← Примеры NeverC](../../docs/ru/examples.md)
 
 # Пример Linux сетевого сокета
 
@@ -21,7 +21,7 @@ Makefile сохраняет `PROFILE`, поэтому последующие `ne
 оставляют тот же выбор debug/release. Release использует встроенный
 `--strip` NeverC: удаляет отладочные метаданные и ненужные статические
 имена символов, сохраняя нужные имена загрузчика/динамического ABI.
-См. [Релизные сборки](../../docs/release-builds/README.ru.md).
+См. [Релизные сборки](../../docs/ru/release-builds.md).
 
 
 AArch64:

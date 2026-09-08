@@ -1,6 +1,6 @@
 **Языки**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Примеры NeverC](../../docs/examples/README.ru.md)
+[← Примеры NeverC](../../docs/ru/examples.md)
 
 # Драйвер ядра Windows с CET Shadow Stack
 
@@ -20,7 +20,7 @@ neverc make debug    # вернуться к debug
 Makefile сохраняет `PROFILE` и `TESTSIGN`. Для релиза:
 `neverc make release` (`-O2 --strip`). С тестовой подписью:
 `neverc make release TESTSIGN=1` (сначала strip, затем подпись в одной линковке).
-См. [Релизные сборки](../../docs/release-builds/README.ru.md).
+См. [Релизные сборки](../../docs/ru/release-builds.md).
 
 Из автономной сборки NeverC:
 

@@ -2,7 +2,7 @@
 
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← أمثلة NeverC](../../docs/examples/README.ar.md)
+[← أمثلة NeverC](../../docs/ar/examples.md)
 
 # Android Kernel Probe
 
@@ -54,7 +54,7 @@ virtual address (عنوان ELF افتراضيًا)، ولا runtime kernel addr
 وقت التشغيل). ولا تخزن NeverC صيغ `sub_`/`loc_` المحجوزة أو أسماء عادية فارغة
 عمدًا.
 
-راجع [سياسة الإصدار والتجريد](../../docs/release-builds/README.ar.md) لمعرفة
+راجع [سياسة الإصدار والتجريد](../../docs/ar/release-builds.md) لمعرفة
 الأسماء الواجب إبقاؤها كما هي، ومعنى عرض `extern` التركيبي في IDA، وحدود الأمان،
 وترتيب الإنهاء والتوقيع.
 

@@ -1,4 +1,4 @@
-**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+**Languages**: [English](README.md) | [简体中文](../zh-CN/builtins/README.md) | [繁體中文](../zh-TW/builtins/README.md) | [日本語](../ja/builtins/README.md) | [한국어](../ko/builtins/README.md) | [Français](../fr/builtins/README.md) | [Deutsch](../de/builtins/README.md) | [Español](../es/builtins/README.md) | [Italiano](../it/builtins/README.md) | [Русский](../ru/builtins/README.md) | [العربية](../ar/builtins/README.md)
 
 [← NeverC Documentation](../README.md)
 
@@ -11,10 +11,10 @@ NeverC extends standard C with opt-in built-in runtimes that are embedded direct
 
 | Built-in                                    | Flag                 | Default | Description                                                                                       |
 | ------------------------------------------- | -------------------- | ------- | ------------------------------------------------------------------------------------------------- |
-| [**`string`**](string/README.md) | `-fbuiltin-string`   | Off     | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8   |
-| [**`mimalloc`**](mimalloc/README.md) | `-fbuiltin-mimalloc` | **On**  | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
-| [**`xorstr`**](xorstr/README.md) | `-fencrypt-call-strings` | Off  | Per-instance compile-time encryption, mandatory late sealing, per-call final expansion, and volatile stack cleanup |
-| [**`strhash`**](strhash/README.md) | `-fstrhash-algo` / `-fstrhash-fold` | Off | Compile-time string hashing with matching runtime and optional IR constant folding |
+| [**`string`**](string.md) | `-fbuiltin-string`   | Off     | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8   |
+| [**`mimalloc`**](mimalloc.md) | `-fbuiltin-mimalloc` | **On**  | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
+| [**`xorstr`**](xorstr.md) | `-fencrypt-call-strings` | Off  | Per-instance compile-time encryption, mandatory late sealing, per-call final expansion, and volatile stack cleanup |
+| [**`strhash`**](strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | Off | Compile-time string hashing with matching runtime and optional IR constant folding |
 
 The `string` built-in requires explicit opt-in; `mimalloc` is enabled by default for all hosted builds (automatically suppressed in kernel, dyncode, and freestanding modes). They can be combined:
 
@@ -85,9 +85,9 @@ Each built-in has a header + implementation pair in `neverc/Foundation/Builtin/`
 
 The API provides `getEmbeddedBitcode()` to retrieve the precompiled LLVM bitcode blob, and `isSupported()` to check platform availability.
 
-> **Note:** `xorstr` does not use the embedded-bitcode model. The explicit macro [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.md) is lowered by `semaBuiltinNeverCXorstr` in `SemaCheckingBuiltinNeverC.cpp`. `EncryptCallStringsPass` and `XorStrCleanupPass` seal automatic literals and plaintext stack storage before IPO and after every late ordinary or plugin IR phase. `FinalizeXorStrPass` rekeys and expands explicit decoders only at a real native machine-code boundary, then removes the shared support graph. See [xorstr documentation](xorstr/README.md) for the full design and reproducibility contract.
+> **Note:** `xorstr` does not use the embedded-bitcode model. The explicit macro [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr.md) is lowered by `semaBuiltinNeverCXorstr` in `SemaCheckingBuiltinNeverC.cpp`. `EncryptCallStringsPass` and `XorStrCleanupPass` seal automatic literals and plaintext stack storage before IPO and after every late ordinary or plugin IR phase. `FinalizeXorStrPass` rekeys and expands explicit decoders only at a real native machine-code boundary, then removes the shared support graph. See [xorstr documentation](xorstr.md) for the full design and reproducibility contract.
 
-> **Note:** `strhash` likewise does not use the embedded-bitcode model. [`NC_STRHASH(s)` / `NEVERC_STRHASH(s)`](strhash/README.md) folds to an integer constant in Sema (`semaBuiltinNeverCStrHash`); runtime hashing uses NeverC std (`neverc_fnv_sum*` / `neverc_xxhash64`) via `neverc_strhash_rt`. Optional `-fstrhash-fold` enables `StrHashFoldPass` to constant-fold runtime hash calls with literal arguments. See [strhash documentation](strhash/README.md).
+> **Note:** `strhash` likewise does not use the embedded-bitcode model. [`NC_STRHASH(s)` / `NEVERC_STRHASH(s)`](strhash.md) folds to an integer constant in Sema (`semaBuiltinNeverCStrHash`); runtime hashing uses NeverC std (`neverc_fnv_sum*` / `neverc_xxhash64`) via `neverc_strhash_rt`. Optional `-fstrhash-fold` enables `StrHashFoldPass` to constant-fold runtime hash calls with literal arguments. See [strhash documentation](strhash.md).
 
 ### Layer 3: CMake Bootstrap Infrastructure
 

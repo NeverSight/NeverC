@@ -1,4 +1,4 @@
-**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+**Languages**: [English](README.md) | [简体中文](../zh-CN/plugin-api/README.md) | [繁體中文](../zh-TW/plugin-api/README.md) | [日本語](../ja/plugin-api/README.md) | [한국어](../ko/plugin-api/README.md) | [Français](../fr/plugin-api/README.md) | [Deutsch](../de/plugin-api/README.md) | [Español](../es/plugin-api/README.md) | [Italiano](../it/plugin-api/README.md) | [Русский](../ru/plugin-api/README.md) | [العربية](../ar/plugin-api/README.md)
 
 [← Documentation index](../README.md) · [← NeverC project](../../README.md)
 
@@ -34,7 +34,7 @@ optimization pipeline — is reached through tables you ask the host for by ID.
 | [Target, MC, assembly, object](target-mc-object.md) | [Target registration](target-mc-object.md#registering-a-target), [calling conventions](target-mc-object.md#abi-and-calling-conventions), [MC encoding](target-mc-object.md#encoders-decoders-and-layout), [object graphs](target-mc-object.md#object-graphs) |
 | [Link and LTO API](link-lto.md) | [Link graph](link-lto.md#reading-the-graph), [symbol resolution](link-lto.md#mutating-the-graph), [GC/ICF](link-lto.md#the-state-machine), [linker and LTO providers](link-lto.md#providers) |
 | [DynCode API](dyncode.md) | [Flat position-independent images](dyncode.md#image-report-and-bounded-byte-edits), [import lowering](dyncode.md#external-references-and-import-lowering), [charset encoding](dyncode.md#image-report-and-bounded-byte-edits) |
-| [Custom calling conventions](custom-callconv/README.md) | [Data-driven calling-convention plugins](custom-callconv/README.md#spec-format) |
+| [Custom calling conventions](custom-callconv.md) | [Data-driven calling-convention plugins](custom-callconv.md#spec-format) |
 | [Phase coverage evidence](coverage.json) | Test mapping for every stable phase |
 
 ## Execution model

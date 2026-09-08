@@ -6,7 +6,7 @@ A guide lives under docs/ or examples/ and carries a full set of translations.
 The English-only pages beside them -- the repository README, SECURITY.md,
 development.md, pluginsdk/README.md -- are read too: a reader follows links out
 of those just the same, and the repository README is where every translation in
-docs/i18n starts from.
+docs/<locale>/project.md starts from.
 
 Checks, without a build:
 
@@ -70,6 +70,8 @@ import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from docs_layout import english_page, localized_page, locale_of
+
 ROOT = Path(__file__).resolve().parents[2]
 DEBT = Path(__file__).resolve().parent / "docs-translation-debt.json"
 DOCS = ROOT / "docs"
@@ -81,14 +83,14 @@ TRANSLATED_TREES = [DOCS, SAMPLES]
 # a README indexes the subtree it sits on top of, so which tree an index
 # reaches is discovered rather than listed. This one reaches a tree that lives
 # somewhere else entirely, which no amount of looking around it would reveal.
-INDEXED_ELSEWHERE = {DOCS / "examples": SAMPLES}
+INDEXED_ELSEWHERE = {DOCS / "examples.md": SAMPLES}
 # pages that ship in English only. They have no language bar and no
 # translations, but a reader still follows their links, so those are checked.
 STANDALONE = ["SECURITY.md", "development.md", "pluginsdk/README.md"]
 # The attribution landing page links to the complete localized guides.
 STANDALONE += ["ATTRIBUTION.md"]
 # Translator implementation contracts are English developer references beside
-# the tools. The public command guide under docs/translate remains localized.
+# the tools. The public command guide under docs/translate.md remains localized.
 STANDALONE += [
     "utils/translate-frontends/cpp/README.md",
     "neverc/lib/Translate/Cpp/SDK/README.md",
@@ -96,14 +98,6 @@ STANDALONE += [
     *[p.relative_to(ROOT).as_posix()
       for p in sorted((ROOT / "utils/translate-frontends/docs").rglob("*.md"))],
 ]
-# docs/i18n translates the repository README, so its original sits outside
-# DOCS and the group has no English page of its own.
-FOREIGN_ORIGINAL = {DOCS / "i18n": ROOT / "README.md"}
-# the same lookup backwards: which directory translates a given original
-TRANSLATED_BY = {
-    original.resolve(): directory
-    for directory, original in FOREIGN_ORIGINAL.items()
-}
 PLUGIN_INC = "neverc/include/neverc/Plugin"
 SCHEMA_INC = f"{PLUGIN_INC}/Schema"
 EXAMPLES = "pluginsdk/examples"
@@ -118,6 +112,8 @@ COMPANIONS = [
     Path(__file__).resolve(),
     Path(__file__).resolve().parent / "check-docs-facts.py",
     DEBT,
+    Path(__file__).resolve().parent / "docs_layout.py",
+    Path(__file__).resolve().parent / "tests/test_docs_layout.py",
     ROOT / SCHEMA_INC / "PhaseSchema.json",
     ROOT / "neverc/include/neverc/Build/BuildConstants.h",
     ROOT / "neverc/include/neverc/Foundation/AndroidKernelReleasePaths.h",
@@ -205,33 +201,11 @@ def resolve_citation(text: str) -> str | None:
     return None
 
 
-def locale_of(name: str) -> str:
-    parts = name[:-3].split(".")
-    return parts[-1] if len(parts) >= 2 and parts[-1] in LOCALES else ""
-
-
-def stem_of(name: str) -> str:
-    parts = name[:-3].split(".")
-    return ".".join(parts[:-1]) if len(parts) >= 2 and parts[-1] in LOCALES else name[:-3]
-
-
-def page_name(stem: str, locale: str) -> str:
-    return f"{stem}.md" if not locale else f"{stem}.{locale}.md"
-
-
 def bar_entry(page: Path, locale: str) -> str:
-    """Where a page's language bar has to point for one locale. Usually a
-    sibling, but the repository README and its docs/i18n translations live in
-    different directories and have to reach across to each other."""
-    directory, stem = page.parent, stem_of(page.name)
-    original = FOREIGN_ORIGINAL.get(directory)
-    if original is not None and not locale:
-        return os.path.relpath(original, directory).replace(os.sep, "/")
-    translated = TRANSLATED_BY.get(page.resolve())
-    if translated is not None and locale:
-        return os.path.relpath(
-            translated / page_name(stem, locale), directory).replace(os.sep, "/")
-    return page_name(stem, locale)
+    """Point the language selector at the matching page in each locale."""
+    return os.path.relpath(
+        localized_page(page, locale), page.parent
+    ).replace(os.sep, "/")
 
 
 def language_bar(text: str) -> tuple[int, str]:
@@ -257,46 +231,30 @@ def guide_pages() -> list[Path]:
 
 
 def indexed_trees() -> list[tuple[Path, Path]]:
-    """Every index, paired with the tree of guides it has to reach.
-
-    A README is an index over the subtree it sits on top of, so a nested one
-    is found rather than named here: listing them is what let a section index
-    stop naming a guide while the index above it still reached the guide and
-    kept the loss out of sight."""
-    found = []
-    for tree in TRANSLATED_TREES:
-        for directory, subdirectories, names in os.walk(tree):
-            subdirectories[:] = [
-                d
-                for d in subdirectories
-                if d != "__pycache__"
-            ]
-            if "README.md" in names:
-                here = Path(directory)
-                found.append((here, INDEXED_ELSEWHERE.get(here, here)))
+    """Discover English section indexes; examples have a separate docs index."""
+    indexes = {
+        page for page in guide_pages()
+        if not locale_of(page) and page.name == "README.md"
+    }
+    found = [(index, index.parent) for index in indexes]
+    found.extend(INDEXED_ELSEWHERE.items())
     return sorted(found)
 
 
 def standalone_pages() -> list[Path]:
-    """English-only pages, plus the repository README, whose translations sit
-    in docs/i18n rather than beside it. None of them is a guide, so none is
-    held to having a locale of its own, but all of them are read."""
-    found = [ROOT / name for name in STANDALONE] + list(FOREIGN_ORIGINAL.values())
+    """English-only pages and the original of localized project overviews."""
+    found = [ROOT / name for name in STANDALONE] + [ROOT / "README.md"]
     return sorted({p.resolve() for p in found if p.exists()})
 
 
 def locale_groups(pages: list[Path]) -> list[dict[str, Path]]:
-    """One entry per guide, mapping locale to page. docs/i18n translates a
-    page that sits outside the translated trees, so its original is filled in
-    from FOREIGN_ORIGINAL; without it the whole group would be dropped here
-    and silently escape every check that compares against an original."""
-    groups: dict[tuple[Path, str], dict[str, Path]] = defaultdict(dict)
+    """Group language-directory docs and suffix-localized example pages."""
+    groups: dict[Path, dict[str, Path]] = defaultdict(dict)
     for page in pages:
-        groups[(page.parent, stem_of(page.name))][locale_of(page.name)] = page
-    for (directory, _), found in groups.items():
-        original = FOREIGN_ORIGINAL.get(directory)
-        if original is not None and "" not in found:
-            found[""] = original.resolve()
+        groups[english_page(page)][locale_of(page)] = page
+    for original, found in groups.items():
+        if original == ROOT / "README.md":
+            found[""] = original
     return [found for _, found in sorted(groups.items()) if "" in found]
 
 
@@ -357,27 +315,22 @@ class Report:
 
 
 def check_locale_coverage(pages: list[Path], report: Report) -> None:
-    groups: dict[tuple[Path, str], dict[str, Path]] = defaultdict(dict)
+    groups: dict[Path, set[str]] = defaultdict(set)
     for page in pages:
-        groups[(page.parent, stem_of(page.name))][locale_of(page.name)] = page
-    for (directory, stem), found in sorted(groups.items()):
-        wanted = [
-            locale for locale in LOCALES
-            if locale or directory not in FOREIGN_ORIGINAL
-        ]
-        missing = [locale for locale in wanted if locale not in found]
+        groups[english_page(page)].add(locale_of(page))
+    for original, found in sorted(groups.items()):
+        if original == ROOT / "README.md" and original.exists():
+            found.add("")
+        missing = [locale for locale in LOCALES if locale not in found]
         if missing:
             report.fail(
-                directory / f"{stem}.md",
+                original,
                 "missing locales: " + ", ".join(m or "en" for m in missing),
             )
-    for directory, original in FOREIGN_ORIGINAL.items():
-        if not original.exists():
-            report.fail(directory, f"translates the missing {original}")
 
 
 def check_language_bar(page: Path, text: str, report: Report) -> None:
-    locale = locale_of(page.name)
+    locale = locale_of(page)
     lines = text.split("\n")
     if locale in RTL_LOCALES:
         # without the wrapper a right-to-left page renders left-to-right
@@ -506,7 +459,7 @@ def check_target(
     nothing was watching."""
     if href.startswith(("http://", "https://", "mailto:")):
         return
-    locale = locale_of(page.name)
+    locale = locale_of(page)
     file_part, _, fragment = href.partition("#")
     target = page if not file_part else (page.parent / file_part).resolve()
     if not target.exists():
@@ -516,10 +469,10 @@ def check_target(
     if not file_part:
         # a same-page jump stays in its own locale by construction
         return
-    if not locale or target.suffix != ".md" or target.name == page.name:
+    if not locale or target.suffix != ".md":
         return
-    sibling = target.parent / page_name(stem_of(target.name), locale)
-    if locale_of(target.name) != locale and sibling.exists():
+    sibling = localized_page(target, locale)
+    if locale_of(target) != locale and sibling.exists():
         # an unfinished translation has to cite sections it does not
         # carry yet, and only the English page has those anchors
         if fragment and page.relative_to(ROOT).as_posix() in debt:
@@ -635,18 +588,12 @@ def check_index_parity(
 
 
 def normalized_target(target: Path) -> str | None:
-    """Name a jump so the same jump reads the same in every locale: drop the
-    locale suffix, and speak of a translated original through the directory
-    that translates it."""
-    directory = TRANSLATED_BY.get(target)
-    if directory is not None:
-        target = directory / target.name
+    """Compare each localized jump by its English destination."""
     if target.suffix == ".md":
-        target = target.parent / page_name(stem_of(target.name), "")
+        target = english_page(target)
     try:
         return target.relative_to(ROOT).as_posix()
     except ValueError:
-        # a jump out of the repository has no locale to keep
         return None
 
 
@@ -661,7 +608,7 @@ def unfinished(target: Path, locale: str, debt: set[str]) -> bool:
     read in ``locale``?"""
     if target.suffix != ".md":
         return False
-    counterpart = target.parent / page_name(stem_of(target.name), locale)
+    counterpart = localized_page(target, locale)
     return counterpart.relative_to(ROOT).as_posix() in debt
 
 
@@ -779,49 +726,37 @@ def within(page: Path, tree: Path) -> bool:
 
 
 def check_parent_index(pages: list[Path], report: Report) -> None:
-    """An index must reach every guide of its tree, in its own locale. Every
-    README is one, nested ones included; a directory with no guides under it
-    is a page that happens to be called README, not an index over anything.
-
-    The only page an index owes nothing to is itself. A guide sitting in the
-    index's own directory is the easiest one to lose -- it has no directory
-    of its own to make its absence noticeable -- so it is held to the same
-    rule as one a level down."""
-    for index_directory, tree in indexed_trees():
-        itself = index_directory / "README.md"
-        guides = sorted(
-            {(page.parent, stem_of(page.name)) for page in pages
-             if not locale_of(page.name) and page != itself
-             and within(page, tree)}
-        )
+    """Every section index must reach its complete subtree in each locale."""
+    for original_index, tree in indexed_trees():
+        guides = sorted({
+            page for page in pages
+            if not locale_of(page) and page != original_index and within(page, tree)
+        })
         if not guides:
             continue
-
-        def entry(directory: Path, stem: str, of_locale: str) -> str:
-            return os.path.relpath(
-                directory / page_name(stem, of_locale),
-                index_directory,
-            ).replace(os.sep, "/")
-
         for locale in LOCALES:
-            index = index_directory / page_name("README", locale)
+            index = localized_page(original_index, locale)
             if not index.exists():
                 report.fail(index, "the guides have a locale the index does not")
                 continue
+
+            def entry(guide: Path, target_locale: str) -> str:
+                return os.path.relpath(
+                    localized_page(guide, target_locale), index.parent
+                ).replace(os.sep, "/")
+
             linked = {
                 href.split("#")[0]
-                for _, href in INLINE_LINK.findall(
-                    index.read_text(encoding="utf-8"))
+                for _, href in INLINE_LINK.findall(index.read_text(encoding="utf-8"))
             }
-            expected = {entry(d, s, locale) for d, s in guides}
+            expected = {entry(guide, locale) for guide in guides}
             for href in sorted(expected - linked):
                 report.fail(index, f"does not link {href}")
             translated = {
-                entry(d, s, other) for d, s in guides for other in LOCALES
+                entry(guide, other) for guide in guides for other in LOCALES
             }
             for href in sorted((linked & translated) - expected):
-                report.fail(
-                    index, f"links {href} rather than its {locale or 'en'} page")
+                report.fail(index, f"links {href} rather than its {locale or 'en'} page")
 
 
 def workflow_filters() -> list[list[str]]:
@@ -955,7 +890,7 @@ def main() -> int:
     standalone = standalone_pages()
     # a guide offers a locale to choose, and so does a page whose translations
     # live in another directory; an English-only page carries no bar to check
-    english_only = {page for page in standalone if page not in TRANSLATED_BY}
+    english_only = {page for page in standalone if page != ROOT / "README.md"}
 
     report = Report()
     indexes: dict[Path, dict[str, str]] = {}
@@ -967,7 +902,7 @@ def main() -> int:
             check_language_bar(page, text, report)
         # a guide sits under an index; the pages translating the repository
         # README sit at the top of the tree and have nothing above them
-        if page in guides and page.parent not in FOREIGN_ORIGINAL:
+        if page in guides and english_page(page) != ROOT / "README.md":
             check_breadcrumb(page, text, report)
         check_links(page, text, report, debt)
         indexes[page] = check_definitions(page, text, report, debt)

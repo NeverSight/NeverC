@@ -2,7 +2,7 @@
 
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← أمثلة NeverC](../../docs/examples/README.ar.md)
+[← أمثلة NeverC](../../docs/ar/examples.md)
 
 # مثال Linux ثنائي ثابت بالكامل
 
@@ -23,7 +23,7 @@ neverc make debug    # العودة إلى debug
 نفس اختيار debug/release. يستخدم الإصدار `--strip` المدمج في NeverC:
 يزيل بيانات التصحيح وأسماء الرموز الساكنة غير اللازمة ويُبقي أسماء
 ABI الديناميكية/المحمّل المطلوبة. انظر
-[ملفات الإصدار](../../docs/release-builds/README.ar.md).
+[ملفات الإصدار](../../docs/ar/release-builds.md).
 
 
 AArch64:

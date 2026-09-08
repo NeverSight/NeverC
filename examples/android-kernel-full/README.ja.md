@@ -1,6 +1,6 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC サンプル](../../docs/examples/README.ja.md)
+[← NeverC サンプル](../../docs/ja/examples.md)
 
 # Android カーネル完全 SDK デモ
 
@@ -36,7 +36,7 @@ address（実行時カーネルアドレス）のいずれでもありません�
 
 正確に保持する名前、IDA の合成 `extern` 表示、セキュリティ境界、最終処理と署名の
 順序については、
-[リリースとストリップ方針](../../docs/release-builds/README.ja.md)を参照してください。
+[リリースとストリップ方針](../../docs/ja/release-builds.md)を参照してください。
 
 ## デプロイと実行
 

@@ -1,6 +1,6 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC Examples](../../docs/examples/README.md)
+[← NeverC Examples](../../docs/examples.md)
 
 # Android Shared Library Example
 
@@ -19,7 +19,7 @@ The Makefile persists `PROFILE`, so later `neverc make` keeps the same
 debug/release selection. Release uses NeverC's integrated `--strip`:
 debug metadata and unneeded static symbol names are removed while
 loader/dynamic ABI names that the binary still needs are preserved.
-See [Release builds](../../docs/release-builds/README.md).
+See [Release builds](../../docs/release-builds.md).
 
 ## Manual build (without Make)
 

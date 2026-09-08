@@ -1,6 +1,6 @@
 **語言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 範例](../../docs/examples/README.zh-TW.md)
+[← NeverC 範例](../../docs/zh-TW/examples.md)
 
 # Android 核心字元裝置
 
@@ -31,7 +31,7 @@ ELF virtual address（ELF 虛擬位址）或 runtime kernel address（核心執�
 NeverC 既不儲存保留的 `sub_`/`loc_` 形式，也不刻意清空一般名稱。
 
 必須原樣保留的名稱、IDA 合成的 `extern` 檢視、安全邊界，以及發布收尾與簽署的
-先後順序，統一參見[發布與剝離策略](../../docs/release-builds/README.zh-TW.md)。
+先後順序，統一參見[發布與剝離策略](../../docs/zh-TW/release-builds.md)。
 
 ## 部署與執行
 

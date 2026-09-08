@@ -1,6 +1,6 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+[← NeverC 示例](../../docs/zh-CN/examples.md)
 
 # 带浮点运算的 Windows 内核驱动
 
@@ -19,7 +19,7 @@ neverc make debug    # 切回 debug
 Makefile 会持久化 `ARCH`、`PROFILE` 与 `TESTSIGN`。发布请用
 `neverc make release`（`-O2 --strip`；PE 导入/导出与加载器元数据保留）。
 需要测试签名时用 `neverc make release TESTSIGN=1`，同一次链接里先 strip 再签名。
-详见 [发行构建](../../docs/release-builds/README.zh-CN.md)。
+详见 [发行构建](../../docs/zh-CN/release-builds.md)。
 
 这会生成 `FloatDriver-x64.sys`。如需改为构建 ARM64，或两者都构建：
 

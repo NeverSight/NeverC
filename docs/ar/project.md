@@ -1,0 +1,217 @@
+<div dir="rtl">
+
+**اللغات**: [English](../../README.md) | [简体中文](../zh-CN/project.md) | [繁體中文](../zh-TW/project.md) | [日本語](../ja/project.md) | [한국어](../ko/project.md) | [Français](../fr/project.md) | [Deutsch](../de/project.md) | [Español](../es/project.md) | [Italiano](../it/project.md) | [Русский](../ru/project.md) | [العربية](project.md)
+
+<div align="center" dir="ltr">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/neverc-logo-dark.svg">
+  <img src="../assets/neverc-logo-light.svg" width="72" alt="NeverC">
+</picture>
+
+# NeverC
+
+**مُجمِّع C23 صديق للذكاء الاصطناعي لأبحاث الأمن — مبني على LLVM**
+
+مُرابط مدمج · مسار dyncode · أوقات تشغيل مدمجة (`string` · `mimalloc` · `xorstr` · `strhash`)
+
+[![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
+[![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#الميزات)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
+[![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#الميزات)
+
+[التوثيق](README.md) · [دليل dyncode](dyncode-compiler/README.md) · [أوقات التشغيل المدمجة](builtins/README.md) · [واجهة الإضافات API](plugin-api/README.md) · [خارطة الطريق](roadmap.md)
+
+</div>
+
+---
+
+> **ملاحظة:** يعرض GitHub دائمًا `README.md` (الإنجليزية) كصفحة رئيسية للمستودع (دون كشف تلقائي للغة). استخدم روابط اللغة أعلاه؛ في [التوثيق](README.md) و[دليل dyncode](dyncode-compiler/README.md) حافظ على نفس اللغة عبر شريط اللغة ومسار التنقل.
+
+## نظرة عامة
+
+يُحوِّل NeverC مصدر C القياسي إلى ثنائيات مُستضافة وملفات تنفيذية مستقلة وdyncode مستقل عن الموضع — كل ذلك من سلسلة أدوات واحدة. يستهدف **x86_64** و**AArch64** (little-endian فقط). ستضيف الإصدارات المستقبلية **EVM** (عقود إيثريوم الذكية) و**Solana eBPF** (برامج على السلسلة) كأهداف تجميع.
+
+## لماذا NeverC؟
+
+لغة C هي بالفعل أبسط لغة أنظمة. NeverC يجعلها أبسط:
+
+- **C23 صرفة، لا أكثر** — لا قوالب، لا RAII، لا تحميل زائد للمعاملات، لا تدفق تحكم خفي. ما تقرأه هو ما يُنفَّذ.
+- **`string` مدمج** — نوع سلسلة بدلالة القيمة مع `+` و`==` و`.starts_with()` وتحرير تلقائي — بدون C++.
+- **لا استثناءات** — معالجة الأخطاء تبقى صريحة. لا فك للمكدس، لا مفاجآت في الأداء.
+- **ثنائي واحد** — المُجمِّع + المُرابط + أوقات التشغيل في ملف تنفيذي واحد. صفر تبعيات خارجية.
+- **صديق لنماذج LLM** — القواعد النحوية البسيطة والدلالات الحتمية تجعل كود NeverC المُولَّد بالذكاء الاصطناعي يُترجم بشكل صحيح أكثر من بدائل C++.
+- **تجميع متقاطع حقيقي** — أنشئ Windows PE و Linux ELF و macOS Mach-O و Android ELF و dyncode من macOS أو Linux — بدون VM، بدون إقلاع مزدوج، بدون البحث عن SDK. حزم SDK للمنصات مدمجة في المُجمِّع.
+- **قابل للتوسيع بلا عوائق** — ملف رأس C وحيد و130 مرحلة ترجمة مسمّاة، وتحصل على [إضافة مُجمِّع](plugin-api/README.md) قادرة على التدخل في أي مرحلة — من تحسين IR إلى الإخراج الثنائي النهائي — دون معرفة LLVM.
+- **أبحاث الأمن مدمجة** — تجميع dyncode وتشفير السلاسل وقت الترجمة وتوليد PE متعدد المنصات مدمجة أصلاً في المُجمِّع — وليست رقعًا مضافة بنصوص خارجية.
+
+## الميزات
+
+- **[مُجمِّع dyncode](dyncode-compiler/README.md)** — مسار IR/MIR متعدد المراحل، استخراج متعدد المنصات، حل الاستيراد/استدعاءات النظام، وضع النواة، تدقيق البايتات المحظورة، بنية إضافات
+- **مُرابط مدمج** — COFF وELF وMach-O في ثنائي واحد؛ دون `ld` أو `link.exe` خارجي
+- **[تجريد ملفات الإصدار](release-builds.md)** — يزيل `--strip` / `-s` المدمج الرموز غير المطلوبة وقت التشغيل وتصحيح المصدر من صور ELF وMach-O وPE/COFF النهائية، ويعيد تسمية رموز `.ko` بنيويًا مع مراعاة النواة (ليس hash ولا encryption)
+- **تجميع متقاطع** — Windows PE و Linux ELF و macOS Mach-O و Android ELF من أي مضيف مع SDK مدمجة لكل منصة
+- **[أوقات التشغيل المدمجة](builtins/README.md)** — أوقات تشغيل LLVM bitcode مدمجة في المترجم: [`string`](builtins/string.md) (سلسلة بدلالة القيمة، إدارة ذاكرة تلقائية) و[`mimalloc`](builtins/mimalloc.md) (تجاوز مخصص ذاكرة عالي الأداء شفاف، مُفعَّل افتراضيًا خارج أهداف النواة وfreestanding) و[`xorstr`](builtins/xorstr.md) (تشفير مستقل لكل مثيل، ختم متأخر إلزامي وتوسيع أصلي لكل موضع استدعاء) و[`strhash`](builtins/strhash.md) (تجزئة السلاسل وقت الترجمة بنفس الخوارزمية وقت التشغيل)
+- **[واجهة الإضافات API](plugin-api/README.md)** — واجهة C ABI خالصة للإضافات خارج الشجرة؛ SDK بملف رأس واحد، صفر تبعيات LLVM/CRT، تغطي مراحل المُشغِّل والمعالج المسبق والشجرة النحوية وIR وMIR وMC والكائنات والربط وLTO وdyncode
+- **[امتداد `.nc`](nc-extension.md)** — استخدم `.nc` لتفعيل جميع ميزات NeverC تلقائيًا (`string`، أنواع الأعداد بأسلوب Rust) بدون أعلام إضافية
+- **بناء LLVM خفيف** — خلفية x86_64 / AArch64 فقط؛ إزالة مسارات C++/ObjC/OpenMP
+
+## مثال سريع
+
+```c
+#include <stdio.h>
+
+typedef struct { string user; string pass; } creds;
+
+int main(void) {
+    string msg = "Hello " + "NeverC!";
+    printf("%s\n", msg.c_str());
+
+    // Compile-time encryption — `strings ./bin` cannot find these literals
+    creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+    string paths[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+
+    // Zero-allocation decrypt-and-compare (plaintext never fully in memory)
+    if (login.user == "admin".encrypt() && login.pass == "s3cret".encrypt()) {
+        for (int i = 0; i < 2; i++)
+            if (msg.starts_with(paths[i]))
+                printf("route matched: %s\n", paths[i].c_str());
+    }
+    return 0;
+}
+```
+
+> **ملاحظة:** يتطلب نوع **`string`** المدمج **`-fbuiltin-string`** لملفات `.c`. يُفعَّل تلقائيًا لـ [**ملفات `.nc`**](nc-extension.md) وفي وضع **`-fdyncode`**.
+
+```bash
+# macOS arm64 / x86_64
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
+
+# iOS arm64
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
+
+# Linux x86_64 / arm64
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
+
+# Android arm64 / x86_64
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
+
+# Windows x86_64 / arm64
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+```
+
+للتفاصيل راجع **[فهرس التوثيق](README.md)** — التصميم، مصفوفة المنصات، مرجع CLI، الأمثلة. لأمثلة قابلة للبناء راجع **[examples](examples.md)**.
+
+## التثبيت
+
+على **Linux x64/arm64** و **macOS arm64**، ثبّت أحدث release بأمر واحد:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+يُنزِّل المثبِّت أرشيف release لمنصتك، يتحقق منه عبر `SHA256SUMS`، يثبّت في `~/.neverc`، ويضيف `~/.neverc/bin` إلى مقدمة `PATH` في الصَّدفة.
+
+لتثبيت إصدار محدد:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+التحقق من التثبيت:
+
+```bash
+neverc --version
+neverc hello.c -o hello -fbuiltin-string
+```
+
+### `neverc run`
+
+يُجمّع إلى ملف تنفيذي مؤقت، ويشغّله على **المضيف المحلي**، ثم يحذفه — شبيه بـ `go run`. للاحتفاظ بالملف الثنائي استخدم `neverc ... -o out`.
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| الموضوع | السلوك |
+|---------|--------|
+| التقسيم الافتراضي | خيارات المترجم قبل أول `.c`/`.nc`؛ المصادر المتتالية تُجمَّع معًا؛ الباقي يُمرَّر إلى `main` |
+| `--` صريح | قبل `--` للمترجم، وبعده للبرنامج (عند وجود خيارات ربط بعد المصادر) |
+| مجلد العمل | يعمل في المجلد الحالي — المسارات النسبية كالملف التنفيذي العادي |
+| البيئة وال I/O | يرث البيئة؛ stdin/stdout/stderr متصلة بالعملية المؤقتة |
+| حالة الخروج | يُعيد رمز خروج البرنامج؛ عند فشل التجميع يُعيد رمز المترجم دون تشغيل البرنامج |
+| المخرج | يُخزَّن في `neverc-run-*` ويُحذف بعد التشغيل |
+
+قد تنجح أعلام الترجمة المتقاطعة في التجميع، لكن الملف المؤقت يُشغَّل دائمًا على المضيف. القواعد والأمثلة والقيود: **[`neverc run` →](run.md)**.
+
+حزم **Windows x64/arm64** متاحة على [GitHub Releases](https://github.com/NeverSight/NeverC/releases) للتنزيل اليدوي. ثنائي macOS arm64 موقَّع بشهادة Apple Developer ID ومعتمد (notarized).
+
+متغيرات بيئة اختيارية:
+
+| المتغير | الغرض |
+|---------|--------|
+| `NEVERC_INSTALL_DIR` | بادئة التثبيت (افتراضي: `~/.neverc`) |
+| `NEVERC_VERSION` | وسم release، مثل `v3389.1.2` (افتراضي: latest) |
+| `NEVERC_NO_MODIFY_PATH=1` | عدم تعديل ملف تعريف الصَّدفة |
+
+جذور sysroot للتجميع المتقاطع (Windows SDK وLinux sysroot وغيرها) تُثبَّت عند الحاجة بعد أن يصبح المترجم على `PATH`:
+
+```bash
+neverc runtime install all
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+يمكن لتثبيت release تحديث المترجم وبيئات runtime المثبّتة مسبقًا للتجميع المتقاطع كوحدة واحدة ذات إصدار متطابق:
+
+```bash
+neverc update                 # أحدث release مكتمل
+neverc update v3389.1.2       # إصدار محدد، بما في ذلك الرجوع إلى إصدار أقدم
+```
+
+الأمر `neverc upgrade` اسم بديل. يحل NeverC وسم release محددًا واحدًا، ويعيد تثبيت بيئات runtime
+الموجودة مسبقًا فقط، ويثبّتها كلها على إصدار المترجم المستهدف. قبل تعديل الملفات الفعلية تُنزّل
+كل الحزم المطلوبة ويُتحقق منها عبر SHA256 ثم تُفك وتُفحص محتوياتها. فشل التجهيز أو التحقق لا يغيّر
+التثبيت الحالي، وفشل الالتزام يؤدي إلى تراجع تلقائي. إذا كان release لإحدى بيئات runtime معيبًا،
+فاستخدم `neverc update <إصدار أقدم>` لإرجاع المترجم وكل بيئات runtime المثبّتة معًا.
+
+المرجع الكامل: [`neverc runtime` →](runtime.md) · [`neverc update` →](update.md) · [`neverc build` / `make` →](build.md).
+
+## البناء من المصدر
+
+المتطلبات وأوامر البناء والتجميع المتقاطع إلى Windows وإعداد PATH والتبديل بين release والبناء داخل الشجرة — راجع **[التطوير المحلي](local-dev.md)**.
+
+## المساهمة
+
+NeverC **مخصّص للغة C فقط** حسب التصميم (C23). واجهات C++ و Objective-C و CUDA واللغات
+المشابهة خارج النطاق؛ ستُغلق طلبات السحب التي تضيفها. إن احتجت سلسلة أدوات LLVM موجّهة
+إلى C++، فكّر في [llvm-msvc](https://github.com/backengineering/llvm-msvc).
+
+للتغييرات الكبيرة في اللغة أو ABI أو وقت التشغيل، افتح issue أولًا لمناقشة النطاق قبل
+إرسال طلب سحب.
+
+فرع التطوير الافتراضي هو **`dev`**. استنسخ المستودع وانتقل إلى `dev` قبل البدء، وافتح طلبات السحب (Pull Request) نحو `dev`.
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
+## الترخيص
+
+[AGPL-3.0](../../LICENSE)
+
+تحتفظ مكوّنات LLVM بترخيص [Apache-2.0 WITH LLVM-exception](../../llvm/LICENSE.TXT).
+
+عند نسخ الشيفرة أو تعديلها، بما في ذلك إعادة الاستخدام بمساعدة الذكاء الاصطناعي أو النماذج اللغوية الكبيرة (AI/LLM) أو المرتبطة بـ LLVM، التزم بالترخيص الساري واحتفظ بإشعارات حقوق النشر والترخيص ونسب العمل المطلوبة. وبشكل مستقل، نطلب ممن يستخدم NeverC مرجعًا أن يذكر المشروع والمصدر الأصلي؛ هذا طلب توثيق من المشروع، وليس شرطًا إضافيًا للترخيص.
+
+راجع [الإشعارات](../../NOTICE) و[دليل نسب العمل](attribution.md) و[بيانات الاستشهاد القابلة للقراءة آليًا](../../CITATION.cff).
+
+</div>

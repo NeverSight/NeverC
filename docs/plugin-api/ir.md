@@ -1,4 +1,4 @@
-**Languages**: [English](ir.md) | [简体中文](ir.zh-CN.md) | [繁體中文](ir.zh-TW.md) | [日本語](ir.ja.md) | [한국어](ir.ko.md) | [Français](ir.fr.md) | [Deutsch](ir.de.md) | [Español](ir.es.md) | [Italiano](ir.it.md) | [Русский](ir.ru.md) | [العربية](ir.ar.md)
+**Languages**: [English](ir.md) | [简体中文](../zh-CN/plugin-api/ir.md) | [繁體中文](../zh-TW/plugin-api/ir.md) | [日本語](../ja/plugin-api/ir.md) | [한국어](../ko/plugin-api/ir.md) | [Français](../fr/plugin-api/ir.md) | [Deutsch](../de/plugin-api/ir.md) | [Español](../es/plugin-api/ir.md) | [Italiano](../it/plugin-api/ir.md) | [Русский](../ru/plugin-api/ir.md) | [العربية](../ar/plugin-api/ir.md)
 
 [← NeverC Plugin ABI](README.md)
 

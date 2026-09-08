@@ -1,6 +1,6 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC サンプル](../../docs/examples/README.ja.md)
+[← NeverC サンプル](../../docs/ja/examples.md)
 
 # mTLS アンチチート・テレメトリコレクター
 
@@ -35,7 +35,7 @@ neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 
 Makefile は `TARGET` と `PROFILE` を保持するため、以降の `neverc make` は同じ
 成果物選択を使います。リリースは NeverC 組み込みの `--strip` を使います。
-[リリースビルド](../../docs/release-builds/README.ja.md) を参照。
+[リリースビルド](../../docs/ja/release-builds.md) を参照。
 
 
 サーバー証明書、サーバー鍵、信頼するクライアント CA、共有 32 バイト

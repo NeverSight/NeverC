@@ -1,6 +1,6 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 예제](../../docs/examples/README.ko.md)
+[← NeverC 예제](../../docs/ko/examples.md)
 
 # 권위형 게임 서버
 
@@ -25,7 +25,7 @@ neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 
 Makefile이 `TARGET`과 `PROFILE`을 유지하므로 이후 `neverc make`는 같은
 산출물 선택을 사용합니다. 릴리스는 NeverC 내장 `--strip`을 사용합니다.
-[릴리스 빌드](../../docs/release-builds/README.ko.md)를 참고하세요.
+[릴리스 빌드](../../docs/ko/release-builds.md)를 참고하세요.
 
 
 QUIC 엔드포인트용 P-256 TLS 인증서와 키로 실행:

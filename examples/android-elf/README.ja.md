@@ -1,6 +1,6 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC サンプル](../../docs/examples/README.ja.md)
+[← NeverC サンプル](../../docs/ja/examples.md)
 
 # Android ELF サンプル
 
@@ -23,7 +23,7 @@ Makefile は `PROFILE` を保持するため、以降の `neverc make` でも同
 debug/release 選択が使われます。release は NeverC 組み込みの `--strip`
 で、不要な静的シンボル名とデバッグメタデータを削除しつつ、ローダー/
 動的 ABI に必要な名前は残します。詳細は
-[リリースビルド](../../docs/release-builds/README.ja.md)。
+[リリースビルド](../../docs/ja/release-builds.md)。
 
 スタンドアロンの NeverC リリースから：
 

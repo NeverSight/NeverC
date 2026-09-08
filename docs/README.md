@@ -1,4 +1,4 @@
-**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+**Languages**: [English](README.md) | [简体中文](zh-CN/README.md) | [繁體中文](zh-TW/README.md) | [日本語](ja/README.md) | [한국어](ko/README.md) | [Français](fr/README.md) | [Deutsch](de/README.md) | [Español](es/README.md) | [Italiano](it/README.md) | [Русский](ru/README.md) | [العربية](ar/README.md)
 
 [← NeverC project](../README.md)
 
@@ -19,15 +19,15 @@ The dyncode compilation pipeline is NeverC's primary research focus. For archite
 | Document | Description |
 |----------|-------------|
 | [README](dyncode-compiler/README.md) | Overview, quick start, supported targets |
-| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic/README.md) | IR → object → extraction design |
-| [IR Pass Design](dyncode-compiler/ir-pass-design/README.md) | Rationale for each IR pass |
-| [MIR Pass Design](dyncode-compiler/mir-pass-design/README.md) | Backend MIR passes |
-| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode/README.md) | Ring-0 compilation |
-| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture/README.md) | `TargetDesc` and extractors |
-| [Platform Extension Guide](dyncode-compiler/platform-extension-guide/README.md) | Adding new targets |
-| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial/README.md) | ARM64 instructions from a dyncode perspective |
-| [Roadmap](dyncode-compiler/roadmap/README.md) | Planned work |
-| [Progress](dyncode-compiler/progress/README.md) | Implementation status |
+| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic.md) | IR → object → extraction design |
+| [IR Pass Design](dyncode-compiler/ir-pass-design.md) | Rationale for each IR pass |
+| [MIR Pass Design](dyncode-compiler/mir-pass-design.md) | Backend MIR passes |
+| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode.md) | Ring-0 compilation |
+| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture.md) | `TargetDesc` and extractors |
+| [Platform Extension Guide](dyncode-compiler/platform-extension-guide.md) | Adding new targets |
+| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial.md) | ARM64 instructions from a dyncode perspective |
+| [Roadmap](dyncode-compiler/roadmap.md) | Planned work |
+| [Progress](dyncode-compiler/progress.md) | Implementation status |
 
 ---
 
@@ -35,7 +35,7 @@ The dyncode compilation pipeline is NeverC's primary research focus. For archite
 
 NeverC recognizes `.nc` as its native source file extension. When you use `.nc`, the compiler automatically enables all NeverC language extensions (`-fneverc-types`, `-fbuiltin-string`) — no extra flags needed.
 
-**[`.nc` Extension →](nc-extension/README.md)**
+**[`.nc` Extension →](nc-extension.md)**
 
 ---
 
@@ -47,10 +47,10 @@ NeverC extends standard C with opt-in built-in runtimes embedded as LLVM bitcode
 
 | Built-in | Flag | Description |
 |----------|------|-------------|
-| [Built-in String](builtins/string/README.md) | `-fbuiltin-string` | Value-semantic `string` type with dot-call methods, automatic memory management, and native UTF-8 |
-| [Built-in mimalloc](builtins/mimalloc/README.md) | `-fbuiltin-mimalloc` | Transparent high-performance `mimalloc` allocator override for `malloc`/`free`/`calloc`/`realloc` |
-| [String Encryption (xorstr)](builtins/xorstr/README.md) | `-fencrypt-call-strings` | Per-instance encryption, mandatory late sealing, per-call final expansion, and volatile stack cleanup |
-| [String Hashing (strhash)](builtins/strhash/README.md) | `-fstrhash-algo` / `-fstrhash-fold` | Compile-time string hashing with matching runtime and optional IR constant folding |
+| [Built-in String](builtins/string.md) | `-fbuiltin-string` | Value-semantic `string` type with dot-call methods, automatic memory management, and native UTF-8 |
+| [Built-in mimalloc](builtins/mimalloc.md) | `-fbuiltin-mimalloc` | Transparent high-performance `mimalloc` allocator override for `malloc`/`free`/`calloc`/`realloc` |
+| [String Encryption (xorstr)](builtins/xorstr.md) | `-fencrypt-call-strings` | Per-instance encryption, mandatory late sealing, per-call final expansion, and volatile stack cleanup |
+| [String Hashing (strhash)](builtins/strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | Compile-time string hashing with matching runtime and optional IR constant folding |
 
 ---
 
@@ -73,7 +73,7 @@ NeverC exposes its whole toolchain through a pure C ABI. A plugin is a shared mo
 | [Target, MC, assembly, object](plugin-api/target-mc-object.md) | Target registration, calling conventions, MC encoding, object graphs |
 | [Link and LTO API](plugin-api/link-lto.md) | Link graph, symbol resolution, GC/ICF, linker and LTO providers |
 | [DynCode API](plugin-api/dyncode.md) | Flat position-independent images, import lowering, charset encoding |
-| [Custom calling conventions](plugin-api/custom-callconv/README.md) | Data-driven calling-convention plugins |
+| [Custom calling conventions](plugin-api/custom-callconv.md) | Data-driven calling-convention plugins |
 
 ---
 
@@ -81,7 +81,7 @@ NeverC exposes its whole toolchain through a pure C ABI. A plugin is a shared mo
 
 Major planned directions for the NeverC project: standard library, EVM smart contract backend, and Solana eBPF backend.
 
-**[Roadmap →](roadmap/README.md)**
+**[Roadmap →](roadmap.md)**
 
 | Feature | Description |
 |---------|-------------|
@@ -100,12 +100,12 @@ User-facing commands beyond a single compile invocation.
 
 | Document | Description |
 |----------|-------------|
-| [`neverc run`](run/README.md) | Compile, execute locally, and discard a temporary binary (`go run`-style workflow) |
-| [`neverc translate`](translate/README.md) | Translate C++ to NeverC |
-| [`neverc update`](update/README.md) | Upgrade or downgrade a release install (compiler + installed runtimes as one tag) |
-| [`neverc runtime`](runtime/README.md) | Install, list, update, or remove cross-compilation sysroots |
-| [`neverc build` / `neverc make`](build/README.md) | GNU Make–compatible driver for example and project Makefiles |
-| [Release binaries and `--strip`](release-builds/README.md) | Remove non-runtime symbols and source debug, including kernel-aware `.ko` structural symbol renaming (not a hash or encryption) |
+| [`neverc run`](run.md) | Compile, execute locally, and discard a temporary binary (`go run`-style workflow) |
+| [`neverc translate`](translate.md) | Translate C++ to NeverC |
+| [`neverc update`](update.md) | Upgrade or downgrade a release install (compiler + installed runtimes as one tag) |
+| [`neverc runtime`](runtime.md) | Install, list, update, or remove cross-compilation sysroots |
+| [`neverc build` / `neverc make`](build.md) | GNU Make–compatible driver for example and project Makefiles |
+| [Release binaries and `--strip`](release-builds.md) | Remove non-runtime symbols and source debug, including kernel-aware `.ko` structural symbol renaming (not a hash or encryption) |
 
 ---
 
@@ -113,7 +113,7 @@ User-facing commands beyond a single compile invocation.
 
 | Document | Description |
 |----------|-------------|
-| [VBS enclave DLLs](vbs-enclave/README.md) | Link, validate, process, sign, and load Microsoft-compatible VBS enclave images |
+| [VBS enclave DLLs](vbs-enclave.md) | Link, validate, process, sign, and load Microsoft-compatible VBS enclave images |
 
 ---
 
@@ -121,7 +121,7 @@ User-facing commands beyond a single compile invocation.
 
 Build NeverC from source and set up the local development environment with PATH configuration.
 
-**[Local Development →](local-dev/README.md)**
+**[Local Development →](local-dev.md)**
 
 ---
 
@@ -129,10 +129,10 @@ Build NeverC from source and set up the local development environment with PATH 
 
 Complete buildable samples demonstrating NeverC's cross-platform compilation capabilities. All examples cross-compile from macOS / Linux.
 
-**[Examples →](examples/README.md)**
+**[Examples →](examples.md)**
 
 ---
 
 ## Source attribution
 
-**[attribution guide →](attribution/README.md)**
+**[attribution guide →](attribution.md)**

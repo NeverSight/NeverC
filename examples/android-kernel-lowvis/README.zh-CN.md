@@ -1,6 +1,6 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+[← NeverC 示例](../../docs/zh-CN/examples.md)
 
 # Android 内核低可见性模块
 
@@ -31,7 +31,7 @@ ELF virtual address（ELF 虚拟地址）或 runtime kernel address（内核运�
 NeverC 既不存储保留的 `sub_`/`loc_` 形式，也不故意清空普通名称。
 
 必须原样保留的名称、IDA 合成的 `extern` 视图、安全边界以及发布收尾与签名的
-先后顺序，统一参见[发布与剥离策略](../../docs/release-builds/README.zh-CN.md)。
+先后顺序，统一参见[发布与剥离策略](../../docs/zh-CN/release-builds.md)。
 
 ## 部署和运行
 

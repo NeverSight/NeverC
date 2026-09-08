@@ -41,9 +41,10 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from docs_layout import english_page, localized_page as localize, locale_of
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DOCS = ROOT / "docs" / "plugin-api"
-RELEASE_DOCS = ROOT / "docs" / "release-builds"
 HEADERS = ROOT / "neverc/include/neverc/Plugin"
 SCHEMA = HEADERS / "Schema" / "PhaseSchema.json"
 SDK = ROOT / "pluginsdk"
@@ -219,33 +220,19 @@ def normalize_digits(text: str) -> str:
 
 
 def page(stem: str, locale: str) -> Path:
-    return PLUGIN_DOCS / (f"{stem}.md" if not locale else f"{stem}.{locale}.md")
+    return localize(PLUGIN_DOCS / f"{stem}.md", locale)
 
 
 def localized_page(directory: Path, stem: str, locale: str) -> Path:
-    return directory / (f"{stem}.md" if not locale else f"{stem}.{locale}.md")
+    return localize(directory / f"{stem}.md", locale)
 
 
 def guide_pages() -> list[Path]:
-    pages = []
-    for directory, subdirectories, names in os.walk(PLUGIN_DOCS):
-        subdirectories[:] = [d for d in subdirectories if d != "__pycache__"]
-        pages.extend(Path(directory) / n for n in sorted(names) if n.endswith(".md"))
-    return sorted(pages)
+    return sorted(localize(page, locale) for page in PLUGIN_DOCS.rglob("*.md") for locale in LOCALES)
 
 
 def release_pages() -> list[Path]:
-    return [localized_page(RELEASE_DOCS, "README", locale) for locale in LOCALES]
-
-
-def locale_of(name: str) -> str:
-    parts = name[:-3].split(".")
-    return parts[-1] if len(parts) >= 2 and parts[-1] in LOCALES else ""
-
-
-def stem_of(name: str) -> str:
-    parts = name[:-3].split(".")
-    return ".".join(parts[:-1]) if len(parts) >= 2 and parts[-1] in LOCALES else name[:-3]
+    return [localize(ROOT / "docs/release-builds.md", locale) for locale in LOCALES]
 
 
 def declared_symbols() -> set[str]:
@@ -679,7 +666,7 @@ def release_summary_line(path: Path, report: Report) -> str:
     except OSError as error:
         report.fail(path, f"cannot be read: {error}")
         return ""
-    matches = [line for line in lines if "release-builds/README" in line]
+    matches = [line for line in lines if "release-builds.md" in line]
     if len(matches) != 1:
         report.fail(path, "must contain exactly one release-builds summary link")
         return ""
@@ -688,7 +675,7 @@ def release_summary_line(path: Path, report: Report) -> str:
 
 def check_release_summary_terminology(report: Report) -> None:
     roots = [ROOT / "README.md"] + [
-        localized_page(ROOT / "docs/i18n", "README", locale)
+        localize(ROOT / "README.md", locale)
         for locale in LOCALES
         if locale
     ]
@@ -726,12 +713,9 @@ def check_names(pages: list[Path], schema: dict, report: Report) -> dict[Path, C
 
 
 def locale_groups(pages: list[Path]) -> list[dict[str, Path]]:
-    """One entry per guide, mapping locale to page; a page with no English
-    original has nothing to be compared against and is dropped."""
-    groups: dict[tuple[Path, str], dict[str, Path]] = defaultdict(dict)
+    groups: dict[Path, dict[str, Path]] = defaultdict(dict)
     for page_path in pages:
-        groups[(page_path.parent, stem_of(page_path.name))][
-            locale_of(page_path.name)] = page_path
+        groups[english_page(page_path)][locale_of(page_path)] = page_path
     return [found for _, found in sorted(groups.items()) if "" in found]
 
 

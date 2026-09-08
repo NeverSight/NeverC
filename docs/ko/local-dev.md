@@ -1,0 +1,164 @@
+**언어**: [English](../local-dev.md) | [简体中文](../zh-CN/local-dev.md) | [繁體中文](../zh-TW/local-dev.md) | [日本語](../ja/local-dev.md) | [한국어](local-dev.md) | [Français](../fr/local-dev.md) | [Deutsch](../de/local-dev.md) | [Español](../es/local-dev.md) | [Italiano](../it/local-dev.md) | [Русский](../ru/local-dev.md) | [العربية](../ar/local-dev.md)
+
+[← 문서 색인](README.md)
+
+# 로컬 개발
+
+소스에서 NeverC를 빌드하고 로컬 개발 환경을 설정하는 가이드입니다.
+
+---
+
+## 사전 요구 사항
+
+- CMake 3.20+
+- Ninja
+- C++17 호스트 컴파일러 (GCC, Clang 또는 MSVC)
+
+---
+
+## 빌드
+
+```bash
+cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake
+cmake --build build-neverc --target neverc
+```
+
+`ccache` / `sccache`가 감지되면 자동으로 활성화됩니다.
+
+`--target neverc`는 일상적인 stage-1 빌드(임베디드 runtime은 빈 플레이스홀더)이며,
+대부분의 로컬 컴파일/디버그에 충분합니다. 바이너리 자체에 string / mimalloc /
+std / NVK runtime을 넣거나 CI와 같은 컴파일러가 필요하면 stage-2 우산 타깃을
+실행하세요:
+
+```bash
+cmake --build build-neverc --target neverc-embed-runtime-bitcode
+```
+
+2단계 부트스트랩 세부 사항은 [Builtins](builtins/README.md)를 참고하세요.
+
+### 테스트 포함 빌드
+
+```bash
+cmake -S llvm -B build-neverc -G Ninja -C neverc/cmake/caches/NeverC.cmake -DNEVERC_INCLUDE_TESTS=ON
+cmake --build build-neverc --target check-neverc
+```
+
+`check-neverc`는 `neverc-embed-runtime-bitcode`에 의존하므로, 첫 테스트 실행 전에
+부트스트랩과 컴파일러 재링크가 자동으로 수행됩니다. embed 타깃을 직접 실행할
+필요는 없습니다.
+
+---
+
+## PATH 설정 (macOS / Linux)
+
+빌드 후 `neverc` 바이너리는 `build-neverc/bin/neverc`에 위치합니다. 헬퍼 스크립트를 사용하여 `PATH`에 추가하면 매번 전체 경로를 입력할 필요가 없습니다:
+
+```bash
+source ./utils/build/neverc-env.sh
+```
+
+이제 `neverc`를 직접 실행할 수 있습니다:
+
+```bash
+neverc --version
+neverc -c hello.c -o hello.o
+```
+
+### PATH에서 제거
+
+로컬 빌드를 `PATH`에서 제거하려면 같은 셸 세션에서 다음을 실행합니다:
+
+```bash
+source ./utils/build/neverc-env.sh --remove   # 또는 -r
+```
+
+### 영구 설정
+
+`source` 행을 셸 rc 파일(`~/.zshrc`, `~/.bashrc` 또는 `~/.profile`)에 자동 추가합니다:
+
+```bash
+source ./utils/build/neverc-env.sh --install
+```
+
+실행 취소:
+
+```bash
+source ./utils/build/neverc-env.sh --uninstall
+```
+
+### 로컬 개발판 / 릴리스판 전환
+
+release(기본: `~/.neverc`)와 소스 트리 빌드가 모두 있는 경우, `neverc-env.sh`로 현재 셸에서 활성 `neverc`를 전환할 수 있습니다. 어느 쪽 설치도 덮어쓰지 않습니다:
+
+```bash
+source ./utils/build/neverc-env.sh              # 로컬 개발판（build-neverc/bin）
+source ./utils/build/neverc-env.sh --local      # 위와 동일
+source ./utils/build/neverc-env.sh --release    # 릴리스판（~/.neverc/bin）
+source ./utils/build/neverc-env.sh --status     # 현재 neverc 확인
+source ./utils/build/neverc-env.sh --remove     # PATH에서 둘 다 제거
+```
+
+전환 후 `NEVERC_ENV`가 `local` 또는 `release`로 설정됩니다:
+
+```bash
+echo "$NEVERC_ENV"
+neverc --version
+which neverc
+```
+
+release를 다른 prefix에 설치한 경우, `install.sh`와 동일한 디렉터리를 지정합니다:
+
+```bash
+NEVERC_INSTALL_DIR=$HOME/.neverc-v3389.1.2 source ./utils/build/neverc-env.sh --release
+```
+
+선택: 셸 설정에 별칭 추가(경로를 저장소 절대 경로로 바꿉니다):
+
+```bash
+alias neverc-dev='source /path/to/NeverC/utils/build/neverc-env.sh --local'
+alias neverc-rel='source /path/to/NeverC/utils/build/neverc-env.sh --release'
+```
+
+---
+
+## Windows (CMD)
+
+Windows에서는 `.bat` 스크립트를 사용합니다 (관리자 권한 불필요):
+
+```cmd
+utils\build\neverc-env.bat             &REM PATH에 추가 (현재 세션)
+utils\build\neverc-env.bat --remove    &REM PATH에서 제거 (현재 세션)
+utils\build\neverc-env.bat --global    &REM setx로 사용자 PATH에 영구 추가
+utils\build\neverc-env.bat --global -r &REM setx로 사용자 PATH에서 영구 제거
+```
+
+Unix 스크립트와 달리 `source`가 필요 없습니다 — `.bat`는 현재 `cmd` 세션을 직접 수정합니다. `--global`은 `setx`를 사용하여 사용자 수준 레지스트리에 기록합니다 (관리자 권한 불필요).
+
+---
+
+## macOS 사전 빌드 바이너리
+
+릴리스는 Apple Developer ID 인증서로 서명되고 Apple에 의해 공증되었습니다. 아카이브를 추출하여 바로 사용할 수 있습니다.
+
+---
+
+## Windows로 크로스 컴파일
+
+NeverC는 `runtime/`에 각 플랫폼 SDK(Windows SDK/WDK, Linux sysroot, macOS sysroot, Android NDK)를 번들로 포함하고 있어 외부 SDK 설정이 필요 없습니다.
+
+```bash
+neverc --target=x86_64-pc-windows-msvc \
+  -fbuiltin-string -o hello.exe hello.c -lkernel32
+```
+
+Windows dyncode(`-fdyncode`, PEB 임포트 해결 등)에 대해서는 [dyncode 컴파일러 문서](dyncode-compiler/README.md)를 참조하세요.
+
+---
+
+## 확인
+
+```bash
+neverc --version
+echo 'int main(void) { return 0; }' > /tmp/hello.c
+neverc -c /tmp/hello.c -o /tmp/hello.o
+```

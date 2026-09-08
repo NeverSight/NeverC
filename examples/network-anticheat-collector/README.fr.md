@@ -1,6 +1,6 @@
 **Langues**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Exemples NeverC](../../docs/examples/README.fr.md)
+[← Exemples NeverC](../../docs/fr/examples.md)
 
 # Collecteur de télémétrie anti-triche mTLS
 
@@ -36,7 +36,7 @@ neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 
 Le Makefile conserve `TARGET` et `PROFILE`, donc les `neverc make` suivants
 gardent le même choix d'artefact. La version release utilise le `--strip` intégré.
-Voir [Builds de release](../../docs/release-builds/README.fr.md).
+Voir [Builds de release](../../docs/fr/release-builds.md).
 
 
 Exécution avec un certificat serveur, une clé serveur, une CA client de

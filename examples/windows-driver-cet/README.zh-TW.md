@@ -1,6 +1,6 @@
 **語言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 範例](../../docs/examples/README.zh-TW.md)
+[← NeverC 範例](../../docs/zh-TW/examples.md)
 
 # 帶 CET 影子堆疊的 Windows 核心驅動程式
 
@@ -19,7 +19,7 @@ neverc make debug    # 切回 debug
 Makefile 會持久化 `PROFILE` 與 `TESTSIGN`。發行請用 `neverc make release`
 （`-O2 --strip`）。需要測試簽章時用 `neverc make release TESTSIGN=1`，
 同一次連結裡先 strip 再簽章。詳見
-[發行建置](../../docs/release-builds/README.zh-TW.md)。
+[發行建置](../../docs/zh-TW/release-builds.md)。
 
 使用獨立的 NeverC 發行版：
 

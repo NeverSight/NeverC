@@ -1,0 +1,143 @@
+**Languages**: [English](../../builtins/README.md) | [简体中文](../../zh-CN/builtins/README.md) | [繁體中文](../../zh-TW/builtins/README.md) | [日本語](../../ja/builtins/README.md) | [한국어](../../ko/builtins/README.md) | [Français](../../fr/builtins/README.md) | [Deutsch](README.md) | [Español](../../es/builtins/README.md) | [Italiano](../../it/builtins/README.md) | [Русский](../../ru/builtins/README.md) | [العربية](../../ar/builtins/README.md)
+
+[← NeverC Dokumentation](../README.md)
+
+# NeverC Integriertes Laufzeitsystem
+
+NeverC erweitert Standard-C mit optionalen integrierten Laufzeiten, die als LLVM-Bitcode direkt in die Compiler-Binärdatei eingebettet sind. Nach Aktivierung über Compiler-Flags wird die entsprechende Laufzeit zur Kompilierzeit in das IR des Benutzers zusammengeführt — keine externen Header, Bibliotheken oder Link-Abhängigkeiten erforderlich.
+
+## Verfügbare integrierte Funktionen
+
+| Integriert | Flag | Standard | Beschreibung |
+|------------|------|----------|-------------|
+| [**`string`**](string.md) | `-fbuiltin-string` | Aus | Wertesemantischer String-Typ mit Punkt-Aufruf-Methoden, automatischer Speicherverwaltung und nativem UTF-8 |
+| [**`mimalloc`**](mimalloc.md) | `-fbuiltin-mimalloc` | **An** | Hochleistungs-Speicherallokator, der `malloc`/`free`/`calloc`/`realloc` transparent ersetzt |
+| [**`xorstr`**](xorstr.md) | `-fencrypt-call-strings` | Aus | Instanzbezogene Kompilierzeitverschlüsselung, verpflichtende späte Versiegelung, Expansion pro Aufrufstelle und volatile Stack-Bereinigung |
+| [**`strhash`**](strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | Aus | Kompilierzeit-Zeichenketten-Hashing, übereinstimmende Laufzeit, optionaler IR-Fold |
+
+```bash
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main
+```
+
+---
+
+## Architekturübersicht
+
+`string` und `mimalloc` teilen die gleiche Vier-Schichten-Architektur:
+
+1. **Sprachoptionen und Treiber-Flags** — `LangOption` definiert in `LangOptions.def`
+2. **Foundation API** — bietet `getEmbeddedBitcode()` und `isSupported()`
+3. **CMake Bootstrap-Infrastruktur** — Zweistufige Bitcode-Generierung
+4. **IR-Merge-Pass** — Bitcode-Zusammenführung in das Benutzermodul bei `PipelineStartEP`
+
+Beispiel für `LangOptions.def`-Registrierung:
+
+```cpp
+LANGOPT(BuiltinString,      1, 0, "inject NeverC builtin string prelude")
+LANGOPT(BuiltinMimalloc,    1, 1, "inject mimalloc allocator override")
+LANGOPT(EncryptCallStrings, 1, 0, "auto-encrypt string literals in call arguments")
+VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
+              "maximum string length for auto-encryption (0 = no limit)")
+```
+
+> **Hinweis:** `xorstr` verwendet nicht das Embedded-Bitcode-Modell. `semaBuiltinNeverCXorstr` in `SemaCheckingBuiltinNeverC.cpp` senkt das explizite Makro ab. `EncryptCallStringsPass` und `XorStrCleanupPass` versiegeln automatische Literale und Klartext-Stack-Speicher vor IPO sowie nach jeder späten normalen oder Plugin-IR-Phase. `FinalizeXorStrPass` rekeyt und expandiert explizite Decoder erst an einer echten nativen Maschinencode-Grenze und entfernt anschließend den gemeinsamen Hilfsgraphen. Details und den Reproduzierbarkeitsvertrag enthält die [xorstr-Dokumentation](xorstr.md).
+
+> **Hinweis:** `strhash` verwendet ebenfalls kein eingebettetes Bitcode-Modell. [`NC_STRHASH(s)`](strhash.md) wird in Sema zu einer Konstante gefaltet; `-fstrhash-fold` aktiviert `StrHashFoldPass`. Siehe [strhash-Dokumentation](strhash.md).
+
+
+---
+
+## Designunterschiede zwischen integrierten Funktionen
+
+| Aspekt | `string` | `mimalloc` |
+|--------|----------|------------|
+| **Merge-Strategie** | On-Demand (BFS-Aufrufgraph) | Gesamtarchiv (alle Symbole) |
+| **Plattform-Bitcode** | Einzeln (architekturunabhängig) | Pro OS (Linux / Darwin / Windows) |
+| **Symbolbehandlung** | Alle internalisiert | Override-Eintrittspunkte bleiben extern |
+| **Präprozessor-Makro** | *(keine)* | `__NEVERC_MIMALLOC__` |
+| **DynCode-Modus** | Auto-aktiviert, Arena-Umschreibung | Unterdrückt (HeapArenaPass übernimmt Heap) |
+| **Optimierungsstufe** | `-O0` (Bitcode-Kompilierung) | `-O2` (leistungskritischer Allokator) |
+| **DCE** | Pre-Merge-Pruning + Post-Merge-Mark-and-Sweep | Kein DCE (Gesamtarchiv-Semantik) |
+
+---
+
+## Sicherheitsverriegelungen
+
+| Bedingung | Auswirkung | Grund |
+|-----------|------------|-------|
+| `-fno-builtin` | Unterdrückt mimalloc | Kein CRT-Override-Szenario |
+| `-mkernel` | Unterdrückt mimalloc | Kein Userspace-Heap im Kernel |
+| `-fdyncode-mode` | Unterdrückt mimalloc | Ersetzt durch HeapArenaPass (Arena-basiert) |
+| `-ffreestanding` | Unterdrückt mimalloc | Keine libc zum Überschreiben |
+
+Das `string`-Built-in hat eine eigene Unterdrückungslogik (Arena-Umschreibung in der DynCode-Pipeline ersetzt Heap-Allokation).
+
+### HeapArenaPass (DynCode-Heap-Allokation)
+
+Wenn `-fdyncode-mode` aktiv ist, wird `mimalloc` unterdrückt, aber `malloc`/`free`/`calloc`/`realloc`-Aufrufe werden automatisch von `HeapArenaPass` umgeschrieben (standardmäßig aktiviert). Der Pass verwendet eine hybride Strategie:
+
+- **Kleine Allokationen (≤ 64 KB)**: Bedient aus einer stack-residenten Arena, die mit dem `string`-Built-in-Runtime geteilt wird (Bump-Allocator + Free-List-Wiederverwendung).
+- **Große Allokationen (> 64 KB) oder Arena-OOM**: Fallback zum OS-Allokator:
+  - **Windows**: `malloc`/`free` über PEB-Walk aus `msvcrt.dll` aufgelöst (`-mdyncode-win-peb-import`).
+  - **Linux / macOS / Android**: `mmap`/`munmap` als native Systemaufrufe inlined (`-mdyncode-syscall`).
+  - **Kein Import-Pass aktiviert**: Nur Arena; OOM gibt `NULL` zurück.
+
+Steuerung über Treiber-Flags:
+
+```bash
+neverc -fdyncode test.c -o test.bin                     # HeapArenaPass AN (Standard)
+neverc -fdyncode -fno-dyncode-heap-arena test.c       # HeapArenaPass AUS (ursprüngliches Verhalten)
+```
+
+---
+
+## Präprozessor-Makros
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+// mimalloc ist aktiv — malloc/free werden transparent überschrieben
+#endif
+```
+
+---
+
+## Dateistruktur
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/
+│   ├── BuiltinString.h / BuiltinMimalloc.h
+│   └── Builtins.def                      # __builtin_neverc_xorstr / strhash
+├── include/neverc/Transforms/XorStr/
+│   └── EncryptCallStringsPass.h / XorStrCleanupPass.h
+├── include/neverc/Transforms/StrHash/    # strhash
+│   └── StrHashFoldPass.h / StrHashCompute.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
+│   └── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
+├── lib/Headers/neverc/
+│   ├── xorstr/xorstr.h / xorstr/xorstr_impl.inc # Makros NC_XORSTR / NEVERC_XORSTR
+│   └── strhash.h / strhash_impl.inc        # Makros NC_STRHASH / NC_STRHASH_AUTO
+├── lib/Analyze/Checking/SemaCheckingBuiltinNeverC.cpp # semaBuiltinNeverCXorstr
+├── lib/Transforms/XorStr/
+│   └── EncryptCallStringsPass.cpp / XorStrCleanupPass.cpp
+├── lib/Emit/Backend/
+│   └── BackendUtil.cpp / StringRuntimeLinker.{h,cpp} / MimallocRuntimeLinker.{h,cpp}
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPredefinedMacros.cpp
+```
+
+---
+
+## Neue integrierte Funktion hinzufügen
+
+1. `LANGOPT` in `LangOptions.def` hinzufügen
+2. Treiber-Flags in `Options.td.h` hinzufügen
+3. Foundation API erstellen (`BuiltinFoo.h` + `.cpp`)
+4. Quellgenerator erstellen
+5. CMake Bootstrap-Targets hinzufügen
+6. IR-Pass erstellen und bei `PipelineStartEP` registrieren
+7. Präprozessor-Makro definieren
+8. Sicherheitsprüfungen hinzufügen
+9. Tests hinzufügen
+10. Dokumentation und i18n-Übersetzungen hinzufügen

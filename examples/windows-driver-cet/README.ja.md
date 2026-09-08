@@ -1,6 +1,6 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC サンプル](../../docs/examples/README.ja.md)
+[← NeverC サンプル](../../docs/ja/examples.md)
 
 # CET シャドウスタック対応 Windows カーネルドライバー
 
@@ -19,7 +19,7 @@ neverc make debug    # debug に戻す
 Makefile は `PROFILE` と `TESTSIGN` を保持します。リリースは
 `neverc make release`（`-O2 --strip`）。テスト署名が必要なら
 `neverc make release TESTSIGN=1` で、同一リンク内で strip の後に署名します。
-詳細は [リリースビルド](../../docs/release-builds/README.ja.md)。
+詳細は [リリースビルド](../../docs/ja/release-builds.md)。
 
 スタンドアロンの NeverC リリースから：
 

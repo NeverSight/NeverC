@@ -1,4 +1,4 @@
-**Languages**: [English](target-mc-object.md) | [简体中文](target-mc-object.zh-CN.md) | [繁體中文](target-mc-object.zh-TW.md) | [日本語](target-mc-object.ja.md) | [한국어](target-mc-object.ko.md) | [Français](target-mc-object.fr.md) | [Deutsch](target-mc-object.de.md) | [Español](target-mc-object.es.md) | [Italiano](target-mc-object.it.md) | [Русский](target-mc-object.ru.md) | [العربية](target-mc-object.ar.md)
+**Languages**: [English](target-mc-object.md) | [简体中文](../zh-CN/plugin-api/target-mc-object.md) | [繁體中文](../zh-TW/plugin-api/target-mc-object.md) | [日本語](../ja/plugin-api/target-mc-object.md) | [한국어](../ko/plugin-api/target-mc-object.md) | [Français](../fr/plugin-api/target-mc-object.md) | [Deutsch](../de/plugin-api/target-mc-object.md) | [Español](../es/plugin-api/target-mc-object.md) | [Italiano](../it/plugin-api/target-mc-object.md) | [Русский](../ru/plugin-api/target-mc-object.md) | [العربية](../ar/plugin-api/target-mc-object.md)
 
 [← NeverC Plugin ABI](README.md)
 
@@ -199,7 +199,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest` is a LOCKSTEP value — `RegisterNumber` only means
 anything against the schema it names. See
-[Custom calling conventions](custom-callconv/README.md#materialized-plans) and
+[Custom calling conventions](custom-callconv.md#materialized-plans) and
 [`pluginsdk/examples/CustomCallConvPlugin.c`] for the full worked example.
 
 ## Code-generation routes

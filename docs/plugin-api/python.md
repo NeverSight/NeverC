@@ -1,4 +1,4 @@
-**Languages**: [English](python.md) | [简体中文](python.zh-CN.md) | [繁體中文](python.zh-TW.md) | [日本語](python.ja.md) | [한국어](python.ko.md) | [Français](python.fr.md) | [Deutsch](python.de.md) | [Español](python.es.md) | [Italiano](python.it.md) | [Русский](python.ru.md) | [العربية](python.ar.md)
+**Languages**: [English](python.md) | [简体中文](../zh-CN/plugin-api/python.md) | [繁體中文](../zh-TW/plugin-api/python.md) | [日本語](../ja/plugin-api/python.md) | [한국어](../ko/plugin-api/python.md) | [Français](../fr/plugin-api/python.md) | [Deutsch](../de/plugin-api/python.md) | [Español](../es/plugin-api/python.md) | [Italiano](../it/plugin-api/python.md) | [Русский](../ru/plugin-api/python.md) | [العربية](../ar/plugin-api/python.md)
 
 [← NeverC Plugin ABI](README.md)
 

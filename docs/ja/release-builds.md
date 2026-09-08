@@ -1,0 +1,347 @@
+**言語**: [English](../release-builds.md) | [简体中文](../zh-CN/release-builds.md) | [繁體中文](../zh-TW/release-builds.md) | [日本語](release-builds.md) | [한국어](../ko/release-builds.md) | [Français](../fr/release-builds.md) | [Deutsch](../de/release-builds.md) | [Español](../es/release-builds.md) | [Italiano](../it/release-builds.md) | [Русский](../ru/release-builds.md) | [العربية](../ar/release-builds.md)
+
+[← ドキュメント索引](README.md) · [← NeverC プロジェクト](project.md)
+
+# リリースバイナリと `--strip`
+
+配布用の実行ファイル、共有ライブラリ、または最終 Android カーネルモジュールを
+作るときは `--strip` を使います。短い別名は `-s` で、両者の動作は同一です。
+
+## クイックスタート
+
+```bash
+neverc -O2 --strip app.c -o app
+neverc -O2 -s app.c -o app
+
+cd examples/android-kernel-hello
+neverc make release
+```
+
+NeverC は統合リンカー内部でストリップを行い、外部の `llvm-strip` を起動
+しません。同じコマンドでクロスターゲットの ELF、Mach-O、PE/COFF を
+生成できます。
+
+この CLI オプションを CMake のパッケージ用スイッチ
+`NEVERC_STRIP_BINARY` と混同しないでください。後者はビルド後に
+`neverc` コンパイラ実行ファイルだけを処理し、外部の strip ツールを
+呼び出す場合があります。NeverC が生成するプログラムには影響しません。
+
+## デバッグ情報とシンボルの方針
+
+| 呼び出し | ソースレベルのデバッグ情報 | 通常の静的シンボル名 | Darwin `.dSYM` |
+|----------|----------------------------|----------------------|----------------|
+| 既定（`-g` なし） | 生成しない | 残る場合がある。既定値は形式依存 | 生成しない |
+| `-g` | 生成する | 残る | 通常の Darwin リンクで生成する |
+| `--strip` | 存在すれば削除 | 実行時に不要な名前を削除 | 生成しない |
+| `-g --strip` | ストリップ方針が優先され、配布イメージには残らない | 実行時に不要な名前を削除 | 生成を抑止 |
+
+`-g` がなければ、フロントエンドはソースレベルのデバッグ情報を生成しません。
+ただし、出力が完全にストリップ済みという意味ではありません。ELF と
+Mach-O には通常のシンボル名が残り得ます。PE はデバッグ設定が要求しない
+限り静的 COFF シンボル表を通常持ちません。Auto-LTO が一部のローカル名を
+破棄しても、strip-all の保証にはなりません。
+
+`-g` は「デバッグなし」から「ソースレベルのデバッグあり」へ切り替えます。
+既定で存在する情報に「さらに追加」するものではありません。ELF/Mach-O の
+`.eh_frame` や PE の `.pdata`/`.xdata` は実行時メタデータであり、
+ソースレベル DWARF ではないため、ストリップ後も残り得ます。
+
+## 実装と形式ごとの動作
+
+ドライバーは `--strip` を単一の型付きリンカー方針へ変換し、3 つの
+バックエンドへ渡します。各バックエンドは形式を理解している段階で方針を
+適用し、ローダーまたは動的 ABI に必要な名前と記録を保持します。
+
+| 形式 | 削除するもの | 必要な場合に保持するもの |
+|------|--------------|--------------------------|
+| ELF | `.debug*` データと通常の静的シンボル表／文字列表 | 動的インポート／エクスポート、再配置とローダーメタデータ、アンワインド情報 |
+| Android カーネル `.ko`（ELF ET_REL） | `.debug*`、`.comment`、再配置に不要なローカル／未定義エントリ、保持された通常定義の可読名 | `.strtab` にリンクする 1 個の `.symtab`、全再配置と対象、正確なローダー／CFI 名、正確な import、保護セクション内の名前、モジュール ABI メタデータ |
+| Mach-O | デバッグマップ／STABS、実行時不要のローカル／グローバルシンボル、付随する `.dSYM` 生成 | バインド／インポート情報、公開 ABI 名、export trie、実行時参照シンボル |
+| PE/COFF | 埋め込み DWARF セクションと、存在する静的 COFF シンボル表／文字列表 | PE インポート／エクスポート、アンワインド表、ロード設定などのローダーメタデータ |
+
+## 適用範囲と優先順位
+
+- `--strip` は最終リンク済み実行ファイル、共有ライブラリ、および下記の
+  厳密な最終 Android `.ko` 例外を対象にします。
+- `-c`、通常の `-r`、Android 中間 `.o`、`--emit-static-lib`、`-fdyncode`
+  との組み合わせは明示的にエラーにします。
+- ストリップ方針は `-g` とバックエンドのデバッグスイッチより優先されます。
+- NeverC 既定の Auto-LTO と `-fno-lto` の両方を対象にテストしています。
+- 共有ライブラリの動的 ABI を壊すインポート／エクスポート名は保持します。
+
+## Android カーネルモジュール
+
+最終 `.ko` も ELF `ET_REL` であり、Linux モジュールローダーはシンボル表、
+リンクされた文字列表、未定義 import、再配置を必要とするため strip-all を
+拒否します。NeverC が `-r --strip` を許可するのは、Android ターゲットで
+`-fandroid-kernel-driver-mode` と `-r` が有効、かつ出力名が `.ko` で終わる
+場合だけです。通常の `-r` と中間 `.o` は引き続き拒否されます。
+
+`neverc make release` は推奨リリースコマンドで、`-O2 --strip` に展開されます。
+これらのサンプルは `neverc make` を必要とし、外部の `make` は拒否されます。
+再帰的なコマンドライン変数の伝播、状態検証、ロック対応のクリーンアップが
+ビルド契約に含まれるためです。検証済みの `.nvk-build-flags` と
+`.nvk-build-integrity` の組がなければ `neverc make` の既定値は debug で、自動的に
+release を選びません。状態ファイルは `MODULE` がサブディレクトリを指す場合も
+常にその隣に置かれます。サンプル Makefile は明示的なプロファイル選択を保存するため、以後の
+`neverc make push`、`neverc make run`、ターゲットなしの `neverc make` は同じ成果物を使います。
+`EXTRA` を受け付けるサンプルは、複数語からなる完全な値を再帰ビルドと以後の
+ビルドでも保持し、再帰 profile ターゲットは他のコマンドライン上書きも保持します。
+`neverc make debug`、`neverc make release`、`neverc make clean` はそれぞれ
+単独のゴールとして実行してください。いずれかを別のゴールと組み合わせると、
+共有出力の競合を防ぐため拒否されます。
+`neverc make debug` または明示的な `neverc make PROFILE=...` が保存した選択を更新するのは、
+モジュール／マップ／状態のバンドルが公開された場合だけで、公開前の失敗では以前の
+成果物と状態が保たれます。`.nvk-build-integrity` はモジュール、ビルド識別子、
+任意の `EXTRA` 状態の SHA-256 を結び付けます。公開中断後に状態が欠落または不一致
+なら無視され、再ビルドが強制されます。`neverc make clean` は公開ロックを通して保存状態を
+削除し、次のビルドを debug に戻します。
+検証済みプロファイルが release の場合、ターゲットなしの `neverc make` はマップが
+欠けていれば再ビルドします。明示的な `neverc make release` はモジュール／マップ／状態の
+バンドルを 1 回無条件に再ビルドするため、再実行すればダイジェスト不一致も
+修復できます。この最終経路では NeverC はデバッグセクション、`.comment`、
+再配置に不要なローカル／未定義エントリを除去し、`.strtab` を再構築します。
+
+release が成功すると、NeverC はモジュールとその隣の
+`<module>.ko.symbols.json` をトランザクションとして公開します。既存ファイル
+はそれぞれがアトミックに置換されるまで表示されたままです。同じ出力
+ディレクトリを対象とする並行公開と `neverc make clean` は `.neverc-output.lock` により
+直列化されます。クリーンアップはバンドルをトランザクションで削除しますが、この
+内部ロックファイルは意図的に残します。公開前のエラーではバンドル全体がロールバックされ、
+遅い段階の永続性エラーでは復旧ジャーナル
+が残ります。2 つのディレクトリエントリを 1 回のファイルシステム操作で置換する
+ことはできません。ビルド状態の整合性は自動検証されますが、異常終了後は必ず
+マップの `image_sha256` を検証してください。
+マップには、保持されたシンボルのうち名前が変わったものについて、`original`
+（元の名前）と `release`（`.ko` 内の名前）が記録されます。
+
+```json
+{
+  "format": "neverc.android-kernel-symbol-map",
+  "version": 2,
+  "image_sha256": "…",
+  "symbols": [
+    {"original": "worker_dispatch", "release": "fn_C000"}
+  ]
+}
+```
+
+エントリは `release` 順です。削除されたシンボルと、正確な名前を保持する必要が
+あるローダー、import、CFI の名前は変換不要のため記録されません。同じ出力先を
+debug またはその他の非 strip ビルドが上書きすると、NeverC は古いマップを
+削除します。ELF のシンボル名には UTF-8 でないバイトも使用できます。このような
+まれな元名は `original` に Base64 で格納され、
+`"original_encoding": "base64"` が付加されます。それ以外の元名は可読なまま
+です。NeverC は POSIX ではモード `0600`、Windows では保護された所有者専用の
+`Windows ACL` でサイドカーを公開し、この制限を適用できなければ公開を失敗
+させます。マップは非公開のデバッグ成果物として保管し、`.ko` と一緒に配布したり
+デバイスへ push したりしないでください。クラッシュログの release 名を変換する
+前に、まず現在の `.ko` に対応するマップであることを確認します。
+
+```bash
+actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" &&
+expected="$(jq -er '.image_sha256 | strings | select(test("^[0-9a-f]{64}$"))' \
+  nvk_hello.ko.symbols.json)" &&
+test "$actual" = "$expected" &&
+
+python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
+import base64, json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    entry = next(item for item in json.load(stream)["symbols"]
+                 if item["release"] == sys.argv[2])
+original = entry["original"]
+print(repr(base64.b64decode(original))
+      if entry.get("original_encoding") == "base64" else original)
+PY
+```
+
+対象となる保持済み定義には、IDA に着想を得つつ予約接頭辞を使わない決定的な
+構造名を付けます。
+
+- `STT_FUNC` は `fn_HEX`。
+- `STT_OBJECT` は `obj_HEX`。
+- 実行可能な `STT_NOTYPE` は `code_HEX`。
+- その他の割り当て済み `STT_NOTYPE` は `sym_HEX`。
+- `SHN_ABS` は `abs_HEX`。
+- `SHF_ALLOC` 外の定義は
+  `sym_S<FINAL_SECTION_ORDINAL_HEX>_<OFFSET_HEX>`。
+
+非割り当て形式の 2 フィールドを含むすべての `HEX` フィールドは、不要な
+先頭ゼロのない大文字 16 進数です。同じ綴りを必要とする複数のシンボルには、
+決定的な 10 進の別名 `_1`、`_2` などを追加します。
+
+この綴りは IDA の表現に着想を得ていますが、dummy-name 名前空間は使いません。
+新規 IDA 9.4 データベースで確認すると、ELF のユーザーシンボル `sub_0`、
+`sub_4`、`loc_8` は `_sub_0`、`_sub_4`、`_loc_8` と表示される一方、
+`fn_0`、`code_8`、`obj_10` はそのまま表示されます。Hex-Rays の
+[`SN_NODUMMY`](https://python.docs.hex-rays.com/ida_name/index.html) 文書も、
+`sub_` などの dummy 接頭辞で始まるユーザー名には `_` を付加すると説明して
+います。NeverC は IDA に `sub_` を生成させる目的で通常の定義の `st_name` を
+空にしません。Android/Linux モジュールの kallsyms は歴史的に名前が空の
+エントリを無視し、空名では監査可能な直列化名の契約も失われるためです。
+元から空である必要があるエントリとセクションシンボルは正確に保持します。
+
+ELF では複数のシンボルが同じ canonical analysis EA を共有できます。NeverC
+は完全な alias 集合を `.symtab` に保持または生成しますが、IDA 9.4 の
+アドレス名モデルは同一アドレスのシンボルのうち主名称を 1 つだけ実体化する
+ことがあります。そのため、IDA に表示されない alias が ELF から失われたとは
+限りません。完全な集合は `llvm-readelf` または `llvm-nm` で監査してください。
+
+割り当て済みシンボルの `HEX` は NeverC canonical analysis EA、つまり静的
+解析だけに使う規範実効アドレスです。カーソル 0 から始め、最終セクション
+ヘッダー順に、最終的に保持する `SHF_ALLOC` セクションを走査します。
+カーソルを `max(sh_addralign, 1)` に整列してそのセクションの基点とし、
+`max(sh_size, 1)` 進めます。EA は基点と最終 `st_value` の和です。
+`abs_HEX` は最終の絶対 `st_value` を使います。非割り当て形式では
+`FINAL_SECTION_ORDINAL_HEX` が最終セクション序数、`OFFSET_HEX` がその
+セクション内の最終 `st_value` です。これらの座標はハッシュ値でも暗号化
+結果でもなく、ファイルオフセット、ELF 仮想アドレス、カーネル実行時
+アドレスでもありません。ローダーと KASLR は実行時にモジュールを別の位置へ
+配置できます。
+
+次の名前は正確なまま保持されます。
+
+- モジュールローダーが名前で解決する、すべての `SHN_UNDEF` import。
+- `.modinfo`、`.text.ftrace_trampoline`、`.gnu.linkonce.this_module`、
+  `__versions`、`.codetag.alloc_tags` 内で定義されたシンボル。
+- `init_module`、`cleanup_module`、`__cfi_check`、`__cfi_check_fail`、
+  `__cfi_jt_init_module`、`__cfi_jt_cleanup_module`。
+- `__typeid__` または `__kcfi_typeid_` で始まる名前。
+
+IDA の `extern` 領域は解析用に合成された表示であり、実在する ELF セクション
+ではありません。最終 `ET_REL` `.ko` の外部再配置対象は `.symtab` 内の
+`SHN_UNDEF` エントリで、その正確な名前をローダーが必要とします。そのため
+方針は実際の ELF シンボルクラスと定義セクションに従います。未定義インポートは
+元の名前を保ち、対象となる定義は解析ツール上の分類にかかわらず改名します。
+
+すべての名前は変更前にグローバルに計画します。同じ基底候補を共有する定義には、
+決定的な順序で番号なしの形式、`_1`、`_2` などを割り当てます。この通常の
+名前割り当てはエラーではありません。生成名が原文どおり保持する名前の予約
+名前空間と衝突する場合、または座標／接尾番号の計算が数値範囲を超える場合は
+最終処理を中止します。`SHN_COMMON`、`SHN_LIVEPATCH`、未知の ELF 予約
+セクションインデックスを検出した場合も、推測せず安全側に倒して拒否します。
+ロード可能な最終モジュールでは `SHN_COMMON` は無効なので、`-fno-common` で
+コンパイルしてください。
+Livepatch モジュールには元のシンボル表の順序とインデックス、および追加の
+再配置メタデータが必要であり、この方針はそれらの保持を保証しません。
+
+検出には複数のシグナルを使います。`SHN_LIVEPATCH` シンボル、`.klp.*`
+セクション、`SHF_RELA_LIVEPATCH` フラグ、または NUL 区切りの `.modinfo` に
+ある `livepatch=` で始まるフィールドのいずれかがあれば livepatch モジュール
+として安全側に倒して拒否します。`.klp.*` セクションや livepatch 再配置
+フラグがなくても、この `.modinfo` マーカーだけで拒否するには十分です。
+
+置換するのは対象となる `.symtab` 名だけです。ロード可能な `.ko` には
+`.symtab`、リンク先の `.strtab`、再配置が引き続き必要なため、汎用ツールが
+`not stripped` と表示しても正当です。BTF、モジュール export、`.modinfo`、
+`__versions`、trace metadata、`__ksymtab_strings`、`.rodata`、文字列
+リテラルなどの独立した格納域／インターフェイスから、元の名前や識別文字列が
+漏れる場合があります。通常のカーネルシンボル名は kallsyms と診断でも変わる
+ため、シンボルベースの ftrace、kprobe/BPF attach、クラッシュレポートの有用性
+が下がります。診断には未ストリップの debug ビルドを使い、release モジュール
+で private シンボルの元名に依存しないでください。
+
+### 最終 Android release の plugin 境界
+
+finalize 処理は plugin 出力フェーズの両側に、独立した fail-closed の identity
+境界を 2 段階で確立します。
+
+- 置換可能な `ObjectGraph` フェーズより前に、graph identity seal は保持される
+  各 logical section の `section ID`、`final ordinal`、正確な名前を固定します。
+  また、正確な名前を維持する各シンボルの `symbol ID` を、名前、class、section、
+  value、size、binding、type、完全な `st_other` に結び付けます。通常の構造名は
+  release verifier が別途再計算します。
+- host が信頼済み write baseline を確立した後、`neverc.object.post_write` より
+  前に、image identity seal は保持される各 logical section の ordinal/name、
+  `.symtab` の総 entry 数、および各 exact-name symbol の名前と属性を raw
+  `.symtab` `slot` に固定します。
+
+このため capability matrix は意図的に狭くなっています。
+
+| フェーズ binding | 最終 Android release での動作 |
+|------------------|-------------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED`。host が確立した信頼済み write baseline を置換できる前に拒否 |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`。最終 Android release には信頼済み baseline を確立する host-owned graph writer が必要 |
+| `observer` | `READ_ONLY`。観察は許可されるが artifact は変更不可 |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`。identity 面に属さない payload byte だけを変更でき、release verifier、入力 ABI contract、両方の identity seal を通過し続ける必要がある |
+
+最終 merge の所有権も host によって封印されます。`third-party ObjectMergeProvider`
+が返した `MergedImage` または独立した byte 列は破棄され、検証・finalize 済みの
+graph を `host-owned graph writer` が直列化します。一方、
+`built-in finalized input serialization` は `external object phases` を迂回して、
+完全一致する `audited native bytes` を host merger に渡します。この内部入力処理が
+上記の出力境界を迂回することはありません。
+
+Finalization は `Android module merge semantics` の場合にだけ受け入れられます。
+`relocatable output request` と `relocatable driver configuration` の両方も必須で、
+満たさなければ `before routing` に失敗します。最終 Android relocatable release
+では、`frozen input format`、
+`TargetKey.ObjectFormatID`、`frozen output format` が
+`one format identity` を共有しなければなりません。不一致は
+`before provider dispatch`、つまり route planning や sink creation よりも前に
+拒否されるため、capability preflight と実際の graph-writer dispatch が異なる
+format を観測することはありません。
+
+通常の graph-representable input では、前段の graph interceptor は graph seal と
+すべての release semantics を保つ場合だけ実行できます。`ObjectGraph` で表現
+できない事実のため native-image passthrough が必要な input では、置換可能な
+`route-matching provider` とすべての interceptor が拒否されます。
+target/CPU/features/object-format/execution-level route が一致しない provider は実行も
+release の阻止もしません。read-only observer だけが許可されます。
+`before sealed commit` の拒否または検証失敗だけが staging を中止し、ファイルを
+公開しません。`AFTER_COMMIT` observer の失敗は公開後に報告され、公開済み
+ファイルをロールバックできません。
+
+`.ko` を `llvm-strip --strip-all` や `objcopy` で後処理せず、codetag/BTF/ABI
+セクションを安易に削除しないでください。署名はストリップ後の最終バイト列に
+行ってください。署名後の変更は署名を無効にします。`clean` はファイル削除
+だけにし、既存モジュールをストリップまたは署名してはいけません。
+
+## セキュリティ上の境界
+
+ストリップは価値の高い名前とデバッグメタデータを消し、解析コストを上げますが、
+ネイティブ機械語のリバースエンジニアリングを不可能にはできません。正しく
+ストリップしたバイナリにも次が残り得ます。
+
+- ローダーに必要な動的インポート／エクスポート名。
+- `.ko` のローダー必須名と `.symtab` 以外に保存された名前。
+- 文字列リテラル、リフレクション表、アプリ固有メタデータ。
+- アンワインド、再配置、署名、ロード設定の記録。
+- 機械語と観測可能な制御フロー。
+
+`--strip` が制御するのは最終イメージだけです。明示的に要求したリンク
+マップ、最適化記録、`-save-temps` 出力などは削除しません。リリース
+ディレクトリを監査し、これらの付随ファイルを配布しないでください。
+
+必要に応じて文字列暗号化、難読化、改ざん防止を別レイヤーとして使い、秘密に
+すべき値をクライアントバイナリへ埋め込まないでください。
+
+## 成果物の検証
+
+CI では LLVM のオブジェクトツールでリリース成果物を検査できます。対象形式に
+合わせてコマンドを調整し、必要な ABI 名は明示的に許可してください。
+下の否定形の `strings` 検査は一致がないことを期待し、その場合だけ成功
+終了します。
+
+```bash
+llvm-readobj --sections --symbols --dyn-symbols app
+llvm-dwarfdump app
+! strings app | grep -Fq -- neverc_private_release_symbol
+test ! -e app.dSYM
+
+file examples/android-kernel-hello/nvk_hello.ko
+llvm-readelf -h -S -s -r examples/android-kernel-hello/nvk_hello.ko
+llvm-dwarfdump examples/android-kernel-hello/nvk_hello.ko
+```
+
+ロード可能な ELF `ET_REL` `.ko` では `.symtab` を意図的に保持するため、
+汎用 `file` ツールが `not stripped` と表示する場合があります。この表示を
+release 成否の基準にしないでください。代わりに DWARF と `.comment` がない
+こと、対象の定義が正規の大文字 16 進形式 `fn_`/`obj_`/`code_`/`sym_`/
+`abs_` であること、`SHN_UNDEF` import と必須のローダー／CFI 名が正確な
+ままであること、再配置が有効であることを確認します。名前漏洩が問題なら、
+BTF、export、modinfo、versions、trace metadata、文字列も個別に監査します。
+
+ストリップ済み成果物にはソースレベルのデバッグセクションや非公開の静的
+シンボル名がないはずです。必要な動的名と実行時メタデータは正常です。

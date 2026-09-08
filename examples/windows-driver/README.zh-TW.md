@@ -1,6 +1,6 @@
 **語言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 範例](../../docs/examples/README.zh-TW.md)
+[← NeverC 範例](../../docs/zh-TW/examples.md)
 
 # Windows 核心驅動程式範例
 
@@ -24,7 +24,7 @@ neverc make debug    # 切回 debug
 Makefile 會持久化 `ARCH`、`PROFILE` 與 `TESTSIGN`。發行請用
 `neverc make release`（`-O2 --strip`；PE 匯入/匯出與載入器中繼資料保留）。
 需要測試簽章時用 `neverc make release TESTSIGN=1`，同一次連結裡先 strip 再簽章。
-詳見 [發行建置](../../docs/release-builds/README.zh-TW.md)。
+詳見 [發行建置](../../docs/zh-TW/release-builds.md)。
 
 這會產生 `ExampleDriver-x64.sys`。若要改為建置 ARM64，或兩者都建置：
 

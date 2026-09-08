@@ -1,6 +1,6 @@
 **Sprachen**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC Beispiele](../../docs/examples/README.de.md)
+[← NeverC Beispiele](../../docs/de/examples.md)
 
 # Windows-Kerneltreiber mit CET Shadow Stack
 
@@ -20,7 +20,7 @@ neverc make debug    # zurück zu debug
 Das Makefile speichert `PROFILE` und `TESTSIGN`. Für Release:
 `neverc make release` (`-O2 --strip`). Mit Testsignatur:
 `neverc make release TESTSIGN=1` (Strip vor Signatur im selben Link).
-Siehe [Release-Builds](../../docs/release-builds/README.de.md).
+Siehe [Release-Builds](../../docs/de/release-builds.md).
 
 Mit einer eigenständigen NeverC-Version:
 

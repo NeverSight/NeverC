@@ -1,4 +1,4 @@
-**Languages**: [English](driver.md) | [简体中文](driver.zh-CN.md) | [繁體中文](driver.zh-TW.md) | [日本語](driver.ja.md) | [한국어](driver.ko.md) | [Français](driver.fr.md) | [Deutsch](driver.de.md) | [Español](driver.es.md) | [Italiano](driver.it.md) | [Русский](driver.ru.md) | [العربية](driver.ar.md)
+**Languages**: [English](driver.md) | [简体中文](../zh-CN/plugin-api/driver.md) | [繁體中文](../zh-TW/plugin-api/driver.md) | [日本語](../ja/plugin-api/driver.md) | [한국어](../ko/plugin-api/driver.md) | [Français](../fr/plugin-api/driver.md) | [Deutsch](../de/plugin-api/driver.md) | [Español](../es/plugin-api/driver.md) | [Italiano](../it/plugin-api/driver.md) | [Русский](../ru/plugin-api/driver.md) | [العربية](../ar/plugin-api/driver.md)
 
 [← NeverC Plugin ABI](README.md)
 

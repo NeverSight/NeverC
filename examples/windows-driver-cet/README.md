@@ -1,6 +1,6 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC Examples](../../docs/examples/README.md)
+[← NeverC Examples](../../docs/examples.md)
 
 # Windows Kernel Driver with CET Shadow Stack
 
@@ -20,7 +20,7 @@ neverc make debug    # switch back to debug
 The Makefile persists `PROFILE` and `TESTSIGN`. Use `neverc make release`
 for `-O2 --strip`. Prefer `neverc make release TESTSIGN=1` so strip runs
 before the Authenticode test signature in the same link.
-See [Release builds](../../docs/release-builds/README.md).
+See [Release builds](../../docs/release-builds.md).
 
 From a standalone NeverC release:
 

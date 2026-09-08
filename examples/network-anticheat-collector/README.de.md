@@ -1,6 +1,6 @@
 **Sprachen**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC Beispiele](../../docs/examples/README.de.md)
+[← NeverC Beispiele](../../docs/de/examples.md)
 
 # mTLS Anti-Cheat-Telemetrie-Sammler
 
@@ -37,7 +37,7 @@ neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 
 Das Makefile speichert `TARGET` und `PROFILE`, sodass spätere
 `neverc make`-Aufrufe dieselbe Artefaktauswahl behalten. Release nutzt NeverCs integriertes `--strip`.
-Siehe [Release-Builds](../../docs/release-builds/README.de.md).
+Siehe [Release-Builds](../../docs/de/release-builds.md).
 
 
 Ausführung mit Server-Zertifikat, Server-Schlüssel, vertrauenswürdiger

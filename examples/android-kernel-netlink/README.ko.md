@@ -1,6 +1,6 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 예제](../../docs/examples/README.ko.md)
+[← NeverC 예제](../../docs/ko/examples.md)
 
 # Android 커널 Netlink
 
@@ -33,7 +33,7 @@ NeverC는 IDA에서 착안하되 예약 접두사를 쓰지 않는 릴리스 이
 예약된 `sub_`/`loc_` 형식이나 의도적으로 빈 일반 이름도 저장하지 않습니다.
 
 정확히 보존할 이름, IDA의 합성 `extern` 보기, 보안 경계, 확정 처리와 서명의 순서는
-[릴리스 및 스트립 정책](../../docs/release-builds/README.ko.md)을 참조하십시오.
+[릴리스 및 스트립 정책](../../docs/ko/release-builds.md)을 참조하십시오.
 
 ## 배포 및 실행
 

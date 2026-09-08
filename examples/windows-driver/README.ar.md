@@ -2,7 +2,7 @@
 
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← أمثلة NeverC](../../docs/examples/README.ar.md)
+[← أمثلة NeverC](../../docs/ar/examples.md)
 
 # مثال على برنامج تشغيل نواة Windows
 
@@ -26,7 +26,7 @@ neverc make debug    # العودة إلى debug
 يحفظ Makefile قيم `ARCH` و`PROFILE` و`TESTSIGN`. للإصدار استخدم
 `neverc make release` (`-O2 --strip`؛ تبقى واردات/صادرات PE وبيانات المحمّل).
 مع توقيع الاختبار: `neverc make release TESTSIGN=1` (التجريد ثم التوقيع في نفس الربط).
-انظر [ملفات الإصدار](../../docs/release-builds/README.ar.md).
+انظر [ملفات الإصدار](../../docs/ar/release-builds.md).
 
 ينتج عن ذلك `ExampleDriver-x64.sys`. للبناء لـ ARM64 أو لكليهما:
 

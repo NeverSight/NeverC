@@ -1,0 +1,212 @@
+**語言**: [English](../../README.md) | [简体中文](../zh-CN/project.md) | [繁體中文](project.md) | [日本語](../ja/project.md) | [한국어](../ko/project.md) | [Français](../fr/project.md) | [Deutsch](../de/project.md) | [Español](../es/project.md) | [Italiano](../it/project.md) | [Русский](../ru/project.md) | [العربية](../ar/project.md)
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/neverc-logo-dark.svg">
+  <img src="../assets/neverc-logo-light.svg" width="72" alt="NeverC">
+</picture>
+
+# NeverC
+
+**AI 友好的安全研究 C23 編譯器，基於 LLVM 建構**
+
+整合連結器 · DynCode 流水線 · 內建執行時（`string` · `mimalloc` · `xorstr` · `strhash`）
+
+[![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
+[![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#特色)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
+[![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#特色)
+
+[文件索引](README.md) · [DynCode 指南](dyncode-compiler/README.md) · [內建執行時](builtins/README.md) · [外掛 API](plugin-api/README.md) · [路線圖](roadmap.md)
+
+</div>
+
+---
+
+> **說明：** GitHub 儲存庫首頁固定展示英文 `README.md`，不會依據瀏覽器語言自動切換。請用上方語言連結進入對應版本；進入 [文件](README.md) 或 [dyncode 指南](dyncode-compiler/README.md) 後，請繼續透過頁內語言列與導覽列保持同一語言。
+
+## 概述
+
+NeverC 將標準 C 編譯為宿主二進位、獨立可執行檔以及位置無關 dyncode——全部來自同一工具鏈。目標架構為 **x86_64** 與 **AArch64**（僅小端序）。未來版本將新增 **EVM**（以太坊智慧合約）和 **Solana eBPF**（鏈上程式）編譯目標。
+
+## 為什麼選擇 NeverC？
+
+C 已經是最簡單的系統程式語言。NeverC 讓它更簡單：
+
+- **純 C23，僅此而已** — 沒有模板、沒有 RAII、沒有運算子多載、沒有隱式控制流。你讀到的就是機器執行的。
+- **內建 `string`** — 值語意字串，支援 `+`、`==`、`.starts_with()` 與自動釋放——不需要 C++。
+- **無例外處理** — 錯誤處理始終顯式。沒有堆疊展開、沒有效能意外。
+- **單一二進位** — 編譯器 + 連結器 + 執行時打包成一個可執行檔，零外部相依性。
+- **LLM 友好** — 極簡語法與確定性語意，讓 AI 生成的 NeverC 程式碼比 C++ 更容易編譯正確。
+- **真正的跨平台編譯** — 在 macOS 或 Linux 上直接編譯 Windows PE、Linux ELF、macOS Mach-O、Android ELF 和 dyncode——不需要虛擬機、不需要雙系統、不需要找 SDK。各平台 SDK 已內建在編譯器裡。
+- **零門檻可擴展** — 單個 C 標頭檔、130 個具名編譯階段，就能寫出[編譯器外掛](plugin-api/README.md)，介入從 IR 最佳化到最終產物輸出的任何階段——不需要懂 LLVM。
+- **安全研究開箱即用** — DynCode 編譯、編譯期字串加密、跨平台 PE 生成全部原生整合在編譯器中——不需要靠外部腳本拼湊。
+
+## 特色
+
+- **[DynCode 編譯器](dyncode-compiler/README.md)** — 多階段 IR/MIR 流水線、跨平台提取、匯入/系統呼叫降階、核心模式、壞位元組稽核與外掛架構
+- **整合連結器** — 單一二進位內完成 COFF、ELF、Mach-O 連結，無需外部 `ld` 或 `link.exe`
+- **[發布剝離](release-builds.md)** — 內建 `--strip` / `-s`，從最終 ELF、Mach-O 與 PE/COFF 映像移除非執行期符號及原始碼層級偵錯資訊，並對 `.ko` 進行核心感知的結構化符號重新命名（不是 hash，也不是 encryption）
+- **交叉編譯** — 從任意宿主建置 Windows PE、Linux ELF、macOS Mach-O 和 Android ELF，內建各平台 SDK
+- **[內建執行時](builtins/README.md)** — 嵌入編譯器的 LLVM bitcode 執行時：[`string`](builtins/string.md)（值語意字串，自動記憶體管理）、[`mimalloc`](builtins/mimalloc.md)（透明高效能配置器覆蓋，核心與 freestanding 目標之外預設開啟）、[`xorstr`](builtins/xorstr.md)（逐實例編譯期加密、強制 late 封口與逐呼叫點原生展開）和 [`strhash`](builtins/strhash.md)（編譯期字串雜湊，與執行時演算法一致）
+- **[外掛 API](plugin-api/README.md)** — 純 C ABI 的樹外外掛介面；單一標頭檔 SDK，零 LLVM/CRT 相依性，涵蓋驅動、預處理、AST、IR、MIR、MC、目的檔、連結、LTO、dyncode 各階段
+- **[`.nc` 副檔名](nc-extension.md)** — 使用 `.nc` 檔案副檔名自動啟用所有 NeverC 功能（`string`、Rust 風格整數型別），無需額外旗標
+- **精簡 LLVM 建置** — 僅 x86_64 / AArch64 後端；剝離 C++/ObjC/OpenMP 等路徑
+
+## 快速範例
+
+```c
+#include <stdio.h>
+
+typedef struct { string user; string pass; } creds;
+
+int main(void) {
+    string msg = "Hello " + "NeverC!";
+    printf("%s\n", msg.c_str());
+
+    // 編譯期加密 — `strings ./bin` 搜不到這些字面量
+    creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+    string paths[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+
+    // 零分配解密比較（明文不會完整出現在記憶體裡）
+    if (login.user == "admin".encrypt() && login.pass == "s3cret".encrypt()) {
+        for (int i = 0; i < 2; i++)
+            if (msg.starts_with(paths[i]))
+                printf("route matched: %s\n", paths[i].c_str());
+    }
+    return 0;
+}
+```
+
+> **說明：** 內建 **`string`** 在 `.c` 檔案中需加 **`-fbuiltin-string`**。使用 [**`.nc` 檔案**](nc-extension.md) 或 **`-fdyncode`** 模式時自動啟用。
+
+```bash
+# macOS arm64 / x86_64
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
+
+# iOS arm64
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
+
+# Linux x86_64 / arm64
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
+
+# Android arm64 / x86_64
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
+
+# Windows x86_64 / arm64
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+```
+
+詳細設計說明、平台矩陣、CLI 參考與範例見 **[文件索引](README.md)**。更多完整可建置範例見 **[examples](examples.md)**。
+
+## 安裝
+
+在 **Linux x64/arm64** 和 **macOS arm64** 上，一條命令安裝最新 release：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+安裝腳本會下載對應平台的 release 套件、對照 `SHA256SUMS` 校驗、安裝到 `~/.neverc`，並把 `~/.neverc/bin` 加入 shell 的 `PATH`。
+
+安裝指定版本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+驗證安裝：
+
+```bash
+neverc --version
+neverc hello.c -o hello -fbuiltin-string
+```
+
+### `neverc run`
+
+編譯到暫存可執行檔，在**本機**執行後自動刪除——類似 `go run`。需要保留二進位檔時請用一般的 `neverc ... -o out`。
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| 主題 | 行為 |
+|------|------|
+| 預設拆分 | 第一個 `.c`/`.nc` 之前為編譯器參數；連續原始檔一起編譯；其餘參數傳給 `main` |
+| 顯式 `--` | `--` 之前給編譯器，之後給程式（原始檔後面還有連結選項等時使用） |
+| 工作目錄 | 在目前目錄執行，相對路徑與一般二進位檔相同 |
+| 環境與 I/O | 繼承環境變數；stdin/stdout/stderr 連接到暫存行程 |
+| 結束碼 | 成功時回傳程式結束碼；編譯失敗回傳編譯器結束碼且不執行程式 |
+| 產物 | 存放在 `neverc-run-*` 暫存目錄，執行後刪除 |
+
+交叉編譯參數也許能編譯，但暫存二進位檔始終在本機執行。完整參數規則、範例與限制見 **[`neverc run` →](run.md)**。
+
+**Windows x64/arm64** 安裝套件請從 [GitHub Releases](https://github.com/NeverSight/NeverC/releases) 手動下載。macOS arm64 二進位已使用 Apple Developer ID 簽名並完成公證。
+
+可選安裝環境變數：
+
+| 變數 | 說明 |
+|------|------|
+| `NEVERC_INSTALL_DIR` | 安裝目錄（預設：`~/.neverc`） |
+| `NEVERC_VERSION` | Release 標籤，如 `v3389.1.2`（預設：最新版） |
+| `NEVERC_NO_MODIFY_PATH=1` | 不修改 shell 設定檔 |
+
+交叉編譯 sysroot（Windows SDK、Linux sysroot 等）在編譯器加入 `PATH` 後按需安裝：
+
+```bash
+neverc runtime install all
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+Release 安裝可以把編譯器與已安裝的交叉編譯 runtime 當成同一個版本單元同步更新：
+
+```bash
+neverc update                 # 更新到最新完整 release
+neverc update v3389.1.2       # 切換到指定版本，也支援降級
+```
+
+`neverc upgrade` 是同義命令。NeverC 只解析一個明確的 release 標籤，僅重新安裝
+原本已存在的 runtime，並將它們全部固定到編譯器的目標版本。所有必要套件都會在
+修改現有檔案前完成下載、SHA256 驗證、解壓與內容驗證；暫存或驗證失敗不會改動
+目前的安裝，提交失敗則會自動回復。若某個 runtime release 有問題，執行
+`neverc update <較舊版本>` 即可讓編譯器與所有已安裝的 runtime 一起回退。
+
+完整命令說明見 [`neverc runtime` →](runtime.md) · [`neverc update` →](update.md) · [`neverc build` / `make` →](build.md)。
+
+## 從原始碼建置
+
+建置需求、建置命令、Windows 交叉編譯、PATH 設定，以及在 release 安裝與本地原始碼建置之間切換，詳見 **[本地開發](local-dev.md)**。
+
+## 貢獻
+
+NeverC **設計上僅支援 C**（C23）。C++、Objective-C、CUDA 及類似語言前端不在專案範圍內；
+相關 Pull Request 將被直接關閉。若需要面向 C++ 的 LLVM 工具鏈，請考慮
+[llvm-msvc](https://github.com/backengineering/llvm-msvc)。
+
+涉及語言、ABI 或執行時的大範圍改動，請先開 issue 討論範圍，再提交 Pull Request。
+
+預設開發分支為 **`dev`**。開始工作前請 clone 並 checkout 該分支；請向 `dev` 提交 Pull Request。
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
+## 授權條款
+
+[AGPL-3.0](../../LICENSE)
+
+LLVM 元件保留 [Apache-2.0 WITH LLVM-exception](../../llvm/LICENSE.TXT) 授權。
+
+複製或改編程式碼時，包括藉助 AI/LLM 或在 LLVM 相關專案中重用，必須遵守適用的授權條款，並保留其要求的著作權、授權和署名聲明。此外，我們請求以 NeverC 為參考的使用者註明專案及原始出處；這是專案的引用請求，不是額外的授權條件。
+
+請參閱[聲明](../../NOTICE)、[署名與引用指南](attribution.md)和[機器可讀的引用資訊](../../CITATION.cff)。

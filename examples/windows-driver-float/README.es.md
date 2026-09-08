@@ -1,6 +1,6 @@
 **Idiomas**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Ejemplos NeverC](../../docs/examples/README.es.md)
+[← Ejemplos NeverC](../../docs/es/examples.md)
 
 # Controlador de kernel Windows con coma flotante
 
@@ -21,7 +21,7 @@ El Makefile guarda `ARCH`, `PROFILE` y `TESTSIGN`. Para publicación use
 `neverc make release` (`-O2 --strip`; se conservan imports/exports PE y
 metadatos del cargador). Con firma de prueba:
 `neverc make release TESTSIGN=1` (strip y luego firma en el mismo enlace).
-Véase [Compilaciones de publicación](../../docs/release-builds/README.es.md).
+Véase [Compilaciones de publicación](../../docs/es/release-builds.md).
 
 Esto produce `FloatDriver-x64.sys`. Para ARM64, o para ambos:
 

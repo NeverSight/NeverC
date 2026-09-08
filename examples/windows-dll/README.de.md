@@ -1,6 +1,6 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC Beispiele](../../docs/examples/README.de.md)
+[← NeverC Beispiele](../../docs/de/examples.md)
 
 # Windows Ring3 DLL Beispiel
 
@@ -19,7 +19,7 @@ Das Makefile speichert `PROFILE`, sodass spätere `neverc make`-Aufrufe
 dieselbe debug/release-Auswahl behalten. Release nutzt NeverCs integriertes
 `--strip`: Debug-Metadaten und unnötige statische Symbolnamen entfallen,
 benötigte Loader-/Dynamik-ABI-Namen bleiben. Siehe
-[Release-Builds](../../docs/release-builds/README.de.md).
+[Release-Builds](../../docs/de/release-builds.md).
 
 ## Manueller Build
 

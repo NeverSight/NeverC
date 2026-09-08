@@ -101,6 +101,7 @@ jobs:
 
       - name: Verify every locale is present and every jump resolves
         run: |
+          python3 -m unittest discover -s utils/plugin-api/tests -p test_docs_layout.py
           python3 utils/plugin-api/check-docs-links.py
           echo ""
           echo "If this step fails, a guide is missing a locale, a language bar"

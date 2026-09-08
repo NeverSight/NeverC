@@ -1,6 +1,6 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Ejemplos NeverC](../../docs/examples/README.es.md)
+[← Ejemplos NeverC](../../docs/es/examples.md)
 
 # Ejemplo EXE Windows Ring3
 
@@ -19,7 +19,7 @@ El Makefile guarda `PROFILE`, así que los siguientes `neverc make`
 conservan la misma selección debug/release. Release usa el `--strip`
 integrado de NeverC: quita metadatos de depuración y nombres de símbolos
 estáticos innecesarios, y conserva los nombres ABI dinámicos/del cargador
-necesarios. Véase [Compilaciones de publicación](../../docs/release-builds/README.es.md).
+necesarios. Véase [Compilaciones de publicación](../../docs/es/release-builds.md).
 
 ## Compilación manual
 

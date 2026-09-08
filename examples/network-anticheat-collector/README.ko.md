@@ -1,6 +1,6 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 예제](../../docs/examples/README.ko.md)
+[← NeverC 예제](../../docs/ko/examples.md)
 
 # mTLS 안티치트 텔레메트리 수집기
 
@@ -34,7 +34,7 @@ neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 
 Makefile이 `TARGET`과 `PROFILE`을 유지하므로 이후 `neverc make`는 같은
 산출물 선택을 사용합니다. 릴리스는 NeverC 내장 `--strip`을 사용합니다.
-[릴리스 빌드](../../docs/release-builds/README.ko.md)를 참고하세요.
+[릴리스 빌드](../../docs/ko/release-builds.md)를 참고하세요.
 
 
 서버 인증서, 서버 키, 신뢰하는 클라이언트 CA, 공유 32바이트 서명 키,

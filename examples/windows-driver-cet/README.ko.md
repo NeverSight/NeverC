@@ -1,6 +1,6 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 예제](../../docs/examples/README.ko.md)
+[← NeverC 예제](../../docs/ko/examples.md)
 
 # CET 섀도우 스택 지원 Windows 커널 드라이버
 
@@ -19,7 +19,7 @@ neverc make debug    # debug로 전환
 Makefile이 `PROFILE`과 `TESTSIGN`을 유지합니다. 릴리스는
 `neverc make release`(`-O2 --strip`). 테스트 서명이 필요하면
 `neverc make release TESTSIGN=1`로 같은 링크에서 strip 후 서명하세요.
-자세한 내용: [릴리스 빌드](../../docs/release-builds/README.ko.md).
+자세한 내용: [릴리스 빌드](../../docs/ko/release-builds.md).
 
 독립 실행형 NeverC 릴리스에서:
 

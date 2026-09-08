@@ -1,6 +1,6 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+[← NeverC 示例](../../docs/zh-CN/examples.md)
 
 # 权威游戏服务器
 
@@ -23,7 +23,7 @@ neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 
 Makefile 会持久化 `TARGET` 和 `PROFILE`，之后的 `neverc make` 会保持同一产物
 选择。发布构建使用 NeverC 内置 `--strip`。
-参见 [发布构建](../../docs/release-builds/README.zh-CN.md)。
+参见 [发布构建](../../docs/zh-CN/release-builds.md)。
 
 
 使用 P-256 TLS 证书和密钥运行 QUIC 端点：

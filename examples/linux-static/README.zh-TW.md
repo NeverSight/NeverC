@@ -1,6 +1,6 @@
 **語言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 範例](../../docs/examples/README.zh-TW.md)
+[← NeverC 範例](../../docs/zh-TW/examples.md)
 
 # Linux 全靜態連結範例
 
@@ -20,7 +20,7 @@ neverc make debug    # 切回 debug
 Makefile 會持久化 `PROFILE`，後續 `neverc make` 會保持同一 debug/release
 選擇。release 使用 NeverC 內建 `--strip`：刪除除錯中繼資料與不需要的靜態
 符號名，同時保留載入器/動態 ABI 仍需要的名稱。詳見
-[發行建置](../../docs/release-builds/README.zh-TW.md)。
+[發行建置](../../docs/zh-TW/release-builds.md)。
 
 
 AArch64:

@@ -1,6 +1,6 @@
 **Langues**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Exemples NeverC](../../docs/examples/README.fr.md)
+[← Exemples NeverC](../../docs/fr/examples.md)
 
 # Pilote noyau Windows avec virgule flottante
 
@@ -21,7 +21,7 @@ Le Makefile mémorise `ARCH`, `PROFILE` et `TESTSIGN`. Pour la publication,
 utilisez `neverc make release` (`-O2 --strip` ; imports/exports PE et
 métadonnées du chargeur conservés). Avec signature de test :
 `neverc make release TESTSIGN=1` (strip puis signature dans le même lien).
-Voir [Builds de publication](../../docs/release-builds/README.fr.md).
+Voir [Builds de publication](../../docs/fr/release-builds.md).
 
 Cela produit `FloatDriver-x64.sys`. Pour ARM64, ou pour les deux :
 

@@ -1,6 +1,6 @@
 # NeverC source attribution
 
-**Languages**: [English](docs/attribution/README.md) | [简体中文](docs/attribution/README.zh-CN.md) | [繁體中文](docs/attribution/README.zh-TW.md) | [日本語](docs/attribution/README.ja.md) | [한국어](docs/attribution/README.ko.md) | [Français](docs/attribution/README.fr.md) | [Deutsch](docs/attribution/README.de.md) | [Español](docs/attribution/README.es.md) | [Italiano](docs/attribution/README.it.md) | [Русский](docs/attribution/README.ru.md) | [العربية](docs/attribution/README.ar.md)
+**Languages**: [English](docs/attribution.md) | [简体中文](docs/zh-CN/attribution.md) | [繁體中文](docs/zh-TW/attribution.md) | [日本語](docs/ja/attribution.md) | [한국어](docs/ko/attribution.md) | [Français](docs/fr/attribution.md) | [Deutsch](docs/de/attribution.md) | [Español](docs/es/attribution.md) | [Italiano](docs/it/attribution.md) | [Русский](docs/ru/attribution.md) | [العربية](docs/ar/attribution.md)
 
 Choose a language above for the complete attribution guide, license obligations,
 source citation examples, and AI/LLM reference instructions.

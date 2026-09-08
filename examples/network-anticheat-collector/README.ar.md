@@ -2,7 +2,7 @@
 
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← أمثلة NeverC](../../docs/examples/README.ar.md)
+[← أمثلة NeverC](../../docs/ar/examples.md)
 
 # جامع تيليمتري مكافحة الغش mTLS
 
@@ -36,7 +36,7 @@ neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 
 يحفظ Makefile قيمتي `TARGET` و`PROFILE`، لذلك تبقي أوامر `neverc make`
 اللاحقة نفس اختيار المُخرَج. يستخدم الإصدار `--strip` المدمج في NeverC.
-انظر [بناء الإصدار](../../docs/release-builds/README.ar.md).
+انظر [بناء الإصدار](../../docs/ar/release-builds.md).
 
 
 التشغيل مع شهادة خادم ومفتاح خادم وCA عميل موثوق ومفتاح توقيع مشترك

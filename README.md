@@ -1,4 +1,4 @@
-**Languages**: [English](README.md) | [简体中文](docs/i18n/README.zh-CN.md) | [繁體中文](docs/i18n/README.zh-TW.md) | [日本語](docs/i18n/README.ja.md) | [한국어](docs/i18n/README.ko.md) | [Français](docs/i18n/README.fr.md) | [Deutsch](docs/i18n/README.de.md) | [Español](docs/i18n/README.es.md) | [Italiano](docs/i18n/README.it.md) | [Русский](docs/i18n/README.ru.md) | [العربية](docs/i18n/README.ar.md)
+**Languages**: [English](README.md) | [简体中文](docs/zh-CN/project.md) | [繁體中文](docs/zh-TW/project.md) | [日本語](docs/ja/project.md) | [한국어](docs/ko/project.md) | [Français](docs/fr/project.md) | [Deutsch](docs/de/project.md) | [Español](docs/es/project.md) | [Italiano](docs/it/project.md) | [Русский](docs/ru/project.md) | [العربية](docs/ar/project.md)
 
 <div align="center">
 
@@ -18,7 +18,7 @@ Integrated linker · DynCode pipeline · Built-in runtimes (`string` · `mimallo
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#features)
 
-[Documentation](docs/README.md) · [DynCode Guide](docs/dyncode-compiler/README.md) · [Built-in Runtimes](docs/builtins/README.md) · [Plugin API](docs/plugin-api/README.md) · [Roadmap](docs/roadmap/README.md)
+[Documentation](docs/README.md) · [DynCode Guide](docs/dyncode-compiler/README.md) · [Built-in Runtimes](docs/builtins/README.md) · [Plugin API](docs/plugin-api/README.md) · [Roadmap](docs/roadmap.md)
 
 </div>
 
@@ -47,11 +47,11 @@ C is already the simplest systems language. NeverC makes it even simpler:
 
 - **[DynCode compiler](docs/dyncode-compiler/README.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
 - **Integrated linker** — COFF, ELF, and Mach-O in one binary; no external `ld` or `link.exe`
-- **[Release stripping](docs/release-builds/README.md)** — built-in `--strip` / `-s` removes non-runtime symbols and source-level debug information, including kernel-aware `.ko` structural symbol renaming (not a hash or encryption)
+- **[Release stripping](docs/release-builds.md)** — built-in `--strip` / `-s` removes non-runtime symbols and source-level debug information, including kernel-aware `.ko` structural symbol renaming (not a hash or encryption)
 - **Cross-compilation** — build Windows PE, Linux ELF, macOS Mach-O, and Android ELF from any host with bundled platform SDKs
-- **[Built-in runtimes](docs/builtins/README.md)** — LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string/README.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override, on by default outside kernel and freestanding targets), [`xorstr`](docs/builtins/xorstr/README.md) (per-instance compile-time encryption with mandatory late sealing and per-call native expansion), and [`strhash`](docs/builtins/strhash/README.md) (compile-time string hashing with matching runtime)
+- **[Built-in runtimes](docs/builtins/README.md)** — LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins/mimalloc.md) (transparent high-performance allocator override, on by default outside kernel and freestanding targets), [`xorstr`](docs/builtins/xorstr.md) (per-instance compile-time encryption with mandatory late sealing and per-call native expansion), and [`strhash`](docs/builtins/strhash.md) (compile-time string hashing with matching runtime)
 - **[Plugin API](docs/plugin-api/README.md)** — pure C ABI for out-of-tree plugins; single-header SDK with zero LLVM/CRT dependencies, spanning driver, preprocessor, AST, IR, MIR, MC, object, link, LTO, and dyncode phases
-- **[`.nc` extension](docs/nc-extension/README.md)** — use `.nc` as file extension to auto-enable all NeverC features (`string`, Rust-style integer types) without extra flags
+- **[`.nc` extension](docs/nc-extension.md)** — use `.nc` as file extension to auto-enable all NeverC features (`string`, Rust-style integer types) without extra flags
 - **Lean LLVM build** — only x86_64 and AArch64 backends; C++/ObjC/OpenMP paths stripped
 
 ## Quick Example
@@ -79,7 +79,7 @@ int main(void) {
 }
 ```
 
-> **Note:** The built-in **`string`** type requires **`-fbuiltin-string`** for `.c` files. It is enabled automatically for [**`.nc` files**](docs/nc-extension/README.md) and in **`-fdyncode`** mode.
+> **Note:** The built-in **`string`** type requires **`-fbuiltin-string`** for `.c` files. It is enabled automatically for [**`.nc` files**](docs/nc-extension.md) and in **`-fdyncode`** mode.
 
 ```bash
 # macOS arm64 / x86_64
@@ -102,7 +102,7 @@ neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
 neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 ```
 
-See the **[documentation index](docs/README.md)** for detailed design notes, platform matrix, CLI reference, and examples. For complete buildable samples, see the **[examples](docs/examples/README.md)** directory.
+See the **[documentation index](docs/README.md)** for detailed design notes, platform matrix, CLI reference, and examples. For complete buildable samples, see the **[examples](docs/examples.md)** directory.
 
 ## Installation
 
@@ -150,7 +150,7 @@ neverc run hello.c -O1 -- program-arg
 
 Cross-compilation flags may compile but the temporary binary is always executed
 on the host. For argument rules, edge cases, and examples, see
-**[`neverc run` →](docs/run/README.md)**.
+**[`neverc run` →](docs/run.md)**.
 
 **Windows x64/arm64** packages are on [GitHub Releases](https://github.com/NeverSight/NeverC/releases) for manual download. The macOS arm64 binary is Apple Developer ID signed and notarized.
 
@@ -186,11 +186,11 @@ checksum failure leaves the current installation untouched, and commit
 failures are rolled back. If a runtime release is bad, run `neverc update`
 with an earlier tag to roll the compiler and installed runtimes back together.
 
-Full command reference: [`neverc runtime` →](docs/runtime/README.md) · [`neverc update` →](docs/update/README.md) · [`neverc build` / `make` →](docs/build/README.md).
+Full command reference: [`neverc runtime` →](docs/runtime.md) · [`neverc update` →](docs/update.md) · [`neverc build` / `make` →](docs/build.md).
 
 ## Building from Source
 
-See **[Local Development](docs/local-dev/README.md)** for build requirements, build commands, cross-compiling to Windows, PATH setup, and switching between a release install and an in-tree build.
+See **[Local Development](docs/local-dev.md)** for build requirements, build commands, cross-compiling to Windows, PATH setup, and switching between a release install and an in-tree build.
 
 ## Contributing
 
@@ -223,5 +223,5 @@ and attribution notices. Separately, we ask that anyone using NeverC as a
 reference cite the project and original source; this is a project citation
 request, not an additional license condition.
 
-See [notices](NOTICE), the [attribution guide](docs/attribution/README.md),
+See [notices](NOTICE), the [attribution guide](docs/attribution.md),
 and the [machine-readable citation](CITATION.cff).

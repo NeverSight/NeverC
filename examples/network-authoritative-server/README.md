@@ -1,6 +1,6 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC Examples](../../docs/examples/README.md)
+[← NeverC Examples](../../docs/examples.md)
 
 # Authoritative Game Server
 
@@ -25,7 +25,7 @@ neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 
 The Makefile persists `TARGET` and `PROFILE`, so later `neverc make` keeps
 the same artifact selection. Release uses NeverC's integrated `--strip`.
-See [Release builds](../../docs/release-builds/README.md).
+See [Release builds](../../docs/release-builds.md).
 
 
 Run with a P-256 TLS certificate and key for the QUIC endpoint:

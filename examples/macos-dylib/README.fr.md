@@ -1,6 +1,6 @@
 **Langues** : [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Exemples NeverC](../../docs/examples/README.fr.md)
+[← Exemples NeverC](../../docs/fr/examples.md)
 
 # Exemple de bibliothèque dynamique macOS
 
@@ -21,7 +21,7 @@ Le Makefile mémorise `PROFILE`, donc les `neverc make` suivants gardent
 le même choix debug/release. La version release utilise `--strip` intégré
 à NeverC : métadonnées de débogage et noms de symboles statiques inutiles
 sont retirés, les noms ABI dynamiques/chargeur nécessaires restent.
-Voir [Builds de publication](../../docs/release-builds/README.fr.md).
+Voir [Builds de publication](../../docs/fr/release-builds.md).
 
 
 Compilation pour Intel :

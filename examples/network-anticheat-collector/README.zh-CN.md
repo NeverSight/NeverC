@@ -1,6 +1,6 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+[← NeverC 示例](../../docs/zh-CN/examples.md)
 
 # mTLS 反作弊遥测收集器
 
@@ -31,7 +31,7 @@ neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 
 Makefile 会持久化 `TARGET` 和 `PROFILE`，之后的 `neverc make` 会保持同一产物
 选择。发布构建使用 NeverC 内置 `--strip`。
-参见 [发布构建](../../docs/release-builds/README.zh-CN.md)。
+参见 [发布构建](../../docs/zh-CN/release-builds.md)。
 
 
 运行时需提供服务器证书、服务器密钥、受信任的客户端 CA、共享的 32 字节

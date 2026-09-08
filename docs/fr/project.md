@@ -1,0 +1,215 @@
+**Langues**: [English](../../README.md) | [简体中文](../zh-CN/project.md) | [繁體中文](../zh-TW/project.md) | [日本語](../ja/project.md) | [한국어](../ko/project.md) | [Français](project.md) | [Deutsch](../de/project.md) | [Español](../es/project.md) | [Italiano](../it/project.md) | [Русский](../ru/project.md) | [العربية](../ar/project.md)
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/neverc-logo-dark.svg">
+  <img src="../assets/neverc-logo-light.svg" width="72" alt="NeverC">
+</picture>
+
+# NeverC
+
+**Le compilateur C23 compatible IA pour la recherche en sécurité, construit sur LLVM**
+
+Éditeur de liens intégré · Pipeline dyncode · Runtimes intégrés (`string` · `mimalloc` · `xorstr` · `strhash`)
+
+[![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
+[![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#fonctionnalités)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
+[![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#fonctionnalités)
+
+[Documentation](README.md) · [Guide dyncode](dyncode-compiler/README.md) · [Runtimes intégrés](builtins/README.md) · [API Plugin](plugin-api/README.md) · [Feuille de route](roadmap.md)
+
+</div>
+
+---
+
+> **Note :** GitHub affiche toujours `README.md` (anglais) en page d'accueil du dépôt (pas de détection automatique). Utilisez les liens de langue ci-dessus ; dans la [documentation](README.md) et le [guide dyncode](dyncode-compiler/README.md), gardez la même locale via la barre de langue et le fil d'Ariane.
+
+## Vue d'ensemble
+
+NeverC compile du C standard en binaires hébergés, exécutables freestanding et dyncode indépendant de la position — le tout depuis une seule chaîne d'outils. Cible **x86_64** et **AArch64** (petit-boutien uniquement). Les futures versions ajouteront **EVM** (contrats intelligents Ethereum) et **Solana eBPF** (programmes on-chain) comme cibles de compilation.
+
+## Pourquoi NeverC ?
+
+C est déjà le langage système le plus simple. NeverC le rend encore plus simple :
+
+- **C23 pur, rien de plus** — Pas de templates, pas de RAII, pas de surcharge d'opérateurs, pas de flux de contrôle caché. Ce que vous lisez est ce qui s'exécute.
+- **`string` intégré** — Type chaîne à sémantique de valeur avec `+`, `==`, `.starts_with()` et libération automatique — sans C++.
+- **Pas d'exceptions** — La gestion d'erreurs reste explicite. Pas de déroulement de pile, pas de surprises de performance.
+- **Binaire unique** — Compilateur + éditeur de liens + runtimes dans un seul exécutable. Zéro dépendance externe.
+- **Compatible LLM** — Grammaire minimale et sémantique déterministe : le code NeverC généré par IA compile correctement plus souvent que les alternatives C++.
+- **Véritable compilation croisée** — Compilez Windows PE, Linux ELF, macOS Mach-O, Android ELF et du dyncode depuis macOS ou Linux — pas de VM, pas de dual boot, pas de SDK à chercher. Les SDK de plateforme sont intégrés au compilateur.
+- **Extensible sans friction** — Un seul en-tête C, 130 phases de compilation nommées, et vous avez un [plugin compilateur](plugin-api/README.md) capable d'intervenir à toute étape — de l'optimisation IR à la sortie binaire finale — sans connaître LLVM.
+- **Recherche en sécurité intégrée** — Compilation dyncode, chiffrement de chaînes à la compilation et génération PE multiplateforme sont nativement intégrés au compilateur — pas des ajouts bricolés avec des scripts externes.
+
+## Fonctionnalités
+
+- **[Compilateur dyncode](dyncode-compiler/README.md)** — pipeline IR/MIR multi-étapes, extraction multiplateforme, résolution d'imports/syscalls, mode noyau, audit d'octets interdits, architecture de plugins
+- **Éditeur de liens intégré** — COFF, ELF et Mach-O dans un seul binaire ; pas de `ld` ou `link.exe` externe
+- **[Dépouillement des versions](release-builds.md)** — `--strip` / `-s` intégré retire des images ELF, Mach-O et PE/COFF finales les symboles non requis à l'exécution et le débogage source, avec renommage structurel des symboles `.ko` adapté au noyau (ni hash ni encryption)
+- **Compilation croisée** — Windows PE, Linux ELF, macOS Mach-O et Android ELF depuis n'importe quel hôte avec SDK de plateforme intégrés
+- **[Runtimes intégrés](builtins/README.md)** — runtimes LLVM bitcode intégrés au compilateur : [`string`](builtins/string.md) (chaîne à sémantique de valeur, gestion mémoire automatique), [`mimalloc`](builtins/mimalloc.md) (remplacement transparent d'allocateur haute performance, activé par défaut hors cibles noyau et freestanding), [`xorstr`](builtins/xorstr.md) (chiffrement par instance, scellement tardif obligatoire et développement natif par site d'appel) et [`strhash`](builtins/strhash.md) (hachage de chaînes à la compilation, même algorithme à l'exécution)
+- **[API Plugin](plugin-api/README.md)** — ABI C pure pour les greffons hors arbre ; SDK à en-tête unique, zéro dépendance LLVM/CRT, couvrant les phases pilote, préprocesseur, AST, IR, MIR, MC, objet, édition de liens, LTO et dyncode
+- **[Extension `.nc`](nc-extension.md)** — utilisez `.nc` pour activer automatiquement toutes les fonctionnalités NeverC (`string`, types entiers style Rust) sans drapeaux supplémentaires
+- **Build LLVM allégé** — backends x86_64 / AArch64 uniquement ; chemins C++/ObjC/OpenMP retirés
+
+## Exemple rapide
+
+```c
+#include <stdio.h>
+
+typedef struct { string user; string pass; } creds;
+
+int main(void) {
+    string msg = "Hello " + "NeverC!";
+    printf("%s\n", msg.c_str());
+
+    // Compile-time encryption — `strings ./bin` cannot find these literals
+    creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+    string paths[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+
+    // Zero-allocation decrypt-and-compare (plaintext never fully in memory)
+    if (login.user == "admin".encrypt() && login.pass == "s3cret".encrypt()) {
+        for (int i = 0; i < 2; i++)
+            if (msg.starts_with(paths[i]))
+                printf("route matched: %s\n", paths[i].c_str());
+    }
+    return 0;
+}
+```
+
+> **Note :** Le type **`string`** intégré nécessite **`-fbuiltin-string`** pour les fichiers `.c`. Il est activé automatiquement pour les [**fichiers `.nc`**](nc-extension.md) et en mode **`-fdyncode`**.
+
+```bash
+# macOS arm64 / x86_64
+neverc -fdyncode -target arm64-apple-macos hello.c -o hello.bin
+neverc -fdyncode -target x86_64-apple-macos hello.c -o hello.bin
+
+# iOS arm64
+neverc -fdyncode -target arm64-apple-ios hello.c -o hello.bin
+
+# Linux x86_64 / arm64
+neverc -fdyncode -target x86_64-linux-gnu hello.c -o hello.bin
+neverc -fdyncode -target aarch64-linux-gnu hello.c -o hello.bin
+
+# Android arm64 / x86_64
+neverc -fdyncode -target aarch64-linux-android hello.c -o hello.bin
+neverc -fdyncode -target x86_64-linux-android hello.c -o hello.bin
+
+# Windows x86_64 / arm64
+neverc -fdyncode -target x86_64-pc-windows-msvc hello.c -o hello.bin
+neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
+```
+
+Voir l'**[index de documentation](README.md)** pour la conception détaillée, la matrice des plateformes, la référence CLI et les exemples. Exemples compilables complets : **[examples](examples.md)**.
+
+## Installation
+
+Sur **Linux x64/arm64** et **macOS arm64**, installez la dernière release en une commande :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+L’installateur télécharge l’archive release pour votre plateforme, la vérifie via `SHA256SUMS`, installe dans `~/.neverc` et ajoute `~/.neverc/bin` en tête du `PATH` du shell.
+
+Pour épingler une version précise :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Vérifier l’installation :
+
+```bash
+neverc --version
+neverc hello.c -o hello -fbuiltin-string
+```
+
+### `neverc run`
+
+Compile en un exécutable temporaire, exécute-le sur l'**hôte local**, puis le supprime — proche de `go run`. Pour conserver le binaire, utilisez `neverc ... -o out`.
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| Sujet | Comportement |
+|-------|--------------|
+| Séparation par défaut | Options compilateur avant le premier `.c`/`.nc` ; sources consécutives compilées ensemble ; le reste va à `main` |
+| `--` explicite | Avant `--` pour le compilateur, après pour le programme (flags de link après les sources) |
+| Répertoire de travail | S'exécute dans le répertoire courant — chemins relatifs comme un binaire normal |
+| Environnement & E/S | Hérite de l'environnement ; stdin/stdout/stderr connectés au processus temporaire |
+| Code de sortie | Retourne le code du programme ; en cas d'échec de compilation, le code du compilateur sans lancer le programme |
+| Artefact | Stocké dans `neverc-run-*` puis supprimé |
+
+Les flags de cross-compilation peuvent compiler, mais le binaire temporaire s'exécute toujours sur l'hôte. Règles, exemples et limites : **[`neverc run` →](run.md)**.
+
+Les paquets **Windows x64/arm64** sont sur [GitHub Releases](https://github.com/NeverSight/NeverC/releases) pour installation manuelle. Le binaire macOS arm64 est signé Apple Developer ID et notarisé.
+
+Variables d’environnement optionnelles :
+
+| Variable | Rôle |
+|----------|------|
+| `NEVERC_INSTALL_DIR` | Préfixe d’installation (défaut : `~/.neverc`) |
+| `NEVERC_VERSION` | Tag release, ex. `v3389.1.2` (défaut : latest) |
+| `NEVERC_NO_MODIFY_PATH=1` | Ne pas modifier le profil shell |
+
+Les sysroots de compilation croisée (Windows SDK, sysroot Linux, etc.) s’installent à la demande une fois le compilateur sur le `PATH` :
+
+```bash
+neverc runtime install all
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+Une installation release peut mettre à jour le compilateur et les runtimes de compilation croisée déjà installés comme une seule unité versionnée :
+
+```bash
+neverc update                 # dernière release complète
+neverc update v3389.1.2       # version exacte, y compris un retour en arrière
+```
+
+`neverc upgrade` est un alias. NeverC résout un seul tag release concret et ne réinstalle que
+les runtimes déjà présents, tous épinglés sur la version cible du compilateur. Avant toute
+modification des fichiers actifs, les archives requises sont téléchargées, vérifiées par SHA256,
+extraites et validées. Un échec de préparation ou de vérification laisse l’installation intacte,
+et un échec de commit déclenche un retour automatique. Si une release de runtime pose problème,
+`neverc update <version antérieure>` ramène ensemble le compilateur et tous les runtimes installés.
+
+Référence complète : [`neverc runtime` →](runtime.md) · [`neverc update` →](update.md) · [`neverc build` / `make` →](build.md).
+
+## Compilation depuis les sources
+
+Prérequis, commandes de compilation, compilation croisée Windows, configuration PATH et bascule entre release installée et build in-tree — voir **[Développement local](local-dev.md)**.
+
+## Contribution
+
+NeverC est **volontairement limité au C** (C23). Les frontends C++, Objective-C, CUDA et
+langages similaires sont hors périmètre ; les pull requests qui les ajoutent seront
+fermées. Pour une chaîne LLVM orientée C++, voir plutôt
+[llvm-msvc](https://github.com/backengineering/llvm-msvc).
+
+Pour les changements importants de langage, d'ABI ou de runtime, ouvrez d'abord une
+issue pour discuter du périmètre avant d'envoyer une pull request.
+
+La branche de développement par défaut est **`dev`**. Clonez le dépôt, basculez sur `dev` avant de travailler, et ouvrez vos pull requests vers `dev`.
+
+```bash
+git clone https://github.com/NeverSight/NeverC.git
+cd NeverC
+git checkout dev
+```
+
+## Licence
+
+[AGPL-3.0](../../LICENSE)
+
+Les composants LLVM conservent la licence [Apache-2.0 WITH LLVM-exception](../../llvm/LICENSE.TXT).
+
+Lors de la copie ou de l’adaptation de code, y compris avec l’aide d’une IA ou d’un LLM ou dans le cadre d’une réutilisation liée à LLVM, respectez la licence applicable et conservez les mentions de droits d’auteur, de licence et d’attribution requises. Par ailleurs, nous demandons aux personnes utilisant NeverC comme référence de citer le projet et la source d’origine ; cette demande du projet ne constitue pas une condition de licence supplémentaire.
+
+Consultez les [mentions](../../NOTICE), le [guide d’attribution](attribution.md) et la [référence bibliographique lisible par machine](../../CITATION.cff).

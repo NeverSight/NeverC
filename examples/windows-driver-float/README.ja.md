@@ -1,6 +1,6 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC サンプル](../../docs/examples/README.ja.md)
+[← NeverC サンプル](../../docs/ja/examples.md)
 
 # 浮動小数点演算対応 Windows カーネルドライバー
 
@@ -20,7 +20,7 @@ Makefile は `ARCH`、`PROFILE`、`TESTSIGN` を保持します。リリース�
 `neverc make release`（`-O2 --strip`。PE の import/export とローダー
 メタデータは残ります）。テスト署名が必要なら
 `neverc make release TESTSIGN=1` で、同一リンク内で strip の後に署名します。
-詳細は [リリースビルド](../../docs/release-builds/README.ja.md)。
+詳細は [リリースビルド](../../docs/ja/release-builds.md)。
 
 これで `FloatDriver-x64.sys` が生成されます。ARM64 向け、または両方をビルドするには:
 

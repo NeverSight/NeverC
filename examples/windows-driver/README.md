@@ -1,6 +1,6 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← NeverC Examples](../../docs/examples/README.md)
+[← NeverC Examples](../../docs/examples.md)
 
 # Windows Kernel Driver Example
 
@@ -25,7 +25,7 @@ The Makefile persists `ARCH`, `PROFILE`, and `TESTSIGN`. Use
 `neverc make release` for `-O2 --strip` (PE imports/exports and loader
 metadata remain). Prefer `neverc make release TESTSIGN=1` so strip runs
 before the Authenticode test signature in the same link.
-See [Release builds](../../docs/release-builds/README.md).
+See [Release builds](../../docs/release-builds.md).
 
 That builds `ExampleDriver-x64.sys`. To build for ARM64 instead, or for both:
 

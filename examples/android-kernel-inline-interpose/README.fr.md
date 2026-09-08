@@ -1,6 +1,6 @@
 **Langues** : [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
-[← Exemples NeverC](../../docs/examples/README.fr.md)
+[← Exemples NeverC](../../docs/fr/examples.md)
 
 # Android Kernel Function Interpose
 
@@ -56,7 +56,7 @@ réservées `sub_`/`loc_`, ni des noms ordinaires volontairement vides.
 
 Pour les noms à conserver exactement, la vue `extern` synthétique d'IDA, les
 limites de sécurité et l'ordre entre finalisation et signature, consultez la
-[politique de publication et de dépouillement](../../docs/release-builds/README.fr.md).
+[politique de publication et de dépouillement](../../docs/fr/release-builds.md).
 
 ## Déploiement et exécution
 

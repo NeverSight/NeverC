@@ -1,4 +1,4 @@
-**Languages**: [English](ast-sema.md) | [简体中文](ast-sema.zh-CN.md) | [繁體中文](ast-sema.zh-TW.md) | [日本語](ast-sema.ja.md) | [한국어](ast-sema.ko.md) | [Français](ast-sema.fr.md) | [Deutsch](ast-sema.de.md) | [Español](ast-sema.es.md) | [Italiano](ast-sema.it.md) | [Русский](ast-sema.ru.md) | [العربية](ast-sema.ar.md)
+**Languages**: [English](ast-sema.md) | [简体中文](../zh-CN/plugin-api/ast-sema.md) | [繁體中文](../zh-TW/plugin-api/ast-sema.md) | [日本語](../ja/plugin-api/ast-sema.md) | [한국어](../ko/plugin-api/ast-sema.md) | [Français](../fr/plugin-api/ast-sema.md) | [Deutsch](../de/plugin-api/ast-sema.md) | [Español](../es/plugin-api/ast-sema.md) | [Italiano](../it/plugin-api/ast-sema.md) | [Русский](../ru/plugin-api/ast-sema.md) | [العربية](../ar/plugin-api/ast-sema.md)
 
 [← NeverC Plugin ABI](README.md)
 

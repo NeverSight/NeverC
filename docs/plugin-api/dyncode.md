@@ -1,4 +1,4 @@
-**Languages**: [English](dyncode.md) | [简体中文](dyncode.zh-CN.md) | [繁體中文](dyncode.zh-TW.md) | [日本語](dyncode.ja.md) | [한국어](dyncode.ko.md) | [Français](dyncode.fr.md) | [Deutsch](dyncode.de.md) | [Español](dyncode.es.md) | [Italiano](dyncode.it.md) | [Русский](dyncode.ru.md) | [العربية](dyncode.ar.md)
+**Languages**: [English](dyncode.md) | [简体中文](../zh-CN/plugin-api/dyncode.md) | [繁體中文](../zh-TW/plugin-api/dyncode.md) | [日本語](../ja/plugin-api/dyncode.md) | [한국어](../ko/plugin-api/dyncode.md) | [Français](../fr/plugin-api/dyncode.md) | [Deutsch](../de/plugin-api/dyncode.md) | [Español](../es/plugin-api/dyncode.md) | [Italiano](../it/plugin-api/dyncode.md) | [Русский](../ru/plugin-api/dyncode.md) | [العربية](../ar/plugin-api/dyncode.md)
 
 [← NeverC Plugin ABI](README.md)
 
