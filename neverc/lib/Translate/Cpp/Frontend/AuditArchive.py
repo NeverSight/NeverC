@@ -353,7 +353,7 @@ def standard_shared_symbol(name, demangled=""):
             return bool(re.fullmatch(
                 r"(?:void\s*\*|void)\s+__cdecl operator (?:new|delete)"
                 r"(?:\[\])?\((?:unsigned (?:int|__int64)|void \*)"
-                r"(?:,(?:unsigned (?:int|__int64)|enum std::align_val_t|"
+                r"(?:, ?(?:unsigned (?:int|__int64)|enum std::align_val_t|"
                 r"struct std::nothrow_t const &))*\)", demangled))
         return False
     # ELF's hidden weak COMDAT points at the shared C++ EH personality.

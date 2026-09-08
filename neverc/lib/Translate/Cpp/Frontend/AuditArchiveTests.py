@@ -710,6 +710,96 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
             with self.subTest(name=name):
                 self.assertFalse(AuditArchive.standard_shared_symbol(name))
 
+    def test_microsoft_global_allocation_ci_references_allow_exact_comma_spacing(self):
+        # Exact raw/decoded pairs from a551 MSVC ARM64 diagnostics at lines
+        # 20156, 20158, 20159, 20160 and 20191. All private rows were U; host
+        # evidence was only the mimalloc.lib COFF definition index. The T rows
+        # below are a synthetic definition model, not observed host object kinds.
+        declarations = (
+            ("??2@YAPEAX_KAEBUnothrow_t@std@@@Z",
+             "void * __cdecl operator new(unsigned __int64, "
+             "struct std::nothrow_t const &)"),
+            ("??2@YAPEAX_KW4align_val_t@std@@AEBUnothrow_t@1@@Z",
+             "void * __cdecl operator new(unsigned __int64, enum std::align_val_t, "
+             "struct std::nothrow_t const &)"),
+            ("??3@YAXPEAX_K@Z",
+             "void __cdecl operator delete(void *, unsigned __int64)"),
+            ("??3@YAXPEAX_KW4align_val_t@std@@@Z",
+             "void __cdecl operator delete(void *, unsigned __int64, "
+             "enum std::align_val_t)"),
+            ("??_V@YAXPEAX_K@Z",
+             "void __cdecl operator delete[](void *, unsigned __int64)"))
+        for raw, spaced in declarations:
+            for decoded in (spaced, spaced.replace(", ", ",")):
+                with self.subTest(raw=raw, decoded=decoded):
+                    self.assertTrue(AuditArchive.standard_shared_symbol(raw, decoded))
+                    for host_format in ("nm", "coff-index"):
+                        with self.subTest(host_format=host_format):
+                            self.audit_inventory([(raw, "U", decoded)],
+                                                 [(raw, "T", decoded)], host_format)
+
+    def test_microsoft_allocation_spacing_does_not_expand_the_symbol_policy(self):
+        declarations = (
+            # Placement's second void* remains outside the existing policy.
+            ("??2@YAPEAX_KPEAX@Z",
+             "void * __cdecl operator new(unsigned __int64, void *)"),
+            ("??_U@YAPEAX_KPEAX@Z",
+             "void * __cdecl operator new[](unsigned __int64, void *)"),
+            ("??2Host@@SAPEAX_KAEBUnothrow_t@std@@@Z",
+             "public: static void * __cdecl Host::operator new(unsigned __int64, "
+             "struct std::nothrow_t const &)"),
+            ("?host_function@@YAPEAX_KAEBUnothrow_t@std@@@Z",
+             "void * __cdecl host_function(unsigned __int64, "
+             "struct std::nothrow_t const &)"),
+            ("??2@YAPEAX_KAEBUnothrow_t@Host@@@Z",
+             "void * __cdecl operator new(unsigned __int64, "
+             "struct Host::nothrow_t const &)"),
+            ("??2@YAPEAX_KW4align_val_t@Host@@@Z",
+             "void * __cdecl operator new(unsigned __int64, enum Host::align_val_t)"),
+            # These actual a551 helper names are not global operator names.
+            ("?__empty_global_delete@@YAXPEAX@Z",
+             "void __cdecl __empty_global_delete(void *)"),
+            ("?__empty_global_delete@@YAXPEAXW4align_val_t@std@@@Z",
+             "void __cdecl __empty_global_delete(void *, enum std::align_val_t)"),
+            ("?__empty_global_delete@@YAXPEAX_K@Z",
+             "void __cdecl __empty_global_delete(void *, unsigned __int64)"),
+            ("?__empty_global_delete@@YAXPEAX_KW4align_val_t@std@@@Z",
+             "void __cdecl __empty_global_delete(void *, unsigned __int64, "
+             "enum std::align_val_t)"),
+            ("?__global_delete@@YAXPEAX_K@Z",
+             "void __cdecl __global_delete(void *, unsigned __int64)"))
+        for raw, spaced in declarations:
+            for decoded in (spaced, spaced.replace(", ", ",")):
+                with self.subTest(raw=raw, decoded=decoded):
+                    self.assertFalse(AuditArchive.standard_shared_symbol(raw, decoded))
+                    for host_format in ("nm", "coff-index"):
+                        with self.subTest(host_format=host_format):
+                            with self.assertRaisesRegex(ValueError, "private/host symbol intersection"):
+                                self.audit_inventory([(raw, "U", decoded)],
+                                                     [(raw, "T", decoded)], host_format)
+
+    def test_microsoft_allocation_rejects_other_whitespace_and_trailing_text(self):
+        raw = "??2@YAPEAX_KW4align_val_t@std@@AEBUnothrow_t@1@@Z"
+        decoded = ("void * __cdecl operator new(unsigned __int64, "
+                   "enum std::align_val_t, struct std::nothrow_t const &)")
+        parts = decoded.split(", ")
+        for separator in (",  ", ",\t", ",\r", ",\n", ",\0"):
+            for position in (0, 1):
+                malformed = (parts[0] + (separator if position == 0 else ", ") +
+                             parts[1] + (separator if position == 1 else ", ") + parts[2])
+                with self.subTest(separator=separator, position=position):
+                    self.assertFalse(AuditArchive.standard_shared_symbol(raw, malformed))
+                    # CR/LF are line framing in the inventory reader, so their
+                    # rejection above deliberately tests the policy directly.
+                    if separator == ",  ":
+                        for host_format in ("nm", "coff-index"):
+                            with self.assertRaisesRegex(ValueError, "private/host symbol intersection"):
+                                self.audit_inventory([(raw, "U", malformed)],
+                                                     [(raw, "T", malformed)], host_format)
+        for suffix in (" ", " const", " junk", ")", "\n", "\0"):
+            with self.subTest(suffix=suffix):
+                self.assertFalse(AuditArchive.standard_shared_symbol(raw, decoded + suffix))
+
     def test_microsoft_std_in_return_argument_or_conversion_is_not_scope(self):
         for declaration in (
                 "class std::string __cdecl host_function(void)",
