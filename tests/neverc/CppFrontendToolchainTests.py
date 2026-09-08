@@ -598,7 +598,10 @@ extern "C" const GUID *neverc_cpp_both_reference() { return &CLSID_CUrlHistoryBo
                     self.clang, "--target=" + self.target, "-std=c++17", "-O2",
                     "-fms-extensions", "-fmerge-all-constants", "-fno-exceptions",
                     "-fno-rtti", "-fms-runtime-lib=static",
+                    # Match clang-cl /showIncludes: SDK headers are system headers,
+                    # so their trace also requires -sys-header-deps.
                     "-Xclang", "--show-includes",
+                    "-Xclang", "-sys-header-deps",
                     *(["-include", header] if isolated else []),
                     "-c", source, "-o", obj,
                 ]
