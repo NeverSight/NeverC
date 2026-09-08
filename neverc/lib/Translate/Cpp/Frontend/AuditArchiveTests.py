@@ -20,6 +20,9 @@ class ArchiveAuditTests(unittest.TestCase):
     # byte grammar. Real compiler+nm coverage lives in the CI toolchain test.
     llvm_literal = ('??_C@_06BCDEFGHI@llvm?3?3?$AA@', 'R', '"llvm::"')
     clang_literal = ('??_C@_07CDEFGHIJ@clang?3?3?$AA@', 'R', '"clang::"')
+    # Actual fe866 MSVC x64/ARM64 private R row and complete nm decoding.
+    # Unlike the controlled payload spellings above, this has no encoded bytes.
+    msvc_empty_literal = ('??_C@_00CNPNBAHC@@', 'R', '""...')
     # Complete LLVM 20 demangling from the 984608 Windows Clang x64 audit.
     # Nested local declarations retain their own return and parameter types.
     microsoft_gcd_lambda = (
@@ -512,6 +515,83 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
             with self.subTest(raw=raw, decoded=decoded):
                 self.assertFalse(AuditArchive.microsoft_string_literal(raw, decoded))
                 self.assertFalse(AuditArchive.standard_shared_symbol(raw, decoded))
+
+    def test_msvc_empty_literal_actual_pair_is_accepted(self):
+        raw, _, decoded = self.msvc_empty_literal
+        self.assertTrue(AuditArchive.microsoft_string_literal(raw, decoded))
+        self.assertTrue(AuditArchive.standard_shared_symbol(raw, decoded))
+        for host_format in ("nm", "coff-index"):
+            with self.subTest(host_format=host_format):
+                # The private R is observed; the matching host R is a controlled
+                # model. COFF index mode makes no claim about the host kind.
+                self.audit_inventory([self.msvc_empty_literal],
+                                     [self.msvc_empty_literal], host_format)
+
+    def test_msvc_empty_literal_requires_the_exact_zero_payload_raw_name(self):
+        raw, _, decoded = self.msvc_empty_literal
+        # Keep all mutations payload-free: an ordinary literal with a legal
+        # encoded payload must still use the existing byte+ grammar.
+        cases = (
+            ("different-crc", "??_C@_00CNPNBAHD@@", decoded),
+            ("different-length", "??_C@_01CNPNBAHC@@", decoded),
+            ("wide-kind", "??_C@_10CNPNBAHC@@", decoded),
+            ("raw-prefix", "prefix" + raw, decoded),
+            ("raw-suffix", raw + "suffix", decoded),
+            ("missing-terminator", raw[:-1], decoded),
+            ("extra-terminator", raw + "@", decoded),
+            ("extra-crc-terminator", "??_C@_00CNPNBAHC@@@@", decoded),
+            ("host-raw-with-literal-decoding", "?call@Host@@YAXXZ", decoded),
+            ("host-declaration-containing-literal", "?call@Host@@YAXXZ",
+             'void __cdecl Host::call<""...>(void)'))
+        for case, mutated_raw, mutated_decoded in cases:
+            with self.subTest(case=case):
+                self.assertFalse(AuditArchive.microsoft_string_literal(
+                    mutated_raw, mutated_decoded))
+                self.assertFalse(AuditArchive.standard_shared_symbol(
+                    mutated_raw, mutated_decoded))
+                for host_format in ("nm", "coff-index"):
+                    with self.subTest(host_format=host_format):
+                        row = (mutated_raw, "R", mutated_decoded)
+                        with self.assertRaisesRegex(
+                                ValueError, "private/host symbol intersection") as failure:
+                            self.audit_inventory([row], [row], host_format)
+                        self.assertIn("intersection: " + mutated_raw +
+                                      "; private_demangled=", str(failure.exception))
+
+    def test_msvc_empty_literal_requires_the_exact_decoding(self):
+        raw, _, _ = self.msvc_empty_literal
+        # Empty output, newline and NUL cannot represent one nm output row;
+        # exercise those directly instead of turning a framing error into
+        # supposed evidence that the intersection policy rejected the token.
+        cases = (
+            ("empty-output", "", False),
+            ("missing-ellipsis", '""', True),
+            ("wide-prefix", 'L""...', True),
+            ("quoted-space", '" "', True),
+            ("quoted-space-with-ellipsis", '" "...', True),
+            ("escaped-nul", '"\\0"...', True),
+            ("escaped-hex-nul", '"\\x00"...', True),
+            ("actual-nul", '"\x00"...', False),
+            ("newline", '"\n"...', False),
+            ("carriage-return", '"\r"...', False),
+            ("tab", '"\t"...', True),
+            ("control-127", '"\x7f"...', True),
+            ("leading-space", ' ""...', True),
+            ("trailing-space", '""... ', True),
+            ("suffix", '""...suffix', True))
+        for case, decoded, line_safe in cases:
+            with self.subTest(case=case):
+                self.assertFalse(AuditArchive.microsoft_string_literal(raw, decoded))
+                self.assertFalse(AuditArchive.standard_shared_symbol(raw, decoded))
+                if line_safe:
+                    for host_format in ("nm", "coff-index"):
+                        with self.subTest(host_format=host_format):
+                            row = (raw, "R", decoded)
+                            with self.assertRaisesRegex(
+                                    ValueError, "private/host symbol intersection") as failure:
+                                self.audit_inventory([row], [row], host_format)
+                            self.assertIn("intersection: " + raw +
+                                          "; private_demangled=", str(failure.exception))
 
     def test_private_namespace_text_inside_literal_is_not_an_abi_entity(self):
         self.audit_inventory([self.llvm_literal, self.clang_literal])

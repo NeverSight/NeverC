@@ -51,7 +51,8 @@ class CppFrontendToolchainTests(unittest.TestCase):
         return result.stdout
 
     def archive(self, directory, name, source, *, msvc=False, assembly=None,
-                extra_sources=(), prefix_header=None, static_runtime=False):
+                extra_sources=(), prefix_header=None, static_runtime=False,
+                msvc_string_pooling=False):
         directory.mkdir(parents=True, exist_ok=True)
         library = directory / (name + ".lib")
         objects = []
@@ -65,6 +66,7 @@ class CppFrontendToolchainTests(unittest.TestCase):
                 runtime = ["/MT"] if static_runtime else []
                 self.require_success([self.msvc, "/nologo", "/std:c++17", "/c", "/Od", "/GL-",
                                       "/GR-", "/EHsc", *runtime, *prefix,
+                                      *(["/GF"] if msvc_string_pooling else []),
                                       "/Fo" + str(obj), cpp])
             else:
                 prefix = ["-include", prefix_header] if prefix_header else []
@@ -1117,6 +1119,73 @@ extern "C" void destroy_probe(neverc_cpp_llvm::Probe *p) { delete p; }
         for host_format in ("nm", "coff-index"):
             with self.subTest(host_format=host_format):
                 self.check_audit(private, host, host_format)
+
+    def test_msvc_empty_literal_requires_exact_shared_identity_and_runtime_value(self):
+        # /GF must emit the observed zero-payload spelling, not merely some
+        # shared nonempty literal that happens to pass the existing grammar.
+        raw, decoded = "??_C@_00CNPNBAHC@@", '""...'
+        private = self.archive(
+            self.root / "private", "private",
+            ENTRY + 'extern "C" const char *neverc_cpp_empty() { return ""; }\n',
+            msvc=True, static_runtime=True, msvc_string_pooling=True)
+        host = self.root / "host"
+        host_archive = self.archive(
+            host, "host", 'extern "C" const char *host_empty() { return ""; }\n',
+            msvc=True, static_runtime=True, msvc_string_pooling=True)
+        for archive in (private, host_archive):
+            declarations = self.defined_declarations(archive)
+            self.assertIn(raw, declarations,
+                          f"MSVC /GF must emit the exact empty-string definition: "
+                          f"{declarations!r}")
+            self.assertEqual(declarations[raw], decoded)
+            output = self.require_success([
+                self.nm, "--extern-only", "--format=posix", archive,
+            ])
+            records = [line for line in output.splitlines()
+                       if line.split() and line.split()[0] == raw]
+            self.assertTrue(records, output)
+            self.assertEqual({line.split()[1] for line in records}, {"R"}, output)
+            print(f"MSVC empty literal provenance: archive={str(archive)!r} "
+                  f"symbol={raw!r} decoded={declarations[raw]!r} "
+                  f"nm_records={records!r}", flush=True)
+        for host_format in ("nm", "coff-index"):
+            with self.subTest(host_format=host_format):
+                checked = self.root / (host_format + ".lib")
+                shutil.copyfile(private, checked)
+                self.check_audit(checked, host, host_format)
+
+        # Keep literals out of the harness. Both archive members must be
+        # extracted, and /OPT:NOICF prevents function folding from supplying
+        # an alternative reason for the two returned addresses to be equal.
+        source = self.root / "empty-probe.cpp"
+        source.write_text('''
+extern "C" const char *neverc_cpp_empty();
+extern "C" const char *host_empty();
+int main() {
+  const char *private_value = neverc_cpp_empty();
+  const char *host_value = host_empty();
+  if (!private_value || !host_value) return 1;
+  if (*private_value != 0 || *host_value != 0) return 2;
+  if (private_value != host_value) return 3;
+  return 0;
+}
+''', encoding="utf-8")
+        for order, archives in (("private-first", (private, host_archive)),
+                                ("host-first", (host_archive, private))):
+            with self.subTest(link_order=order):
+                executable = self.root / (order + ".exe")
+                command = [
+                    self.msvc, "/nologo", "/std:c++17", "/Od", "/GL-",
+                    "/MT", "/EHsc", source, *archives,
+                    "/Fe" + str(executable),
+                    "/Fo" + str(self.root / (order + ".obj")), "/link", "/OPT:NOICF",
+                ]
+                print("MSVC empty literal link: " + subprocess.list2cmdline(
+                    [str(argument) for argument in command]), flush=True)
+                self.require_success(command)
+                self.require_success([executable])
+                print(f"MSVC empty literal runtime PASS: {order}; both nonnull, "
+                      "NUL-valued and coalesced under /OPT:NOICF", flush=True)
 
     def test_actual_private_llvm_entity_is_rejected(self):
         private = self.archive(

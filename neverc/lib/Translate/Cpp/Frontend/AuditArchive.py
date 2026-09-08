@@ -310,6 +310,11 @@ def global_cpp_record_entity(symbol, declaration, record):
 
 
 def microsoft_string_literal(name, demangled):
+    # MSVC's empty narrow string observed in real archives has no encoded
+    # payload. LLVM renders that exact spelling as a truncated empty literal.
+    # Do not extend the general grammar to arbitrary zero-payload spellings.
+    if name == "??_C@_00CNPNBAHC@@":
+        return demangled == '""...'
     # MicrosoftMangle.cpp::mangleStringLiteral encodes the character kind,
     # byte length, CRC and leading bytes in a COMDAT name. Require the entire
     # raw spelling as well as successful literal demangling: a quoted substring
