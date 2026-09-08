@@ -2,6 +2,7 @@
 """Exercise the frontend ABI audit with real, tiny Microsoft COFF archives."""
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -538,6 +539,324 @@ int main() {
                         self.assertEqual(result.returncode, 0,
                                          f"{command!r}\n{result.stdout}\n{result.stderr}")
                 self.require_success([executable])
+
+    def test_sdk_url_history_clsids_and_alias_are_isolated(self):
+        # These definitions come from the runner's shlguid.h, not fixture GUID
+        # initializers. Without INITGUID, its other DEFINE_GUID declarations do
+        # not instantiate unrelated SDK objects. GUID_DEFS_ONLY only avoids the
+        # automation interfaces; both selectany definitions and SID remain live.
+        definition = """
+#ifdef INITGUID
+#error The fixture must not instantiate all SDK GUIDs
+#endif
+#include <guiddef.h>
+#define GUID_DEFS_ONLY
+#include <shlguid.h>
+#ifndef SID_SUrlHistory
+#error The actual SDK must provide the history alias
+#endif
+extern "C" const GUID *SIDE_history_definition() { return &CLSID_CUrlHistory; }
+extern "C" const GUID *SIDE_both_definition() { return &CLSID_CUrlHistoryBoth; }
+extern "C" const GUID *SIDE_sid() { return &SID_SUrlHistory; }
+"""
+        # A separate, declaration-only TU must have U records, so removing an
+        # SDK definition cannot be masked by another selectany header instance.
+        reference = ENTRY + """
+#include <guiddef.h>
+extern "C" const GUID CLSID_CUrlHistory;
+extern "C" const GUID CLSID_CUrlHistoryBoth;
+extern "C" const GUID *neverc_cpp_history_reference() { return &CLSID_CUrlHistory; }
+extern "C" const GUID *neverc_cpp_both_reference() { return &CLSID_CUrlHistoryBoth; }
+"""
+        symbols = ("CLSID_CUrlHistory", "CLSID_CUrlHistoryBoth")
+        header = self.root / "UrlHistoryPrivatePrefix.h"
+        header.write_text("".join(f"#define {name} neverc_cpp_{name}\n"
+                                  for name in symbols), encoding="utf-8")
+        provenance = {}
+
+        def compile_definition(directory, side, msvc, *, isolated=False,
+                               missing=None):
+            directory.mkdir(parents=True, exist_ok=True)
+            source = directory / "sdk-definition.cpp"
+            obj = directory / "sdk-definition.obj"
+            # Keep the actual SDK initializer even in missing-D cases: rename
+            # only the selected definition to a different fixture-private name.
+            # The independent reference object still requests its normal name.
+            omit = (f"#undef {missing}\n"
+                    f"#define {missing} neverc_cpp_fixture_omitted_{missing}\n"
+                    if missing else "")
+            source.write_text(omit + definition.replace("SIDE", side), encoding="utf-8")
+            if msvc:
+                command = [
+                    self.msvc, "/nologo", "/std:c++17", "/c", "/Od", "/GL-",
+                    "/GR-", "/EHsc", "/MT", "/showIncludes",
+                    *(["/FI" + str(header)] if isolated else []),
+                    "/Fo" + str(obj), source,
+                ]
+            else:
+                command = [
+                    self.clang, "--target=" + self.target, "-std=c++17", "-O2",
+                    "-fms-extensions", "-fmerge-all-constants", "-fno-exceptions",
+                    "-fno-rtti", "-fms-runtime-lib=static",
+                    "-Xclang", "--show-includes",
+                    *(["-include", header] if isolated else []),
+                    "-c", source, "-o", obj,
+                ]
+            print("CLSID SDK compile: " + subprocess.list2cmdline(
+                [str(argument) for argument in command]), flush=True)
+            compile_environment = os.environ.copy()
+            if msvc:
+                compile_environment["VSLANG"] = "1033"
+            result = subprocess.run(
+                [str(argument) for argument in command], cwd=self.root,
+                env=compile_environment, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120, check=False,
+            )
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output)
+            # Both traces belong to this actual object compilation. MSVC's
+            # language is fixed above; Clang's MS-style trace has the same
+            # literal prefix and leaves the full path unescaped.
+            consumed = {name: set() for name in ("guiddef.h", "shlguid.h")}
+            for line in output.splitlines():
+                prefix = "Note: including file:"
+                if not line.startswith(prefix):
+                    continue
+                path = Path(line[len(prefix):].lstrip(" "))
+                if path.name.lower() not in consumed:
+                    continue
+                self.assertTrue(path.is_absolute(), str(path))
+                path = path.resolve(strict=True)
+                self.assertTrue(path.is_file(), str(path))
+                consumed[path.name.lower()].add(path)
+            for name, paths in consumed.items():
+                self.assertEqual(len(paths), 1,
+                                 f"Actual compilation must trace one {name}: {output}")
+                path = next(iter(paths))
+                evidence = (str(path), hashlib.sha256(path.read_bytes()).hexdigest())
+                print(f"CLSID SDK provenance: compiler={'msvc' if msvc else 'clang'} "
+                      f"object={obj} header={name} path={evidence[0]} "
+                      f"sha256={evidence[1]}", flush=True)
+                if name in provenance:
+                    self.assertEqual(evidence, provenance[name],
+                                     "Host/private and both compilers must consume the same SDK")
+                else:
+                    provenance[name] = evidence
+            return obj
+
+        def inventory(obj):
+            output = self.require_success([
+                self.nm, "--extern-only", "--format=posix", obj,
+            ])
+            print(f"CLSID actual inventory: {obj}\n{output}", end="", flush=True)
+            return output
+
+        def assert_symbol(output, name, kind):
+            self.assertRegex(output, r"(?m)^" + re.escape(name) + " " + kind + r"\s")
+
+        def pack(directory, name, *objects):
+            directory.mkdir(parents=True, exist_ok=True)
+            archive = directory / (name + ".lib")
+            self.require_success([
+                self.librarian, "/nologo", "/out:" + str(archive), *objects,
+            ])
+            return archive
+
+        probe_source = """
+#include <windows.h>
+#include <combaseapi.h>
+#include <stddef.h>
+static_assert(sizeof(GUID) == 16, "SDK GUID size");
+static_assert(offsetof(GUID, Data1) == 0, "SDK GUID Data1 offset");
+static_assert(offsetof(GUID, Data2) == 4, "SDK GUID Data2 offset");
+static_assert(offsetof(GUID, Data3) == 6, "SDK GUID Data3 offset");
+static_assert(offsetof(GUID, Data4) == 8, "SDK GUID Data4 offset");
+extern "C" const GUID *host_history_definition();
+extern "C" const GUID *host_both_definition();
+extern "C" const GUID *host_sid();
+extern "C" const GUID *neverc_cpp_history_definition();
+extern "C" const GUID *neverc_cpp_both_definition();
+extern "C" const GUID *neverc_cpp_sid();
+extern "C" const GUID *neverc_cpp_history_reference();
+extern "C" const GUID *neverc_cpp_both_reference();
+
+static wchar_t upper_hex(wchar_t c) {
+  return c >= L'a' && c <= L'f' ? c - L'a' + L'A' : c;
+}
+
+static int compare_slot(const GUID *host, const GUID *isolated,
+                        const wchar_t *expected) {
+  if (!host || !isolated || host == isolated) return 1;
+  if (host->Data1 != isolated->Data1 || host->Data2 != isolated->Data2 ||
+      host->Data3 != isolated->Data3) return 2;
+  for (unsigned int i = 0; i != 8; ++i)
+    if (host->Data4[i] != isolated->Data4[i]) return 3;
+  wchar_t host_text[40], isolated_text[40];
+  for (unsigned int i = 0; i != 40; ++i) {
+    host_text[i] = L'!';
+    isolated_text[i] = L'?';
+  }
+  const int host_length = StringFromGUID2(*host, host_text, 40);
+  const int isolated_length = StringFromGUID2(*isolated, isolated_text, 40);
+  if (host_length != 39 || isolated_length != 39 ||
+      host_text[38] != 0 || isolated_text[38] != 0) return 4;
+  // Compare every code unit, including NUL, before normalizing hexadecimal
+  // letter case against a separate expected value for each fixed slot.
+  for (unsigned int i = 0; i != 39; ++i) {
+    if (host_text[i] != isolated_text[i]) return 5;
+    if (upper_hex(host_text[i]) != expected[i] ||
+        upper_hex(isolated_text[i]) != expected[i]) return 6;
+  }
+  return 0;
+}
+
+int main() {
+  const GUID *host_history = host_history_definition();
+  const GUID *host_both = host_both_definition();
+  const GUID *private_history = neverc_cpp_history_reference();
+  const GUID *private_both = neverc_cpp_both_reference();
+  if (private_history != neverc_cpp_history_definition() ||
+      private_both != neverc_cpp_both_definition()) return 7;
+  if (host_history == host_both || private_history == private_both) return 8;
+  if (host_sid() != host_history || host_sid() == host_both ||
+      neverc_cpp_sid() != private_history || neverc_cpp_sid() == private_both)
+    return 9;
+  const int history = compare_slot(host_history, private_history,
+      L"{3C374A40-BAE4-11CF-BF7D-00AA006946EE}");
+  if (history) return 10 + history;
+  const int both = compare_slot(host_both, private_both,
+      L"{6659983C-8476-4EB4-B78C-E5968F326BA0}");
+  return both ? 20 + both : 0;
+}
+"""
+        library_dirs = [Path(value.strip().strip('"'))
+                        for value in os.environ.get("LIB", "").split(";")
+                        if value.strip()]
+        self.assertTrue(library_dirs, "The native MSVC LIB environment is required")
+        library_dirs = [path for path in library_dirs if path.is_dir()]
+        for library in ("libcmt.lib", "libucrt.lib", "libvcruntime.lib",
+                        "oldnames.lib", "kernel32.lib", "ole32.lib"):
+            self.assertTrue(any((path / library).is_file() for path in library_dirs),
+                            f"The runner's native CRT/SDK must provide {library}")
+        linker = self.llvm_root / "bin/lld-link.exe"
+        print(f"CLSID probe linker: {linker}; exists={linker.is_file()}", flush=True)
+        self.assertTrue(linker.is_file(), "The GNU Clang runtime probe requires lld-link")
+        for msvc in (False, True):
+            compiler = "msvc" if msvc else "clang"
+            with self.subTest(compiler=compiler):
+                directory = self.root / "url-history" / compiler
+                host = directory / "host"
+                host_obj = compile_definition(host, "host", msvc)
+                host_archive = pack(host, "host", host_obj)
+                host_inventory = inventory(host_obj)
+                for name in symbols:
+                    assert_symbol(host_inventory, name, "R")
+                    self.assertNotRegex(host_inventory, r"(?m)^" + name + r" U\s")
+                archives = {}
+                reference_objects = {}
+                for isolated in (False, True):
+                    mode = "isolated" if isolated else "unisolated"
+                    current = directory / mode
+                    definition_obj = compile_definition(
+                        current, "neverc_cpp", msvc, isolated=isolated)
+                    ref_archive = self.archive(
+                        current / "reference", "reference", reference,
+                        prefix_header=header if isolated else None,
+                        msvc=msvc, static_runtime=True)
+                    reference_obj = ref_archive.with_suffix(".obj")
+                    definition_inventory = inventory(definition_obj)
+                    reference_inventory = inventory(reference_obj)
+                    for name in symbols:
+                        raw = "neverc_cpp_" + name if isolated else name
+                        assert_symbol(definition_inventory, raw, "R")
+                        self.assertNotRegex(definition_inventory,
+                                            r"(?m)^" + raw + r" U\s")
+                        assert_symbol(reference_inventory, raw, "U")
+                        # Match any non-U kind, not only one anticipated D kind.
+                        self.assertNotRegex(reference_inventory,
+                                            r"(?m)^" + raw + r" (?!U\s)\S\s")
+                    archives[isolated] = pack(
+                        current, "private", definition_obj, reference_obj)
+                    reference_objects[isolated] = reference_obj
+                    if isolated:
+                        aggregate_inventory = inventory(archives[isolated])
+                        for name in symbols:
+                            self.assertNotRegex(aggregate_inventory,
+                                                r"(?m)^" + name + r"\s")
+                for host_format in ("nm", "coff-index"):
+                    for name in symbols:
+                        with self.subTest(compiler=compiler, host_format=host_format,
+                                          rejected=name):
+                            rejected = directory / (host_format + "-" + name + ".lib")
+                            shutil.copyfile(archives[False], rejected)
+                            self.check_audit(
+                                rejected, host, host_format, prefix_header=header,
+                                error="private/host symbol intersection: " + name +
+                                      "; private_demangled=")
+                    self.check_audit(archives[True], host, host_format,
+                                     prefix_header=header)
+                for omitted in symbols:
+                    current = directory / ("missing-" + omitted)
+                    definition_obj = compile_definition(
+                        current, "neverc_cpp", msvc, isolated=True, missing=omitted)
+                    defined = inventory(definition_obj)
+                    wanted = "neverc_cpp_" + omitted
+                    self.assertNotRegex(defined, r"(?m)^" + wanted + r"\s")
+                    assert_symbol(defined, "neverc_cpp_fixture_omitted_" + omitted, "R")
+                    for name in symbols:
+                        if name != omitted:
+                            assert_symbol(defined, "neverc_cpp_" + name, "R")
+                    missing_archive = pack(
+                        current, "private", definition_obj, reference_objects[True])
+                    missing_inventory = inventory(missing_archive)
+                    assert_symbol(missing_inventory, wanted, "U")
+                    self.assertNotRegex(missing_inventory,
+                                        r"(?m)^" + wanted + r" (?!U\s)\S\s")
+                    for host_format in ("nm", "coff-index"):
+                        with self.subTest(compiler=compiler, host_format=host_format,
+                                          missing=omitted):
+                            rejected = current / (host_format + ".lib")
+                            shutil.copyfile(missing_archive, rejected)
+                            self.check_audit(
+                                rejected, host, host_format, prefix_header=header,
+                                error="unresolved private dependency: " + wanted + "\n")
+                source = directory / "clsid-probe.cpp"
+                source.write_text(probe_source, encoding="utf-8")
+                executable = directory / "clsid-probe.exe"
+                obj = directory / "clsid-probe.obj"
+                if msvc:
+                    commands = [[
+                        self.msvc, "/nologo", "/std:c++17", "/Od", "/GL-",
+                        "/MT", "/EHsc", source, archives[True], host_archive,
+                        "/Fe" + str(executable), "/Fo" + str(obj), "/link",
+                        "/OPT:NOICF", "ole32.lib",
+                        *("/libpath:" + str(path) for path in library_dirs),
+                    ]]
+                else:
+                    # Match the existing Fenv fixture's native static CRT and
+                    # absolute linker. No uuid.lib or COM activation is needed.
+                    machine = "x64" if self.target.startswith("x86_64-") else "arm64"
+                    commands = [[
+                        self.clang, "--target=" + self.target, "-std=c++17",
+                        "-O2", "-fno-lto", "-fms-extensions",
+                        "-fms-runtime-lib=static", "-v", "-c", source, "-o", obj,
+                    ], [
+                        linker, "/nologo", "/out:" + str(executable),
+                        "/machine:" + machine, "/subsystem:console", "/OPT:NOICF",
+                        "/defaultlib:libcmt", "/defaultlib:oldnames",
+                        *("/libpath:" + str(path) for path in library_dirs),
+                        obj, archives[True], host_archive, "ole32.lib",
+                    ]]
+                for command in commands:
+                    print("CLSID probe command: " + subprocess.list2cmdline(
+                        [str(argument) for argument in command]), flush=True)
+                    result = self.run_command(command)
+                    print(result.stdout + result.stderr, end="", flush=True)
+                    self.assertEqual(result.returncode, 0,
+                                     f"{command!r}\n{result.stdout}\n{result.stderr}")
+                self.require_success([executable])
+                print(f"CLSID runtime PASS: compiler={compiler}; both distinct addresses, "
+                      "SID alias, all GUID fields and complete strings", flush=True)
 
     def test_windows_abort_handler_definition_and_references_are_private(self):
         # Like Windows Signals.inc, this C-linkage function is declared inside

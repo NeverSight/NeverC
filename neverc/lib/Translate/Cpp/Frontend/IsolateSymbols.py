@@ -97,6 +97,10 @@ symbols.update({
     # Prefix its header definition and FE_DFL_ENV references together; the CRT
     # fesetenv/feclearexcept/fetestexcept entry points retain their normal ABI.
     "_Fenv1",
+    # shlguid.h defines these immutable GUID values with C linkage and selectany.
+    # Keep the SDK layout/initializers and rewrite identifier uses, including
+    # expansion of the SID_SUrlHistory alias, into the private frontend ABI.
+    "CLSID_CUrlHistory", "CLSID_CUrlHistoryBoth",
 })
 if len(symbols) < 900:
     raise SystemExit("Unexpected LLVM 20.1.8 symbol inventory; review the pinned source")
