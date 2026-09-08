@@ -357,8 +357,9 @@ TEST_F(TranslateTest, EmptySelfExecutableFailsWithoutGeneratedOutput) {
   const auto Result =
       controlledDriver(source(), {"-o", Output.string()}, fs::path{});
   expectCode(Result, "TR0402");
-  EXPECT_TRUE(Result.contains(
-      "cannot determine the running NeverC executable path"));
+  EXPECT_TRUE(Result.stderrContains(
+      "cannot determine the running NeverC executable path"))
+      << Result.out << Result.err;
   expectNoArtifacts(Output);
 }
 
