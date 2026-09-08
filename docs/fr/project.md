@@ -18,13 +18,13 @@
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#fonctionnalités)
 
-[Documentation](README.md) · [Guide dyncode](dyncode-compiler/README.md) · [Runtimes intégrés](builtins/README.md) · [API Plugin](plugin-api/README.md) · [Feuille de route](roadmap.md)
+[Documentation](README.md) · [Guide dyncode](dyncode-compiler.md) · [Runtimes intégrés](builtins.md) · [API Plugin](plugin-api.md) · [Feuille de route](roadmap.md)
 
 </div>
 
 ---
 
-> **Note :** GitHub affiche toujours `README.md` (anglais) en page d'accueil du dépôt (pas de détection automatique). Utilisez les liens de langue ci-dessus ; dans la [documentation](README.md) et le [guide dyncode](dyncode-compiler/README.md), gardez la même locale via la barre de langue et le fil d'Ariane.
+> **Note :** GitHub affiche toujours `README.md` (anglais) en page d'accueil du dépôt (pas de détection automatique). Utilisez les liens de langue ci-dessus ; dans la [documentation](README.md) et le [guide dyncode](dyncode-compiler.md), gardez la même locale via la barre de langue et le fil d'Ariane.
 
 ## Vue d'ensemble
 
@@ -40,17 +40,17 @@ C est déjà le langage système le plus simple. NeverC le rend encore plus simp
 - **Binaire unique** — Compilateur + éditeur de liens + runtimes dans un seul exécutable. Zéro dépendance externe.
 - **Compatible LLM** — Grammaire minimale et sémantique déterministe : le code NeverC généré par IA compile correctement plus souvent que les alternatives C++.
 - **Véritable compilation croisée** — Compilez Windows PE, Linux ELF, macOS Mach-O, Android ELF et du dyncode depuis macOS ou Linux — pas de VM, pas de dual boot, pas de SDK à chercher. Les SDK de plateforme sont intégrés au compilateur.
-- **Extensible sans friction** — Un seul en-tête C, 130 phases de compilation nommées, et vous avez un [plugin compilateur](plugin-api/README.md) capable d'intervenir à toute étape — de l'optimisation IR à la sortie binaire finale — sans connaître LLVM.
+- **Extensible sans friction** — Un seul en-tête C, 130 phases de compilation nommées, et vous avez un [plugin compilateur](plugin-api.md) capable d'intervenir à toute étape — de l'optimisation IR à la sortie binaire finale — sans connaître LLVM.
 - **Recherche en sécurité intégrée** — Compilation dyncode, chiffrement de chaînes à la compilation et génération PE multiplateforme sont nativement intégrés au compilateur — pas des ajouts bricolés avec des scripts externes.
 
 ## Fonctionnalités
 
-- **[Compilateur dyncode](dyncode-compiler/README.md)** — pipeline IR/MIR multi-étapes, extraction multiplateforme, résolution d'imports/syscalls, mode noyau, audit d'octets interdits, architecture de plugins
+- **[Compilateur dyncode](dyncode-compiler.md)** — pipeline IR/MIR multi-étapes, extraction multiplateforme, résolution d'imports/syscalls, mode noyau, audit d'octets interdits, architecture de plugins
 - **Éditeur de liens intégré** — COFF, ELF et Mach-O dans un seul binaire ; pas de `ld` ou `link.exe` externe
 - **[Dépouillement des versions](release-builds.md)** — `--strip` / `-s` intégré retire des images ELF, Mach-O et PE/COFF finales les symboles non requis à l'exécution et le débogage source, avec renommage structurel des symboles `.ko` adapté au noyau (ni hash ni encryption)
 - **Compilation croisée** — Windows PE, Linux ELF, macOS Mach-O et Android ELF depuis n'importe quel hôte avec SDK de plateforme intégrés
-- **[Runtimes intégrés](builtins/README.md)** — runtimes LLVM bitcode intégrés au compilateur : [`string`](builtins/string.md) (chaîne à sémantique de valeur, gestion mémoire automatique), [`mimalloc`](builtins/mimalloc.md) (remplacement transparent d'allocateur haute performance, activé par défaut hors cibles noyau et freestanding), [`xorstr`](builtins/xorstr.md) (chiffrement par instance, scellement tardif obligatoire et développement natif par site d'appel) et [`strhash`](builtins/strhash.md) (hachage de chaînes à la compilation, même algorithme à l'exécution)
-- **[API Plugin](plugin-api/README.md)** — ABI C pure pour les greffons hors arbre ; SDK à en-tête unique, zéro dépendance LLVM/CRT, couvrant les phases pilote, préprocesseur, AST, IR, MIR, MC, objet, édition de liens, LTO et dyncode
+- **[Runtimes intégrés](builtins.md)** — runtimes LLVM bitcode intégrés au compilateur : [`string`](builtins-string.md) (chaîne à sémantique de valeur, gestion mémoire automatique), [`mimalloc`](builtins-mimalloc.md) (remplacement transparent d'allocateur haute performance, activé par défaut hors cibles noyau et freestanding), [`xorstr`](builtins-xorstr.md) (chiffrement par instance, scellement tardif obligatoire et développement natif par site d'appel) et [`strhash`](builtins-strhash.md) (hachage de chaînes à la compilation, même algorithme à l'exécution)
+- **[API Plugin](plugin-api.md)** — ABI C pure pour les greffons hors arbre ; SDK à en-tête unique, zéro dépendance LLVM/CRT, couvrant les phases pilote, préprocesseur, AST, IR, MIR, MC, objet, édition de liens, LTO et dyncode
 - **[Extension `.nc`](nc-extension.md)** — utilisez `.nc` pour activer automatiquement toutes les fonctionnalités NeverC (`string`, types entiers style Rust) sans drapeaux supplémentaires
 - **Build LLVM allégé** — backends x86_64 / AArch64 uniquement ; chemins C++/ObjC/OpenMP retirés
 

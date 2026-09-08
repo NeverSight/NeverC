@@ -2,11 +2,11 @@
 
 This directory packages the public, pure-C first-release plugin ABI and
 buildable examples. Start with
-[`docs/plugin-api/README.md`](../docs/plugin-api/README.md); the Target/MC/
+[`docs/plugin-api.md`](../docs/plugin-api.md); the Target/MC/
 assembly/object guide is
-[`docs/plugin-api/target-mc-object.md`](../docs/plugin-api/target-mc-object.md).
+[`docs/plugin-api-target-mc-object.md`](../docs/plugin-api-target-mc-object.md).
 The optional Python authoring package lives in [`python/`](python/) and is
-documented in [`docs/plugin-api/python.md`](../docs/plugin-api/python.md).
+documented in [`docs/plugin-api-python.md`](../docs/plugin-api-python.md).
 
 Build every example with both the configured host C compiler and NeverC:
 
@@ -51,7 +51,7 @@ The SDK ships two equivalent forms of the same pure-C ABI:
 Object-format API 1.1 adds opt-in ELF writer-policy requests. Providers that
 advertise 1.0 remain compatible for probe, read, and default writes and receive
 minor-0, zero-flag requests; see the
-[writer-policy contract](../docs/plugin-api/target-mc-object.md#object-format-11-writer-policies).
+[writer-policy contract](../docs/plugin-api-target-mc-object.md#object-format-11-writer-policies).
 
 [`manifest/plugin.json`](manifest/plugin.json)
 ([`utils/plugin-api/gen-sdk-manifest.py`](../utils/plugin-api/gen-sdk-manifest.py))

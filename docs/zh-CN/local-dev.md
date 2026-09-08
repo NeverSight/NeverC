@@ -33,7 +33,7 @@ runtime（或对齐 CI 制品），再跑 stage-2 伞目标：
 cmake --build build-neverc --target neverc-embed-runtime-bitcode
 ```
 
-两阶段 bootstrap 细节见 [Builtins](builtins/README.md)。
+两阶段 bootstrap 细节见 [Builtins](builtins.md)。
 
 ### 带测试构建
 
@@ -149,7 +149,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-Windows dyncode（`-fdyncode`、PEB 导入解析等）详见 [dyncode 编译器文档](dyncode-compiler/README.md)。
+Windows dyncode（`-fdyncode`、PEB 导入解析等）详见 [dyncode 编译器文档](dyncode-compiler.md)。
 
 ---
 

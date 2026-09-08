@@ -56,9 +56,30 @@ class DocumentationLayoutTests(unittest.TestCase):
         nav.check_language_bar(page, text, report)
         self.assertTrue(report.failures)
 
-    def test_index_cannot_omit_a_nested_guide(self):
+    def test_index_cannot_omit_a_topic_guide(self):
         index = DOCS / "zh-CN/README.md"
-        target = "plugin-api/driver.md"
+        target = "plugin-api-driver.md"
+        original_read = Path.read_text
+        text = index.read_text()
+        self.assertIn(f"]({target})", text)
+        broken = text.replace(f"]({target})", "](missing-guide.md)")
+        def read(path, *args, **kwargs):
+            return broken if path == index else original_read(path, *args, **kwargs)
+        report = nav.Report()
+        with patch.object(Path, "read_text", read):
+            nav.check_parent_index(nav.guide_pages(), report)
+        self.assertTrue(any(f"does not link {target}" in e for e in report.failures))
+
+
+    def test_topic_membership_requires_a_hyphen_boundary(self):
+        index = DOCS / "plugin-api.md"
+        self.assertTrue(nav.within(DOCS / "plugin-api-driver.md", index))
+        self.assertFalse(nav.within(DOCS / "plugin-apiExtra.md", index))
+        self.assertFalse(nav.within(DOCS / "builtins-string.md", index))
+
+    def test_flat_topic_index_cannot_omit_its_child(self):
+        index = DOCS / "zh-CN/plugin-api.md"
+        target = "plugin-api-driver.md"
         original_read = Path.read_text
         text = index.read_text()
         self.assertIn(f"]({target})", text)

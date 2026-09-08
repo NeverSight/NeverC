@@ -581,7 +581,7 @@ def parse_arguments():
     arguments.manifest = (
         arguments.manifest
         or arguments.manifest_path
-        or repository / "docs/plugin-api/coverage.json"
+        or repository / "docs/plugin-api-coverage.json"
     )
     if (
         arguments.ctest_binary_dir is None

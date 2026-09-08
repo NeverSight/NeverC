@@ -12,7 +12,7 @@ SCHEMA = (
     ROOT
     / "neverc/include/neverc/Plugin/Schema/PhaseSchema.json"
 )
-MANIFEST = ROOT / "docs/plugin-api/coverage.json"
+MANIFEST = ROOT / "docs/plugin-api-coverage.json"
 CHECKER = ROOT / "utils/plugin-api/check-coverage.py"
 
 SPEC = importlib.util.spec_from_file_location(

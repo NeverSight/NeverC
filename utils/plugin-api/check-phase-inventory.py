@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 SCHEMA = ROOT / "neverc/include/neverc/Plugin/Schema/PhaseSchema.json"
-COVERAGE = ROOT / "docs/plugin-api/coverage.json"
+COVERAGE = ROOT / "docs/plugin-api-coverage.json"
 
 SCHEMA_GENERATORS = [
     "gen-phase-schema.py",

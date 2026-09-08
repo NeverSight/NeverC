@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 SCHEMA = ROOT / "neverc/include/neverc/Plugin/Schema/PhaseSchema.json"
-COVERAGE = ROOT / "docs/plugin-api/coverage.json"
+COVERAGE = ROOT / "docs/plugin-api-coverage.json"
 SDK_MANIFEST = ROOT / "pluginsdk/manifest/plugin.json"
 SCHEMA_DIR = ROOT / "neverc/include/neverc/Plugin/Schema"
 

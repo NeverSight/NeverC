@@ -18,13 +18,13 @@
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#特色)
 
-[文件索引](README.md) · [DynCode 指南](dyncode-compiler/README.md) · [內建執行時](builtins/README.md) · [外掛 API](plugin-api/README.md) · [路線圖](roadmap.md)
+[文件索引](README.md) · [DynCode 指南](dyncode-compiler.md) · [內建執行時](builtins.md) · [外掛 API](plugin-api.md) · [路線圖](roadmap.md)
 
 </div>
 
 ---
 
-> **說明：** GitHub 儲存庫首頁固定展示英文 `README.md`，不會依據瀏覽器語言自動切換。請用上方語言連結進入對應版本；進入 [文件](README.md) 或 [dyncode 指南](dyncode-compiler/README.md) 後，請繼續透過頁內語言列與導覽列保持同一語言。
+> **說明：** GitHub 儲存庫首頁固定展示英文 `README.md`，不會依據瀏覽器語言自動切換。請用上方語言連結進入對應版本；進入 [文件](README.md) 或 [dyncode 指南](dyncode-compiler.md) 後，請繼續透過頁內語言列與導覽列保持同一語言。
 
 ## 概述
 
@@ -40,17 +40,17 @@ C 已經是最簡單的系統程式語言。NeverC 讓它更簡單：
 - **單一二進位** — 編譯器 + 連結器 + 執行時打包成一個可執行檔，零外部相依性。
 - **LLM 友好** — 極簡語法與確定性語意，讓 AI 生成的 NeverC 程式碼比 C++ 更容易編譯正確。
 - **真正的跨平台編譯** — 在 macOS 或 Linux 上直接編譯 Windows PE、Linux ELF、macOS Mach-O、Android ELF 和 dyncode——不需要虛擬機、不需要雙系統、不需要找 SDK。各平台 SDK 已內建在編譯器裡。
-- **零門檻可擴展** — 單個 C 標頭檔、130 個具名編譯階段，就能寫出[編譯器外掛](plugin-api/README.md)，介入從 IR 最佳化到最終產物輸出的任何階段——不需要懂 LLVM。
+- **零門檻可擴展** — 單個 C 標頭檔、130 個具名編譯階段，就能寫出[編譯器外掛](plugin-api.md)，介入從 IR 最佳化到最終產物輸出的任何階段——不需要懂 LLVM。
 - **安全研究開箱即用** — DynCode 編譯、編譯期字串加密、跨平台 PE 生成全部原生整合在編譯器中——不需要靠外部腳本拼湊。
 
 ## 特色
 
-- **[DynCode 編譯器](dyncode-compiler/README.md)** — 多階段 IR/MIR 流水線、跨平台提取、匯入/系統呼叫降階、核心模式、壞位元組稽核與外掛架構
+- **[DynCode 編譯器](dyncode-compiler.md)** — 多階段 IR/MIR 流水線、跨平台提取、匯入/系統呼叫降階、核心模式、壞位元組稽核與外掛架構
 - **整合連結器** — 單一二進位內完成 COFF、ELF、Mach-O 連結，無需外部 `ld` 或 `link.exe`
 - **[發布剝離](release-builds.md)** — 內建 `--strip` / `-s`，從最終 ELF、Mach-O 與 PE/COFF 映像移除非執行期符號及原始碼層級偵錯資訊，並對 `.ko` 進行核心感知的結構化符號重新命名（不是 hash，也不是 encryption）
 - **交叉編譯** — 從任意宿主建置 Windows PE、Linux ELF、macOS Mach-O 和 Android ELF，內建各平台 SDK
-- **[內建執行時](builtins/README.md)** — 嵌入編譯器的 LLVM bitcode 執行時：[`string`](builtins/string.md)（值語意字串，自動記憶體管理）、[`mimalloc`](builtins/mimalloc.md)（透明高效能配置器覆蓋，核心與 freestanding 目標之外預設開啟）、[`xorstr`](builtins/xorstr.md)（逐實例編譯期加密、強制 late 封口與逐呼叫點原生展開）和 [`strhash`](builtins/strhash.md)（編譯期字串雜湊，與執行時演算法一致）
-- **[外掛 API](plugin-api/README.md)** — 純 C ABI 的樹外外掛介面；單一標頭檔 SDK，零 LLVM/CRT 相依性，涵蓋驅動、預處理、AST、IR、MIR、MC、目的檔、連結、LTO、dyncode 各階段
+- **[內建執行時](builtins.md)** — 嵌入編譯器的 LLVM bitcode 執行時：[`string`](builtins-string.md)（值語意字串，自動記憶體管理）、[`mimalloc`](builtins-mimalloc.md)（透明高效能配置器覆蓋，核心與 freestanding 目標之外預設開啟）、[`xorstr`](builtins-xorstr.md)（逐實例編譯期加密、強制 late 封口與逐呼叫點原生展開）和 [`strhash`](builtins-strhash.md)（編譯期字串雜湊，與執行時演算法一致）
+- **[外掛 API](plugin-api.md)** — 純 C ABI 的樹外外掛介面；單一標頭檔 SDK，零 LLVM/CRT 相依性，涵蓋驅動、預處理、AST、IR、MIR、MC、目的檔、連結、LTO、dyncode 各階段
 - **[`.nc` 副檔名](nc-extension.md)** — 使用 `.nc` 檔案副檔名自動啟用所有 NeverC 功能（`string`、Rust 風格整數型別），無需額外旗標
 - **精簡 LLVM 建置** — 僅 x86_64 / AArch64 後端；剝離 C++/ObjC/OpenMP 等路徑
 

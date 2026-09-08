@@ -34,7 +34,7 @@ paraguas stage-2:
 cmake --build build-neverc --target neverc-embed-runtime-bitcode
 ```
 
-El bootstrap en dos etapas se detalla en [Builtins](builtins/README.md).
+El bootstrap en dos etapas se detalla en [Builtins](builtins.md).
 
 ### Compilación con pruebas
 
@@ -151,7 +151,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-Para dyncode de Windows (`-fdyncode`, resolución de importaciones PEB, etc.), consulte la [documentación del compilador dyncode](dyncode-compiler/README.md).
+Para dyncode de Windows (`-fdyncode`, resolución de importaciones PEB, etc.), consulte la [documentación del compilador dyncode](dyncode-compiler.md).
 
 ---
 

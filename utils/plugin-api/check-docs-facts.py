@@ -44,7 +44,7 @@ from pathlib import Path
 from docs_layout import english_page, localized_page as localize, locale_of
 
 ROOT = Path(__file__).resolve().parents[2]
-PLUGIN_DOCS = ROOT / "docs" / "plugin-api"
+PLUGIN_DOCS = ROOT / "docs"
 HEADERS = ROOT / "neverc/include/neverc/Plugin"
 SCHEMA = HEADERS / "Schema" / "PhaseSchema.json"
 SDK = ROOT / "pluginsdk"
@@ -220,7 +220,8 @@ def normalize_digits(text: str) -> str:
 
 
 def page(stem: str, locale: str) -> Path:
-    return localize(PLUGIN_DOCS / f"{stem}.md", locale)
+    name = "plugin-api.md" if stem == "README" else f"plugin-api-{stem}.md"
+    return localize(PLUGIN_DOCS / name, locale)
 
 
 def localized_page(directory: Path, stem: str, locale: str) -> Path:
@@ -228,7 +229,10 @@ def localized_page(directory: Path, stem: str, locale: str) -> Path:
 
 
 def guide_pages() -> list[Path]:
-    return sorted(localize(page, locale) for page in PLUGIN_DOCS.rglob("*.md") for locale in LOCALES)
+    originals = [PLUGIN_DOCS / "plugin-api.md"] + [
+        path for path in PLUGIN_DOCS.glob("plugin-api-*.md") if path.is_file()
+    ]
+    return sorted(localize(page, locale) for page in originals for locale in LOCALES)
 
 
 def release_pages() -> list[Path]:

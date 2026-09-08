@@ -14,20 +14,20 @@
 
 DynCode 컴파일 파이프라인은 NeverC의 핵심 연구 영역입니다. 아키텍처, CLI 옵션, 플랫폼 매트릭스, 예제:
 
-**[DynCode 컴파일러 →](dyncode-compiler/README.md)**
+**[DynCode 컴파일러 →](dyncode-compiler.md)**
 
 | 문서 | 설명 |
 |------|------|
-| [README](dyncode-compiler/README.md) | 개요, 빠른 시작, 지원 대상 |
-| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic.md) | IR → 객체 → 추출 설계 |
-| [IR Pass Design](dyncode-compiler/ir-pass-design.md) | 각 IR 패스 설계 근거 |
-| [MIR Pass Design](dyncode-compiler/mir-pass-design.md) | 백엔드 MIR 패스 |
-| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode.md) | Ring-0 컴파일 |
-| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture.md) | `TargetDesc` 및 추출기 |
-| [Platform Extension Guide](dyncode-compiler/platform-extension-guide.md) | 새 플랫폼 추가 |
-| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial.md) | dyncode 관점의 ARM64 명령어 |
-| [Roadmap](dyncode-compiler/roadmap.md) | 예정 작업 |
-| [Progress](dyncode-compiler/progress.md) | 구현 현황 |
+| [README](dyncode-compiler.md) | 개요, 빠른 시작, 지원 대상 |
+| [Pipeline & PIC](dyncode-compiler-pipeline-and-pic.md) | IR → 객체 → 추출 설계 |
+| [IR Pass Design](dyncode-compiler-ir-pass-design.md) | 각 IR 패스 설계 근거 |
+| [MIR Pass Design](dyncode-compiler-mir-pass-design.md) | 백엔드 MIR 패스 |
+| [Kernel-Mode DynCode](dyncode-compiler-kernel-mode-dyncode.md) | Ring-0 컴파일 |
+| [Cross-Platform Architecture](dyncode-compiler-cross-platform-architecture.md) | `TargetDesc` 및 추출기 |
+| [Platform Extension Guide](dyncode-compiler-platform-extension-guide.md) | 새 플랫폼 추가 |
+| [ARM64 Assembly Tutorial](dyncode-compiler-arm64-assembly-tutorial.md) | dyncode 관점의 ARM64 명령어 |
+| [Roadmap](dyncode-compiler-roadmap.md) | 예정 작업 |
+| [Progress](dyncode-compiler-progress.md) | 구현 현황 |
 
 ---
 
@@ -43,14 +43,14 @@ NeverC는 `.nc`를 네이티브 소스 파일 확장자로 인식합니다. `.nc
 
 NeverC는 LLVM bitcode로 임베디드된 내장 런타임으로 표준 C를 확장합니다. 각 `-fbuiltin-<name>` 플래그로 제어됩니다. `.nc` 파일에서는 `string`이 자동 활성화됩니다.
 
-**[내장 런타임 시스템 →](builtins/README.md)**
+**[내장 런타임 시스템 →](builtins.md)**
 
 | 내장 기능 | 플래그 | 설명 |
 |----------|--------|------|
-| [내장 문자열](builtins/string.md) | `-fbuiltin-string` | 값 의미론 `string` 타입, 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
-| [내장 mimalloc](builtins/mimalloc.md) | `-fbuiltin-mimalloc` | `malloc`/`free`/`calloc`/`realloc` `mimalloc` 투명 고성능 할당자 오버라이드 |
-| [문자열 암호화 (xorstr)](builtins/xorstr.md) | `-fencrypt-call-strings` | 인스턴스별 암호화, 필수 late sealing, 호출 지점별 최종 전개, volatile 스택 정리 |
-| [문자열 해시 (strhash)](builtins/strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | 컴파일 타임 문자열 해시, 런타임과 동일 알고리즘, 선택적 IR 접힘 |
+| [내장 문자열](builtins-string.md) | `-fbuiltin-string` | 값 의미론 `string` 타입, 도트 호출 메서드, 자동 메모리 관리, 네이티브 UTF-8 |
+| [내장 mimalloc](builtins-mimalloc.md) | `-fbuiltin-mimalloc` | `malloc`/`free`/`calloc`/`realloc` `mimalloc` 투명 고성능 할당자 오버라이드 |
+| [문자열 암호화 (xorstr)](builtins-xorstr.md) | `-fencrypt-call-strings` | 인스턴스별 암호화, 필수 late sealing, 호출 지점별 최종 전개, volatile 스택 정리 |
+| [문자열 해시 (strhash)](builtins-strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | 컴파일 타임 문자열 해시, 런타임과 동일 알고리즘, 선택적 IR 접힘 |
 
 ---
 
@@ -58,22 +58,22 @@ NeverC는 LLVM bitcode로 임베디드된 내장 런타임으로 표준 C를 확
 
 NeverC는 순수 C ABI로 툴체인 전체를 개방합니다. 플러그인은 공유 모듈(`.dll` / `.so` / `.dylib`)로서, 명령줄 파싱부터 최종 링크 이미지까지 130개의 이름 붙은 컴파일 페이즈 중 어디에나 옵저버, 인터셉터, 또는 대체 프로바이더로 붙을 수 있습니다. SDK는 헤더 전용이라 LLVM 헤더도, 컴파일러 링크도 필요 없습니다.
 
-**[플러그인 API →](plugin-api/README.md)**
+**[플러그인 API →](plugin-api.md)**
 
 | 문서 | 설명 |
 |------|------|
-| [README](plugin-api/README.md) | 진입점, 페이즈, 인터페이스 협상, 등록, ABI 규칙 |
-| [Python 플러그인](plugin-api/python.md) | 선택적 embedded Python, 수명 주기, 옵션, read-only observer, 진단 및 제한 |
-| [드라이버 API](plugin-api/driver.md) | 명령줄, 툴체인 선택, 액션 그래프, 잡 그래프 |
-| [소스와 I/O API](plugin-api/source.md) | VFS 프로바이더, 소스 위치, 버퍼, 출력 싱크, 의존성 |
-| [전처리기 API](plugin-api/prep.md) | 토큰, 매크로, pragma, include, 기능 질의, 39가지 이벤트 |
-| [AST와 의미 분석 API](plugin-api/ast-sema.md) | 파서 확장, AST 변경, 이름 조회, 타입, 상수 |
-| [IR API](plugin-api/ir.md) | LLVM IR 읽기, 트랜잭션 기반 구성, 분석, 패스, 프로바이더 |
-| [MIR API](plugin-api/mir.md) | 머신 함수, 레지스터, 스택 프레임, MIR 패스와 분석 |
-| [타깃, MC, 어셈블리, 오브젝트](plugin-api/target-mc-object.md) | 타깃 등록, 호출 규약, MC 인코딩, 오브젝트 그래프 |
-| [링크와 LTO API](plugin-api/link-lto.md) | 링크 그래프, 심볼 결정, GC/ICF, 링커와 LTO 프로바이더 |
-| [DynCode API](plugin-api/dyncode.md) | 평평한 위치 독립 이미지, 임포트 로워링, 문자셋 인코딩 |
-| [사용자 정의 호출 규약](plugin-api/custom-callconv.md) | 데이터 주도 호출 규약 플러그인 |
+| [README](plugin-api.md) | 진입점, 페이즈, 인터페이스 협상, 등록, ABI 규칙 |
+| [Python 플러그인](plugin-api-python.md) | 선택적 embedded Python, 수명 주기, 옵션, read-only observer, 진단 및 제한 |
+| [드라이버 API](plugin-api-driver.md) | 명령줄, 툴체인 선택, 액션 그래프, 잡 그래프 |
+| [소스와 I/O API](plugin-api-source.md) | VFS 프로바이더, 소스 위치, 버퍼, 출력 싱크, 의존성 |
+| [전처리기 API](plugin-api-prep.md) | 토큰, 매크로, pragma, include, 기능 질의, 39가지 이벤트 |
+| [AST와 의미 분석 API](plugin-api-ast-sema.md) | 파서 확장, AST 변경, 이름 조회, 타입, 상수 |
+| [IR API](plugin-api-ir.md) | LLVM IR 읽기, 트랜잭션 기반 구성, 분석, 패스, 프로바이더 |
+| [MIR API](plugin-api-mir.md) | 머신 함수, 레지스터, 스택 프레임, MIR 패스와 분석 |
+| [타깃, MC, 어셈블리, 오브젝트](plugin-api-target-mc-object.md) | 타깃 등록, 호출 규약, MC 인코딩, 오브젝트 그래프 |
+| [링크와 LTO API](plugin-api-link-lto.md) | 링크 그래프, 심볼 결정, GC/ICF, 링커와 LTO 프로바이더 |
+| [DynCode API](plugin-api-dyncode.md) | 평평한 위치 독립 이미지, 임포트 로워링, 문자셋 인코딩 |
+| [사용자 정의 호출 규약](plugin-api-custom-callconv.md) | 데이터 주도 호출 규약 플러그인 |
 
 ---
 

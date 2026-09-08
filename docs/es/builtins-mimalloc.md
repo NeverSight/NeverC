@@ -1,0 +1,104 @@
+**Languages**: [English](../builtins-mimalloc.md) | [简体中文](../zh-CN/builtins-mimalloc.md) | [繁體中文](../zh-TW/builtins-mimalloc.md) | [日本語](../ja/builtins-mimalloc.md) | [한국어](../ko/builtins-mimalloc.md) | [Français](../fr/builtins-mimalloc.md) | [Deutsch](../de/builtins-mimalloc.md) | [Español](builtins-mimalloc.md) | [Italiano](../it/builtins-mimalloc.md) | [Русский](../ru/builtins-mimalloc.md) | [العربية](../ar/builtins-mimalloc.md)
+
+[← Sistema de Runtime Integrado de NeverC](builtins.md)
+
+# Asignador `mimalloc` Integrado
+
+## Descripción
+
+NeverC integra [mimalloc](https://github.com/microsoft/mimalloc) — el asignador de memoria de alto rendimiento de Microsoft — directamente en los binarios compilados mediante fusión de bitcode LLVM. `malloc`, `free`, `calloc` y `realloc` se reemplazan transparentemente por las implementaciones de mimalloc en tiempo de compilación.
+
+**Activado por defecto** allí donde haya un heap de libc que reemplazar: una compilación corriente ya asigna a través de mimalloc. Los objetivos de kernel y freestanding quedan excluidos automáticamente; en un objetivo host, `-fno-builtin-mimalloc` lo desactiva.
+
+```bash
+neverc main.c -o main
+```
+
+---
+
+## Uso
+
+```bash
+neverc -fbuiltin-mimalloc hello.c -o hello                     # básico
+neverc -fbuiltin-string -fbuiltin-mimalloc main.c -o main      # combinado con `string`
+neverc -fno-builtin-mimalloc main.c -o main                    # desactivar
+```
+
+```c
+#ifdef __NEVERC_MIMALLOC__
+    printf("Usando asignador mimalloc\n");
+#endif
+```
+
+---
+
+## Soporte de Plataformas
+
+| Plataforma | Triple | Estado |
+|-----------|--------|--------|
+| Linux x86_64 | `x86_64-unknown-linux-gnu` | Soportado |
+| Linux AArch64 | `aarch64-unknown-linux-gnu` | Soportado |
+| Android | `aarch64-linux-android` | Soportado |
+| macOS x86_64 | `x86_64-apple-macosx` | Soportado |
+| macOS AArch64 | `arm64-apple-macosx` | Soportado |
+| iOS | `arm64-apple-ios` | Soportado |
+| Windows x86_64 (MSVC) | `x86_64-pc-windows-msvc` | Soportado |
+| Windows AArch64 (MSVC) | `aarch64-pc-windows-msvc` | Soportado |
+
+---
+
+## Supresión Automática
+
+| Flag / Modo | Razón |
+|-------------|-------|
+| `-fno-builtin` | Sin escenario de override de CRT |
+| `-mkernel` | Sin heap de espacio de usuario en el kernel |
+| `-fms-kernel` | Driver de kernel de Windows; igual, y no implica `-fno-builtin` |
+| `-fandroid-kernel-driver-mode` | Módulo de kernel de Android; igual |
+| `-shared` / `-dynamiclib` | Reemplazar `malloc` es decisión del programa, no de una biblioteca; el heap local de hilo además requiere TLS initial-exec, que un objeto compartido no puede usar |
+| `-fdyncode-mode` | Reemplazado por HeapArenaPass (arena + fallback OS) |
+| `-ffreestanding` | Sin libc para reemplazar |
+
+---
+
+## Proceso de Bootstrap
+
+```bash
+ninja neverc                         # Etapa 1: Placeholders de bitcode vacíos
+ninja neverc-bootstrap-mimalloc-bc   # Etapa 2: Compilar bitcode por SO
+ninja neverc                         # Etapa 3: Integrar bitcode real
+```
+
+---
+
+## Arquitectura
+
+mimalloc se integra como bitcode LLVM en el binario del compilador. Durante la compilación del usuario, un Module Pass fusiona el bitcode en el IR antes del pipeline de optimización. Compilado por separado por SO (Linux `mmap`, macOS `vm_allocate`, Windows `VirtualAlloc`), seleccionado vía target triple. Semántica de **archivo completo** — todas las funciones se enlazan.
+
+---
+
+## Estructura de Archivos
+
+```
+neverc/
+├── include/neverc/Foundation/Builtin/BuiltinMimalloc.h
+├── lib/Foundation/Builtin/
+│   ├── BuiltinMimalloc.cpp / gen_mimalloc_source.py / bin2c.py
+├── lib/Emit/Backend/
+│   ├── MimallocRuntimeLinker.{h,cpp} / BackendUtil.cpp
+├── lib/Invoke/ToolChains/NeverC.cpp
+└── lib/Compiler/Preprocessor/InitPredefinedMacros.cpp
+```
+
+---
+
+## Referencia de Flags del Compilador
+
+| Flag | Descripción |
+|------|-------------|
+| `-fbuiltin-mimalloc` | Activar inyección de override `mimalloc` (activado por defecto para builds alojados) |
+| `-fno-builtin-mimalloc` | Desactivar explícitamente la inyección `mimalloc` |
+
+| Macro | Valor | Cuándo se define |
+|-------|-------|-----------------|
+| `__NEVERC_MIMALLOC__` | `1` | Cuando `-fbuiltin-mimalloc` está activo |

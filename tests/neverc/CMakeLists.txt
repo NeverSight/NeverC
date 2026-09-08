@@ -2455,7 +2455,7 @@ add_test(
           --schema
           ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
           --manifest
-          ${CMAKE_CURRENT_SOURCE_DIR}/../../docs/plugin-api/coverage.json
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../docs/plugin-api-coverage.json
           --ctest-binary-dir
           ${CMAKE_CURRENT_BINARY_DIR}
           --ctest

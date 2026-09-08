@@ -14,20 +14,20 @@
 
 DynCode 编译流水线是 NeverC 的核心研究方向。架构、CLI 选项、平台矩阵与示例见：
 
-**[DynCode 编译器 →](dyncode-compiler/README.md)**
+**[DynCode 编译器 →](dyncode-compiler.md)**
 
 | 文档 | 说明 |
 |------|------|
-| [README](dyncode-compiler/README.md) | 概述、快速开始、支持的目标 |
-| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic.md) | IR → 对象文件 → 提取设计 |
-| [IR Pass Design](dyncode-compiler/ir-pass-design.md) | 各 IR pass 的设计 rationale |
-| [MIR Pass Design](dyncode-compiler/mir-pass-design.md) | 后端 MIR pass |
-| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode.md) | Ring-0 编译 |
-| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture.md) | `TargetDesc` 与提取器 |
-| [Platform Extension Guide](dyncode-compiler/platform-extension-guide.md) | 添加新目标平台 |
-| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial.md) | 从 dyncode 角度讲解 ARM64 指令 |
-| [Roadmap](dyncode-compiler/roadmap.md) | 计划中的工作 |
-| [Progress](dyncode-compiler/progress.md) | 实现进度 |
+| [README](dyncode-compiler.md) | 概述、快速开始、支持的目标 |
+| [Pipeline & PIC](dyncode-compiler-pipeline-and-pic.md) | IR → 对象文件 → 提取设计 |
+| [IR Pass Design](dyncode-compiler-ir-pass-design.md) | 各 IR pass 的设计 rationale |
+| [MIR Pass Design](dyncode-compiler-mir-pass-design.md) | 后端 MIR pass |
+| [Kernel-Mode DynCode](dyncode-compiler-kernel-mode-dyncode.md) | Ring-0 编译 |
+| [Cross-Platform Architecture](dyncode-compiler-cross-platform-architecture.md) | `TargetDesc` 与提取器 |
+| [Platform Extension Guide](dyncode-compiler-platform-extension-guide.md) | 添加新目标平台 |
+| [ARM64 Assembly Tutorial](dyncode-compiler-arm64-assembly-tutorial.md) | 从 dyncode 角度讲解 ARM64 指令 |
+| [Roadmap](dyncode-compiler-roadmap.md) | 计划中的工作 |
+| [Progress](dyncode-compiler-progress.md) | 实现进度 |
 
 ---
 
@@ -43,14 +43,14 @@ NeverC 将 `.nc` 作为原生源文件扩展名。使用 `.nc` 时，编译器�
 
 NeverC 通过嵌入 LLVM bitcode 的内置运行时扩展标准 C，每个由 `-fbuiltin-<name>` 标志控制。`.nc` 文件自动启用 `string`。
 
-**[内置运行时系统 →](builtins/README.md)**
+**[内置运行时系统 →](builtins.md)**
 
 | 内置功能 | 标志 | 描述 |
 |---------|------|------|
-| [内置字符串](builtins/string.md) | `-fbuiltin-string` | 值语义 `string` 类型，点调用方法、自动内存管理和原生 UTF-8 |
-| [内置 mimalloc](builtins/mimalloc.md) | `-fbuiltin-mimalloc` | 透明高性能 `mimalloc` 分配器覆盖 `malloc`/`free`/`calloc`/`realloc` |
-| [字符串加密 (xorstr)](builtins/xorstr.md) | `-fencrypt-call-strings` | 逐实例加密、强制 late 封口、逐调用点最终展开与 volatile 栈清零 |
-| [字符串哈希 (strhash)](builtins/strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | 编译期字符串哈希，运行时算法一致，可选 IR 常量折叠 |
+| [内置字符串](builtins-string.md) | `-fbuiltin-string` | 值语义 `string` 类型，点调用方法、自动内存管理和原生 UTF-8 |
+| [内置 mimalloc](builtins-mimalloc.md) | `-fbuiltin-mimalloc` | 透明高性能 `mimalloc` 分配器覆盖 `malloc`/`free`/`calloc`/`realloc` |
+| [字符串加密 (xorstr)](builtins-xorstr.md) | `-fencrypt-call-strings` | 逐实例加密、强制 late 封口、逐调用点最终展开与 volatile 栈清零 |
+| [字符串哈希 (strhash)](builtins-strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | 编译期字符串哈希，运行时算法一致，可选 IR 常量折叠 |
 
 ---
 
@@ -58,22 +58,22 @@ NeverC 通过嵌入 LLVM bitcode 的内置运行时扩展标准 C，每个由 `-
 
 NeverC 通过一套纯 C ABI 开放整条工具链。插件是一个共享模块（`.dll` / `.so` / `.dylib`），可以观察者、拦截器或替换 Provider 的身份，附着到 130 个具名编译阶段中的任意一个——从命令行解析一直到最终链接产物。SDK 只有头文件：不含 LLVM 头文件，也不链接编译器。
 
-**[插件 API →](plugin-api/README.md)**
+**[插件 API →](plugin-api.md)**
 
 | 文档 | 说明 |
 |------|------|
-| [README](plugin-api/README.md) | 入口点、阶段、接口协商、注册、ABI 规则 |
-| [Python 插件](plugin-api/python.md) | 可选的嵌入式 Python、生命周期、选项、只读 observer、诊断与限制 |
-| [驱动 API](plugin-api/driver.md) | 命令行、工具链选择、action 图、job 图 |
-| [源与 I/O API](plugin-api/source.md) | VFS Provider、源位置、缓冲区、输出 sink、依赖 |
-| [预处理器 API](plugin-api/prep.md) | token、宏、pragma、include、特性查询、39 种事件 |
-| [AST 与语义 API](plugin-api/ast-sema.md) | 解析器扩展、AST 修改、名字查找、类型、常量 |
-| [IR API](plugin-api/ir.md) | LLVM IR 读取、事务式构造、分析、pass、Provider |
-| [MIR API](plugin-api/mir.md) | 机器函数、寄存器、栈帧、MIR pass 与分析 |
-| [Target、MC、汇编、目标文件](plugin-api/target-mc-object.md) | 目标注册、调用约定、MC 编码、目标文件图 |
-| [链接与 LTO API](plugin-api/link-lto.md) | 链接图、符号决议、GC/ICF、链接器与 LTO Provider |
-| [DynCode API](plugin-api/dyncode.md) | 扁平位置无关映像、导入降级、字符集编码 |
-| [自定义调用约定](plugin-api/custom-callconv.md) | 数据驱动的调用约定插件 |
+| [README](plugin-api.md) | 入口点、阶段、接口协商、注册、ABI 规则 |
+| [Python 插件](plugin-api-python.md) | 可选的嵌入式 Python、生命周期、选项、只读 observer、诊断与限制 |
+| [驱动 API](plugin-api-driver.md) | 命令行、工具链选择、action 图、job 图 |
+| [源与 I/O API](plugin-api-source.md) | VFS Provider、源位置、缓冲区、输出 sink、依赖 |
+| [预处理器 API](plugin-api-prep.md) | token、宏、pragma、include、特性查询、39 种事件 |
+| [AST 与语义 API](plugin-api-ast-sema.md) | 解析器扩展、AST 修改、名字查找、类型、常量 |
+| [IR API](plugin-api-ir.md) | LLVM IR 读取、事务式构造、分析、pass、Provider |
+| [MIR API](plugin-api-mir.md) | 机器函数、寄存器、栈帧、MIR pass 与分析 |
+| [Target、MC、汇编、目标文件](plugin-api-target-mc-object.md) | 目标注册、调用约定、MC 编码、目标文件图 |
+| [链接与 LTO API](plugin-api-link-lto.md) | 链接图、符号决议、GC/ICF、链接器与 LTO Provider |
+| [DynCode API](plugin-api-dyncode.md) | 扁平位置无关映像、导入降级、字符集编码 |
+| [自定义调用约定](plugin-api-custom-callconv.md) | 数据驱动的调用约定插件 |
 
 ---
 

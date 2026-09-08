@@ -34,7 +34,7 @@ string / mimalloc / std / NVK runtime を埋め込む場合（または CI 相�
 cmake --build build-neverc --target neverc-embed-runtime-bitcode
 ```
 
-二段階ブートストラップの詳細は [Builtins](builtins/README.md) を参照してください。
+二段階ブートストラップの詳細は [Builtins](builtins.md) を参照してください。
 
 ### テスト付きビルド
 
@@ -151,7 +151,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-Windows dyncode（`-fdyncode`、PEB インポート解決など）については [dyncode コンパイラドキュメント](dyncode-compiler/README.md)を参照してください。
+Windows dyncode（`-fdyncode`、PEB インポート解決など）については [dyncode コンパイラドキュメント](dyncode-compiler.md)を参照してください。
 
 ---
 

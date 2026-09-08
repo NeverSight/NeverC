@@ -16,20 +16,20 @@
 
 مسار تجميع dyncode هو محور أبحاث NeverC الأساسي. للبنية وخيارات CLI ومصفوفة المنصات والأمثلة:
 
-**[مُجمِّع dyncode →](dyncode-compiler/README.md)**
+**[مُجمِّع dyncode →](dyncode-compiler.md)**
 
 | المستند | الوصف |
 |---------|--------|
-| [README](dyncode-compiler/README.md) | نظرة عامة، بدء سريع، الأهداف المدعومة |
-| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic.md) | تصميم IR → كائن → استخراج |
-| [IR Pass Design](dyncode-compiler/ir-pass-design.md) | مبررات كل مرور IR |
-| [MIR Pass Design](dyncode-compiler/mir-pass-design.md) | مرورات MIR للخلفية |
-| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode.md) | تجميع Ring-0 |
-| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture.md) | `TargetDesc` والمستخرجات |
-| [Platform Extension Guide](dyncode-compiler/platform-extension-guide.md) | إضافة منصة |
-| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial.md) | تعليمات ARM64 من منظور dyncode |
-| [Roadmap](dyncode-compiler/roadmap.md) | العمل المخطط |
-| [Progress](dyncode-compiler/progress.md) | حالة التنفيذ |
+| [README](dyncode-compiler.md) | نظرة عامة، بدء سريع، الأهداف المدعومة |
+| [Pipeline & PIC](dyncode-compiler-pipeline-and-pic.md) | تصميم IR → كائن → استخراج |
+| [IR Pass Design](dyncode-compiler-ir-pass-design.md) | مبررات كل مرور IR |
+| [MIR Pass Design](dyncode-compiler-mir-pass-design.md) | مرورات MIR للخلفية |
+| [Kernel-Mode DynCode](dyncode-compiler-kernel-mode-dyncode.md) | تجميع Ring-0 |
+| [Cross-Platform Architecture](dyncode-compiler-cross-platform-architecture.md) | `TargetDesc` والمستخرجات |
+| [Platform Extension Guide](dyncode-compiler-platform-extension-guide.md) | إضافة منصة |
+| [ARM64 Assembly Tutorial](dyncode-compiler-arm64-assembly-tutorial.md) | تعليمات ARM64 من منظور dyncode |
+| [Roadmap](dyncode-compiler-roadmap.md) | العمل المخطط |
+| [Progress](dyncode-compiler-progress.md) | حالة التنفيذ |
 
 ---
 
@@ -45,14 +45,14 @@
 
 يوسع NeverC لغة C القياسية بأوقات تشغيل مدمجة كـ LLVM bitcode. كل منها يُتحكم به عبر علم `-fbuiltin-<name>`. ملفات `.nc` تُفعّل `string` تلقائيًا.
 
-**[نظام وقت التشغيل المدمج →](builtins/README.md)**
+**[نظام وقت التشغيل المدمج →](builtins.md)**
 
 | المدمج | العلم | الوصف |
 |--------|-------|-------|
-| [السلسلة المدمجة](builtins/string.md) | `-fbuiltin-string` | نوع `string` بدلالة القيمة، طرق بالنقطة، إدارة ذاكرة تلقائية، UTF-8 أصلي |
-| [mimalloc المدمج](builtins/mimalloc.md) | `-fbuiltin-mimalloc` | تجاوز مخصص ذاكرة `mimalloc` عالي الأداء شفاف `malloc`/`free`/`calloc`/`realloc` |
-| [تشفير السلاسل (xorstr)](builtins/xorstr.md) | `-fencrypt-call-strings` | تشفير مستقل لكل مثيل، ختم متأخر إلزامي، توسيع لكل موضع استدعاء وتنظيف متطاير للمكدس |
-| [تجزئة السلاسل (strhash)](builtins/strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | تجزئة السلاسل وقت الترجمة بنفس الخوارزمية وقت التشغيل، طي IR اختياري |
+| [السلسلة المدمجة](builtins-string.md) | `-fbuiltin-string` | نوع `string` بدلالة القيمة، طرق بالنقطة، إدارة ذاكرة تلقائية، UTF-8 أصلي |
+| [mimalloc المدمج](builtins-mimalloc.md) | `-fbuiltin-mimalloc` | تجاوز مخصص ذاكرة `mimalloc` عالي الأداء شفاف `malloc`/`free`/`calloc`/`realloc` |
+| [تشفير السلاسل (xorstr)](builtins-xorstr.md) | `-fencrypt-call-strings` | تشفير مستقل لكل مثيل، ختم متأخر إلزامي، توسيع لكل موضع استدعاء وتنظيف متطاير للمكدس |
+| [تجزئة السلاسل (strhash)](builtins-strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | تجزئة السلاسل وقت الترجمة بنفس الخوارزمية وقت التشغيل، طي IR اختياري |
 
 ---
 
@@ -60,22 +60,22 @@
 
 يفتح NeverC سلسلة أدواته بالكامل عبر واجهة C ABI خالصة. والإضافة وحدة مشتركة (`.dll` / `.so` / `.dylib`) ترتبط بأي مرحلة من مراحل الترجمة المسمّاة البالغ عددها 130 — من تحليل سطر الأوامر حتى الصورة المربوطة النهائية — بوصفها مراقبًا أو مُعترِضًا أو مزوِّدًا بديلًا. وحزمة التطوير ترويسات فقط: بلا ترويسات LLVM وبلا ربط بالمُترجِم.
 
-**[واجهة الإضافات API →](plugin-api/README.md)**
+**[واجهة الإضافات API →](plugin-api.md)**
 
 | المستند | الوصف |
 |---------|--------|
-| [README](plugin-api/README.md) | نقطة الدخول، المراحل، التفاوض على الواجهات، التسجيل، قواعد ABI |
-| [إضافات Python](plugin-api/python.md) | Python مضمّن اختياري، ودورة الحياة، والخيارات، وobservers للقراءة فقط، والتشخيصات، والقيود |
-| [واجهة المُشغِّل](plugin-api/driver.md) | سطر الأوامر، اختيار سلسلة الأدوات، رسم الإجراءات، رسم المهام |
-| [واجهة المصادر والإدخال/الإخراج](plugin-api/source.md) | مزوِّدو VFS، مواقع المصدر، المخازن المؤقتة، مصارف الإخراج، التبعيات |
-| [واجهة المعالج المسبق](plugin-api/prep.md) | الرموز، الماكرو، البراغما، التضمينات، استعلامات الميزات، 39 نوعًا من الأحداث |
-| [واجهة الشجرة النحوية والدلالات](plugin-api/ast-sema.md) | توسيع المُحلِّل، تعديل الشجرة النحوية، البحث عن الأسماء، الأنواع، الثوابت |
-| [واجهة IR](plugin-api/ir.md) | قراءة LLVM IR، البناء المعاملاتي، التحليلات، المرورات، المزوِّدون |
-| [واجهة MIR](plugin-api/mir.md) | دوال الآلة، السجلات، إطارات المكدس، مرورات وتحليلات MIR |
-| [الهدف وMC والتجميع والكائنات](plugin-api/target-mc-object.md) | تسجيل الأهداف، اصطلاحات الاستدعاء، ترميز MC، رسوم الكائنات |
-| [واجهة الربط وLTO](plugin-api/link-lto.md) | رسم الربط، حل الرموز، GC/ICF، مزوِّدو الرابط وLTO |
-| [واجهة DynCode](plugin-api/dyncode.md) | صور مسطّحة مستقلة عن الموضع، خفض الاستيرادات، ترميز مجموعة المحارف |
-| [اصطلاحات استدعاء مخصّصة](plugin-api/custom-callconv.md) | إضافات اصطلاحات الاستدعاء المُوجَّهة بالبيانات |
+| [README](plugin-api.md) | نقطة الدخول، المراحل، التفاوض على الواجهات، التسجيل، قواعد ABI |
+| [إضافات Python](plugin-api-python.md) | Python مضمّن اختياري، ودورة الحياة، والخيارات، وobservers للقراءة فقط، والتشخيصات، والقيود |
+| [واجهة المُشغِّل](plugin-api-driver.md) | سطر الأوامر، اختيار سلسلة الأدوات، رسم الإجراءات، رسم المهام |
+| [واجهة المصادر والإدخال/الإخراج](plugin-api-source.md) | مزوِّدو VFS، مواقع المصدر، المخازن المؤقتة، مصارف الإخراج، التبعيات |
+| [واجهة المعالج المسبق](plugin-api-prep.md) | الرموز، الماكرو، البراغما، التضمينات، استعلامات الميزات، 39 نوعًا من الأحداث |
+| [واجهة الشجرة النحوية والدلالات](plugin-api-ast-sema.md) | توسيع المُحلِّل، تعديل الشجرة النحوية، البحث عن الأسماء، الأنواع، الثوابت |
+| [واجهة IR](plugin-api-ir.md) | قراءة LLVM IR، البناء المعاملاتي، التحليلات، المرورات، المزوِّدون |
+| [واجهة MIR](plugin-api-mir.md) | دوال الآلة، السجلات، إطارات المكدس، مرورات وتحليلات MIR |
+| [الهدف وMC والتجميع والكائنات](plugin-api-target-mc-object.md) | تسجيل الأهداف، اصطلاحات الاستدعاء، ترميز MC، رسوم الكائنات |
+| [واجهة الربط وLTO](plugin-api-link-lto.md) | رسم الربط، حل الرموز، GC/ICF، مزوِّدو الرابط وLTO |
+| [واجهة DynCode](plugin-api-dyncode.md) | صور مسطّحة مستقلة عن الموضع، خفض الاستيرادات، ترميز مجموعة المحارف |
+| [اصطلاحات استدعاء مخصّصة](plugin-api-custom-callconv.md) | إضافات اصطلاحات الاستدعاء المُوجَّهة بالبيانات |
 
 ---
 

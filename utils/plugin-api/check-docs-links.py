@@ -184,7 +184,7 @@ def citation_targets() -> dict[str, str]:
     for name in os.listdir(ROOT / EXAMPLES):
         if name.endswith(".c"):
             targets[name] = f"{EXAMPLES}/{name}"
-    targets["coverage.json"] = "docs/plugin-api/coverage.json"
+    targets["coverage.json"] = "docs/plugin-api-coverage.json"
     return targets
 
 
@@ -231,12 +231,15 @@ def guide_pages() -> list[Path]:
 
 
 def indexed_trees() -> list[tuple[Path, Path]]:
-    """Discover English section indexes; examples have a separate docs index."""
-    indexes = {
-        page for page in guide_pages()
-        if not locale_of(page) and page.name == "README.md"
-    }
-    found = [(index, index.parent) for index in indexes]
+    """Find directory indexes and flat topic indexes by their child prefixes."""
+    pages = [page for page in guide_pages() if not locale_of(page)]
+    found = [(page, page.parent) for page in pages if page.name == "README.md"]
+    for page in pages:
+        if page.parent == DOCS and any(
+            child.parent == DOCS and child.name.startswith(page.stem + "-")
+            for child in pages
+        ):
+            found.append((page, page))
     found.extend(INDEXED_ELSEWHERE.items())
     return sorted(found)
 
@@ -722,6 +725,8 @@ def check_jump_parity(
 
 
 def within(page: Path, tree: Path) -> bool:
+    if tree.suffix == ".md":
+        return page.parent == tree.parent and page.name.startswith(tree.stem + "-")
     return tree == page.parent or tree in page.parents
 
 

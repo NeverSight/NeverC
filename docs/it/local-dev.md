@@ -34,7 +34,7 @@ ombrello stage-2:
 cmake --build build-neverc --target neverc-embed-runtime-bitcode
 ```
 
-I dettagli del bootstrap a due fasi sono in [Builtins](builtins/README.md).
+I dettagli del bootstrap a due fasi sono in [Builtins](builtins.md).
 
 ### Compilazione con test
 
@@ -151,7 +151,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-Per dyncode Windows (`-fdyncode`, risoluzione import PEB, ecc.), consultate la [documentazione del compilatore dyncode](dyncode-compiler/README.md).
+Per dyncode Windows (`-fdyncode`, risoluzione import PEB, ecc.), consultate la [documentazione del compilatore dyncode](dyncode-compiler.md).
 
 ---
 

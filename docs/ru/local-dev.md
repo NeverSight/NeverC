@@ -34,7 +34,7 @@ string / mimalloc / std / NVK в сам бинарник (или получит�
 cmake --build build-neverc --target neverc-embed-runtime-bitcode
 ```
 
-Подробности двухэтапного bootstrap — в [Builtins](builtins/README.md).
+Подробности двухэтапного bootstrap — в [Builtins](builtins.md).
 
 ### Сборка с тестами
 
@@ -151,7 +151,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-О шеллкоде для Windows (`-fdyncode`, PEB-разрешение импортов и т.д.) см. [документацию dyncode-компилятора](dyncode-compiler/README.md).
+О шеллкоде для Windows (`-fdyncode`, PEB-разрешение импортов и т.д.) см. [документацию dyncode-компилятора](dyncode-compiler.md).
 
 ---
 

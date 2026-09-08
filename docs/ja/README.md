@@ -14,20 +14,20 @@
 
 DynCode コンパイルパイプラインは NeverC の主要な研究領域です。アーキテクチャ、CLI オプション、プラットフォームマトリクス、例は次を参照：
 
-**[DynCode コンパイラ →](dyncode-compiler/README.md)**
+**[DynCode コンパイラ →](dyncode-compiler.md)**
 
 | ドキュメント | 説明 |
 |-------------|------|
-| [README](dyncode-compiler/README.md) | 概要、クイックスタート、サポートターゲット |
-| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic.md) | IR → オブジェクト → 抽出の設計 |
-| [IR Pass Design](dyncode-compiler/ir-pass-design.md) | 各 IR パスの設計意図 |
-| [MIR Pass Design](dyncode-compiler/mir-pass-design.md) | バックエンド MIR パス |
-| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode.md) | Ring-0 コンパイル |
-| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture.md) | `TargetDesc` と抽出器 |
-| [Platform Extension Guide](dyncode-compiler/platform-extension-guide.md) | 新プラットフォームの追加 |
-| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial.md) | dyncode の観点から見た ARM64 命令 |
-| [Roadmap](dyncode-compiler/roadmap.md) | 予定作業 |
-| [Progress](dyncode-compiler/progress.md) | 実装状況 |
+| [README](dyncode-compiler.md) | 概要、クイックスタート、サポートターゲット |
+| [Pipeline & PIC](dyncode-compiler-pipeline-and-pic.md) | IR → オブジェクト → 抽出の設計 |
+| [IR Pass Design](dyncode-compiler-ir-pass-design.md) | 各 IR パスの設計意図 |
+| [MIR Pass Design](dyncode-compiler-mir-pass-design.md) | バックエンド MIR パス |
+| [Kernel-Mode DynCode](dyncode-compiler-kernel-mode-dyncode.md) | Ring-0 コンパイル |
+| [Cross-Platform Architecture](dyncode-compiler-cross-platform-architecture.md) | `TargetDesc` と抽出器 |
+| [Platform Extension Guide](dyncode-compiler-platform-extension-guide.md) | 新プラットフォームの追加 |
+| [ARM64 Assembly Tutorial](dyncode-compiler-arm64-assembly-tutorial.md) | dyncode の観点から見た ARM64 命令 |
+| [Roadmap](dyncode-compiler-roadmap.md) | 予定作業 |
+| [Progress](dyncode-compiler-progress.md) | 実装状況 |
 
 ---
 
@@ -43,14 +43,14 @@ NeverC は `.nc` をネイティブソースファイル拡張子として認識
 
 NeverC は LLVM bitcode として埋め込まれた組み込みランタイムで標準 C を拡張します。各 `-fbuiltin-<name>` フラグで制御。`.nc` ファイルでは `string` が自動有効化。
 
-**[組み込みランタイムシステム →](builtins/README.md)**
+**[組み込みランタイムシステム →](builtins.md)**
 
 | 組み込み | フラグ | 説明 |
 |---------|--------|------|
-| [組み込み文字列](builtins/string.md) | `-fbuiltin-string` | 値セマンティクス `string` 型、ドットコールメソッド、自動メモリ管理、ネイティブ UTF-8 |
-| [組み込み mimalloc](builtins/mimalloc.md) | `-fbuiltin-mimalloc` | `malloc`/`free`/`calloc`/`realloc` の透過的 `mimalloc` 高性能アロケータオーバーライド |
-| [文字列暗号化 (xorstr)](builtins/xorstr.md) | `-fencrypt-call-strings` | インスタンス別暗号化、必須 late seal、呼び出し箇所別の最終展開、volatile スタッククリア |
-| [文字列ハッシュ (strhash)](builtins/strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | コンパイル時文字列ハッシュ、実行時と同一アルゴリズム、任意 IR 畳み込み |
+| [組み込み文字列](builtins-string.md) | `-fbuiltin-string` | 値セマンティクス `string` 型、ドットコールメソッド、自動メモリ管理、ネイティブ UTF-8 |
+| [組み込み mimalloc](builtins-mimalloc.md) | `-fbuiltin-mimalloc` | `malloc`/`free`/`calloc`/`realloc` の透過的 `mimalloc` 高性能アロケータオーバーライド |
+| [文字列暗号化 (xorstr)](builtins-xorstr.md) | `-fencrypt-call-strings` | インスタンス別暗号化、必須 late seal、呼び出し箇所別の最終展開、volatile スタッククリア |
+| [文字列ハッシュ (strhash)](builtins-strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | コンパイル時文字列ハッシュ、実行時と同一アルゴリズム、任意 IR 畳み込み |
 
 ---
 
@@ -58,22 +58,22 @@ NeverC は LLVM bitcode として埋め込まれた組み込みランタイム�
 
 NeverC は純粋な C ABI を通じてツールチェーン全体を公開します。プラグインは共有モジュール（`.dll` / `.so` / `.dylib`）であり、コマンドライン解析から最終的なリンク済みイメージまで、130 の名前付きコンパイルフェーズのいずれにも、オブザーバー・インターセプター・置換プロバイダーとして接続できます。SDK はヘッダーのみで、LLVM ヘッダーもコンパイラへのリンクも不要です。
 
-**[プラグイン API →](plugin-api/README.md)**
+**[プラグイン API →](plugin-api.md)**
 
 | ドキュメント | 説明 |
 |-------------|------|
-| [README](plugin-api/README.md) | エントリーポイント、フェーズ、インターフェース交渉、登録、ABI 規則 |
-| [Python プラグイン](plugin-api/python.md) | 任意の埋め込み Python、ライフサイクル、オプション、read-only observer、診断、制限 |
-| [ドライバー API](plugin-api/driver.md) | コマンドライン、ツールチェーン選択、アクショングラフ、ジョブグラフ |
-| [ソースと I/O API](plugin-api/source.md) | VFS プロバイダー、ソース位置、バッファー、出力シンク、依存関係 |
-| [プリプロセッサー API](plugin-api/prep.md) | トークン、マクロ、pragma、include、機能クエリ、39 種類のイベント |
-| [AST と意味解析 API](plugin-api/ast-sema.md) | パーサー拡張、AST 変更、名前探索、型、定数 |
-| [IR API](plugin-api/ir.md) | LLVM IR の読み取り、トランザクショナルな構築、解析、パス、プロバイダー |
-| [MIR API](plugin-api/mir.md) | マシン関数、レジスター、スタックフレーム、MIR パスと解析 |
-| [ターゲット、MC、アセンブリ、オブジェクト](plugin-api/target-mc-object.md) | ターゲット登録、呼び出し規約、MC エンコード、オブジェクトグラフ |
-| [リンクと LTO API](plugin-api/link-lto.md) | リンクグラフ、シンボル解決、GC/ICF、リンカーと LTO プロバイダー |
-| [DynCode API](plugin-api/dyncode.md) | フラットな位置独立イメージ、インポートの低位化、文字セットエンコード |
-| [カスタム呼び出し規約](plugin-api/custom-callconv.md) | データ駆動の呼び出し規約プラグイン |
+| [README](plugin-api.md) | エントリーポイント、フェーズ、インターフェース交渉、登録、ABI 規則 |
+| [Python プラグイン](plugin-api-python.md) | 任意の埋め込み Python、ライフサイクル、オプション、read-only observer、診断、制限 |
+| [ドライバー API](plugin-api-driver.md) | コマンドライン、ツールチェーン選択、アクショングラフ、ジョブグラフ |
+| [ソースと I/O API](plugin-api-source.md) | VFS プロバイダー、ソース位置、バッファー、出力シンク、依存関係 |
+| [プリプロセッサー API](plugin-api-prep.md) | トークン、マクロ、pragma、include、機能クエリ、39 種類のイベント |
+| [AST と意味解析 API](plugin-api-ast-sema.md) | パーサー拡張、AST 変更、名前探索、型、定数 |
+| [IR API](plugin-api-ir.md) | LLVM IR の読み取り、トランザクショナルな構築、解析、パス、プロバイダー |
+| [MIR API](plugin-api-mir.md) | マシン関数、レジスター、スタックフレーム、MIR パスと解析 |
+| [ターゲット、MC、アセンブリ、オブジェクト](plugin-api-target-mc-object.md) | ターゲット登録、呼び出し規約、MC エンコード、オブジェクトグラフ |
+| [リンクと LTO API](plugin-api-link-lto.md) | リンクグラフ、シンボル解決、GC/ICF、リンカーと LTO プロバイダー |
+| [DynCode API](plugin-api-dyncode.md) | フラットな位置独立イメージ、インポートの低位化、文字セットエンコード |
+| [カスタム呼び出し規約](plugin-api-custom-callconv.md) | データ駆動の呼び出し規約プラグイン |
 
 ---
 

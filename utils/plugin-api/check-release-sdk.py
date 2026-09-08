@@ -108,7 +108,7 @@ def main() -> int:
 
         coverage = HERE / "check-coverage.py"
         if run([sys.executable, str(coverage),
-                str(REPO / "docs/plugin-api/coverage.json")],
+                str(REPO / "docs/plugin-api-coverage.json")],
                cwd=REPO) != 0:
             failures.append(coverage.name)
 

@@ -35,7 +35,7 @@ CI)، شغّل هدف المظلة stage-2:
 cmake --build build-neverc --target neverc-embed-runtime-bitcode
 ```
 
-تفاصيل الإقلاع على مرحلتين في [Builtins](builtins/README.md).
+تفاصيل الإقلاع على مرحلتين في [Builtins](builtins.md).
 
 ### البناء مع الاختبارات
 
@@ -151,7 +151,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-لمزيد من المعلومات حول dyncode لـ Windows (`-fdyncode`، تحليل استيراد PEB، إلخ)، راجع [وثائق مُجمِّع dyncode](dyncode-compiler/README.md).
+لمزيد من المعلومات حول dyncode لـ Windows (`-fdyncode`، تحليل استيراد PEB، إلخ)، راجع [وثائق مُجمِّع dyncode](dyncode-compiler.md).
 
 ---
 

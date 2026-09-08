@@ -18,13 +18,13 @@ Integrated linker · DynCode pipeline · Built-in runtimes (`string` · `mimallo
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#features)
 
-[Documentation](docs/README.md) · [DynCode Guide](docs/dyncode-compiler/README.md) · [Built-in Runtimes](docs/builtins/README.md) · [Plugin API](docs/plugin-api/README.md) · [Roadmap](docs/roadmap.md)
+[Documentation](docs/README.md) · [DynCode Guide](docs/dyncode-compiler.md) · [Built-in Runtimes](docs/builtins.md) · [Plugin API](docs/plugin-api.md) · [Roadmap](docs/roadmap.md)
 
 </div>
 
 ---
 
-> **Note:** GitHub always shows `README.md` as the repository homepage (no automatic locale detection). Use the language links above; follow in-page links and breadcrumbs to keep the same locale in [docs](docs/README.md) and the [dyncode guide](docs/dyncode-compiler/README.md).
+> **Note:** GitHub always shows `README.md` as the repository homepage (no automatic locale detection). Use the language links above; follow in-page links and breadcrumbs to keep the same locale in [docs](docs/README.md) and the [dyncode guide](docs/dyncode-compiler.md).
 
 ## Overview
 
@@ -40,17 +40,17 @@ C is already the simplest systems language. NeverC makes it even simpler:
 - **Single binary** — Compiler + linker + runtimes ship as one executable. Zero external dependencies to set up.
 - **LLM-friendly** — Minimal grammar and deterministic semantics mean AI-generated NeverC code compiles correctly more often than C++ alternatives.
 - **True cross-compilation** — Build Windows PE, Linux ELF, macOS Mach-O, Android ELF, and dyncode from macOS or Linux — no VM, no dual boot, no SDK hunting. Platform SDKs ship inside the compiler.
-- **Extensible with zero friction** — A single C header, 130 named compiler phases, and you have a [compiler plugin](docs/plugin-api/README.md) that can intercept any stage from IR optimization to final binary output — no LLVM knowledge needed.
+- **Extensible with zero friction** — A single C header, 130 named compiler phases, and you have a [compiler plugin](docs/plugin-api.md) that can intercept any stage from IR optimization to final binary output — no LLVM knowledge needed.
 - **Security research built in** — DynCode compilation, compile-time string encryption, and cross-platform PE generation are native to the toolchain — not afterthoughts bolted on with external scripts.
 
 ## Features
 
-- **[DynCode compiler](docs/dyncode-compiler/README.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
+- **[DynCode compiler](docs/dyncode-compiler.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
 - **Integrated linker** — COFF, ELF, and Mach-O in one binary; no external `ld` or `link.exe`
 - **[Release stripping](docs/release-builds.md)** — built-in `--strip` / `-s` removes non-runtime symbols and source-level debug information, including kernel-aware `.ko` structural symbol renaming (not a hash or encryption)
 - **Cross-compilation** — build Windows PE, Linux ELF, macOS Mach-O, and Android ELF from any host with bundled platform SDKs
-- **[Built-in runtimes](docs/builtins/README.md)** — LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins/mimalloc.md) (transparent high-performance allocator override, on by default outside kernel and freestanding targets), [`xorstr`](docs/builtins/xorstr.md) (per-instance compile-time encryption with mandatory late sealing and per-call native expansion), and [`strhash`](docs/builtins/strhash.md) (compile-time string hashing with matching runtime)
-- **[Plugin API](docs/plugin-api/README.md)** — pure C ABI for out-of-tree plugins; single-header SDK with zero LLVM/CRT dependencies, spanning driver, preprocessor, AST, IR, MIR, MC, object, link, LTO, and dyncode phases
+- **[Built-in runtimes](docs/builtins.md)** — LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins-string.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins-mimalloc.md) (transparent high-performance allocator override, on by default outside kernel and freestanding targets), [`xorstr`](docs/builtins-xorstr.md) (per-instance compile-time encryption with mandatory late sealing and per-call native expansion), and [`strhash`](docs/builtins-strhash.md) (compile-time string hashing with matching runtime)
+- **[Plugin API](docs/plugin-api.md)** — pure C ABI for out-of-tree plugins; single-header SDK with zero LLVM/CRT dependencies, spanning driver, preprocessor, AST, IR, MIR, MC, object, link, LTO, and dyncode phases
 - **[`.nc` extension](docs/nc-extension.md)** — use `.nc` as file extension to auto-enable all NeverC features (`string`, Rust-style integer types) without extra flags
 - **Lean LLVM build** — only x86_64 and AArch64 backends; C++/ObjC/OpenMP paths stripped
 

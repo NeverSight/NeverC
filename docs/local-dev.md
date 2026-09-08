@@ -34,7 +34,7 @@ CI-like compiler), run the stage-2 umbrella:
 cmake --build build-neverc --target neverc-embed-runtime-bitcode
 ```
 
-Details of the two-stage bootstrap live in [Builtins](builtins/README.md).
+Details of the two-stage bootstrap live in [Builtins](builtins.md).
 
 ### Building with Tests
 
@@ -154,7 +154,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-See [dyncode compiler docs](dyncode-compiler/README.md) for Windows dyncode (`-fdyncode`, PEB import resolution, etc.).
+See [dyncode compiler docs](dyncode-compiler.md) for Windows dyncode (`-fdyncode`, PEB import resolution, etc.).
 
 ---
 

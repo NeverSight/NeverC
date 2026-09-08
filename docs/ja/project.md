@@ -18,13 +18,13 @@
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#機能)
 
-[ドキュメント索引](README.md) · [DynCode ガイド](dyncode-compiler/README.md) · [組み込みランタイム](builtins/README.md) · [プラグイン API](plugin-api/README.md) · [ロードマップ](roadmap.md)
+[ドキュメント索引](README.md) · [DynCode ガイド](dyncode-compiler.md) · [組み込みランタイム](builtins.md) · [プラグイン API](plugin-api.md) · [ロードマップ](roadmap.md)
 
 </div>
 
 ---
 
-> **注：** GitHub はリポジトリトップに常に英語の `README.md` を表示します（ブラウザ言語の自動切替なし）。上の言語リンクを使用し、[ドキュメント](README.md)・[dyncode ガイド](dyncode-compiler/README.md) ではページ内の言語欄とパンくずで同じ言語を維持してください。
+> **注：** GitHub はリポジトリトップに常に英語の `README.md` を表示します（ブラウザ言語の自動切替なし）。上の言語リンクを使用し、[ドキュメント](README.md)・[dyncode ガイド](dyncode-compiler.md) ではページ内の言語欄とパンくずで同じ言語を維持してください。
 
 ## 概要
 
@@ -40,17 +40,17 @@ C は既に最もシンプルなシステムプログラミング言語です。
 - **単一バイナリ** — コンパイラ + リンカ + ランタイムが一つの実行ファイルに。外部依存ゼロ。
 - **LLM フレンドリー** — 最小限の文法と決定的なセマンティクスにより、AI が生成する NeverC コードは C++ より正しくコンパイルされやすい。
 - **真のクロスコンパイル** — macOS や Linux から Windows PE、Linux ELF、macOS Mach-O、Android ELF、dyncode をビルド——VM 不要、デュアルブート不要、SDK 探し不要。各プラットフォーム SDK はコンパイラに内蔵。
-- **ゼロフリクションで拡張可能** — たった1つの C ヘッダーと 130 の名前付きコンパイルフェーズで、IR 最適化から最終バイナリ出力まであらゆる段階に介入する[コンパイラプラグイン](plugin-api/README.md)が書ける——LLVM の知識不要。
+- **ゼロフリクションで拡張可能** — たった1つの C ヘッダーと 130 の名前付きコンパイルフェーズで、IR 最適化から最終バイナリ出力まであらゆる段階に介入する[コンパイラプラグイン](plugin-api.md)が書ける——LLVM の知識不要。
 - **セキュリティ研究を組み込み済み** — DynCode コンパイル、コンパイル時文字列暗号化、クロスプラットフォーム PE 生成がコンパイラにネイティブ統合——外部スクリプトによる後付けではありません。
 
 ## 機能
 
-- **[DynCode コンパイラ](dyncode-compiler/README.md)** — 多段 IR/MIR パイプライン、クロスプラットフォーム抽出、インポート/システムコール低減、カーネルモード、バッドバイト監査、プラグインアーキテクチャ
+- **[DynCode コンパイラ](dyncode-compiler.md)** — 多段 IR/MIR パイプライン、クロスプラットフォーム抽出、インポート/システムコール低減、カーネルモード、バッドバイト監査、プラグインアーキテクチャ
 - **統合リンカ** — 単一バイナリで COFF・ELF・Mach-O；外部 `ld` / `link.exe` 不要
 - **[リリース時のストリップ](release-builds.md)** — 組み込みの `--strip` / `-s` が最終 ELF、Mach-O、PE/COFF から実行時不要のシンボルとソースデバッグ情報を削除し、`.ko` にはカーネル対応の構造的シンボル改名を適用（hash でも encryption でもありません）
 - **クロスコンパイル** — 任意のホストから Windows PE、Linux ELF、macOS Mach-O、Android ELF をビルド（各プラットフォーム SDK 内蔵）
-- **[組み込みランタイム](builtins/README.md)** — コンパイラ埋め込みの LLVM bitcode ランタイム：[`string`](builtins/string.md)（値セマンティクス文字列、自動メモリ管理）、[`mimalloc`](builtins/mimalloc.md)（透過的高性能アロケータオーバーライド、カーネルと freestanding を除きデフォルト有効）、[`xorstr`](builtins/xorstr.md)（インスタンス別コンパイル時暗号化、必須 late seal、呼び出し箇所別のネイティブ展開）、[`strhash`](builtins/strhash.md)（コンパイル時文字列ハッシュ、実行時と同一アルゴリズム）
-- **[プラグイン API](plugin-api/README.md)** — アウトオブツリープラグイン用純粋 C ABI；単一ヘッダー SDK、LLVM/CRT 依存ゼロ、ドライバー・プリプロセッサー・AST・IR・MIR・MC・オブジェクト・リンク・LTO・dyncode の各フェーズを網羅
+- **[組み込みランタイム](builtins.md)** — コンパイラ埋め込みの LLVM bitcode ランタイム：[`string`](builtins-string.md)（値セマンティクス文字列、自動メモリ管理）、[`mimalloc`](builtins-mimalloc.md)（透過的高性能アロケータオーバーライド、カーネルと freestanding を除きデフォルト有効）、[`xorstr`](builtins-xorstr.md)（インスタンス別コンパイル時暗号化、必須 late seal、呼び出し箇所別のネイティブ展開）、[`strhash`](builtins-strhash.md)（コンパイル時文字列ハッシュ、実行時と同一アルゴリズム）
+- **[プラグイン API](plugin-api.md)** — アウトオブツリープラグイン用純粋 C ABI；単一ヘッダー SDK、LLVM/CRT 依存ゼロ、ドライバー・プリプロセッサー・AST・IR・MIR・MC・オブジェクト・リンク・LTO・dyncode の各フェーズを網羅
 - **[`.nc` 拡張子](nc-extension.md)** — `.nc` ファイル拡張子ですべての NeverC 機能（`string`、Rust スタイル整数型）を自動有効化、追加フラグ不要
 - **スリム LLVM ビルド** — x86_64 / AArch64 バックエンドのみ；C++/ObjC/OpenMP 経路を除去
 

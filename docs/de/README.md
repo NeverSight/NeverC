@@ -14,20 +14,20 @@ Designnotizen, API-Referenz und Leitfäden für jedes NeverC-Subsystem.
 
 Die DynCode-Kompilierungspipeline ist NeverCs Hauptforschungsschwerpunkt. Architektur, CLI-Optionen, Plattformmatrix und Beispiele:
 
-**[DynCode-Compiler →](dyncode-compiler/README.md)**
+**[DynCode-Compiler →](dyncode-compiler.md)**
 
 | Dokument | Beschreibung |
 |----------|--------------|
-| [README](dyncode-compiler/README.md) | Überblick, Schnellstart, unterstützte Ziele |
-| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic.md) | Design IR → Objekt → Extraktion |
-| [IR Pass Design](dyncode-compiler/ir-pass-design.md) | Begründung jeder IR-Pass |
-| [MIR Pass Design](dyncode-compiler/mir-pass-design.md) | Backend-MIR-Passes |
-| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode.md) | Ring-0-Kompilierung |
-| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture.md) | `TargetDesc` und Extraktoren |
-| [Platform Extension Guide](dyncode-compiler/platform-extension-guide.md) | Neue Plattform hinzufügen |
-| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial.md) | ARM64-Befehle aus DynCode-Perspektive |
-| [Roadmap](dyncode-compiler/roadmap.md) | Geplante Arbeit |
-| [Progress](dyncode-compiler/progress.md) | Implementierungsstand |
+| [README](dyncode-compiler.md) | Überblick, Schnellstart, unterstützte Ziele |
+| [Pipeline & PIC](dyncode-compiler-pipeline-and-pic.md) | Design IR → Objekt → Extraktion |
+| [IR Pass Design](dyncode-compiler-ir-pass-design.md) | Begründung jeder IR-Pass |
+| [MIR Pass Design](dyncode-compiler-mir-pass-design.md) | Backend-MIR-Passes |
+| [Kernel-Mode DynCode](dyncode-compiler-kernel-mode-dyncode.md) | Ring-0-Kompilierung |
+| [Cross-Platform Architecture](dyncode-compiler-cross-platform-architecture.md) | `TargetDesc` und Extraktoren |
+| [Platform Extension Guide](dyncode-compiler-platform-extension-guide.md) | Neue Plattform hinzufügen |
+| [ARM64 Assembly Tutorial](dyncode-compiler-arm64-assembly-tutorial.md) | ARM64-Befehle aus DynCode-Perspektive |
+| [Roadmap](dyncode-compiler-roadmap.md) | Geplante Arbeit |
+| [Progress](dyncode-compiler-progress.md) | Implementierungsstand |
 
 ---
 
@@ -43,14 +43,14 @@ NeverC erkennt `.nc` als seine native Quelldateierweiterung. Mit `.nc` werden al
 
 NeverC erweitert Standard-C mit integrierten Laufzeiten als LLVM-Bitcode. Jede wird über ein `-fbuiltin-<name>`-Flag gesteuert. `.nc`-Dateien aktivieren `string` automatisch.
 
-**[Integriertes Laufzeitsystem →](builtins/README.md)**
+**[Integriertes Laufzeitsystem →](builtins.md)**
 
 | Integriert | Flag | Beschreibung |
 |------------|------|-------------|
-| [Integrierter String](builtins/string.md) | `-fbuiltin-string` | `string`-Werttyp mit Punkt-Aufruf-Methoden, automatischer Speicherverwaltung, nativem UTF-8 |
-| [Integriertes mimalloc](builtins/mimalloc.md) | `-fbuiltin-mimalloc` | Transparenter `mimalloc` Hochleistungs-Allokator-Override für `malloc`/`free`/`calloc`/`realloc` |
-| [Zeichenkettenverschlüsselung (xorstr)](builtins/xorstr.md) | `-fencrypt-call-strings` | Instanzbezogene Verschlüsselung, verpflichtende späte Versiegelung, Expansion pro Aufrufstelle und volatile Stack-Bereinigung |
-| [Zeichenketten-Hashing (strhash)](builtins/strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | Kompilierzeit-Zeichenketten-Hashing, übereinstimmende Laufzeit, optionaler IR-Fold |
+| [Integrierter String](builtins-string.md) | `-fbuiltin-string` | `string`-Werttyp mit Punkt-Aufruf-Methoden, automatischer Speicherverwaltung, nativem UTF-8 |
+| [Integriertes mimalloc](builtins-mimalloc.md) | `-fbuiltin-mimalloc` | Transparenter `mimalloc` Hochleistungs-Allokator-Override für `malloc`/`free`/`calloc`/`realloc` |
+| [Zeichenkettenverschlüsselung (xorstr)](builtins-xorstr.md) | `-fencrypt-call-strings` | Instanzbezogene Verschlüsselung, verpflichtende späte Versiegelung, Expansion pro Aufrufstelle und volatile Stack-Bereinigung |
+| [Zeichenketten-Hashing (strhash)](builtins-strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | Kompilierzeit-Zeichenketten-Hashing, übereinstimmende Laufzeit, optionaler IR-Fold |
 
 ---
 
@@ -58,22 +58,22 @@ NeverC erweitert Standard-C mit integrierten Laufzeiten als LLVM-Bitcode. Jede w
 
 NeverC öffnet seine gesamte Toolchain über eine reine C-ABI. Ein Plugin ist ein gemeinsames Modul (`.dll` / `.so` / `.dylib`), das sich an jede der 130 benannten Compilerphasen hängen kann — von der Kommandozeilenanalyse bis zum fertig gelinkten Abbild — als Beobachter, als Interceptor oder als ersetzender Provider. Das SDK besteht nur aus Headern: keine LLVM-Header, keine Compiler-Anbindung.
 
-**[Plugin-API →](plugin-api/README.md)**
+**[Plugin-API →](plugin-api.md)**
 
 | Dokument | Beschreibung |
 |----------|--------------|
-| [README](plugin-api/README.md) | Einstiegspunkt, Phasen, Schnittstellenaushandlung, Registrierung, ABI-Regeln |
-| [Python-Plugins](plugin-api/python.md) | Optionales eingebettetes Python, Lebenszyklus, Optionen, schreibgeschützte Observer, Diagnosen und Grenzen |
-| [Driver-API](plugin-api/driver.md) | Kommandozeile, Toolchain-Auswahl, Aktionsgraph, Job-Graph |
-| [Source- und E/A-API](plugin-api/source.md) | VFS-Provider, Quellpositionen, Puffer, Ausgabesenken, Abhängigkeiten |
-| [Präprozessor-API](plugin-api/prep.md) | Token, Makros, Pragmas, Includes, Feature-Abfragen, 39 Ereignisarten |
-| [AST- und Semantik-API](plugin-api/ast-sema.md) | Parser-Erweiterung, AST-Mutation, Namensauflösung, Typen, Konstanten |
-| [IR-API](plugin-api/ir.md) | LLVM-IR lesen, transaktionales Bauen, Analysen, Passes, Provider |
-| [MIR-API](plugin-api/mir.md) | Maschinenfunktionen, Register, Stackframes, MIR-Passes und -Analysen |
-| [Target, MC, Assembly, Objekt](plugin-api/target-mc-object.md) | Target-Registrierung, Aufrufkonventionen, MC-Kodierung, Objektgraphen |
-| [Link- und LTO-API](plugin-api/link-lto.md) | Link-Graph, Symbolauflösung, GC/ICF, Linker- und LTO-Provider |
-| [DynCode-API](plugin-api/dyncode.md) | Flache positionsunabhängige Images, Import-Lowering, Zeichensatzkodierung |
-| [Eigene Aufrufkonventionen](plugin-api/custom-callconv.md) | Datengetriebene Aufrufkonventions-Plugins |
+| [README](plugin-api.md) | Einstiegspunkt, Phasen, Schnittstellenaushandlung, Registrierung, ABI-Regeln |
+| [Python-Plugins](plugin-api-python.md) | Optionales eingebettetes Python, Lebenszyklus, Optionen, schreibgeschützte Observer, Diagnosen und Grenzen |
+| [Driver-API](plugin-api-driver.md) | Kommandozeile, Toolchain-Auswahl, Aktionsgraph, Job-Graph |
+| [Source- und E/A-API](plugin-api-source.md) | VFS-Provider, Quellpositionen, Puffer, Ausgabesenken, Abhängigkeiten |
+| [Präprozessor-API](plugin-api-prep.md) | Token, Makros, Pragmas, Includes, Feature-Abfragen, 39 Ereignisarten |
+| [AST- und Semantik-API](plugin-api-ast-sema.md) | Parser-Erweiterung, AST-Mutation, Namensauflösung, Typen, Konstanten |
+| [IR-API](plugin-api-ir.md) | LLVM-IR lesen, transaktionales Bauen, Analysen, Passes, Provider |
+| [MIR-API](plugin-api-mir.md) | Maschinenfunktionen, Register, Stackframes, MIR-Passes und -Analysen |
+| [Target, MC, Assembly, Objekt](plugin-api-target-mc-object.md) | Target-Registrierung, Aufrufkonventionen, MC-Kodierung, Objektgraphen |
+| [Link- und LTO-API](plugin-api-link-lto.md) | Link-Graph, Symbolauflösung, GC/ICF, Linker- und LTO-Provider |
+| [DynCode-API](plugin-api-dyncode.md) | Flache positionsunabhängige Images, Import-Lowering, Zeichensatzkodierung |
+| [Eigene Aufrufkonventionen](plugin-api-custom-callconv.md) | Datengetriebene Aufrufkonventions-Plugins |
 
 ---
 

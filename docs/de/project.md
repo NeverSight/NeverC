@@ -18,13 +18,13 @@ Integrierter Linker · DynCode-Pipeline · Integrierte Laufzeiten (`string` · `
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#funktionen)
 
-[Dokumentationsindex](README.md) · [DynCode-Leitfaden](dyncode-compiler/README.md) · [Integrierte Laufzeiten](builtins/README.md) · [Plugin-API](plugin-api/README.md) · [Roadmap](roadmap.md)
+[Dokumentationsindex](README.md) · [DynCode-Leitfaden](dyncode-compiler.md) · [Integrierte Laufzeiten](builtins.md) · [Plugin-API](plugin-api.md) · [Roadmap](roadmap.md)
 
 </div>
 
 ---
 
-> **Hinweis:** GitHub zeigt auf der Repository-Startseite immer `README.md` (Englisch) – keine automatische Spracherkennung. Nutzen Sie die Sprachlinks oben; in der [Dokumentation](README.md) und dem [DynCode-Leitfaden](dyncode-compiler/README.md) dieselbe Sprache über Sprachleiste und Breadcrumbs beibehalten.
+> **Hinweis:** GitHub zeigt auf der Repository-Startseite immer `README.md` (Englisch) – keine automatische Spracherkennung. Nutzen Sie die Sprachlinks oben; in der [Dokumentation](README.md) und dem [DynCode-Leitfaden](dyncode-compiler.md) dieselbe Sprache über Sprachleiste und Breadcrumbs beibehalten.
 
 ## Überblick
 
@@ -40,17 +40,17 @@ C ist bereits die einfachste Systemsprache. NeverC macht sie noch einfacher:
 - **Einzelne Binärdatei** — Compiler + Linker + Laufzeiten in einer einzigen ausführbaren Datei. Null externe Abhängigkeiten.
 - **LLM-freundlich** — Minimale Grammatik und deterministische Semantik sorgen dafür, dass KI-generierter NeverC-Code häufiger korrekt kompiliert als C++-Alternativen.
 - **Echte Cross-Kompilierung** — Windows PE, Linux ELF, macOS Mach-O, Android ELF und DynCode von macOS oder Linux bauen — keine VM, kein Dual-Boot, keine SDK-Suche. Plattform-SDKs sind im Compiler integriert.
-- **Erweiterbar ohne Reibung** — Ein einziger C-Header, 130 benannte Compilerphasen, und Sie haben ein [Compiler-Plugin](plugin-api/README.md), das in jede Phase eingreifen kann — von der IR-Optimierung bis zur finalen Binärausgabe — ohne LLVM-Kenntnisse.
+- **Erweiterbar ohne Reibung** — Ein einziger C-Header, 130 benannte Compilerphasen, und Sie haben ein [Compiler-Plugin](plugin-api.md), das in jede Phase eingreifen kann — von der IR-Optimierung bis zur finalen Binärausgabe — ohne LLVM-Kenntnisse.
 - **Sicherheitsforschung eingebaut** — DynCode-Kompilierung, Kompilierzeit-Stringverschlüsselung und plattformübergreifende PE-Generierung sind nativ in den Compiler integriert — keine nachträglich angehängten externen Skripte.
 
 ## Funktionen
 
-- **[DynCode-Compiler](dyncode-compiler/README.md)** — mehrstufige IR/MIR-Pipeline, plattformübergreifende Extraktion, Import-/Syscall-Lowering, Kernelmodus, Bad-Byte-Audit, Plugin-Architektur
+- **[DynCode-Compiler](dyncode-compiler.md)** — mehrstufige IR/MIR-Pipeline, plattformübergreifende Extraktion, Import-/Syscall-Lowering, Kernelmodus, Bad-Byte-Audit, Plugin-Architektur
 - **Integrierter Linker** — COFF, ELF und Mach-O in einem Binary; kein externes `ld` oder `link.exe`
 - **[Release-Stripping](release-builds.md)** — integriertes `--strip` / `-s` entfernt nicht zur Laufzeit nötige Symbole und Quelldebuginformationen aus finalen ELF-, Mach-O- und PE/COFF-Images und benennt `.ko`-Symbole kernelgerecht strukturell um (kein hash und keine encryption)
 - **Cross-Kompilierung** — Windows PE, Linux ELF, macOS Mach-O und Android ELF von jedem Host mit integrierten Plattform-SDKs
-- **[Integrierte Laufzeiten](builtins/README.md)** — in den Compiler eingebettete LLVM-Bitcode-Laufzeiten: [`string`](builtins/string.md) (Werttyp-String, automatische Speicherverwaltung), [`mimalloc`](builtins/mimalloc.md) (transparenter Hochleistungs-Allokator-Override, außerhalb von Kernel- und Freestanding-Zielen standardmäßig aktiv), [`xorstr`](builtins/xorstr.md) (instanzbezogene Kompilierzeitverschlüsselung, verpflichtende späte Versiegelung und native Expansion pro Aufrufstelle) und [`strhash`](builtins/strhash.md) (Kompilierzeit-Zeichenketten-Hashing mit übereinstimmender Laufzeit)
-- **[Plugin-API](plugin-api/README.md)** — Reine C-ABI für Out-of-Tree-Plugins; Single-Header-SDK, null LLVM/CRT-Abhängigkeiten, über Treiber-, Präprozessor-, AST-, IR-, MIR-, MC-, Objekt-, Link-, LTO- und dyncode-Phasen hinweg
+- **[Integrierte Laufzeiten](builtins.md)** — in den Compiler eingebettete LLVM-Bitcode-Laufzeiten: [`string`](builtins-string.md) (Werttyp-String, automatische Speicherverwaltung), [`mimalloc`](builtins-mimalloc.md) (transparenter Hochleistungs-Allokator-Override, außerhalb von Kernel- und Freestanding-Zielen standardmäßig aktiv), [`xorstr`](builtins-xorstr.md) (instanzbezogene Kompilierzeitverschlüsselung, verpflichtende späte Versiegelung und native Expansion pro Aufrufstelle) und [`strhash`](builtins-strhash.md) (Kompilierzeit-Zeichenketten-Hashing mit übereinstimmender Laufzeit)
+- **[Plugin-API](plugin-api.md)** — Reine C-ABI für Out-of-Tree-Plugins; Single-Header-SDK, null LLVM/CRT-Abhängigkeiten, über Treiber-, Präprozessor-, AST-, IR-, MIR-, MC-, Objekt-, Link-, LTO- und dyncode-Phasen hinweg
 - **[`.nc`-Erweiterung](nc-extension.md)** — `.nc`-Dateierweiterung aktiviert automatisch alle NeverC-Funktionen (`string`, Integer-Typen im Rust-Stil) ohne zusätzliche Flags
 - **Schlanker LLVM-Build** — nur x86_64 / AArch64-Backends; C++/ObjC/OpenMP-Pfade entfernt
 

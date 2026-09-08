@@ -34,7 +34,7 @@ de la CI), lancez la cible parapluie stage-2 :
 cmake --build build-neverc --target neverc-embed-runtime-bitcode
 ```
 
-Le bootstrap en deux étapes est détaillé dans [Builtins](builtins/README.md).
+Le bootstrap en deux étapes est détaillé dans [Builtins](builtins.md).
 
 ### Compilation avec les tests
 
@@ -151,7 +151,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-Pour le dyncode Windows (`-fdyncode`, résolution d'imports PEB, etc.), voir la [documentation du compilateur dyncode](dyncode-compiler/README.md).
+Pour le dyncode Windows (`-fdyncode`, résolution d'imports PEB, etc.), voir la [documentation du compilateur dyncode](dyncode-compiler.md).
 
 ---
 

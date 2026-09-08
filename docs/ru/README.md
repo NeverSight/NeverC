@@ -14,20 +14,20 @@
 
 Конвейер компиляции dyncode — основной исследовательский фокус NeverC. Архитектура, опции CLI, матрица платформ и примеры:
 
-**[Компилятор dyncode →](dyncode-compiler/README.md)**
+**[Компилятор dyncode →](dyncode-compiler.md)**
 
 | Документ | Описание |
 |----------|----------|
-| [README](dyncode-compiler/README.md) | Обзор, быстрый старт, поддерживаемые цели |
-| [Pipeline & PIC](dyncode-compiler/pipeline-and-pic.md) | Дизайн IR → объект → извлечение |
-| [IR Pass Design](dyncode-compiler/ir-pass-design.md) | Обоснование каждого IR-прохода |
-| [MIR Pass Design](dyncode-compiler/mir-pass-design.md) | MIR-проходы бэкенда |
-| [Kernel-Mode DynCode](dyncode-compiler/kernel-mode-dyncode.md) | Компиляция Ring-0 |
-| [Cross-Platform Architecture](dyncode-compiler/cross-platform-architecture.md) | `TargetDesc` и экстракторы |
-| [Platform Extension Guide](dyncode-compiler/platform-extension-guide.md) | Добавление платформы |
-| [ARM64 Assembly Tutorial](dyncode-compiler/arm64-assembly-tutorial.md) | Инструкции ARM64 с точки зрения dyncode |
-| [Roadmap](dyncode-compiler/roadmap.md) | Запланированная работа |
-| [Progress](dyncode-compiler/progress.md) | Статус реализации |
+| [README](dyncode-compiler.md) | Обзор, быстрый старт, поддерживаемые цели |
+| [Pipeline & PIC](dyncode-compiler-pipeline-and-pic.md) | Дизайн IR → объект → извлечение |
+| [IR Pass Design](dyncode-compiler-ir-pass-design.md) | Обоснование каждого IR-прохода |
+| [MIR Pass Design](dyncode-compiler-mir-pass-design.md) | MIR-проходы бэкенда |
+| [Kernel-Mode DynCode](dyncode-compiler-kernel-mode-dyncode.md) | Компиляция Ring-0 |
+| [Cross-Platform Architecture](dyncode-compiler-cross-platform-architecture.md) | `TargetDesc` и экстракторы |
+| [Platform Extension Guide](dyncode-compiler-platform-extension-guide.md) | Добавление платформы |
+| [ARM64 Assembly Tutorial](dyncode-compiler-arm64-assembly-tutorial.md) | Инструкции ARM64 с точки зрения dyncode |
+| [Roadmap](dyncode-compiler-roadmap.md) | Запланированная работа |
+| [Progress](dyncode-compiler-progress.md) | Статус реализации |
 
 ---
 
@@ -43,14 +43,14 @@ NeverC распознаёт `.nc` как своё нативное расшир�
 
 NeverC расширяет стандартный C встроенными средами выполнения в виде LLVM bitcode. Каждая управляется флагом `-fbuiltin-<name>`. Файлы `.nc` автоматически включают `string`.
 
-**[Система встроенных сред →](builtins/README.md)**
+**[Система встроенных сред →](builtins.md)**
 
 | Встроенная | Флаг | Описание |
 |-----------|------|----------|
-| [Встроенная строка](builtins/string.md) | `-fbuiltin-string` | Тип `string` с семантикой значения, методы через точку, автоуправление памятью, нативный UTF-8 |
-| [Встроенный mimalloc](builtins/mimalloc.md) | `-fbuiltin-mimalloc` | Прозрачная замена аллокатора `mimalloc` высокой производительности `malloc`/`free`/`calloc`/`realloc` |
-| [Шифрование строк (xorstr)](builtins/xorstr.md) | `-fencrypt-call-strings` | Шифрование каждого экземпляра, обязательное позднее запечатывание, разворачивание в точке вызова и volatile-очистка стека |
-| [Хеширование строк (strhash)](builtins/strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | Хеширование строк на этапе компиляции, тот же алгоритм во время выполнения, опциональный IR-fold |
+| [Встроенная строка](builtins-string.md) | `-fbuiltin-string` | Тип `string` с семантикой значения, методы через точку, автоуправление памятью, нативный UTF-8 |
+| [Встроенный mimalloc](builtins-mimalloc.md) | `-fbuiltin-mimalloc` | Прозрачная замена аллокатора `mimalloc` высокой производительности `malloc`/`free`/`calloc`/`realloc` |
+| [Шифрование строк (xorstr)](builtins-xorstr.md) | `-fencrypt-call-strings` | Шифрование каждого экземпляра, обязательное позднее запечатывание, разворачивание в точке вызова и volatile-очистка стека |
+| [Хеширование строк (strhash)](builtins-strhash.md) | `-fstrhash-algo` / `-fstrhash-fold` | Хеширование строк на этапе компиляции, тот же алгоритм во время выполнения, опциональный IR-fold |
 
 ---
 
@@ -58,22 +58,22 @@ NeverC расширяет стандартный C встроенными сре
 
 NeverC открывает всю свою цепочку инструментов через чистый C ABI. Плагин — это разделяемый модуль (`.dll` / `.so` / `.dylib`), который присоединяется к любой из 130 именованных фаз компиляции — от разбора командной строки до итогового скомпонованного образа — как наблюдатель, как перехватчик или как замещающий провайдер. SDK состоит только из заголовков: ни заголовков LLVM, ни компоновки с компилятором.
 
-**[API плагинов →](plugin-api/README.md)**
+**[API плагинов →](plugin-api.md)**
 
 | Документ | Описание |
 |----------|----------|
-| [README](plugin-api/README.md) | Точка входа, фазы, согласование интерфейсов, регистрация, правила ABI |
-| [Плагины Python](plugin-api/python.md) | Необязательный встроенный Python, жизненный цикл, опции, read-only observers, диагностика и ограничения |
-| [API драйвера](plugin-api/driver.md) | Командная строка, выбор тулчейна, граф действий, граф заданий |
-| [API источников и ввода-вывода](plugin-api/source.md) | Провайдеры VFS, позиции в исходниках, буферы, приёмники вывода, зависимости |
-| [API препроцессора](plugin-api/prep.md) | Токены, макросы, прагмы, включения, запросы возможностей, 39 видов событий |
-| [API AST и семантики](plugin-api/ast-sema.md) | Расширение парсера, изменение AST, поиск имён, типы, константы |
-| [API IR](plugin-api/ir.md) | Чтение LLVM IR, транзакционное построение, анализы, проходы, провайдеры |
-| [API MIR](plugin-api/mir.md) | Машинные функции, регистры, кадры стека, проходы и анализы MIR |
-| [Целевая платформа, MC, ассемблер, объектные файлы](plugin-api/target-mc-object.md) | Регистрация целевых платформ, соглашения о вызовах, кодирование MC, графы объектных файлов |
-| [API компоновки и LTO](plugin-api/link-lto.md) | Граф компоновки, разрешение символов, GC/ICF, провайдеры компоновщика и LTO |
-| [API DynCode](plugin-api/dyncode.md) | Плоские позиционно-независимые образы, понижение импортов, кодирование набора символов |
-| [Пользовательские соглашения о вызовах](plugin-api/custom-callconv.md) | Плагины соглашений о вызовах, управляемые данными |
+| [README](plugin-api.md) | Точка входа, фазы, согласование интерфейсов, регистрация, правила ABI |
+| [Плагины Python](plugin-api-python.md) | Необязательный встроенный Python, жизненный цикл, опции, read-only observers, диагностика и ограничения |
+| [API драйвера](plugin-api-driver.md) | Командная строка, выбор тулчейна, граф действий, граф заданий |
+| [API источников и ввода-вывода](plugin-api-source.md) | Провайдеры VFS, позиции в исходниках, буферы, приёмники вывода, зависимости |
+| [API препроцессора](plugin-api-prep.md) | Токены, макросы, прагмы, включения, запросы возможностей, 39 видов событий |
+| [API AST и семантики](plugin-api-ast-sema.md) | Расширение парсера, изменение AST, поиск имён, типы, константы |
+| [API IR](plugin-api-ir.md) | Чтение LLVM IR, транзакционное построение, анализы, проходы, провайдеры |
+| [API MIR](plugin-api-mir.md) | Машинные функции, регистры, кадры стека, проходы и анализы MIR |
+| [Целевая платформа, MC, ассемблер, объектные файлы](plugin-api-target-mc-object.md) | Регистрация целевых платформ, соглашения о вызовах, кодирование MC, графы объектных файлов |
+| [API компоновки и LTO](plugin-api-link-lto.md) | Граф компоновки, разрешение символов, GC/ICF, провайдеры компоновщика и LTO |
+| [API DynCode](plugin-api-dyncode.md) | Плоские позиционно-независимые образы, понижение импортов, кодирование набора символов |
+| [Пользовательские соглашения о вызовах](plugin-api-custom-callconv.md) | Плагины соглашений о вызовах, управляемые данными |
 
 ---
 

@@ -34,7 +34,7 @@ std / NVK runtime을 넣거나 CI와 같은 컴파일러가 필요하면 stage-2
 cmake --build build-neverc --target neverc-embed-runtime-bitcode
 ```
 
-2단계 부트스트랩 세부 사항은 [Builtins](builtins/README.md)를 참고하세요.
+2단계 부트스트랩 세부 사항은 [Builtins](builtins.md)를 참고하세요.
 
 ### 테스트 포함 빌드
 
@@ -151,7 +151,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -fbuiltin-string -o hello.exe hello.c -lkernel32
 ```
 
-Windows dyncode(`-fdyncode`, PEB 임포트 해결 등)에 대해서는 [dyncode 컴파일러 문서](dyncode-compiler/README.md)를 참조하세요.
+Windows dyncode(`-fdyncode`, PEB 임포트 해결 등)에 대해서는 [dyncode 컴파일러 문서](dyncode-compiler.md)를 참조하세요.
 
 ---
 

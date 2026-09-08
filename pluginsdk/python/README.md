@@ -19,6 +19,6 @@ descriptors are connected through `neverc_plugin.ffi.bind_callbacks`, which
 adds checked lifetimes, native trampolines, GIL handling, and structured
 exception propagation.
 
-See `docs/plugin-api/python.md` for the full contract. A complete Python-only
+See `docs/plugin-api-python.md` for the full contract. A complete Python-only
 classic OLLVM example implementing SUB, BCF, and FLA is in
 `examples/ollvm/`.
