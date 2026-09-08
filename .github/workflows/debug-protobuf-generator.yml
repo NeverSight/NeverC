@@ -1,0 +1,141 @@
+# Temporary focused acceptance; remove after the candidate's GitHub validation.
+name: debug-protobuf-generator
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - utils/protobuf/neverc-protoc.py
+      - utils/protobuf/test_neverc_protoc.py
+      - tests/neverc/CMakeLists.txt
+      - .github/workflows/debug-protobuf-generator.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel stale runs on the same ref when a newer commit is pushed. Set repo
+# variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/dev'
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux GCC
+            runner: ubuntu-22.04
+            cc: gcc
+            cxx: g++
+            compiler_id: GNU
+            frontend: GNU
+            target: ''
+            msvc_arch: ''
+          - name: Linux Clang
+            runner: ubuntu-22.04
+            cc: clang
+            cxx: clang++
+            compiler_id: Clang
+            frontend: GNU
+            target: ''
+            msvc_arch: ''
+          - name: macOS AppleClang
+            runner: macos-15
+            cc: /usr/bin/clang
+            cxx: /usr/bin/clang++
+            compiler_id: AppleClang
+            frontend: GNU
+            target: ''
+            msvc_arch: ''
+          - name: Windows x64 MSVC
+            runner: windows-2022
+            cc: cl.exe
+            cxx: cl.exe
+            compiler_id: MSVC
+            frontend: MSVC
+            target: ''
+            msvc_arch: x64
+          - name: Windows ARM64 MSVC
+            runner: windows-11-arm
+            cc: cl.exe
+            cxx: cl.exe
+            compiler_id: MSVC
+            frontend: MSVC
+            target: ''
+            msvc_arch: arm64
+          - name: Windows x64 Clang
+            runner: windows-2022
+            cc: 'C:\Program Files\LLVM\bin\clang.exe'
+            cxx: 'C:\Program Files\LLVM\bin\clang++.exe'
+            compiler_id: Clang
+            frontend: GNU
+            target: x86_64-pc-windows-msvc
+            msvc_arch: x64
+          - name: Windows ARM64 Clang
+            runner: windows-11-arm
+            cc: 'C:\Program Files\LLVM\bin\clang.exe'
+            cxx: 'C:\Program Files\LLVM\bin\clang++.exe'
+            compiler_id: Clang
+            frontend: GNU
+            target: aarch64-pc-windows-msvc
+            msvc_arch: arm64
+    env:
+      NEVERC_PROTOC_C_COMPILER: ${{ matrix.cc }}
+      NEVERC_PROTOC_C_ID: ${{ matrix.compiler_id }}
+      NEVERC_PROTOC_C_FRONTEND: ${{ matrix.frontend }}
+      NEVERC_PROTOC_C_TARGET: ${{ matrix.target }}
+      NEVERC_PROTOC_CXX_COMPILER: ${{ matrix.cxx }}
+      NEVERC_PROTOC_CXX_ID: ${{ matrix.compiler_id }}
+      NEVERC_PROTOC_CXX_FRONTEND: ${{ matrix.frontend }}
+      NEVERC_PROTOC_CXX_TARGET: ${{ matrix.target }}
+    steps:
+      - name: Checkout exact candidate commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12.10'
+
+      - name: Set up Windows compiler and SDK environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Run generator regressions and C/C++ syntax checks
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import sys
+
+          environment = os.environ.copy()
+          for language in ("C", "CXX"):
+              prefix = "NEVERC_PROTOC_" + language
+              requested = environment[prefix + "_COMPILER"]
+              compiler = shutil.which(requested)
+              if compiler is None:
+                  raise RuntimeError(f"Required {language} compiler is missing: {requested}")
+              environment[prefix + "_COMPILER"] = str(Path(compiler).resolve())
+              for suffix in ("COMPILER", "ID", "FRONTEND", "TARGET"):
+                  key = prefix + "_" + suffix
+                  print(f"{key}={environment[key]}", flush=True)
+          subprocess.run(
+              [sys.executable, "-I", "-B",
+               "utils/protobuf/test_neverc_protoc.py", "-v"],
+              env=environment,
+              check=True,
+          )

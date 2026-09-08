@@ -2379,6 +2379,24 @@ gtest_discover_tests(neverc-plugin-io-tests
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(
+  NAME ProtobufGeneratorTests
+  COMMAND "${CMAKE_COMMAND}" -E env
+          "NEVERC_PROTOC_C_COMPILER=${CMAKE_C_COMPILER}"
+          "NEVERC_PROTOC_C_ID=${CMAKE_C_COMPILER_ID}"
+          "NEVERC_PROTOC_C_FRONTEND=${CMAKE_C_COMPILER_FRONTEND_VARIANT}"
+          "NEVERC_PROTOC_C_TARGET=${CMAKE_C_COMPILER_TARGET}"
+          "NEVERC_PROTOC_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+          "NEVERC_PROTOC_CXX_ID=${CMAKE_CXX_COMPILER_ID}"
+          "NEVERC_PROTOC_CXX_FRONTEND=${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}"
+          "NEVERC_PROTOC_CXX_TARGET=${CMAKE_CXX_COMPILER_TARGET}"
+          "${Python3_EXECUTABLE}" -I -B
+          "${CMAKE_CURRENT_SOURCE_DIR}/../../utils/protobuf/test_neverc_protoc.py"
+          -v
+)
+set_tests_properties(ProtobufGeneratorTests PROPERTIES
+  TIMEOUT 300
+)
+add_test(
   NAME StdLibTest.BuildStdBitcodeGenerator
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/BuildStdBitcodeTests.py
