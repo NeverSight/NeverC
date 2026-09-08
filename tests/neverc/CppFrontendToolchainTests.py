@@ -11,6 +11,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import tarfile
+import time
+import urllib.request
 
 
 ENTRY = 'extern "C" int neverc_cpp_frontend_main(int, const char **) { return 0; }\n'
@@ -541,6 +544,242 @@ int main() {
                         self.assertEqual(result.returncode, 0,
                                          f"{command!r}\n{result.stdout}\n{result.stderr}")
                 self.require_success([executable])
+
+    def test_setup_sdk_inputs_and_object_provenance(self):
+        # Evidence collection only: these non-LTO objects are neither linked
+        # nor run. Symbol/section data does not prove GUID storage identity,
+        # QueryInterface behavior, or equivalence to every production mode.
+        repository = Path(__file__).resolve().parents[2]
+        pin = repository / "neverc/cmake/modules/BuiltinCppFrontend.cmake"
+        archive_url = (
+            "https://github.com/llvm/llvm-project/releases/download/"
+            "llvmorg-20.1.8/llvm-project-20.1.8.src.tar.xz")
+        archive_sha = "6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d"
+        archive_size = 147242952
+        member_name = (
+            "llvm-project-20.1.8.src/llvm/include/llvm/WindowsDriver/"
+            "MSVCSetupApi.h")
+        header_sha = "d4341b292369b13be4c4b3de1c7dd87bc9f79d3aa25eb80a632d742e20da44a8"
+        header_size = 19823
+        pin_text = pin.read_text(encoding="utf-8")
+        self.assertEqual(re.findall(
+            r'^\s*set\(_url "(https://[^"]+)"\)\s*$', pin_text, re.MULTILINE),
+            [archive_url], "Update the witness when the production LLVM pin changes")
+        self.assertEqual(re.findall(
+            r"^\s*URL_HASH SHA256=([0-9a-f]{64})\s*$", pin_text, re.MULTILINE),
+            [archive_sha], "The witness must use the production archive hash")
+
+        # This runs only in the existing Windows GitHub toolchain jobs, before
+        # the main ExternalProject has extracted its source. Download the same
+        # content-addressed release here; never substitute the host LLVM header.
+        archive_path = self.root / "llvm-project-20.1.8.src.tar.xz"
+        digest = hashlib.sha256()
+        downloaded = 0
+        started = time.monotonic()
+        with urllib.request.urlopen(archive_url, timeout=30) as response:
+            self.assertEqual(response.status, 200)
+            with archive_path.open("wb") as output:
+                while chunk := response.read(1024 * 1024):
+                    downloaded += len(chunk)
+                    self.assertLessEqual(downloaded, archive_size)
+                    self.assertLess(time.monotonic() - started, 300,
+                                    "Pinned source download exceeded five minutes")
+                    digest.update(chunk)
+                    output.write(chunk)
+        self.assertEqual(downloaded, archive_size)
+        self.assertEqual(digest.hexdigest(), archive_sha)
+        print(f"SETUP source archive: url={archive_url} bytes={downloaded} "
+              f"sha256={digest.hexdigest()} pin_file_sha256="
+              f"{hashlib.sha256(pin.read_bytes()).hexdigest()}", flush=True)
+
+        headers = []
+        with tarfile.open(archive_path, mode="r|xz") as archive:
+            for member in archive:
+                if member.name != member_name:
+                    continue
+                self.assertTrue(member.isfile(), member.name)
+                self.assertEqual(member.size, header_size)
+                with archive.extractfile(member) as source:
+                    headers.append(source.read(header_size + 1))
+        self.assertEqual(len(headers), 1, "Expected one exact release header member")
+        header_bytes = headers[0]
+        self.assertEqual(len(header_bytes), header_size)
+        self.assertEqual(hashlib.sha256(header_bytes).hexdigest(), header_sha)
+        include_root = self.root / "pinned-include"
+        header = include_root / "llvm/WindowsDriver/MSVCSetupApi.h"
+        header.parent.mkdir(parents=True)
+        header.write_bytes(header_bytes)
+        print(f"SETUP pinned header: member={member_name} bytes={header_size} "
+              f"sha256={header_sha} path={header}", flush=True)
+
+        common = """
+// Match the Windows include controls in the pinned MSVCPaths.cpp.
+#define WIN32_LEAN_AND_MEAN
+#define NOGDI
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+// Match MSVCPaths.cpp's required order; let comdef choose its own SDK headers.
+#include <comdef.h>
+#include "llvm/WindowsDriver/MSVCSetupApi.h"
+#include <stddef.h>
+static_assert(sizeof(GUID) == 16, "GUID size");
+static_assert(offsetof(GUID, Data1) == 0, "GUID Data1 offset");
+static_assert(offsetof(GUID, Data2) == 4, "GUID Data2 offset");
+static_assert(offsetof(GUID, Data3) == 6, "GUID Data3 offset");
+static_assert(offsetof(GUID, Data4) == 8, "GUID Data4 offset");
+static_assert(sizeof(void *) == 8, "Native 64-bit witness required");
+#define NEVERC_SETUP_STRING_IMPL(x) #x
+#define NEVERC_SETUP_STRING(x) NEVERC_SETUP_STRING_IMPL(x)
+"""
+        architecture_macro = (
+            "_M_ARM64" if self.target == "aarch64-pc-windows-msvc" else "_M_X64")
+        common += (f"#ifndef {architecture_macro}\n"
+                   '#error The active compiler does not match the native CI target\n'
+                   "#endif\n")
+        for macro in ("_MSC_VER", "_MSC_FULL_VER", "_MT", "_DLL", "_CPPUNWIND",
+                      "_HAS_EXCEPTIONS", "_M_X64", "_M_ARM64", "__clang_major__",
+                      "__clang_minor__", "__clang_patchlevel__", "__EXCEPTIONS",
+                      "WIN32_LEAN_AND_MEAN", "NOGDI", "NOMINMAX"):
+            common += (f"#ifdef {macro}\n"
+                       f'#pragma message("NEVERC_SETUP_MACRO {macro}=" '
+                       f'NEVERC_SETUP_STRING({macro}))\n'
+                       "#else\n"
+                       f'#pragma message("NEVERC_SETUP_MACRO {macro}=undefined")\n'
+                       "#endif\n")
+        guid_types = (
+            ("unknown", "IUnknown"),
+            ("class", "SetupConfiguration"),
+            ("configuration", "ISetupConfiguration"),
+            ("configuration2", "ISetupConfiguration2"),
+            ("helper", "ISetupHelper"),
+        )
+        values = "".join(
+            f'extern "C" const GUID *neverc_cpp_setup_{name}_guid() '
+            f'{{ return &__uuidof({kind}); }}\n' for name, kind in guid_types)
+        # Keep this TU separate: the explicit value accessors above must not
+        # force symbols into the smart-pointer call-shape inventory.
+        calls = """
+_COM_SMARTPTR_TYPEDEF(ISetupConfiguration, __uuidof(ISetupConfiguration));
+_COM_SMARTPTR_TYPEDEF(ISetupConfiguration2, __uuidof(ISetupConfiguration2));
+_COM_SMARTPTR_TYPEDEF(ISetupHelper, __uuidof(ISetupHelper));
+_COM_SMARTPTR_TYPEDEF(IEnumSetupInstances, __uuidof(IEnumSetupInstances));
+extern "C" HRESULT neverc_cpp_setup_smart_pointer_shapes(
+    BSTR version, ULONGLONG *parsed) {
+  ISetupConfigurationPtr query;
+  HRESULT result = query.CreateInstance(__uuidof(SetupConfiguration));
+  if (FAILED(result)) return result;
+  IEnumSetupInstancesPtr instances;
+  result = ISetupConfiguration2Ptr(query)->EnumAllInstances(&instances);
+  if (FAILED(result)) return result;
+  return ISetupHelperPtr(query)->ParseVersion(version, parsed);
+}
+"""
+        expected_guids = {
+            "_GUID_00000000_0000_0000_c000_000000000046",
+            "_GUID_177f0c4a_1cd3_4de7_a32c_71dbbb9fa36d",
+            "_GUID_42843719_db4c_46c2_8e7c_64f1816efd5b",
+            "_GUID_26aab78c_4a60_49d6_af3b_3c35bc93365d",
+            "_GUID_42b21b78_6192_463e_87bf_d577838f1d5c",
+        }
+        provenance = {}
+        for msvc in (False, True):
+            compiler = "msvc" if msvc else "clang"
+            if not msvc:
+                print(self.require_success([self.clang, "--version"]), flush=True)
+            for unit, body in (("explicit-values", values), ("smart-pointers", calls)):
+                with self.subTest(compiler=compiler, unit=unit):
+                    directory = self.root / compiler / unit
+                    directory.mkdir(parents=True)
+                    source = directory / "setup.cpp"
+                    obj = directory / "setup.obj"
+                    source.write_text(common + body, encoding="utf-8")
+                    if msvc:
+                        command = [
+                            self.msvc, "/nologo", "/Bv", "/std:c++17", "/c",
+                            "/Od", "/GL-", "/GR-", "/EHsc", "/MT", "/showIncludes",
+                            "/I" + str(include_root), "/Fo" + str(obj), source,
+                        ]
+                    else:
+                        command = [
+                            self.clang, "--target=" + self.target, "-std=c++17",
+                            "-O2", "-fno-lto", "-fms-extensions",
+                            "-fmerge-all-constants", "-fno-exceptions", "-fno-rtti",
+                            "-fms-runtime-lib=static", "-Xclang", "--show-includes",
+                            "-Xclang", "-sys-header-deps", "-I", include_root,
+                            "-c", source, "-o", obj,
+                        ]
+                    print(f"SETUP compile: compiler={compiler} unit={unit} "
+                          f"target={self.target} command=" + subprocess.list2cmdline(
+                              [str(argument) for argument in command]), flush=True)
+                    environment = os.environ.copy()
+                    if msvc:
+                        environment["VSLANG"] = "1033"
+                    result = subprocess.run(
+                        [str(argument) for argument in command], cwd=self.root,
+                        env=environment, capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", timeout=120, check=False)
+                    output = result.stdout + result.stderr
+                    print(output, end="", flush=True)
+                    self.assertEqual(result.returncode, 0, output)
+                    consumed = {name: set() for name in (
+                        "comdef.h", "comip.h", "unknwn.h", "unknwnbase.h",
+                        "guiddef.h", "msvcsetupapi.h")}
+                    for line in output.splitlines():
+                        prefix = "Note: including file:"
+                        if not line.startswith(prefix):
+                            continue
+                        path = Path(line[len(prefix):].lstrip(" "))
+                        name = path.name.lower()
+                        if name not in consumed:
+                            continue
+                        self.assertTrue(path.is_absolute(), str(path))
+                        path = path.resolve(strict=True)
+                        self.assertTrue(path.is_file(), str(path))
+                        consumed[name].add(path)
+                    for name in ("comdef.h", "msvcsetupapi.h"):
+                        self.assertEqual(len(consumed[name]), 1,
+                                         f"Actual compilation must trace one {name}")
+                    self.assertTrue(consumed["unknwn.h"] or consumed["unknwnbase.h"],
+                                    "The actual IUnknown header must be traced")
+                    for name, paths in consumed.items():
+                        self.assertLessEqual(len(paths), 1, f"Ambiguous {name}: {paths}")
+                        if not paths:
+                            # Header layout may differ by SDK. Never manufacture
+                            # provenance by explicitly including an absent header.
+                            print(f"SETUP SDK provenance: compiler={compiler} "
+                                  f"unit={unit} header={name} observed=false", flush=True)
+                            continue
+                        path = next(iter(paths))
+                        evidence = (str(path), hashlib.sha256(path.read_bytes()).hexdigest())
+                        if name == "msvcsetupapi.h":
+                            self.assertEqual(path, header.resolve(strict=True))
+                            self.assertEqual(evidence[1], header_sha)
+                        if name in provenance:
+                            self.assertEqual(evidence, provenance[name],
+                                             "Both compilers must consume identical named headers")
+                        else:
+                            provenance[name] = evidence
+                        print(f"SETUP SDK provenance: compiler={compiler} unit={unit} "
+                              f"header={name} path={evidence[0]} sha256={evidence[1]}",
+                              flush=True)
+                    inventory = self.require_success([
+                        self.nm, "--extern-only", "--format=posix", obj])
+                    print(f"SETUP actual inventory: compiler={compiler} unit={unit} "
+                          f"object={obj}\n{inventory}", end="", flush=True)
+                    if unit == "explicit-values":
+                        definitions = self.defined_declarations(obj)
+                        self.assertTrue(expected_guids <= definitions.keys(),
+                                        f"Missing actual __uuidof definitions: {definitions}")
+                    sections = self.require_success([
+                        self.readobj, "--file-headers", "--symbols", "--sections",
+                        "--section-data", "--relocations", obj])
+                    print(f"SETUP actual COFF data: compiler={compiler} unit={unit} "
+                          f"object={obj}\n{sections}", end="", flush=True)
+        print("SETUP input/object capture completed; no linked address identity, "
+              "COM runtime behavior, or production-mode equivalence was tested.",
+              flush=True)
 
     def test_sdk_url_history_clsids_and_alias_are_isolated(self):
         # These definitions come from the runner's shlguid.h, not fixture GUID
