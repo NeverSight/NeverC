@@ -75,11 +75,30 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Verify builtin C++ audit with real COFF archives
+        id: cpp_coff_witness
+        timeout-minutes: 20
         shell: bash
         run: |
           "${{ steps.python.outputs.python-path }}" -I -B \
             tests/neverc/CppFrontendToolchainTests.py \
-            --llvm-root "$LLVM_ROOT" --target x86_64-pc-windows-msvc
+            --llvm-root "$LLVM_ROOT" --target x86_64-pc-windows-msvc \
+            --report-dir "$RUNNER_TEMP/cpp-coff-witness-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+
+      - name: Require COFF witness manifest
+        if: always()
+        shell: bash
+        run: test -s "$RUNNER_TEMP/cpp-coff-witness-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/manifest.json"
+
+      - name: Upload COFF witness text evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-coff-witness-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cpp-coff-witness-${{ github.run_id }}-${{ github.run_attempt }}/manifest.json
+            ${{ runner.temp }}/cpp-coff-witness-${{ github.run_id }}-${{ github.run_attempt }}/*.txt
+          if-no-files-found: error
+          retention-days: 14
 
       # ── sccache ──────────────────────────────────────────────
       - name: Setup sccache

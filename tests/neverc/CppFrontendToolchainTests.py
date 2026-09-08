@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -20,6 +21,13 @@ ENTRY = 'extern "C" int neverc_cpp_frontend_main(int, const char **) { return 0;
 
 
 class CppFrontendToolchainTests(unittest.TestCase):
+    @classmethod
+    def write_setup_report(cls):
+        temporary = cls.report_dir / "manifest.json.tmp"
+        temporary.write_text(json.dumps(cls.setup_report, indent=2) + "\n",
+                             encoding="utf-8")
+        temporary.replace(cls.report_dir / "manifest.json")
+
     @classmethod
     def setUpClass(cls):
         cls.audit = (Path(__file__).resolve().parents[2] /
@@ -41,11 +49,62 @@ class CppFrontendToolchainTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
 
     def run_command(self, command):
+        if hasattr(self, "setup_deadline"):
+            return self.setup_command(command)
         return subprocess.run(
             [str(argument) for argument in command], cwd=self.root,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=120, check=False,
         )
+
+    def setup_command(self, command, *, env=None, timeout=120):
+        # Only the Setup witness enters this path. Persist an intent before
+        # starting a process, so a killed job leaves an incomplete record.
+        arguments = [str(argument) for argument in command]
+        index = len(self.setup_report["commands"]) + 1
+        stem = f"command-{index:03d}"
+        record = {"argv": arguments, "status": "started",
+                  "stdout": stem + ".stdout.txt", "stderr": stem + ".stderr.txt"}
+        self.setup_report["commands"].append(record)
+        self.write_setup_report()
+        remaining = self.setup_deadline - time.monotonic()
+        if remaining <= 0:
+            record["status"] = "budget-exhausted"
+            for stream in ("stdout", "stderr"):
+                (self.report_dir / record[stream]).write_text("", encoding="utf-8")
+            self.write_setup_report()
+            self.fail("Setup witness exceeded its ten-minute budget")
+        started = time.monotonic()
+        try:
+            result = subprocess.run(
+                arguments, cwd=self.root, env=env, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=min(timeout, remaining),
+                check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            record.update(status="process-error", error=type(error).__name__,
+                          detail=str(error), seconds=time.monotonic() - started)
+            for stream in ("stdout", "stderr"):
+                content = getattr(error, stream, "") or ""
+                if isinstance(content, bytes):
+                    content = content.decode("utf-8", errors="replace")
+                (self.report_dir / record[stream]).write_text(content, encoding="utf-8")
+            self.write_setup_report()
+            raise
+        for stream in ("stdout", "stderr"):
+            (self.report_dir / record[stream]).write_text(
+                getattr(result, stream), encoding="utf-8")
+        record.update(status="completed", returncode=result.returncode,
+                      seconds=time.monotonic() - started)
+        self.write_setup_report()
+        return result
+
+    def check_setup_budget(self):
+        remaining = self.setup_deadline - time.monotonic()
+        if remaining <= 0:
+            self.setup_report["setup_status"] = "budget-exhausted"
+            self.write_setup_report()
+            self.fail("Setup witness exceeded its ten-minute cooperative budget")
+        return remaining
 
     def require_success(self, command):
         result = self.run_command(command)
@@ -545,11 +604,595 @@ int main() {
                                          f"{command!r}\n{result.stdout}\n{result.stderr}")
                 self.require_success([executable])
 
+    def run_setup_runtime_witness(self, common, include_root):
+        # Two baseline providers intentionally retain their SDK spellings.
+        # A future production isolation change needs its own failing contract.
+        provider = r"""
+// Appended to the pinned-header/common preamble; SIDE is host or private.
+#define SETUP_JOIN_IMPL(a, b) a##b
+#define SETUP_JOIN(a, b) SETUP_JOIN_IMPL(a, b)
+#define SETUP_EXPORT(suffix) SETUP_JOIN(SIDE, suffix)
+
+_COM_SMARTPTR_TYPEDEF(ISetupConfiguration, __uuidof(ISetupConfiguration));
+_COM_SMARTPTR_TYPEDEF(ISetupConfiguration2, __uuidof(ISetupConfiguration2));
+_COM_SMARTPTR_TYPEDEF(ISetupHelper, __uuidof(ISetupHelper));
+_COM_SMARTPTR_TYPEDEF(IEnumSetupInstances, __uuidof(IEnumSetupInstances));
+
+extern "C" const GUID *SETUP_EXPORT(_setup_guid)(unsigned slot) {
+  switch (slot) {
+  case 0: return &__uuidof(IUnknown);
+  case 1: return &__uuidof(SetupConfiguration);
+  case 2: return &__uuidof(ISetupConfiguration);
+  case 3: return &__uuidof(ISetupConfiguration2);
+  case 4: return &__uuidof(ISetupHelper);
+  default: return nullptr;
+  }
+}
+
+extern "C" HRESULT SETUP_EXPORT(_setup_run)(
+    ISetupConfiguration *input, ISetupConfiguration2 *expected_configuration2,
+    ISetupHelper *expected_helper, BSTR version, ULONGLONG *parsed) {
+  if (!input || !expected_configuration2 || !expected_helper || !version || !parsed)
+    return E_POINTER;
+  // The raw-pointer constructor acquires its own reference. The harness keeps
+  // its original reference, and checks that this entire scope releases its own.
+  ISetupConfigurationPtr query(input);
+  ISetupConfiguration2Ptr configuration2(query);
+  if (configuration2.GetInterfacePtr() != expected_configuration2) {
+    // Do not call Release through an incorrectly typed interface in this
+    // failing process. A failed witness makes no cleanup-success claim.
+    configuration2.Detach();
+    return E_UNEXPECTED;
+  }
+  IEnumSetupInstancesPtr instances;
+  HRESULT result = configuration2->EnumAllInstances(&instances);
+  if (FAILED(result)) return result;
+  ISetupHelperPtr helper(query);
+  if (helper.GetInterfacePtr() != expected_helper) {
+    helper.Detach();
+    return E_UNEXPECTED;
+  }
+  return helper->ParseVersion(version, parsed);
+}
+"""
+        harness = r"""
+// Appended to the pinned-header/common preamble. This oracle does not use
+// __uuidof to initialize its expected values or identify supported interfaces.
+#include <stdio.h>
+#include <string.h>
+
+extern "C" const GUID *host_setup_guid(unsigned);
+extern "C" const GUID *private_setup_guid(unsigned);
+extern "C" HRESULT host_setup_run(ISetupConfiguration *, ISetupConfiguration2 *,
+                                   ISetupHelper *, BSTR, ULONGLONG *);
+extern "C" HRESULT private_setup_run(ISetupConfiguration *, ISetupConfiguration2 *,
+                                      ISetupHelper *, BSTR, ULONGLONG *);
+
+static const GUID Expected[5] = {
+    {0x00000000, 0x0000, 0x0000, {0xc0,0x00,0x00,0x00,0x00,0x00,0x00,0x46}},
+    {0x177f0c4a, 0x1cd3, 0x4de7, {0xa3,0x2c,0x71,0xdb,0xbb,0x9f,0xa3,0x6d}},
+    {0x42843719, 0xdb4c, 0x46c2, {0x8e,0x7c,0x64,0xf1,0x81,0x6e,0xfd,0x5b}},
+    {0x26aab78c, 0x4a60, 0x49d6, {0xaf,0x3b,0x3c,0x35,0xbc,0x93,0x36,0x5d}},
+    {0x42b21b78, 0x6192, 0x463e, {0x87,0xbf,0xd5,0x77,0x83,0x8f,0x1d,0x5c}},
+};
+static const GUID EnumIID =
+    {0x6380bcff, 0x41d3, 0x4b2e, {0x8b,0x2e,0xbf,0x8a,0x68,0x10,0xc8,0x48}};
+static const unsigned InterfaceSlot[4] = {0, 2, 3, 4};
+static const ULONGLONG ParsedValue = 0x0001000200030004ULL;
+static const HRESULT EnumFailure = static_cast<HRESULT>(0x80040201UL);
+static const HRESULT ParseFailure = static_cast<HRESULT>(0x80040202UL);
+
+static bool same_guid(REFGUID a, REFGUID b) {
+  if (a.Data1 != b.Data1 || a.Data2 != b.Data2 || a.Data3 != b.Data3) return false;
+  for (unsigned i = 0; i != 8; ++i) if (a.Data4[i] != b.Data4[i]) return false;
+  return true;
+}
+static void guid_text(const GUID &value, char text[37]) {
+  snprintf(text, 37, "%08lx-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+           static_cast<unsigned long>(value.Data1), static_cast<unsigned>(value.Data2),
+           static_cast<unsigned>(value.Data3), static_cast<unsigned>(value.Data4[0]),
+           static_cast<unsigned>(value.Data4[1]), static_cast<unsigned>(value.Data4[2]),
+           static_cast<unsigned>(value.Data4[3]), static_cast<unsigned>(value.Data4[4]),
+           static_cast<unsigned>(value.Data4[5]), static_cast<unsigned>(value.Data4[6]),
+           static_cast<unsigned>(value.Data4[7]));
+}
+static int finish(int code, const char *reason) {
+  // Every reason is a fixed string literal, never runner/user-controlled text.
+  if (code == 41 || code == 42 || code == 43)
+    printf("{\"event\":\"negative_control\",\"check_code\":%d,\"reason\":\"%s\"}\n", code, reason);
+  printf("{\"event\":\"final\",\"check_code\":%d,\"reason\":\"%s\"}\n", code, reason);
+  fflush(stdout);
+  return code;
+}
+enum class Fault { None, Address, WrongHelper, NoAddRef };
+enum class MethodMode { Success, EnumFailure, ParseFailure };
+struct Counts {
+  ULONG live = 0, adds = 0, releases = 0, created = 0, destroyed = 0, underflows = 0;
+};
+struct Stats {
+  Counts config, enumerator;
+  ULONG queries = 0, enum_calls = 0, parse_calls = 0, bad_calls = 0;
+  ULONG iid_queries[4] = {}, unsupported_queries = 0;
+};
+
+class FakeEnum final : public IEnumSetupInstances {
+  Stats &s;
+public:
+  explicit FakeEnum(Stats &stats) : s(stats) { ++s.enumerator.created; ++s.enumerator.live; }
+  ~FakeEnum() { ++s.enumerator.destroyed; }
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override {
+    if (!out) return E_POINTER;
+    *out = nullptr;
+    if (!same_guid(iid, Expected[0]) && !same_guid(iid, EnumIID)) return E_NOINTERFACE;
+    *out = static_cast<IEnumSetupInstances *>(this);
+    AddRef();
+    return S_OK;
+  }
+  ULONG STDMETHODCALLTYPE AddRef() override { ++s.enumerator.adds; return ++s.enumerator.live; }
+  ULONG STDMETHODCALLTYPE Release() override {
+    ++s.enumerator.releases;
+    if (!s.enumerator.live) { ++s.enumerator.underflows; return 0; }
+    ULONG left = --s.enumerator.live;
+    if (!left) delete this;
+    return left;
+  }
+  HRESULT STDMETHODCALLTYPE Next(ULONG count, ISetupInstance **items, ULONG *fetched) override {
+    ++s.bad_calls;
+    if (fetched) *fetched = 0;
+    if (count && !items) return E_POINTER;
+    for (ULONG i = 0; i < count; ++i) items[i] = nullptr;
+    return S_FALSE;
+  }
+  HRESULT STDMETHODCALLTYPE Skip(ULONG) override { ++s.bad_calls; return S_FALSE; }
+  HRESULT STDMETHODCALLTYPE Reset() override { ++s.bad_calls; return S_OK; }
+  HRESULT STDMETHODCALLTYPE Clone(IEnumSetupInstances **out) override {
+    ++s.bad_calls;
+    if (!out) return E_POINTER;
+    *out = nullptr;
+    return E_NOTIMPL;
+  }
+};
+
+class FakeSetup final : public ISetupConfiguration2, public ISetupHelper {
+  Stats &s;
+  Fault fault;
+  MethodMode method;
+public:
+  FakeSetup(Stats &stats, Fault f = Fault::None, MethodMode m = MethodMode::Success)
+      : s(stats), fault(f), method(m) { ++s.config.created; ++s.config.live; }
+  ~FakeSetup() { ++s.config.destroyed; }
+  void *face(unsigned which) {
+    switch (which) {
+    case 0: return static_cast<IUnknown *>(static_cast<ISetupConfiguration *>(this));
+    case 1: return static_cast<ISetupConfiguration *>(this);
+    case 2: return static_cast<ISetupConfiguration2 *>(this);
+    default: return static_cast<ISetupHelper *>(this);
+    }
+  }
+  IUnknown *view(unsigned which) {
+    switch (which) {
+    case 0: return static_cast<IUnknown *>(static_cast<ISetupConfiguration *>(this));
+    case 1: return static_cast<ISetupConfiguration *>(this);
+    case 2: return static_cast<ISetupConfiguration2 *>(this);
+    default: return static_cast<ISetupHelper *>(this);
+    }
+  }
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void **out) override {
+    ++s.queries;
+    if (!out) return E_POINTER;
+    *out = nullptr;
+    for (unsigned k = 0; k != 4; ++k) {
+      const GUID &wanted = Expected[InterfaceSlot[k]];
+      if (!same_guid(iid, wanted)) continue;
+      ++s.iid_queries[k];
+      if (fault == Fault::Address && &iid != &wanted) return E_NOINTERFACE;
+      *out = fault == Fault::WrongHelper && k == 3 ? face(0) : face(k);
+      if (fault != Fault::NoAddRef) AddRef();
+      return S_OK;
+    }
+    ++s.unsupported_queries;
+    return E_NOINTERFACE;
+  }
+  ULONG STDMETHODCALLTYPE AddRef() override { ++s.config.adds; return ++s.config.live; }
+  ULONG STDMETHODCALLTYPE Release() override {
+    ++s.config.releases;
+    if (!s.config.live) { ++s.config.underflows; return 0; }
+    ULONG left = --s.config.live;
+    if (!left) delete this;
+    return left;
+  }
+  HRESULT STDMETHODCALLTYPE EnumInstances(IEnumSetupInstances **out) override {
+    ++s.bad_calls;
+    if (!out) return E_POINTER;
+    *out = nullptr;
+    return E_NOTIMPL;
+  }
+  HRESULT STDMETHODCALLTYPE GetInstanceForCurrentProcess(ISetupInstance **out) override {
+    ++s.bad_calls;
+    if (!out) return E_POINTER;
+    *out = nullptr;
+    return E_NOTIMPL;
+  }
+  HRESULT STDMETHODCALLTYPE GetInstanceForPath(LPCWSTR, ISetupInstance **out) override {
+    return GetInstanceForCurrentProcess(out);
+  }
+  HRESULT STDMETHODCALLTYPE EnumAllInstances(IEnumSetupInstances **out) override {
+    ++s.enum_calls;
+    if (!out) return E_POINTER;
+    *out = nullptr;
+    if (method == MethodMode::EnumFailure) return EnumFailure;
+    *out = new FakeEnum(s); // Return exactly one owned reference to the SDK smart pointer.
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE ParseVersion(LPCOLESTR text, PULONGLONG parsed) override {
+    ++s.parse_calls;
+    if (!text || !parsed) return E_POINTER;
+    const wchar_t wanted[] = L"1.2.3.4";
+    for (unsigned k = 0; k != sizeof(wanted) / sizeof(wanted[0]); ++k) {
+      if (text[k] != wanted[k]) { ++s.bad_calls; return E_INVALIDARG; }
+    }
+    if (method == MethodMode::ParseFailure) return ParseFailure;
+    *parsed = ParsedValue;
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE ParseVersionRange(LPCOLESTR, PULONGLONG low, PULONGLONG high) override {
+    ++s.bad_calls;
+    if (low) *low = 0;
+    if (high) *high = 0;
+    return E_NOTIMPL;
+  }
+};
+
+static IUnknown *returned_view(void *out, unsigned which) {
+  switch (which) {
+  case 0: return static_cast<IUnknown *>(out);
+  case 1: return static_cast<ISetupConfiguration *>(out);
+  case 2: return static_cast<ISetupConfiguration2 *>(out);
+  default: return static_cast<ISetupHelper *>(out);
+  }
+}
+
+static int check_interfaces(Fault fault) {
+  Stats s;
+  FakeSetup *object = new FakeSetup(s, fault);
+  void *canonical = object->face(0);
+  if (object->face(3) == canonical) return finish(20, "helper_subobject_not_distinct");
+  for (unsigned source = 0; source != 4; ++source) {
+    for (unsigned target = 0; target != 4; ++target) {
+      ULONG before = s.config.live, adds = s.config.adds;
+      void *out = nullptr;
+      HRESULT hr = object->view(source)->QueryInterface(Expected[InterfaceSlot[target]], &out);
+      printf("{\"event\":\"qi\",\"source\":%u,\"target\":%u,\"hr\":%lu,\"pointer\":\"%p\",\"before\":%lu,\"after\":%lu}\n",
+             source, target, static_cast<unsigned long>(hr), out, before, s.config.live);
+      if (hr != S_OK) return finish(21, "qi_hresult");
+      // Check the pointer before any cast or virtual call through its value.
+      if (out != object->face(target))
+        return finish(fault == Fault::WrongHelper && target == 3 ? 42 : 22, "returned_interface");
+      if (s.config.live != before + 1 || s.config.adds != adds + 1)
+        return finish(fault == Fault::NoAddRef ? 43 : 23, "qi_addref");
+      IUnknown *returned = returned_view(out, target);
+      void *identity = nullptr;
+      adds = s.config.adds;
+      hr = returned->QueryInterface(Expected[0], &identity);
+      if (hr != S_OK || identity != canonical) return finish(24, "canonical_iunknown");
+      if (s.config.live != before + 2 || s.config.adds != adds + 1)
+        return finish(25, "canonical_addref");
+      ULONG identity_left = static_cast<IUnknown *>(identity)->Release();
+      ULONG returned_left = returned->Release();
+      if (identity_left != before + 1 || returned_left != before || s.config.live != before)
+        return finish(26, "qi_release_balance");
+      printf("{\"event\":\"canonical\",\"source\":%u,\"target\":%u,\"pointer\":\"%p\",\"refs\":%lu}\n",
+             source, target, identity, s.config.live);
+    }
+  }
+  for (unsigned target = 0; target != 4; ++target) {
+    GUID copy = Expected[InterfaceSlot[target]];
+    if (&copy == &Expected[InterfaceSlot[target]]) return finish(35, "copied_iid_address");
+    ULONG before = s.config.live, adds = s.config.adds;
+    void *out = nullptr;
+    HRESULT hr = object->view(0)->QueryInterface(copy, &out);
+    printf("{\"event\":\"copied_iid\",\"target\":%u,\"hr\":%lu,\"iid_address\":\"%p\",\"expected_address\":\"%p\"}\n",
+           target, static_cast<unsigned long>(hr), static_cast<void *>(&copy),
+           static_cast<const void *>(&Expected[InterfaceSlot[target]]));
+    if (hr != S_OK) return finish(fault == Fault::Address && hr == E_NOINTERFACE ? 41 : 27, "copied_iid_value");
+    if (out != object->face(target)) return finish(28, "copied_iid_pointer");
+    if (s.config.live != before + 1 || s.config.adds != adds + 1) return finish(29, "copied_iid_addref");
+    if (returned_view(out, target)->Release() != before || s.config.live != before)
+      return finish(30, "copied_iid_release");
+  }
+  GUID unsupported = Expected[0];
+  unsupported.Data1 ^= 1;
+  void *out = object->face(3); // A valid, nonnull sentinel that must be cleared.
+  ULONG before = s.config.live, adds = s.config.adds;
+  HRESULT hr = object->view(0)->QueryInterface(unsupported, &out);
+  printf("{\"event\":\"unsupported_iid\",\"hr\":%lu,\"output_null\":%u,\"before\":%lu,\"after\":%lu}\n",
+         static_cast<unsigned long>(hr), out ? 0U : 1U, before, s.config.live);
+  if (hr != E_NOINTERFACE || out || s.config.live != before || s.config.adds != adds)
+    return finish(31, "unsupported_iid_contract");
+  hr = object->view(0)->QueryInterface(Expected[0], nullptr);
+  printf("{\"event\":\"null_output\",\"hr\":%lu,\"before\":%lu,\"after\":%lu}\n",
+         static_cast<unsigned long>(hr), before, s.config.live);
+  if (hr != E_POINTER || s.config.live != before || s.config.adds != adds)
+    return finish(32, "null_output_contract");
+  if (fault != Fault::None) return finish(50, "negative_not_detected");
+  if (s.queries != 38 || s.iid_queries[0] != 21 || s.iid_queries[1] != 5 ||
+      s.iid_queries[2] != 5 || s.iid_queries[3] != 5 || s.unsupported_queries != 1)
+    return finish(34, "qi_coverage_count");
+  if (object->Release() != 0 || s.config.live || s.config.created != 1 ||
+      s.config.destroyed != 1 || s.config.underflows || s.config.releases != s.config.adds + 1)
+    return finish(33, "matrix_lifecycle");
+  printf("{\"event\":\"qi_coverage\",\"matrix\":16,\"canonical\":16,\"copied\":4,\"unsupported\":1,\"null_output\":1,\"queries\":%lu,\"destroyed\":%lu}\n",
+         s.queries, s.config.destroyed);
+  return 0;
+}
+
+static int check_provider_runs() {
+  typedef HRESULT (*Run)(ISetupConfiguration *, ISetupConfiguration2 *,
+                        ISetupHelper *, BSTR, ULONGLONG *);
+  const Run providers[2] = {host_setup_run, private_setup_run};
+  for (unsigned side = 0; side != 2; ++side) {
+    for (unsigned scenario = 0; scenario != 3; ++scenario) {
+      Stats s;
+      MethodMode mode = scenario == 0 ? MethodMode::Success :
+          scenario == 1 ? MethodMode::EnumFailure : MethodMode::ParseFailure;
+      FakeSetup *object = new FakeSetup(s, Fault::None, mode);
+      BSTR version = SysAllocString(L"1.2.3.4");
+      if (!version) return finish(51, "bstr_allocation");
+      const ULONGLONG sentinel = 0xfedcba9876543210ULL;
+      ULONGLONG parsed = sentinel;
+      // Only interface addresses are supplied as the pointer oracle. The real
+      // SDK smart pointers still select every requested IID themselves.
+      HRESULT hr = providers[side](static_cast<ISetupConfiguration *>(object),
+                                   static_cast<ISetupConfiguration2 *>(object),
+                                   static_cast<ISetupHelper *>(object), version, &parsed);
+      SysFreeString(version);
+      HRESULT wanted = scenario == 0 ? S_OK : scenario == 1 ? EnumFailure : ParseFailure;
+      ULONG enums = scenario == 1 ? 0 : 1;
+      printf("{\"event\":\"methods\",\"side\":%u,\"scenario\":%u,\"hr\":%lu,\"parsed\":%llu,\"enum_calls\":%lu,\"parse_calls\":%lu,\"refs\":%lu}\n",
+             side, scenario, static_cast<unsigned long>(hr), static_cast<unsigned long long>(parsed),
+             s.enum_calls, s.parse_calls, s.config.live);
+      printf("{\"event\":\"provider_iids\",\"side\":%u,\"scenario\":%u,\"unknown\":%lu,\"configuration\":%lu,\"configuration2\":%lu,\"helper\":%lu,\"unsupported\":%lu}\n",
+             side, scenario, s.iid_queries[0], s.iid_queries[1],
+             s.iid_queries[2], s.iid_queries[3], s.unsupported_queries);
+      if (hr != wanted || parsed != (scenario == 0 ? ParsedValue : sentinel))
+        return finish(52, "method_result");
+      if (s.enum_calls != 1 || s.parse_calls != enums || s.bad_calls)
+        return finish(53, "method_dispatch");
+      // A wrong IID can return the same Configuration/Configuration2 address
+      // and vtable: method success alone is therefore not an IID oracle.
+      if (!s.iid_queries[2] || (enums ? !s.iid_queries[3] : s.iid_queries[3] != 0) ||
+          s.unsupported_queries)
+        return finish(56, "provider_iid_dispatch");
+      // Do not require a fixed SDK temporary/copy count, only balanced ownership.
+      if (s.config.live != 1 || s.config.adds != s.config.releases || s.config.destroyed ||
+          s.config.underflows || s.enumerator.live || s.enumerator.underflows ||
+          s.enumerator.created != enums || s.enumerator.destroyed != enums ||
+          s.enumerator.releases != s.enumerator.adds + enums)
+        return finish(54, "smart_pointer_balance");
+      if (object->Release() != 0 || s.config.live || s.config.destroyed != 1 ||
+          s.config.releases != s.config.adds + 1 || s.config.underflows)
+        return finish(55, "provider_lifecycle");
+      printf("{\"event\":\"lifecycle\",\"side\":%u,\"scenario\":%u,\"config_created\":%lu,\"config_destroyed\":%lu,\"enum_created\":%lu,\"enum_destroyed\":%lu}\n",
+             side, scenario, s.config.created, s.config.destroyed,
+             s.enumerator.created, s.enumerator.destroyed);
+    }
+  }
+  return 0;
+}
+
+int main(int argc, char **argv) {
+  if (argc != 2) return finish(10, "mode_argument");
+  Fault fault;
+  if (!strcmp(argv[1], "normal")) fault = Fault::None;
+  else if (!strcmp(argv[1], "address")) fault = Fault::Address;
+  else if (!strcmp(argv[1], "wrong-helper")) fault = Fault::WrongHelper;
+  else if (!strcmp(argv[1], "no-addref")) fault = Fault::NoAddRef;
+  else return finish(11, "unknown_mode");
+  for (unsigned slot = 0; slot != 5; ++slot) {
+    const GUID *host = host_setup_guid(slot), *private_value = private_setup_guid(slot);
+    if (!host || !private_value) {
+      printf("{\"event\":\"guid_null\",\"slot\":%u,\"host\":\"%p\",\"private\":\"%p\"}\n",
+             slot, static_cast<const void *>(host), static_cast<const void *>(private_value));
+      return finish(12, "guid_null");
+    }
+    char host_text[37], private_text[37];
+    guid_text(*host, host_text);
+    guid_text(*private_value, private_text);
+    // Observe cross-provider identity; COM does not require shared GUID storage.
+    printf("{\"event\":\"guid\",\"slot\":%u,\"host\":\"%p\",\"private\":\"%p\",\"same_address\":%u,\"host_value\":\"%s\",\"private_value\":\"%s\"}\n",
+           slot, static_cast<const void *>(host), static_cast<const void *>(private_value),
+           host == private_value ? 1U : 0U, host_text, private_text);
+    if (!same_guid(*host, Expected[slot]) || !same_guid(*private_value, Expected[slot]))
+      return finish(12, "guid_fields");
+    if (host != host_setup_guid(slot) || private_value != private_setup_guid(slot))
+      return finish(13, "guid_address_stability");
+  }
+  int code = check_interfaces(fault);
+  if (code) return code;
+  code = check_provider_runs();
+  if (code) return code;
+  printf("{\"event\":\"coverage\",\"guid_slots\":5,\"provider_sides\":2,\"provider_scenarios\":3,\"provider_runs\":6}\n");
+  return finish(0, "ok");
+}
+"""
+        library_dirs = [Path(value.strip().strip('"'))
+                        for value in os.environ.get("LIB", "").split(";")
+                        if value.strip()]
+        self.assertTrue(library_dirs, "The native MSVC LIB environment is required")
+        library_dirs = [path.resolve() for path in library_dirs if path.is_dir()]
+        libraries = ("libcmt.lib", "libucrt.lib", "libvcruntime.lib", "oldnames.lib",
+                     "kernel32.lib", "ole32.lib", "oleaut32.lib", "comsuppw.lib")
+        self.setup_report["native_libraries"] = {}
+        for name in libraries:
+            found = next((path / name for path in library_dirs if (path / name).is_file()), None)
+            self.assertIsNotNone(found, f"The native CRT/SDK must provide {name}")
+            self.setup_report["native_libraries"][name] = str(found)
+        linker = self.llvm_root / "bin/lld-link.exe"
+        for name, path in (("clang", self.clang), ("msvc", Path(self.msvc)),
+                           ("librarian", self.librarian), ("nm", self.nm),
+                           ("readobj", self.readobj), ("lld-link", linker)):
+            path = path.resolve(strict=True)
+            self.assertTrue(path.is_file(), f"Required witness tool missing: {path}")
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    self.check_setup_budget()
+                    digest.update(chunk)
+            self.check_setup_budget()
+            self.setup_report["tools"][name] = {
+                "path": str(path), "sha256": digest.hexdigest()}
+        self.write_setup_report()
+        machine = "x64" if self.target.startswith("x86_64-") else "arm64"
+        cases = (("normal", 0, "ok"), ("address", 41, "copied_iid_value"),
+                 ("wrong-helper", 42, "returned_interface"),
+                 ("no-addref", 43, "qi_addref"))
+        normal_counts = {
+            "guid": 5, "qi": 16, "canonical": 16, "copied_iid": 4,
+            "unsupported_iid": 1, "null_output": 1, "qi_coverage": 1,
+            "methods": 6, "provider_iids": 6, "lifecycle": 6,
+            "coverage": 1, "final": 1,
+        }
+        for msvc in (False, True):
+            compiler = "msvc" if msvc else "clang"
+            directory = self.root / "setup-runtime" / compiler
+            directory.mkdir(parents=True)
+            objects = {}
+            for unit in ("host", "private", "harness"):
+                source = directory / (unit + ".cpp")
+                obj = directory / (unit + ".obj")
+                source.write_text(common + (harness if unit == "harness" else provider),
+                                  encoding="utf-8")
+                if msvc:
+                    command = [self.msvc, "/nologo", "/std:c++17", "/c", "/Od",
+                               "/GL-", "/GR-", "/EHsc", "/MT", "/Zc:wchar_t",
+                               "/showIncludes",
+                               "/I" + str(include_root), "/Fo" + str(obj),
+                               *([] if unit == "harness" else ["/DSIDE=" + unit]), source]
+                else:
+                    command = [self.clang, "--target=" + self.target, "-std=c++17",
+                               "-O2", "-fno-lto", "-fms-extensions", "-fno-exceptions",
+                               "-fno-rtti", "-fms-runtime-lib=static", "-I", include_root,
+                               "-Xclang", "--show-includes", "-Xclang", "-sys-header-deps",
+                               *([] if unit == "harness" else ["-DSIDE=" + unit]),
+                               "-c", source, "-o", obj]
+                environment = os.environ.copy()
+                if msvc:
+                    environment["VSLANG"] = "1033"
+                compiled = self.setup_command(command, env=environment)
+                output = compiled.stdout + compiled.stderr
+                self.assertEqual(compiled.returncode, 0, output)
+                consumed = {}
+                for line in output.splitlines():
+                    prefix = "Note: including file:"
+                    if not line.startswith(prefix):
+                        continue
+                    path = Path(line[len(prefix):].lstrip(" "))
+                    name = path.name.lower()
+                    if name not in self.setup_report["headers"]:
+                        continue
+                    self.assertTrue(path.is_absolute(), str(path))
+                    path = path.resolve(strict=True)
+                    evidence = {"path": str(path),
+                                "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                    self.assertEqual(evidence, self.setup_report["headers"][name],
+                                     "Runtime providers must consume the captured SDK headers")
+                    consumed[name] = evidence
+                self.assertIn("comdef.h", consumed)
+                self.assertIn("msvcsetupapi.h", consumed)
+                self.setup_report["runtime_headers"][compiler + "/" + unit] = consumed
+                self.write_setup_report()
+                self.require_success([self.nm, "--extern-only", "--format=posix", obj])
+                self.require_success([self.readobj, "--file-headers", "--symbols",
+                                      "--sections", "--section-data", "--relocations", obj])
+                objects[unit] = obj
+            archives = {}
+            for side in ("host", "private"):
+                archive = directory / (side + ".lib")
+                self.require_success([self.librarian, "/nologo", "/out:" + str(archive),
+                                      objects[side]])
+                archives[side] = archive
+            for order, sides in (("host-first", ("host", "private")),
+                                 ("private-first", ("private", "host"))):
+                executable = directory / (order + ".exe")
+                link_map = directory / (order + ".map")
+                inputs = [archives[side] for side in sides]
+                options = ["/OPT:NOICF", "/MAP:" + str(link_map),
+                           "/VERBOSE:LIB" if msvc else "/verbose",
+                           *("/libpath:" + str(path) for path in library_dirs),
+                           "oleaut32.lib", "ole32.lib", "comsuppw.lib"]
+                if msvc:
+                    command = [self.msvc, "/nologo", objects["harness"], *inputs,
+                               "/Fe" + str(executable), "/link", *options]
+                else:
+                    command = [linker, "/nologo", "/out:" + str(executable),
+                               "/machine:" + machine, "/subsystem:console",
+                               "/defaultlib:libcmt", "/defaultlib:oldnames",
+                               objects["harness"], *inputs, *options]
+                self.require_success(command)
+                self.assertTrue(link_map.is_file(), "The final link must produce a map")
+                map_text = link_map.read_text(encoding="utf-8", errors="replace")
+                (self.report_dir / (compiler + "-" + order + ".map.txt")).write_text(
+                    map_text, encoding="utf-8")
+                for side in sides:
+                    for suffix in ("_setup_guid", "_setup_run"):
+                        self.assertIn(side + suffix, map_text,
+                                      "Both provider members must enter the final link")
+                self.require_success([self.readobj, "--file-headers", "--coff-imports",
+                                      executable])
+                for mode, expected_code, reason in cases:
+                    observed = {"compiler": compiler, "order": order, "mode": mode,
+                                "expected_code": expected_code, "status": "started"}
+                    self.setup_report["runtime_cases"].append(observed)
+                    self.write_setup_report()
+                    result = self.setup_command([executable, mode], timeout=15)
+                    observed["returncode"] = result.returncode
+                    observed["command"] = len(self.setup_report["commands"])
+                    self.write_setup_report()
+                    # Never truncate Windows exception codes or accept arbitrary
+                    # nonzero exits as a detected negative control.
+                    self.assertEqual(result.returncode, expected_code,
+                                     f"{compiler}/{order}/{mode}: {result.stdout}\n{result.stderr}")
+                    events = [json.loads(line) for line in result.stdout.splitlines() if line]
+                    self.assertTrue(events, "Runtime witness output is required")
+                    self.assertTrue(all(isinstance(event, dict) for event in events))
+                    self.assertEqual(events[-1], {
+                        "event": "final", "check_code": expected_code, "reason": reason})
+                    if mode == "normal":
+                        counts = {name: sum(event.get("event") == name for event in events)
+                                  for name in normal_counts}
+                        self.assertEqual(counts, normal_counts)
+                        self.assertEqual(len(events), sum(normal_counts.values()))
+                        coverage = next(event for event in events if event["event"] == "coverage")
+                        self.assertEqual(coverage, {"event": "coverage", "guid_slots": 5,
+                                                   "provider_sides": 2, "provider_scenarios": 3,
+                                                   "provider_runs": 6})
+                    else:
+                        self.assertEqual([event for event in events
+                                          if event.get("event") == "negative_control"],
+                                         [{"event": "negative_control", "check_code": expected_code,
+                                           "reason": reason}])
+                    observed.update(status="passed", events=events)
+                    self.write_setup_report()
+        self.assertEqual(len(self.setup_report["runtime_cases"]), 16)
+        self.assertTrue(all(case["status"] == "passed"
+                            for case in self.setup_report["runtime_cases"]))
+
     def test_setup_sdk_inputs_and_object_provenance(self):
-        # Evidence collection only: these non-LTO objects are neither linked
-        # nor run. Symbol/section data does not prove GUID storage identity,
-        # QueryInterface behavior, or equivalence to every production mode.
+        # Preserve the separate non-LTO object inventories, then exercise a
+        # linked baseline with real SDK smart pointers and deterministic COM.
+        # This witness does not change the production isolation policy.
+        self.setup_started = time.monotonic()
+        self.setup_deadline = self.setup_started + 600
+        self.assertFalse(self.report_dir.is_relative_to(self.root),
+                         "Reports must survive temporary-directory cleanup")
+        self.setup_report["setup_status"] = "started"
+        self.write_setup_report()
         repository = Path(__file__).resolve().parents[2]
+        checkout = self.require_success(["git", "-C", repository, "rev-parse", "HEAD"]).strip()
+        self.assertRegex(checkout, r"\A[0-9a-f]{40}\Z")
+        self.assertEqual(checkout, self.setup_report["source_sha"],
+                         "The witness must run the workflow's exact checkout")
+        self.setup_report["verified_checkout"] = checkout
         pin = repository / "neverc/cmake/modules/BuiltinCppFrontend.cmake"
         archive_url = (
             "https://github.com/llvm/llvm-project/releases/download/"
@@ -576,35 +1219,46 @@ int main() {
         digest = hashlib.sha256()
         downloaded = 0
         started = time.monotonic()
-        with urllib.request.urlopen(archive_url, timeout=30) as response:
+        with urllib.request.urlopen(archive_url, timeout=min(30, self.check_setup_budget())) as response:
             self.assertEqual(response.status, 200)
             with archive_path.open("wb") as output:
                 while chunk := response.read(1024 * 1024):
+                    self.check_setup_budget()
                     downloaded += len(chunk)
                     self.assertLessEqual(downloaded, archive_size)
                     self.assertLess(time.monotonic() - started, 300,
                                     "Pinned source download exceeded five minutes")
                     digest.update(chunk)
                     output.write(chunk)
+        self.check_setup_budget()
         self.assertEqual(downloaded, archive_size)
         self.assertEqual(digest.hexdigest(), archive_sha)
+        self.setup_report["source_archive"] = {
+            "url": archive_url, "bytes": downloaded, "sha256": digest.hexdigest()}
+        self.write_setup_report()
         print(f"SETUP source archive: url={archive_url} bytes={downloaded} "
               f"sha256={digest.hexdigest()} pin_file_sha256="
               f"{hashlib.sha256(pin.read_bytes()).hexdigest()}", flush=True)
 
         headers = []
+        self.check_setup_budget()
         with tarfile.open(archive_path, mode="r|xz") as archive:
             for member in archive:
+                self.check_setup_budget()
                 if member.name != member_name:
                     continue
                 self.assertTrue(member.isfile(), member.name)
                 self.assertEqual(member.size, header_size)
                 with archive.extractfile(member) as source:
                     headers.append(source.read(header_size + 1))
+        self.check_setup_budget()
         self.assertEqual(len(headers), 1, "Expected one exact release header member")
         header_bytes = headers[0]
         self.assertEqual(len(header_bytes), header_size)
         self.assertEqual(hashlib.sha256(header_bytes).hexdigest(), header_sha)
+        self.setup_report["pinned_header"] = {
+            "member": member_name, "bytes": header_size, "sha256": header_sha}
+        self.write_setup_report()
         include_root = self.root / "pinned-include"
         header = include_root / "llvm/WindowsDriver/MSVCSetupApi.h"
         header.parent.mkdir(parents=True)
@@ -716,10 +1370,7 @@ extern "C" HRESULT neverc_cpp_setup_smart_pointer_shapes(
                     environment = os.environ.copy()
                     if msvc:
                         environment["VSLANG"] = "1033"
-                    result = subprocess.run(
-                        [str(argument) for argument in command], cwd=self.root,
-                        env=environment, capture_output=True, text=True,
-                        encoding="utf-8", errors="replace", timeout=120, check=False)
+                    result = self.setup_command(command, env=environment)
                     output = result.stdout + result.stderr
                     print(output, end="", flush=True)
                     self.assertEqual(result.returncode, 0, output)
@@ -764,6 +1415,9 @@ extern "C" HRESULT neverc_cpp_setup_smart_pointer_shapes(
                         print(f"SETUP SDK provenance: compiler={compiler} unit={unit} "
                               f"header={name} path={evidence[0]} sha256={evidence[1]}",
                               flush=True)
+                        self.setup_report["headers"][name] = {
+                            "path": evidence[0], "sha256": evidence[1]}
+                        self.write_setup_report()
                     inventory = self.require_success([
                         self.nm, "--extern-only", "--format=posix", obj])
                     print(f"SETUP actual inventory: compiler={compiler} unit={unit} "
@@ -777,8 +1431,18 @@ extern "C" HRESULT neverc_cpp_setup_smart_pointer_shapes(
                         "--section-data", "--relocations", obj])
                     print(f"SETUP actual COFF data: compiler={compiler} unit={unit} "
                           f"object={obj}\n{sections}", end="", flush=True)
-        print("SETUP input/object capture completed; no linked address identity, "
-              "COM runtime behavior, or production-mode equivalence was tested.",
+                    self.setup_report["object_probes"].append(compiler + "/" + unit)
+                    self.write_setup_report()
+        self.assertEqual(set(self.setup_report["object_probes"]), {
+            compiler + "/" + unit for compiler in ("clang", "msvc")
+            for unit in ("explicit-values", "smart-pointers")})
+        self.run_setup_runtime_witness(common, include_root)
+        self.check_setup_budget()
+        self.setup_report["setup_elapsed_seconds"] = time.monotonic() - self.setup_started
+        self.setup_report["setup_status"] = "passed"
+        self.write_setup_report()
+        print("SETUP linked/runtime witness passed; no production isolation change, "
+              "COM activation, VS discovery, or production LTO equivalence was tested.",
               flush=True)
 
     def test_sdk_url_history_clsids_and_alias_are_isolated(self):
@@ -1988,7 +2652,36 @@ if __name__ == "__main__":
     parser.add_argument("--llvm-root", type=Path, required=True)
     parser.add_argument("--target", required=True, choices=(
         "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"))
+    parser.add_argument("--report-dir", required=True, type=Path)
     arguments = parser.parse_args()
     CppFrontendToolchainTests.llvm_root = arguments.llvm_root.resolve()
     CppFrontendToolchainTests.target = arguments.target
-    unittest.main(argv=[sys.argv[0]], verbosity=2)
+    CppFrontendToolchainTests.report_dir = arguments.report_dir.resolve()
+    CppFrontendToolchainTests.report_dir.mkdir(parents=True, exist_ok=False)
+    CppFrontendToolchainTests.setup_report = {
+        "schema": 1, "status": "started", "setup_status": "not-started",
+        "source_sha": os.environ.get("GITHUB_SHA", ""),
+        "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+        "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        "target": arguments.target, "headers": {}, "runtime_headers": {}, "tools": {},
+        "object_probes": [], "commands": [], "runtime_cases": [],
+        "limits": {"setup_cooperative_seconds": 600, "command_seconds": 120,
+                   "runtime_seconds": 15, "workflow_step_minutes": 20},
+    }
+    CppFrontendToolchainTests.write_setup_report()
+    program = unittest.main(argv=[sys.argv[0]], verbosity=2, exit=False)
+    result = program.result
+    report = CppFrontendToolchainTests.setup_report
+    report["suite"] = {
+        "tests_run": result.testsRun, "failures": len(result.failures),
+        "errors": len(result.errors), "skipped": len(result.skipped),
+        "failure_details": [{"test": str(test), "traceback": details}
+                            for test, details in result.failures],
+        "error_details": [{"test": str(test), "traceback": details}
+                          for test, details in result.errors],
+    }
+    passed = (result.wasSuccessful() and not result.skipped
+              and report["setup_status"] == "passed")
+    report["status"] = "passed" if passed else "failed"
+    CppFrontendToolchainTests.write_setup_report()
+    sys.exit(0 if passed else 1)
