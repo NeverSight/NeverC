@@ -352,6 +352,16 @@ TEST_F(TranslateTest, MissingSelfExecutableFailsWithoutGeneratedOutput) {
   expectNoArtifacts(Output);
 }
 
+TEST_F(TranslateTest, EmptySelfExecutableFailsWithoutGeneratedOutput) {
+  const auto Output = tmpFile("output.nc");
+  const auto Result =
+      controlledDriver(source(), {"-o", Output.string()}, fs::path{});
+  expectCode(Result, "TR0402");
+  EXPECT_TRUE(Result.contains(
+      "cannot determine the running NeverC executable path"));
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, UsesRunningExecutableWhenArgvZeroIsUnrelated) {
   const auto Source = source(), Output = tmpFile("output.nc");
   const auto Unrelated = tmpFile("not-the-running-compiler");

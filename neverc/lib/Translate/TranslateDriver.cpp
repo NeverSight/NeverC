@@ -284,6 +284,10 @@ bool recordError(Error E, Diagnostics &D, StringRef Source,
               "reported file error.");
 }
 Expected<std::string> executable(StringRef Path) {
+  if (Path.empty())
+    return createStringError(
+        inconvertibleErrorCode(),
+        "cannot determine the running NeverC executable path");
   auto Found = sys::findProgramByName(Path);
   if (!Found)
     return errorCodeToError(Found.getError());
