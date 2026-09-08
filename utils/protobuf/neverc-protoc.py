@@ -32,9 +32,66 @@ SCALARS = {
 
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# Field spellings are preserved in public headers, which support both C and
+# C++. Reject keyword spellings through C23 and C++23 consistently.
+C_CPP_KEYWORDS = frozenset(
+    """
+    _Alignas _Alignof _Atomic _BitInt _Bool _Complex _Decimal32 _Decimal64
+    _Decimal128 _Generic _Imaginary _Noreturn _Static_assert _Thread_local
+    alignas alignof and and_eq asm auto bitand bitor bool break case catch char
+    char8_t char16_t char32_t class compl concept const consteval constexpr
+    constinit const_cast continue co_await co_return co_yield decltype default
+    delete do double dynamic_cast else enum explicit export extern false float
+    for friend goto if inline int long mutable namespace new noexcept not not_eq
+    nullptr operator or or_eq private protected public register reinterpret_cast
+    requires restrict return short signed sizeof static static_assert static_cast
+    struct switch template this thread_local throw true try typedef typeid
+    typename typeof typeof_unqual union unsigned using virtual void volatile
+    wchar_t while xor xor_eq
+    """.split()
+)
+
+C_FIELD_TYPES = frozenset(ctype for ctype, _descriptor in SCALARS.values())
+
+# Object-like macros from the included headers: standard 8/16/32/64-bit stdint
+# families through C23 and the fixed protobuf.h macros. Function-like macros
+# remain valid member names; platform and consumer extensions are not modeled.
+C_HEADER_MACROS = frozenset({
+    "NULL", "NEVERC_ENCODING_PROTOBUF_H", "NEVERC_PROTOBUF_MAX_FIELD_NUMBER",
+    "NEVERC_PROTOBUF_DEFAULT_MAX_FIELD_SIZE",
+}) | frozenset(
+    f"{prefix}{width}_{suffix}"
+    for prefix in ("INT", "UINT", "INT_LEAST", "UINT_LEAST", "INT_FAST", "UINT_FAST")
+    for width in (8, 16, 32, 64)
+    for suffix in (("MAX", "WIDTH") if prefix.startswith("U")
+                   else ("MIN", "MAX", "WIDTH"))
+) | frozenset(
+    f"{prefix}_{suffix}"
+    for prefix in ("INTPTR", "UINTPTR", "INTMAX", "UINTMAX", "PTRDIFF",
+                   "SIG_ATOMIC", "SIZE", "WCHAR", "WINT")
+    for suffix in (("MAX", "WIDTH") if prefix.startswith("U") or prefix == "SIZE"
+                   else ("MIN", "MAX", "WIDTH"))
+)
+
 
 class SchemaError(ValueError):
     pass
+
+
+def validate_c_member_name(name: str, line: int, header_guard: str) -> None:
+    if name in C_CPP_KEYWORDS:
+        reason = f"field name {name!r} is a C/C++ keyword"
+    elif "__" in name or re.match(r"^_[A-Z]", name):
+        reason = (
+            f"generated C member {name!r} is reserved to the C/C++ implementation"
+        )
+    elif name in C_HEADER_MACROS or name == header_guard:
+        reason = f"generated C member {name!r} conflicts with a header macro"
+    elif name in C_FIELD_TYPES:
+        reason = f"generated C member {name!r} shadows a generated field type"
+    else:
+        return
+    raise SchemaError(f"line {line}: {reason}; rename the proto field")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -117,9 +174,10 @@ def tokenize(text: str) -> list[Token]:
 
 
 class Parser:
-    def __init__(self, tokens: list[Token]):
+    def __init__(self, tokens: list[Token], header_guard: str):
         self.tokens = tokens
         self.position = 0
+        self.header_guard = header_guard
 
     def current(self) -> Token:
         if self.position >= len(self.tokens):
@@ -224,6 +282,7 @@ class Parser:
         fields: list[Field] = []
         field_names: set[str] = set()
         field_numbers: set[int] = set()
+        member_names: set[str] = set()
         while not self.accept("}"):
             token = self.current()
             if token.value == "<eof>":
@@ -279,6 +338,20 @@ class Parser:
                 raise SchemaError(
                     f"line {number.line}: duplicate field number {field_number}"
                 )
+            emitted_names = [field_name.value]
+            if optional:
+                emitted_names.append(f"has_{field_name.value}")
+            for member_name in emitted_names:
+                validate_c_member_name(
+                    member_name, field_name.line, self.header_guard
+                )
+                if member_name in member_names:
+                    raise SchemaError(
+                        f"line {field_name.line}: generated C member "
+                        f"{member_name!r} conflicts with another field; "
+                        "rename the proto field"
+                    )
+            member_names.update(emitted_names)
             field_names.add(field_name.value)
             field_numbers.add(field_number)
             fields.append(
@@ -428,8 +501,8 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         text = arguments.schema.read_text(encoding="utf-8")
-        schema = Parser(tokenize(text)).parse()
         stem = arguments.schema.stem
+        schema = Parser(tokenize(text), include_guard(stem)).parse()
         write_atomic(arguments.out_dir / f"{stem}.pb.h",
                      render_header(schema, stem))
         write_atomic(arguments.out_dir / f"{stem}.pb.c",
