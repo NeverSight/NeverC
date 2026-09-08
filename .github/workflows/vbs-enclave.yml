@@ -16,6 +16,7 @@ on:
       - utils/ci/new-vbs-enclave-test-certificate.ps1
       - utils/ci/run-vbs-enclave-ci.ps1
       - utils/ci/verify-vbs-enclave-pe.py
+      - utils/ci/verify-vbs-enclave-runtime.py
       - .github/workflows/vbs-enclave.yml
   pull_request:
     paths:
@@ -31,6 +32,7 @@ on:
       - utils/ci/new-vbs-enclave-test-certificate.ps1
       - utils/ci/run-vbs-enclave-ci.ps1
       - utils/ci/verify-vbs-enclave-pe.py
+      - utils/ci/verify-vbs-enclave-runtime.py
       - .github/workflows/vbs-enclave.yml
   workflow_dispatch:
     inputs:
@@ -111,6 +113,10 @@ jobs:
           Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.zip" -OutFile cmake.zip
           Expand-Archive cmake.zip C:\tools -Force
           Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVersion-windows-x86_64\bin"
+
+      - name: Check runtime evidence rejection tests
+        shell: pwsh
+        run: python .\utils\ci\verify-vbs-enclave-runtime.py self-test
 
       - name: Set up MSVC x64
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
@@ -241,7 +247,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'failed to compare static source commit' }
           $allowedPaths = @(
             '.github/workflows/vbs-enclave.yml',
-            'utils/ci/run-vbs-enclave-ci.ps1'
+            'utils/ci/run-vbs-enclave-ci.ps1',
+            'utils/ci/verify-vbs-enclave-runtime.py'
           )
           $unexpectedPaths = @($changedPaths | Where-Object {
             $_ -notin $allowedPaths

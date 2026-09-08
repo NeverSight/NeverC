@@ -65,6 +65,8 @@ NeverC 會在移除未使用程式碼時保留 `__enclave_config`，必要時從
 4. 在 Windows 上對完成的映像執行 Windows SDK 的 VEIID 工具。
 5. 在 Windows 上使用 SignTool 簽署經 VEIID 處理的映像。簽署必須是最後一次檔案變更。
 6. 在 Windows 主機程式中檢查 `IsEnclaveTypeSupported(ENCLAVE_TYPE_VBS)`，使用 `CreateEnclave` 配置 enclave，透過 `LoadEnclaveImage` 載入 DLL，並呼叫 `InitializeEnclave`。
+7. 使用 `GetProcAddress` 解析 enclave 匯出函式，透過 `CallEnclave` 進入該函式並驗證傳回值。重複呼叫，涵蓋受 CFG 保護與舊式的間接呼叫路徑。
+8. 使用 `TerminateEnclave` 與 `DeleteEnclave` 終止並釋放 enclave，檢查兩個操作均成功。
 
 對於反作弊系統，enclave 適合承載小型驗證或金鑰處理元件；這類元件的程式碼與私有狀態需要與一般遊戲處理程序建立更強的邊界。請保持 enclave 介面精簡，並驗證主機提供的所有資料：主機仍然控制輸入、排程、儲存與可用性。VBS enclave 是伺服器端權威、遙測、驅動程式防禦和一般處理程序強化的補充，而非替代品。
 
@@ -78,6 +80,8 @@ NeverC 會在移除未使用程式碼時保留 `__enclave_config`，必要時從
 - 對 PE 驗證器執行突變測試；以及
 - 為差異執行階段探測準備經 VEIID 處理的映像。
 
-執行階段探測會先執行 Microsoft 映像。如果託管 runner 缺少 VBS 或可用的簽署環境，結果會明確標示為環境略過。一旦 Microsoft 參考映像成功載入，任何一個 NeverC 候選映像失敗都會成為硬性測試失敗。設定妥當的自託管 VBS runner 可以將執行階段成功設為強制閘道。
+x64 執行階段探測會先執行 Microsoft 映像，再執行兩個 NeverC 候選映像。它使用 `GetProcAddress` 解析匯出函式，透過 `CallEnclave` 重複呼叫，涵蓋受 CFG 保護與舊式的間接呼叫路徑，並檢查傳回值。`PASS` 要求完整且順序正確的生命週期階段證據，包括成功終止與釋放；僅載入和初始化成功並不足夠。ARM64 的涵蓋範圍是靜態驗證與差異連結，不包含實際執行。
+
+選擇性的執行階段探測僅能在函式執行前，因已識別的環境準備條件不可用而回報 `SKIP`。當機、逾時、階段證據缺漏或順序錯誤及功能錯誤均為 `FAIL`，Microsoft 參考映像也不例外。設定妥當的自託管 VBS runner 可以將執行階段成功設為強制閘道。
 
 連結器支援 x86-64 與 ARM64 COFF enclave 映像。它會驗證已發佈的設定指標，接著依最終的一般 DLL 匯入集合產生連續的 80 位元組 `IMAGE_ENCLAVE_IMPORT` 項目。項目初始只包含匯入名稱，識別欄位均為零，供 VEIID 繫結；連結器會回填數量、清單與項目大小。作用中的延遲載入匯入會被拒絕。連結器不會對 `IMAGE_ENCLAVE_CONFIG` 內部帶版本的欄位施加額外原則。

@@ -66,10 +66,35 @@ int wmain(int argc, wchar_t **argv) {
     return Fail(L"InitializeEnclave", GetLastError(), enclave);
   Report(L"InitializeEnclave", L"PASS", ERROR_SUCCESS);
 
-  Report(L"Complete", L"PASS", ERROR_SUCCESS);
+  SetLastError(ERROR_SUCCESS);
+  const auto exercise = reinterpret_cast<LPENCLAVE_ROUTINE>(
+      GetProcAddress(static_cast<HMODULE>(enclave), "VbsEnclaveExercise"));
+  if (exercise == nullptr)
+    return Fail(L"GetProcAddress", GetLastError(), enclave);
+  Report(L"GetProcAddress", L"PASS", ERROR_SUCCESS);
+
+  constexpr ULONG_PTR inputs[] = {0, 35, 127, 4660};
+  for (const ULONG_PTR input : inputs) {
+    PVOID result = nullptr;
+    SetLastError(ERROR_SUCCESS);
+    if (!CallEnclave(exercise, reinterpret_cast<PVOID>(input), TRUE, &result))
+      return Fail(L"CallEnclave", GetLastError(), enclave);
+    Report(L"CallEnclave", L"PASS", ERROR_SUCCESS);
+
+    const ULONG_PTR expected = 2 * (input ^ 0x5a) + input + 49;
+    if (reinterpret_cast<ULONG_PTR>(result) != expected)
+      return Fail(L"VerifyResult", ERROR_INVALID_DATA, enclave);
+    Report(L"VerifyResult", L"PASS", ERROR_SUCCESS);
+  }
+
+  SetLastError(ERROR_SUCCESS);
   if (!TerminateEnclave(enclave, TRUE))
     return Fail(L"TerminateEnclave", GetLastError(), enclave);
+  Report(L"TerminateEnclave", L"PASS", ERROR_SUCCESS);
+  SetLastError(ERROR_SUCCESS);
   if (!DeleteEnclave(enclave))
     return Fail(L"DeleteEnclave", GetLastError(), nullptr);
+  Report(L"DeleteEnclave", L"PASS", ERROR_SUCCESS);
+  Report(L"Complete", L"PASS", ERROR_SUCCESS);
   return 0;
 }

@@ -291,7 +291,7 @@ function Assert-BundledRuntimeTrace {
 }
 
 function Write-Result {
-  param([string]$Status, [string]$Stage, [int]$ErrorCode,
+  param([string]$Status, [string]$Stage, [long]$ErrorCode,
         [string]$Message, [string]$ResultPath)
   $result = [ordered]@{
     status = $Status
@@ -301,6 +301,7 @@ function Write-Result {
     require_runtime = [bool]$RequireRuntime
   }
   $result | ConvertTo-Json | Set-Content -LiteralPath $ResultPath -Encoding utf8
+  $script:runtimeResultWritten = $true
   $summary = "### VBS enclave runtime: $Status`n`n- Stage: ``$Stage```n- Error: ``$ErrorCode```n- $Message`n"
   if ($env:GITHUB_STEP_SUMMARY) {
     $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
@@ -314,6 +315,9 @@ $logRoot = Join-Path $artifactRoot 'logs'
 New-Item -ItemType Directory -Force -Path $artifactRoot, $logRoot | Out-Null
 $fixtureRoot = Join-Path $repository 'tests\neverc\Inputs\VBSEnclave'
 $verifier = Require-File (Join-Path $repository 'utils\ci\verify-vbs-enclave-pe.py') 'PE verifier'
+$runtimeVerifier = Require-File `
+  (Join-Path $repository 'utils\ci\verify-vbs-enclave-runtime.py') `
+  'runtime evidence verifier'
 $certificateHelper = Require-File `
   (Join-Path $repository 'utils\ci\new-vbs-enclave-test-certificate.ps1') `
   'VBS enclave test-certificate helper'
@@ -349,6 +353,7 @@ if ($Phase -eq 'Certificate') {
 if ($Phase -eq 'Static') {
   $python = (Get-Command python.exe -ErrorAction Stop).Source
   Invoke-Logged $python @($verifier, 'self-test') (Join-Path $logRoot 'verifier-self-test.log') | Out-Null
+  Invoke-Logged $python @($runtimeVerifier, 'self-test') (Join-Path $logRoot 'runtime-verifier-self-test.log') | Out-Null
   $tools = Resolve-Toolchain -IncludeArm64
   $tools.GetEnumerator() | ForEach-Object { Write-Host ("{0}: {1}" -f $_.Key, $_.Value) }
   $tools | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactRoot 'tool-paths.json') -Encoding utf8
@@ -543,7 +548,10 @@ if ($Phase -eq 'Static') {
 }
 
 $resultPath = Join-Path $artifactRoot 'runtime-result.json'
+$script:runtimeResultWritten = $false
 try {
+  $python = (Get-Command python.exe -ErrorAction Stop).Source
+  Invoke-Logged $python @($runtimeVerifier, 'self-test') (Join-Path $logRoot 'runtime-verifier-self-test.log') | Out-Null
   $tools = Resolve-Toolchain
   $runtimeHost = Require-File (Join-Path $artifactRoot 'vbs-enclave-host.exe') 'runtime host'
   $runtimeRoot = Join-Path $artifactRoot 'runtime'
@@ -596,38 +604,29 @@ try {
   }
 
   function Invoke-RuntimeImage {
-    param([string]$Name)
+    param([string]$Name, [switch]$Reference)
     $image = Join-Path $signedRoot $Name
     $log = Join-Path $logRoot "runtime-$Name.log"
     $exitCode = Invoke-TimedLogged $runtimeHost @($image) $log `
       -TimeoutSeconds 180 -AllowFailure
-    $stage = 'Complete'
-    $errorCode = 0
-    if ($exitCode -ne 0) {
-      if ($exitCode -eq 124) {
-        $stage = 'HostTimeout'
-        $errorCode = 1460
-      } else {
-        $failureLine = Get-Content -LiteralPath $log |
-          Where-Object { $_ -match 'VBS_STAGE=(\S+) STATUS=FAIL ERROR=(\d+)' } |
-          Select-Object -Last 1
-      }
-      if ($exitCode -ne 124 -and $failureLine -and
-          $failureLine -match 'VBS_STAGE=(\S+) STATUS=FAIL ERROR=(\d+)') {
-        $stage = $Matches[1]
-        $errorCode = [int]$Matches[2]
-      } elseif ($exitCode -ne 124) {
-        $stage = 'HostProcess'
-        $errorCode = $exitCode
-      }
+    $verificationArguments = @(
+      $runtimeVerifier, 'inspect', '--log', $log, "--exit-code=$exitCode"
+    )
+    if ($Reference) { $verificationArguments += '--reference' }
+    if ($RequireRuntime) { $verificationArguments += '--require-runtime' }
+    $verificationJson = & $python @verificationArguments
+    if ($LASTEXITCODE -ne 0) {
+      throw "runtime evidence verifier failed for $Name"
     }
-    return [pscustomobject]@{ Name = $Name; ExitCode = $exitCode; Stage = $stage; Error = $errorCode }
+    $verificationJson | Set-Content -LiteralPath `
+      (Join-Path $logRoot "runtime-$Name.json") -Encoding utf8
+    return ($verificationJson | ConvertFrom-Json)
   }
 
-  $reference = Invoke-RuntimeImage 'msvc-msvc.dll'
-  if ($reference.ExitCode -ne 0) {
-    $message = "Microsoft reference failed; runner lacks a usable VBS/test-signing environment"
-    if ($RequireRuntime) {
+  $reference = Invoke-RuntimeImage 'msvc-msvc.dll' -Reference
+  if ($reference.Status -ne 'PASS') {
+    $message = "Microsoft reference: $($reference.Message)"
+    if ($reference.Status -ne 'SKIP') {
       Write-Result 'FAIL' $reference.Stage $reference.Error $message $resultPath
       throw $message
     }
@@ -637,16 +636,16 @@ try {
 
   foreach ($candidateName in @('neverc-msvc.dll', 'neverc-neverc.dll')) {
     $candidate = Invoke-RuntimeImage $candidateName
-    if ($candidate.ExitCode -ne 0) {
-      $message = "$candidateName failed after the Microsoft reference passed"
+    if ($candidate.Status -ne 'PASS') {
+      $message = "$candidateName failed after the Microsoft reference passed: $($candidate.Message)"
       Write-Result 'FAIL' $candidate.Stage $candidate.Error $message $resultPath
       throw $message
     }
   }
-  Write-Result 'PASS' 'Complete' 0 'Reference and both candidates loaded and initialized.' $resultPath
+  Write-Result 'PASS' 'Complete' 0 'Reference and both candidates executed four enclave calls with verified results and successful teardown.' $resultPath
   exit 0
 } catch {
-  if (-not (Test-Path -LiteralPath $resultPath)) {
+  if (-not $script:runtimeResultWritten) {
     Write-Result 'FAIL' 'Harness' 1 $_.Exception.Message $resultPath
   }
   throw

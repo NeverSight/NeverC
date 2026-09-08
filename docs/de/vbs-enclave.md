@@ -65,6 +65,8 @@ Eine ausdrückliche Anforderung für inkrementelles Linken ist mit `/ENCLAVE` in
 4. Führen Sie unter Windows das VEIID-Werkzeug des Windows SDK auf dem fertigen Image aus.
 5. Signieren Sie unter Windows das von VEIID verarbeitete Image mit SignTool. Die Signierung muss die letzte Dateiänderung sein.
 6. Prüfen Sie im Windows-Host `IsEnclaveTypeSupported(ENCLAVE_TYPE_VBS)`, reservieren Sie die Enklave mit `CreateEnclave`, laden Sie die DLL mit `LoadEnclaveImage` und rufen Sie `InitializeEnclave` auf.
+7. Ermitteln Sie eine exportierte Enklavenfunktion mit `GetProcAddress`, führen Sie sie über `CallEnclave` aus und prüfen Sie ihren Rückgabewert. Wiederholen Sie die Aufrufe und decken Sie dabei CFG-geschützte sowie ältere indirekte Aufrufpfade ab.
+8. Beenden Sie die Enklave mit `TerminateEnclave` und geben Sie sie mit `DeleteEnclave` frei. Prüfen Sie, dass beide Vorgänge erfolgreich sind.
 
 Für Anti-Cheat-Systeme eignet sich die Enklave für eine kleine Prüf- oder Schlüsselverwaltungskomponente, deren Code und privater Zustand eine stärkere Grenze zum gewöhnlichen Spielprozess benötigen. Halten Sie die Enklavenschnittstelle schmal und validieren Sie alle vom Host gelieferten Daten: Der Host kontrolliert weiterhin Eingaben, Scheduling, Speicher und Verfügbarkeit. Eine VBS-Enklave ergänzt serverseitige Autorität, Telemetrie, Treiberabwehr und gewöhnliche Prozesshärtung; sie ersetzt diese nicht.
 
@@ -78,6 +80,8 @@ Der Workflow `VBS enclave differential CI` läuft unter Windows. Sein statisches
 - führt Mutationstests gegen den PE-Prüfer aus;
 - bereitet VEIID-verarbeitete Images für eine differentielle Laufzeitprüfung vor.
 
-Die Laufzeitprüfung führt zuerst das Microsoft-Image aus. Fehlen dem gehosteten Runner VBS oder eine nutzbare Signierungsumgebung, wird das Ergebnis ausdrücklich als umgebungsbedingtes Überspringen ausgewiesen. Sobald das Microsoft-Referenzimage erfolgreich geladen wurde, ist das Scheitern eines der NeverC-Kandidaten ein harter Testfehler. Ein konfigurierter selbstgehosteter VBS-Runner kann den Laufzeiterfolg verbindlich machen.
+Die x64-Laufzeitprüfung führt zuerst das Microsoft-Image und anschließend beide NeverC-Kandidaten aus. Sie ermittelt eine exportierte Funktion mit `GetProcAddress`, ruft sie wiederholt über `CallEnclave` auf, deckt CFG-geschützte und ältere indirekte Aufrufpfade ab und prüft die Rückgabewerte. `PASS` erfordert geordnete Nachweise für jede Lebenszyklusphase einschließlich erfolgreicher Beendigung und Freigabe; Laden und Initialisieren allein reichen nicht aus. ARM64 wird durch statische Prüfung und differentielles Linken abgedeckt, nicht durch Laufzeitausführung.
+
+Eine optionale Laufzeitprüfung darf `SKIP` nur bei erkannten, nicht verfügbaren Umgebungsvoraussetzungen vor der Funktionsausführung melden. Abstürze, Zeitüberschreitungen, fehlende oder falsch geordnete Phasennachweise und Funktionsfehler führen zu `FAIL`, auch beim Microsoft-Referenzimage. Ein konfigurierter selbstgehosteter VBS-Runner kann den Laufzeiterfolg verbindlich machen.
 
 Der Linker unterstützt x86-64- und ARM64-COFF-Enklavenimages. Er validiert den veröffentlichten Konfigurationszeiger und leitet dann aus der endgültigen Menge gewöhnlicher DLL-Importe eine zusammenhängende Folge von 80 Byte großen `IMAGE_ENCLAVE_IMPORT`-Einträgen ab. Die Einträge enthalten anfangs nur den Importnamen und sonst nullte Identitätsfelder, damit VEIID sie binden kann; der Linker schreibt Anzahl, Liste und Eintragsgröße zurück. Aktive verzögert geladene Importe werden abgewiesen. Für die versionierten Felder in `IMAGE_ENCLAVE_CONFIG` erzwingt der Linker keine zusätzliche Richtlinie.

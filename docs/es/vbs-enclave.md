@@ -65,6 +65,8 @@ Una solicitud explícita de enlace incremental es incompatible con `/ENCLAVE` y 
 4. En Windows, ejecute la herramienta VEIID del SDK de Windows sobre la imagen terminada.
 5. En Windows, firme con SignTool la imagen procesada por VEIID. La firma debe ser la última modificación del archivo.
 6. En el host Windows, compruebe `IsEnclaveTypeSupported(ENCLAVE_TYPE_VBS)`, asigne el enclave con `CreateEnclave`, cargue la DLL con `LoadEnclaveImage` y llame a `InitializeEnclave`.
+7. Resuelva una función exportada del enclave con `GetProcAddress`, ejecútela mediante `CallEnclave` y verifique su valor de retorno. Repita las llamadas, cubriendo las rutas de llamadas indirectas protegidas por CFG y heredadas.
+8. Termine y libere el enclave con `TerminateEnclave` y `DeleteEnclave`, comprobando que ambas operaciones tengan éxito.
 
 En sistemas antitrampas, el enclave es apropiado para un pequeño componente de verificación o manejo de claves cuyo código y estado privado necesiten una frontera más fuerte respecto al proceso ordinario del juego. Mantenga estrecha la interfaz del enclave y valide todos los datos proporcionados por el host: este sigue controlando las entradas, la planificación, el almacenamiento y la disponibilidad. Un enclave VBS complementa la autoridad del servidor, la telemetría, las defensas del controlador y el endurecimiento habitual del proceso; no los reemplaza.
 
@@ -78,6 +80,8 @@ El workflow `VBS enclave differential CI` se ejecuta en Windows. Su puerta está
 - ejecuta pruebas de mutación contra el verificador de PE;
 - prepara imágenes procesadas por VEIID para una sonda de ejecución diferencial.
 
-La sonda de ejecución ejecuta primero la imagen de Microsoft. Si el runner alojado carece de VBS o de un entorno de firma utilizable, el resultado se marca explícitamente como omisión debida al entorno. Una vez que la imagen de referencia de Microsoft se carga correctamente, el fallo de cualquiera de los candidatos de NeverC es un fallo de prueba estricto. Un runner VBS autoalojado y configurado puede hacer obligatorio el éxito en tiempo de ejecución.
+La sonda de ejecución x64 ejecuta primero la imagen de Microsoft y después ambos candidatos de NeverC. Resuelve una función exportada con `GetProcAddress`, repite las llamadas `CallEnclave`, cubriendo las rutas de llamadas indirectas protegidas por CFG y heredadas, y comprueba los valores de retorno. `PASS` exige evidencias ordenadas de cada etapa del ciclo de vida, incluidas la terminación y la liberación correctas; cargar e inicializar no es suficiente. ARM64 está cubierto por validación estática y enlace diferencial, no por ejecución.
+
+Una sonda de ejecución opcional solo puede informar `SKIP` ante una indisponibilidad reconocida de los requisitos del entorno antes de ejecutar la función. Los cierres inesperados, tiempos de espera agotados, evidencias de etapas ausentes o desordenadas y errores funcionales son `FAIL`, incluso en la referencia de Microsoft. Un runner VBS autoalojado y configurado puede hacer obligatorio el éxito en tiempo de ejecución.
 
 El enlazador admite imágenes de enclave COFF x86-64 y ARM64. Valida el puntero de configuración publicado y después deriva, del conjunto final de importaciones DLL ordinarias, una secuencia contigua de entradas `IMAGE_ENCLAVE_IMPORT` de 80 bytes. Inicialmente las entradas solo contienen el nombre de importación y campos de identidad a cero para que VEIID los vincule; el enlazador escribe el recuento, la lista y el tamaño de entrada. Se rechazan las importaciones de carga diferida activas. El enlazador no impone políticas adicionales sobre los campos versionados de `IMAGE_ENCLAVE_CONFIG`.

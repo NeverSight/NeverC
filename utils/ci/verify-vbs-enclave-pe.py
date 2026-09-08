@@ -74,6 +74,7 @@ DEBUG_DIRECTORY_ENTRY_SIZE = 28
 ALLOWED_DEBUG_TYPES = frozenset((2, 13))
 REQUIRED_EXCEPTION_EXPORTS = (
     "GuardedIndirectCall", "GuardedExercise", "LegacyExercise",
+    "VbsEnclaveExercise",
 )
 LOAD_CONFIG_GUARD_CHECK_POINTER_OFFSET = 0x70
 LOAD_CONFIG_GUARD_DISPATCH_POINTER_OFFSET = 0x78
@@ -107,6 +108,9 @@ EXPECTED_EXPORTS = {
     },
     "LegacyTarget": {
         "kind": "function", "ordinal": 6, "gfid_covered": True,
+    },
+    "VbsEnclaveExercise": {
+        "kind": "function", "ordinal": 7, "gfid_covered": False,
     },
 }
 GUARD_MAP_BINDINGS = (
@@ -2329,11 +2333,11 @@ def _synthetic_image() -> bytes:
                      DYNAMIC_BASE | FORCE_INTEGRITY | GUARD_CF)
     struct.pack_into("<I", data, optional + 108, 16)
     struct.pack_into("<II", data, optional + 112 + EXPORT_DIRECTORY * 8,
-                     0x2400, 0xD9)
+                     0x2400, 0xF4)
     struct.pack_into("<II", data, optional + 112 + IMPORT_DIRECTORY * 8,
                      0x22C0, 3 * IMPORT_DESCRIPTOR_SIZE)
     struct.pack_into("<II", data, optional + 112 + EXCEPTION_DIRECTORY * 8,
-                     0x4000, 3 * 12)
+                     0x4000, 4 * 12)
     struct.pack_into("<II", data, optional + 112 + DEBUG_DIRECTORY * 8,
                      0x4040, DEBUG_DIRECTORY_ENTRY_SIZE)
     struct.pack_into("<II", data, optional + 112 + LOAD_CONFIG_DIRECTORY * 8,
@@ -2396,18 +2400,19 @@ def _synthetic_image() -> bytes:
         ("LegacyAddressTaken", 0x25E0),
         ("LegacyExercise", 0x1040),
         ("LegacyTarget", 0x1030),
+        ("VbsEnclaveExercise", 0x1090),
     )
-    struct.pack_into("<IIHHIIIIIII", data, export, 0, 0, 0, 0, 0x2468, 1,
-                     len(export_names), len(export_names), 0x2428, 0x2440,
-                     0x2458)
-    string_offset = 0xA78
-    data[0xA68:0xA74] = b"fixture.dll\0"
+    struct.pack_into("<IIHHIIIIIII", data, export, 0, 0, 0, 0, 0x2470, 1,
+                     len(export_names), len(export_names), 0x2428, 0x2444,
+                     0x2460)
+    string_offset = 0xA80
+    data[0xA70:0xA7C] = b"fixture.dll\0"
     for index, (name, target_rva) in enumerate(export_names):
         encoded_name = name.encode("ascii") + b"\0"
         struct.pack_into("<I", data, 0xA28 + index * 4, target_rva)
-        struct.pack_into("<I", data, 0xA40 + index * 4,
+        struct.pack_into("<I", data, 0xA44 + index * 4,
                          0x2400 + string_offset - export)
-        struct.pack_into("<H", data, 0xA58 + index * 2, index)
+        struct.pack_into("<H", data, 0xA60 + index * 2, index)
         data[string_offset:string_offset + len(encoded_name)] = encoded_name
         string_offset += len(encoded_name)
     struct.pack_into("<Q", data, 0xBE0, 0x180001030)
@@ -2421,11 +2426,12 @@ def _synthetic_image() -> bytes:
                      (DIR64 << 12) | LOAD_CONFIG_ENCLAVE_POINTER_OFFSET,
                      (DIR64 << 12) | 0x100, (DIR64 << 12) | 0x108,
                      (DIR64 << 12) | 0x5E0)
-    struct.pack_into("<IIIIIIIII", data, 0xE00,
+    struct.pack_into("<IIIIIIIIIIII", data, 0xE00,
                      0x1010, 0x1020, 0x4080,
                      0x1020, 0x1030, 0x4084,
-                     0x1040, 0x1050, 0x4088)
-    data[0xE80:0xE8C] = b"\x01\0\0\0" * 3
+                     0x1040, 0x1050, 0x4088,
+                     0x1090, 0x10A0, 0x408C)
+    data[0xE80:0xE90] = b"\x01\0\0\0" * 4
     struct.pack_into("<IIHHIIII", data, 0xE40,
                      0, 0, 0, 0, 2, 24, 0x4060, 0xE60)
     data[0xE60:0xE78] = b"RSDS" + bytes(20)
@@ -2448,6 +2454,7 @@ def _synthetic_map_text(
         "LegacyAddressTaken": 0x25E0,
         "LegacyExercise": 0x1040,
         "LegacyTarget": 0x1030,
+        "VbsEnclaveExercise": 0x1090,
         "__guard_check_icall_fptr": 0x2100,
         "__guard_dispatch_icall_fptr": 0x2108,
         "_guard_check_icall_nop": 0x1060,
@@ -2491,6 +2498,10 @@ def self_test() -> None:
     cases: List[Tuple[str, bytes, str]] = []
     arm64_cases: List[Tuple[str, bytes, str]] = []
     failures = []
+    if not any(entry["name"] == "VbsEnclaveExercise" and
+               entry["kind"] == "function" and entry["ordinal"] == 7
+               for entry in reference["exports"]):
+        failures.append("runtime callback export was not validated")
     direct_negative_count = 11
     crt_identity_negative_count = 0
     short_origin_forms = {
@@ -2674,7 +2685,7 @@ def self_test() -> None:
         3, 0x08, 8, 0, 0, 0, 3, 0, 0x04, 0, 0, 0,
     ))
     x64_v3_large = bytearray(valid)
-    struct.pack_into("<II", x64_v3_large, 0xE1C, 0x1200, 0x4090)
+    struct.pack_into("<II", x64_v3_large, 0xE28, 0x1200, 0x4090)
     x64_v3_large[0xE90:0xE98] = bytes((
         0x43, 4, 2, 1, 1, 0, 1, 0x2C,
     ))
@@ -2684,7 +2695,7 @@ def self_test() -> None:
         3, 1, 6, 0x41, 0, 0x08, 4, 0, 0, 0, 2, 0, 0, 4, 0, 0x2C,
     ))
     x64_v3_large_epilog = bytearray(valid)
-    struct.pack_into("<II", x64_v3_large_epilog, 0xE1C, 0x1200, 0x4090)
+    struct.pack_into("<II", x64_v3_large_epilog, 0xE28, 0x1200, 0x4090)
     x64_v3_large_epilog[0xE90:0xE9E] = bytes((
         3, 0, 5, 0x20,
         0x0A, 0x10, 0, 0, 0, 0, 1, 0, 0, 0x2C,
@@ -2697,12 +2708,13 @@ def self_test() -> None:
     arm64_valid = bytearray(valid)
     struct.pack_into("<H", arm64_valid, 0x84, 0xAA64)
     struct.pack_into("<II", arm64_valid,
-                     0x98 + 112 + EXCEPTION_DIRECTORY * 8, 0x4000, 3 * 8)
-    arm64_valid[0xE00:0xE24] = bytes(0x24)
-    struct.pack_into("<IIIIII", arm64_valid, 0xE00,
+                     0x98 + 112 + EXCEPTION_DIRECTORY * 8, 0x4000, 4 * 8)
+    arm64_valid[0xE00:0xE30] = bytes(0x30)
+    struct.pack_into("<IIIIIIII", arm64_valid, 0xE00,
                      0x1010, 0x4080,
                      0x1020, (4 << 2) | 1,
-                     0x1040, 0x4088)
+                     0x1040, 0x4088,
+                     0x1090, (4 << 2) | 1)
     struct.pack_into("<II", arm64_valid, 0xE80,
                      (1 << 27) | (1 << 21) | 4, 0x000000E4)
     struct.pack_into("<II", arm64_valid, 0xE88,
@@ -2815,7 +2827,7 @@ def self_test() -> None:
                             str(error))
 
     wrong_export_name = bytearray(valid)
-    wrong_export_name[0xA68] = ord("x")
+    wrong_export_name[0xA70] = ord("x")
     try:
         PEImage(bytes(wrong_export_name),
                 "self-test/wrong export DLL name").inspect(
@@ -3043,6 +3055,8 @@ def self_test() -> None:
             (0xEA0, bytes(4))])
     add("missing exact nonleaf runtime function", 0xE00, "<I", 0x1000,
         "map-bound nonleaf export GuardedIndirectCall lacks one exact")
+    add("missing runtime callback unwind entry", 0xE24, "<I", 0x1080,
+        "map-bound nonleaf export VbsEnclaveExercise lacks one exact")
 
     add("malformed debug directory size",
         optional + 112 + DEBUG_DIRECTORY * 8 + 4, "<I", 27,
@@ -3213,6 +3227,10 @@ def self_test() -> None:
         "missing exact ARM64 nonleaf runtime function",
         "map-bound nonleaf export GuardedIndirectCall lacks one exact",
         [(0xE00, "<I", 0x1000)])
+    mutate_arm64(
+        "missing ARM64 runtime callback unwind entry",
+        "map-bound nonleaf export VbsEnclaveExercise lacks one exact",
+        [(0xE18, "<I", 0x1080)])
 
     add("missing standard imports", optional + 112 + IMPORT_DIRECTORY * 8,
         "<I", 0, "missing or short standard import directory")
@@ -3285,28 +3303,33 @@ def self_test() -> None:
         "export Characteristics is nonzero")
     add("wrong export base", 0xA00 + 16, "<I", 2,
         "export ordinal Base is not 1")
-    add("unnamed export ordinal", 0xA00 + 20, "<I", 7,
+    add("unnamed export ordinal", 0xA00 + 20, "<I", 8,
         "export function/name counts differ from fixture contract")
-    add("export ordinal out of range", 0xA58, "<H", 6,
+    mutate("missing runtime callback export",
+           "export function/name counts differ from fixture contract",
+           [(0xA00 + 20, "<I", 6), (0xA00 + 24, "<I", 6)])
+    add("absent runtime callback export target", 0xA40, "<I", 0,
+        "named export VbsEnclaveExercise has no target")
+    add("export ordinal out of range", 0xA60, "<H", 7,
         "export name ordinal is out of range")
-    add("aliased export ordinal", 0xA58 + 2, "<H", 0,
+    add("aliased export ordinal", 0xA60 + 2, "<H", 0,
         "export names alias the same ordinal")
     add("aliased export target", 0xA28 + 4, "<I", 0x1020,
         "exports alias one target RVA")
     mutate("missing required export",
            "required export GFID coverage differs from fixture contract", [],
-           [(0xA78, b"A")])
+           [(0xA80, b"A")])
     mutate("swapped export ordinals", "exports differ from fixture contract",
-           [(0xA58, "<H", 1), (0xA5A, "<H", 0)])
+           [(0xA60, "<H", 1), (0xA62, "<H", 0)])
     mutate("swapped same-semantics export targets",
            "export GuardedExercise target RVA 0x1010 does not match COFF map",
            [(0xA28, "<I", 0x1010), (0xA2C, "<I", 0x1020)])
     mutate("unsorted export name table",
            "export name pointer table is not strictly lexical",
-           [(0xA40, "<I", 0x2488), (0xA44, "<I", 0x2478),
-            (0xA58, "<H", 1), (0xA5A, "<H", 0)])
+           [(0xA44, "<I", 0x2490), (0xA48, "<I", 0x2480),
+            (0xA60, "<H", 1), (0xA62, "<H", 0)])
     mutate("non-printable export name", "non-printable ASCII export name", [],
-           [(0xA78, b"\x1f")])
+           [(0xA80, b"\x1f")])
     mutate("GFID and export in executable virtual tail",
            "GFID 0x1250 is not executable",
            [(0x188 + 8, "<I", 0x300), (0x8A0, "<I", 0x1250),

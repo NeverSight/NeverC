@@ -114,6 +114,11 @@ their normal precedence.
 6. In the Windows host, check `IsEnclaveTypeSupported(ENCLAVE_TYPE_VBS)`,
    allocate the enclave with `CreateEnclave`, load the DLL with
    `LoadEnclaveImage`, and call `InitializeEnclave`.
+7. Resolve an exported enclave function with `GetProcAddress`, enter it through
+   `CallEnclave`, and verify its returned value. Exercise repeated calls,
+   including guarded and legacy indirect-call paths.
+8. Terminate and release the enclave with `TerminateEnclave` and
+   `DeleteEnclave`, checking that both operations succeed.
 
 For anti-cheat systems, the enclave is suitable for a small verification or
 key-handling component whose code and private state need a stronger boundary
@@ -132,11 +137,19 @@ The `VBS enclave differential CI` workflow runs on Windows. Its static gate:
 - runs mutation tests against the PE verifier; and
 - prepares VEIID-processed images for a differential runtime probe.
 
-The runtime probe executes the Microsoft image first. If the hosted runner
-lacks VBS or a usable signing environment, the result is an explicit
-environment skip. Once the Microsoft reference loads successfully, either
-NeverC candidate failing is a hard test failure. A configured self-hosted VBS
-runner can make runtime success mandatory.
+The x64 runtime probe executes the Microsoft image first, then both NeverC
+candidates. It resolves an export with `GetProcAddress`, makes repeated
+`CallEnclave` calls through guarded and legacy indirect-call paths, and checks
+the returned values. `PASS` requires ordered evidence for every lifecycle
+stage, including successful termination and deletion; loading and
+initialization alone are insufficient. ARM64 is covered by static validation
+and differential linking, not runtime execution.
+
+An optional runtime probe may report `SKIP` only for recognized environment
+setup unavailability before function execution. Crashes, timeouts, missing or
+out-of-order stage evidence, and functional errors are `FAIL`, including in the
+Microsoft reference. A configured self-hosted VBS runner can make runtime
+success mandatory.
 
 The linker supports x86-64 and ARM64 COFF enclave images. It validates the
 published configuration pointer, then derives a contiguous sequence of

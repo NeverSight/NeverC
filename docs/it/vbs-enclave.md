@@ -65,6 +65,8 @@ Una richiesta esplicita di collegamento incrementale è incompatibile con `/ENCL
 4. Su Windows, esegui lo strumento VEIID del Windows SDK sull’immagine completata.
 5. Su Windows, firma con SignTool l’immagine elaborata da VEIID. La firma deve essere l’ultima modifica del file.
 6. Nell’host Windows, verifica `IsEnclaveTypeSupported(ENCLAVE_TYPE_VBS)`, alloca l’enclave con `CreateEnclave`, carica la DLL con `LoadEnclaveImage` e chiama `InitializeEnclave`.
+7. Risolvi una funzione esportata dell’enclave con `GetProcAddress`, eseguila tramite `CallEnclave` e verificane il valore restituito. Ripeti le chiamate, coprendo i percorsi di chiamata indiretta protetti da CFG e legacy.
+8. Termina e libera l’enclave con `TerminateEnclave` e `DeleteEnclave`, verificando il successo di entrambe le operazioni.
 
 Nei sistemi anti-cheat, l’enclave è adatto a un piccolo componente di verifica o gestione delle chiavi il cui codice e stato privato richiedano un confine più forte rispetto al normale processo del gioco. Mantieni ridotta l’interfaccia dell’enclave e convalida tutti i dati forniti dall’host: l’host controlla comunque input, scheduling, archiviazione e disponibilità. Un enclave VBS integra l’autorità lato server, la telemetria, le difese del driver e il normale hardening del processo; non li sostituisce.
 
@@ -78,6 +80,8 @@ Il workflow `VBS enclave differential CI` viene eseguito su Windows. Il suo gate
 - esegue test di mutazione sul verificatore PE;
 - prepara immagini elaborate da VEIID per una verifica differenziale a runtime.
 
-La verifica a runtime esegue prima l’immagine Microsoft. Se il runner ospitato non dispone di VBS o di un ambiente di firma utilizzabile, il risultato viene indicato esplicitamente come salto dovuto all’ambiente. Dopo il corretto caricamento dell’immagine di riferimento Microsoft, il fallimento di uno dei candidati NeverC costituisce un errore di test definitivo. Un runner VBS self-hosted configurato può rendere obbligatorio il successo a runtime.
+La verifica a runtime x64 esegue prima l’immagine Microsoft, poi entrambi i candidati NeverC. Risolve una funzione esportata con `GetProcAddress`, ripete le chiamate `CallEnclave`, coprendo i percorsi di chiamata indiretta protetti da CFG e legacy, e controlla i valori restituiti. `PASS` richiede prove ordinate di ogni fase del ciclo di vita, incluse terminazione e liberazione riuscite; il solo caricamento e l’inizializzazione non bastano. ARM64 è coperto dalla convalida statica e dal collegamento differenziale, non dall’esecuzione a runtime.
+
+Una verifica a runtime facoltativa può segnalare `SKIP` solo per l’indisponibilità riconosciuta dei prerequisiti dell’ambiente prima dell’esecuzione della funzione. Arresti anomali, timeout, prove delle fasi mancanti o fuori ordine ed errori funzionali producono `FAIL`, anche per il riferimento Microsoft. Un runner VBS self-hosted configurato può rendere obbligatorio il successo a runtime.
 
 Il linker supporta immagini di enclave COFF x86-64 e ARM64. Convalida il puntatore di configurazione pubblicato e ricava quindi, dall’insieme finale delle importazioni DLL ordinarie, una sequenza contigua di voci `IMAGE_ENCLAVE_IMPORT` da 80 byte. Inizialmente le voci contengono soltanto il nome di importazione e campi identità a zero, che VEIID deve associare; il linker riscrive conteggio, elenco e dimensione della voce. Le importazioni con caricamento ritardato attive vengono rifiutate. Il linker non impone criteri aggiuntivi sui campi con versione all’interno di `IMAGE_ENCLAVE_CONFIG`.
