@@ -3,6 +3,123 @@ if(NOT PACKAGE_VERSION VERSION_EQUAL "20.1.8" OR
    NOT DEFINED NEVERC_CPP_REPOSITORY_ROOT)
   message(FATAL_ERROR "The builtin C++ frontend requires its isolated LLVM 20.1.8 build")
 endif()
+# The builtin frontend uses ClangTool directly. It does not use Tooling's
+# command-line executor registry or Support's balanced-partitioning algorithm.
+# Keep this change in the private build, and recheck the source/target layout
+# when updating the upstream pin instead of filtering arbitrary file names.
+get_filename_component(_neverc_cpp_upstream "${LLVM_MAIN_SRC_DIR}" DIRECTORY)
+foreach(_source_pin IN ITEMS
+    "clang/lib/Tooling/CMakeLists.txt|7f0160cd9c0c03b89e9ac57ce9921b364e92912afcd7d549ed26e14406a95b25"
+    "llvm/lib/Support/CMakeLists.txt|433969af272d535f2616bb7513677b9c99b1a9d61572d8e933e624250f2770ca"
+    "clang/cmake/modules/AddClang.cmake|34e3b3cf152fe9a6692d05e82b9d14b4b3d377624cf4ab79b33824c23075006d"
+    "llvm/cmake/modules/AddLLVM.cmake|e8bcd0649e978d2c26ad0484e081fbac3fd30c6addfd0ec60f807f2b6b8d322b")
+  string(REPLACE "|" ";" _source_pin_parts "${_source_pin}")
+  list(GET _source_pin_parts 0 _source_pin_path)
+  list(GET _source_pin_parts 1 _source_pin_hash)
+  file(SHA256 "${_neverc_cpp_upstream}/${_source_pin_path}" _source_hash)
+  if(NOT _source_hash STREQUAL _source_pin_hash)
+    message(FATAL_ERROR
+      "Changed LLVM 20.1.8 source layout for builtin C++: ${_source_pin_path}")
+  endif()
+endforeach()
+
+function(_neverc_cpp_remove_sources target expected_type source_directory)
+  if(NOT TARGET "${target}")
+    message(FATAL_ERROR "Missing private C++ source owner: ${target}")
+  endif()
+  get_target_property(_type "${target}" TYPE)
+  get_target_property(_directory "${target}" SOURCE_DIR)
+  get_target_property(_sources "${target}" SOURCES)
+  file(REAL_PATH "${source_directory}" _expected_directory)
+  file(REAL_PATH "${_directory}" _actual_directory)
+  if(NOT _type STREQUAL expected_type OR
+     NOT _actual_directory STREQUAL _expected_directory OR NOT _sources)
+    message(FATAL_ERROR "Changed private C++ source owner: ${target}")
+  endif()
+  set(_object_source "")
+  set(_object_matches 0)
+  if(target STREQUAL "LLVMSupport")
+    if(NOT TARGET LLVMSupportBlake3)
+      message(FATAL_ERROR "Missing private LLVMSupportBlake3 object library")
+    endif()
+    get_target_property(_blake_type LLVMSupportBlake3 TYPE)
+    get_target_property(_blake_directory LLVMSupportBlake3 SOURCE_DIR)
+    file(REAL_PATH "${_blake_directory}" _blake_directory)
+    file(REAL_PATH "${source_directory}/BLAKE3" _expected_blake_directory)
+    if(NOT _blake_type STREQUAL "OBJECT_LIBRARY" OR
+       NOT _blake_directory STREQUAL _expected_blake_directory)
+      message(FATAL_ERROR "Changed private LLVMSupportBlake3 object-library layout")
+    endif()
+    set(_object_source "$<TARGET_OBJECTS:LLVMSupportBlake3>")
+  endif()
+  foreach(_source IN LISTS _sources)
+    if(_source MATCHES "\\$<")
+      if(_object_source AND _source STREQUAL _object_source)
+        math(EXPR _object_matches "${_object_matches} + 1")
+      else()
+        message(FATAL_ERROR
+          "Unexpected generator expression in private C++ source owner ${target}: ${_source}")
+      endif()
+    endif()
+  endforeach()
+  if(_object_source AND NOT _object_matches EQUAL 1)
+    message(FATAL_ERROR "Expected exactly one private LLVMSupportBlake3 object reference")
+  endif()
+  foreach(_name IN LISTS ARGN)
+    if(NOT EXISTS "${source_directory}/${_name}")
+      message(FATAL_ERROR "Missing pinned private C++ source: ${_name}")
+    endif()
+    file(REAL_PATH "${source_directory}/${_name}" _expected_source)
+    set(_matches 0)
+    set(_remaining)
+    foreach(_source IN LISTS _sources)
+      if(_object_source AND _source STREQUAL _object_source)
+        list(APPEND _remaining "${_source}")
+        continue()
+      endif()
+      file(REAL_PATH "${_source}" _actual_source BASE_DIRECTORY "${_directory}")
+      if(_actual_source STREQUAL _expected_source)
+        math(EXPR _matches "${_matches} + 1")
+      else()
+        list(APPEND _remaining "${_source}")
+      endif()
+    endforeach()
+    if(NOT _matches EQUAL 1)
+      message(FATAL_ERROR
+        "Expected exactly one ${_name} in private C++ owner ${target}; found ${_matches}")
+    endif()
+    set(_sources "${_remaining}")
+  endforeach()
+  set_property(TARGET "${target}" PROPERTY SOURCES "${_sources}")
+endfunction()
+
+if(TARGET obj.clangTooling)
+  get_target_property(_tooling_type clangTooling TYPE)
+  get_target_property(_tooling_sources clangTooling SOURCES)
+  if(NOT _tooling_type STREQUAL "STATIC_LIBRARY" OR
+     NOT _tooling_sources STREQUAL "$<TARGET_OBJECTS:obj.clangTooling>")
+    message(FATAL_ERROR "Changed private clangTooling object-library layout")
+  endif()
+  set(_tooling_source_owner obj.clangTooling)
+  set(_tooling_source_type OBJECT_LIBRARY)
+elseif(CMAKE_GENERATOR STREQUAL "Xcode" OR
+       CMAKE_GENERATOR MATCHES "^Visual Studio ")
+  set(_tooling_source_owner clangTooling)
+  set(_tooling_source_type STATIC_LIBRARY)
+else()
+  message(FATAL_ERROR "Missing private clangTooling object-library owner")
+endif()
+# Execution.cpp's registry anchors require both executor implementations. Drop
+# all three together, preserving the unrelated LLVMInterpreter/Execution.cpp.
+_neverc_cpp_remove_sources("${_tooling_source_owner}" "${_tooling_source_type}"
+  "${_neverc_cpp_upstream}/clang/lib/Tooling"
+  AllTUsExecution.cpp Execution.cpp StandaloneExecution.cpp)
+# BPFunctionNode's constructor remains inline in its header. The bundled
+# InstrProf code only constructs/sorts nodes; llvm-profdata and LLD, which call
+# the algorithm, are not built or linked into this private frontend bundle.
+_neverc_cpp_remove_sources(LLVMSupport STATIC_LIBRARY
+  "${LLVM_MAIN_SRC_DIR}/lib/Support" BalancedPartitioning.cpp)
+
 # These upstream command-line options have external linkage outside namespace
 # llvm. Keep their definitions and references private without changing upstream
 # source files. The archive audit also rejects the original global names.
@@ -121,12 +238,15 @@ set(_output "${LLVM_BINARY_DIR}/lib/$<CONFIG>/${CMAKE_STATIC_LIBRARY_PREFIX}neve
 if(APPLE)
   find_program(_bundle_tool NAMES libtool REQUIRED)
   set(_bundle_kind darwin)
+  set(_member_reader_kind darwin)
 elseif(MSVC AND CMAKE_AR MATCHES "(^|[/\\\\])(llvm-)?lib(\\.exe)?$")
   set(_bundle_tool "${CMAKE_AR}")
   set(_bundle_kind msvc)
+  set(_member_reader_kind msvc)
 else()
   set(_bundle_tool "${CMAKE_AR}")
   set(_bundle_kind mri)
+  set(_member_reader_kind ar)
 endif()
 add_custom_command(OUTPUT "${_output}"
   COMMAND "${CMAKE_COMMAND}" "-DINPUTS=${_inputs}" "-DOUTPUT=${_output}"
@@ -138,6 +258,13 @@ add_custom_command(OUTPUT "${_output}"
     "${CMAKE_CURRENT_SOURCE_DIR}/CoffWeakAliases.py"
   VERBATIM)
 add_custom_target(nevercCppFrontendBundle
+  COMMAND "${Python3_EXECUTABLE}" -I -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/VerifyArchiveMembersTests.py"
+  # Always inspect the actual archive, including when an earlier invocation
+  # left an existing output behind. A missing nm symbol is not member evidence.
+  COMMAND "${Python3_EXECUTABLE}" -I -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/VerifyArchiveMembers.py"
+    --archive "${_output}" --archiver "${CMAKE_AR}" --kind "${_member_reader_kind}"
   COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/AuditArchiveTests.py"
   COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/CoffWeakAliasesTests.py"
   COMMAND "${Python3_EXECUTABLE}" -E -B
