@@ -13,6 +13,11 @@ The isolated build renames namespace llvm and selected global C/C++ symbols.
 IsolateSymbols.py applies checked, idempotent changes to the extracted
 IntrinsicInst.cpp, Debugify.h, and LoopUtils.cpp to isolate otherwise global
 identifiers.
+Six calls in Signals.cpp, APFixedPoint.cpp, and ConstantFolding.cpp explicitly
+perform the same double promotions as the integer/mixed cmath overloads. This
+avoids emitting shared global MSVC math templates while preserving getter
+evaluation, integer negation, and the existing outer float/half conversions.
+All three math sources are checked before any of those files is rewritten.
 Other symbol changes use compilation definitions. NoCrashReporter.h disables
 the private PrettyStackTrace.cpp Darwin process annotation; NeverC owns it.
 The exact scripts and compilation rules are part of the NeverC source tree at

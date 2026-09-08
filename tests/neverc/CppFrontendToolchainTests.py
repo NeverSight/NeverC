@@ -1187,6 +1187,519 @@ int main() {
                 print(f"MSVC empty literal runtime PASS: {order}; both nonnull, "
                       "NUL-valued and coalesced under /OPT:NOICF", flush=True)
 
+    def test_cmath_explicit_double_calls_preserve_values_and_remove_templates(self):
+        # This is a bounded SDK/compiler experiment, not a claim that these
+        # fixture flags reproduce every production LLVM compile command.
+        expected = {
+            "??$log10@H$0A@@@YANH@Z": "double __cdecl log10<int, 0>(int)",
+            "??$pow@HH$0A@@@YANHH@Z": "double __cdecl pow<int, int, 0>(int, int)",
+            "??$pow@MH$0A@@@YANMH@Z": "double __cdecl pow<float, int, 0>(float, int)",
+            "??$pow@NH$0A@@@YANNH@Z": "double __cdecl pow<double, int, 0>(double, int)",
+        }
+        preamble = r"""
+#include <cmath>
+#include <type_traits>
+// Check ordinary overload resolution separately from explicitly taking the
+// templates' addresses. These decltype operands never execute math calls.
+static_assert(std::is_same_v<decltype(std::log10(0)), double>);
+static_assert(std::is_same_v<decltype(std::pow(0, 0)), double>);
+static_assert(std::is_same_v<decltype(std::pow(0.0f, 0)), double>);
+static_assert(std::is_same_v<decltype(std::pow(0.0, 0)), double>);
+#if !defined(_MT) || defined(_DLL)
+#error This fixture requires the static Microsoft CRT
+#endif
+#define NC_STRING_IMPL(x) #x
+#define NC_STRING(x) NC_STRING_IMPL(x)
+#pragma message("NEVERC_CMATH_MACROS _MSC_VER=" NC_STRING(_MSC_VER) \
+ ";_MSC_FULL_VER=" NC_STRING(_MSC_FULL_VER) \
+ ";_MSVC_STL_VERSION=" NC_STRING(_MSVC_STL_VERSION) \
+ ";_MSVC_STL_UPDATE=" NC_STRING(_MSVC_STL_UPDATE) \
+ ";_MSVC_LANG=" NC_STRING(_MSVC_LANG) \
+ ";_HAS_EXCEPTIONS=" NC_STRING(_HAS_EXCEPTIONS) ";_MT=" NC_STRING(_MT))
+#if defined(__clang__)
+#pragma STDC FENV_ACCESS ON
+#else
+#pragma fenv_access(on)
+#endif
+"""
+        preamble += ("#if !defined(_M_ARM64)\n" if self.target.startswith("aarch64-")
+                     else "#if !defined(_M_X64)\n")
+        preamble += "#error The compiler must use the requested native target\n#endif\n"
+        wrappers = r"""
+static int SIDE_integer(int value, unsigned *calls) { ++*calls; return value; }
+static float SIDE_single(float value, unsigned *calls) { ++*calls; return value; }
+static double SIDE_double(double value, unsigned *calls) { ++*calls; return value; }
+extern "C" double SIDE_log(int depth, unsigned *calls) {
+  // Signals evaluates this only inside its positive-Depth loop.
+  if (depth <= 0) return 0.0;
+  return LOG_EXPRESSION;
+}
+extern "C" double SIDE_ap(int weight, int negate, unsigned *calls) {
+  // The caller supplies the signed-13-bit domain. Do not store the negated
+  // -4096 value back into that bit field: the original negation has type int.
+  if (negate) return NEGATIVE_AP_EXPRESSION;
+  return POSITIVE_AP_EXPRESSION;
+}
+extern "C" float SIDE_fp(float base, int exponent, unsigned *a, unsigned *b) {
+  // base is the already-converted float, not APFloat converted straight to
+  // double. The outer narrowing remains present. This does not model half.
+  return static_cast<float>(FLOAT_EXPRESSION);
+}
+extern "C" double SIDE_dp(double base, int exponent, unsigned *a, unsigned *b) {
+  return DOUBLE_EXPRESSION;
+}
+"""
+        escapes = r"""
+extern "C" {
+double (*SIDE_keep_log)(int) = static_cast<double (*)(int)>(&std::log10<int>);
+double (*SIDE_keep_ii)(int, int) =
+    static_cast<double (*)(int, int)>(&std::pow<int, int>);
+double (*SIDE_keep_fi)(float, int) =
+    static_cast<double (*)(float, int)>(&std::pow<float, int>);
+double (*SIDE_keep_di)(double, int) =
+    static_cast<double (*)(double, int)>(&std::pow<double, int>);
+}
+"""
+
+        def wrapper_source(side, changed):
+            expressions = {
+                "LOG_EXPRESSION": "std::log10(SIDE_integer(depth, calls))",
+                "NEGATIVE_AP_EXPRESSION": "std::pow(2, -SIDE_integer(weight, calls))",
+                "POSITIVE_AP_EXPRESSION": "std::pow(2, SIDE_integer(weight, calls))",
+                "FLOAT_EXPRESSION": (
+                    "std::pow(SIDE_single(base, a), SIDE_integer(exponent, b))"),
+                "DOUBLE_EXPRESSION": (
+                    "std::pow(SIDE_double(base, a), SIDE_integer(exponent, b))"),
+            }
+            if changed:
+                expressions = {
+                    "LOG_EXPRESSION": (
+                        "std::log10(static_cast<double>(SIDE_integer(depth, calls)))"),
+                    "NEGATIVE_AP_EXPRESSION": (
+                        "std::pow(2.0, static_cast<double>(-SIDE_integer(weight, calls)))"),
+                    "POSITIVE_AP_EXPRESSION": (
+                        "std::pow(2.0, static_cast<double>(SIDE_integer(weight, calls)))"),
+                    "FLOAT_EXPRESSION": (
+                        "std::pow(static_cast<double>(SIDE_single(base, a)), "
+                        "static_cast<double>(SIDE_integer(exponent, b)))"),
+                    "DOUBLE_EXPRESSION": (
+                        "std::pow(SIDE_double(base, a), "
+                        "static_cast<double>(SIDE_integer(exponent, b)))"),
+                }
+            result = wrappers
+            for token, expression in expressions.items():
+                result = result.replace(token, expression)
+            return (result + ("" if changed else escapes)).replace("SIDE", side)
+
+        harness = r"""
+#include <cerrno>
+#include <cfenv>
+#include <climits>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <limits>
+static_assert(CHAR_BIT == 8 && sizeof(int) == 4 && INT_MAX == 2147483647);
+static_assert(sizeof(float) == 4 && sizeof(double) == 8);
+static_assert(std::numeric_limits<float>::is_iec559 &&
+              std::numeric_limits<float>::radix == 2 &&
+              std::numeric_limits<float>::digits == 24 &&
+              std::numeric_limits<float>::min_exponent == -125 &&
+              std::numeric_limits<float>::max_exponent == 128);
+static_assert(std::numeric_limits<double>::is_iec559 &&
+              std::numeric_limits<double>::radix == 2 &&
+              std::numeric_limits<double>::digits == 53 &&
+              std::numeric_limits<double>::min_exponent == -1021 &&
+              std::numeric_limits<double>::max_exponent == 1024);
+#define DECLARE(SIDE) \
+extern "C" double SIDE##_log(int, unsigned *); \
+extern "C" double SIDE##_ap(int, int, unsigned *); \
+extern "C" float SIDE##_fp(float, int, unsigned *, unsigned *); \
+extern "C" double SIDE##_dp(double, int, unsigned *, unsigned *);
+DECLARE(neverc_cpp_original)
+DECLARE(neverc_cpp_changed)
+#undef DECLARE
+struct Input { unsigned kind; std::uint64_t bits; int argument; };
+struct Observation {
+  std::uint64_t bits;
+  int error, flags, rounding;
+  unsigned a, b;
+};
+// kind: guarded log10, positive AP scale, negative AP scale, float powi, double powi.
+static int observe(const Input &in, bool changed, int mode, int initial,
+                   Observation &out) {
+  fenv_t saved;
+  if (std::feholdexcept(&saved) != 0) return 10;
+  int status = 0;
+  if (std::fesetround(mode) != 0 || std::fegetround() != mode ||
+      std::feclearexcept(FE_ALL_EXCEPT) != 0 ||
+      (initial && std::feraiseexcept(initial) != 0) ||
+      std::fetestexcept(FE_ALL_EXCEPT) != initial) {
+    status = 11;
+  } else {
+    out.a = out.b = 0;
+    errno = 73;
+    if (in.kind == 3) {
+      const std::uint32_t raw = static_cast<std::uint32_t>(in.bits);
+      float base;
+      std::memcpy(&base, &raw, sizeof(base));
+      float value = changed
+          ? neverc_cpp_changed_fp(base, in.argument, &out.a, &out.b)
+          : neverc_cpp_original_fp(base, in.argument, &out.a, &out.b);
+      out.error = errno;
+      out.flags = std::fetestexcept(FE_ALL_EXCEPT);
+      out.rounding = std::fegetround();
+      std::uint32_t bits;
+      std::memcpy(&bits, &value, sizeof(bits));
+      out.bits = bits;
+    } else {
+      double value;
+      if (in.kind == 0)
+        value = changed ? neverc_cpp_changed_log(in.argument, &out.a)
+                        : neverc_cpp_original_log(in.argument, &out.a);
+      else if (in.kind == 1 || in.kind == 2)
+        value = changed ? neverc_cpp_changed_ap(in.argument, in.kind == 2, &out.a)
+                        : neverc_cpp_original_ap(in.argument, in.kind == 2, &out.a);
+      else {
+        double base;
+        std::memcpy(&base, &in.bits, sizeof(base));
+        value = changed
+            ? neverc_cpp_changed_dp(base, in.argument, &out.a, &out.b)
+            : neverc_cpp_original_dp(base, in.argument, &out.a, &out.b);
+      }
+      out.error = errno;
+      out.flags = std::fetestexcept(FE_ALL_EXCEPT);
+      out.rounding = std::fegetround();
+      std::memcpy(&out.bits, &value, sizeof(value));
+    }
+    const unsigned expected_a = in.kind == 0 && in.argument <= 0 ? 0 : 1;
+    const unsigned expected_b = in.kind >= 3 ? 1 : 0;
+    if (out.a != expected_a || out.b != expected_b || out.rounding != mode ||
+        (out.flags & initial) != initial)
+      status = 12;
+    // No log call, floating exception, errno change, or getter evaluation may
+    // sneak past the nonpositive Depth guard.
+    if (in.kind == 0 && in.argument <= 0 &&
+        (out.bits != 0 || out.error != 73 || out.flags != initial))
+      status = 13;
+  }
+  // Restore, rather than re-raise measured flags with feupdateenv.
+  const int restored = std::fesetenv(&saved);
+  return restored == 0 ? status : 14;
+}
+static int compare(Input in, int mode, int initial, unsigned &pairs) {
+  Observation before{}, after{};
+  int status = observe(in, false, mode, initial, before);
+  if (!status) status = observe(in, true, mode, initial, after);
+  if (!status && (before.bits != after.bits || before.error != after.error ||
+                 before.flags != after.flags || before.a != after.a ||
+                 before.b != after.b || before.rounding != after.rounding))
+    status = 20;
+  if (status) {
+    std::printf("CMATH mismatch status=%d kind=%u input=%llx exponent=%d "
+                "round=%d initial=%d before=%llx/%d/%d/%u/%u "
+                "after=%llx/%d/%d/%u/%u\n",
+                status, in.kind, static_cast<unsigned long long>(in.bits),
+                in.argument, mode, initial,
+                static_cast<unsigned long long>(before.bits), before.error,
+                before.flags, before.a, before.b,
+                static_cast<unsigned long long>(after.bits), after.error,
+                after.flags, after.a, after.b);
+    return status;
+  }
+  ++pairs;
+  return 0;
+}
+template <unsigned B, unsigned E>
+static int group(unsigned kind, const std::uint64_t (&bases)[B],
+                 const int (&exponents)[E], int mode, int initial, unsigned &pairs) {
+  for (std::uint64_t base : bases)
+    for (int exponent : exponents) {
+      const int status = compare({kind, base, exponent}, mode, initial, pairs);
+      if (status) return status;
+    }
+  return 0;
+}
+static int run(unsigned &pairs) {
+  const int depths[] = {1, 9, 10, 99, 100, 1023, INT_MAX, 0, -1, INT_MIN};
+  const int weights[] = {-4096, -1075, -1074, -1022, -1, 0, 1, 1023, 1024, 4095};
+  const std::uint64_t doubles[] = {
+    0x0000000000000000ULL, 0x8000000000000000ULL,
+    0x3ff0000000000000ULL, 0xbff0000000000000ULL,
+    0x4000000000000000ULL, 0xc000000000000000ULL,
+    0x0000000000000001ULL, 0x8000000000000001ULL,
+    0x7fefffffffffffffULL, 0xffefffffffffffffULL,
+    0x7ff0000000000000ULL, 0xfff0000000000000ULL,
+    0x7ff8000000000123ULL, 0xfff8000000000123ULL
+  };
+  const int double_exponents[] = {
+    INT_MIN, -1075, -1074, -1022, -3, -2, -1, 0, 1, 2, 3, 1023, 1024, INT_MAX
+  };
+  // These float domains avoid a finite double result outside float's range
+  // before the retained outer cast. Do not add float-max squared or 2^128.
+  const std::uint64_t maxima[] = {0x7f7fffffULL, 0xff7fffffULL};
+  const int max_exponents[] = {-1, 0, 1};
+  const std::uint64_t ones[] = {0x3f800000ULL, 0xbf800000ULL};
+  const int one_exponents[] = {INT_MIN, -3, -2, -1, 0, 1, 2, 3, INT_MAX};
+  const std::uint64_t specials[] = {
+    0, 0x80000000ULL, 0x7f800000ULL, 0xff800000ULL, 0x7fc00123ULL, 0xffc00123ULL
+  };
+  const int special_exponents[] = {-3, -2, -1, 0, 1, 2, 3};
+  const std::uint64_t twos[] = {0x40000000ULL, 0xc0000000ULL};
+  const int two_exponents[] = {-149, -126, -1, 0, 1, 2, 3, 127};
+  const std::uint64_t tiny[] = {1, 0x80000001ULL};
+  const int tiny_exponents[] = {0, 1};
+  const int modes[] = {FE_TONEAREST, FE_DOWNWARD, FE_UPWARD, FE_TOWARDZERO};
+  const int initial_flags[] = {0, FE_DIVBYZERO};
+  for (int mode : modes)
+    for (int initial : initial_flags) {
+      for (int depth : depths) {
+        const int status = compare({0, 0, depth}, mode, initial, pairs);
+        if (status) return status;
+      }
+      for (int weight : weights)
+        for (unsigned kind = 1; kind <= 2; ++kind) {
+          const int status = compare({kind, 0, weight}, mode, initial, pairs);
+          if (status) return status;
+        }
+      int status = group(4, doubles, double_exponents, mode, initial, pairs);
+      if (!status) status = group(3, maxima, max_exponents, mode, initial, pairs);
+      if (!status) status = group(3, ones, one_exponents, mode, initial, pairs);
+      if (!status) status = group(3, specials, special_exponents, mode, initial, pairs);
+      if (!status) status = group(3, twos, two_exponents, mode, initial, pairs);
+      if (!status) status = group(3, tiny, tiny_exponents, mode, initial, pairs);
+      if (status) return status;
+    }
+  return pairs == 2496 ? 0 : 21;
+}
+int main() {
+  fenv_t saved;
+  if (std::fegetenv(&saved) != 0) return 30;
+  unsigned pairs = 0;
+  const int status = run(pairs);
+  const int restored = std::fesetenv(&saved);
+  if (restored != 0) return 31;
+  if (status) return status;
+  std::printf("CMATH differential PASS: pairs=%u; round_modes=4; initial_flags=2; "
+              "bits/errno/fenv/getters; half=not-covered\n", pairs);
+  return 0;
+}
+"""
+        header_provenance = {}
+        configurations = {}
+        library_dirs = [Path(value.strip().strip('"'))
+                        for value in os.environ.get("LIB", "").split(";")
+                        if value.strip()]
+        library_dirs = [path for path in library_dirs if path.is_dir()]
+        for name in ("libcmt.lib", "libucrt.lib", "libvcruntime.lib",
+                     "oldnames.lib", "kernel32.lib"):
+            self.assertTrue(any((path / name).is_file() for path in library_dirs),
+                            f"The native CRT/SDK must provide {name}")
+        linker = self.llvm_root / "bin/lld-link.exe"
+        self.assertTrue(linker.is_file(), "The runtime probe requires lld-link")
+
+        def compile_source(directory, name, body, msvc, optimized, trace=True):
+            directory.mkdir(parents=True, exist_ok=True)
+            source, obj = directory / (name + ".cpp"), directory / (name + ".obj")
+            source.write_text((preamble if trace else "") + body, encoding="utf-8")
+            if msvc:
+                command = [self.msvc, "/nologo", "/std:c++17", "/c",
+                           "/O2" if optimized else "/Od", "/GL-", "/MT",
+                           "/EHsc", "/GR-", "/fp:strict",
+                           *(["/showIncludes"] if trace else []),
+                           "/Fo" + str(obj), source]
+            else:
+                command = [self.clang, "--target=" + self.target, "-std=c++17",
+                           "-O2" if optimized else "-O0", "-fno-lto",
+                           "-fms-extensions", "-fms-runtime-lib=static",
+                           "-fno-exceptions", "-fno-rtti", "-ffp-model=strict",
+                           "-ffp-contract=off",
+                           *(["-Xclang", "--show-includes",
+                              "-Xclang", "-sys-header-deps"] if trace else []),
+                           "-c", source, "-o", obj]
+            print("CMATH compile: " + subprocess.list2cmdline(
+                [str(argument) for argument in command]), flush=True)
+            environment = os.environ.copy()
+            environment["VSLANG"] = "1033"
+            result = subprocess.run(
+                [str(argument) for argument in command], cwd=self.root,
+                env=environment, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120, check=False)
+            output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, output)
+            if not trace:
+                return obj
+            macros = set(re.findall(
+                r"NEVERC_CMATH_MACROS (_MSC_VER=\d+;_MSC_FULL_VER=\d+;"
+                r"_MSVC_STL_VERSION=\d+;_MSVC_STL_UPDATE=\d+L?;"
+                r"_MSVC_LANG=\d+L?;_HAS_EXCEPTIONS=[01];_MT=1)", output))
+            self.assertEqual(len(macros), 1, output)
+            macro_evidence = next(iter(macros))
+            key = (msvc, optimized)
+            self.assertEqual(configurations.setdefault(key, macro_evidence),
+                             macro_evidence, "Original/changed/host configuration differs")
+            print(f"CMATH configuration: object={obj}; {macro_evidence}", flush=True)
+            consumed = {name: set() for name in ("cmath", "math.h", "corecrt_math.h")}
+            for line in output.splitlines():
+                prefix = "Note: including file:"
+                if line.startswith(prefix):
+                    path = Path(line[len(prefix):].lstrip(" "))
+                    if path.name.lower() in consumed:
+                        self.assertTrue(path.is_absolute(), str(path))
+                        consumed[path.name.lower()].add(path.resolve(strict=True))
+            for name, paths in consumed.items():
+                self.assertEqual(len(paths), 1,
+                                 f"Actual compilation must trace one {name}: {output}")
+                path = next(iter(paths))
+                data = path.read_bytes()
+                evidence = (str(path), hashlib.sha256(data).hexdigest())
+                self.assertEqual(header_provenance.setdefault(name, evidence), evidence,
+                                 "All fixture TUs must consume the same actual SDK headers")
+                print(f"CMATH SDK provenance: object={obj}; header={name}; "
+                      f"path={evidence[0]}; sha256={evidence[1]}", flush=True)
+                lines = data.decode("utf-8-sig").splitlines()
+                if name == "cmath":
+                    # Read the runner's actual definitions, never a downloaded
+                    # reference tag. Require only the promotion macros at issue.
+                    aliases = [i for i, line in enumerate(lines)
+                               if re.match(r"\s*using\s+_Common_float_type_t\s*=", line)]
+                    self.assertEqual(len(aliases), 1, path)
+                    end = aliases[0]
+                    while ";" not in lines[end]:
+                        end += 1
+                        self.assertLess(end, len(lines))
+                    for i in range(max(0, aliases[0] - 1), end + 1):
+                        print(f"CMATH actual common type {path}:{i + 1}: {lines[i]}",
+                              flush=True)
+                    for macro in ("_GENERIC_MATH1_BASE", "_GENERIC_MATH1R",
+                                  "_GENERIC_MATH1", "_GENERIC_MATH2_BASE",
+                                  "_GENERIC_MATH2"):
+                        starts = [i for i, line in enumerate(lines)
+                                  if re.match(r"\s*#\s*define\s+" + macro + r"\(", line)]
+                        self.assertEqual(len(starts), 1, (path, macro))
+                        end = starts[0]
+                        while lines[end].rstrip().endswith("\\"):
+                            end += 1
+                            self.assertLess(end, len(lines))
+                        for i in range(starts[0], end + 1):
+                            print(f"CMATH actual macro {path}:{i + 1}: {lines[i]}", flush=True)
+                        body_text = "\n".join(lines[starts[0]:end + 1])
+                        if macro.endswith("_BASE"):
+                            self.assertIn("static_cast<double>(_Left)", body_text)
+                            if macro == "_GENERIC_MATH2_BASE":
+                                self.assertIn("static_cast<double>(_Right)", body_text)
+                    for pattern in (r"_GENERIC_MATH1\s*\(\s*log10\s*\)",
+                                    r"_GENERIC_MATH2\s*\(\s*pow\s*\)"):
+                        matches = [(i, line) for i, line in enumerate(lines)
+                                   if re.fullmatch(r"\s*" + pattern + r"\s*", line)]
+                        self.assertEqual(len(matches), 1, (path, pattern))
+                        i, line = matches[0]
+                        print(f"CMATH actual instantiation {path}:{i + 1}: {line}", flush=True)
+                elif name == "math.h":
+                    # The actual UCRT math.h is a forwarding header. Its
+                    # included definition file must be in this same trace.
+                    matches = [(i, line) for i, line in enumerate(lines)
+                               if re.match(r'\s*#\s*include\s*[<"]corecrt_math\.h[>"]',
+                                           line)]
+                    self.assertEqual(len(matches), 1, path)
+                    i, line = matches[0]
+                    print(f"CMATH actual forwarding header {path}:{i + 1}: {line}",
+                          flush=True)
+                else:
+                    for function in ("log10", "pow"):
+                        matches = [(i, line) for i, line in enumerate(lines)
+                                   if re.search(r"\bdouble\s+__cdecl\s+" +
+                                                function + r"\s*\(", line)]
+                        self.assertTrue(matches, (path, function))
+                        for i, line in matches:
+                            print(f"CMATH actual CRT declaration {path}:{i + 1}: {line}",
+                                  flush=True)
+            return obj
+
+        def pack(path, objects):
+            self.require_success([self.librarian, "/nologo", "/out:" + str(path), *objects])
+            return path
+
+        for msvc in (True, False):
+            for optimized in (False, True):
+                compiler = "msvc" if msvc else "clang"
+                configuration = compiler + ("-O2" if optimized else "-O0")
+                with self.subTest(configuration=configuration):
+                    directory = self.root / "cmath" / configuration
+                    original_obj = compile_source(
+                        directory / "original", "original",
+                        wrapper_source("neverc_cpp_original", False), msvc, optimized)
+                    changed_obj = compile_source(
+                        directory / "changed", "changed",
+                        wrapper_source("neverc_cpp_changed", True), msvc, optimized)
+                    host = directory / "host"
+                    host_obj = compile_source(
+                        host, "host", escapes.replace("SIDE", "host_cmath"), msvc, optimized)
+                    # ENTRY is a separate member, and never enters the runtime
+                    # link. Host escapes instantiate the same four templates,
+                    # without wrapper literals (such as 2.0) introducing an
+                    # unrelated floating-constant COMDAT intersection.
+                    entry_obj = compile_source(
+                        directory, "entry", ENTRY, msvc, optimized, trace=False)
+                    original = pack(directory / "original.lib", (entry_obj, original_obj))
+                    changed = pack(directory / "changed.lib", (entry_obj, changed_obj))
+                    host_archive = pack(host / "host.lib", (host_obj,))
+                    for archive in (original, host_archive):
+                        declarations = self.defined_declarations(archive)
+                        for raw, decoded in expected.items():
+                            self.assertIn(raw, declarations, declarations)
+                            self.assertEqual(declarations[raw], decoded)
+                        inventory = self.require_success([
+                            self.nm, "--extern-only", "--format=posix", archive])
+                        for line in inventory.splitlines():
+                            if line.split() and line.split()[0] in expected:
+                                print(f"CMATH actual original definition: {archive}: {line}; "
+                                      f"decoded={declarations[line.split()[0]]!r}", flush=True)
+                    inventory = self.require_success([
+                        self.nm, "--extern-only", "--format=posix", changed])
+                    all_names = {line.split()[0] for line in inventory.splitlines()
+                                 if line.split()}
+                    self.assertFalse(all_names & expected.keys(),
+                                     "Changed calls retain an original template D/U: " + inventory)
+                    for host_format in ("nm", "coff-index"):
+                        checked = directory / (host_format + "-original.lib")
+                        shutil.copyfile(original, checked)
+                        command = [sys.executable, "-E", "-B", self.audit,
+                                   "--nm", self.nm, "--archive", checked,
+                                   "--coff-readobj", self.readobj,
+                                   "--host-lib-dir", host, "--host-format", host_format]
+                        if host_format == "nm":
+                            command.extend(["--host-nm", self.nm])
+                        result = self.run_command(command)
+                        output = result.stdout + result.stderr
+                        self.assertNotEqual(result.returncode, 0, output)
+                        self.assertFalse(checked.exists(), output)
+                        for raw in expected:
+                            self.assertIn("private/host symbol intersection: " + raw + ";",
+                                          output)
+                        print(f"CMATH original rejection ({configuration}, {host_format}):\n"
+                              + output, flush=True)
+                        checked = directory / (host_format + "-changed.lib")
+                        shutil.copyfile(changed, checked)
+                        self.check_audit(checked, host, host_format)
+                        print(f"CMATH changed audit PASS: {configuration}, {host_format}; "
+                              "all four original template D/U absent", flush=True)
+                    harness_obj = compile_source(
+                        directory, "harness", harness, msvc, optimized)
+                    executable = directory / "cmath-probe.exe"
+                    machine = "arm64" if self.target.startswith("aarch64-") else "x64"
+                    command = [linker, "/nologo", "/out:" + str(executable),
+                               "/machine:" + machine, "/subsystem:console", "/OPT:NOICF",
+                               "/defaultlib:libcmt", "/defaultlib:oldnames",
+                               *("/libpath:" + str(path) for path in library_dirs),
+                               harness_obj, original_obj, changed_obj]
+                    print("CMATH link: " + subprocess.list2cmdline(
+                        [str(argument) for argument in command]), flush=True)
+                    self.require_success(command)
+                    output = self.require_success([executable])
+                    self.assertIn("CMATH differential PASS: pairs=2496;", output)
+                    print(f"CMATH runtime ({configuration}): {output}", flush=True)
+
     def test_actual_private_llvm_entity_is_rejected(self):
         private = self.archive(
             self.root / "private", "private",

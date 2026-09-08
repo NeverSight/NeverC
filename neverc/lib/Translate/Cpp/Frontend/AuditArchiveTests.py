@@ -178,6 +178,36 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
             "// Private NeverC frontend ABI: this upstream type is global.\n"
             "#define DebugInfoPerPass neverc_cpp_DebugInfoPerPass\n"
             "struct DebugInfoPerPass {};\n#endif\n")
+        # Independent fixed input/output expressions, not imported from the
+        # production script. The third spelling models an incomplete rewrite.
+        math_calls = {
+            "llvm/lib/Support/Signals.cpp": (
+                ("std::log10(Depth)",
+                 "std::log10(static_cast<double>(Depth))",
+                 "std::log10(static_cast<double>(Depth)"),),
+            "llvm/lib/Support/APFixedPoint.cpp": (
+                ("std::pow(2, Sema.getLsbWeight())",
+                 "std::pow(2.0, static_cast<double>(Sema.getLsbWeight()))",
+                 "std::pow(2.0, Sema.getLsbWeight())"),
+                ("std::pow(2, -DstFXSema.getLsbWeight())",
+                 "std::pow(2.0, static_cast<double>(-DstFXSema.getLsbWeight()))",
+                 "std::pow(2.0, -DstFXSema.getLsbWeight())"),
+                ("std::pow(2, DstFXSema.getLsbWeight())",
+                 "std::pow(2.0, static_cast<double>(DstFXSema.getLsbWeight()))",
+                 "std::pow(2.0, DstFXSema.getLsbWeight())")),
+            "llvm/lib/Analysis/ConstantFolding.cpp": (
+                ("std::pow(Op1V.convertToFloat(), Exp)",
+                 "std::pow(static_cast<double>(Op1V.convertToFloat()), "
+                 "static_cast<double>(Exp))",
+                 "std::pow(static_cast<double>(Op1V.convertToFloat()), Exp)"),
+                ("std::pow(Op1V.convertToDouble(), Exp)",
+                 "std::pow(Op1V.convertToDouble(), static_cast<double>(Exp))",
+                 "std::pow(Op1V.convertToDouble(), static_cast<double>(Exp)")),
+        }
+        math_sources = {name: "".join(before + ";\n" for before, _, _ in calls)
+                        for name, calls in math_calls.items()}
+        expected_math = {name: "".join(after + ";\n" for _, after, _ in calls)
+                         for name, calls in math_calls.items()}
         files = {
             "llvm/lib/IR/IntrinsicInst.cpp": intrinsic,
             "llvm/include/llvm/Transforms/Utils/Debugify.h": debugify,
@@ -190,6 +220,7 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
             "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h": (
                 "#define blake3_compress_in_place llvm_blake3_compress_in_place\n"),
         }
+        files.update(math_sources)
         for name in notice_names:
             files["llvm/lib/Support/" + name] = (
                 "// Controlled transformation fixture notice.\nint fixture_value;\n")
@@ -206,7 +237,7 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
                        str(Path(__file__).resolve().with_name("IsolateSymbols.py")),
                        "--source", str(source), "--output", str(output)]
 
-            def run_script(success):
+            def run_script(success, expected_error=None):
                 try:
                     result = subprocess.run(
                         command, cwd=root, capture_output=True, text=True,
@@ -221,8 +252,11 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
                     self.assertIn("Isolated llvm namespace and", result.stdout, diagnostic)
                 else:
                     self.assertNotEqual(result.returncode, 0, diagnostic)
-                    self.assertIn("Unexpected pinned LLVM PointerBounds", result.stderr,
-                                  diagnostic)
+                    if expected_error is None:
+                        self.assertIn("Unexpected pinned LLVM PointerBounds", result.stderr,
+                                      diagnostic)
+                    else:
+                        self.assertEqual(result.stderr, expected_error + "\n", diagnostic)
 
             run_script(True)
             loop = source / "llvm/lib/Transforms/Utils/LoopUtils.cpp"
@@ -231,6 +265,9 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
                 encoding="utf-8"), expected_intrinsic)
             self.assertEqual((source / "llvm/include/llvm/Transforms/Utils/Debugify.h").read_text(
                 encoding="utf-8"), expected_debugify)
+            math_paths = {name: source / name for name in math_calls}
+            for name, path in math_paths.items():
+                self.assertEqual(path.read_text(encoding="utf-8"), expected_math[name], name)
             prefix = output.read_text(encoding="utf-8")
             for name in ("llvm", "LLVMFixture0000", "LLVMFixture0899", "LLVMIsAArgument",
                          "llvm_blake3_compress_in_place"):
@@ -244,7 +281,8 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
             self.assertEqual(notices.read_text(encoding="utf-8"), expected_notices)
             stable = {path: path.read_bytes() for path in (
                 loop, output, notices, source / "llvm/lib/IR/IntrinsicInst.cpp",
-                source / "llvm/include/llvm/Transforms/Utils/Debugify.h")}
+                source / "llvm/include/llvm/Transforms/Utils/Debugify.h",
+                *math_paths.values())}
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))
@@ -275,6 +313,51 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
                     loop.write_bytes(before)
                     run_script(False)
                     self.assertEqual(loop.read_bytes(), before)
+
+            # The preceding negatives leave an invalid LoopUtils.cpp. Restore
+            # it so no PointerBounds error can hide a math validation failure.
+            loop.write_text(expected_loop, encoding="utf-8")
+            # Interrupted runs may leave whole files rewritten independently.
+            # Original/all-rewritten states were checked above; exercise the
+            # other six combinations of the three files as valid inputs.
+            for rewritten_mask in range(1, 7):
+                with self.subTest(math_rewritten_files=rewritten_mask):
+                    for index, (name, path) in enumerate(math_paths.items()):
+                        contents = (expected_math[name] if rewritten_mask & (1 << index)
+                                    else math_sources[name])
+                        path.write_text(contents, encoding="utf-8")
+                    run_script(True)
+                    for path, contents in stable.items():
+                        self.assertEqual(path.read_bytes(), contents, str(path))
+
+            for name, calls in math_calls.items():
+                for before, after, partial in calls:
+                    original, rewritten = math_sources[name], expected_math[name]
+                    invalid_math = {
+                        "missing call": original.replace(before, "0.0", 1),
+                        "duplicate original": original + before + ";\n",
+                        "duplicate rewritten": rewritten + after + ";\n",
+                        "same call original and rewritten": original + after + ";\n",
+                        "partial rewrite": original.replace(before, partial, 1),
+                    }
+                    if len(calls) > 1:
+                        invalid_math.update({
+                            "one call rewritten": original.replace(before, after, 1),
+                            "one call original": rewritten.replace(after, before, 1),
+                        })
+                    for state, invalid_source in invalid_math.items():
+                        with self.subTest(math_file=name, call=before, state=state):
+                            for other_name, path in math_paths.items():
+                                contents = (invalid_source if other_name == name
+                                            else math_sources[other_name])
+                                path.write_bytes(contents.encode("utf-8"))
+                            unchanged = {path: path.read_bytes() for path in stable}
+                            run_script(False, "Unexpected pinned LLVM math calls in " +
+                                       str(math_paths[name]))
+                            # Even when the last file is invalid, the earlier
+                            # valid original math files must remain unmodified.
+                            for path, contents in unchanged.items():
+                                self.assertEqual(path.read_bytes(), contents, str(path))
 
     def test_global_pointer_bounds_record_identity_has_explicit_type_context(self):
         for record in ("PointerBounds", "neverc_cpp_PointerBounds"):
