@@ -835,6 +835,73 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
                 with self.subTest(declaration=declaration):
                     self.assertEqual(AuditArchive.microsoft_std_entity(declaration), expected)
 
+    def test_microsoft_less_template_preserves_the_actual_ci_pair_owner(self):
+        # Complete b24 Windows Clang x64 declaration: ?M is operator<, and
+        # MicrosoftDemangleNodes appends the template '<' without a separator.
+        string = ("class std::basic_string<char, struct std::char_traits<char>, "
+                  "class std::allocator<char>>")
+        pair = f"struct std::pair<{string}, {string}>"
+        declaration = (f"bool __cdecl std::operator<<{string}, {string}, {string}, {string}>"
+                       f"({pair} const &, {pair} const &)")
+        raw = ("??$?MV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@"
+               "V01@V01@V01@@std@@YA_NAEBU?$pair@V?$basic_string@DU?$char_traits@D@std@@"
+               "V?$allocator@D@2@@std@@V12@@0@0@Z")
+        self.assertTrue(AuditArchive.standard_shared_symbol(raw, declaration))
+        for host_format in ("nm", "coff-index"):
+            with self.subTest(host_format=host_format):
+                self.audit_inventory([(raw, "T", declaration)],
+                                     [(raw, "W", declaration)], host_format)
+        # Keep every std type in the signature; only the declaration owner
+        # changes. The enclosing function also owns its quoted local symbols.
+        host = declaration.replace("std::operator<", "Host::operator<", 1)
+        for parent, expected in ((declaration, True), (host, False)):
+            for value in (parent, f"int `{parent}'::`2'::state"):
+                with self.subTest(declaration=value):
+                    self.assertEqual(AuditArchive.microsoft_std_entity(value), expected)
+
+    def test_microsoft_less_and_shift_template_punctuation_preserves_owners(self):
+        for name in ("operator<", "operator<<", "operator<<=",
+                     "operator<<int>", "operator<<<int>",
+                     "operator<<=<int>",
+                     "operator<<class <unnamed-type-1>>",
+                     "operator<<<<unnamed-type-1>>"):
+            for owner, expected in (("std", True), ("Host", False)):
+                parent = f"bool __cdecl {owner}::{name}(int, int)"
+                for declaration in (parent, f"int `{parent}'::`2'::state"):
+                    with self.subTest(declaration=declaration):
+                        self.assertEqual(AuditArchive.microsoft_std_entity(declaration),
+                                         expected)
+
+    def test_microsoft_template_operator_malformed_and_ambiguous_forms_fail_closed(self):
+        for declaration in (
+                "bool __cdecl std::operator<<int(int, int)",
+                "bool __cdecl std::operator<<int>>(int, int)",
+                "bool __cdecl std::operator<<<int(int, int)",
+                "bool __cdecl std::operator<<<int>>(int, int)",
+                "bool __cdecl std::operator<<int>(int, int) trailing",
+                "bool __cdecl std::operator<<int>(int, int) constconst",
+                "int `bool __cdecl std::operator<<int>(int, int)::`2'::state",
+                "int `bool __cdecl std::operator<<",
+                # A tagless anonymous first argument is ambiguous with the
+                # shift spelling. Do not guess an alternative operator split.
+                "bool __cdecl std::operator<<<unnamed-type-1>>(int, int)",
+                "bool __cdecl std::operator<<<<unnamed-type-1>>>(int, int)"):
+            with self.subTest(declaration=declaration):
+                self.assertFalse(AuditArchive.microsoft_std_entity(declaration))
+        for control in ("\n", "\r", "\t", "\x00", "\x1f", "\x7f"):
+            for declaration in ("bool __cdecl std::operator<<(int, int)",
+                                "int `bool __cdecl std::operator<<(int, int)'::`2'::state"):
+                with self.subTest(declaration=declaration, control=repr(control)):
+                    self.assertFalse(AuditArchive.microsoft_std_entity(declaration + control))
+
+    def test_microsoft_template_operator_nesting_remains_bounded(self):
+        for operator in ("<", "<<"):
+            for depth, expected in ((32, True), (33, False)):
+                argument = "Box<" * (depth - 1) + "int" + ">" * (depth - 1)
+                declaration = f"bool __cdecl std::operator{operator}<{argument}>(int, int)"
+                with self.subTest(operator=operator, depth=depth):
+                    self.assertEqual(AuditArchive.microsoft_std_entity(declaration), expected)
+
     def test_microsoft_function_suffix_requires_separate_ordered_qualifiers(self):
         declaration = "public: void __cdecl std::Box::f(void)"
         # MicrosoftDemangleNodes.cpp emits noexcept before the ref qualifier.

@@ -124,7 +124,7 @@ class CppFrontendToolchainTests(unittest.TestCase):
         return dict(zip(*inventories))
 
     def check_owner_fixture(self, source, patterns, *, msvc=False, rejected=False,
-                            case="owner"):
+                            case="owner", raw_prefix=None):
         compiler = "msvc" if msvc else "clang"
         directory = self.root / case / compiler
         private = self.archive(
@@ -141,11 +141,13 @@ class CppFrontendToolchainTests(unittest.TestCase):
         selected = set()
         for pattern in patterns:
             matches = {name for name in shared if name.startswith("?") and
+                       (raw_prefix is None or name.startswith(raw_prefix)) and
                        re.search(pattern, private_declarations[name])}
             self.assertTrue(
                 matches,
                 f"The {compiler} fixture must emit shared external definitions "
-                f"matching {pattern!r}; actual private declarations: "
+                f"matching {pattern!r} with raw prefix {raw_prefix!r}; "
+                f"actual private declarations: "
                 f"{private_declarations!r}; host declarations: {host_declarations!r}")
             selected.update(matches)
         for name in selected:
@@ -162,6 +164,86 @@ class CppFrontendToolchainTests(unittest.TestCase):
                         error="private/host symbol intersection: " + sorted(selected)[0])
                 else:
                     self.check_audit(checked, host, host_format)
+
+    def test_std_pair_less_template_is_not_a_shift_operator(self):
+        source = """
+#include <utility>
+using Pair = std::pair<int, int>;
+using Compare = bool (*)(Pair const &, Pair const &);
+extern "C" { Compare FIXTURE_ANCHOR = &std::operator<; }
+"""
+        # The escaped pointer requires the runner's actual STL specialization
+        # even at -O2. Its target type deduces either the two- or four-parameter
+        # pair overload; do not hard-code one STL revision's template arity.
+        # Microsoft ?M denotes less-than. The following template '<' makes the
+        # decoded spelling start with 'operator<<', not a left-shift operator.
+        for msvc in (False, True):
+            self.check_owner_fixture(source, (
+                r"^bool __cdecl std::operator<<(?!<)[^()]*>\("
+                r"struct std::pair<int, int> const &, "
+                r"struct std::pair<int, int> const &\)$",
+            ), msvc=msvc, raw_prefix="??$?M", case="std-pair-less")
+
+    def test_host_pair_less_template_does_not_inherit_std_ownership(self):
+        source = """
+#include <utility>
+namespace Host {
+template <class A, class B, class C, class D>
+bool operator<(std::pair<A, B> const &left, std::pair<C, D> const &right) {
+  return left.first < right.first ||
+         (!(right.first < left.first) && left.second < right.second);
+}
+}
+using Pair = std::pair<int, int>;
+using Compare = bool (*)(Pair const &, Pair const &);
+extern "C" { Compare FIXTURE_ANCHOR = &Host::operator<; }
+"""
+        # This uses real std::pair parameter types but the declaration belongs
+        # to Host. Require that exact shared raw specialization to be rejected;
+        # an unrelated collision cannot make the negative case pass.
+        for msvc in (False, True):
+            self.check_owner_fixture(source, (
+                r"^bool __cdecl Host::operator<<int, int, int, int>\("
+                r"struct std::pair<int, int> const &, "
+                r"struct std::pair<int, int> const &\)$",
+            ), msvc=msvc, rejected=True, raw_prefix="??$?M",
+                case="host-pair-less")
+
+    def test_shift_operator_model_distinguishes_template_and_plain_names(self):
+        # These controlled declarations exercise only operator token boundaries,
+        # not a complete STL ABI. Both address initializers force real external
+        # definitions; their raw ?6 operator code must differ from pair's ?M.
+        model = """
+namespace std {
+template <class T> struct ShiftBox { T value; };
+template <class T>
+ShiftBox<T> operator<<(ShiftBox<T> left, int amount) {
+  left.value <<= amount;
+  return left;
+}
+ShiftBox<int> operator<<(ShiftBox<int> left, unsigned int amount) {
+  left.value <<= amount;
+  return left;
+}
+}
+using Box = std::ShiftBox<int>;
+"""
+        cases = (
+            ("template", "int", "??$?6", r"operator<<<int>"),
+            ("plain", "unsigned int", "??6", r"operator<<"),
+        )
+        for case, amount, raw_prefix, spelling in cases:
+            source = model + f"""
+using Shift = Box (*)(Box, {amount});
+extern "C" {{ Shift FIXTURE_ANCHOR = &std::operator<<; }}
+"""
+            pattern = (r"^struct std::ShiftBox<int> __cdecl std::" + spelling +
+                       r"\(struct std::ShiftBox<int>, " + amount + r"\)$")
+            for msvc in (False, True):
+                with self.subTest(operator=case):
+                    self.check_owner_fixture(
+                        source, (pattern,), msvc=msvc, raw_prefix=raw_prefix,
+                        case="shift-model-" + case)
 
     def test_std_local_static_and_guard_follow_the_enclosing_function(self):
         source = """

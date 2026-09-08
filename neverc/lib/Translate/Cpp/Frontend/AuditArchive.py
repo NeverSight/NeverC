@@ -88,8 +88,12 @@ def host_archives(directory, private_archive):
 
 MICROSOFT_DECLARATION_LIMIT = 65536
 MICROSOFT_NESTING_LIMIT = 32
+# The demangler appends template arguments directly to the operator spelling.
+# Consume both '<' characters for a shift only before its parameter/template
+# group or the absolute end of an extracted owner token. In operator<<int>,
+# the second '<' instead opens the less-than operator's template arguments.
 _MICROSOFT_OPERATOR = re.compile(
-    r"\boperator(?:<=>|->\*?|<<=?|>>=?|<=?|>=?|==|!=|&&|\|\||\+\+|--|"
+    r"\boperator(?:<=>|->\*?|<<=|<<(?=[<(]|\Z)|>>=?|<=?|>=?|==|!=|&&|\|\||\+\+|--|"
     r"\(\)|\[\]|,|[-+*/%&|^~!=]=?)")
 _MICROSOFT_CALLING_CONVENTIONS = frozenset((
     "__cdecl", "__thiscall", "__stdcall", "__fastcall", "__vectorcall", "__clrcall"))
