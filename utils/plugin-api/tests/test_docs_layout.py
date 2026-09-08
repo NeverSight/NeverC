@@ -83,7 +83,11 @@ class DocumentationLayoutTests(unittest.TestCase):
         original_read = Path.read_text
         text = index.read_text()
         self.assertIn(f"]({target})", text)
+        # Section links still reach the guide, so remove those targets too.
         broken = text.replace(f"]({target})", "](missing-guide.md)")
+        broken = broken.replace(f"]({target}#", "](missing-guide.md#")
+        self.assertNotIn(f"]({target})", broken)
+        self.assertNotIn(f"]({target}#", broken)
         def read(path, *args, **kwargs):
             return broken if path == index else original_read(path, *args, **kwargs)
         report = nav.Report()
