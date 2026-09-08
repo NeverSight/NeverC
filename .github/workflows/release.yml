@@ -44,6 +44,7 @@ jobs:
         run: |
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 \
             .github/workflows/release.yml \
+            .github/workflows/test-windows-installer.yml \
             .github/workflows/release-linux-x64.yml \
             .github/workflows/release-linux-arm64.yml \
             .github/workflows/release-windows-x64.yml \
@@ -65,16 +66,20 @@ jobs:
       contents: read
     uses: ./.github/workflows/release-linux-arm64.yml
 
+  validate-windows-installer:
+    name: Validate Windows installer
+    uses: ./.github/workflows/test-windows-installer.yml
+
   windows-x64:
     name: Windows x64
-    needs: validate
+    needs: [validate, validate-windows-installer]
     permissions:
       contents: read
     uses: ./.github/workflows/release-windows-x64.yml
 
   windows-arm64:
     name: Windows arm64
-    needs: validate
+    needs: [validate, validate-windows-installer]
     permissions:
       contents: read
     uses: ./.github/workflows/release-windows-arm64.yml
@@ -158,6 +163,13 @@ jobs:
             neverc-macos-arm64.zip; do
             unzip -Z1 "dist/$installer_archive" \
               | grep -Fx 'bin/neverc' > /dev/null
+          done
+
+          for windows_archive in \
+            windows-arm64-neverc-release.zip \
+            windows-x64-neverc-release.zip; do
+            unzip -Z1 "dist/$windows_archive" \
+              | grep -Fx 'install/bin/neverc.exe' > /dev/null
           done
 
           (

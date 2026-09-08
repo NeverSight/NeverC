@@ -114,10 +114,24 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh |
 
 El instalador descarga el archivo release de su plataforma, lo verifica con `SHA256SUMS`, instala en `~/.neverc` y antepone `~/.neverc/bin` al `PATH` del shell.
 
+En **Windows x64/arm64**, ejecute este comando en **PowerShell 5.1 o posterior**:
+
+```powershell
+irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex
+```
+
+El instalador de Windows detecta la arquitectura nativa, verifica el archivo release con `SHA256SUMS` e instala en `$HOME\.neverc` sin permisos de administrador. Añade `$HOME\.neverc\bin` al `PATH` de la sesión actual y del usuario, de modo que `neverc` queda disponible de inmediato y en terminales nuevos.
+
 Para fijar una versión concreta:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1))) -Version v3389.1.2
 ```
 
 Verificar la instalación:
@@ -148,7 +162,7 @@ neverc run hello.c -O1 -- program-arg
 
 Los flags de cross-compilación pueden compilar, pero el binario temporal siempre se ejecuta en el host. Reglas, ejemplos y límites: **[`neverc run` →](run.md)**.
 
-Los paquetes **Windows x64/arm64** están en [GitHub Releases](https://github.com/NeverSight/NeverC/releases) para descarga manual. El binario macOS arm64 está firmado con Apple Developer ID y notarizado.
+El binario macOS arm64 está firmado con Apple Developer ID y notarizado.
 
 Variables de entorno opcionales:
 
@@ -156,7 +170,7 @@ Variables de entorno opcionales:
 |----------|-----------|
 | `NEVERC_INSTALL_DIR` | Prefijo de instalación (predeterminado: `~/.neverc`) |
 | `NEVERC_VERSION` | Tag release, p. ej. `v3389.1.2` (predeterminado: latest) |
-| `NEVERC_NO_MODIFY_PATH=1` | No modificar el perfil del shell |
+| `NEVERC_NO_MODIFY_PATH=1` | No modificar el perfil del shell; en Windows, no modificar el `PATH` de la sesión ni del usuario |
 
 Los sysroots de compilación cruzada (Windows SDK, sysroot Linux, etc.) se instalan bajo demanda cuando el compilador ya está en el `PATH`:
 

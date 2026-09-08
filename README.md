@@ -114,10 +114,24 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh |
 
 This downloads the release archive for your platform, verifies it against `SHA256SUMS`, installs to `~/.neverc`, and prepends `~/.neverc/bin` to your shell `PATH`.
 
+On **Windows x64/arm64**, run this in **PowerShell 5.1 or later**:
+
+```powershell
+irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex
+```
+
+The Windows installer detects the native architecture, verifies the release archive against `SHA256SUMS`, and installs to `$HOME\.neverc` without administrator rights. It adds `$HOME\.neverc\bin` to the current session and your user `PATH`, so `neverc` is available immediately and in new terminals.
+
 To pin a specific version:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1))) -Version v3389.1.2
 ```
 
 Verify the install:
@@ -152,7 +166,7 @@ Cross-compilation flags may compile but the temporary binary is always executed
 on the host. For argument rules, edge cases, and examples, see
 **[`neverc run` →](docs/run.md)**.
 
-**Windows x64/arm64** packages are on [GitHub Releases](https://github.com/NeverSight/NeverC/releases) for manual download. The macOS arm64 binary is Apple Developer ID signed and notarized.
+The macOS arm64 binary is Apple Developer ID signed and notarized.
 
 Optional installer environment variables:
 
@@ -160,7 +174,7 @@ Optional installer environment variables:
 |----------|---------|
 | `NEVERC_INSTALL_DIR` | Install prefix (default: `~/.neverc`) |
 | `NEVERC_VERSION` | Release tag, e.g. `v3389.1.2` (default: latest) |
-| `NEVERC_NO_MODIFY_PATH=1` | Skip shell profile changes |
+| `NEVERC_NO_MODIFY_PATH=1` | Skip shell profile changes; on Windows, skip both current-session and user `PATH` changes |
 
 Cross-compilation sysroots (Windows SDK, Linux sysroot, etc.) are installed on demand after the compiler is on your `PATH`:
 

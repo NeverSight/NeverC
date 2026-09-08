@@ -114,10 +114,24 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh |
 
 インストーラはプラットフォーム向け release アーカイブをダウンロードし、`SHA256SUMS` で検証して `~/.neverc` に展開し、shell の `PATH` 先頭に `~/.neverc/bin` を追加します。
 
+**Windows x64/arm64** では、**PowerShell 5.1 以降**で次を実行します：
+
+```powershell
+irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex
+```
+
+Windows インストーラはネイティブアーキテクチャを検出し、release アーカイブを `SHA256SUMS` で検証して、管理者権限なしで `$HOME\.neverc` にインストールします。`$HOME\.neverc\bin` を現在のセッションとユーザーの `PATH` に追加するため、`neverc` はその場でも新しいターミナルでも使用できます。
+
 特定バージョンを指定する場合：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1))) -Version v3389.1.2
 ```
 
 インストール確認：
@@ -148,7 +162,7 @@ neverc run hello.c -O1 -- program-arg
 
 クロスコンパイルフラグでコンパイルできても、一時バイナリは常にホスト上で実行されます。引数規則・例・制限の詳細は **[`neverc run` →](run.md)** を参照してください。
 
-**Windows x64/arm64** は [GitHub Releases](https://github.com/NeverSight/NeverC/releases) から手動でダウンロードしてください。macOS arm64 バイナリは Apple Developer ID 署名済みで公証されています。
+macOS arm64 バイナリは Apple Developer ID 署名済みで公証されています。
 
 任意のインストール環境変数：
 
@@ -156,7 +170,7 @@ neverc run hello.c -O1 -- program-arg
 |------|------|
 | `NEVERC_INSTALL_DIR` | インストール先（既定：`~/.neverc`） |
 | `NEVERC_VERSION` | Release タグ（例：`v3389.1.2`、既定：最新） |
-| `NEVERC_NO_MODIFY_PATH=1` | shell 設定ファイルを変更しない |
+| `NEVERC_NO_MODIFY_PATH=1` | shell 設定ファイルを変更しない。Windows では現在のセッションとユーザーの `PATH` を変更しない |
 
 クロスコンパイル用 sysroot（Windows SDK、Linux sysroot など）は、コンパイラが `PATH` に入った後に必要に応じてインストールします：
 

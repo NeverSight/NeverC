@@ -114,10 +114,24 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh |
 
 安装脚本会下载对应平台的 release 包、对照 `SHA256SUMS` 校验、安装到 `~/.neverc`，并把 `~/.neverc/bin` 加入 shell 的 `PATH`。
 
+在 **Windows x64/arm64** 上，使用 **PowerShell 5.1 或更高版本**运行：
+
+```powershell
+irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex
+```
+
+Windows 安装脚本会自动识别本机架构，对照 `SHA256SUMS` 校验安装包，并安装到 `$HOME\.neverc`，无需管理员权限。它会把 `$HOME\.neverc\bin` 加入当前会话和用户的 `PATH`，安装后可立即使用 `neverc`，新终端也会生效。
+
 安装指定版本：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1))) -Version v3389.1.2
 ```
 
 验证安装：
@@ -148,7 +162,7 @@ neverc run hello.c -O1 -- program-arg
 
 交叉编译参数可能能编译，但临时二进制始终在本机执行。完整参数规则、示例与限制见 **[`neverc run` →](run.md)**。
 
-**Windows x64/arm64** 安装包请从 [GitHub Releases](https://github.com/NeverSight/NeverC/releases) 手动下载。macOS arm64 二进制已使用 Apple Developer ID 签名并完成公证。
+macOS arm64 二进制已使用 Apple Developer ID 签名并完成公证。
 
 可选安装环境变量：
 
@@ -156,7 +170,7 @@ neverc run hello.c -O1 -- program-arg
 |------|------|
 | `NEVERC_INSTALL_DIR` | 安装目录（默认：`~/.neverc`） |
 | `NEVERC_VERSION` | Release 标签，如 `v3389.1.2`（默认：最新版） |
-| `NEVERC_NO_MODIFY_PATH=1` | 不修改 shell 配置文件 |
+| `NEVERC_NO_MODIFY_PATH=1` | 不修改 shell 配置文件；Windows 上不修改当前会话和用户的 `PATH` |
 
 交叉编译 sysroot（Windows SDK、Linux sysroot 等）在编译器加入 `PATH` 后按需安装：
 

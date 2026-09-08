@@ -1,0 +1,96 @@
+name: Test Windows installer
+
+on:
+  push:
+    paths:
+      - install.ps1
+      - install.sh
+      - utils/release/test-install.ps1
+      - utils/release/test-install-online.ps1
+      - utils/release/test-install.sh
+      - .github/workflows/test-windows-installer.yml
+      - .github/workflows/release.yml
+      - .github/workflows/release-windows-x64.yml
+      - .github/workflows/release-windows-arm64.yml
+  pull_request:
+    paths:
+      - install.ps1
+      - install.sh
+      - utils/release/test-install.ps1
+      - utils/release/test-install-online.ps1
+      - utils/release/test-install.sh
+      - .github/workflows/test-windows-installer.yml
+      - .github/workflows/release.yml
+      - .github/workflows/release-windows-x64.yml
+      - .github/workflows/release-windows-arm64.yml
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel stale runs on the same ref when a newer commit is pushed. Set repo
+# variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
+
+jobs:
+  validate:
+    name: Validate workflows and Unix installer
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Test Unix installer regressions
+        run: sh utils/release/test-install.sh
+
+      - name: Validate installer and release workflows
+        if: ${{ !cancelled() }}
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 \
+            .github/workflows/test-windows-installer.yml \
+            .github/workflows/release.yml \
+            .github/workflows/release-windows-x64.yml \
+            .github/workflows/release-windows-arm64.yml
+
+  test:
+    name: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    env:
+      INSTALLER_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+      INSTALLER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact installer commit
+        id: checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ env.INSTALLER_REPOSITORY }}
+          ref: ${{ env.INSTALLER_COMMIT }}
+
+      - name: Offline regressions in Windows PowerShell 5.1
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        shell: powershell
+        run: ./utils/release/test-install.ps1
+
+      - name: Offline regressions in PowerShell 7
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        shell: pwsh
+        run: ./utils/release/test-install.ps1
+
+      - name: Public install and native C smoke test in Windows PowerShell 5.1
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        shell: powershell
+        run: ./utils/release/test-install-online.ps1 -Repository $env:INSTALLER_REPOSITORY -Commit $env:INSTALLER_COMMIT
+
+      - name: Public install and native C smoke test in PowerShell 7
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        shell: pwsh
+        run: ./utils/release/test-install-online.ps1 -Repository $env:INSTALLER_REPOSITORY -Commit $env:INSTALLER_COMMIT

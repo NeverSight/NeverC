@@ -8,8 +8,8 @@ Update a **release installation** of NeverC so the compiler and every already
 installed cross-compilation runtime move to **one concrete release tag**
 together. `neverc upgrade` is an alias with the same behavior.
 
-Use this after `install.sh` (or a package install under `~/.neverc`). It does
-**not** update a CMake/Ninja source build tree — switch those with PATH and a
+Use this after `install.sh` or `install.ps1` (or a package install under
+`~/.neverc`). It does **not** update a CMake/Ninja source build tree — switch those with PATH and a
 rebuild; see [Local Development](local-dev.md).
 
 ## Syntax

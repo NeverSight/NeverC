@@ -8,7 +8,7 @@ Met à jour une **installation release** de NeverC pour que le compilateur et
 chaque runtime de cross-compilation **déjà installé** passent ensemble à
 **une balise de release concrète**. `neverc upgrade` est un alias.
 
-Destiné aux installs via `install.sh` (souvent sous `~/.neverc`). Ne met **pas**
+Destiné aux installs via `install.sh` ou `install.ps1` (souvent sous `~/.neverc`). Ne met **pas**
 à jour un arbre de build CMake/Ninja — changez le PATH et reconstruisez ; voir
 [Développement local](local-dev.md).
 

@@ -47,7 +47,7 @@ Update the version tests at the same time:
 
 - Change the current version, current tag, and expected error message in `utils/release/test-version.sh` to the new version.
 - Use the previous version for the mismatch case in `utils/release/test-version.sh`.
-- It is recommended to update the fake release fixture and explicit-version assertions in `utils/release/test-install.sh` so the examples continue to represent the current release.
+- It is recommended to update the fake release fixtures and explicit-version assertions in `utils/release/test-install.sh` and `utils/release/test-install.ps1` so the examples continue to represent the current release.
 
 To change the static text included in every GitHub Release, edit `.github/release-notes-prefix.md`. Keep the `@RELEASE_TAG@` placeholder because the release workflow replaces it with the current tag.
 
@@ -99,6 +99,17 @@ python3 utils/plugin-api/check-target-schema.py \
 git diff --check
 ```
 
+Run the Windows installer regression suite in both Windows PowerShell 5.1 and PowerShell 7 on Windows:
+
+```powershell
+powershell -NoProfile -File utils/release/test-install.ps1
+pwsh -NoProfile -File utils/release/test-install.ps1
+```
+
+The same suite runs on x64 and arm64 in `test-windows-installer.yml`. Each Windows release producer also tests its newly built ZIP through the installer using `-Archive`, then runs the installed `neverc.exe --version`.
+
+The workflow also runs `utils/release/test-install-online.ps1` in both PowerShell versions on both architectures. It downloads the installer from the exact commit being tested and compares it with the checkout, then installs the latest public release through the real download and checksum path. It verifies the installed PE architecture, runs `neverc --version`, compiles and runs a native C program, and checks the persisted user `PATH` from a fresh PowerShell process. The test restores the original `PATH` and removes its temporary installation afterward.
+
 Run the complete NeverC test suite:
 
 ```sh
@@ -110,6 +121,7 @@ If a release workflow changed, also run Actionlint locally:
 ```sh
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 \
   .github/workflows/release.yml \
+  .github/workflows/test-windows-installer.yml \
   .github/workflows/release-linux-x64.yml \
   .github/workflows/release-linux-arm64.yml \
   .github/workflows/release-windows-x64.yml \
@@ -246,7 +258,7 @@ The central workflow automatically:
 2. Builds five supported host distributions and seven target runtime archives in parallel.
 3. Verifies the exact set of 15 ZIP asset names.
 4. Runs a complete extraction test on every ZIP archive.
-5. Verifies that the three curl installer archives contain `bin/neverc`.
+5. Verifies that the three Unix installer archives contain `bin/neverc` and both Windows archives contain `install/bin/neverc.exe`.
 6. Generates `SHA256SUMS`.
 7. Creates a draft GitHub Release and uploads the assets.
 8. Verifies that the remote and local asset sets are identical.
@@ -305,6 +317,31 @@ printf 'int main(void) { return 0; }\n' |
 
 "$NEVERC_RELEASE_TEST_ROOT/hello"
 ```
+
+On Windows x64 or arm64, perform a clean installation in PowerShell 5.1 or later:
+
+```powershell
+$nevercReleaseTag = 'v3389.1.5' # Use the release tag being verified.
+$nevercReleaseTestRoot = Join-Path ([IO.Path]::GetTempPath()) ("neverc-release-install-" + [guid]::NewGuid())
+$nevercReleaseTestPrefix = Join-Path $nevercReleaseTestRoot 'prefix'
+
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/NeverSight/NeverC/$nevercReleaseTag/install.ps1"))) `
+    -Version $nevercReleaseTag `
+    -InstallDir $nevercReleaseTestPrefix `
+    -NoModifyPath
+
+& (Join-Path $nevercReleaseTestPrefix 'bin\neverc.exe') --version
+'int main(void) { return 0; }' | Set-Content -Encoding ASCII (Join-Path $nevercReleaseTestRoot 'hello.c')
+& (Join-Path $nevercReleaseTestPrefix 'bin\neverc.exe') `
+    (Join-Path $nevercReleaseTestRoot 'hello.c') `
+    -o (Join-Path $nevercReleaseTestRoot 'hello.exe')
+& (Join-Path $nevercReleaseTestRoot 'hello.exe')
+```
+
+The installer selects `windows-x64-neverc-release.zip` or
+`windows-arm64-neverc-release.zip` according to the native Windows architecture.
+`-NoModifyPath` keeps this verification install out of the current session and
+user `PATH`.
 
 ## 10. Handle failures
 

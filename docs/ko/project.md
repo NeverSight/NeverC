@@ -114,10 +114,24 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh |
 
 설치 스크립트는 플랫폼용 release 아카이브를 내려받아 `SHA256SUMS`로 검증한 뒤 `~/.neverc`에 설치하고, shell `PATH` 앞에 `~/.neverc/bin`을 추가합니다.
 
+**Windows x64/arm64**에서는 **PowerShell 5.1 이상**에서 실행하세요:
+
+```powershell
+irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex
+```
+
+Windows 설치 프로그램은 네이티브 아키텍처를 감지하고 release 아카이브를 `SHA256SUMS`로 검증한 뒤 관리자 권한 없이 `$HOME\.neverc`에 설치합니다. `$HOME\.neverc\bin`을 현재 세션과 사용자 `PATH`에 추가하므로 `neverc`를 즉시 사용할 수 있으며 새 터미널에도 적용됩니다.
+
 특정 버전을 고정하려면:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1))) -Version v3389.1.2
 ```
 
 설치 확인:
@@ -148,7 +162,7 @@ neverc run hello.c -O1 -- program-arg
 
 크로스 컴파일 플래그로 컴파일할 수 있어도 임시 바이너리는 항상 호스트에서 실행됩니다. 인자 규칙, 예제, 제한은 **[`neverc run` →](run.md)** 를 참고하세요.
 
-**Windows x64/arm64** 패키지는 [GitHub Releases](https://github.com/NeverSight/NeverC/releases)에서 수동으로 받으세요. macOS arm64 바이너리는 Apple Developer ID로 서명되고 공증되었습니다.
+macOS arm64 바이너리는 Apple Developer ID로 서명되고 공증되었습니다.
 
 선택적 설치 환경 변수:
 
@@ -156,7 +170,7 @@ neverc run hello.c -O1 -- program-arg
 |------|------|
 | `NEVERC_INSTALL_DIR` | 설치 prefix（기본：`~/.neverc`） |
 | `NEVERC_VERSION` | Release 태그（예：`v3389.1.2`, 기본：최신） |
-| `NEVERC_NO_MODIFY_PATH=1` | shell 설정 파일 변경 건너뛰기 |
+| `NEVERC_NO_MODIFY_PATH=1` | shell 설정 파일 변경 건너뛰기. Windows에서는 현재 세션과 사용자 `PATH` 변경도 건너뛰기 |
 
 크로스 컴파일 sysroot(Windows SDK, Linux sysroot 등)는 컴파일러가 `PATH`에 올라간 뒤 필요할 때 설치합니다:
 

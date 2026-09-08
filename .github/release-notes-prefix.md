@@ -6,9 +6,15 @@ Linux x64/arm64 and macOS arm64:
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/@RELEASE_TAG@/install.sh | NEVERC_VERSION=@RELEASE_TAG@ sh
 ```
 
-The command is pinned to this release tag. The installer verifies the downloaded archive against the release's `SHA256SUMS` before changing the install prefix.
+Windows x64/arm64 (PowerShell 5.1 or later):
 
-Windows x64 and arm64 packages are available as release assets for manual installation.
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/@RELEASE_TAG@/install.ps1))) -Version @RELEASE_TAG@
+```
+
+Both commands are pinned to this release tag. The installers verify the downloaded archive against the release's `SHA256SUMS` before changing the install prefix.
+
+The Windows installer detects the native architecture, installs to `$HOME\.neverc` without administrator rights, and adds `$HOME\.neverc\bin` to the current session and user `PATH`.
 
 ## Python plugin ABI parity
 
@@ -43,7 +49,7 @@ Choose the compiler package for the machine that will run NeverC. A runtime pack
 |---|---|
 | `neverc-<os>-<arch>.zip` | Recommended lightweight package used by `install.sh`. It contains the compiler, required headers and libraries, and the NeverC Plugin SDK. Target runtimes are installed on demand. |
 | `<os>-<arch>-neverc.zip` | Full offline package for Linux or macOS. It contains the complete CMake installation tree, including bundled runtime resources. |
-| `windows-<arch>-neverc-release.zip` | Complete Windows distribution for manual installation. |
+| `windows-<arch>-neverc-release.zip` | Complete Windows distribution used by `install.ps1`; also available for manual installation. |
 | `neverc-runtime-<target>.zip` | Cross-compilation runtime only. It does not contain the NeverC compiler. Install it through `neverc runtime install` instead of extracting it manually. |
 | `SHA256SUMS` | SHA-256 checksums for all custom release ZIP files. |
 | Source code archives | GitHub-generated source snapshots for users who want to build NeverC from source. They do not contain prebuilt NeverC binaries. |

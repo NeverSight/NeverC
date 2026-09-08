@@ -7,7 +7,7 @@
 **릴리스 설치**의 컴파일러와 이미 설치된 교차 컴파일 runtime을 **하나의 구체적 릴리스 태그**로
 함께 맞춥니다. `neverc upgrade`는 동의어입니다.
 
-`install.sh`(또는 `~/.neverc` 설치) 이후 업/다운그레이드용입니다. CMake/Ninja 소스 빌드
+`install.sh` 또는 `install.ps1`(또는 `~/.neverc` 설치) 이후 업/다운그레이드용입니다. CMake/Ninja 소스 빌드
 트리는 갱신하지 않습니다. PATH를 바꾸고 다시 빌드하세요. [로컬 개발](local-dev.md).
 
 ## 구문

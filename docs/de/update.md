@@ -8,7 +8,7 @@ Aktualisiert eine **Release-Installation**, sodass Compiler und alle bereits
 installierten Cross-Compile-Runtimes gemeinsam auf **einen konkreten Release-Tag**
 wechseln. `neverc upgrade` ist ein Alias.
 
-Für Installationen über `install.sh` (typisch `~/.neverc`). Aktualisiert **kein**
+Für Installationen über `install.sh` oder `install.ps1` (typisch `~/.neverc`). Aktualisiert **kein**
 CMake/Ninja-Quellbaum — PATH wechseln und neu bauen; siehe
 [Lokale Entwicklung](local-dev.md).
 

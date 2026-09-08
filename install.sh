@@ -37,7 +37,7 @@ detect_os() {
   case "$(uname -s)" in
     Darwin) echo "macos" ;;
     Linux)  echo "linux" ;;
-    *)      err "unsupported OS: $(uname -s) — use manual download for Windows" ;;
+    *)      err "unsupported OS: $(uname -s) — on Windows, run in PowerShell: irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex" ;;
   esac
 }
 

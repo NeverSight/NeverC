@@ -114,10 +114,24 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh |
 
 L’installer scarica l’archivio release per la vostra piattaforma, lo verifica con `SHA256SUMS`, installa in `~/.neverc` e antepone `~/.neverc/bin` al `PATH` della shell.
 
+Su **Windows x64/arm64**, eseguite questo comando in **PowerShell 5.1 o successivo**:
+
+```powershell
+irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex
+```
+
+L’installer Windows rileva l’architettura nativa, verifica l’archivio release con `SHA256SUMS` e installa in `$HOME\.neverc` senza privilegi di amministratore. Aggiunge `$HOME\.neverc\bin` al `PATH` della sessione corrente e dell’utente, rendendo `neverc` disponibile subito e nei nuovi terminali.
+
 Per fissare una versione specifica:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1))) -Version v3389.1.2
 ```
 
 Verificare l’installazione:
@@ -148,7 +162,7 @@ neverc run hello.c -O1 -- program-arg
 
 I flag di cross-compilazione possono compilare, ma il binario temporaneo viene sempre eseguito sull'host. Regole, esempi e limiti: **[`neverc run` →](run.md)**.
 
-I pacchetti **Windows x64/arm64** sono su [GitHub Releases](https://github.com/NeverSight/NeverC/releases) per download manuale. Il binario macOS arm64 è firmato con Apple Developer ID e notarizzato.
+Il binario macOS arm64 è firmato con Apple Developer ID e notarizzato.
 
 Variabili d’ambiente opzionali:
 
@@ -156,7 +170,7 @@ Variabili d’ambiente opzionali:
 |-----------|-------|
 | `NEVERC_INSTALL_DIR` | Prefisso di installazione (predefinito: `~/.neverc`) |
 | `NEVERC_VERSION` | Tag release, es. `v3389.1.2` (predefinito: latest) |
-| `NEVERC_NO_MODIFY_PATH=1` | Non modificare il profilo shell |
+| `NEVERC_NO_MODIFY_PATH=1` | Non modificare il profilo shell; su Windows, non modificare il `PATH` della sessione né quello dell’utente |
 
 I sysroot per cross-compilazione (Windows SDK, sysroot Linux, ecc.) si installano on demand dopo che il compilatore è nel `PATH`:
 

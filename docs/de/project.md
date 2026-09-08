@@ -114,10 +114,24 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh |
 
 Das Skript lädt das Release-Archiv für Ihre Plattform herunter, prüft es gegen `SHA256SUMS`, installiert nach `~/.neverc` und hängt `~/.neverc/bin` an den Shell-`PATH` an.
 
+Unter **Windows x64/arm64** führen Sie diesen Befehl in **PowerShell 5.1 oder neuer** aus:
+
+```powershell
+irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex
+```
+
+Der Windows-Installer erkennt die native Architektur, prüft das Release-Archiv gegen `SHA256SUMS` und installiert ohne Administratorrechte nach `$HOME\.neverc`. Er ergänzt `$HOME\.neverc\bin` im `PATH` der aktuellen Sitzung und des Benutzers. Damit ist `neverc` sofort und in neuen Terminals verfügbar.
+
 Eine bestimmte Version pinnen:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1))) -Version v3389.1.2
 ```
 
 Installation prüfen:
@@ -148,7 +162,7 @@ neverc run hello.c -O1 -- program-arg
 
 Cross-Compile-Flags können kompilieren, aber das temporäre Binary wird immer auf dem Host ausgeführt. Regeln, Beispiele und Grenzen: **[`neverc run` →](run.md)**.
 
-**Windows x64/arm64**-Pakete stehen auf [GitHub Releases](https://github.com/NeverSight/NeverC/releases) zum manuellen Download bereit. Das macOS-arm64-Binary ist mit Apple Developer ID signiert und notarisiert.
+Das macOS-arm64-Binary ist mit Apple Developer ID signiert und notarisiert.
 
 Optionale Umgebungsvariablen:
 
@@ -156,7 +170,7 @@ Optionale Umgebungsvariablen:
 |----------|-------|
 | `NEVERC_INSTALL_DIR` | Installationspräfix (Standard: `~/.neverc`) |
 | `NEVERC_VERSION` | Release-Tag, z. B. `v3389.1.2` (Standard: latest) |
-| `NEVERC_NO_MODIFY_PATH=1` | Shell-Profil nicht ändern |
+| `NEVERC_NO_MODIFY_PATH=1` | Shell-Profil nicht ändern; unter Windows weder den Sitzungs- noch den Benutzer-`PATH` ändern |
 
 Cross-Compilation-Sysroots (Windows SDK, Linux-Sysroot usw.) werden bei Bedarf installiert, sobald der Compiler im `PATH` liegt:
 

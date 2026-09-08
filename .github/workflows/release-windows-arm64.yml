@@ -113,6 +113,10 @@ jobs:
             utils/release/test-python-plugin-package.py \
             --archive windows-arm64-neverc-release.zip
 
+      - name: Test PowerShell installation of release archive
+        shell: pwsh
+        run: ./utils/release/test-install.ps1 -Archive "$PWD/windows-arm64-neverc-release.zip"
+
       - name: Upload CI artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

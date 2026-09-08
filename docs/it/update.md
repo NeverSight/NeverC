@@ -8,7 +8,7 @@ Aggiorna un'**installazione release** così che compilatore e ogni runtime di
 cross-compilazione **già installato** passino insieme a **un tag di release concreto**.
 `neverc upgrade` è un alias.
 
-Per installazioni via `install.sh` (tipicamente `~/.neverc`). **Non** aggiorna
+Per installazioni via `install.sh` o `install.ps1` (tipicamente `~/.neverc`). **Non** aggiorna
 un albero di build CMake/Ninja — cambi PATH e ricostruisci; vedi
 [Sviluppo locale](local-dev.md).
 

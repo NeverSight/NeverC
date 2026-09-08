@@ -7,7 +7,7 @@
 将 **release 安装** 中的编译器，以及所有**已经安装**的交叉编译 runtime，同步到
 **同一个具体 release 标签**。`neverc upgrade` 为同义命令。
 
-适用于 `install.sh`（或安装到 `~/.neverc`）之后的升级/降级。它**不会**更新
+适用于 `install.sh` 或 `install.ps1`（或安装到 `~/.neverc`）之后的升级/降级。它**不会**更新
 CMake/Ninja 源码构建树——那种环境请改 PATH 并自行重建，见
 [本地开发](local-dev.md)。
 

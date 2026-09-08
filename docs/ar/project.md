@@ -116,10 +116,24 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh |
 
 يُنزِّل المثبِّت أرشيف release لمنصتك، يتحقق منه عبر `SHA256SUMS`، يثبّت في `~/.neverc`، ويضيف `~/.neverc/bin` إلى مقدمة `PATH` في الصَّدفة.
 
+على **Windows x64/arm64**، نفّذ هذا الأمر في **PowerShell 5.1 أو أحدث**:
+
+```powershell
+irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex
+```
+
+يكتشف مثبّت Windows المعمارية الأصلية، ويتحقق من أرشيف release عبر `SHA256SUMS`، ويثبّت في `$HOME\.neverc` دون صلاحيات المسؤول. ويضيف `$HOME\.neverc\bin` إلى `PATH` للجلسة الحالية وللمستخدم، ليصبح `neverc` متاحًا فورًا وفي النوافذ الطرفية الجديدة.
+
 لتثبيت إصدار محدد:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1))) -Version v3389.1.2
 ```
 
 التحقق من التثبيت:
@@ -150,7 +164,7 @@ neverc run hello.c -O1 -- program-arg
 
 قد تنجح أعلام الترجمة المتقاطعة في التجميع، لكن الملف المؤقت يُشغَّل دائمًا على المضيف. القواعد والأمثلة والقيود: **[`neverc run` →](run.md)**.
 
-حزم **Windows x64/arm64** متاحة على [GitHub Releases](https://github.com/NeverSight/NeverC/releases) للتنزيل اليدوي. ثنائي macOS arm64 موقَّع بشهادة Apple Developer ID ومعتمد (notarized).
+ثنائي macOS arm64 موقَّع بشهادة Apple Developer ID ومعتمد (notarized).
 
 متغيرات بيئة اختيارية:
 
@@ -158,7 +172,7 @@ neverc run hello.c -O1 -- program-arg
 |---------|--------|
 | `NEVERC_INSTALL_DIR` | بادئة التثبيت (افتراضي: `~/.neverc`) |
 | `NEVERC_VERSION` | وسم release، مثل `v3389.1.2` (افتراضي: latest) |
-| `NEVERC_NO_MODIFY_PATH=1` | عدم تعديل ملف تعريف الصَّدفة |
+| `NEVERC_NO_MODIFY_PATH=1` | عدم تعديل ملف تعريف الصَّدفة؛ على Windows، عدم تعديل `PATH` للجلسة الحالية أو للمستخدم |
 
 جذور sysroot للتجميع المتقاطع (Windows SDK وLinux sysroot وغيرها) تُثبَّت عند الحاجة بعد أن يصبح المترجم على `PATH`:
 

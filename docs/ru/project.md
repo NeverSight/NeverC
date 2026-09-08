@@ -114,10 +114,24 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh |
 
 Установщик скачивает архив release для вашей платформы, проверяет его по `SHA256SUMS`, устанавливает в `~/.neverc` и добавляет `~/.neverc/bin` в начало `PATH` shell.
 
+На **Windows x64/arm64** выполните команду в **PowerShell 5.1 или новее**:
+
+```powershell
+irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1 | iex
+```
+
+Установщик Windows определяет нативную архитектуру, проверяет архив release по `SHA256SUMS` и устанавливает в `$HOME\.neverc` без прав администратора. Он добавляет `$HOME\.neverc\bin` в `PATH` текущего сеанса и пользователя, поэтому `neverc` доступен сразу и в новых терминалах.
+
 Чтобы зафиксировать конкретную версию:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.ps1))) -Version v3389.1.2
 ```
 
 Проверка установки:
@@ -148,7 +162,7 @@ neverc run hello.c -O1 -- program-arg
 
 Флаги кросс-компиляции могут скомпилировать, но временный бинарник всегда выполняется на хосте. Правила, примеры и ограничения: **[`neverc run` →](run.md)**.
 
-Пакеты **Windows x64/arm64** — на [GitHub Releases](https://github.com/NeverSight/NeverC/releases) для ручной загрузки. Бинарник macOS arm64 подписан Apple Developer ID и нотаризован.
+Бинарник macOS arm64 подписан Apple Developer ID и нотаризован.
 
 Необязательные переменные окружения:
 
@@ -156,7 +170,7 @@ neverc run hello.c -O1 -- program-arg
 |------------|------------|
 | `NEVERC_INSTALL_DIR` | Каталог установки (по умолчанию: `~/.neverc`) |
 | `NEVERC_VERSION` | Тег release, напр. `v3389.1.2` (по умолчанию: latest) |
-| `NEVERC_NO_MODIFY_PATH=1` | Не менять профиль shell |
+| `NEVERC_NO_MODIFY_PATH=1` | Не менять профиль shell; на Windows не менять `PATH` текущего сеанса и пользователя |
 
 Sysroot для кросс-компиляции (Windows SDK, Linux sysroot и т. д.) ставятся по требованию, когда компилятор уже в `PATH`:
 
