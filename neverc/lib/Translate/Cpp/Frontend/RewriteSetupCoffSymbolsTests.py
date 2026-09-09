@@ -108,7 +108,7 @@ def share_symbol_string(payload, symbol_number, target_number, suffix=0):
     return bytes(result)
 
 
-def bigobj_bytes():
+def bigobj_bytes(*, extras=()):
     """Independent 56-byte header and 20-byte symbol/FILE fixture.
 
     Spell the raw wire magic here, rather than importing the parser constant;
@@ -123,10 +123,20 @@ def bigobj_bytes():
         strings.extend(name.encode() + b"\0")
     symbols.extend(b".file\0\0\0" + struct.pack("<IiHBB", 0, -2, 0, 103, 2))
     symbols.extend(b"source.cpp".ljust(20, b"\0") + bytes(20))
+    symbol_count = 8
+    for name, value, section, kind, storage, auxiliary in extras:
+        symbols.extend(struct.pack("<II", 0, len(strings)))
+        symbols.extend(struct.pack("<IiHBB", value, section, kind, storage, len(auxiliary)))
+        strings.extend(name.encode("utf-8") + b"\0")
+        for payload in auxiliary:
+            if len(payload) != 20:
+                raise ValueError("fixture bigobj auxiliary must occupy exactly one slot")
+            symbols.extend(payload)
+        symbol_count += 1 + len(auxiliary)
     struct.pack_into("<I", strings, 0, len(strings))
     header = bytes.fromhex("0000ffff02006486") + struct.pack("<I", 0)
     header += bytes.fromhex("c7a1bad1eebaa94baf20faf66aa4dcb8")
-    header += struct.pack("<IIIIIII", 0, 0, 0, 0, 1, 96 + len(contents), 8)
+    header += struct.pack("<IIIIIII", 0, 0, 0, 0, 1, 96 + len(contents), symbol_count)
     section = b".rdata\0\0" + struct.pack("<IIIIIIHHI", 0, 0, len(contents), 96, 0, 0, 0, 0, 0x40300040)
     return header + section + contents + symbols + strings
 
@@ -211,6 +221,130 @@ class StructureTests(unittest.TestCase):
                   ("alias", 0, 0, 0, 105, (weak_aux,)))
         with self.assertRaisesRegex(ValueError, "primary symbol"):
             rewrite.inspect_object(object_bytes(extras=extras))
+
+    def weak_aux_fixture(self, *, bigobj=False, name="weak_alias", value=0,
+                         section=0, kind=0, target=0, search=3, reserved=bytes(10)):
+        auxiliary = struct.pack("<II", target, search) + reserved
+        if bigobj:
+            auxiliary += bytes(2)
+        extras = ((name, value, section, kind, 105, (auxiliary,)),)
+        payload = bigobj_bytes(extras=extras) if bigobj else object_bytes(extras=extras)
+        return payload, auxiliary
+
+    def test_weak_aux_diagnostic_reports_each_rejected_field_and_full_wire_slot(self):
+        cases = (
+            ({"section": 1}, ["section"]),
+            ({"value": 7}, ["value"]),
+            ({"kind": 0x20}, ["type"]),
+            ({"search": 0}, ["search"]),
+            ({"search": 4}, ["search"]),
+            ({"search": 0xFFFFFFFF}, ["search"]),
+            ({"reserved": b"\xa5" + bytes(9)}, ["reserved"]),
+            ({"reserved": bytes(9) + b"\xa5"}, ["reserved"]),
+            ({"section": 1, "value": 7, "kind": 0x20, "search": 4,
+              "reserved": bytes(9) + b"\xa5"},
+             ["section", "value", "type", "search", "reserved"]),
+        )
+        for bigobj in (False, True):
+            for changes, rejected in cases:
+                with self.subTest(bigobj=bigobj, rejected=rejected):
+                    payload, auxiliary = self.weak_aux_fixture(bigobj=bigobj, **changes)
+                    with self.assertRaises(ValueError) as failure:
+                        rewrite.inspect_object(payload)
+                    prefix, encoded = str(failure.exception).split("; weak_aux=", 1)
+                    self.assertEqual(prefix,
+                                     "Setup COFF rewrite: unsupported weak external auxiliary record")
+                    self.assertEqual(json.loads(encoded), {
+                        "symbol_index": 8 if bigobj else 5,
+                        "symbol_name": {"text": "weak_alias", "chars": 10,
+                                        "utf8_bytes": 10, "truncated": False,
+                                        "sha256": hashlib.sha256(b"weak_alias").hexdigest()},
+                        "storage": 105, "aux_count": 1,
+                        "section": changes.get("section", 0), "value": changes.get("value", 0),
+                        "type": changes.get("kind", 0), "target": 0,
+                        "search": changes.get("search", 3),
+                        "aux_record_bytes": 20 if bigobj else 18,
+                        "aux_hex": auxiliary.hex(), "rejected_fields": rejected,
+                    })
+
+    def test_weak_aux_diagnostics_preserve_supported_layouts(self):
+        for bigobj in (False, True):
+            for search in (1, 2, 3):
+                with self.subTest(bigobj=bigobj, search=search):
+                    payload, auxiliary = self.weak_aux_fixture(bigobj=bigobj, search=search)
+                    symbol = rewrite.inspect_object(payload).symbols[-1]
+                    self.assertEqual(symbol.index, 8 if bigobj else 5)
+                    self.assertEqual(symbol.weak, (0, search))
+                    self.assertEqual(symbol.aux, (auxiliary[:18],))
+
+    def test_weak_aux_diagnostics_preserve_earlier_rejection_order(self):
+        for bigobj in (False, True):
+            slot = struct.pack("<II", 0, 4) + bytes(12 if bigobj else 10)
+            builder = bigobj_bytes if bigobj else object_bytes
+            for auxiliary, expected in (
+                    ((slot, slot), "unsupported multiple auxiliary records"),
+                    ((), "missing required auxiliary record")):
+                with self.subTest(bigobj=bigobj, expected=expected):
+                    payload = builder(extras=(("weak_alias", 0, 0, 0x20, 105, auxiliary),))
+                    with self.assertRaises(ValueError) as failure:
+                        rewrite.inspect_object(payload)
+                    self.assertEqual(str(failure.exception), "Setup COFF rewrite: " + expected)
+        slot = struct.pack("<II", 0, 4) + bytes(11) + b"\x01"
+        with self.assertRaises(ValueError) as failure:
+            rewrite.inspect_object(bigobj_bytes(extras=(("weak_alias", 0, 0, 0x20, 105, (slot,)),)))
+        self.assertEqual(str(failure.exception), "Setup COFF rewrite: nonzero bigobj auxiliary padding")
+        for bigobj in (False, True):
+            payload, _ = self.weak_aux_fixture(bigobj=bigobj, target=0xFFFFFFFF)
+            with self.assertRaises(ValueError) as failure:
+                rewrite.inspect_object(payload)
+            self.assertEqual(str(failure.exception),
+                             "Setup COFF rewrite: weak target is not a supported primary symbol")
+            payload, _ = self.weak_aux_fixture(bigobj=bigobj, target=0xFFFFFFFF, kind=0x20)
+            with self.assertRaises(ValueError) as failure:
+                rewrite.inspect_object(payload)
+            details = json.loads(str(failure.exception).split("; weak_aux=", 1)[1])
+            self.assertEqual(details["target"], 0xFFFFFFFF)
+            self.assertEqual(details["rejected_fields"], ["type"])
+
+    def test_weak_aux_diagnostic_escapes_names_and_retains_member_context(self):
+        names = ("x" * 96, "x" * 97, "\U0001f4a1" * 1000,
+                 'weak_"\\\u0085\u2028' + "x" * 4096)
+        member_name = 'bad_"\u0085.obj'
+        for bigobj in (False, True):
+            for name in names:
+                with self.subTest(bigobj=bigobj, name_length=len(name)):
+                    payload, _ = self.weak_aux_fixture(bigobj=bigobj, name=name, kind=0x20)
+                    archive = archive_bytes([("good.obj", object_bytes(), GUIDS),
+                                             (member_name, payload, GUIDS)])
+                    with self.assertRaises(ValueError) as failure:
+                        rewrite.inspect_archive_bytes(archive)
+                    message = str(failure.exception)
+                    self.assertTrue(message.startswith("Setup COFF rewrite: member 1 name="))
+                    self.assertTrue(message.isascii())
+                    self.assertLess(len(message), 4096)
+                    member, _ = json.JSONDecoder().raw_decode(message.split(" name=", 1)[1])
+                    self.assertEqual(member["text"], member_name)
+                    self.assertEqual(member["sha256"], hashlib.sha256(member_name.encode()).hexdigest())
+                    details = json.loads(message.split("; weak_aux=", 1)[1])
+                    self.assertEqual(details["symbol_index"], 8 if bigobj else 5)
+                    self.assertEqual(details["rejected_fields"], ["type"])
+                    self.assertEqual(details["symbol_name"], {
+                        "text": name[:96], "chars": len(name),
+                        "utf8_bytes": len(name.encode("utf-8")),
+                        "sha256": hashlib.sha256(name.encode("utf-8")).hexdigest(),
+                        "truncated": len(name) > 96,
+                    })
+
+    def test_truncated_diagnostic_names_keep_distinct_complete_identities(self):
+        names = ("x" * 96 + "a", "x" * 96 + "b")
+        details = [rewrite.diagnostic_name(name) for name in names]
+        self.assertEqual(details[0]["text"], details[1]["text"])
+        self.assertNotEqual(details[0]["sha256"], details[1]["sha256"])
+        for name, record in zip(names, details):
+            self.assertEqual(record["chars"], 97)
+            self.assertEqual(record["utf8_bytes"], 97)
+            self.assertTrue(record["truncated"])
+            self.assertEqual(record["sha256"], hashlib.sha256(name.encode()).hexdigest())
 
     def test_unselected_member_must_also_preserve_payload(self):
         original = rewrite.inspect_object(object_bytes())

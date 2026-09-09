@@ -81,6 +81,13 @@ def text_name(data):
     return value
 
 
+def diagnostic_name(name):
+    """Bound the preview while retaining the complete UTF-8 name identity."""
+    encoded = name.encode("utf-8")
+    return {"text": name[:96], "chars": len(name), "utf8_bytes": len(encoded),
+            "sha256": digest(encoded), "truncated": len(name) > 96}
+
+
 class Regions:
     """Bound and disjoint all interpreted intervals; reject unknown payloads."""
 
@@ -248,7 +255,23 @@ def inspect_object(data):
             if storage == 105:
                 target, search = struct.unpack_from("<II", auxiliary[0])
                 if section or value or kind or search not in (1, 2, 3) or any(auxiliary[0][8:]):
-                    fail("unsupported weak external auxiliary record")
+                    # This is diagnostic-only: keep the rejection predicate and
+                    # earlier record checks unchanged. aux_count is exactly one,
+                    # so payload retains that complete 18- or 20-byte wire slot.
+                    rejected_fields = [field for field, rejected in (
+                        ("section", section != 0), ("value", value != 0),
+                        ("type", kind != 0), ("search", search not in (1, 2, 3)),
+                        ("reserved", any(auxiliary[0][8:]))) if rejected]
+                    details = {
+                        "symbol_index": index, "symbol_name": diagnostic_name(name),
+                        "storage": storage, "aux_count": aux_count,
+                        "section": section, "value": value, "type": kind,
+                        "target": target, "search": search,
+                        "aux_record_bytes": len(payload), "aux_hex": payload.hex(),
+                        "rejected_fields": rejected_fields,
+                    }
+                    fail("unsupported weak external auxiliary record; weak_aux=" +
+                         json.dumps(details, ensure_ascii=True, sort_keys=True))
             elif storage == 3 and section > 0 and kind == 0 and value == 0:
                 length, relocs, lines, checksum, low, selection, reserved, high = struct.unpack("<IHHIHBBH", auxiliary[0])
                 target = low | high << 16
@@ -426,7 +449,9 @@ def _inspect_archive_stream(stream, size):
         try:
             obj = inspect_object(data)
         except ValueError as error:
-            fail("member " + str(ordinal) + " " + name + ": " + str(error))
+            fail("member " + str(ordinal) + " name=" +
+                 json.dumps(diagnostic_name(name), ensure_ascii=True, sort_keys=True) +
+                 ": " + str(error))
         members.append((name, obj))
         machines.add(obj.machine)
         actual.update((symbol.name, entry.offset) for symbol in obj.symbols if symbol.indexed)
