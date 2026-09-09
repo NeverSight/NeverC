@@ -212,23 +212,34 @@ TEST_F(TranslateCompilationContextTest,
 TEST_F(TranslateCompilationContextTest,
        NestedResponseFilesUseOriginalCompilationDirectory) {
   fs::create_directories(Build / "sub");
-  writeFile(Build / "inner.rsp", "'-DVALUE=hello world' -I'../include one'\n");
-  writeFile(Build / "sub" / "inner.rsp", "-DWRONG_DIRECTORY=1\n");
-  writeFile(Build / "sub" / "outer.rsp", "@inner.rsp -O2\n");
-  database({entry({"clang++", "@sub/outer.rsp", "-c", "../src/a.cpp"})});
-  ASSERT_TRUE(parse());
-  const auto &Unit = Result.Units.front();
-  ASSERT_EQ(Unit.ResponseFiles.size(), 2u);
-  EXPECT_EQ(Unit.ResponseFiles[0].RelativePath, "build/inner.rsp");
-  EXPECT_EQ(Unit.ResponseFiles[1].RelativePath, "build/sub/outer.rsp");
-  EXPECT_EQ(Unit.NormalizedArguments,
-            (std::vector<std::string>{"-std=c++17", "-DVALUE=hello world", "-I",
-                                      "$PROJECT/include one", "-O2"}));
-  EXPECT_TRUE(verifyProjectContextInputs(Result, Errors));
-  writeFile(Build / "inner.rsp", "-DVALUE=changed\n");
-  EXPECT_FALSE(verifyProjectContextInputs(Result, Errors));
-  ASSERT_FALSE(Errors.empty());
-  EXPECT_EQ(Errors.back().Code, "TR0603");
+  auto CheckMode = [&](CommandQuoting Quoting, const char *Flags,
+                       const char *Label) {
+    SCOPED_TRACE(Label);
+    Options.Quoting = Quoting;
+    Options.ExtraSourceArguments.clear();
+    writeFile(Build / "inner.rsp", Flags);
+    writeFile(Build / "sub" / "inner.rsp", "-DWRONG_DIRECTORY=1\n");
+    writeFile(Build / "sub" / "outer.rsp", "@inner.rsp -O2\n");
+    database({entry({"clang++", "@sub/outer.rsp", "-c", "../src/a.cpp"})});
+    ASSERT_TRUE(parse());
+    const auto &Unit = Result.Units.front();
+    ASSERT_EQ(Unit.ResponseFiles.size(), 2u);
+    EXPECT_EQ(Unit.ResponseFiles[0].RelativePath, "build/inner.rsp");
+    EXPECT_EQ(Unit.ResponseFiles[1].RelativePath, "build/sub/outer.rsp");
+    EXPECT_EQ(Unit.NormalizedArguments,
+              (std::vector<std::string>{"-std=c++17", "-DVALUE=hello world", "-I",
+                                        "$PROJECT/include one", "-O2"}));
+    EXPECT_TRUE(verifyProjectContextInputs(Result, Errors));
+    writeFile(Build / "inner.rsp", "-DVALUE=changed\n");
+    EXPECT_FALSE(verifyProjectContextInputs(Result, Errors));
+    ASSERT_FALSE(Errors.empty());
+    EXPECT_EQ(Errors.back().Code, "TR0603");
+  };
+  EXPECT_NO_FATAL_FAILURE(CheckMode(
+      CommandQuoting::GNU, "'-DVALUE=hello world' -I'../include one'\n", "GNU"));
+  EXPECT_NO_FATAL_FAILURE(CheckMode(
+      CommandQuoting::Windows, "\"-DVALUE=hello world\" -I\"../include one\"\n",
+      "Windows"));
 }
 
 TEST_F(TranslateCompilationContextTest,
@@ -409,10 +420,19 @@ TEST_F(TranslateCompilationContextTest,
     Options.ExtraSourceArguments = {Arg};
     rejected("TR0004");
   }
-  Options.ExtraSourceArguments.clear();
-  writeFile(Build / "flags.rsp", "'-DVALUE=x\ny'");
-  database({entry({"clang++", "@flags.rsp", "../src/a.cpp"})});
-  rejected("TR0004");
+  auto CheckResponseMode = [&](CommandQuoting Quoting, const char *Flags,
+                               const char *Label) {
+    SCOPED_TRACE(Label);
+    Options.Quoting = Quoting;
+    Options.ExtraSourceArguments.clear();
+    writeFile(Build / "flags.rsp", Flags);
+    database({entry({"clang++", "@flags.rsp", "../src/a.cpp"})});
+    ASSERT_NO_FATAL_FAILURE(rejected("TR0004"));
+  };
+  EXPECT_NO_FATAL_FAILURE(
+      CheckResponseMode(CommandQuoting::GNU, "'-DVALUE=x\ny'", "GNU"));
+  EXPECT_NO_FATAL_FAILURE(
+      CheckResponseMode(CommandQuoting::Windows, "\"-DVALUE=x\ny\"", "Windows"));
 }
 
 TEST_F(TranslateCompilationContextTest,
@@ -508,7 +528,7 @@ TEST_F(TranslateCompilationContextTest,
   if (EC)
     GTEST_SKIP() << "symlink creation unavailable: " << EC.message();
   database({entry({"clang++", "-I", "../alias/../include", "../src/a.cpp"})});
-  rejected("TR0004");
+  ASSERT_NO_FATAL_FAILURE(rejected("TR0004"));
   EXPECT_NE(Errors.front().Reason.find("outside --project-root"),
             std::string::npos);
 }
