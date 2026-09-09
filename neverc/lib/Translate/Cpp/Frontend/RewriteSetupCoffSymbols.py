@@ -254,13 +254,15 @@ def inspect_object(data):
                 fail("unsupported multiple auxiliary records")
             if storage == 105:
                 target, search = struct.unpack_from("<II", auxiliary[0])
-                if section or value or kind or search not in (1, 2, 3) or any(auxiliary[0][8:]):
-                    # This is diagnostic-only: keep the rejection predicate and
-                    # earlier record checks unchanged. aux_count is exactly one,
-                    # so payload retains that complete 18- or 20-byte wire slot.
+                # COFF weak functions use NULL base type with FUNCTION (2 << 4),
+                # as in LLVM 20.1.8 lld/test/COFF/weak-external{,2}.test.
+                if (section or value or kind not in (0, 0x20) or
+                        search not in (1, 2, 3) or any(auxiliary[0][8:])):
+                    # aux_count is exactly one, so payload retains that complete
+                    # 18- or 20-byte wire slot after the earlier record checks.
                     rejected_fields = [field for field, rejected in (
                         ("section", section != 0), ("value", value != 0),
-                        ("type", kind != 0), ("search", search not in (1, 2, 3)),
+                        ("type", kind not in (0, 0x20)), ("search", search not in (1, 2, 3)),
                         ("reserved", any(auxiliary[0][8:]))) if rejected]
                     details = {
                         "symbol_index": index, "symbol_name": diagnostic_name(name),

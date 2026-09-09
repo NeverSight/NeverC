@@ -235,13 +235,19 @@ class StructureTests(unittest.TestCase):
         cases = (
             ({"section": 1}, ["section"]),
             ({"value": 7}, ["value"]),
-            ({"kind": 0x20}, ["type"]),
+            ({"kind": 1}, ["type"]),
+            ({"kind": 0x10}, ["type"]),
+            ({"kind": 0x21}, ["type"]),
+            ({"kind": 0x30}, ["type"]),
+            ({"kind": 0xFFFF}, ["type"]),
             ({"search": 0}, ["search"]),
             ({"search": 4}, ["search"]),
             ({"search": 0xFFFFFFFF}, ["search"]),
             ({"reserved": b"\xa5" + bytes(9)}, ["reserved"]),
             ({"reserved": bytes(9) + b"\xa5"}, ["reserved"]),
-            ({"section": 1, "value": 7, "kind": 0x20, "search": 4,
+            ({"kind": 0x20, "search": 4}, ["search"]),
+            ({"kind": 0x20, "reserved": b"\xa5" + bytes(9)}, ["reserved"]),
+            ({"section": 1, "value": 7, "kind": 0x30, "search": 4,
               "reserved": bytes(9) + b"\xa5"},
              ["section", "value", "type", "search", "reserved"]),
         )
@@ -277,6 +283,35 @@ class StructureTests(unittest.TestCase):
                     self.assertEqual(symbol.weak, (0, search))
                     self.assertEqual(symbol.aux, (auxiliary[:18],))
 
+    def test_weak_function_type_and_auxiliary_survive_guid_rewrite(self):
+        # Independent wire fixtures model the FUNCTION type used by upstream
+        # weak-external tests. These records are not executable test programs.
+        for bigobj in (False, True):
+            for search in (1, 2, 3):
+                for target_section in (0, 1):
+                    with self.subTest(bigobj=bigobj, search=search, target_section=target_section):
+                        index = 8 if bigobj else 5
+                        auxiliary = struct.pack("<II", index + 2, search)
+                        auxiliary += bytes(12 if bigobj else 10)
+                        extras = (("weak_function", 0, 0, 0x20, 105, (auxiliary,)),
+                                  ("weak_target", 0, target_section, 0x20, 2, ()))
+                        builder = bigobj_bytes if bigobj else object_bytes
+                        payload = builder(extras=extras)
+                        symbol = rewrite.inspect_object(payload).symbols[-2]
+                        self.assertEqual((symbol.index, symbol.kind, symbol.weak),
+                                         (index, 0x20, (index + 2, search)))
+                        self.assertEqual(symbol.aux, (auxiliary[:18],))
+                        exports = GUIDS + (("weak_function",) if search == 3 else ())
+                        if target_section:
+                            exports += ("weak_target",)
+                        original = archive_bytes([("weak.obj", payload, exports)])
+                        changed = rewrite.rewrite_archive_bytes(original, GUID_RENAMES)
+                        result = rewrite.inspect_archive_bytes(changed).members[0][1]
+                        self.assertEqual(result.symbols[-2:],
+                                         rewrite.inspect_object(payload).symbols[-2:])
+                        proof = rewrite.verify_rewrite_bytes(original, changed, GUID_RENAMES)
+                        self.assertEqual(proof["status"], "passed")
+
     def test_weak_aux_diagnostics_preserve_earlier_rejection_order(self):
         for bigobj in (False, True):
             slot = struct.pack("<II", 0, 4) + bytes(12 if bigobj else 10)
@@ -294,12 +329,13 @@ class StructureTests(unittest.TestCase):
             rewrite.inspect_object(bigobj_bytes(extras=(("weak_alias", 0, 0, 0x20, 105, (slot,)),)))
         self.assertEqual(str(failure.exception), "Setup COFF rewrite: nonzero bigobj auxiliary padding")
         for bigobj in (False, True):
-            payload, _ = self.weak_aux_fixture(bigobj=bigobj, target=0xFFFFFFFF)
-            with self.assertRaises(ValueError) as failure:
-                rewrite.inspect_object(payload)
-            self.assertEqual(str(failure.exception),
-                             "Setup COFF rewrite: weak target is not a supported primary symbol")
-            payload, _ = self.weak_aux_fixture(bigobj=bigobj, target=0xFFFFFFFF, kind=0x20)
+            for kind in (0, 0x20):
+                payload, _ = self.weak_aux_fixture(bigobj=bigobj, target=0xFFFFFFFF, kind=kind)
+                with self.assertRaises(ValueError) as failure:
+                    rewrite.inspect_object(payload)
+                self.assertEqual(str(failure.exception),
+                                 "Setup COFF rewrite: weak target is not a supported primary symbol")
+            payload, _ = self.weak_aux_fixture(bigobj=bigobj, target=0xFFFFFFFF, kind=0x30)
             with self.assertRaises(ValueError) as failure:
                 rewrite.inspect_object(payload)
             details = json.loads(str(failure.exception).split("; weak_aux=", 1)[1])
@@ -313,7 +349,7 @@ class StructureTests(unittest.TestCase):
         for bigobj in (False, True):
             for name in names:
                 with self.subTest(bigobj=bigobj, name_length=len(name)):
-                    payload, _ = self.weak_aux_fixture(bigobj=bigobj, name=name, kind=0x20)
+                    payload, _ = self.weak_aux_fixture(bigobj=bigobj, name=name, kind=0x30)
                     archive = archive_bytes([("good.obj", object_bytes(), GUIDS),
                                              (member_name, payload, GUIDS)])
                     with self.assertRaises(ValueError) as failure:
