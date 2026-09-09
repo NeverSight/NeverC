@@ -207,9 +207,9 @@ class CppFrontendToolchainTests(unittest.TestCase):
             directory = self.root / "setup-closure" / compiler
             directory.mkdir(parents=True)
 
-            def compile_object(stem, body):
+            def compile_object(stem, body, *, preamble=common):
                 source, obj = directory / (stem + ".cpp"), directory / (stem + ".obj")
-                source.write_text(common + body, encoding="utf-8")
+                source.write_text(preamble + body, encoding="utf-8")
                 if msvc:
                     command = [self.msvc, "/nologo", "/std:c++17", "/Od", "/GL-",
                                "/GR-", "/EHsc", "/MT", "/c", "/I" + str(include_root),
@@ -271,10 +271,17 @@ class CppFrontendToolchainTests(unittest.TestCase):
                 self.write_setup_report()
                 return changed
 
-            entry = compile_object("entry", ENTRY)
+            # Keep consumers independent of comdef.h: MSVC's comdefsp.h already
+            # declares the IUnknown GUID as __s_GUID, which conflicts with the
+            # GUID declarations here. Only providers need the real SDK objects;
+            # the entry must not supply GUID definitions to the U-only cases.
+            reference_preamble = "#include <guiddef.h>\n"
+            entry = compile_object("entry", ENTRY, preamble="")
             definitions = compile_object("definition", values)
-            references = compile_object("reference", declaration)
-            private_references = compile_object("private-reference", new_declaration)
+            references = compile_object("reference", declaration,
+                                        preamble=reference_preamble)
+            private_references = compile_object("private-reference", new_declaration,
+                                                preamble=reference_preamble)
             missing = compile_object("missing-definition", "".join(
                 line + "\n" for line in values.splitlines() if "setup_helper_guid" not in line))
             # Check actual D/U inventories before packing. The reference TU
