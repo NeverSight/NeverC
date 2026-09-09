@@ -50,6 +50,39 @@ class CoffWeakAliasesTests(unittest.TestCase):
                 self.assertEqual(self.parse(member(symbol("private_body"), weak(search=search))),
                                  {"private_alias"})
 
+    def test_exact_runtime_fallback_requires_every_edge_and_real_target(self):
+        wrapper = "?__global_delete@@YAXPEAX_K@Z"
+        fallback = "?__empty_global_delete@@YAXPEAX_K@Z"
+
+        def exact(text, definitions=(fallback,)):
+            return coff.parse_resolved_aliases(
+                io.StringIO(text), set(definitions), {wrapper},
+                expected_fallbacks={wrapper: fallback})
+
+        valid = member(symbol(fallback), weak(name=wrapper, target=fallback))
+        self.assertIn(wrapper, exact(valid))
+        split = (member(symbol(fallback, section=0), weak(name=wrapper, target=fallback),
+                        name="private.lib(use.obj)") +
+                 member(symbol(fallback), name="private.lib(body.obj)"))
+        self.assertIn(wrapper, exact(split))
+        invalid = (
+            (member(symbol(fallback)), (fallback,)),
+            (member(symbol(fallback, section=0), weak(name=wrapper, target=fallback)), (fallback,)),
+            (member(symbol(fallback, storage=3), weak(name=wrapper, target=fallback)), (fallback,)),
+            (member(symbol("wrong"), weak(name=wrapper, target="wrong")), ("wrong", fallback)),
+            (member(symbol(fallback), weak(name=wrapper, target=fallback)), ()),
+            (member(symbol("body"), weak(name=fallback, target="body"),
+                    weak(name=wrapper, target=fallback, index=1)), (fallback, "body")),
+            (member(weak(name=fallback, target=wrapper, index=2),
+                    weak(name=wrapper, target=fallback)), (fallback, wrapper)),
+            (valid + member(symbol("wrong"), weak(name=wrapper, target="wrong"),
+                            name="private.lib(other.obj)"), (fallback, "wrong")),
+        )
+        for text, definitions in invalid:
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError):
+                    exact(text, definitions)
+
     def test_global_fallback_definition_may_be_in_another_member(self):
         text = (member(symbol("private_body", section=0), weak(), name="private.lib(a.obj)") +
                 member(symbol("private_body"), name="private.lib(b.obj)"))

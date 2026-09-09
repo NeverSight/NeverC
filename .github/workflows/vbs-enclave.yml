@@ -118,6 +118,16 @@ jobs:
         shell: pwsh
         run: python .\utils\ci\verify-vbs-enclave-runtime.py self-test
 
+      - name: Check compiler ABI audit rejection tests
+        shell: pwsh
+        run: |
+          python -E -B .\neverc\lib\Translate\Cpp\Frontend\AuditArchiveTests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -E -B .\neverc\lib\Translate\Cpp\Frontend\MsvcRuntimeSymbolsTests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -E -B .\neverc\lib\Translate\Cpp\Frontend\CoffWeakAliasesTests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Set up MSVC x64
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:

@@ -10,6 +10,10 @@ import sys
 
 sys.dont_write_bytecode = True
 
+from MsvcRuntimeSymbols import (MSVC_DELETE_FALLBACK,
+                                msvc_delete_weak_reference,
+                                msvc_runtime_definition)
+
 
 STRDUP_SYMBOLS = frozenset(("strdup", "_strdup"))
 
@@ -431,9 +435,11 @@ def audit(args):
             bad.append(name + " => " + declaration)
             bad_private_names.add(name)
     definitions, references = set(), set()
+    private_kinds = {}
     for record in symbol_records(nm_output(
             nm, [args.archive], "--format=posix")):
         name, kind, _, _ = record
+        private_kinds.setdefault(name, set()).add(kind)
         report_strdup_records("private", args.archive, (record,))
         plain = name[1:] if name.startswith("_") else name
         if (re.match(r"^_?(?:LLVM[A-Z]|llvm_|UseNewDbgInfoFormat$)", name)
@@ -450,6 +456,8 @@ def audit(args):
                 or name in renamed.values() or plain in renamed.values())
 
     resolved_aliases = set()
+    runtime_fallbacks = {}
+    host_format = getattr(args, "host_format", "nm")
     coff_readobj = getattr(args, "coff_readobj", None)
     coff_readobj_file = getattr(args, "coff_readobj_file", None)
     if coff_readobj_file:
@@ -462,8 +470,22 @@ def audit(args):
         # appear defined to nm while its auxiliary fallback remains unresolved.
         private_names = {name for name in definitions | references
                          if private_dependency(name)}
+        # Only an observed weak MSVC wrapper with its precise private runtime
+        # body can request an exception. Ordinary U references stay rejected.
+        if (args.host_lib_dir and host_format == "coff-index" and
+                msvc_runtime_definition(
+                    MSVC_DELETE_FALLBACK,
+                    private_decoded.get(MSVC_DELETE_FALLBACK, ""),
+                    private_kinds.get(MSVC_DELETE_FALLBACK, set()))):
+            runtime_fallbacks = {
+                name: MSVC_DELETE_FALLBACK for name in references
+                if msvc_delete_weak_reference(name, private_decoded.get(name, ""),
+                                               private_kinds[name])}
+        private_names.update(runtime_fallbacks)
+        proof_arguments = ({"expected_fallbacks": runtime_fallbacks}
+                           if runtime_fallbacks else {})
         resolved_aliases = read_resolved_aliases(
-            coff_readobj, args.archive, definitions, private_names)
+            coff_readobj, args.archive, definitions, private_names, **proof_arguments)
     for name in sorted(references - definitions - resolved_aliases):
         if private_dependency(name):
             bad.append("unresolved private dependency: " + name)
@@ -553,6 +575,12 @@ def audit(args):
                     host_evidence_batches.append((batch, batch_candidates))
         shared = (definitions | references) & host_definitions
         for name in sorted(shared):
+            if host_format == "coff-index":
+                if (name not in references and msvc_runtime_definition(
+                        name, private_decoded.get(name, ""), private_kinds[name])):
+                    continue
+                if name in runtime_fallbacks and name in resolved_aliases:
+                    continue
             # Only a platform strdup reference may bind the host allocator.
             # A private strong OR weak definition is never exempted. The COFF
             # index cannot supply observed object kinds, so it grants no such

@@ -3,6 +3,7 @@
 
 import argparse
 import io
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -723,6 +724,61 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
             self.audit_inventory([(alias, "w", alias)], coff_readobj="controlled-readobj")
         reader.read_resolved_aliases.assert_called_once_with(
             "controlled-readobj", Path("private.lib"), {"neverc_cpp_frontend_main"}, {alias})
+
+    def test_msvc_runtime_constants_require_actual_definition_kinds(self):
+        raw = "__real@3ff0000000000000"
+        self.audit_inventory([(raw, "R", raw)], [(raw, "R", raw)], "coff-index")
+        for private in ([(raw, "T", raw)], [(raw, "U", raw)],
+                        [(raw, "R", raw), (raw, "T", raw)],
+                        [(raw, "R", raw), (raw, "U", raw)]):
+            with self.subTest(private=private):
+                with self.assertRaisesRegex(ValueError, "private/host symbol intersection"):
+                    self.audit_inventory(private, [(raw, "R", raw)], "coff-index")
+        with self.assertRaisesRegex(ValueError, "private/host symbol intersection"):
+            self.audit_inventory([(raw, "R", raw)], [(raw, "R", raw)], "nm")
+
+    def test_msvc_runtime_observed_definition_inventory(self):
+        fixture = json.loads(Path(__file__).with_name(
+            "MsvcRuntimeSymbolsFixture.json").read_text(encoding="utf-8"))
+        private = [(name, kinds[0], decoded) for name, kinds, decoded in fixture
+                   if kinds != ["w"]]
+        self.assertEqual(len(private), 228)
+        self.audit_inventory(private, private, "coff-index")
+
+    def test_msvc_delete_wrapper_requires_proven_exact_fallback(self):
+        wrapper = "?__global_delete@@YAXPEAX_K@Z"
+        fallback = "?__empty_global_delete@@YAXPEAX_K@Z"
+        declaration = "void __cdecl __global_delete(void *, unsigned __int64)"
+        fallback_decl = "void __cdecl __empty_global_delete(void *, unsigned __int64)"
+        private = [(wrapper, "w", declaration), (fallback, "T", fallback_decl)]
+        host = [(wrapper, "T", declaration), (fallback, "T", fallback_decl)]
+        reader = types.ModuleType("CoffWeakAliases")
+        reader.read_resolved_aliases = mock.Mock(return_value={wrapper})
+        with mock.patch.dict(sys.modules, {"CoffWeakAliases": reader}):
+            self.audit_inventory(private, host, "coff-index", "controlled-readobj")
+        reader.read_resolved_aliases.assert_called_once_with(
+            "controlled-readobj", Path("private.lib"),
+            {"neverc_cpp_frontend_main", fallback}, {wrapper},
+            expected_fallbacks={wrapper: fallback})
+
+        for evidence in (None, set()):
+            reader.read_resolved_aliases = mock.Mock(return_value=evidence)
+            with self.subTest(evidence=evidence), \
+                    mock.patch.dict(sys.modules, {"CoffWeakAliases": reader}):
+                with self.assertRaisesRegex(ValueError, "private/host symbol intersection"):
+                    self.audit_inventory(private, host, "coff-index",
+                                         "controlled-readobj" if evidence is not None else None)
+        for kind in ("U", "T", "W", "v"):
+            with self.subTest(kind=kind), \
+                    mock.patch.dict(sys.modules, {"CoffWeakAliases": reader}):
+                reader.read_resolved_aliases = mock.Mock(return_value={wrapper})
+                with self.assertRaisesRegex(ValueError, "private/host symbol intersection"):
+                    self.audit_inventory([(wrapper, kind, declaration), private[1]],
+                                         host, "coff-index", "controlled-readobj")
+        reader.read_resolved_aliases = mock.Mock(side_effect=ValueError("wrong exact fallback"))
+        with mock.patch.dict(sys.modules, {"CoffWeakAliases": reader}):
+            with self.assertRaisesRegex(ValueError, "wrong exact fallback"):
+                self.audit_inventory(private, host, "coff-index", "controlled-readobj")
 
     def test_defined_coff_alias_still_requires_fallback_validation(self):
         alias = "neverc_cpp_llvm_alias"

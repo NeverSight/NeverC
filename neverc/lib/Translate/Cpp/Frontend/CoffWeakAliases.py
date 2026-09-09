@@ -131,7 +131,7 @@ def _member_edges(member, symbols, definitions, real_definitions, definition_sou
             raise ValueError("COFF weak alias inventory exceeds its limit")
 
 
-def parse_resolved_aliases(lines, definitions, private_names=()):
+def parse_resolved_aliases(lines, definitions, private_names=(), *, expected_fallbacks=None):
     """Consume complete llvm-readobj --symbols output without retaining its text."""
     state = "header"
     header = {}
@@ -211,6 +211,17 @@ def parse_resolved_aliases(lines, definitions, private_names=()):
     if state != "header" or header or not member_count:
         raise ValueError("Truncated or empty COFF symbol inventory")
 
+    # A runtime wrapper exception needs the specific ABI fallback, not merely
+    # a chain that happens to end in some private symbol. Verify every member's
+    # edge and require an actual external body, independently of nm's index.
+    for name, target in (expected_fallbacks or {}).items():
+        alternatives = edges.get(name)
+        if (not alternatives or name in real_definitions or
+                target not in real_definitions or any(
+                    edge.target != target or edge.local_definition
+                    for edge in alternatives)):
+            raise ValueError("Invalid exact COFF fallback: " + name + " -> " + target)
+
     # nm reports Search=Alias as W/V. Only actual non-alias COFF records above
     # seed this set. An independently emitted real definition does override a
     # weak alias of the same name, as it does in the COFF linker.
@@ -263,7 +274,7 @@ def parse_resolved_aliases(lines, definitions, private_names=()):
     return resolved
 
 
-def read_resolved_aliases(readobj, archive, definitions, private_names=()):
+def read_resolved_aliases(readobj, archive, definitions, private_names=(), *, expected_fallbacks=None):
     """Run a bounded inspection; diagnostics or an unreadable member fail closed."""
     with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
         process = subprocess.Popen([str(readobj), "--symbols", "--no-demangle", str(archive)],
@@ -299,7 +310,8 @@ def read_resolved_aliases(readobj, archive, definitions, private_names=()):
                         raise ValueError("llvm-readobj symbol line exceeds its limit")
                     yield line.decode("utf-8", "strict")
 
-            return parse_resolved_aliases(lines(), definitions, private_names)
+            return parse_resolved_aliases(lines(), definitions, private_names,
+                                          expected_fallbacks=expected_fallbacks)
         finally:
             if process.poll() is None:
                 process.kill()

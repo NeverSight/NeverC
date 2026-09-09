@@ -266,6 +266,7 @@ add_custom_target(nevercCppFrontendBundle
     "${CMAKE_CURRENT_SOURCE_DIR}/VerifyArchiveMembers.py"
     --archive "${_output}" --archiver "${CMAKE_AR}" --kind "${_member_reader_kind}"
   COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/AuditArchiveTests.py"
+  COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/MsvcRuntimeSymbolsTests.py"
   COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/CoffWeakAliasesTests.py"
   COMMAND "${Python3_EXECUTABLE}" -E -B
     "${NEVERC_CPP_REPOSITORY_ROOT}/tests/neverc/HostCoffSymbolsTests.py"

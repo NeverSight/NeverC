@@ -42,4 +42,5 @@ jobs:
         run: |
           python -I -B tests/neverc/HostCoffSymbolsTests.py
           python -E -B neverc/lib/Translate/Cpp/Frontend/AuditArchiveTests.py
+          python -E -B neverc/lib/Translate/Cpp/Frontend/MsvcRuntimeSymbolsTests.py
           python -E -B neverc/lib/Translate/Cpp/Frontend/CoffWeakAliasesTests.py
