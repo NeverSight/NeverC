@@ -105,6 +105,137 @@ def isolate_math_calls(source_root):
         path.write_text(text, encoding="utf-8")
 
 
+# Only the two Setup discovery outputs in the pinned MSVCPaths.cpp need this
+# owner. Keep it in the private llvm namespace and leave the host SDK intact.
+SETUP_BSTR_OWNER = """namespace llvm {
+class NeverCSetupBstr final {
+  BSTR Value = nullptr;
+
+public:
+  NeverCSetupBstr() noexcept = default;
+  NeverCSetupBstr(const NeverCSetupBstr &) = delete;
+  NeverCSetupBstr &operator=(const NeverCSetupBstr &) = delete;
+  NeverCSetupBstr(NeverCSetupBstr &&) = delete;
+  NeverCSetupBstr &operator=(NeverCSetupBstr &&) = delete;
+  ~NeverCSetupBstr() noexcept { reset(); }
+
+  void reset() noexcept {
+    ::SysFreeString(Value);
+    Value = nullptr;
+  }
+  BSTR *out() noexcept {
+    reset();
+    return &Value;
+  }
+  BSTR get() const noexcept { return Value; }
+};
+} // namespace llvm
+"""
+
+
+def isolate_setup_bstr(path):
+    preamble = """#ifdef _MSC_VER
+// Don't support SetupApi on MinGW.
+#define USE_MSVC_SETUP_API
+
+// Make sure this comes before MSVCSetupApi.h
+#include <comdef.h>
+
+#include "llvm/Support/COM.h"
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnon-virtual-dtor"
+#endif
+#include "llvm/WindowsDriver/MSVCSetupApi.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+_COM_SMARTPTR_TYPEDEF(ISetupConfiguration, __uuidof(ISetupConfiguration));
+_COM_SMARTPTR_TYPEDEF(ISetupConfiguration2, __uuidof(ISetupConfiguration2));
+_COM_SMARTPTR_TYPEDEF(ISetupHelper, __uuidof(ISetupHelper));
+_COM_SMARTPTR_TYPEDEF(IEnumSetupInstances, __uuidof(IEnumSetupInstances));
+_COM_SMARTPTR_TYPEDEF(ISetupInstance, __uuidof(ISetupInstance));
+_COM_SMARTPTR_TYPEDEF(ISetupInstance2, __uuidof(ISetupInstance2));
+#endif"""
+    version_before = """  do {
+    bstr_t VersionString;
+    uint64_t VersionNum;
+    HR = Instance->GetInstallationVersion(VersionString.GetAddress());
+    if (FAILED(HR))
+      continue;
+    HR = ISetupHelperPtr(Query)->ParseVersion(VersionString, &VersionNum);
+    if (FAILED(HR))
+      continue;
+    if (!NewestVersionNum || (VersionNum > NewestVersionNum)) {
+      NewestInstance = Instance;
+      NewestVersionNum = VersionNum;
+    }
+  } while ((HR = EnumInstances->Next(1, &Instance, nullptr)) == S_OK);"""
+    version_after = """  do {
+    NeverCSetupBstr VersionString;
+    uint64_t VersionNum;
+    HR = Instance->GetInstallationVersion(VersionString.out());
+    if (FAILED(HR) || !VersionString.get())
+      continue;
+    HR = ISetupHelperPtr(Query)->ParseVersion(VersionString.get(), &VersionNum);
+    if (FAILED(HR))
+      continue;
+    if (!NewestVersionNum || (VersionNum > NewestVersionNum)) {
+      NewestInstance = Instance;
+      NewestVersionNum = VersionNum;
+    }
+  } while ((HR = EnumInstances->Next(1, &Instance, nullptr)) == S_OK);"""
+    path_before = """  bstr_t VCPathWide;
+  HR = NewestInstance->ResolvePath(L"VC", VCPathWide.GetAddress());
+  if (FAILED(HR))
+    return false;
+
+  std::string VCRootPath;
+  convertWideToUTF8(std::wstring(VCPathWide), VCRootPath);"""
+    path_after = """  NeverCSetupBstr VCPathWide;
+  HR = NewestInstance->ResolvePath(L"VC", VCPathWide.out());
+  if (FAILED(HR) || !VCPathWide.get())
+    return false;
+
+  std::string VCRootPath;
+  convertWideToUTF8(std::wstring(VCPathWide.get()), VCRootPath);"""
+    replacements = (
+        (preamble, preamble[:-len("#endif")] + "\n" + SETUP_BSTR_OWNER + "#endif"),
+        (version_before, version_after),
+        (path_before, path_after),
+    )
+    error_message = "Unexpected pinned LLVM Setup BSTR source in " + str(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = [(text.count(before), text.count(after))
+              for before, after in replacements]
+    if all(count == (1, 0) for count in counts):
+        state = 0
+    elif all(count == (0, 1) for count in counts):
+        state = 1
+    else:
+        raise SystemExit(error_message)
+
+    # Validate the insertion guard and both complete call blocks together.
+    # Reject additional or partially rewritten uses, even when the three
+    # expected blocks themselves still match. All checks precede the source write.
+    remainder = text
+    for pair in replacements:
+        remainder = remainder.replace(pair[state], "", 1)
+    if re.search(r"\b(?:bstr_t|_bstr_t|NeverCSetupBstr)\b|\.GetAddress\s*\(", remainder):
+        raise SystemExit(error_message)
+    if state == 0:
+        for before, after in replacements:
+            text = text.replace(before, after, 1)
+        path.write_text(text, encoding="utf-8")
+
+
+# Check Setup source before any other patch writes. Later unrelated failures
+# do not roll back previously completed patches.
+isolate_setup_bstr(args.source / "llvm/lib/WindowsDriver/MSVCPaths.cpp")
+
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [
     ("constexpr bool isVPIntrinsic(", "constexpr bool neverc_cpp_isVPIntrinsic("),

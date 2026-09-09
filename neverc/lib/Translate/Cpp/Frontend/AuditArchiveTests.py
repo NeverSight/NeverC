@@ -471,7 +471,121 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
                         for name, calls in math_calls.items()}
         expected_math = {name: "".join(after + ";\n" for _, after, _ in calls)
                          for name, calls in math_calls.items()}
+        # Verbatim relevant spans from LLVM 20.1.8 MSVCPaths.cpp, not generated
+        # from the patcher's constants. Omitted unrelated functions are outside
+        # this source-state contract; this fixture is never a compiler proof.
+        setup_preamble = """#ifdef _MSC_VER
+// Don't support SetupApi on MinGW.
+#define USE_MSVC_SETUP_API
+
+// Make sure this comes before MSVCSetupApi.h
+#include <comdef.h>
+
+#include "llvm/Support/COM.h"
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnon-virtual-dtor"
+#endif
+#include "llvm/WindowsDriver/MSVCSetupApi.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+_COM_SMARTPTR_TYPEDEF(ISetupConfiguration, __uuidof(ISetupConfiguration));
+_COM_SMARTPTR_TYPEDEF(ISetupConfiguration2, __uuidof(ISetupConfiguration2));
+_COM_SMARTPTR_TYPEDEF(ISetupHelper, __uuidof(ISetupHelper));
+_COM_SMARTPTR_TYPEDEF(IEnumSetupInstances, __uuidof(IEnumSetupInstances));
+_COM_SMARTPTR_TYPEDEF(ISetupInstance, __uuidof(ISetupInstance));
+_COM_SMARTPTR_TYPEDEF(ISetupInstance2, __uuidof(ISetupInstance2));
+#endif
+"""
+        setup_calls = """  ISetupInstancePtr NewestInstance;
+  std::optional<uint64_t> NewestVersionNum;
+  do {
+    bstr_t VersionString;
+    uint64_t VersionNum;
+    HR = Instance->GetInstallationVersion(VersionString.GetAddress());
+    if (FAILED(HR))
+      continue;
+    HR = ISetupHelperPtr(Query)->ParseVersion(VersionString, &VersionNum);
+    if (FAILED(HR))
+      continue;
+    if (!NewestVersionNum || (VersionNum > NewestVersionNum)) {
+      NewestInstance = Instance;
+      NewestVersionNum = VersionNum;
+    }
+  } while ((HR = EnumInstances->Next(1, &Instance, nullptr)) == S_OK);
+
+  if (!NewestInstance)
+    return false;
+
+  bstr_t VCPathWide;
+  HR = NewestInstance->ResolvePath(L"VC", VCPathWide.GetAddress());
+  if (FAILED(HR))
+    return false;
+
+  std::string VCRootPath;
+  convertWideToUTF8(std::wstring(VCPathWide), VCRootPath);
+"""
+        original_setup = setup_preamble + "\n" + setup_calls
+        # Independent expected owner, not obtained by importing or extracting
+        # SETUP_BSTR_OWNER from the script being tested.
+        expected_owner = """namespace llvm {
+class NeverCSetupBstr final {
+  BSTR Value = nullptr;
+
+public:
+  NeverCSetupBstr() noexcept = default;
+  NeverCSetupBstr(const NeverCSetupBstr &) = delete;
+  NeverCSetupBstr &operator=(const NeverCSetupBstr &) = delete;
+  NeverCSetupBstr(NeverCSetupBstr &&) = delete;
+  NeverCSetupBstr &operator=(NeverCSetupBstr &&) = delete;
+  ~NeverCSetupBstr() noexcept { reset(); }
+
+  void reset() noexcept {
+    ::SysFreeString(Value);
+    Value = nullptr;
+  }
+  BSTR *out() noexcept {
+    reset();
+    return &Value;
+  }
+  BSTR get() const noexcept { return Value; }
+};
+} // namespace llvm
+"""
+        expected_setup_calls = """  ISetupInstancePtr NewestInstance;
+  std::optional<uint64_t> NewestVersionNum;
+  do {
+    NeverCSetupBstr VersionString;
+    uint64_t VersionNum;
+    HR = Instance->GetInstallationVersion(VersionString.out());
+    if (FAILED(HR) || !VersionString.get())
+      continue;
+    HR = ISetupHelperPtr(Query)->ParseVersion(VersionString.get(), &VersionNum);
+    if (FAILED(HR))
+      continue;
+    if (!NewestVersionNum || (VersionNum > NewestVersionNum)) {
+      NewestInstance = Instance;
+      NewestVersionNum = VersionNum;
+    }
+  } while ((HR = EnumInstances->Next(1, &Instance, nullptr)) == S_OK);
+
+  if (!NewestInstance)
+    return false;
+
+  NeverCSetupBstr VCPathWide;
+  HR = NewestInstance->ResolvePath(L"VC", VCPathWide.out());
+  if (FAILED(HR) || !VCPathWide.get())
+    return false;
+
+  std::string VCRootPath;
+  convertWideToUTF8(std::wstring(VCPathWide.get()), VCRootPath);
+"""
+        expected_setup_preamble = (setup_preamble[:-len("#endif\n")] + "\n" +
+                                   expected_owner + "#endif\n")
+        expected_setup = expected_setup_preamble + "\n" + expected_setup_calls
         files = {
+            "llvm/lib/WindowsDriver/MSVCPaths.cpp": original_setup,
             "llvm/lib/IR/IntrinsicInst.cpp": intrinsic,
             "llvm/include/llvm/Transforms/Utils/Debugify.h": debugify,
             "llvm/lib/Transforms/Utils/LoopUtils.cpp": original_loop,
@@ -521,7 +635,26 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
                     else:
                         self.assertEqual(result.stderr, expected_error + "\n", diagnostic)
 
+            def snapshot_all_files():
+                return {path.relative_to(root): path.read_bytes()
+                        for path in root.rglob("*") if path.is_file()}
+
+            # The new source check must run before *any* existing rewrite or
+            # generated-file creation, including when the pinned file is absent.
+            setup_path = source / "llvm/lib/WindowsDriver/MSVCPaths.cpp"
+            setup_path.unlink()
+            untouched = snapshot_all_files()
+            run_script(False, "Unexpected pinned LLVM Setup BSTR source in " + str(setup_path))
+            self.assertEqual(snapshot_all_files(), untouched)
+            self.assertFalse(output.exists())
+            setup_path.write_text(original_setup, encoding="utf-8")
+
             run_script(True)
+            rewritten_setup = setup_path.read_text(encoding="utf-8")
+            self.assertEqual(rewritten_setup, expected_setup)
+            self.assertEqual(rewritten_setup.count(expected_owner), 1)
+            self.assertNotIn("GetAddress", rewritten_setup)
+            self.assertNotIn("bstr_t", rewritten_setup)
             loop = source / "llvm/lib/Transforms/Utils/LoopUtils.cpp"
             self.assertEqual(loop.read_text(encoding="utf-8"), expected_loop)
             self.assertEqual((source / "llvm/lib/IR/IntrinsicInst.cpp").read_text(
@@ -536,6 +669,7 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
                          "llvm_blake3_compress_in_place"):
                 self.assertIn(f"#define {name} neverc_cpp_{name}\n", prefix)
             self.assertNotIn("#define PointerBounds", prefix)
+            self.assertNotRegex(prefix, r"(?m)^\s*#\s*(?:define|undef)\s+_?bstr_t\b")
             notices = output.parent / "NeverCCppThirdPartyNotices.txt"
             expected_notices = "Additional notices from the pinned LLVM 20.1.8 sources.\n"
             for name in notice_names:
@@ -545,7 +679,82 @@ expandBounds(const SmallVectorImpl<RuntimePointerCheck> &PointerChecks, Loop *L,
             stable = {path: path.read_bytes() for path in (
                 loop, output, notices, source / "llvm/lib/IR/IntrinsicInst.cpp",
                 source / "llvm/include/llvm/Transforms/Utils/Debugify.h",
-                *math_paths.values())}
+                setup_path, *math_paths.values())}
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            anchor = ("_COM_SMARTPTR_TYPEDEF(ISetupInstance2, "
+                      "__uuidof(ISetupInstance2));\n")
+            original_version = "    bstr_t VersionString;\n"
+            private_version = "    NeverCSetupBstr VersionString;\n"
+            setup_states = {
+                "missing anchor": original_setup.replace(anchor, "", 1),
+                "duplicate anchor": original_setup.replace(anchor, anchor + anchor, 1),
+                "missing version declaration": original_setup.replace(original_version, "", 1),
+                "duplicate original declaration": original_setup.replace(
+                    original_version, original_version * 2, 1),
+                "duplicate rewritten declaration": rewritten_setup.replace(
+                    private_version, private_version * 2, 1),
+                "mixed declarations": original_setup.replace(
+                    original_version, original_version + private_version, 1),
+                "one declaration rewritten": original_setup.replace(
+                    original_version, private_version, 1),
+                "one declaration original": rewritten_setup.replace(
+                    private_version, original_version, 1),
+                "only out call rewritten": original_setup.replace(
+                    "VersionString.GetAddress()", "VersionString.out()", 1),
+                "old out call remains": rewritten_setup.replace(
+                    "VCPathWide.out()", "VCPathWide.GetAddress()", 1),
+                "changed version call": original_setup.replace(
+                    "GetInstallationVersion(VersionString.GetAddress())",
+                    "GetInstallationVersion(nullptr)", 1),
+                "changed path call": original_setup.replace(
+                    'ResolvePath(L"VC", VCPathWide.GetAddress())',
+                    'ResolvePath(L"Other", VCPathWide.GetAddress())', 1),
+                "missing parsed get": rewritten_setup.replace(
+                    "ParseVersion(VersionString.get(), &VersionNum)",
+                    "ParseVersion(VersionString, &VersionNum)", 1),
+                "missing path get": rewritten_setup.replace(
+                    "std::wstring(VCPathWide.get())", "std::wstring(VCPathWide)", 1),
+                "missing version null guard": rewritten_setup.replace(
+                    "if (FAILED(HR) || !VersionString.get())", "if (FAILED(HR))", 1),
+                "missing path null guard": rewritten_setup.replace(
+                    "if (FAILED(HR) || !VCPathWide.get())", "if (FAILED(HR))", 1),
+                "extra original declaration": original_setup + "bstr_t Extra;\n",
+                "extra private declaration": rewritten_setup + "NeverCSetupBstr Extra;\n",
+                "unexpected wrapper macro": original_setup + "#define _bstr_t NeverCSetupBstr\n",
+                "owner missing": rewritten_setup.replace(expected_owner, "", 1),
+                "duplicate owner": rewritten_setup.replace(
+                    expected_owner, expected_owner * 2, 1),
+                "owner only rewritten": expected_setup_preamble + "\n" + setup_calls,
+                "owner outside guard": setup_preamble + "\n" + expected_owner +
+                    expected_setup_calls,
+                "owner in global namespace": rewritten_setup.replace(
+                    expected_owner, expected_owner.replace("namespace llvm {\n", "", 1), 1),
+                "changed owner destructor": rewritten_setup.replace(
+                    "~NeverCSetupBstr() noexcept { reset(); }",
+                    "~NeverCSetupBstr() noexcept {}", 1),
+                "owner without copy deletion": rewritten_setup.replace(
+                    "  NeverCSetupBstr(const NeverCSetupBstr &) = delete;\n", "", 1),
+                "owner without out reset": rewritten_setup.replace(
+                    "  BSTR *out() noexcept {\n    reset();\n",
+                    "  BSTR *out() noexcept {\n", 1),
+            }
+            for state, invalid_source in setup_states.items():
+                with self.subTest(setup_bstr_state=state):
+                    # Every other file is an original, valid input. If Setup
+                    # validation ran later, the intrinsic/math patches would
+                    # modify these bytes before the failure was reported.
+                    for name, contents in files.items():
+                        (source / name).write_text(contents, encoding="utf-8")
+                    setup_path.write_text(invalid_source, encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned LLVM Setup BSTR source in " +
+                               str(setup_path))
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            for name, contents in files.items():
+                (source / name).write_text(contents, encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))

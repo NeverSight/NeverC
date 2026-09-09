@@ -2,6 +2,7 @@
 """Exercise the frontend ABI audit with real, tiny Microsoft COFF archives."""
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -2889,6 +2890,295 @@ int main() {
                     self.assertIn("CMATH differential PASS: pairs=2496;", output)
                     print(f"CMATH runtime ({configuration}): {output}", flush=True)
 
+    def test_setup_bstr_owner_preserves_out_parameter_lifetimes(self):
+        # Compile the actual owner literal without importing or executing the
+        # source-patching script. The callbacks below model only the two local
+        # ownership/control-flow contracts, not the full Setup COM provider.
+        patcher = self.audit.with_name("IsolateSymbols.py")
+        tree = ast.parse(patcher.read_text(encoding="utf-8"), filename=str(patcher))
+        bindings = [node for node in ast.walk(tree)
+                    if isinstance(node, ast.Name) and node.id == "SETUP_BSTR_OWNER"
+                    and isinstance(node.ctx, ast.Store)]
+        assignments = [node for node in tree.body if isinstance(node, ast.Assign)
+                       and len(node.targets) == 1
+                       and isinstance(node.targets[0], ast.Name)
+                       and node.targets[0].id == "SETUP_BSTR_OWNER"]
+        self.assertEqual(len(bindings), 1, "The owner must have one literal definition")
+        self.assertEqual(len(assignments), 1)
+        literal = assignments[0].value
+        self.assertIsInstance(literal, ast.Constant)
+        self.assertIsInstance(literal.value, str)
+        owner = literal.value
+        self.assertTrue(owner.strip())
+        owner_sha256 = hashlib.sha256(owner.encode("utf-8")).hexdigest()
+        preamble = r"""
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <oleauto.h>
+#include <cstdio>
+#include <string>
+#include <type_traits>
+#include <utility>
+#if !defined(_MT) || defined(_DLL)
+#error This fixture requires the static Microsoft CRT
+#endif
+static BSTR Live[16] = {};
+static BSTR LastOutput = nullptr;
+static unsigned Allocations = 0, Releases = 0, ParseCalls = 0, Copies = 0;
+static bool InvalidOwnership = false;
+static bool is_live(const wchar_t *value) {
+  if (!value) return false;
+  for (BSTR slot : Live) if (slot == value) return true;
+  return false;
+}
+static BSTR remember(BSTR value) {
+  if (!value) { InvalidOwnership = true; return nullptr; }
+  for (BSTR &slot : Live) {
+    if (!slot) { slot = value; ++Allocations; return value; }
+  }
+  InvalidOwnership = true;
+  ::SysFreeString(value);
+  return nullptr;
+}
+static void NeverCTrackedFree(BSTR value) noexcept {
+  if (!value) {
+    ::SysFreeString(value); // Exercise the real null-safe API as well.
+    return;
+  }
+  for (BSTR &slot : Live) {
+    if (slot == value) {
+      slot = nullptr;
+      ++Releases;
+      ::SysFreeString(value);
+      return;
+    }
+  }
+  // Record double/foreign frees without deliberately invoking undefined behavior.
+  InvalidOwnership = true;
+}
+// All SDK and STL headers precede this fixture-only observation hook.
+#define SysFreeString NeverCTrackedFree
+"""
+        preamble += ("#if !defined(_M_ARM64)\n" if self.target.startswith("aarch64-")
+                     else "#if !defined(_M_X64)\n")
+        preamble += "#error The compiler must use the requested native target\n#endif\n"
+        harness = r"""
+#undef SysFreeString
+using Owner = llvm::NeverCSetupBstr;
+static_assert(std::is_nothrow_default_constructible_v<Owner>);
+static_assert(std::is_nothrow_destructible_v<Owner>);
+static_assert(!std::is_copy_constructible_v<Owner>);
+static_assert(!std::is_copy_assignable_v<Owner>);
+static_assert(!std::is_move_constructible_v<Owner>);
+static_assert(!std::is_move_assignable_v<Owner>);
+static_assert(noexcept(std::declval<Owner &>().out()));
+static_assert(noexcept(std::declval<Owner &>().reset()));
+static_assert(noexcept(std::declval<const Owner &>().get()));
+static_assert(std::is_same_v<decltype(std::declval<Owner &>().out()), BSTR *>);
+static_assert(std::is_same_v<decltype(std::declval<const Owner &>().get()), BSTR>);
+
+static HRESULT provide(BSTR *output, const wchar_t *text, HRESULT status) {
+  if (!output || *output) { InvalidOwnership = true; return E_UNEXPECTED; }
+  *output = text ? remember(::SysAllocString(text)) : nullptr;
+  LastOutput = *output;
+  return status;
+}
+static HRESULT parse_version(LPCOLESTR text, ULONGLONG *parsed, HRESULT status) {
+  ++ParseCalls;
+  // ParseVersion borrows the exact live pointer until the call returns.
+  if (text != LastOutput || !is_live(text)) {
+    InvalidOwnership = true;
+    return E_UNEXPECTED;
+  }
+  if (FAILED(status)) return status;
+  if (!*text) return E_INVALIDARG;
+  *parsed = 1234;
+  return S_OK;
+}
+static bool version_loop(const wchar_t *text, HRESULT output_status,
+                         HRESULT parse_status, unsigned iterations = 1) {
+  bool found = false;
+  for (unsigned index = 0; index < iterations; ++index) {
+    Owner VersionString;
+    ULONGLONG VersionNum = 0;
+    HRESULT hr = provide(VersionString.out(), text,
+                         iterations > 1 && index == 0 ? E_FAIL : output_status);
+    if (FAILED(hr) || !VersionString.get()) continue;
+    hr = parse_version(VersionString.get(), &VersionNum, parse_status);
+    if (FAILED(hr)) continue;
+    if (!is_live(VersionString.get()) || VersionNum != 1234)
+      InvalidOwnership = true;
+    found = true;
+  }
+  return found;
+}
+static bool copy_path(const wchar_t *text, HRESULT output_status, std::wstring &copy) {
+  Owner VCPathWide;
+  HRESULT hr = provide(VCPathWide.out(), text, output_status);
+  if (FAILED(hr) || !VCPathWide.get()) return false;
+  if (VCPathWide.get() != LastOutput || !is_live(VCPathWide.get())) {
+    InvalidOwnership = true;
+    return false;
+  }
+  // Keep the original std::wstring(pointer) NUL-terminated copy semantics.
+  copy = std::wstring(VCPathWide.get());
+  ++Copies;
+  if (!is_live(VCPathWide.get())) InvalidOwnership = true;
+  return true;
+}
+static bool repeated_output() {
+  {
+    Owner value;
+    if (FAILED(provide(value.out(), L"first", S_OK))) return false;
+    BSTR *slot = value.out();
+    if (*slot || value.get() || Releases != 1) return false;
+    if (FAILED(provide(slot, L"second", S_OK))) return false;
+    value.reset();
+    if (value.get() || Releases != 2) return false;
+    value.reset();
+    if (value.get() || Releases != 2) return false;
+    if (FAILED(provide(value.out(), L"third", S_OK))) return false;
+    if (!is_live(value.get()) || Releases != 2) return false;
+  }
+  return Releases == 3;
+}
+static bool copy_after_reset() {
+  std::wstring copy;
+  {
+    Owner value;
+    const wchar_t raw[] = {L'V', L'C', L'\0', L'X'};
+    *value.out() = remember(::SysAllocStringLen(raw, 4));
+    if (!is_live(value.get()) || ::SysStringLen(value.get()) != 4) return false;
+    copy = std::wstring(value.get());
+    ++Copies;
+    if (copy != L"VC") return false;
+    value.reset();
+    if (value.get() || Releases != 1 || copy != L"VC") return false;
+  }
+  return Releases == 1 && copy == L"VC";
+}
+static bool run_case(unsigned number) {
+  std::wstring copy = L"unchanged";
+  switch (number) {
+  case 0: {
+    Owner value;
+    if (value.get()) return false;
+    value.reset();
+    BSTR *slot = value.out();
+    return slot && !*slot && value.out() == slot && !value.get();
+  }
+  case 1: return version_loop(L"17.9.1", S_OK, S_OK);
+  // Writing a BSTR on failure is a defensive, nonconforming-provider case.
+  case 2: return !version_loop(L"17.9.1", E_FAIL, S_OK);
+  // Successful null is rejected before a nonnull ParseVersion input is needed.
+  case 3: return !version_loop(nullptr, S_OK, S_OK);
+  case 4: return !version_loop(L"", S_OK, S_OK);
+  case 5: return !version_loop(L"17.9.1", S_OK, E_FAIL);
+  case 6: return copy_path(L"C:\\VS\\\u4e2d\u6587\\VC", S_OK, copy) &&
+                 copy == L"C:\\VS\\\u4e2d\u6587\\VC" && Releases == 1;
+  case 7: return !copy_path(L"C:\\VS\\VC", E_FAIL, copy) && copy == L"unchanged";
+  case 8: return !copy_path(nullptr, S_OK, copy) && copy == L"unchanged";
+  case 9: return copy_path(L"", S_OK, copy) && copy.empty();
+  case 10: return repeated_output();
+  case 11: return copy_after_reset();
+  // Both continue paths destroy each iteration's owner before the next output.
+  case 12: return !version_loop(L"17.9.1", S_OK, E_FAIL, 2);
+  default: return false;
+  }
+}
+int main() {
+  const unsigned expected[][3] = {
+    {0, 0, 0}, {1, 1, 0}, {1, 0, 0}, {0, 0, 0}, {1, 1, 0},
+    {1, 1, 0}, {1, 0, 1}, {1, 0, 0}, {0, 0, 0}, {1, 0, 1},
+    {3, 0, 0}, {1, 0, 1}, {2, 1, 0}
+  };
+  for (unsigned number = 0; number < 13; ++number) {
+    Allocations = Releases = ParseCalls = Copies = 0;
+    LastOutput = nullptr;
+    InvalidOwnership = false;
+    const bool passed = run_case(number);
+    bool live = false;
+    for (BSTR value : Live) live = live || value != nullptr;
+    if (!passed || live || InvalidOwnership || Allocations != Releases ||
+        Allocations != expected[number][0] || ParseCalls != expected[number][1] ||
+        Copies != expected[number][2]) {
+      std::printf("BSTR failure: case=%u allocated=%u released=%u parsed=%u copies=%u "
+                  "live=%d ownership=%d\n", number, Allocations, Releases,
+                  ParseCalls, Copies, live, InvalidOwnership);
+      return static_cast<int>(40 + number);
+    }
+    std::printf("{\"case\":%u,\"allocations\":%u,\"releases\":%u,"
+                "\"parse_calls\":%u,\"copies\":%u}\n",
+                number, Allocations, Releases, ParseCalls, Copies);
+  }
+  return 0;
+}
+"""
+        expected = [(0, 0, 0), (1, 1, 0), (1, 0, 0), (0, 0, 0), (1, 1, 0),
+                    (1, 1, 0), (1, 0, 1), (1, 0, 0), (0, 0, 0), (1, 0, 1),
+                    (3, 0, 0), (1, 0, 1), (2, 1, 0)]
+        library_dirs = [Path(value.strip().strip('"'))
+                        for value in os.environ.get("LIB", "").split(";")
+                        if value.strip()]
+        library_dirs = [path for path in library_dirs if path.is_dir()]
+        for name in ("libcmt.lib", "libucrt.lib", "libvcruntime.lib",
+                     "oldnames.lib", "kernel32.lib", "oleaut32.lib"):
+            self.assertTrue(any((path / name).is_file() for path in library_dirs),
+                            f"The native CRT/SDK must provide {name}")
+        linker = self.llvm_root / "bin/lld-link.exe"
+        self.assertTrue(linker.is_file(), "The BSTR fixture requires the existing lld-link")
+        machine = "arm64" if self.target.startswith("aarch64-") else "x64"
+        self.setup_report["bstr_lifecycle_fixture"] = {
+            "scope": "owner-lifetime-and-callback-model", "owner_sha256": owner_sha256,
+            "target": self.target, "status": "started", "compilers": {}}
+        self.write_setup_report()
+        for msvc in (False, True):
+            compiler = "msvc" if msvc else "clang"
+            with self.subTest(compiler=compiler):
+                directory = self.root / "setup-bstr-owner" / compiler
+                directory.mkdir(parents=True)
+                source, obj = directory / "owner.cpp", directory / "owner.obj"
+                executable = directory / "owner.exe"
+                source.write_text(preamble + owner + harness, encoding="utf-8")
+                if msvc:
+                    command = [self.msvc, "/nologo", "/std:c++17", "/c", "/O2", "/GL-",
+                               "/MT", "/EHsc", "/GR-", "/Fo" + str(obj), source]
+                else:
+                    command = [self.clang, "--target=" + self.target, "-std=c++17", "-O2",
+                               "-fno-lto", "-fms-extensions", "-fms-runtime-lib=static",
+                               "-fno-exceptions", "-fno-rtti", "-c", source, "-o", obj]
+                print("BSTR compile: " + subprocess.list2cmdline(
+                    [str(argument) for argument in command]), flush=True)
+                self.require_success(command)
+                command = [linker, "/nologo", "/out:" + str(executable),
+                           "/machine:" + machine, "/subsystem:console", "/OPT:NOICF",
+                           "/defaultlib:libcmt", "/defaultlib:oldnames",
+                           *("/libpath:" + str(path) for path in library_dirs),
+                           obj, "oleaut32.lib"]
+                print("BSTR link: " + subprocess.list2cmdline(
+                    [str(argument) for argument in command]), flush=True)
+                self.require_success(command)
+                result = subprocess.run([str(executable)], cwd=self.root, capture_output=True,
+                                        text=True, encoding="utf-8", errors="strict",
+                                        timeout=15, check=False)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                events = [json.loads(line) for line in result.stdout.splitlines() if line]
+                self.assertEqual(events, [
+                    {"case": number, "allocations": allocations, "releases": allocations,
+                     "parse_calls": parsed, "copies": copies}
+                    for number, (allocations, parsed, copies) in enumerate(expected)])
+                self.setup_report["bstr_lifecycle_fixture"]["compilers"][compiler] = {
+                    "returncode": result.returncode, "events": events}
+                self.write_setup_report()
+                print(f"BSTR lifetime PASS: compiler={compiler}; target={self.target}; "
+                      f"owner_sha256={owner_sha256}; cases={len(events)}; "
+                      "scope=owner-lifetime-and-callback-model", flush=True)
+        self.assertEqual(set(self.setup_report["bstr_lifecycle_fixture"]["compilers"]),
+                         {"clang", "msvc"})
+        self.setup_report["bstr_lifecycle_fixture"]["status"] = "passed"
+        self.write_setup_report()
+
     def test_actual_private_llvm_entity_is_rejected(self):
         private = self.archive(
             self.root / "private", "private",
@@ -3818,7 +4108,7 @@ if __name__ == "__main__":
                               for test, details in result.errors],
         }
         passed = (result.wasSuccessful() and not result.skipped
-                  and result.testsRun == (1 if arguments.setup_contract else 22)
+                  and result.testsRun == (1 if arguments.setup_contract else 23)
                   and report["setup_status"] == "passed")
     except BaseException as error:
         report["interrupted"] = {"type": type(error).__name__, "detail": str(error)}
