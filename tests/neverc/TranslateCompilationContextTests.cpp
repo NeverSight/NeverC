@@ -570,4 +570,69 @@ TEST_F(TranslateCompilationContextTest,
             std::string::npos);
 }
 
+TEST_F(TranslateCompilationContextTest,
+       ExistingContextPathsAcceptFiniteParentRevisits) {
+  const auto Name = fs::u8path(u8"\u6e90 input.cpp");
+  const auto Input = Source.parent_path() / Name;
+  fs::create_directory(Build / "child");
+  fs::create_directory(Source.parent_path() / "child");
+  writeFile(Input, "int f() { return 1; }\n");
+  ASSERT_EQ(Input.filename().u8string(), u8"\u6e90 input.cpp");
+  ASSERT_EQ(fs::u8path(Input.u8string()), Input);
+  Options.ProjectRoot = (Root / "src" / "..").u8string();
+  Options.Database = (Build / "child" / ".." / Database.filename()).u8string();
+  Options.Selections = {{(Source.parent_path() / "child" / ".." / Name).u8string(),
+                         std::nullopt}};
+  const auto Relative = "../src/child/../" + Name.generic_u8string();
+  database({entry(
+      {"clang++", "-I", "../include one/../include one", "-c", Relative}, Relative,
+      (Build / "child" / ".." / "child" / "..").u8string())});
+  ASSERT_TRUE(parse());
+  ASSERT_TRUE(Errors.empty());
+  ASSERT_EQ(Result.Units.size(), 1u);
+  const auto &Unit = Result.Units.front();
+  EXPECT_EQ(Result.ProjectRootAbsolute, fs::canonical(Root).u8string());
+  EXPECT_EQ(Result.Database.RelativePath, "build/compile_commands.json");
+  EXPECT_EQ(Unit.SourceAbsolute, fs::canonical(Input).u8string());
+  EXPECT_EQ(Unit.SourceRelative, u8"src/\u6e90 input.cpp");
+  EXPECT_EQ(Unit.WorkingDirectoryRelative, "build");
+  EXPECT_EQ(Unit.NormalizedArguments,
+            (std::vector<std::string>{"-std=c++17", "-I",
+                                      "$PROJECT/include one"}));
+  EXPECT_EQ(Unit.FrontendArguments,
+            (std::vector<std::string>{
+                "-std=c++17", "-I",
+                fs::canonical(Root / "include one").u8string()}));
+  EXPECT_TRUE(verifyProjectContextInputs(Result, Errors));
+}
+
+TEST_F(TranslateCompilationContextTest,
+       ExistingContextPathsRejectInvalidIntermediateComponents) {
+  Options.ProjectRoot = Root.u8string();
+  Options.Database = Database.u8string();
+  database({entry({"clang++", "-c", "../src/a.cpp"}, "../src/a.cpp",
+                  Build.u8string())});
+  for (const auto &Path : std::vector<std::string>{
+           (Source.parent_path() / "missing" / ".." / Source.filename())
+               .u8string(),
+           (Source / ".").u8string(),
+           (Source / ".." / Source.filename()).u8string(),
+           Source.u8string() + "/"}) {
+    SCOPED_TRACE(Path);
+    Options.Selections = {{Path, std::nullopt}};
+    EXPECT_NO_FATAL_FAILURE(rejected("TR0203"));
+  }
+  Options.Selections = {{Source.u8string(), std::nullopt}};
+  for (const auto &Include : {Root / "missing" / ".." / "include one",
+                             Source / ".." / ".." / "include one"}) {
+    SCOPED_TRACE(Include.u8string());
+    database({entry({"clang++", "-I", Include.u8string(), "../src/a.cpp"},
+                    "../src/a.cpp", Build.u8string())});
+    EXPECT_NO_FATAL_FAILURE(rejected("TR0004"));
+  }
+  EXPECT_FALSE(fs::exists(Root / "missing"));
+  EXPECT_FALSE(fs::exists(Source.parent_path() / "missing"));
+  EXPECT_EQ(readFile(Source), "int f() { return 7; }\n");
+}
+
 } // namespace

@@ -1,4 +1,5 @@
 #include "CompilationContext.h"
+#include "../ArtifactPlatform.h"
 #include "../ArtifactWriter.h"
 
 #include "llvm/ADT/SmallString.h"
@@ -67,7 +68,7 @@ bool canonical(StringRef Path, StringRef Directory, std::string &Result,
   // Resolve the original spelling before reducing '..': a parent can be a
   // symlink, so lexical normalization would change which file was requested.
   SmallString<256> Real;
-  if (std::error_code EC = sys::fs::real_path(Absolute, Real)) {
+  if (std::error_code EC = resolveExistingPath(Absolute, Real)) {
     Reason = EC.message();
     return false;
   }

@@ -45,7 +45,7 @@ Expected<std::string> canonicalDestination(StringRef Path) {
       sys::path::filename(Absolute) == "..")
     return collision(Path);
   SmallString<256> Parent;
-  if (auto EC = sys::fs::real_path(sys::path::parent_path(Absolute), Parent))
+  if (auto EC = resolveExistingPath(sys::path::parent_path(Absolute), Parent))
     return ioError(Path, EC);
   sys::path::append(Parent, sys::path::filename(Absolute));
   return Parent.str().str();
