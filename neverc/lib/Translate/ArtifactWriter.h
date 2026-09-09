@@ -1,9 +1,9 @@
 #ifndef NEVERC_TRANSLATE_ARTIFACTWRITER_H
 #define NEVERC_TRANSLATE_ARTIFACTWRITER_H
 
+#include "ArtifactPlatform.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FileSystem/UniqueID.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -49,15 +49,17 @@ private:
   llvm::Error publishReport(llvm::StringRef Contents);
   llvm::Error publishFile(llvm::StringRef From, llvm::StringRef To);
   llvm::Error rollback();
+  void cleanupReportStaging();
   std::string Staging, Output, OutputDirectory, ReportPath;
   std::string SourceName, MapName, ManifestName, HeaderName, ReportName;
   bool ReportInsideDirectory = false;
   bool Committed = false;
   struct PublishedFile {
     std::string Path;
-    llvm::sys::fs::UniqueID Identity;
+    ArtifactFileIdentity Identity;
   };
   std::vector<PublishedFile> Published;
+  std::vector<std::string> ReportStaging;
 };
 
 llvm::Expected<std::string> readFile(llvm::StringRef Path,

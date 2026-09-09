@@ -220,6 +220,10 @@ ArtifactWriter::create(const ArtifactOptions &Options, StringRef Source) {
 ArtifactWriter::~ArtifactWriter() {
   if (!Committed)
     consumeError(rollback());
+  // A committed writer keeps its outputs, but must release identity handles
+  // before deleting the staging links (including external report staging).
+  Published.clear();
+  cleanupReportStaging();
   if (!Staging.empty())
     (void)sys::fs::remove_directories(Staging);
 }
@@ -238,35 +242,43 @@ Error ArtifactWriter::writeStage(StringRef Name, StringRef Contents) {
 Error ArtifactWriter::publishFile(StringRef From, StringRef To) {
   // Hard-link publication is atomic and fails even if a destination appeared
   // after preflight. Staging lives on the same filesystem as the destination.
-  sys::fs::UniqueID Identity;
-  if (auto EC = sys::fs::getUniqueID(From, Identity))
+  ArtifactFileIdentity Identity;
+  if (auto EC = ArtifactFileIdentity::capture(From, Identity))
     return ioError(From, EC);
   if (auto EC = sys::fs::create_hard_link(From, To)) {
     if (EC == std::errc::file_exists)
       return collision(To);
     return ioError(To, EC);
   }
-  Published.push_back({To.str(), Identity});
+  Published.push_back({To.str(), std::move(Identity)});
   return Error::success();
 }
 
 Error ArtifactWriter::rollback() {
   Error Result = Error::success();
   for (auto I = Published.rbegin(); I != Published.rend(); ++I) {
-    sys::fs::file_status Status;
-    if (auto EC = sys::fs::status(I->Path, Status, /*follow=*/false)) {
+    bool Same = false;
+    if (auto EC = I->Identity.matches(I->Path, Same)) {
       if (EC != std::errc::no_such_file_or_directory)
         Result = joinErrors(std::move(Result), ioError(I->Path, EC));
       continue;
     }
-    // Another publisher may have replaced a path after we created it. Its new
-    // file is not part of our transaction and must survive our rollback.
-    if (Status.getUniqueID() == I->Identity)
+    // Preserve replacements already present when identity is checked. The
+    // comparison and path-based removal are not atomic against a later replace.
+    if (Same)
       if (auto EC = sys::fs::remove(I->Path))
         Result = joinErrors(std::move(Result), ioError(I->Path, EC));
   }
+  // Close retained Windows handles before reusing a removed report pathname.
   Published.clear();
+  cleanupReportStaging();
   return Result;
+}
+
+void ArtifactWriter::cleanupReportStaging() {
+  for (const auto &Directory : ReportStaging)
+    (void)sys::fs::remove_directories(Directory);
+  ReportStaging.clear();
 }
 
 Error ArtifactWriter::publishReport(StringRef Contents) {
@@ -277,11 +289,13 @@ Error ArtifactWriter::publishReport(StringRef Contents) {
       appendPath(sys::path::parent_path(ReportPath), ".neverc-report");
   if (auto EC = sys::fs::createUniqueDirectory(Prefix, Temporary))
     return ioError(ReportPath, EC);
+  // Keep this original link until rollback/commit releases its identity token.
+  // On Windows an open identity handle can defer the link's final deletion.
+  ReportStaging.push_back(Temporary.str().str());
   auto Path = appendPath(Temporary, "report.json");
   Error E = writeExclusive(Path, Contents);
   if (!E)
     E = publishFile(Path, ReportPath);
-  (void)sys::fs::remove_directories(Temporary);
   return E;
 }
 
