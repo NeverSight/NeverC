@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import tarfile
 import time
 import urllib.request
@@ -21,6 +22,8 @@ ENTRY = 'extern "C" int neverc_cpp_frontend_main(int, const char **) { return 0;
 
 
 class CppFrontendToolchainTests(unittest.TestCase):
+    setup_contract = False
+
     @classmethod
     def write_setup_report(cls):
         temporary = cls.report_dir / "manifest.json.tmp"
@@ -111,6 +114,209 @@ class CppFrontendToolchainTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0,
                          f"{command!r}\n{result.stdout}\n{result.stderr}")
         return result.stdout
+
+    def setup_guid_audit(self, archive, *, original=False, host=None,
+                         expected_error=None, host_format="nm"):
+        # AuditArchive deliberately removes rejected inputs. Give the SAME
+        # production closure gate a disposable copy for both RED and GREEN.
+        checked = archive.with_name(archive.stem + "-audit.lib")
+        self.assertFalse(checked.exists())
+        shutil.copyfile(archive, checked)
+        command = [sys.executable, "-E", "-B", self.audit,
+                   "--nm", self.setup_writer_tools["nm"], "--archive", checked,
+                   "--coff-readobj", self.setup_writer_tools["readobj"]]
+        if host is not None:
+            command.extend(["--host-lib-dir", host, "--host-format", host_format])
+            if host_format == "nm":
+                command.extend(["--host-nm", self.setup_writer_tools["nm"]])
+        result = self.setup_command(command)
+        text = result.stdout + result.stderr
+        if original:
+            self.assertNotEqual(result.returncode, 0, text)
+            self.assertIn("unisolated Setup GUID", text)
+            self.assertTrue(any(name in text for name in self.setup_guid_names), text)
+            self.assertFalse(checked.exists())
+        elif expected_error is not None:
+            self.assertNotEqual(result.returncode, 0, text)
+            self.assertIn(expected_error, text)
+            self.assertFalse(checked.exists())
+        else:
+            self.assertEqual(result.returncode, 0, text)
+            self.assertIn("defined and undefined symbols use the private LLVM ABI", text)
+            checked.unlink()
+        return len(self.setup_report["commands"])
+
+    def setup_rewrite_archive(self, archive, compiler, label):
+        # This is an isolation-contract RED/GREEN. It does not claim the
+        # unisolated baseline has incorrect COM behavior.
+        original_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+        inventory = self.require_success([
+            self.setup_writer_tools["nm"], "--extern-only", "--no-sort",
+            "--format=just-symbols", archive])
+        names = {line for line in inventory.splitlines()
+                 if line and not line.endswith(":")}
+        self.assertTrue(self.setup_guid_names <= names, inventory)
+        inventory_command = len(self.setup_report["commands"])
+        rejected_command = self.setup_guid_audit(archive, original=True)
+        changed = archive.with_name(archive.stem + "-isolated.lib")
+        report = self.report_dir / ("setup-rewrite-" + compiler + "-" + label + ".txt")
+        self.assertFalse(changed.exists())
+        self.assertFalse(report.exists())
+        record = {"compiler": compiler, "case": label, "status": "started",
+                  "original_sha256": original_hash,
+                  "original_inventory_command": inventory_command,
+                  "original_data_names": sorted(self.setup_guid_names),
+                  "original_rejected_command": rejected_command,
+                  "report": report.name}
+        self.setup_report["closure_cases"].append(record)
+        self.write_setup_report()
+        self.require_success([
+            sys.executable, "-E", "-B", self.audit.with_name("RewriteSetupCoffSymbols.py"),
+            "--input", archive, "--output", changed,
+            "--nm", self.setup_writer_tools["nm"],
+            "--readobj", self.setup_writer_tools["readobj"], "--report", report])
+        self.assertTrue(changed.is_file())
+        self.assertTrue(report.is_file(), "The rewrite must retain its structural proof")
+        proof = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual(proof["status"], "passed", proof)
+        self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), original_hash,
+                         "A rewrite must preserve its input")
+        # The no-host audit must prove complete private closure before any
+        # executable links the original host provider.
+        accepted_command = self.setup_guid_audit(changed)
+        record.update(status="passed", proof=proof,
+                      changed_sha256=hashlib.sha256(changed.read_bytes()).hexdigest(),
+                      changed_accepted_command=accepted_command)
+        self.write_setup_report()
+        return changed
+
+    def run_setup_closure_edges(self, common, values, include_root):
+        # Real D-only and U-only objects complement the linked smart-pointer
+        # contract. A host archive must never supply a missing private GUID.
+        self.setup_report["closure_edges"] = []
+        old_names = sorted(self.setup_guid_names)
+        declaration = "".join(
+            f'extern "C" const GUID {name};\n'
+            f'extern "C" const GUID *neverc_cpp_edge_ref_{index}() '
+            f'{{ return &{name}; }}\n' for index, name in enumerate(old_names))
+        new_declaration = declaration
+        for old, new in self.setup_guid_renames.items():
+            new_declaration = new_declaration.replace(old, new)
+        for msvc in (False, True):
+            compiler = "msvc" if msvc else "clang"
+            directory = self.root / "setup-closure" / compiler
+            directory.mkdir(parents=True)
+
+            def compile_object(stem, body):
+                source, obj = directory / (stem + ".cpp"), directory / (stem + ".obj")
+                source.write_text(common + body, encoding="utf-8")
+                if msvc:
+                    command = [self.msvc, "/nologo", "/std:c++17", "/Od", "/GL-",
+                               "/GR-", "/EHsc", "/MT", "/c", "/I" + str(include_root),
+                               "/Fo" + str(obj), source]
+                else:
+                    command = [self.clang, "--target=" + self.target, "-std=c++17",
+                               "-O2", "-fno-lto", "-fms-extensions", "-fno-exceptions",
+                               "-fno-rtti", "-fms-runtime-lib=static", "-I", include_root,
+                               "-c", source, "-o", obj]
+                self.require_success(command)
+                return obj
+
+            def pack(stem, members):
+                path = directory / (stem + ".lib")
+                self.require_success([self.librarian, "/nologo", "/out:" + str(path), *members])
+                return path
+
+            def rewrite(case, members, *, reject=False):
+                original = pack(case, members)
+                changed = directory / (case + "-isolated.lib")
+                prefix = "setup-negative-" if reject else "setup-closure-"
+                report = self.report_dir / (prefix + compiler + "-" + case + ".txt")
+                before_hash = hashlib.sha256(original.read_bytes()).hexdigest()
+                record = {"compiler": compiler, "case": case, "status": "started",
+                          "expectation": "reject" if reject else "accept", "report": report.name}
+                self.setup_report["closure_edges"].append(record)
+                self.write_setup_report()
+                result = self.setup_command([
+                    sys.executable, "-E", "-B", self.audit.with_name("RewriteSetupCoffSymbols.py"),
+                    "--input", original, "--output", changed,
+                    "--nm", self.setup_writer_tools["nm"],
+                    "--readobj", self.setup_writer_tools["readobj"], "--report", report])
+                record["command"] = len(self.setup_report["commands"])
+                proof = json.loads(report.read_text(encoding="utf-8"))
+                self.assertEqual(hashlib.sha256(original.read_bytes()).hexdigest(), before_hash)
+                if reject:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(proof["status"], "failed", proof)
+                    self.assertFalse(proof["published"], proof)
+                    self.assertIn("missing original Setup GUID data definition", proof["error"])
+                    self.assertFalse(changed.exists())
+                    record["negative_error"] = proof["error"]
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(proof["status"], "passed", proof)
+                    self.assertTrue(proof["published"], proof)
+                    self.assertEqual(proof["byte_proof"]["status"], "passed", proof)
+                    if case == "duplicate-definition":
+                        self.assertEqual(proof["member_count"], 4, proof)
+                        repeated = [member for member in proof["members"]
+                                    if Path(member["name"]).name == definitions.name]
+                        self.assertEqual(len(repeated), 2, proof)
+                        self.assertEqual(len({member["ordinal"] for member in repeated}), 2)
+                        definition_hash = hashlib.sha256(definitions.read_bytes()).hexdigest()
+                        self.assertTrue(all(member["input_sha256"] == definition_hash
+                                            for member in repeated), proof)
+                    record["no_host_command"] = self.setup_guid_audit(changed)
+                record.update(status="passed", proof=proof)
+                self.write_setup_report()
+                return changed
+
+            entry = compile_object("entry", ENTRY)
+            definitions = compile_object("definition", values)
+            references = compile_object("reference", declaration)
+            private_references = compile_object("private-reference", new_declaration)
+            missing = compile_object("missing-definition", "".join(
+                line + "\n" for line in values.splitlines() if "setup_helper_guid" not in line))
+            # Check actual D/U inventories before packing. The reference TU
+            # contains declarations only; SDK inline headers cannot fill the gap.
+            for obj, defined in ((definitions, True), (references, False)):
+                output = self.require_success([self.setup_writer_tools["nm"], "--extern-only",
+                                               "--format=posix", obj])
+                for name in old_names:
+                    records = [line.split() for line in output.splitlines()
+                               if line.split() and line.split()[0] == name]
+                    self.assertEqual(len(records), 1, output)
+                    self.assertEqual(records[0][1] != "U", defined, output)
+            isolated_definitions = rewrite("d-only", [entry, definitions])
+            rewrite("definition-first", [entry, definitions, references])
+            rewrite("reference-first", [entry, references, definitions])
+            duplicate_dir = directory / "duplicate"
+            duplicate_dir.mkdir()
+            duplicate = duplicate_dir / definitions.name
+            shutil.copyfile(definitions, duplicate)
+            rewrite("duplicate-definition", [entry, definitions, duplicate, references])
+            rewrite("u-only", [entry, references], reject=True)
+            rewrite("missing-d", [entry, missing, references], reject=True)
+            host = directory / "host"
+            host.mkdir()
+            shutil.copyfile(isolated_definitions, host / "private-definitions.lib")
+            for case, members, host_dir, host_format, diagnostic in (
+                    ("old-u", [isolated_definitions, references], None, "nm",
+                     "unisolated Setup GUID"),
+                    ("private-u", [entry, private_references], None, "nm",
+                     "unresolved private dependency"),
+                    ("host-fallback", [entry, private_references], host, "nm",
+                     "unresolved private dependency"),
+                    ("host-fallback-coff-index", [entry, private_references], host, "coff-index",
+                     "unresolved private dependency")):
+                archive = pack(case, members)
+                command = self.setup_guid_audit(archive, host=host_dir, host_format=host_format,
+                                                expected_error=diagnostic)
+                self.setup_report["closure_edges"].append({
+                    "compiler": compiler, "case": case, "status": "passed",
+                    "expectation": "reject", "command": command, "negative_error": diagnostic})
+                self.write_setup_report()
+        self.assertEqual(len(self.setup_report["closure_edges"]), 20)
 
     def archive(self, directory, name, source, *, msvc=False, assembly=None,
                 extra_sources=(), prefix_header=None, static_runtime=False,
@@ -605,8 +811,8 @@ int main() {
                 self.require_success([executable])
 
     def run_setup_runtime_witness(self, common, include_root):
-        # Two baseline providers intentionally retain their SDK spellings.
-        # A future production isolation change needs its own failing contract.
+        # Keep the original baseline, then run the same SDK implementation
+        # with the production object transformation applied to the private side.
         provider = r"""
 // Appended to the pinned-header/common preamble; SIDE is host or private.
 #define SETUP_JOIN_IMPL(a, b) a##b
@@ -1060,7 +1266,8 @@ int main(int argc, char **argv) {
             for unit in ("host", "private", "harness"):
                 source = directory / (unit + ".cpp")
                 obj = directory / (unit + ".obj")
-                source.write_text(common + (harness if unit == "harness" else provider),
+                source.write_text(common + (harness if unit == "harness" else provider)
+                                  + (ENTRY if unit == "private" else ""),
                                   encoding="utf-8")
                 if msvc:
                     command = [self.msvc, "/nologo", "/std:c++17", "/c", "/Od",
@@ -1111,11 +1318,27 @@ int main(int argc, char **argv) {
                 self.require_success([self.librarian, "/nologo", "/out:" + str(archive),
                                       objects[side]])
                 archives[side] = archive
-            for order, sides in (("host-first", ("host", "private")),
-                                 ("private-first", ("private", "host"))):
-                executable = directory / (order + ".exe")
-                link_map = directory / (order + ".map")
-                inputs = [archives[side] for side in sides]
+            variants = [
+                    ("baseline", "host-first", ("host", "private")),
+                    ("baseline", "private-first", ("private", "host"))]
+            if self.setup_contract:
+                isolated_private = self.setup_rewrite_archive(
+                    archives["private"], compiler, "runtime")
+                private_names = tuple(self.setup_guid_renames[name] for name in (
+                    "_GUID_00000000_0000_0000_c000_000000000046",
+                    "_GUID_177f0c4a_1cd3_4de7_a32c_71dbbb9fa36d",
+                    "_GUID_42843719_db4c_46c2_8e7c_64f1816efd5b",
+                    "_GUID_26aab78c_4a60_49d6_af3b_3c35bc93365d",
+                    "_GUID_42b21b78_6192_463e_87bf_d577838f1d5c"))
+                variants.extend([
+                    ("isolated", "host-first", ("host", "private")),
+                    ("isolated", "private-first", ("private", "host"))])
+            for variant, order, sides in variants:
+                stem = variant + "-" + order
+                executable = directory / (stem + ".exe")
+                link_map = directory / (stem + ".map")
+                inputs = [isolated_private if side == "private" and variant == "isolated"
+                          else archives[side] for side in sides]
                 options = ["/OPT:NOICF", "/MAP:" + str(link_map),
                            "/VERBOSE:LIB" if msvc else "/verbose",
                            *("/libpath:" + str(path) for path in library_dirs),
@@ -1131,16 +1354,30 @@ int main(int argc, char **argv) {
                 self.require_success(command)
                 self.assertTrue(link_map.is_file(), "The final link must produce a map")
                 map_text = link_map.read_text(encoding="utf-8", errors="replace")
-                (self.report_dir / (compiler + "-" + order + ".map.txt")).write_text(
+                (self.report_dir / (compiler + "-" + stem + ".map.txt")).write_text(
                     map_text, encoding="utf-8")
                 for side in sides:
                     for suffix in ("_setup_guid", "_setup_run"):
                         self.assertIn(side + suffix, map_text,
                                       "Both provider members must enter the final link")
+                if variant == "isolated":
+                    for name in private_names:
+                        definitions = [line for line in map_text.splitlines()
+                                       if re.search(r"\s" + re.escape(name) + r"\s", line)]
+                        self.assertEqual(len(definitions), 1, name + "\n" + map_text)
+                        self.assertRegex(definitions[0], r"\bprivate-isolated:private\.obj\s*$")
+                    if msvc:
+                        for interface, name in (("ISetupConfiguration2", private_names[3]),
+                                                ("ISetupHelper", private_names[4])):
+                            needle = "?GetIID@?$_com_IIID@U" + interface + "@@$1?" + name + "@@"
+                            definitions = [line for line in map_text.splitlines() if needle in line]
+                            self.assertEqual(len(definitions), 1, needle + "\n" + map_text)
+                            self.assertRegex(definitions[0], r"\bprivate-isolated:private\.obj\s*$")
                 self.require_success([self.readobj, "--file-headers", "--coff-imports",
                                       executable])
                 for mode, expected_code, reason in cases:
-                    observed = {"compiler": compiler, "order": order, "mode": mode,
+                    observed = {"compiler": compiler, "variant": variant,
+                                "order": order, "mode": mode,
                                 "expected_code": expected_code, "status": "started"}
                     self.setup_report["runtime_cases"].append(observed)
                     self.write_setup_report()
@@ -1155,6 +1392,11 @@ int main(int argc, char **argv) {
                     events = [json.loads(line) for line in result.stdout.splitlines() if line]
                     self.assertTrue(events, "Runtime witness output is required")
                     self.assertTrue(all(isinstance(event, dict) for event in events))
+                    guid_events = [event for event in events if event.get("event") == "guid"]
+                    self.assertEqual(len(guid_events), 5)
+                    if variant == "isolated":
+                        self.assertTrue(all(event["same_address"] == 0 for event in guid_events),
+                                        "With /OPT:NOICF, private GUID storage must stay separate")
                     self.assertEqual(events[-1], {
                         "event": "final", "check_code": expected_code, "reason": reason})
                     if mode == "normal":
@@ -1173,14 +1415,15 @@ int main(int argc, char **argv) {
                                            "reason": reason}])
                     observed.update(status="passed", events=events)
                     self.write_setup_report()
-        self.assertEqual(len(self.setup_report["runtime_cases"]), 16)
+        self.assertEqual(len(self.setup_report["runtime_cases"]),
+                         32 if self.setup_contract else 16)
         self.assertTrue(all(case["status"] == "passed"
                             for case in self.setup_report["runtime_cases"]))
 
     def test_setup_sdk_inputs_and_object_provenance(self):
         # Preserve the separate non-LTO object inventories, then exercise a
         # linked baseline with real SDK smart pointers and deterministic COM.
-        # This witness does not change the production isolation policy.
+        # The explicit post-build mode also tests the production byte writer.
         self.setup_started = time.monotonic()
         self.setup_deadline = self.setup_started + 600
         self.assertFalse(self.report_dir.is_relative_to(self.root),
@@ -1212,48 +1455,75 @@ int main(int argc, char **argv) {
             r"^\s*URL_HASH SHA256=([0-9a-f]{64})\s*$", pin_text, re.MULTILINE),
             [archive_sha], "The witness must use the production archive hash")
 
-        # This runs only in the existing Windows GitHub toolchain jobs, before
-        # the main ExternalProject has extracted its source. Download the same
-        # content-addressed release here; never substitute the host LLVM header.
-        archive_path = self.root / "llvm-project-20.1.8.src.tar.xz"
-        digest = hashlib.sha256()
-        downloaded = 0
-        started = time.monotonic()
-        with urllib.request.urlopen(archive_url, timeout=min(30, self.check_setup_budget())) as response:
-            self.assertEqual(response.status, 200)
-            with archive_path.open("wb") as output:
-                while chunk := response.read(1024 * 1024):
-                    self.check_setup_budget()
-                    downloaded += len(chunk)
-                    self.assertLessEqual(downloaded, archive_size)
-                    self.assertLess(time.monotonic() - started, 300,
-                                    "Pinned source download exceeded five minutes")
-                    digest.update(chunk)
-                    output.write(chunk)
-        self.check_setup_budget()
-        self.assertEqual(downloaded, archive_size)
-        self.assertEqual(digest.hexdigest(), archive_sha)
-        self.setup_report["source_archive"] = {
-            "url": archive_url, "bytes": downloaded, "sha256": digest.hexdigest()}
-        self.write_setup_report()
-        print(f"SETUP source archive: url={archive_url} bytes={downloaded} "
-              f"sha256={digest.hexdigest()} pin_file_sha256="
-              f"{hashlib.sha256(pin.read_bytes()).hexdigest()}", flush=True)
+        if self.setup_contract:
+            # The private sub-build has already verified and extracted the pin.
+            # Hash its actual header again; do not download another toolchain.
+            header_bytes = self.pinned_setup_header.read_bytes()
+            self.setup_report["source_archive"] = {
+                "url": archive_url, "sha256": archive_sha,
+                "mode": "verified-private-subbuild", "header_path": str(self.pinned_setup_header)}
+            self.setup_writer_tools = {"nm": self.private_nm, "readobj": self.private_readobj}
+            self.setup_report["private_readers"] = {}
+            for role, tool in self.setup_writer_tools.items():
+                self.assertTrue(tool.is_file(), str(tool))
+                self.assertNotEqual(tool.resolve(), getattr(self, role).resolve(),
+                                    "The private reader must not fall back to the host toolchain")
+                version = self.require_success([tool, "--version"])
+                self.assertRegex(version, r"\bLLVM version 20\.1\.8(?:\s|$)")
+                self.setup_report["private_readers"][role] = {
+                    "path": str(tool), "sha256": hashlib.sha256(tool.read_bytes()).hexdigest(),
+                    "bytes": tool.stat().st_size,
+                    "version_command": len(self.setup_report["commands"])}
+            sys.path.insert(0, str(self.audit.parent))
+            try:
+                from SetupGuidSymbols import GUID_RENAMES
+            finally:
+                sys.path.pop(0)
+            self.setup_guid_renames = GUID_RENAMES
+            self.write_setup_report()
+        else:
+            # This runs only in the existing Windows GitHub toolchain jobs, before
+            # the main ExternalProject has extracted its source. Download the same
+            # content-addressed release here; never substitute the host LLVM header.
+            archive_path = self.root / "llvm-project-20.1.8.src.tar.xz"
+            digest = hashlib.sha256()
+            downloaded = 0
+            started = time.monotonic()
+            with urllib.request.urlopen(archive_url, timeout=min(30, self.check_setup_budget())) as response:
+                self.assertEqual(response.status, 200)
+                with archive_path.open("wb") as output:
+                    while chunk := response.read(1024 * 1024):
+                        self.check_setup_budget()
+                        downloaded += len(chunk)
+                        self.assertLessEqual(downloaded, archive_size)
+                        self.assertLess(time.monotonic() - started, 300,
+                                        "Pinned source download exceeded five minutes")
+                        digest.update(chunk)
+                        output.write(chunk)
+            self.check_setup_budget()
+            self.assertEqual(downloaded, archive_size)
+            self.assertEqual(digest.hexdigest(), archive_sha)
+            self.setup_report["source_archive"] = {
+                "url": archive_url, "bytes": downloaded, "sha256": digest.hexdigest()}
+            self.write_setup_report()
+            print(f"SETUP source archive: url={archive_url} bytes={downloaded} "
+                  f"sha256={digest.hexdigest()} pin_file_sha256="
+                  f"{hashlib.sha256(pin.read_bytes()).hexdigest()}", flush=True)
 
-        headers = []
-        self.check_setup_budget()
-        with tarfile.open(archive_path, mode="r|xz") as archive:
-            for member in archive:
-                self.check_setup_budget()
-                if member.name != member_name:
-                    continue
-                self.assertTrue(member.isfile(), member.name)
-                self.assertEqual(member.size, header_size)
-                with archive.extractfile(member) as source:
-                    headers.append(source.read(header_size + 1))
-        self.check_setup_budget()
-        self.assertEqual(len(headers), 1, "Expected one exact release header member")
-        header_bytes = headers[0]
+            headers = []
+            self.check_setup_budget()
+            with tarfile.open(archive_path, mode="r|xz") as archive:
+                for member in archive:
+                    self.check_setup_budget()
+                    if member.name != member_name:
+                        continue
+                    self.assertTrue(member.isfile(), member.name)
+                    self.assertEqual(member.size, header_size)
+                    with archive.extractfile(member) as source:
+                        headers.append(source.read(header_size + 1))
+            self.check_setup_budget()
+            self.assertEqual(len(headers), 1, "Expected one exact release header member")
+            header_bytes = headers[0]
         self.assertEqual(len(header_bytes), header_size)
         self.assertEqual(hashlib.sha256(header_bytes).hexdigest(), header_sha)
         self.setup_report["pinned_header"] = {
@@ -1337,6 +1607,7 @@ extern "C" HRESULT neverc_cpp_setup_smart_pointer_shapes(
             "_GUID_26aab78c_4a60_49d6_af3b_3c35bc93365d",
             "_GUID_42b21b78_6192_463e_87bf_d577838f1d5c",
         }
+        self.setup_guid_names = expected_guids
         provenance = {}
         for msvc in (False, True):
             compiler = "msvc" if msvc else "clang"
@@ -1348,7 +1619,7 @@ extern "C" HRESULT neverc_cpp_setup_smart_pointer_shapes(
                     directory.mkdir(parents=True)
                     source = directory / "setup.cpp"
                     obj = directory / "setup.obj"
-                    source.write_text(common + body, encoding="utf-8")
+                    source.write_text(common + ENTRY + body, encoding="utf-8")
                     if msvc:
                         command = [
                             self.msvc, "/nologo", "/Bv", "/std:c++17", "/c",
@@ -1433,16 +1704,24 @@ extern "C" HRESULT neverc_cpp_setup_smart_pointer_shapes(
                           f"object={obj}\n{sections}", end="", flush=True)
                     self.setup_report["object_probes"].append(compiler + "/" + unit)
                     self.write_setup_report()
+                    if self.setup_contract:
+                        probe_archive = directory / "probe.lib"
+                        self.require_success([self.librarian, "/nologo",
+                                              "/out:" + str(probe_archive), obj])
+                        self.setup_rewrite_archive(probe_archive, compiler, unit)
         self.assertEqual(set(self.setup_report["object_probes"]), {
             compiler + "/" + unit for compiler in ("clang", "msvc")
             for unit in ("explicit-values", "smart-pointers")})
         self.run_setup_runtime_witness(common, include_root)
+        if self.setup_contract:
+            self.run_setup_closure_edges(common, values, include_root)
         self.check_setup_budget()
         self.setup_report["setup_elapsed_seconds"] = time.monotonic() - self.setup_started
         self.setup_report["setup_status"] = "passed"
         self.write_setup_report()
-        print("SETUP linked/runtime witness passed; no production isolation change, "
-              "COM activation, VS discovery, or production LTO equivalence was tested.",
+        print("SETUP " + ("isolation contract and " if self.setup_contract else "") +
+              "SDK runtime witness passed; "
+              "COM activation, VS discovery, and production LTO equivalence remain untested.",
               flush=True)
 
     def test_sdk_url_history_clsids_and_alias_are_isolated(self):
@@ -2647,41 +2926,897 @@ int main() {
                         error="private/host symbol intersection: " + name)
 
 
+REPORT_FILE_LIMIT = 8 * 1024 * 1024
+REPORT_TOTAL_LIMIT = 32 * 1024 * 1024
+REPORT_COUNT_LIMIT = 512
+REPORT_METADATA_RESERVE = 1024 * 1024
+REPORT_SCHEMA = 2
+REWRITE_SCHEMA = "neverc.setup-coff-rewrite.v2"
+SETUP_COMPILERS = ("clang", "msvc")
+SETUP_VARIANTS = ("baseline", "isolated")
+SETUP_ORDERS = ("host-first", "private-first")
+SETUP_MODES = {"normal": (0, "ok"), "address": (41, "copied_iid_value"),
+               "wrong-helper": (42, "returned_interface"), "no-addref": (43, "qi_addref")}
+SETUP_REWRITE_CASES = ("explicit-values", "smart-pointers", "runtime")
+SETUP_EDGE_ACCEPT = ("d-only", "definition-first", "reference-first", "duplicate-definition")
+SETUP_EDGE_REJECT = ("u-only", "missing-d", "old-u", "private-u", "host-fallback",
+                     "host-fallback-coff-index")
+SETUP_MAP_FILES = {f"{compiler}-{variant}-{order}.map.txt"
+                   for compiler in SETUP_COMPILERS for variant in SETUP_VARIANTS
+                   for order in SETUP_ORDERS}
+SETUP_PROOF_FILES = {f"setup-rewrite-{compiler}-{case}.txt"
+                     for compiler in SETUP_COMPILERS for case in SETUP_REWRITE_CASES}
+SETUP_EDGE_FILES = ({f"setup-closure-{compiler}-{case}.txt"
+                    for compiler in SETUP_COMPILERS for case in SETUP_EDGE_ACCEPT}
+                   | {f"setup-negative-{compiler}-{case}.txt"
+                      for compiler in SETUP_COMPILERS for case in ("u-only", "missing-d")})
+SETUP_FIXED_FILES = ({"manifest.json", "production-stage.txt", "production-rewrite.txt",
+                      "production-audit.txt", "production-members.txt"}
+                     | SETUP_MAP_FILES | SETUP_PROOF_FILES | SETUP_EDGE_FILES)
+
+
+def report_identity(target):
+    return {"source_sha": os.environ.get("GITHUB_SHA", ""),
+            "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+            "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+            "target": target}
+
+
+def report_require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def report_sha256(value):
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def report_text(path):
+    report_require(not path.is_symlink() and path.is_file(),
+                   "Setup evidence is not a regular file: " + path.name)
+    size = path.stat().st_size
+    report_require(size <= REPORT_FILE_LIMIT, "Setup evidence file exceeds its byte limit: " + path.name)
+    with path.open("rb") as stream:
+        data = stream.read(REPORT_FILE_LIMIT + 1)
+    report_require(len(data) == size and len(data) <= REPORT_FILE_LIMIT,
+                   "Setup evidence changed or exceeded its byte limit: " + path.name)
+    data.decode("utf-8", errors="strict")
+    report_require(b"\0" not in data, "NUL in Setup text evidence: " + path.name)
+    return data
+
+
+def validate_rewrite_proof(proof, target):
+    report_require(isinstance(proof, dict) and proof.get("schema") == REWRITE_SCHEMA
+                   and proof.get("status") == "passed" and proof.get("published") is True,
+                   "Missing completed v2 rewrite proof")
+    before, after = proof["input"], proof["output"]
+    for record in (before, after):
+        report_require(isinstance(record, dict) and report_sha256(record.get("sha256"))
+                       and type(record.get("size")) is int and record["size"] > 0
+                       and isinstance(record.get("path"), str) and bool(record["path"]),
+                       "Invalid rewrite input/output identity")
+    byte_proof = proof["byte_proof"]
+    report_require(isinstance(byte_proof, dict) and byte_proof.get("status") == "passed"
+                   and byte_proof.get("compared_bytes") == before["size"] == after["size"],
+                   "Missing complete rewrite byte proof")
+    report_require(proof.get("machine") == ("AMD64" if target.startswith("x86_64-") else "ARM64"),
+                   "Rewrite machine does not match the native runner")
+    readers = proof["tools"]
+    report_require(isinstance(readers, dict) and set(readers) == {"nm", "readobj"},
+                   "Rewrite must use exactly the two private readers")
+    for reader in readers.values():
+        report_require(isinstance(reader, dict) and report_sha256(reader.get("sha256"))
+                       and isinstance(reader.get("version"), str)
+                       and re.search(r"\bLLVM version 20\.1\.8(?:\s|$)", reader["version"]),
+                       "Rewrite reader is not the pinned LLVM 20.1.8")
+
+
+def validate_setup_contract(files):
+    def text_file(name):
+        report_require(name in files, "Missing Setup evidence file: " + name)
+        return files[name].decode("utf-8")
+
+    def json_file(name):
+        value = json.loads(text_file(name))
+        report_require(isinstance(value, dict), "Expected an object in " + name)
+        return value
+
+    target = {"X64": "x86_64-pc-windows-msvc", "ARM64": "aarch64-pc-windows-msvc"}.get(
+        os.environ.get("RUNNER_ARCH", "").upper())
+    report_require(target is not None, "Unsupported or missing native RUNNER_ARCH")
+    report = json_file("manifest.json")
+    for key, value in report_identity(target).items():
+        report_require(bool(value) and report.get(key) == value, "Setup report identity mismatch: " + key)
+    report_require(report.get("schema") == REPORT_SCHEMA and report.get("mode") == "setup-contract"
+                   and report.get("status") == "passed" and report.get("setup_status") == "passed"
+                   and report.get("verified_checkout") == report["source_sha"],
+                   "Setup contract did not complete successfully")
+    suite = report["suite"]
+    report_require(isinstance(suite, dict) and
+                   tuple(suite.get(key) for key in ("tests_run", "failures", "errors", "skipped")) == (1, 0, 0, 0),
+                   "Expected exactly one complete Setup contract test")
+    commands = report["commands"]
+    report_require(isinstance(commands, list) and bool(commands), "Missing Setup commands")
+    required_files = set(SETUP_FIXED_FILES)
+    for index, command in enumerate(commands, 1):
+        report_require(isinstance(command, dict) and command.get("status") == "completed"
+                       and type(command.get("returncode")) is int
+                       and isinstance(command.get("argv"), list) and bool(command["argv"])
+                       and all(isinstance(value, str) for value in command["argv"]),
+                       "Incomplete Setup command: " + str(index))
+        for stream in ("stdout", "stderr"):
+            name = f"command-{index:03d}.{stream}.txt"
+            report_require(command.get(stream) == name and name in files,
+                           "Missing or mismatched Setup command output: " + name)
+            required_files.add(name)
+
+    def command_at(index):
+        report_require(type(index) is int and 1 <= index <= len(commands), "Invalid Setup command index")
+        return commands[index - 1]
+
+    def audit_command(index, *, diagnostic=None, no_host=False):
+        command = command_at(index)
+        report_require(any(Path(value).name == "AuditArchive.py" for value in command["argv"]),
+                       "Setup audit evidence references the wrong command")
+        if no_host:
+            report_require("--host-lib-dir" not in command["argv"], "Private closure audit borrowed a host")
+        output = text_file(command["stdout"]) + text_file(command["stderr"])
+        if diagnostic is None:
+            report_require(command["returncode"] == 0
+                           and "defined and undefined symbols use the private LLVM ABI" in output,
+                           "Missing successful private closure audit")
+        else:
+            report_require(command["returncode"] != 0 and diagnostic in output,
+                           "Missing expected private closure rejection")
+
+    runtime = report["runtime_cases"]
+    report_require(isinstance(runtime, list) and len(runtime) == 32
+                   and all(isinstance(case, dict) and case.get("status") == "passed" for case in runtime),
+                   "Missing Setup runtime cases")
+    expected = {(compiler, variant, order, mode) for compiler in SETUP_COMPILERS
+                for variant in SETUP_VARIANTS for order in SETUP_ORDERS for mode in SETUP_MODES}
+    actual = {(case["compiler"], case["variant"], case["order"], case["mode"]) for case in runtime}
+    report_require(actual == expected, "Setup runtime matrix is incomplete")
+    runtime_commands = set()
+    for case in runtime:
+        code, reason = SETUP_MODES[case["mode"]]
+        command = command_at(case["command"])
+        report_require(case["command"] not in runtime_commands, "Setup runtime command was reused")
+        runtime_commands.add(case["command"])
+        report_require(case.get("expected_code") == code and case.get("returncode") == code
+                       and command["returncode"] == code and len(command["argv"]) == 2
+                       and command["argv"][-1] == case["mode"]
+                       and Path(command["argv"][0]).name == f"{case['variant']}-{case['order']}.exe"
+                       and Path(command["argv"][0]).parent.name == case["compiler"],
+                       "Setup runtime mode or full return code differs from its evidence")
+        events = [json.loads(line) for line in text_file(command["stdout"]).splitlines() if line]
+        report_require(bool(events) and events == case.get("events")
+                       and all(isinstance(event, dict) for event in events)
+                       and events[-1] == {"event": "final", "check_code": code, "reason": reason},
+                       "Setup runtime stdout differs from its recorded events")
+        guid_events = [event for event in events if event.get("event") == "guid"]
+        report_require(len(guid_events) == 5 and
+                       (case["variant"] != "isolated" or
+                        all(event.get("same_address") == 0 for event in guid_events)),
+                       "Missing or shared private Setup GUID runtime evidence")
+        if case["mode"] == "normal":
+            counts = {"guid": 5, "qi": 16, "canonical": 16, "copied_iid": 4,
+                      "unsupported_iid": 1, "null_output": 1, "qi_coverage": 1,
+                      "methods": 6, "provider_iids": 6, "lifecycle": 6, "coverage": 1, "final": 1}
+            report_require(len(events) == 64 and
+                           {name: sum(event.get("event") == name for event in events) for name in counts} == counts,
+                           "Setup normal runtime event coverage is incomplete")
+        else:
+            report_require([event for event in events if event.get("event") == "negative_control"] ==
+                           [{"event": "negative_control", "check_code": code, "reason": reason}],
+                           "Setup negative control lacks its exact marker")
+    for name in SETUP_MAP_FILES:
+        report_require(bool(text_file(name).strip()), "Empty Setup link map: " + name)
+
+    closures = report["closure_cases"]
+    report_require(isinstance(closures, list) and len(closures) == 6
+                   and all(isinstance(case, dict) and case.get("status") == "passed" for case in closures),
+                   "Missing real-object rewrite cases")
+    report_require({(case["compiler"], case["case"]) for case in closures}
+                   == {(compiler, case) for compiler in SETUP_COMPILERS for case in SETUP_REWRITE_CASES},
+                   "Real-object rewrite identities are incomplete")
+    for case in closures:
+        name = f"setup-rewrite-{case['compiler']}-{case['case']}.txt"
+        report_require(case.get("report") == name, "Wrong real-object rewrite report name")
+        proof = json_file(name)
+        validate_rewrite_proof(proof, target)
+        report_require(proof == case.get("proof")
+                       and case.get("original_sha256") == proof["input"]["sha256"]
+                       and case.get("changed_sha256") == proof["output"]["sha256"],
+                       "Real-object rewrite report or archive digest differs from its record")
+        audit_command(case["original_rejected_command"], diagnostic="unisolated Setup GUID", no_host=True)
+        audit_command(case["changed_accepted_command"], no_host=True)
+
+    edges = report["closure_edges"]
+    report_require(isinstance(edges, list) and len(edges) == 20
+                   and all(isinstance(case, dict) and case.get("status") == "passed" for case in edges),
+                   "Missing Setup definition/reference closure cases")
+    report_require({(case["compiler"], case["case"]) for case in edges}
+                   == {(compiler, case) for compiler in SETUP_COMPILERS
+                       for case in (*SETUP_EDGE_ACCEPT, *SETUP_EDGE_REJECT)},
+                   "Setup definition/reference closure identities are incomplete")
+    edge_commands = set()
+    for case in edges:
+        accepted = case["case"] in SETUP_EDGE_ACCEPT
+        report_require(case.get("expectation") == ("accept" if accepted else "reject"),
+                       "Incorrect Setup closure expectation")
+        command = command_at(case["command"])
+        report_require(case["command"] not in edge_commands, "Setup closure command was reused")
+        edge_commands.add(case["command"])
+        if accepted or case["case"] in ("u-only", "missing-d"):
+            prefix = "setup-closure" if accepted else "setup-negative"
+            name = f"{prefix}-{case['compiler']}-{case['case']}.txt"
+            report_require(case.get("report") == name
+                           and any(Path(value).name == "RewriteSetupCoffSymbols.py" for value in command["argv"]),
+                           "Setup closure references the wrong writer report or command")
+            proof = json_file(name)
+            report_require(proof == case.get("proof"), "Setup closure writer report differs from its record")
+            if accepted:
+                validate_rewrite_proof(proof, target)
+                report_require(command["returncode"] == 0, "Accepted Setup rewrite command failed")
+                audit_command(case["no_host_command"], no_host=True)
+            else:
+                diagnostic = case.get("negative_error")
+                report_require(command["returncode"] != 0 and proof.get("schema") == REWRITE_SCHEMA
+                               and proof.get("status") == "failed" and proof.get("published") is False
+                               and isinstance(diagnostic, str) and bool(diagnostic)
+                               and proof.get("error") == diagnostic
+                               and "missing original Setup GUID data definition" in diagnostic,
+                               "Missing expected unclosed Setup writer rejection")
+        else:
+            diagnostic = "unisolated Setup GUID" if case["case"] == "old-u" else "unresolved private dependency"
+            report_require(case.get("negative_error") == diagnostic, "Incorrect Setup audit diagnostic")
+            if case["case"].startswith("host-fallback"):
+                arguments = command["argv"]
+                for option in ("--host-lib-dir", "--host-format"):
+                    report_require(arguments.count(option) == 1
+                                   and arguments.index(option) + 1 < len(arguments)
+                                   and bool(arguments[arguments.index(option) + 1]),
+                                   "Missing explicit Setup host fallback argument: " + option)
+                expected_format = "coff-index" if case["case"].endswith("coff-index") else "nm"
+                report_require(arguments[arguments.index("--host-format") + 1] == expected_format,
+                               "Setup host fallback reader format differs from its case")
+            audit_command(case["command"], diagnostic=diagnostic,
+                          no_host=case["case"] in ("old-u", "private-u"))
+
+    stage = json_file("production-stage.txt")
+    proof = json_file("production-rewrite.txt")
+    validate_rewrite_proof(proof, target)
+    report_require(stage.get("phase") == "published" and stage.get("stage") == "publish"
+                   and stage.get("result") == "0", "Production archive was not successfully published")
+    report_require(stage.get("input_sha256") == proof["input"]["sha256"]
+                   and stage.get("output_sha256") == proof["output"]["sha256"],
+                   "Production stage/rewrite digest mismatch")
+    report_require("defined and undefined symbols use the private LLVM ABI" in text_file("production-audit.txt"),
+                   "Missing successful production no-host audit output")
+    member_count = proof.get("member_count")
+    report_require(type(member_count) is int and member_count > 0 and
+        (f"Builtin C++ frontend: checked {member_count} object members; "
+         "excluded implementation members are absent") in text_file("production-members.txt").splitlines(),
+        "Production archive-member inspection/count differs from the byte proof")
+    report_require(set(files) == required_files, "Unexpected or incomplete Setup evidence file inventory")
+
+
+def setup_upload_ready(ready):
+    output = os.environ.get("GITHUB_OUTPUT")
+    if output:
+        with open(output, "a", encoding="utf-8") as stream:
+            stream.write("upload_ready=" + ("true" if ready else "false") + "\n")
+
+
+def verify_setup_contract_report(directory):
+    # Export only bounded, validated text snapshots. A failed validation still
+    # gets a fresh failure artifact; an unknown upload directory is never used.
+    setup_upload_ready(False)
+    failures, files, inventory = [], {}, []
+    upload = directory / "upload"
+    try:
+        report_require(not directory.is_symlink() and directory.is_dir(),
+                       "Missing or unsafe Setup evidence directory")
+        report_require(not upload.exists() and not upload.is_symlink(),
+                       "Setup upload directory already exists; refusing to overwrite or upload it")
+        paths = []
+        for path in directory.iterdir():
+            if len(paths) >= REPORT_COUNT_LIMIT - 2:
+                failures.append("Too many Setup evidence files")
+                break
+            paths.append(path)
+        total = 0
+        for path in sorted(paths):
+            try:
+                # An old index is checked like every other source file, but
+                # never reused as the new export's verification result.
+                allowed = (path.name in SETUP_FIXED_FILES or path.name == "evidence-index.txt"
+                           or re.fullmatch(r"command-[0-9]{3}\.(stdout|stderr)\.txt", path.name))
+                report_require(allowed, "Unexpected Setup evidence file: " + path.name)
+                data = report_text(path)
+                report_require(total + len(data) <= REPORT_TOTAL_LIMIT - REPORT_METADATA_RESERVE,
+                               "Setup evidence exceeds its total byte limit")
+                total += len(data)
+                if path.name == "evidence-index.txt":
+                    continue
+                files[path.name] = data
+                inventory.append({"file": path.name, "bytes": len(data),
+                                  "sha256": hashlib.sha256(data).hexdigest()})
+            except (OSError, ValueError) as error:
+                if len(failures) < 32:
+                    failures.append(str(error)[:1024])
+        try:
+            validate_setup_contract(files)
+        except (OSError, ValueError, KeyError, TypeError, IndexError) as error:
+            failures.append(str(error)[:1024])
+        status = "failed" if failures else "passed"
+        # A numeric filename alone is not proof that a process produced it.
+        # Keep only streams declared by the manifest's sequential records,
+        # including started records whose partial output helps diagnose failure.
+        declared_streams = set()
+        try:
+            source_report = json.loads(files.get("manifest.json", b"{}"))
+            source_commands = source_report.get("commands", []) if isinstance(source_report, dict) else []
+            if isinstance(source_commands, list):
+                for index, command in enumerate(source_commands, 1):
+                    if not isinstance(command, dict):
+                        continue
+                    for stream in ("stdout", "stderr"):
+                        name = f"command-{index:03d}.{stream}.txt"
+                        if command.get(stream) == name:
+                            declared_streams.add(name)
+        except (ValueError, TypeError):
+            pass
+        payloads = {name: data for name, data in files.items()
+                    if not name.startswith("command-") or name in declared_streams}
+        if failures:
+            # Preserve the original manifest in the source directory. The
+            # exported manifest must never suggest that incomplete evidence passed.
+            source_manifest_file = None
+            if "manifest.json" in files:
+                source_manifest_file = "source-manifest.txt"
+                payloads[source_manifest_file] = files["manifest.json"]
+            payloads["manifest.json"] = (json.dumps({
+                "schema": REPORT_SCHEMA, "mode": "setup-contract", "status": "failed",
+                "setup_status": "evidence-validation-failed", "failures": failures,
+                **report_identity({"X64": "x86_64-pc-windows-msvc", "ARM64": "aarch64-pc-windows-msvc"}.get(
+                    os.environ.get("RUNNER_ARCH", "").upper(), "unknown")),
+                "source_manifest_file": source_manifest_file,
+                "source_manifest": next((item for item in inventory if item["file"] == "manifest.json"), None),
+            }, indent=2) + "\n").encode("utf-8")
+        exported = [{"file": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+                    for name, data in sorted(payloads.items())]
+        payloads["evidence-index.txt"] = (json.dumps({
+            "status": status, "failures": failures, "source_files": inventory, "files": exported,
+        }, indent=2) + "\n").encode("utf-8")
+        report_require(len(payloads) <= REPORT_COUNT_LIMIT
+                       and all(len(data) <= REPORT_FILE_LIMIT for data in payloads.values())
+                       and sum(map(len, payloads.values())) <= REPORT_TOTAL_LIMIT,
+                       "Setup export metadata exceeds its byte limit")
+        upload.mkdir(exist_ok=False)
+        for name, data in sorted(payloads.items()):
+            with (upload / name).open("xb") as stream:
+                stream.write(data)
+        setup_upload_ready(True)
+    except (OSError, ValueError) as error:
+        failures.append(str(error)[:1024])
+    print("Setup contract evidence: " + ("failed" if failures else "passed") +
+          (": " + "; ".join(failures) if failures else ""), flush=True)
+    return 1 if failures else 0
+
+
+class SetupContractReportTests(unittest.TestCase):
+    # These are report fixtures, not generated compiler evidence. Keep their
+    # expected identities and event layout independent of validator constants.
+    RUNTIME_ROWS = """
+clang baseline host-first normal 0 ok
+clang baseline host-first address 41 copied_iid_value
+clang baseline host-first wrong-helper 42 returned_interface
+clang baseline host-first no-addref 43 qi_addref
+clang baseline private-first normal 0 ok
+clang baseline private-first address 41 copied_iid_value
+clang baseline private-first wrong-helper 42 returned_interface
+clang baseline private-first no-addref 43 qi_addref
+clang isolated host-first normal 0 ok
+clang isolated host-first address 41 copied_iid_value
+clang isolated host-first wrong-helper 42 returned_interface
+clang isolated host-first no-addref 43 qi_addref
+clang isolated private-first normal 0 ok
+clang isolated private-first address 41 copied_iid_value
+clang isolated private-first wrong-helper 42 returned_interface
+clang isolated private-first no-addref 43 qi_addref
+msvc baseline host-first normal 0 ok
+msvc baseline host-first address 41 copied_iid_value
+msvc baseline host-first wrong-helper 42 returned_interface
+msvc baseline host-first no-addref 43 qi_addref
+msvc baseline private-first normal 0 ok
+msvc baseline private-first address 41 copied_iid_value
+msvc baseline private-first wrong-helper 42 returned_interface
+msvc baseline private-first no-addref 43 qi_addref
+msvc isolated host-first normal 0 ok
+msvc isolated host-first address 41 copied_iid_value
+msvc isolated host-first wrong-helper 42 returned_interface
+msvc isolated host-first no-addref 43 qi_addref
+msvc isolated private-first normal 0 ok
+msvc isolated private-first address 41 copied_iid_value
+msvc isolated private-first wrong-helper 42 returned_interface
+msvc isolated private-first no-addref 43 qi_addref
+""".strip().splitlines()
+    NORMAL_EVENT_NAMES = """
+guid guid guid guid guid
+qi qi qi qi qi qi qi qi qi qi qi qi qi qi qi qi
+canonical canonical canonical canonical canonical canonical canonical canonical
+canonical canonical canonical canonical canonical canonical canonical canonical
+copied_iid copied_iid copied_iid copied_iid unsupported_iid null_output qi_coverage
+methods methods methods methods methods methods
+provider_iids provider_iids provider_iids provider_iids provider_iids provider_iids
+lifecycle lifecycle lifecycle lifecycle lifecycle lifecycle coverage final
+""".split()
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="neverc-report-fixture-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.output = self.root / "step-output.txt"
+        self.case_number = 0
+        environment = mock.patch.dict(os.environ, {
+            "GITHUB_SHA": "0123456789abcdef0123456789abcdef01234567",
+            "GITHUB_RUN_ID": "987654321", "GITHUB_RUN_ATTEMPT": "2", "RUNNER_ARCH": "X64",
+            "GITHUB_OUTPUT": str(self.output),
+        }, clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
+        # An accidental compiler, Git or network dependency must fail here,
+        # rather than acquiring a runner toolchain for these pure fixtures.
+        for owner, name in ((subprocess, "run"), (subprocess, "Popen"), (urllib.request, "urlopen")):
+            guard = mock.patch.object(owner, name, side_effect=AssertionError("Report fixtures must not invoke tools or network"))
+            guard.start()
+            self.addCleanup(guard.stop)
+
+    @staticmethod
+    def json_bytes(value):
+        return (json.dumps(value, indent=2) + "\n").encode("utf-8")
+
+    @staticmethod
+    def proof():
+        return {
+            "schema": "neverc.setup-coff-rewrite.v2", "status": "passed", "published": True,
+            "input": {"path": "/fixture/original.lib", "sha256": "1" * 64, "size": 128},
+            "output": {"path": "/fixture/isolated.lib", "sha256": "2" * 64, "size": 128},
+            "machine": "AMD64", "member_count": 2,
+            "byte_proof": {"status": "passed", "compared_bytes": 128,
+                           "patch_intervals": 1, "changed_bytes": 42},
+            "tools": {
+                "nm": {"path": "/private/llvm-nm.exe", "sha256": "3" * 64, "version": "LLVM version 20.1.8"},
+                "readobj": {"path": "/private/llvm-readobj.exe", "sha256": "4" * 64, "version": "LLVM version 20.1.8"},
+            },
+        }
+
+    def fixture(self):
+        files = {}
+        report = {
+            "schema": 2, "mode": "setup-contract", "status": "passed", "setup_status": "passed",
+            "source_sha": "0123456789abcdef0123456789abcdef01234567",
+            "verified_checkout": "0123456789abcdef0123456789abcdef01234567",
+            "run_id": "987654321", "run_attempt": "2", "target": "x86_64-pc-windows-msvc",
+            "suite": {"tests_run": 1, "failures": 0, "errors": 0, "skipped": 0},
+            "commands": [], "runtime_cases": [], "closure_cases": [], "closure_edges": [],
+        }
+
+        def command(arguments, code=0, stdout=""):
+            index = len(report["commands"]) + 1
+            out, err = f"command-{index:03d}.stdout.txt", f"command-{index:03d}.stderr.txt"
+            report["commands"].append({"argv": arguments, "status": "completed", "returncode": code,
+                                       "stdout": out, "stderr": err})
+            files[out], files[err] = stdout.encode("utf-8"), b""
+            return index
+
+        def audit(diagnostic=None, host_format=None):
+            arguments = ["python", "/fixture/AuditArchive.py", "--archive", "/fixture/private.lib"]
+            if host_format is not None:
+                arguments += ["--host-lib-dir", "/fixture/host", "--host-format", host_format]
+            output = diagnostic or "defined and undefined symbols use the private LLVM ABI"
+            return command(arguments, 1 if diagnostic else 0, output + "\n")
+
+        self.assertEqual(len(self.RUNTIME_ROWS), 32)
+        self.assertEqual(len(self.NORMAL_EVENT_NAMES), 64)
+        for row in self.RUNTIME_ROWS:
+            compiler, variant, order, mode, code, reason = row.split()
+            code = int(code)
+            if mode == "normal":
+                events = [{"event": name} for name in self.NORMAL_EVENT_NAMES]
+            else:
+                events = [{"event": "guid"} for _ in range(5)]
+                events += [{"event": "negative_control", "check_code": code, "reason": reason}, {"event": "final"}]
+            for event in events:
+                if event["event"] == "guid":
+                    event["same_address"] = 0 if variant == "isolated" else 1
+            events[-1] = {"event": "final", "check_code": code, "reason": reason}
+            stdout = "".join(json.dumps(event) + "\n" for event in events)
+            index = command([f"/fixture/{compiler}/{variant}-{order}.exe", mode], code, stdout)
+            report["runtime_cases"].append({
+                "compiler": compiler, "variant": variant, "order": order, "mode": mode,
+                "expected_code": code, "returncode": code, "status": "passed", "command": index, "events": events,
+            })
+            files[f"{compiler}-{variant}-{order}.map.txt"] = b"Fixture link map\n"
+        for compiler in ("clang", "msvc"):
+            for label in ("explicit-values", "smart-pointers", "runtime"):
+                name = f"setup-rewrite-{compiler}-{label}.txt"
+                proof = self.proof()
+                files[name] = self.json_bytes(proof)
+                report["closure_cases"].append({
+                    "compiler": compiler, "case": label, "status": "passed", "report": name, "proof": proof,
+                    "original_sha256": "1" * 64, "changed_sha256": "2" * 64,
+                    "original_rejected_command": audit("unisolated Setup GUID"),
+                    "changed_accepted_command": audit(),
+                })
+            for label in ("d-only", "definition-first", "reference-first", "duplicate-definition"):
+                name = f"setup-closure-{compiler}-{label}.txt"
+                proof = self.proof()
+                files[name] = self.json_bytes(proof)
+                report["closure_edges"].append({
+                    "compiler": compiler, "case": label, "status": "passed", "expectation": "accept",
+                    "report": name, "proof": proof,
+                    "command": command(["python", "/fixture/RewriteSetupCoffSymbols.py"]),
+                    "no_host_command": audit(),
+                })
+            for label in ("u-only", "missing-d"):
+                name = f"setup-negative-{compiler}-{label}.txt"
+                error = "missing original Setup GUID data definition"
+                proof = {"schema": "neverc.setup-coff-rewrite.v2", "status": "failed",
+                         "published": False, "error": error}
+                files[name] = self.json_bytes(proof)
+                report["closure_edges"].append({
+                    "compiler": compiler, "case": label, "status": "passed", "expectation": "reject",
+                    "report": name, "proof": proof, "negative_error": error,
+                    "command": command(["python", "/fixture/RewriteSetupCoffSymbols.py"], 1, error),
+                })
+            for label, diagnostic, host_format in (
+                    ("old-u", "unisolated Setup GUID", None),
+                    ("private-u", "unresolved private dependency", None),
+                    ("host-fallback", "unresolved private dependency", "nm"),
+                    ("host-fallback-coff-index", "unresolved private dependency", "coff-index")):
+                report["closure_edges"].append({
+                    "compiler": compiler, "case": label, "status": "passed", "expectation": "reject",
+                    "negative_error": diagnostic, "command": audit(diagnostic, host_format),
+                })
+        files["production-stage.txt"] = self.json_bytes({
+            "phase": "published", "stage": "publish", "result": "0",
+            "input_sha256": "1" * 64, "output_sha256": "2" * 64,
+        })
+        files["production-rewrite.txt"] = self.json_bytes(self.proof())
+        files["production-audit.txt"] = b"defined and undefined symbols use the private LLVM ABI\n"
+        files["production-members.txt"] = (
+            b"Builtin C++ frontend: checked 2 object members; excluded implementation members are absent\r\n")
+        files["manifest.json"] = self.json_bytes(report)
+        return files
+
+    def stage(self, files):
+        self.case_number += 1
+        directory = self.root / ("report-" + str(self.case_number))
+        directory.mkdir()
+        for name, data in files.items():
+            (directory / name).write_bytes(data)
+        self.output.write_text("", encoding="utf-8")
+        return directory
+
+    def exported(self, files, code):
+        directory = self.stage(files)
+        self.assertEqual(verify_setup_contract_report(directory), code)
+        self.assertEqual(self.output.read_text(encoding="utf-8").splitlines()[-1], "upload_ready=true")
+        upload = directory / "upload"
+        manifest = json.loads((upload / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["status"], "passed" if code == 0 else "failed")
+        index = json.loads((upload / "evidence-index.txt").read_text(encoding="utf-8"))
+        self.assertEqual(index["status"], manifest["status"])
+        for record in index["files"]:
+            data = (upload / record["file"]).read_bytes()
+            self.assertEqual(len(data), record["bytes"])
+            self.assertEqual(hashlib.sha256(data).hexdigest(), record["sha256"])
+        return directory, manifest
+
+    def test_complete_report_and_export(self):
+        files = self.fixture()
+        validate_setup_contract(files)
+        directory, _ = self.exported(files, 0)
+        self.assertEqual({path.name for path in (directory / "upload").iterdir()}, set(files) | {"evidence-index.txt"})
+        for name, data in files.items():
+            self.assertEqual((directory / name).read_bytes(), data)
+            self.assertEqual((directory / "upload" / name).read_bytes(), data)
+
+    def test_missing_or_empty_map_is_rejected(self):
+        for empty in (False, True):
+            with self.subTest(empty=empty):
+                files = self.fixture()
+                if empty:
+                    files["clang-isolated-host-first.map.txt"] = b""
+                else:
+                    del files["clang-isolated-host-first.map.txt"]
+                with self.assertRaisesRegex(ValueError, "map"):
+                    validate_setup_contract(files)
+
+    def test_truncated_or_inconsistent_rewrite_proof_is_rejected(self):
+        for truncated in (False, True):
+            with self.subTest(truncated=truncated):
+                files = self.fixture()
+                if truncated:
+                    files["setup-rewrite-msvc-runtime.txt"] = b'{"schema":'
+                else:
+                    proof = json.loads(files["setup-rewrite-msvc-runtime.txt"])
+                    proof["input"]["sha256"] = "a" * 64
+                    files["setup-rewrite-msvc-runtime.txt"] = self.json_bytes(proof)
+                with self.assertRaises(ValueError):
+                    validate_setup_contract(files)
+
+    def test_ci_identity_mismatches_are_rejected(self):
+        for key, value in (("source_sha", "b" * 40), ("run_id", "different-run"),
+                           ("run_attempt", "3"), ("target", "aarch64-pc-windows-msvc")):
+            with self.subTest(field=key):
+                files = self.fixture()
+                report = json.loads(files["manifest.json"])
+                report[key] = value
+                files["manifest.json"] = self.json_bytes(report)
+                with self.assertRaisesRegex(ValueError, "identity mismatch"):
+                    validate_setup_contract(files)
+        for arch in ("ARM64", "unknown", ""):
+            with self.subTest(runner_arch=arch), mock.patch.dict(os.environ, {"RUNNER_ARCH": arch}):
+                with self.assertRaises(ValueError):
+                    validate_setup_contract(self.fixture())
+
+    def test_unfinished_or_empty_commands_are_rejected(self):
+        for empty in (False, True):
+            with self.subTest(empty=empty):
+                files = self.fixture()
+                report = json.loads(files["manifest.json"])
+                if empty:
+                    report["commands"] = []
+                else:
+                    report["commands"][0]["status"] = "started"
+                files["manifest.json"] = self.json_bytes(report)
+                with self.assertRaisesRegex(ValueError, "command"):
+                    validate_setup_contract(files)
+
+    def test_runtime_stdout_or_full_exit_code_is_rejected(self):
+        for field in ("stdout", "returncode"):
+            with self.subTest(field=field):
+                files = self.fixture()
+                report = json.loads(files["manifest.json"])
+                command = report["commands"][1]
+                if field == "stdout":
+                    files[command["stdout"]] = b'{"event":"different"}\n'
+                else:
+                    command["returncode"] = 0xC0000029
+                    files["manifest.json"] = self.json_bytes(report)
+                with self.assertRaisesRegex(ValueError, "runtime"):
+                    validate_setup_contract(files)
+
+    def test_runtime_matrix_and_event_coverage_are_required(self):
+        for mutation in ("duplicate", "normal-event", "negative-marker"):
+            with self.subTest(mutation=mutation):
+                files = self.fixture()
+                report = json.loads(files["manifest.json"])
+                if mutation == "duplicate":
+                    report["runtime_cases"][-1] = report["runtime_cases"][0]
+                else:
+                    case = report["runtime_cases"][0 if mutation == "normal-event" else 1]
+                    name = "qi" if mutation == "normal-event" else "negative_control"
+                    index = next(index for index, event in enumerate(case["events"]) if event["event"] == name)
+                    del case["events"][index]
+                    output = report["commands"][case["command"] - 1]["stdout"]
+                    files[output] = "".join(json.dumps(event) + "\n" for event in case["events"]).encode("utf-8")
+                files["manifest.json"] = self.json_bytes(report)
+                with self.assertRaises(ValueError):
+                    validate_setup_contract(files)
+
+    def test_unknown_and_non_text_files_are_not_exported(self):
+        for name, data in (("sdk-source.txt", b"unknown source text"),
+                           ("fixture.cpp", b"int main() {}"),
+                           ("command-999.stdout.txt", b"unreferenced command text"),
+                           ("clang-isolated-host-first.map.txt", b"bad\0text"),
+                           ("clang-isolated-host-first.map.txt", b"bad\xfftext")):
+            with self.subTest(name=name, data=data):
+                files = self.fixture()
+                files[name] = data
+                directory, _ = self.exported(files, 1)
+                self.assertFalse((directory / "upload" / name).exists())
+                self.assertEqual((directory / name).read_bytes(), data)
+
+    def test_symlink_sources_and_root_are_rejected(self):
+        # Mock only the filesystem's symlink predicate so this contract does
+        # not depend on Windows symlink creation privileges. Real bytes and
+        # directories still exercise the complete verifier/export path.
+        for kind in ("root", "index", "upload"):
+            with self.subTest(kind=kind):
+                directory = self.stage(self.fixture())
+                unsafe = (directory if kind == "root" else
+                          directory / ("upload" if kind == "upload" else "evidence-index.txt"))
+                if kind == "index":
+                    unsafe.write_bytes(b"original index target")
+                original = Path.is_symlink
+                with mock.patch.object(Path, "is_symlink", lambda path: path == unsafe or original(path)):
+                    self.assertEqual(verify_setup_contract_report(directory), 1)
+                output = self.output.read_text(encoding="utf-8").splitlines()
+                if kind != "index":
+                    self.assertEqual(output[-1], "upload_ready=false")
+                    self.assertFalse((directory / "upload").exists())
+                else:
+                    self.assertEqual(output[-1], "upload_ready=true")
+                    self.assertEqual(unsafe.read_bytes(), b"original index target")
+                    index = json.loads((directory / "upload/evidence-index.txt").read_text(encoding="utf-8"))
+                    self.assertEqual(index["status"], "failed")
+
+    def test_file_byte_limit_excludes_oversized_evidence(self):
+        files = self.fixture()
+        name = "clang-isolated-host-first.map.txt"
+        files[name] = b"x" * (8 * 1024 * 1024 + 1)
+        directory, manifest = self.exported(files, 1)
+        self.assertTrue(any("byte limit" in error for error in manifest["failures"]))
+        self.assertFalse((directory / "upload" / name).exists())
+        self.assertEqual((directory / name).stat().st_size, 8 * 1024 * 1024 + 1)
+
+    def test_total_byte_limit_produces_a_bounded_failure_export(self):
+        files = self.fixture()
+        for name in ("clang-baseline-host-first.map.txt", "clang-baseline-private-first.map.txt",
+                     "clang-isolated-host-first.map.txt", "clang-isolated-private-first.map.txt",
+                     "msvc-baseline-host-first.map.txt"):
+            files[name] = b"x" * (7 * 1024 * 1024)
+        directory, manifest = self.exported(files, 1)
+        self.assertTrue(any("total byte limit" in error for error in manifest["failures"]))
+        self.assertLessEqual(sum(path.stat().st_size for path in (directory / "upload").iterdir()), 32 * 1024 * 1024)
+
+    def test_file_count_limit_is_enforced(self):
+        files = self.fixture()
+        for index in range(600, 1000):
+            files[f"command-{index}.stdout.txt"] = b""
+        directory, manifest = self.exported(files, 1)
+        self.assertIn("Too many Setup evidence files", manifest["failures"])
+        self.assertLessEqual(len(list((directory / "upload").iterdir())), 512)
+        self.assertEqual(len(list(directory.iterdir())), len(files) + 1)
+
+    def test_failure_export_preserves_source_manifest_bytes(self):
+        files = self.fixture()
+        report = json.loads(files["manifest.json"])
+        report["status"] = "failed"
+        report["suite"]["failures"] = 1
+        report["suite"]["failure_details"] = [{"test": "fixture", "traceback": "first line\nassertion details\n"}]
+        files["manifest.json"] = self.json_bytes(report)
+        directory, manifest = self.exported(files, 1)
+        self.assertEqual(manifest["source_manifest_file"], "source-manifest.txt")
+        self.assertEqual((directory / "upload/source-manifest.txt").read_bytes(), files["manifest.json"])
+        self.assertEqual((directory / "manifest.json").read_bytes(), files["manifest.json"])
+
+    def test_existing_upload_is_never_overwritten(self):
+        directory = self.stage(self.fixture())
+        upload = directory / "upload"
+        upload.mkdir()
+        (upload / "sentinel.txt").write_bytes(b"existing data")
+        self.assertEqual(verify_setup_contract_report(directory), 1)
+        self.assertEqual(self.output.read_text(encoding="utf-8").splitlines()[-1], "upload_ready=false")
+        self.assertEqual({path.name for path in upload.iterdir()}, {"sentinel.txt"})
+        self.assertEqual((upload / "sentinel.txt").read_bytes(), b"existing data")
+
+    def test_production_proof_stage_and_member_count_must_agree(self):
+        for field in ("schema", "published", "byte_proof", "stage", "hash", "member_count"):
+            with self.subTest(field=field):
+                files = self.fixture()
+                proof = json.loads(files["production-rewrite.txt"])
+                stage = json.loads(files["production-stage.txt"])
+                if field == "schema":
+                    proof["schema"] = "obsolete"
+                elif field == "published":
+                    proof["published"] = False
+                elif field == "byte_proof":
+                    proof["byte_proof"]["compared_bytes"] = 127
+                elif field == "stage":
+                    stage["phase"] = "started"
+                elif field == "hash":
+                    stage["output_sha256"] = "5" * 64
+                else:
+                    proof["member_count"] = 3
+                files["production-rewrite.txt"] = self.json_bytes(proof)
+                files["production-stage.txt"] = self.json_bytes(stage)
+                with self.assertRaises(ValueError):
+                    validate_setup_contract(files)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--llvm-root", type=Path, required=True)
-    parser.add_argument("--target", required=True, choices=(
+    parser.add_argument("--llvm-root", type=Path)
+    parser.add_argument("--target", choices=(
         "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"))
-    parser.add_argument("--report-dir", required=True, type=Path)
+    parser.add_argument("--report-dir", type=Path)
+    parser.add_argument("--report-self-tests", action="store_true")
+    parser.add_argument("--setup-contract", action="store_true")
+    parser.add_argument("--private-nm", type=Path)
+    parser.add_argument("--private-readobj", type=Path)
+    parser.add_argument("--pinned-setup-header", type=Path)
+    parser.add_argument("--pending-setup-contract-report-dir", type=Path)
+    parser.add_argument("--verify-setup-contract-report", action="store_true")
     arguments = parser.parse_args()
+    if arguments.report_self_tests:
+        if (arguments.report_dir or arguments.setup_contract or arguments.llvm_root or arguments.target
+                or arguments.private_nm or arguments.private_readobj or arguments.pinned_setup_header
+                or arguments.pending_setup_contract_report_dir or arguments.verify_setup_contract_report):
+            parser.error("Report self-tests accept no toolchain or report arguments")
+        program = unittest.main(argv=[sys.argv[0], "SetupContractReportTests"], verbosity=2, exit=False)
+        result = program.result
+        sys.exit(0 if result.testsRun > 0 and result.wasSuccessful() and not result.skipped else 1)
+    if arguments.report_dir is None:
+        parser.error("--report-dir is required unless --report-self-tests is selected")
+    if arguments.verify_setup_contract_report:
+        if (arguments.setup_contract or arguments.llvm_root or arguments.target
+                or arguments.private_nm or arguments.private_readobj or arguments.pinned_setup_header
+                or arguments.pending_setup_contract_report_dir):
+            parser.error("Evidence verification accepts only --report-dir")
+        sys.exit(verify_setup_contract_report(arguments.report_dir.absolute()))
+    if arguments.llvm_root is None or arguments.target is None:
+        parser.error("--llvm-root and --target are required to run toolchain tests")
+    if arguments.setup_contract and any(value is None for value in (
+            arguments.private_nm, arguments.private_readobj, arguments.pinned_setup_header)):
+        parser.error("Setup contract requires the private nm, readobj and pinned header")
+    if not arguments.setup_contract and any(value is not None for value in (
+            arguments.private_nm, arguments.private_readobj, arguments.pinned_setup_header)):
+        parser.error("Private reader arguments require --setup-contract")
+    if arguments.setup_contract and arguments.pending_setup_contract_report_dir:
+        parser.error("The post-build contract cannot create its own pending record")
+    identity = report_identity(arguments.target)
+    if arguments.pending_setup_contract_report_dir:
+        pending = arguments.pending_setup_contract_report_dir.resolve()
+        pending.mkdir(parents=True, exist_ok=False)
+        (pending / "manifest.json").write_text(json.dumps({
+            "schema": REPORT_SCHEMA, "mode": "setup-contract", "status": "not-started",
+            "setup_status": "not-started", **identity,
+            "reason": "Waiting for private LLVM readers and bundle build"}, indent=2) + "\n",
+            encoding="utf-8")
     CppFrontendToolchainTests.llvm_root = arguments.llvm_root.resolve()
     CppFrontendToolchainTests.target = arguments.target
-    CppFrontendToolchainTests.report_dir = arguments.report_dir.resolve()
-    CppFrontendToolchainTests.report_dir.mkdir(parents=True, exist_ok=False)
+    CppFrontendToolchainTests.setup_contract = arguments.setup_contract
+    CppFrontendToolchainTests.report_dir = arguments.report_dir.absolute()
+    if arguments.setup_contract:
+        report_require(not CppFrontendToolchainTests.report_dir.is_symlink(), "Unsafe pending Setup directory")
+        pending = json.loads(report_text(CppFrontendToolchainTests.report_dir / "manifest.json"))
+        if (not isinstance(pending, dict) or pending.get("schema") != REPORT_SCHEMA
+                or pending.get("status") != "not-started" or pending.get("mode") != "setup-contract"
+                or any(pending.get(key) != value or not value for key, value in identity.items())):
+            raise ValueError("Missing or mismatched pending Setup contract identity")
+        CppFrontendToolchainTests.private_nm = arguments.private_nm.resolve()
+        CppFrontendToolchainTests.private_readobj = arguments.private_readobj.resolve()
+        CppFrontendToolchainTests.pinned_setup_header = arguments.pinned_setup_header.resolve()
+    else:
+        CppFrontendToolchainTests.report_dir.mkdir(parents=True, exist_ok=False)
     CppFrontendToolchainTests.setup_report = {
-        "schema": 1, "status": "started", "setup_status": "not-started",
-        "source_sha": os.environ.get("GITHUB_SHA", ""),
-        "run_id": os.environ.get("GITHUB_RUN_ID", ""),
-        "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
-        "target": arguments.target, "headers": {}, "runtime_headers": {}, "tools": {},
-        "object_probes": [], "commands": [], "runtime_cases": [],
+        "schema": REPORT_SCHEMA, "mode": "setup-contract" if arguments.setup_contract else "baseline",
+        "status": "started", "setup_status": "not-started", **identity,
+        "headers": {}, "runtime_headers": {}, "tools": {},
+        "object_probes": [], "commands": [], "runtime_cases": [], "closure_cases": [], "closure_edges": [],
         "limits": {"setup_cooperative_seconds": 600, "command_seconds": 120,
-                   "runtime_seconds": 15, "workflow_step_minutes": 20},
+                   "runtime_seconds": 15, "report_file_bytes": REPORT_FILE_LIMIT,
+                   "report_total_bytes": REPORT_TOTAL_LIMIT, "report_files": REPORT_COUNT_LIMIT},
     }
     CppFrontendToolchainTests.write_setup_report()
-    program = unittest.main(argv=[sys.argv[0]], verbosity=2, exit=False)
-    result = program.result
     report = CppFrontendToolchainTests.setup_report
-    report["suite"] = {
-        "tests_run": result.testsRun, "failures": len(result.failures),
-        "errors": len(result.errors), "skipped": len(result.skipped),
-        "failure_details": [{"test": str(test), "traceback": details}
-                            for test, details in result.failures],
-        "error_details": [{"test": str(test), "traceback": details}
-                          for test, details in result.errors],
-    }
-    passed = (result.wasSuccessful() and not result.skipped
-              and report["setup_status"] == "passed")
-    report["status"] = "passed" if passed else "failed"
-    CppFrontendToolchainTests.write_setup_report()
+    passed = False
+    try:
+        selected = (["CppFrontendToolchainTests.test_setup_sdk_inputs_and_object_provenance"]
+                    if arguments.setup_contract else ["CppFrontendToolchainTests"])
+        program = unittest.main(argv=[sys.argv[0], *selected], verbosity=2, exit=False)
+        result = program.result
+        report["suite"] = {
+            "tests_run": result.testsRun, "failures": len(result.failures),
+            "errors": len(result.errors), "skipped": len(result.skipped),
+            "failure_details": [{"test": str(test), "traceback": details}
+                                for test, details in result.failures],
+            "error_details": [{"test": str(test), "traceback": details}
+                              for test, details in result.errors],
+        }
+        passed = (result.wasSuccessful() and not result.skipped
+                  and result.testsRun == (1 if arguments.setup_contract else 22)
+                  and report["setup_status"] == "passed")
+    except BaseException as error:
+        report["interrupted"] = {"type": type(error).__name__, "detail": str(error)}
+        raise
+    finally:
+        report["status"] = "passed" if passed else "failed"
+        CppFrontendToolchainTests.write_setup_report()
     sys.exit(0 if passed else 1)

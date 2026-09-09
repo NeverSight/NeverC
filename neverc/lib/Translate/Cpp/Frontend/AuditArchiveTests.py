@@ -13,6 +13,171 @@ from unittest import mock
 
 sys.dont_write_bytecode = True
 import AuditArchive
+import SetupGuidSymbols
+
+
+# Fixed witnesses copied from the c942 native SDK symbol reports, independent
+# of the production policy's template-name construction.
+SETUP_GUID_PAIRS = (
+    ("_GUID_00000000_0000_0000_c000_000000000046", "neverc_cpp0000000000000000c000000000000046"),
+    ("_GUID_177f0c4a_1cd3_4de7_a32c_71dbbb9fa36d", "neverc_cpp177f0c4a1cd34de7a32c71dbbb9fa36d"),
+    ("_GUID_42843719_db4c_46c2_8e7c_64f1816efd5b", "neverc_cpp42843719db4c46c28e7c64f1816efd5b"),
+    ("_GUID_26aab78c_4a60_49d6_af3b_3c35bc93365d", "neverc_cpp26aab78c4a6049d6af3b3c35bc93365d"),
+    ("_GUID_42b21b78_6192_463e_87bf_d577838f1d5c", "neverc_cpp42b21b786192463e87bfd577838f1d5c"),
+)
+SETUP_GET_IID = (
+    "?GetIID@?$_com_IIID@UISetupConfiguration@@$1?"
+    "_GUID_42843719_db4c_46c2_8e7c_64f1816efd5b@@3U__s_GUID@@B@@SAAEBU_GUID@@XZ")
+PRIVATE_SETUP_GET_IID = (
+    "?GetIID@?$_com_IIID@UISetupConfiguration@@$1?"
+    "neverc_cpp42843719db4c46c28e7c64f1816efd5b@@3U__s_GUID@@B@@SAAEBU_GUID@@XZ")
+SETUP_CONVERT = (
+    "??$?0V?$_com_IIID@UISetupConfiguration@@$1?"
+    "_GUID_42843719_db4c_46c2_8e7c_64f1816efd5b@@3U__s_GUID@@B@@$0A@@"
+    "?$_com_ptr_t@V?$_com_IIID@UISetupHelper@@$1?"
+    "_GUID_42b21b78_6192_463e_87bf_d577838f1d5c@@3U__s_GUID@@B@@@@QEAA@AEBV"
+    "?$_com_ptr_t@V?$_com_IIID@UISetupConfiguration@@$1?"
+    "_GUID_42843719_db4c_46c2_8e7c_64f1816efd5b@@3U__s_GUID@@B@@@@@Z")
+PRIVATE_SETUP_CONVERT = (
+    "??$?0V?$_com_IIID@UISetupConfiguration@@$1?"
+    "neverc_cpp42843719db4c46c28e7c64f1816efd5b@@3U__s_GUID@@B@@$0A@@"
+    "?$_com_ptr_t@V?$_com_IIID@UISetupHelper@@$1?"
+    "neverc_cpp42b21b786192463e87bfd577838f1d5c@@3U__s_GUID@@B@@@@QEAA@AEBV"
+    "?$_com_ptr_t@V?$_com_IIID@UISetupConfiguration@@$1?"
+    "neverc_cpp42843719db4c46c28e7c64f1816efd5b@@3U__s_GUID@@B@@@@@Z")
+SETUP_RELEASE = (
+    "?_Release@?$_com_ptr_t@V?$_com_IIID@UISetupConfiguration@@$1?"
+    "_GUID_42843719_db4c_46c2_8e7c_64f1816efd5b@@3U__s_GUID@@B@@@@AEAAXXZ")
+PRIVATE_SETUP_RELEASE = (
+    "?_Release@?$_com_ptr_t@V?$_com_IIID@UISetupConfiguration@@$1?"
+    "neverc_cpp42843719db4c46c28e7c64f1816efd5b@@3U__s_GUID@@B@@@@AEAAXXZ")
+SETUP_DEFAULT = (
+    "??0?$_com_ptr_t@V?$_com_IIID@UISetupConfiguration@@$1?"
+    "_GUID_42843719_db4c_46c2_8e7c_64f1816efd5b@@3U__s_GUID@@B@@@@QEAA@XZ")
+PRIVATE_SETUP_DEFAULT = (
+    "??0?$_com_ptr_t@V?$_com_IIID@UISetupConfiguration@@$1?"
+    "neverc_cpp42843719db4c46c28e7c64f1816efd5b@@3U__s_GUID@@B@@@@QEAA@XZ")
+SETUP_INTERFACE_PTR = (
+    "?GetInterfacePtr@?$_com_ptr_t@V?$_com_IIID@UISetupConfiguration2@@$1?"
+    "_GUID_26aab78c_4a60_49d6_af3b_3c35bc93365d@@3U__s_GUID@@B@@@@QEAAAEAPEAUISetupConfiguration2@@XZ")
+PRIVATE_SETUP_INTERFACE_PTR = (
+    "?GetInterfacePtr@?$_com_ptr_t@V?$_com_IIID@UISetupConfiguration2@@$1?"
+    "neverc_cpp26aab78c4a6049d6af3b3c35bc93365d@@3U__s_GUID@@B@@@@QEAAAEAPEAUISetupConfiguration2@@XZ")
+
+
+class SetupGuidPolicyTests(unittest.TestCase):
+    def test_exact_five_data_mapping(self):
+        self.assertEqual(SetupGuidSymbols.GUID_RENAMES, dict(SETUP_GUID_PAIRS))
+        self.assertEqual(SetupGuidSymbols.build_rename_map(old for old, _ in SETUP_GUID_PAIRS),
+                         dict(SETUP_GUID_PAIRS))
+        for old, new in SETUP_GUID_PAIRS:
+            with self.subTest(old=old):
+                self.assertTrue(SetupGuidSymbols.contains_old_guid_name(old))
+                self.assertEqual(SetupGuidSymbols.rewrite_name(old), new)
+                self.assertTrue(SetupGuidSymbols.is_private_guid_name(new))
+                self.assertFalse(SetupGuidSymbols.contains_old_guid_name(new))
+                self.assertIsNone(SetupGuidSymbols.rewrite_name(new))
+                self.assertEqual(len(old.encode("ascii")), 42)
+                self.assertEqual(len(new.encode("ascii")), 42)
+                self.assertFalse(SetupGuidSymbols.is_private_guid_metadata_name(new))
+
+    def test_observed_full_names_rewrite_every_nttp(self):
+        for old, new in ((SETUP_GET_IID, PRIVATE_SETUP_GET_IID),
+                         (SETUP_CONVERT, PRIVATE_SETUP_CONVERT)):
+            with self.subTest(old=old):
+                self.assertEqual(SetupGuidSymbols.rewrite_name(old), new)
+                self.assertTrue(SetupGuidSymbols.is_private_guid_name(new))
+                self.assertFalse(SetupGuidSymbols.contains_old_guid_name(new))
+                self.assertEqual(len(old.encode("ascii")), len(new.encode("ascii")))
+                self.assertFalse(SetupGuidSymbols.is_private_guid_metadata_name(new))
+
+    def test_unrelated_guid_and_symbols_are_unchanged(self):
+        for name in ("_GUID_6380bcff_41d3_4b2e_8b2e_bf8a6810c848", "_GUID_unrelated",
+                     "?GetIID@Unrelated@@SAAEBU_GUID@@XZ", "neverc_cpp_frontend_main"):
+            with self.subTest(name=name):
+                self.assertIsNone(SetupGuidSymbols.rewrite_name(name))
+                self.assertFalse(SetupGuidSymbols.contains_old_guid_name(name))
+                self.assertFalse(SetupGuidSymbols.is_private_guid_name(name))
+
+    def test_unobserved_old_grammar_is_rejected(self):
+        old = SETUP_GUID_PAIRS[2][0]
+        for name in ("prefix" + old, old + "suffix", "$1?" + old + "@@3U__s_GUID@@B",
+                     SETUP_GET_IID.replace("GetIID", "InventedMethod"),
+                     SETUP_GET_IID.replace("UISetupConfiguration@@", "UOther@@"),
+                     SETUP_GET_IID + "suffix", SETUP_CONVERT.replace(old, SETUP_GUID_PAIRS[2][1], 1)):
+            with self.subTest(name=name):
+                self.assertTrue(SetupGuidSymbols.contains_old_guid_name(name))
+                with self.assertRaisesRegex(ValueError, "Unsupported original Setup GUID symbol grammar"):
+                    SetupGuidSymbols.build_rename_map([name])
+
+    def test_unobserved_new_grammar_is_rejected(self):
+        for name in ("prefix" + SETUP_GUID_PAIRS[0][1], SETUP_GUID_PAIRS[0][1] + "suffix",
+                     PRIVATE_SETUP_GET_IID.replace("GetIID", "InventedMethod")):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "Unsupported private Setup GUID symbol grammar"):
+                    SetupGuidSymbols.is_private_guid_name(name)
+                with self.assertRaisesRegex(ValueError, "Unsupported private Setup GUID symbol grammar"):
+                    SetupGuidSymbols.build_rename_map([name])
+
+    def test_existing_target_collides_but_duplicate_source_occurrences_are_valid(self):
+        for old, new in (SETUP_GUID_PAIRS[0], (SETUP_GET_IID, PRIVATE_SETUP_GET_IID)):
+            with self.subTest(old=old):
+                with self.assertRaisesRegex(ValueError, "Setup GUID target-name collision"):
+                    SetupGuidSymbols.build_rename_map([old, new])
+                self.assertEqual(SetupGuidSymbols.build_rename_map([old, old]), {old: new})
+
+    def test_mapping_must_be_injective(self):
+        with mock.patch.object(SetupGuidSymbols, "rewrite_name", return_value=SETUP_GUID_PAIRS[0][1]):
+            with self.assertRaisesRegex(ValueError, "Non-injective Setup GUID symbol mapping"):
+                SetupGuidSymbols.build_rename_map(["A" * 42, "B" * 42])
+
+    def test_partially_rewritten_inventory_is_rejected(self):
+        # All five old data definitions can still exist after an incomplete
+        # template-only rename. The writer must not accept that mixed state.
+        for existing in (SETUP_GUID_PAIRS[0][1], PRIVATE_SETUP_GET_IID,
+                         "$pdata$" + PRIVATE_SETUP_RELEASE):
+            with self.subTest(existing=existing):
+                with self.assertRaisesRegex(ValueError, "Setup GUID target-name collision"):
+                    SetupGuidSymbols.build_rename_map([*(old for old, _ in SETUP_GUID_PAIRS), existing])
+
+    def test_exact_observed_metadata_combinations_preserve_full_names_and_lengths(self):
+        cases = [(prefix + SETUP_RELEASE, prefix + PRIVATE_SETUP_RELEASE)
+                 for prefix in ("$pdata$", "$unwind$", "$cppxdata$", "$ip2state$")]
+        cases += [(prefix + SETUP_CONVERT, prefix + PRIVATE_SETUP_CONVERT)
+                  for prefix in ("$pdata$", "$unwind$")]
+        cases += [("$pdata$" + SETUP_DEFAULT, "$pdata$" + PRIVATE_SETUP_DEFAULT),
+                  ("$pdata$" + SETUP_INTERFACE_PTR, "$pdata$" + PRIVATE_SETUP_INTERFACE_PTR)]
+        for old, new in cases:
+            with self.subTest(old=old):
+                self.assertEqual(SetupGuidSymbols.build_rename_map([old]), {old: new})
+                self.assertTrue(SetupGuidSymbols.is_private_guid_name(new))
+                self.assertTrue(SetupGuidSymbols.is_private_guid_metadata_name(new))
+                self.assertFalse(SetupGuidSymbols.is_private_guid_metadata_name(old))
+                self.assertEqual(len(old.encode("ascii")), len(new.encode("ascii")))
+                self.assertFalse(SetupGuidSymbols.contains_old_guid_name(new))
+
+    def test_metadata_prefixes_do_not_admit_unobserved_combinations(self):
+        cases = [(prefix + SETUP_GET_IID, prefix + PRIVATE_SETUP_GET_IID)
+                 for prefix in ("$pdata$", "$unwind$", "$cppxdata$", "$ip2state$")]
+        cases += [(prefix + SETUP_CONVERT, prefix + PRIVATE_SETUP_CONVERT)
+                  for prefix in ("$cppxdata$", "$ip2state$")]
+        cases += [(prefix + old, prefix + new)
+                  for old, new in ((SETUP_DEFAULT, PRIVATE_SETUP_DEFAULT),
+                                   (SETUP_INTERFACE_PTR, PRIVATE_SETUP_INTERFACE_PTR))
+                  for prefix in ("$unwind$", "$cppxdata$", "$ip2state$")]
+        cases += [("$future$" + SETUP_RELEASE, "$future$" + PRIVATE_SETUP_RELEASE),
+                  ("$pdata$" + SETUP_GUID_PAIRS[0][0], "$pdata$" + SETUP_GUID_PAIRS[0][1])]
+        for old, new in cases:
+            with self.subTest(old=old):
+                with self.assertRaisesRegex(ValueError, "Unsupported original Setup GUID symbol grammar"):
+                    SetupGuidSymbols.build_rename_map([old])
+                with self.assertRaisesRegex(ValueError, "Unsupported private Setup GUID symbol grammar"):
+                    SetupGuidSymbols.is_private_guid_name(new)
+
+    def test_mapping_cannot_change_a_symbol_byte_length(self):
+        with mock.patch.object(SetupGuidSymbols, "rewrite_name", return_value=SETUP_GUID_PAIRS[0][1]):
+            with self.assertRaisesRegex(ValueError, "changes byte length"):
+                SetupGuidSymbols.build_rename_map(["short_source"])
 
 
 class ArchiveAuditTests(unittest.TestCase):
@@ -70,6 +235,103 @@ class ArchiveAuditTests(unittest.TestCase):
                 mock.patch.object(AuditArchive, "host_archives",
                                   return_value=[Path("host.lib")]):
             AuditArchive.audit(args)
+
+    def test_original_setup_guid_definitions_and_references_fail_without_host(self):
+        for old, _ in SETUP_GUID_PAIRS:
+            for kind in ("R", "D", "T", "W", "V", "U", "w", "v"):
+                with self.subTest(name=old, kind=kind):
+                    with self.assertRaisesRegex(ValueError, "unisolated Setup GUID symbol: " + old):
+                        self.audit_inventory([(old, kind, old)])
+
+    def test_original_setup_guid_gate_does_not_depend_on_host_intersection(self):
+        for host_format in ("nm", "coff-index"):
+            for old, _ in SETUP_GUID_PAIRS:
+                for host in ([], [("host_only", "T", "host_only")], [(old, "R", old)]):
+                    with self.subTest(host_format=host_format, name=old, host=host):
+                        with self.assertRaisesRegex(ValueError, "unisolated Setup GUID symbol: " + old):
+                            self.audit_inventory([(old, "U", old)], host, host_format)
+
+    def test_original_setup_templates_and_unknown_spellings_fail_without_host(self):
+        for name in (SETUP_GET_IID, SETUP_CONVERT, "$pdata$" + SETUP_RELEASE,
+                     "invented_" + SETUP_GUID_PAIRS[0][0]):
+            for kind in ("T", "U"):
+                with self.subTest(name=name, kind=kind):
+                    with self.assertRaises(ValueError) as failure:
+                        self.audit_inventory([(name, kind, "void __cdecl std::controlled(void)")])
+                    self.assertIn("unisolated Setup GUID symbol: " + name, str(failure.exception))
+
+    def test_private_setup_definitions_close_references_without_host(self):
+        for _, new in (*SETUP_GUID_PAIRS, (SETUP_GET_IID, PRIVATE_SETUP_GET_IID),
+                       (SETUP_CONVERT, PRIVATE_SETUP_CONVERT)):
+            with self.subTest(name=new):
+                self.audit_inventory([(new, "R", new), (new, "U", new)])
+
+    def test_host_cannot_supply_missing_private_setup_definitions(self):
+        for old, new in (*SETUP_GUID_PAIRS, (SETUP_GET_IID, PRIVATE_SETUP_GET_IID)):
+            for host_format in ("nm", "coff-index"):
+                for host in (None, [(old, "R", old)], [(new, "R", new)]):
+                    with self.subTest(name=new, host_format=host_format, host=host):
+                        with self.assertRaises(ValueError) as failure:
+                            self.audit_inventory([(new, "U", new)], host, host_format)
+                        self.assertIn("unresolved private dependency: " + new, str(failure.exception))
+
+    def test_closed_private_setup_names_remain_subject_to_host_intersection(self):
+        old, new = SETUP_GUID_PAIRS[0]
+        for host_format in ("nm", "coff-index"):
+            with self.subTest(host_format=host_format):
+                self.audit_inventory([(new, "R", new), (new, "U", new)],
+                                     [(old, "R", old)], host_format)
+                with self.assertRaisesRegex(ValueError, "private/host symbol intersection: " + new):
+                    self.audit_inventory([(new, "R", new)], [(new, "R", new)], host_format)
+
+    def test_unknown_private_setup_spelling_is_rejected(self):
+        name = "invented_" + SETUP_GUID_PAIRS[0][1]
+        with self.assertRaisesRegex(ValueError, "Unsupported private Setup GUID symbol grammar: " + name):
+            self.audit_inventory([(name, "R", name)])
+
+    def test_metadata_in_extern_only_nm_is_rejected_not_an_external_obligation(self):
+        for prefix in ("$pdata$", "$unwind$", "$cppxdata$", "$ip2state$"):
+            name = prefix + PRIVATE_SETUP_RELEASE
+            for kind in ("R", "T", "U", "W", "w"):
+                with self.subTest(name=name, kind=kind):
+                    with self.assertRaises(ValueError) as failure:
+                        self.audit_inventory([(name, kind, name)])
+                    self.assertIn("Setup GUID metadata has external linkage: " + name,
+                                  str(failure.exception))
+                    self.assertNotIn("unresolved private dependency: " + name, str(failure.exception))
+
+    def test_private_setup_weak_names_require_actual_coff_closure(self):
+        for new in (SETUP_GUID_PAIRS[0][1], PRIVATE_SETUP_GET_IID):
+            for kind in ("W", "V", "w", "v"):
+                with self.subTest(name=new, kind=kind):
+                    with self.assertRaises(ValueError) as failure:
+                        self.audit_inventory([(new, kind, new)])
+                    self.assertIn("Setup GUID weak closure requires a COFF reader: " + new,
+                                  str(failure.exception))
+                    reader = types.ModuleType("CoffWeakAliases")
+                    reader.read_resolved_aliases = mock.Mock(return_value={new})
+                    with mock.patch.dict(sys.modules, {"CoffWeakAliases": reader}):
+                        self.audit_inventory([(new, kind, new)], coff_readobj="controlled-readobj")
+                    self.assertIn(new, reader.read_resolved_aliases.call_args.args[3])
+
+    def test_coff_missing_private_setup_definition_keeps_specific_diagnostic(self):
+        new = SETUP_GUID_PAIRS[0][1]
+        reader = types.ModuleType("CoffWeakAliases")
+        reader.read_resolved_aliases = mock.Mock(
+            side_effect=ValueError("unresolved private dependency: " + new + "; COFF definition missing"))
+        with mock.patch.dict(sys.modules, {"CoffWeakAliases": reader}):
+            with self.assertRaisesRegex(ValueError, "unresolved private dependency: " + new):
+                self.audit_inventory([(new, "W", new)], [(new, "R", new)],
+                                     coff_readobj="controlled-readobj")
+
+    def test_coff_original_setup_name_keeps_specific_diagnostic(self):
+        old = SETUP_GUID_PAIRS[0][0]
+        reader = types.ModuleType("CoffWeakAliases")
+        reader.read_resolved_aliases = mock.Mock(
+            side_effect=ValueError("unisolated Setup GUID symbol: " + old + " in private.obj"))
+        with mock.patch.dict(sys.modules, {"CoffWeakAliases": reader}):
+            with self.assertRaisesRegex(ValueError, "unisolated Setup GUID symbol: " + old):
+                self.audit_inventory([(old, "R", old)], coff_readobj="controlled-readobj")
 
     def test_windows_abort_handler_prefix_checks_definitions_and_references(self):
         with tempfile.TemporaryDirectory(prefix="neverc-abort-prefix-") as temporary:

@@ -82,7 +82,8 @@ jobs:
           "${{ steps.python.outputs.python-path }}" -I -B \
             tests/neverc/CppFrontendToolchainTests.py \
             --llvm-root "$LLVM_ROOT" --target x86_64-pc-windows-msvc \
-            --report-dir "$RUNNER_TEMP/cpp-coff-witness-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            --report-dir "$RUNNER_TEMP/cpp-coff-witness-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --pending-setup-contract-report-dir "$RUNNER_TEMP/cpp-setup-contract-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 
       - name: Require COFF witness manifest
         if: always()
@@ -115,6 +116,8 @@ jobs:
 
       # ── Build ────────────────────────────────────────────────
       - name: Build neverc (Clang + LTO)
+        env:
+          NEVERC_CPP_SETUP_CONTRACT_REPORT_DIR: ${{ runner.temp }}/cpp-setup-contract-${{ github.run_id }}-${{ github.run_attempt }}
         shell: bash
         run: |
           cmake -S llvm -B build -G Ninja \
@@ -129,6 +132,27 @@ jobs:
             -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
             -DCMAKE_EXE_LINKER_FLAGS="-Wl,//debug"
           cmake --build build --target neverc-embed-runtime-bitcode --parallel $NUMBER_OF_PROCESSORS
+
+      - name: Verify postbuild Setup contract evidence
+        id: cpp_setup_contract_evidence
+        if: always()
+        shell: bash
+        run: |
+          "${{ steps.python.outputs.python-path }}" -I -B \
+            tests/neverc/CppFrontendToolchainTests.py \
+            --verify-setup-contract-report \
+            --report-dir "$RUNNER_TEMP/cpp-setup-contract-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+
+      - name: Upload postbuild Setup contract text evidence
+        if: always() && steps.cpp_setup_contract_evidence.outputs.upload_ready == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-setup-contract-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cpp-setup-contract-${{ github.run_id }}-${{ github.run_attempt }}/upload/manifest.json
+            ${{ runner.temp }}/cpp-setup-contract-${{ github.run_id }}-${{ github.run_attempt }}/upload/*.txt
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Show sccache stats
         if: always()

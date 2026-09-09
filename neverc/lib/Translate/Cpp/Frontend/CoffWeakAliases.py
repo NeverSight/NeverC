@@ -13,6 +13,9 @@ import subprocess
 import tempfile
 import time
 
+from SetupGuidSymbols import (contains_old_guid_name, is_private_guid_name,
+                              is_private_guid_metadata_name)
+
 
 MAX_LINE = 1024 * 1024
 MAX_OUTPUT = 4 * 1024 * 1024 * 1024
@@ -99,8 +102,34 @@ def _field(line, indent, fields):
     fields[name] = value
 
 
+def _check_setup_guid_name(name, member):
+    if contains_old_guid_name(name):
+        raise ValueError("unisolated Setup GUID symbol: " + name + " in " + member)
+    return is_private_guid_name(name)
+
+
 def _member_edges(member, symbols, definitions, real_definitions, definition_sources,
-                  edges, edge_count):
+                  edges, edge_count, required_guid_names):
+    # Inspect even local names and auxiliary targets before an actual
+    # definition or an optional alias can hide a stale selected identity.
+    for symbol in symbols.values():
+        private_guid = _check_setup_guid_name(symbol.name, member)
+        if symbol.linked is not None:
+            _check_setup_guid_name(symbol.linked[0], member)
+        if private_guid:
+            if is_private_guid_metadata_name(symbol.name):
+                if not (symbol.storage == 3 and symbol.section > 0
+                        and symbol.aux_count == 0 and symbol.linked is None):
+                    raise ValueError("Invalid private Setup GUID metadata storage: " +
+                                     symbol.name + " in " + member)
+                # Local EH/unwind records have no external identity. Neither
+                # the required-name set nor real_definitions may use them.
+            elif symbol.storage in (2, 105):
+                required_guid_names.add(symbol.name)
+            elif not (symbol.storage == 3 and symbol.section > 0
+                      and symbol.linked is None):
+                raise ValueError("Private Setup GUID has no external or local COFF definition: " +
+                                 symbol.name + " in " + member)
     for symbol in symbols.values():
         if (symbol.storage == 2 and symbol.linked is None
                 and (symbol.section > 0 or (symbol.section == 0 and symbol.value > 0))
@@ -116,6 +145,12 @@ def _member_edges(member, symbols, definitions, real_definitions, definition_sou
                              " in " + member)
         if not target_name:
             raise ValueError("Unnamed COFF fallback target in " + member)
+        if is_private_guid_metadata_name(target_name):
+            # Reject the terminal even behind an ordinary intermediary name;
+            # otherwise a cached multi-hop alias could promote metadata into
+            # a private external definition.
+            raise ValueError("COFF fallback cannot use private Setup GUID metadata: " +
+                             symbol.name + " -> " + target_name + " in " + member)
         local = target.storage == 3 and target.section > 0 and target.linked is None
         if not local and target.storage not in (2, 105):
             raise ValueError("COFF fallback has no external or local definition: " +
@@ -146,6 +181,7 @@ def parse_resolved_aliases(lines, definitions, private_names=()):
     definition_sources = {}
     edges = {}
     edge_count = [0]
+    required_guid_names = set()
     aux_schema = {
         "AuxFunctionDef": {"TagIndex", "TotalSize", "PointerToLineNumber", "PointerToNextFunction"},
         "AuxWeakExternal": {"Linked", "Search"},
@@ -179,7 +215,7 @@ def parse_resolved_aliases(lines, definitions, private_names=()):
                 state = "symbol"
             elif line == "]":
                 _member_edges(header["File"], symbols, definitions, real_definitions,
-                              definition_sources, edges, edge_count)
+                              definition_sources, edges, edge_count, required_guid_names)
                 member_count += 1
                 state, header, symbols = "header", {}, {}
             else:
@@ -245,11 +281,19 @@ def parse_resolved_aliases(lines, definitions, private_names=()):
     for name in sorted(edges):
         if resolve(name, set()):
             resolved.add(name)
+    # The caller's private-name set comes from nm. Selected GUID identities
+    # found only in COFF must still close inside this archive, including
+    # ordinary undefined records and targets of otherwise optional aliases.
+    unresolved_guids = [name for name in sorted(required_guid_names)
+                        if not resolve(name, set())]
+    if unresolved_guids:
+        raise ValueError("\n".join("unresolved private dependency: " + name +
+            "; COFF " + failed[name] for name in unresolved_guids[:20]))
     unresolved_private = (set(private_names) & edges.keys()) - resolved
     if unresolved_private:
         raise ValueError("Unresolved private COFF fallback:\n" + "\n".join(
             name + ": " + failed[name] for name in sorted(unresolved_private)[:20]))
-    relevant = sorted(set(private_names) & resolved)
+    relevant = sorted((set(private_names) | required_guid_names) & resolved)
     for name in relevant[:16]:
         if name in real_definitions:
             print("Actual private COFF definition overrides weak alias: " + name +

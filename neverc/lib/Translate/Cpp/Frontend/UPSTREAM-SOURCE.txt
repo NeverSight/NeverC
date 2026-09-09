@@ -20,6 +20,22 @@ evaluation, integer negation, and the existing outer float/half conversions.
 All three math sources are checked before any of those files is rewritten.
 Other symbol changes use compilation definitions. NoCrashReporter.h disables
 the private PrettyStackTrace.cpp Darwin process annotation; NeverC owns it.
+On Windows, RewriteSetupCoffSymbols.py isolates five Setup COM GUID identities
+in the aggregated COFF archive. It replaces each 42-byte GUID identifier with
+an equal-length private ASCII name, including the exact observed MSVC template
+and local metadata spellings listed in SetupGuidSymbols.py. The first linker
+index keeps its order; the second index stably reorders name/member-index pairs.
+Original member selection and duplicate multiplicity are preserved. Object
+records, auxiliary slots, code, data, relocations and member offsets are compared
+byte for byte; only the authorized name bytes and paired index ordering may
+change. Unknown spellings, conflicting shared strings and changed GUID values
+are rejected. The same private LLVM 20.1.8 nm/readobj independently inspect the
+result, and the full no-host ABI audit runs before the final archive is replaced.
+This is a build-time Python transformation, with no external Clang executable
+or COFF writer required by the installed NeverC translator. Internal Clang
+libraries remain statically included. The Windows CI contract retains separate
+baseline/isolated SDK smart-pointer and deterministic COM runtime evidence;
+it does not claim to test COM activation, VS discovery or private LTO behavior.
 The exact scripts and compilation rules are part of the NeverC source tree at
 neverc/lib/Translate/Cpp/Frontend and neverc/cmake/modules/BuiltinCppFrontend.cmake.
 

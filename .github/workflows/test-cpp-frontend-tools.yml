@@ -6,12 +6,14 @@ on:
       - 'neverc/lib/Translate/Cpp/Frontend/**'
       - 'neverc/cmake/modules/BuiltinCppFrontend.cmake'
       - 'tests/neverc/HostCoffSymbolsTests.py'
+      - 'tests/neverc/CppFrontendToolchainTests.py'
       - '.github/workflows/test-cpp-frontend-tools.yml'
   pull_request:
     paths:
       - 'neverc/lib/Translate/Cpp/Frontend/**'
       - 'neverc/cmake/modules/BuiltinCppFrontend.cmake'
       - 'tests/neverc/HostCoffSymbolsTests.py'
+      - 'tests/neverc/CppFrontendToolchainTests.py'
       - '.github/workflows/test-cpp-frontend-tools.yml'
 
 permissions:
@@ -43,3 +45,5 @@ jobs:
           python -I -B tests/neverc/HostCoffSymbolsTests.py
           python -E -B neverc/lib/Translate/Cpp/Frontend/AuditArchiveTests.py
           python -E -B neverc/lib/Translate/Cpp/Frontend/CoffWeakAliasesTests.py
+          python -E -B neverc/lib/Translate/Cpp/Frontend/RewriteSetupCoffSymbolsTests.py
+          python -I -B tests/neverc/CppFrontendToolchainTests.py --report-self-tests

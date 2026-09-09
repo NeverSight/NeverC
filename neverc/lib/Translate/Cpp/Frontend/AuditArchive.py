@@ -10,6 +10,9 @@ import sys
 
 sys.dont_write_bytecode = True
 
+from SetupGuidSymbols import (contains_old_guid_name, is_private_guid_name,
+                              is_private_guid_metadata_name)
+
 
 STRDUP_SYMBOLS = frozenset(("strdup", "_strdup"))
 
@@ -431,10 +434,31 @@ def audit(args):
             bad.append(name + " => " + declaration)
             bad_private_names.add(name)
     definitions, references = set(), set()
+    private_guid_symbols, private_guid_weak_symbols = set(), set()
     for record in symbol_records(nm_output(
             nm, [args.archive], "--format=posix")):
         name, kind, _, _ = record
         report_strdup_records("private", args.archive, (record,))
+        # This is a private-archive invariant, independent of whether a host
+        # happens to expose the same GUID or SDK template COMDAT today.
+        if contains_old_guid_name(name):
+            bad.append("unisolated Setup GUID symbol: " + name)
+            bad_private_names.add(name)
+        try:
+            if is_private_guid_name(name):
+                if is_private_guid_metadata_name(name):
+                    # nm_output always requests --extern-only. Metadata names
+                    # are valid only on local COFF records, never as a public
+                    # definition or an external closure obligation.
+                    bad.append("Setup GUID metadata has external linkage: " + name)
+                    bad_private_names.add(name)
+                else:
+                    private_guid_symbols.add(name)
+                    if kind in ("W", "V", "w", "v"):
+                        private_guid_weak_symbols.add(name)
+        except ValueError as error:
+            bad.append(str(error))
+            bad_private_names.add(name)
         plain = name[1:] if name.startswith("_") else name
         if (re.match(r"^_?(?:LLVM[A-Z]|llvm_|UseNewDbgInfoFormat$)", name)
                 or name in renamed or plain in renamed):
@@ -446,6 +470,7 @@ def audit(args):
         plain = name[1:] if name.startswith("_") else name
         return ("neverc_cpp_llvm" in name or "5clang" in name
                 or "@clang@@" in name
+                or name in private_guid_symbols
                 or name in private_record_symbols
                 or name in renamed.values() or plain in renamed.values())
 
@@ -464,6 +489,12 @@ def audit(args):
                          if private_dependency(name)}
         resolved_aliases = read_resolved_aliases(
             coff_readobj, args.archive, definitions, private_names)
+    elif private_guid_weak_symbols:
+        # W/V can describe an alias, not an actual definition. Without COFF
+        # auxiliary records its fallback could still borrow a host symbol.
+        for name in sorted(private_guid_weak_symbols):
+            bad.append("Setup GUID weak closure requires a COFF reader: " + name)
+            bad_private_names.add(name)
     for name in sorted(references - definitions - resolved_aliases):
         if private_dependency(name):
             bad.append("unresolved private dependency: " + name)

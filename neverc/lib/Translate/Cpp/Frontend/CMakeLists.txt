@@ -148,10 +148,14 @@ endif()
 set(_builtin_sdk "${NEVERC_CPP_REPOSITORY_ROOT}/neverc/lib/Translate/Cpp/SDK")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp Frontend.h
+  SetupGuidSymbols.py RewriteSetupCoffSymbols.py BundleArchive.cmake
+  AuditArchive.py CoffWeakAliases.py HostCoffSymbols.py VerifyArchiveMembers.py
   "${_builtin_sdk}/catalog.json" "${_builtin_sdk}/embed.py")
 set(_identity "builtin:llvm20.1.8:6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d")
 foreach(_input Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp Frontend.h
-    CMakeLists.txt IsolateSymbols.py NoCrashReporter.h BuildID.h.in)
+    CMakeLists.txt IsolateSymbols.py NoCrashReporter.h BuildID.h.in
+    SetupGuidSymbols.py RewriteSetupCoffSymbols.py BundleArchive.cmake
+    AuditArchive.py CoffWeakAliases.py HostCoffSymbols.py VerifyArchiveMembers.py)
   file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/${_input}" _hash)
   string(APPEND _identity ":${_hash}")
 endforeach()
@@ -226,6 +230,8 @@ file(GENERATE OUTPUT "${LLVM_BINARY_DIR}/neverc-cpp-nm-$<CONFIG>.txt"
   CONTENT "$<TARGET_FILE:llvm-nm>\n")
 set(_audit_tools llvm-nm)
 set(_coff_audit_arguments)
+set(_bundle_coff_arguments)
+set(_setup_contract_dependencies)
 if(WIN32)
   # COFF weak externals carry a fallback symbol in auxiliary records that nm's
   # one-character type cannot represent. This reader is a build tool only.
@@ -233,6 +239,40 @@ if(WIN32)
   list(APPEND _coff_audit_arguments --coff-readobj "$<TARGET_FILE:llvm-readobj>")
   file(GENERATE OUTPUT "${LLVM_BINARY_DIR}/neverc-cpp-readobj-$<CONFIG>.txt"
     CONTENT "$<TARGET_FILE:llvm-readobj>\n")
+  list(APPEND _bundle_coff_arguments
+    "-DCOFF=ON" "-DPYTHON=${Python3_EXECUTABLE}"
+    "-DNM=$<TARGET_FILE:llvm-nm>" "-DREADOBJ=$<TARGET_FILE:llvm-readobj>"
+    "-DWRITER=${CMAKE_CURRENT_SOURCE_DIR}/RewriteSetupCoffSymbols.py"
+    "-DWRITER_TESTS=${CMAKE_CURRENT_SOURCE_DIR}/RewriteSetupCoffSymbolsTests.py"
+    "-DAUDITOR=${CMAKE_CURRENT_SOURCE_DIR}/AuditArchive.py"
+    "-DPREFIX_HEADER=${LLVM_BINARY_DIR}/NeverCCppPrivatePrefix.h")
+  set(_setup_contract_report "$ENV{NEVERC_CPP_SETUP_CONTRACT_REPORT_DIR}")
+  if(_setup_contract_report)
+    # This environment variable is passed by the existing Windows Clang CI
+    # jobs and inherited through ExternalProject. It has no product role.
+    if(NOT "$ENV{GITHUB_ACTIONS}" STREQUAL "true" OR
+       NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+       NOT IS_ABSOLUTE "${_setup_contract_report}" OR "$ENV{LLVM_ROOT}" STREQUAL "")
+      message(FATAL_ERROR "Invalid Windows Setup contract CI context")
+    endif()
+    if(CMAKE_CXX_COMPILER_TARGET)
+      set(_setup_target "${CMAKE_CXX_COMPILER_TARGET}")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
+      set(_setup_target x86_64-pc-windows-msvc)
+    else()
+      message(FATAL_ERROR "Missing exact native target for Setup contract")
+    endif()
+    if(NOT _setup_target MATCHES "^(x86_64|aarch64)-pc-windows-msvc$")
+      message(FATAL_ERROR "Unsupported Setup contract target: ${_setup_target}")
+    endif()
+    set(_setup_test "${NEVERC_CPP_REPOSITORY_ROOT}/tests/neverc/CppFrontendToolchainTests.py")
+    set(_setup_header "${LLVM_MAIN_SRC_DIR}/include/llvm/WindowsDriver/MSVCSetupApi.h")
+    list(APPEND _bundle_coff_arguments
+      "-DSETUP_CONTRACT_REPORT_DIR=${_setup_contract_report}"
+      "-DHOST_LLVM_ROOT=$ENV{LLVM_ROOT}" "-DSETUP_TARGET=${_setup_target}"
+      "-DTOOLCHAIN_TESTS=${_setup_test}" "-DSETUP_HEADER=${_setup_header}")
+    list(APPEND _setup_contract_dependencies "${_setup_test}" "${_setup_header}")
+  endif()
 endif()
 set(_output "${LLVM_BINARY_DIR}/lib/$<CONFIG>/${CMAKE_STATIC_LIBRARY_PREFIX}nevercCppFrontend${CMAKE_STATIC_LIBRARY_SUFFIX}")
 if(APPLE)
@@ -248,14 +288,27 @@ else()
   set(_bundle_kind mri)
   set(_member_reader_kind ar)
 endif()
+if(WIN32)
+  list(APPEND _bundle_coff_arguments
+    "-DMEMBER_READER=${CMAKE_CURRENT_SOURCE_DIR}/VerifyArchiveMembers.py"
+    "-DMEMBER_TESTS=${CMAKE_CURRENT_SOURCE_DIR}/VerifyArchiveMembersTests.py"
+    "-DMEMBER_ARCHIVER=${CMAKE_AR}" "-DMEMBER_KIND=${_member_reader_kind}")
+endif()
 add_custom_command(OUTPUT "${_output}"
   COMMAND "${CMAKE_COMMAND}" "-DINPUTS=${_inputs}" "-DOUTPUT=${_output}"
     "-DTOOL=${_bundle_tool}" "-DKIND=${_bundle_kind}"
+    ${_bundle_coff_arguments}
     -P "${CMAKE_CURRENT_SOURCE_DIR}/BundleArchive.cmake"
-  DEPENDS ${_archives}
+  DEPENDS ${_archives} ${_audit_tools} ${_setup_contract_dependencies}
     "${CMAKE_CURRENT_SOURCE_DIR}/BundleArchive.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/AuditArchive.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/CoffWeakAliases.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/SetupGuidSymbols.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/RewriteSetupCoffSymbols.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/RewriteSetupCoffSymbolsTests.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/HostCoffSymbols.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/VerifyArchiveMembers.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/VerifyArchiveMembersTests.py"
   VERBATIM)
 add_custom_target(nevercCppFrontendBundle
   COMMAND "${Python3_EXECUTABLE}" -I -B
