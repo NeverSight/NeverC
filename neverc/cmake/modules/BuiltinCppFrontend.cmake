@@ -95,6 +95,19 @@ function(neverc_setup_builtin_cpp_frontend)
   # Debug affects the default MSVC CRT and STL iterator ABI, even across a C
   # entry point: standard-library template symbols remain process-wide.
   set(_private_config "$<IF:$<CONFIG:Debug>,Debug,Release>")
+  # The host ABI header has one configure-time value, even for multi-config
+  # builds. Preserve that resolved value rather than deriving it again from the
+  # private Debug/Release defaults; Windows link directives check both builds.
+  if(LLVM_ENABLE_ASSERTIONS)
+    set(_private_assertions ON)
+  else()
+    set(_private_assertions OFF)
+  endif()
+  if(LLVM_ENABLE_ABI_BREAKING_CHECKS)
+    set(_private_abi_policy FORCE_ON)
+  else()
+    set(_private_abi_policy FORCE_OFF)
+  endif()
   set(_archive_name "${CMAKE_STATIC_LIBRARY_PREFIX}nevercCppFrontend${CMAKE_STATIC_LIBRARY_SUFFIX}")
   set(_archive "${_build}/lib/${_private_config}/${_archive_name}")
   set(_private_audit_arguments)
@@ -145,6 +158,8 @@ function(neverc_setup_builtin_cpp_frontend)
       --source <SOURCE_DIR> --output "${_prefix}"
     CMAKE_ARGS
       "-DCMAKE_BUILD_TYPE:STRING=${_private_config}"
+      "-DLLVM_ENABLE_ASSERTIONS:BOOL=${_private_assertions}"
+      "-DLLVM_ABI_BREAKING_CHECKS:STRING=${_private_abi_policy}"
       "-DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}"
       "-DCMAKE_CXX_COMPILER:FILEPATH=${CMAKE_CXX_COMPILER}"
       "-DCMAKE_C_FLAGS:STRING=${_prefix_flags}"

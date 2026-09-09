@@ -2890,6 +2890,232 @@ int main() {
                     self.assertIn("CMATH differential PASS: pairs=2496;", output)
                     print(f"CMATH runtime ({configuration}): {output}", flush=True)
 
+    def test_builtin_cpp_configuration_preserves_the_host_abi_check(self):
+        # Configure only tiny LANGUAGES NONE projects. The production function
+        # must generate the actual ExternalProject arguments, but none of its
+        # download, patch, configure, build or install steps may run here.
+        repository = self.audit.parents[5]
+        module = repository / "neverc/cmake/modules/BuiltinCppFrontend.cmake"
+        template = repository / "llvm/include/llvm/Config/abi-breaking.h.cmake"
+        cmake, ninja = shutil.which("cmake"), shutil.which("ninja")
+        self.assertTrue(cmake, "The real CMake configuration fixture requires cmake")
+        self.assertTrue(ninja, "The real CMake configuration fixture requires ninja")
+        self.assertTrue(module.is_file(), str(module))
+        self.assertTrue(template.is_file(), str(template))
+        linker = self.llvm_root / "bin/lld-link.exe"
+        self.assertTrue(linker.is_file(), str(linker))
+        key = "LLVM_ENABLE_ABI_BREAKING_CHECKS"
+        machine = "arm64" if self.target.startswith("aarch64-") else "x64"
+        coff_machine = "ARM64" if machine == "arm64" else "AMD64"
+        macro = "_M_ARM64" if machine == "arm64" else "_M_X64"
+        library_dirs = [Path(item) for item in os.environ.get("LIB", "").split(";") if item]
+        for name in ("libcmt.lib", "libucrt.lib", "libvcruntime.lib", "oldnames.lib"):
+            self.assertTrue(any((path / name).is_file() for path in library_dirs), name)
+        fixture = self.root / "cpp-abi-configuration"
+        fixture.mkdir()
+        offline = fixture / "never-download.tar.xz"
+        offline_bytes = b"NeverC configure-only ABI fixture: not a source archive\n"
+        offline.write_bytes(offline_bytes)
+
+        def cmake_path(path):
+            value = Path(path).resolve().as_posix()
+            self.assertNotIn("]=]", value)
+            self.assertFalse(any(char in value for char in "\r\n\0"), value)
+            return "[=[" + value + "]=]"
+
+        host_source = fixture / "host-project"
+        host_source.mkdir()
+        host_project = r'''
+cmake_minimum_required(VERSION 3.20)
+project(NeverCAbiArgumentCapture LANGUAGES NONE)
+set(MSVC TRUE)
+set(WIN32 TRUE)
+set(CMAKE_STATIC_LIBRARY_PREFIX "")
+set(CMAKE_STATIC_LIBRARY_SUFFIX ".lib")
+set(CMAKE_EXECUTABLE_SUFFIX ".exe")
+include(@MODULE@)
+neverc_setup_builtin_cpp_frontend()
+ExternalProject_Get_Property(nevercCppFrontendBuild CMAKE_ARGS URL SOURCE_DIR BINARY_DIR)
+file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/cpp-args-$<CONFIG>.txt"
+  CONTENT "$<JOIN:${CMAKE_ARGS},\n>\n")
+file(WRITE "${CMAKE_BINARY_DIR}/offline-url.txt" "${URL}\n")
+file(WRITE "${CMAKE_BINARY_DIR}/external-directories.txt" "${SOURCE_DIR}\n${BINARY_DIR}\n")
+configure_file(@TEMPLATE@ "${CMAKE_BINARY_DIR}/host-abi-breaking.h" @ONLY)
+'''.replace("@MODULE@", cmake_path(module)).replace("@TEMPLATE@", cmake_path(template))
+        (host_source / "CMakeLists.txt").write_text(host_project, encoding="utf-8")
+        consumer_source = fixture / "consumer-project"
+        consumer_source.mkdir()
+        consumer_project = r'''
+cmake_minimum_required(VERSION 3.20)
+project(NeverCAbiArgumentConsumer LANGUAGES NONE)
+if(NOT DEFINED LLVM_ENABLE_ASSERTIONS)
+  message(FATAL_ERROR "The actual ExternalProject assertion argument is missing")
+endif()
+if(LLVM_ABI_BREAKING_CHECKS STREQUAL "FORCE_ON")
+  set(LLVM_ENABLE_ABI_BREAKING_CHECKS ON)
+elseif(LLVM_ABI_BREAKING_CHECKS STREQUAL "FORCE_OFF")
+  set(LLVM_ENABLE_ABI_BREAKING_CHECKS OFF)
+else()
+  message(FATAL_ERROR "Expected a resolved FORCE_ON or FORCE_OFF ABI policy")
+endif()
+configure_file(@TEMPLATE@ "${CMAKE_BINARY_DIR}/private-abi-breaking.h" @ONLY)
+file(WRITE "${CMAKE_BINARY_DIR}/consumed-values.txt"
+  "${LLVM_ENABLE_ASSERTIONS}\n${LLVM_ABI_BREAKING_CHECKS}\n${LLVM_ENABLE_ABI_BREAKING_CHECKS}\n")
+'''.replace("@TEMPLATE@", cmake_path(template))
+        (consumer_source / "CMakeLists.txt").write_text(consumer_project, encoding="utf-8")
+        cases = (
+            ("on-on", "ON", "ON", "Ninja", ("RelWithDebInfo",)),
+            ("on-off", "ON", "OFF", "Ninja Multi-Config", ("Debug", "Release")),
+            ("off-on", "OFF", "ON", "Ninja Multi-Config", ("Debug", "Release")),
+            ("off-off", "OFF", "OFF", "Ninja", ("Debug",)),
+            ("zero-zero", "0", "0", "Ninja", ("Release",)),
+            ("undefined", None, None, "Ninja", ("Release",)),
+        )
+        generated = []
+        for label, assertions, effective, generator, configurations in cases:
+            build = fixture / ("host-" + label)
+            command = [cmake, "-S", host_source, "-B", build, "-G", generator,
+                       "-DCMAKE_MAKE_PROGRAM:FILEPATH=" + Path(ninja).as_posix(),
+                       "-DPython3_EXECUTABLE:FILEPATH=" + Path(sys.executable).as_posix(),
+                       "-DNEVERC_CPP_LLVM_SOURCE_ARCHIVE:FILEPATH=" + offline.as_posix(),
+                       "-DCMAKE_C_COMPILER:FILEPATH=" + Path(self.msvc).as_posix(),
+                       "-DCMAKE_CXX_COMPILER:FILEPATH=" + Path(self.msvc).as_posix(),
+                       "-DCMAKE_C_COMPILER_TARGET:STRING=" + self.target,
+                       "-DCMAKE_CXX_COMPILER_TARGET:STRING=" + self.target,
+                       "-DLLVM_DEFAULT_TARGET_TRIPLE:STRING=" + self.target,
+                       "-DCMAKE_MSVC_RUNTIME_LIBRARY:STRING=MultiThreaded$<$<CONFIG:Debug>:Debug>"]
+            if generator == "Ninja Multi-Config":
+                command.append("-DCMAKE_CONFIGURATION_TYPES:STRING=Debug;Release")
+            else:
+                command.append("-DCMAKE_BUILD_TYPE:STRING=" + configurations[0])
+            for name, value in (("LLVM_ENABLE_ASSERTIONS", assertions), (key, effective)):
+                if value is not None:
+                    command.append("-D" + name + ":STRING=" + value)
+            self.require_success(command)
+            self.assertEqual((build / "offline-url.txt").read_text(encoding="utf-8").strip(),
+                             offline.as_posix())
+            directories = (build / "external-directories.txt").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(directories), 2)
+            # ExternalProject may mkdir these directories at configure time;
+            # source contents and the patch output must still be absent.
+            self.assertFalse((Path(directories[0]) / "LICENSE.TXT").exists())
+            self.assertFalse((Path(directories[0]) / "llvm/CMakeLists.txt").exists())
+            self.assertFalse((Path(directories[1]) / "NeverCCppPrivatePrefix.h").exists())
+            self.assertFalse((Path(directories[1]) / "CMakeCache.txt").exists())
+            self.assertEqual(offline.read_bytes(), offline_bytes)
+            expected_assertions = "ON" if assertions == "ON" else "OFF"
+            expected_bit = int(effective == "ON")
+            expected_policy = "FORCE_ON" if expected_bit else "FORCE_OFF"
+            host_header = build / "host-abi-breaking.h"
+            for config in configurations:
+                private_config = "Debug" if config == "Debug" else "Release"
+                captured = (build / ("cpp-args-" + config + ".txt")).read_text(
+                    encoding="utf-8").splitlines()
+                self.assertTrue(captured)
+                self.assertTrue(all(argument.startswith("-D") for argument in captured), captured)
+                self.assertFalse(any("$<" in argument for argument in captured), captured)
+                for prefix, value in (
+                    ("-DLLVM_ENABLE_ASSERTIONS:BOOL=", expected_assertions),
+                    ("-DLLVM_ABI_BREAKING_CHECKS:STRING=", expected_policy),
+                    ("-DCMAKE_BUILD_TYPE:STRING=", private_config),
+                    ("-DCMAKE_MSVC_RUNTIME_LIBRARY:STRING=",
+                     "MultiThreadedDebug" if config == "Debug" else "MultiThreaded"),
+                ):
+                    self.assertEqual([argument for argument in captured if argument.startswith(prefix)],
+                                     [prefix + value], f"{label}/{config}: {captured}")
+                consumer = fixture / ("consumer-" + label + "-" + config)
+                self.require_success([cmake, "-S", consumer_source, "-B", consumer,
+                                      "-G", "Ninja",
+                                      "-DCMAKE_MAKE_PROGRAM:FILEPATH=" + Path(ninja).as_posix(),
+                                      *captured])
+                values = (consumer / "consumed-values.txt").read_text(encoding="utf-8").splitlines()
+                self.assertEqual(values, [expected_assertions, expected_policy,
+                                         "ON" if expected_bit else "OFF"])
+                private_header = consumer / "private-abi-breaking.h"
+                for header in (host_header, private_header):
+                    text = header.read_text(encoding="utf-8")
+                    self.assertEqual(re.findall(r"^#define " + key + r" ([01])$", text, re.M),
+                                     [str(expected_bit)])
+                    self.assertIn('#pragma detect_mismatch("' + key + '",', text)
+                generated.append((label + "/" + config, expected_bit, host_header, private_header))
+                print(f"CPP ABI CMAKE PASS: {label}/{config}; assertions={expected_assertions}; "
+                      f"policy={expected_policy}; private_config={private_config}", flush=True)
+        self.assertEqual(len(generated), 8)
+
+        # Use the repository's real ABI header and the original mismatch key.
+        # Fixed /MT, non-LTO objects keep this a configuration/link-directive
+        # fixture, not a claim about cross-version LLVM layouts or LTO behavior.
+        source_prefix = (f'#if !defined(_MSC_VER) || !defined({macro})\n'
+                         '#error The native Microsoft ABI target is required\n#endif\n')
+        positive_count = negative_count = 0
+        for compiler in ("clang", "msvc"):
+            witnesses = {}
+            for label, bit, host_header, private_header in generated:
+                directory = fixture / compiler / label
+                directory.mkdir(parents=True)
+                objects = {}
+                for side, header in (("host", host_header), ("private", private_header)):
+                    shutil.copyfile(header, directory / (side + "-abi-breaking.h"))
+                    body = source_prefix + '#include "' + side + '-abi-breaking.h"\n'
+                    if side == "host":
+                        body += ('#include <stdio.h>\nextern "C" int private_abi_value();\n'
+                                 'int main() {\n'
+                                 '  if (private_abi_value() != LLVM_ENABLE_ABI_BREAKING_CHECKS) return 31;\n'
+                                 '  printf("CPP_ABI_PASS value=%d\\n", LLVM_ENABLE_ABI_BREAKING_CHECKS);\n'
+                                 '  return 0;\n}\n')
+                    else:
+                        body += ('extern "C" int private_abi_value() {\n'
+                                 '  return LLVM_ENABLE_ABI_BREAKING_CHECKS;\n}\n')
+                    source, obj = directory / (side + ".cpp"), directory / (side + ".obj")
+                    source.write_text(body, encoding="utf-8")
+                    if compiler == "msvc":
+                        command = [self.msvc, "/nologo", "/std:c++17", "/c", "/Od", "/GL-",
+                                   "/MT", "/EHsc", "/GR-", "/Fo" + str(obj), source]
+                    else:
+                        command = [self.clang, "--target=" + self.target, "-std=c++17",
+                                   "-O0", "-fno-lto", "-fms-extensions", "-fms-runtime-lib=static",
+                                   "-fno-exceptions", "-fno-rtti", "-c", source, "-o", obj]
+                    self.require_success(command)
+                    records = self.require_success([self.readobj, "--file-headers",
+                                                    "--coff-directives", obj])
+                    self.assertIn("Machine: IMAGE_FILE_MACHINE_" + coff_machine + " ", records)
+                    directives = [quoted or plain for quoted, plain in re.findall(
+                        r'/FAILIFMISMATCH:(?:"([^"\r\n]+)"|([^\s]+))', records, re.I)]
+                    abi_directives = [item for item in directives if item.startswith(key + "=")]
+                    self.assertEqual(abi_directives, [key + "=" + str(bit)], records)
+                    print(f"CPP ABI DIRECTIVE: compiler={compiler}; case={label}; side={side}; "
+                          f"machine={coff_machine}; observed={abi_directives[0]}", flush=True)
+                    objects[side] = obj
+                executable = directory / "same-abi.exe"
+                link_args = [linker, "/nologo", "/machine:" + machine, "/subsystem:console",
+                             "/defaultlib:libcmt", "/defaultlib:oldnames",
+                             *("/libpath:" + str(path) for path in library_dirs)]
+                self.require_success([*link_args, "/out:" + str(executable),
+                                      objects["host"], objects["private"]])
+                pe = self.require_success([self.readobj, "--file-headers", executable])
+                self.assertIn("Machine: IMAGE_FILE_MACHINE_" + coff_machine + " ", pe)
+                output = self.require_success([executable])
+                self.assertEqual(output, f"CPP_ABI_PASS value={bit}\n")
+                positive_count += 1
+                witnesses.setdefault(bit, objects)
+                print(f"CPP ABI LINK PASS: compiler={compiler}; case={label}; "
+                      f"target={self.target}; {key}={bit}", flush=True)
+            self.assertEqual(set(witnesses), {0, 1})
+            rejected = fixture / compiler / "different-abi.exe"
+            result = self.run_command([*link_args, "/out:" + str(rejected),
+                                       witnesses[1]["host"], witnesses[0]["private"]])
+            diagnostic = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, diagnostic)
+            self.assertRegex(diagnostic, r"mismatch detected for ['\"]" + key + r"['\"]")
+            self.assertRegex(diagnostic, r"has value ['\"]?1(?:['\"]|\s|$)")
+            self.assertRegex(diagnostic, r"has value ['\"]?0(?:['\"]|\s|$)")
+            self.assertFalse(rejected.exists(), "A mismatch must not publish an executable")
+            negative_count += 1
+            print(f"CPP ABI NEGATIVE PASS: compiler={compiler}; same-key={key}; "
+                  "host=1; private=0; mismatch-rejected", flush=True)
+        self.assertEqual((positive_count, negative_count), (16, 2))
+        self.assertEqual(offline.read_bytes(), offline_bytes)
+
     def test_setup_bstr_owner_preserves_out_parameter_lifetimes(self):
         # Compile the actual owner literal without importing or executing the
         # source-patching script. The callbacks below model only the two local
@@ -4108,7 +4334,7 @@ if __name__ == "__main__":
                               for test, details in result.errors],
         }
         passed = (result.wasSuccessful() and not result.skipped
-                  and result.testsRun == (1 if arguments.setup_contract else 23)
+                  and result.testsRun == (1 if arguments.setup_contract else 24)
                   and report["setup_status"] == "passed")
     except BaseException as error:
         report["interrupted"] = {"type": type(error).__name__, "detail": str(error)}
