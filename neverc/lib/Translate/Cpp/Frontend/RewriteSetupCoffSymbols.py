@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import io
@@ -50,6 +51,25 @@ MAX_LINE = 1024 * 1024
 MAX_OUTPUT = 4 * 1024 * 1024 * 1024
 MAX_ERRORS = 1024 * 1024
 COMMAND_TIMEOUT = 900
+PROGRESS_MAX_RECORDS = 64
+PROGRESS_MAX_BYTES = 32768
+PROGRESS_MAX_RECORD_BYTES = 512
+PROGRESS_PHASES = frozenset((
+    "transform", "tool_nm_version", "tool_readobj_version",
+    "tool_nm_identity", "tool_readobj_identity", "input_identity",
+    "input_inspect", "mapping", "copy", "patch", "output_inspect",
+    "byte_proof", "pair_proof", "native_readers", "native_nm", "native_readobj",
+    "nested_audit", "final_identity", "publish", "staging_cleanup",
+))
+PROGRESS_EVENTS = frozenset((
+    "started", "child_completed", "output_started", "consume_started",
+    "completed", "failed",
+))
+PROGRESS_COUNTS = frozenset((
+    "input_bytes", "member_count", "symbol_count", "mapping_count",
+    "patch_count", "command_index", "returncode", "stdout_bytes",
+    "stderr_bytes", "child_ms",
+))
 PUBLICATION_LIMIT = ("Cooperative exclusive output ownership is required from link through final "
                      "report confirmation; rollback lstat and unlink are not atomic against "
                      "arbitrary concurrent replacement.")
@@ -60,6 +80,106 @@ MACHINES = {0x8664: "AMD64", 0xAA64: "ARM64"}
 
 def fail(message):
     raise ValueError("Setup COFF rewrite: " + message)
+
+
+class ProgressJournal:
+    """Optional bounded phase evidence, separate from the final rewrite report.
+
+    A completed phase is not confirmation that the report or Bundle succeeded.
+    Every successful emit returns only after its complete UTF-8 line is durable.
+    Failed writes poison the journal: never append a record after a partial line.
+    """
+
+    def __init__(self, path):
+        self.started = time.monotonic()
+        self.records = 0
+        self.bytes_used = 0
+        self.poisoned = False
+        self.phase = "transform"
+        self.stream = Path(path).open("xb")
+
+    def emit(self, phase, event, **counts):
+        if self.poisoned:
+            fail("progress journal is no longer writable")
+        if (type(phase) is not str or type(event) is not str
+                or phase not in PROGRESS_PHASES or event not in PROGRESS_EVENTS):
+            self.poisoned = True
+            fail("unsupported progress phase or event")
+        if not counts.keys() <= PROGRESS_COUNTS:
+            self.poisoned = True
+            fail("unsupported progress field")
+        for key, value in counts.items():
+            lower = -(1 << 63) if key == "returncode" else 0
+            if type(value) is not int or not lower <= value < (1 << 63):
+                self.poisoned = True
+                fail("invalid progress integer")
+        elapsed = int((time.monotonic() - self.started) * 1000)
+        if not 0 <= elapsed < (1 << 63):
+            self.poisoned = True
+            fail("invalid progress elapsed time")
+        record = {"seq": self.records + 1, "elapsed_ms": elapsed,
+                  "phase": phase, "event": event, **counts}
+        encoded = (json.dumps(record, ensure_ascii=False, sort_keys=True,
+                              separators=(",", ":")) + "\n").encode("utf-8")
+        if (len(encoded) > PROGRESS_MAX_RECORD_BYTES
+                or self.records >= PROGRESS_MAX_RECORDS
+                or self.bytes_used + len(encoded) > PROGRESS_MAX_BYTES):
+            self.poisoned = True
+            fail("progress journal limit exceeded")
+        # Reserve the complete attempt before I/O; a failure never resets or
+        # refunds either lifetime budget, even when only a prefix was written.
+        self.records += 1
+        self.bytes_used += len(encoded)
+        self.phase = phase
+        try:
+            if self.stream.write(encoded) != len(encoded):
+                fail("short progress journal write")
+            self.stream.flush()
+            os.fsync(self.stream.fileno())
+        except BaseException:
+            self.poisoned = True
+            raise
+
+    def close(self):
+        self.stream.close()
+
+    def __enter__(self):
+        try:
+            self.emit("transform", "started")
+        except BaseException:
+            try:
+                self.close()
+            except BaseException:
+                pass
+            raise
+        return self
+
+    def __exit__(self, kind, error, traceback):
+        if kind is not None:
+            # Preserve the active product exception if diagnostics also fail.
+            try:
+                self.emit(self.phase, "failed")
+            except BaseException:
+                pass
+        try:
+            self.close()
+        except BaseException:
+            if kind is None:
+                raise
+        return False
+
+
+def _progress_emit(progress, phase, event, **counts):
+    if progress is not None:
+        progress.emit(phase, event, **counts)
+
+
+@contextmanager
+def _progress_stage(progress, phase):
+    _progress_emit(progress, phase, "started")
+    completed = {}
+    yield completed
+    _progress_emit(progress, phase, "completed", **completed)
 
 
 def digest(data):
@@ -714,9 +834,11 @@ def verify_archive_pair(before, after, mapping):
     return report, dict(sorted(hits.items()))
 
 
-def _run(command, report, consume=None, timeout=COMMAND_TIMEOUT):
+def _run(command, report, consume=None, timeout=COMMAND_TIMEOUT, *, progress=None, phase=None):
     record = {"argv": list(map(str, command)), "status": "started"}
     report["commands"].append(record)
+    command_index = len(report["commands"])
+    _progress_emit(progress, phase, "started", command_index=command_index)
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         started = time.monotonic()
         try:
@@ -746,8 +868,13 @@ def _run(command, report, consume=None, timeout=COMMAND_TIMEOUT):
             record["seconds"] = round(time.monotonic() - started, 3)
             record["stdout_bytes"] = os.fstat(stdout.fileno()).st_size
             record["stderr_bytes"] = os.fstat(stderr.fileno()).st_size
+        _progress_emit(progress, phase, "child_completed", command_index=command_index,
+                       returncode=record["returncode"],
+                       child_ms=round(record["seconds"] * 1000),
+                       stdout_bytes=record["stdout_bytes"], stderr_bytes=record["stderr_bytes"])
         if record["stdout_bytes"] > MAX_OUTPUT or record["stderr_bytes"] > MAX_ERRORS:
             fail("tool output exceeds limit")
+        _progress_emit(progress, phase, "output_started", command_index=command_index)
         stdout.seek(0)
         value = hashlib.sha256()
         while chunk := stdout.read(1024 * 1024):
@@ -763,13 +890,24 @@ def _run(command, report, consume=None, timeout=COMMAND_TIMEOUT):
             record["stdout_diagnostic_truncated"] = record["stdout_bytes"] > MAX_ERRORS
             fail("tool command failed: " + str(command[0]) + ": " + error[:4096])
         stdout.seek(0)
+        _progress_emit(progress, phase, "consume_started", command_index=command_index)
         try:
             result = consume(stdout) if consume else None
         except (OSError, ValueError, UnicodeError) as error:
             record["status"], record["error"] = "validation_failed", str(error)
             raise
         record["status"] = "passed"
+        _progress_emit(progress, phase, "completed", command_index=command_index)
         return result
+
+
+def _progress_run(command, report, consume=None, timeout=COMMAND_TIMEOUT, *, progress=None, phase=None):
+    # Preserve the existing no-progress call shapes, including test boundaries.
+    if progress is None:
+        if timeout == COMMAND_TIMEOUT:
+            return _run(command, report, consume)
+        return _run(command, report, consume, timeout=timeout)
+    return _run(command, report, consume, timeout=timeout, progress=progress, phase=phase)
 
 
 def _lines(stream):
@@ -779,7 +917,7 @@ def _lines(stream):
         yield line.decode("utf-8", "strict")
 
 
-def verify_native_readers(nm, readobj, archive, snapshot, report):
+def verify_native_readers(nm, readobj, archive, snapshot, report, *, progress=None):
     symbols = [symbol for _, obj in snapshot.members for symbol in obj.symbols]
     external = [symbol for symbol in symbols if symbol.storage in (2, 105)]
     expected = Counter((symbol.name, "D" if symbol.indexed else "U") for symbol in external)
@@ -797,11 +935,13 @@ def verify_native_readers(nm, readobj, archive, snapshot, report):
         if observed != expected:
             fail("native nm and structural symbol inventories differ")
 
-    _run([nm, "--extern-only", "--no-demangle", "--format=posix", archive], report, nm_rows)
+    _progress_run([nm, "--extern-only", "--no-demangle", "--format=posix", archive],
+                  report, nm_rows, progress=progress, phase="native_nm")
     definitions = {symbol.name for symbol in external if symbol.definition}
     private = {symbol.name for symbol in external if is_private_guid_name(symbol.name)}
-    resolved = _run([readobj, "--symbols", "--no-demangle", archive], report,
-                    lambda stream: parse_resolved_aliases(_lines(stream), definitions, private))
+    resolved = _progress_run([readobj, "--symbols", "--no-demangle", archive], report,
+                             lambda stream: parse_resolved_aliases(_lines(stream), definitions, private),
+                             progress=progress, phase="native_readobj")
     required = private - definitions - resolved
     if required:
         fail("private GUID/template reference has no private definition: " + ", ".join(sorted(required)))
@@ -810,6 +950,19 @@ def verify_native_readers(nm, readobj, archive, snapshot, report):
 
 
 def transform(args, report):
+    progress_file = getattr(args, "progress_file", None)
+    if progress_file is None:
+        return _transform(args, report)
+    progress_path = Path(progress_file)
+    if progress_path.resolve() in {
+            Path(getattr(args, name)).resolve()
+            for name in ("input", "output", "report", "nm", "readobj")}:
+        fail("progress file must differ from input, output, report and tools")
+    with ProgressJournal(progress_path) as progress:
+        return _transform(args, report, progress)
+
+
+def _transform(args, report, progress=None):
     source, output = args.input.resolve(strict=True), args.output.absolute()
     if not output.parent.is_dir() or output.exists() or output.is_symlink():
         fail("output must be a fresh path in an existing directory")
@@ -820,62 +973,95 @@ def transform(args, report):
         path = getattr(args, name).resolve(strict=True)
         if not path.is_file() or path in (source, output.resolve(), args.report.resolve()):
             fail("invalid or overlapping tool path")
-        version = _run([path, "--version"], report,
-                       lambda stream: stream.read(65537).decode("utf-8", "strict"), timeout=30)
-        if len(version) > 65536 or not re.search(r"\bLLVM version 20\.1\.8(?:\s|$)", version):
-            fail(name + " must be pinned LLVM 20.1.8")
-        tools[name] = path
-        report["tools"][name] = {"path": str(path), "version": version.strip(), "sha256": file_hash(path)}
-    before = inspect_archive(source)
+        version = _progress_run(
+            [path, "--version"], report,
+            lambda stream: stream.read(65537).decode("utf-8", "strict"), timeout=30,
+            progress=progress, phase="tool_" + name + "_version")
+        with _progress_stage(progress, "tool_" + name + "_identity"):
+            if len(version) > 65536 or not re.search(r"\bLLVM version 20\.1\.8(?:\s|$)", version):
+                fail(name + " must be pinned LLVM 20.1.8")
+            tools[name] = path
+            report["tools"][name] = {"path": str(path), "version": version.strip(), "sha256": file_hash(path)}
+    if progress is not None:
+        with _progress_stage(progress, "input_identity") as completed:
+            completed["input_bytes"] = source.stat().st_size
+    with _progress_stage(progress, "input_inspect") as completed:
+        before = inspect_archive(source)
+        if progress is not None:
+            completed.update(input_bytes=before.size, member_count=len(before.members),
+                             symbol_count=sum(len(obj.symbols) for _, obj in before.members))
     report["input"] = {"path": str(source), "sha256": before.sha256, "size": before.size}
     report["machine"] = MACHINES[before.machine]
     report["member_count"] = len(before.members)
-    mapping = build_mapping(before)
-    report["mapping"] = dict(sorted(mapping.items()))
-    patches = _patch_plan(before, mapping)
+    with _progress_stage(progress, "mapping") as completed:
+        mapping = build_mapping(before)
+        report["mapping"] = dict(sorted(mapping.items()))
+        patches = _patch_plan(before, mapping)
+        if progress is not None:
+            completed.update(mapping_count=len(mapping), patch_count=len(patches))
     with tempfile.TemporaryDirectory(prefix="setup-coff-", dir=output.parent) as directory:
         temporary = Path(directory)
         staged = temporary / "rewritten.lib"
-        shutil.copyfile(source, staged)
-        if file_hash(staged) != before.sha256:
-            fail("input changed while copying the staging archive")
-        with staged.open("r+b") as stream:
-            for patch in patches:
-                stream.seek(patch.offset)
-                if stream.read(len(patch.old)) != patch.old:
-                    fail("staged name/index bytes disagree with the approved plan")
-                stream.seek(patch.offset)
-                stream.write(patch.new)
-            stream.flush()
-            os.fsync(stream.fileno())
-        after = inspect_archive(staged)
-        with source.open("rb") as original, staged.open("rb") as transformed:
-            report["byte_proof"] = _verify_byte_streams(original, transformed, before.size, patches)
-        report["members"], report["hits"] = verify_archive_pair(before, after, mapping)
-        verify_native_readers(tools["nm"], tools["readobj"], staged, after, report)
+        with _progress_stage(progress, "copy"):
+            shutil.copyfile(source, staged)
+            if file_hash(staged) != before.sha256:
+                fail("input changed while copying the staging archive")
+        with _progress_stage(progress, "patch"):
+            with staged.open("r+b") as stream:
+                for patch in patches:
+                    stream.seek(patch.offset)
+                    if stream.read(len(patch.old)) != patch.old:
+                        fail("staged name/index bytes disagree with the approved plan")
+                    stream.seek(patch.offset)
+                    stream.write(patch.new)
+                stream.flush()
+                os.fsync(stream.fileno())
+        with _progress_stage(progress, "output_inspect") as completed:
+            after = inspect_archive(staged)
+            if progress is not None:
+                completed.update(input_bytes=after.size, member_count=len(after.members),
+                                 symbol_count=sum(len(obj.symbols) for _, obj in after.members))
+        with _progress_stage(progress, "byte_proof"):
+            with source.open("rb") as original, staged.open("rb") as transformed:
+                report["byte_proof"] = _verify_byte_streams(original, transformed, before.size, patches)
+        with _progress_stage(progress, "pair_proof"):
+            report["members"], report["hits"] = verify_archive_pair(before, after, mapping)
+        with _progress_stage(progress, "native_readers"):
+            if progress is None:
+                verify_native_readers(tools["nm"], tools["readobj"], staged, after, report)
+            else:
+                verify_native_readers(tools["nm"], tools["readobj"], staged, after, report,
+                                      progress=progress)
         auditor = Path(__file__).resolve().with_name("AuditArchive.py")
         report["auditor"] = {"path": str(auditor), "sha256": file_hash(auditor)}
-        report["audit_output"] = _run(
+        report["audit_output"] = _progress_run(
             [sys.executable, "-B", auditor, "--nm", tools["nm"], "--archive", staged,
              "--coff-readobj", tools["readobj"]], report,
-            lambda stream: stream.read(MAX_ERRORS + 1).decode("utf-8", "strict"))
+            lambda stream: stream.read(MAX_ERRORS + 1).decode("utf-8", "strict"),
+            progress=progress, phase="nested_audit")
         if len(report["audit_output"].encode("utf-8")) > MAX_ERRORS:
             fail("ABI audit report exceeds its limit")
-        if file_hash(source) != before.sha256 or file_hash(staged) != after.sha256:
-            fail("input or staging archive changed during transaction")
-        for name, path in tools.items():
-            if file_hash(path) != report["tools"][name]["sha256"]:
-                fail("pinned tool changed during transaction")
+        with _progress_stage(progress, "final_identity"):
+            if file_hash(source) != before.sha256 or file_hash(staged) != after.sha256:
+                fail("input or staging archive changed during transaction")
+            for name, path in tools.items():
+                if file_hash(path) != report["tools"][name]["sha256"]:
+                    fail("pinned tool changed during transaction")
         # Same-filesystem hard link publishes exclusively; unlike replace or
         # rename this cannot overwrite a file created by a concurrent build.
         # Read identity from our staging file before link: looking up the output
         # afterwards could observe a file another actor has already substituted.
-        identity = staged.stat()
-        report["published_identity"] = {"device": identity.st_dev, "inode": identity.st_ino}
-        os.link(staged, output)
-        report["published"] = True
-        report["output"] = {"path": str(output), "sha256": after.sha256, "size": after.size}
-        report["status"] = "passed"
+        with _progress_stage(progress, "publish"):
+            identity = staged.stat()
+            report["published_identity"] = {"device": identity.st_dev, "inode": identity.st_ino}
+            os.link(staged, output)
+            report["published"] = True
+            report["output"] = {"path": str(output), "sha256": after.sha256, "size": after.size}
+            report["status"] = "passed"
+        # The final report is still pending. These events cover only this
+        # transform's existing staging cleanup, never Bundle publication.
+        _progress_emit(progress, "staging_cleanup", "started")
+    _progress_emit(progress, "staging_cleanup", "completed")
 
 
 def _rollback_output(output, report):
@@ -918,6 +1104,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("input", "output", "nm", "readobj", "report"):
         parser.add_argument("--" + name, required=True, type=Path)
+    parser.add_argument("--progress-file", type=Path)
     args = parser.parse_args()
     report = {"schema": SCHEMA, "status": "started", "tools": {}, "commands": [], "published": False,
               "publication_limit": PUBLICATION_LIMIT}

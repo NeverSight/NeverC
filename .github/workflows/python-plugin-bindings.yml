@@ -206,6 +206,9 @@ jobs:
 
       - name: Build compiler, Python bridge, core tests and SDK
         run: |
+          if [ "${{ matrix.host }}" = windows-x64 ]; then
+            export NEVERC_CPP_SETUP_TRACE=1
+          fi
           # Windows RelWithDebInfo + ninja-all-cores OOMs the hosted runner
           # (mspdbsrv / link). Build the three targets sequentially so the
           # neverc.exe link does not overlap the test/SDK compiles.
@@ -368,6 +371,15 @@ jobs:
           "${{ steps.python.outputs.python-path }}" -c \
             'import json, pathlib, sys; assert json.loads(pathlib.Path(sys.argv[1]).read_text())["version"] == "3.12.10"' \
             "$physical_prefix/python/runtime.json"
+
+      - name: Upload C++ Setup rewrite progress (Windows x64)
+        if: failure() && matrix.host == 'windows-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-setup-rewrite-progress-windows-x64
+          path: build/_deps/neverc-cpp-build/lib/Release/nevercCppFrontend.lib.setup-progress.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload driver log
         if: always() && matrix.host == 'linux-x64'

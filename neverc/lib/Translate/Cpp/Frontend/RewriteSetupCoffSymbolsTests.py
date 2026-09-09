@@ -7,9 +7,12 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import queue
 import struct
+import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 import uuid
@@ -889,6 +892,452 @@ class EqualWidthTests(unittest.TestCase):
         output = rewrite.rewrite_archive_bytes(payload, GUID_RENAMES)
         result = rewrite.inspect_archive_bytes(output)
         self.assertEqual(result.members[0][1].symbols[-1].aux, (auxiliary,))
+
+
+class ProgressJournalTests(unittest.TestCase):
+    """Small transaction witnesses; native tool execution remains controlled."""
+
+    arguments = TransactionTests.arguments
+    fixture = TransactionTests.fixture
+    read_failed_report = TransactionTests.read_failed_report
+
+    @contextmanager
+    def controlled_processes(self):
+        # The production command wrapper, output consumer and COFF reader run.
+        # Only Popen is replaced; these rows do not prove a native LLVM run.
+        names = (*GUID_RENAMES.values(), "aaa")
+        nm_output = "".join(f"{name} R 0 0\n" for name in names).encode()
+
+        def member(name, symbols):
+            rows = "".join(
+                "  Symbol {\n" + f"    Name: {symbol}\n"
+                "    Value: 0\n    Section: .rdata (1)\n"
+                "    BaseType: Null (0x0)\n    ComplexType: Null (0x0)\n"
+                "    StorageClass: External (0x2)\n    AuxSymbolCount: 0\n  }\n"
+                for symbol in symbols)
+            return (f"File: controlled.lib({name})\nFormat: COFF-x86-64\n"
+                    "Arch: x86_64\nAddressSize: 64bit\nSymbols [\n" + rows + "]\n")
+
+        readobj_output = (member("guid.obj", GUID_RENAMES.values()) +
+                          member("aaa.obj", ("aaa",))).encode()
+
+        class Process:
+            returncode = 0
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def poll(self):
+                return self.returncode
+
+            def kill(self):
+                raise AssertionError("completed controlled child must not be killed")
+
+        def launch(command, *, stdout, stderr):
+            arguments = list(map(str, command))
+            if arguments[1:] == ["--version"]:
+                payload = b"LLVM version 20.1.8\nVERSION_OUTPUT_PRIVATE_SENTINEL\n"
+            elif "--format=posix" in arguments:
+                payload = nm_output
+            elif "--symbols" in arguments:
+                payload = readobj_output
+            elif len(arguments) > 2 and Path(arguments[2]).name == "AuditArchive.py":
+                payload = b"AUDIT_OUTPUT_PRIVATE_SENTINEL\n"
+            else:
+                raise AssertionError("unexpected controlled command")
+            stdout.write(payload)
+            stdout.flush()
+            return Process()
+
+        with mock.patch.object(rewrite.subprocess, "Popen", side_effect=launch) as process:
+            yield process
+
+    def journal_arguments(self, root):
+        return self.arguments(root) + ["--progress-file", str(root / "progress.jsonl")]
+
+    def run_main(self, root, *, progress=True):
+        arguments = self.journal_arguments(root) if progress else self.arguments(root)
+        with self.controlled_processes() as processes, mock.patch.object(
+                sys, "argv", arguments), mock.patch.object(sys, "stdout", new=io.StringIO()):
+            rewrite.main()
+        return processes
+
+    def read_progress(self, root):
+        data = (root / "progress.jsonl").read_bytes()
+        self.assertTrue(data.endswith(b"\n"))
+        lines = data.splitlines(keepends=True)
+        records = [json.loads(line.decode("utf-8", "strict")) for line in lines]
+        self.assertLessEqual(len(lines), 64)
+        self.assertLessEqual(len(data), 32768)
+        self.assertTrue(all(len(line) <= 512 for line in lines))
+        self.assertEqual([record["seq"] for record in records], list(range(1, len(records) + 1)))
+        return data, records
+
+    def test_default_off_keeps_the_existing_transaction_and_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, original, expected = self.fixture(directory)
+            with mock.patch.object(rewrite, "ProgressJournal") as journal:
+                self.run_main(root, progress=False)
+            journal.assert_not_called()
+            self.assertEqual((root / "output.lib").read_bytes(), expected)
+            self.assertEqual((root / "input.lib").read_bytes(), original)
+            self.assertFalse((root / "progress.jsonl").exists())
+            report = json.loads((root / "report.json").read_text())
+            self.assertEqual(report["schema"], "neverc.setup-coff-rewrite.v2")
+            self.assertEqual(report["status"], "passed")
+            self.assertTrue(report["published"])
+            self.assertNotIn("progress", report)
+
+    def test_success_records_bounded_phases_without_private_text(self):
+        with tempfile.TemporaryDirectory(prefix="private-path-sentinel-") as directory:
+            root, original, expected = self.fixture(directory)
+            processes = self.run_main(root)
+            self.assertEqual(processes.call_count, 5)
+            self.assertEqual((root / "output.lib").read_bytes(), expected)
+            self.assertEqual((root / "input.lib").read_bytes(), original)
+            data, records = self.read_progress(root)
+            expected_order = [("transform", "started")]
+
+            def stage(phase):
+                expected_order.extend(((phase, "started"), (phase, "completed")))
+
+            def command(phase):
+                expected_order.extend((phase, event) for event in (
+                    "started", "child_completed", "output_started", "consume_started", "completed"))
+
+            for tool in ("nm", "readobj"):
+                command("tool_" + tool + "_version")
+                stage("tool_" + tool + "_identity")
+            stage("input_identity")
+            for phase in ("input_inspect", "mapping", "copy", "patch", "output_inspect",
+                          "byte_proof", "pair_proof"):
+                stage(phase)
+            expected_order.append(("native_readers", "started"))
+            command("native_nm")
+            command("native_readobj")
+            expected_order.append(("native_readers", "completed"))
+            command("nested_audit")
+            for phase in ("final_identity", "publish", "staging_cleanup"):
+                stage(phase)
+            self.assertEqual([(row["phase"], row["event"]) for row in records], expected_order)
+            allowed = {"seq", "elapsed_ms", "phase", "event", "input_bytes", "member_count",
+                       "symbol_count", "mapping_count", "patch_count", "command_index",
+                       "returncode", "stdout_bytes", "stderr_bytes", "child_ms"}
+            for row in records:
+                self.assertLessEqual(set(row), allowed)
+                for key, value in row.items():
+                    if key not in ("phase", "event"):
+                        self.assertIs(type(value), int)
+            self.assertEqual([row["elapsed_ms"] for row in records],
+                             sorted(row["elapsed_ms"] for row in records))
+            for forbidden in (str(root), "argv", "input.lib", "rewritten.lib", "nm.exe",
+                              "PYTHONPATH", "VERSION_OUTPUT_PRIVATE_SENTINEL",
+                              "AUDIT_OUTPUT_PRIVATE_SENTINEL", "published", "passed"):
+                self.assertNotIn(forbidden.encode(), data)
+
+    def test_schema_rejects_unknown_text_boolean_and_negative_counts(self):
+        cases = [("unlisted_phase", "started", {}), ("copy", "success", {}),
+                 ("copy", "started", {"argv": "private-command"}),
+                 ("copy", "started", {"path": "private-path"}),
+                 ("copy", "started", {"error": "private-error"}),
+                 ("copy", "started", {"member_count": True}),
+                 ("copy", "started", {"member_count": -1}),
+                 ("copy", "started", {"member_count": "2"}),
+                 ("copy", "started", {"member_count": []}),
+                 ("copy", "started", {"member_count": 1 << 63}),
+                 ("copy", "started", {"returncode": -(1 << 63) - 1})]
+        for phase, event, counts in cases:
+            with self.subTest(phase=phase, event=event, counts=counts), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "progress.jsonl"
+                with rewrite.ProgressJournal(path) as journal:
+                    before = path.read_bytes()
+                    with self.assertRaises(ValueError):
+                        journal.emit(phase, event, **counts)
+                    self.assertEqual(path.read_bytes(), before)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.jsonl"
+            with rewrite.ProgressJournal(path) as journal:
+                journal.emit("native_nm", "child_completed", returncode=-1)
+            self.assertEqual(json.loads(path.read_bytes().splitlines()[-1])["returncode"], -1)
+
+    def test_record_limit_is_cumulative_and_poisoned_after_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.jsonl"
+            with rewrite.ProgressJournal(path) as journal:
+                for _ in range(63):
+                    journal.emit("copy", "started")
+                before = path.read_bytes()
+                self.assertEqual(len(before.splitlines()), 64)
+                used = journal.bytes_used
+                with self.assertRaises(ValueError):
+                    journal.emit("copy", "failed")
+                self.assertTrue(journal.poisoned)
+                self.assertGreaterEqual(journal.bytes_used, used)
+                with self.assertRaises(ValueError):
+                    journal.emit("copy", "completed")
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_byte_limits_count_the_persisted_utf8_newline(self):
+        # Fixed time makes these two short records byte-for-byte reproducible.
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+                rewrite.time, "monotonic", return_value=10.0):
+            root = Path(directory)
+            with rewrite.ProgressJournal(root / "reference.jsonl") as journal:
+                journal.emit("copy", "started", input_bytes=127)
+            first, second = (root / "reference.jsonl").read_bytes().splitlines(keepends=True)
+            self.assertTrue(first.endswith(b"\n") and second.endswith(b"\n"))
+            for constant, maximum in (("PROGRESS_MAX_RECORD_BYTES", len(first) - 1),
+                                      ("PROGRESS_MAX_BYTES", len(first) + len(second) - 1)):
+                with self.subTest(constant=constant), mock.patch.object(rewrite, constant, maximum):
+                    path = root / (constant + ".jsonl")
+                    with self.assertRaises(ValueError):
+                        with rewrite.ProgressJournal(path) as limited:
+                            limited.emit("copy", "started", input_bytes=127)
+                    self.assertLessEqual(path.stat().st_size, maximum)
+                    if constant == "PROGRESS_MAX_BYTES":
+                        self.assertEqual(path.read_bytes(), first)
+                        self.assertTrue(limited.poisoned)
+                        self.assertGreaterEqual(limited.bytes_used, len(first))
+
+    def test_partial_write_poison_preserves_the_attempt_budgets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.jsonl"
+            with rewrite.ProgressJournal(path) as journal:
+                before = path.read_bytes()
+                records, used = journal.records, journal.bytes_used
+                stream = journal.stream
+                attempted = []
+
+                def short_write(data):
+                    attempted.append(data)
+                    return stream.write(data[:3])
+
+                journal.stream = mock.Mock(wraps=stream)
+                journal.stream.write.side_effect = short_write
+                with self.assertRaisesRegex(ValueError, "short progress journal write"):
+                    journal.emit("copy", "failed", input_bytes=127)
+                self.assertTrue(journal.poisoned)
+                self.assertEqual(journal.records, records + 1)
+                self.assertEqual(journal.bytes_used, used + len(attempted[0]))
+                with self.assertRaises(ValueError):
+                    journal.emit("copy", "completed")
+                self.assertEqual(len(attempted), 1)
+            self.assertEqual(path.read_bytes(), before + attempted[0][:3])
+
+    @contextmanager
+    def journal_fault(self, root, operation, *, late=False, replace_output=False):
+        path, output = root / "progress.jsonl", root / "output.lib"
+        replacement = root / "foreign.lib"
+        if replace_output:
+            replacement.write_bytes(b"foreign replacement must survive")
+        state = {"faults": 0, "descriptor": None, "phase": None}
+        open_file, fsync = Path.open, rewrite.os.fsync
+        emit = rewrite.ProgressJournal.emit
+        target = ("publish", "completed") if late else ("transform", "started")
+
+        def fault():
+            if state["faults"]:
+                return
+            if operation != "close" and state["phase"] != target:
+                return
+            state["faults"] += 1
+            if replace_output:
+                self.assertTrue(output.exists())
+                replacement.replace(output)
+            raise OSError("controlled journal " + operation + " failure")
+
+        class Stream:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __getattr__(self, name):
+                return getattr(self.stream, name)
+
+            def write(self, data):
+                if operation == "write":
+                    fault()
+                return self.stream.write(data)
+
+            def flush(self):
+                if operation == "flush":
+                    fault()
+                return self.stream.flush()
+
+            def close(self):
+                self.stream.close()
+                if operation == "close":
+                    fault()
+
+        def open_progress(file, *args, **kwargs):
+            mode = args[0] if args else kwargs.get("mode", "r")
+            if file == path and mode == "xb":
+                if operation == "open":
+                    state["faults"] += 1
+                    raise OSError("controlled journal open failure")
+                stream = open_file(file, *args, **kwargs)
+                state["descriptor"] = stream.fileno()
+                return Stream(stream)
+            return open_file(file, *args, **kwargs)
+
+        def sync_progress(descriptor):
+            if operation == "fsync" and descriptor == state["descriptor"]:
+                fault()
+            return fsync(descriptor)
+
+        def emit_progress(journal, phase, event, **counts):
+            state["phase"] = (phase, event)
+            try:
+                return emit(journal, phase, event, **counts)
+            finally:
+                state["phase"] = None
+
+        with mock.patch.object(Path, "open", new=open_progress), mock.patch.object(
+                rewrite.os, "fsync", side_effect=sync_progress), mock.patch.object(
+                rewrite.ProgressJournal, "emit", new=emit_progress):
+            yield state
+
+    def test_progress_open_write_flush_and_fsync_fail_without_publication(self):
+        for operation in ("open", "write", "flush", "fsync"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                root, original, _ = self.fixture(directory)
+                with self.journal_fault(root, operation) as state:
+                    with self.assertRaisesRegex(SystemExit, "controlled journal " + operation):
+                        self.run_main(root)
+                self.assertEqual(state["faults"], 1)
+                self.assertFalse((root / "output.lib").exists())
+                self.read_failed_report(root, original, "controlled journal " + operation)
+
+    def test_existing_progress_file_is_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, original, _ = self.fixture(directory)
+            path = root / "progress.jsonl"
+            path.write_bytes(b"an earlier transaction owns this journal\n")
+            with self.assertRaises(SystemExit):
+                self.run_main(root)
+            self.assertEqual(path.read_bytes(), b"an earlier transaction owns this journal\n")
+            self.assertFalse((root / "output.lib").exists())
+            self.assertEqual((root / "input.lib").read_bytes(), original)
+
+    def test_progress_limit_failure_cannot_publish_a_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, original, _ = self.fixture(directory)
+            with mock.patch.object(rewrite, "PROGRESS_MAX_RECORDS", 1):
+                with self.assertRaises(SystemExit):
+                    self.run_main(root)
+            self.assertFalse((root / "output.lib").exists())
+            report = self.read_failed_report(root, original, "")
+            self.assertTrue(report["error"])
+            _, records = self.read_progress(root)
+            self.assertEqual([(row["phase"], row["event"]) for row in records],
+                             [("transform", "started")])
+
+    def test_late_progress_errors_rollback_only_the_owned_publication(self):
+        for operation in ("write", "fsync", "close"):
+            for replace_output in (False, True):
+                with self.subTest(operation=operation, replace_output=replace_output), tempfile.TemporaryDirectory() as directory:
+                    root, original, _ = self.fixture(directory)
+                    with self.journal_fault(root, operation, late=True,
+                                            replace_output=replace_output) as state:
+                        with self.assertRaisesRegex(SystemExit, "controlled journal " + operation):
+                            self.run_main(root)
+                    self.assertEqual(state["faults"], 1)
+                    report = self.read_failed_report(root, original, "controlled journal " + operation)
+                    if replace_output:
+                        self.assertEqual((root / "output.lib").read_bytes(), b"foreign replacement must survive")
+                        self.assertEqual(report["rollback"]["status"], "preserved-replacement")
+                    else:
+                        self.assertFalse((root / "output.lib").exists())
+                        self.assertEqual(report["rollback"]["status"], "removed-owned-output")
+                    self.assertEqual(report["byte_proof"]["status"], "passed")
+                    self.assertFalse(report["published"])
+
+    def test_failed_progress_record_preserves_the_original_transaction_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, original, _ = self.fixture(directory)
+            emit = rewrite.ProgressJournal.emit
+
+            def secondary_failure(journal, phase, event, **counts):
+                if event == "failed":
+                    raise OSError("SECONDARY_JOURNAL_PRIVATE_SENTINEL")
+                return emit(journal, phase, event, **counts)
+
+            with mock.patch.object(rewrite, "inspect_archive", side_effect=ValueError(
+                    "PRIMARY_TRANSACTION_PRIVATE_SENTINEL")), mock.patch.object(
+                    rewrite.ProgressJournal, "emit", new=secondary_failure):
+                with self.assertRaisesRegex(SystemExit, "PRIMARY_TRANSACTION_PRIVATE_SENTINEL") as caught:
+                    self.run_main(root)
+            self.assertNotIn("SECONDARY", str(caught.exception))
+            report = self.read_failed_report(root, original, "PRIMARY_TRANSACTION_PRIVATE_SENTINEL")
+            self.assertNotIn("SECONDARY", report["error"])
+            self.assertFalse((root / "output.lib").exists())
+            data, _ = self.read_progress(root)
+            self.assertNotIn(b"PRIMARY_TRANSACTION_PRIVATE_SENTINEL", data)
+            self.assertNotIn(b"SECONDARY_JOURNAL_PRIVATE_SENTINEL", data)
+
+    def test_interruption_occurs_only_after_a_durable_started_handshake(self):
+        # This CI-only child has no native subprocesses: it blocks immediately
+        # after the real first journal emit has flushed and fsynced successfully.
+        child = r'''
+import importlib.util
+from pathlib import Path
+import sys
+source, root = Path(sys.argv[1]), Path(sys.argv[2])
+sys.path.insert(0, str(source.parent))
+spec = importlib.util.spec_from_file_location("progress_writer_child", source)
+writer = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = writer
+spec.loader.exec_module(writer)
+emit = writer.ProgressJournal.emit
+def synchronized_emit(journal, phase, event, **counts):
+    result = emit(journal, phase, event, **counts)
+    if (phase, event) == ("transform", "started"):
+        print("DURABLE_STARTED", flush=True)
+        sys.stdin.buffer.read(1)
+        raise AssertionError("parent must terminate the blocked child")
+    return result
+writer.ProgressJournal.emit = synchronized_emit
+sys.argv = [str(source), "--input", str(root / "input.lib"),
+            "--output", str(root / "output.lib"), "--report", str(root / "report.json"),
+            "--nm", str(root / "nm.exe"), "--readobj", str(root / "readobj.exe"),
+            "--progress-file", str(root / "progress.jsonl")]
+writer.main()
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root, original, _ = self.fixture(directory)
+            with tempfile.TemporaryFile() as errors:
+                process = subprocess.Popen(
+                    [sys.executable, "-I", "-B", "-c", child,
+                     str(Path(rewrite.__file__).resolve()), str(root)],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors)
+                ready = queue.Queue()
+                reader = threading.Thread(target=lambda: ready.put(process.stdout.readline()), daemon=True)
+                reader.start()
+                try:
+                    self.assertEqual(ready.get(timeout=20).rstrip(b"\r\n"), b"DURABLE_STARTED")
+                    self.assertIsNone(process.poll())
+                    _, records = self.read_progress(root)
+                    self.assertEqual([(row["phase"], row["event"]) for row in records],
+                                     [("transform", "started")])
+                    self.assertFalse((root / "output.lib").exists())
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait(timeout=10)
+                    reader.join(timeout=5)
+                    process.stdin.close()
+                    process.stdout.close()
+                self.assertFalse(reader.is_alive())
+                self.assertNotEqual(process.returncode, 0)
+            self.assertEqual((root / "input.lib").read_bytes(), original)
+            self.assertFalse((root / "output.lib").exists())
+            data, records = self.read_progress(root)
+            self.assertEqual(len(records), 1)
+            self.assertNotIn(b"completed", data)
+            report_bytes = (root / "report.json").read_bytes()
+            if report_bytes:
+                report = json.loads(report_bytes)
+                self.assertNotEqual(report["status"], "passed")
+                self.assertFalse(report["published"])
 
 
 if __name__ == "__main__":

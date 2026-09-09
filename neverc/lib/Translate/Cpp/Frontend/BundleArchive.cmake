@@ -89,10 +89,19 @@ if(COFF)
   endif()
   set(_isolated "${OUTPUT}.isolated.tmp")
   file(REMOVE "${_isolated}")
+  set(_progress_arguments)
+  if("$ENV{NEVERC_CPP_SETUP_TRACE}" STREQUAL "1")
+    # This bounded journal is independent of the full Setup runtime contract.
+    # Remove only this build's owned intermediate before the writer reserves it.
+    set(_progress_report "${OUTPUT}.setup-progress.jsonl")
+    file(REMOVE "${_progress_report}")
+    list(APPEND _progress_arguments --progress-file "${_progress_report}")
+  endif()
   _setup_stage(started rewrite 0)
   execute_process(COMMAND "${PYTHON}" -E -B "${WRITER}"
     --input "${_temporary}" --output "${_isolated}" --nm "${NM}"
     --readobj "${READOBJ}" --report "${_rewrite_report}"
+    ${_progress_arguments}
     RESULT_VARIABLE _result TIMEOUT 600)
   if(NOT _result EQUAL 0)
     _setup_stage(failed rewrite "${_result}")
