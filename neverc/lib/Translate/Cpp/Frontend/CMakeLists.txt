@@ -149,12 +149,14 @@ set(_builtin_sdk "${NEVERC_CPP_REPOSITORY_ROOT}/neverc/lib/Translate/Cpp/SDK")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp Frontend.h
   SetupGuidSymbols.py RewriteSetupCoffSymbols.py BundleArchive.cmake
+  MsvcRuntimeSymbols.py
   AuditArchive.py CoffWeakAliases.py HostCoffSymbols.py VerifyArchiveMembers.py
   "${_builtin_sdk}/catalog.json" "${_builtin_sdk}/embed.py")
 set(_identity "builtin:llvm20.1.8:6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d")
 foreach(_input Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp Frontend.h
     CMakeLists.txt IsolateSymbols.py NoCrashReporter.h BuildID.h.in
     SetupGuidSymbols.py RewriteSetupCoffSymbols.py BundleArchive.cmake
+    MsvcRuntimeSymbols.py
     AuditArchive.py CoffWeakAliases.py HostCoffSymbols.py VerifyArchiveMembers.py)
   file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/${_input}" _hash)
   string(APPEND _identity ":${_hash}")
@@ -302,6 +304,7 @@ add_custom_command(OUTPUT "${_output}"
   DEPENDS ${_archives} ${_audit_tools} ${_setup_contract_dependencies}
     "${CMAKE_CURRENT_SOURCE_DIR}/BundleArchive.cmake"
     "${CMAKE_CURRENT_SOURCE_DIR}/AuditArchive.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/MsvcRuntimeSymbols.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/CoffWeakAliases.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/SetupGuidSymbols.py"
     "${CMAKE_CURRENT_SOURCE_DIR}/RewriteSetupCoffSymbols.py"
@@ -319,6 +322,7 @@ add_custom_target(nevercCppFrontendBundle
     "${CMAKE_CURRENT_SOURCE_DIR}/VerifyArchiveMembers.py"
     --archive "${_output}" --archiver "${CMAKE_AR}" --kind "${_member_reader_kind}"
   COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/AuditArchiveTests.py"
+  COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/MsvcRuntimeSymbolsTests.py"
   COMMAND "${Python3_EXECUTABLE}" -E -B "${CMAKE_CURRENT_SOURCE_DIR}/CoffWeakAliasesTests.py"
   COMMAND "${Python3_EXECUTABLE}" -E -B
     "${NEVERC_CPP_REPOSITORY_ROOT}/tests/neverc/HostCoffSymbolsTests.py"

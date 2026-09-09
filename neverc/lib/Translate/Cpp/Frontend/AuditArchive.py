@@ -10,6 +10,9 @@ import sys
 
 sys.dont_write_bytecode = True
 
+from MsvcRuntimeSymbols import (MSVC_DELETE_FALLBACK,
+                                msvc_delete_weak_reference,
+                                msvc_runtime_definition)
 from SetupGuidSymbols import (contains_old_guid_name, is_private_guid_name,
                               is_private_guid_metadata_name)
 
@@ -435,9 +438,11 @@ def audit(args):
             bad_private_names.add(name)
     definitions, references = set(), set()
     private_guid_symbols, private_guid_weak_symbols = set(), set()
+    private_kinds = {}
     for record in symbol_records(nm_output(
             nm, [args.archive], "--format=posix")):
         name, kind, _, _ = record
+        private_kinds.setdefault(name, set()).add(kind)
         report_strdup_records("private", args.archive, (record,))
         # This is a private-archive invariant, independent of whether a host
         # happens to expose the same GUID or SDK template COMDAT today.
@@ -475,6 +480,8 @@ def audit(args):
                 or name in renamed.values() or plain in renamed.values())
 
     resolved_aliases = set()
+    runtime_fallbacks = {}
+    host_format = getattr(args, "host_format", "nm")
     coff_readobj = getattr(args, "coff_readobj", None)
     coff_readobj_file = getattr(args, "coff_readobj_file", None)
     if coff_readobj_file:
@@ -487,8 +494,22 @@ def audit(args):
         # appear defined to nm while its auxiliary fallback remains unresolved.
         private_names = {name for name in definitions | references
                          if private_dependency(name)}
+        # Only an observed weak MSVC wrapper with its precise private runtime
+        # body can request an exception. Ordinary U references stay rejected.
+        if (args.host_lib_dir and host_format == "coff-index" and
+                msvc_runtime_definition(
+                    MSVC_DELETE_FALLBACK,
+                    private_decoded.get(MSVC_DELETE_FALLBACK, ""),
+                    private_kinds.get(MSVC_DELETE_FALLBACK, set()))):
+            runtime_fallbacks = {
+                name: MSVC_DELETE_FALLBACK for name in references
+                if msvc_delete_weak_reference(name, private_decoded.get(name, ""),
+                                               private_kinds[name])}
+        private_names.update(runtime_fallbacks)
+        proof_arguments = ({"expected_fallbacks": runtime_fallbacks}
+                           if runtime_fallbacks else {})
         resolved_aliases = read_resolved_aliases(
-            coff_readobj, args.archive, definitions, private_names)
+            coff_readobj, args.archive, definitions, private_names, **proof_arguments)
     elif private_guid_weak_symbols:
         # W/V can describe an alias, not an actual definition. Without COFF
         # auxiliary records its fallback could still borrow a host symbol.
@@ -584,6 +605,14 @@ def audit(args):
                     host_evidence_batches.append((batch, batch_candidates))
         shared = (definitions | references) & host_definitions
         for name in sorted(shared):
+            # Runtime sharing never erases independent private-archive findings
+            # above, including an original Setup GUID or invalid metadata.
+            if host_format == "coff-index":
+                if (name not in references and msvc_runtime_definition(
+                        name, private_decoded.get(name, ""), private_kinds[name])):
+                    continue
+                if name in runtime_fallbacks and name in resolved_aliases:
+                    continue
             # Only a platform strdup reference may bind the host allocator.
             # A private strong OR weak definition is never exempted. The COFF
             # index cannot supply observed object kinds, so it grants no such

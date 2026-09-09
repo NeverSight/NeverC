@@ -259,6 +259,8 @@ function(neverc_check_builtin_cpp_frontend target)
     VERBATIM)
   set_property(TARGET "${target}" APPEND PROPERTY LINK_DEPENDS
     "${_audit_SCRIPT}"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../lib/Translate/Cpp/Frontend/MsvcRuntimeSymbols.py"
+    "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../lib/Translate/Cpp/Frontend/SetupGuidSymbols.py"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../lib/Translate/Cpp/Frontend/CoffWeakAliases.py"
     "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../../lib/Translate/Cpp/Frontend/HostCoffSymbols.py")
 endfunction()
