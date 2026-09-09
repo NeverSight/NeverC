@@ -2992,8 +2992,11 @@ file(WRITE "${CMAKE_BINARY_DIR}/consumed-values.txt"
                 if value is not None:
                     command.append("-D" + name + ":STRING=" + value)
             self.require_success(command)
-            self.assertEqual((build / "offline-url.txt").read_text(encoding="utf-8").strip(),
-                             offline.as_posix())
+            captured_url = (build / "offline-url.txt").read_text(encoding="utf-8").strip()
+            captured_archive = Path(captured_url)
+            # CMake may expand Windows 8.3 paths to their long names.
+            self.assertTrue(captured_archive.is_absolute(), captured_url)
+            self.assertTrue(captured_archive.samefile(offline), captured_url)
             directories = (build / "external-directories.txt").read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(directories), 2)
             # ExternalProject may mkdir these directories at configure time;
