@@ -135,26 +135,63 @@ TEST_F(TranslateCompilationContextTest,
 
 TEST_F(TranslateCompilationContextTest,
        GnuAndWindowsCommandQuotingProduceEquivalentMacros) {
-  const auto QuotedSource = Source.parent_path() / "空 格.cpp";
+  const auto SourceName = fs::u8path(u8"\u7a7a \u683c.cpp");
+  const auto QuotedSource = Source.parent_path() / SourceName;
+  const auto RelativeSource = "../src/" + SourceName.generic_u8string();
+  ASSERT_EQ(QuotedSource.filename().u8string(), u8"\u7a7a \u683c.cpp");
+  ASSERT_EQ(fs::u8path(QuotedSource.u8string()), QuotedSource);
   writeFile(QuotedSource, "int f() { return 1; }\n");
-  Options.Selections = {{QuotedSource.string(), std::nullopt}};
-  auto CommandEntry = [&](const std::string &Command) {
-    return Object{{"directory", jsonString(Build.string())},
-                  {"file", jsonString("../src/空 格.cpp")},
-                  {"command", jsonString(Command)}};
+  std::optional<TranslationUnitContext> GNUUnit, WindowsUnit;
+  auto CheckMode = [&](CommandQuoting Quoting, const std::string &Command,
+                       const char *Label,
+                       std::optional<TranslationUnitContext> &ParsedUnit) {
+    SCOPED_TRACE(Label);
+    ParsedUnit.reset();
+    Options.Database = Database.u8string();
+    Options.ProjectRoot = Root.u8string();
+    Options.Selections = {{QuotedSource.u8string(), std::nullopt}};
+    Options.ExtraSourceArguments.clear();
+    Options.Quoting = Quoting;
+    database({Object{{"directory", jsonString(Build.u8string())},
+                     {"file", jsonString(RelativeSource)},
+                     {"command", jsonString(Command)}}});
+    const bool Parsed = parse();
+    std::string Details;
+    for (const auto &Diagnostic : Errors)
+      Details += "\n" + Diagnostic.Code + " " + Diagnostic.Location.File + " [" +
+                 Diagnostic.Construct + "]: " + Diagnostic.Reason;
+    ASSERT_TRUE(Parsed) << Details;
+    ASSERT_TRUE(Errors.empty()) << Details;
+    ASSERT_EQ(Result.Units.size(), 1u);
+    const auto Unit = Result.Units.front();
+    EXPECT_EQ(Unit.SourceRelative, u8"src/\u7a7a \u683c.cpp");
+    EXPECT_EQ(Unit.WorkingDirectoryRelative, "build");
+    EXPECT_EQ(Unit.CompilerExecutable, "tool dir/clang++");
+    EXPECT_EQ(Unit.NormalizedArguments,
+              (std::vector<std::string>{"-std=c++17", "-DVALUE=hello world", "-I",
+                                        "$PROJECT/include one"}));
+    EXPECT_EQ(Unit.FrontendArguments,
+              (std::vector<std::string>{
+                  "-std=c++17", "-DVALUE=hello world", "-I",
+                  fs::canonical(Root / "include one").u8string()}));
+    EXPECT_TRUE(Unit.ResponseFiles.empty());
+    EXPECT_EQ(Unit.ConfigurationID.size(), 64u);
+    ParsedUnit = Unit;
   };
-  Options.Quoting = CommandQuoting::GNU;
-  database({CommandEntry("'tool dir/clang++' '-DVALUE=hello world' "
-                         "-I'../include one' -c '../src/空 格.cpp'")});
-  ASSERT_TRUE(parse());
-  const auto GNUArguments = Result.Units.front().NormalizedArguments;
-  const auto GNUHash = Result.Units.front().ConfigurationID;
-  Options.Quoting = CommandQuoting::Windows;
-  database({CommandEntry("\"tool dir/clang++\" \"-DVALUE=hello world\" "
-                         "-I\"../include one\" -c \"../src/空 格.cpp\"")});
-  ASSERT_TRUE(parse());
-  EXPECT_EQ(Result.Units.front().NormalizedArguments, GNUArguments);
-  EXPECT_EQ(Result.Units.front().ConfigurationID, GNUHash);
+  EXPECT_NO_FATAL_FAILURE(CheckMode(
+      CommandQuoting::GNU,
+      "'tool dir/clang++' '-DVALUE=hello world' -I'../include one' -c '" +
+          RelativeSource + "'",
+      "GNU", GNUUnit));
+  EXPECT_NO_FATAL_FAILURE(CheckMode(
+      CommandQuoting::Windows,
+      "\"tool dir/clang++\" \"-DVALUE=hello world\" -I\"../include one\" -c \"" +
+          RelativeSource + "\"",
+      "Windows", WindowsUnit));
+  if (GNUUnit && WindowsUnit) {
+    EXPECT_EQ(GNUUnit->NormalizedArguments, WindowsUnit->NormalizedArguments);
+    EXPECT_EQ(GNUUnit->ConfigurationID, WindowsUnit->ConfigurationID);
+  }
 }
 
 TEST_F(TranslateCompilationContextTest,

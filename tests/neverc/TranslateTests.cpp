@@ -195,28 +195,44 @@ protected:
                       fs::path MapPath = {}, fs::path ManifestPath = {}) {
     ASSERT_TRUE(fs::is_regular_file(Output)) << Output;
     EXPECT_FALSE(fs::is_symlink(Output));
-    if (MapPath.empty())
-      MapPath = Output.string() + ".map.json";
-    if (ManifestPath.empty())
-      ManifestPath = Output.string() + ".manifest.json";
+    if (MapPath.empty()) {
+      MapPath = Output;
+      MapPath += ".map.json";
+    }
+    if (ManifestPath.empty()) {
+      ManifestPath = Output;
+      ManifestPath += ".manifest.json";
+    }
     ASSERT_TRUE(fs::is_regular_file(MapPath));
     ASSERT_TRUE(fs::is_regular_file(ManifestPath));
     EXPECT_FALSE(fs::is_symlink(MapPath));
     EXPECT_FALSE(fs::is_symlink(ManifestPath));
-    const auto SourceHash = neverc::translate::sha256(readFile(Output));
-    auto MapValue = llvm::json::parse(readFile(MapPath));
+    // Metadata filenames are UTF-8, independent of the Windows ANSI code page.
+    // Keep the checked reader's default 32 MiB bound for these shared callers.
+    auto OutputBytes = neverc::translate::readFile(Output.u8string());
+    ASSERT_TRUE(static_cast<bool>(OutputBytes))
+        << llvm::toString(OutputBytes.takeError()).str().str();
+    const auto SourceHash = neverc::translate::sha256(*OutputBytes);
+    auto MapBytes = neverc::translate::readFile(MapPath.u8string());
+    ASSERT_TRUE(static_cast<bool>(MapBytes))
+        << llvm::toString(MapBytes.takeError()).str().str();
+    auto MapValue = llvm::json::parse(*MapBytes);
     ASSERT_TRUE(static_cast<bool>(MapValue))
         << llvm::toString(MapValue.takeError()).str().str();
     const auto *Map = MapValue->getAsObject();
     ASSERT_NE(Map, nullptr);
     EXPECT_TRUE(Map->getString("schema") == "neverc.translate.source-map");
-    EXPECT_TRUE(Map->getString("generated_file") == Output.filename().string());
+    EXPECT_EQ(Map->getString("generated_file").str(),
+              Output.filename().u8string());
     EXPECT_TRUE(Map->getString("generated_sha256") == SourceHash);
     const auto *Entries = Map->getArray("entries");
     ASSERT_NE(Entries, nullptr);
     EXPECT_FALSE(Entries->empty());
 
-    auto ManifestValue = llvm::json::parse(readFile(ManifestPath));
+    auto ManifestBytes = neverc::translate::readFile(ManifestPath.u8string());
+    ASSERT_TRUE(static_cast<bool>(ManifestBytes))
+        << llvm::toString(ManifestBytes.takeError()).str().str();
+    auto ManifestValue = llvm::json::parse(*ManifestBytes);
     ASSERT_TRUE(static_cast<bool>(ManifestValue))
         << llvm::toString(ManifestValue.takeError()).str().str();
     const auto *Manifest = ManifestValue->getAsObject();
@@ -245,9 +261,13 @@ protected:
     ASSERT_EQ(Dependencies->size(), 1u);
     const auto *Dependency = Dependencies->front().getAsObject();
     ASSERT_NE(Dependency, nullptr);
-    EXPECT_TRUE(Dependency->getString("path") == Source.filename().string());
-    EXPECT_TRUE(Dependency->getString("sha256") ==
-                neverc::translate::sha256(readFile(Source)));
+    EXPECT_EQ(Dependency->getString("path").str(),
+              Source.filename().u8string());
+    auto InputBytes = neverc::translate::readFile(Source.u8string());
+    ASSERT_TRUE(static_cast<bool>(InputBytes))
+        << llvm::toString(InputBytes.takeError()).str().str();
+    EXPECT_EQ(Dependency->getString("sha256").str(),
+              neverc::translate::sha256(*InputBytes));
     const auto *Generated = Manifest->getArray("generated_files");
     ASSERT_NE(Generated, nullptr);
     ASSERT_EQ(Generated->size(), 2u);
@@ -255,11 +275,19 @@ protected:
       const auto *File = Value.getAsObject();
       ASSERT_NE(File, nullptr);
       const auto Name = File->getString("path").str();
-      EXPECT_TRUE(Name == Output.filename().string() ||
-                  Name == MapPath.filename().string());
-      EXPECT_TRUE(
-          File->getString("sha256") ==
-          neverc::translate::sha256(readFile(Output.parent_path() / Name)));
+      ASSERT_TRUE(Name == Output.filename().u8string() ||
+                  Name == MapPath.filename().u8string())
+          << "unexpected generated filename: " << Name
+          << "; expected " << Output.filename().u8string() << " or "
+          << MapPath.filename().u8string();
+      const auto GeneratedPath = Output.parent_path() / fs::u8path(Name);
+      ASSERT_TRUE(fs::is_regular_file(GeneratedPath)) << GeneratedPath;
+      EXPECT_FALSE(fs::is_symlink(GeneratedPath)) << GeneratedPath;
+      auto GeneratedBytes = neverc::translate::readFile(GeneratedPath.u8string());
+      ASSERT_TRUE(static_cast<bool>(GeneratedBytes))
+          << llvm::toString(GeneratedBytes.takeError()).str().str();
+      EXPECT_EQ(File->getString("sha256").str(),
+                neverc::translate::sha256(*GeneratedBytes));
     }
   }
 
@@ -680,16 +708,64 @@ TEST_F(TranslateTest, CheckModeRunsValidationAndPublishesOnlyItsReport) {
 
 TEST_F(TranslateTest,
        HandlesSpacesAndUnicodeAndPublishesACleanOutputDirectory) {
-  const auto Source = tmpFile(u8"源 input.cpp");
+  const std::string SourceName = u8"\u6e90 input.cpp";
+  const std::string DirectoryName = u8"\u751f\u6210 output";
+  const std::string ReportName = u8"\u68c0\u67e5 report.json";
+  const std::string OutputName = u8"\u6e90 input.nc";
+  const auto Source = tmp() / fs::u8path(SourceName);
+  const auto Directory = tmp() / fs::u8path(DirectoryName);
+  const auto Report = tmp() / fs::u8path(ReportName);
+  const auto Output = Directory / fs::u8path(OutputName);
+  ASSERT_EQ(Source.filename().u8string(), SourceName);
+  ASSERT_EQ(Directory.filename().u8string(), DirectoryName);
+  ASSERT_EQ(Report.filename().u8string(), ReportName);
+  ASSERT_EQ(Output.filename().u8string(), OutputName);
+  for (const auto &Path : {Source, Directory, Report, Output})
+    ASSERT_EQ(fs::u8path(Path.u8string()), Path);
   writeFile(Source, "int main() { return 0; }\n");
-  const auto Directory = tmpFile(u8"生成 output");
-  const auto Report = tmpFile(u8"检查 report.json");
-  auto Result = translate(
-      Source, {"--out-dir", Directory.string(), "--report", Report.string()});
-  ASSERT_EQ(Result.exitCode, 0) << Result.err;
-  EXPECT_TRUE(fs::is_regular_file(Directory / u8"源 input.nc"));
-  expectMetadata(Directory / u8"源 input.nc", Source,
-                 Directory / "translate.map.json",
+
+  // This test supplies UTF-8 argv to the existing runner (W APIs on Windows).
+  // The shared fixture's native-narrow command contract is unchanged.
+  const auto Stdout = tmpFile("unicode.stdout");
+  const auto Stderr = tmpFile("unicode.stderr");
+  const auto StdoutUtf8 = Stdout.u8string(), StderrUtf8 = Stderr.u8string();
+  const std::vector<std::string> Arguments{
+      neverc().u8string(), "translate", "--from", "cpp", Source.u8string(),
+      "--out-dir", Directory.u8string(), "--report", Report.u8string(),
+      "--", "-std=c++17"};
+  neverc::translate::ProcessResult Result;
+  {
+    neverc::translate::TranslationCancellation Cancellation;
+    Result = neverc::translate::runProcess(Arguments, StdoutUtf8, StderrUtf8, 30);
+  }
+  std::string Out, Err, CaptureErrors;
+  auto readCapture = [&](const fs::path &Path, std::string &Contents) {
+    auto Bytes = neverc::translate::readFile(Path.u8string(), 1024 * 1024);
+    if (!Bytes) {
+      CaptureErrors += Path.filename().u8string() + ": " +
+                       llvm::toString(Bytes.takeError()).str().str() + "\n";
+      return false;
+    }
+    Contents = std::move(*Bytes);
+    return true;
+  };
+  // Read both captures before asserting, retaining evidence from either one
+  // even if launch/timeout or the other read failed. Every Error is consumed.
+  const bool OutRead = readCapture(Stdout, Out);
+  const bool ErrRead = readCapture(Stderr, Err);
+  const auto Detail =
+      "exit=" + std::to_string(Result.ExitCode) +
+      "; cancelled=" + std::to_string(Result.Cancelled) +
+      "; process error=" + Result.Error + "\n" + CaptureErrors +
+      "stdout:\n" + Out + "\nstderr:\n" + Err;
+  EXPECT_FALSE(Result.Cancelled) << Detail;
+  EXPECT_TRUE(Result.Error.empty()) << Detail;
+  ASSERT_EQ(Result.ExitCode, 0) << Detail;
+  ASSERT_TRUE(OutRead) << Detail;
+  ASSERT_TRUE(ErrRead) << Detail;
+  EXPECT_NE(Out.find(SourceName), std::string::npos) << Detail;
+  EXPECT_TRUE(fs::is_regular_file(Output));
+  expectMetadata(Output, Source, Directory / "translate.map.json",
                  Directory / "translate-manifest.json");
   expectReport(Report, "success");
   EXPECT_EQ(std::distance(fs::directory_iterator(Directory),
