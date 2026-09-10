@@ -308,12 +308,14 @@ def parse_resolved_aliases(lines, definitions, private_names=(), *, expected_fal
     relevant = sorted((set(private_names) | required_guid_names) & resolved)
     for name in relevant[:16]:
         if name in real_definitions:
-            print("Actual private COFF definition overrides weak alias: " + name +
-                  " [" + definition_sources[name] + "]")
+            message = ("Actual private COFF definition overrides weak alias: " + name +
+                       " [" + definition_sources[name] + "]")
+            print(message.encode("ascii", "backslashreplace").decode("ascii"))
             continue
         edge = edges[name][0]
-        print("Proven private COFF fallback: " + name + " -> " + edge.target +
-              " [" + edge.member + ", search=" + str(edge.search) + "]")
+        message = ("Proven private COFF fallback: " + name + " -> " + edge.target +
+                   " [" + edge.member + ", search=" + str(edge.search) + "]")
+        print(message.encode("ascii", "backslashreplace").decode("ascii"))
     if relevant:
         print("Proven private COFF fallbacks: " + str(len(relevant)))
     return resolved

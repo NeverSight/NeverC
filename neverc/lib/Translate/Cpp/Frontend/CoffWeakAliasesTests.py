@@ -458,6 +458,64 @@ class CoffWeakAliasesTests(unittest.TestCase):
         self.assertEqual(self.parse(text), {"private_alias"})
         self.assertEqual(self.inspect(text), {"private_alias"})
 
+    def parse_with_cp1252_stdout(self, text, definitions=("private_body",),
+                                 private=("private_alias",)):
+        with io.BytesIO() as sink:
+            with io.TextIOWrapper(sink, encoding="cp1252", errors="strict",
+                                  newline="\n") as output:
+                with mock.patch.object(sys, "stdout", output):
+                    resolved = self.parse(text, definitions, private)
+                    output.flush()
+                return resolved, sink.getvalue()
+
+    def test_unicode_fallback_diagnostic_is_safe_on_strict_cp1252_stdout(self):
+        alias = "private_alias_中\u2028"
+        target = "private_body_\x80\U0001f600"
+        text = member(symbol(target), weak(name=alias, target=target),
+                      name="private.lib(文\u2029.obj)")
+        resolved, output = self.parse_with_cp1252_stdout(
+            text, definitions=(target,), private=(alias,))
+        self.assertEqual(resolved, {alias})
+        self.assertEqual(
+            output,
+            b"Proven private COFF fallback: private_alias_\\u4e2d\\u2028 -> "
+            b"private_body_\\x80\\U0001f600 [private.lib(\\u6587\\u2029.obj), search=1]\n"
+            b"Proven private COFF fallbacks: 1\n")
+
+    def test_unicode_definition_override_diagnostic_is_safe_on_strict_cp1252_stdout(self):
+        alias = "private_alias_中\u2028"
+        missing = "missing_\x80"
+        text = (member(symbol(missing, section=0), weak(name=alias, target=missing),
+                       name="private.lib(弱.obj)") +
+                member(symbol(alias), name="private.lib(文\u2029.obj)"))
+        resolved, output = self.parse_with_cp1252_stdout(
+            text, definitions=(alias,), private=(alias,))
+        self.assertEqual(resolved, {alias})
+        self.assertEqual(
+            output,
+            b"Actual private COFF definition overrides weak alias: "
+            b"private_alias_\\u4e2d\\u2028 [private.lib(\\u6587\\u2029.obj)]\n"
+            b"Proven private COFF fallbacks: 1\n")
+
+    def test_ascii_success_diagnostics_remain_byte_identical(self):
+        cases = (
+            (member(symbol("private_body"), weak()), ("private_body",),
+             b"Proven private COFF fallback: private_alias -> private_body "
+             b"[private.lib(member.obj), search=1]\n"
+             b"Proven private COFF fallbacks: 1\n"),
+            (member(symbol("missing", section=0), weak(target="missing"),
+                    name="private.lib(weak.obj)") +
+             member(symbol("private_alias"), name="private.lib(body.obj)"),
+             ("private_alias",),
+             b"Actual private COFF definition overrides weak alias: private_alias "
+             b"[private.lib(body.obj)]\nProven private COFF fallbacks: 1\n"),
+        )
+        for text, definitions, expected in cases:
+            with self.subTest(expected=expected):
+                resolved, output = self.parse_with_cp1252_stdout(text, definitions)
+                self.assertEqual(resolved, {"private_alias"})
+                self.assertEqual(output, expected)
+
     def test_line_and_member_inventory_limits_are_bounded(self):
         with mock.patch.object(coff, "MAX_LINE", 16):
             with self.assertRaisesRegex(ValueError, "line exceeds"):
