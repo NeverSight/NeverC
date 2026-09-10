@@ -1781,8 +1781,9 @@ int runInvocationPassTimingOwnershipProbe() {
     return recoveryProbeFailure(213, Error.message());
 
   const std::string HostTriple = llvm::sys::getDefaultTargetTriple();
-  const std::string InfoOutputArgument =
-      "-info-output-file=" + StrayReportPath.str().str();
+  // Route this invocation's legitimate pass reports to stdout. The host's
+  // restored StrayReportPath must remain untouched.
+  const std::string InfoOutputArgument = "-info-output-file=-";
   const char *Args[] = {"-triple", HostTriple.c_str(), "-emit-obj", "-O0",
                         "-ftime-report", "-o", OutputPath.c_str(),
                         "-mllvm", InfoOutputArgument.c_str(),
