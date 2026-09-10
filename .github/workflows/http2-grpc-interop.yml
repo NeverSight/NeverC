@@ -56,4 +56,7 @@ jobs:
       - name: Run h2spec, nghttp2, and gRPC-Go interoperability
         env:
           NEVERC_RUN_H2SPEC: '1'
-        run: utils/ci/run-http2-grpc-interop.sh "$PWD" clang 19091
+          GOFLAGS: '-mod=readonly'
+        run: |
+          utils/ci/run-http2-grpc-interop.sh "$PWD" clang 19091
+          git diff --exit-code -- tests/neverc/interop/go-grpc/go.mod tests/neverc/interop/go-grpc/go.sum
