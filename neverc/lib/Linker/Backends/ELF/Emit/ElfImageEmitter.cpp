@@ -2462,14 +2462,21 @@ void computeHash(
     llvm::MutableArrayRef<uint8_t> hashBuf, llvm::ArrayRef<uint8_t> data,
     std::function<void(uint8_t *dest, ArrayRef<uint8_t> arr)> hashFn,
     bool releaseChunkPages = false, bool allowTransientWorkers = false) {
-  auto markDontNeed = [](ArrayRef<uint8_t> arr) {
+#if defined(MADV_DONTNEED) && (defined(__unix__) || defined(__APPLE__))
+  const size_t pageSize = releaseChunkPages
+                              ? [] {
+                                  long p = ::sysconf(_SC_PAGESIZE);
+                                  return p > 0 ? static_cast<size_t>(p)
+                                               : size_t(0);
+                                }()
+                              : size_t(0);
+#else
+  const size_t pageSize = 0;
+#endif
+  auto markDontNeed = [pageSize](ArrayRef<uint8_t> arr) {
 #if defined(MADV_DONTNEED) && (defined(__unix__) || defined(__APPLE__))
     if (arr.empty())
       return;
-    const size_t pageSize = [] {
-      long p = ::sysconf(_SC_PAGESIZE);
-      return p > 0 ? static_cast<size_t>(p) : size_t(0);
-    }();
     if (!pageSize)
       return;
 
@@ -2483,6 +2490,7 @@ void computeHash(
                     alignedEnd - alignedBegin, MADV_DONTNEED);
 #else
     (void)arr;
+    (void)pageSize;
 #endif
   };
 

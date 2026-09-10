@@ -2182,6 +2182,9 @@ void OutputWriter::writeSections() {
 
   // Scatter-gather: each output section writes independently.
   parallelForEach(ctx.outputSections, [&](OutputSection *sec) {
+    const uint32_t rawSize = sec->getRawSize();
+    if (rawSize == 0)
+      return;
     uint8_t *secBuf = buf + sec->getFileOff();
 
     if ((sec->header.Characteristics & IMAGE_SCN_CNT_CODE) &&
@@ -2189,28 +2192,35 @@ void OutputWriter::writeSections() {
       uint32_t prevEnd = 0;
       for (Chunk *c : sec->chunks) {
         uint32_t off = c->getRVA() - sec->getRVA();
-        if (off > prevEnd)
-          memset(secBuf + prevEnd, 0xCC, off - prevEnd);
-        prevEnd = off + c->getSize();
+        // Virtual zero-fill chunks may extend beyond the file-backed bytes.
+        // Fill only the part of an alignment gap represented in the file.
+        const uint32_t gapEnd = std::min(off, rawSize);
+        if (gapEnd > prevEnd)
+          memset(secBuf + prevEnd, 0xCC, gapEnd - prevEnd);
+        prevEnd = std::min<uint64_t>(uint64_t(off) + c->getSize(), rawSize);
       }
-      if (sec->getRawSize() > prevEnd)
-        memset(secBuf + prevEnd, 0xCC, sec->getRawSize() - prevEnd);
+      if (rawSize > prevEnd)
+        memset(secBuf + prevEnd, 0xCC, rawSize - prevEnd);
     }
 
-    for (Chunk *c : sec->chunks)
-      c->writeTo(secBuf + c->getRVA() - sec->getRVA());
+    for (Chunk *c : sec->chunks) {
+      // FileOutputBuffer starts zeroed. Leave virtual and explicit zero-fill
+      // chunks untouched, without forming a pointer outside the raw section.
+      if (!c->hasData)
+        continue;
+      const uint32_t off = c->getRVA() - sec->getRVA();
+      if (off > rawSize || c->getSize() > rawSize - off)
+        fatal("chunk exceeds raw section size: " + sec->name);
+      c->writeTo(secBuf + off);
+    }
   });
 }
 
 namespace {
-void markChunkAsDontNeed(ArrayRef<uint8_t> arr) {
+void markChunkAsDontNeed(ArrayRef<uint8_t> arr, size_t pageSize) {
 #if defined(MADV_DONTNEED) && (defined(__unix__) || defined(__APPLE__))
   if (arr.empty())
     return;
-  const size_t pageSize = [] {
-    long p = ::sysconf(_SC_PAGESIZE);
-    return p > 0 ? static_cast<size_t>(p) : size_t(0);
-  }();
   if (!pageSize)
     return;
 
@@ -2224,6 +2234,7 @@ void markChunkAsDontNeed(ArrayRef<uint8_t> arr) {
                   alignedEnd - alignedBegin, MADV_DONTNEED);
 #else
   (void)arr;
+  (void)pageSize;
 #endif
 }
 
@@ -2234,6 +2245,17 @@ uint64_t computeChunkedBLAKE3Hash64(ArrayRef<uint8_t> data,
   if (data.empty())
     return read64le(BLAKE3::hash<8>(ArrayRef<uint8_t>()).data());
 
+#if defined(MADV_DONTNEED) && (defined(__unix__) || defined(__APPLE__))
+  const size_t pageSize = releaseChunkPages
+                              ? [] {
+                                  long p = ::sysconf(_SC_PAGESIZE);
+                                  return p > 0 ? static_cast<size_t>(p)
+                                               : size_t(0);
+                                }()
+                              : size_t(0);
+#else
+  const size_t pageSize = 0;
+#endif
   size_t numChunks = (data.size() + chunkSize - 1) / chunkSize;
   std::unique_ptr<uint8_t[]> chunkHashes(new uint8_t[numChunks * 8]);
 
@@ -2245,7 +2267,7 @@ uint64_t computeChunkedBLAKE3Hash64(ArrayRef<uint8_t> data,
         auto digest = BLAKE3::hash<8>(chunk);
         memcpy(chunkHashes.get() + i * 8, digest.data(), 8);
         if (releaseChunkPages)
-          markChunkAsDontNeed(chunk);
+          markChunkAsDontNeed(chunk, pageSize);
       });
 
   auto digest =
