@@ -42,10 +42,16 @@ struct DirectInvocationOpts {
   // When true, an invocation that does not mutate LLVM command-line options
   // may share the process option gate with other parallel frontends. Any
   // mutating invocation still takes an exclusive restoring snapshot inside
-  // ExecuteFrontendDirect; callers must not reset LLVM options around the
-  // parallel region. Fatal recovery is scoped to the invoking thread in this
-  // host image; it does not propagate into plugin DSOs or asynchronous LLVM
-  // workers.
+  // ExecuteFrontendDirect. An ambient LLVM pass-timing request also forces a
+  // plain exclusive lease because LLVM reuses named codegen timers globally;
+  // that lease preserves the host's option values and occurrence metadata.
+  // Embedders with unpublished TimerGroup records must keep
+  // llvm::TimePassesIsEnabled true until they publish those records. Entering
+  // with it false declares there are no ambient records to preserve and lets
+  // an invocation that enables pass timing publish and clear the profile.
+  // Callers must not reset LLVM options around the parallel region. Fatal
+  // recovery is scoped to the invoking thread in this host image; it does not
+  // propagate into plugin DSOs or asynchronous LLVM workers.
   bool ParallelSafe = false;
 };
 

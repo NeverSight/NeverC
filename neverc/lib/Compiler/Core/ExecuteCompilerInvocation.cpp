@@ -337,10 +337,31 @@ public:
            "frontend process-global owner acquired twice");
     if (MutatesLLVMOptions) {
       OptionSnapshot.emplace(plugin::pluginLLVMOptionGate());
+      // Capture ownership before ResetAllOptionOccurrences and parsing can
+      // replace the host's value. An invocation may request pass timing while
+      // an embedder already owns accumulated TimerGroup records; restoring the
+      // option does not grant NeverC permission to publish or clear them.
+      // Embedders with unpublished TimerGroup records must therefore keep
+      // TimePassesIsEnabled true across this call. A false value declares that
+      // no ambient records await publication and permits this invocation to
+      // own the profile if it enables pass timing itself.
+      AmbientPassTimingEnabled = llvm::TimePassesIsEnabled;
     } else if (RequiresExclusiveLease) {
       WriteLease.emplace(plugin::pluginLLVMOptionGate());
     } else {
       ReadLease.emplace(plugin::pluginLLVMOptionGate());
+      // A host may have enabled LLVM pass timing before entering NeverC.
+      // Although this invocation does not mutate that option, LLVM codegen's
+      // NamedRegionTimer instances reuse process-global Timer objects whose
+      // start/stop operations are not thread-safe. Inspect the ambient value
+      // while holding the shared gate, then conservatively upgrade without
+      // snapshotting or resetting the host's option state. The upgrade gap is
+      // safe: a concurrent writer may only make the exclusive lease
+      // unnecessary, never make shared execution safe again behind our lock.
+      if (llvm::TimePassesIsEnabled) {
+        ReadLease.reset();
+        WriteLease.emplace(plugin::pluginLLVMOptionGate());
+      }
     }
   }
 
@@ -354,12 +375,13 @@ public:
   FrontendProcessGlobalStateOwner &
   operator=(FrontendProcessGlobalStateOwner &&) = delete;
 
-  bool holdsExclusiveLease() const noexcept {
-    return OptionSnapshot.has_value() || WriteLease.has_value();
-  }
-
   bool ownsOptionSnapshot() const noexcept {
     return OptionSnapshot.has_value();
+  }
+
+  bool ownsInvocationPassTimingProfile() const noexcept {
+    return OptionSnapshot.has_value() && !AmbientPassTimingEnabled &&
+           llvm::TimePassesIsEnabled;
   }
 
   void installFatalErrorHandler(DiagnosticsEngine &Diags) {
@@ -394,6 +416,7 @@ private:
   std::optional<plugin::PluginLLVMOptionSharedLease> ReadLease;
   DirectLLVMFatalErrorHandlerContext FatalHandlerContext;
   std::optional<llvm::ScopedThreadLocalFatalErrorHandler> FatalHandler;
+  bool AmbientPassTimingEnabled = false;
   bool Released = false;
 };
 
@@ -677,8 +700,12 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
     }
   }
 
-  const bool HoldsExclusiveProcessGlobals =
-      ProcessGlobals.get().holdsExclusiveLease();
+  // An exclusive lease or restoring snapshot can be synchronization-only:
+  // neither grants ownership of TimerGroup records accumulated by a host that
+  // entered with pass timing enabled. Publish and clear only when this
+  // invocation transitioned pass timing from disabled to enabled.
+  const bool OwnsPassTimingProfile =
+      ProcessGlobals.get().ownsInvocationPassTimingProfile();
   ProcessGlobals.get().installFatalErrorHandler(CI->getDiagnostics());
 
   {
@@ -686,7 +713,7 @@ int ExecuteFrontendDirect(llvm::ArrayRef<const char *> Argv, const char *Argv0,
     Success = ExecuteCompilerInvocation(CI.get());
   }
 
-  if (HoldsExclusiveProcessGlobals) {
+  if (OwnsPassTimingProfile) {
     llvm::TimerGroup::printAll(llvm::errs());
     llvm::TimerGroup::clearAll();
   }

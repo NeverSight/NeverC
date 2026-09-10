@@ -1570,6 +1570,257 @@ int runUnmanagedAmbientNoTraceFrontendProbe() {
   return 0;
 }
 
+constexpr llvm::StringLiteral AmbientPassTimingRecord =
+    "NeverC ambient host pass timing record";
+constexpr llvm::StringLiteral FrontendPassTimingRecord =
+    "NeverC front-end timer";
+constexpr llvm::StringLiteral CodeGenerationPassTimingRecord =
+    "Code Generation Time";
+
+int runAmbientPassTimingOwnershipProbe() {
+  if (!initializeNativeCodegen())
+    return recoveryProbeFailure(191, "could not initialize native target");
+
+  llvm::cl::Option *TimePasses =
+      llvm::cl::getRegisteredOptions().lookup("time-passes");
+  llvm::cl::Option *TimePassesPerRun =
+      llvm::cl::getRegisteredOptions().lookup("time-passes-per-run");
+  if (!TimePasses || !TimePassesPerRun)
+    return recoveryProbeFailure(192, "could not find pass-timing options");
+  const bool SavedTimePasses = llvm::TimePassesIsEnabled;
+  const bool SavedTimePassesPerRun = llvm::TimePassesPerRun;
+  const int SavedTimePassesOccurrences = TimePasses->getNumOccurrences();
+  const int SavedTimePassesPerRunOccurrences =
+      TimePassesPerRun->getNumOccurrences();
+  auto RestoreTiming = llvm::make_scope_exit([&] {
+    llvm::TimePassesIsEnabled = SavedTimePasses;
+    llvm::TimePassesPerRun = SavedTimePassesPerRun;
+  });
+  llvm::TimePassesIsEnabled = true;
+  llvm::TimePassesPerRun = false;
+
+  std::optional<BackendFatalOptionState> BaselineOptions =
+      captureBackendFatalOptions();
+  if (!BaselineOptions)
+    return recoveryProbeFailure(193, "could not capture LLVM option baseline");
+
+  llvm::TimerGroup *const DefaultTimerGroup =
+      llvm::timer_detail::getDefaultTimerGroup();
+  std::string DiscardedTimingReport;
+  {
+    llvm::raw_string_ostream TimingStream(DiscardedTimingReport);
+    DefaultTimerGroup->print(TimingStream, /*ResetAfterPrint=*/true);
+    TimingStream.flush();
+  }
+
+  llvm::Timer HostTimer("neverc-ambient-host-pass-timing",
+                        AmbientPassTimingRecord);
+  HostTimer.startTimer();
+  HostTimer.stopTimer();
+
+  llvm::SmallString<128> SourcePath;
+  if (llvm::sys::fs::createTemporaryFile(
+          "neverc-ambient-pass-timing", "c", SourcePath))
+    return recoveryProbeFailure(194, "could not create source");
+  llvm::FileRemover RemoveSource(SourcePath);
+  std::error_code SourceError;
+  {
+    llvm::raw_fd_ostream Source(SourcePath, SourceError);
+    if (SourceError)
+      return recoveryProbeFailure(195, "could not open source");
+    Source << "int neverc_ambient_pass_timing(void) { return 53; }\n";
+  }
+
+  llvm::SmallString<128> OutputPath;
+  if (llvm::sys::fs::createTemporaryFile(
+          "neverc-ambient-pass-timing", "o", OutputPath))
+    return recoveryProbeFailure(196, "could not create output path");
+  llvm::FileRemover RemoveOutput(OutputPath);
+  if (std::error_code Error = llvm::sys::fs::remove(OutputPath))
+    return recoveryProbeFailure(197, Error.message());
+
+  const std::string HostTriple = llvm::sys::getDefaultTargetTriple();
+  const std::string DumpArgument =
+      "-ir-dump-directory=" + SourcePath.str().str() + ".ir";
+  const char *Args[] = {"-triple",
+                        HostTriple.c_str(),
+                        "-emit-obj",
+                        "-O0",
+                        "-ftime-report",
+                        "-o",
+                        OutputPath.c_str(),
+                        "-mllvm",
+                        DumpArgument.c_str(),
+                        SourcePath.c_str()};
+  neverc::driver::DirectInvocationOpts DirectOpts;
+  DirectOpts.ParallelSafe = true;
+  if (neverc::ExecuteFrontendDirect(Args, "neverc-test-frontend",
+                                    frontendMainAddress(), &DirectOpts) != 0)
+    return recoveryProbeFailure(198, "ambient timing frontend failed");
+  if (!llvm::sys::fs::is_regular_file(OutputPath))
+    return recoveryProbeFailure(199,
+                                "ambient timing frontend emitted no output");
+  if (!backendFatalOptionsMatch(*BaselineOptions))
+    return recoveryProbeFailure(200, "unrelated LLVM option was not restored");
+  if (!llvm::TimePassesIsEnabled || llvm::TimePassesPerRun ||
+      TimePasses->getNumOccurrences() != SavedTimePassesOccurrences ||
+      TimePassesPerRun->getNumOccurrences() !=
+          SavedTimePassesPerRunOccurrences)
+    return recoveryProbeFailure(201, "ambient timing option state changed");
+
+  std::string HostTimingReport;
+  {
+    llvm::raw_string_ostream TimingStream(HostTimingReport);
+    DefaultTimerGroup->print(TimingStream, /*ResetAfterPrint=*/true);
+    TimingStream.flush();
+  }
+  if (countTextOccurrences(HostTimingReport, AmbientPassTimingRecord) != 1)
+    return recoveryProbeFailure(202, "host timing record ownership changed");
+
+  std::string SecondHostTimingReport;
+  {
+    llvm::raw_string_ostream TimingStream(SecondHostTimingReport);
+    DefaultTimerGroup->print(TimingStream, /*ResetAfterPrint=*/false);
+    TimingStream.flush();
+  }
+  if (countTextOccurrences(SecondHostTimingReport,
+                           AmbientPassTimingRecord) != 0)
+    return recoveryProbeFailure(203, "host timing record printed twice");
+  return 0;
+}
+
+int runInvocationPassTimingOwnershipProbe() {
+  if (!initializeNativeCodegen())
+    return recoveryProbeFailure(204, "could not initialize native target");
+
+  llvm::initTimerOptions();
+  llvm::cl::Option *TimePasses =
+      llvm::cl::getRegisteredOptions().lookup("time-passes");
+  llvm::cl::Option *TimePassesPerRun =
+      llvm::cl::getRegisteredOptions().lookup("time-passes-per-run");
+  if (!TimePasses || !TimePassesPerRun)
+    return recoveryProbeFailure(205, "could not find pass-timing options");
+  const bool SavedTimePasses = llvm::TimePassesIsEnabled;
+  const bool SavedTimePassesPerRun = llvm::TimePassesPerRun;
+  const int SavedTimePassesOccurrences = TimePasses->getNumOccurrences();
+  const int SavedTimePassesPerRunOccurrences =
+      TimePassesPerRun->getNumOccurrences();
+  auto RestoreTiming = llvm::make_scope_exit([&] {
+    llvm::TimePassesIsEnabled = SavedTimePasses;
+    llvm::TimePassesPerRun = SavedTimePassesPerRun;
+  });
+  llvm::TimePassesIsEnabled = false;
+  llvm::TimePassesPerRun = false;
+
+  // Keep the process-lifetime default group nonempty so destroying the
+  // invocation's CodeGenerationTime queues its record instead of implicitly
+  // publishing it. This timer is deliberately never triggered: it establishes
+  // lifetime only and cannot be mistaken for a host-owned timing record.
+  llvm::Timer RegistrySentinel("neverc-invocation-pass-timing-sentinel",
+                               "NeverC invocation pass timing sentinel");
+  llvm::TimerGroup *const DefaultTimerGroup =
+      llvm::timer_detail::getDefaultTimerGroup();
+  llvm::TimerGroup *const BaselineTimerGroups =
+      llvm::timer_detail::TimerGroupList;
+  if (!BaselineTimerGroups)
+    return recoveryProbeFailure(206, "default timer group was not initialized");
+
+  // A disabled ambient option is not by itself proof that the host owns no
+  // queued records. Drain every group's queued records, then publish again:
+  // any triggered live timer would reappear, so an empty second report proves
+  // this isolated child starts without an ambient timing record.
+  std::string DiscardedTimingReport;
+  {
+    llvm::raw_string_ostream TimingStream(DiscardedTimingReport);
+    llvm::TimerGroup::printAll(TimingStream);
+    TimingStream.flush();
+  }
+  std::string EmptyTimingBaseline;
+  {
+    llvm::raw_string_ostream TimingStream(EmptyTimingBaseline);
+    llvm::TimerGroup::printAll(TimingStream);
+    TimingStream.flush();
+  }
+  if (!EmptyTimingBaseline.empty())
+    return recoveryProbeFailure(207, "pass timing baseline was not empty");
+
+  llvm::SmallString<128> StrayReportPath;
+  if (llvm::sys::fs::createTemporaryFile(
+          "neverc-invocation-pass-timing-stray", "txt", StrayReportPath))
+    return recoveryProbeFailure(208, "could not create stray-report path");
+  llvm::FileRemover RemoveStrayReport(StrayReportPath);
+  if (std::error_code Error = llvm::sys::fs::remove(StrayReportPath))
+    return recoveryProbeFailure(209, Error.message());
+
+  llvm::SmallString<256> SavedInfoOutput(
+      llvm::timer_detail::getLibSupportInfoOutputFilename());
+  auto RestoreInfoOutput = llvm::make_scope_exit([&] {
+    llvm::timer_detail::getLibSupportInfoOutputFilename() = SavedInfoOutput;
+  });
+  llvm::timer_detail::getLibSupportInfoOutputFilename() = StrayReportPath;
+
+  llvm::SmallString<128> SourcePath;
+  if (llvm::sys::fs::createTemporaryFile(
+          "neverc-invocation-pass-timing", "c", SourcePath))
+    return recoveryProbeFailure(210, "could not create source");
+  llvm::FileRemover RemoveSource(SourcePath);
+  std::error_code SourceError;
+  {
+    llvm::raw_fd_ostream Source(SourcePath, SourceError);
+    if (SourceError)
+      return recoveryProbeFailure(211, "could not open source");
+    Source << "int neverc_invocation_pass_timing(void) { return 59; }\n";
+  }
+
+  llvm::SmallString<128> OutputPath;
+  if (llvm::sys::fs::createTemporaryFile(
+          "neverc-invocation-pass-timing", "o", OutputPath))
+    return recoveryProbeFailure(212, "could not create output path");
+  llvm::FileRemover RemoveOutput(OutputPath);
+  if (std::error_code Error = llvm::sys::fs::remove(OutputPath))
+    return recoveryProbeFailure(213, Error.message());
+
+  const std::string HostTriple = llvm::sys::getDefaultTargetTriple();
+  const std::string InfoOutputArgument =
+      "-info-output-file=" + StrayReportPath.str().str();
+  const char *Args[] = {"-triple", HostTriple.c_str(), "-emit-obj", "-O0",
+                        "-ftime-report", "-o", OutputPath.c_str(),
+                        "-mllvm", InfoOutputArgument.c_str(),
+                        SourcePath.c_str()};
+  neverc::driver::DirectInvocationOpts DirectOpts;
+  DirectOpts.ParallelSafe = true;
+  if (neverc::ExecuteFrontendDirect(Args, "neverc-test-frontend",
+                                    frontendMainAddress(), &DirectOpts) != 0)
+    return recoveryProbeFailure(214, "invocation timing frontend failed");
+  if (!llvm::sys::fs::is_regular_file(OutputPath))
+    return recoveryProbeFailure(215,
+                                "invocation timing frontend emitted no output");
+  if (llvm::TimePassesIsEnabled || llvm::TimePassesPerRun ||
+      TimePasses->getNumOccurrences() != SavedTimePassesOccurrences ||
+      TimePassesPerRun->getNumOccurrences() !=
+          SavedTimePassesPerRunOccurrences)
+    return recoveryProbeFailure(216, "invocation timing option state changed");
+  if (llvm::timer_detail::getLibSupportInfoOutputFilename() != StrayReportPath)
+    return recoveryProbeFailure(217, "info-output option was not restored");
+  if (llvm::timer_detail::TimerGroupList != BaselineTimerGroups)
+    return recoveryProbeFailure(218, "pass timing registry was not restored");
+  if (llvm::sys::fs::exists(StrayReportPath))
+    return recoveryProbeFailure(219, "pass timing emitted a stray report");
+
+  std::string RemainingTimingReport;
+  {
+    llvm::raw_string_ostream TimingStream(RemainingTimingReport);
+    DefaultTimerGroup->print(TimingStream, /*ResetAfterPrint=*/true);
+    TimingStream.flush();
+  }
+  if (countTextOccurrences(RemainingTimingReport,
+                           CodeGenerationPassTimingRecord) != 0)
+    return recoveryProbeFailure(220, "codegen timing record was not consumed");
+  if (!RemainingTimingReport.empty())
+    return recoveryProbeFailure(221, "pass timing records remained queued");
+  return 0;
+}
+
 } // namespace
 
 TEST(PluginFrontendTimeTraceInteropTest,
@@ -1581,6 +1832,19 @@ TEST(PluginFrontendTimeTraceInteropTest,
   DirectOpts = {};
   DirectOpts.ParallelSafe = true;
   EXPECT_TRUE(neverc::driver::hasAnyDirectOpts(DirectOpts));
+}
+
+TEST(PluginFrontendTimeTraceInteropTest,
+     AmbientPassTimingProfileRemainsOwnedByHost) {
+  EXPECT_EXIT(std::exit(runAmbientPassTimingOwnershipProbe()),
+              ::testing::ExitedWithCode(0), "");
+}
+
+TEST(PluginFrontendTimeTraceInteropTest,
+     ExplicitPassTimingWithNoAmbientOwnerPrintsAndClears) {
+  EXPECT_EXIT(std::exit(runInvocationPassTimingOwnershipProbe()),
+              ::testing::ExitedWithCode(0),
+              FrontendPassTimingRecord.data());
 }
 
 TEST(PluginFrontendTimeTraceInteropTest,

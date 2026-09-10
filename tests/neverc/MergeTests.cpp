@@ -11,13 +11,17 @@
 #include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "ELF/ExtendedSectionNumbering.h"
+#include "neverc/Compiler/FrontendTool.h"
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
 #include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
+#include "neverc/Invoke/DirectInvocationOpts.h"
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 #include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/Host/NativeRelocationFacts.h"
+#include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/BinaryFormat/COFF.h"
@@ -25,8 +29,11 @@
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
 #include "llvm/Object/COFF.h"
+#include "llvm/Pass.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
 // Used only by the NEVERC_BINARY-gated differential suite at end of file, but
@@ -39,6 +46,8 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SHA256.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/Support/thread.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
@@ -49,10 +58,14 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <limits>
+#include <mutex>
 #include <random>
 #include <string>
 #include <vector>
@@ -3367,6 +3380,64 @@ SmallVector<char, 0> buildHeaderOnlyMachO(bool Is64, bool LittleEndian,
   if (Is64)
     Put(0); // reserved3
   return Buf;
+}
+
+class FatalHandlerObservingStream final : public raw_pwrite_stream {
+public:
+  FatalHandlerObservingStream() : raw_pwrite_stream(/*Unbuffered=*/true) {}
+
+  bool sawProcessFatalHandler() const { return SawProcessFatalHandler; }
+
+private:
+  uint64_t current_pos() const override { return Bytes.size(); }
+
+  void observeHandler() { SawProcessFatalHandler |= ::ErrorHandler != nullptr; }
+
+  void write_impl(const char *Ptr, size_t Size) override {
+    observeHandler();
+    Bytes.append(Ptr, Ptr + Size);
+  }
+
+  void pwrite_impl(const char *Ptr, size_t Size, uint64_t Offset) override {
+    observeHandler();
+    assert(Offset + Size <= Bytes.size() &&
+           "merge stream pwrite exceeds emitted bytes");
+    for (size_t I = 0; I != Size; ++I)
+      Bytes[Offset + I] = Ptr[I];
+  }
+
+  SmallVector<char, 0> Bytes;
+  bool SawProcessFatalHandler = false;
+};
+
+// A valid merge must not mutate LLVM's process-global fatal handler.  The old
+// runMergeSafely wrapper installed one around every invocation, even when no
+// error was possible; observing the unbuffered output made that behavior a
+// deterministic RED without malformed input, longjmp, or a data race.
+TEST(MergeRuntime, OrdinaryMergesDoNotInstallProcessFatalHandler) {
+  ASSERT_EQ(::ErrorHandler, nullptr);
+
+  auto ExpectCleanMerge = [](SmallVector<char, 0> Object, Format Kind,
+                             StringRef Case) {
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(std::move(Object));
+    FatalHandlerObservingStream Output;
+    EXPECT_TRUE(mergeObjects(Inputs, Output, Kind)) << Case.str();
+    EXPECT_GT(Output.tell(), uint64_t(0)) << Case.str();
+    EXPECT_FALSE(Output.sawProcessFatalHandler())
+        << Case.str() << " installed a process-global fatal handler";
+    EXPECT_EQ(::ErrorHandler, nullptr)
+        << Case.str() << " left a process-global fatal handler installed";
+  };
+
+  ExpectCleanMerge(buildMinimalELF({"elf_probe"}, {}), Format::ELF64LE,
+                   "ELF");
+  ExpectCleanMerge(
+      buildCOFF(llvm::COFF::IMAGE_FILE_MACHINE_AMD64, {}, {}, {}),
+      Format::COFF, "COFF");
+  ExpectCleanMerge(buildMachO(llvm::MachO::CPU_TYPE_X86_64,
+                              llvm::MachO::CPU_SUBTYPE_X86_64_ALL, {}, {}),
+                   Format::MachO64, "Mach-O");
 }
 
 struct MachoParsedSec {
@@ -13597,6 +13668,234 @@ TEST(ParallelFrontendTiming, MultiFileTimePassesUsesExclusiveOptionLease) {
   CheckTimingLog();
   Output.clear();
   EXPECT_EQ(runExeCapture(Dir, LLVMExe, Output), 0);
+}
+
+// Embedders may enter NeverC with LLVM's process-global pass timing already
+// enabled. Such an invocation has no option mutation of its own, but codegen
+// still creates NamedRegionTimer objects that share one Timer per name. Their
+// start/stop operations are not synchronized, so ParallelSafe frontends must
+// upgrade from the shared option lease to a plain exclusive lease without
+// resetting the embedder's option state. First verify that one frontend waits
+// for an exclusive lease behind a host reader. Only after that succeeds, run
+// concurrent ordinary frontends and check their output and ambient state.
+TEST(ParallelFrontendTiming,
+     AmbientTimePassesSerializesOtherwiseParallelSafeFrontends) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "parallel frontend requires at least two hardware threads";
+
+  static const bool NativeTargetInitialized =
+      !llvm::InitializeNativeTarget() &&
+      !llvm::InitializeNativeTargetAsmPrinter();
+  ASSERT_TRUE(NativeTargetInitialized);
+
+  auto &RegisteredOptions = llvm::cl::getRegisteredOptions();
+  llvm::cl::Option *TimePassesOption =
+      RegisteredOptions.lookup("time-passes");
+  llvm::cl::Option *TimePassesPerRunOption =
+      RegisteredOptions.lookup("time-passes-per-run");
+  ASSERT_NE(TimePassesOption, nullptr);
+  ASSERT_NE(TimePassesPerRunOption, nullptr);
+
+  ScratchDir Dir;
+  ASSERT_TRUE(Dir.Ok);
+
+  bool SavedTimePasses = false;
+  bool SavedTimePassesPerRun = false;
+  int SavedTimePassesOccurrences = 0;
+  int SavedTimePassesPerRunOccurrences = 0;
+  std::string SavedInfoOutput;
+  std::function<void()> RestoreTimePassesState;
+  std::function<void()> RestoreTimePassesPerRunState;
+  {
+    neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+        neverc::plugin::pluginLLVMOptionGate());
+    SavedTimePasses = llvm::TimePassesIsEnabled;
+    SavedTimePassesPerRun = llvm::TimePassesPerRun;
+    SavedTimePassesOccurrences = TimePassesOption->getNumOccurrences();
+    SavedTimePassesPerRunOccurrences =
+        TimePassesPerRunOption->getNumOccurrences();
+    SavedInfoOutput =
+        llvm::timer_detail::getLibSupportInfoOutputFilename().str().str();
+    RestoreTimePassesState = TimePassesOption->createStateRestorer();
+    RestoreTimePassesPerRunState =
+        TimePassesPerRunOption->createStateRestorer();
+  }
+  auto RestoreAmbientTiming = llvm::make_scope_exit([&] {
+    neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+        neverc::plugin::pluginLLVMOptionGate());
+    RestoreTimePassesPerRunState();
+    RestoreTimePassesState();
+    llvm::TimePassesIsEnabled = SavedTimePasses;
+    llvm::TimePassesPerRun = SavedTimePassesPerRun;
+    llvm::timer_detail::getLibSupportInfoOutputFilename() = SavedInfoOutput;
+  });
+
+  {
+    neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+        neverc::plugin::pluginLLVMOptionGate());
+    llvm::TimePassesIsEnabled = true;
+    llvm::TimePassesPerRun = false;
+    llvm::timer_detail::getLibSupportInfoOutputFilename() =
+        Dir.file("ambient-time-passes.log");
+  }
+
+  std::string SourceText;
+  {
+    raw_string_ostream Source(SourceText);
+    for (unsigned I = 0; I != 96; ++I)
+      Source << "__attribute__((noinline)) unsigned long long ambient_" << I
+             << "(unsigned long long x) { for (unsigned i = 0; i != 19; ++i) "
+                "x = x * 6364136223846793005ULL + "
+                "1442695040888963407ULL + i; return x; }\n";
+    Source << "unsigned long long ambient_entry(unsigned long long x) {\n";
+    for (unsigned I = 0; I != 96; ++I)
+      Source << "  x ^= ambient_" << I << "(x + " << I << ");\n";
+    Source << "  return x;\n}\n";
+  }
+  const std::string SourcePath = Dir.file("ambient-time-passes.c");
+  {
+    std::error_code Error;
+    raw_fd_ostream Source(SourcePath, Error);
+    ASSERT_FALSE(Error) << Error.message();
+    Source << SourceText;
+  }
+
+  constexpr unsigned WorkerCount = 4;
+  constexpr unsigned RoundCount = 4;
+  const std::string HostTriple = llvm::sys::getDefaultTargetTriple();
+
+  // A single frontend must wait for this host reader before it can enter
+  // codegen. Observe the existing gate epoch instead of relying on a race or
+  // timer assertion to prove that ambient timing requires an exclusive lease.
+  const std::string ProbeOutput = Dir.file("ambient-gate-probe.o");
+  std::mutex ProbeMutex;
+  std::condition_variable ProbeCondition;
+  bool ProbeFinished = false;
+  int ProbeResult = -1;
+  std::optional<neverc::plugin::PluginLLVMOptionSharedLease> HostReadLease;
+  HostReadLease.emplace(neverc::plugin::pluginLLVMOptionGate());
+  const std::uint64_t PreviousWaitEpoch =
+      neverc::plugin::pluginLLVMOptionExclusiveWaitEpoch();
+  llvm::thread ProbeWorker([&] {
+    const char *Args[] = {"-triple", HostTriple.c_str(), "-emit-obj", "-O1",
+                          "-o", ProbeOutput.c_str(), SourcePath.c_str()};
+    neverc::driver::DirectInvocationOpts DirectOpts;
+    DirectOpts.ParallelSafe = true;
+    ProbeResult = neverc::ExecuteFrontendDirect(
+        Args, "neverc-test-frontend",
+        reinterpret_cast<void *>(
+            reinterpret_cast<std::uintptr_t>(&compileLinkMulti)),
+        &DirectOpts);
+    {
+      std::lock_guard<std::mutex> Lock(ProbeMutex);
+      ProbeFinished = true;
+    }
+    ProbeCondition.notify_all();
+  });
+  auto JoinProbe = llvm::make_scope_exit([&] {
+    HostReadLease.reset();
+    if (ProbeWorker.joinable())
+      ProbeWorker.join();
+  });
+  bool ObservedExclusiveWait = false;
+  {
+    const auto Deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    std::unique_lock<std::mutex> Lock(ProbeMutex);
+    while (!ProbeFinished &&
+           neverc::plugin::pluginLLVMOptionExclusiveWaitEpoch() ==
+               PreviousWaitEpoch &&
+           std::chrono::steady_clock::now() < Deadline)
+      ProbeCondition.wait_for(Lock, std::chrono::milliseconds(1));
+    ObservedExclusiveWait =
+        neverc::plugin::pluginLLVMOptionExclusiveWaitEpoch() !=
+        PreviousWaitEpoch;
+  }
+  HostReadLease.reset();
+  ProbeWorker.join();
+  JoinProbe.release();
+  ASSERT_TRUE(ObservedExclusiveWait)
+      << "ambient pass timing frontend did not request an exclusive lease";
+  ASSERT_EQ(ProbeResult, 0);
+  ASSERT_TRUE(llvm::sys::fs::is_regular_file(ProbeOutput));
+
+  for (unsigned Round = 0; Round != RoundCount; ++Round) {
+    std::array<int, WorkerCount> Results;
+    Results.fill(-1);
+    std::array<std::string, WorkerCount> Outputs;
+    for (unsigned Worker = 0; Worker != WorkerCount; ++Worker)
+      Outputs[Worker] = Dir.file("ambient-" + Twine(Round) + "-" +
+                                 Twine(Worker) + ".o");
+
+    std::mutex StartMutex;
+    std::condition_variable StartCondition;
+    unsigned Ready = 0;
+    bool Start = false;
+    std::vector<llvm::thread> Workers;
+    Workers.reserve(WorkerCount);
+    for (unsigned Worker = 0; Worker != WorkerCount; ++Worker) {
+      Workers.emplace_back([&, Worker] {
+        const char *Args[] = {"-triple",
+                              HostTriple.c_str(),
+                              "-emit-obj",
+                              "-O1",
+                              "-o",
+                              Outputs[Worker].c_str(),
+                              SourcePath.c_str()};
+        {
+          std::unique_lock<std::mutex> Lock(StartMutex);
+          ++Ready;
+          StartCondition.notify_all();
+          StartCondition.wait(Lock, [&] { return Start; });
+        }
+        neverc::driver::DirectInvocationOpts DirectOpts;
+        DirectOpts.ParallelSafe = true;
+        Results[Worker] = neverc::ExecuteFrontendDirect(
+            Args, "neverc-test-frontend",
+            reinterpret_cast<void *>(
+                reinterpret_cast<std::uintptr_t>(&compileLinkMulti)),
+            &DirectOpts);
+      });
+    }
+    auto JoinWorkers = llvm::make_scope_exit([&] {
+      {
+        std::lock_guard<std::mutex> Lock(StartMutex);
+        Start = true;
+      }
+      StartCondition.notify_all();
+      for (llvm::thread &Worker : Workers)
+        if (Worker.joinable())
+          Worker.join();
+    });
+    {
+      std::unique_lock<std::mutex> Lock(StartMutex);
+      ASSERT_TRUE(StartCondition.wait_for(
+          Lock, std::chrono::seconds(10), [&] { return Ready == WorkerCount; }));
+      Start = true;
+    }
+    StartCondition.notify_all();
+    for (llvm::thread &Worker : Workers)
+      Worker.join();
+    JoinWorkers.release();
+
+    for (unsigned Worker = 0; Worker != WorkerCount; ++Worker) {
+      EXPECT_EQ(Results[Worker], 0)
+          << "round " << Round << ", worker " << Worker;
+      EXPECT_TRUE(llvm::sys::fs::is_regular_file(Outputs[Worker]))
+          << "round " << Round << ", worker " << Worker;
+    }
+  }
+
+  {
+    neverc::plugin::PluginLLVMOptionExclusiveLease Lease(
+        neverc::plugin::pluginLLVMOptionGate());
+    EXPECT_TRUE(llvm::TimePassesIsEnabled);
+    EXPECT_FALSE(llvm::TimePassesPerRun);
+    EXPECT_EQ(TimePassesOption->getNumOccurrences(),
+              SavedTimePassesOccurrences);
+    EXPECT_EQ(TimePassesPerRunOption->getNumOccurrences(),
+              SavedTimePassesPerRunOccurrences);
+  }
 }
 
 TEST(ParallelFrontendTiming, MultiFileTimeTracePreservesEveryRootArtifact) {
