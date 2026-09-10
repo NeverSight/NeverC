@@ -147,7 +147,7 @@ TEST(SupportCommandLineTest, CGNUTokenizerBorrowsLargeSimpleArguments) {
 TEST(SupportCommandLineTest,
      CGNUTokenizerOnlyCopiesArgumentsThatNeedTransformation) {
   std::string Input =
-      "plain \"two words\" '' escaped\\ value # ignored \"'\\\\\n"
+      "plain\t\"two words\"\r'' escaped\\ value # ignored \"'\\\\\n"
       "next raw#hash continued\\\nline";
   Input.push_back('\0');
   Input += "after-nul \"unterminated";

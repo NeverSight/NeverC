@@ -39,6 +39,10 @@ public:
              CancellationCheck IsCancelled = CancellationCheck(),
              OutputLeaseOwner LeaseOwner = {});
 
+  /// Resolve the parent using native filesystem semantics without following a
+  /// final file symlink. Directory spellings (including terminal dots or a
+  /// separator) resolve as existing native paths; acquiring a directory lease
+  /// does not imply that an output transaction may replace that directory.
   llvm::Expected<std::string>
   canonicalize(llvm::StringRef Path) const;
 

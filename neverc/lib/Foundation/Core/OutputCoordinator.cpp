@@ -19,10 +19,23 @@ OutputCoordinator::canonicalize(StringRef Path) const {
   SmallString<256> Absolute(Path);
   if (std::error_code Error = sys::fs::make_absolute(Absolute))
     return errorCodeToError(Error);
-  (void)sys::path::remove_dots(Absolute, true);
-
-  SmallString<256> Parent(sys::path::parent_path(Absolute));
   const std::string Filename = sys::path::filename(Absolute).str();
+  // Directory spellings must share one lease key with their canonical path.
+  // Keep the platform's existing-path semantics; output transactions decide
+  // whether that destination can be replaced by a file.
+  if (Filename.empty() || Filename == "." || Filename == ".." ||
+      sys::path::is_separator(Absolute.back()) ||
+      sys::path::root_path(Absolute) == Absolute) {
+    SmallString<256> Canonical;
+    if (std::error_code Error = sys::fs::real_path(Absolute, Canonical, true))
+      return errorCodeToError(Error);
+    return Canonical.str().str();
+  }
+
+  // Resolve the parent before simplifying '..': on POSIX a directory symlink
+  // changes which parent that component names. Preserve the final component so
+  // the transaction can apply its own final-symlink replacement policy.
+  SmallString<256> Parent(sys::path::parent_path(Absolute));
   SmallString<256> CanonicalParent;
   if (std::error_code Error =
           sys::fs::real_path(Parent, CanonicalParent, true))

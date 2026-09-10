@@ -2312,6 +2312,30 @@ target_include_directories(neverc-support-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
 target_compile_features(neverc-support-tests PRIVATE cxx_std_17)
+
+# Each header is compiled as the first include in its own translation unit.
+# A combined include list would hide dependencies on earlier headers.
+foreach(_neverc_support_header IN ITEMS
+    llvm/ADT/ArrayRef.h
+    llvm/ADT/SmallVector.h
+    llvm/Support/CommandLine.h
+    llvm/Support/ErrorHandling.h)
+  get_filename_component(_neverc_support_header_name
+    "${_neverc_support_header}" NAME_WE)
+  set(_neverc_support_header_target
+    "neverc-support-header-${_neverc_support_header_name}")
+  add_library(${_neverc_support_header_target} OBJECT
+    SupportErrorHandlingHeaderCompile.cpp)
+  target_compile_definitions(${_neverc_support_header_target} PRIVATE
+    NEVERC_SUPPORT_HEADER="${_neverc_support_header}")
+  target_compile_features(${_neverc_support_header_target} PRIVATE cxx_std_17)
+  target_link_libraries(${_neverc_support_header_target} PRIVATE LLVMSupport)
+  add_dependencies(neverc-support-tests ${_neverc_support_header_target})
+endforeach()
+unset(_neverc_support_header)
+unset(_neverc_support_header_name)
+unset(_neverc_support_header_target)
+
 gtest_discover_tests(neverc-support-tests
   PROPERTIES
     TIMEOUT 60
@@ -2965,6 +2989,7 @@ gtest_discover_tests(neverc-run-tests
 # Focused process-wide resource arbitration tests. Keep these independent of
 # Emit/Merge so the broker's lock and lifetime invariants have a small target.
 add_executable(neverc-foundation-tests
+  OutputCoordinatorTests.cpp
   ProcessResourceBudgetTests.cpp
   ThreadLocalStorageTests.cpp
 )
