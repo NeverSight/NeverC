@@ -62,13 +62,14 @@ inline ManagedStatic<cl::opt<bool>, CreateTrackSpace> TrackSpace;
 
 struct CreateInfoOutputFilename {
   static void *call() {
-    return new cl::opt<SmallString<256>, true>(
+    return new cl::opt<SmallString<256>, true, cl::parser<std::string>>(
         "info-output-file", cl::value_desc("filename"),
         cl::desc("File to append -stats and -timer output to"), cl::Hidden,
         cl::location(getLibSupportInfoOutputFilename()));
   }
 };
-inline ManagedStatic<cl::opt<SmallString<256>, true>, CreateInfoOutputFilename>
+inline ManagedStatic<cl::opt<SmallString<256>, true, cl::parser<std::string>>,
+                     CreateInfoOutputFilename>
     InfoOutputFilename;
 
 struct CreateSortTimers {
