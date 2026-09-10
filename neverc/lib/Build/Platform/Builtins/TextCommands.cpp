@@ -142,7 +142,9 @@ bool tryExecutePrintf(llvm::ArrayRef<Token> Argv, int &ExitCode) {
   llvm::StringRef Format = Argv[FmtIdx].Text;
   size_t ArgI = 0;
   std::string Out;
-  bool HardError = false;
+  // A later unsupported operand or escape must still allow shell fallback
+  // without duplicating either output or diagnostics.
+  std::string Errors;
 
   // Count conversion specs so we can reuse the format (POSIX printf).
   unsigned SpecCount = 0;
@@ -199,15 +201,24 @@ bool tryExecutePrintf(llvm::ArrayRef<Token> Argv, int &ExitCode) {
           Out += '0';
           break;
         }
+        // Character constants have locale-dependent semantics; leave them to
+        // the shell along with the other unsupported printf forms.
+        if (Arg.front() == '\'' || Arg.front() == '"')
+          return false;
         const std::string ArgStr = Arg.str();
         char *End = nullptr;
-        long Value = std::strtol(ArgStr.c_str(), &End, 10);
-        if (End == ArgStr.c_str() || (End && *End != '\0')) {
-          llvm::errs() << "neverc make: printf: expected integer, got '" << Arg
-                       << "'\n";
-          HardError = true;
-          return false;
+        errno = 0;
+        const long Value = std::strtol(ArgStr.c_str(), &End, 0);
+        const bool OutOfRange = errno == ERANGE;
+        if (End == ArgStr.c_str() || *End != '\0' || OutOfRange) {
+          Errors += "neverc make: printf: ";
+          Errors += OutOfRange ? "integer out of range, got '"
+                               : "expected integer, got '";
+          Errors += ArgStr;
+          Errors += "'\n";
         }
+        // Numeric conversion errors preserve the accumulated value and do not
+        // prevent later operands from being formatted.
         Out += std::to_string(Value);
         break;
       }
@@ -230,19 +241,15 @@ bool tryExecutePrintf(llvm::ArrayRef<Token> Argv, int &ExitCode) {
       return false;
   } else {
     do {
-      if (!appendOnePass(/*ConsumeArgs=*/true)) {
-        if (HardError) {
-          ExitCode = 1;
-          return true;
-        }
+      if (!appendOnePass(/*ConsumeArgs=*/true))
         return false;
-      }
     } while (ArgI < Args.size());
   }
 
   llvm::outs() << Out;
   llvm::outs().flush();
-  ExitCode = 0;
+  llvm::errs() << Errors;
+  ExitCode = Errors.empty() ? 0 : 1;
   return true;
 }
 

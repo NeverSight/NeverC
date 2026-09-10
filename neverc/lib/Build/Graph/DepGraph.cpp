@@ -36,6 +36,11 @@ bool DepGraph::buildNode(const std::string &Target, const RuleDB &Rules,
   {
     Node &N = Nodes[Target];
     N.Name = Target;
+    // Another requested target may revisit this node. Reconstruct its rule
+    // data without discarding execution state from an earlier build.
+    N.Rule = nullptr;
+    N.Dependencies.clear();
+    N.OrderOnlyDeps.clear();
 
     auto AllRules = Rules.findAllRules(Target);
     N.IsPhony = Rules.isPhony(Target);

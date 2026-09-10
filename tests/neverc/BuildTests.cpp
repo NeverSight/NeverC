@@ -18,7 +18,9 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cerrno>
 #include <fstream>
+#include <limits>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -1554,6 +1556,79 @@ TEST_F(BuildDepGraphTest, OrderOnlyDeps) {
   EXPECT_EQ(N->OrderOnlyDeps[0], "include/generated");
 }
 
+TEST_F(BuildDepGraphTest, SharedPrerequisitesStayUniqueAcrossRoots) {
+  ParsedMakefile M;
+  ASSERT_TRUE(M.parse(
+      ".PHONY: first second shared one two order\n"
+      "first: shared\n"
+      "second: shared\n"
+      "shared: one two | order\n"
+      "\techo $^\n"));
+
+  DepGraph G;
+  ASSERT_TRUE(G.build("first", M.Rules));
+  ASSERT_TRUE(G.build("second", M.Rules));
+
+  ASSERT_NE(G.getNode("first"), nullptr);
+  ASSERT_NE(G.getNode("second"), nullptr);
+  EXPECT_EQ(G.getNode("first")->Dependencies,
+            (std::vector<std::string>{"shared"}));
+  EXPECT_EQ(G.getNode("second")->Dependencies,
+            (std::vector<std::string>{"shared"}));
+  const auto *Shared = G.getNode("shared");
+  ASSERT_NE(Shared, nullptr);
+  EXPECT_EQ(Shared->Dependencies, (std::vector<std::string>{"one", "two"}));
+  EXPECT_EQ(Shared->OrderOnlyDeps, (std::vector<std::string>{"order"}));
+}
+
+TEST_F(BuildDepGraphTest, RepeatedRootKeepsDependencyOrderAndExecutionState) {
+  ParsedMakefile M;
+  ASSERT_TRUE(M.parse(
+      ".PHONY: all first second order\n"
+      "all: first second | order\n"
+      "\techo $^\n"));
+
+  DepGraph G;
+  ASSERT_TRUE(G.build("all", M.Rules));
+  ASSERT_NE(G.getNode("all"), nullptr);
+  ASSERT_NE(G.getNode("first"), nullptr);
+  G.getNode("all")->Built = true;
+  G.getNode("first")->Failed = true;
+
+  ASSERT_TRUE(G.build("all", M.Rules));
+  const auto *All = G.getNode("all");
+  ASSERT_NE(All, nullptr);
+  EXPECT_EQ(All->Dependencies, (std::vector<std::string>{"first", "second"}));
+  EXPECT_EQ(All->OrderOnlyDeps, (std::vector<std::string>{"order"}));
+  EXPECT_TRUE(All->Built);
+  ASSERT_NE(G.getNode("first"), nullptr);
+  EXPECT_TRUE(G.getNode("first")->Failed);
+}
+
+TEST_F(BuildDepGraphTest, RebuildingNodeWithoutRuleDropsStaleStructure) {
+  ParsedMakefile M;
+  ASSERT_TRUE(M.parse(
+      ".PHONY: all input order\n"
+      "all: input | order\n"
+      "\techo $^\n"));
+
+  DepGraph G;
+  ASSERT_TRUE(G.build("all", M.Rules));
+  ASSERT_NE(G.getNode("all"), nullptr);
+  G.getNode("all")->Built = true;
+
+  RuleDB EmptyRules;
+  ASSERT_TRUE(G.build("all", EmptyRules));
+  const auto *All = G.getNode("all");
+  ASSERT_NE(All, nullptr);
+  EXPECT_EQ(All->Rule, nullptr);
+  EXPECT_TRUE(All->Dependencies.empty());
+  EXPECT_TRUE(All->OrderOnlyDeps.empty());
+  EXPECT_FALSE(All->IsPhony);
+  EXPECT_FALSE(All->NeedsBuild);
+  EXPECT_TRUE(All->Built);
+}
+
 // ===== Integration: Simplified Linux 5.10 Kernel Makefile =====
 
 class BuildKernelMakefileTest : public ::testing::Test {};
@@ -2551,6 +2626,109 @@ TEST_F(BuildBuiltinCommandTest, PrintfReusesFormatAndCmpSilent) {
   EXPECT_EQ(Exit, 0);
   ASSERT_TRUE(builtins::tryExecute("cmp -s " + A + " " + C, Exit));
   EXPECT_EQ(Exit, 1);
+}
+
+TEST_F(BuildBuiltinCommandTest, PrintfIntegerConstantsUseCNumberBases) {
+  for (const char *Format : {"%d", "%i"}) {
+    SCOPED_TRACE(Format);
+    const std::string Command = std::string("printf '") + Format +
+        "\\n' 010 0x10 0X2a -010 +0x10 -42 +42 42 0";
+    int Exit = -1;
+    testing::internal::CaptureStdout();
+    const bool Handled = builtins::tryExecute(Command, Exit);
+    const std::string Out = testing::internal::GetCapturedStdout();
+
+    EXPECT_TRUE(Handled);
+    EXPECT_EQ(Exit, 0);
+    EXPECT_EQ(Out, "8\n16\n42\n-8\n16\n-42\n42\n42\n0\n");
+  }
+}
+
+TEST_F(BuildBuiltinCommandTest, PrintfReportsInvalidDigitsAndContinues) {
+  struct Case {
+    const char *Operand;
+    const char *Converted;
+  };
+  for (const Case &Value : {Case{"08", "0"}, Case{"12x", "12"},
+                            Case{"0xG", "0"}, Case{"word", "0"}}) {
+    SCOPED_TRACE(Value.Operand);
+    const std::string Command =
+        std::string("printf '%d\\n' 5 ") + Value.Operand + " 7";
+    int Exit = -1;
+    testing::internal::CaptureStdout();
+    testing::internal::CaptureStderr();
+    const bool Handled = builtins::tryExecute(Command, Exit);
+    const std::string Out = testing::internal::GetCapturedStdout();
+    const std::string Error = testing::internal::GetCapturedStderr();
+
+    EXPECT_TRUE(Handled);
+    EXPECT_NE(Exit, 0);
+    EXPECT_EQ(Out, std::string("5\n") + Value.Converted + "\n7\n");
+    EXPECT_NE(Error.find(Value.Operand), std::string::npos);
+  }
+}
+
+TEST_F(BuildBuiltinCommandTest, PrintfReportsIntegerOverflowAndContinues) {
+  const std::string Maximum = std::to_string(std::numeric_limits<long>::max());
+  const std::string Minimum = std::to_string(std::numeric_limits<long>::min());
+  const std::string Command =
+      "printf '%i\\n' " + Maximum + "0 " + Minimum + "0 7";
+  int Exit = -1;
+  testing::internal::CaptureStdout();
+  testing::internal::CaptureStderr();
+  const bool Handled = builtins::tryExecute(Command, Exit);
+  const std::string Out = testing::internal::GetCapturedStdout();
+  const std::string Error = testing::internal::GetCapturedStderr();
+
+  EXPECT_TRUE(Handled);
+  EXPECT_NE(Exit, 0);
+  EXPECT_EQ(Out, Maximum + "\n" + Minimum + "\n7\n");
+  EXPECT_NE(Error.find(Maximum + "0"), std::string::npos);
+  EXPECT_NE(Error.find(Minimum + "0"), std::string::npos);
+}
+
+TEST_F(BuildBuiltinCommandTest, PrintfAcceptsIntegerLimitsDespiteStaleErrno) {
+  const std::string Maximum = std::to_string(std::numeric_limits<long>::max());
+  const std::string Minimum = std::to_string(std::numeric_limits<long>::min());
+  const std::string Command = "printf '%d\\n' " + Maximum + " " + Minimum;
+  int Exit = -1;
+  testing::internal::CaptureStdout();
+  errno = ERANGE;
+  const bool Handled = builtins::tryExecute(Command, Exit);
+  const std::string Out = testing::internal::GetCapturedStdout();
+
+  EXPECT_TRUE(Handled);
+  EXPECT_EQ(Exit, 0);
+  EXPECT_EQ(Out, Maximum + "\n" + Minimum + "\n");
+}
+
+TEST_F(BuildBuiltinCommandTest, PrintfFallsBackWithoutPartialOutput) {
+  for (const char *Command : {"printf '%04d' 010", "printf '%d\\a' 08",
+                              "printf '%d' \"'A\""}) {
+    SCOPED_TRACE(Command);
+    int Exit = 123;
+    testing::internal::CaptureStdout();
+    testing::internal::CaptureStderr();
+    const bool Handled = builtins::tryExecute(Command, Exit);
+    const std::string Out = testing::internal::GetCapturedStdout();
+    const std::string Error = testing::internal::GetCapturedStderr();
+
+    EXPECT_FALSE(Handled);
+    EXPECT_EQ(Exit, 123);
+    EXPECT_TRUE(Out.empty()) << Out;
+    EXPECT_TRUE(Error.empty()) << Error;
+  }
+}
+
+TEST_F(BuildBuiltinCommandTest, PrintfMissingIntegerOperandsAreZero) {
+  int Exit = -1;
+  testing::internal::CaptureStdout();
+  const bool Handled = builtins::tryExecute("printf '%d/%i\\n'", Exit);
+  const std::string Out = testing::internal::GetCapturedStdout();
+
+  EXPECT_TRUE(Handled);
+  EXPECT_EQ(Exit, 0);
+  EXPECT_EQ(Out, "0/0\n");
 }
 
 TEST_F(BuildBuiltinCommandTest, TestNewerThanAndUnlinkRevFold) {
