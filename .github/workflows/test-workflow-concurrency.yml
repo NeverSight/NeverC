@@ -1,0 +1,37 @@
+name: workflow-concurrency
+
+on:
+  push:
+    paths:
+      - 'utils/ci/sync-workflow-concurrency.py'
+      - 'utils/ci/test_sync_workflow_concurrency.py'
+      - '.github/workflows/test-workflow-concurrency.yml'
+  pull_request:
+    paths:
+      - 'utils/ci/sync-workflow-concurrency.py'
+      - 'utils/ci/test_sync_workflow_concurrency.py'
+      - '.github/workflows/test-workflow-concurrency.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel stale runs on the same ref when a newer commit is pushed. Set repo
+# variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Test workflow trigger recognition and preservation
+        run: python -I -B utils/ci/test_sync_workflow_concurrency.py
+      - name: Validate workflow syntax
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/test-workflow-concurrency.yml
