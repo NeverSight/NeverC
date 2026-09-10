@@ -2,6 +2,7 @@
 """Reject private LLVM definitions or references that could bind the host ABI."""
 
 import argparse
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -18,6 +19,52 @@ from SetupGuidSymbols import (contains_old_guid_name, is_private_guid_name,
 
 
 STRDUP_SYMBOLS = frozenset(("strdup", "_strdup"))
+
+CRT_STORAGE_SYMBOLS = frozenset((
+    "?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA",
+    "?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA",
+    "_Avx2WmemEnabledWeakValue",
+))
+
+
+def crt_storage_failure_context(args, shared, bad_private_names, bad_host_names,
+                                archives, nm, coff_readobj, host_nm):
+    """Describe an existing rejection; never decide whether sharing is allowed."""
+    report_root = os.environ.get("NEVERC_CPP_CRT_STORAGE_REPORT_DIR")
+    if (not report_root or not args.host_lib_dir or
+            getattr(args, "host_format", "nm") != "nm"):
+        return None
+    selected = CRT_STORAGE_SYMBOLS & shared & bad_private_names & bad_host_names
+    if not selected:
+        return None
+    return report_root, {
+        "schema": "neverc.crt-storage-request.v1",
+        "selected_symbols": sorted(selected),
+        "private_archive": str(args.archive),
+        "host_archives": list(map(str, archives)),
+        "private_nm": str(nm),
+        "private_readobj": str(coff_readobj) if coff_readobj else None,
+        "host_nm": str(host_nm),
+        "audit_outcome": "rejected",
+        "source_sha": os.environ.get("GITHUB_SHA", ""),
+        "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+        "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        "target": os.environ.get("NEVERC_CPP_CRT_STORAGE_TARGET", ""),
+    }
+
+
+def collect_crt_storage_failure(context, report_root):
+    # A missing adjacent helper must not fall back to a PYTHONPATH module.
+    helper = Path(__file__).resolve().with_name("CollectCrtStorageEvidence.py")
+    if helper.is_symlink() or not helper.is_file():
+        raise ValueError("Missing adjacent CRT storage diagnostic helper")
+    spec = importlib.util.spec_from_file_location("_neverc_crt_storage_evidence", helper)
+    if spec is None or spec.loader is None:
+        raise ValueError("Cannot load adjacent CRT storage diagnostic helper")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.collect_failure(context, report_root)
 
 
 def symbol_records(output):
@@ -408,6 +455,7 @@ def has_raw_clang_name(name):
 
 
 def audit(args):
+    args._crt_storage_failure = None
     nm = args.nm
     if args.nm_file:
         nm = args.nm_file.read_text(encoding="utf-8").strip()
@@ -628,6 +676,10 @@ def audit(args):
                 bad_private_names.add(name)
                 bad_host_names.add(name)
     if bad:
+        if args.host_lib_dir and host_format == "nm":
+            args._crt_storage_failure = crt_storage_failure_context(
+                args, shared, bad_private_names, bad_host_names, archives,
+                nm, coff_readobj, host_nm)
         diagnostic = (f"Unisolated symbols in builtin C++ frontend (total={len(bad)}):\n" +
                       "\n".join(bad))
         # Failure evidence is read one archive at a time. LLVM's default POSIX
@@ -689,8 +741,23 @@ def main():
     try:
         audit(args)
     except (OSError, UnicodeError, ValueError, subprocess.CalledProcessError) as error:
-        # A failed inspection must not leave an apparently usable aggregate.
-        args.archive.unlink(missing_ok=True)
+        # Diagnostics cannot replace the original rejection or retain an
+        # apparently usable aggregate, including when their helper exits.
+        failure = getattr(args, "_crt_storage_failure", None)
+        try:
+            if failure is not None:
+                report_root, context = failure
+                collect_crt_storage_failure(context, Path(report_root))
+        except BaseException as diagnostic_error:
+            try:
+                print("CRT storage diagnostics unavailable: " +
+                      type(diagnostic_error).__name__, file=sys.stderr)
+            except BaseException:
+                # Reporting a diagnostic failure is also subordinate to the
+                # original rejection, even if the error stream is closed.
+                pass
+        finally:
+            args.archive.unlink(missing_ok=True)
         raise SystemExit(str(error)) from error
 
 

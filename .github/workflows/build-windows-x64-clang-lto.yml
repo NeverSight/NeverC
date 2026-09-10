@@ -118,6 +118,8 @@ jobs:
       - name: Build neverc (Clang + LTO)
         env:
           NEVERC_CPP_SETUP_CONTRACT_REPORT_DIR: ${{ runner.temp }}/cpp-setup-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          NEVERC_CPP_CRT_STORAGE_REPORT_DIR: ${{ runner.temp }}/cpp-crt-storage-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          NEVERC_CPP_CRT_STORAGE_TARGET: x86_64-pc-windows-msvc
         shell: bash
         run: |
           cmake -S llvm -B build -G Ninja \
@@ -151,6 +153,28 @@ jobs:
           path: |
             ${{ runner.temp }}/cpp-setup-contract-${{ github.run_id }}-${{ github.run_attempt }}/upload/manifest.json
             ${{ runner.temp }}/cpp-setup-contract-${{ github.run_id }}-${{ github.run_attempt }}/upload/*.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify CRT storage diagnostic evidence
+        id: cpp_crt_storage_evidence
+        if: always()
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          "${{ steps.python.outputs.python-path }}" -I -B \
+            neverc/lib/Translate/Cpp/Frontend/CollectCrtStorageEvidence.py \
+            --verify-report "$RUNNER_TEMP/cpp-crt-storage-x64-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+
+      - name: Upload CRT storage diagnostic text evidence
+        if: always() && steps.cpp_crt_storage_evidence.outputs.upload_ready == 'true'
+        timeout-minutes: 1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cpp-crt-storage-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cpp-crt-storage-x64-${{ github.run_id }}-${{ github.run_attempt }}/upload/manifest.json
+            ${{ runner.temp }}/cpp-crt-storage-x64-${{ github.run_id }}-${{ github.run_attempt }}/upload/*.txt
           if-no-files-found: error
           retention-days: 14
 

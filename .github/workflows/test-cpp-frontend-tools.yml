@@ -48,3 +48,4 @@ jobs:
           python -E -B neverc/lib/Translate/Cpp/Frontend/CoffWeakAliasesTests.py
           python -E -B neverc/lib/Translate/Cpp/Frontend/RewriteSetupCoffSymbolsTests.py
           python -I -B tests/neverc/CppFrontendToolchainTests.py --report-self-tests
+          python -I -B neverc/lib/Translate/Cpp/Frontend/CollectCrtStorageEvidenceTests.py
