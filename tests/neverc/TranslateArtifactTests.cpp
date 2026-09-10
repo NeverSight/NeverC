@@ -486,43 +486,177 @@ TEST_F(TranslateArtifactTest, FileIdentityMovesTransferOnlyTheCapturedObject) {
 
 #ifdef _WIN32
 TEST_F(TranslateArtifactTest, FileIdentityReleasesDeletePendingHandles) {
+  constexpr DWORD ShareAll =
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+  constexpr DWORD OpenFlags =
+      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT;
+  auto closeOwned = [](HANDLE &File) {
+    if (File == INVALID_HANDLE_VALUE)
+      return DWORD(ERROR_SUCCESS);
+    if (!::CloseHandle(File)) {
+      const DWORD Error = ::GetLastError();
+      return Error ? Error : DWORD(ERROR_GEN_FAILURE);
+    }
+    File = INVALID_HANDLE_VALUE;
+    return DWORD(ERROR_SUCCESS);
+  };
+  auto checkRegularIdentity = [](HANDLE File, FILE_ID_INFO &Identity) {
+    ::SetLastError(ERROR_SUCCESS);
+    const DWORD Type = ::GetFileType(File);
+    const DWORD TypeError = ::GetLastError();
+    ASSERT_EQ(Type, DWORD(FILE_TYPE_DISK))
+        << "GetFileType error=" << TypeError;
+    FILE_ATTRIBUTE_TAG_INFO Attributes = {};
+    BOOL Queried = ::GetFileInformationByHandleEx(
+        File, FileAttributeTagInfo, &Attributes, sizeof(Attributes));
+    DWORD Error = Queried ? ERROR_SUCCESS : ::GetLastError();
+    ASSERT_TRUE(Queried) << "FileAttributeTagInfo error=" << Error;
+    ASSERT_EQ(Attributes.FileAttributes &
+                  (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT),
+              DWORD(0));
+    Queried = ::GetFileInformationByHandleEx(File, FileIdInfo, &Identity,
+                                           sizeof(Identity));
+    Error = Queried ? ERROR_SUCCESS : ::GetLastError();
+    ASSERT_TRUE(Queried) << "FileIdInfo error=" << Error;
+  };
+  auto checkDeletePending = [](HANDLE File) {
+    FILE_STANDARD_INFO Standard = {};
+    const BOOL Queried = ::GetFileInformationByHandleEx(
+        File, FileStandardInfo, &Standard, sizeof(Standard));
+    const DWORD Error = Queried ? ERROR_SUCCESS : ::GetLastError();
+    ASSERT_TRUE(Queried) << "FileStandardInfo error=" << Error;
+    ASSERT_TRUE(Standard.DeletePending) << "FileStandardInfo.DeletePending";
+  };
+  auto markPending = [&](const fs::path &Path,
+                         const FILE_ID_INFO *ExpectedIdentity) {
+    SCOPED_TRACE("classic setter: " + Path.u8string());
+    HANDLE File = ::CreateFileW(Path.c_str(), DELETE | FILE_READ_ATTRIBUTES,
+                               ShareAll, nullptr, OPEN_EXISTING, OpenFlags,
+                               nullptr);
+    const DWORD OpenError = File == INVALID_HANDLE_VALUE ? ::GetLastError()
+                                                        : ERROR_SUCCESS;
+    auto CloseFile = llvm::make_scope_exit([&] {
+      EXPECT_EQ(closeOwned(File), DWORD(ERROR_SUCCESS))
+          << "setter cleanup CloseHandle";
+    });
+    ASSERT_NE(File, INVALID_HANDLE_VALUE)
+        << "CreateFileW DELETE|FILE_READ_ATTRIBUTES error=" << OpenError;
+    FILE_ID_INFO Identity = {};
+    ASSERT_NO_FATAL_FAILURE(checkRegularIdentity(File, Identity));
+    if (ExpectedIdentity) {
+      ASSERT_EQ(Identity.VolumeSerialNumber,
+                ExpectedIdentity->VolumeSerialNumber);
+      for (unsigned I = 0; I != sizeof(Identity.FileId.Identifier); ++I)
+        ASSERT_EQ(Identity.FileId.Identifier[I],
+                  ExpectedIdentity->FileId.Identifier[I])
+            << "FileIdInfo byte=" << I;
+    }
+    // DeleteFileW may choose POSIX deletion and remove the name while a token
+    // is still alive. Request classic deletion explicitly, without EX flags.
+    FILE_DISPOSITION_INFO Disposition = {TRUE};
+    const BOOL Marked = ::SetFileInformationByHandle(
+        File, FileDispositionInfo, &Disposition, sizeof(Disposition));
+    const DWORD Error = Marked ? ERROR_SUCCESS : ::GetLastError();
+    ASSERT_TRUE(Marked) << "SetFileInformationByHandle FileDispositionInfo "
+                          "DeleteFile=TRUE error="
+                       << Error;
+    ASSERT_NO_FATAL_FAILURE(checkDeletePending(File));
+    ASSERT_EQ(closeOwned(File), DWORD(ERROR_SUCCESS))
+        << "setter CloseHandle before namespace probes";
+  };
+  auto expectBlocked = [&](const fs::path &Path, DWORD Creation) {
+    SCOPED_TRACE("held namespace probe: " + Path.u8string());
+    const DWORD Access =
+        Creation == OPEN_EXISTING ? FILE_READ_ATTRIBUTES : GENERIC_WRITE;
+    HANDLE File = ::CreateFileW(Path.c_str(), Access, ShareAll, nullptr,
+                               Creation, OpenFlags, nullptr);
+    const DWORD Error = File == INVALID_HANDLE_VALUE ? ::GetLastError()
+                                                    : ERROR_SUCCESS;
+    auto CloseFile = llvm::make_scope_exit([&] {
+      EXPECT_EQ(closeOwned(File), DWORD(ERROR_SUCCESS))
+          << "unexpected probe cleanup CloseHandle";
+    });
+    ASSERT_EQ(File, INVALID_HANDLE_VALUE)
+        << "CreateFileW creation=" << Creation << " access=" << Access
+        << " error=" << Error;
+    ASSERT_EQ(Error, DWORD(ERROR_ACCESS_DENIED))
+        << "CreateFileW creation=" << Creation << " access=" << Access;
+  };
+  auto expectReusable = [&](const fs::path &Path) {
+    SCOPED_TRACE("released namespace probe: " + Path.u8string());
+    HANDLE File = ::CreateFileW(Path.c_str(), FILE_READ_ATTRIBUTES, ShareAll,
+                               nullptr, OPEN_EXISTING, OpenFlags, nullptr);
+    DWORD Error = File == INVALID_HANDLE_VALUE ? ::GetLastError()
+                                              : ERROR_SUCCESS;
+    auto CloseFile = llvm::make_scope_exit([&] {
+      EXPECT_EQ(closeOwned(File), DWORD(ERROR_SUCCESS))
+          << "reuse probe cleanup CloseHandle";
+    });
+    ASSERT_EQ(File, INVALID_HANDLE_VALUE)
+        << "CreateFileW OPEN_EXISTING error=" << Error;
+    ASSERT_EQ(Error, DWORD(ERROR_FILE_NOT_FOUND))
+        << "CreateFileW OPEN_EXISTING";
+    File = ::CreateFileW(Path.c_str(), GENERIC_WRITE, ShareAll, nullptr,
+                        CREATE_NEW, OpenFlags, nullptr);
+    Error = File == INVALID_HANDLE_VALUE ? ::GetLastError() : ERROR_SUCCESS;
+    ASSERT_NE(File, INVALID_HANDLE_VALUE)
+        << "CreateFileW CREATE_NEW error=" << Error;
+    ASSERT_EQ(closeOwned(File), DWORD(ERROR_SUCCESS))
+        << "reuse probe CloseHandle";
+  };
+
+  // Establish the observable held/closed distinction on this filesystem using
+  // the product's exact metadata-only access, sharing and no-follow flags.
+  // This prerequisite is a failure, never a skip or an error-2/error-5 union.
+  const auto Control = tmpFile("pending-native-control.bin");
+  writeFile(Control, "native control\n");
+  {
+    SCOPED_TRACE("native metadata-handle prerequisite");
+    HANDLE Metadata = ::CreateFileW(Control.c_str(), FILE_READ_ATTRIBUTES,
+                                   ShareAll, nullptr, OPEN_EXISTING, OpenFlags,
+                                   nullptr);
+    const DWORD Error = Metadata == INVALID_HANDLE_VALUE ? ::GetLastError()
+                                                        : ERROR_SUCCESS;
+    auto CloseMetadata = llvm::make_scope_exit([&] {
+      EXPECT_EQ(closeOwned(Metadata), DWORD(ERROR_SUCCESS))
+          << "native prerequisite cleanup CloseHandle";
+    });
+    ASSERT_NE(Metadata, INVALID_HANDLE_VALUE)
+        << "CreateFileW FILE_READ_ATTRIBUTES error=" << Error;
+    FILE_ID_INFO Identity = {};
+    ASSERT_NO_FATAL_FAILURE(checkRegularIdentity(Metadata, Identity));
+    ASSERT_NO_FATAL_FAILURE(markPending(Control, &Identity));
+    // The setter has closed: only Metadata is deliberately retained here.
+    ASSERT_NO_FATAL_FAILURE(checkDeletePending(Metadata));
+    ASSERT_NO_FATAL_FAILURE(expectBlocked(Control, OPEN_EXISTING));
+    ASSERT_NO_FATAL_FAILURE(expectBlocked(Control, CREATE_NEW));
+    ASSERT_EQ(closeOwned(Metadata), DWORD(ERROR_SUCCESS))
+        << "native prerequisite release CloseHandle";
+    ASSERT_NO_FATAL_FAILURE(expectReusable(Control));
+  }
+
   const auto First = tmpFile("pending-first.bin");
   const auto Second = tmpFile("pending-second.bin");
   writeFile(First, "first\n");
   writeFile(Second, "second\n");
-  auto expectPending = [](const fs::path &Path) {
-    HANDLE File = ::CreateFileW(Path.c_str(), FILE_READ_ATTRIBUTES,
-                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    const DWORD Error = ::GetLastError();
-    if (File != INVALID_HANDLE_VALUE)
-      ::CloseHandle(File);
-    EXPECT_EQ(File, INVALID_HANDLE_VALUE);
-    EXPECT_EQ(Error, ERROR_ACCESS_DENIED);
-  };
-  auto expectReusable = [](const fs::path &Path) {
-    HANDLE File = ::CreateFileW(Path.c_str(), GENERIC_WRITE,
-                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                              nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-    EXPECT_NE(File, INVALID_HANDLE_VALUE) << ::GetLastError();
-    if (File != INVALID_HANDLE_VALUE)
-      EXPECT_TRUE(::CloseHandle(File));
-  };
   {
+    SCOPED_TRACE("product token moves and release");
     ArtifactFileIdentity Source, Destination;
     auto Error = ArtifactFileIdentity::capture(First.u8string(), Source);
     ASSERT_FALSE(Error) << Error.message();
     Error = ArtifactFileIdentity::capture(Second.u8string(), Destination);
     ASSERT_FALSE(Error) << Error.message();
     ArtifactFileIdentity Moved(std::move(Source));
-    ASSERT_TRUE(::DeleteFileW(Second.c_str())) << ::GetLastError();
-    expectPending(Second);
+    ASSERT_NO_FATAL_FAILURE(markPending(Second, nullptr));
+    ASSERT_NO_FATAL_FAILURE(expectBlocked(Second, OPEN_EXISTING));
+    ASSERT_NO_FATAL_FAILURE(expectBlocked(Second, CREATE_NEW));
     Destination = std::move(Moved); // Must close the overwritten second handle.
-    expectReusable(Second);
-    ASSERT_TRUE(::DeleteFileW(First.c_str())) << ::GetLastError();
-    expectPending(First);
+    ASSERT_NO_FATAL_FAILURE(expectReusable(Second));
+    ASSERT_NO_FATAL_FAILURE(markPending(First, nullptr));
+    ASSERT_NO_FATAL_FAILURE(expectBlocked(First, OPEN_EXISTING));
+    ASSERT_NO_FATAL_FAILURE(expectBlocked(First, CREATE_NEW));
   } // The final destination owner must close the first handle.
-  expectReusable(First);
+  ASSERT_NO_FATAL_FAILURE(expectReusable(First));
 }
 #endif
 
@@ -558,17 +692,44 @@ TEST_F(TranslateArtifactTest,
   const auto Input = Root / "input.cpp";
   fs::create_directory(Root);
   writeFile(Input, "int f() { return 1; }\n");
-  // Each spelling would name an existing object if dot components were erased
-  // before checking the preceding component.
+  // A missing component must never disappear through lexical dot removal.
+  {
+    llvm::SmallString<256> Resolved("stale result");
+    const auto Error = neverc::translate::resolveExistingPath(
+        (Root / "missing" / ".." / "input.cpp").u8string(), Resolved);
+    EXPECT_TRUE(Error);
+    EXPECT_TRUE(Resolved.empty());
+  }
   for (const auto &Path : std::vector<std::string>{
-           (Root / "missing" / ".." / "input.cpp").u8string(),
            (Input / ".").u8string(),
            (Input / ".." / "input.cpp").u8string(), Input.u8string() + "/"}) {
     SCOPED_TRACE(Path);
+#ifndef _WIN32
+    // POSIX implementations differ on dot/separator suffixes after a file.
+    // Use the independent native result rather than imposing Windows rules.
+    std::error_code NativeError;
+    const auto Native = fs::canonical(fs::u8path(Path), NativeError);
+#endif
     llvm::SmallString<256> Resolved("stale result");
     const auto Error = neverc::translate::resolveExistingPath(Path, Resolved);
+#ifdef _WIN32
     EXPECT_TRUE(Error);
     EXPECT_TRUE(Resolved.empty());
+#else
+    if (NativeError) {
+      EXPECT_TRUE(Error);
+      EXPECT_TRUE(Resolved.empty());
+    } else {
+      EXPECT_FALSE(Error) << Error.message();
+      EXPECT_EQ(Resolved.str().str(), Native.u8string());
+      if (!Error) {
+        std::error_code IdentityError;
+        EXPECT_TRUE(fs::equivalent(fs::u8path(Resolved.str().str()), Input,
+                                   IdentityError));
+        EXPECT_FALSE(IdentityError) << IdentityError.message();
+      }
+    }
+#endif
   }
   EXPECT_EQ(readFile(Input), "int f() { return 1; }\n");
   EXPECT_FALSE(fs::exists(Root / "missing"));
@@ -759,8 +920,8 @@ TEST_F(TranslateArtifactTest, ExistingPathsDoNotRequestAncestorReadSharing) {
     // Restrict only read sharing on this owned directory. No ACL or token
     // changes are involved; existing children retain their usual access.
     HANDLE Held = ::CreateFileW(
-        Parent.c_str(), 0, FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        Parent.c_str(), FILE_LIST_DIRECTORY, FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
     ASSERT_NE(Held, INVALID_HANDLE_VALUE) << ::GetLastError();
     auto CloseHeld = llvm::make_scope_exit([&] {
       EXPECT_TRUE(::CloseHandle(Held)) << ::GetLastError();
@@ -835,10 +996,67 @@ TEST_F(TranslateArtifactTest, PublicationRejectsInvalidParentComponents) {
     EXPECT_NE(llvm::toString(Writer.takeError()).str().str().find("TR0502"),
               std::string::npos);
   };
+  EXPECT_NO_FATAL_FAILURE(Reject(Root / "missing" / ".." / "output.nc"));
   for (const auto &Output :
-       {Root / "missing" / ".." / "output.nc",
-        Source / "." / "output.nc", Source / ".." / "output.nc"})
+       {Source / "." / "output.nc", Source / ".." / "output.nc"}) {
+#ifdef _WIN32
     EXPECT_NO_FATAL_FAILURE(Reject(Output));
+#else
+    auto CheckNative = [&] {
+      SCOPED_TRACE(Output.u8string());
+      std::error_code NativeError;
+      const auto Parent = fs::canonical(Output.parent_path(), NativeError);
+      if (NativeError || !fs::is_directory(Parent, NativeError)) {
+        Reject(Output);
+        return;
+      }
+      ASSERT_FALSE(NativeError) << NativeError.message();
+      ASSERT_EQ(Parent, fs::canonical(Root));
+      const auto Name = Output.filename().u8string();
+      const std::vector<Artifact> Expected = {
+          {Name, "int main() { return 0; }\n"},
+          {Name + ".map.json", "{\"map\":1}\n"},
+          {Name + ".manifest.json", "{\"manifest\":1}\n"}};
+      for (const auto &Artifact : Expected)
+        ASSERT_FALSE(fs::exists(Parent / fs::u8path(Artifact.Name)));
+      auto Cleanup = llvm::make_scope_exit([&] {
+        for (const auto &Artifact : Expected) {
+          std::error_code Error;
+          fs::remove(Parent / fs::u8path(Artifact.Name), Error);
+          EXPECT_FALSE(Error) << Error.message();
+        }
+      });
+      std::string Stage;
+      {
+        auto Writer = ArtifactWriter::create({Output.u8string(), "", ""},
+                                            Source.u8string());
+        ASSERT_TRUE(bool(Writer))
+            << llvm::toString(Writer.takeError()).str().str();
+        Stage = (*Writer)->stagingDirectory().str();
+        EXPECT_EQ((*Writer)->sourceName().str(), Expected[0].Name);
+        EXPECT_EQ((*Writer)->mapName().str(), Expected[1].Name);
+        EXPECT_EQ((*Writer)->manifestName().str(), Expected[2].Name);
+        success((*Writer)->publish(Expected, "{}"));
+      }
+      EXPECT_FALSE(fs::exists(fs::u8path(Stage)));
+      for (const auto &Artifact : Expected) {
+        const auto Published = Parent / fs::u8path(Artifact.Name);
+        EXPECT_TRUE(fs::is_regular_file(Published));
+        auto Bytes = neverc::translate::readFile(Published.u8string());
+        ASSERT_TRUE(bool(Bytes))
+            << llvm::toString(Bytes.takeError()).str().str();
+        EXPECT_EQ(*Bytes, Artifact.Contents);
+        EXPECT_FALSE(fs::exists(tmp() / fs::u8path(Artifact.Name)));
+      }
+      EXPECT_EQ(std::distance(fs::directory_iterator(Root),
+                              fs::directory_iterator()),
+                4);
+      EXPECT_EQ(readFile(Source), "int f() { return 1; }\n");
+      expectNoArtifactTemporaryDirectories();
+    };
+    EXPECT_NO_FATAL_FAILURE(CheckNative());
+#endif
+  }
   EXPECT_FALSE(fs::exists(Root / "output.nc"));
   EXPECT_FALSE(fs::exists(Root / "missing"));
   EXPECT_EQ(std::distance(fs::directory_iterator(Root),

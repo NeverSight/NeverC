@@ -612,23 +612,78 @@ TEST_F(TranslateCompilationContextTest,
   Options.Database = Database.u8string();
   database({entry({"clang++", "-c", "../src/a.cpp"}, "../src/a.cpp",
                   Build.u8string())});
+  // A missing component must not disappear through lexical dot removal.
+  Options.Selections = {
+      {(Source.parent_path() / "missing" / ".." / Source.filename()).u8string(),
+       std::nullopt}};
+  EXPECT_NO_FATAL_FAILURE(rejected("TR0203"));
+#ifndef _WIN32
+  auto CheckAccepted = [&](const fs::path &ExpectedSource,
+                           const std::vector<std::string> &Normalized,
+                           const std::vector<std::string> &Frontend) {
+    ASSERT_TRUE(parse());
+    ASSERT_TRUE(Errors.empty());
+    ASSERT_EQ(Result.Units.size(), 1u);
+    const auto &Unit = Result.Units.front();
+    EXPECT_EQ(Result.ProjectRootAbsolute, fs::canonical(Root).u8string());
+    EXPECT_EQ(Result.Database.AbsolutePath, fs::canonical(Database).u8string());
+    EXPECT_EQ(Result.Database.RelativePath, "build/compile_commands.json");
+    EXPECT_EQ(Unit.SourceAbsolute, ExpectedSource.u8string());
+    EXPECT_EQ(Unit.SourceRelative, "src/a.cpp");
+    EXPECT_EQ(Unit.WorkingDirectoryAbsolute, fs::canonical(Build).u8string());
+    EXPECT_EQ(Unit.WorkingDirectoryRelative, "build");
+    EXPECT_EQ(Unit.NormalizedArguments, Normalized);
+    EXPECT_EQ(Unit.FrontendArguments, Frontend);
+    EXPECT_TRUE(verifyProjectContextInputs(Result, Errors));
+  };
+#endif
   for (const auto &Path : std::vector<std::string>{
-           (Source.parent_path() / "missing" / ".." / Source.filename())
-               .u8string(),
            (Source / ".").u8string(),
            (Source / ".." / Source.filename()).u8string(),
            Source.u8string() + "/"}) {
     SCOPED_TRACE(Path);
     Options.Selections = {{Path, std::nullopt}};
+#ifdef _WIN32
     EXPECT_NO_FATAL_FAILURE(rejected("TR0203"));
+#else
+    // Match the native filesystem contract for suffixes after regular files.
+    std::error_code NativeError;
+    const auto Native = fs::canonical(fs::u8path(Path), NativeError);
+    if (NativeError) {
+      EXPECT_NO_FATAL_FAILURE(rejected("TR0203"));
+    } else {
+      ASSERT_EQ(Native, fs::canonical(Source));
+      EXPECT_NO_FATAL_FAILURE(
+          CheckAccepted(Native, {"-std=c++17"}, {"-std=c++17"}));
+    }
+#endif
   }
   Options.Selections = {{Source.u8string(), std::nullopt}};
-  for (const auto &Include : {Root / "missing" / ".." / "include one",
-                             Source / ".." / ".." / "include one"}) {
+  database({entry({"clang++", "-I",
+                   (Root / "missing" / ".." / "include one").u8string(),
+                   "../src/a.cpp"},
+                  "../src/a.cpp", Build.u8string())});
+  EXPECT_NO_FATAL_FAILURE(rejected("TR0004"));
+  {
+    const auto Include = Source / ".." / ".." / "include one";
     SCOPED_TRACE(Include.u8string());
     database({entry({"clang++", "-I", Include.u8string(), "../src/a.cpp"},
                     "../src/a.cpp", Build.u8string())});
+#ifdef _WIN32
     EXPECT_NO_FATAL_FAILURE(rejected("TR0004"));
+#else
+    std::error_code NativeError;
+    const auto Native = fs::canonical(Include, NativeError);
+    if (NativeError || !fs::is_directory(Native, NativeError)) {
+      EXPECT_NO_FATAL_FAILURE(rejected("TR0004"));
+    } else {
+      ASSERT_FALSE(NativeError) << NativeError.message();
+      ASSERT_EQ(Native, fs::canonical(Root / "include one"));
+      EXPECT_NO_FATAL_FAILURE(CheckAccepted(
+          fs::canonical(Source), {"-std=c++17", "-I", "$PROJECT/include one"},
+          {"-std=c++17", "-I", Native.u8string()}));
+    }
+#endif
   }
   EXPECT_FALSE(fs::exists(Root / "missing"));
   EXPECT_FALSE(fs::exists(Source.parent_path() / "missing"));
