@@ -24,6 +24,7 @@ MAX_SYMBOLS_PER_MEMBER = 1000000
 MAX_ALIASES = 1000000
 MAX_CHAIN = 256
 READ_TIMEOUT = 900
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass
@@ -194,7 +195,7 @@ def parse_resolved_aliases(lines, definitions, private_names=(), *, expected_fal
         if len(raw_line) > MAX_LINE:
             raise ValueError("llvm-readobj symbol line exceeds its limit")
         line = raw_line.rstrip("\r\n")
-        if any(ord(char) < 32 or ord(char) == 127 for char in line):
+        if _CONTROL_CHARACTER.search(line):
             raise ValueError("Control character in llvm-readobj symbol inventory")
         if not line:
             continue

@@ -429,6 +429,35 @@ class CoffWeakAliasesTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.parse(text)
 
+    def test_all_ascii_control_characters_are_rejected_inside_a_field(self):
+        valid = member(symbol("private_body"), weak())
+        self.assertEqual(self.parse(valid), {"private_alias"})
+        valid_lines = valid.splitlines(keepends=True)
+        field_index = valid_lines.index("    Name: private_body\n")
+        for codepoint in (*range(32), 127):
+            with self.subTest(codepoint=codepoint):
+                lines = list(valid_lines)
+                # Insert after splitting so embedded CR/LF reaches the parser's
+                # control check, independently of the input iterator's framing.
+                lines[field_index] = f"    Name: private{chr(codepoint)}body\n"
+                with self.assertRaisesRegex(
+                        ValueError, "^Control character in llvm-readobj symbol inventory$"):
+                    coff.parse_resolved_aliases(
+                        iter(lines), {"private_body"}, {"private_alias"})
+
+    def test_printable_and_non_ascii_symbol_characters_remain_accepted(self):
+        for character in (" ", "~", "\x80", "é", "中", "\u2028", "\u2029"):
+            with self.subTest(character=character):
+                name = "private" + character + "body"
+                self.assertEqual(
+                    self.parse(member(symbol(name), weak(target=name)), definitions=(name,)),
+                    {"private_alias"})
+
+    def test_crlf_symbol_inventory_preserves_alias_resolution(self):
+        text = member(symbol("private_body"), weak()).replace("\n", "\r\n")
+        self.assertEqual(self.parse(text), {"private_alias"})
+        self.assertEqual(self.inspect(text), {"private_alias"})
+
     def test_line_and_member_inventory_limits_are_bounded(self):
         with mock.patch.object(coff, "MAX_LINE", 16):
             with self.assertRaisesRegex(ValueError, "line exceeds"):
