@@ -948,6 +948,8 @@ def main(argv=None):
         with open(output, "a", encoding="utf-8", newline="\n") as stream:
             stream.write("upload_ready=" + ready + "\n")
     print("CRT identity report: " + result["status"] + "; upload_ready=" + ready)
+    if result["status"] not in ("ready", "absent") and result.get("error"):
+        print("CRT identity report error: " + result["error"], file=sys.stderr)
     return 0 if result["status"] in ("ready", "absent") else 1
 
 

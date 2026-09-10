@@ -1603,5 +1603,89 @@ class FileIdentityCompatibilityTests(TemporaryEvidenceTest):
                     self.assertIn("tool changed during version probe", result["error"])
 
 
+class VerifierDiagnosticCliTests(TemporaryEvidenceTest):
+    def invoke_verifier_cli(self, output_name="github-output.txt"):
+        output = self.root / output_name
+        output.write_bytes(b"existing=preserved\n")
+        stdout, stderr = io.StringIO(), io.StringIO()
+        environment = {
+            "GITHUB_OUTPUT": str(output),
+            "NEVERC_TEST_SECRET": "ENVIRONMENT_SENTINEL_MUST_NOT_APPEAR",
+        }
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(sys, "stdout", stdout), \
+                mock.patch.object(sys, "stderr", stderr):
+            code = evidence.main(["--verify-report", str(self.report)])
+        return code, stdout.getvalue(), stderr.getvalue(), output.read_bytes()
+
+    def test_real_verifier_error_truncates_raw_characters_before_ascii_escape(self):
+        self.report.mkdir()
+        (self.report / "collection.claim").mkdir()
+        error = ValueError("\U0001f600" * 241 + "DISCARDED_ERROR_SUFFIX")
+        with mock.patch.object(evidence, "_read_text", side_effect=error) as read:
+            code, stdout, stderr, output = self.invoke_verifier_cli()
+        read.assert_called_once()
+        self.assertEqual(read.call_args.args[0], self.report / "manifest.json")
+        expected = "CRT identity report error: " + r"\ud83d\ude00" * 240 + "\n"
+        self.assertEqual(stderr, expected)
+        self.assertEqual(len(stderr.encode("ascii")), 2908)
+        self.assertEqual(stderr.count("\n"), 1)
+        self.assertNotIn("DISCARDED_ERROR_SUFFIX", stdout + stderr)
+        self.assertNotIn("ENVIRONMENT_SENTINEL_MUST_NOT_APPEAR", stdout + stderr)
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "CRT identity report: invalid; upload_ready=false\n")
+        self.assertEqual(output, b"existing=preserved\nupload_ready=false\n")
+        self.assertEqual({path.name for path in self.report.iterdir()},
+                         {"collection.claim", "verification.claim"})
+
+    def test_real_verifier_escapes_controls_and_literal_backslashes_only_once(self):
+        self.report.mkdir()
+        (self.report / "collection.claim").mkdir()
+        error = ValueError('line\n\t\r\0"\\literal\\n中é\u2028\u2029\U0001f600')
+        with mock.patch.object(evidence, "_read_text", side_effect=error) as read:
+            code, stdout, stderr, output = self.invoke_verifier_cli()
+        read.assert_called_once()
+        expected_error = (r'line\n\t\r\u0000\"\\literal\\n\u4e2d\u00e9'
+                          r'\u2028\u2029\ud83d\ude00')
+        self.assertEqual(stderr, "CRT identity report error: " + expected_error + "\n")
+        self.assertTrue(stderr.isascii())
+        self.assertEqual(stderr.count("\n"), 1)
+        self.assertNotIn("\r", stderr)
+        self.assertNotIn("\0", stderr)
+        self.assertNotIn("ENVIRONMENT_SENTINEL_MUST_NOT_APPEAR", stdout + stderr)
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "CRT identity report: invalid; upload_ready=false\n")
+        self.assertEqual(output, b"existing=preserved\nupload_ready=false\n")
+
+    def test_silent_statuses_preserve_summary_upload_output_and_exit_code(self):
+        cases = [
+            ({"status": "invalid", "upload_ready": False}, 1, "false"),
+            ({"status": "invalid", "upload_ready": False, "error": ""}, 1, "false"),
+            ({"status": "invalid", "upload_ready": False, "error": None}, 1, "false"),
+            ({"status": "ready", "upload_ready": True, "error": "ignored"}, 0, "true"),
+            ({"status": "absent", "upload_ready": False, "error": "ignored"}, 0, "false"),
+        ]
+        for number, (result, expected_code, ready) in enumerate(cases):
+            with self.subTest(result=result), \
+                    mock.patch.object(evidence, "verify_report", return_value=result) as verify:
+                code, stdout, stderr, output = self.invoke_verifier_cli(
+                    "github-output-" + str(number) + ".txt")
+            verify.assert_called_once_with(self.report)
+            self.assertEqual(code, expected_code)
+            self.assertEqual(stderr, "")
+            self.assertEqual(stdout, "CRT identity report: " + result["status"] +
+                             "; upload_ready=" + ready + "\n")
+            self.assertEqual(output, b"existing=preserved\nupload_ready=" +
+                             ready.encode("ascii") + b"\n")
+
+    def test_real_absent_report_is_silent_and_does_not_create_report_directory(self):
+        code, stdout, stderr, output = self.invoke_verifier_cli()
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout, "CRT identity report: absent; upload_ready=false\n")
+        self.assertEqual(stderr, "")
+        self.assertEqual(output, b"existing=preserved\nupload_ready=false\n")
+        self.assertFalse(self.report.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
