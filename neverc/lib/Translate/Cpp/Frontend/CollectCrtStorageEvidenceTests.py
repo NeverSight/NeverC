@@ -9,10 +9,12 @@ import io
 import json
 import os
 from pathlib import Path
+import stat
 import struct
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -1374,6 +1376,231 @@ class ManifestConsistencyTests(TemporaryEvidenceTest):
         result = evidence.verify_report(self.report)
         self.assertTrue(result["upload_ready"], result)
         self.assertEqual(list(self.root.rglob("*.pyc")), [])
+
+
+class FileIdentityCompatibilityTests(TemporaryEvidenceTest):
+    """Keep path/descriptor comparisons distinct from same-API stability."""
+
+    def metadata(self, **changes):
+        values = {"st_mode": stat.S_IFREG | 0o600, "st_dev": 17,
+                  "st_ino": (1 << 100) + 23, "st_size": 7,
+                  "st_mtime_ns": 300, "st_ctime_ns": 100,
+                  "st_birthtime_ns": 100}
+        values.update(changes)
+        return SimpleNamespace(**values)
+
+    def os_view(self, *, name="nt", fstat=None):
+        # Do not mutate the process-wide os.name: pathlib must keep using
+        # the native path class while only the collector selects its policy.
+        return SimpleNamespace(
+            name=name, O_RDONLY=os.O_RDONLY,
+            O_BINARY=getattr(os, "O_BINARY", 0),
+            O_NONBLOCK=getattr(os, "O_NONBLOCK", 0),
+            O_NOFOLLOW=getattr(os, "O_NOFOLLOW", 0),
+            open=mock.Mock(wraps=os.open),
+            fstat=os.fstat if fstat is None else fstat,
+            fdopen=os.fdopen, close=mock.Mock(wraps=os.close))
+
+    def assert_failed_open_closed_descriptor(self, view):
+        view.close.assert_called_once()
+        descriptor = view.close.call_args.args[0]
+        with self.assertRaises(OSError) as caught:
+            os.fstat(descriptor)
+        self.assertEqual(caught.exception.errno, errno.EBADF)
+
+    def test_windows_cross_api_times_allow_read_hash_and_preserve_raw_fields(self):
+        payload = b"payload"
+        self.private.write_bytes(payload)
+        path_before = self.metadata()
+        fd_before = self.metadata(st_ctime_ns=200)
+        view = self.os_view(fstat=mock.Mock(side_effect=[fd_before, fd_before]))
+        with mock.patch.object(evidence, "os", view), \
+                mock.patch.object(Path, "lstat", return_value=path_before):
+            stream, observed, path_observed = evidence._regular_open(self.private)
+            with stream:
+                self.assertEqual(stream.read(), payload)
+                digest = evidence._hash_region(stream, 0, len(payload),
+                                               evidence.Budget(10))
+                fd_after, path_after = evidence._stable(
+                    self.private, stream, observed, path_observed)
+            self.assertEqual(evidence._comparison_identity(observed),
+                             {"device": 17, "inode": (1 << 100) + 23,
+                              "size": 7, "mtime_ns": 300,
+                              "birthtime_ns": 100})
+        self.assertEqual(digest, hashlib.sha256(payload).hexdigest())
+        self.assertIs(observed, fd_before)
+        self.assertIs(path_observed, path_before)
+        self.assertEqual(fd_after, {"device": 17, "inode": (1 << 100) + 23,
+                                    "size": 7, "mtime_ns": 300,
+                                    "ctime_ns": 200})
+        self.assertEqual(path_after, {"device": 17, "inode": (1 << 100) + 23,
+                                      "size": 7, "mtime_ns": 300,
+                                      "ctime_ns": 100})
+
+    def test_windows_cross_api_identity_mismatch_is_rejected_and_closed(self):
+        self.private.write_bytes(b"payload")
+        changes = {"st_dev": 18, "st_ino": (1 << 101) + 23,
+                   "st_size": 8, "st_mtime_ns": 301,
+                   "st_birthtime_ns": 101}
+        for field, value in changes.items():
+            with self.subTest(field=field):
+                path_before = self.metadata()
+                fd_before = self.metadata(st_ctime_ns=200, **{field: value})
+                view = self.os_view(fstat=mock.Mock(return_value=fd_before))
+                with mock.patch.object(evidence, "os", view), \
+                        mock.patch.object(Path, "lstat", return_value=path_before):
+                    with self.assertRaisesRegex(
+                            ValueError, "input identity changed while opening"):
+                        evidence._regular_open(self.private)
+                self.assert_failed_open_closed_descriptor(view)
+
+    def test_windows_same_api_ctime_and_birthtime_changes_are_rejected(self):
+        self.private.write_bytes(b"payload")
+        for side in ("path", "fd"):
+            for field in ("st_ctime_ns", "st_birthtime_ns"):
+                with self.subTest(side=side, field=field):
+                    path_before = self.metadata()
+                    fd_before = self.metadata(st_ctime_ns=200)
+                    path_after, fd_after = path_before, fd_before
+                    if side == "path":
+                        path_after = self.metadata(**{field: 999})
+                    else:
+                        values = {"st_ctime_ns": 200, field: 999}
+                        fd_after = self.metadata(**values)
+                    view = self.os_view(fstat=mock.Mock(
+                        side_effect=[fd_before, fd_after]))
+                    with mock.patch.object(evidence, "os", view), \
+                            mock.patch.object(Path, "lstat", side_effect=[
+                                path_before, path_after]):
+                        stream, observed, path_observed = evidence._regular_open(
+                            self.private)
+                        with stream, self.assertRaisesRegex(
+                                ValueError, "input changed or was replaced"):
+                            evidence._stable(self.private, stream, observed,
+                                             path_observed)
+
+    def test_stable_requires_final_path_and_descriptor_to_name_same_object(self):
+        self.private.write_bytes(b"payload")
+        fd_before = self.metadata(st_ctime_ns=200)
+        path_before = self.metadata(st_ino=(1 << 101) + 23)
+        view = self.os_view(fstat=mock.Mock(return_value=fd_before))
+        # Both API-specific baselines remain unchanged. Their disagreement
+        # must still fail the final cross-API check.
+        with self.private.open("rb") as stream, \
+                mock.patch.object(evidence, "os", view), \
+                mock.patch.object(Path, "lstat", return_value=path_before):
+            with self.assertRaisesRegex(ValueError, "input changed or was replaced"):
+                evidence._stable(self.private, stream, fd_before, path_before)
+
+    def test_posix_cross_api_ctime_difference_is_still_rejected(self):
+        self.private.write_bytes(b"payload")
+        path_before = self.metadata()
+        fd_before = self.metadata(st_ctime_ns=200)
+        view = self.os_view(name="posix", fstat=mock.Mock(return_value=fd_before))
+        with mock.patch.object(evidence, "os", view), \
+                mock.patch.object(Path, "lstat", return_value=path_before):
+            self.assertEqual(evidence._comparison_identity(path_before),
+                             {"device": 17, "inode": (1 << 100) + 23,
+                              "size": 7, "mtime_ns": 300, "ctime_ns": 100})
+            with self.assertRaisesRegex(ValueError,
+                                        "input identity changed while opening"):
+                evidence._regular_open(self.private)
+        self.assert_failed_open_closed_descriptor(view)
+
+    def test_windows_missing_or_noninteger_birthtime_fails_closed(self):
+        self.private.write_bytes(b"payload")
+        for side in ("path", "fd"):
+            for value in ("missing", None, True, 100.0, "100"):
+                with self.subTest(side=side, value=value):
+                    path_before = self.metadata()
+                    fd_before = self.metadata(st_ctime_ns=200)
+                    invalid = path_before if side == "path" else fd_before
+                    if value == "missing":
+                        del invalid.st_birthtime_ns
+                    else:
+                        invalid.st_birthtime_ns = value
+                    view = self.os_view(fstat=mock.Mock(return_value=fd_before))
+                    with mock.patch.object(evidence, "os", view), \
+                            mock.patch.object(Path, "lstat", return_value=path_before):
+                        with self.assertRaisesRegex(
+                                ValueError, "Windows file creation time is unavailable"):
+                            evidence._regular_open(self.private)
+                    self.assert_failed_open_closed_descriptor(view)
+
+    def test_real_regular_file_reads_hashes_and_retains_both_baselines(self):
+        payload = b"owned real file; no native tool execution\n"
+        self.private.write_bytes(payload)
+        stream, fd_before, path_before = evidence._regular_open(self.private)
+        with stream:
+            self.assertEqual(stream.read(), payload)
+            digest = evidence._hash_region(stream, 0, len(payload),
+                                           evidence.Budget(10))
+            fd_after, path_after = evidence._stable(
+                self.private, stream, fd_before, path_before)
+        self.assertEqual(digest, hashlib.sha256(payload).hexdigest())
+        self.assertEqual(fd_after["inode"], fd_before.st_ino)
+        self.assertEqual(path_after["inode"], path_before.st_ino)
+        self.assertEqual(fd_after["ctime_ns"], fd_before.st_ctime_ns)
+        self.assertEqual(path_after["ctime_ns"], path_before.st_ctime_ns)
+        self.assertEqual(fd_after["size"], len(payload))
+        self.assertEqual(path_after["size"], len(payload))
+
+    def test_tool_final_check_uses_path_baseline_and_rejects_path_changes(self):
+        self.host_nm.parent.mkdir(parents=True)
+        payload = b"MZ inert fixture; version execution is mocked"
+        self.host_nm.write_bytes(payload)
+        original_lstat, original_fstat = Path.lstat, os.fstat
+        for change in (None, "st_ctime_ns", "st_birthtime_ns"):
+            with self.subTest(change=change):
+                directory = self.root / ("probe-" + str(change))
+                directory.mkdir()
+                version_finished = False
+
+                def observation(raw, ctime):
+                    return self.metadata(st_mode=raw.st_mode, st_dev=raw.st_dev,
+                                         st_ino=raw.st_ino, st_size=raw.st_size,
+                                         st_mtime_ns=raw.st_mtime_ns,
+                                         st_ctime_ns=ctime)
+
+                def path_stat(path):
+                    result = observation(original_lstat(path), 100)
+                    if path == self.host_nm and version_finished and change:
+                        setattr(result, change, 999)
+                    return result
+
+                def fd_stat(descriptor):
+                    return observation(original_fstat(descriptor), 200)
+
+                def child(argv, stdout, stderr, _budget, **_options):
+                    nonlocal version_finished
+                    self.assertEqual(argv, [str(self.host_nm), "--version"])
+                    stdout.write_bytes(b"LLVM version 22.1.8\n")
+                    stderr.write_bytes(b"")
+                    version_finished = True
+                    return {"status": "completed", "returncode": 0,
+                            "cleanup": {"reaped": True, "kill_requested": False,
+                                        "complete": True}}
+
+                view = self.os_view(fstat=fd_stat)
+                with mock.patch.object(evidence, "os", view), \
+                        mock.patch.object(Path, "lstat", path_stat), \
+                        mock.patch.object(evidence, "run_child", side_effect=child) as launch, \
+                        mock.patch.object(subprocess, "Popen", side_effect=AssertionError(
+                            "native tools must not execute in this test")):
+                    result = evidence.probe_tool("host-nm", self.host_nm, "22.1.8",
+                                                 evidence.Budget(10), directory)
+                launch.assert_called_once()
+                self.assertEqual(result["sha256"], hashlib.sha256(payload).hexdigest())
+                self.assertEqual(result["version"], "22.1.8")
+                self.assertEqual(result["before"]["ctime_ns"], 200)
+                self.assertEqual(result["path_before"]["ctime_ns"], 100)
+                self.assertEqual(result["after"]["ctime_ns"], 200)
+                self.assertEqual(result["path_after"]["ctime_ns"], 100)
+                if change is None:
+                    self.assertEqual(result["status"], "complete", result)
+                else:
+                    self.assertEqual(result["status"], "incomplete", result)
+                    self.assertIn("tool changed during version probe", result["error"])
 
 
 if __name__ == "__main__":

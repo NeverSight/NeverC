@@ -96,6 +96,20 @@ def _identity(value):
             "ctime_ns": value.st_ctime_ns}
 
 
+def _comparison_identity(value):
+    result = _identity(value)
+    if os.name == "nt":
+        # CPython 3.12 path stat preserves creation time in ctime, while
+        # fstat exposes Windows ChangeTime. Compare their common birthtime;
+        # keep both raw ctime observations for same-API stability checks.
+        birthtime = getattr(value, "st_birthtime_ns", None)
+        if type(birthtime) is not int:
+            raise ValueError("Windows file creation time is unavailable")
+        del result["ctime_ns"]
+        result["birthtime_ns"] = birthtime
+    return result
+
+
 def _regular_open(path):
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode):
@@ -105,22 +119,27 @@ def _regular_open(path):
     descriptor = os.open(path, flags)
     try:
         observed = os.fstat(descriptor)
-        if not stat.S_ISREG(observed.st_mode) or _identity(before) != _identity(observed):
+        if (not stat.S_ISREG(observed.st_mode) or
+                _comparison_identity(before) != _comparison_identity(observed)):
             raise ValueError("input identity changed while opening")
         stream = os.fdopen(descriptor, "rb")
         descriptor = None
-        return stream, observed
+        return stream, observed, before
     finally:
         if descriptor is not None:
             os.close(descriptor)
 
 
-def _stable(path, stream, before):
+def _stable(path, stream, before, path_before):
     after = os.fstat(stream.fileno())
     path_after = path.lstat()
-    if (not stat.S_ISREG(path_after.st_mode) or
+    if (not stat.S_ISREG(after.st_mode) or
+            not stat.S_ISREG(path_after.st_mode) or
             _identity(before) != _identity(after) or
-            _identity(before) != _identity(path_after)):
+            _identity(path_before) != _identity(path_after) or
+            _comparison_identity(before) != _comparison_identity(after) or
+            _comparison_identity(path_before) != _comparison_identity(path_after) or
+            _comparison_identity(after) != _comparison_identity(path_after)):
         raise ValueError("input changed or was replaced during collection")
     return _identity(after), _identity(path_after)
 
@@ -259,7 +278,8 @@ def inventory_archive(path, selected_symbols, budget, *, archive_ordinal=0,
     path = Path(path)
     result = {"status": "incomplete", "side": side,
               "archive_ordinal": archive_ordinal,
-              "archive": {"path": str(path), "before": None, "after": None,
+              "archive": {"path": str(path), "before": None, "path_before": None,
+                          "after": None,
                           "path_after": None, "sha256": None,
                           "sha256_status": "unavailable", "identity_stable": False},
               "member_count": 0, "member_inventory_sha256": None,
@@ -269,9 +289,10 @@ def inventory_archive(path, selected_symbols, budget, *, archive_ordinal=0,
         if not selected_symbols or not set(selected_symbols) <= set(SELECTED_SYMBOLS):
             raise ValueError("unsupported selected symbols")
         coff = _load_coff_reader()
-        stream, before = _regular_open(path)
+        stream, before, path_before = _regular_open(path)
         with stream:
             result["archive"]["before"] = _identity(before)
+            result["archive"]["path_before"] = _identity(path_before)
             checked = _CheckedStream(stream, budget)
             coff._defined_symbols(checked, before.st_size)
             budget.check()
@@ -358,7 +379,7 @@ def inventory_archive(path, selected_symbols, budget, *, archive_ordinal=0,
                 result["archive"]["sha256_status"] = "computed-unverified"
             else:
                 result["archive"]["sha256_status"] = "not-selected"
-            after, path_after = _stable(path, stream, before)
+            after, path_after = _stable(path, stream, before, path_before)
             result["archive"].update(after=after, path_after=path_after, identity_stable=True)
             if representatives:
                 result["archive"]["sha256_status"] = "complete"
@@ -582,14 +603,14 @@ def run_child(argv, stdout_path, stderr_path, budget, *, timeout_seconds,
 
 def _read_text(path, budget):
     budget.check()
-    stream, before = _regular_open(path)
+    stream, before, path_before = _regular_open(path)
     with stream:
         if before.st_size > FILE_LIMIT:
             raise EvidenceLimit("text file exceeds 1 MiB")
         data = _CheckedStream(stream, budget).read(before.st_size)
         if len(data) != before.st_size:
             raise ValueError("truncated text file")
-        _stable(path, stream, before)
+        _stable(path, stream, before, path_before)
     data.decode("utf-8", errors="strict")
     budget.check()
     return data
@@ -613,7 +634,7 @@ def probe_tool(role, path, expected_version, budget, root):
         except FileNotFoundError:
             record["exists"] = False
             raise
-        stream, before = _regular_open(path)
+        stream, before, path_before = _regular_open(path)
         with stream:
             magic = stream.read(4)
             if not (magic.startswith(b"MZ") or magic == b"\x7fELF" or magic in (
@@ -622,8 +643,8 @@ def probe_tool(role, path, expected_version, budget, root):
                 raise ValueError("tool is not a recognized native binary")
             record.update(size=before.st_size,
                           sha256=_hash_region(stream, 0, before.st_size, budget),
-                          before=_identity(before))
-            after, path_after = _stable(path, stream, before)
+                          before=_identity(before), path_before=_identity(path_before))
+            after, path_after = _stable(path, stream, before, path_before)
             record.update(after=after, path_after=path_after)
         stdout = Path(root) / f"tool-{role}-stdout.txt"
         stderr = Path(root) / f"tool-{role}-stderr.txt"
@@ -643,7 +664,10 @@ def probe_tool(role, path, expected_version, budget, root):
             record["status"] = "version-mismatch"
         else:
             record["status"] = "complete"
-        if _identity(path.lstat()) != record["before"]:
+        path_final = path.lstat()
+        if (not stat.S_ISREG(path_final.st_mode) or
+                _identity(path_final) != record["path_before"] or
+                _comparison_identity(path_final) != _comparison_identity(path_before)):
             raise ValueError("tool changed during version probe")
     except (OSError, ValueError) as error:
         record.update(status="incomplete", error=_brief(error))
