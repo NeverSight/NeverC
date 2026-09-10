@@ -1,4 +1,17 @@
 set(LLVM_LINK_COMPONENTS
+  Option
+  Support
+  )
+
+# Share the option schema with small command-line clients without the driver.
+add_neverc_library(nevercDriverOptions
+  Option/DriverOptions.cpp
+
+  DEPENDS
+  NeverCDriverOptions
+  )
+
+set(LLVM_LINK_COMPONENTS
   BinaryFormat
   MC
   Object
@@ -44,7 +57,6 @@ add_neverc_library(nevercInvoke
   Multilib/Multilib.cpp
   Multilib/MultilibBuilder.cpp
 
-  Option/DriverOptions.cpp
   Option/OptionUtils.cpp
   Option/Types.cpp
 
@@ -66,6 +78,7 @@ add_neverc_library(nevercInvoke
   NeverCDriverOptions
 
   LINK_LIBS
+  nevercDriverOptions
   nevercFoundation
   nevercPluginCore
   nevercPluginFrontend

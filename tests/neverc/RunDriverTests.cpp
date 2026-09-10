@@ -136,6 +136,86 @@ TEST(RunArgumentTest, DoesNotTreatDashPrefixedFlagAsSourceFile) {
             (std::vector<std::string>{"argument"}));
 }
 
+TEST(RunArgumentTest, KeepsSeparateOptionValuesBeforeTheSourceList) {
+  const std::vector<std::vector<std::string>> OptionCases = {
+      {"-include", "config.c"},
+      {"-imacros", "macros.nc"},
+      {"-I", "include.c"},
+      {"-D", "VALUE=.nc"},
+      {"-o", "ignored.c"},
+      {"-sectcreate", "__TEXT", "info.c", "resource.nc"},
+  };
+  for (const auto &Options : OptionCases) {
+    SCOPED_TRACE(Options.front());
+    std::vector<std::string> Compiler = Options;
+    Compiler.insert(Compiler.end(), {"-O2", "main.c", "helper.nc"});
+    SmallVector<StringRef, 12> Args(Compiler.begin(), Compiler.end());
+    Args.push_back("argument");
+
+    run::RunInvocation Invocation = takeValue(run::parseRunArguments(Args));
+
+    EXPECT_EQ(Invocation.CompilerArguments, Compiler);
+    EXPECT_EQ(Invocation.ProgramArguments,
+              (std::vector<std::string>{"argument"}));
+  }
+}
+
+TEST(RunArgumentTest, KeepsJoinedOptionValuesBeforeTheSourceList) {
+  SmallVector<StringRef, 8> Args = {"-Iinclude.c", "-DVALUE=.nc", "-O2",
+                                  "main.c", "argument"};
+  run::RunInvocation Invocation = takeValue(run::parseRunArguments(Args));
+
+  EXPECT_EQ(Invocation.CompilerArguments,
+            (std::vector<std::string>{"-Iinclude.c", "-DVALUE=.nc", "-O2",
+                                      "main.c"}));
+  EXPECT_EQ(Invocation.ProgramArguments,
+            (std::vector<std::string>{"argument"}));
+}
+
+TEST(RunArgumentTest, LeavesMissingCompilerOptionValuesForCompilerDiagnostics) {
+  SmallVector<StringRef, 2> Args = {"-O2", "-include"};
+  run::RunInvocation Invocation = takeValue(run::parseRunArguments(Args));
+
+  EXPECT_EQ(Invocation.CompilerArguments,
+            (std::vector<std::string>{"-O2", "-include"}));
+  EXPECT_TRUE(Invocation.ProgramArguments.empty());
+}
+
+TEST(RunArgumentTest, DoesNotInterpretProgramFlagsAsCompilerOptions) {
+  SmallVector<StringRef, 8> Args = {"-O2", "main.c", "-include", "arg.c",
+                                  "-sectcreate"};
+  run::RunInvocation Invocation = takeValue(run::parseRunArguments(Args));
+
+  EXPECT_EQ(Invocation.CompilerArguments,
+            (std::vector<std::string>{"-O2", "main.c"}));
+  EXPECT_EQ(Invocation.ProgramArguments,
+            (std::vector<std::string>{"-include", "arg.c", "-sectcreate"}));
+}
+
+TEST(RunArgumentTest, ExplicitSeparatorPreservesSourceLikeOptionValues) {
+  SmallVector<StringRef, 8> Args = {"-include", "config.c", "main.c", "-O2",
+                                  "--", "arg.nc", "-include"};
+  run::RunInvocation Invocation = takeValue(run::parseRunArguments(Args));
+
+  EXPECT_EQ(Invocation.CompilerArguments,
+            (std::vector<std::string>{"-include", "config.c", "main.c", "-O2"}));
+  EXPECT_EQ(Invocation.ProgramArguments,
+            (std::vector<std::string>{"arg.nc", "-include"}));
+}
+
+TEST(RunArgumentTest, AcceptsArgumentViewsWithoutNullTerminators) {
+  StringRef Include = StringRef("-include-unused").take_front(8);
+  StringRef Config = StringRef("config.c-unused").take_front(8);
+  StringRef Source = StringRef("main.c-unused").take_front(6);
+  SmallVector<StringRef, 8> Args = {Include, Config, "-O2", Source, "argument"};
+  run::RunInvocation Invocation = takeValue(run::parseRunArguments(Args));
+
+  EXPECT_EQ(Invocation.CompilerArguments,
+            (std::vector<std::string>{"-include", "config.c", "-O2", "main.c"}));
+  EXPECT_EQ(Invocation.ProgramArguments,
+            (std::vector<std::string>{"argument"}));
+}
+
 TEST(RunArgumentTest, RejectsMissingCompilerInput) {
   SmallVector<StringRef, 1> Empty;
   Expected<run::RunInvocation> Missing = run::parseRunArguments(Empty);
@@ -187,6 +267,25 @@ int main(int argc, char **argv) {
   SmallVector<StringRef, 8> Args = {"run", Source, "-O1", "--", "x"};
   StringRef Redirects[] = {StringRef(), Stdout, Stderr};
   EXPECT_EQ(executeNeverC(Args, Redirects), 17) << readFile(Stderr);
+}
+
+TEST(NeverCRunIntegrationTest, ForwardsIncludeOperandBeforeSourceAndFlags) {
+  ScratchDirectory Scratch;
+  SmallString<256> Config = Scratch.child("config.c");
+  SmallString<256> Source = Scratch.child("main.c");
+  SmallString<256> Stdout = Scratch.child("stdout.txt");
+  SmallString<256> Stderr = Scratch.child("stderr.txt");
+  writeFile(Config, "#define EXPECTED_EXIT 31\n");
+  writeFile(Source, R"c(
+int main(int argc, char **argv) {
+  return argc == 2 && argv[1][0] == 'x' && argv[1][1] == 0 ? EXPECTED_EXIT : 92;
+}
+)c");
+
+  SmallVector<StringRef, 8> Args = {"run", "-include", Config, "-O0", Source,
+                                  "x"};
+  StringRef Redirects[] = {StringRef(), Stdout, Stderr};
+  EXPECT_EQ(executeNeverC(Args, Redirects), 31) << readFile(Stderr);
 }
 
 TEST(NeverCRunIntegrationTest, CompilationFailureNeverRunsProgram) {

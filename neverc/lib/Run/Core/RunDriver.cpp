@@ -1,7 +1,10 @@
 #include "neverc/Run/RunDriver.h"
 
+#include "neverc/Invoke/Options.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Option/Arg.h"
+#include "llvm/Option/ArgList.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/FileSystem.h"
@@ -30,6 +33,28 @@ void copyArguments(ArrayRef<StringRef> Arguments, size_t Begin, size_t End,
   Destination.reserve(Destination.size() + End - Begin);
   for (size_t I = Begin; I != End; ++I)
     Destination.push_back(Arguments[I].str());
+}
+
+size_t findFirstRunSource(ArrayRef<StringRef> Arguments) {
+  // OptTable requires terminated strings, while this API accepts StringRefs.
+  std::vector<std::string> Storage;
+  copyArguments(Arguments, 0, Arguments.size(), Storage);
+  SmallVector<const char *, 32> Argv;
+  for (const std::string &Argument : Storage)
+    Argv.push_back(Argument.c_str());
+  opt::InputArgList Args(Argv.begin(), Argv.end());
+
+  unsigned Index = 0;
+  while (Index < Arguments.size()) {
+    auto Argument = driver::getDriverOptTable().ParseOneArg(Args, Index);
+    // Preserve incomplete invocations for the compiler's own diagnostics.
+    if (!Argument)
+      break;
+    if (Argument->getOption().getKind() == opt::Option::InputClass &&
+        isRunSource(Arguments[Argument->getIndex()]))
+      return Argument->getIndex();
+  }
+  return Arguments.size();
 }
 
 class TemporaryRunDirectory {
@@ -142,13 +167,7 @@ Expected<RunInvocation> parseRunArguments(ArrayRef<StringRef> Arguments) {
     copyArguments(Arguments, Separator + 1, Arguments.size(),
                   Invocation.ProgramArguments);
   } else {
-    size_t FirstSource = Arguments.size();
-    for (size_t I = 0; I != Arguments.size(); ++I) {
-      if (isRunSource(Arguments[I])) {
-        FirstSource = I;
-        break;
-      }
-    }
+    const size_t FirstSource = findFirstRunSource(Arguments);
 
     size_t CompilerEnd = Arguments.size();
     if (FirstSource != Arguments.size()) {
