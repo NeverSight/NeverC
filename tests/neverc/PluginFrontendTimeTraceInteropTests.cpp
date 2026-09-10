@@ -1802,15 +1802,23 @@ int runInvocationPassTimingOwnershipProbe() {
     return recoveryProbeFailure(216, "invocation timing option state changed");
   if (llvm::timer_detail::getLibSupportInfoOutputFilename() != StrayReportPath)
     return recoveryProbeFailure(217, "info-output option was not restored");
-  if (llvm::timer_detail::TimerGroupList != BaselineTimerGroups)
-    return recoveryProbeFailure(218, "pass timing registry was not restored");
+  // Cold codegen may add process-lifetime named and pass timer groups. Those
+  // cached registrations can change the list head without changing the
+  // existing default group's lifetime or this untriggered sentinel.
+  if (llvm::timer_detail::getDefaultTimerGroup() != DefaultTimerGroup ||
+      !RegistrySentinel.isInitialized() || RegistrySentinel.hasTriggered() ||
+      RegistrySentinel.isRunning())
+    return recoveryProbeFailure(
+        218, "pass timing default group or sentinel state changed");
   if (llvm::sys::fs::exists(StrayReportPath))
     return recoveryProbeFailure(219, "pass timing emitted a stray report");
 
+  // Check every group, including caches first registered by this invocation,
+  // for queued records or timers that remain triggered.
   std::string RemainingTimingReport;
   {
     llvm::raw_string_ostream TimingStream(RemainingTimingReport);
-    DefaultTimerGroup->print(TimingStream, /*ResetAfterPrint=*/true);
+    llvm::TimerGroup::printAll(TimingStream);
     TimingStream.flush();
   }
   if (countTextOccurrences(RemainingTimingReport,
