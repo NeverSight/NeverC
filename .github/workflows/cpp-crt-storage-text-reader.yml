@@ -1,0 +1,1377 @@
+# Temporary fixed-artifact text diagnostic; remove after evidence review.
+# Source report is already rejected. Reader success is not ABI or link approval.
+name: Read fixed C++ CRT storage text evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+
+concurrency:
+  group: neverc-crt-storage-text-reader-0531e2b8
+  cancel-in-progress: false
+
+jobs:
+  read-fixed-report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Assemble trusted reader 1 of 4
+        id: reader_source
+        shell: bash
+        run: |
+          reader="$RUNNER_TEMP/neverc-crt-reader-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.py"
+          umask 077
+          (
+            set -C
+            : > "$reader"
+          )
+          printf '%s\n' 'created=true' >> "$GITHUB_OUTPUT"
+          cat >> "$reader" <<'NEVERC_CRT_TRUSTED_SOURCE_1'
+          import hashlib
+          import json
+          import math
+          import signal
+          import stat
+          import struct
+          import zlib
+
+
+          SOURCE = {
+              "repository": "NeverSight/NeverC",
+              "repository_id": 1240844551,
+              "head": "0531e2b89d7ffcdf70e8fefc6dd228020e6f17c8",
+              "branch": "dev",
+              "run_id": 34500997839,
+              "run_attempt": 1,
+              "job_id": 102951452910,
+              "workflow_id": 289991650,
+              "workflow_path": ".github/workflows/build-windows-x64-clang-lto.yml",
+              "artifact_id": 10164600024,
+              "artifact_name": "cpp-crt-storage-x64-34500997839-1",
+              "zip_bytes": 22988,
+              "zip_sha256": "f8ee8e43b37ddbbddbc81f045c4a80606fe1afe097e4e7bf1cf63b6de2486173",
+              "target": "x86_64-pc-windows-msvc",
+          }
+          TOOL_ROLES = (
+              "private-nm", "private-readobj", "host-nm", "host-readobj",
+              "host-dis", "host-bcanalyzer",
+          )
+          TEXT_NAMES = {"request.txt", "inventory.txt", "worker-stdout.txt", "worker-stderr.txt"}
+          TEXT_NAMES.update("tool-" + role + "-" + stream + ".txt"
+                            for role in TOOL_ROLES for stream in ("stdout", "stderr"))
+          MANIFEST_LIMIT = 256 * 1024
+          TEXT_LIMIT = 1024 * 1024
+          TOTAL_TEXT_LIMIT = 8 * 1024 * 1024
+          OUTPUT_LIMIT = 256 * 1024
+          OUTPUT_PREFIX = "CRT_TEXT_READER "
+          PREVIEW_TRUNCATIONS = 0
+
+
+          class ReaderFailure(Exception):
+              def __init__(self, code):
+                  self.code = code
+                  super().__init__(code)
+
+
+          def require(condition, code):
+              if not condition:
+                  raise ReaderFailure(code)
+
+
+          def sha256_bytes(raw):
+              return hashlib.sha256(raw).hexdigest()
+
+
+          def preview(value):
+              global PREVIEW_TRUNCATIONS
+              require(type(value) is str, "preview-type")
+              if len(value) > 240:
+                  PREVIEW_TRUNCATIONS += 1
+              return value[:240]
+
+
+          def strict_json(raw, label, limit):
+              require(type(raw) is bytes and len(raw) <= limit, "json-byte-limit")
+              require(b"\0" not in raw, "json-nul")
+              try:
+                  text = raw.decode("utf-8", errors="strict")
+              except UnicodeError:
+                  raise ReaderFailure("json-utf8") from None
+              depth = 0
+              quoted = escaped = False
+              for char in text:
+                  if quoted:
+                      if escaped:
+                          escaped = False
+                      elif char == "\\":
+                          escaped = True
+                      elif char == '"':
+                          quoted = False
+                  elif char == '"':
+                      quoted = True
+                  elif char in "[{":
+                      depth += 1
+                      require(depth <= 32, "json-depth")
+                  elif char in "]}":
+                      depth -= 1
+                      require(depth >= 0, "json-depth")
+              require(depth == 0 and not quoted, "json-structure")
+
+              def pairs(items):
+                  result = {}
+                  for key, value in items:
+                      require(key not in result, "json-duplicate-key")
+                      result[key] = value
+                  return result
+
+              def integer(value):
+                  require(len(value) <= 128, "json-integer-size")
+                  return int(value)
+
+              def floating(value):
+                  number = float(value)
+                  require(math.isfinite(number), "json-nonfinite")
+                  return number
+
+              def constant(value):
+                  raise ReaderFailure("json-nonfinite")
+
+              try:
+                  value = json.loads(text, object_pairs_hook=pairs, parse_int=integer,
+                                     parse_float=floating, parse_constant=constant)
+              except (ValueError, RecursionError):
+                  raise ReaderFailure("json-syntax") from None
+              pending = [value]
+              while pending:
+                  item = pending.pop()
+                  if type(item) is str:
+                      require("\0" not in item, "json-decoded-nul")
+                      require(not any(0xD800 <= ord(c) <= 0xDFFF for c in item),
+                              "json-unpaired-surrogate")
+                  elif type(item) is dict:
+                      pending.extend(item.keys())
+                      pending.extend(item.values())
+                  elif type(item) is list:
+                      pending.extend(item)
+              return value
+
+
+          def _zip_extra(raw):
+              offset = 0
+              while offset < len(raw):
+                  require(offset + 4 <= len(raw), "zip-extra-header")
+                  tag, size = struct.unpack_from("<HH", raw, offset)
+                  offset += 4
+                  require(tag != 0x0001, "zip64-not-supported")
+                  require(offset + size <= len(raw), "zip-extra-size")
+                  offset += size
+
+
+          def _inflate(raw, method, size, crc, limit):
+              require(0 <= size <= limit, "zip-expanded-size")
+              if method == 0:
+                  data = raw
+              else:
+                  require(method == 8, "zip-compression")
+                  decoder = zlib.decompressobj(-15)
+                  failed = False
+                  try:
+                      data = decoder.decompress(raw, limit + 1)
+                  except zlib.error:
+                      failed = True
+                  require(not failed, "zip-deflate-invalid")
+                  require(len(data) <= limit, "zip-expanded-size")
+                  require(decoder.eof and not decoder.unused_data and not decoder.unconsumed_tail,
+                          "zip-deflate-boundary")
+              require(len(data) == size and len(data) <= limit, "zip-expanded-size")
+              require(zlib.crc32(data) & 0xFFFFFFFF == crc, "zip-crc")
+              require(b"\0" not in data, "zip-text-nul")
+              try:
+                  data.decode("utf-8", errors="strict")
+              except UnicodeError:
+                  raise ReaderFailure("zip-text-utf8") from None
+              return data
+
+
+          def read_text_zip(raw):
+              # Container parsing only. Native archive/object formats are never interpreted.
+              require(type(raw) is bytes and 22 <= len(raw) <= SOURCE["zip_bytes"], "zip-byte-limit")
+              end = len(raw) - 22
+              signature, disk, central_disk, disk_count, count, central_size, central_offset, comment = (
+                  struct.unpack_from("<4s4H2LH", raw, end)
+              )
+              require(signature == b"PK\x05\x06" and comment == 0, "zip-end-record")
+              require(disk == central_disk == 0 and disk_count == count == 13, "zip-disk-or-count")
+              require(central_offset + central_size == end, "zip-central-boundary")
+              central = struct.Struct("<4s6H3L5H2L")
+              local = struct.Struct("<4s5H3L2H")
+              cursor = central_offset
+              members = []
+              names = set()
+              folded = set()
+              expanded = 0
+              for unused in range(count):
+                  require(cursor + central.size <= end, "zip-central-header")
+                  (magic, made, needed, flags, method, clock, date, crc, compressed, size,
+                   name_size, extra_size, comment_size, disk_start, internal, external, offset) = (
+                      central.unpack_from(raw, cursor)
+                  )
+                  require(magic == b"PK\x01\x02", "zip-central-header")
+                  require(disk_start == 0 and 10 <= needed <= 20, "zip-version-or-disk")
+                  require(method in (0, 8) and flags & ~0x080E == 0, "zip-method-or-flags")
+                  require(method == 8 or flags & 0x0006 == 0, "zip-stored-flags")
+                  require(comment_size == 0 and name_size > 0, "zip-entry-comment-or-name")
+                  require(size <= TEXT_LIMIT and compressed <= SOURCE["zip_bytes"], "zip-entry-size")
+                  start = cursor + central.size
+                  stop = start + name_size + extra_size + comment_size
+                  require(stop <= end, "zip-central-entry-boundary")
+                  raw_name = raw[start:start + name_size]
+                  require(all(0x21 <= c <= 0x7E for c in raw_name), "zip-name-ascii")
+                  name = raw_name.decode("ascii")
+                  require("/" not in name and "\\" not in name and ":" not in name
+                          and name not in (".", ".."), "zip-name-path")
+                  require(name == "manifest.json" or name in TEXT_NAMES, "zip-name-allowlist")
+                  require(name not in names and name.lower() not in folded, "zip-name-duplicate")
+                  names.add(name)
+                  folded.add(name.lower())
+                  limit = MANIFEST_LIMIT if name == "manifest.json" else TEXT_LIMIT
+                  require(size <= limit, "zip-entry-size")
+                  creator = made >> 8
+                  kind = stat.S_IFMT(external >> 16)
+                  require(creator in (0, 3), "zip-creator")
+                  require(kind == stat.S_IFREG or (creator == 0 and kind == 0), "zip-not-regular")
+                  require(external & 0x18 == 0, "zip-dos-directory-or-volume")
+                  _zip_extra(raw[start + name_size:stop])
+                  require(offset < central_offset, "zip-local-offset")
+                  expanded += size
+                  require(expanded <= TOTAL_TEXT_LIMIT, "zip-total-expanded-size")
+                  members.append((offset, name, raw_name, flags, method, clock, date, crc,
+                                  compressed, size, needed, limit))
+                  cursor = stop
+              require(cursor == end and "manifest.json" in names and len(names - {"manifest.json"}) == 12,
+                      "zip-central-size-or-membership")
+              members.sort(key=lambda value: value[0])
+              cursor = 0
+              entries = {}
+              for index, member in enumerate(members):
+                  (offset, name, raw_name, flags, method, clock, date, crc,
+                   compressed, size, needed, limit) = member
+                  require(offset == cursor and offset + local.size <= central_offset, "zip-local-layout")
+                  (magic, local_needed, local_flags, local_method, local_clock, local_date,
+                   local_crc, local_compressed, local_size, name_size, extra_size) = local.unpack_from(raw, offset)
+                  require(magic == b"PK\x03\x04", "zip-local-header")
+                  require((local_needed, local_flags, local_method, local_clock, local_date) ==
+                          (needed, flags, method, clock, date), "zip-local-central-mismatch")
+                  start = offset + local.size
+                  body = start + name_size + extra_size
+                  stop = body + compressed
+                  boundary = members[index + 1][0] if index + 1 < len(members) else central_offset
+                  require(start <= body <= stop <= boundary, "zip-local-data-boundary")
+                  require(raw[start:start + name_size] == raw_name, "zip-local-name")
+                  _zip_extra(raw[start + name_size:body])
+                  if flags & 8:
+                      require(local_crc in (0, crc) and local_compressed in (0, compressed)
+                              and local_size in (0, size), "zip-local-descriptor-values")
+                      descriptor = raw[stop:boundary]
+                      if len(descriptor) == 16:
+                          require(descriptor[:4] == b"PK\x07\x08", "zip-data-descriptor")
+                          descriptor = descriptor[4:]
+                      require(len(descriptor) == 12, "zip-data-descriptor-size")
+                      require(struct.unpack("<3L", descriptor) == (crc, compressed, size),
+                              "zip-data-descriptor-values")
+                  else:
+                      require((local_crc, local_compressed, local_size) == (crc, compressed, size),
+                              "zip-local-sizes")
+                      require(stop == boundary, "zip-unclaimed-data")
+                  entries[name] = _inflate(raw[body:stop], method, size, crc, limit)
+                  cursor = boundary
+              require(cursor == central_offset, "zip-local-end")
+              return entries
+
+
+          def bounded_result(result):
+              def encode(value):
+                  text = json.dumps(value, ensure_ascii=True, allow_nan=False, separators=(",", ":"))
+                  # These markers can occur only inside strings in valid JSON. Preserve
+                  # decoded values while removing both modern and legacy CI command markers.
+                  text = text.replace("#", "\\u0023").replace("::", "\\u003a\\u003a")
+                  return (OUTPUT_PREFIX + text + "\n").encode("utf-8")
+
+              raw = encode(result)
+              if len(raw) > OUTPUT_LIMIT:
+                  result = {key: value for key, value in result.items() if key != "report"}
+                  result.update({"report_omitted": True, "display_truncated": True,
+                                 "display_reason": "projected-report-exceeds-output-budget"})
+                  raw = encode(result)
+              require(len(raw) <= OUTPUT_LIMIT, "output-byte-limit")
+              return raw
+
+
+          def emit_result(result):
+              raw = bounded_result(result)
+              # Emit only after byte bounds and CI marker escaping have both been applied.
+              print(raw.decode("ascii"), end="", flush=True)
+
+
+          def _reader_timeout(signum, frame):
+              raise ReaderFailure("reader-total-timeout")
+
+          """Fixed runner-only transport; SOURCE and three validation helpers are injected.
+
+          No artifact content is executed or written.  The caller owns the outer 240-second
+          SIGALRM budget; each scope below preserves the time left on that outer timer.
+          """
+
+          import contextlib as _fixed_contextlib
+          import http.client as _fixed_http
+          import os as _fixed_os
+          import signal as _fixed_signal
+          import ssl as _fixed_ssl
+          import time as _fixed_time
+          import urllib.parse as _fixed_parse
+
+
+          class _FixedFetchError(Exception):
+              def __init__(self, code):
+                  self.code = code
+                  super().__init__(code)
+
+
+          def _fixed_check(condition, code):
+              if not condition:
+                  raise _FixedFetchError(code)
+
+
+          def _fixed_equal(actual, expected):
+              return type(actual) is type(expected) and actual == expected
+
+
+          @_fixed_contextlib.contextmanager
+          def _fixed_time_limit(seconds, code):
+              old_handler = _fixed_signal.getsignal(_fixed_signal.SIGALRM)
+              old_remaining, old_interval = _fixed_signal.getitimer(_fixed_signal.ITIMER_REAL)
+              _fixed_check(old_interval == 0.0, "fetch_timer_contract")
+              started = _fixed_time.monotonic()
+              delay = min(seconds, old_remaining) if old_remaining > 0 else seconds
+
+              def expired(_signum, _frame):
+                  raise _FixedFetchError(code)
+
+              _fixed_signal.signal(_fixed_signal.SIGALRM, expired)
+              try:
+                  _fixed_signal.setitimer(_fixed_signal.ITIMER_REAL, delay)
+                  yield started + delay
+              finally:
+                  _fixed_signal.setitimer(_fixed_signal.ITIMER_REAL, 0)
+                  _fixed_signal.signal(_fixed_signal.SIGALRM, old_handler)
+                  if old_remaining > 0:
+                      remaining = old_remaining - (_fixed_time.monotonic() - started)
+                      # An expired enclosing budget must not silently disappear.
+                      _fixed_signal.setitimer(_fixed_signal.ITIMER_REAL,
+                                              max(remaining, 0.000001))
+
+
+          def _fixed_remaining(deadline):
+              remaining = deadline - _fixed_time.monotonic()
+              _fixed_check(remaining > 0, "fetch_deadline")
+              return remaining
+
+
+          def _fixed_single_header(response, name):
+              values = response.headers.get_all(name, [])
+              _fixed_check(len(values) <= 1, "fetch_duplicate_header")
+              return values[0] if values else None
+
+
+          def _fixed_response_headers(response, ceiling):
+              headers = response.getheaders()
+              _fixed_check(len(headers) <= 64 and
+                           sum(len(k) + len(v) + 4 for k, v in headers) <= 32768,
+                           "fetch_headers_limit")
+              encoding = _fixed_single_header(response, "Content-Encoding")
+              _fixed_check(encoding is None or encoding.strip().lower() == "identity",
+                           "fetch_content_encoding")
+              transfer = _fixed_single_header(response, "Transfer-Encoding")
+              _fixed_check(transfer is None or transfer.strip().lower() == "chunked",
+                           "fetch_transfer_encoding")
+              length = _fixed_single_header(response, "Content-Length")
+              _fixed_check(transfer is None or length is None, "fetch_ambiguous_length")
+              if length is not None:
+                  _fixed_check(0 < len(length) <= 10 and
+                               all("0" <= char <= "9" for char in length),
+                               "fetch_invalid_length")
+                  _fixed_check(int(length) <= ceiling, "fetch_body_limit")
+              return None if length is None else int(length)
+
+
+          def _fixed_read_body(response, ceiling, deadline):
+              body = bytearray()
+              while True:
+                  _fixed_remaining(deadline)
+                  # One extra byte detects overflow without retaining an unbounded body.
+                  chunk = response.read(min(16384, ceiling + 1 - len(body)))
+                  if not chunk:
+                      break
+                  body.extend(chunk)
+                  _fixed_check(len(body) <= ceiling, "fetch_body_limit")
+              return bytes(body)
+
+
+          def _fixed_open(host, target, headers, deadline):
+              # http.client does not follow redirects, load proxy credentials, or retain
+              # cookies.  Certificate and hostname verification use the default context.
+              connection = None
+              try:
+                  # Bound the explicit DNS/TCP/TLS connection separately while retaining
+                  # whichever enclosing API/download deadline expires first.
+                  with _fixed_time_limit(10, "fetch_connect_timeout") as connect_deadline:
+                      connection = _fixed_http.HTTPSConnection(
+                          host, 443, timeout=_fixed_remaining(connect_deadline),
+                          context=_fixed_ssl.create_default_context())
+                      connection.connect()
+                  connection.timeout = _fixed_remaining(deadline)
+                  _fixed_check(connection.sock is not None, "fetch_connect_state")
+                  connection.sock.settimeout(connection.timeout)
+                  # No implicit reconnection if the explicitly opened socket is lost.
+                  connection.auto_open = 0
+                  connection.request("GET", target, headers=headers)
+                  response = connection.getresponse()
+                  return connection, response
+              except BaseException:
+                  if connection is not None:
+                      connection.close()
+                  raise
+
+
+          def _fixed_close(connection, response):
+              try:
+                  response.close()
+              finally:
+                  connection.close()
+
+
+          def _fixed_api_headers(token):
+              return {
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": "Bearer " + token,
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "Accept-Encoding": "identity",
+                  "User-Agent": "NeverC-fixed-crt-text-reader",
+              }
+
+
+          def _fixed_api_json(target, token, label):
+              with _fixed_time_limit(25, label + "_timeout") as deadline:
+                  connection, response = _fixed_open(
+          NEVERC_CRT_TRUSTED_SOURCE_1
+      - name: Assemble trusted reader 2 of 4
+        shell: bash
+        run: |
+          reader="$RUNNER_TEMP/neverc-crt-reader-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.py"
+          if [ ! -f "$reader" ] || [ -L "$reader" ]; then
+            exit 1
+          fi
+          cat >> "$reader" <<'NEVERC_CRT_TRUSTED_SOURCE_2'
+                      "api.github.com", target, _fixed_api_headers(token), deadline)
+                  try:
+                      _fixed_check(response.status == 200, label + "_status")
+                      declared = _fixed_response_headers(response, 262144)
+                      raw = _fixed_read_body(response, 262144, deadline)
+                      _fixed_check(declared is None or len(raw) == declared,
+                                   label + "_length")
+                  finally:
+                      _fixed_close(connection, response)
+                  try:
+                      value = strict_json(raw, label, 262144)
+                  except _FixedFetchError:
+                      raise
+                  except Exception:
+                      raise _FixedFetchError(label + "_json") from None
+                  _fixed_check(type(value) is dict, label + "_object")
+                  return value
+
+
+          def _fixed_fields(value, expected, code):
+              _fixed_check(type(value) is dict, code)
+              _fixed_check(all(_fixed_equal(value.get(key), item)
+                               for key, item in expected.items()), code)
+
+
+          def _fixed_metadata(token):
+              prefix = "/repos/" + SOURCE["repository"] + "/actions/"
+              artifact = _fixed_api_json(
+                  prefix + "artifacts/" + str(SOURCE["artifact_id"]), token,
+                  "artifact_metadata")
+              _fixed_fields(artifact, {
+                  "id": SOURCE["artifact_id"], "name": SOURCE["artifact_name"],
+                  "size_in_bytes": SOURCE["zip_bytes"], "expired": False,
+                  "digest": "sha256:" + SOURCE["zip_sha256"],
+              }, "artifact_identity")
+              _fixed_fields(artifact.get("workflow_run"), {
+                  "id": SOURCE["run_id"], "repository_id": SOURCE["repository_id"],
+                  "head_repository_id": SOURCE["repository_id"],
+                  "head_branch": SOURCE["branch"], "head_sha": SOURCE["head"],
+              }, "artifact_run_identity")
+
+              run = _fixed_api_json(
+                  prefix + "runs/" + str(SOURCE["run_id"]) + "/attempts/" +
+                  str(SOURCE["run_attempt"]), token, "run_metadata")
+              _fixed_fields(run, {
+                  "id": SOURCE["run_id"], "run_attempt": SOURCE["run_attempt"],
+                  "workflow_id": SOURCE["workflow_id"], "head_sha": SOURCE["head"],
+                  "head_branch": SOURCE["branch"], "status": "completed",
+                  "conclusion": "failure",
+              }, "run_identity")
+              for key in ("repository", "head_repository"):
+                  _fixed_fields(run.get(key), {
+                      "id": SOURCE["repository_id"], "full_name": SOURCE["repository"],
+                  }, "run_repository_identity")
+              path = run.get("path")
+              allowed_paths = (
+                  SOURCE["workflow_path"],
+                  SOURCE["workflow_path"] + "@" + SOURCE["branch"],
+                  SOURCE["workflow_path"] + "@refs/heads/" + SOURCE["branch"],
+                  SOURCE["workflow_path"] + "@" + SOURCE["head"],
+              )
+              _fixed_check(type(path) is str and path in allowed_paths, "run_workflow_path")
+
+              job = _fixed_api_json(
+                  prefix + "jobs/" + str(SOURCE["job_id"]), token, "job_metadata")
+              _fixed_fields(job, {
+                  "id": SOURCE["job_id"], "run_id": SOURCE["run_id"],
+                  "head_sha": SOURCE["head"], "head_branch": SOURCE["branch"],
+                  "status": "completed", "conclusion": "failure",
+              }, "job_identity")
+              if "run_attempt" in job:
+                  _fixed_check(_fixed_equal(job["run_attempt"], SOURCE["run_attempt"]),
+                               "job_attempt_identity")
+              # Public artifact metadata has no job_id/run_attempt.  The fixed job ID and
+              # its separately reviewed upload log provide that association; matching
+              # these API fields does not manufacture a direct artifact-to-job API link.
+
+
+          def _fixed_blob_target(location):
+              _fixed_check(type(location) is str and 0 < len(location) <= 8192 and
+                           all(33 <= ord(char) <= 126 for char in location),
+                           "download_location")
+              try:
+                  parsed = _fixed_parse.urlsplit(location)
+                  host = parsed.hostname
+                  port = parsed.port
+              except ValueError:
+                  raise _FixedFetchError("download_location") from None
+              _fixed_check(parsed.scheme == "https" and host is not None and
+                           parsed.username is None and parsed.password is None and
+                           port in (None, 443) and not parsed.fragment,
+                           "download_location")
+              _fixed_check(len(host) <= 253 and host.endswith(".blob.core.windows.net"),
+                           "download_host")
+              labels = host.split(".")
+              _fixed_check(all(1 <= len(label) <= 63 and label[0] != "-" and
+                               label[-1] != "-" and
+                               all(char in "abcdefghijklmnopqrstuvwxyz0123456789-"
+                                   for char in label) for label in labels),
+                           "download_host")
+              target = parsed.path or "/"
+              if parsed.query:
+                  target += "?" + parsed.query
+              return host, target
+
+
+          def _fixed_download(token):
+              # This one 60-second scope includes the 302 API request and the one blob
+              # request, including both response bodies and the final ZIP digest check.
+              with _fixed_time_limit(60, "download_timeout") as deadline:
+                  with _fixed_time_limit(25, "download_api_timeout") as api_deadline:
+                      target = ("/repos/" + SOURCE["repository"] + "/actions/artifacts/" +
+                                str(SOURCE["artifact_id"]) + "/zip")
+                      connection, response = _fixed_open(
+                          "api.github.com", target, _fixed_api_headers(token), api_deadline)
+                      try:
+                          _fixed_check(response.status == 302, "download_api_status")
+                          _fixed_response_headers(response, 262144)
+                          location = _fixed_single_header(response, "Location")
+                          host, blob_target = _fixed_blob_target(location)
+                          # Do not drain, print, or retain the redirect response body.
+                      finally:
+                          _fixed_close(connection, response)
+                  # A separate headers object contains no GitHub token or cookie.  No
+                  # signed URL is placed in argv, the environment, a file, or output.
+                  connection, response = _fixed_open(host, blob_target, {
+                      "Accept-Encoding": "identity",
+                      "User-Agent": "NeverC-fixed-crt-text-reader",
+                  }, deadline)
+                  try:
+                      _fixed_check(response.status == 200, "download_blob_status")
+                      length = _fixed_response_headers(response, SOURCE["zip_bytes"])
+                      _fixed_check(length is None or length == SOURCE["zip_bytes"],
+                                   "download_zip_length")
+                      raw = _fixed_read_body(response, SOURCE["zip_bytes"], deadline)
+                  finally:
+                      _fixed_close(connection, response)
+                  _fixed_check(len(raw) == SOURCE["zip_bytes"], "download_zip_length")
+                  _fixed_check(sha256_bytes(raw) == SOURCE["zip_sha256"],
+                               "download_zip_digest")
+                  _fixed_remaining(deadline)
+                  return raw
+
+
+          def fetch_fixed_zip() -> bytes:
+              """Return the one fixed ZIP, or reject with a fixed, non-secret code."""
+              token = _fixed_os.environ.pop("GH_TOKEN", None)
+              failure = None
+              try:
+                  _fixed_check(type(token) is str and 0 < len(token) <= 4096 and
+                               all(33 <= ord(char) <= 126 for char in token), "fetch_token")
+                  _fixed_metadata(token)
+                  return _fixed_download(token)
+              except _FixedFetchError as error:
+                  failure = error.code
+              except Exception:
+                  # Never expose HTTPError/SSL/OSError text: it can contain a signed URL.
+                  failure = "fixed_fetch_transport"
+              finally:
+                  token = None
+              # Raise outside the except blocks so an uncaught caller exception cannot
+              # display a network exception through Python's implicit context chain.
+              require(False, failure)
+              raise AssertionError("fixed_fetch_rejected") from None
+
+          import json as _rs_json
+          import re as _rs_re
+          from pathlib import PureWindowsPath as _rs_WindowsPath
+
+
+          # Fixed 0531 producer contract. All paths and command arguments remain data.
+          _RS_SCOPE = "observed-index-representatives-only"
+          _RS_SELECTED = {
+              "?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA",
+              "?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA",
+              "_Avx2WmemEnabledWeakValue",
+          }
+          _RS_ROLES = ("private-nm", "private-readobj", "host-nm", "host-readobj",
+                       "host-dis", "host-bcanalyzer")
+          _RS_STATES = {"complete", "incomplete"}
+          _RS_COUNT_KEYS = {"scope", "processed", "omitted", "eligible_first",
+                            "eligible_second", "selected"}
+          _RS_LIMITS = {"collection_seconds": 110, "verification_seconds": 10,
+                        "file_bytes": 1048576, "total_retained_bytes": 8388608,
+                        "representatives_per_side_and_symbol": 1,
+                        "manifest_reserved_bytes": 262144}
+
+
+          def _rs_keys(value, required, optional=()):
+              require(type(value) is dict, "schema_object")
+              require(set(required) <= set(value) <= set(required) | set(optional),
+                      "schema_fields")
+
+
+          def _rs_uint(value):
+              require(type(value) is int and value >= 0, "schema_integer")
+
+
+          def _rs_hash(value):
+              require(type(value) is str and
+                      _rs_re.fullmatch(r"[0-9a-f]{64}", value) is not None, "schema_hash")
+
+
+          def _rs_error(value, limit=2880):
+              require(type(value) is str and len(value) <= limit and
+                      all(32 <= ord(char) < 127 for char in value), "schema_error")
+
+
+          def _rs_elapsed(value):
+              require(type(value) in (int, float) and 0 <= value < float("inf"),
+                      "schema_elapsed")
+
+
+          def _rs_equal(left, right):
+              if type(left) is not type(right):
+                  return False
+              if type(left) is dict:
+                  return (set(left) == set(right) and
+                          all(_rs_equal(left[key], right[key]) for key in left))
+              if type(left) is list:
+                  return (len(left) == len(right) and
+                          all(_rs_equal(a, b) for a, b in zip(left, right)))
+              return left == right
+
+
+          def _rs_path(value):
+              require(type(value) is str and 0 < len(value) <= 32768 and
+                      "\0" not in value, "schema_path")
+              # PureWindowsPath performs no filesystem lookup on the reader's OS.
+              require(_rs_WindowsPath(value).is_absolute(), "schema_absolute_path")
+
+
+          def _rs_context(value):
+              _rs_keys(value, {"schema", "selected_symbols", "private_archive",
+                               "host_archives", "private_nm", "private_readobj", "host_nm",
+                               "audit_outcome", "source_sha", "run_id", "run_attempt", "target"})
+              require(value["schema"] == "neverc.crt-storage-request.v1" and
+                      value["audit_outcome"] == "rejected", "request_schema")
+              selected = value["selected_symbols"]
+              require(type(selected) is list and 1 <= len(selected) <= 3 and
+                      all(type(name) is str and name in _RS_SELECTED for name in selected),
+                      "request_symbols")
+              require(len(set(selected)) == len(selected), "request_duplicate_symbols")
+              hosts = value["host_archives"]
+              require(type(hosts) is list and 1 <= len(hosts) <= 4096, "request_hosts")
+              for path in [value["private_archive"], value["private_nm"], value["host_nm"]] + hosts:
+                  _rs_path(path)
+              if value["private_readobj"] is not None:
+                  _rs_path(value["private_readobj"])
+              require(type(value["source_sha"]) is str and
+                      _rs_re.fullmatch(r"[0-9a-f]{40}", value["source_sha"]) is not None and
+                      value["source_sha"] == SOURCE["head"], "request_source")
+              for key in ("run_id", "run_attempt"):
+                  require(type(value[key]) in (str, int) and
+                          _rs_re.fullmatch(r"[0-9]{1,24}", str(value[key])) is not None and
+                          str(value[key]) == str(SOURCE[key]), "request_run")
+              require(type(value["target"]) is str and
+                      value["target"] in {"x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"}
+                      and value["target"] == SOURCE["target"], "request_target")
+
+
+          def _rs_identity(value):
+              if value is None:
+                  return
+              _rs_keys(value, {"device", "inode", "size", "mtime_ns", "ctime_ns"})
+              require(all(type(item) is int for item in value.values()), "identity_integer")
+              for key in ("device", "inode", "size"):
+                  _rs_uint(value[key])
+              # Raw fd/path ctime legitimately differs on Windows; birthtime is not
+              # exported. Do not invent a cross-API identity proof or truncate st_ino.
+
+
+          def _rs_command(value):
+              _rs_keys(value, {"status", "returncode", "elapsed_seconds", "cleanup", "argv"},
+                       {"error"})
+              require(type(value["status"]) is str and
+                      value["status"] in {"completed", "timeout", "output_limit",
+                                         "startup_failed", "error", "cleanup_incomplete"},
+                      "command_status")
+              require(value["returncode"] is None or type(value["returncode"]) is int,
+                      "command_returncode")
+              _rs_elapsed(value["elapsed_seconds"])
+              cleanup = value["cleanup"]
+              _rs_keys(cleanup, {"reaped", "kill_requested", "complete", "error"})
+              require(all(type(cleanup[key]) is bool for key in
+                          ("reaped", "kill_requested", "complete")), "command_cleanup")
+              if cleanup["error"] is not None:
+                  # Two independently bounded kill/wait errors, with fixed separators.
+                  _rs_error(cleanup["error"], 5774)
+              if "error" in value:
+                  _rs_error(value["error"])
+              require(type(value["argv"]) is list and len(value["argv"]) in (2, 9) and
+                      all(type(arg) is str and len(arg) <= 32768 and "\0" not in arg
+                          for arg in value["argv"]), "command_argv")
+
+
+          def _rs_success(command):
+              return (command["status"] == "completed" and
+                      type(command["returncode"]) is int and command["returncode"] == 0 and
+                      command["cleanup"]["complete"] and command["cleanup"]["reaped"] and
+                      command["cleanup"]["kill_requested"] is False and
+                      command["cleanup"]["error"] is None)
+
+
+          def _rs_tools(manifest, context):
+              tools, commands = manifest["tools"], manifest["commands"]
+              require(type(tools) is list and len(tools) <= 6 and
+                      type(commands) is list and len(commands) <= 7, "manifest_stages")
+              host = _rs_WindowsPath(context["host_nm"])
+              suffix = ".exe" if host.suffix == ".exe" else ""
+              paths = {"private-nm": context["private_nm"],
+                       "private-readobj": context["private_readobj"], "host-nm": str(host)}
+              paths.update({role: str(host.with_name("llvm-" + role.split("-", 1)[1] + suffix))
+                            for role in _RS_ROLES[3:]})
+              tool_commands = []
+              host_version = None
+              for ordinal, tool in enumerate(tools):
+                  _rs_keys(tool, {"role", "path", "status", "exists", "size", "sha256",
+                                  "version", "expected_version", "command"},
+                           {"before", "path_before", "after", "path_after", "error"})
+                  role = _RS_ROLES[ordinal]
+                  require(tool["role"] == role, "tool_role_order")
+                  expected_path = paths[role]
+                  if expected_path is None:
+                      require(tool["path"] is None, "tool_path_binding")
+                  else:
+                      _rs_path(tool["path"])
+                      require(str(_rs_WindowsPath(tool["path"])) ==
+                              str(_rs_WindowsPath(expected_path)), "tool_path_binding")
+                  require(type(tool["status"]) is str and
+                          tool["status"] in {"complete", "incomplete", "probe-failed",
+                                             "version-mismatch"}, "tool_status")
+                  require(tool["exists"] is None or type(tool["exists"]) is bool, "tool_exists")
+                  if tool["size"] is not None:
+                      _rs_uint(tool["size"])
+                  if tool["sha256"] is not None:
+                      _rs_hash(tool["sha256"])
+                  for key in ("version", "expected_version"):
+                      if tool[key] is not None:
+                          require(type(tool[key]) is str and
+                                  _rs_re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", tool[key]) is not None,
+                                  "tool_version")
+                  expected = "20.1.8" if role.startswith("private-") else host_version
+                  require(tool["expected_version"] == expected, "tool_expected_version")
+                  for key in ("before", "path_before", "after", "path_after"):
+                      if key in tool:
+                          require(tool[key] is not None, "tool_identity")
+                          _rs_identity(tool[key])
+                  if "error" in tool:
+                      _rs_error(tool["error"])
+                  command = tool["command"]
+                  if command is not None:
+                      _rs_command(command)
+                      require(tool["path"] is not None and len(command["argv"]) == 2 and
+                              command["argv"][1] == "--version" and
+                              command["argv"][0] == str(_rs_WindowsPath(tool["path"])),
+                              "tool_command_binding")
+                      tool_commands.append(command)
+                  if tool["status"] in ("complete", "version-mismatch"):
+                      require(command is not None and _rs_success(command) and
+                              tool["exists"] is True and tool["size"] is not None and
+                              tool["sha256"] is not None and tool["version"] is not None and
+                              all(key in tool for key in ("before", "path_before", "after", "path_after")),
+                              "tool_completed_fields")
+                      require(_rs_equal(tool["before"], tool["after"]) and
+                              _rs_equal(tool["path_before"], tool["path_after"]) and
+                              all(tool[key]["size"] == tool["size"] for key in
+          NEVERC_CRT_TRUSTED_SOURCE_2
+      - name: Assemble trusted reader 3 of 4
+        shell: bash
+        run: |
+          reader="$RUNNER_TEMP/neverc-crt-reader-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.py"
+          if [ ! -f "$reader" ] || [ -L "$reader" ]; then
+            exit 1
+          fi
+          cat >> "$reader" <<'NEVERC_CRT_TRUSTED_SOURCE_3'
+                                  ("before", "path_before", "after", "path_after")),
+                              "tool_stability_claim")
+                      require((tool["status"] == "complete") ==
+                              (expected is None or tool["version"] == expected), "tool_version_status")
+                  if role == "host-nm" and tool["status"] == "complete":
+                      host_version = tool["version"]
+                  if role in _RS_ROLES[3:] and host_version is None:
+                      require(tool["status"] == "incomplete", "tool_missing_host_version")
+              for command in commands:
+                  _rs_command(command)
+              require(len(commands) in (len(tool_commands), len(tool_commands) + 1) and
+                      _rs_equal(commands[:len(tool_commands)], tool_commands), "tool_commands_disagree")
+              worker = commands[-1] if len(commands) > len(tool_commands) else None
+              if worker is not None:
+                  argv = worker["argv"]
+                  require(len(argv) == 9 and argv[1:3] == ["-I", "-B"] and
+                          argv[4] == "--inventory" and argv[7] == "--seconds", "worker_argv")
+                  for position in (0, 3, 5, 6):
+                      _rs_path(argv[position])
+                  require(_rs_WindowsPath(argv[5]).name == "request.txt" and
+                          _rs_WindowsPath(argv[6]).name == "inventory.txt" and
+                          _rs_WindowsPath(argv[5]).parent == _rs_WindowsPath(argv[6]).parent,
+                          "worker_file_binding")
+                  require(_rs_re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", argv[8]) is not None and
+                          0 < float(argv[8]) <= 110, "worker_seconds")
+              return worker
+
+
+          def _rs_representative(value, record, selected):
+              _rs_keys(value, {"symbol", "index_source", "first_index_ordinal", "member_ordinal",
+                               "archive_member_ordinal", "header_offset", "payload_offset",
+                               "payload_size", "member_name", "payload_sha256"})
+              require(type(value["symbol"]) is str and value["symbol"] in selected and
+                      value["index_source"] == "first-linker-member", "representative_symbol")
+              for key in ("first_index_ordinal", "member_ordinal", "archive_member_ordinal",
+                          "header_offset", "payload_offset", "payload_size"):
+                  _rs_uint(value[key])
+              require(value["member_ordinal"] < record["member_count"] and
+                      value["archive_member_ordinal"] - value["member_ordinal"] in (2, 3) and
+                      value["payload_offset"] == value["header_offset"] + 60,
+                      "representative_offsets")
+              index = record["index"]
+              require(bool(index) and value["first_index_ordinal"] < index["first_count"] and
+                      index["candidates_by_symbol"][value["symbol"]]["first"] > 0,
+                      "representative_index")
+              before = record["archive"]["before"]
+              require(before is not None and
+                      value["payload_offset"] + value["payload_size"] <= before["size"],
+                      "representative_extent")
+              name = value["member_name"]
+              _rs_keys(name, {"preview", "bytes", "sha256"})
+              require(type(name["preview"]) is str and len(name["preview"]) <= 643,
+                      "member_name_preview")
+              _rs_uint(name["bytes"])
+              require(name["bytes"] <= 1048576, "member_name_size")
+              _rs_hash(name["sha256"])
+              _rs_hash(value["payload_sha256"])
+
+
+          def _rs_archive(record, side, ordinal, path, selected):
+              _rs_keys(record, {"status", "side", "archive_ordinal", "archive", "member_count",
+                                "member_inventory_sha256", "index", "representatives"}, {"error"})
+              require(type(record["status"]) is str and record["status"] in _RS_STATES and
+                      record["side"] == side and
+                      type(record["archive_ordinal"]) is int and record["archive_ordinal"] == ordinal,
+                      "archive_scope_binding")
+              if "error" in record:
+                  _rs_error(record["error"])
+              archive = record["archive"]
+              _rs_keys(archive, {"path", "before", "path_before", "after", "path_after", "sha256",
+                                 "sha256_status", "identity_stable"})
+              _rs_path(archive["path"])
+              require(str(_rs_WindowsPath(archive["path"])) == str(_rs_WindowsPath(path)),
+                      "archive_path_binding")
+              for key in ("before", "path_before", "after", "path_after"):
+                  _rs_identity(archive[key])
+              require(type(archive["identity_stable"]) is bool and
+                      type(archive["sha256_status"]) is str and
+                      archive["sha256_status"] in {"unavailable", "computed-unverified",
+                                                    "not-selected", "complete"}, "archive_identity_status")
+              if archive["sha256"] is not None:
+                  _rs_hash(archive["sha256"])
+              require((archive["sha256"] is not None) ==
+                      (archive["sha256_status"] in {"computed-unverified", "complete"}), "archive_hash_status")
+              if archive["identity_stable"]:
+                  require(all(archive[key] is not None for key in
+                              ("before", "path_before", "after", "path_after")) and
+                          _rs_equal(archive["before"], archive["after"]) and
+                          _rs_equal(archive["path_before"], archive["path_after"]), "archive_stability_claim")
+              _rs_uint(record["member_count"])
+              if record["member_inventory_sha256"] is not None:
+                  _rs_hash(record["member_inventory_sha256"])
+              index = record["index"]
+              require(type(index) is dict, "archive_index")
+              if index:
+                  _rs_keys(index, {"first_count", "second_count", "first_candidate_count",
+                                   "second_candidate_count", "first_candidates_sha256",
+                                   "second_candidates_sha256", "candidates_by_symbol"})
+                  _rs_keys(index["candidates_by_symbol"], selected)
+                  for name in selected:
+                      _rs_keys(index["candidates_by_symbol"][name], {"first", "second"})
+                      for value in index["candidates_by_symbol"][name].values():
+                          _rs_uint(value)
+                  for label in ("first", "second"):
+                      _rs_uint(index[label + "_count"])
+                      _rs_uint(index[label + "_candidate_count"])
+                      _rs_hash(index[label + "_candidates_sha256"])
+                      require(index[label + "_candidate_count"] <= index[label + "_count"] and
+                              index[label + "_candidate_count"] == sum(
+                                  pair[label] for pair in index["candidates_by_symbol"].values()),
+                              "archive_index_count")
+                  require(record["member_inventory_sha256"] is not None, "archive_member_inventory")
+              reps = record["representatives"]
+              require(type(reps) is list and len(reps) <= len(selected), "archive_representatives")
+              seen = set()
+              for rep in reps:
+                  _rs_representative(rep, record, selected)
+                  require(rep["symbol"] not in seen, "archive_duplicate_representative")
+                  seen.add(rep["symbol"])
+              if record["status"] == "complete":
+                  require(archive["identity_stable"] and bool(index) and
+                          archive["sha256_status"] == ("complete" if reps else "not-selected"),
+                          "archive_complete_fields")
+
+
+          def _rs_inventory(value, context):
+              _rs_keys(value, {"schema", "status", "evidence_scope", "archives", "representatives", "counts"},
+                       {"scope_sha256", "missing_index_representatives", "error"})
+              require(value["schema"] == "neverc.crt-storage-inventory.v1" and
+                      value["evidence_scope"] == _RS_SCOPE and type(value["status"]) is str and
+                      value["status"] in _RS_STATES,
+                      "inventory_schema")
+              if "error" in value:
+                  _rs_error(value["error"])
+              counts = value["counts"]
+              _rs_keys(counts, _RS_COUNT_KEYS)
+              for number in counts.values():
+                  _rs_uint(number)
+              records, reps = value["archives"], value["representatives"]
+              require(type(records) is list and len(records) <= 4097 and
+                      type(reps) is list and len(reps) <= 6, "inventory_lists")
+              scope = [("private", 0, context["private_archive"])] + [
+                  ("host", ordinal, path) for ordinal, path in enumerate(context["host_archives"])]
+              if "scope_sha256" in value:
+                  _rs_hash(value["scope_sha256"])
+                  encoded = (_rs_json.dumps(scope, sort_keys=True, ensure_ascii=True,
+                                            separators=(",", ":")) + "\n").encode("ascii")
+                  require(value["scope_sha256"] == sha256_bytes(encoded) and
+                          counts["scope"] == len(scope), "inventory_scope_hash")
+              else:
+                  require(value["status"] == "incomplete" and not records and not reps and
+                          all(number == 0 for number in counts.values()), "inventory_unstarted")
+              require(counts["processed"] == len(records) and
+                      counts["omitted"] == counts["scope"] - len(records) and
+                      counts["selected"] == len(reps), "inventory_counts")
+              flattened, seen = [], set()
+              for position, record in enumerate(records):
+                  require(position < len(scope), "inventory_scope_overflow")
+                  side, ordinal, path = scope[position]
+                  _rs_archive(record, side, ordinal, path, context["selected_symbols"])
+                  if position + 1 < len(records):
+                      require(record["status"] == "complete", "inventory_after_failed_archive")
+                  for rep in record["representatives"]:
+                      identity = (side, rep["symbol"])
+                      require(identity not in seen, "inventory_duplicate_representative")
+                      seen.add(identity)
+                      flattened.append(dict(rep, side=side, archive_ordinal=ordinal))
+              require(_rs_equal(reps, flattened), "inventory_representative_binding")
+              for label in ("first", "second"):
+                  require(counts["eligible_" + label] == sum(
+                      record["index"].get(label + "_candidate_count", 0) for record in records),
+                      "inventory_eligible_count")
+              if "missing_index_representatives" in value:
+                  missing = value["missing_index_representatives"]
+                  _rs_keys(missing, {"private", "host"})
+                  require(_rs_equal(missing, {side: sorted(name for name in context["selected_symbols"]
+                                                         if (side, name) not in seen)
+                                              for side in ("private", "host")}), "inventory_missing_symbols")
+              if value["status"] == "complete":
+                  require("scope_sha256" in value and counts["omitted"] == 0 and
+                          "missing_index_representatives" in value and
+                          all(record["status"] == "complete" for record in records),
+                          "inventory_complete_fields")
+
+
+          def _rs_display(items):
+              return {"items": items[:64], "display_omitted": max(0, len(items) - 64)}
+
+
+          def validate_report(entries):
+              """Check bounded text and internal consistency, never native ABI or execution."""
+              require(type(entries) is dict and "manifest.json" in entries and
+                      set(entries) <= set(TEXT_NAMES) | {"manifest.json"}, "report_entries")
+              require(all(type(raw) is bytes for raw in entries.values()), "report_bytes")
+              require(sum(map(len, entries.values())) <= 8388608, "report_total_bytes")
+              for name, raw in entries.items():
+                  require(len(raw) <= (262144 if name == "manifest.json" else 1048576),
+                          "report_file_bytes")
+                  try:
+                      raw.decode("utf-8", errors="strict")
+                  except UnicodeError:
+                      require(False, "report_utf8")
+              manifest = strict_json(entries["manifest.json"], "manifest", 262144)
+              _rs_keys(manifest, {"schema", "status", "audit_outcome", "evidence_scope", "context",
+                                  "tools", "commands", "inventory", "cleanup", "files", "limits",
+                                  "elapsed_seconds"}, {"error"})
+              require(manifest["schema"] == "neverc.crt-storage-evidence.v1" and
+                      type(manifest["status"]) is str and manifest["status"] in _RS_STATES and
+                      manifest["audit_outcome"] == "rejected" and
+                      manifest["evidence_scope"] == _RS_SCOPE, "manifest_schema")
+              require(_rs_equal(manifest["limits"], _RS_LIMITS), "manifest_limits")
+              _rs_elapsed(manifest["elapsed_seconds"])
+              if "error" in manifest:
+                  _rs_error(manifest["error"])
+              _rs_context(manifest["context"])
+              files = manifest["files"]
+              require(type(files) is list and len(files) <= 16, "manifest_files")
+              names = set()
+              for entry in files:
+                  _rs_keys(entry, {"name", "size", "sha256"})
+                  name = entry["name"]
+                  require(type(name) is str and name in TEXT_NAMES and name not in names and
+                          name in entries, "manifest_file_name")
+                  _rs_uint(entry["size"])
+                  _rs_hash(entry["sha256"])
+                  require(entry["size"] == len(entries[name]) and
+                          entry["sha256"] == sha256_bytes(entries[name]), "manifest_file_integrity")
+                  names.add(name)
+              require(names == set(entries) - {"manifest.json"} and "request.txt" in names,
+                      "manifest_file_bijection")
+              request = strict_json(entries["request.txt"], "request", 1048576)
+              _rs_context(request)
+              require(_rs_equal(request, manifest["context"]), "request_manifest_binding")
+              worker = _rs_tools(manifest, request)
+              _rs_keys(manifest["cleanup"], {"complete"})
+              require(type(manifest["cleanup"]["complete"]) is bool and
+                      manifest["cleanup"]["complete"] == all(command["cleanup"]["complete"]
+                                                             for command in manifest["commands"]),
+                      "manifest_cleanup")
+              inventory = None
+              if "inventory.txt" in names:
+                  inventory = strict_json(entries["inventory.txt"], "inventory", 1048576)
+                  _rs_inventory(inventory, request)
+              summary = manifest["inventory"]
+              if summary is not None:
+                  _rs_keys(summary, {"file", "status", "counts"})
+                  require(inventory is not None and summary["file"] == "inventory.txt" and
+                          summary["status"] == inventory["status"] and
+                          _rs_equal(summary["counts"], inventory["counts"]) and
+                          worker is not None and _rs_success(worker), "manifest_inventory_summary")
+              if manifest["status"] == "complete":
+                  require(names == set(TEXT_NAMES), "manifest_complete_files")
+                  require(summary is not None and summary["status"] == "complete" and
+                          len(manifest["tools"]) == 6 and len(manifest["commands"]) == 7 and
+                          all(tool["status"] == "complete" for tool in manifest["tools"]) and
+                          all(_rs_success(command) for command in manifest["commands"]) and
+                          manifest["cleanup"]["complete"], "manifest_complete_stages")
+              projection = {
+                  "status": manifest["status"], "audit_outcome": "rejected", "evidence_scope": _RS_SCOPE,
+                  "error": preview(manifest["error"]) if "error" in manifest else None,
+                  "cleanup": {"complete": manifest["cleanup"]["complete"], "scope": "direct-child-only"},
+                  "tools": _rs_display([{
+                      "role": tool["role"], "status": tool["status"], "exists": tool["exists"],
+                      "path_preview": preview(tool["path"]) if tool["path"] is not None else None,
+                      "reported_size": tool["size"], "reported_sha256": tool["sha256"],
+                      "version": preview(tool["version"]) if tool["version"] is not None else None,
+                      "expected_version": preview(tool["expected_version"]) if tool["expected_version"] is not None else None,
+                      "error": preview(tool["error"]) if "error" in tool else None,
+                  } for tool in manifest["tools"]]),
+                  "commands": _rs_display([{
+                      "status": command["status"], "returncode": command["returncode"],
+                      "elapsed_seconds": command["elapsed_seconds"],
+                      "cleanup": {**{key: command["cleanup"][key] for key in
+                                     ("complete", "reaped", "kill_requested")},
+                                  "error": preview(command["cleanup"]["error"])
+                                  if command["cleanup"]["error"] is not None else None},
+                      "error": preview(command["error"]) if "error" in command else None,
+                  } for command in manifest["commands"]]),
+                  "inventory": None,
+                  "evidence_limit": "Text consistency only; native hashes are reported, not recomputed. "
+                                    "Index representatives do not prove full definitions, ABI equality, or execution.",
+              }
+              if inventory is not None:
+                  records = inventory["archives"]
+                  important = [record for record in records if record["status"] != "complete" or record["representatives"]]
+                  others = [record for record in records if record["status"] == "complete" and not record["representatives"]]
+                  selected_records = (important + others)[:64]
+                  archives = [{"side": record["side"], "archive_ordinal": record["archive_ordinal"],
+                               "status": record["status"], "path_preview": preview(record["archive"]["path"]),
+                               "member_count": record["member_count"],
+                               "reported_member_inventory_sha256": record["member_inventory_sha256"],
+                               "reported_index": record["index"],
+                               "reported_sha256": record["archive"]["sha256"],
+                               "reported_sha256_status": record["archive"]["sha256_status"],
+                               "reported_identity_stable": record["archive"]["identity_stable"],
+          NEVERC_CRT_TRUSTED_SOURCE_3
+      - name: Assemble trusted reader 4 of 4
+        shell: bash
+        run: |
+          reader="$RUNNER_TEMP/neverc-crt-reader-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.py"
+          if [ ! -f "$reader" ] || [ -L "$reader" ]; then
+            exit 1
+          fi
+          cat >> "$reader" <<'NEVERC_CRT_TRUSTED_SOURCE_4'
+                               "error": preview(record["error"]) if "error" in record else None}
+                              for record in selected_records]
+                  representatives = []
+                  for rep in inventory["representatives"]:
+                      item = {key: rep[key] for key in ("symbol", "side", "archive_ordinal", "index_source",
+                                                        "first_index_ordinal", "member_ordinal", "archive_member_ordinal",
+                                                        "header_offset", "payload_offset", "payload_size")}
+                      item.update(member_name={"preview": preview(rep["member_name"]["preview"]),
+                                               "bytes": rep["member_name"]["bytes"],
+                                               "reported_sha256": rep["member_name"]["sha256"]},
+                                  reported_payload_sha256=rep["payload_sha256"])
+                      representatives.append(item)
+                  projection["inventory"] = {
+                      "status": inventory["status"], "counts": dict(inventory["counts"]),
+                      "error": preview(inventory["error"]) if "error" in inventory else None,
+                      "missing_index_representatives": inventory.get("missing_index_representatives"),
+                      "archives": {"items": archives, "display_omitted": len(records) - len(archives)},
+                      "representatives": _rs_display(representatives),
+                  }
+              return projection
+
+          def reader_selftests():
+              # Trusted synthetic data only. These checks run on GitHub, never locally.
+              import io
+              import warnings
+              import zipfile
+
+              checks = 0
+              names = ["manifest.json"] + sorted(TEXT_NAMES)[:12]
+
+              class ForwardOnly(io.BytesIO):
+                  def seek(self, *args):
+                      raise io.UnsupportedOperation("synthetic-forward-only")
+
+              def fixture(entry_names=None, method=0, creator=3, mode=None, streaming=False, extra=b""):
+                  sink = ForwardOnly() if streaming else io.BytesIO()
+                  with warnings.catch_warnings():
+                      warnings.simplefilter("ignore", UserWarning)
+                      with zipfile.ZipFile(sink, "w", compression=method, allowZip64=False) as archive:
+                          for name in names if entry_names is None else entry_names:
+                              entry = zipfile.ZipInfo(name)
+                              entry.create_system = creator
+                              entry.compress_type = method
+                              entry.external_attr = (stat.S_IFREG | 0o600) << 16 if mode is None else mode
+                              entry.extra = extra
+                              archive.writestr(entry, b"{}\n")
+                  return sink.getvalue()
+
+              def rejects(callback):
+                  nonlocal checks
+                  rejected = False
+                  try:
+                      callback()
+                  except ReaderFailure:
+                      rejected = True
+                  require(rejected, "selftest-expected-rejection")
+                  checks += 1
+
+              for archive in (fixture(), fixture(method=8), fixture(creator=0, mode=0x20),
+                              fixture(streaming=True), fixture(method=8, streaming=True)):
+                  require(read_text_zip(archive) == {name: b"{}\n" for name in names}, "selftest-valid-zip")
+                  checks += 1
+              for entry_names in (names[:-1], names + ["worker-stderr.txt"],
+                                  names[:-1] + [names[1]], ["MANIFEST.JSON"] + names[1:],
+                                  ["../manifest.json"] + names[1:]):
+                  archive = fixture(entry_names)
+                  rejects(lambda archive=archive: read_text_zip(archive))
+              rejects(lambda: read_text_zip(fixture(mode=(stat.S_IFLNK | 0o777) << 16)))
+              rejects(lambda: read_text_zip(fixture(creator=0, mode=0x10)))
+              rejects(lambda: read_text_zip(fixture(extra=struct.pack("<HHQQ", 1, 16, 3, 3))))
+              archive = fixture().replace(b"request.txt", b"request\0txt")
+              rejects(lambda: read_text_zip(archive))
+              archive = fixture() + b"unexpected-trailing-data"
+              rejects(lambda: read_text_zip(archive))
+
+              archive = bytearray(fixture())
+              central_offset = struct.unpack_from("<L", archive, len(archive) - 6)[0]
+              archive[central_offset + 8] |= 1
+              rejects(lambda: read_text_zip(bytes(archive)))
+              archive = bytearray(fixture())
+              archive[len(archive) - 18] = 1
+              rejects(lambda: read_text_zip(bytes(archive)))
+              archive = bytearray(fixture())
+              archive[14] ^= 1
+              archive[central_offset + 16] ^= 1
+              rejects(lambda: read_text_zip(bytes(archive)))
+
+              compressor = zlib.compressobj(wbits=-15)
+              compressed = compressor.compress(b"example") + compressor.flush()
+              crc = zlib.crc32(b"example") & 0xFFFFFFFF
+              require(_inflate(compressed, 8, 7, crc, 7) == b"example", "selftest-deflate")
+              checks += 1
+              rejects(lambda: _inflate(compressed[:-1], 8, 7, crc, 7))
+              rejects(lambda: _inflate(compressed + b"extra", 8, 7, crc, 7))
+              rejects(lambda: _inflate(compressed, 8, 6, crc, 6))
+
+              require(strict_json(b'{"valid":[1,true,null]}', "selftest", 1024) ==
+                      {"valid": [1, True, None]}, "selftest-valid-json")
+              checks += 1
+              for raw in (b'{"a":{"x":1,"x":2}}', b'{"n":NaN}', b'{"n":Infinity}',
+                          b'{"n":1e999}', b'{"n":"\\u0000"}', b'{"n":"\\ud800"}',
+                          b"[" * 33 + b"0" + b"]" * 33, b'{} trailing', b'"\xff"'):
+                  rejects(lambda raw=raw: strict_json(raw, "selftest", 1024))
+              marker = ":" * 2 + "error" + ":" * 2 + "\n" + "#" * 2 + "[warning]" + "\u2603"
+              rendered = bounded_result({"value": marker})
+              require(b"::" not in rendered and b"##[" not in rendered and rendered.count(b"\n") == 1,
+                      "selftest-output-markers")
+              require(json.loads(rendered[len(OUTPUT_PREFIX):]) == {"value": marker}, "selftest-output-roundtrip")
+              checks += 1
+              rendered = bounded_result({"reader_validation": "passed", "report": "\u2603" * OUTPUT_LIMIT})
+              decoded = json.loads(rendered[len(OUTPUT_PREFIX):])
+              require(len(rendered) <= OUTPUT_LIMIT and decoded["report_omitted"] is True
+                      and decoded["display_truncated"] is True, "selftest-output-budget")
+              checks += 1
+              return checks
+
+          import os as _reader_os
+          import time as _reader_time
+
+
+          def _display_has_omissions(value):
+              if type(value) is dict:
+                  omitted = value.get("display_omitted")
+                  if type(omitted) is int and omitted > 0:
+                      return True
+                  return any(_display_has_omissions(item) for item in value.values())
+              if type(value) is list:
+                  return any(_display_has_omissions(item) for item in value)
+              return False
+
+
+          def reader_main():
+              global PREVIEW_TRUNCATIONS
+              signal.signal(signal.SIGALRM, _reader_timeout)
+              deadline = _reader_time.monotonic() + 240
+              signal.setitimer(signal.ITIMER_REAL, 240)
+              phase = "selftests"
+              result = None
+              exit_code = 1
+              try:
+                  checks = reader_selftests()
+                  phase = "fetch"
+                  raw = fetch_fixed_zip()
+                  require(len(raw) == SOURCE["zip_bytes"] and sha256_bytes(raw) == SOURCE["zip_sha256"],
+                          "fixed-zip-identity")
+                  phase = "zip"
+                  entries = read_text_zip(raw)
+                  phase = "report"
+                  PREVIEW_TRUNCATIONS = 0
+                  report = validate_report(entries)
+                  result = {
+                      "reader_validation": "passed",
+                      "source_status": report["status"],
+                      "source_audit_outcome": "rejected",
+                      "scope": "text-integrity-and-reported-index-representatives-only",
+                      "source": SOURCE,
+                      "job_association": "fixed-job-run-metadata-and-previously-reviewed-upload-log",
+                      "native_hashes": "reported-by-producer-not-recomputed-from-native-files",
+                      "selftests_passed": checks,
+                      "zip_bytes_verified": len(raw),
+                      "zip_sha256_verified": sha256_bytes(raw),
+                      "entry_count": len(entries),
+                      "preview_truncations": PREVIEW_TRUNCATIONS,
+                      "display_truncated": bool(PREVIEW_TRUNCATIONS) or _display_has_omissions(report),
+                      "report": report,
+                  }
+                  exit_code = 0
+              except ReaderFailure as error:
+                  result = {"reader_validation": "failed", "phase": phase, "error_code": error.code}
+              except Exception:
+                  # Never print an exception, traceback, URL, arbitrary file, or environment.
+                  result = {"reader_validation": "failed", "phase": phase,
+                            "error_code": "unexpected-reader-error"}
+              try:
+                  # The outer timer also covers serialization and stdout flushing. An
+                  # already expired budget must not start an unbounded final write.
+                  if _reader_time.monotonic() >= deadline:
+                      return 1
+                  emit_result(result)
+                  return exit_code
+              except Exception:
+                  # Output failure (including timeout) is fatal; no traceback or retry.
+                  return 1
+              finally:
+                  signal.setitimer(signal.ITIMER_REAL, 0)
+
+
+          if __name__ == "__main__":
+              # emit_result already flushes explicitly. Do not let interpreter shutdown
+              # retry a failed or interrupted buffered write after the timer is disabled.
+              _reader_os._exit(reader_main())
+          NEVERC_CRT_TRUSTED_SOURCE_4
+      - name: Validate and read fixed text report
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          reader="$RUNNER_TEMP/neverc-crt-reader-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.py"
+          if [ ! -f "$reader" ] || [ -L "$reader" ]; then
+            exit 1
+          fi
+          python3 -I -B - "$reader" <<'NEVERC_CRT_SOURCE_IDENTITY'
+          import hashlib
+          import sys
+
+          try:
+              with open(sys.argv[1], "rb") as stream:
+                  source = stream.read(59694)
+              valid = len(source) == 59693 and hashlib.sha256(source).hexdigest() == "856525c6cb46bfe13d5aa88be9d29e5e0d8c04456a87fa95acafdca63d0ecf28"
+          except Exception:
+              valid = False
+          if not valid:
+              raise SystemExit("reader-source-integrity")
+          NEVERC_CRT_SOURCE_IDENTITY
+          exec env -u PYTHONPATH -u PYTHONHOME python3 -I -B "$reader"
+      - name: Remove trusted reader source
+        if: ${{ always() && steps.reader_source.outputs.created == 'true' }}
+        shell: bash
+        run: |
+          reader="$RUNNER_TEMP/neverc-crt-reader-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.py"
+          rm -f -- "$reader"
