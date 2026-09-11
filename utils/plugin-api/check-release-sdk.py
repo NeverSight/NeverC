@@ -82,10 +82,9 @@ def main() -> int:
 
         # Source-of-truth generators and public-header hygiene: the shipped
         # single header, manifest and ABI baseline must match the modules, and
-        # the public headers must stay pure C.
+        # the public headers must stay pure C. check-single-header.py also runs
+        # the single-header and SDK-manifest generators with --check.
         source_gates = [
-            (HERE / "gen-single-header.py", ["--check"]),
-            (HERE / "gen-sdk-manifest.py", ["--check"]),
             (HERE / "gen-abi-manifest.py", ["--check"]),
             (HERE / "check-single-header.py", []),
             (HERE / "check-public-c.py",

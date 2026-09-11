@@ -5,7 +5,8 @@
 // published constant, every phase declares a non-empty policy, and sealed host
 // gates never expose interceptable/replaceable/skippable policy bits. These are
 // static (compile-time) guarantees over the same macros a plugin sees, plus a
-// runtime assertion that pins the first-version ABI.
+// runtime assertion that the inventory is non-empty. PluginABIContractTests.cpp
+// owns the first-version ABI assertions.
 //
 //===----------------------------------------------------------------------===//
 
@@ -45,11 +46,6 @@ NEVERC_FOR_EACH_BUILTIN_PHASE(NEVERC_INVENTORY_CHECK_SEALED)
 TEST(PluginCapabilityInventoryTest, EnumeratesAllCompiledInPhases) {
   EXPECT_GT(NEVERC_BUILTIN_PHASE_COUNT, UINT32_C(0));
   EXPECT_EQ(kEnumeratedPhaseCount, (int)NEVERC_BUILTIN_PHASE_COUNT);
-}
-
-TEST(PluginCapabilityInventoryTest, LocksFirstVersionABI) {
-  EXPECT_EQ(NEVERC_PLUGIN_ABI_MAJOR, UINT16_C(1));
-  EXPECT_EQ(NEVERC_PLUGIN_ABI_MINOR, UINT16_C(0));
 }
 
 } // namespace

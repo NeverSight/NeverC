@@ -2,7 +2,8 @@
 //
 // Verifies the generated distributed single header is consistent with the
 // modular headers it is inlined from: identical declared struct sizes and
-// discriminant constants, and a stable first-version ABI version. This
+// discriminant constants, including the ABI version. PluginABIContractTests.cpp
+// pins the public version; this test compares the two header forms. This
 // translation unit includes the modular aggregate; PluginSDKGenerationSingleHeader.cpp
 // includes the distributed single header. The two probe tables must match.
 //
@@ -41,11 +42,6 @@ TEST(PluginSDKGenerationTest, SingleHeaderMatchesModularHeaders) {
     EXPECT_EQ(Single[I].Value, Modular[I].Value)
         << "single header and modular headers disagree on " << Modular[I].Name;
   }
-}
-
-TEST(PluginSDKGenerationTest, LocksFirstVersionABIVersion) {
-  EXPECT_EQ(NEVERC_PLUGIN_ABI_MAJOR, UINT16_C(1));
-  EXPECT_EQ(NEVERC_PLUGIN_ABI_MINOR, UINT16_C(0));
 }
 
 } // namespace
