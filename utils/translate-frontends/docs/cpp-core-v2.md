@@ -131,6 +131,38 @@ valid storage and in-bounds accesses as the source program; the translator does
 not add a runtime bounds-check guarantee. `sizeof`, `alignof`, pointer arithmetic
 and pointer difference still require later type/operation support.
 
+## Switch control flow
+
+Core v2 accepts `switch`, `case` and `default` with supported promoted 32-bit
+integer/enum selectors. C++17 switch init-statements and condition variables are
+initialized once, and the selector is evaluated once before dispatch. Case values
+are checked constant expressions; normal fallthrough and Clang-validated
+`[[fallthrough]];` annotations are preserved.
+
+Dispatch can enter cases nested in blocks, conditionals or loops. Storage is
+registered for declarations that a case entry can bypass, without executing their
+initializers or zeroing uninitialized objects. Clang still rejects illegal jumps
+past initialization. A constant-expression selector selects only its matching
+case/default/exit in the generated control-flow graph.
+
+`break` exits the nearest loop or switch. `continue` selects the nearest enclosing
+loop even when a switch lies between it and that loop. Nested switches keep
+independent case labels and exits. GNU case ranges, other statement attributes,
+`goto` and ordinary named labels remain outside this profile. Unsupported case
+expressions are diagnosed even in dead or unused code.
+
+```cpp
+int main() {
+  int result = 0;
+  switch (int value = 1; value) {
+  case 1: result = 3; [[fallthrough]];
+  case 2: result += 4; break;
+  default: return 1;
+  }
+  return result == 7 ? 0 : 1;
+}
+```
+
 ## Remaining scope and wire representation
 
 Additional integer widths, floating-point types,
@@ -156,7 +188,8 @@ The regression cases cover generated execution at O0/O2, scoped and unscoped
 enums, signed/unsigned boundary values, overloads, global/aggregate values,
 local declarations, pointer/reference aliasing with inlining disabled, nested
 const, nulls, reference-return assignment, array initialization and indexing order,
-multidimensional arrays, temporary array reads, resource limits, unsupported
+multidimensional arrays, temporary array reads, switch dispatch/fallthrough,
+nested case entry and loop control, constant selectors, resource limits, unsupported
 bindings, malformed IR,
 old-profile rejection and consumer profile/version boundaries. CI evidence must
 be recorded against the

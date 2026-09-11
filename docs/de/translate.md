@@ -23,6 +23,8 @@ Mit `--profile cpp-core-v2` werden geprüfte `typedef`-/`using`-Typaliase, Aufz�
 
 Core v2 ergänzt lokale Arrays fester Länge und Array-Felder, mehrdimensionale Indizierung sowie Zeiger und Referenzen auf Arrays. Bei Teilinitialisierung werden übrige Elemente mit null initialisiert; Reihenfolge und Aliasbeziehungen bleiben erhalten. Array-Länge und Initialisierungsexpansion sind begrenzt. Globale Arrays, Arrays variabler Länge und nichttriviale Elementlebenszeiten bleiben ausgeschlossen.
 
+Core v2 unterstützt `switch`/`case`/`default` mit C++17-Initialisierungsanweisungen, Fallthrough und geprüften `[[fallthrough]]`-Annotationen. Der Selektor wird einmal ausgewertet; verschachtelte Switches und Schleifen behalten ihre `break`-/`continue`-Ziele. GNU-Case-Bereiche und andere Anweisungsattribute bleiben ausgeschlossen.
+
 ## Projekte mit mehreren Dateien
 
 Wählen Sie Übersetzungseinheiten ausdrücklich aus einer Kompilierungsdatenbank aus und geben Sie das Projektstammverzeichnis an. Das integrierte Frontend analysiert jede Einheit einzeln; die Zusammenführung prüft Definitionen, Bindung, gemeinsame Typen und die Einhaltung der Ein-Definitions-Regel (ODR) anhand konservativer Prüfungen.

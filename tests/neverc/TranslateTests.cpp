@@ -809,6 +809,187 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2SwitchPreservesDispatchFallthroughAndLoopControl) {
+  const auto Source = tmpFile("switch.cpp");
+  const auto Output = tmpFile("switch.nc");
+  writeFile(Source, R"cpp(
+int pick(int &calls, int value) { ++calls; return value; }
+int selection(int value, int &calls) {
+  int result = 0;
+  switch (int selected = pick(calls, value); selected) {
+  case 0: result = 1; [[fallthrough]];
+  case 1: result += 2; break;
+  default: result = 9;
+  case 4: result += 4; break;
+  }
+  return result;
+}
+int complete(int value) {
+  switch (value) {case 1: return 7; default: return 11;}
+}
+int constant_match() {
+  switch (1) {case 1: return 13;}
+}
+int nested_entries(int value) {
+  switch (value) {
+    return 99;
+    int storage;
+    {case 1: storage = 17; return storage;
+     case 2: return 19;}
+    default: return 23;
+  }
+}
+struct Record { int first; int second; };
+int declared_storage(int value) {
+  switch (value) {
+    return 99;
+    Record record;
+    Record records[2];
+    case 1:
+      record.first = 29;
+      records[1].second = 31;
+      return record.first + records[1].second;
+    default: return 37;
+  }
+}
+int embedded_case(int value) {
+  int effects = 0;
+  switch (value) {
+    if (++effects == 0) {
+      case 1: effects += 41; break;
+    }
+    while (++effects < 5) {
+      case 2: effects += 43; break;
+    }
+    effects += 47;
+    break;
+    default: effects = 53;
+  }
+  return effects;
+}
+int main() {
+  int calls = 0;
+  if (selection(0, calls) != 3 || calls != 1) return 1;
+  if (selection(1, calls) != 2 || calls != 2) return 2;
+  if (selection(4, calls) != 4 || calls != 3) return 3;
+  if (selection(8, calls) != 13 || calls != 4) return 4;
+  int total = 0;
+  for (int i = 0; i < 5; ++i) {
+    switch (i) {
+      case 1: continue;
+      case 3: break;
+      default: total += i;
+    }
+    total += 10;
+  }
+  if (total != 46) return 5;
+  switch (1) {
+    case 1:
+      for (int j = 0; j < 3; ++j) {
+        if (j == 1) break;
+        total += 100;
+      }
+      total += 7;
+      break;
+    default: return 6;
+  }
+  if (total != 153) return 7;
+  switch (1) {
+    case 1:
+      switch (2) {case 2: total += 11; break; default: return 8;}
+      total += 13;
+      break;
+    default: return 9;
+  }
+  if (total != 177) return 10;
+  int n = 0, sum = 0;
+  while (n < 4) {
+    ++n;
+    switch (n) {case 1: continue; case 2: break; default: sum += n;}
+    sum += 10;
+  }
+  if (sum != 37) return 11;
+  n = 0; sum = 0;
+  do {
+    ++n;
+    switch (n) {case 1: continue; default: sum += n;}
+  } while (n < 3);
+  if (sum != 5) return 12;
+  if (complete(1) != 7 || complete(2) != 11 || constant_match() != 13)
+    return 13;
+  if (nested_entries(1) != 17 || nested_entries(2) != 19 ||
+      nested_entries(3) != 23) return 14;
+  if (declared_storage(1) != 60 || declared_storage(2) != 37) return 15;
+  if (embedded_case(1) != 41 || embedded_case(2) != 90 ||
+      embedded_case(3) != 53) return 16;
+  enum class Mode : unsigned int { high = 0xffffffffu, low = 0u };
+  Mode mode = Mode::high;
+  switch (mode) {case Mode::high: total = 59; break; case Mode::low: return 17;}
+  if (total != 59) return 18;
+  switch (0xffffffffu) {case 0xffffffffu: total = 61; break; default: return 19;}
+  if (total != 61) return 20;
+  switch (int condition = pick(calls, 1)) {
+    case 1: total += condition; break;
+    default: return 21;
+  }
+  if (total != 62 || calls != 5) return 22;
+  switch (pick(calls, 0)) { total = 99; }
+  if (calls != 6 || total != 62) return 23;
+  switch (7) {case 9: return 24;}
+  switch (7) {case 9: return 25; default: total = 67;}
+  if (total != 67) return 26;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("switch" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SwitchRejectsUnsupportedCasesAndInvalidEntries) {
+  struct Rejection { const char *Name; const char *Source; const char *Code; };
+  const Rejection Cases[] = {
+      {"switch-case-range",
+       "int f(int n){switch(n){case 1 ... 3:return 7;default:return 9;}}", "TR0201"},
+      {"switch-dead-range",
+       "int f(int n){if(false){switch(n){case 1 ... 3:return 7;}}return 0;}", "TR0201"},
+      {"switch-other-attribute",
+       "int f(int n){switch(n){case 0:[[likely]];case 1:return 7;default:return 9;}}", "TR0201"},
+      {"switch-folded-cast",
+       "int f(int n){switch(n){case (void(0),1):return 7;default:return 9;}}", "TR0201"},
+      {"switch-pointer-selector",
+       "int f(int*p){switch(p){default:return 0;}}", "TR0202"},
+      {"switch-nonconstant-case",
+       "int f(int n,int v){switch(n){case v:return 7;default:return 9;}}", "TR0202"},
+      {"switch-duplicate-case",
+       "int f(int n){switch(n){case 1:return 7;case 1:return 9;}}", "TR0202"},
+      {"switch-skipped-initialization",
+       "int f(int n){switch(n){int value=3;case 1:return value;default:return 0;}}", "TR0202"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string(Case.Name) + ".cpp");
+    const auto Output = tmpFile(std::string(Case.Name) + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Case.Code);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("switch-v1.cpp");
+  const auto Output = tmpFile("switch-v1.nc");
+  writeFile(Source, "int f(int n){switch(n){default:return 0;}}");
+  auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2FixedArraysPreserveStorageAndInitialization) {
   const auto Source = tmpFile("arrays.cpp");
   const auto Output = tmpFile("arrays.nc");

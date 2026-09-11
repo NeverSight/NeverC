@@ -23,6 +23,8 @@ Sélectionnez `--profile cpp-core-v2` pour ajouter les alias `typedef`/`using` v
 
 Core v2 ajoute les tableaux locaux de taille fixe et les champs tableau, l’indexation multidimensionnelle et les pointeurs ou références vers des tableaux. L’initialisation partielle met à zéro les éléments restants et conserve l’ordre ainsi que les alias. La taille et l’expansion de l’initialisation sont limitées. Les tableaux globaux, de taille variable et les éléments à durée de vie non triviale restent exclus.
 
+Core v2 prend en charge `switch`/`case`/`default`, les instructions d’initialisation C++17, le passage au cas suivant et les annotations `[[fallthrough]]` validées. Le sélecteur est évalué une seule fois ; les switch et boucles imbriqués conservent les cibles de `break`/`continue`. Les plages case GNU et les autres attributs d’instruction restent exclus.
+
 ## Projets à plusieurs fichiers
 
 Sélectionnez explicitement les unités de traduction dans une base de données de compilation et indiquez le répertoire racine du projet. Le frontend intégré analyse chaque unité séparément ; la fusion vérifie les définitions, la liaison, les types partagés et le respect de la règle de définition unique (ODR) de façon conservatrice.

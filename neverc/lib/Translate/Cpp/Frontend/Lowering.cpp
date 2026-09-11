@@ -14,7 +14,13 @@ class FunctionLowering {
   json::Array Parameters, Locals, Body;
   std::map<const Decl *, Expression> Storage;
   std::map<std::string, std::vector<std::string>> Edges;
-  std::vector<std::pair<std::string, std::string>> Loops;
+  // Every breakable construct has an exit; only loops have a continue target.
+  std::vector<std::pair<std::string, std::string>> ControlTargets;
+  struct SwitchFrame {
+    std::map<const SwitchCase *, std::string> Labels;
+    std::set<const Stmt *> Entries;
+  };
+  std::vector<SwitchFrame> Switches;
   std::string Prefix, Current, Entry;
   unsigned Serial = 0;
   bool Open = false;
@@ -713,15 +719,28 @@ class FunctionLowering {
     }
     assign(std::move(Place), expression(Init), L);
   }
-  void declaration(const VarDecl *V) {
+  Expression localStorage(const VarDecl *V) {
+    auto Found = Storage.find(V->getCanonicalDecl());
+    if (Found != Storage.end()) {
+      // Reference identity is represented by dereferencing its hidden pointer.
+      if (V->getType()->isLValueReferenceType())
+        return *(*Found->second.getArray("args"))[0].getAsObject();
+      return Found->second;
+    }
     auto L = V->getLocation();
     auto Place = temporary(type(V->getType(), L), L);
+    Storage.emplace(V->getCanonicalDecl(),
+                    V->getType()->isLValueReferenceType()
+                        ? dereference(Place, L) : Place);
+    return Place;
+  }
+  void declaration(const VarDecl *V) {
+    auto L = V->getLocation();
+    auto Place = localStorage(V);
     if (V->getType()->isLValueReferenceType()) {
-      Storage.emplace(V->getCanonicalDecl(), dereference(Place, L));
       assign(std::move(Place), bind(V->getInit(), V->getType()), L);
       return;
     }
-    Storage.emplace(V->getCanonicalDecl(), Place);
     if (!V->getInit())
       return;
     if (const auto *C = dyn_cast<CXXConstructExpr>(V->getInit());
@@ -731,10 +750,122 @@ class FunctionLowering {
       return;
     initialize(std::move(Place), V->getInit(), L);
   }
+  void registerSwitchStorage(const Stmt *S) {
+    if (!S)
+      return;
+    if (const auto *D = dyn_cast<DeclStmt>(S))
+      for (const auto *Declaration : D->decls())
+        if (const auto *V = dyn_cast<VarDecl>(Declaration))
+          localStorage(V);
+    for (const auto *Child : S->children())
+      registerSwitchStorage(Child);
+  }
+  bool markSwitchEntries(const Stmt *S, SwitchFrame &Frame) {
+    if (!S || isa<SwitchStmt>(S))
+      return false;
+    const auto *Case = dyn_cast<SwitchCase>(S);
+    bool HasEntry = Case && Frame.Labels.count(Case);
+    for (const auto *Child : S->children())
+      HasEntry |= markSwitchEntries(Child, Frame);
+    if (HasEntry)
+      Frame.Entries.insert(S);
+    return HasEntry;
+  }
+  void switchStatement(const SwitchStmt *S) {
+    auto L = S->getSwitchLoc();
+    statement(S->getInit());
+    if (S->getConditionVariable())
+      declaration(S->getConditionVariable());
+    auto Selector = snapshot(expression(S->getCond()), L);
+    auto SelectorType = Selector.getString("type")->str();
+    if (SelectorType != "int" && SelectorType != "uint")
+      reject(L, "switch selector", "Only promoted int/uint selectors are supported.");
+    auto Normalize = [&](const llvm::APSInt &Value) {
+      auto Result = Value.extOrTrunc(32);
+      Result.setIsUnsigned(SelectorType == "uint");
+      return Result;
+    };
+    std::optional<llvm::APSInt> Known;
+    APValue Constant;
+    if (S->getCond()->isCXX11ConstantExpr(A.Context, &Constant) && Constant.isInt())
+      Known = Normalize(Constant.getInt());
+    SwitchFrame Frame;
+    std::vector<std::pair<const CaseStmt *, llvm::APSInt>> Cases;
+    auto End = labelName();
+    auto Default = End;
+    for (const auto *C = S->getSwitchCaseList(); C; C = C->getNextSwitchCase()) {
+      auto Name = labelName();
+      Frame.Labels.emplace(C, Name);
+      if (const auto *Case = dyn_cast<CaseStmt>(C)) {
+        APValue Value;
+        if (Case->getRHS() ||
+            !Case->getLHS()->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt())
+          reject(Case->getBeginLoc(), "case value", "A checked constant integer case is required.");
+        Cases.emplace_back(Case, Normalize(Value.getInt()));
+      } else {
+        Default = Name;
+      }
+    }
+    markSwitchEntries(S->getBody(), Frame);
+    registerSwitchStorage(S->getBody());
+    if (Known) {
+      auto Destination = Default;
+      for (const auto &Case : Cases)
+        if (Case.second == *Known) {
+          Destination = Frame.Labels.at(Case.first);
+          break;
+        }
+      jump(Destination, L);
+    } else if (Cases.empty()) {
+      jump(Default, L);
+    } else {
+      for (std::size_t I = 0; I < Cases.size(); ++I) {
+        const auto &Case = Cases[I];
+        auto Next = I + 1 == Cases.size() ? Default : labelName();
+        branch(binary("==", Selector,
+                      A.literal(Case.second, SelectorType, Case.first->getBeginLoc()),
+                      "bool", L), Frame.Labels.at(Case.first), Next, L);
+        if (I + 1 != Cases.size())
+          label(Next, L);
+      }
+    }
+    // Dispatch bypasses this entry. Source case labels reconnect reachable
+    // portions of the body; ordinary pre-case effects are pruned afterwards.
+    label(labelName(), L);
+    Switches.push_back(std::move(Frame));
+    ControlTargets.emplace_back(End, std::string());
+    statement(S->getBody());
+    ControlTargets.pop_back();
+    Switches.pop_back();
+    if (Open)
+      jump(End, L);
+    label(End, L);
+  }
   void statement(const Stmt *S) {
-    if (!S || !Open)
-      return; // The independent allowlist still inspects dead code.
+    if (!S)
+      return;
     auto L = S->getBeginLoc();
+    if (!Open) {
+      if (Switches.empty() || !Switches.back().Entries.count(S))
+        return; // The independent allowlist still inspects dead code.
+      label(labelName(), L);
+    }
+    if (const auto *Case = dyn_cast<SwitchCase>(S); Case && A.S.coreV2()) {
+      if (Switches.empty() || !Switches.back().Labels.count(Case))
+        reject(L, "case label", "No enclosing supported switch.");
+      label(Switches.back().Labels.at(Case), L);
+      statement(Case->getSubStmt());
+      return;
+    }
+    if (const auto *Switch = dyn_cast<SwitchStmt>(S); Switch && A.S.coreV2()) {
+      switchStatement(Switch);
+      return;
+    }
+    if (const auto *Attributed = dyn_cast<AttributedStmt>(S); Attributed && A.S.coreV2()) {
+      // The allowlist admits only validated fallthrough on a null statement.
+      statement(Attributed->getSubStmt());
+      return;
+    }
     if (const auto *C = dyn_cast<CompoundStmt>(S)) {
       for (const auto *Child : C->body())
         statement(Child);
@@ -785,9 +916,9 @@ class FunctionLowering {
         declaration(W->getConditionVariable());
       branch(expression(W->getCond()), Loop, End, L, W->getCond());
       label(Loop, L);
-      Loops.emplace_back(End, Test);
+      ControlTargets.emplace_back(End, Test);
       statement(W->getBody());
-      Loops.pop_back();
+      ControlTargets.pop_back();
       if (Open)
         jump(Test, L);
       label(End, L);
@@ -795,9 +926,9 @@ class FunctionLowering {
       auto Loop = labelName(), Test = labelName(), End = labelName();
       jump(Loop, L);
       label(Loop, L);
-      Loops.emplace_back(End, Test);
+      ControlTargets.emplace_back(End, Test);
       statement(D->getBody());
-      Loops.pop_back();
+      ControlTargets.pop_back();
       if (Open)
         jump(Test, L);
       label(Test, L);
@@ -816,9 +947,9 @@ class FunctionLowering {
       else
         jump(Loop, L);
       label(Loop, L);
-      Loops.emplace_back(End, Step);
+      ControlTargets.emplace_back(End, Step);
       statement(F->getBody());
-      Loops.pop_back();
+      ControlTargets.pop_back();
       if (Open)
         jump(Step, L);
       label(Step, L);
@@ -827,9 +958,17 @@ class FunctionLowering {
       jump(Test, L);
       label(End, L);
     } else if (isa<BreakStmt, ContinueStmt>(S)) {
-      if (Loops.empty())
-        reject(L, "loop control", "No enclosing supported loop.");
-      jump(isa<BreakStmt>(S) ? Loops.back().first : Loops.back().second, L);
+      if (isa<BreakStmt>(S)) {
+        if (ControlTargets.empty())
+          reject(L, "break", "No enclosing supported loop or switch.");
+        jump(ControlTargets.back().first, L);
+      } else {
+        auto Loop = std::find_if(ControlTargets.rbegin(), ControlTargets.rend(),
+                                 [](const auto &Target) { return !Target.second.empty(); });
+        if (Loop == ControlTargets.rend())
+          reject(L, "continue", "No enclosing supported loop.");
+        jump(Loop->second, L);
+      }
     } else if (const auto *E = dyn_cast<Expr>(S)) {
       discard(E);
     } else if (!isa<NullStmt>(S)) {

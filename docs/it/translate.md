@@ -23,6 +23,8 @@ Selezionare `--profile cpp-core-v2` per aggiungere alias `typedef`/`using` verif
 
 Core v2 aggiunge array locali di dimensione fissa e campi array, indicizzazione multidimensionale e puntatori o riferimenti ad array. L’inizializzazione parziale azzera gli elementi restanti e mantiene l’ordine e gli alias. Dimensioni ed espansione dell’inizializzazione sono limitate. Restano esclusi gli array globali, quelli di lunghezza variabile e gli elementi con gestione della durata non banale.
 
+Core v2 supporta `switch`/`case`/`default`, con istruzioni di inizializzazione C++17, passaggio al caso successivo e annotazioni `[[fallthrough]]` convalidate. Il selettore viene valutato una sola volta; switch e cicli annidati mantengono le destinazioni di `break`/`continue`. Restano esclusi gli intervalli case GNU e altri attributi di istruzione.
+
 ## Progetti con più file
 
 Selezionare esplicitamente le unità di traduzione da un database di compilazione e specificare la directory radice del progetto. Il frontend integrato analizza ogni unità separatamente; la fusione verifica definizioni, collegamento, tipi condivisi e il rispetto della regola di definizione unica (ODR) mediante verifiche conservative.

@@ -1,6 +1,7 @@
 #include "Frontend.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/TargetInfo.h"
@@ -584,7 +585,8 @@ public:
     if (!(A.S.math() && isa<FloatingLiteral>(S)) &&
         !(A.S.coreV2() &&
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
-              CXXFunctionalCastExpr, ArraySubscriptExpr>(S)) &&
+              CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
+              DefaultStmt, AttributedStmt>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -595,6 +597,20 @@ public:
              ConditionalOperator>(S))
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
+    if (A.S.coreV2()) {
+      if (const auto *C = dyn_cast<CaseStmt>(S); C && C->getRHS())
+        A.reject(S->getBeginLoc(), "case range",
+                 "GNU case ranges are outside the core v2 profile.");
+      if (const auto *Attributed = dyn_cast<AttributedStmt>(S)) {
+        if (!isa<NullStmt>(Attributed->getSubStmt()) ||
+            Attributed->getAttrs().empty() ||
+            !std::all_of(Attributed->getAttrs().begin(),
+                         Attributed->getAttrs().end(),
+                         [](const Attr *A) { return isa<FallThroughAttr>(A); }))
+          A.reject(S->getBeginLoc(), "statement attribute",
+                   "Only a validated fallthrough annotation is supported.");
+      }
+    }
     if (const auto *C = dyn_cast<CallExpr>(S)) {
       const auto *F = C->getDirectCallee();
       if (A.S.coreV2() && F && !isa<CXXMethodDecl>(F))

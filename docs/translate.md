@@ -23,6 +23,8 @@ Select `--profile cpp-core-v2` to add checked `typedef`/`using` aliases, enums w
 
 Core v2 also adds fixed-size local arrays and array fields, multidimensional indexing, and pointers/references to arrays. Partial initialization fills remaining elements with zero; element initialization preserves source order and aliasing. Extents and initializer expansion are bounded. Global arrays, variable-length arrays and nontrivial element lifetimes remain unsupported.
 
+Core v2 supports `switch`/`case`/`default`, including C++17 init-statements, fallthrough and validated `[[fallthrough]]` annotations. Selector evaluation occurs once; nested switches and loops retain their own `break` and `continue` targets. GNU case ranges and other statement attributes remain rejected.
+
 ## Multi-file projects
 
 Select the translation units explicitly from a compilation database and set the project root directory. The built-in frontend analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).

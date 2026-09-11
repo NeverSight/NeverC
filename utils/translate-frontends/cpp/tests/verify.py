@@ -109,6 +109,18 @@ def main():
         "array-in-record-copy": "struct R{int a[2];}; int main(){R r{{1,2}}; R s=r; s.a[1]=7; return r.a[1]==2 && s.a[1]==7 ? 0:1;}",
         "pointer-call-index-reference": "int*f(int*p){return p;} int main(){int a[2]={1,2}; int&r=f(a)[1]; r=3; return a[1]-3;}",
     })
+    core_v2.update({
+        "switch-basic": "int f(int n){switch(n){case 1:return 7;default:return 9;}} int main(){return f(1)-7;}",
+        "switch-fallthrough": "int f(int n){int r=0;switch(n){case 0:r=1;[[fallthrough]];case 1:r+=2;break;default:r=3;}return r;} int main(){return f(0)-3;}",
+        "switch-constant-return": "int f(){switch(1){case 1:return 7;}} int main(){return f()-7;}",
+        "switch-constant-no-match": "int main(){switch(1){case 2:return 9;}return 0;}",
+        "switch-nested-entry": "int f(int n){switch(n){return 9;int x;{case 1:x=7;return x;}default:return 3;}} int main(){return f(1)-7;}",
+        "switch-continue": "int main(){int s=0;for(int i=0;i<3;++i){switch(i){case 1:continue;default:s+=i;}}return s-2;}",
+        "switch-condition-variable": "int main(){switch(int n=7){case 7:return n-7;default:return 9;}}",
+        "switch-init": "int main(){int calls=0;switch(int n=++calls;n){case 1:break;default:return 9;}return calls-1;}",
+        "switch-unsigned-enum": "enum class E:unsigned int{top=0xffffffffu};int f(E n){switch(n){case E::top:return 7;default:return 9;}}int main(){return f(E::top)-7;}",
+        "switch-empty": "int main(){int n=0;switch(++n){n=9;}return n-1;}",
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     for name, source in {
@@ -160,6 +172,12 @@ def main():
         "array-temporary-comma": "struct R{int a[2];}; int f(){int n=0; const int&r=(++n,R{{1,2}}.a)[0]; return r;}",
         "array-temporary-dereference": "struct R{int a[2];}; int f(){const int&r=*R{{1,2}}.a; return r;}",
         "array-temporary-subobject": "struct R{int a[2];}; int f(){const int&r=R{{1,2}}.a[0]; return r;}",
+    })
+    v2_rejections.update({
+        "switch-case-range": "int f(int n){switch(n){case 1 ... 3:return 7;default:return 9;}}",
+        "switch-dead-range": "int f(int n){if(false){switch(n){case 1 ... 3:return 7;}}return 0;}",
+        "switch-other-attribute": "int f(int n){switch(n){case 0:[[likely]];case 1:return 7;default:return 9;}}",
+        "switch-folded-cast": "int f(int n){switch(n){case (void(0),1):return 7;default:return 9;}}",
     })
     for name, source in v2_rejections.items():
         check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")
