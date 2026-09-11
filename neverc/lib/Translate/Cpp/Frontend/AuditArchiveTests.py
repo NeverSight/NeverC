@@ -1587,6 +1587,28 @@ public:
                 self.audit_inventory([(name, kind, declaration)],
                                      [(name, "W", declaration)])
 
+    def test_microsoft_std_eh_arrays_and_throw_info_share_nm_identity(self):
+        # Exact CTA/TI spellings from the cac5 Windows Clang audit. This
+        # checks shared std ownership, not record layout or ABI equivalence.
+        symbols = (
+            "_CTA2?AVbad_cast@std@@",
+            "_CTA2?AVbad_optional_access@std@@",
+            "_CTA2?AVbad_variant_access@std@@",
+            "_CTA3?AVbad_array_new_length@std@@",
+            "_CTA3?AVfuture_error@std@@",
+            "_CTA5?AVfailure@ios_base@std@@",
+            "_TI2?AVbad_cast@std@@",
+            "_TI2?AVbad_optional_access@std@@",
+            "_TI2?AVbad_variant_access@std@@",
+            "_TI3?AVbad_array_new_length@std@@",
+            "_TI3?AVfuture_error@std@@",
+            "_TI5?AVfailure@ios_base@std@@",
+        )
+        for name in symbols:
+            with self.subTest(name=name):
+                self.audit_inventory([(name, "R", name)],
+                                     [(name, "W", name)], "nm")
+
     def test_microsoft_nonstandard_owners_cannot_hide_in_nested_quotes(self):
         declarations = (
             "int `class std::string __cdecl Host::get(void)'::`2'::$TSS0",
