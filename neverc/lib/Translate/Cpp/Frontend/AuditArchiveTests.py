@@ -1812,15 +1812,34 @@ public:
                         self.audit_inventory([(name, kind, name) for kind in kinds],
                                              [(name, "W", name)], "nm")
 
+    def test_microsoft_stdio_definitions_share_module_runtime_identity(self):
+        # These are the actual Windows Clang x64/ARM64 private T7/B2 and host
+        # W inventories. Host W is not evidence of a text or storage kind.
+        # UCRT shares the accessors and their options storage within one final
+        # module; this does not assert a process-wide or cross-DLL identity.
+        records = (
+            ("__local_stdio_printf_options", "T", "__local_stdio_printf_options"),
+            ("__local_stdio_scanf_options", "T", "__local_stdio_scanf_options"),
+            ("_snprintf", "T", "_snprintf"),
+            ("fprintf", "T", "fprintf"),
+            ("snprintf", "T", "snprintf"),
+            ("sprintf_s", "T", "sprintf_s"),
+            ("sscanf", "T", "sscanf"),
+            ("?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA", "B",
+             "unsigned __int64 `extern \"C\" __local_stdio_printf_options'::"
+             "`2'::_OptionsStorage"),
+            ("?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA", "B",
+             "unsigned __int64 `extern \"C\" __local_stdio_scanf_options'::"
+             "`2'::_OptionsStorage"),
+        )
+        for name, kind, decoded in records:
+            with self.subTest(name=name):
+                self.audit_inventory([(name, kind, decoded)],
+                                     [(name, "W", name)], "nm")
+
     def test_microsoft_std_eh_does_not_share_other_runtime_records(self):
         records = (
             ("__real@3ff0000000000000", "R"),
-            ("__local_stdio_printf_options", "T"),
-            ("__local_stdio_scanf_options", "T"),
-            ("fprintf", "T"), ("sprintf_s", "T"), ("snprintf", "T"),
-            ("_snprintf", "T"), ("sscanf", "T"),
-            ("?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA", "B"),
-            ("?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA", "B"),
             ("_Avx2WmemEnabledWeakValue", "B"),
         )
         for name, kind in records:
