@@ -263,12 +263,22 @@ function(neverc_check_builtin_cpp_frontend target)
     get_target_property(_audit_${_property} nevercCppFrontend
       "NEVERC_CPP_AUDIT_${_property}")
   endforeach()
+  set(_audit_SELF_ARGUMENTS "")
+  if(WIN32 AND (MSVC OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"))
+    # Source dllexport declarations already produce this executable's import
+    # library. Model it so CMake exposes its exact path, including renamed and
+    # per-configuration outputs, for exclusion from repeated host audits.
+    set_property(TARGET "${target}" PROPERTY ENABLE_EXPORTS ON)
+    list(APPEND _audit_SELF_ARGUMENTS
+      --self-import-library "$<TARGET_LINKER_FILE:${target}>")
+  endif()
   add_custom_command(TARGET "${target}" PRE_LINK
     COMMAND "${_audit_PYTHON}" "${_audit_SCRIPT}"
       --nm-file "${_audit_NM_FILE}"
       --archive "$<TARGET_FILE:nevercCppFrontend>"
       --prefix-header "${_audit_PREFIX}"
       --host-lib-dir "$<TARGET_FILE_DIR:LLVMCore>"
+      ${_audit_SELF_ARGUMENTS}
       ${_audit_PRIVATE_ARGUMENTS}
       ${_audit_HOST_ARGUMENTS}
     VERBATIM)
