@@ -1644,6 +1644,104 @@ public:
                 self.audit_inventory([(name, "R", name)],
                                      [(name, "W", name)], "nm")
 
+    def test_microsoft_std_catchable_type_plain_owners_and_raw_tail_bounds(self):
+        # These tails are accepted as raw decimal spellings, not decoded sizes.
+        names = (
+            "_CT??_R0?AVsample@std@@@8??0sample@std@@QEAA@AEBV01@@Z0",
+            "_CT??_R0?AVsample@std@@@8??0sample@std@@QEAA@AEBV01@@Z4294967295",
+            "_CT??_R0?AV_Error1@nested_2@std@@@8"
+            "??0_Error1@nested_2@std@@QEAA@AEBV012@@Z24",
+        )
+        for name in names:
+            for private in ([(name, "R", name)],
+                            [(name, "R", name), (name, "R", name)]):
+                with self.subTest(name=name, definitions=len(private)):
+                    self.audit_inventory(private, [(name, "W", name)], "nm")
+
+    def test_microsoft_std_catchable_type_rejects_unknown_or_mismatched_names(self):
+        plain = "_CT??_R0?AVbad_cast@std@@@8??0bad_cast@std@@QEAA@AEBV01@@Z24"
+        nested = ("_CT??_R0?AVfailure@ios_base@std@@@8"
+                  "??0failure@ios_base@std@@QEAA@AEBV012@@Z40")
+        names = (
+            plain.replace("??0bad_cast@", "??0exception@"),
+            nested.replace("??0failure@ios_base@", "??0failure@ios_other@"),
+            nested.replace("??0failure@ios_base@", "??0ios_base@failure@"),
+            plain.replace("@std@", "@Host@"),
+            plain.replace("@std@", "@std@Host@"),
+            plain.replace("@std@", "@std_extra@"),
+            plain.replace("bad_cast@std", "std@std"),
+            nested.replace("failure@ios_base@std", "failure@failure@std"),
+            nested.replace("failure@ios_base@std", "failure@std@std"),
+            nested.replace("failure@ios_base@std", "failure@ios_base@nested@std"),
+            plain.replace("?AVbad_cast@", "?AV?$bad_cast@H@"),
+            plain.replace("??0bad_cast@", "??0?$bad_cast@H@"),
+            plain.replace("@std@", "@?A0x1234@"),
+            plain.replace("?AV", "?AU"),
+            plain.replace("?AV", "?BV"),
+            plain.replace("@@@8", "@@8"),
+            plain.replace("@@@8", "@@@9"),
+            plain.replace("@@@8", "@@@@8"),
+            plain.replace("@@@8", "@@@8extra"),
+            plain.replace("??0bad_cast@std@@QEAA@AEBV01@@Z", ""),
+            plain.replace("??0", "??_O"),
+            plain.replace("??0", "??_F"),
+            plain.replace("QEAA", "QAE"),
+            plain.replace("AEBV01@@Z", "AEBV012@@Z"),
+            plain.replace("AEBV01@@Z", "AEBV10@@Z"),
+            plain.replace("AEBV01@@Z", "AEBV00@@Z"),
+            plain.replace("AEBV01@@Z", "AEBV09@@Z"),
+            plain.replace("AEBV01@@Z", "AEBV010@@Z"),
+            plain.replace("AEBV01@@Z", "AEBV01@H@Z"),
+            plain.replace("AEBV01@@Z", "AEBV01@@ZZ"),
+            nested.replace("AEBV012@@Z", "AEBV01@@Z"),
+            nested.replace("AEBV012@@Z", "AEBV021@@Z"),
+            nested.replace("AEBV012@@Z", "AEBV013@@Z"),
+            "_CT??@0123456789abcdef@@24",
+            plain + "@",
+            plain + nested,
+        )
+        for name in names:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(
+                        ValueError, "private/host symbol intersection"):
+                    self.audit_inventory([(name, "R", name)],
+                                         [(name, "W", name)], "nm")
+
+    def test_microsoft_std_catchable_type_rejects_unknown_numeric_tails(self):
+        prefix = "_CT??_R0?AVbad_cast@std@@@8??0bad_cast@std@@QEAA@AEBV01@@Z"
+        for tail in ("", "00", "024", "+24", "-24", "0x18", "\u0662",
+                     "4294967296", "10000000000", "24x", "24@", "24_1", "24-120"):
+            name = prefix + tail
+            with self.subTest(tail=tail):
+                with self.assertRaisesRegex(
+                        ValueError, "private/host symbol intersection"):
+                    self.audit_inventory([(name, "R", name)],
+                                         [(name, "W", name)], "nm")
+
+    def test_microsoft_std_catchable_type_requires_only_read_only_definitions(self):
+        name = "_CT??_R0?AVbad_cast@std@@@8??0bad_cast@std@@QEAA@AEBV01@@Z24"
+        for kinds in (("U",), ("w",), ("v",), ("B",), ("D",), ("T",), ("W",),
+                      ("V",), ("R", "U"), ("U", "R"), ("R", "w"), ("R", "v"),
+                      ("R", "B"), ("R", "D"), ("R", "T"), ("R", "W"), ("R", "V")):
+            with self.subTest(kinds=kinds):
+                with self.assertRaisesRegex(
+                        ValueError, "private/host symbol intersection"):
+                    self.audit_inventory([(name, kind, name) for kind in kinds],
+                                         [(name, "W", name)], "nm")
+
+    def test_microsoft_std_catchable_type_preserves_independent_private_findings(self):
+        name = "_CT??_R0?AVbad_cast@std@@@8??0bad_cast@std@@QEAA@AEBV01@@Z24"
+        for old, _ in SETUP_GUID_PAIRS:
+            with self.subTest(setup_guid=old):
+                with self.assertRaisesRegex(
+                        ValueError, "unisolated Setup GUID symbol: " + old):
+                    self.audit_inventory([(name, "R", name), (old, "R", old)],
+                                         [(name, "W", name), (old, "R", old)], "nm")
+        with self.assertRaisesRegex(ValueError, "LLVMContextCreate"):
+            self.audit_inventory([(name, "R", name),
+                                  ("LLVMContextCreate", "T", "LLVMContextCreate")],
+                                 [(name, "W", name)], "nm")
+
     def test_microsoft_std_eh_simple_owners_and_count_bounds(self):
         for prefix in ("_CTA", "_TI"):
             for spelling in ("0?AVerror@std@@", "4294967295?AVerror@std@@",

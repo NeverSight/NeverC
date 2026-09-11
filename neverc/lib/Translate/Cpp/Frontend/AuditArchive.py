@@ -335,6 +335,35 @@ def microsoft_std_eh_entity(name):
                     for part in components))
 
 
+def microsoft_std_catchable_type(name):
+    """Recognize the observed plain-class CT self-copy constructor forms.
+
+    RTTI and constructor manglings use independent name backreference tables.
+    With two or three distinct identifiers, the constructor's class parameter
+    refers back to its own name with 01 or 012 respectively. Require the exact
+    same std-owned type in both halves.
+
+    CT numeric fields have no separators. The bounded canonical decimal tail
+    below is a conservative acceptance domain, not the full upstream grammar;
+    it does not decode size/offset fields or establish layout equivalence.
+    """
+    if len(name) > MICROSOFT_DECLARATION_LIMIT:
+        return False
+    identifier = r"[A-Za-z_][A-Za-z0-9_]*"
+    scope = identifier + r"(?:@" + identifier + r"){1,2}"
+    match = re.fullmatch(
+        r"_CT\?\?_R0\?AV(" + scope + r")@@@8\?\?0(" + scope +
+        r")@@QEAA@AEBV(01|012)@@Z(0|[1-9][0-9]{0,9})", name)
+    if match is None:
+        return False
+    type_scope, ctor_scope, backrefs, tail = match.groups()
+    components = type_scope.split("@")
+    return (type_scope == ctor_scope and components[-1] == "std"
+            and len(set(components)) == len(components)
+            and backrefs == ("01" if len(components) == 2 else "012")
+            and int(tail) <= 0xFFFFFFFF)
+
+
 def global_cpp_record_entity(symbol, declaration, record):
     """Recognize explicit global record identities, never a name substring.
 
@@ -688,12 +717,13 @@ def audit(args):
             if (host_format == "nm" and name in STRDUP_SYMBOLS
                     and name in references and name not in definitions):
                 continue
-            # CTA/TI names retain their std type identity in both archives.
+            # Exception metadata retains its std type identity in both archives.
             # Only observed private read-only definitions may use this policy;
             # a host nm definition (often W) is not evidence of its object kind.
             if (host_format == "nm" and name not in references
                     and private_kinds[name] == {"R"}
-                    and microsoft_std_eh_entity(name)):
+                    and (microsoft_std_eh_entity(name)
+                         or microsoft_std_catchable_type(name))):
                 continue
             if not standard_shared_symbol(name, private_decoded.get(name, "")):
                 bad.append("private/host symbol intersection: " + name +
