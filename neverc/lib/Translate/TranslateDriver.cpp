@@ -97,7 +97,8 @@ bool expectedCarrierLayout(VerificationContext &Context, Diagnostics &D,
   return true;
 }
 json::Object layoutJSON(const StorageLayout &L) {
-  return {{"size_bits", L.SizeBits}, {"abi_align_bits", L.ABIAlignBits}};
+  return json::Object{{"size_bits", L.SizeBits},
+                      {"abi_align_bits", L.ABIAlignBits}};
 }
 json::Object layoutJSON(const CarrierLayout &L) {
   json::Object O{{"char_bits", L.CharBits}};
