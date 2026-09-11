@@ -28,6 +28,7 @@ MSVC_STDIO_SYMBOLS = frozenset((
     "__local_stdio_scanf_options",
     "_snprintf",
     "fprintf",
+    "printf",
     "snprintf",
     "sprintf_s",
     "sscanf",

@@ -17,13 +17,14 @@ import AuditArchive
 import SetupGuidSymbols
 
 
-# Independent expectations for the nine stdio identities in one final module.
+# Independent expectations for the ten stdio identities in one final module.
 # These controlled rows do not prove SDK macros, object layout or cross-DLL ABI.
 MSVC_STDIO_MODULE_RECORDS = (
     ("__local_stdio_printf_options", "T", "__local_stdio_printf_options"),
     ("__local_stdio_scanf_options", "T", "__local_stdio_scanf_options"),
     ("_snprintf", "T", "_snprintf"),
     ("fprintf", "T", "fprintf"),
+    ("printf", "T", "printf"),
     ("snprintf", "T", "snprintf"),
     ("sprintf_s", "T", "sprintf_s"),
     ("sscanf", "T", "sscanf"),
