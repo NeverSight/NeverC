@@ -1856,6 +1856,12 @@ public:
                 self.audit_inventory([(name, kind, decoded)],
                                      [(name, "W", name)], "nm")
 
+    def test_microsoft_avx2_fallback_definition_shares_module_identity(self):
+        # UCRT coalesces this zero-initialized fallback in one final module.
+        # Sharing this definition does not authorize the feature-variable alias.
+        name = "_Avx2WmemEnabledWeakValue"
+        self.audit_inventory([(name, "B", name)], [(name, "W", name)], "nm")
+
     def test_microsoft_stdio_duplicate_definition_kinds_share_module_identity(self):
         for name, kind, decoded in MSVC_STDIO_MODULE_RECORDS:
             with self.subTest(name=name):
@@ -1914,7 +1920,6 @@ public:
     def test_microsoft_stdio_does_not_expand_to_other_runtime_families(self):
         records = (
             ("printf", "T", "printf"),
-            ("_Avx2WmemEnabledWeakValue", "B", "_Avx2WmemEnabledWeakValue"),
             ("__real@3ff0000000000000", "R", "__real@3ff0000000000000"),
             ("?_OptionsStorage@?1??__local_stdio_printf_options@@9@9", "C",
              "extern \"C\" \x60extern \"C\" __local_stdio_printf_options'::"
@@ -1984,7 +1989,6 @@ public:
     def test_microsoft_std_eh_does_not_share_other_runtime_records(self):
         records = (
             ("__real@3ff0000000000000", "R"),
-            ("_Avx2WmemEnabledWeakValue", "B"),
         )
         for name, kind in records:
             with self.subTest(name=name):
