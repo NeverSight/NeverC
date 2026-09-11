@@ -3,6 +3,7 @@
 #include "BuildID.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/RecordLayout.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -716,9 +717,19 @@ void Adapter::run() {
     for (const auto *F : R->fields())
       Fields.push_back(json::Object{
           {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
-    RecordData.push_back(json::Object{{"id", name(R)},
-                                      {"fields", std::move(Fields)},
-                                      {"loc", loc(R->getLocation())}});
+    json::Object Record{{"id", name(R)}, {"fields", std::move(Fields)},
+                        {"loc", loc(R->getLocation())}};
+    if (S.coreV2()) {
+      const auto &Layout = Context.getASTRecordLayout(R);
+      json::Array Offsets;
+      for (unsigned I = 0; I < Layout.getFieldCount(); ++I)
+        Offsets.push_back(Layout.getFieldOffset(I));
+      Record["layout"] = json::Object{
+          {"size_bits", uint64_t(Layout.getSize().getQuantity()) * 8},
+          {"abi_align_bits", uint64_t(Layout.getAlignment().getQuantity()) * 8},
+          {"field_offsets_bits", std::move(Offsets)}};
+    }
+    RecordData.push_back(std::move(Record));
   }
   for (const auto *G : Globals) {
     APValue Value;
@@ -746,11 +757,24 @@ void Adapter::run() {
   }
   if (!S.Diagnostics.empty())
     return;
-  S.Module["target"] =
-      json::Object{{"triple", S.Target},
-                   {"int_bits", Target.getIntWidth()},
-                   {"pointer_bits", Target.getPointerWidth(LangAS::Default)},
-                   {"little_endian", Target.isLittleEndian()}};
+  json::Object TargetData{
+      {"triple", S.Target}, {"int_bits", Target.getIntWidth()},
+      {"pointer_bits", Target.getPointerWidth(LangAS::Default)},
+      {"little_endian", Target.isLittleEndian()}};
+  if (S.coreV2()) {
+    const std::pair<const char *, QualType> Carriers[] = {
+        {"bool", Context.BoolTy}, {"i8", Context.SignedCharTy},
+        {"u8", Context.UnsignedCharTy}, {"i16", Context.ShortTy},
+        {"u16", Context.UnsignedShortTy}, {"int", Context.IntTy},
+        {"uint", Context.UnsignedIntTy}, {"i64", Context.LongLongTy},
+        {"u64", Context.UnsignedLongLongTy}, {"default-pointer", Context.VoidPtrTy}};
+    json::Object Layout{{"char_bits", Target.getCharWidth()}};
+    for (const auto &[Name, T] : Carriers)
+      Layout[Name] = json::Object{{"size_bits", Context.getTypeSize(T)},
+                                   {"abi_align_bits", Context.getTypeAlign(T)}};
+    TargetData["carrier_layout"] = std::move(Layout);
+  }
+  S.Module["target"] = std::move(TargetData);
   S.Module["records"] = std::move(RecordData);
   S.Module["globals"] = std::move(GlobalData);
   // The allowlist resolves every owned call, including unreachable source.

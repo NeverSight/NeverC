@@ -238,6 +238,16 @@ class Emitter {
     line("static_assert(sizeof(void *) * __CHAR_BIT__ == " +
          std::to_string(M.Target.PointerBits) +
          ", \"translated source requires its recorded pointer width\");");
+    if (M.Profile == "cpp-core-v2")
+      for (size_t I = 0; I < CarrierNames.size(); ++I) {
+        const auto &C = M.Target.Carriers->Carriers[I];
+        const std::string T = CarrierSpellings[I];
+        line("static_assert(sizeof(" + T + ") * __CHAR_BIT__ == " +
+             std::to_string(C.SizeBits) + ", \"translated carrier size mismatch\");");
+        line("static_assert(alignof(" + T + ") * __CHAR_BIT__ == " +
+             std::to_string(C.ABIAlignBits) +
+             ", \"translated carrier alignment mismatch\");");
+      }
     if (M.Profile == "cpp-math-v1") {
       line("static_assert(sizeof(double) * __CHAR_BIT__ == 64, \"translated "
            "math requires binary64 storage\");");
@@ -285,6 +295,19 @@ class Emitter {
     for (const auto &F : R.Fields)
       line("  " + declaration(F.ValueType, F.Name) + ";", &R.Loc);
     line(ForwardDeclared ? "};" : "} " + R.ID + ";", &R.Loc);
+    if (R.Layout) {
+      line("static_assert(sizeof(" + R.ID + ") * __CHAR_BIT__ == " +
+           std::to_string(R.Layout->Storage.SizeBits) +
+           ", \"translated record size mismatch\");", &R.Loc);
+      line("static_assert(alignof(" + R.ID + ") * __CHAR_BIT__ == " +
+           std::to_string(R.Layout->Storage.ABIAlignBits) +
+           ", \"translated record alignment mismatch\");", &R.Loc);
+      for (size_t I = 0; I < R.Fields.size(); ++I)
+        line("static_assert(__builtin_offsetof(" + R.ID + ", " +
+             R.Fields[I].Name + ") * __CHAR_BIT__ == " +
+             std::to_string(R.Layout->FieldOffsetsBits[I]) +
+             ", \"translated field offset mismatch\");", &R.Loc);
+    }
     line("");
   }
   void inspectModule() {

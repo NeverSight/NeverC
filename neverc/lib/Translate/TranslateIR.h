@@ -4,6 +4,7 @@
 #include "Diagnostics.h"
 #include "FrontendProtocol.h"
 #include "llvm/ADT/StringRef.h"
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -104,10 +105,37 @@ struct Field {
   std::string Name;
   Type ValueType;
 };
+// Ordered carrier slots are shared by protocol validation and NC guards.
+inline constexpr std::array<const char *, 10> CarrierNames{
+    "bool", "i8", "u8", "i16", "u16", "int", "uint", "i64", "u64",
+    "default-pointer"};
+inline constexpr std::array<const char *, 10> CarrierSpellings{
+    "bool", "signed char", "unsigned char", "short", "unsigned short", "int",
+    "unsigned int", "long long", "unsigned long long", "void *"};
+struct StorageLayout {
+  uint32_t SizeBits = 0, ABIAlignBits = 0;
+  bool operator==(const StorageLayout &Other) const {
+    return SizeBits == Other.SizeBits && ABIAlignBits == Other.ABIAlignBits;
+  }
+  bool operator!=(const StorageLayout &Other) const { return !(*this == Other); }
+};
+struct CarrierLayout {
+  uint32_t CharBits = 8;
+  std::array<StorageLayout, CarrierNames.size()> Carriers{};
+  bool operator==(const CarrierLayout &Other) const {
+    return CharBits == Other.CharBits && Carriers == Other.Carriers;
+  }
+  bool operator!=(const CarrierLayout &Other) const { return !(*this == Other); }
+};
+struct RecordLayout {
+  StorageLayout Storage;
+  std::vector<uint32_t> FieldOffsetsBits;
+};
 struct Record {
   std::string ID;
   std::vector<Field> Fields;
   SourceLocation Loc;
+  std::optional<RecordLayout> Layout;
 };
 struct Global {
   std::string Name;
@@ -136,6 +164,7 @@ struct TargetInfo {
   uint32_t IntBits = 32;
   uint32_t PointerBits = 0;
   bool LittleEndian = true;
+  std::optional<CarrierLayout> Carriers;
 };
 struct Dependency {
   std::string Path;
@@ -189,6 +218,8 @@ struct VerificationContext {
   bool LittleEndian = true;
   std::string FPContractID;
   std::vector<std::string> ApprovedSDKIDs, ApprovedMappingIDs;
+  // Constructed independently from NeverC target options, never from Module.
+  std::optional<CarrierLayout> ExpectedCarrierLayout;
 };
 struct SourceMapEntry {
   uint32_t BeginLine = 1;

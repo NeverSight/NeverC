@@ -101,6 +101,16 @@ The consumer validates the entire module and all referenced symbols, types, fiel
 
 NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record frontend and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
 
+## Core v2 layout evidence
+
+`cpp-core-v2` requires `target.carrier_layout` and per-record `layout` evidence.
+The driver derives expected carrier sizes and ABI alignments independently from
+NeverC's own target configuration; the verifier also reconstructs plain-record
+size, alignment and field offsets before emission. Generated static assertions
+check these values during NC compilation. Manifests retain the carrier table
+and `record_layouts`. See the [exact core v2 fields and compatibility rules](cpp-core-v2.md#verified-target-and-record-layout).
+Older v1 profiles exclude this evidence.
+
 ## Gated mathematics extension
 
 `cpp-math-v1` uses project schema 1 and the same owned declaration/ODR envelope

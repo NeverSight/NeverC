@@ -9,6 +9,10 @@
 #include "ProjectIR.h"
 #include "TranslateIR.h"
 #include "neverc/Foundation/Core/Version.h"
+#include "neverc/Foundation/Diagnostic/Diagnostic.h"
+#include "neverc/Foundation/LangOpts/LangOptions.h"
+#include "neverc/Foundation/Target/TargetInfo.h"
+#include "neverc/Foundation/Target/TargetOptions.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FileSystem.h"
@@ -40,6 +44,74 @@ bool fail(Diagnostics &D, StringRef Code, StringRef Source, StringRef Construct,
           StringRef Reason, StringRef Guidance) {
   D.push_back(driverDiagnostic(Code, Source, Construct, Reason, Guidance));
   return false;
+}
+// These are the complete target/layout-affecting validation options. Source
+// frontend flags are never forwarded to the NC compiler. Keep the independent
+// target model and the replayed validation command on this same configuration.
+constexpr const char *ValidationStandard = "c23";
+std::vector<std::string> validationOptions(llvm::StringRef Triple) {
+  return {"--no-default-config", "--target=" + Triple.str(),
+          std::string("-std=") + ValidationStandard};
+}
+bool expectedCarrierLayout(VerificationContext &Context, Diagnostics &D,
+                           llvm::StringRef Source) {
+  neverc::DiagnosticsEngine TargetDiags(new neverc::DiagnosticIDs(),
+                                        new neverc::DiagnosticOptions(),
+                                        new neverc::IgnoringDiagConsumer());
+  auto Options = std::make_shared<neverc::TargetOptions>();
+  Options->Triple = Context.TargetTriple;
+  std::unique_ptr<neverc::TargetInfo> Target(
+      neverc::TargetInfo::CreateTargetInfo(TargetDiags, Options));
+  if (!Target || TargetDiags.hasErrorOccurred())
+    return fail(D, "TR0204", Source, "NeverC target layout",
+                "Cannot construct the requested NeverC target.",
+                "Select an admitted native target.");
+  neverc::LangOptions Lang;
+  std::vector<std::string> Includes;
+  neverc::LangOptions::setLangDefaults(
+      Lang, neverc::Language::C, llvm::Triple(Context.TargetTriple), Includes,
+      neverc::LangStandard::getLangKind(ValidationStandard));
+  Target->adjust(TargetDiags, Lang);
+  if (TargetDiags.hasErrorOccurred())
+    return fail(D, "TR0204", Source, "NeverC target layout",
+                "Cannot apply the NC validation language configuration.",
+                "Select an admitted native target.");
+  CarrierLayout Layout;
+  Layout.CharBits = Target->getCharWidth();
+  Layout.Carriers[0] = {Target->getBoolWidth(), Target->getBoolAlign()};
+  Layout.Carriers[1] = Layout.Carriers[2] =
+      {Target->getCharWidth(), Target->getCharAlign()};
+  Layout.Carriers[3] = Layout.Carriers[4] =
+      {Target->getShortWidth(), Target->getShortAlign()};
+  Layout.Carriers[5] = Layout.Carriers[6] =
+      {Target->getIntWidth(), Target->getIntAlign()};
+  Layout.Carriers[7] = Layout.Carriers[8] =
+      {Target->getLongLongWidth(), Target->getLongLongAlign()};
+  Layout.Carriers[9] = {
+      uint32_t(Target->getPointerWidth(neverc::LangAS::Default)),
+      uint32_t(Target->getPointerAlign(neverc::LangAS::Default))};
+  Context.IntBits = Target->getIntWidth();
+  Context.PointerBits = Layout.Carriers[9].SizeBits;
+  Context.LittleEndian = Target->isLittleEndian();
+  Context.ExpectedCarrierLayout = Layout;
+  return true;
+}
+json::Object layoutJSON(const StorageLayout &L) {
+  return {{"size_bits", L.SizeBits}, {"abi_align_bits", L.ABIAlignBits}};
+}
+json::Object layoutJSON(const CarrierLayout &L) {
+  json::Object O{{"char_bits", L.CharBits}};
+  for (size_t I = 0; I < CarrierNames.size(); ++I)
+    O[CarrierNames[I]] = layoutJSON(L.Carriers[I]);
+  return O;
+}
+json::Object layoutJSON(const RecordLayout &L) {
+  auto O = layoutJSON(L.Storage);
+  json::Array Offsets;
+  for (auto Bits : L.FieldOffsetsBits)
+    Offsets.push_back(Bits);
+  O["field_offsets_bits"] = std::move(Offsets);
+  return O;
 }
 bool parseInvocation(int Argc, const char **Argv, Invocation &I,
                      Diagnostics &D) {
@@ -443,14 +515,10 @@ std::string manifest(const Invocation &I, const Module &M,
   if (!Header.empty())
     Files.push_back(json::Object{{"path", jsonString(Writer.headerName())},
                                  {"sha256", jsonString(sha256(Header))}});
-  std::vector<std::string> Recipe{"neverc",
-                                  "--no-default-config",
-                                  "--target=" + M.Target.Triple,
-                                  "-std=c23",
-                                  Writer.sourceName().str(),
-                                  "-c",
-                                  "-o",
-                                  "module.o"};
+  std::vector<std::string> Recipe{"neverc"};
+  auto ValidationArgs = validationOptions(M.Target.Triple);
+  Recipe.insert(Recipe.end(), ValidationArgs.begin(), ValidationArgs.end());
+  Recipe.insert(Recipe.end(), {Writer.sourceName().str(), "-c", "-o", "module.o"});
   json::Object Manifest{
       {"schema", "neverc.translate.manifest"},
       {"version", 1},
@@ -459,9 +527,7 @@ std::string manifest(const Invocation &I, const Module &M,
       {"profile_version", I.Profile == "cpp-core-v2" ? 2 : 1},
       {"source_options", Project ? json::Array{} : strings(I.Arguments)},
       {"compiler_environment_policy", "neverc.translate.execution-env.v1"},
-      {"compiler_options",
-       json::Array{"--no-default-config",
-                   jsonString("--target=" + M.Target.Triple), "-std=c23"}},
+      {"compiler_options", strings(ValidationArgs)},
       {"frontend", json::Object{{"name", jsonString(M.Frontend.Name)},
                                 {"version", jsonString(M.Frontend.Version)},
                                 {"build", jsonString(M.Frontend.Build)}}},
@@ -478,6 +544,17 @@ std::string manifest(const Invocation &I, const Module &M,
       {"required_headers", json::Array{}},
       {"required_modules", json::Array{}},
       {"compilation_recipe", strings(Recipe)}};
+  if (M.Target.Carriers) {
+    (*Manifest.getObject("target"))["carrier_layout"] =
+        layoutJSON(*M.Target.Carriers);
+    json::Array Records;
+    for (const auto &R : M.Records) {
+      auto Layout = layoutJSON(*R.Layout);
+      Layout["id"] = jsonString(R.ID);
+      Records.push_back(std::move(Layout));
+    }
+    Manifest["record_layouts"] = std::move(Records);
+  }
   if (Project) {
     json::Array Units;
     for (const auto &Unit : Project->Units) {
@@ -602,6 +679,9 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
   Triple T(Context.TargetTriple);
   Context.PointerBits = T.isArch64Bit() ? 64 : 32;
   Context.LittleEndian = T.isLittleEndian();
+  if (I.Profile == "cpp-core-v2" &&
+      !expectedCarrierLayout(Context, D, I.Source))
+    return failed();
   std::string Root = sys::path::parent_path(I.Source).str();
   ProjectContext Project;
   std::vector<TranslationUnitContext> Jobs;
@@ -853,9 +933,10 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
   }
   for (bool Syntax : {true, false}) {
     Stage = Syntax ? "syntax" : "object";
-    std::vector<std::string> Args{
-        *Compiler, "--no-default-config", "--target=" + Context.TargetTriple,
-        "-std=c23", Writer->stagePath("validation.nc")};
+    std::vector<std::string> Args{*Compiler};
+    auto ValidationArgs = validationOptions(Context.TargetTriple);
+    Args.insert(Args.end(), ValidationArgs.begin(), ValidationArgs.end());
+    Args.push_back(Writer->stagePath("validation.nc"));
     if (!I.BuiltinStdEnabled)
       Args.push_back("-fno-builtin-std");
     if (Syntax)

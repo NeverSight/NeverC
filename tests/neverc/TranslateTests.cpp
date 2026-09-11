@@ -1306,6 +1306,73 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2LayoutEvidenceMatchesCompiledRecordStorage) {
+  const auto Source = tmpFile("layout.cpp");
+  const auto Output = tmpFile("layout.nc");
+  writeFile(Source, R"cpp(
+struct Inner { bool flag; int value; bool tail; };
+struct Outer { bool flag; Inner items[2]; Inner *pointer; };
+int main() {
+  Outer value{true, {{true, 11, false}, {false, 17, true}}, nullptr};
+  value.pointer = &value.items[1];
+  value.pointer->value += value.items[0].value;
+  if (!value.flag || !value.items[0].flag || value.items[0].tail) return 1;
+  if (value.items[1].flag || !value.items[1].tail) return 2;
+  if (value.items[1].value != 28) return 3;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Object = Manifest->getAsObject();
+  ASSERT_NE(Object, nullptr);
+  const auto *Target = Object->getObject("target");
+  ASSERT_NE(Target, nullptr);
+  const auto *Carriers = Target->getObject("carrier_layout");
+  ASSERT_NE(Carriers, nullptr);
+  EXPECT_EQ(Carriers->size(), 11u);
+  const auto *Records = Object->getArray("record_layouts");
+  ASSERT_NE(Records, nullptr);
+  ASSERT_EQ(Records->size(), 2u);
+  int64_t InnerSize = 0, InnerAlign = 0;
+  const auto *Inner = (*Records)[0].getAsObject();
+  ASSERT_NE(Inner, nullptr);
+  ASSERT_TRUE(Inner->getInteger("size_bits", InnerSize));
+  ASSERT_TRUE(Inner->getInteger("abi_align_bits", InnerAlign));
+  EXPECT_EQ(InnerSize, 96);
+  EXPECT_EQ(InnerAlign, 32);
+  const auto *Offsets = Inner->getArray("field_offsets_bits");
+  ASSERT_NE(Offsets, nullptr);
+  EXPECT_EQ(Offsets->size(), 3u);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("layout" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  // Prove the output compiler evaluates the recorded field-layout assertions.
+  auto Text = readFile(Output);
+  auto Guard = Text.find("static_assert(__builtin_offsetof(");
+  ASSERT_NE(Guard, std::string::npos);
+  auto Value = Text.find("== ", Guard);
+  ASSERT_NE(Value, std::string::npos);
+  auto End = Text.find(',', Value);
+  ASSERT_NE(End, std::string::npos);
+  Text.replace(Value, End - Value, "== 1");
+  const auto Corrupt = tmpFile("layout-corrupt.nc");
+  writeFile(Corrupt, Text);
+  auto Compile = compileGenerated(Corrupt, tmpFile("layout-corrupt"), "-O0");
+  EXPECT_NE(Compile.exitCode, 0);
+  EXPECT_NE(Compile.err.find("translated field offset mismatch"), std::string::npos)
+      << Compile.out << Compile.err;
+}
+
 TEST_F(TranslateTest, CoreV2DeclarationsPreserveValuesAndOverloads) {
   const auto Source = tmpFile("declarations.cpp");
   const auto Output = tmpFile("declarations.nc");

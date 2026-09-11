@@ -96,6 +96,34 @@ public:
     Out = uint32_t(I);
     return true;
   }
+  bool storageLayout(const llvm::json::Object &O, StorageLayout &Out) {
+    return integer(O, "size_bits", Out.SizeBits) &&
+           integer(O, "abi_align_bits", Out.ABIAlignBits);
+  }
+  bool carrierLayout(const llvm::json::Object &O, CarrierLayout &Out) {
+    if (O.size() != CarrierNames.size() + 1 ||
+        !integer(O, "char_bits", Out.CharBits))
+      return error("Invalid carrier layout fields.");
+    for (size_t I = 0; I < CarrierNames.size(); ++I) {
+      const auto *C = O.getObject(CarrierNames[I]);
+      if (!C || C->size() != 2 || !storageLayout(*C, Out.Carriers[I]))
+        return error("Missing or invalid carrier layout entry.");
+    }
+    return true;
+  }
+  bool recordLayout(const llvm::json::Object &O, RecordLayout &Out) {
+    const auto *Offsets = O.getArray("field_offsets_bits");
+    if (O.size() != 3 || !storageLayout(O, Out.Storage) || !Offsets)
+      return error("Missing or invalid record layout fields.");
+    for (const auto &V : *Offsets) {
+      int64_t Bits = 0;
+      if (!node() || !V.getAsInteger(Bits) || Bits < 0 ||
+          uint64_t(Bits) > UINT32_MAX)
+        return error("Invalid record field offset.");
+      Out.FieldOffsetsBits.push_back(uint32_t(Bits));
+    }
+    return true;
+  }
   bool location(const llvm::json::Object &O, SourceLocation &Loc) {
     const auto *L = O.getObject("loc");
     if (!L)
@@ -378,6 +406,15 @@ public:
         !integer(*T, "pointer_bits", M.Target.PointerBits) ||
         !boolean(*T, "little_endian", M.Target.LittleEndian))
       return false;
+    if (M.Profile == "cpp-core-v2") {
+      const auto *Layout = T->getObject("carrier_layout");
+      if (!Layout)
+        return error("Core v2 requires carrier layout evidence.");
+      M.Target.Carriers.emplace();
+      if (!carrierLayout(*Layout, *M.Target.Carriers))
+        return false;
+    } else if (T->get("carrier_layout"))
+      return error("Carrier layout evidence requires core v2.");
     const auto *Mappings = O.getArray("mappings");
     const auto *Diags = O.getArray("diagnostics");
     if (!Mappings || !Diags)
@@ -398,6 +435,15 @@ public:
                }) ||
         !array(O, "records", M.Records,
                [&](const auto &V, Record &R) {
+                 if (M.Profile == "cpp-core-v2") {
+                   const auto *Layout = V.getObject("layout");
+                   if (!Layout)
+                     return error("Core v2 records require layout evidence.");
+                   R.Layout.emplace();
+                   if (!recordLayout(*Layout, *R.Layout))
+                     return false;
+                 } else if (V.get("layout"))
+                   return error("Record layout evidence requires core v2.");
                  return string(V, "id", R.ID) && location(V, R.Loc) &&
                         array(V, "fields", R.Fields,
                               [&](const auto &J, Field &Field) {
@@ -999,6 +1045,81 @@ class Verifier {
     return true;
   }
 
+  bool carrierLayout(const SourceLocation &L) {
+    if (M.Profile != "cpp-core-v2")
+      return !M.Target.Carriers ||
+             error(L, "Carrier layout evidence requires core v2.");
+    if (!M.Target.Carriers || !Context.ExpectedCarrierLayout)
+      return error(L, "Core v2 requires independent carrier layout evidence.");
+    const auto &Layout = *M.Target.Carriers;
+    const uint32_t Widths[] = {0, 8, 8, 16, 16, 32, 32, 64, 64,
+                               M.Target.PointerBits};
+    if (Layout.CharBits != 8 ||
+        Layout != *Context.ExpectedCarrierLayout)
+      return error(L, "Source and NeverC carrier layouts disagree.");
+    for (size_t I = 0; I < Layout.Carriers.size(); ++I) {
+      const auto &C = Layout.Carriers[I];
+      if (C.SizeBits < 8 || C.SizeBits > 64 ||
+          (C.SizeBits & (C.SizeBits - 1)) ||
+          (Widths[I] && C.SizeBits != Widths[I]) ||
+          C.ABIAlignBits < 8 || C.ABIAlignBits > C.SizeBits ||
+          (C.ABIAlignBits & (C.ABIAlignBits - 1)))
+        return error(L, "Unsupported carrier size or ABI alignment.");
+    }
+    return true;
+  }
+  // Current records have only ordinary fields, with no bases, packing,
+  // bitfields, custom alignment or lifetime-managed subobjects. Reconstruct
+  // their natural layout from independently verified carriers. Pointer layout
+  // never traverses its pointee, so recursive record pointers are bounded.
+  static constexpr uint64_t MaxLayoutBits = uint64_t(MaxProtocolNodes) * 128;
+  std::optional<StorageLayout> storageLayout(const Type &T) const {
+    const auto &C = Context.ExpectedCarrierLayout->Carriers;
+    switch (T.Kind) {
+    case TypeKind::Bool: return C[0];
+    case TypeKind::Int: return C[5];
+    case TypeKind::UInt: return C[6];
+    case TypeKind::Pointer: return C[9];
+    case TypeKind::Record: {
+      auto It = Records.find(T.RecordID);
+      if (It != Records.end() && It->second->Layout)
+        return It->second->Layout->Storage;
+      return std::nullopt;
+    }
+    case TypeKind::Array: {
+      auto Element = storageLayout(T.Elements[0]);
+      if (!Element || uint64_t(Element->SizeBits) * T.Count > MaxLayoutBits)
+        return std::nullopt;
+      return StorageLayout{Element->SizeBits * T.Count, Element->ABIAlignBits};
+    }
+    default: return std::nullopt;
+    }
+  }
+  bool recordLayout(const Record &R) {
+    if (M.Profile != "cpp-core-v2")
+      return !R.Layout || error(R.Loc, "Record layout evidence requires core v2.");
+    if (!R.Layout || R.Layout->FieldOffsetsBits.size() != R.Fields.size())
+      return error(R.Loc, "Missing record layout or mismatched field offsets.");
+    uint64_t End = 0;
+    uint32_t Align = 8;
+    for (size_t I = 0; I < R.Fields.size(); ++I) {
+      auto Field = storageLayout(R.Fields[I].ValueType);
+      if (!Field)
+        return error(R.Loc, "Record layout exceeds the storage budget.");
+      Align = std::max(Align, Field->ABIAlignBits);
+      uint64_t Offset = (End + Field->ABIAlignBits - 1) /
+                        Field->ABIAlignBits * Field->ABIAlignBits;
+      End = Offset + Field->SizeBits;
+      if (End > MaxLayoutBits || R.Layout->FieldOffsetsBits[I] != Offset)
+        return error(R.Loc, "Record field offset disagrees with target layout.");
+    }
+    End = (End + Align - 1) / Align * Align;
+    if (End > MaxLayoutBits || R.Layout->Storage.SizeBits != End ||
+        R.Layout->Storage.ABIAlignBits != Align)
+      return error(R.Loc, "Record size or alignment disagrees with target layout.");
+    return true;
+  }
+
 public:
   Verifier(const Module &M, const VerificationContext &C, Diagnostics &D)
       : M(M), Context(C), D(D) {}
@@ -1040,7 +1161,7 @@ public:
       return fail(D, "TR0204", Anchor, "target data model",
                   "Frontend and requested native target/data model disagree or "
                   "are unsupported.");
-    if (!mathMetadata(Anchor, T))
+    if (!carrierLayout(Anchor) || !mathMetadata(Anchor, T))
       return false;
     if (M.Dependencies.empty())
       return error(Anchor, "Module must record its input dependency.");
@@ -1070,6 +1191,8 @@ public:
             !type(F.ValueType, R.Loc))
           return error(R.Loc, "Invalid/duplicate field or forward/cyclic "
                               "by-value record dependency.");
+      if (!recordLayout(R))
+        return false;
       Records.emplace(R.ID, &R);
       std::size_t Units = 0;
       bool HasArray = false;

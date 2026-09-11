@@ -61,11 +61,29 @@ Instruction ret(Expr E) {
   I.Value = std::move(E);
   return I;
 }
-Module module() {
+CarrierLayout x64CarrierLayout() {
+  CarrierLayout L;
+  // Explicit x86_64 Linux ABI fixture, independent of module evidence.
+  L.Carriers = {{{8, 8}, {8, 8}, {8, 8}, {16, 16}, {16, 16},
+                 {32, 32}, {32, 32}, {64, 64}, {64, 64}, {64, 64}}};
+  return L;
+}
+std::string carrierLayoutWire() {
+  auto L = x64CarrierLayout();
+  std::string JSON = "{\"char_bits\":8";
+  for (size_t I = 0; I < CarrierNames.size(); ++I)
+    JSON += ",\"" + std::string(CarrierNames[I]) + "\":{\"size_bits\":" +
+            std::to_string(L.Carriers[I].SizeBits) + ",\"abi_align_bits\":" +
+            std::to_string(L.Carriers[I].ABIAlignBits) + "}";
+  return JSON + "}";
+}
+Module module(bool CoreV2 = false) {
   Module M;
-  M.Profile = "cpp-core-v1";
+  M.Profile = CoreV2 ? "cpp-core-v2" : "cpp-core-v1";
   M.Frontend = {CppFrontendName, CppFrontendVersion, "cpp-frontend-1"};
   M.Target = {"x86_64-unknown-linux-gnu", 32, 64, true};
+  if (CoreV2)
+    M.Target.Carriers = x64CarrierLayout();
   M.Dependencies = {{"input.cpp", std::string(64, 'a')}};
   Function F;
   F.Name = "sample";
@@ -77,8 +95,11 @@ Module module() {
   return M;
 }
 VerificationContext context(const Module &M) {
-  return {M.Profile, M.Target.Triple, M.Target.IntBits, M.Target.PointerBits,
-          M.Target.LittleEndian};
+  VerificationContext C{M.Profile, M.Target.Triple, M.Target.IntBits,
+                        M.Target.PointerBits, M.Target.LittleEndian};
+  if (M.Profile == "cpp-core-v2")
+    C.ExpectedCarrierLayout = x64CarrierLayout();
+  return C;
 }
 void invalid(const Module &M, const std::string &Reason = {}) {
   Diagnostics D;
@@ -94,8 +115,8 @@ void invalid(const Module &M, const std::string &Reason = {}) {
   EXPECT_FALSE(emitNC(M, context(M), Output, D));
   EXPECT_EQ(Output.Text, "unchanged");
 }
-std::string wireModule() {
-  return R"json({
+std::string wireModule(bool CoreV2 = false) {
+  std::string JSON = R"json({
   "protocol": 1, "profile": "cpp-core-v1",
   "frontend": {"name": "neverc-cpp-frontend", "version": "20.1.8", "build": "cpp-frontend-1"},
   "target": {"triple": "x86_64-unknown-linux-gnu", "int_bits": 32, "pointer_bits": 64, "little_endian": true},
@@ -110,6 +131,14 @@ std::string wireModule() {
                  "loc": {"file": "input.cpp", "line": 2, "column": 9}}}
     ]}]
 })json";
+  if (CoreV2) {
+    JSON.replace(JSON.find("cpp-core-v1"), std::string("cpp-core-v1").size(),
+                 "cpp-core-v2");
+    auto At = JSON.find("\"little_endian\": true") +
+              std::string("\"little_endian\": true").size();
+    JSON.insert(At, ", \"carrier_layout\":" + carrierLayoutWire());
+  }
+  return JSON;
 }
 void replaceOnce(std::string &S, const std::string &Old,
                  const std::string &New) {
@@ -131,8 +160,7 @@ TEST(TranslateIR, ParsesTypedModuleAndDerivesExports) {
 }
 
 TEST(TranslateIR, CoreV2ParsesVerifiesAndEmitsWithMatchingProfile) {
-  auto JSON = wireModule();
-  replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+  auto JSON = wireModule(true);
   Module M;
   Diagnostics D;
   ASSERT_TRUE(parseModule(JSON, M, D));
@@ -141,6 +169,132 @@ TEST(TranslateIR, CoreV2ParsesVerifiesAndEmitsWithMatchingProfile) {
   ASSERT_TRUE(emitNC(M, context(M), Output, D));
   EXPECT_NE(Output.Text.find("profile cpp-core-v2"), std::string::npos);
   EXPECT_EQ(M.Exports.front().Result, "bool");
+}
+
+TEST(TranslateIR, CoreV2RequiresIndependentCarrierLayout) {
+  auto M = module(true);
+  auto C = context(M);
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, C, Output, D));
+  EXPECT_NE(Output.Text.find("alignof(unsigned long long) * __CHAR_BIT__ == 64"),
+            std::string::npos);
+  EXPECT_NE(Output.Text.find("sizeof(void *) * __CHAR_BIT__ == 64"),
+            std::string::npos);
+  C.ExpectedCarrierLayout.reset();
+  EXPECT_FALSE(verifyModule(M, C, D));
+  M.Target.Carriers.reset();
+  invalid(M, "independent carrier layout");
+  M = module(true);
+  M.Target.Carriers->Carriers[7].ABIAlignBits = 32;
+  invalid(M, "layouts disagree");
+  M = module(true);
+  M.Target.Carriers->Carriers[9].SizeBits = 32;
+  invalid(M, "layouts disagree");
+  // An equally malformed synthetic context must not admit an invalid model.
+  for (auto Bad : {StorageLayout{64, 24}, StorageLayout{128, 64},
+                   StorageLayout{64, 0}, StorageLayout{64, 128}}) {
+    M = module(true);
+    C = context(M);
+    M.Target.Carriers->Carriers[7] = Bad;
+    C.ExpectedCarrierLayout->Carriers[7] = Bad;
+    EXPECT_FALSE(verifyModule(M, C, D));
+  }
+  M = module(true);
+  M.Profile = "cpp-core-v1";
+  invalid(M, "requires core v2");
+}
+
+TEST(TranslateIR, CoreV2LayoutWireRequiresExactFields) {
+  auto Missing = wireModule();
+  replaceOnce(Missing, "cpp-core-v1", "cpp-core-v2");
+  Module M;
+  Diagnostics D;
+  EXPECT_FALSE(parseModule(Missing, M, D));
+  for (const auto &Pair : std::vector<std::pair<std::string, std::string>>{
+           {"\"char_bits\":8", "\"char_bits\":8,\"unknown\":1"},
+           {"\"i8\":", "\"i08\":"},
+           {"\"abi_align_bits\":64", "\"abi_align_bits\":64,\"extra\":0"},
+           {"\"size_bits\":64", "\"size_bits\":-1"},
+           {"\"size_bits\":64", "\"size_bits\":4294967296"},
+           {"cpp-core-v2", "cpp-core-v1"}}) {
+    auto JSON = wireModule(true);
+    replaceOnce(JSON, Pair.first, Pair.second);
+    EXPECT_FALSE(parseModule(JSON, M, D)) << JSON;
+  }
+  auto JSON = wireModule(true);
+  replaceOnce(JSON, "\"abi_align_bits\":64", "\"abi_align_bits\":32");
+  ASSERT_TRUE(parseModule(JSON, M, D));
+  invalid(M, "layouts disagree");
+}
+
+TEST(TranslateIR, CoreV2RecordLayoutChecksOffsetsPaddingAndNestedStorage) {
+  auto M = module(true);
+  Type Inner{TypeKind::Record, "nct_inner"};
+  M.Records = {
+      {"nct_inner", {{"flag", boolType()}, {"value", intType()},
+                      {"tail", boolType()}}, InputLoc,
+       RecordLayout{{96, 32}, {0, 32, 64}}},
+      {"nct_outer", {{"flag", boolType()}, {"items", arrayType(Inner, 2)},
+                      {"pointer", pointerType(Inner)}}, InputLoc,
+       RecordLayout{{320, 64}, {0, 32, 256}}}};
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("sizeof(nct_outer) * __CHAR_BIT__ == 320"),
+            std::string::npos);
+  EXPECT_NE(Output.Text.find("__builtin_offsetof(nct_outer, pointer) * "
+                            "__CHAR_BIT__ == 256"), std::string::npos);
+  auto Base = M;
+  M.Records[0].Layout.reset();
+  invalid(M, "Missing record layout");
+  M = Base;
+  M.Records[0].Layout->FieldOffsetsBits.pop_back();
+  invalid(M, "mismatched field offsets");
+  M = Base;
+  M.Records[1].Layout->FieldOffsetsBits.back() = 224;
+  invalid(M, "field offset disagrees");
+  M = Base;
+  M.Records[0].Layout->Storage.SizeBits = 72;
+  invalid(M, "size or alignment disagrees");
+  M = Base;
+  M.Records[0].Layout->Storage.ABIAlignBits = 8;
+  invalid(M, "size or alignment disagrees");
+  M = Base;
+  M.Records[0].Layout->Storage.SizeBits = UINT32_MAX;
+  invalid(M, "size or alignment disagrees");
+  M = module();
+  M.Records.push_back(Base.Records[0]);
+  invalid(M, "requires core v2");
+}
+
+TEST(TranslateIR, CoreV2RecordLayoutWireRejectsMissingAndMalformedEvidence) {
+  const std::string Record = R"json({"id":"nct_record",
+    "loc":{"file":"input.cpp","line":1,"column":1},
+    "fields":[{"name":"value","type":"int"}],
+    "layout":{"size_bits":32,"abi_align_bits":32,"field_offsets_bits":[0]}})json";
+  auto Base = wireModule(true);
+  replaceOnce(Base, "\"records\": []", "\"records\": [" + Record + "]");
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(Base, M, D));
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  for (const auto &Pair : std::vector<std::pair<std::string, std::string>>{
+           {"\"layout\":", "\"missing\":"},
+           {"\"field_offsets_bits\":[0]", "\"field_offsets_bits\":[-1]"},
+           {"\"field_offsets_bits\":[0]", "\"field_offsets_bits\":[4294967296]"},
+           {"\"field_offsets_bits\":[0]", "\"field_offsets_bits\":[0],\"extra\":1"}}) {
+    auto JSON = Base;
+    replaceOnce(JSON, Pair.first, Pair.second);
+    EXPECT_FALSE(parseModule(JSON, M, D));
+  }
+  auto JSON = Base;
+  replaceOnce(JSON, "\"field_offsets_bits\":[0]", "\"field_offsets_bits\":[8]");
+  ASSERT_TRUE(parseModule(JSON, M, D));
+  invalid(M, "field offset disagrees");
+  JSON = wireModule();
+  replaceOnce(JSON, "\"records\": []", "\"records\": [" + Record + "]");
+  EXPECT_FALSE(parseModule(JSON, M, D));
 }
 
 TEST(TranslateIR, CoreV2CannotSubstituteForAnotherRequestedProfile) {
@@ -171,8 +325,7 @@ TEST(TranslateIR, CoreV2ArrayPointerWireAndDeclarators) {
            {"ptr:arr:3:int", "int (* sample(void))[3]"},
            {"cptr:arr:3:int", "const int (* sample(void))[3]"},
            {"cptr:arr:3:ptr:int", "int *const (* sample(void))[3]"}}) {
-    auto JSON = wireModule();
-    replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+    auto JSON = wireModule(true);
     replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + Pair.first + "\"");
     replaceOnce(JSON, "\"kind\": \"literal\", \"type\": \"bool\", \"value\": true,",
                 "\"kind\": \"null\", \"type\": \"" + Pair.first + "\",");
@@ -193,11 +346,11 @@ TEST(TranslateIR, CoreV2ArrayPointerWireAndDeclarators) {
 }
 
 TEST(TranslateIR, CoreV2ArraysAreStorageAndInitializerSubtrees) {
-  auto M = module();
-  M.Profile = "cpp-core-v2";
+  auto M = module(true);
   auto Array = arrayType(intType(), 2);
   Type Record{TypeKind::Record, "nct_box"};
-  M.Records.push_back({"nct_box", {{"values", Array}}, InputLoc});
+  M.Records.push_back({"nct_box", {{"values", Array}}, InputLoc,
+                       RecordLayout{{64, 32}, {0}}});
   M.Functions[0].Locals.push_back({"nct_object", Record, InputLoc});
   Expr Values = pointerExpr(ExprKind::Aggregate, Array, {literal("1"), literal("2")});
   Expr Whole = pointerExpr(ExprKind::Aggregate, Record, {Values});
@@ -237,11 +390,11 @@ TEST(TranslateIR, CoreV2ArraysAreStorageAndInitializerSubtrees) {
 }
 
 TEST(TranslateIR, CoreV2ArrayDecayAndIndexRetainConstStorage) {
-  auto M = module();
-  M.Profile = "cpp-core-v2";
+  auto M = module(true);
   auto Array = arrayType(intType(), 2);
   Type Record{TypeKind::Record, "nct_box"};
-  M.Records.push_back({"nct_box", {{"values", Array}}, InputLoc});
+  M.Records.push_back({"nct_box", {{"values", Array}}, InputLoc,
+                       RecordLayout{{64, 32}, {0}}});
   auto View = pointerType(Record, true);
   M.Functions[0].Params.push_back({"nct_view", View, InputLoc});
   auto Field = pointerExpr(ExprKind::Member, Array,
@@ -274,11 +427,12 @@ TEST(TranslateIR, CoreV2ArrayDecayAndIndexRetainConstStorage) {
 }
 
 TEST(TranslateIR, CoreV2ArrayElementsNeedCompletenessAndBoundedStorage) {
-  auto M = module();
-  M.Profile = "cpp-core-v2";
+  auto M = module(true);
   Type Later{TypeKind::Record, "nct_later"};
-  M.Records = {{"nct_first", {{"items", arrayType(pointerType(Later), 3)}}, InputLoc},
-               {"nct_later", {{"value", intType()}}, InputLoc}};
+  M.Records = {{"nct_first", {{"items", arrayType(pointerType(Later), 3)}}, InputLoc,
+                RecordLayout{{192, 64}, {0}}},
+               {"nct_later", {{"value", intType()}}, InputLoc,
+                RecordLayout{{32, 32}, {0}}}};
   Diagnostics D;
   EXPECT_TRUE(verifyModule(M, context(M), D));
   M.Records[0].Fields[0].ValueType = pointerType(arrayType(Later, 3));
@@ -306,6 +460,7 @@ TEST(TranslateIR, ArrayIRRejectsMalformedTypesAndNonaddressableDecay) {
   M.Functions[0].Locals.push_back({"nct_array", Array, InputLoc});
   invalid(M, "Array types require core v2");
   M.Profile = "cpp-core-v2";
+  M.Target.Carriers = x64CarrierLayout();
   auto Malformed = Array;
   Malformed.PointeeConst = true;
   M.Functions[0].Locals[0].ValueType = Malformed;
@@ -316,7 +471,8 @@ TEST(TranslateIR, ArrayIRRejectsMalformedTypesAndNonaddressableDecay) {
   invalid(M, "Array types require");
   M.Functions[0].Locals[0].ValueType = Array;
   Type Record{TypeKind::Record, "nct_box"};
-  M.Records.push_back({"nct_box", {{"values", Array}}, InputLoc});
+  M.Records.push_back({"nct_box", {{"values", Array}}, InputLoc,
+                       RecordLayout{{64, 32}, {0}}});
   auto Values = pointerExpr(ExprKind::Aggregate, Array,
                             {literal("1"), literal("2")});
   auto Whole = pointerExpr(ExprKind::Aggregate, Record, {Values});
@@ -339,8 +495,7 @@ TEST(TranslateIR, CoreV2ParsesPointerTypesAndEmitsNestedConstDeclarators) {
            {"cptr:ptr:int", "int *const * sample(void)"},
            {"ptr:cptr:int", "const int * * sample(void)"},
            {"ptr:void", "void * sample(void)"}}) {
-    auto JSON = wireModule();
-    replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+    auto JSON = wireModule(true);
     replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + Pair.first + "\"");
     replaceOnce(JSON, "\"kind\": \"literal\", \"type\": \"bool\", \"value\": true,",
                 "\"kind\": \"null\", \"type\": \"" + Pair.first + "\",");
@@ -362,8 +517,7 @@ TEST(TranslateIR, CoreV2BoundsPointerWireTypesAndRejectsMalformedTrees) {
   Deep += "int";
   for (const auto &Spelling :
        std::vector<std::string>{"ptr:", "cptr::int", Deep, std::string(4097, 'a')}) {
-    auto JSON = wireModule();
-    replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+    auto JSON = wireModule(true);
     replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + Spelling + "\"");
     Module M;
     Diagnostics D;
@@ -381,16 +535,14 @@ TEST(TranslateIR, CoreV2BoundsPointerWireTypesAndRejectsMalformedTrees) {
     DeepType = pointerType(std::move(DeepType));
   BadTypes.push_back(std::move(DeepType));
   for (auto T : BadTypes) {
-    auto M = module();
-    M.Profile = "cpp-core-v2";
+    auto M = module(true);
     M.Functions[0].Result = std::move(T);
     invalid(M);
   }
 }
 
 TEST(TranslateIR, CoreV2VerifiesPointerAddressesAndConstWrites) {
-  auto M = module();
-  M.Profile = "cpp-core-v2";
+  auto M = module(true);
   auto Pointer = pointerType(intType());
   auto &F = M.Functions[0];
   F.Params.push_back({"nct_p", Pointer, InputLoc});
@@ -429,11 +581,11 @@ TEST(TranslateIR, CoreV2VerifiesPointerAddressesAndConstWrites) {
 }
 
 TEST(TranslateIR, CoreV2ConstRecordDoesNotMakeItsPointerPointeeConst) {
-  auto M = module();
-  M.Profile = "cpp-core-v2";
+  auto M = module(true);
   Type RecordType{TypeKind::Record, "nct_box"};
   Type Pointer = pointerType(intType());
-  M.Records.push_back({"nct_box", {{"value", Pointer}}, InputLoc});
+  M.Records.push_back({"nct_box", {{"value", Pointer}}, InputLoc,
+                       RecordLayout{{64, 64}, {0}}});
   Type View = pointerType(RecordType, true);
   M.Functions[0].Params.push_back({"nct_box_pointer", View, InputLoc});
   Expr Field = pointerExpr(ExprKind::Member, Pointer,
@@ -454,11 +606,12 @@ TEST(TranslateIR, CoreV2ConstRecordDoesNotMakeItsPointerPointeeConst) {
 }
 
 TEST(TranslateIR, CoreV2DistinguishesPointerGraphsFromByValueCycles) {
-  auto M = module();
-  M.Profile = "cpp-core-v2";
+  auto M = module(true);
   Type A{TypeKind::Record, "nct_a"}, B{TypeKind::Record, "nct_b"};
-  M.Records = {{"nct_a", {{"next", pointerType(B)}}, InputLoc},
-               {"nct_b", {{"next", pointerType(A)}}, InputLoc}};
+  M.Records = {{"nct_a", {{"next", pointerType(B)}}, InputLoc,
+                RecordLayout{{64, 64}, {0}}},
+               {"nct_b", {{"next", pointerType(A)}}, InputLoc,
+                RecordLayout{{64, 64}, {0}}}};
   Diagnostics D;
   EmittedSource Output;
   ASSERT_TRUE(emitNC(M, context(M), Output, D));
@@ -475,16 +628,14 @@ TEST(TranslateIR, CoreV2RejectsPointerIntegerCastsAndOrdering) {
   for (const auto &Pair : std::vector<std::pair<Type, Type>>{
            {Pointer, intType()}, {intType(), Pointer},
            {boolType(), Pointer}, {Pointer, pointerType(boolType())}}) {
-    auto M = module();
-    M.Profile = "cpp-core-v2";
+    auto M = module(true);
     M.Functions[0].Result = Pair.second;
     M.Functions[0].Params.push_back({"nct_value", Pair.first, InputLoc});
     M.Functions[0].Body.back() = ret(pointerExpr(
         ExprKind::Cast, Pair.second, {variable("nct_value", Pair.first)}));
     invalid(M, "pointer conversion");
   }
-  auto M = module();
-  M.Profile = "cpp-core-v2";
+  auto M = module(true);
   M.Functions[0].Result = boolType();
   auto Null = pointerExpr(ExprKind::Null, Pointer);
   M.Functions[0].Body.back() = ret(binary(BinaryOperator::Equal, Null, Null, boolType()));
@@ -512,8 +663,7 @@ TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
            pointerExpr(ExprKind::Dereference, boolType(), {Null}),
            pointerExpr(ExprKind::Dereference, intType(),
                         {pointerExpr(ExprKind::Null, pointerType({TypeKind::Void, {}}))})}) {
-    auto M = module();
-    M.Profile = "cpp-core-v2";
+    auto M = module(true);
     M.Functions[0].Result = Value.ValueType;
     M.Functions[0].Body.back() = ret(Value);
     invalid(M);
@@ -521,8 +671,7 @@ TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
 }
 
 TEST(TranslateIR, CoreV2RetainsSingleUnitAndNoMathContract) {
-  Module Base = module();
-  Base.Profile = "cpp-core-v2";
+  Module Base = module(true);
   Module M = Base;
   M.Dependencies.push_back({"owned.hpp", std::string(64, 'b')});
   invalid(M, "exactly one source dependency");
@@ -551,8 +700,7 @@ TEST(TranslateIR, CoreV2WireRejectsMathEvidenceBeforeEmission) {
            "\"sdk_catalog_sha256\":\"unapproved\",",
            "\"sdk_dependencies\":[],"}) {
     SCOPED_TRACE(Extra);
-    auto JSON = wireModule();
-    replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+    auto JSON = wireModule(true);
     replaceOnce(JSON, "\"records\": []", std::string(Extra) + "\"records\": []");
     Module M;
     Diagnostics D;

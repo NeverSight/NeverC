@@ -51,6 +51,26 @@ def main():
             assert result.returncode == 0 and not codes, (name, result.returncode, data)
             assert data["profile"] == profile
             assert data["target"]["triple"] == args.target
+            if profile == "cpp-core-v2":
+                layout = data["target"]["carrier_layout"]
+                widths = {"i8": 8, "u8": 8, "i16": 16, "u16": 16,
+                          "int": 32, "uint": 32, "i64": 64, "u64": 64,
+                          "bool": 8, "default-pointer": data["target"]["pointer_bits"]}
+                assert set(layout) == {"char_bits", *widths}
+                assert layout["char_bits"] == 8
+                for carrier, width in widths.items():
+                    entry = layout[carrier]
+                    assert set(entry) == {"size_bits", "abi_align_bits"}
+                    assert entry["size_bits"] == width
+                    align = entry["abi_align_bits"]
+                    assert 8 <= align <= width and align & (align - 1) == 0
+                for record in data["records"]:
+                    record_layout = record["layout"]
+                    assert set(record_layout) == {"size_bits", "abi_align_bits", "field_offsets_bits"}
+                    assert len(record_layout["field_offsets_bits"]) == len(record["fields"])
+            else:
+                assert "carrier_layout" not in data["target"]
+                assert all("layout" not in record for record in data["records"])
             assert data["dependencies"][0]["path"] == "input.cpp"
             before = response.read_bytes()
             again = subprocess.run([str(args.neverc), "__neverc_cpp_frontend", "--request", str(request),

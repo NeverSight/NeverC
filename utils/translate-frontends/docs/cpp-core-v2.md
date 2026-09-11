@@ -163,6 +163,36 @@ int main() {
 }
 ```
 
+## Verified target and record layout
+
+Experimental core v2 now requires `target.carrier_layout` in frontend responses
+and manifests. It contains `char_bits: 8` and exact `size_bits`/`abi_align_bits`
+entries named `bool`, `i8`, `u8`, `i16`, `u16`, `int`, `uint`, `i64`, `u64` and
+`default-pointer`. These name the native emission carriers; the layout table
+alone does not add new source integer types. Core v2 still admits the source
+types described above.
+
+The driver independently constructs NeverC's target model for its recorded
+C23 validation options. The verifier compares all source carrier evidence
+against this model; a matching triple alone is insufficient. Missing, unknown
+or mismatching layout fields are rejected. Source sizes and ABI alignments
+must agree, with supported byte sizes and power-of-two alignment.
+
+Each response record also requires `layout` containing `size_bits`,
+`abi_align_bits` and `field_offsets_bits` in declaration order. The verifier
+reconstructs the natural layout of the currently supported plain aggregates
+from matched carriers, arrays and earlier records. Arithmetic is bounded;
+layout size is at most 25,600,000 bits and field offsets must agree exactly.
+This does not admit packing, custom alignment, bases or bitfields.
+
+Generated `sizeof`, `alignof` and `__builtin_offsetof` static assertions check
+these values again in both syntax and object validation. The manifest retains
+the same record evidence in `record_layouts`, with each record's emitted `id`.
+Existing v1 profiles reject the new metadata. Older experimental v2 responses
+without layout evidence must be regenerated; protocol/schema major 1 and
+profile version 2 remain unchanged. Core v2 still emits a single source file;
+a separate generated header belongs to project mode.
+
 ## Remaining scope and wire representation
 
 Additional integer widths, floating-point types,
@@ -190,7 +220,8 @@ local declarations, pointer/reference aliasing with inlining disabled, nested
 const, nulls, reference-return assignment, array initialization and indexing order,
 multidimensional arrays, temporary array reads, switch dispatch/fallthrough,
 nested case entry and loop control, constant selectors, resource limits, unsupported
-bindings, malformed IR,
+bindings, malformed IR, independent carrier/record layout evidence,
+compiled layout assertions,
 old-profile rejection and consumer profile/version boundaries. CI evidence must
 be recorded against the
 revision that runs these cases; earlier core v1 CI results do not establish

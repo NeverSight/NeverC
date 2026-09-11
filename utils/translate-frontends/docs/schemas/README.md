@@ -16,6 +16,11 @@ must reject incompatible major versions.
   diagnostics. Reports may contain machine-specific error detail and are not
   part of reproducible semantic output.
 
+Core v2 manifests require `target.carrier_layout` and `record_layouts`.
+The compiler independently verifies carrier and record layout evidence and
+emits static layout assertions. V1 profiles reject these fields; older
+experimental v2 output must be regenerated with the current built-in frontend.
+
 The production C++ verifier additionally validates semantic references, types,
 operators, identifier namespaces, target consistency, normalized paths, and
 resource limits. JSON Schema does not express those invariants by itself.

@@ -95,6 +95,250 @@
         },
         "little_endian": {
           "type": "boolean"
+        },
+        "carrier_layout": {
+          "type": "object",
+          "properties": {
+            "char_bits": {
+              "const": 8
+            },
+            "bool": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    8,
+                    16,
+                    32,
+                    64
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8,
+                    16,
+                    32,
+                    64
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            },
+            "i8": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    8
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            },
+            "u8": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    8
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            },
+            "i16": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    16
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8,
+                    16
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            },
+            "u16": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    16
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8,
+                    16
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            },
+            "int": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    32
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8,
+                    16,
+                    32
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            },
+            "uint": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    32
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8,
+                    16,
+                    32
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            },
+            "i64": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    64
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8,
+                    16,
+                    32,
+                    64
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            },
+            "u64": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    64
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8,
+                    16,
+                    32,
+                    64
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            },
+            "default-pointer": {
+              "type": "object",
+              "properties": {
+                "size_bits": {
+                  "enum": [
+                    32,
+                    64
+                  ]
+                },
+                "abi_align_bits": {
+                  "enum": [
+                    8,
+                    16,
+                    32,
+                    64
+                  ]
+                }
+              },
+              "required": [
+                "size_bits",
+                "abi_align_bits"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "char_bits",
+            "bool",
+            "i8",
+            "u8",
+            "i16",
+            "u16",
+            "int",
+            "uint",
+            "i64",
+            "u64",
+            "default-pointer"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -496,6 +740,50 @@
     },
     "builtin_std_enabled": {
       "type": "boolean"
+    },
+    "record_layouts": {
+      "type": "array",
+      "maxItems": 200000,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "size_bits": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 25600000,
+            "multipleOf": 8
+          },
+          "abi_align_bits": {
+            "enum": [
+              8,
+              16,
+              32,
+              64
+            ]
+          },
+          "field_offsets_bits": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200000,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 25600000,
+              "multipleOf": 8
+            }
+          }
+        },
+        "required": [
+          "id",
+          "size_bits",
+          "abi_align_bits",
+          "field_offsets_bits"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
@@ -642,6 +930,43 @@
         "properties": {
           "profile_version": {
             "const": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "cpp-core-v2"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "record_layouts"
+        ],
+        "properties": {
+          "target": {
+            "required": [
+              "carrier_layout"
+            ]
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "record_layouts"
+          ]
+        },
+        "properties": {
+          "target": {
+            "not": {
+              "required": [
+                "carrier_layout"
+              ]
+            }
           }
         }
       }
