@@ -315,6 +315,26 @@ def microsoft_std_entity(demangled):
     return _microsoft_declaration_std_owner(demangled.strip())
 
 
+def microsoft_std_eh_entity(name):
+    """Recognize plain-class CTA/TI owners under the shared-std policy.
+
+    Clang's MicrosoftMangle.cpp writes a decimal entry count followed by the
+    thrown type. Qualified identifiers are encoded from inner to outer scope.
+    This checks ownership, not record layout or ABI equivalence. Templates,
+    backreferences, TI qualifiers and CT records need separate handling.
+    """
+    if len(name) > MICROSOFT_DECLARATION_LIMIT:
+        return False
+    match = re.fullmatch(r"_(?:CTA|TI)(0|[1-9][0-9]{0,9})\?AV(.+)@@", name)
+    if match is None or int(match.group(1)) > 0xFFFFFFFF:
+        return False
+    components = match.group(2).split("@")
+    return (2 <= len(components) <= MICROSOFT_NESTING_LIMIT
+            and components[-1] == "std"
+            and all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", part)
+                    for part in components))
+
+
 def global_cpp_record_entity(symbol, declaration, record):
     """Recognize explicit global record identities, never a name substring.
 
@@ -667,6 +687,13 @@ def audit(args):
             # exception until equivalent evidence is available.
             if (host_format == "nm" and name in STRDUP_SYMBOLS
                     and name in references and name not in definitions):
+                continue
+            # CTA/TI names retain their std type identity in both archives.
+            # Only observed private read-only definitions may use this policy;
+            # a host nm definition (often W) is not evidence of its object kind.
+            if (host_format == "nm" and name not in references
+                    and private_kinds[name] == {"R"}
+                    and microsoft_std_eh_entity(name)):
                 continue
             if not standard_shared_symbol(name, private_decoded.get(name, "")):
                 bad.append("private/host symbol intersection: " + name +

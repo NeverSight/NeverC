@@ -1609,6 +1609,111 @@ public:
                 self.audit_inventory([(name, "R", name)],
                                      [(name, "W", name)], "nm")
 
+    def test_microsoft_std_eh_simple_owners_and_count_bounds(self):
+        for prefix in ("_CTA", "_TI"):
+            for spelling in ("0?AVerror@std@@", "4294967295?AVerror@std@@",
+                             "12?AV_Error1@nested_2@std@@",
+                             "2?AVerror@" + "nested@" * 30 + "std@@"):
+                name = prefix + spelling
+                with self.subTest(name=name):
+                    self.audit_inventory([(name, "R", name)],
+                                         [(name, "W", name)], "nm")
+
+    def test_microsoft_std_eh_rejects_unknown_or_malformed_names(self):
+        spellings = (
+            "2?AVerror@Host@@",
+            "2?AVerror@std@Host@@",
+            "2?AVerror@std_extra@@",
+            "2?AVstd@@",
+            "2?AVerror@@",
+            "2?AVerror@@std@@",
+            "2?AVerror@std@@suffix",
+            "2?AVerror@std@@@",
+            "2?AVerror@std@",
+            "2?AVerror@0@@",
+            "2?AVerror@0@std@@",
+            "2?AV?$error@H@std@@",
+            "2?AVerror@?$owner@H@std@@",
+            "2?AVerror@?A0x1234@std@@",
+            "2?AVerror$1@std@@",
+            "2?AV9error@std@@",
+            "2?AVerror@std::@@",
+            "2?AUerror@std@@",
+            "2?ATerror@std@@",
+            "2?AW4error@std@@",
+            "2?BVerror@std@@",
+            "?AVerror@std@@",
+            "00?AVerror@std@@",
+            "02?AVerror@std@@",
+            "+2?AVerror@std@@",
+            "-2?AVerror@std@@",
+            "0x2?AVerror@std@@",
+            "\u0662?AVerror@std@@",
+            "4294967296?AVerror@std@@",
+            "10000000000?AVerror@std@@",
+            "C2?AVerror@std@@",
+            "V2?AVerror@std@@",
+            "U2?AVerror@std@@",
+            "CVU2?AVerror@std@@",
+            "2?AV" + "a" * 65536 + "@std@@",
+            "2?AVerror@" + "nested@" * 31 + "std@@",
+        )
+        for prefix in ("_CTA", "_TI"):
+            for spelling in spellings:
+                name = prefix + spelling
+                with self.subTest(prefix=prefix, spelling=spelling[:100]):
+                    with self.assertRaisesRegex(
+                            ValueError, "private/host symbol intersection"):
+                        self.audit_inventory([(name, "R", name)],
+                                             [(name, "W", name)], "nm")
+
+    def test_microsoft_std_eh_requires_only_read_only_definitions(self):
+        for name in ("_CTA2?AVbad_cast@std@@", "_TI2?AVbad_cast@std@@"):
+            for kinds in (("U",), ("w",), ("v",), ("B",), ("D",), ("T",),
+                          ("W",), ("V",), ("R", "U"), ("U", "R"),
+                          ("R", "w"), ("R", "v"), ("R", "B"),
+                          ("R", "D"), ("R", "T"), ("R", "W"), ("R", "V")):
+                with self.subTest(name=name, kinds=kinds):
+                    with self.assertRaisesRegex(
+                            ValueError, "private/host symbol intersection"):
+                        self.audit_inventory([(name, kind, name) for kind in kinds],
+                                             [(name, "W", name)], "nm")
+
+    def test_microsoft_std_eh_does_not_share_other_runtime_records(self):
+        records = (
+            ("_CT??_R0?AVbad_cast@std@@@8??0bad_cast@std@@QEAA@AEBV01@@Z24", "R"),
+            ("__real@3ff0000000000000", "R"),
+            ("__local_stdio_printf_options", "T"),
+            ("__local_stdio_scanf_options", "T"),
+            ("fprintf", "T"), ("sprintf_s", "T"), ("snprintf", "T"),
+            ("_snprintf", "T"), ("sscanf", "T"),
+            ("?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA", "B"),
+            ("?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA", "B"),
+            ("_Avx2WmemEnabledWeakValue", "B"),
+        )
+        for name, kind in records:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(
+                        ValueError, "private/host symbol intersection"):
+                    self.audit_inventory([(name, kind, name)],
+                                         [(name, "W", name)], "nm")
+
+    def test_microsoft_std_eh_sharing_preserves_independent_private_findings(self):
+        for name in ("_CTA2?AVbad_cast@std@@", "_TI2?AVbad_cast@std@@"):
+            for old, _ in SETUP_GUID_PAIRS:
+                with self.subTest(name=name, setup_guid=old):
+                    with self.assertRaisesRegex(
+                            ValueError, "unisolated Setup GUID symbol: " + old):
+                        self.audit_inventory([(name, "R", name), (old, "R", old)],
+                                             [(name, "W", name), (old, "R", old)],
+                                             "nm")
+            with self.subTest(name=name, llvm_symbol="LLVMContextCreate"):
+                with self.assertRaisesRegex(ValueError, "LLVMContextCreate"):
+                    self.audit_inventory(
+                        [(name, "R", name),
+                         ("LLVMContextCreate", "T", "LLVMContextCreate")],
+                        [(name, "W", name)], "nm")
+
     def test_microsoft_nonstandard_owners_cannot_hide_in_nested_quotes(self):
         declarations = (
             "int `class std::string __cdecl Host::get(void)'::`2'::$TSS0",
