@@ -110,13 +110,25 @@ std::string Adapter::name(const NamedDecl *D) {
   return Name;
 }
 
-std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid) {
+std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
+                          unsigned Depth) {
+  if (Depth > 64) {
+    reject(L, "type", "Pointer type nesting exceeds the protocol limit.");
+    return {};
+  }
   if (T.isVolatileQualified() || T->isAtomicType() || T.isRestrictQualified()) {
     reject(L, "qualified type",
            "Volatile, atomic and restrict-qualified types are unsupported.");
     return {};
   }
   const Type *C = T.getCanonicalType().getTypePtr();
+  if (S.coreV2() && (C->isPointerType() || C->isLValueReferenceType())) {
+    QualType Pointee = C->getPointeeType();
+    auto Element = type(Pointee, L, C->isPointerType(), Depth + 1);
+    if (Element.empty())
+      return {};
+    return std::string(Pointee.isConstQualified() ? "cptr:" : "ptr:") + Element;
+  }
   if (const auto *B = dyn_cast<BuiltinType>(C)) {
     switch (B->getKind()) {
     case BuiltinType::Int:
@@ -155,8 +167,8 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid) {
       return name(D);
   }
   reject(L, "type",
-         "Only int, unsigned int, bool, void results and supported records are "
-         "admitted.");
+         "Only the documented scalar, record and core v2 pointer/reference "
+         "types are admitted.");
   return {};
 }
 
@@ -178,6 +190,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
   if (Kind == "double")
     return floatingLiteral(llvm::APFloat::getZero(llvm::APFloat::IEEEdouble()),
                            L);
+  if (T->isPointerType())
+    return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
     for (const auto *F : R->getDefinition()->fields())
@@ -215,6 +229,37 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   bool owned(const Decl *D) {
     return !D->isImplicit() && A.S.owns(A.Sources, D->getLocation());
+  }
+  // Follow the identity of an lvalue, not arbitrary call arguments. A by-value
+  // temporary passed to a function returning some other live object is safe.
+  bool temporaryBinding(const Expr *E) {
+    E = E->IgnoreParens();
+    if (isa<MaterializeTemporaryExpr, CXXBindTemporaryExpr>(E))
+      return true;
+    if (const auto *C = dyn_cast<CastExpr>(E))
+      return temporaryBinding(C->getSubExpr());
+    if (const auto *W = dyn_cast<ExprWithCleanups>(E))
+      return temporaryBinding(W->getSubExpr());
+    if (const auto *M = dyn_cast<MemberExpr>(E))
+      return !M->isArrow() && temporaryBinding(M->getBase());
+    if (const auto *C = dyn_cast<ConditionalOperator>(E))
+      return temporaryBinding(C->getTrueExpr()) ||
+             temporaryBinding(C->getFalseExpr());
+    if (const auto *B = dyn_cast<BinaryOperator>(E)) {
+      if (B->getOpcode() == BO_Comma)
+        return temporaryBinding(B->getRHS());
+      if (B->isAssignmentOp())
+        return temporaryBinding(B->getLHS());
+    }
+    if (const auto *U = dyn_cast<UnaryOperator>(E);
+        U && U->isIncrementDecrementOp())
+      return temporaryBinding(U->getSubExpr());
+    return !E->isLValue();
+  }
+  void checkBinding(const Expr *E) {
+    if (E && temporaryBinding(E))
+      A.reject(E->getExprLoc(), "reference binding",
+               "Binding references to temporaries requires lifetime lowering.");
   }
 
 public:
@@ -316,6 +361,14 @@ public:
     if (!owned(D))
       return true;
     A.type(D->getType(), D->getLocation());
+    if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
+      checkBinding(D->getInit());
+    if (!D->isLocalVarDeclOrParm() &&
+        (D->getType()->isPointerType() || D->getType()->isReferenceType())) {
+      A.reject(D->getLocation(), "global variable",
+               "Pointer/reference globals require global lifetime lowering.");
+      return true;
+    }
     if (D->getTLSKind() != VarDecl::TLS_None || D->isStaticLocal() ||
         (D->isLocalVarDecl() && D->hasExternalStorage()))
       A.reject(D->getLocation(), "storage duration",
@@ -371,10 +424,10 @@ public:
       return true;
     A.type(D->getType(), D->getLocation());
     if (D->isBitField() || D->hasInClassInitializer() || D->isMutable() ||
-        D->getType().isConstQualified())
+        D->getType().isConstQualified() || D->getType()->isReferenceType())
       A.reject(D->getLocation(), "field",
-               "Bitfields, mutable/const fields and default field initializers "
-               "are unsupported.");
+               "Bitfields, mutable/const/reference fields and default field "
+               "initializers are unsupported.");
     return true;
   }
   bool VisitStmt(Stmt *S) {
@@ -393,7 +446,16 @@ public:
           case CK_IntegralCast:
           case CK_IntegralToBoolean:
           case CK_FunctionToPointerDecay:
+          case CK_NullToPointer:
+          case CK_PointerToBoolean:
             break;
+          case CK_BitCast:
+            if (C->getType()->isPointerType() &&
+                C->getSubExpr()->getType()->isPointerType() &&
+                (C->getType()->getPointeeType()->isVoidType() ||
+                 C->getSubExpr()->getType()->getPointeeType()->isVoidType()))
+              break;
+            [[fallthrough]];
           default:
             A.reject(E->getExprLoc(), "cast",
                      "This cast operation is outside the core v2 profile.");
@@ -402,11 +464,14 @@ public:
       const auto *Cast = dyn_cast<ImplicitCastExpr>(E);
       bool FunctionDecay =
           Cast && Cast->getCastKind() == CK_FunctionToPointerDecay;
-      if (!FunctionDecay && !E->getType()->isFunctionType())
+      if (!FunctionDecay && !E->getType()->isFunctionType() &&
+          !(A.S.coreV2() &&
+            isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())))
         A.type(E->getType(), E->getExprLoc(), true);
     }
     if (!(A.S.math() && isa<FloatingLiteral>(S)) &&
-        !(A.S.coreV2() && isa<ConstantExpr>(S)) &&
+        !(A.S.coreV2() &&
+          isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -419,6 +484,10 @@ public:
                "Expression or statement is outside the selected profile.");
     if (const auto *C = dyn_cast<CallExpr>(S)) {
       const auto *F = C->getDirectCallee();
+      if (A.S.coreV2() && F && !isa<CXXMethodDecl>(F))
+        for (unsigned I = 0; I < C->getNumArgs() && I < F->getNumParams(); ++I)
+          if (F->getParamDecl(I)->getType()->isReferenceType())
+            checkBinding(C->getArg(I));
       if (A.S.math() && F &&
           (F->getBuiltinID() || !A.S.owns(A.Sources, F->getLocation()))) {
         if (A.mapping(C).empty())
@@ -453,14 +522,29 @@ public:
             S->getBeginLoc(), "construction",
             "Only implicit trivial aggregate construction/copy is supported.");
     if (const auto *U = dyn_cast<UnaryOperator>(S))
-      if (U->getOpcode() == UO_AddrOf || U->getOpcode() == UO_Deref ||
+      if ((!A.S.coreV2() &&
+           (U->getOpcode() == UO_AddrOf || U->getOpcode() == UO_Deref)) ||
+          (U->isIncrementDecrementOp() && U->getType()->isPointerType()) ||
           U->getOpcode() == UO_Extension)
         A.reject(S->getBeginLoc(), "unary operator",
-                 "Pointers and GNU extension expressions are unsupported.");
+                 "This pointer operation or GNU extension is unsupported.");
     if (const auto *M = dyn_cast<MemberExpr>(S))
-      if (M->isArrow() || !isa<FieldDecl>(M->getMemberDecl()))
+      if ((!A.S.coreV2() && M->isArrow()) ||
+          !isa<FieldDecl>(M->getMemberDecl()))
         A.reject(S->getBeginLoc(), "member access",
                  "Only direct aggregate field access is supported.");
+    if (A.S.coreV2()) {
+      if (const auto *R = dyn_cast<ReturnStmt>(S);
+          R && R->getRetValue() && R->getRetValue()->isGLValue())
+        checkBinding(R->getRetValue());
+      if (const auto *B = dyn_cast<BinaryOperator>(S);
+          B && (B->getLHS()->getType()->isPointerType() ||
+                B->getRHS()->getType()->isPointerType()) &&
+          B->getOpcode() != BO_Assign && B->getOpcode() != BO_Comma &&
+          B->getOpcode() != BO_EQ && B->getOpcode() != BO_NE)
+        A.reject(S->getBeginLoc(), "pointer binary operator",
+                 "Pointer arithmetic, difference and ordering are unsupported.");
+    }
     if (A.S.math()) {
       if (const auto *U = dyn_cast<UnaryOperator>(S);
           U && U->getSubExpr()->getType()->isRealFloatingType() &&

@@ -79,6 +79,18 @@ def main():
         "opaque-enum": "enum class E:unsigned int; unsigned int f(){E e=static_cast<E>(23u); return static_cast<unsigned int>(e);}",
         "unsigned-unscoped": "enum E:unsigned int{v=0xffffffffu}; int main(){return v+1==0u && v==-1 ? 0:1;}",
     }
+    core_v2.update({
+        "pointer-alias": "using P=int*; void f(P p){*p=3;}",
+        "reference-return": "int& f(int&x){return x;} int main(){int x=1; f(x)=7; return x-7;}",
+        "pointer-reference": "int*& f(int*&p){return p;} int main(){int x=3; int *p=nullptr; f(p)=&x; return *p-3;}",
+        "const-pointee": "int f(const int*p){return *p;} int main(){const int x=7; return f(&x)-7;}",
+        "null-pointer": "int main(){int*p=((nullptr)); int*q{}; return p!=q || p!=0 || !!p;}",
+        "pointer-cast": "int main(){int x=7; void*p=&x; return *static_cast<int*>(p)-7;}",
+        "const-cast": "int main(){int x=7; const int& r=x; const_cast<int&>(r)=9; return x-9;}",
+        "self-pointer": "struct R{R*next; int value;}; int main(){R r{nullptr,7}; r.next=&r; return r.next->value-7;}",
+        "forward-pointer": "struct B; struct A{B*b;}; struct B{A*a;}; int main(){A a{}; B b{&a}; a.b=&b; return a.b->a!=&a;}",
+        "enum-pointer": "enum class E:int{v=7}; int main(){E e=E::v; E*p=&e; return static_cast<int>(*p)-7;}",
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     for name, source in {
@@ -88,7 +100,7 @@ def main():
     }.items():
         check("v1-still-rejects-" + name, source, "TR0201")
     v2_rejections = {
-        "unused-pointer-alias": "using Hidden=int*; int main(){}",
+        "unsupported-pointer-alias": "using Hidden=char*; int main(){}",
         "unused-volatile-alias": "using Hidden=volatile int; int main(){}",
         "unused-function-alias": "using Hidden=void(); int main(){}",
         "alias-template": "template<class T> using Hidden=T; int main(){}",
@@ -100,6 +112,23 @@ def main():
         "folded-assert-type": "static_assert(1L==1L,\"condition\"); int main(){}",
         "runtime-string": "static_assert(true,\"message\"); const char *s=\"runtime\"; int main(){}",
     }
+    v2_rejections.update({
+        "temporary-reference": "int f(){const int&r=1; return r;}",
+        "dead-temporary-reference": "int f(){if(false){const int&r=1;} return 0;}",
+        "conversion-temporary": "int f(){int x=1; const unsigned int&r=x; return r;}",
+        "temporary-subobject": "struct R{int x;}; int f(){const int&r=R{1}.x; return r;}",
+        "temporary-reference-argument": "int f(const int&r){return r;} int main(){return f(1);}",
+        "rvalue-reference": "int f(int&&r){return r;}",
+        "reference-field": "struct R{int&r;};",
+        "pointer-global": "int*const p=nullptr;",
+        "reference-global": "const int x=1; const int&r=x;",
+        "pointer-arithmetic": "int*f(int*p){return p+1;}",
+        "pointer-ordering": "bool f(int*a,int*b){return a<b;}",
+        "pointer-integer": "unsigned long long f(int*p){return (unsigned long long)p;}",
+        "integer-pointer": "int*f(int x){return (int*)x;}",
+        "unrelated-pointer-cast": "bool*f(int*p){return (bool*)p;}",
+        "standalone-null-type": "int main(){auto p=nullptr;}",
+    })
     for name, source in v2_rejections.items():
         check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")
     check("v2-failed-assert", "static_assert(false,\"must fail\"); int main(){}",

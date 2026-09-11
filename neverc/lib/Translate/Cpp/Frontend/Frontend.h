@@ -85,7 +85,7 @@ public:
   json::Object evidence(const clang::NamedDecl *D, llvm::StringRef Kind);
   void addProjectMetadata();
   std::string type(clang::QualType T, clang::SourceLocation L,
-                   bool AllowVoid = false);
+                   bool AllowVoid = false, unsigned Depth = 0);
   json::Object literal(const llvm::APSInt &Value, llvm::StringRef Type,
                        clang::SourceLocation L);
   json::Object floatingLiteral(const llvm::APFloat &Value,

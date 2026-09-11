@@ -19,7 +19,7 @@ neverc output.nc -c -o output.o
 
 `cpp-core-v1` は include のない単一の C++17 ソースを受け付けます。`int`、`unsigned int`、`bool`、`void`、単純な集成体型、非メンバー関数、名前空間、オーバーロード、および文書化された制御フローをサポートします。未使用のコードを含め、入力に含まれるすべての宣言を検査します。
 
-`--profile cpp-core-v2` を選択すると、検査済みの `typedef`／`using` 型エイリアス、基底型が 32 ビットの `int` または `unsigned int` である列挙型、および `static_assert` を追加で変換できます。単一ソースと include 禁止の制限は引き続き適用されます。[core v2 の対応範囲](../../utils/translate-frontends/docs/cpp-core-v2.md)を参照してください。
+`--profile cpp-core-v2` を選択すると、検査済みの `typedef`／`using` 型エイリアス、基底型が 32 ビットの `int` または `unsigned int` の列挙型、`static_assert`、限定されたオブジェクトポインターと左辺値参照を追加で変換できます。参照引数と参照戻り値は元のオブジェクトを参照し、多段ポインターの `const` とヌルポインターにも対応します。単一ソースと include 禁止の制限は継続します。[core v2 の対応範囲](../../utils/translate-frontends/docs/cpp-core-v2.md)を参照してください。
 
 ## 複数ファイルのプロジェクト
 
@@ -52,4 +52,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 出力と付随ファイルは上書きされません。`--out-dir` には既存の親ディレクトリ内の新しいディレクトリ、`-o` には新しい `.nc` パスが必要です。マニフェストはターゲット要件、入出力ハッシュ、コンパイル手順を記録し、ソースマップは生成行を元の位置に対応付けます。
 
-CI の結果、実行・インストールの検証、スキップされたテストはプラットフォーム別に記録しています。ネイティブの macOS arm64 と Rosetta 上の macOS x86_64 は異なる検証環境として区別しています。完全な C++／STL、ポインター、参照、配列、例外、テンプレート、文字列、`std::vector` は公開されたサポート範囲外です。[サポート表](../../utils/translate-frontends/docs/support-matrix.md)、[プロトコルと復旧規則](../../utils/translate-frontends/docs/protocol.md)、[プロジェクト例](../../tests/neverc/Inputs/translate/cpp/project)を参照してください。
+CI の結果、実行・インストールの検証、スキップされたテストはプラットフォーム別に記録しています。ネイティブの macOS arm64 と Rosetta 上の macOS x86_64 は異なる検証環境として区別しています。完全な C++／STL、配列、例外、テンプレート、文字列、`std::vector` は公開されたサポート範囲外です。[サポート表](../../utils/translate-frontends/docs/support-matrix.md)、[プロトコルと復旧規則](../../utils/translate-frontends/docs/protocol.md)、[プロジェクト例](../../tests/neverc/Inputs/translate/cpp/project)を参照してください。

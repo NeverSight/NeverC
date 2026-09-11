@@ -19,7 +19,7 @@ neverc output.nc -c -o output.o
 
 El perfil `cpp-core-v1` acepta un único archivo C++17 autónomo sin includes. Admite `int`, `unsigned int`, `bool`, `void`, tipos agregados triviales, funciones no miembro, espacios de nombres, sobrecargas y el flujo de control documentado. Se comprueban todas las declaraciones de entrada, incluido el código no utilizado.
 
-Seleccione `--profile cpp-core-v2` para añadir alias `typedef`/`using` comprobados, enumeraciones cuyo tipo subyacente sea `int` o `unsigned int` de 32 bits y `static_assert`. Se mantienen las restricciones de un solo archivo fuente y sin includes. Consulte el [contrato de core v2](../../utils/translate-frontends/docs/cpp-core-v2.md).
+Seleccione `--profile cpp-core-v2` para añadir alias `typedef`/`using` comprobados, enumeraciones de base `int` o `unsigned int` de 32 bits, `static_assert`, punteros a objetos y referencias a lvalues dentro de un alcance limitado. Los parámetros y resultados por referencia conservan los alias; se admiten punteros nulos y calificaciones `const` anidadas. Se mantienen las restricciones de un solo archivo fuente y sin includes. Consulte el [contrato de core v2](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
 ## Proyectos de varios archivos
 
@@ -52,4 +52,4 @@ Use `--check` en lugar de una opción de salida para realizar el mismo análisis
 
 Las salidas y los archivos auxiliares nunca se sobrescriben. `--out-dir` requiere un directorio nuevo con un padre existente; `-o` requiere una ruta `.nc` nueva. El manifiesto registra requisitos del destino, hashes de entrada y salida y el procedimiento de compilación; el mapa fuente relaciona las líneas generadas con las ubicaciones originales.
 
-Los resultados de CI, las verificaciones de ejecución e instalación y las pruebas omitidas se registran por plataforma. macOS arm64 nativo y macOS x86_64 mediante Rosetta siguen siendo entornos de validación distintos. El alcance anunciado no incluye C++/STL completo, punteros, referencias, arrays, excepciones, plantillas, cadenas ni `std::vector`. Consulte la [matriz de compatibilidad](../../utils/translate-frontends/docs/support-matrix.md), el [protocolo y las reglas de recuperación](../../utils/translate-frontends/docs/protocol.md) y el [proyecto de ejemplo](../../tests/neverc/Inputs/translate/cpp/project).
+Los resultados de CI, las verificaciones de ejecución e instalación y las pruebas omitidas se registran por plataforma. macOS arm64 nativo y macOS x86_64 mediante Rosetta siguen siendo entornos de validación distintos. El alcance anunciado no incluye C++/STL completo, arrays, excepciones, plantillas, cadenas ni `std::vector`. Consulte la [matriz de compatibilidad](../../utils/translate-frontends/docs/support-matrix.md), el [protocolo y las reglas de recuperación](../../utils/translate-frontends/docs/protocol.md) y el [proyecto de ejemplo](../../tests/neverc/Inputs/translate/cpp/project).

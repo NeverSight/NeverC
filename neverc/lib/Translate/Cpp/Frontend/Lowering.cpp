@@ -59,6 +59,25 @@ class FunctionLowering {
                       {"args", json::Array{std::move(E)}},
                       {"loc", A.loc(L)}};
   }
+  Expression address(Expression Place, QualType T, SourceLocation L) {
+    return Expression{{"kind", "address"},
+                      {"type", type(A.Context.getPointerType(T), L)},
+                      {"args", json::Array{std::move(Place)}},
+                      {"loc", A.loc(L)}};
+  }
+  Expression dereference(Expression Pointer, SourceLocation L) {
+    auto T = *Pointer.getString("type");
+    auto Pointee = T.drop_front(T.starts_with("cptr:") ? 5 : 4).str();
+    return Expression{{"kind", "dereference"},
+                      {"type", Pointee},
+                      {"args", json::Array{std::move(Pointer)}},
+                      {"loc", A.loc(L)}};
+  }
+  Expression bind(const Expr *E, QualType ReferenceType) {
+    auto L = E->getExprLoc();
+    auto Pointer = address(lvalue(E), E->getType(), L);
+    return cast(std::move(Pointer), type(ReferenceType, L), L);
+  }
   Expression binary(llvm::StringRef Op, Expression LHS, Expression RHS,
                     llvm::StringRef T, SourceLocation L) {
     return Expression{{"kind", "binary"},
@@ -138,22 +157,64 @@ class FunctionLowering {
   }
   Expression lvalue(const Expr *E) {
     E = E->IgnoreParens();
+    auto L = E->getExprLoc();
     if (const auto *R = dyn_cast<DeclRefExpr>(E))
       return storage(R->getDecl(), E->getExprLoc());
     if (const auto *M = dyn_cast<MemberExpr>(E)) {
-      if (M->isArrow())
-        reject(E->getExprLoc(), "member lvalue",
-               "Pointer member access is unsupported.");
       // Never snapshot a whole base record just to access one of its fields.
       return Expression{{"kind", "member"},
                         {"type", type(M->getType(), M->getExprLoc())},
                         {"name", A.name(M->getMemberDecl())},
-                        {"args", json::Array{lvalue(M->getBase())}},
+                        {"args", json::Array{
+                             M->isArrow()
+                                 ? dereference(expression(M->getBase()), L)
+                                 : lvalue(M->getBase())}},
                         {"loc", A.loc(M->getExprLoc())}};
     }
-    if (const auto *C = dyn_cast<ImplicitCastExpr>(E);
-        C && C->getCastKind() == CK_NoOp)
-      return lvalue(C->getSubExpr());
+    if (const auto *C = dyn_cast<CastExpr>(E);
+        C && C->getCastKind() == CK_NoOp) {
+      auto Place = lvalue(C->getSubExpr());
+      if (!A.S.coreV2())
+        return Place;
+      return dereference(
+          cast(address(std::move(Place), C->getSubExpr()->getType(), L),
+               type(A.Context.getPointerType(E->getType()), L), L), L);
+    }
+    if (A.S.coreV2()) {
+      if (const auto *W = dyn_cast<ExprWithCleanups>(E))
+        return lvalue(W->getSubExpr());
+      if (const auto *U = dyn_cast<UnaryOperator>(E)) {
+        if (U->getOpcode() == UO_Deref)
+          return dereference(expression(U->getSubExpr()), L);
+        if (U->isIncrementDecrementOp() && !U->isPostfix())
+          return expression(U);
+      }
+      if (const auto *C = dyn_cast<ConditionalOperator>(E); C && C->isLValue()) {
+        auto Condition = expression(C->getCond());
+        auto Yes = labelName(), No = labelName(), End = labelName();
+        auto Reference = A.Context.getLValueReferenceType(E->getType());
+        auto Result = temporary(type(Reference, L), L);
+        branch(std::move(Condition), Yes, No, L, C->getCond());
+        label(Yes, L);
+        assign(Result, bind(C->getTrueExpr(), Reference), L);
+        jump(End, L);
+        label(No, L);
+        assign(Result, bind(C->getFalseExpr(), Reference), L);
+        jump(End, L);
+        label(End, L);
+        return dereference(std::move(Result), L);
+      }
+      if (const auto *B = dyn_cast<BinaryOperator>(E)) {
+        if (B->getOpcode() == BO_Comma) {
+          discard(B->getLHS());
+          return lvalue(B->getRHS());
+        }
+        if (B->isAssignmentOp())
+          return expression(B);
+      }
+      if (const auto *Call = dyn_cast<CallExpr>(E); Call && Call->isLValue())
+        return expression(Call);
+    }
     reject(E->getExprLoc(), "lvalue",
            "Only direct scalar/aggregate storage and field lvalues are "
            "supported.");
@@ -222,9 +283,21 @@ class FunctionLowering {
       case CK_LValueToRValue:
         return snapshot(cast(expression(C->getSubExpr()), T, L), L);
       case CK_NoOp:
+        if (A.S.coreV2() && C->isLValue())
+          return lvalue(C);
+        return cast(expression(C->getSubExpr()), T, L);
       case CK_IntegralCast:
       case CK_IntegralToBoolean:
         return cast(expression(C->getSubExpr()), T, L);
+      case CK_NullToPointer:
+        if (A.S.coreV2())
+          return Expression{{"kind", "null"}, {"type", T}, {"loc", A.loc(L)}};
+        [[fallthrough]];
+      case CK_PointerToBoolean:
+      case CK_BitCast:
+        if (A.S.coreV2())
+          return cast(expression(C->getSubExpr()), T, L);
+        [[fallthrough]];
       case CK_IntegralToFloating:
       case CK_FloatingToIntegral:
       case CK_FloatingToBoolean:
@@ -237,6 +310,8 @@ class FunctionLowering {
       }
     }
     if (const auto *M = dyn_cast<MemberExpr>(E)) {
+      if (A.S.coreV2() && M->isLValue())
+        return lvalue(M);
       return project(M->getBase(), {llvm::cast<FieldDecl>(M->getMemberDecl())},
                      T, L);
     }
@@ -319,21 +394,34 @@ class FunctionLowering {
         reject(L, "call",
                "Call target is not a supported defined free function.");
       json::Array Args;
-      for (const auto *Arg : Call->arguments())
-        Args.push_back(expression(Arg));
+      for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+        const auto *Arg = Call->getArg(I);
+        auto ParameterType = Callee->getParamDecl(I)->getType();
+        if (ParameterType->isLValueReferenceType())
+          Args.push_back(snapshot(bind(Arg, ParameterType), Arg->getExprLoc()));
+        else
+          Args.push_back(expression(Arg));
+      }
       json::Object Instruction{{"op", "call"},
                                {"callee", A.name(Callee)},
                                {"args", std::move(Args)},
                                {"loc", A.loc(L)}};
       Expression Result;
-      if (T != "void") {
-        Result = temporary(T, L);
+      auto ResultType = type(Callee->getReturnType(), L, true);
+      if (ResultType != "void") {
+        Result = temporary(ResultType, L);
         Instruction["target"] = json::Object(Result);
       }
       Body.push_back(std::move(Instruction));
+      if (Callee->getReturnType()->isLValueReferenceType())
+        return dereference(std::move(Result), L);
       return Result;
     }
     if (const auto *U = dyn_cast<UnaryOperator>(E)) {
+      if (A.S.coreV2() && U->getOpcode() == UO_AddrOf)
+        return address(lvalue(U->getSubExpr()), U->getSubExpr()->getType(), L);
+      if (A.S.coreV2() && U->getOpcode() == UO_Deref)
+        return lvalue(U);
       if (U->isIncrementDecrementOp()) {
         auto Place = lvalue(U->getSubExpr());
         auto Old = snapshot(Place, L);
@@ -392,6 +480,8 @@ class FunctionLowering {
           L);
     }
     if (const auto *C = dyn_cast<ConditionalOperator>(E)) {
+      if (A.S.coreV2() && C->isLValue())
+        return lvalue(C);
       auto Condition = expression(C->getCond());
       auto Yes = labelName(), No = labelName(), End = labelName();
       Expression Result;
@@ -456,6 +546,11 @@ class FunctionLowering {
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
     auto Place = temporary(type(V->getType(), L), L);
+    if (V->getType()->isLValueReferenceType()) {
+      Storage.emplace(V->getCanonicalDecl(), dereference(Place, L));
+      assign(std::move(Place), bind(V->getInit(), V->getType()), L);
+      return;
+    }
     Storage.emplace(V->getCanonicalDecl(), Place);
     if (!V->getInit())
       return;
@@ -485,7 +580,9 @@ class FunctionLowering {
     } else if (const auto *R = dyn_cast<ReturnStmt>(S)) {
       json::Object Return{{"op", "return"}, {"loc", A.loc(L)}};
       if (R->getRetValue()) {
-        auto Value = expression(R->getRetValue());
+        auto Value = Function->getReturnType()->isLValueReferenceType()
+                         ? bind(R->getRetValue(), Function->getReturnType())
+                         : expression(R->getRetValue());
         if (!Value.empty())
           Return["value"] = std::move(Value);
       }
@@ -583,8 +680,11 @@ public:
       auto T = type(P->getType(), P->getLocation());
       Parameters.push_back(json::Object{
           {"name", Name}, {"type", T}, {"loc", A.loc(P->getLocation())}});
+      auto Place = variable(Name, T, P->getLocation());
       Storage.emplace(P->getCanonicalDecl(),
-                      variable(Name, T, P->getLocation()));
+                      P->getType()->isLValueReferenceType()
+                          ? dereference(std::move(Place), P->getLocation())
+                          : std::move(Place));
     }
     Entry = labelName();
     label(Entry, L);

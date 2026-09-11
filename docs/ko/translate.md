@@ -19,7 +19,7 @@ neverc output.nc -c -o output.o
 
 `cpp-core-v1`은 include가 없는 독립적인 C++17 소스 하나를 받습니다. `int`, `unsigned int`, `bool`, `void`, 단순 집합체 타입, 비멤버 함수, 네임스페이스, 오버로드와 문서화된 제어 흐름을 지원합니다. 사용하지 않는 코드를 포함하여 입력에 포함된 모든 선언을 검사합니다.
 
-`--profile cpp-core-v2`를 선택하면 검증된 `typedef`/`using` 타입 별칭, 기반 타입이 32비트 `int` 또는 `unsigned int`인 열거형, `static_assert`를 추가로 변환할 수 있습니다. 단일 소스와 include 금지 제한은 그대로 적용됩니다. [core v2 지원 범위](../../utils/translate-frontends/docs/cpp-core-v2.md)를 참고하세요.
+`--profile cpp-core-v2`를 선택하면 검증된 `typedef`/`using` 타입 별칭, 기반 타입이 32비트 `int` 또는 `unsigned int`인 열거형, `static_assert`, 제한된 객체 포인터와 좌측값 참조를 추가로 변환할 수 있습니다. 참조 매개변수와 반환 참조는 원래 객체를 가리키며, 다중 포인터의 `const`와 널 포인터를 지원합니다. 단일 소스와 include 금지 제한은 유지됩니다. [core v2 지원 범위](../../utils/translate-frontends/docs/cpp-core-v2.md)를 참고하세요.
 
 ## 여러 파일로 구성된 프로젝트
 
@@ -52,4 +52,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 출력과 부속 파일은 덮어쓰지 않습니다. `--out-dir`는 기존 부모 디렉터리 아래 새 디렉터리를, `-o`는 새 `.nc` 경로를 요구합니다. 매니페스트는 대상 요구 사항, 입출력 해시와 컴파일 절차를 기록하며 소스 맵은 생성된 행을 원래 위치에 연결합니다.
 
-CI 결과, 실행 및 설치 검증, 건너뛴 테스트는 플랫폼별로 기록합니다. 네이티브 macOS arm64와 Rosetta에서 구동하는 macOS x86_64는 서로 다른 검증 환경으로 구분합니다. 전체 C++／STL, 포인터, 참조, 배열, 예외, 템플릿, 문자열과 `std::vector`는 공개된 지원 범위에 포함되지 않습니다. [지원 표](../../utils/translate-frontends/docs/support-matrix.md), [프로토콜 및 복구 규칙](../../utils/translate-frontends/docs/protocol.md), [프로젝트 예제](../../tests/neverc/Inputs/translate/cpp/project)를 참고하세요.
+CI 결과, 실행 및 설치 검증, 건너뛴 테스트는 플랫폼별로 기록합니다. 네이티브 macOS arm64와 Rosetta에서 구동하는 macOS x86_64는 서로 다른 검증 환경으로 구분합니다. 전체 C++／STL, 배열, 예외, 템플릿, 문자열과 `std::vector`는 공개된 지원 범위에 포함되지 않습니다. [지원 표](../../utils/translate-frontends/docs/support-matrix.md), [프로토콜 및 복구 규칙](../../utils/translate-frontends/docs/protocol.md), [프로젝트 예제](../../tests/neverc/Inputs/translate/cpp/project)를 참고하세요.

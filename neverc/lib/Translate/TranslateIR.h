@@ -11,24 +11,32 @@
 
 namespace neverc::translate {
 
-enum class TypeKind { Int, UInt, Bool, Void, Record, Double };
+enum class TypeKind { Int, UInt, Bool, Void, Record, Double, Pointer };
 struct Type {
   TypeKind Kind = TypeKind::Void;
   std::string RecordID;
+  // A pointer owns exactly one component; other types have none. Keeping the
+  // tree value-owned prevents recursive record pointers from forming cycles.
+  std::vector<Type> Elements;
+  bool PointeeConst = false;
   bool operator==(const Type &Other) const {
-    return Kind == Other.Kind && RecordID == Other.RecordID;
+    return Kind == Other.Kind && RecordID == Other.RecordID &&
+           Elements == Other.Elements && PointeeConst == Other.PointeeConst;
   }
   bool operator!=(const Type &Other) const { return !(*this == Other); }
   bool isInteger() const {
     return Kind == TypeKind::Int || Kind == TypeKind::UInt;
   }
   bool isScalar() const {
-    return isInteger() || Kind == TypeKind::Bool || Kind == TypeKind::Double;
+    return isInteger() || Kind == TypeKind::Bool || Kind == TypeKind::Double ||
+           Kind == TypeKind::Pointer;
   }
 };
 std::string typeName(const Type &T);
 
-enum class ExprKind { Literal, Var, Unary, Binary, Cast, Member, Aggregate };
+enum class ExprKind {
+  Literal, Var, Unary, Binary, Cast, Member, Aggregate, Null, Address, Dereference
+};
 enum class UnaryOperator { Plus, Minus, BitNot, LogicalNot };
 enum class BinaryOperator {
   Add,

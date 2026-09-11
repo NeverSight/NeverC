@@ -27,6 +27,9 @@ std::string typeName(const Type &T) {
     return T.RecordID;
   case TypeKind::Double:
     return "double";
+  case TypeKind::Pointer:
+    return std::string(T.PointeeConst ? "cptr:" : "ptr:") +
+           (T.Elements.size() == 1 ? typeName(T.Elements[0]) : "?");
   }
   return {};
 }
@@ -101,6 +104,23 @@ public:
     std::string S;
     if (!string(O, Key, S))
       return false;
+    if (S.size() > 4096)
+      return error("Type spelling limit exceeded.");
+    return typeSpelling(S, T);
+  }
+  bool typeSpelling(llvm::StringRef S, Type &T, std::size_t Depth = 0) {
+    bool Pointer = S.starts_with("ptr:") || S.starts_with("cptr:");
+    if (Depth > MaxProtocolDepth || ((Depth || Pointer) && !node()))
+      return error("Type depth or node limit exceeded.");
+    if (Pointer) {
+      T.Kind = TypeKind::Pointer;
+      T.PointeeConst = S.starts_with("cptr:");
+      T.Elements.resize(1);
+      return typeSpelling(S.drop_front(T.PointeeConst ? 5 : 4), T.Elements[0],
+                          Depth + 1);
+    }
+    if (S.empty() || S.contains(':'))
+      return error("Invalid canonical type spelling.");
     if (S == "int")
       T.Kind = TypeKind::Int;
     else if (S == "uint")
@@ -113,7 +133,7 @@ public:
       T.Kind = TypeKind::Double;
     else {
       T.Kind = TypeKind::Record;
-      T.RecordID = std::move(S);
+      T.RecordID = S.str();
     }
     return true;
   }
@@ -162,6 +182,10 @@ public:
         return true;
       }
       return string(O, "value", E.Integer);
+    }
+    if (K == "null") {
+      E.Kind = ExprKind::Null;
+      return true;
     }
     if (K == "var") {
       E.Kind = ExprKind::Var;
@@ -217,6 +241,10 @@ public:
         return false;
     } else if (K == "aggregate")
       E.Kind = ExprKind::Aggregate;
+    else if (K == "address")
+      E.Kind = ExprKind::Address;
+    else if (K == "dereference")
+      E.Kind = ExprKind::Dereference;
     else
       return error("Unknown expression kind.");
     return array(O, "args", E.Args, [&](const auto &A, Expr &Arg) {
@@ -469,6 +497,7 @@ class Verifier {
   llvm::ArrayRef<Function> FunctionDeclarations;
   llvm::ArrayRef<Variable> GlobalDeclarations;
   std::map<std::string, const Record *> Records;
+  std::set<std::string> KnownRecords;
   std::map<std::string, Type> Globals;
   std::map<std::string, const Function *> Functions;
   std::set<std::string> Symbols;
@@ -492,7 +521,19 @@ class Verifier {
                "Invalid, reserved, or non-deterministic emitted identifier: " +
                    N.str());
   }
-  bool type(const Type &T, const SourceLocation &L, bool Void = false) {
+  bool type(const Type &T, const SourceLocation &L, bool Void = false,
+            std::size_t Depth = 0, bool Indirect = false) {
+    if (Depth > MaxProtocolDepth ||
+        ((Depth || T.Kind == TypeKind::Pointer) && ++Nodes > MaxProtocolNodes))
+      return error(L, "IR type depth/node limit exceeded.");
+    if (T.Kind == TypeKind::Pointer) {
+      if (M.Profile != "cpp-core-v2" || !T.RecordID.empty() ||
+          T.Elements.size() != 1)
+        return error(L, "Pointer types require core v2 and exactly one pointee.");
+      return type(T.Elements[0], L, true, Depth + 1, true);
+    }
+    if (!T.Elements.empty() || T.PointeeConst)
+      return error(L, "Non-pointer type has pointer components/qualifiers.");
     switch (T.Kind) {
     case TypeKind::Void:
       return (Void && T.RecordID.empty()) ||
@@ -506,8 +547,11 @@ class Verifier {
       return T.RecordID.empty() ||
              error(L, "Scalar type has an invalid record identity.");
     case TypeKind::Record:
-      return Records.count(T.RecordID) ||
+      return (Indirect ? KnownRecords.count(T.RecordID)
+                       : Records.count(T.RecordID)) ||
              error(L, "Unknown or forward/cyclic record type: " + T.RecordID);
+    case TypeKind::Pointer:
+      break;
     }
     return error(L, "Unknown type kind.");
   }
@@ -528,6 +572,18 @@ class Verifier {
              error(E.Loc, "Expression has incorrect operand count.");
     };
     switch (E.Kind) {
+    case ExprKind::Null:
+      return (Arity(0) && E.ValueType.Kind == TypeKind::Pointer) ||
+             error(E.Loc, "Null requires a pointer type and no operands.");
+    case ExprKind::Address:
+      if (!Arity(1) || E.ValueType.Kind != TypeKind::Pointer ||
+          E.ValueType.Elements[0] != E.Args[0].ValueType)
+        return error(E.Loc, "Address requires a matching pointer/lvalue type.");
+      return lvalue(E.Args[0], Storage, !E.ValueType.PointeeConst);
+    case ExprKind::Dereference:
+      return (Arity(1) && E.Args[0].ValueType.Kind == TypeKind::Pointer &&
+              E.Args[0].ValueType.Elements[0] == E.ValueType) ||
+             error(E.Loc, "Dereference requires a matching nonvoid pointee.");
     case ExprKind::Literal:
       if (!Arity(0))
         return false;
@@ -578,6 +634,11 @@ class Verifier {
       if (!Arity(2))
         return false;
       const Type &A = E.Args[0].ValueType, &B = E.Args[1].ValueType;
+      if (A.Kind == TypeKind::Pointer || B.Kind == TypeKind::Pointer)
+        return (A == B && E.ValueType.Kind == TypeKind::Bool &&
+                (E.BinaryOp == BinaryOperator::Equal ||
+                 E.BinaryOp == BinaryOperator::NotEqual)) ||
+               error(E.Loc, "Pointers permit only equally typed equality/inequality.");
       bool Compare = false, Shift = false;
       switch (E.BinaryOp) {
       case BinaryOperator::Equal:
@@ -620,11 +681,22 @@ class Verifier {
                       : E.ValueType == A) ||
              error(E.Loc, "Binary expression result type mismatch.");
     }
-    case ExprKind::Cast:
-      return Arity(1) &&
-             ((E.ValueType.isScalar() && E.Args[0].ValueType.isScalar()) ||
-              error(E.Loc,
-                    "Only documented scalar conversions are supported."));
+    case ExprKind::Cast: {
+      if (!Arity(1))
+        return false;
+      const Type &From = E.Args[0].ValueType, &To = E.ValueType;
+      if (From.Kind == TypeKind::Pointer || To.Kind == TypeKind::Pointer) {
+        if (From.Kind == TypeKind::Pointer && To.Kind == TypeKind::Bool)
+          return true;
+        if (From.Kind == TypeKind::Pointer && To.Kind == TypeKind::Pointer &&
+            (From.Elements[0].Kind == TypeKind::Void ||
+             To.Elements[0].Kind == TypeKind::Void || sameUnqualified(From, To)))
+          return true;
+        return error(E.Loc, "Unsupported pointer conversion.");
+      }
+      return (From.isScalar() && To.isScalar()) ||
+             error(E.Loc, "Only documented scalar conversions are supported.");
+    }
     case ExprKind::Member: {
       if (!Arity(1))
         return false;
@@ -651,12 +723,22 @@ class Verifier {
     }
     return error(E.Loc, "Unknown expression kind.");
   }
-  bool lvalue(const Expr &E, const std::map<std::string, Type> &Storage) {
+  bool sameUnqualified(const Type &A, const Type &B) {
+    return A.Kind == B.Kind && A.RecordID == B.RecordID &&
+           (A.Kind != TypeKind::Pointer ||
+            sameUnqualified(A.Elements[0], B.Elements[0]));
+  }
+  bool lvalue(const Expr &E, const std::map<std::string, Type> &Storage,
+              bool Write = true) {
     if (E.Kind == ExprKind::Var)
-      return Storage.count(E.Name) ||
+      return Storage.count(E.Name) || (!Write && Globals.count(E.Name)) ||
              error(E.Loc, "Global constants are not writable.");
     if (E.Kind == ExprKind::Member && E.Args.size() == 1)
-      return lvalue(E.Args[0], Storage);
+      return lvalue(E.Args[0], Storage, Write);
+    if (E.Kind == ExprKind::Dereference && E.Args.size() == 1 &&
+        E.Args[0].ValueType.Kind == TypeKind::Pointer)
+      return !Write || !E.Args[0].ValueType.PointeeConst ||
+             error(E.Loc, "Const pointee storage is not writable.");
     return error(
         E.Loc,
         "Assignment target must be rooted in mutable local/parameter storage.");
@@ -895,6 +977,8 @@ public:
     if (!Project && M.Dependencies.size() != 1)
       return error(Anchor,
                    "The core profile accepts exactly one source dependency.");
+    for (const auto &R : M.Records)
+      KnownRecords.insert(R.ID);
     for (const auto &R : M.Records) {
       if (!loc(R.Loc) || !name(R.ID, R.Loc, true) ||
           !Symbols.insert(R.ID).second)
@@ -911,7 +995,8 @@ public:
     }
     for (const auto &G : M.Globals) {
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
-          !type(G.ValueType, G.Loc) || !Symbols.insert(G.Name).second)
+          !type(G.ValueType, G.Loc) || G.ValueType.Kind == TypeKind::Pointer ||
+          !Symbols.insert(G.Name).second)
         return error(G.Loc, "Invalid or duplicate global identifier/type.");
       Globals.emplace(G.Name, G.ValueType);
     }

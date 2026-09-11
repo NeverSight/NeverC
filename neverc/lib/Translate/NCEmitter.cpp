@@ -5,8 +5,11 @@
 
 namespace neverc::translate {
 namespace {
-std::string cType(const Type &T) {
-  return T.Kind == TypeKind::UInt ? "unsigned int" : typeName(T);
+std::string cType(const Type &T, bool Const = false) {
+  if (T.Kind == TypeKind::Pointer)
+    return cType(T.Elements[0], T.PointeeConst) + (Const ? " *const" : " *");
+  return std::string(Const ? "const " : "") +
+         (T.Kind == TypeKind::UInt ? "unsigned int" : typeName(T));
 }
 std::string hexadecimal(uint64_t Bits, size_t Digits) {
   static const char Hex[] = "0123456789abcdef";
@@ -107,6 +110,12 @@ class Emitter {
   }
   std::string expression(const Expr &E, bool Initializer = false) {
     switch (E.Kind) {
+    case ExprKind::Null:
+      return "((" + cType(E.ValueType) + ")0)";
+    case ExprKind::Address:
+      return "(&(" + expression(E.Args[0]) + "))";
+    case ExprKind::Dereference:
+      return "(*(" + expression(E.Args[0]) + "))";
     case ExprKind::Literal:
       if (E.ValueType.Kind == TypeKind::Bool)
         return E.Boolean ? "true" : "false";
@@ -253,10 +262,12 @@ class Emitter {
     }
   }
   void record(const Record &R) {
-    line("typedef struct " + R.ID + " {", &R.Loc);
+    const bool ForwardDeclared = M.Profile == "cpp-core-v2";
+    line(std::string(ForwardDeclared ? "struct " : "typedef struct ") +
+             R.ID + " {", &R.Loc);
     for (const auto &F : R.Fields)
       line("  " + cType(F.ValueType) + " " + F.Name + ";", &R.Loc);
-    line("} " + R.ID + ";", &R.Loc);
+    line(ForwardDeclared ? "};" : "} " + R.ID + ";", &R.Loc);
     line("");
   }
   void inspectModule() {
@@ -324,6 +335,9 @@ public:
     inspectModule();
     guards();
     helpers();
+    if (M.Profile == "cpp-core-v2")
+      for (const auto &R : M.Records)
+        line("typedef struct " + R.ID + " " + R.ID + ";", &R.Loc);
     for (const auto &R : M.Records)
       record(R);
     for (const auto &G : M.Globals)

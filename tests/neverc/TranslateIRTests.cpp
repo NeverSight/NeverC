@@ -9,6 +9,17 @@ const SourceLocation InputLoc{"input.cpp", 1, 1};
 Type intType() { return {TypeKind::Int, {}}; }
 Type uintType() { return {TypeKind::UInt, {}}; }
 Type boolType() { return {TypeKind::Bool, {}}; }
+Type pointerType(Type Pointee, bool Const = false) {
+  return {TypeKind::Pointer, {}, {std::move(Pointee)}, Const};
+}
+Expr pointerExpr(ExprKind Kind, Type T, std::vector<Expr> Args = {}) {
+  Expr E;
+  E.Kind = Kind;
+  E.ValueType = std::move(T);
+  E.Loc = InputLoc;
+  E.Args = std::move(Args);
+  return E;
+}
 Expr literal(std::string Value, Type T = intType()) {
   Expr E;
   E.ValueType = std::move(T);
@@ -149,6 +160,192 @@ TEST(TranslateIR, CoreV2CannotSubstituteForAnotherRequestedProfile) {
     EmittedSource Output{"unchanged", {}};
     EXPECT_FALSE(emitNC(M, C, Output, D));
     EXPECT_EQ(Output.Text, "unchanged");
+  }
+}
+
+TEST(TranslateIR, CoreV2ParsesPointerTypesAndEmitsNestedConstDeclarators) {
+  for (const auto &Pair : std::vector<std::pair<std::string, std::string>>{
+           {"cptr:ptr:int", "int *const * sample(void)"},
+           {"ptr:cptr:int", "const int * * sample(void)"},
+           {"ptr:void", "void * sample(void)"}}) {
+    auto JSON = wireModule();
+    replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+    replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + Pair.first + "\"");
+    replaceOnce(JSON, "\"kind\": \"literal\", \"type\": \"bool\", \"value\": true,",
+                "\"kind\": \"null\", \"type\": \"" + Pair.first + "\",");
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(JSON, M, D));
+    ASSERT_TRUE(verifyModule(M, context(M), D));
+    EXPECT_EQ(M.Exports.front().Result, Pair.first);
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find(Pair.second), std::string::npos) << Output.Text;
+  }
+}
+
+TEST(TranslateIR, CoreV2BoundsPointerWireTypesAndRejectsMalformedTrees) {
+  std::string Deep;
+  for (unsigned I = 0; I != 66; ++I)
+    Deep += "ptr:";
+  Deep += "int";
+  for (const auto &Spelling :
+       std::vector<std::string>{"ptr:", "cptr::int", Deep, std::string(4097, 'a')}) {
+    auto JSON = wireModule();
+    replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+    replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + Spelling + "\"");
+    Module M;
+    Diagnostics D;
+    EXPECT_FALSE(parseModule(JSON, M, D)) << Spelling;
+  }
+  std::vector<Type> BadTypes = {
+      {TypeKind::Pointer, {}},
+      {TypeKind::Pointer, {}, {intType(), intType()}},
+      {TypeKind::Int, {}, {intType()}},
+      {TypeKind::Int, {}, {}, true},
+      pointerType({TypeKind::Record, "nct_missing"}),
+      pointerType({TypeKind::Double, {}})};
+  Type DeepType = intType();
+  for (unsigned I = 0; I != 66; ++I)
+    DeepType = pointerType(std::move(DeepType));
+  BadTypes.push_back(std::move(DeepType));
+  for (auto T : BadTypes) {
+    auto M = module();
+    M.Profile = "cpp-core-v2";
+    M.Functions[0].Result = std::move(T);
+    invalid(M);
+  }
+}
+
+TEST(TranslateIR, CoreV2VerifiesPointerAddressesAndConstWrites) {
+  auto M = module();
+  M.Profile = "cpp-core-v2";
+  auto Pointer = pointerType(intType());
+  auto &F = M.Functions[0];
+  F.Params.push_back({"nct_p", Pointer, InputLoc});
+  auto Place = pointerExpr(ExprKind::Dereference, intType(),
+                           {variable("nct_p", Pointer)});
+  Instruction Assign;
+  Assign.Op = InstructionKind::Assign;
+  Assign.Loc = InputLoc;
+  Assign.Target = Place;
+  Assign.Value = literal("7");
+  F.Body = {label(), Assign, ret(Place)};
+  Diagnostics D;
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("(*(nct_p)) = (7);"), std::string::npos);
+
+  auto Readonly = pointerType(intType(), true);
+  F.Params[0].ValueType = Readonly;
+  F.Body[1].Target->Args[0].ValueType = Readonly;
+  F.Body.back().Value->Args[0].ValueType = Readonly;
+  invalid(M, "Const pointee");
+
+  F.Body = {label(), ret(literal("0"))};
+  F.Result = Pointer;
+  M.Globals.push_back({"nct_constant", intType(), literal("3"), InputLoc});
+  F.Body.back() = ret(pointerExpr(ExprKind::Address, Pointer,
+                                 {variable("nct_constant")}));
+  invalid(M, "Global constants");
+  F.Result = Readonly;
+  F.Body.back().Value->ValueType = Readonly;
+  D.clear();
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  F.Body.back().Value->Args[0] = literal("3");
+  invalid(M, "Assignment target");
+}
+
+TEST(TranslateIR, CoreV2ConstRecordDoesNotMakeItsPointerPointeeConst) {
+  auto M = module();
+  M.Profile = "cpp-core-v2";
+  Type RecordType{TypeKind::Record, "nct_box"};
+  Type Pointer = pointerType(intType());
+  M.Records.push_back({"nct_box", {{"value", Pointer}}, InputLoc});
+  Type View = pointerType(RecordType, true);
+  M.Functions[0].Params.push_back({"nct_box_pointer", View, InputLoc});
+  Expr Field = pointerExpr(ExprKind::Member, Pointer,
+      {pointerExpr(ExprKind::Dereference, RecordType,
+                   {variable("nct_box_pointer", View)})});
+  Field.Name = "value";
+  Instruction Assign;
+  Assign.Op = InstructionKind::Assign;
+  Assign.Loc = InputLoc;
+  Assign.Target = pointerExpr(ExprKind::Dereference, intType(), {Field});
+  Assign.Value = literal("9");
+  M.Functions[0].Body = {label(), Assign, ret(literal("0"))};
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  M.Functions[0].Body[1].Target = Field;
+  M.Functions[0].Body[1].Value = pointerExpr(ExprKind::Null, Pointer);
+  invalid(M, "Const pointee");
+}
+
+TEST(TranslateIR, CoreV2DistinguishesPointerGraphsFromByValueCycles) {
+  auto M = module();
+  M.Profile = "cpp-core-v2";
+  Type A{TypeKind::Record, "nct_a"}, B{TypeKind::Record, "nct_b"};
+  M.Records = {{"nct_a", {{"next", pointerType(B)}}, InputLoc},
+               {"nct_b", {{"next", pointerType(A)}}, InputLoc}};
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_LT(Output.Text.find("typedef struct nct_b nct_b;"),
+            Output.Text.find("struct nct_a {"));
+  M.Records[0].Fields[0].ValueType = B;
+  invalid(M, "forward/cyclic");
+  M.Records[0].Fields[0].ValueType = pointerType({TypeKind::Record, "nct_unknown"});
+  invalid(M, "Unknown");
+}
+
+TEST(TranslateIR, CoreV2RejectsPointerIntegerCastsAndOrdering) {
+  Type Pointer = pointerType(intType());
+  for (const auto &Pair : std::vector<std::pair<Type, Type>>{
+           {Pointer, intType()}, {intType(), Pointer},
+           {boolType(), Pointer}, {Pointer, pointerType(boolType())}}) {
+    auto M = module();
+    M.Profile = "cpp-core-v2";
+    M.Functions[0].Result = Pair.second;
+    M.Functions[0].Params.push_back({"nct_value", Pair.first, InputLoc});
+    M.Functions[0].Body.back() = ret(pointerExpr(
+        ExprKind::Cast, Pair.second, {variable("nct_value", Pair.first)}));
+    invalid(M, "pointer conversion");
+  }
+  auto M = module();
+  M.Profile = "cpp-core-v2";
+  M.Functions[0].Result = boolType();
+  auto Null = pointerExpr(ExprKind::Null, Pointer);
+  M.Functions[0].Body.back() = ret(binary(BinaryOperator::Equal, Null, Null, boolType()));
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  M.Functions[0].Body.back().Value->BinaryOp = BinaryOperator::Less;
+  invalid(M, "equality/inequality");
+}
+
+TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
+  Type Pointer = pointerType(intType());
+  auto Null = pointerExpr(ExprKind::Null, Pointer);
+  for (const auto &Value : {
+           Null,
+           pointerExpr(ExprKind::Address, Pointer, {literal("1")}),
+           pointerExpr(ExprKind::Dereference, intType(), {Null})}) {
+    auto M = module();
+    M.Functions[0].Result = Value.ValueType;
+    M.Functions[0].Body.back() = ret(Value);
+    invalid(M, "core v2");
+  }
+  for (const auto &Value : {
+           pointerExpr(ExprKind::Null, intType()),
+           pointerExpr(ExprKind::Null, Pointer, {literal("0")}),
+           pointerExpr(ExprKind::Dereference, boolType(), {Null}),
+           pointerExpr(ExprKind::Dereference, intType(),
+                        {pointerExpr(ExprKind::Null, pointerType({TypeKind::Void, {}}))})}) {
+    auto M = module();
+    M.Profile = "cpp-core-v2";
+    M.Functions[0].Result = Value.ValueType;
+    M.Functions[0].Body.back() = ret(Value);
+    invalid(M);
   }
 }
 

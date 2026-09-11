@@ -19,7 +19,7 @@ neverc output.nc -c -o output.o
 
 Das Profil `cpp-core-v1` akzeptiert eine eigenständige C++17-Datei ohne Includes. Unterstützt werden `int`, `unsigned int`, `bool`, `void`, triviale Aggregattypen, freie Funktionen, Namensräume, Überladungen und der dokumentierte Kontrollfluss. Alle projekteigenen Deklarationen werden geprüft, auch unbenutzter Code.
 
-Mit `--profile cpp-core-v2` werden zusätzlich geprüfte `typedef`-/`using`-Typaliase, Aufzählungen mit dem zugrunde liegenden 32-Bit-Typ `int` oder `unsigned int` und `static_assert` unterstützt. Die Beschränkung auf eine Quelldatei ohne Includes bleibt bestehen. Siehe den [core-v2-Vertrag](../../utils/translate-frontends/docs/cpp-core-v2.md).
+Mit `--profile cpp-core-v2` werden geprüfte `typedef`-/`using`-Typaliase, Aufzählungen mit dem 32-Bit-Basistyp `int` oder `unsigned int`, `static_assert` sowie Objektzeiger und Lvalue-Referenzen in begrenztem Umfang unterstützt. Referenzparameter und zurückgegebene Referenzen erhalten die Aliasbeziehungen; Nullzeiger und verschachtelte `const`-Qualifikationen werden unterstützt. Die Beschränkung auf eine Quelldatei ohne Includes bleibt bestehen. Siehe den [core-v2-Vertrag](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
 ## Projekte mit mehreren Dateien
 
@@ -52,4 +52,4 @@ Mit `--check` anstelle einer Ausgabeoption durchlaufen Sie dieselbe Analyse, Erz
 
 Ausgaben und Begleitdateien werden nicht überschrieben. `--out-dir` verlangt ein neues Verzeichnis unter einem vorhandenen Elternverzeichnis; `-o` einen neuen `.nc`-Pfad. Das Manifest enthält Zielanforderungen, Ein- und Ausgabehashes sowie die Kompilierungsanleitung; die Quellzuordnung verbindet erzeugte Zeilen mit ursprünglichen Positionen.
 
-CI-Ergebnisse, Ausführungs- und Installationsprüfungen sowie übersprungene Tests werden nach Plattform dokumentiert. Natives macOS arm64 und macOS x86_64 unter Rosetta bleiben getrennte Prüfungsumgebungen. Der angegebene Umfang umfasst weder vollständiges C++/STL noch Zeiger, Referenzen, Arrays, Ausnahmen, Templates, Zeichenketten oder `std::vector`. Siehe [Unterstützungsmatrix](../../utils/translate-frontends/docs/support-matrix.md), [Protokoll und Wiederherstellungsregeln](../../utils/translate-frontends/docs/protocol.md) und [Beispielprojekt](../../tests/neverc/Inputs/translate/cpp/project).
+CI-Ergebnisse, Ausführungs- und Installationsprüfungen sowie übersprungene Tests werden nach Plattform dokumentiert. Natives macOS arm64 und macOS x86_64 unter Rosetta bleiben getrennte Prüfungsumgebungen. Der angegebene Umfang umfasst weder vollständiges C++/STL noch Arrays, Ausnahmen, Templates, Zeichenketten oder `std::vector`. Siehe [Unterstützungsmatrix](../../utils/translate-frontends/docs/support-matrix.md), [Protokoll und Wiederherstellungsregeln](../../utils/translate-frontends/docs/protocol.md) und [Beispielprojekt](../../tests/neverc/Inputs/translate/cpp/project).

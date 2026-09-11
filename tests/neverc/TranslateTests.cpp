@@ -773,6 +773,151 @@ TEST_F(TranslateTest,
             3);
 }
 
+TEST_F(TranslateTest, CoreV2PointersAndReferencesPreserveAliasedStorage) {
+  const auto Source = tmpFile("references.cpp");
+  const auto Output = tmpFile("references.nc");
+  writeFile(Source, R"cpp(
+const int constant = 17;
+struct Box { int *value; int marker; };
+int &select(bool first, int &left, int &right) {
+  return first ? left : right;
+}
+int &increment(int &value) {
+  ++value;
+  return value;
+}
+int *&identity(int *&pointer) { return pointer; }
+const int *qualified_alias(int **p, const int *const *q, int *replacement) {
+  *p = replacement;
+  return *q;
+}
+void update(int *pointer, int &alias) {
+  *pointer += 2;
+  alias += 3;
+}
+int main() {
+  int left = 1;
+  int right = 7;
+  int *pointer = &left;
+  int &alias = left;
+  update(pointer, alias);
+  if (left != 6 || *pointer != 6 || alias != 6) return 1;
+  increment(left) = 20;
+  if (left != 20) return 2;
+  select(false, left, right) = 31;
+  if (left != 20 || right != 31) return 3;
+  int *selected = &select(true, left, right);
+  *selected = 23;
+  if (left != 23) return 4;
+  Box partial;
+  Box *box = &partial;
+  box->value = pointer;
+  *box->value = 29;
+  if (left != 29) return 5;
+  const int *view = &constant;
+  if (*view != 17) return 6;
+  int *empty = ((nullptr));
+  if (empty || empty != nullptr || !pointer) return 7;
+  empty = 0;
+  if (!(empty == nullptr)) return 8;
+  int *zero{};
+  if (zero != empty) return 9;
+  int *const fixed = pointer;
+  int *const *nested = &fixed;
+  **nested = 37;
+  if (left != 37) return 10;
+  const int *readonly = pointer;
+  int *writable = const_cast<int *>(readonly);
+  *writable = 41;
+  void *erased = pointer;
+  int *restored = static_cast<int *>(erased);
+  if (*restored != 41) return 11;
+  Box complete{pointer, 9};
+  Box copy = complete;
+  *copy.value = 43;
+  if (left != 43 || copy.marker != 9) return 12;
+  identity(pointer) = &right;
+  if (pointer != &right || *pointer != 31) return 13;
+  const Box *constbox = &copy;
+  *constbox->value = 47;
+  if (left != 47) return 14;
+  int &assigned = (left = 49);
+  int &comma = (right = 51, left);
+  int &prefix = ++left;
+  if (&assigned != &left || &comma != &left || &prefix != &left || left != 50)
+    return 15;
+  const int &qualified = left;
+  const_cast<int &>(qualified) = 53;
+  if (left != 53) return 16;
+  enum class E:unsigned int { value=0xffffffffu };
+  E e=E::value;
+  E *ep=&e;
+  E &er=*ep;
+  er=E{3u};
+  if (static_cast<unsigned int>(e)!=3u) return 17;
+  pointer = &left;
+  const int *const *qualified_pointer = &pointer;
+  if (qualified_alias(&pointer, qualified_pointer, &right) != &right)
+    return 18;
+  pointer = &left;
+  *(pointer = &right) = *pointer;
+  if (right != 53) return 19;
+  return 0;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization,
+                                    {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"rvalue-reference", "int f(int &&value) {return value;}", "TR0201"},
+      {"temporary-reference",
+       "int f(){const int &value=42; return value;}", "TR0201"},
+      {"dead-temporary-reference",
+       "int f(){if(false){const int &value=42;} return 0;}", "TR0201"},
+      {"temporary-reference-argument",
+       "int f(const int &x){return x;} int main(){return f(42);}", "TR0201"},
+      {"conversion-temporary",
+       "int f(){int x=1; const unsigned int &r=x; return r;}", "TR0201"},
+      {"temporary-subobject",
+       "struct R{int x;}; int f(){const int &r=R{1}.x; return r;}", "TR0201"},
+      {"reference-field", "struct R{int &value;};", "TR0201"},
+      {"pointer-global", "int *const value=nullptr;", "TR0201"},
+      {"reference-global", "const int value=1; const int &alias=value;",
+       "TR0201"},
+      {"pointer-arithmetic", "int *f(int *p){return p+1;}", "TR0201"},
+      {"pointer-ordering", "bool f(int *a,int *b){return a<b;}", "TR0201"},
+      {"function-pointer", "int f(int (*call)()){return call();}", "TR0201"},
+      {"unsupported-pointee", "char *f(char *p){return p;}", "TR0201"},
+      {"const-write", "void f(const int *p){*p=1;}", "TR0202"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string(Case.Name) + ".cpp");
+    const auto Output = tmpFile(std::string(Case.Name) + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(
+        Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DeclarationsPreserveValuesAndOverloads) {
   const auto Source = tmpFile("declarations.cpp");
   const auto Output = tmpFile("declarations.nc");
@@ -872,7 +1017,7 @@ TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"pointer-alias", "using Hidden = int *;", "TR0201"},
+      {"pointer-alias", "using Hidden = char *;", "TR0201"},
       {"volatile-alias", "using Hidden = volatile int;", "TR0201"},
       {"function-alias", "using Hidden = void();", "TR0201"},
       {"alias-template", "template<class T> using Hidden = T;", "TR0201"},

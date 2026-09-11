@@ -19,7 +19,7 @@ neverc output.nc -c -o output.o
 
 `cpp-core-v1` 接受一個不含 include 的獨立 C++17 原始檔，支援 `int`、`unsigned int`、`bool`、`void`、簡單聚合型別、自由函式、命名空間、多載及文件列出的控制流程。所有輸入宣告都會檢查，包括未使用的程式碼。
 
-使用 `--profile cpp-core-v2` 可增加經過檢查的 `typedef`／`using` 型別別名、底層型別為 32 位元 `int` 或 `unsigned int` 的列舉，以及 `static_assert`。仍限單一原始檔，且不允許 include。詳見 [core v2 支援範圍](../../utils/translate-frontends/docs/cpp-core-v2.md)。
+使用 `--profile cpp-core-v2` 可增加經過檢查的 `typedef`／`using` 型別別名、底層型別為 32 位元 `int` 或 `unsigned int` 的列舉、`static_assert`，以及限定範圍的物件指標與左值參考。參考保留別名關係，包括參數和回傳參考；支援多層指標的 `const` 與空指標。仍限單一原始檔，且不允許 include。詳見 [core v2 支援範圍](../../utils/translate-frontends/docs/cpp-core-v2.md)。
 
 ## 多檔案專案
 
@@ -52,4 +52,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 輸出及附屬檔案不會覆寫既有檔案。`--out-dir` 要求父目錄存在且目標目錄不存在；`-o` 要求新的 `.nc` 路徑。清單記錄目標需求、輸入／輸出雜湊及編譯方式，原始碼映射將產生行對應至原始位置。
 
-CI 結果、執行與安裝驗證以及測試跳過項目依平台分別記錄。原生 macOS arm64 與透過 Rosetta 執行的 macOS x86_64 仍是不同的驗證環境。完整 C++／STL、指標、參考、陣列、例外、範本、字串及 `std::vector` 不在已公布的支援範圍內。請參閱[支援矩陣](../../utils/translate-frontends/docs/support-matrix.md)、[協定與復原規則](../../utils/translate-frontends/docs/protocol.md)及[專案範例](../../tests/neverc/Inputs/translate/cpp/project)。
+CI 結果、執行與安裝驗證以及測試跳過項目依平台分別記錄。原生 macOS arm64 與透過 Rosetta 執行的 macOS x86_64 仍是不同的驗證環境。完整 C++／STL、陣列、例外、範本、字串及 `std::vector` 不在已公布的支援範圍內。請參閱[支援矩陣](../../utils/translate-frontends/docs/support-matrix.md)、[協定與復原規則](../../utils/translate-frontends/docs/protocol.md)及[專案範例](../../tests/neverc/Inputs/translate/cpp/project)。
