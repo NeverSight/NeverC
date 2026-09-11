@@ -206,8 +206,17 @@ class FunctionLowering {
       return boolean(B->getValue(), L);
     if (const auto *P = dyn_cast<ParenExpr>(E))
       return expression(P->getSubExpr());
-    if (const auto *R = dyn_cast<DeclRefExpr>(E))
+    if (const auto *C = dyn_cast<ConstantExpr>(E); C && A.S.coreV2())
+      return expression(C->getSubExpr());
+    if (const auto *R = dyn_cast<DeclRefExpr>(E)) {
+      if (A.S.coreV2())
+        if (const auto *Enumerator = dyn_cast<EnumConstantDecl>(R->getDecl())) {
+          llvm::APSInt Value = Enumerator->getInitVal().extOrTrunc(32);
+          Value.setIsUnsigned(T == "uint");
+          return A.literal(Value, T, L);
+        }
       return storage(R->getDecl(), L);
+    }
     if (const auto *C = dyn_cast<CastExpr>(E)) {
       switch (C->getCastKind()) {
       case CK_LValueToRValue:
@@ -468,7 +477,9 @@ class FunctionLowering {
       for (const auto *Decl : D->decls()) {
         if (const auto *V = dyn_cast<VarDecl>(Decl))
           declaration(V);
-        else if (!isa<CXXRecordDecl>(Decl))
+        else if (!isa<CXXRecordDecl>(Decl) &&
+                 !(A.S.coreV2() &&
+                   isa<TypedefNameDecl, EnumDecl, StaticAssertDecl>(Decl)))
           reject(L, "declaration statement", "Unsupported local declaration.");
       }
     } else if (const auto *R = dyn_cast<ReturnStmt>(S)) {

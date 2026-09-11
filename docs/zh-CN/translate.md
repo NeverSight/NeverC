@@ -4,7 +4,7 @@
 
 # 将 C++ 转译为 NeverC
 
-实验性命令 `neverc translate` 通过 `cpp-core-v1`、`cpp-project-v1` 和 `cpp-math-v1` 生成可审查的 `.nc` 源码。
+实验性命令 `neverc translate` 通过 `cpp-core-v1`、`cpp-core-v2`、`cpp-project-v1` 和 `cpp-math-v1` 生成可审查的 `.nc` 源码。
 
 **目前仅实现了 C++ 输入转译。** 易语言（E Language，`.e`）、Python、Go、Rust、TypeScript 和 JavaScript 均为未来计划，尚无可用的转译器。
 
@@ -18,6 +18,8 @@ neverc output.nc -c -o output.o
 ```
 
 `cpp-core-v1` 接受一个不含 include 的独立 C++17 源文件，支持 `int`、`unsigned int`、`bool`、`void`、简单聚合类型、自由函数、命名空间、重载及文档列出的控制流。所有项目声明都会检查，包括未使用的代码。
+
+使用 `--profile cpp-core-v2` 可增加经过检查的 `typedef`／`using` 类型别名、底层类型为 32 位 `int` 或 `unsigned int` 的枚举，以及 `static_assert`。仍限单个源文件，且不允许 include。详见 [core v2 支持范围](../../utils/translate-frontends/docs/cpp-core-v2.md)。
 
 ## 多文件项目
 

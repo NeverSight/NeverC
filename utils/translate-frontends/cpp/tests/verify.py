@@ -29,7 +29,7 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
 
-    def check(name, source, code=None, options=(), root=None):
+    def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1"):
         nonlocal count
         directory = root or (args.output_dir / name)
         directory.mkdir(parents=True)
@@ -37,7 +37,7 @@ def main():
         file.write_text(source)
         request = directory / "request.json"
         response = directory / "response.json"
-        request.write_text(json.dumps({"protocol": 1, "profile": "cpp-core-v1",
+        request.write_text(json.dumps({"protocol": 1, "profile": profile,
             "root": str(directory.resolve()), "source": str(file.resolve()),
             "target": args.target, "arguments": ["-std=c++17", *options]}))
         result = subprocess.run([str(args.neverc), "__neverc_cpp_frontend", "--request", str(request),
@@ -49,6 +49,7 @@ def main():
             assert result.returncode and code in codes, (name, result.returncode, data)
         else:
             assert result.returncode == 0 and not codes, (name, result.returncode, data)
+            assert data["profile"] == profile
             assert data["target"]["triple"] == args.target
             assert data["dependencies"][0]["path"] == "input.cpp"
             before = response.read_bytes()
@@ -61,6 +62,49 @@ def main():
     for fixture in ("program.cpp", "module.cpp", "unspecified-order.cpp"):
         check(fixture[:-4], (repository / "tests/neverc/Inputs/translate/cpp" / fixture).read_text())
     check("example", (repository / "examples/translate-cpp/input.cpp").read_text())
+
+    # The explicit next core profile admits declarations without changing v1.
+    core_v2 = {
+        "alias-chain": "typedef int I; using J=I; J f(J x){using K=J; K y=x; return y;}",
+        "void-alias": "using Nothing=void; Nothing f(){} int main(){f();}",
+        "scoped-enum": "enum class E:unsigned int{v=0xffffffffu}; unsigned int f(){return static_cast<unsigned int>(E::v);}",
+        "signed-enum": "enum class E:int{v=-2147483647-1}; int f(){return static_cast<int>(E::v);}",
+        "unscoped-enum": "enum E{a=2,b=a+3}; int f(){return b;}",
+        "enum-global-field": "enum class E:int{v=4}; struct P{E e;}; constexpr P p{E::v}; int f(){return static_cast<int>(p.e);}",
+        "enum-overload": "enum class E:int{v=4}; int f(E x){return 1;} int f(int x){return 2;} int main(){return f(E::v)-1;}",
+        "local-declarations": "int main(){using I=int; enum class E:I{v=4}; static_assert(static_cast<I>(E::v)==4,\"text\"); return 0;}",
+        "assertion-no-message": "static_assert(true); int main(){}",
+        "assertion-message": "static_assert(true,\"diagnostic text only\"); int main(){}",
+        "enum-initialization": "enum class E:unsigned int{v=1}; int main(){E direct{1u}; E zero{}; return direct==E::v && static_cast<unsigned int>(zero)==0u ? 0:1;}",
+        "opaque-enum": "enum class E:unsigned int; unsigned int f(){E e=static_cast<E>(23u); return static_cast<unsigned int>(e);}",
+        "unsigned-unscoped": "enum E:unsigned int{v=0xffffffffu}; int main(){return v+1==0u && v==-1 ? 0:1;}",
+    }
+    for name, source in core_v2.items():
+        check("v2-" + name, source, profile="cpp-core-v2")
+    for name, source in {
+        "alias": "using I=int; int main(){}",
+        "typedef": "typedef int I; int main(){}",
+        "assertion": "static_assert(true,\"message\"); int main(){}",
+    }.items():
+        check("v1-still-rejects-" + name, source, "TR0201")
+    v2_rejections = {
+        "unused-pointer-alias": "using Hidden=int*; int main(){}",
+        "unused-volatile-alias": "using Hidden=volatile int; int main(){}",
+        "unused-function-alias": "using Hidden=void(); int main(){}",
+        "alias-template": "template<class T> using Hidden=T; int main(){}",
+        "narrow-enum": "enum class E:unsigned char{v=1}; int main(){}",
+        "wide-enum": "enum class E:unsigned long long{v=1}; int main(){}",
+        "bool-enum": "enum class E:bool{v=true}; int main(){}",
+        "folded-enum-cast": "enum E:int{v=(static_cast<void>(0),1)}; int main(){}",
+        "folded-assert-cast": "static_assert((static_cast<void>(0),true),\"condition\"); int main(){}",
+        "folded-assert-type": "static_assert(1L==1L,\"condition\"); int main(){}",
+        "runtime-string": "static_assert(true,\"message\"); const char *s=\"runtime\"; int main(){}",
+    }
+    for name, source in v2_rejections.items():
+        check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")
+    check("v2-failed-assert", "static_assert(false,\"must fail\"); int main(){}",
+          "TR0202", profile="cpp-core-v2")
+
     check("globals", "struct Pair { int x; unsigned int y; }; constexpr Pair p{2, 3u}; const int k = p.x + 4; int main(){return k - 6;}")
     check("empty-main", "int main() {}")
     private_c = check("private-c-linkage", 'extern "C" {static int private_value(){return 3;}} int main(){return private_value()-3;}')

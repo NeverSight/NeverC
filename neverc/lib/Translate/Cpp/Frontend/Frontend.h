@@ -41,6 +41,7 @@ struct State {
                 llvm::StringRef Reason, llvm::StringRef Guidance,
                 unsigned Line = 1, unsigned Column = 1,
                 llvm::StringRef File = {});
+  bool coreV2() const { return Profile == "cpp-core-v2"; }
   bool project() const { return Profile == "cpp-project-v1" || math(); }
   bool math() const { return Profile == "cpp-math-v1"; }
   bool configureSDK(const json::Object &SDK);

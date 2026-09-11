@@ -4,7 +4,7 @@
 
 # 將 C++ 轉譯為 NeverC
 
-實驗性命令 `neverc translate` 透過 `cpp-core-v1`、`cpp-project-v1` 和 `cpp-math-v1` 產生可審查的 `.nc` 原始碼。
+實驗性命令 `neverc translate` 透過 `cpp-core-v1`、`cpp-core-v2`、`cpp-project-v1` 和 `cpp-math-v1` 產生可審查的 `.nc` 原始碼。
 
 **目前僅實作了 C++ 輸入轉譯。** 易語言（E Language，`.e`）、Python、Go、Rust、TypeScript 和 JavaScript 均為未來計畫，目前尚無可用的轉譯器。
 
@@ -18,6 +18,8 @@ neverc output.nc -c -o output.o
 ```
 
 `cpp-core-v1` 接受一個不含 include 的獨立 C++17 原始檔，支援 `int`、`unsigned int`、`bool`、`void`、簡單聚合型別、自由函式、命名空間、多載及文件列出的控制流程。所有輸入宣告都會檢查，包括未使用的程式碼。
+
+使用 `--profile cpp-core-v2` 可增加經過檢查的 `typedef`／`using` 型別別名、底層型別為 32 位元 `int` 或 `unsigned int` 的列舉，以及 `static_assert`。仍限單一原始檔，且不允許 include。詳見 [core v2 支援範圍](../../utils/translate-frontends/docs/cpp-core-v2.md)。
 
 ## 多檔案專案
 

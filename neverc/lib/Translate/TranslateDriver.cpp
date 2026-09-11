@@ -121,11 +121,12 @@ bool parseInvocation(int Argc, const char **Argv, Invocation &I,
     return fail(D, "TR0002", I.Source, "language",
                 "unsupported language: " + Language,
                 "Only --from cpp is available.");
-  if (I.Profile != "cpp-core-v1" && I.Profile != "cpp-project-v1" &&
+  if (I.Profile != "cpp-core-v1" && I.Profile != "cpp-core-v2" &&
+      I.Profile != "cpp-project-v1" &&
       I.Profile != "cpp-math-v1")
     return fail(D, "TR0003", I.Source, "profile",
                 "unsupported profile: " + I.Profile,
-                "Use cpp-core-v1, cpp-project-v1, or cpp-math-v1.");
+                "Use cpp-core-v1, cpp-core-v2, cpp-project-v1, or cpp-math-v1.");
   if (I.Profile == "cpp-math-v1") {
     if (I.Target.empty())
       return error("cpp-math-v1 requires an explicit --target");
@@ -141,7 +142,8 @@ bool parseInvocation(int Argc, const char **Argv, Invocation &I,
   if (!I.Artifacts.Output.empty() &&
       sys::path::extension(I.Artifacts.Output) != ".nc")
     return error("-o must name a .nc file");
-  I.Artifacts.Project = I.Profile != "cpp-core-v1";
+  I.Artifacts.Project = I.Profile == "cpp-project-v1" ||
+                        I.Profile == "cpp-math-v1";
   if (I.Artifacts.Project) {
     if (I.Database.empty() || I.ProjectRoot.empty())
       return error("project profiles require --compdb and --project-root");
@@ -152,7 +154,7 @@ bool parseInvocation(int Argc, const char **Argv, Invocation &I,
     return true;
   }
   if (I.Sources.size() != 1)
-    return error("cpp-core-v1 accepts exactly one source file");
+    return error("core profiles accept exactly one source file");
   if (!I.Database.empty() || !I.ProjectRoot.empty() || !I.Target.empty() ||
       !I.Quoting.empty() || !I.EntrySelectors.empty())
     return error("project context options require an explicit project profile");
@@ -172,7 +174,7 @@ bool parseInvocation(int Argc, const char **Argv, Invocation &I,
       continue;
     }
     return fail(D, "TR0004", I.Source, "source compiler option",
-                "option is not in cpp-core-v1: " + A.str(),
+                "option is not in the selected core profile: " + A.str(),
                 "Use -std=c++17 and supported -D/-U macros; "
                 "target/layout/include options require another profile.");
   }
@@ -186,7 +188,8 @@ void help() {
          "(-o output.nc | --out-dir new-directory | --check) [options] -- "
          "[source options]\n\n"
          "Experimental C++17 scalar/aggregate translation.\n"
-         "  --profile PROFILE     cpp-core-v1 (default), cpp-project-v1, "
+         "  --profile PROFILE     cpp-core-v1 (default), cpp-core-v2, "
+         "cpp-project-v1, "
          "cpp-math-v1\n"
          "  --compdb PATH         Compilation database for selected project "
          "sources\n"
@@ -453,7 +456,7 @@ std::string manifest(const Invocation &I, const Module &M,
       {"version", 1},
       {"protocol", FrontendProtocolMajor},
       {"profile", jsonString(I.Profile)},
-      {"profile_version", 1},
+      {"profile_version", I.Profile == "cpp-core-v2" ? 2 : 1},
       {"source_options", Project ? json::Array{} : strings(I.Arguments)},
       {"compiler_environment_policy", "neverc.translate.execution-env.v1"},
       {"compiler_options",

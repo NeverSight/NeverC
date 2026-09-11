@@ -4,7 +4,7 @@
 
 # C++를 NeverC로 변환
 
-실험적인 `neverc translate`는 `cpp-core-v1`, `cpp-project-v1`, `cpp-math-v1`으로 검토 가능한 `.nc` 소스를 생성합니다.
+실험적인 `neverc translate`는 `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1`, `cpp-math-v1`으로 검토 가능한 `.nc` 소스를 생성합니다.
 
 **현재 입력 언어로 C++만 구현되어 있습니다.** E Language(易语言, `.e`), Python, Go, Rust, TypeScript, JavaScript 지원은 향후 계획이며, 해당 언어의 변환기는 아직 제공되지 않습니다.
 
@@ -18,6 +18,8 @@ neverc output.nc -c -o output.o
 ```
 
 `cpp-core-v1`은 include가 없는 독립적인 C++17 소스 하나를 받습니다. `int`, `unsigned int`, `bool`, `void`, 단순 집합체 타입, 비멤버 함수, 네임스페이스, 오버로드와 문서화된 제어 흐름을 지원합니다. 사용하지 않는 코드를 포함하여 입력에 포함된 모든 선언을 검사합니다.
+
+`--profile cpp-core-v2`를 선택하면 검증된 `typedef`/`using` 타입 별칭, 기반 타입이 32비트 `int` 또는 `unsigned int`인 열거형, `static_assert`를 추가로 변환할 수 있습니다. 단일 소스와 include 금지 제한은 그대로 적용됩니다. [core v2 지원 범위](../../utils/translate-frontends/docs/cpp-core-v2.md)를 참고하세요.
 
 ## 여러 파일로 구성된 프로젝트
 

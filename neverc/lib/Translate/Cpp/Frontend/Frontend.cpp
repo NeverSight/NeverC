@@ -88,7 +88,7 @@ void Adapter::reject(SourceLocation L, llvm::StringRef Construct,
   auto P = Sources.getPresumedLoc(Sources.getExpansionLoc(L));
   S.diagnose(
       Code, Construct, Reason,
-      "Rewrite using the documented cpp-core-v1 scalar/aggregate subset.",
+      "Rewrite using the documented constructs in the selected profile.",
       P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1,
       S.project() ? S.sourcePath(Sources, L) : S.Relative);
 }
@@ -137,6 +137,18 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid) {
       break;
     }
   }
+  if (S.coreV2())
+    if (const auto *E = dyn_cast<EnumType>(C)) {
+      QualType Underlying = E->getDecl()->getIntegerType();
+      if (!Underlying.isNull() &&
+          (Underlying->isSpecificBuiltinType(BuiltinType::Int) ||
+           Underlying->isSpecificBuiltinType(BuiltinType::UInt)))
+        return type(Underlying, L);
+      reject(L, "enum underlying type",
+             "Core v2 enums require an established int or unsigned int "
+             "underlying type.");
+      return {};
+    }
   if (const auto *R = C->getAs<RecordType>()) {
     const auto *D = dyn_cast<CXXRecordDecl>(R->getDecl());
     if (D && D->getDefinition() && !D->isUnion())
@@ -213,10 +225,14 @@ public:
     if (D->hasAttrs())
       A.reject(D->getLocation(), "attribute",
                "Source declaration attributes are unsupported.");
-    if (!isa<NamespaceDecl, LinkageSpecDecl, FunctionDecl, VarDecl,
+    const bool ExtendedDeclaration =
+        A.S.coreV2() &&
+        isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl>(D);
+    if (!ExtendedDeclaration &&
+        !isa<NamespaceDecl, LinkageSpecDecl, FunctionDecl, VarDecl,
              CXXRecordDecl, FieldDecl>(D))
       A.reject(D->getLocation(), D->getDeclKindName(),
-               "Declaration is outside cpp-core-v1.");
+               "Declaration is outside the selected profile.");
     if (const auto *N = dyn_cast<NamespaceDecl>(D); N && N->isInline())
       A.reject(D->getLocation(), "inline namespace",
                "Inline namespaces are not in the core profile.");
@@ -226,6 +242,26 @@ public:
                  "Owned declarations cannot extend or impersonate an approved "
                  "standard-library namespace.");
     return true;
+  }
+  bool VisitTypedefNameDecl(TypedefNameDecl *D) {
+    if (owned(D) && A.S.coreV2())
+      A.type(D->getUnderlyingType(), D->getLocation(), true);
+    return true;
+  }
+  bool VisitEnumDecl(EnumDecl *D) {
+    if (owned(D) && A.S.coreV2())
+      A.type(A.Context.getTypeDeclType(D), D->getLocation());
+    return true;
+  }
+  bool TraverseStaticAssertDecl(StaticAssertDecl *D) {
+    if (!A.S.coreV2())
+      return RecursiveASTVisitor<Allowlist>::TraverseStaticAssertDecl(D);
+    if (!WalkUpFromStaticAssertDecl(D))
+      return false;
+    // Sema validates the assertion. Still inspect its condition so constant
+    // evaluation cannot conceal unsupported source. The message is diagnostic
+    // text, not a runtime string expression to translate.
+    return TraverseStmt(D->getAssertExpr());
   }
   bool VisitFunctionDecl(FunctionDecl *D) {
     if (!owned(D))
@@ -347,6 +383,22 @@ public:
     if (const auto *E = dyn_cast<Expr>(S)) {
       if (const auto *WrittenCast = dyn_cast<ExplicitCastExpr>(E))
         A.type(WrittenCast->getTypeAsWritten(), E->getExprLoc(), true);
+      if (A.S.coreV2())
+        if (const auto *C = dyn_cast<CastExpr>(E)) {
+          // Enum initializers and static assertions are erased after checking.
+          // Validate their operations before erasure, not only in lowering.
+          switch (C->getCastKind()) {
+          case CK_LValueToRValue:
+          case CK_NoOp:
+          case CK_IntegralCast:
+          case CK_IntegralToBoolean:
+          case CK_FunctionToPointerDecay:
+            break;
+          default:
+            A.reject(E->getExprLoc(), "cast",
+                     "This cast operation is outside the core v2 profile.");
+          }
+        }
       const auto *Cast = dyn_cast<ImplicitCastExpr>(E);
       bool FunctionDecay =
           Cast && Cast->getCastKind() == CK_FunctionToPointerDecay;
@@ -354,6 +406,7 @@ public:
         A.type(E->getType(), E->getExprLoc(), true);
     }
     if (!(A.S.math() && isa<FloatingLiteral>(S)) &&
+        !(A.S.coreV2() && isa<ConstantExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -363,7 +416,7 @@ public:
              MaterializeTemporaryExpr, ExprWithCleanups, CXXBindTemporaryExpr,
              ConditionalOperator>(S))
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
-               "Expression or statement is outside cpp-core-v1.");
+               "Expression or statement is outside the selected profile.");
     if (const auto *C = dyn_cast<CallExpr>(S)) {
       const auto *F = C->getDirectCallee();
       if (A.S.math() && F &&
@@ -909,6 +962,7 @@ static bool request(State &S, llvm::StringRef Path) {
   const auto *O = Data->getAsObject();
   if (!O || O->getInteger("protocol") != 1 ||
       (O->getString("profile") != "cpp-core-v1" &&
+       O->getString("profile") != "cpp-core-v2" &&
        O->getString("profile") != "cpp-project-v1" &&
        O->getString("profile") != "cpp-math-v1"))
     return false;

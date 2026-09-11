@@ -116,6 +116,84 @@ TEST(TranslateIR, ParsesTypedModuleAndDerivesExports) {
   EXPECT_TRUE(M.Functions.front().Body.back().Value->Boolean);
 }
 
+TEST(TranslateIR, CoreV2ParsesVerifiesAndEmitsWithMatchingProfile) {
+  auto JSON = wireModule();
+  replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(JSON, M, D));
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("profile cpp-core-v2"), std::string::npos);
+  EXPECT_EQ(M.Exports.front().Result, "bool");
+}
+
+TEST(TranslateIR, CoreV2CannotSubstituteForAnotherRequestedProfile) {
+  for (const auto &Pair :
+       std::vector<std::pair<std::string, std::string>>{
+           {"cpp-core-v1", "cpp-core-v2"},
+           {"cpp-core-v2", "cpp-core-v1"},
+           {"cpp-core-v2", "cpp-project-v1"},
+           {"cpp-core-v2", "cpp-math-v1"},
+           {"cpp-core-v3", "cpp-core-v3"}}) {
+    SCOPED_TRACE(Pair.first + " -> " + Pair.second);
+    Module M = module();
+    M.Profile = Pair.first;
+    auto C = context(M);
+    C.Profile = Pair.second;
+    Diagnostics D;
+    EXPECT_FALSE(verifyModule(M, C, D));
+    ASSERT_FALSE(D.empty());
+    EXPECT_EQ(D.front().Code, "TR0003");
+    EmittedSource Output{"unchanged", {}};
+    EXPECT_FALSE(emitNC(M, C, Output, D));
+    EXPECT_EQ(Output.Text, "unchanged");
+  }
+}
+
+TEST(TranslateIR, CoreV2RetainsSingleUnitAndNoMathContract) {
+  Module Base = module();
+  Base.Profile = "cpp-core-v2";
+  Module M = Base;
+  M.Dependencies.push_back({"owned.hpp", std::string(64, 'b')});
+  invalid(M, "exactly one source dependency");
+  M = Base;
+  M.FPContractID = CppMathFPContractID;
+  invalid(M, "Math metadata");
+  M = Base;
+  M.SDKDistributionID = "unapproved-sdk";
+  invalid(M, "Math metadata");
+  M = Base;
+  M.Functions.front().Result = {TypeKind::Double, {}};
+  invalid(M, "Double requires");
+  M = Base;
+  Instruction Call;
+  Call.Op = InstructionKind::MappedCall;
+  Call.Loc = InputLoc;
+  Call.MappingID = "cpp.math.fabs.f64.v1";
+  M.Functions.front().Body.insert(M.Functions.front().Body.begin() + 1, Call);
+  invalid(M, "Mapped call");
+}
+
+TEST(TranslateIR, CoreV2WireRejectsMathEvidenceBeforeEmission) {
+  for (const auto *Extra : {
+           "\"fp_contract\":\"cpp.math.binary64.masked.v1\",",
+           "\"sdk_distribution_id\":\"unapproved-sdk\",",
+           "\"sdk_catalog_sha256\":\"unapproved\",",
+           "\"sdk_dependencies\":[],"}) {
+    SCOPED_TRACE(Extra);
+    auto JSON = wireModule();
+    replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+    replaceOnce(JSON, "\"records\": []", std::string(Extra) + "\"records\": []");
+    Module M;
+    Diagnostics D;
+    EXPECT_FALSE(parseModule(JSON, M, D));
+    ASSERT_FALSE(D.empty());
+    EXPECT_EQ(D.front().Code, "TR0103");
+  }
+}
+
 TEST(TranslateIR, RejectsMalformedAndIncompatibleWireData) {
   for (const auto &Change : std::vector<std::pair<std::string, std::string>>{
            {"\"protocol\": 1", "\"protocol\": 2"},

@@ -855,9 +855,10 @@ public:
         M.Frontend.Version != CppFrontendVersion || M.Frontend.Build.empty())
       return fail(D, "TR0103", Anchor, "frontend identity",
                   "Incompatible protocol or frontend identity/version.");
-    if (M.Profile != (Project ? (Math ? "cpp-math-v1" : "cpp-project-v1")
-                              : "cpp-core-v1") ||
-        M.Profile != Context.Profile)
+    const bool SupportedProfile =
+        Project ? M.Profile == (Math ? "cpp-math-v1" : "cpp-project-v1")
+                : (M.Profile == "cpp-core-v1" || M.Profile == "cpp-core-v2");
+    if (!SupportedProfile || M.Profile != Context.Profile)
       return fail(D, "TR0003", Anchor, "translation profile",
                   "Unsupported or mismatched semantic profile.");
     llvm::Triple T(llvm::Triple::normalize(M.Target.Triple));

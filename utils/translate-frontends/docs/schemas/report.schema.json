@@ -12,6 +12,7 @@
     "profile": {
       "enum": [
         "cpp-core-v1",
+        "cpp-core-v2",
         "cpp-project-v1",
         "cpp-math-v1"
       ]
@@ -176,6 +177,7 @@
           "profile": {
             "enum": [
               "cpp-core-v1",
+              "cpp-core-v2",
               "cpp-project-v1"
             ]
           }

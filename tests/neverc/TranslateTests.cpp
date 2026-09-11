@@ -773,6 +773,153 @@ TEST_F(TranslateTest,
             3);
 }
 
+TEST_F(TranslateTest, CoreV2DeclarationsPreserveValuesAndOverloads) {
+  const auto Source = tmpFile("declarations.cpp");
+  const auto Output = tmpFile("declarations.nc");
+  writeFile(Source, R"cpp(
+namespace model {
+using Count = unsigned int;
+typedef int Result;
+using Copy = Count;
+using Nothing = void;
+enum class Mode : Copy { low = 1u, high = 0xffffffffu };
+enum class Signed : Result { minimum = -2147483647 - 1, negative = -3 };
+enum Legacy { zero, answer = 40 };
+enum Large : Count { top = 0xffffffffu };
+enum class Opaque : Count;
+struct Pair { Mode mode; Signed sign; };
+constexpr Pair original{Mode::high, Signed::minimum};
+static_assert(static_cast<Count>(Mode::high) == 0xffffffffu, "enum width");
+static_assert(static_cast<int>(Signed::minimum) == -2147483647 - 1);
+int select(Mode value) { return value == Mode::high ? 7 : 8; }
+int select(Count value) { return value == 0xffffffffu ? 9 : 10; }
+}
+int main() {
+  using Local = model::Mode;
+  typedef model::Result Result;
+  enum class LocalEnum : int { value = 3 };
+  static_assert(static_cast<int>(LocalEnum::value) == 3, "local assertion");
+  Local mode = model::Mode::high;
+  Local direct{1u};
+  Local zero{};
+  model::Opaque opaque = static_cast<model::Opaque>(23u);
+  model::Pair copy = model::original;
+  Result value = model::answer;
+  if (static_cast<model::Count>(mode) != 0xffffffffu) return 1;
+  if (static_cast<int>(copy.sign) != -2147483647 - 1) return 2;
+  if (copy.mode != mode) return 3;
+  if (model::select(mode) != 7) return 4;
+  if (model::select(static_cast<model::Count>(mode)) != 9) return 5;
+  if (static_cast<int>(model::Signed::negative) != -3) return 6;
+  if (static_cast<Local>(1u) != model::Mode::low) return 7;
+  if (value + static_cast<int>(LocalEnum::value) != 43) return 8;
+  if (direct != model::Mode::low || static_cast<model::Count>(zero) != 0u)
+    return 9;
+  if (static_cast<model::Count>(opaque) != 23u) return 10;
+  if (model::top + 1 != 0u || !(model::top == -1)) return 11;
+  return 0;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Object = Manifest->getAsObject();
+  ASSERT_NE(Object, nullptr);
+  EXPECT_TRUE(Object->getString("profile") == "cpp-core-v2");
+  int64_t Version = 0;
+  ASSERT_TRUE(Object->getInteger("profile_version", Version));
+  EXPECT_EQ(Version, 2);
+  const auto *Mappings = Object->getArray("mappings");
+  ASSERT_NE(Mappings, nullptr);
+  EXPECT_TRUE(Mappings->empty());
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("declarations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CheckAcceptsDeclarationsWithoutOutput) {
+  const auto Source = tmpFile("assertions.cpp");
+  const auto Report = tmpFile("assertions.json");
+  writeFile(Source, "using Value = int; enum class E : Value { answer = 42 };"
+                    "static_assert(static_cast<Value>(E::answer) == 42, "
+                    "\"diagnostic text only\");");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check",
+                                    "--report", Report.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  auto Parsed = llvm::json::parse(readFile(Report));
+  ASSERT_TRUE(static_cast<bool>(Parsed))
+      << llvm::toString(Parsed.takeError()).str().str();
+  const auto *Object = Parsed->getAsObject();
+  ASSERT_NE(Object, nullptr);
+  EXPECT_TRUE(Object->getString("profile") == "cpp-core-v2");
+  EXPECT_TRUE(Object->getString("status") == "success");
+  EXPECT_FALSE(fs::exists(tmpFile("assertions.nc")));
+}
+
+TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"pointer-alias", "using Hidden = int *;", "TR0201"},
+      {"volatile-alias", "using Hidden = volatile int;", "TR0201"},
+      {"function-alias", "using Hidden = void();", "TR0201"},
+      {"alias-template", "template<class T> using Hidden = T;", "TR0201"},
+      {"wide-enum", "enum class E : unsigned long long { value = 0 };",
+       "TR0201"},
+      {"narrow-enum", "enum class E : unsigned char { value = 0 };",
+       "TR0201"},
+      {"bool-enum", "enum class E : bool { value = false };", "TR0201"},
+      {"folded-enum",
+       "enum E : int { value = (static_cast<void>(0), 1) };", "TR0201"},
+      {"folded-assertion",
+       "static_assert((static_cast<void>(0), true), \"checked condition\");",
+       "TR0201"},
+      {"wide-assertion", "static_assert(1L == 1L, \"checked types\");",
+       "TR0201"},
+      {"runtime-string",
+       "static_assert(true, \"message\"); const char *value = \"runtime\";",
+       "TR0201"},
+      {"failed-assertion", "static_assert(false, \"must fail\");", "TR0202"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string(Case.Name) + ".cpp");
+    const auto Output = tmpFile(std::string(Case.Name) + ".nc");
+    writeFile(Source, std::string(Case.Source) + "\nint main() { return 0; }\n");
+    auto Result = translate(
+        Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DeclarationsDoNotBroadenCoreV1) {
+  unsigned Index = 0;
+  for (const auto *Declaration : {"using Value = int;",
+                                 "typedef int Value;",
+                                 "enum class E : int { value = 1 };",
+                                 "static_assert(true, \"message\");"}) {
+    SCOPED_TRACE(Declaration);
+    const auto Name = "old-contract-" + std::to_string(++Index);
+    const auto Source = tmpFile(Name + ".cpp");
+    const auto Output = tmpFile(Name + ".nc");
+    writeFile(Source, std::string(Declaration) + "\nint main() { return 0; }\n");
+    expectCode(translate(Source, {"-o", Output.string()}), "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, RejectsUnsupportedOwnedCodeWithoutPublishingArtifacts) {
   struct Rejection {
     const char *Name;

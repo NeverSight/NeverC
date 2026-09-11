@@ -1,7 +1,7 @@
 # C++ translation support matrix
 
 Status: experimental built-in C++ implementation of `cpp-core-v1`,
-`cpp-project-v1`, and `cpp-math-v1`. NeverC statically contains the pinned full
+`cpp-core-v2`, `cpp-project-v1`, and `cpp-math-v1`. NeverC statically contains the pinned full
 Clang frontend and approved SDK headers. No separate frontend executable,
 Clang/LLVM installation or SDK descriptor is needed for translation. Only C++
 input translation is implemented; other language adapters remain future work.
@@ -15,6 +15,7 @@ The [design](design.md) defines commands, diagnostics, and artifacts.
 | C++ SDK parsing | The approved `<cmath>` header union and minimal SDK version metadata are embedded. Historical `<string>` and `<vector>` syntax probes establish no translation support. See [source provenance](../../../neverc/lib/Translate/Cpp/SDK/README.md). |
 | Builtin driver, semantic protocol, artifact checks | Implemented with CLI/IR/artifact tests; production protocol is separate from the P0 prototype format. |
 | Experimental `cpp-core-v1` | Implemented: programs/modules, `-O0`/`-O2` full-value comparison, rejection, relocation, output ownership and cancellation tests. Platform and delivery evidence is listed below. |
+| Experimental `cpp-core-v2` | Adds checked type aliases, int/uint32 enums and static assertions to the single-source core contract. See the [declaration support contract](cpp-core-v2.md); earlier v1 CI evidence does not establish v2 execution support. |
 | Multi-file project translation | P3A implemented: compilation-database selection, owned headers, per-unit semantic analysis, ODR/linkage checks, combined source/header emission, and original/generated program/library comparison at `-O0`/`-O2`. |
 | NeverC math mappings | P3B implemented behind explicit `cpp-math-v1`, pinned SDK/declaration provenance, exact runtime capability checks, and a runtime link probe. The [mapping gates](runtime-mapping.md) include numeric/environment differentials and installed output execution. |
 | C++ byte strings / trivial vectors | Follow-up profiles; no translation support implied by parsing their headers. |

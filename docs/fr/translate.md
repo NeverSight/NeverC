@@ -4,7 +4,7 @@
 
 # Traduire C++ vers NeverC
 
-La commande expérimentale `neverc translate` produit du code source `.nc` vérifiable avec `cpp-core-v1`, `cpp-project-v1` et `cpp-math-v1`.
+La commande expérimentale `neverc translate` produit du code source `.nc` vérifiable avec `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1` et `cpp-math-v1`.
 
 **Seule la traduction de code C++ est actuellement implémentée.** La prise en charge d’E Language (易语言, `.e`), de Python, Go, Rust, TypeScript et JavaScript est prévue ; leurs traducteurs ne sont pas encore disponibles.
 
@@ -18,6 +18,8 @@ neverc output.nc -c -o output.o
 ```
 
 Le profil `cpp-core-v1` accepte un unique fichier C++17 autonome sans include. Il prend en charge `int`, `unsigned int`, `bool`, `void`, les structures triviales, les fonctions non membres, les espaces de noms, surcharges et le contrôle de flux documenté. Toutes les déclarations du projet sont vérifiées, même inutilisées.
+
+Sélectionnez `--profile cpp-core-v2` pour ajouter les alias `typedef`/`using` vérifiés, les énumérations dont le type sous-jacent est `int` ou `unsigned int` sur 32 bits, et `static_assert`. Les restrictions à un seul fichier source et sans include restent applicables. Voir le [contrat core v2](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
 ## Projets à plusieurs fichiers
 

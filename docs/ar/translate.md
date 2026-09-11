@@ -6,7 +6,7 @@
 
 # ترجمة C++ إلى NeverC
 
-ينتج الأمر التجريبي `neverc translate` شيفرة `.nc` قابلة للمراجعة عبر `cpp-core-v1` و`cpp-project-v1` و`cpp-math-v1`.
+ينتج الأمر التجريبي `neverc translate` شيفرة `.nc` قابلة للمراجعة عبر `cpp-core-v1` و`cpp-core-v2` و`cpp-project-v1` و`cpp-math-v1`.
 
 **المتاح حالياً هو ترجمة شيفرة C++ فقط.** دعم E Language (易语言، `.e`) وPython وGo وRust وTypeScript وJavaScript ضمن الخطط المستقبلية؛ ولا تتوفر مترجمات لهذه اللغات بعد.
 
@@ -20,6 +20,8 @@ neverc output.nc -c -o output.o
 ```
 
 يقبل الملف التعريفي `cpp-core-v1` ملف مصدر C++17 مستقلاً واحداً دون include. يدعم `int` و`unsigned int` و`bool` و`void` والأنواع التجميعية البسيطة والدوال غير الأعضاء ومساحات الأسماء والتحميل الزائد وتدفق التحكم الموثق. تُفحص جميع التصريحات في المدخلات، بما فيها الشيفرة غير المستخدمة.
+
+اختر `--profile cpp-core-v2` لإضافة أسماء الأنواع البديلة `typedef`/`using` بعد التحقق منها، والتعدادات ذات النوع الأساسي `int` أو `unsigned int` بحجم 32 بت، و`static_assert`. تظل القيود مقتصرة على ملف مصدر واحد دون include. راجع [عقد core v2](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
 ## المشروعات متعددة الملفات
 
