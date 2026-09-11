@@ -1976,9 +1976,14 @@ public:
                         self.audit_inventory([(nearby, kind, decoded)],
                                              [(nearby, "W", nearby)], "nm")
 
+    def test_microsoft_printf_definition_shares_module_runtime_identity(self):
+        # Windows Clang x64 install observes private MicrosoftDemangle T and
+        # host GoogleTest W definitions of this UCRT header wrapper.
+        self.audit_inventory([("printf", "T", "printf")],
+                             [("printf", "W", "printf")], "nm")
+
     def test_microsoft_stdio_does_not_expand_to_other_runtime_families(self):
         records = (
-            ("printf", "T", "printf"),
             ("__real@3ff0000000000000", "R", "__real@3ff0000000000000"),
             ("?_OptionsStorage@?1??__local_stdio_printf_options@@9@9", "C",
              "extern \"C\" \x60extern \"C\" __local_stdio_printf_options'::"
