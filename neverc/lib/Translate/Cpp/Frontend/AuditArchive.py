@@ -137,12 +137,14 @@ def nm_output(nm, paths, *options):
         check=True).stdout
 
 
-def host_archives(directory, private_archive):
+def host_archives(directory, private_archive, self_import_library=None):
     def fail_walk(error):
         raise error
 
     result = []
-    private_archive = private_archive.resolve()
+    excluded_archives = {private_archive.resolve()}
+    if self_import_library is not None:
+        excluded_archives.add(self_import_library.resolve())
     for parent, directories, files in os.walk(
             directory, followlinks=False, onerror=fail_walk):
         directories[:] = sorted(name for name in directories
@@ -151,7 +153,7 @@ def host_archives(directory, private_archive):
         for name in sorted(files):
             path = Path(parent) / name
             if (path.suffix.lower() in (".a", ".lib")
-                    and path.resolve() != private_archive):
+                    and path.resolve() not in excluded_archives):
                 result.append(path)
     if not result:
         raise ValueError("No host archives found for the builtin C++ ABI audit")
@@ -640,7 +642,9 @@ def audit(args):
         bad.append("missing builtin C++ frontend C entry point definition")
 
     if args.host_lib_dir:
-        archives = host_archives(args.host_lib_dir, args.archive)
+        archives = host_archives(
+            args.host_lib_dir, args.archive,
+            self_import_library=getattr(args, "self_import_library", None))
         host_definitions = set()
         host_format = getattr(args, "host_format", "nm")
         if host_format == "coff-index":
@@ -826,6 +830,8 @@ def main():
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--prefix-header", type=Path)
     parser.add_argument("--host-lib-dir", type=Path)
+    parser.add_argument("--self-import-library", type=Path,
+                        help="Exact import-library output of the executable being linked")
     parser.add_argument("--host-format", choices=("nm", "coff-index"), default="nm")
     parser.add_argument("--host-nm")
     coff_reader = parser.add_mutually_exclusive_group()
