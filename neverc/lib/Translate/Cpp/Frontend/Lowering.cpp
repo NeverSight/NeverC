@@ -543,6 +543,40 @@ class FunctionLowering {
     }
     expression(E);
   }
+  void initialize(Expression Place, const Expr *Init, SourceLocation L) {
+    Init = Init->IgnoreParens();
+    if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
+      initialize(std::move(Place), W->getSubExpr(), L);
+      return;
+    }
+    if (const auto *C = dyn_cast<ConstantExpr>(Init); C && A.S.coreV2()) {
+      initialize(std::move(Place), C->getSubExpr(), L);
+      return;
+    }
+    if (const auto *I = dyn_cast<InitListExpr>(Init);
+        I && I->getType()->isRecordType()) {
+      if (I->isSyntacticForm() && I->getSemanticForm())
+        I = I->getSemanticForm();
+      auto Fields = I->getType()->getAsCXXRecordDecl()->getDefinition()->fields();
+      if (I->getNumInits() != std::distance(Fields.begin(), Fields.end()))
+        reject(L, "aggregate initialization",
+               "Incomplete semantic field initializer list.");
+      unsigned Index = 0;
+      // Initialization is observable through earlier destination subobjects.
+      // Store each field before evaluating the next clause, including nested
+      // lists. Ordinary record copy/assignment still uses the value path.
+      for (const auto *Field : Fields) {
+        Expression Member{{"kind", "member"},
+                          {"type", type(Field->getType(), L)},
+                          {"name", A.name(Field)},
+                          {"args", json::Array{json::Object(Place)}},
+                          {"loc", A.loc(L)}};
+        initialize(std::move(Member), I->getInit(Index++), L);
+      }
+      return;
+    }
+    assign(std::move(Place), expression(Init), L);
+  }
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
     auto Place = temporary(type(V->getType(), L), L);
@@ -559,7 +593,7 @@ class FunctionLowering {
         C->getConstructor()->isTrivial() && !C->getNumArgs() &&
         !C->requiresZeroInitialization())
       return;
-    assign(std::move(Place), expression(V->getInit()), L);
+    initialize(std::move(Place), V->getInit(), L);
   }
   void statement(const Stmt *S) {
     if (!S || !Open)

@@ -773,12 +773,49 @@ TEST_F(TranslateTest,
             3);
 }
 
+TEST_F(TranslateTest, AggregateInitializationStoresFieldsInSourceOrder) {
+  const auto Source = tmpFile("aggregate-order.cpp");
+  writeFile(Source, R"cpp(
+struct Pair { int x; int y; };
+struct Nested { Pair pair; int last; };
+int main() {
+  Pair direct{3, direct.x + 4};
+  if (direct.x != 3 || direct.y != 7) return 1;
+  Nested nested{{11, nested.pair.x + 2}, nested.pair.y + 4};
+  if (nested.pair.x != 11 || nested.pair.y != 13 || nested.last != 17)
+    return 2;
+  Pair assigned{5, 6};
+  assigned = {7, assigned.x + 10};
+  if (assigned.x != 7 || assigned.y != 15) return 3;
+  Pair copied = direct;
+  if (copied.x != 3 || copied.y != 7) return 4;
+  return 0;
+}
+)cpp");
+  for (const std::string &Profile : {"cpp-core-v1", "cpp-core-v2"}) {
+    SCOPED_TRACE(Profile);
+    const auto Output = tmpFile("aggregate-order-" + Profile + ".nc");
+    auto Result = translate(Source, {"--profile", Profile, "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile("aggregate-order-" + Profile + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization,
+                                      {"-fno-inline"});
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PointersAndReferencesPreserveAliasedStorage) {
   const auto Source = tmpFile("references.cpp");
   const auto Output = tmpFile("references.nc");
   writeFile(Source, R"cpp(
 const int constant = 17;
 struct Box { int *value; int marker; };
+struct Self { int value; int *alias; int observed; };
 int &select(bool first, int &left, int &right) {
   return first ? left : right;
 }
@@ -862,6 +899,9 @@ int main() {
   pointer = &left;
   *(pointer = &right) = *pointer;
   if (right != 53) return 19;
+  Self self{59, &self.value, *self.alias};
+  if (self.value != 59 || self.alias != &self.value || self.observed != 59)
+    return 20;
   return 0;
 }
 )cpp");
