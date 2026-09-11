@@ -50,4 +50,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 出力と付随ファイルは上書きされません。`--out-dir` には既存の親ディレクトリ内の新しいディレクトリ、`-o` には新しい `.nc` パスが必要です。マニフェストはターゲット要件、入出力ハッシュ、コンパイル手順を記録し、ソースマップは生成行を元の位置に対応付けます。
 
-実行とインストールの検証記録は、ネイティブの macOS arm64 と Rosetta 上の macOS x86_64 を分けて記載しています。Intel Mac 上でのネイティブ実行、Linux、Windows、その他のターゲットへの対応を示すものではありません。完全な C++／STL、ポインター、参照、配列、例外、テンプレート、文字列、`std::vector` は公開されたサポート範囲外です。[サポート表](../../utils/translate-frontends/docs/support-matrix.md)、[プロトコルと復旧規則](../../utils/translate-frontends/docs/protocol.md)、[プロジェクト例](../../tests/neverc/Inputs/translate/cpp/project)を参照してください。
+CI の結果、実行・インストールの検証、スキップされたテストはプラットフォーム別に記録しています。ネイティブの macOS arm64 と Rosetta 上の macOS x86_64 は異なる検証環境として区別しています。完全な C++／STL、ポインター、参照、配列、例外、テンプレート、文字列、`std::vector` は公開されたサポート範囲外です。[サポート表](../../utils/translate-frontends/docs/support-matrix.md)、[プロトコルと復旧規則](../../utils/translate-frontends/docs/protocol.md)、[プロジェクト例](../../tests/neverc/Inputs/translate/cpp/project)を参照してください。

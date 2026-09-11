@@ -50,4 +50,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 輸出及附屬檔案不會覆寫既有檔案。`--out-dir` 要求父目錄存在且目標目錄不存在；`-o` 要求新的 `.nc` 路徑。清單記錄目標需求、輸入／輸出雜湊及編譯方式，原始碼映射將產生行對應至原始位置。
 
-原生 macOS arm64 與透過 Rosetta 執行的 macOS x86_64 的執行及安裝驗證紀錄分別列出。這不代表已驗證原生 Intel Mac、Linux、Windows 或其他目標。完整 C++／STL、指標、參考、陣列、例外、範本、字串及 `std::vector` 不在已公布的支援範圍內。請參閱[支援矩陣](../../utils/translate-frontends/docs/support-matrix.md)、[協定與復原規則](../../utils/translate-frontends/docs/protocol.md)及[專案範例](../../tests/neverc/Inputs/translate/cpp/project)。
+CI 結果、執行與安裝驗證以及測試跳過項目依平台分別記錄。原生 macOS arm64 與透過 Rosetta 執行的 macOS x86_64 仍是不同的驗證環境。完整 C++／STL、指標、參考、陣列、例外、範本、字串及 `std::vector` 不在已公布的支援範圍內。請參閱[支援矩陣](../../utils/translate-frontends/docs/support-matrix.md)、[協定與復原規則](../../utils/translate-frontends/docs/protocol.md)及[專案範例](../../tests/neverc/Inputs/translate/cpp/project)。

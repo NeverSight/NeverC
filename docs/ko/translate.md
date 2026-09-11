@@ -50,4 +50,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 출력과 부속 파일은 덮어쓰지 않습니다. `--out-dir`는 기존 부모 디렉터리 아래 새 디렉터리를, `-o`는 새 `.nc` 경로를 요구합니다. 매니페스트는 대상 요구 사항, 입출력 해시와 컴파일 절차를 기록하며 소스 맵은 생성된 행을 원래 위치에 연결합니다.
 
-실행 및 설치 검증 기록은 네이티브 macOS arm64와 Rosetta에서 구동하는 macOS x86_64를 구분해 제공합니다. Intel Mac의 네이티브 실행, Linux, Windows 및 다른 대상을 지원한다는 의미는 아닙니다. 전체 C++／STL, 포인터, 참조, 배열, 예외, 템플릿, 문자열과 `std::vector`는 공개된 지원 범위에 포함되지 않습니다. [지원 표](../../utils/translate-frontends/docs/support-matrix.md), [프로토콜 및 복구 규칙](../../utils/translate-frontends/docs/protocol.md), [프로젝트 예제](../../tests/neverc/Inputs/translate/cpp/project)를 참고하세요.
+CI 결과, 실행 및 설치 검증, 건너뛴 테스트는 플랫폼별로 기록합니다. 네이티브 macOS arm64와 Rosetta에서 구동하는 macOS x86_64는 서로 다른 검증 환경으로 구분합니다. 전체 C++／STL, 포인터, 참조, 배열, 예외, 템플릿, 문자열과 `std::vector`는 공개된 지원 범위에 포함되지 않습니다. [지원 표](../../utils/translate-frontends/docs/support-matrix.md), [프로토콜 및 복구 규칙](../../utils/translate-frontends/docs/protocol.md), [프로젝트 예제](../../tests/neverc/Inputs/translate/cpp/project)를 참고하세요.

@@ -101,10 +101,10 @@ runs are a semantic regression baseline, not proof of the new built-in delivery.
 
 | Host / source target | Built-in implementation evidence | Support boundary |
 | --- | --- | --- |
-| macOS arm64 / `arm64-apple-macosx15.0.0` | Latest recorded built-in core protocol suite: 73 passed. Earlier built-in project and math suites passed 33 and 49 cases respectively. Isolated fresh-prefix installation, translation and O0/O2 execution passed with default mimalloc, Python plugins and bundled Python enabled. Full integrated-suite status is recorded below. | Native macOS runner; bounded profiles only. |
+| macOS arm64 / `arm64-apple-macosx15.0.0` | Earlier recorded built-in core protocol suite: 73 passed. Earlier built-in project and math suites passed 33 and 49 cases respectively. Isolated fresh-prefix installation, translation and O0/O2 execution passed with default mimalloc, Python plugins and bundled Python enabled. Full integrated-suite status is recorded below. | Native macOS runner; bounded profiles only. |
 | macOS under Rosetta x86_64 / `x86_64-apple-darwin24.6.0` | Prior 126-test process-separated baseline above. Local built-in validation was not completed. | Math target is explicitly macOS 15.0; built-in and native Intel execution are not established. |
-| Linux x64 / arm64 | No completed built-in frontend/runtime/installation evidence recorded here. | Not advertised. |
-| Windows x64 / arm64 | Full built-in build and regression validation assigned to GitHub CI; results pending. | Not advertised until matching CI evidence is available; the math profile remains restricted to its approved macOS targets. |
+| Linux x64 / arm64 | At `b02468ad`, the [x64](https://github.com/NeverSight/NeverC/actions/runs/34596323748) and [arm64](https://github.com/NeverSight/NeverC/actions/runs/34596323441) formal CI workflows completed successfully. | Workflow completion evidence only; per-test execution and installed-prefix translation were not separately reviewed here. The math profile remains restricted to its approved macOS targets. |
+| Windows x64 / arm64 | At `b02468ad`, the [x64 Clang](https://github.com/NeverSight/NeverC/actions/runs/34596323650) and [arm64 Clang](https://github.com/NeverSight/NeverC/actions/runs/34596323464) logs verify the built-in build, embedded-runtime relink, installation and full CTest run. Counts and skips are recorded below. | Bounded profiles and explicit test skips; installation of the compiler is distinct from an installed-prefix C++ translation smoke. The math profile remains restricted to its approved macOS targets. |
 | Android, kernel, freestanding, dyncode | Outside initial hosted translation profile. Existing NeverC support for such modes is not translator validation. | Not advertised. |
 
 The arm64 SDK probes explicitly select their target. A NeverC build under Rosetta
@@ -142,25 +142,47 @@ through the existing direct NeverC path.
 
 ## Repository regression validation
 
-The first built-in arm64 integrated run passed 131 of 132 tests. The remaining
-test correctly rejected an owned shadow header, but its new assertion expected
-the wrong diagnostic code. That assertion is corrected. The second run was
-stopped when full validation moved to GitHub CI, so there is no completed
-132-test passing run for this revision.
+The early local built-in arm64 integrated run passed 131 of 132 tests. Its
+remaining shadow-header assertion was corrected; the second local run stopped
+when full validation moved to GitHub CI. These are historical results. The
+earlier local protocol and installation evidence above predates the numeric byte
+initializer for MSVC, Windows path normalization and full-host symbol audit.
 
-Remaining full regression and platform validation now run in GitHub CI,
-including Windows x64 and arm64; their results are pending. The earlier local
-protocol and installation evidence above is retained separately. It predates
-the numeric byte initializer for MSVC, Windows path normalization, and the
-automated full-host symbol audit; those changes require the GitHub gates.
+At code revision [`b02468ad1ccda72b16393e4fab9147c201f2ee1f`](https://github.com/NeverSight/NeverC/commit/b02468ad1ccda72b16393e4fab9147c201f2ee1f),
+all ten formal CI workflows completed successfully: seven platform builds,
+the C++ frontend tools, code quality, and documentation/test-dependency checks.
+This includes the [macOS arm64 workflow](https://github.com/NeverSight/NeverC/actions/runs/34596323438).
+Linux and macOS evidence for this revision is workflow completion only; no
+additional per-test, numerical-observation or installed-prefix smoke results
+are inferred here from those workflow statuses.
+
+The Windows Clang build, installation and test logs were reviewed separately.
+Both architectures completed the initial and embedded-runtime executable links,
+passed the private/host ABI audit, and installed `neverc.exe`. Each CTest
+inventory contained 2,899 tests:
+
+| Windows Clang runner | Passed | Skipped | Failed |
+| --- | ---: | ---: | ---: |
+| x64 | 2,829 | 70 | 0 |
+| arm64 | 2,780 | 119 | 0 |
+
+Each runner's `neverc-translate.*` group contained 130 passed and 21 skipped
+tests. The skips cover three independent reference-compiler comparisons,
+15 macOS-specific math tests, two POSIX process fixtures and one controlled
+long-path test. The logs do not identify which long-path environment condition
+caused that skip. Core/project protocol tests and the executable core translation
+fixtures passed. Windows does not register the math protocol suite.
+
 The separate `cpp-frontend-tools` workflow exercises the archive-index parser
 and ABI collision checks on Linux, Windows and macOS before the full compiler
 builds finish. Compiler builds also run those checks against their real archives,
 including Clang LTO and MSVC LTCG inputs.
-The macOS workflow also runs the fresh-prefix installation smoke with reads of
+The macOS workflow includes the fresh-prefix installation smoke with reads of
 the checkout, selected Xcode developer directory and installed Homebrew/developer
-roots denied to NeverC and its generated programs. This gate verifies the current
-build's installed core, project and math translation at O0/O2.
+roots denied to NeverC and its generated programs. That gate checks installed
+core, project and math translation at O0/O2. Its current detailed smoke log was
+not separately reviewed for the CI summary above; earlier measured installation
+evidence remains recorded in its own section.
 
 The repository gate requires default mimalloc and Python-plugin options enabled,
 with bundled Python for the installed configuration. `PluginGlobalState`
