@@ -35,6 +35,10 @@ MSVC_STDIO_SYMBOLS = frozenset((
     "?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA",
 ))
 
+# UCRT defines this zero-initialized selectany fallback in the final module.
+# Sharing it does not authorize the feature variable or its alternate-name edge.
+MSVC_AVX2_FALLBACK = "_Avx2WmemEnabledWeakValue"
+
 CRT_STORAGE_SYMBOLS = frozenset((
     "?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA",
     "?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA",
@@ -740,6 +744,12 @@ def audit(args):
                     and name not in references and msvc_runtime_definition(
                         name, private_decoded.get(name, ""), private_kinds[name])):
                 continue
+            # Share only the exact UCRT fallback definition. Its feature-variable
+            # alias and all weak-reference closure checks retain their own rules.
+            if (host_format == "nm" and name == MSVC_AVX2_FALLBACK
+                    and name not in references and msvc_runtime_definition(
+                        name, private_decoded.get(name, ""), private_kinds[name])):
+                continue
             # Exception metadata retains its std type identity in both archives.
             # Only observed private read-only definitions may use this policy;
             # a host nm definition (often W) is not evidence of its object kind.
@@ -748,9 +758,10 @@ def audit(args):
                     and (microsoft_std_eh_entity(name)
                          or microsoft_std_catchable_type(name))):
                 continue
-            # A mismatched stdio declaration cannot fall through to the broader
+            # A mismatched runtime declaration cannot fall through to the broader
             # std-owner policy, including a storage name paired with std text.
-            if ((host_format == "nm" and name in MSVC_STDIO_SYMBOLS)
+            if ((host_format == "nm" and (name in MSVC_STDIO_SYMBOLS
+                                         or name == MSVC_AVX2_FALLBACK))
                     or not standard_shared_symbol(name, private_decoded.get(name, ""))):
                 bad.append("private/host symbol intersection: " + name +
                            f"; private_demangled={private_decoded.get(name, '')!r}" +

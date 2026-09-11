@@ -1862,6 +1862,65 @@ public:
         name = "_Avx2WmemEnabledWeakValue"
         self.audit_inventory([(name, "B", name)], [(name, "W", name)], "nm")
 
+    def test_microsoft_avx2_fallback_duplicate_b_definitions_share_identity(self):
+        name = "_Avx2WmemEnabledWeakValue"
+        self.audit_inventory([(name, "B", name)] * 2,
+                             [(name, "W", name)] * 2, "nm")
+
+    def test_microsoft_avx2_fallback_rejects_other_kinds_and_references(self):
+        name = "_Avx2WmemEnabledWeakValue"
+        for wrong in ("C", "D", "R", "T", "W", "V", "U", "w", "v"):
+            for kinds in ((wrong,), ("B", wrong), (wrong, "B")):
+                with self.subTest(kinds=kinds):
+                    with self.assertRaisesRegex(
+                            ValueError, "private/host symbol intersection"):
+                        self.audit_inventory([(name, kind, name) for kind in kinds],
+                                             [(name, "W", name)], "nm")
+
+    def test_microsoft_avx2_fallback_requires_exact_private_declaration(self):
+        name = "_Avx2WmemEnabledWeakValue"
+        declarations = ("different", "int std::state", " " + name,
+                        name + " ", name + "_extra")
+        declarations += tuple(name[:1] + control + name[1:]
+                              for control in ("\x00", "\t", "\x1f", "\x7f"))
+        for decoded in declarations:
+            with self.subTest(decoded=repr(decoded)):
+                with self.assertRaisesRegex(
+                        ValueError, "private/host symbol intersection"):
+                    self.audit_inventory([(name, "B", decoded)],
+                                         [(name, "W", name)], "nm")
+
+    def test_microsoft_avx2_fallback_does_not_authorize_other_symbols(self):
+        fallback = "_Avx2WmemEnabledWeakValue"
+        names = ("_Avx2WmemEnabled", "_" + fallback, fallback + "_extra",
+                 "prefix_" + fallback, fallback.lower(),
+                 "__isa_available_default", "_OtherFeatureWeakValue")
+        for name in names:
+            for kind in ("B", "T", "W", "U", "w", "v"):
+                with self.subTest(name=name, kind=kind):
+                    with self.assertRaisesRegex(
+                            ValueError, "private/host symbol intersection"):
+                        self.audit_inventory([(name, kind, name)],
+                                             [(name, "W", name)], "nm")
+
+    def test_microsoft_avx2_fallback_preserves_independent_private_findings(self):
+        fallback = "_Avx2WmemEnabledWeakValue"
+        cases = [
+            ("LLVMContextCreate", "T", "LLVMContextCreate"),
+            ("neverc_cpp_llvm_missing", "U",
+             "unresolved private dependency: neverc_cpp_llvm_missing"),
+        ]
+        for old, _ in SETUP_GUID_PAIRS:
+            for kind in ("R", "U"):
+                cases.append((old, kind, "unisolated Setup GUID symbol: " + old))
+        for name, kind, diagnostic in cases:
+            with self.subTest(name=name, kind=kind):
+                with self.assertRaises(ValueError) as failure:
+                    self.audit_inventory(
+                        [(fallback, "B", fallback), (name, kind, name)],
+                        [(fallback, "W", fallback), (name, "W", name)], "nm")
+                self.assertIn(diagnostic, str(failure.exception))
+
     def test_microsoft_stdio_duplicate_definition_kinds_share_module_identity(self):
         for name, kind, decoded in MSVC_STDIO_MODULE_RECORDS:
             with self.subTest(name=name):

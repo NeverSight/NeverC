@@ -2,7 +2,8 @@
 """Narrow MSVC runtime identities shared by the two compiler implementations.
 
 The full runtime definition policy applies only to the COFF host-index audit.
-AuditArchive's nm path admits only its explicit nine-symbol stdio subset.
+AuditArchive's nm path admits only its explicit nine-symbol stdio subset
+and the exact AVX2 fallback definition.
 Definition sharing requires the complete ABI spelling, decoded declaration,
 observed private definition kind and absence of private references. It does
 not authorize other stdext entities or arbitrary C entry points.
