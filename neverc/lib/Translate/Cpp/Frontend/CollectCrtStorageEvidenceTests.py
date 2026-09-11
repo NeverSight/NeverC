@@ -234,7 +234,8 @@ class AuditActivationTests(TemporaryEvidenceTest):
 
     def test_real_audit_failure_populates_only_structured_selected_context(self):
         args = self.args()
-        inventories = {self.private: [("neverc_cpp_frontend_main", "T"), (AVX, "B")],
+        # Initialized storage is outside the shared zero-initialized fallback rule.
+        inventories = {self.private: [("neverc_cpp_frontend_main", "T"), (AVX, "D")],
                        self.host: [(AVX, "W")]}
 
         def nm_output(_tool, paths, *options):
