@@ -1609,6 +1609,41 @@ public:
                 self.audit_inventory([(name, "R", name)],
                                      [(name, "W", name)], "nm")
 
+    def test_microsoft_std_catchable_types_share_nm_identity(self):
+        # Exact CT spellings from the cac5 Windows Clang audit. Only shared
+        # std type/copy-constructor ownership is tested; the numeric suffix
+        # does not establish size or layout.
+        symbols = (
+            "_CT??_R0?AV_System_error@std@@@8"
+            "??0_System_error@std@@QEAA@AEBV01@@Z40",
+            "_CT??_R0?AVbad_alloc@std@@@8"
+            "??0bad_alloc@std@@QEAA@AEBV01@@Z24",
+            "_CT??_R0?AVbad_array_new_length@std@@@8"
+            "??0bad_array_new_length@std@@QEAA@AEBV01@@Z24",
+            "_CT??_R0?AVbad_cast@std@@@8"
+            "??0bad_cast@std@@QEAA@AEBV01@@Z24",
+            "_CT??_R0?AVbad_optional_access@std@@@8"
+            "??0bad_optional_access@std@@QEAA@AEBV01@@Z24",
+            "_CT??_R0?AVbad_variant_access@std@@@8"
+            "??0bad_variant_access@std@@QEAA@AEBV01@@Z24",
+            "_CT??_R0?AVexception@std@@@8"
+            "??0exception@std@@QEAA@AEBV01@@Z24",
+            "_CT??_R0?AVfailure@ios_base@std@@@8"
+            "??0failure@ios_base@std@@QEAA@AEBV012@@Z40",
+            "_CT??_R0?AVfuture_error@std@@@8"
+            "??0future_error@std@@QEAA@AEBV01@@Z40",
+            "_CT??_R0?AVlogic_error@std@@@8"
+            "??0logic_error@std@@QEAA@AEBV01@@Z24",
+            "_CT??_R0?AVruntime_error@std@@@8"
+            "??0runtime_error@std@@QEAA@AEBV01@@Z24",
+            "_CT??_R0?AVsystem_error@std@@@8"
+            "??0system_error@std@@QEAA@AEBV01@@Z40",
+        )
+        for name in symbols:
+            with self.subTest(name=name):
+                self.audit_inventory([(name, "R", name)],
+                                     [(name, "W", name)], "nm")
+
     def test_microsoft_std_eh_simple_owners_and_count_bounds(self):
         for prefix in ("_CTA", "_TI"):
             for spelling in ("0?AVerror@std@@", "4294967295?AVerror@std@@",
@@ -1681,7 +1716,6 @@ public:
 
     def test_microsoft_std_eh_does_not_share_other_runtime_records(self):
         records = (
-            ("_CT??_R0?AVbad_cast@std@@@8??0bad_cast@std@@QEAA@AEBV01@@Z24", "R"),
             ("__real@3ff0000000000000", "R"),
             ("__local_stdio_printf_options", "T"),
             ("__local_stdio_scanf_options", "T"),
