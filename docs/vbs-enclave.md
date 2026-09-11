@@ -142,8 +142,18 @@ candidates. It resolves an export with `GetProcAddress`, makes repeated
 `CallEnclave` calls through guarded and legacy indirect-call paths, and checks
 the returned values. `PASS` requires ordered evidence for every lifecycle
 stage, including successful termination and deletion; loading and
-initialization alone are insufficient. ARM64 is covered by static validation
-and differential linking, not runtime execution.
+initialization alone are insufficient. In this workflow, ARM64 is covered by
+static validation and differential linking; the regular runtime probe remains
+x64-only.
+
+A separate validation on native Windows 11 ARM64 passed on 2026-09-11
+([run 34554067852](https://github.com/NeverSight/NeverC/actions/runs/34554067852)).
+It reused both NeverC ARM64 DLLs built from
+`c46e3a4cc4b3732823a7241a43bca6c44b0f0b74` and tested them alongside a freshly built
+MSVC reference image. All 48 lifecycle stages and 12 calls with verified
+results passed; enclave teardown and signing-certificate cleanup also
+succeeded. This verifies those fixed artifacts, not a fresh NeverC compiler
+build or a permanent ARM64 runtime CI gate.
 
 An optional runtime probe may report `SKIP` only for recognized environment
 setup unavailability before function execution. Crashes, timeouts, missing or
