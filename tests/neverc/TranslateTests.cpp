@@ -809,6 +809,173 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2FixedArraysPreserveStorageAndInitialization) {
+  const auto Source = tmpFile("arrays.cpp");
+  const auto Output = tmpFile("arrays.nc");
+  writeFile(Source, R"cpp(
+using Row = int[3];
+struct Record { int values[3]; int marker; };
+struct Links { int *values[2]; };
+struct Wrapper { Record record; int marker; };
+struct Pair { int x; int y; };
+int second(int values[3]) { return values[1]; }
+Record make_record(int &calls) { ++calls; return {{47, 53}, 59}; }
+Row &row(Row &value) { return value; }
+Row *row_pointer(Row &value) { return &value; }
+int redirect(int *&pointer, int *replacement) {
+  pointer = replacement;
+  return 1;
+}
+int main() {
+  int values[3] = {1};
+  if (values[0] != 1 || values[1] != 0 || values[2] != 0) return 1;
+  int matrix[2][3] = {{1, 2}, {3}};
+  if (matrix[0][0] != 1 || matrix[0][1] != 2 || matrix[0][2] != 0 ||
+      matrix[1][0] != 3 || matrix[1][1] != 0 || matrix[1][2] != 0) return 2;
+  row(values)[1] = 7;
+  (*row_pointer(values))[2] = 9;
+  if (values[1] != 7 || values[2] != 9) return 3;
+  const Row &view = values;
+  if (view[1] != 7) return 4;
+  int other[3] = {80, 90, 100};
+  int *pointer = values;
+  int selected = pointer[redirect(pointer, other)];
+  if (selected != 7 || pointer != other) return 5;
+  pointer = values;
+  int reversed = redirect(pointer, other)[pointer];
+  if (reversed != 90) return 13;
+  Record partial;
+  Record *record = &partial;
+  record->values[1] = 11;
+  if (record->values[1] != 11) return 6;
+  Record complete{{13, 17}, 19};
+  Record copy = complete;
+  copy.values[0] = 23;
+  if (complete.values[0] != 13 || copy.values[0] != 23 ||
+      copy.values[1] != 17 || copy.values[2] != 0 || copy.marker != 19) return 7;
+  const Record *readonly = &copy;
+  const int *element_view = readonly->values;
+  if (element_view[0] != 23) return 8;
+  int left = 29, right = 31;
+  Links links{{&left, &right}};
+  *links.values[1] = 37;
+  if (right != 37) return 9;
+  int *const fixed[2] = {&left, &right};
+  int *const *fixed_view = fixed;
+  **fixed_view = 41;
+  if (left != 41) return 10;
+  bool flags[3] = {true};
+  int *pointers[2] = {};
+  if (!flags[0] || flags[1] || flags[2] || pointers[0] || pointers[1]) return 11;
+  enum class E:int { value=43 };
+  E enums[2] = {E::value};
+  if (static_cast<int>(enums[0]) != 43 || static_cast<int>(enums[1]) != 0)
+    return 12;
+  Record observed{{5, observed.values[0] + 2}, observed.values[1] + 3};
+  if (observed.values[0] != 5 || observed.values[1] != 7 ||
+      observed.values[2] != 0 || observed.marker != 10) return 14;
+  Record records[2] = {{{2, 3}, 4}, {{5}, 6}};
+  records[1].values[2] = 7;
+  if (records[0].values[0] != 2 || records[0].values[1] != 3 ||
+      records[0].values[2] != 0 || records[0].marker != 4 ||
+      records[1].values[0] != 5 || records[1].values[1] != 0 ||
+      records[1].values[2] != 7 || records[1].marker != 6) return 15;
+  const int constants[2][3] = {{11}, {13, 17}};
+  const int (*constant_rows)[3] = constants;
+  if (constant_rows[0][0] != 11 || constant_rows[0][1] != 0 ||
+      constant_rows[1][0] != 13 || constant_rows[1][1] != 17 ||
+      constant_rows[1][2] != 0) return 16;
+  int calls = 0;
+  if (make_record(calls).values[1] != 53 || calls != 1) return 17;
+  if (Record{{61, 67}, 71}.values[0] != 61) return 18;
+  int self[3] = {5, self[0] + 2, self[1] + 4};
+  if (self[0] != 5 || self[1] != 7 || self[2] != 11) return 19;
+  Record assigned{{1}, 2};
+  assigned = {{3, assigned.values[0] + 4}, assigned.marker + 5};
+  if (assigned.values[0] != 3 || assigned.values[1] != 5 ||
+      assigned.values[2] != 0 || assigned.marker != 7) return 20;
+  Pair pair = Pair{3, pair.x + 4};
+  if (pair.x != 3 || pair.y != 7) return 21;
+  Record typed = Record{{5, typed.values[0] + 2}, typed.values[1] + 3};
+  if (typed.values[0] != 5 || typed.values[1] != 7 || typed.marker != 10)
+    return 22;
+  Wrapper nested{Record{{7, nested.record.values[0] + 4},
+                        nested.record.values[1] + 2}, nested.record.marker + 4};
+  if (nested.record.values[0] != 7 || nested.record.values[1] != 11 ||
+      nested.record.marker != 13 || nested.marker != 17) return 23;
+  if (second(values) != 7) return 24;
+  for (int choose = 0; choose < 2; ++choose) {
+    int effects = 0;
+    Pair selected = choose ? Pair{3, selected.x + 4}
+                           : Pair{5, selected.x + 6};
+    if (selected.x != (choose ? 3 : 5) ||
+        selected.y != (choose ? 7 : 11)) return 25;
+    Pair sequenced = (++effects, Pair{13, sequenced.x + 4});
+    if (effects != 1 || sequenced.x != 13 || sequenced.y != 17) return 26;
+  }
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("arrays" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayScopeRejectsUnsupportedStorage) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"zero-array",
+       "int f(){int a[0]; return 0;}", "TR0201"},
+      {"variable-array",
+       "int f(int n){int a[n]; return 0;}", "TR0201"},
+      {"dead-variable-array",
+       "int f(int n){if(false){int a[n];} return 0;}", "TR0201"},
+      {"unsupported-element",
+       "int f(){char a[2]; return 0;}", "TR0201"},
+      {"global-array",
+       "const int a[2]={1,2};", "TR0201"},
+      {"global-array-field",
+       "struct R{int a[2];}; constexpr R r{{1,2}};", "TR0201"},
+      {"array-alias-bound",
+       "using TooLarge=int[65537]; int main(){}", "TR0201"},
+      {"nested-array-expansion",
+       "using TooLarge=int[65536][65536]; int main(){}", "TR0201"},
+      {"const-array-write",
+       "void f(){const int a[2]={1,2}; a[0]=3;}", "TR0202"},
+      {"const-record-array-write",
+       "struct R{int a[2];}; void f(const R*p){p->a[0]=3;}", "TR0202"},
+      {"array-temporary-subobject",
+       "struct R{int a[2];}; int f(){const int &r=R{{1,2}}.a[0]; return r;}", "TR0201"},
+      {"array-temporary-comma",
+       "struct R{int a[2];}; int f(){int n=0; const int &r=(++n,R{{1,2}}.a)[0]; return r;}", "TR0201"},
+      {"array-temporary-dereference",
+       "struct R{int a[2];}; int f(){const int &r=*R{{1,2}}.a; return r;}", "TR0201"},
+      {"array-initialization-budget",
+       "int f(){int a[65536]={}; return a[0];}", "TR0201"}
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string(Case.Name) + ".cpp");
+    const auto Output = tmpFile(std::string(Case.Name) + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result = translate(
+        Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PointersAndReferencesPreserveAliasedStorage) {
   const auto Source = tmpFile("references.cpp");
   const auto Output = tmpFile("references.nc");

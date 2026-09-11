@@ -21,6 +21,8 @@ neverc output.nc -c -o output.o
 
 `--profile cpp-core-v2` を選択すると、検査済みの `typedef`／`using` 型エイリアス、基底型が 32 ビットの `int` または `unsigned int` の列挙型、`static_assert`、限定されたオブジェクトポインターと左辺値参照を追加で変換できます。参照引数と参照戻り値は元のオブジェクトを参照し、多段ポインターの `const` とヌルポインターにも対応します。単一ソースと include 禁止の制限は継続します。[core v2 の対応範囲](../../utils/translate-frontends/docs/cpp-core-v2.md)を参照してください。
 
+core v2 は固定長のローカル配列と配列フィールド、多次元の添字アクセス、配列へのポインターと参照にも対応します。部分初期化では残りの要素をゼロで埋め、要素の初期化順序とエイリアス関係を保持します。配列長と初期化の展開量には上限があります。グローバル配列、可変長配列、非自明な要素の生存期間処理は未対応です。
+
 ## 複数ファイルのプロジェクト
 
 コンパイルデータベースから翻訳単位を明示的に選び、プロジェクトのルートディレクトリを指定します。内蔵フロントエンドは各単位を個別に解析し、マージ処理は定義の完全性、リンケージ、共有型を検査し、単一定義規則（ODR）への適合を保守的に検証します。
@@ -52,4 +54,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 出力と付随ファイルは上書きされません。`--out-dir` には既存の親ディレクトリ内の新しいディレクトリ、`-o` には新しい `.nc` パスが必要です。マニフェストはターゲット要件、入出力ハッシュ、コンパイル手順を記録し、ソースマップは生成行を元の位置に対応付けます。
 
-CI の結果、実行・インストールの検証、スキップされたテストはプラットフォーム別に記録しています。ネイティブの macOS arm64 と Rosetta 上の macOS x86_64 は異なる検証環境として区別しています。完全な C++／STL、配列、例外、テンプレート、文字列、`std::vector` は公開されたサポート範囲外です。[サポート表](../../utils/translate-frontends/docs/support-matrix.md)、[プロトコルと復旧規則](../../utils/translate-frontends/docs/protocol.md)、[プロジェクト例](../../tests/neverc/Inputs/translate/cpp/project)を参照してください。
+CI の結果、実行・インストールの検証、スキップされたテストはプラットフォーム別に記録しています。ネイティブの macOS arm64 と Rosetta 上の macOS x86_64 は異なる検証環境として区別しています。完全な C++／STL、例外、テンプレート、文字列、`std::vector` は公開されたサポート範囲外です。[サポート表](../../utils/translate-frontends/docs/support-matrix.md)、[プロトコルと復旧規則](../../utils/translate-frontends/docs/protocol.md)、[プロジェクト例](../../tests/neverc/Inputs/translate/cpp/project)を参照してください。

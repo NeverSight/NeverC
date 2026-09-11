@@ -110,6 +110,48 @@ std::string Adapter::name(const NamedDecl *D) {
   return Name;
 }
 
+std::size_t Adapter::storageUnits(QualType T, unsigned Depth) {
+  constexpr std::size_t Limit = 200000;
+  if (Depth > 64)
+    return Limit + 1;
+  if (const auto *Array = Context.getAsConstantArrayType(T)) {
+    auto Count = Array->getSize().getLimitedValue(65537);
+    auto Element = storageUnits(Array->getElementType(), Depth + 1);
+    return !Count || Count > 65536 || Element > Limit / Count
+               ? Limit + 1 : Element * Count;
+  }
+  if (const auto *R = T->getAsCXXRecordDecl(); R && R->getDefinition()) {
+    R = R->getDefinition();
+    auto Found = StorageUnits.find(R);
+    if (Found != StorageUnits.end())
+      return Found->second;
+    StorageUnits.emplace(R, Limit + 1);
+    std::size_t Units = 0;
+    for (const auto *F : R->fields()) {
+      auto Added = storageUnits(F->getType(), Depth + 1);
+      if (Added > Limit - Units)
+        return Limit + 1;
+      Units += Added;
+    }
+    StorageUnits[R] = Units;
+    return Units;
+  }
+  // Pointers/references consume storage but do not expand their pointees.
+  return 1;
+}
+
+void Adapter::chargeExpansion(std::size_t Nodes, SourceLocation L) {
+  if (!S.coreV2())
+    return;
+  constexpr std::size_t Limit = 200000;
+  if (Nodes > Limit - ExpandedNodes) {
+    reject(L, "initialization expansion",
+           "Expanded initializer/assignment nodes exceed the frontend budget.");
+    throw Failure{};
+  }
+  ExpandedNodes += Nodes;
+}
+
 std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                           unsigned Depth) {
   if (Depth > 64) {
@@ -122,6 +164,18 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     return {};
   }
   const Type *C = T.getCanonicalType().getTypePtr();
+  if (S.coreV2())
+    if (const auto *Array = Context.getAsConstantArrayType(T)) {
+      auto Count = Array->getSize().getLimitedValue(65537);
+      if (!Count || Count > 65536 || storageUnits(T) > 200000) {
+        reject(L, "array extent", "Fixed arrays exceed the extent/storage limit.");
+        return {};
+      }
+      auto Element = type(Array->getElementType(), L, false, Depth + 1);
+      if (Element.empty())
+        return {};
+      return "arr:" + std::to_string(Count) + ":" + Element;
+    }
   if (S.coreV2() && (C->isPointerType() || C->isLValueReferenceType())) {
     QualType Pointee = C->getPointeeType();
     auto Element = type(Pointee, L, C->isPointerType(), Depth + 1);
@@ -187,6 +241,17 @@ json::Object Adapter::literal(const llvm::APSInt &V, llvm::StringRef T,
 
 json::Object Adapter::zero(QualType T, SourceLocation L) {
   std::string Kind = type(T, L);
+  if (Kind.empty())
+    throw Failure{};
+  chargeExpansion(2 + std::count(Kind.begin(), Kind.end(), ':'), L);
+  if (const auto *Array = Context.getAsConstantArrayType(T); Array && S.coreV2()) {
+    json::Array Values;
+    auto Count = Array->getSize().getLimitedValue(65537);
+    for (uint64_t I = 0; I < Count; ++I)
+      Values.push_back(zero(Array->getElementType(), L));
+    return json::Object{{"kind", "aggregate"}, {"type", Kind},
+                        {"args", std::move(Values)}, {"loc", loc(L)}};
+  }
   if (Kind == "double")
     return floatingLiteral(llvm::APFloat::getZero(llvm::APFloat::IEEEdouble()),
                            L);
@@ -227,11 +292,35 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
 
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
+  std::map<const CXXRecordDecl *, bool> HasArray;
   bool owned(const Decl *D) {
     return !D->isImplicit() && A.S.owns(A.Sources, D->getLocation());
   }
   // Follow the identity of an lvalue, not arbitrary call arguments. A by-value
   // temporary passed to a function returning some other live object is safe.
+  bool temporaryArrayBase(const Expr *E) {
+    E = E->IgnoreParens();
+    if (E->getType()->isArrayType())
+      return temporaryBinding(E);
+    if (const auto *C = dyn_cast<CastExpr>(E)) {
+      if (C->getCastKind() == CK_ArrayToPointerDecay)
+        return temporaryBinding(C->getSubExpr());
+      if (C->getCastKind() == CK_NoOp || C->getCastKind() == CK_BitCast)
+        return temporaryArrayBase(C->getSubExpr());
+    }
+    if (const auto *W = dyn_cast<ExprWithCleanups>(E))
+      return temporaryArrayBase(W->getSubExpr());
+    if (const auto *C = dyn_cast<ConditionalOperator>(E))
+      return temporaryArrayBase(C->getTrueExpr()) ||
+             temporaryArrayBase(C->getFalseExpr());
+    if (const auto *B = dyn_cast<BinaryOperator>(E);
+        B && B->getOpcode() == BO_Comma)
+      return temporaryArrayBase(B->getRHS());
+    if (const auto *U = dyn_cast<UnaryOperator>(E); U && U->getOpcode() == UO_AddrOf)
+      return temporaryBinding(U->getSubExpr());
+    // A pointer prvalue (including a call result) is not a temporary pointee.
+    return false;
+  }
   bool temporaryBinding(const Expr *E) {
     E = E->IgnoreParens();
     if (isa<MaterializeTemporaryExpr, CXXBindTemporaryExpr>(E))
@@ -242,6 +331,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return temporaryBinding(W->getSubExpr());
     if (const auto *M = dyn_cast<MemberExpr>(E))
       return !M->isArrow() && temporaryBinding(M->getBase());
+    if (const auto *Index = dyn_cast<ArraySubscriptExpr>(E))
+      return temporaryArrayBase(Index->getBase());
     if (const auto *C = dyn_cast<ConditionalOperator>(E))
       return temporaryBinding(C->getTrueExpr()) ||
              temporaryBinding(C->getFalseExpr());
@@ -251,10 +342,29 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (B->isAssignmentOp())
         return temporaryBinding(B->getLHS());
     }
-    if (const auto *U = dyn_cast<UnaryOperator>(E);
-        U && U->isIncrementDecrementOp())
-      return temporaryBinding(U->getSubExpr());
+    if (const auto *U = dyn_cast<UnaryOperator>(E)) {
+      if (U->getOpcode() == UO_Deref)
+        return temporaryArrayBase(U->getSubExpr());
+      if (U->isIncrementDecrementOp())
+        return temporaryBinding(U->getSubExpr());
+    }
     return !E->isLValue();
+  }
+  bool containsArray(QualType T, unsigned Depth = 0) {
+    if (Depth > 64 || T->isArrayType())
+      return true;
+    if (const auto *R = T->getAsCXXRecordDecl(); R && R->getDefinition()) {
+      R = R->getDefinition();
+      auto Found = HasArray.find(R);
+      if (Found != HasArray.end())
+        return Found->second;
+      HasArray.emplace(R, true);
+      for (const auto *F : R->getDefinition()->fields())
+        if (containsArray(F->getType(), Depth + 1))
+          return true;
+      HasArray[R] = false;
+    }
+    return false;
   }
   void checkBinding(const Expr *E) {
     if (E && temporaryBinding(E))
@@ -364,9 +474,10 @@ public:
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
       checkBinding(D->getInit());
     if (!D->isLocalVarDeclOrParm() &&
-        (D->getType()->isPointerType() || D->getType()->isReferenceType())) {
+        (D->getType()->isPointerType() || D->getType()->isReferenceType() ||
+         (A.S.coreV2() && containsArray(D->getType())))) {
       A.reject(D->getLocation(), "global variable",
-               "Pointer/reference globals require global lifetime lowering.");
+               "Pointer/reference/array globals require global lifetime lowering.");
       return true;
     }
     if (D->getTLSKind() != VarDecl::TLS_None || D->isStaticLocal() ||
@@ -448,6 +559,7 @@ public:
           case CK_FunctionToPointerDecay:
           case CK_NullToPointer:
           case CK_PointerToBoolean:
+          case CK_ArrayToPointerDecay:
             break;
           case CK_BitCast:
             if (C->getType()->isPointerType() &&
@@ -471,7 +583,8 @@ public:
     }
     if (!(A.S.math() && isa<FloatingLiteral>(S)) &&
         !(A.S.coreV2() &&
-          isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr>(S)) &&
+          isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
+              CXXFunctionalCastExpr, ArraySubscriptExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,

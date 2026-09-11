@@ -1,5 +1,6 @@
 #include "Frontend.h"
 #include "clang/AST/ExprCXX.h"
+#include <algorithm>
 #include <optional>
 #include <set>
 
@@ -78,6 +79,25 @@ class FunctionLowering {
     auto Pointer = address(lvalue(E), E->getType(), L);
     return cast(std::move(Pointer), type(ReferenceType, L), L);
   }
+  Expression decay(Expression Place, llvm::StringRef PointerType,
+                   SourceLocation L) {
+    return Expression{{"kind", "array_decay"}, {"type", PointerType.str()},
+                      {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+  }
+  Expression index(Expression Pointer, Expression Index, llvm::StringRef T,
+                   SourceLocation L) {
+    return Expression{{"kind", "index"}, {"type", T.str()},
+                      {"args", json::Array{std::move(Pointer), std::move(Index)}},
+                      {"loc", A.loc(L)}};
+  }
+  std::size_t generatedNodes(const Expression &E) {
+    auto T = *E.getString("type");
+    std::size_t Nodes = 2 + std::count(T.begin(), T.end(), ':');
+    if (const auto *Args = E.getArray("args"))
+      for (const auto &Arg : *Args)
+        Nodes += generatedNodes(*Arg.getAsObject());
+    return Nodes;
+  }
   Expression binary(llvm::StringRef Op, Expression LHS, Expression RHS,
                     llvm::StringRef T, SourceLocation L) {
     return Expression{{"kind", "binary"},
@@ -87,6 +107,7 @@ class FunctionLowering {
                       {"loc", A.loc(L)}};
   }
   void assign(Expression Target, Expression Value, SourceLocation L) {
+    A.chargeExpansion(1 + generatedNodes(Target) + generatedNodes(Value), L);
     Body.push_back(json::Object{{"op", "assign"},
                                 {"target", std::move(Target)},
                                 {"value", std::move(Value)},
@@ -181,6 +202,22 @@ class FunctionLowering {
                type(A.Context.getPointerType(E->getType()), L), L), L);
     }
     if (A.S.coreV2()) {
+      if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E);
+          M && M->getType()->isRecordType()) {
+        // Give a trivial record temporary addressable storage for array decay
+        // and subobject reads in its full expression. Reference lifetime
+        // extension remains guarded by the source allowlist.
+        return snapshot(expression(M->getSubExpr()), L);
+      }
+      if (const auto *Index = dyn_cast<ArraySubscriptExpr>(E)) {
+        // C++17 sequences the syntactic left operand first, even for i[p].
+        auto Left = expression(Index->getLHS());
+        auto Right = expression(Index->getRHS());
+        bool PointerOnLeft = Index->getLHS()->getType()->isPointerType();
+        return PointerOnLeft
+                   ? index(std::move(Left), std::move(Right), type(E->getType(), L), L)
+                   : index(std::move(Right), std::move(Left), type(E->getType(), L), L);
+      }
       if (const auto *W = dyn_cast<ExprWithCleanups>(E))
         return lvalue(W->getSubExpr());
       if (const auto *U = dyn_cast<UnaryOperator>(E)) {
@@ -293,6 +330,10 @@ class FunctionLowering {
         if (A.S.coreV2())
           return Expression{{"kind", "null"}, {"type", T}, {"loc", A.loc(L)}};
         [[fallthrough]];
+      case CK_ArrayToPointerDecay:
+        if (A.S.coreV2())
+          return snapshot(decay(lvalue(C->getSubExpr()), T, L), L);
+        [[fallthrough]];
       case CK_PointerToBoolean:
       case CK_BitCast:
         if (A.S.coreV2())
@@ -315,11 +356,30 @@ class FunctionLowering {
       return project(M->getBase(), {llvm::cast<FieldDecl>(M->getMemberDecl())},
                      T, L);
     }
+    if (A.S.coreV2() && isa<ArraySubscriptExpr>(E))
+      return lvalue(E);
     if (isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(E))
       return A.zero(E->getType(), L);
     if (const auto *I = dyn_cast<InitListExpr>(E)) {
       if (I->isSyntacticForm() && I->getSemanticForm())
         I = I->getSemanticForm();
+      if (const auto *Array = A.Context.getAsConstantArrayType(E->getType());
+          Array && A.S.coreV2()) {
+        json::Array Values;
+        auto Count = Array->getSize().getLimitedValue(65537);
+        if (I->getNumInits() > Count)
+          reject(L, "array initialization", "Too many semantic initializers.");
+        A.chargeExpansion(2, L);
+        for (uint64_t N = 0; N < Count; ++N) {
+          const Expr *Init = N < I->getNumInits() ? I->getInit(unsigned(N))
+                                                 : I->getArrayFiller();
+          auto Value = Init ? expression(Init) : A.zero(Array->getElementType(), L);
+          A.chargeExpansion(generatedNodes(Value), L);
+          Values.push_back(std::move(Value));
+        }
+        return Expression{{"kind", "aggregate"}, {"type", T},
+                          {"args", std::move(Values)}, {"loc", A.loc(L)}};
+      }
       if (!E->getType()->isRecordType()) {
         if (!I->getNumInits())
           return A.zero(E->getType(), L);
@@ -543,6 +603,25 @@ class FunctionLowering {
     }
     expression(E);
   }
+  Expression initialElement(Expression Place, QualType Element, unsigned N,
+                            SourceLocation L) {
+    auto T = type(Element, L);
+    // Initialization may write const destination objects. As for scalar/record
+    // locals, their storage is unqualified internally; source accesses still
+    // carry Clang's const-qualified decay/reference types.
+    return index(decay(std::move(Place), "ptr:" + T, L),
+                 A.literal(llvm::APSInt(llvm::APInt(32, N), false), "int", L), T, L);
+  }
+  void initializeZero(Expression Place, QualType T, SourceLocation L) {
+    if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
+      auto Element = Array->getElementType();
+      auto Count = Array->getSize().getLimitedValue(65537);
+      for (unsigned N = 0; N < Count; ++N)
+        initializeZero(initialElement(Place, Element, N, L), Element, L);
+      return;
+    }
+    assign(std::move(Place), A.zero(T, L), L);
+  }
   void initialize(Expression Place, const Expr *Init, SourceLocation L) {
     Init = Init->IgnoreParens();
     if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
@@ -553,6 +632,63 @@ class FunctionLowering {
       initialize(std::move(Place), C->getSubExpr(), L);
       return;
     }
+    if (const auto *C = dyn_cast<CastExpr>(Init);
+        A.S.coreV2() && C && C->getCastKind() == CK_NoOp && C->isPRValue() &&
+        C->getType()->isRecordType() &&
+        A.Context.hasSameUnqualifiedType(C->getType(), C->getSubExpr()->getType())) {
+      // C++17 initializes the destination directly through typed construction
+      // wrappers such as R r = R{1, r.first}. A real copy still takes the value
+      // path once recursion reaches its constructor or source object.
+      initialize(std::move(Place), C->getSubExpr(), L);
+      return;
+    }
+    if (A.S.coreV2() && Init->isPRValue() && Init->getType()->isRecordType()) {
+      if (const auto *B = dyn_cast<BinaryOperator>(Init);
+          B && B->getOpcode() == BO_Comma) {
+        discard(B->getLHS());
+        initialize(std::move(Place), B->getRHS(), L);
+        return;
+      }
+      if (const auto *C = dyn_cast<ConditionalOperator>(Init)) {
+        auto Condition = expression(C->getCond());
+        auto Yes = labelName(), No = labelName(), End = labelName();
+        branch(std::move(Condition), Yes, No, L, C->getCond());
+        label(Yes, L);
+        initialize(Place, C->getTrueExpr(), L);
+        jump(End, L);
+        label(No, L);
+        initialize(std::move(Place), C->getFalseExpr(), L);
+        jump(End, L);
+        label(End, L);
+        return;
+      }
+    }
+    if (A.S.coreV2())
+      if (const auto *Array = A.Context.getAsConstantArrayType(Init->getType())) {
+        const auto *I = dyn_cast<InitListExpr>(Init);
+        if (!I) {
+          if (isa<ImplicitValueInitExpr>(Init)) {
+            initializeZero(std::move(Place), Init->getType(), L);
+            return;
+          }
+          reject(L, "array initialization", "Only semantic initializer lists and value initialization are supported.");
+        }
+        if (I->isSyntacticForm() && I->getSemanticForm())
+          I = I->getSemanticForm();
+        auto Element = Array->getElementType();
+        auto Count = Array->getSize().getLimitedValue(65537);
+        if (I->getNumInits() > Count)
+          reject(L, "array initialization", "Too many semantic initializers.");
+        for (unsigned N = 0; N < Count; ++N) {
+          auto Target = initialElement(Place, Element, N, L);
+          const Expr *Value = N < I->getNumInits() ? I->getInit(N) : I->getArrayFiller();
+          if (Value)
+            initialize(std::move(Target), Value, L);
+          else
+            initializeZero(std::move(Target), Element, L);
+        }
+        return;
+      }
     if (const auto *I = dyn_cast<InitListExpr>(Init);
         I && I->getType()->isRecordType()) {
       if (I->isSyntacticForm() && I->getSemanticForm())

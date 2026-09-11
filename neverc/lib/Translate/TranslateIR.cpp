@@ -30,6 +30,9 @@ std::string typeName(const Type &T) {
   case TypeKind::Pointer:
     return std::string(T.PointeeConst ? "cptr:" : "ptr:") +
            (T.Elements.size() == 1 ? typeName(T.Elements[0]) : "?");
+  case TypeKind::Array:
+    return "arr:" + std::to_string(T.Count) + ":" +
+           (T.Elements.size() == 1 ? typeName(T.Elements[0]) : "?");
   }
   return {};
 }
@@ -110,7 +113,8 @@ public:
   }
   bool typeSpelling(llvm::StringRef S, Type &T, std::size_t Depth = 0) {
     bool Pointer = S.starts_with("ptr:") || S.starts_with("cptr:");
-    if (Depth > MaxProtocolDepth || ((Depth || Pointer) && !node()))
+    bool Array = S.starts_with("arr:");
+    if (Depth > MaxProtocolDepth || ((Depth || Pointer || Array) && !node()))
       return error("Type depth or node limit exceeded.");
     if (Pointer) {
       T.Kind = TypeKind::Pointer;
@@ -118,6 +122,17 @@ public:
       T.Elements.resize(1);
       return typeSpelling(S.drop_front(T.PointeeConst ? 5 : 4), T.Elements[0],
                           Depth + 1);
+    }
+    if (Array) {
+      auto Parts = S.drop_front(4).split(':');
+      if (Parts.first.empty() || Parts.first.front() == '0' ||
+          !std::all_of(Parts.first.begin(), Parts.first.end(),
+                       [](char C) { return C >= '0' && C <= '9'; }) ||
+          Parts.first.getAsInteger(10, T.Count) || T.Count > 65536)
+        return error("Array extent must be a canonical integer from 1 to 65536.");
+      T.Kind = TypeKind::Array;
+      T.Elements.resize(1);
+      return typeSpelling(Parts.second, T.Elements[0], Depth + 1);
     }
     if (S.empty() || S.contains(':'))
       return error("Invalid canonical type spelling.");
@@ -245,6 +260,10 @@ public:
       E.Kind = ExprKind::Address;
     else if (K == "dereference")
       E.Kind = ExprKind::Dereference;
+    else if (K == "array_decay")
+      E.Kind = ExprKind::ArrayDecay;
+    else if (K == "index")
+      E.Kind = ExprKind::Index;
     else
       return error("Unknown expression kind.");
     return array(O, "args", E.Args, [&](const auto &A, Expr &Arg) {
@@ -498,6 +517,8 @@ class Verifier {
   llvm::ArrayRef<Variable> GlobalDeclarations;
   std::map<std::string, const Record *> Records;
   std::set<std::string> KnownRecords;
+  std::map<std::string, std::size_t> RecordStorageUnits;
+  std::map<std::string, bool> RecordHasArray;
   std::map<std::string, Type> Globals;
   std::map<std::string, const Function *> Functions;
   std::set<std::string> Symbols;
@@ -524,15 +545,26 @@ class Verifier {
   bool type(const Type &T, const SourceLocation &L, bool Void = false,
             std::size_t Depth = 0, bool Indirect = false) {
     if (Depth > MaxProtocolDepth ||
-        ((Depth || T.Kind == TypeKind::Pointer) && ++Nodes > MaxProtocolNodes))
+        ((Depth || T.Kind == TypeKind::Pointer || T.Kind == TypeKind::Array) &&
+         ++Nodes > MaxProtocolNodes))
       return error(L, "IR type depth/node limit exceeded.");
     if (T.Kind == TypeKind::Pointer) {
-      if (M.Profile != "cpp-core-v2" || !T.RecordID.empty() ||
+      if (M.Profile != "cpp-core-v2" || !T.RecordID.empty() || T.Count ||
           T.Elements.size() != 1)
         return error(L, "Pointer types require core v2 and exactly one pointee.");
       return type(T.Elements[0], L, true, Depth + 1, true);
     }
-    if (!T.Elements.empty() || T.PointeeConst)
+    if (T.Kind == TypeKind::Array) {
+      if (M.Profile != "cpp-core-v2" || !T.RecordID.empty() || T.PointeeConst ||
+          T.Elements.size() != 1 || !T.Count || T.Count > 65536)
+        return error(L, "Array types require core v2, one element and a bounded extent.");
+      // An outer pointer does not make incomplete/void array elements valid.
+      if (!type(T.Elements[0], L, false, Depth + 1, false))
+        return false;
+      return storageUnits(T) <= MaxProtocolNodes ||
+             error(L, "Array storage expansion exceeds the protocol limit.");
+    }
+    if (!T.Elements.empty() || T.PointeeConst || T.Count)
       return error(L, "Non-pointer type has pointer components/qualifiers.");
     switch (T.Kind) {
     case TypeKind::Void:
@@ -551,12 +583,14 @@ class Verifier {
                        : Records.count(T.RecordID)) ||
              error(L, "Unknown or forward/cyclic record type: " + T.RecordID);
     case TypeKind::Pointer:
+    case TypeKind::Array:
       break;
     }
     return error(L, "Unknown type kind.");
   }
   bool expr(const Expr &E, const std::map<std::string, Type> &Storage,
-            std::size_t Depth = 0, bool Folded = false) {
+            std::size_t Depth = 0, bool Folded = false,
+            bool InitializerElement = false) {
     if (++Nodes > MaxProtocolNodes || Depth > MaxProtocolDepth)
       return error(E.Loc, "IR expression/node limit exceeded.");
     if (!loc(E.Loc) || !type(E.ValueType, E.Loc))
@@ -565,13 +599,24 @@ class Verifier {
       return error(
           E.Loc, "Global initializer must be a folded literal/aggregate tree.");
     for (const auto &A : E.Args)
-      if (!expr(A, Storage, Depth + 1, Folded))
+      if (!expr(A, Storage, Depth + 1, Folded, E.Kind == ExprKind::Aggregate))
         return false;
     auto Arity = [&](std::size_t N) {
       return E.Args.size() == N ||
              error(E.Loc, "Expression has incorrect operand count.");
     };
     switch (E.Kind) {
+    case ExprKind::ArrayDecay:
+      if (!Arity(1) || E.ValueType.Kind != TypeKind::Pointer ||
+          E.Args[0].ValueType.Kind != TypeKind::Array ||
+          E.ValueType.Elements[0] != E.Args[0].ValueType.Elements[0])
+        return error(E.Loc, "Array decay requires matching addressable array/element types.");
+      return lvalue(E.Args[0], Storage, !E.ValueType.PointeeConst);
+    case ExprKind::Index:
+      return (Arity(2) && E.Args[0].ValueType.Kind == TypeKind::Pointer &&
+              E.Args[1].ValueType.isInteger() &&
+              E.ValueType == E.Args[0].ValueType.Elements[0]) ||
+             error(E.Loc, "Index requires a nonvoid element pointer and promoted integer.");
     case ExprKind::Null:
       return (Arity(0) && E.ValueType.Kind == TypeKind::Pointer) ||
              error(E.Loc, "Null requires a pointer type and no operands.");
@@ -710,6 +755,17 @@ class Verifier {
              error(E.Loc, "Unknown member or member type mismatch.");
     }
     case ExprKind::Aggregate: {
+      for (const auto &A : E.Args)
+        if (A.ValueType.Kind == TypeKind::Array && A.Kind != ExprKind::Aggregate)
+          return error(E.Loc, "Array initializer children must be aggregate subtrees.");
+      if (E.ValueType.Kind == TypeKind::Array) {
+        if (!InitializerElement || !Arity(E.ValueType.Count))
+          return error(E.Loc, "Array aggregate requires an initializer subtree with every element.");
+        for (const auto &A : E.Args)
+          if (A.ValueType != E.ValueType.Elements[0])
+            return error(E.Loc, "Array element initializer type mismatch.");
+        return true;
+      }
       if (E.ValueType.Kind != TypeKind::Record)
         return error(E.Loc, "Aggregate expression must have record type.");
       const auto &Fields = Records.at(E.ValueType.RecordID)->Fields;
@@ -724,9 +780,28 @@ class Verifier {
     return error(E.Loc, "Unknown expression kind.");
   }
   bool sameUnqualified(const Type &A, const Type &B) {
-    return A.Kind == B.Kind && A.RecordID == B.RecordID &&
-           (A.Kind != TypeKind::Pointer ||
+    return A.Kind == B.Kind && A.RecordID == B.RecordID && A.Count == B.Count &&
+           ((A.Kind != TypeKind::Pointer && A.Kind != TypeKind::Array) ||
             sameUnqualified(A.Elements[0], B.Elements[0]));
+  }
+  std::size_t storageUnits(const Type &T) {
+    if (T.Kind == TypeKind::Record) {
+      auto I = RecordStorageUnits.find(T.RecordID);
+      return I == RecordStorageUnits.end() ? MaxProtocolNodes + 1 : I->second;
+    }
+    if (T.Kind == TypeKind::Array) {
+      auto Element = storageUnits(T.Elements[0]);
+      return Element > MaxProtocolNodes / T.Count ? MaxProtocolNodes + 1
+                                                 : Element * T.Count;
+    }
+    return 1;
+  }
+  bool containsArray(const Type &T) {
+    if (T.Kind == TypeKind::Array)
+      return true;
+    if (T.Kind == TypeKind::Record)
+      return RecordHasArray.at(T.RecordID);
+    return false;
   }
   bool lvalue(const Expr &E, const std::map<std::string, Type> &Storage,
               bool Write = true) {
@@ -735,7 +810,8 @@ class Verifier {
              error(E.Loc, "Global constants are not writable.");
     if (E.Kind == ExprKind::Member && E.Args.size() == 1)
       return lvalue(E.Args[0], Storage, Write);
-    if (E.Kind == ExprKind::Dereference && E.Args.size() == 1 &&
+    if (((E.Kind == ExprKind::Dereference && E.Args.size() == 1) ||
+         (E.Kind == ExprKind::Index && E.Args.size() == 2)) &&
         E.Args[0].ValueType.Kind == TypeKind::Pointer)
       return !Write || !E.Args[0].ValueType.PointeeConst ||
              error(E.Loc, "Const pointee storage is not writable.");
@@ -751,6 +827,8 @@ class Verifier {
         if (!loc(V.Loc) || !name(V.Name, V.Loc, true) ||
             !type(V.ValueType, V.Loc))
           return false;
+        if (Vars == &F.Params && V.ValueType.Kind == TypeKind::Array)
+          return error(V.Loc, "Array parameters must use their adjusted pointer type.");
         if (Symbols.count(V.Name) ||
             !Storage.emplace(V.Name, V.ValueType).second)
           return error(V.Loc, "Duplicate or shadowing storage identifier.");
@@ -797,7 +875,8 @@ class Verifier {
       switch (I.Op) {
       case InstructionKind::Assign:
         if (!I.Target || !I.Value || I.Condition || !I.Args.empty() ||
-            I.Target->ValueType != I.Value->ValueType)
+            I.Target->ValueType != I.Value->ValueType ||
+            I.Target->ValueType.Kind == TypeKind::Array)
           return error(I.Loc,
                        "Assignment requires equally typed target and value.");
         if (!lvalue(*I.Target, Storage))
@@ -992,10 +1071,25 @@ public:
           return error(R.Loc, "Invalid/duplicate field or forward/cyclic "
                               "by-value record dependency.");
       Records.emplace(R.ID, &R);
+      std::size_t Units = 0;
+      bool HasArray = false;
+      for (const auto &F : R.Fields)
+        HasArray |= containsArray(F.ValueType);
+      for (const auto &F : R.Fields) {
+        auto Added = storageUnits(F.ValueType);
+        if (Added > MaxProtocolNodes - Units) {
+          Units = MaxProtocolNodes + 1;
+          break;
+        }
+        Units += Added;
+      }
+      RecordStorageUnits.emplace(R.ID, Units);
+      RecordHasArray.emplace(R.ID, HasArray);
     }
     for (const auto &G : M.Globals) {
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
           !type(G.ValueType, G.Loc) || G.ValueType.Kind == TypeKind::Pointer ||
+          containsArray(G.ValueType) ||
           !Symbols.insert(G.Name).second)
         return error(G.Loc, "Invalid or duplicate global identifier/type.");
       Globals.emplace(G.Name, G.ValueType);
@@ -1022,6 +1116,8 @@ public:
       if (!loc(F.Loc) || !name(F.Name, F.Loc, !F.CExport && F.Name != "main") ||
           !type(F.Result, F.Loc, true) || !Symbols.insert(F.Name).second)
         return error(F.Loc, "Invalid or duplicate function identifier/type.");
+      if (F.Result.Kind == TypeKind::Array)
+        return error(F.Loc, "Functions cannot return arrays by value.");
       if (F.CExport && llvm::StringRef(F.Name).starts_with("nct_"))
         return error(F.Loc, "C export collides with generated identifiers.");
       if (F.Name == "main" &&

@@ -12,6 +12,9 @@ Type boolType() { return {TypeKind::Bool, {}}; }
 Type pointerType(Type Pointee, bool Const = false) {
   return {TypeKind::Pointer, {}, {std::move(Pointee)}, Const};
 }
+Type arrayType(Type Element, uint32_t Count) {
+  return {TypeKind::Array, {}, {std::move(Element)}, false, Count};
+}
 Expr pointerExpr(ExprKind Kind, Type T, std::vector<Expr> Args = {}) {
   Expr E;
   E.Kind = Kind;
@@ -161,6 +164,174 @@ TEST(TranslateIR, CoreV2CannotSubstituteForAnotherRequestedProfile) {
     EXPECT_FALSE(emitNC(M, C, Output, D));
     EXPECT_EQ(Output.Text, "unchanged");
   }
+}
+
+TEST(TranslateIR, CoreV2ArrayPointerWireAndDeclarators) {
+  for (const auto &Pair : std::vector<std::pair<std::string, std::string>>{
+           {"ptr:arr:3:int", "int (* sample(void))[3]"},
+           {"cptr:arr:3:int", "const int (* sample(void))[3]"},
+           {"cptr:arr:3:ptr:int", "int *const (* sample(void))[3]"}}) {
+    auto JSON = wireModule();
+    replaceOnce(JSON, "cpp-core-v1", "cpp-core-v2");
+    replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + Pair.first + "\"");
+    replaceOnce(JSON, "\"kind\": \"literal\", \"type\": \"bool\", \"value\": true,",
+                "\"kind\": \"null\", \"type\": \"" + Pair.first + "\",");
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(JSON, M, D));
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find(Pair.second), std::string::npos) << Output.Text;
+  }
+  for (const auto *Spelling : {"arr:0:int", "arr:03:int", "arr:-1:int", "arr:65537:int"}) {
+    auto JSON = wireModule();
+    replaceOnce(JSON, "\"result\": \"bool\"", std::string("\"result\": \"ptr:") + Spelling + "\"");
+    Module M;
+    Diagnostics D;
+    EXPECT_FALSE(parseModule(JSON, M, D));
+  }
+}
+
+TEST(TranslateIR, CoreV2ArraysAreStorageAndInitializerSubtrees) {
+  auto M = module();
+  M.Profile = "cpp-core-v2";
+  auto Array = arrayType(intType(), 2);
+  Type Record{TypeKind::Record, "nct_box"};
+  M.Records.push_back({"nct_box", {{"values", Array}}, InputLoc});
+  M.Functions[0].Locals.push_back({"nct_object", Record, InputLoc});
+  Expr Values = pointerExpr(ExprKind::Aggregate, Array, {literal("1"), literal("2")});
+  Expr Whole = pointerExpr(ExprKind::Aggregate, Record, {Values});
+  Instruction Assign;
+  Assign.Op = InstructionKind::Assign;
+  Assign.Loc = InputLoc;
+  Assign.Target = variable("nct_object", Record);
+  Assign.Value = Whole;
+  M.Functions[0].Body = {label(), Assign, ret(literal("0"))};
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("int values[2];"), std::string::npos);
+  EXPECT_NE(Output.Text.find("(nct_box){{(1), (2)}}"), std::string::npos);
+  M.Functions[0].Locals.push_back({"nct_array", Array, InputLoc});
+  M.Functions[0].Body[1].Value->Args[0] = variable("nct_array", Array);
+  invalid(M, "Array initializer children");
+  auto Member = pointerExpr(ExprKind::Member, Array, {variable("nct_object", Record)});
+  Member.Name = "values";
+  M.Functions[0].Body[1].Value->Args[0] = Member;
+  invalid(M, "Array initializer children");
+  M.Functions[0].Body[1].Target = variable("nct_array", Array);
+  M.Functions[0].Body[1].Value = variable("nct_array", Array);
+  invalid(M, "equally typed");
+  M.Functions[0].Body[1].Value = Values;
+  invalid(M, "initializer subtree");
+  M.Functions[0].Body = {label(), ret(variable("nct_array", Array))};
+  M.Functions[0].Result = Array;
+  invalid(M, "return arrays");
+  M.Functions[0].Result = intType();
+  M.Functions[0].Body.back() = ret(literal("0"));
+  M.Functions[0].Params.push_back({"nct_param", Array, InputLoc});
+  invalid(M, "scalar parameter");
+  M.Functions[0].CExport = false;
+  M.Functions[0].Name = "nct_sample";
+  invalid(M, "adjusted pointer type");
+}
+
+TEST(TranslateIR, CoreV2ArrayDecayAndIndexRetainConstStorage) {
+  auto M = module();
+  M.Profile = "cpp-core-v2";
+  auto Array = arrayType(intType(), 2);
+  Type Record{TypeKind::Record, "nct_box"};
+  M.Records.push_back({"nct_box", {{"values", Array}}, InputLoc});
+  auto View = pointerType(Record, true);
+  M.Functions[0].Params.push_back({"nct_view", View, InputLoc});
+  auto Field = pointerExpr(ExprKind::Member, Array,
+      {pointerExpr(ExprKind::Dereference, Record, {variable("nct_view", View)})});
+  Field.Name = "values";
+  auto Readonly = pointerType(intType(), true);
+  auto Decay = pointerExpr(ExprKind::ArrayDecay, Readonly, {Field});
+  M.Functions[0].Result = Readonly;
+  M.Functions[0].Body.back() = ret(Decay);
+  Diagnostics D;
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  M.Functions[0].Result = pointerType(intType());
+  M.Functions[0].Body.back().Value->ValueType = pointerType(intType());
+  invalid(M, "Const pointee");
+  auto Index = pointerExpr(ExprKind::Index, intType(), {Decay, literal("1")});
+  Instruction Assign;
+  Assign.Op = InstructionKind::Assign;
+  Assign.Loc = InputLoc;
+  Assign.Target = Index;
+  Assign.Value = literal("9");
+  M.Functions[0].Result = intType();
+  M.Functions[0].Body = {label(), Assign, ret(Index)};
+  invalid(M, "Const pointee");
+  M.Functions[0].Body = {label(), ret(Index)};
+  D.clear();
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  M.Functions[0].Body.back().Value->ValueType = boolType();
+  M.Functions[0].Result = boolType();
+  invalid(M, "Index requires");
+}
+
+TEST(TranslateIR, CoreV2ArrayElementsNeedCompletenessAndBoundedStorage) {
+  auto M = module();
+  M.Profile = "cpp-core-v2";
+  Type Later{TypeKind::Record, "nct_later"};
+  M.Records = {{"nct_first", {{"items", arrayType(pointerType(Later), 3)}}, InputLoc},
+               {"nct_later", {{"value", intType()}}, InputLoc}};
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  M.Records[0].Fields[0].ValueType = pointerType(arrayType(Later, 3));
+  invalid(M, "forward/cyclic");
+  M.Records.clear();
+  for (const auto &T : {
+           arrayType({TypeKind::Void, {}}, 1),
+           arrayType(arrayType(intType(), 65536), 65536),
+           arrayType(intType(), 0)}) {
+    M.Functions[0].Result = pointerType(T);
+    invalid(M);
+  }
+  auto From = pointerType(arrayType(intType(), 2));
+  auto To = pointerType(arrayType(intType(), 3));
+  M.Functions[0].Params.push_back({"nct_pointer", From, InputLoc});
+  M.Functions[0].Result = To;
+  M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Cast, To,
+                                            {variable("nct_pointer", From)}));
+  invalid(M, "pointer conversion");
+}
+
+TEST(TranslateIR, ArrayIRRejectsMalformedTypesAndNonaddressableDecay) {
+  auto M = module();
+  auto Array = arrayType(intType(), 2);
+  M.Functions[0].Locals.push_back({"nct_array", Array, InputLoc});
+  invalid(M, "Array types require core v2");
+  M.Profile = "cpp-core-v2";
+  auto Malformed = Array;
+  Malformed.PointeeConst = true;
+  M.Functions[0].Locals[0].ValueType = Malformed;
+  invalid(M, "Array types require");
+  Malformed = Array;
+  Malformed.Elements.push_back(intType());
+  M.Functions[0].Locals[0].ValueType = Malformed;
+  invalid(M, "Array types require");
+  M.Functions[0].Locals[0].ValueType = Array;
+  Type Record{TypeKind::Record, "nct_box"};
+  M.Records.push_back({"nct_box", {{"values", Array}}, InputLoc});
+  auto Values = pointerExpr(ExprKind::Aggregate, Array,
+                            {literal("1"), literal("2")});
+  auto Whole = pointerExpr(ExprKind::Aggregate, Record, {Values});
+  auto Member = pointerExpr(ExprKind::Member, Array, {Whole});
+  Member.Name = "values";
+  M.Functions[0].Result = pointerType(intType());
+  M.Functions[0].Body.back() = ret(pointerExpr(
+      ExprKind::ArrayDecay, pointerType(intType()), {Member}));
+  invalid(M, "Assignment target");
+  M.Functions[0].Body.back().Value->Args[0] = variable("nct_array", Array);
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  M.Functions[0].Result = pointerType(boolType());
+  M.Functions[0].Body.back().Value->ValueType = pointerType(boolType());
+  invalid(M, "Array decay requires");
 }
 
 TEST(TranslateIR, CoreV2ParsesPointerTypesAndEmitsNestedConstDeclarators) {

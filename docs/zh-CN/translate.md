@@ -21,6 +21,8 @@ neverc output.nc -c -o output.o
 
 使用 `--profile cpp-core-v2` 可增加经过检查的 `typedef`／`using` 类型别名、底层类型为 32 位 `int` 或 `unsigned int` 的枚举、`static_assert`，以及限定范围的对象指针与左值引用。引用保留别名关系，包括参数和返回引用；支持多层指针的 `const` 与空指针。仍限单个源文件，且不允许 include。详见 [core v2 支持范围](../../utils/translate-frontends/docs/cpp-core-v2.md)。
 
+core v2 还增加了固定长度的局部数组与数组字段、多维下标访问，以及数组指针和引用。部分初始化会将剩余元素置零；元素初始化保留源码顺序与别名关系。数组长度与初始化展开量有上限。全局数组、变长数组及元素的非平凡生命周期仍未支持。
+
 ## 多文件项目
 
 从编译数据库中明确选择翻译单元，并指定项目根目录。内置前端逐个分析翻译单元，合并器检查定义的完整性、链接属性及共享类型，并保守验证单一定义规则（ODR）。
@@ -52,4 +54,4 @@ neverc translate --from cpp --profile cpp-math-v1 \
 
 输出及附属文件不会覆盖已有文件。`--out-dir` 要求父目录已存在且目标目录不存在；`-o` 要求新的 `.nc` 路径。清单记录目标要求、输入／输出哈希和编译方式，源码映射将生成行关联到原始位置。
 
-CI 结果、运行与安装验证以及测试跳过项按平台分别记录。原生 macOS arm64 与通过 Rosetta 运行的 macOS x86_64 仍是不同的验证环境。完整 C++／STL、数组、异常、模板、字符串及 `std::vector` 不在已公布的支持范围内。详见[支持矩阵](../../utils/translate-frontends/docs/support-matrix.md)、[协议与恢复规则](../../utils/translate-frontends/docs/protocol.md)及[项目示例](../../tests/neverc/Inputs/translate/cpp/project)。
+CI 结果、运行与安装验证以及测试跳过项按平台分别记录。原生 macOS arm64 与通过 Rosetta 运行的 macOS x86_64 仍是不同的验证环境。完整 C++／STL、异常、模板、字符串及 `std::vector` 不在已公布的支持范围内。详见[支持矩阵](../../utils/translate-frontends/docs/support-matrix.md)、[协议与恢复规则](../../utils/translate-frontends/docs/protocol.md)及[项目示例](../../tests/neverc/Inputs/translate/cpp/project)。

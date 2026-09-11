@@ -8,6 +8,7 @@
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include <map>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
@@ -74,6 +75,8 @@ public:
   std::map<const clang::Decl *, clang::FunctionDecl *> FunctionDeclarations;
   std::map<const clang::Decl *, clang::VarDecl *> GlobalDeclarations;
   std::map<std::string, json::Object> MappedFunctions;
+  std::map<const clang::CXXRecordDecl *, std::size_t> StorageUnits;
+  std::size_t ExpandedNodes = 0;
   Adapter(State &S, clang::ASTContext &C)
       : S(S), Context(C), Sources(C.getSourceManager()) {}
   json::Object loc(clang::SourceLocation L) const;
@@ -86,6 +89,8 @@ public:
   void addProjectMetadata();
   std::string type(clang::QualType T, clang::SourceLocation L,
                    bool AllowVoid = false, unsigned Depth = 0);
+  std::size_t storageUnits(clang::QualType T, unsigned Depth = 0);
+  void chargeExpansion(std::size_t Nodes, clang::SourceLocation L);
   json::Object literal(const llvm::APSInt &Value, llvm::StringRef Type,
                        clang::SourceLocation L);
   json::Object floatingLiteral(const llvm::APFloat &Value,

@@ -5,11 +5,23 @@
 
 namespace neverc::translate {
 namespace {
-std::string cType(const Type &T, bool Const = false) {
-  if (T.Kind == TypeKind::Pointer)
-    return cType(T.Elements[0], T.PointeeConst) + (Const ? " *const" : " *");
+std::string declaration(const Type &T, std::string Name, bool Const = false) {
+  if (T.Kind == TypeKind::Pointer) {
+    Name = std::string(Const ? "*const" : "*") +
+           (Name.empty() ? "" : " " + Name);
+    if (T.Elements[0].Kind == TypeKind::Array)
+      Name = "(" + Name + ")";
+    return declaration(T.Elements[0], std::move(Name), T.PointeeConst);
+  }
+  if (T.Kind == TypeKind::Array)
+    return declaration(T.Elements[0],
+                       Name + "[" + std::to_string(T.Count) + "]", Const);
   return std::string(Const ? "const " : "") +
-         (T.Kind == TypeKind::UInt ? "unsigned int" : typeName(T));
+         (T.Kind == TypeKind::UInt ? "unsigned int" : typeName(T)) +
+         (Name.empty() ? "" : " " + Name);
+}
+std::string cType(const Type &T) {
+  return declaration(T, {});
 }
 std::string hexadecimal(uint64_t Bits, size_t Digits) {
   static const char Hex[] = "0123456789abcdef";
@@ -116,6 +128,10 @@ class Emitter {
       return "(&(" + expression(E.Args[0]) + "))";
     case ExprKind::Dereference:
       return "(*(" + expression(E.Args[0]) + "))";
+    case ExprKind::ArrayDecay:
+      return "(&((" + expression(E.Args[0]) + ")[0]))";
+    case ExprKind::Index:
+      return "((" + expression(E.Args[0]) + ")[" + expression(E.Args[1]) + "])";
     case ExprKind::Literal:
       if (E.ValueType.Kind == TypeKind::Bool)
         return E.Boolean ? "true" : "false";
@@ -159,6 +175,7 @@ class Emitter {
     case ExprKind::Member:
       return "((" + expression(E.Args[0]) + ")." + E.Name + ")";
     case ExprKind::Aggregate: {
+      Initializer |= E.ValueType.Kind == TypeKind::Array;
       std::string Text = Initializer ? "{" : "(" + cType(E.ValueType) + "){";
       for (std::size_t I = 0; I < E.Args.size(); ++I) {
         if (I)
@@ -171,16 +188,16 @@ class Emitter {
     return {};
   }
   std::string signature(const Function &F) {
-    std::string S = F.Internal ? "static " : "";
-    S += cType(F.Result) + " " + F.Name + "(";
+    std::string S = F.Name + "(";
     if (F.Params.empty())
       S += "void";
     for (std::size_t I = 0; I < F.Params.size(); ++I) {
       if (I)
         S += ", ";
-      S += cType(F.Params[I].ValueType) + " " + F.Params[I].Name;
+      S += declaration(F.Params[I].ValueType, F.Params[I].Name);
     }
-    return S + ")";
+    return std::string(F.Internal ? "static " : "") +
+           declaration(F.Result, S + ")");
   }
   void guards() {
     llvm::Triple T(llvm::Triple::normalize(M.Target.Triple));
@@ -266,7 +283,7 @@ class Emitter {
     line(std::string(ForwardDeclared ? "struct " : "typedef struct ") +
              R.ID + " {", &R.Loc);
     for (const auto &F : R.Fields)
-      line("  " + cType(F.ValueType) + " " + F.Name + ";", &R.Loc);
+      line("  " + declaration(F.ValueType, F.Name) + ";", &R.Loc);
     line(ForwardDeclared ? "};" : "} " + R.ID + ";", &R.Loc);
     line("");
   }
@@ -285,7 +302,7 @@ class Emitter {
   void function(const Function &F) {
     line(signature(F) + " {", &F.Loc);
     for (const auto &L : F.Locals)
-      line("  " + cType(L.ValueType) + " " + L.Name + ";", &L.Loc);
+      line("  " + declaration(L.ValueType, L.Name) + ";", &L.Loc);
     for (const auto &I : F.Body) {
       std::string Text;
       switch (I.Op) {

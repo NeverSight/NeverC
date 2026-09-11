@@ -1,8 +1,8 @@
-# C++ core v2: declarations, pointers and references
+# C++ core v2: declarations, pointers, references and arrays
 
 `cpp-core-v2` is an experimental, explicitly selected extension of the
-single-source `cpp-core-v1` contract. It adds the declarations and bounded pointer
-and reference operations below. It is a step toward broader C++17 translation;
+single-source `cpp-core-v1` contract. It adds the declarations, bounded pointer
+and reference operations, and fixed arrays below. It is a step toward broader C++17 translation;
 it does not claim complete C++17 or STL support. The existing core, project and math v1 profiles retain
 their accepted-input contracts.
 
@@ -48,13 +48,13 @@ binary ABI or foreign-object identity.
 Unsupported operations remain errors even inside constant-evaluated assertions
 and enumerator initializers. For example, a cast to `void` is not yet admitted
 by this profile. A successful `static_assert(true, "message")` does not admit
-runtime string literals, `std::string` or array types.
+runtime string literals or `std::string`.
 
 ## Object pointers and lvalue references
 
 - Local variables, free-function parameters and results may use object pointers
   and lvalue references. Supported pointees are `int`, `unsigned int`, `bool`,
-  the admitted enums and complete trivial records; `void *` is supported without
+  the admitted enums, complete trivial records and admitted fixed arrays; `void *` is supported without
   dereferencing `void`. Function and member pointers remain unsupported.
 - Address, dereference, `->`, pointer equality/inequality, conversion to `bool`,
   null initialization (`nullptr`, zero and value initialization), qualification
@@ -92,9 +92,48 @@ undefined behavior. In particular, casting away `const` does not make an
 originally const object writable. Generated `.nc` source targets NeverC's
 pointer aliasing behavior, not an arbitrary C compiler's alias rules.
 
+## Fixed arrays and initialization
+
+- Local arrays and record array fields may have nonzero constant extents. Each
+  dimension is limited to 65536 elements, with at most 200000 expanded storage
+  units and a separate 200000-node initializer/assignment expansion budget.
+  Nested arrays and records count toward these limits. Initializing a large
+  array can exceed the work budget even when its extent alone is permitted.
+- Support includes array-to-pointer decay, `a[i]` and `i[a]`, multidimensional
+  arrays, adjusted array parameters, and pointers/lvalue references to arrays
+  as parameters and results. The syntactic left operand is evaluated before
+  the right operand, as required by C++17; aliases keep the original storage.
+- List/value initialization stores each element in source order and zero-fills
+  omitted elements, including nested record fields. Default initialization does
+  not initialize scalar elements. Accessing one initialized element never copies
+  unrelated uninitialized elements or record fields. Trivial record copies
+  include their array fields; direct array assignment is not permitted.
+- Array element qualification is preserved through decay and pointers/references
+  to arrays. A const record's array cannot be used to obtain a mutable element
+  pointer. Reads such as `make_record().values[0]` materialize a trivial temporary
+  for the full expression; reference binding to temporary subobjects remains
+  rejected by the existing lifetime boundary.
+
+```cpp
+using Row = int[3];
+Row &row(Row &value) { return value; }
+int main() {
+  Row values{5, values[0] + 2};
+  row(values)[2] = 11;
+  return values[0] == 5 && values[1] == 7 && values[2] == 11 ? 0 : 1;
+}
+```
+
+Global arrays and global records containing arrays, zero-length and variable-length
+arrays, unsupported element types and nontrivial element construction/destruction
+remain rejected, including in unused or dead code. Indexing requires the same
+valid storage and in-bounds accesses as the source program; the translator does
+not add a runtime bounds-check guarantee. `sizeof`, `alignof`, pointer arithmetic
+and pointer difference still require later type/operation support.
+
 ## Remaining scope and wire representation
 
-Arrays, additional integer widths, floating-point types,
+Additional integer widths, floating-point types,
 classes with nontrivial lifetime behavior, templates, exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2
@@ -102,8 +141,11 @@ does not implicitly combine their capabilities.
 
 The transport protocol and artifact schemas retain version 1. Core v2 adds
 canonical recursive type strings `ptr:<type>` and `cptr:<type>` for mutable and
-const pointees, and explicit `null`, `address` and `dereference` expression nodes.
-Type depth is limited to 64 pointer components and spelling to 4096 bytes; types
+const pointees, plus `arr:<positive-count>:<element>` for arrays. Expression nodes
+include `null`, `address`, `dereference`, `array_decay` and `index`. Array aggregate
+nodes are permitted only as nested initializer trees, never as assignable array
+values. Array elements must be complete even behind an outer pointer.
+Type depth is limited to 64 derived components and spelling to 4096 bytes; types
 also consume the protocol's node budget. The consumer verifies pointee identity,
 addressability, const writes and the restricted cast/operator rules before emission.
 The manifest records `profile: cpp-core-v2`
@@ -113,7 +155,9 @@ and `profile_version: 2`; existing profiles continue to record profile version
 The regression cases cover generated execution at O0/O2, scoped and unscoped
 enums, signed/unsigned boundary values, overloads, global/aggregate values,
 local declarations, pointer/reference aliasing with inlining disabled, nested
-const, nulls, reference-return assignment, unsupported bindings, malformed IR,
+const, nulls, reference-return assignment, array initialization and indexing order,
+multidimensional arrays, temporary array reads, resource limits, unsupported
+bindings, malformed IR,
 old-profile rejection and consumer profile/version boundaries. CI evidence must
 be recorded against the
 revision that runs these cases; earlier core v1 CI results do not establish

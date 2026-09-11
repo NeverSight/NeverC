@@ -91,6 +91,24 @@ def main():
         "forward-pointer": "struct B; struct A{B*b;}; struct B{A*a;}; int main(){A a{}; B b{&a}; a.b=&b; return a.b->a!=&a;}",
         "enum-pointer": "enum class E:int{v=7}; int main(){E e=E::v; E*p=&e; return static_cast<int>(*p)-7;}",
     })
+    core_v2.update({
+        "functional-scalar-cast": "int main(){return int{7}-int(7);}",
+        "conditional-record-self-observation": "struct P{int x;int y;}; int f(bool b){P p=b?P{3,p.x+4}:P{5,p.x+6}; return p.y;} int main(){return f(true)==7 && f(false)==11 ? 0:1;}",
+        "comma-record-self-observation": "struct P{int x;int y;}; int main(){int n=0; P p=(++n,P{3,p.x+4}); return p.y==7 && n==1 ? 0:1;}",
+        "typed-record-self-observation": "struct R{int a[2];int m;}; int main(){R r=R{{5,r.a[0]+2},r.a[1]+3}; return r.a[1]==7 && r.m==10 ? 0:1;}",
+        "braced-record-array": "struct R{int a[2];}; int main(){return R{{7,8}}.a[0]-7;}",
+        "temporary-record-array": "struct R{int a[2];}; R make(){return {{7,8}};} int main(){return make().a[0]-7;}",
+        "adjusted-array-parameter": "int f(int a[2]){return a[1];} int main(){int a[2]={1,2}; return f(a)-2;}",
+        "fixed-array": "int main(){int a[3]={1}; return a[0]==1 && a[1]==0 && a[2]==0 ? 0:1;}",
+        "array-reference": "using Row=int[3]; Row& f(Row&r){return r;} int main(){Row a{}; f(a)[1]=7; return a[1]-7;}",
+        "array-pointer-result": "using Row=int[3]; Row*f(Row&r){return &r;} int main(){Row a{}; (*f(a))[2]=9; return a[2]-9;}",
+        "multidimensional-array": "int main(){int a[2][3]={{1},{2}}; return a[0][0]==1 && a[1][0]==2 && a[1][2]==0 ? 0:1;}",
+        "array-self-observation": "struct R{int a[2];int m;}; int main(){R r{{5,r.a[0]+2},r.a[1]+3}; return r.a[1]==7 && r.m==10 ? 0:1;}",
+        "const-array": "int main(){const int a[2][3]={{1},{2}}; const int(*p)[3]=a; return p[1][0]-2;}",
+        "array-of-records": "struct R{int a;int b;}; int main(){R r[2]={{1},{2}}; return r[0].b+r[1].b;}",
+        "array-in-record-copy": "struct R{int a[2];}; int main(){R r{{1,2}}; R s=r; s.a[1]=7; return r.a[1]==2 && s.a[1]==7 ? 0:1;}",
+        "pointer-call-index-reference": "int*f(int*p){return p;} int main(){int a[2]={1,2}; int&r=f(a)[1]; r=3; return a[1]-3;}",
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     for name, source in {
@@ -128,6 +146,20 @@ def main():
         "integer-pointer": "int*f(int x){return (int*)x;}",
         "unrelated-pointer-cast": "bool*f(int*p){return (bool*)p;}",
         "standalone-null-type": "int main(){auto p=nullptr;}",
+    })
+    v2_rejections.update({
+        "zero-array": "int f(){int a[0]; return 0;}",
+        "variable-array": "int f(int n){int a[n]; return 0;}",
+        "dead-variable-array": "int f(int n){if(false){int a[n];} return 0;}",
+        "global-array": "const int a[2]={1,2};",
+        "global-array-field": "struct R{int a[2];}; constexpr R r{{1,2}};",
+        "array-bound": "using Large=int[65537]; int main(){}",
+        "array-product": "using Large=int[65536][65536]; int main(){}",
+        "folded-functional-void": "static_assert((void(0),true)); int main(){}",
+        "array-initialization-budget": "int f(){int a[65536]={}; return a[0];}",
+        "array-temporary-comma": "struct R{int a[2];}; int f(){int n=0; const int&r=(++n,R{{1,2}}.a)[0]; return r;}",
+        "array-temporary-dereference": "struct R{int a[2];}; int f(){const int&r=*R{{1,2}}.a; return r;}",
+        "array-temporary-subobject": "struct R{int a[2];}; int f(){const int&r=R{{1,2}}.a[0]; return r;}",
     })
     for name, source in v2_rejections.items():
         check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")
