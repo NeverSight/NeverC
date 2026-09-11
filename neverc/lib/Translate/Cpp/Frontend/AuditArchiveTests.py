@@ -2254,6 +2254,166 @@ public:
         self.assertFalse(AuditArchive.microsoft_std_entity(
             "void __cdecl std::function<" + "(" * 33 + "int" + ")" * 33 + ">::f(void)"))
 
+    def test_scan_excludes_only_the_canonical_self_import_library(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "library outputs"
+            (directory / "other").mkdir(parents=True)
+            (directory / "existing").mkdir()
+            private = directory / "private.lib"
+            own_output = directory / "renamed-compiler.lib"
+            host = directory / "LLVMCore.lib"
+            same_basename = directory / "other" / own_output.name
+            same_stem = directory / "renamed-compiler.a"
+            for path in (private, own_output, host, same_basename, same_stem):
+                path.touch()
+            output_spelling = directory / "existing" / ".." / own_output.name
+            self.assertEqual(AuditArchive.host_archives(
+                directory, private, self_import_library=output_spelling),
+                [host, same_stem, same_basename])
+
+    def test_scan_is_stable_before_and_after_its_own_link_output_exists(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            private = directory / "private.lib"
+            own_output = directory / "neverc.lib"
+            host = directory / "LLVMCore.lib"
+            private.touch()
+            host.touch()
+            self.assertEqual(AuditArchive.host_archives(
+                directory, private, self_import_library=own_output), [host])
+            own_output.touch()
+            for stage in (2, 3):
+                with self.subTest(stage=stage):
+                    self.assertEqual(AuditArchive.host_archives(
+                        directory, private, self_import_library=own_output), [host])
+
+    def test_scan_without_self_import_library_keeps_existing_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            private = directory / "private.lib"
+            own_output = directory / "neverc.lib"
+            host = directory / "LLVMCore.lib"
+            for path in (private, own_output, host):
+                path.touch()
+            self.assertEqual(AuditArchive.host_archives(directory, private),
+                             [host, own_output])
+            self.assertEqual(AuditArchive.host_archives(
+                directory, private, self_import_library=None), [host, own_output])
+
+    def test_scan_rejects_no_host_after_excluding_its_own_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            private = directory / "private.lib"
+            own_output = directory / "neverc.lib"
+            (directory / "_deps").mkdir()
+            (directory / "_deps" / "upstream.lib").touch()
+            private.touch()
+            for output_exists in (False, True):
+                with self.subTest(output_exists=output_exists):
+                    if output_exists:
+                        own_output.touch()
+                    with self.assertRaisesRegex(ValueError, "No host archives found"):
+                        AuditArchive.host_archives(
+                            directory, private, self_import_library=own_output)
+
+    def check_self_import_library_audit(self, host_format, genuine_host_clang):
+        # These are empty inventory fixtures, not native archives. Exercise the
+        # real directory scan and audit with controlled readers for both formats.
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "library outputs"
+            (directory / "other").mkdir(parents=True)
+            private = directory / "private.lib"
+            own_output = directory / "renamed-compiler.lib"
+            host = directory / "LLVMCore.lib"
+            other = directory / "other" / own_output.name
+            clang = ("_ZN5clang4Decl3fooEv", "T", "clang::Decl::foo()")
+            records = {
+                private: [("neverc_cpp_frontend_main", "T", "neverc_cpp_frontend_main"),
+                          clang],
+                own_output: [clang],
+                host: [("host_only_function", "T", "host_only_function")],
+            }
+            if genuine_host_clang:
+                records[other] = [clang]
+            for path in records:
+                path.touch()
+            args = argparse.Namespace(
+                nm="controlled-nm", nm_file=None, archive=private, prefix_header=None,
+                host_lib_dir=directory, host_format=host_format, host_nm=None,
+                self_import_library=own_output)
+            host_reads = set()
+
+            def inventory(_nm, paths, *options):
+                if paths != [private]:
+                    host_reads.update(paths)
+                rows = [row for path in paths for row in records[path]]
+                if "--format=posix" in options:
+                    return "".join(f"{raw} {kind} 0 0\n" for raw, kind, _ in rows)
+                self.assertIn("--format=just-symbols", options)
+                return "".join((decoded if "--demangle" in options else raw) + "\n"
+                               for raw, _, decoded in rows)
+
+            def indexed(archive):
+                host_reads.add(archive)
+                return {raw for raw, _, _ in records[archive]}
+
+            reader = types.ModuleType("HostCoffSymbols")
+            reader.read_defined_symbols = mock.Mock(side_effect=indexed)
+            with mock.patch.dict(sys.modules, {"HostCoffSymbols": reader}), \
+                    mock.patch.object(AuditArchive, "nm_output", side_effect=inventory), \
+                    mock.patch("sys.stdout", new_callable=io.StringIO):
+                if genuine_host_clang:
+                    with self.assertRaisesRegex(ValueError, "unexpected host Clang definition"):
+                        AuditArchive.audit(args)
+                else:
+                    AuditArchive.audit(args)
+            self.assertNotIn(own_output, host_reads)
+            self.assertIn(host, host_reads)
+            if genuine_host_clang:
+                self.assertIn(other, host_reads)
+
+    def test_audit_excludes_self_import_library_before_reading_host_symbols(self):
+        for host_format in ("nm", "coff-index"):
+            with self.subTest(host_format=host_format):
+                self.check_self_import_library_audit(host_format, genuine_host_clang=False)
+
+    def test_audit_still_rejects_clang_in_another_library_with_the_same_basename(self):
+        for host_format in ("nm", "coff-index"):
+            with self.subTest(host_format=host_format):
+                self.check_self_import_library_audit(host_format, genuine_host_clang=True)
+
+    def test_cli_passes_the_optional_self_import_library_path(self):
+        for own_output in (None, Path("library outputs") / "renamed-compiler.lib"):
+            with self.subTest(own_output=own_output):
+                arguments = ["audit", "--nm", "controlled", "--archive", "private.a",
+                             "--host-lib-dir", "library outputs"]
+                if own_output is not None:
+                    arguments.extend(("--self-import-library", str(own_output)))
+                with mock.patch.object(sys, "argv", arguments), \
+                        mock.patch.object(AuditArchive, "audit") as audit:
+                    AuditArchive.main()
+                audit.assert_called_once()
+                self.assertEqual(audit.call_args.args[0].self_import_library, own_output)
+
+    def test_failed_audit_does_not_delete_the_self_import_library(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            private = directory / "private.lib"
+            own_output = directory / "neverc.lib"
+            private.touch()
+            own_output.write_bytes(b"controlled import-library inventory fixture\n")
+            arguments = ["audit", "--nm", "controlled", "--archive", str(private),
+                         "--host-lib-dir", str(directory),
+                         "--self-import-library", str(own_output)]
+            with mock.patch.object(sys, "argv", arguments), \
+                    mock.patch.object(AuditArchive, "audit",
+                                      side_effect=OSError("inspection failed")):
+                with self.assertRaisesRegex(SystemExit, "inspection failed"):
+                    AuditArchive.main()
+            self.assertFalse(private.exists())
+            self.assertEqual(own_output.read_bytes(),
+                             b"controlled import-library inventory fixture\n")
+
     def test_scan_excludes_private_dependency_tree(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
