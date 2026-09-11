@@ -17,6 +17,25 @@ import AuditArchive
 import SetupGuidSymbols
 
 
+# Independent expectations for the nine stdio identities in one final module.
+# These controlled rows do not prove SDK macros, object layout or cross-DLL ABI.
+MSVC_STDIO_MODULE_RECORDS = (
+    ("__local_stdio_printf_options", "T", "__local_stdio_printf_options"),
+    ("__local_stdio_scanf_options", "T", "__local_stdio_scanf_options"),
+    ("_snprintf", "T", "_snprintf"),
+    ("fprintf", "T", "fprintf"),
+    ("snprintf", "T", "snprintf"),
+    ("sprintf_s", "T", "sprintf_s"),
+    ("sscanf", "T", "sscanf"),
+    ("?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA", "B",
+     "unsigned __int64 \x60extern \"C\" __local_stdio_printf_options'::"
+     "\x602'::_OptionsStorage"),
+    ("?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA", "B",
+     "unsigned __int64 \x60extern \"C\" __local_stdio_scanf_options'::"
+     "\x602'::_OptionsStorage"),
+)
+
+
 # Fixed witnesses copied from the c942 native SDK symbol reports, independent
 # of the production policy's template-name construction.
 SETUP_GUID_PAIRS = (
@@ -1836,6 +1855,131 @@ public:
             with self.subTest(name=name):
                 self.audit_inventory([(name, kind, decoded)],
                                      [(name, "W", name)], "nm")
+
+    def test_microsoft_stdio_duplicate_definition_kinds_share_module_identity(self):
+        for name, kind, decoded in MSVC_STDIO_MODULE_RECORDS:
+            with self.subTest(name=name):
+                self.audit_inventory([(name, kind, decoded)] * 2,
+                                     [(name, "W", name)] * 2, "nm")
+
+    def test_microsoft_stdio_rejects_wrong_and_mixed_private_definition_kinds(self):
+        for name, expected, decoded in MSVC_STDIO_MODULE_RECORDS:
+            for wrong in ("B", "C", "D", "R", "T", "W", "V"):
+                if wrong == expected:
+                    continue
+                for kinds in ((wrong,), (expected, wrong), (wrong, expected)):
+                    with self.subTest(name=name, kinds=kinds):
+                        with self.assertRaisesRegex(
+                                ValueError, "private/host symbol intersection"):
+                            self.audit_inventory(
+                                [(name, kind, decoded) for kind in kinds],
+                                [(name, "W", name)], "nm")
+
+    def test_microsoft_stdio_rejects_references_with_or_without_definitions(self):
+        for name, definition, decoded in MSVC_STDIO_MODULE_RECORDS:
+            for reference in ("U", "w", "v"):
+                for kinds in ((reference,), (definition, reference),
+                              (reference, definition)):
+                    with self.subTest(name=name, kinds=kinds):
+                        with self.assertRaisesRegex(
+                                ValueError, "private/host symbol intersection"):
+                            self.audit_inventory(
+                                [(name, kind, decoded) for kind in kinds],
+                                [(name, "W", name)], "nm")
+
+    def test_microsoft_stdio_requires_exact_untainted_private_declarations(self):
+        for name, kind, decoded in MSVC_STDIO_MODULE_RECORDS:
+            # A valid std owner must not rescue an exact storage name after
+            # its independent stdio declaration check has failed.
+            wrong = ("different declaration", "int std::state",
+                     " " + decoded, decoded + " ", decoded + " trailing")
+            wrong += tuple(decoded[:1] + control + decoded[1:]
+                           for control in ("\x00", "\t", "\x1f", "\x7f"))
+            for declaration in wrong:
+                with self.subTest(name=name, declaration=repr(declaration)):
+                    with self.assertRaisesRegex(
+                            ValueError, "private/host symbol intersection"):
+                        self.audit_inventory([(name, kind, declaration)],
+                                             [(name, "W", name)], "nm")
+
+    def test_microsoft_stdio_does_not_accept_nearby_raw_spellings(self):
+        for name, kind, decoded in MSVC_STDIO_MODULE_RECORDS:
+            for nearby in (name + "_extra", "prefix_" + name, "_" + name):
+                with self.subTest(original=name, nearby=nearby):
+                    with self.assertRaisesRegex(
+                            ValueError, "private/host symbol intersection"):
+                        self.audit_inventory([(nearby, kind, decoded)],
+                                             [(nearby, "W", nearby)], "nm")
+
+    def test_microsoft_stdio_does_not_expand_to_other_runtime_families(self):
+        records = (
+            ("printf", "T", "printf"),
+            ("_Avx2WmemEnabledWeakValue", "B", "_Avx2WmemEnabledWeakValue"),
+            ("__real@3ff0000000000000", "R", "__real@3ff0000000000000"),
+            ("?_OptionsStorage@?1??__local_stdio_printf_options@@9@9", "C",
+             "extern \"C\" \x60extern \"C\" __local_stdio_printf_options'::"
+             "\x602'::_OptionsStorage"),
+            ("?_OptionsStorage@?1??__local_stdio_scanf_options@@9@9", "C",
+             "extern \"C\" \x60extern \"C\" __local_stdio_scanf_options'::"
+             "\x602'::_OptionsStorage"),
+        )
+        for name, kind, decoded in records:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(
+                        ValueError, "private/host symbol intersection"):
+                    self.audit_inventory([(name, kind, decoded)],
+                                         [(name, "W", name)], "nm")
+
+    def test_microsoft_stdio_sharing_preserves_independent_private_llvm_errors(self):
+        shared = list(MSVC_STDIO_MODULE_RECORDS)
+        host = [(name, "W", name) for name, _, _ in shared]
+        cases = (
+            ("LLVMGetGlobalContext", "T", "LLVMGetGlobalContext",
+             "LLVMGetGlobalContext"),
+            ("unisolated_llvm_owner", "T", "void __cdecl llvm::state(void)",
+             "unisolated_llvm_owner => void __cdecl llvm::state(void)"),
+            ("neverc_cpp_llvm_missing", "U", "neverc_cpp_llvm_missing",
+             "unresolved private dependency: neverc_cpp_llvm_missing"),
+        )
+        for name, kind, decoded, diagnostic in cases:
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError) as failure:
+                    self.audit_inventory([*shared, (name, kind, decoded)], host, "nm")
+                self.assertIn(diagnostic, str(failure.exception))
+
+    def test_microsoft_stdio_sharing_preserves_independent_setup_errors(self):
+        shared = list(MSVC_STDIO_MODULE_RECORDS)
+        host = [(name, "W", name) for name, _, _ in shared]
+        cases = []
+        for old, new in SETUP_GUID_PAIRS:
+            cases.extend((
+                (old, "R", "unisolated Setup GUID symbol: " + old),
+                (old, "U", "unisolated Setup GUID symbol: " + old),
+                (new, "U", "unresolved private dependency: " + new),
+                (new, "W", "Setup GUID weak closure requires a COFF reader: " + new),
+                (new, "R", "private/host symbol intersection: " + new),
+                ("invented_" + new, "R",
+                 "Unsupported private Setup GUID symbol grammar: invented_" + new),
+            ))
+        for name in (SETUP_GET_IID, SETUP_CONVERT,
+                     "invented_" + SETUP_GUID_PAIRS[0][0]):
+            cases.append((name, "T", "unisolated Setup GUID symbol: " + name))
+        for prefix in ("$pdata$", "$unwind$", "$cppxdata$", "$ip2state$"):
+            name = prefix + PRIVATE_SETUP_RELEASE
+            cases.append((name, "R", "Setup GUID metadata has external linkage: " + name))
+        for name, kind, diagnostic in cases:
+            with self.subTest(name=name, kind=kind):
+                with self.assertRaises(ValueError) as failure:
+                    self.audit_inventory([*shared, (name, kind, name)],
+                                         [*host, (name, "W", name)], "nm")
+                self.assertIn(diagnostic, str(failure.exception))
+        reader = types.ModuleType("CoffWeakAliases")
+        reader.read_resolved_aliases = mock.Mock(
+            side_effect=ValueError("controlled COFF closure failure"))
+        with mock.patch.dict(sys.modules, {"CoffWeakAliases": reader}):
+            with self.assertRaisesRegex(ValueError, "controlled COFF closure failure"):
+                self.audit_inventory(shared, host, "nm", "controlled-readobj")
+        reader.read_resolved_aliases.assert_called_once()
 
     def test_microsoft_std_eh_does_not_share_other_runtime_records(self):
         records = (

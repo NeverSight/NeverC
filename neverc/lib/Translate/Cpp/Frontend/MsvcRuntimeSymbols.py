@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Narrow MSVC runtime identities shared by the two compiler implementations.
 
-These exceptions apply to the COFF host-index audit only. Unlike the shared
-std namespace policy, each entry requires its complete ABI spelling, decoded
-declaration and observed definition kind. They never authorize ordinary
-undefined references, arbitrary stdext entities or arbitrary C entry points.
+The full runtime definition policy applies only to the COFF host-index audit.
+AuditArchive's nm path admits only its explicit nine-symbol stdio subset.
+Definition sharing requires the complete ABI spelling, decoded declaration,
+observed private definition kind and absence of private references. It does
+not authorize other stdext entities or arbitrary C entry points.
 """
 
 import re

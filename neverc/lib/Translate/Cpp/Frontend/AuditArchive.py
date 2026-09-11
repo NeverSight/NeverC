@@ -20,6 +20,21 @@ from SetupGuidSymbols import (contains_old_guid_name, is_private_guid_name,
 
 STRDUP_SYMBOLS = frozenset(("strdup", "_strdup"))
 
+# The UCRT stdio wrappers, option accessors and their storage share one final
+# module's CRT configuration. Keep this subset separate from the wider COFF
+# runtime policy and from diagnostic-only storage selection below.
+MSVC_STDIO_SYMBOLS = frozenset((
+    "__local_stdio_printf_options",
+    "__local_stdio_scanf_options",
+    "_snprintf",
+    "fprintf",
+    "snprintf",
+    "sprintf_s",
+    "sscanf",
+    "?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA",
+    "?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA",
+))
+
 CRT_STORAGE_SYMBOLS = frozenset((
     "?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA",
     "?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA",
@@ -717,6 +732,14 @@ def audit(args):
             if (host_format == "nm" and name in STRDUP_SYMBOLS
                     and name in references and name not in definitions):
                 continue
+            # These exact stdio identities belong to the final module's CRT
+            # configuration, including the accessors and their shared storage.
+            # Require the observed private definition kind and declaration;
+            # host nm W establishes a definition, not its text/storage kind.
+            if (host_format == "nm" and name in MSVC_STDIO_SYMBOLS
+                    and name not in references and msvc_runtime_definition(
+                        name, private_decoded.get(name, ""), private_kinds[name])):
+                continue
             # Exception metadata retains its std type identity in both archives.
             # Only observed private read-only definitions may use this policy;
             # a host nm definition (often W) is not evidence of its object kind.
@@ -725,7 +748,10 @@ def audit(args):
                     and (microsoft_std_eh_entity(name)
                          or microsoft_std_catchable_type(name))):
                 continue
-            if not standard_shared_symbol(name, private_decoded.get(name, "")):
+            # A mismatched stdio declaration cannot fall through to the broader
+            # std-owner policy, including a storage name paired with std text.
+            if ((host_format == "nm" and name in MSVC_STDIO_SYMBOLS)
+                    or not standard_shared_symbol(name, private_decoded.get(name, ""))):
                 bad.append("private/host symbol intersection: " + name +
                            f"; private_demangled={private_decoded.get(name, '')!r}" +
                            f"; private_definition={name in definitions}" +
