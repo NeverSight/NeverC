@@ -6,6 +6,7 @@
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/Builtins.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
@@ -87,8 +88,12 @@ bool ordinaryCopyAssignment(const CXXMethodDecl *M) {
          Prototype && !Prototype->hasExceptionSpec();
 }
 
+bool supportedCopyAssignment(const CXXMethodDecl *M) {
+  return ordinaryCopyAssignment(M) || defaultedCopyAssignment(M);
+}
+
 bool callableMethod(const CXXMethodDecl *M) {
-  return ordinaryMethod(M) || ordinaryCopyAssignment(M);
+  return ordinaryMethod(M) || supportedCopyAssignment(M);
 }
 
 static bool defaultedFunction(const CXXMethodDecl *M) {
@@ -135,6 +140,77 @@ bool defaultedCopyConstructor(const CXXConstructorDecl *C) {
   const auto *Record = Pointee->getAsCXXRecordDecl();
   return !Pointee.isVolatileQualified() && !Pointee.isRestrictQualified() &&
          Record && Record->getCanonicalDecl() == C->getParent()->getCanonicalDecl();
+}
+
+bool defaultedCopyAssignment(const CXXMethodDecl *M) {
+  if (!defaultedFunction(M) || !M->isCopyAssignmentOperator() ||
+      M->isMoveAssignmentOperator() || M->getNumParams() != 1 ||
+      M->getMethodQualifiers().getCVRQualifiers() || M->getRefQualifier() == RQ_RValue)
+    return false;
+  auto Source = M->getParamDecl(0)->getType();
+  auto Result = M->getReturnType();
+  if (!Source->isLValueReferenceType() || !Result->isLValueReferenceType() ||
+      Source->getPointeeType().isVolatileQualified() ||
+      Source->getPointeeType().isRestrictQualified() ||
+      Result->getPointeeType().getQualifiers().getCVRQualifiers())
+    return false;
+  const auto *SourceRecord = Source->getPointeeType()->getAsCXXRecordDecl();
+  const auto *ResultRecord = Result->getPointeeType()->getAsCXXRecordDecl();
+  return SourceRecord && ResultRecord &&
+         SourceRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl() &&
+         ResultRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl();
+}
+
+std::optional<GeneratedArrayAssignment> generatedArrayAssignment(
+    const CallExpr *Call, const CXXMethodDecl *Owner, ASTContext &Context) {
+  if (!defaultedCopyAssignment(Owner) || !Call || Call->getNumArgs() != 3 ||
+      !Call->getDirectCallee() ||
+      Call->getDirectCallee()->getBuiltinID() != Builtin::BI__builtin_memcpy)
+    return std::nullopt;
+  auto MemberAddress = [](const Expr *E) -> const MemberExpr * {
+    E = E->IgnoreParens();
+    while (const auto *C = dyn_cast<ImplicitCastExpr>(E)) {
+      if ((C->getCastKind() != CK_BitCast && C->getCastKind() != CK_NoOp) ||
+          !C->getType()->isPointerType() ||
+          !C->getType()->getPointeeType()->isVoidType() ||
+          !C->getSubExpr()->getType()->isPointerType())
+        return nullptr;
+      E = C->getSubExpr()->IgnoreParens();
+    }
+    const auto *Address = dyn_cast<UnaryOperator>(E);
+    return Address && Address->getOpcode() == UO_AddrOf
+               ? dyn_cast<MemberExpr>(Address->getSubExpr()->IgnoreParens()) : nullptr;
+  };
+  const auto *To = MemberAddress(Call->getArg(0));
+  const auto *From = MemberAddress(Call->getArg(1));
+  if (!To || !From || !To->isArrow() || From->isArrow() ||
+      !To->isLValue() || !From->isLValue() || To->getType().isConstQualified() ||
+      !isa<CXXThisExpr>(To->getBase()->IgnoreParenImpCasts()))
+    return std::nullopt;
+  const auto *Parameter = dyn_cast<DeclRefExpr>(From->getBase()->IgnoreParenImpCasts());
+  const auto *Field = dyn_cast<FieldDecl>(To->getMemberDecl());
+  const auto *Bytes = dyn_cast<IntegerLiteral>(Call->getArg(2)->IgnoreParenImpCasts());
+  if (!Field || !Parameter || !Bytes ||
+      Field->getParent()->getCanonicalDecl() != Owner->getParent()->getCanonicalDecl() ||
+      From->getMemberDecl()->getCanonicalDecl() != Field->getCanonicalDecl() ||
+      Parameter->getDecl()->getCanonicalDecl() != Owner->getParamDecl(0)->getCanonicalDecl() ||
+      !Context.hasSameUnqualifiedType(To->getType(), From->getType()) ||
+      !Context.hasSameUnqualifiedType(To->getType(), Field->getType()))
+    return std::nullopt;
+  auto T = Field->getType();
+  const auto *Array = Context.getAsConstantArrayType(T);
+  if (!Array || !Array->getSize().getLimitedValue(65537) ||
+      Array->getSize().getLimitedValue(65537) > 65536 ||
+      Bytes->getValue().getLimitedValue() != uint64_t(Context.getTypeSizeInChars(T).getQuantity()))
+    return std::nullopt;
+  auto Element = Context.getBaseElementType(T);
+  const auto *Record = Element->getAsCXXRecordDecl();
+  if (!(Element->isIntegerType() || Element->isEnumeralType() ||
+        Element->isPointerType() || (Record && Record->hasTrivialCopyAssignment())))
+    return std::nullopt;
+  // Sema emits this shape only after selecting trivial assignment. Construction
+  // and destruction may still be nontrivial; never substitute those operations.
+  return GeneratedArrayAssignment{To, From, T};
 }
 
 bool supportedConstructor(const CXXConstructorDecl *C) {
@@ -207,7 +283,7 @@ const Expr *directMethodReference(const CallExpr *Call) {
     D = Member->getMemberDecl();
   else if (const auto *Reference = dyn_cast<DeclRefExpr>(E);
            Reference && (M->isStatic() ||
-                         (isa<CXXOperatorCallExpr>(Call) && ordinaryCopyAssignment(M))))
+                         (isa<CXXOperatorCallExpr>(Call) && supportedCopyAssignment(M))))
     D = Reference->getDecl();
   return D && D->getCanonicalDecl() == M->getCanonicalDecl() ? E : nullptr;
 }
@@ -506,15 +582,16 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::map<const CXXRecordDecl *, bool> HasArray;
-  std::set<const Expr *> DirectMethodCallees;
+  std::set<const Expr *> DirectMethodCallees, GeneratedBuiltinCallees;
+  std::set<const CallExpr *> GeneratedArrayAssignments;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
   const CXXMethodDecl *CurrentMethod = nullptr;
   SourceLocation ImplicitInitializerOwner;
   std::set<const Expr *> CheckedSemanticInitializers;
   std::set<const CXXConstructExpr *> CheckedConstructions;
-  std::set<const Decl *> QueuedGeneratedConstructors;
-  std::vector<const CXXConstructorDecl *> GeneratedConstructors;
+  std::set<const Decl *> QueuedGeneratedMethods;
+  std::vector<const CXXMethodDecl *> GeneratedMethods;
   bool owned(const Decl *D) {
     return !D->isImplicit() && A.S.owns(A.Sources, D->getLocation());
   }
@@ -605,6 +682,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                "Binding references to temporaries requires lifetime lowering.");
   }
 
+  void queueGenerated(const CXXMethodDecl *Method, SourceLocation L) {
+    const FunctionDecl *Definition = nullptr;
+    if (Method->isTrivial() || !Method->hasBody(Definition))
+      return; // Trivial functions and unevaluated uses can have no lazy body.
+    if (!A.S.owns(A.Sources, Definition->getLocation())) {
+      A.reject(L, "generated definition", "The generated definition must be source-owned.", "TR0203");
+      return;
+    }
+    if (QueuedGeneratedMethods.insert(Method->getCanonicalDecl()).second) {
+      A.chargeExpansion(1, L);
+      GeneratedMethods.push_back(cast<CXXMethodDecl>(Definition));
+    }
+  }
   void checkConstruction(const CXXConstructExpr *C, SourceLocation L) {
     if (!CheckedConstructions.insert(C).second)
       return;
@@ -613,17 +703,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!A.S.owns(A.Sources, Constructor->getLocation())) {
         A.reject(L, "construction", "The selected constructor must be source-owned.", "TR0203");
       } else if (defaultedLifecycle(Constructor) || defaultedCopyConstructor(Constructor)) {
-        // Trivial generated constructors need no function, even when explicitly
-        // defaulted. Nontrivial definitions are also lazy in unevaluated uses.
-        const FunctionDecl *Definition = nullptr;
-        if (!Constructor->isTrivial() && Constructor->hasBody(Definition)) {
-          if (!A.S.owns(A.Sources, Definition->getLocation()))
-            A.reject(L, "construction", "The generated definition must be source-owned.", "TR0203");
-          else if (QueuedGeneratedConstructors.insert(Constructor->getCanonicalDecl()).second) {
-            A.chargeExpansion(1, L);
-            GeneratedConstructors.push_back(cast<CXXConstructorDecl>(Definition));
-          }
-        }
+        queueGenerated(Constructor, L);
       } else if (!Constructor->hasBody()) {
         A.reject(L, "construction",
                  "The selected constructor requires a source-owned definition.",
@@ -705,43 +785,46 @@ public:
     CurrentMethod = Saved;
     return Result;
   }
-  void finishGeneratedConstructors() {
-    // Drain selected definitions only. Enabling all implicit RAV declarations
-    // would also visit unselected copy/move methods and change their boundary.
-    for (std::size_t Index = 0; Index < GeneratedConstructors.size(); ++Index) {
-      const auto *C = GeneratedConstructors[Index];
-      const auto *Body = dyn_cast_or_null<CompoundStmt>(C->getBody());
-      if ((!defaultedLifecycle(C) && !defaultedCopyConstructor(C)) ||
-          !Body || !Body->body_empty()) {
-        A.reject(C->getLocation(), "generated constructor",
-                 "Expected a defaulted constructor with semantic field initializers and an empty body.");
+  void finishGeneratedMethods() {
+    // Inspect selected definitions only. RAV normally skips defaulted bodies;
+    // visiting all implicit declarations would broaden source admission.
+    for (std::size_t Index = 0; Index < GeneratedMethods.size(); ++Index) {
+      const auto *Method = GeneratedMethods[Index];
+      const auto *C = dyn_cast<CXXConstructorDecl>(Method);
+      const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+      if (!Body || (C ? ((!defaultedLifecycle(C) && !defaultedCopyConstructor(C)) ||
+                         !Body->body_empty()) : !defaultedCopyAssignment(Method))) {
+        A.reject(Method->getLocation(), "generated method",
+                 "Expected an admitted defaulted definition with a semantic body.");
         continue;
       }
       auto *SavedMethod = CurrentMethod;
       auto SavedOwner = ImplicitInitializerOwner;
-      CurrentMethod = C;
-      ImplicitInitializerOwner = C->getLocation();
+      CurrentMethod = Method;
+      ImplicitInitializerOwner = Method->getLocation();
       auto Restore = llvm::make_scope_exit([&] {
         CurrentMethod = SavedMethod;
         ImplicitInitializerOwner = SavedOwner;
       });
-      A.type(C->getReturnType(), C->getLocation(), true);
-      A.type(C->getThisType(), C->getLocation());
-      for (const auto *Parameter : C->parameters())
-        A.type(Parameter->getType(), C->getLocation());
-      std::set<const Decl *> Initialized;
-      for (const auto *I : C->inits()) {
-        if (!I->isMemberInitializer() || I->isPackExpansion() ||
-            I->getMember()->getParent() != C->getParent() || !I->getInit() ||
-            !Initialized.insert(I->getMember()->getCanonicalDecl()).second) {
-          A.reject(C->getLocation(), "generated constructor initializer",
-                   "Only unique direct field initializers are supported.");
-          continue;
+      A.type(Method->getReturnType(), Method->getLocation(), true);
+      A.type(Method->getThisType(), Method->getLocation());
+      for (const auto *Parameter : Method->parameters())
+        A.type(Parameter->getType(), Method->getLocation());
+      if (C) {
+        std::set<const Decl *> Initialized;
+        for (const auto *I : C->inits()) {
+          if (!I->isMemberInitializer() || I->isPackExpansion() ||
+              I->getMember()->getParent() != C->getParent() || !I->getInit() ||
+              !Initialized.insert(I->getMember()->getCanonicalDecl()).second) {
+            A.reject(C->getLocation(), "generated constructor initializer",
+                     "Only unique direct field initializers are supported.");
+            continue;
+          }
+          TraverseStmt(I->getInit());
         }
-        TraverseStmt(I->getInit());
       }
       TraverseStmt(const_cast<CompoundStmt *>(Body));
-      A.Functions.push_back(const_cast<CXXConstructorDecl *>(C));
+      A.Functions.push_back(const_cast<CXXMethodDecl *>(Method));
     }
   }
   bool TraverseArrayInitLoopExpr(ArrayInitLoopExpr *Loop) {
@@ -831,7 +914,7 @@ public:
     A.type(D->getReturnType(), D->getLocation(), true);
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
     const bool Defaulted = A.S.coreV2() &&
-        (defaultedLifecycle(Method) ||
+        (defaultedLifecycle(Method) || defaultedCopyAssignment(Method) ||
          defaultedCopyConstructor(dyn_cast_or_null<CXXConstructorDecl>(Method)));
     if ((Method && (!A.S.coreV2() ||
                     (!callableMethod(Method) &&
@@ -981,6 +1064,24 @@ public:
       return true;
     auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
                                         : ImplicitInitializerOwner;
+    if (A.S.coreV2() && ImplicitInitializerOwner.isValid())
+      if (const auto *Call = dyn_cast<CallExpr>(S))
+        if (auto Copy = generatedArrayAssignment(Call, CurrentMethod, A.Context)) {
+          A.type(Copy->Type, L);
+          if (A.storageUnits(Copy->Type) > 200000)
+            A.reject(L, "generated array assignment", "Array assignment exceeds the storage limit.");
+          GeneratedArrayAssignments.insert(Call);
+          const Expr *E = Call->getCallee();
+          while (true) {
+            GeneratedBuiltinCallees.insert(E);
+            if (const auto *P = dyn_cast<ParenExpr>(E))
+              E = P->getSubExpr();
+            else if (const auto *C = dyn_cast<ImplicitCastExpr>(E))
+              E = C->getSubExpr();
+            else
+              break;
+          }
+        }
     // The visitor is preorder. Mark only the direct callee path before its
     // children are inspected, including Clang's BoundMemberTy expressions.
     if (A.S.coreV2())
@@ -1009,7 +1110,7 @@ public:
       if (const auto *WrittenCast = dyn_cast<ExplicitCastExpr>(E))
         A.type(WrittenCast->getTypeAsWritten(), E->getExprLoc(), true);
       if (A.S.coreV2())
-        if (const auto *C = dyn_cast<CastExpr>(E)) {
+        if (const auto *C = dyn_cast<CastExpr>(E); C && !GeneratedBuiltinCallees.count(C)) {
           // Enum initializers and static assertions are erased after checking.
           // Validate their operations before erasure, not only in lowering.
           switch (C->getCastKind()) {
@@ -1044,7 +1145,7 @@ public:
       const auto *Cast = dyn_cast<ImplicitCastExpr>(E);
       bool FunctionDecay =
           Cast && Cast->getCastKind() == CK_FunctionToPointerDecay;
-      if (!DirectMethodCallees.count(E) && !FunctionDecay &&
+      if (!DirectMethodCallees.count(E) && !GeneratedBuiltinCallees.count(E) && !FunctionDecay &&
           !E->getType()->isFunctionType() &&
           !(A.S.coreV2() &&
             isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())))
@@ -1098,6 +1199,8 @@ public:
       }
     }
     if (const auto *C = dyn_cast<CallExpr>(S)) {
+      if (GeneratedArrayAssignments.count(C))
+        return true; // Its typed argument subtrees are still visited by RAV.
       const auto *F = C->getDirectCallee();
       const auto *Method = dyn_cast_or_null<CXXMethodDecl>(F);
       if (A.S.coreV2() && isa_and_nonnull<CXXDestructorDecl>(F))
@@ -1110,10 +1213,10 @@ public:
                                  Method->isImplicit() && Method->isTrivial() &&
                                  Operator->getNumArgs() == 2;
         if (!TrivialAssignment &&
-            !(ordinaryCopyAssignment(Method) && Operator->getOperator() == OO_Equal &&
+            !(supportedCopyAssignment(Method) && Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
           A.reject(L, "overloaded operator",
-                   "Only admitted user copy assignment and implicit trivial assignment are supported.");
+                   "Only admitted copy assignment and implicit trivial assignment are supported.");
       }
       if (A.S.coreV2() && Method && callableMethod(Method)) {
         const auto *Reference = directMethodReference(C);
@@ -1147,8 +1250,15 @@ public:
                    "TR0203");
         return true;
       }
+      const bool GeneratedAssignment = A.S.coreV2() && defaultedCopyAssignment(Method);
+      if (GeneratedAssignment) {
+        if (!A.S.owns(A.Sources, Method->getLocation()))
+          A.reject(L, "copy assignment", "The selected assignment must be source-owned.", "TR0203");
+        else
+          queueGenerated(Method, L);
+      }
       if (!F ||
-          (!F->isImplicit() && !F->hasBody() &&
+          (!GeneratedAssignment && !F->isImplicit() && !F->hasBody() &&
            (!A.S.project() || F->getFormalLinkage() == Linkage::Internal ||
             F->isInlined())))
         A.reject(
@@ -1267,7 +1377,7 @@ void Adapter::run() {
   Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (!S.Diagnostics.empty())
     return;
-  Check.finishGeneratedConstructors();
+  Check.finishGeneratedMethods();
   if (!S.Diagnostics.empty())
     return;
   const auto &Target = Context.getTargetInfo();

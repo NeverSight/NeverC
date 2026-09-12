@@ -71,6 +71,15 @@ bool validExportName(llvm::StringRef Name);
 bool isolateProjectEnvironment();
 bool ordinaryMethod(const clang::CXXMethodDecl *Method);
 bool ordinaryCopyAssignment(const clang::CXXMethodDecl *Method);
+bool defaultedCopyAssignment(const clang::CXXMethodDecl *Method);
+bool supportedCopyAssignment(const clang::CXXMethodDecl *Method);
+struct GeneratedArrayAssignment {
+  const clang::Expr *Destination, *Source;
+  clang::QualType Type;
+};
+std::optional<GeneratedArrayAssignment> generatedArrayAssignment(
+    const clang::CallExpr *Call, const clang::CXXMethodDecl *Owner,
+    clang::ASTContext &Context);
 bool callableMethod(const clang::CXXMethodDecl *Method);
 bool ordinaryConstructor(const clang::CXXConstructorDecl *Constructor);
 const clang::CXXConstructExpr *constructorConversion(const clang::CastExpr *Cast,

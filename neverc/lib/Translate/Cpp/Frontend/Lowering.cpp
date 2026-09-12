@@ -345,6 +345,32 @@ class FunctionLowering {
                          {"loc", A.loc(L)}};
     return Value;
   }
+  void copyAssignedArray(Expression To, Expression From, QualType T,
+                         QualType SourceType, SourceLocation L) {
+    const auto *Array = A.Context.getAsConstantArrayType(T);
+    const auto *SourceArray = A.Context.getAsConstantArrayType(SourceType);
+    if (!Array || !SourceArray ||
+        !A.Context.hasSameUnqualifiedType(T, SourceType))
+      reject(L, "generated array assignment", "Source and destination array types differ.");
+    auto Count = Array->getSize().getLimitedValue(65537);
+    if (!Count || Count > 65536 || A.storageUnits(T) > 200000)
+      reject(L, "generated array assignment", "Array assignment exceeds the storage limit.");
+    auto Element = Array->getElementType();
+    auto SourceElement = SourceArray->getElementType();
+    for (unsigned N = 0; N < Count; ++N) {
+      A.chargeExpansion(1, L);
+      auto Destination = initialElement(To, Element, N, L);
+      auto Source = index(
+          decay(From, type(A.Context.getPointerType(SourceElement), L), L),
+          A.literal(llvm::APSInt(llvm::APInt(32, N), false), "int", L),
+          type(SourceElement, L), L);
+      if (Element->isArrayType())
+        copyAssignedArray(std::move(Destination), std::move(Source),
+                          Element, SourceElement, L);
+      else
+        assign(std::move(Destination), std::move(Source), L);
+    }
+  }
   Expression call(const CallExpr *Call,
                   std::optional<Expression> Destination = std::nullopt) {
     auto L = Call->getExprLoc();
@@ -364,15 +390,26 @@ class FunctionLowering {
                                   {"loc", A.loc(L)}});
       return Result;
     }
+    if (A.S.coreV2())
+      if (auto Copy = generatedArrayAssignment(
+              Call, dyn_cast_or_null<CXXMethodDecl>(Function), A.Context)) {
+        auto To = snapshot(address(lvalue(Copy->Destination), Copy->Type, L), L);
+        auto From = snapshot(address(lvalue(Copy->Source), Copy->Source->getType(), L), L);
+        copyAssignedArray(dereference(To, L), dereference(std::move(From), L),
+                          Copy->Type, Copy->Source->getType(), L);
+        return cast(std::move(To), type(Call->getType(), L), L);
+      }
+    const bool TrivialAssignment = A.S.coreV2() && defaultedCopyAssignment(Method) &&
+                                   Method->isTrivial();
     if (!Callee ||
-        (!Callee->hasBody() &&
+        (!TrivialAssignment && !Callee->hasBody() &&
          (!A.S.project() ||
           Callee->getFormalLinkage() == Linkage::Internal)) ||
         (Method && (!A.S.coreV2() || !callableMethod(Method))))
       reject(L, "call",
              "Call target is not a supported defined function.");
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-    if (Operator && (!A.S.coreV2() || !ordinaryCopyAssignment(Method) ||
+    if (Operator && (!A.S.coreV2() || !supportedCopyAssignment(Method) ||
                      Operator->getOperator() != OO_Equal))
       reject(L, "operator call", "Unsupported selected operator function.");
     unsigned ArgumentOffset = Operator ? 1 : 0;
@@ -424,6 +461,14 @@ class FunctionLowering {
       for (unsigned I = 0; I < Call->getNumArgs(); ++I)
         Args.push_back(argument(Call->getArg(I),
                                 Callee->getParamDecl(I)->getType()));
+    }
+    if (TrivialAssignment) {
+      // Both reference addresses are now captured in source sequencing order.
+      // Read fields only here, after receiver effects, and return the receiver
+      // lvalue. Assignment creates no complete-object lifetime or helper call.
+      auto Receiver = dereference(*Args[0].getAsObject(), L);
+      assign(Receiver, dereference(*Args[1].getAsObject(), L), L);
+      return Receiver;
     }
     chargeCall(Args, L);
     json::Object Instruction{{"op", "call"},
@@ -606,16 +651,17 @@ class FunctionLowering {
       const auto *Method =
           dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
       if (Call->getOperator() == OO_Equal && Method && Method->isImplicit() &&
-          Method->isTrivial() && Call->getNumArgs() == 2) {
+          Method->isTrivial() && Call->getNumArgs() == 2 &&
+          (!A.S.coreV2() || !Method->isCopyAssignmentOperator())) {
         auto Right = expression(Call->getArg(1));
         auto Left = lvalue(Call->getArg(0));
         assign(Left, std::move(Right), L);
         return Left;
       }
-      if (A.S.coreV2() && ordinaryCopyAssignment(Method))
+      if (A.S.coreV2() && supportedCopyAssignment(Method))
         return call(Call);
       reject(L, "overloaded operator",
-             "Only admitted user copy assignment and implicit trivial assignment are supported.");
+             "Only admitted copy assignment and implicit trivial assignment are supported.");
     }
     if (const auto *Call = dyn_cast<CallExpr>(E))
       return Call->isPRValue() && recordValue(Call->getType())

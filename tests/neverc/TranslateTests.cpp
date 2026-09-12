@@ -1606,7 +1606,6 @@ int main(){
 TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMembers) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"deleted-constructor", "struct R{int n;R(const R&)=delete;};"},
-      {"defaulted-assignment", "struct R{int n;R&operator=(const R&)=default;};"},
       {"deleted-assignment", "struct R{int n;R&operator=(const R&)=delete;};"},
       {"volatile-constructor", "struct R{int n;R(const volatile R&r):n(r.n){}};"},
       {"volatile-assignment", "struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};"},
@@ -1621,8 +1620,6 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
       {"move-constructor", "struct R{int n;R(R&&r):n(r.n){}};"},
       {"move-assignment", "struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};"},
       {"arbitrary-operator", "struct R{int n;R operator+(const R&r){return {n+r.n};}};"},
-      {"implicit-containing-assignment", "struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};a=b;}"},
-      {"implicit-containing-assignment-dead", "struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};if(false)a=b;}"},
       {"temporary-assignment-source", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}"},
       {"temporary-assignment-receiver", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}"},
   };
@@ -1652,6 +1649,213 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
   writeFile(Source, "struct R{int n;R(const R&r):n(r.n){}};");
   Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
   expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
+TEST_F(TranslateTest, CoreV2GeneratedAssignmentPreservesMemberEffectsAndSequencing) {
+  const auto Source = tmpFile("generated-assignment.cpp");
+  const auto Output = tmpFile("generated-assignment.nc");
+  writeFile(Source, R"cpp(
+struct Stats { int assigned,copied,destroyed,used,trace[64]; };
+struct Leaf {
+  int value;Stats*stats;Leaf*self;Leaf*alias;
+  Leaf(int n,Stats&s):value(n),stats(&s),self(this),alias(this){}
+  Leaf(const Leaf&s):value(s.value),stats(s.stats),self(this),alias(this){++stats->copied;}
+  Leaf&operator=(const Leaf&s){
+    ++stats->assigned;stats->trace[stats->used++]=s.value;
+    value=s.value+10;self=this;return *alias;
+  }
+  ~Leaf(){++stats->destroyed;}
+};
+struct Inner { Leaf items[2];~Inner()=default; };
+struct Box {
+  int before;Leaf first;int numbers[2];Inner inner;Leaf grid[2][2];int after;
+  Box&operator=(const Box&)=default;
+  ~Box()=default;
+};
+Box make(Stats&s,int n){
+  return {n,Leaf(n,s),{n+1,n+2},{{Leaf(n+1,s),Leaf(n+2,s)}},
+          {{Leaf(n+3,s),Leaf(n+4,s)},{Leaf(n+5,s),Leaf(n+6,s)}},n+7};
+}
+bool own(const Box&b){
+  if(b.first.self!=&b.first)return false;
+  for(int i=0;i<2;++i)if(b.inner.items[i].self!=&b.inner.items[i])return false;
+  for(int i=0;i<2;++i)for(int j=0;j<2;++j)if(b.grid[i][j].self!=&b.grid[i][j])return false;
+  return true;
+}
+Box&sourceEffect(Box&source,int&trace,int&count){trace=trace*10+2;++count;return source;}
+Box&receiverEffect(Box&target,Box&source,int&trace,int&count){
+  trace=trace*10+1;++count;source.first.value=77;return target;
+}
+Box&reseatReceiver(Box&target,Box*&pointer,Box&other){pointer=&other;return target;}
+struct Plain {
+  int values[2];Plain*self;Stats*stats;
+  Plain(int n,Stats&s):values{n,n+1},self(this),stats(&s){}
+  Plain(const Plain&s):values{s.values[0],s.values[1]},self(this),stats(s.stats){++stats->copied;}
+  ~Plain(){++stats->destroyed;}
+};
+struct WithPlain { Plain grid[2][2];Leaf trigger;WithPlain&operator=(const WithPlain&)=default;~WithPlain()=default; };
+struct Simple { int values[2];Simple*self;Simple&operator=(const Simple&)=default; };
+Simple&simpleReceiver(Simple&target,Simple&source,int&trace){trace=trace*10+1;source.values[0]=77;return target;}
+const Simple&simpleSource(const Simple&source,int&trace){trace=trace*10+2;return source;}
+Simple&simpleReseat(Simple&target,Simple*&pointer,Simple&other){pointer=&other;return target;}
+struct Outside { Leaf leaf;Outside&operator=(const Outside&);~Outside()=default; };
+Outside&Outside::operator=(const Outside&)=default;
+struct Qualified { Leaf leaf;Qualified&operator=(const Qualified&) & =default;~Qualified()=default; };
+struct MutableLeaf {
+  int value;Stats*stats;MutableLeaf*self;
+  MutableLeaf(int n,Stats&s):value(n),stats(&s),self(this){}
+  MutableLeaf&operator=(MutableLeaf&s){value=++s.value;self=this;++stats->assigned;return *this;}
+  ~MutableLeaf(){++stats->destroyed;}
+};
+struct MutableBox { MutableLeaf items[2];~MutableBox()=default; };
+struct Unused { int n;Unused&operator=(const Unused&)=default; };
+struct Lazy { Leaf leaf;Lazy&operator=(const Lazy&)=default; };
+int query(Lazy&target,const Lazy&source){return sizeof(target=source);}
+int main(){
+  Stats stats{0,0,0,0,{}};
+  {
+    Leaf unrelated(99,stats);
+    Box source=make(stats,10),target=make(stats,30),third=make(stats,50);
+    target.first.alias=&unrelated;
+    if(&(target=source)!=&target || stats.assigned!=7 || stats.used!=7)return 1;
+    if(!own(target) || target.first.value!=20 || target.grid[1][1].value!=26 ||
+       target.before!=10 || target.numbers[0]!=11 || target.numbers[1]!=12 || target.after!=17)return 2;
+    if(source.first.value!=10 || unrelated.value!=99 || target.first.alias!=&unrelated)return 3;
+    for(int i=0;i<7;++i)if(stats.trace[i]!=10+i)return 4;
+    stats.used=0;
+    if(&(target=target)!=&target || target.first.value!=30 || target.grid[1][1].value!=36 || stats.assigned!=14)return 5;
+    for(int i=0;i<7;++i)if(stats.trace[i]!=20+i)return 6;
+    stats.used=0;
+    if(&(third=target=source)!=&third || third.first.value!=30 || target.first.value!=20 || stats.assigned!=28)return 7;
+    for(int i=0;i<7;++i)if(stats.trace[i]!=10+i || stats.trace[i+7]!=20+i)return 8;
+    stats.used=0;
+    if(&target.operator=(source)!=&target || stats.assigned!=35)return 9;
+    Box*pointer=&target;
+    if(&pointer->operator=(source)!=&target || stats.assigned!=42)return 10;
+    int trace=0,left=0,right=0;stats.used=0;
+    receiverEffect(target,source,trace,left)=sourceEffect(source,trace,right);
+    if(trace!=21 || left!=1 || right!=1 || target.first.value!=87 || stats.assigned!=49)return 11;
+    trace=left=right=0;source.first.value=10;stats.used=0;
+    receiverEffect(target,source,trace,left).operator=(sourceEffect(source,trace,right));
+    if(trace!=12 || left!=1 || right!=1 || target.first.value!=87 || stats.assigned!=56)return 12;
+    pointer=&source;stats.used=0;
+    reseatReceiver(target,pointer,third)=*pointer;
+    if(pointer!=&third || target.first.value!=87 || stats.assigned!=63 || !own(target))return 13;
+    if(stats.copied || stats.destroyed)return 14;
+  }
+  if(stats.destroyed!=22)return 15;
+  {
+    stats.used=0;
+    WithPlain source{{{Plain(1,stats),Plain(3,stats)},{Plain(5,stats),Plain(7,stats)}},Leaf(9,stats)};
+    WithPlain target{{{Plain(11,stats),Plain(13,stats)},{Plain(15,stats),Plain(17,stats)}},Leaf(19,stats)};
+    if(&(target=source)!=&target || target.trigger.value!=19 || stats.assigned!=64)return 16;
+    for(int i=0;i<2;++i)for(int j=0;j<2;++j)
+      if(target.grid[i][j].self!=&source.grid[i][j] ||
+         target.grid[i][j].values[0]!=source.grid[i][j].values[0] ||
+         target.grid[i][j].values[1]!=source.grid[i][j].values[1])return 17;
+    target=target;
+    if(target.grid[1][1].self!=&source.grid[1][1] || target.trigger.value!=29 || stats.assigned!=65)return 18;
+    if(stats.copied || stats.destroyed!=22)return 19;
+    Simple a{{1,2},nullptr};a.self=&a;Simple b{{3,4},nullptr};
+    if(&(b=a)!=&b || b.values[0]!=1 || b.values[1]!=2 || b.self!=&a)return 20;
+    if(&b.operator=(a)!=&b || b.self!=&a)return 21;
+    Simple*pointer=&b;
+    if(&pointer->operator=(a)!=&b || b.self!=&a)return 22;
+    int trace=0;
+    simpleReceiver(b,a,trace)=simpleSource(a,trace);
+    if(trace!=21 || b.values[0]!=77 || b.self!=&a)return 23;
+    trace=0;a.values[0]=1;
+    simpleReceiver(b,a,trace).operator=(simpleSource(a,trace));
+    if(trace!=12 || b.values[0]!=77 || b.self!=&a)return 24;
+    Simple other{{9,10},nullptr};pointer=&a;
+    simpleReseat(b,pointer,other)=*pointer;
+    if(pointer!=&other || b.values[0]!=77 || b.self!=&a)return 25;
+  }
+  if(stats.destroyed!=32)return 26;
+  {
+    stats.used=0;
+    Outside source{Leaf(3,stats)},target{Leaf(5,stats)};
+    if(&(target=source)!=&target || target.leaf.value!=13 || stats.assigned!=66)return 27;
+    Qualified a{Leaf(7,stats)},b{Leaf(9,stats)};
+    if(&(b=a)!=&b || b.leaf.value!=17 || stats.assigned!=67)return 28;
+    MutableBox mutable_source{{MutableLeaf(1,stats),MutableLeaf(3,stats)}};
+    MutableBox mutable_target{{MutableLeaf(5,stats),MutableLeaf(7,stats)}};
+    if(&(mutable_target=mutable_source)!=&mutable_target || stats.assigned!=69)return 29;
+    if(mutable_source.items[0].value!=2 || mutable_source.items[1].value!=4 ||
+       mutable_target.items[0].value!=2 || mutable_target.items[1].value!=4 ||
+       mutable_target.items[0].self!=&mutable_target.items[0] || stats.copied)return 30;
+  }
+  if(stats.destroyed!=40)return 31;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("generated-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2GeneratedAssignmentKeepsBuiltinAndReferenceBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"deleted", "struct R{int n;R&operator=(const R&)=delete;};"},
+      {"defaulted-deleted", "struct I{int n;I&operator=(const I&)=delete;};struct R{I i;R&operator=(const R&)=default;};"},
+      {"noexcept", "struct R{int n;R&operator=(const R&)noexcept=default;};"},
+      {"noexcept-false", "struct R{int n;R&operator=(const R&)noexcept(false)=default;};"},
+      {"out-of-line-noexcept", "struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;"},
+      {"rvalue-receiver", "struct R{int n;R&operator=(const R&)&&=default;};"},
+      {"move-assignment", "struct R{int n;R&operator=(R&&)=default;};"},
+      {"default-member", "struct R{int n=1;R&operator=(const R&)=default;};"},
+      {"const-field", "struct R{const int n;R&operator=(const R&)=default;};"},
+      {"reference-field", "struct R{int&n;R&operator=(const R&)=default;};"},
+      {"private-field", "class R{int n;public:R&operator=(const R&)=default;};"},
+      {"base-field", "struct B{int n;};struct R:B{int m;R&operator=(const R&)=default;};"},
+      {"temporary-source", "struct R{int n;R&operator=(const R&)=default;};void f(R&r){r=R{1};}"},
+      {"temporary-receiver", "struct R{int n;R&operator=(const R&)=default;};void f(const R&s){R{1}=s;}"},
+      {"raw-builtin", "void f(int*a,int*b){__builtin_memcpy(a,b,4);}"},
+      {"dead-builtin", "void f(int*a,int*b){if(false)__builtin_memcpy(a,b,4);}"},
+      {"user-member-builtin", "struct R{int n[2];R&operator=(const R&s){__builtin_memcpy(n,s.n,sizeof(n));return *this;}};"},
+      {"array-expansion", "struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{int n[65536];I i;R&operator=(const R&)=default;};void f(R&a,const R&b){a=b;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("generated-assignment-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("generated-assignment-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("generated-assignment-boundary.cpp");
+  const auto Output = tmpFile("generated-assignment-boundary.nc");
+  const std::vector<std::pair<std::string, std::string>> InvalidCases = {
+      {"volatile-source", "struct R{int n;R&operator=(const volatile R&)=default;};"},
+      {"volatile-receiver", "struct R{int n;R&operator=(const R&)volatile=default;};"},
+      {"const-receiver", "struct R{int n;R&operator=(const R&)const=default;};"},
+      {"value-parameter", "struct R{int n;R&operator=(R)=default;};"},
+      {"value-result", "struct R{int n;R operator=(const R&)=default;};"},
+      {"const-result", "struct R{int n;const R&operator=(const R&)=default;};"},
+  };
+  for (const auto &[Name, Code] : InvalidCases) {
+    SCOPED_TRACE(Name);
+    writeFile(Source, Code);
+    auto Invalid = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Invalid, "TR0202");
+    expectNoArtifacts(Output);
+  }
+  writeFile(Source, "struct I{int n;I&operator=(const I&);};struct R{I i;R&operator=(const R&)=default;};void f(R&a,const R&b){a=b;}");
+  auto Missing = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  expectCode(Missing, "TR0203");
+  expectNoArtifacts(Output);
+  writeFile(Source, "struct R{int n;R&operator=(const R&)=default;};");
+  auto Old = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Old, "TR0201");
   expectNoArtifacts(Output);
 }
 
@@ -1814,9 +2018,6 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
       {"out-of-line-noexcept", "struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;"},
       {"move-default", "struct R{int n;R(R&&)=default;};"},
       {"move-assignment-default", "struct R{int n;R&operator=(R&&)=default;};"},
-      {"copy-assignment-default", "struct R{int n;R&operator=(const R&)=default;};"},
-      {"implicit-assignment", "struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{I i;};void f(R&a,const R&b){a=b;}"},
-      {"dead-implicit-assignment", "struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{I i;};void f(R&a,const R&b){if(false)a=b;}"},
       {"default-member", "struct R{int n=1;R(const R&)=default;};"},
       {"unevaluated-default-member", "struct R{int n=1;R(const R&)=default;};int f(const R&r){return sizeof(R(r));}"},
       {"reference-field", "struct R{int &n;R(const R&)=default;};"},
@@ -1967,7 +2168,6 @@ TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
       {"nonpublic-field", "class R{int n;public:R()=default;};"},
       {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
       {"move-default", "struct R{int n;R(R&&)=default;};"},
-      {"copy-assignment-default", "struct R{int n;R&operator=(const R&)=default;};"},
       {"explicit-destruction", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},
       {"temporary-reference", "struct R{int n;explicit R()=default;};int f(){const R&r=R{};return r.n;}"},
       {"throwing-member-constructor", "struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};"},

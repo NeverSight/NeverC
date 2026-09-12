@@ -274,6 +274,22 @@ def main():
         'generated-copy-mutable-source': 'struct I{int n;I(I&s):n(++s.n){}};struct R{I i[2];~R()=default;};R f(R&s){return s;}',
     })
     core_v2.update({
+        'generated-assignment-implicit-nontrivial': 'struct I{int n;I&operator=(const I&s){n=s.n+1;return *this;}};struct R{I i;};void f(R&a,const R&b){a=b;}',
+        'generated-assignment-defaulted-nontrivial': 'struct I{int n;I&operator=(const I&s){n=s.n+1;return *this;}};struct R{I i;R&operator=(const R&)=default;};void f(R&a,const R&b){a=b;}',
+        'generated-assignment-out-of-line': 'struct R{int n[2];R&operator=(const R&);};R&R::operator=(const R&)=default;void f(R&a,const R&b){a=b;}',
+        'generated-assignment-qualified': 'struct R{int n;R&operator=(const R&) & =default;};R&f(R&a,const R&b){return a=b;}',
+        'generated-assignment-trivial-operator': 'struct R{int n;R&operator=(const R&)=default;};R&f(R&a,const R&b){return a=b;}',
+        'generated-assignment-trivial-member': 'struct R{int n;R&operator=(const R&)=default;};R&f(R&a,const R&b){return a.operator=(b);}',
+        'generated-assignment-trivial-arrow': 'struct R{int n;R&operator=(const R&)=default;};R&f(R*a,const R&b){return a->operator=(b);}',
+        'generated-assignment-implicit-member': 'struct R{int n;};R&f(R&a,const R&b){return a.operator=(b);}',
+        'generated-assignment-unused': 'struct R{int n;R&operator=(const R&)=default;};',
+        'generated-assignment-unevaluated-lazy': 'struct I{int n;I&operator=(const I&s){n=s.n+1;return *this;}};struct R{I i;R&operator=(const R&)=default;};int f(R&a,const R&b){return sizeof(a=b);}',
+        'generated-assignment-nested-array': 'struct I{int n;I&operator=(const I&s){n=s.n+1;return *this;}};struct R{I i[2][3];};void f(R&a,const R&b){a=b;}',
+        'generated-assignment-scalar-array': 'struct I{int n;I&operator=(const I&s){n=s.n+1;return *this;}};struct R{int a[2][3];I i;};void f(R&a,const R&b){a=b;}',
+        'generated-assignment-mutable-source': 'struct I{int n;I&operator=(I&s){n=++s.n;return *this;}};struct R{I i[2];};void f(R&a,R&b){a=b;}',
+        'generated-assignment-nontrivial-lifetime-trivial-assignment': 'struct I{int n;I(const I&s):n(s.n){}~I(){}};struct J{int n;J&operator=(const J&s){n=s.n;return *this;}};struct R{I i[2];J j;};void f(R&a,const R&b){a=b;}',
+    })
+    core_v2.update({
         'generated-copy-implicit-containing-copy': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};Box b=a;}',
         'generated-copy-implicit-containing-copy-dead': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};if(false){Box b=a;}}',
     })
@@ -489,7 +505,6 @@ int main(){
 
     user_copy_rejected = {
         'deleted-constructor': 'struct R{int n;R(const R&)=delete;};',
-        'defaulted-assignment': 'struct R{int n;R&operator=(const R&)=default;};',
         'deleted-assignment': 'struct R{int n;R&operator=(const R&)=delete;};',
         'volatile-constructor': 'struct R{int n;R(const volatile R&r):n(r.n){}};',
         'volatile-assignment': 'struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};',
@@ -504,8 +519,6 @@ int main(){
         'move-constructor': 'struct R{int n;R(R&&r):n(r.n){}};',
         'move-assignment': 'struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};',
         'arbitrary-operator': 'struct R{int n;R operator+(const R&r){return {n+r.n};}};',
-        'implicit-containing-assignment': 'struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};a=b;}',
-        'implicit-containing-assignment-dead': 'struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};if(false)a=b;}',
         'temporary-assignment-source': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}',
         'temporary-assignment-receiver': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}',
     }
@@ -700,9 +713,6 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
         'out-of-line-noexcept': 'struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;',
         'move-default': 'struct R{int n;R(R&&)=default;};',
         'move-assignment-default': 'struct R{int n;R&operator=(R&&)=default;};',
-        'copy-assignment-default': 'struct R{int n;R&operator=(const R&)=default;};',
-        'implicit-assignment': 'struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{I i;};void f(R&a,const R&b){a=b;}',
-        'dead-implicit-assignment': 'struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{I i;};void f(R&a,const R&b){if(false)a=b;}',
         'default-member': 'struct R{int n=1;R(const R&)=default;};',
         'unevaluated-default-member': 'struct R{int n=1;R(const R&)=default;};int f(const R&r){return sizeof(R(r));}',
         'reference-field': 'struct R{int &n;R(const R&)=default;};',
@@ -721,6 +731,143 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
     check("v2-generated-copy-missing", "struct I{int n;I(const I&);};struct R{I i;R(const R&)=default;};R f(const R&s){return s;}",
           "TR0203", profile="cpp-core-v2")
     check("v1-defaulted-copy", "struct R{int n;R(const R&)=default;};", "TR0201")
+    generated_assignment_source = """struct Leaf { int n;Leaf*alias;
+ Leaf&operator=(const Leaf&s){n=s.n+1;return *alias;}
+};
+struct Inner { Leaf items[2]; };
+struct Plain { int n;Plain*self;Plain(const Plain&s):n(s.n),self(this){}~Plain(){} };
+struct Box { int scalar[2][2];Inner inner;Leaf grid[2][2];Plain plain[2];Box&operator=(const Box&)=default; };
+struct Outside { int scalar[2];Leaf leaf;Outside&operator=(const Outside&); };
+Outside&Outside::operator=(const Outside&)=default;
+struct Trivial { int n[2];Trivial*self;Trivial&operator=(const Trivial&)=default; };
+struct MutableLeaf { int n;MutableLeaf&operator=(MutableLeaf&s){n=++s.n;return *this;} };
+struct MutableBox { MutableLeaf items[2]; };
+struct Lazy { Leaf leaf;Lazy&operator=(const Lazy&)=default; };
+Box&assign(Box&a,const Box&b){return a=b;}
+void twice(Box&a,const Box&b){a=b;a.operator=(b);}
+Outside&outside(Outside&a,const Outside&b){return a=b;}
+Trivial&trivial(Trivial&a,const Trivial&b){return a=b;}
+Trivial&member(Trivial&a,const Trivial&b){return a.operator=(b);}
+Trivial&arrow(Trivial*a,const Trivial&b){return a->operator=(b);}
+MutableBox&mutableCopy(MutableBox&a,MutableBox&b){return a=b;}
+int query(Lazy&a,const Lazy&b){return sizeof(a=b);}
+Box&left(Box&a){return a;}
+const Box&right(const Box&b){return b;}
+void ordered(Box&a,const Box&b){left(a)=right(b);}
+void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
+"""
+    generated_assignment = check("v2-generated-assignment-protocol", generated_assignment_source, profile="cpp-core-v2")
+    ga_records = {r["loc"]["line"]: r for r in generated_assignment["records"]}
+    ga_functions = {f["name"]: f for f in generated_assignment["functions"]}
+    ga_by_line = {f["loc"]["line"]: f for f in generated_assignment["functions"]}
+    ga_assignments = {}
+    for line in (1, 4, 5, 6, 7, 9, 10, 11, 12):
+        rid = ga_records[line]["id"]
+        source_kind = "ptr:" if line in (10, 11) else "cptr:"
+        selected = [f for f in generated_assignment["functions"] if f["result"] == "ptr:" + rid
+                    and [p["type"] for p in f["params"]] == ["ptr:" + rid, source_kind + rid]]
+        assert len(selected) == (0 if line in (5, 9, 12) else 1), (line, selected)
+        if selected:
+            ga_assignments[line] = selected[0]
+    for line, callees in {4: [1], 6: [4, 1], 7: [1], 11: [10]}.items():
+        function = ga_assignments[line]
+        calls = gc_calls(function)
+        assert [n["callee"] for n in calls] == [ga_assignments[c]["name"] for c in callees], calls
+        # Nontrivial array assignments stay counted loops: one body call per
+        # semantic loop, executed for every element, without whole-record stores.
+        if line in (4, 6, 11):
+            assert any(n["op"] == "branch" for n in function["body"]), function
+        assert not any(n["op"] == "assign" and n["target"]["type"] == ga_records[line]["id"]
+                       for n in function["body"]), function
+        returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+        assert gc_identity(function, returned) == ("parameter", function["params"][0]["name"])
+    box_assignment = ga_assignments[6]
+    fields = ga_records[6]["fields"]
+    # Optimized generated copies of scalar and trivially assigned class arrays
+    # become typed stores, even if the class has a nontrivial ctor/destructor.
+    scalar_stores = [n for n in box_assignment["body"] if n["op"] == "assign"
+                     and n["target"]["kind"] == "index" and n["target"]["type"] == "int"]
+    assert len(scalar_stores) == 4, scalar_stores
+    for node, (row, col) in zip(scalar_stores, ((0, 0), (0, 1), (1, 0), (1, 1))):
+        for expr, param in zip((node["target"], node["value"]), box_assignment["params"]):
+            assert gc_identity(box_assignment, expr) == (
+                "index", ("index", ("member", ("parameter", param["name"]), fields[0]["name"]), row), col)
+    plain_stores = [n for n in box_assignment["body"] if n["op"] == "assign"
+                    and n["target"]["type"] == ga_records[5]["id"]]
+    assert len(plain_stores) == 2, plain_stores
+    for index_value, node in enumerate(plain_stores):
+        for expr, param in zip((node["target"], node["value"]), box_assignment["params"]):
+            assert gc_identity(box_assignment, expr) == (
+                "index", ("member", ("parameter", param["name"]), fields[3]["name"]), index_value)
+    array_captures = [n for n in box_assignment["body"] if n["op"] == "assign"
+                      and n["value"]["kind"] == "address"
+                      and n["value"]["args"][0]["type"].startswith("arr:")]
+    assert len(array_captures) == 4, array_captures
+    for line in (16, 17, 18):
+        function = ga_by_line[line]
+        assert not gc_calls(function), function
+        stores = [n for n in function["body"] if n["op"] == "assign"
+                  and n["target"]["type"] == ga_records[9]["id"]]
+        assert len(stores) == 1, stores
+        assert gc_identity(function, stores[0]["target"]) == ("parameter", function["params"][0]["name"])
+        assert gc_identity(function, stores[0]["value"]) == ("parameter", function["params"][1]["name"])
+        returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+        assert gc_identity(function, returned) == ("parameter", function["params"][0]["name"])
+    for line, callee in ((13, 6), (15, 7), (19, 11)):
+        calls = gc_calls(ga_by_line[line])
+        assert len(calls) == 1 and calls[0]["callee"] == ga_assignments[callee]["name"], calls
+    assert [n["callee"] for n in gc_calls(ga_by_line[14])] == [ga_assignments[6]["name"]] * 2
+    assert not gc_calls(ga_by_line[20])
+    assert [n["callee"] for n in gc_calls(ga_by_line[23])] == [
+        ga_by_line[22]["name"], ga_by_line[21]["name"], ga_assignments[6]["name"]]
+    assert [n["callee"] for n in gc_calls(ga_by_line[24])] == [
+        ga_by_line[21]["name"], ga_by_line[22]["name"], ga_assignments[6]["name"]]
+    for function in generated_assignment["functions"]:
+        assert not any(n["op"] == "mapped_call" for n in function["body"]), function
+        for node in gc_calls(function):
+            assert node["callee"] in ga_functions, node
+            callee = ga_functions[node["callee"]]
+            assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]], node
+    assert "__builtin_memcpy" not in json.dumps(generated_assignment)
+    with tempfile.TemporaryDirectory(prefix="neverc-generated-assignment-relocated-") as temp:
+        relocated = check("generated-assignment-relocated", generated_assignment_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == generated_assignment, "generated assignment depends on the absolute root"
+    generated_assignment_rejected = {
+        'deleted': 'struct R{int n;R&operator=(const R&)=delete;};',
+        'defaulted-deleted': 'struct I{int n;I&operator=(const I&)=delete;};struct R{I i;R&operator=(const R&)=default;};',
+        'noexcept': 'struct R{int n;R&operator=(const R&)noexcept=default;};',
+        'noexcept-false': 'struct R{int n;R&operator=(const R&)noexcept(false)=default;};',
+        'out-of-line-noexcept': 'struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;',
+        'rvalue-receiver': 'struct R{int n;R&operator=(const R&)&&=default;};',
+        'move-assignment': 'struct R{int n;R&operator=(R&&)=default;};',
+        'default-member': 'struct R{int n=1;R&operator=(const R&)=default;};',
+        'const-field': 'struct R{const int n;R&operator=(const R&)=default;};',
+        'reference-field': 'struct R{int&n;R&operator=(const R&)=default;};',
+        'private-field': 'class R{int n;public:R&operator=(const R&)=default;};',
+        'base-field': 'struct B{int n;};struct R:B{int m;R&operator=(const R&)=default;};',
+        'temporary-source': 'struct R{int n;R&operator=(const R&)=default;};void f(R&r){r=R{1};}',
+        'temporary-receiver': 'struct R{int n;R&operator=(const R&)=default;};void f(const R&s){R{1}=s;}',
+        'raw-builtin': 'void f(int*a,int*b){__builtin_memcpy(a,b,4);}',
+        'dead-builtin': 'void f(int*a,int*b){if(false)__builtin_memcpy(a,b,4);}',
+        'user-member-builtin': 'struct R{int n[2];R&operator=(const R&s){__builtin_memcpy(n,s.n,sizeof(n));return *this;}};',
+        'array-expansion': 'struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{int n[65536];I i;R&operator=(const R&)=default;};void f(R&a,const R&b){a=b;}',
+    }
+    generated_assignment_invalid = {
+        'volatile-source': 'struct R{int n;R&operator=(const volatile R&)=default;};',
+        'volatile-receiver': 'struct R{int n;R&operator=(const R&)volatile=default;};',
+        'const-receiver': 'struct R{int n;R&operator=(const R&)const=default;};',
+        'value-parameter': 'struct R{int n;R&operator=(R)=default;};',
+        'value-result': 'struct R{int n;R operator=(const R&)=default;};',
+        'const-result': 'struct R{int n;const R&operator=(const R&)=default;};',
+    }
+    for name, source in generated_assignment_invalid.items():
+        check("v2-generated-assignment-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
+    for name, source in generated_assignment_rejected.items():
+        check("v2-generated-assignment-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+    check("v2-generated-assignment-missing", "struct I{int n;I&operator=(const I&);};struct R{I i;R&operator=(const R&)=default;};void f(R&a,const R&b){a=b;}",
+          "TR0203", profile="cpp-core-v2")
+    check("v1-defaulted-assignment", "struct R{int n;R&operator=(const R&)=default;};", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -805,7 +952,6 @@ int query(){return sizeof(Lazy{});}
         'nonpublic-field': 'class R{int n;public:R()=default;};',
         'virtual-destructor': 'struct R{int n;virtual ~R()=default;};',
         'move-default': 'struct R{int n;R(R&&)=default;};',
-        'copy-assignment-default': 'struct R{int n;R&operator=(const R&)=default;};',
         'explicit-destruction': 'struct R{int n;~R()=default;};void f(){R r{1};r.~R();}',
         'temporary-reference': 'struct R{int n;explicit R()=default;};int f(){const R&r=R{};return r.n;}',
         'throwing-member-constructor': 'struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};',

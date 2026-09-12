@@ -169,7 +169,7 @@ Nested direct returns forward the same place. Intentional lvalue argument copies
 and named-object return copies use ordinary checked record assignments for trivial
 copying, or selected user/generated copy calls described below; source and destination remain distinct. Signatures, arity, pointee identities and
 record layouts are validated by the existing consumer. This convention applies
-to core v2 only and does not admit a foreign ABI, implicit nontrivial copy assignment, moves
+to core v2 only and does not admit a foreign ABI, moves
 or exception unwinding. Normal cleanup follows the explicit destruction convention below. See the [source contract](cpp-core-v2.md#record-arguments-and-results).
 
 ## Core v2 user copy calls
@@ -188,8 +188,8 @@ argument order remains receiver then source after those effects are captured.
 No new copy opcode or foreign ABI bypass is introduced. Existing signature,
 arity, const qualification, storage and layout checks apply, with the normal
 parameter/result lifetime convention preserved. Implicit trivial copies retain
-ordinary value assignments; implicit nontrivial copy assignment, defaulted copy assignment and
-moves remain rejected. See the [source copy contract](cpp-core-v2.md#user-defined-copy-operations).
+ordinary value assignments; generated copy assignment follows below and moves
+remain rejected. See the [source copy contract](cpp-core-v2.md#user-defined-copy-operations).
 
 ## Core v2 generated copy calls
 
@@ -211,6 +211,32 @@ node, opcode or fallback source blob. Existing extent/storage/expansion limits
 bound the expansion. Full-expression cleanup and complete-object ownership are
 unchanged. Unused or unevaluated copies emit no invented function body or runtime
 call. See the [generated copy contract](cpp-core-v2.md#generated-copy-construction).
+
+## Core v2 generated assignment calls
+
+Generated nontrivial copy assignment uses the existing record-reference result,
+mutable receiver and mutable/const source-pointer signature. Its checked body
+retains selected member calls and counted array loops, followed by the receiver
+reference return. Each selected canonical method is emitted once. Ordinary
+member assignment return aliases are preserved but do not replace the containing
+assignment's receiver result. No new operator or ABI representation is introduced.
+
+Only in a checked generated copy assignment may the adapter recognize the pinned
+Clang builtin for copying the same direct array field from the source parameter
+to `this`. Recognition checks builtin identity, address/member/parameter identity,
+array types, exact byte count and trivial element assignment. The implicit builtin
+callee conversion is allowed only on that recognized callee path. The operation
+becomes captured array addresses and bounded typed element assignments with
+source constness preserved; no builtin, memory-copy import or mapped-call opcode
+is transported. Nontrivial construction/destruction of a trivially assigned
+member does not cause extra lifecycle operations.
+
+Trivial assignment uses captured source and receiver references without an emitted
+helper. Source operator order is RHS then receiver; explicit member-call order is
+receiver then source. Values are read only after those captures and effects. The
+result remains the receiver lvalue. Unevaluated assignments introduce no runtime
+calls. Existing signature, constness, layout, storage and expansion validation
+applies. See the [generated assignment contract](cpp-core-v2.md#generated-copy-assignment).
 
 ## Core v2 defaulted lifecycle
 
