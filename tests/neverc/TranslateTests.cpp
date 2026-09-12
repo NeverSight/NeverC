@@ -2193,7 +2193,6 @@ TEST_F(TranslateTest, CoreV2MutableScalarGlobalsRetainTypeAndInitializationBound
       {"volatile", "volatile int value;", "TR0201"},
       {"atomic", "_Atomic(int) value;", "TR0201"},
       {"tls", "thread_local int value;", "TR0201"},
-      {"static-local", "int f(){static int value;return ++value;}", "TR0201"},
       {"folded-unsupported", "int value=static_cast<int>(1.0);", "TR0201"},
       {"unused-folded-unsupported", "constexpr int f(){return static_cast<int>(1.0);}int value=f();", "TR0201"},
       {"variable-template", "template<class T> int value=1;", "TR0201"},
@@ -3348,7 +3347,6 @@ TEST_F(TranslateTest, CoreV2StaticMembersRetainStorageAndSourceBoundaries) {
       {"dependent", "template<class T>struct R{inline static T n=1;};", "TR0201"},
       {"folded-unsupported", "struct R{inline static int n=static_cast<int>(1.0);};", "TR0201"},
       {"folded-body", "constexpr int f(){return static_cast<int>(1.0);}struct R{inline static int n=f();};", "TR0201"},
-      {"static-local", "int f(){static int n=1;return ++n;}", "TR0201"},
       {"private", "class R{inline static int n=1;};int f(){return R::n;}", "TR0202"},
       {"protected", "class R{protected:inline static int n=1;};int f(){return R::n;}", "TR0202"},
       {"write-const", "struct R{static constexpr int n=1;};void f(){R::n=2;}", "TR0202"},
@@ -3565,6 +3563,174 @@ TEST_F(TranslateTest, CoreV2StaticConstantValuesRequireDefinitionsForIdentity) {
                                   "struct R{int n;static const int value=3;};static_assert(R::value==3);"}) {
     const auto Source = tmpFile("static_values-v1.cpp");
     const auto Output = tmpFile("static_values-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticLocalsPreserveStateAndAddresses) {
+  const auto Source = tmpFile("static_locals.cpp");
+  const auto Output = tmpFile("static_locals.nc");
+  writeFile(Source, R"cpp(
+int destroyed=0;
+int&counter(){static int n;return n;}
+int&seeded(){static int n=7;return n;}
+bool flip(){static bool n=false;n=!n;return n;}
+enum class Mode:unsigned char{low=1,high=255};
+Mode toggle(){static Mode n=Mode::high;Mode old=n;n=Mode::low;return old;}
+unsigned long long wide(){static unsigned long long n=0xffffffffffffffffULL;return n++;}
+int narrow(){static short n=-32768;return ++n;}
+const int*constant(){static const int n=11;return &n;}
+int recursive(int depth){static int n=0;++n;if(depth)recursive(depth-1);return n;}
+int loop(int count){int last=0;for(int i=0;i<count;++i){static int n=3;last=++n;}return last;}
+int forInit(){for(static int n=0;;){return ++n;}}
+int ifInit(){if(static int n=0;true)return ++n;return -1;}
+int switchInit(){switch(static int n=0;0){default:return ++n;}}
+int bypass(){switch(1){static int n=9;case 1:return ++n;}}
+int scopes(bool choose){if(choose){static int n=1;return ++n;}else{static int n=10;return ++n;}}
+int overloaded(int){static int n=2;return ++n;}
+int overloaded(bool){static int n=20;return ++n;}
+int shadow(){static int n=30;{int n=99;if(n!=99)return -1;}return ++n;}
+inline int shared(){static int n;return ++n;}
+int callA(){return shared();}
+int callB(){return shared();}
+struct Member{static const int value=17;};
+constexpr int seed(){return 13;}
+int constants(){static constexpr int a=seed();static const int b=a+1;static const int c=Member::value;int ignored;static int d=sizeof(ignored);return a+b+c+d;}
+int skipped(bool enter){if(enter){static int unused=3;}return 7;}
+struct R {
+ int n;
+ R(){static int value=5;n=++value;}
+ ~R(){static int value=0;destroyed=++value;}
+ int method(){static int value=40;return ++value;}
+ static int stat(){static int value=50;return ++value;}
+};
+int main(){
+ int&n=counter();if(n!=0||&n!=&counter())return 1;
+ n=5;if(counter()!=5||seeded()!=7||&seeded()==&n)return 2;
+ ++seeded();if(seeded()!=8||!flip()||flip())return 3;
+ if(toggle()!=Mode::high||toggle()!=Mode::low)return 4;
+ if(wide()!=0xffffffffffffffffULL||wide()!=0)return 5;
+ if(narrow()!=-32767||narrow()!=-32766)return 6;
+ if(*constant()!=11||constant()!=constant())return 7;
+ if(recursive(2)!=3||recursive(0)!=4)return 8;
+ if(loop(2)!=5||loop(1)!=6)return 9;
+ if(forInit()!=1||forInit()!=2)return 10;
+ if(ifInit()!=1||ifInit()!=2)return 11;
+ if(switchInit()!=1||switchInit()!=2)return 12;
+ if(bypass()!=10||bypass()!=11)return 13;
+ if(scopes(true)!=2||scopes(false)!=11||scopes(true)!=3||scopes(false)!=12)return 14;
+ if(overloaded(0)!=3||overloaded(false)!=21||overloaded(0)!=4||overloaded(false)!=22)return 15;
+ if(shadow()!=31||shadow()!=32)return 16;
+ if(callA()!=1||callB()!=2||callA()!=3)return 17;
+ if(constants()!=13+14+17+sizeof(int)||constants()!=13+14+17+sizeof(int))return 18;
+ if(skipped(false)!=7||skipped(true)!=7)return 19;
+ {
+  R first,second;
+  if(first.n!=6||second.n!=7||first.method()!=41||second.method()!=42||R::stat()!=51||first.stat()!=52)return 20;
+ }
+ if(destroyed!=2)return 21;
+ int value=R{}.method();if(value!=43||destroyed!=3)return 22;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("static_locals" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticLocalsAcceptConstantAndZeroInitialization) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"zero", "int&f(){static int n;return n;}int main(){f()=3;return f()-3;}"},
+      {"constant", "int f(){static int n=3;return ++n;}int main(){return f()+f()-9;}"},
+      {"const-address", "const int*f(){static const int n=3;return &n;}int main(){return *f()!=3||f()!=f();}"},
+      {"constexpr", "const int&f(){static constexpr int n=3;return n;}int main(){return &f()!=&f();}"},
+      {"bool-enum", "enum class E:unsigned char{high=255};int f(){static bool b=true;static E e=E::high;return b?static_cast<int>(e):0;}"},
+      {"widths", "unsigned long long f(){static signed char a=-1;static unsigned short b=65535;static long long c=-2147483649LL;static unsigned long long d=0xffffffffffffffffULL;return a==-1&&b==65535&&c==-2147483649LL?d:0;}"},
+      {"alias", "int*f(){static int n;return &n;}int main(){int&r=*f();r=7;return *f()-7;}"},
+      {"overloads", "int*f(int){static int n;return &n;}int*f(bool){static int n;return &n;}int main(){return f(0)==f(false);}"},
+      {"sibling-scopes", "int*f(bool b){if(b){static int n;return &n;}else{static int n;return &n;}}int main(){return f(true)==f(false);}"},
+      {"inline", "inline int f(){static int n;return ++n;}int a(){return f();}int b(){return f();}int main(){return a()+b()-3;}"},
+      {"method", "struct R{int n;int&f(){static int value;return value;}static int*g(){static int value;return &value;}};int main(){R a{},b{};a.f()=3;return b.f()!=3||&a.f()==R::g();}"},
+      {"constructor-destructor", "int result=0;struct R{int n;R(){static int value=3;n=++value;}~R(){static int count;result=++count;}};int main(){{R a,b;if(a.n!=4||b.n!=5)return 1;}return result-2;}"},
+      {"recursion", "int f(int d){static int n;++n;if(d)f(d-1);return n;}int main(){return f(2)!=3||f(0)!=4;}"},
+      {"loop-body", "int f(){int last=0;for(int i=0;i<2;++i){static int n=3;last=++n;}return last;}int main(){return f()!=5||f()!=7;}"},
+      {"for-init", "int f(){for(static int n=0;;){return ++n;}}int main(){return f()!=1||f()!=2;}"},
+      {"if-init", "int f(){if(static int n=0;true)return ++n;return 0;}int main(){return f()!=1||f()!=2;}"},
+      {"switch-init", "int f(){switch(static int n=0;0){default:return ++n;}}int main(){return f()!=1||f()!=2;}"},
+      {"switch-bypass", "int f(){switch(1){static int n=3;case 1:return ++n;}}int main(){return f()!=4||f()!=5;}"},
+      {"automatic-shadow", "int f(){static int n=3;{int n=9;if(n!=9)return 0;}return ++n;}int main(){return f()!=4||f()!=5;}"},
+      {"initializer-call", "constexpr int seed(){return 3;}int f(){static int n=seed();return ++n;}int main(){return f()!=4||f()!=5;}"},
+      {"initializer-local-constant", "int f(){static const int first=3;static int second=first+1;return ++second;}int main(){return f()!=5||f()!=6;}"},
+      {"initializer-class-constant", "struct R{static const int n=3;};int f(){static int n=R::n;return ++n;}"},
+      {"initializer-query", "int f(){int ignored;static int n=sizeof(ignored);return ++n;}int main(){return f()!=sizeof(int)+1||f()!=sizeof(int)+2;}"},
+      {"inferred", "int f(){static auto n=3;return ++n;}int main(){return f()!=4||f()!=5;}"},
+      {"unused-skipped", "void f(bool b){static int unused=3;if(b){static const int unused=4;}}"},
+      {"nested-nonconstexpr-method", "constexpr int f(bool b){struct R{int get(){static int n=3;return ++n;}};if(b){R r{};return r.get();}return 0;}int main(){return f(true)!=4||f(true)!=5||f(false)!=0;}"},
+      {"promoted-1", "int f(){static int value;return ++value;}"},
+      {"promoted-2", "int f(){static int n=1;return ++n;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static_locals-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("static_locals-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticLocalsRetainInitializationAndLanguageBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"dynamic-call", "int seed(){return 3;}int f(){static int n=seed();return n;}", "TR0201"},
+      {"dynamic-parameter", "int f(int p){static int n=p;return n;}", "TR0201"},
+      {"dynamic-global", "int value=3;int f(){static int n=value;return n;}", "TR0201"},
+      {"dynamic-self", "int f(){static int n=n;return n;}", "TR0201"},
+      {"unused-dynamic", "int seed(){return 3;}void f(){static int unused=seed();}", "TR0201"},
+      {"skipped-dynamic", "int seed(){return 3;}void f(){if(false){static int unused=seed();}}", "TR0201"},
+      {"folded-float", "int f(){static int n=static_cast<int>(1.0);return n;}", "TR0201"},
+      {"folded-body", "constexpr int seed(){return static_cast<int>(1.0);}int f(){static int n=seed();return n;}", "TR0201"},
+      {"tls", "int f(){thread_local int n=3;return n;}", "TR0201"},
+      {"static-tls", "int f(){static thread_local int n=3;return n;}", "TR0201"},
+      {"volatile", "int f(){static volatile int n=3;return n;}", "TR0201"},
+      {"floating", "double f(){static double n=3.0;return n;}", "TR0201"},
+      {"pointer", "int*f(){static int*n=nullptr;return n;}", "TR0201"},
+      {"reference", "int value=3;int&f(){static int&n=value;return n;}", "TR0201"},
+      {"array", "int f(){static int n[2]={1,2};return n[0];}", "TR0201"},
+      {"record", "struct R{int n;};int f(){static R r{3};return r.n;}", "TR0201"},
+      {"record-destruction", "struct R{int n;~R(){}};int f(){static R r{3};return r.n;}", "TR0201"},
+      {"extern", "int value=3;int f(){extern int value;return value;}", "TR0201"},
+      {"template", "template<class T>int f(){static int n=3;return n;}", "TR0201"},
+      {"constexpr-function", "constexpr int f(bool b){if(b){static int n=3;return n;}return 0;}", "TR0201"},
+      {"constexpr-method", "struct R{constexpr int f(bool b)const{if(b){static const int n=3;return n;}return 0;}};", "TR0201"},
+      {"constexpr-skipped", "constexpr int f(){if(false){static int n=3;}return 0;}", "TR0201"},
+      {"const-write", "void f(){static const int n=3;n=4;}", "TR0202"},
+      {"const-uninitialized", "void f(){static const int n;}", "TR0202"},
+      {"duplicate", "void f(){static int n=3;static int n=4;}", "TR0202"},
+      {"scope", "void f(){if(true){static int n=3;}n=4;}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static_locals-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("static_locals-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"int f(){static int n;return ++n;}",
+                                  "int f(){static const int n=3;return n;}"}) {
+    const auto Source = tmpFile("static_locals-v1.cpp");
+    const auto Output = tmpFile("static_locals-v1.nc");
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
     expectCode(Result, "TR0201");

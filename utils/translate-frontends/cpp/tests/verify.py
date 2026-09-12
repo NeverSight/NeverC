@@ -3297,7 +3297,6 @@ int main(){return read();}
         'volatile': 'volatile int value;',
         'atomic': '_Atomic(int) value;',
         'tls': 'thread_local int value;',
-        'static-local': 'int f(){static int value;return ++value;}',
         'folded-unsupported': 'int value=static_cast<int>(1.0);',
         'unused-folded-unsupported': 'constexpr int f(){return static_cast<int>(1.0);}int value=f();',
         'variable-template': 'template<class T> int value=1;',
@@ -4623,7 +4622,6 @@ int unevaluated(){return sizeof(make().shared);}
         'dependent': 'template<class T>struct R{inline static T n=1;};',
         'folded-unsupported': 'struct R{inline static int n=static_cast<int>(1.0);};',
         'folded-body': 'constexpr int f(){return static_cast<int>(1.0);}struct R{inline static int n=f();};',
-        'static-local': 'int f(){static int n=1;return ++n;}',
     }
     for name, source in static_members_reject.items():
         check("v2-static-members-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
@@ -4879,6 +4877,209 @@ bool pure(){return noexcept(Values::first);}
         check("v2-static-values-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     check("v1-static-values-method", "struct R{int n;static const int value=3;int get(){return value;}};", "TR0201")
     check("v1-static-values-assertion", "struct R{int n;static const int value=3;};static_assert(R::value==3);", "TR0201")
+
+    static_locals_source = """constexpr int seed(){return 11;}
+int&state(){
+ static int n;
+ return n;
+}
+const int*fixed(){
+ static const int n=7;
+ return &n;
+}
+int initialized(){
+ static int n=seed();
+ return ++n;
+}
+int scopes(bool choose){
+ if(choose){static int n=10;return ++n;}
+ else {static int n=20;return ++n;}
+}
+int over(int){static int n=30;return ++n;}
+int over(bool){static int n=40;return ++n;}
+int bypass(){switch(1){static int n=50;case 1:return ++n;}}
+int forInit(){for(static int n=60;;){return ++n;}}
+int loop(int count){int last=0;for(int i=0;i<count;++i){static int n=70;last=++n;}return last;}
+struct R{int field;int&member(){static int n=80;return n;}};
+bool flip(){static bool n=false;n=!n;return n;}
+int automatic(){int n=90;return ++n;}
+void write(int n){state()=n;}
+int*address(){return &state();}
+"""
+    static_locals = check("v2-static-locals-protocol", static_locals_source, profile="cpp-core-v2")
+    sl_functions = {f["name"]: f for f in static_locals["functions"]}
+
+    def sl_line(prefix):
+        lines = [i for i, line in enumerate(static_locals_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def sl_function(prefix, result, parameters):
+        found = [f for f in static_locals["functions"] if f["loc"]["line"] == sl_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def sl_global(prefix, value, mutable=True, kind="int"):
+        found = [g for g in static_locals["globals"] if g["loc"]["line"] == sl_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        global_value = found[0]
+        assert global_value["type"] == kind and global_value["value"]["kind"] == "literal"
+        assert global_value["value"]["type"] == kind and int(global_value["value"]["value"]) == value
+        assert global_value.get("mutable", False) == mutable
+        if not mutable:
+            assert "mutable" not in global_value
+        return global_value
+
+    assert len(static_locals["globals"]) == 12
+    zero = sl_global(" static int n;", 0)
+    fixed_global = sl_global(" static const int n=7;", 7, False)
+    initialized_global = sl_global(" static int n=seed();", 11)
+    left_global = sl_global(" if(choose){", 10)
+    right_global = sl_global(" else {", 20)
+    over_int_global = sl_global("int over(int)", 30)
+    over_bool_global = sl_global("int over(bool)", 40)
+    bypass_global = sl_global("int bypass()", 50)
+    for_global = sl_global("int forInit()", 60)
+    loop_global = sl_global("int loop(", 70)
+    member_global = sl_global("struct R{", 80)
+    flip_global = sl_global("bool flip()", 0, kind="bool")
+    names = {g["name"] for g in static_locals["globals"]}
+    assert len(names) == 12
+    for function in static_locals["functions"]:
+        assert not names & {v["name"] for v in function["locals"]}, "static storage became an automatic local"
+        assert not any(n["op"] == "assign" and n["target"].get("name") in names
+                       and n["value"].get("kind") == "literal" for n in function["body"]), "static initializer ran at block entry"
+    state = sl_function("int&state()", "ptr:int", [])
+    fixed = sl_function("const int*fixed()", "cptr:int", [])
+    record = static_locals["records"][0]
+    assert len(static_locals["records"]) == 1 and [f["type"] for f in record["fields"]] == ["int"]
+    member = sl_function("struct R{", "ptr:int", ["ptr:"+record["id"]])
+    for function, global_value in ((state, zero), (fixed, fixed_global), (member, member_global)):
+        assert not gc_calls(function)
+        assert [np_pointer(function, n["value"]) for n in function["body"] if n["op"] == "return"] == [("object", global_value["name"])]
+        assert not any(n.get("kind") == "member" for n in walk(function["body"]))
+    initialized = sl_function("int initialized()", "int", [])
+    bypass = sl_function("int bypass()", "int", [])
+    for_init = sl_function("int forInit()", "int", [])
+    loop = sl_function("int loop(", "int", ["int"])
+    over_int = sl_function("int over(int)", "int", ["int"])
+    over_bool = sl_function("int over(bool)", "int", ["bool"])
+    for function, global_value in ((initialized, initialized_global), (bypass, bypass_global),
+                                   (for_init, for_global), (loop, loop_global),
+                                   (over_int, over_int_global), (over_bool, over_bool_global)):
+        assert not gc_calls(function), "constant initializer became a runtime call"
+        writes = [n for n in function["body"] if n["op"] == "assign" and n["target"].get("name") == global_value["name"]]
+        assert len(writes) == 1 and writes[0]["value"]["kind"] == "binary" and writes[0]["value"]["operator"] == "+"
+        reads = [n for n in function["body"] if n["op"] == "assign" and n["value"].get("name") == global_value["name"]]
+        assert reads and all(n["value"]["type"] == "int" for n in reads)
+    scopes = sl_function("int scopes(", "int", ["bool"])
+    assert any(n["op"] == "branch" for n in scopes["body"])
+    assert {n["target"]["name"] for n in scopes["body"] if n["op"] == "assign" and n["target"].get("name") in names} == {left_global["name"], right_global["name"]}
+    automatic = sl_function("int automatic()", "int", [])
+    assert any(n["op"] == "assign" and n["value"].get("kind") == "literal" and n["value"].get("value") == "90" for n in automatic["body"])
+    assert not any(n.get("kind") == "var" and n.get("name") in names for n in walk(automatic["body"]))
+    write = sl_function("void write(", "void", ["int"])
+    address = sl_function("int*address()", "ptr:int", [])
+    for function in (write, address):
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [state["name"]]
+        target = calls[0]["target"]["name"]
+        if function is write:
+            stores = [n for n in function["body"] if n["op"] == "assign" and n["target"].get("kind") == "dereference"]
+            assert len(stores) == 1 and stores[0]["target"]["args"][0].get("name") == target
+            assert gc_identity(function, stores[0]["value"]) == ("parameter", function["params"][0]["name"])
+        else:
+            # Reference return forwarding can be represented by &* of the call result.
+            returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+            assert len(returned) == 1
+            value = returned[0]
+            while value["kind"] in ("address", "dereference", "cast", "var"):
+                if value["kind"] != "var":
+                    value = value["args"][0]
+                elif value["name"] == target:
+                    break
+                else:
+                    definitions = [n["value"] for n in function["body"] if n["op"] == "assign" and n["target"].get("name") == value["name"]]
+                    assert len(definitions) == 1
+                    value = definitions[0]
+            assert value["kind"] == "var" and value["name"] == target
+    for function in static_locals["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in sl_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-static-locals-relocated-") as temp:
+        relocated = check("v2-static-locals-relocated", static_locals_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == static_locals, "static local storage identities depend on the absolute root"
+
+    static_locals_positive = {
+        'zero': 'int&f(){static int n;return n;}int main(){f()=3;return f()-3;}',
+        'constant': 'int f(){static int n=3;return ++n;}int main(){return f()+f()-9;}',
+        'const-address': 'const int*f(){static const int n=3;return &n;}int main(){return *f()!=3||f()!=f();}',
+        'constexpr': 'const int&f(){static constexpr int n=3;return n;}int main(){return &f()!=&f();}',
+        'bool-enum': 'enum class E:unsigned char{high=255};int f(){static bool b=true;static E e=E::high;return b?static_cast<int>(e):0;}',
+        'widths': 'unsigned long long f(){static signed char a=-1;static unsigned short b=65535;static long long c=-2147483649LL;static unsigned long long d=0xffffffffffffffffULL;return a==-1&&b==65535&&c==-2147483649LL?d:0;}',
+        'alias': 'int*f(){static int n;return &n;}int main(){int&r=*f();r=7;return *f()-7;}',
+        'overloads': 'int*f(int){static int n;return &n;}int*f(bool){static int n;return &n;}int main(){return f(0)==f(false);}',
+        'sibling-scopes': 'int*f(bool b){if(b){static int n;return &n;}else{static int n;return &n;}}int main(){return f(true)==f(false);}',
+        'inline': 'inline int f(){static int n;return ++n;}int a(){return f();}int b(){return f();}int main(){return a()+b()-3;}',
+        'method': 'struct R{int n;int&f(){static int value;return value;}static int*g(){static int value;return &value;}};int main(){R a{},b{};a.f()=3;return b.f()!=3||&a.f()==R::g();}',
+        'constructor-destructor': 'int result=0;struct R{int n;R(){static int value=3;n=++value;}~R(){static int count;result=++count;}};int main(){{R a,b;if(a.n!=4||b.n!=5)return 1;}return result-2;}',
+        'recursion': 'int f(int d){static int n;++n;if(d)f(d-1);return n;}int main(){return f(2)!=3||f(0)!=4;}',
+        'loop-body': 'int f(){int last=0;for(int i=0;i<2;++i){static int n=3;last=++n;}return last;}int main(){return f()!=5||f()!=7;}',
+        'for-init': 'int f(){for(static int n=0;;){return ++n;}}int main(){return f()!=1||f()!=2;}',
+        'if-init': 'int f(){if(static int n=0;true)return ++n;return 0;}int main(){return f()!=1||f()!=2;}',
+        'switch-init': 'int f(){switch(static int n=0;0){default:return ++n;}}int main(){return f()!=1||f()!=2;}',
+        'switch-bypass': 'int f(){switch(1){static int n=3;case 1:return ++n;}}int main(){return f()!=4||f()!=5;}',
+        'automatic-shadow': 'int f(){static int n=3;{int n=9;if(n!=9)return 0;}return ++n;}int main(){return f()!=4||f()!=5;}',
+        'initializer-call': 'constexpr int seed(){return 3;}int f(){static int n=seed();return ++n;}int main(){return f()!=4||f()!=5;}',
+        'initializer-local-constant': 'int f(){static const int first=3;static int second=first+1;return ++second;}int main(){return f()!=5||f()!=6;}',
+        'initializer-class-constant': 'struct R{static const int n=3;};int f(){static int n=R::n;return ++n;}',
+        'initializer-query': 'int f(){int ignored;static int n=sizeof(ignored);return ++n;}int main(){return f()!=sizeof(int)+1||f()!=sizeof(int)+2;}',
+        'inferred': 'int f(){static auto n=3;return ++n;}int main(){return f()!=4||f()!=5;}',
+        'unused-skipped': 'void f(bool b){static int unused=3;if(b){static const int unused=4;}}',
+        'nested-nonconstexpr-method': 'constexpr int f(bool b){struct R{int get(){static int n=3;return ++n;}};if(b){R r{};return r.get();}return 0;}int main(){return f(true)!=4||f(true)!=5||f(false)!=0;}',
+        'promoted-1': 'int f(){static int value;return ++value;}',
+        'promoted-2': 'int f(){static int n=1;return ++n;}',
+    }
+    for name, source in static_locals_positive.items():
+        check("v2-static-locals-positive-" + name, source, profile="cpp-core-v2")
+    static_locals_reject = {
+        'dynamic-call': 'int seed(){return 3;}int f(){static int n=seed();return n;}',
+        'dynamic-parameter': 'int f(int p){static int n=p;return n;}',
+        'dynamic-global': 'int value=3;int f(){static int n=value;return n;}',
+        'dynamic-self': 'int f(){static int n=n;return n;}',
+        'unused-dynamic': 'int seed(){return 3;}void f(){static int unused=seed();}',
+        'skipped-dynamic': 'int seed(){return 3;}void f(){if(false){static int unused=seed();}}',
+        'folded-float': 'int f(){static int n=static_cast<int>(1.0);return n;}',
+        'folded-body': 'constexpr int seed(){return static_cast<int>(1.0);}int f(){static int n=seed();return n;}',
+        'tls': 'int f(){thread_local int n=3;return n;}',
+        'static-tls': 'int f(){static thread_local int n=3;return n;}',
+        'volatile': 'int f(){static volatile int n=3;return n;}',
+        'floating': 'double f(){static double n=3.0;return n;}',
+        'pointer': 'int*f(){static int*n=nullptr;return n;}',
+        'reference': 'int value=3;int&f(){static int&n=value;return n;}',
+        'array': 'int f(){static int n[2]={1,2};return n[0];}',
+        'record': 'struct R{int n;};int f(){static R r{3};return r.n;}',
+        'record-destruction': 'struct R{int n;~R(){}};int f(){static R r{3};return r.n;}',
+        'extern': 'int value=3;int f(){extern int value;return value;}',
+        'template': 'template<class T>int f(){static int n=3;return n;}',
+        'constexpr-function': 'constexpr int f(bool b){if(b){static int n=3;return n;}return 0;}',
+        'constexpr-method': 'struct R{constexpr int f(bool b)const{if(b){static const int n=3;return n;}return 0;}};',
+        'constexpr-skipped': 'constexpr int f(){if(false){static int n=3;}return 0;}',
+    }
+    for name, source in static_locals_reject.items():
+        check("v2-static-locals-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    static_locals_invalid = {
+        'const-write': 'void f(){static const int n=3;n=4;}',
+        'const-uninitialized': 'void f(){static const int n;}',
+        'duplicate': 'void f(){static int n=3;static int n=4;}',
+        'scope': 'void f(){if(true){static int n=3;}n=4;}',
+    }
+    for name, source in static_locals_invalid.items():
+        check("v2-static-locals-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    check("v1-static-locals-mutable", "int f(){static int n;return ++n;}", "TR0201")
+    check("v1-static-locals-const", "int f(){static const int n=3;return n;}", "TR0201")
 
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}

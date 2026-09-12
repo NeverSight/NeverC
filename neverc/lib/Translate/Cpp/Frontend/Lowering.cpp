@@ -228,6 +228,12 @@ class FunctionLowering {
     return Seen;
   }
   Expression storage(const NamedDecl *D, SourceLocation L) {
+    if (const auto *V = dyn_cast<VarDecl>(D);
+        A.S.coreV2() && V && V->isStaticLocal()) {
+      if (!A.StaticLocals.count(V->getCanonicalDecl()))
+        reject(L, "static local storage", "No checked scalar static definition exists.");
+      return variable(A.name(V), type(V->getType(), L), L);
+    }
     auto I = Storage.find(D->getCanonicalDecl());
     if (I != Storage.end())
       return I->second;
@@ -1427,6 +1433,9 @@ class FunctionLowering {
     assign(std::move(Place), expression(Init), L);
   }
   Expression localStorage(const VarDecl *V) {
+    // Switch entry pre-registration must never create an automatic shadow.
+    if (A.S.coreV2() && V->isStaticLocal())
+      return storage(V, V->getLocation());
     auto Found = Storage.find(V->getCanonicalDecl());
     if (Found != Storage.end()) {
       // Reference identity is represented by dereferencing its hidden pointer.
@@ -1443,6 +1452,10 @@ class FunctionLowering {
   }
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
+    if (A.S.coreV2() && V->isStaticLocal()) {
+      (void)storage(V, L); // Static initialization was emitted with the global.
+      return;
+    }
     auto Place = localStorage(V);
     beginFullExpression();
     if (V->getType()->isReferenceType()) {

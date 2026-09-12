@@ -129,6 +129,14 @@ Receiver effects and cleanup stay explicit; discarded and unevaluated values
 emit no scalar storage. Source address/reference uses still require a real
 definition. See [declaration-only static constants](cpp-core-v2.md#declaration-only-static-constant-values).
 
+Statically initialized core-v2 scalar locals reuse canonical typed globals and
+the optional `mutable` flag. Their source declaration locations and identities
+distinguish functions, overloads and lexical scopes. Local declarations and
+switch storage pre-registration create no automatic shadow, repeated initializer,
+guard or lexical cleanup. Addresses and returned aliases designate the static
+object. See [statically initialized scalar locals](cpp-core-v2.md#statically-initialized-scalar-locals)
+for the constant-initialization and C++17 function boundaries.
+
 Core-v2 named nested records use the existing record IDs, fields, layouts and
 ordinary member signatures. Canonical source scopes distinguish equal-spelled
 types. No enclosing-object field or extra receiver is added. The producer orders

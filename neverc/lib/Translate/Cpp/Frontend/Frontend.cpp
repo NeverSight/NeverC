@@ -1684,6 +1684,43 @@ public:
       // declaration. RAV still checks every written initializer and body.
       return true;
     }
+    if (A.S.coreV2() && D->isStaticLocal()) {
+      const auto *Parent = dyn_cast<FunctionDecl>(D->getDeclContext()->getRedeclContext());
+      const auto *LexicalParent =
+          dyn_cast<FunctionDecl>(D->getLexicalDeclContext()->getRedeclContext());
+      auto *Definition = D->getDefinition();
+      if (D->getKind() != Decl::Var || D->isImplicit() || !D->isLocalVarDecl() ||
+          !Parent || !LexicalParent || !owned(Parent) ||
+          Parent->getCanonicalDecl() != LexicalParent->getCanonicalDecl() ||
+          Parent->isDependentContext() || Parent->isConstexpr() ||
+          Parent->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+          D->hasExternalStorage() || D->getTLSKind() != VarDecl::TLS_None ||
+          D->getType().isVolatileQualified() ||
+          !D->getType()->isIntegralOrEnumerationType() || Definition != D) {
+        A.reject(D->getLocation(), "static local",
+                 "Only owned non-volatile scalar static locals in non-constexpr functions are supported.");
+        return true;
+      }
+      if (const auto *Init = D->getInit()) {
+        APValue Value;
+        if (!Init->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt()) {
+          A.reject(D->getLocation(), "static local initializer",
+                   "A scalar static local requires zero or fully defined constant initialization.");
+          return true;
+        }
+      } else if (D->getType().isConstQualified()) {
+        A.reject(D->getLocation(), "static local initializer",
+                 "A const static local requires a constant initializer.");
+        return true;
+      }
+      if (A.StaticLocals.insert(D->getCanonicalDecl()).second) {
+        A.chargeExpansion(1, D->getLocation());
+        A.Globals.push_back(D);
+      }
+      // The declaration allocates static storage, not a block-entry action.
+      // RAV still checks every written initializer, including folded operations.
+      return true;
+    }
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
       checkBinding(D->getInit(), HasDefault,
                    D->getKind() == Decl::Var && D->isLocalVarDecl() && D->hasLocalStorage()

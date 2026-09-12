@@ -11,6 +11,7 @@
 #include <map>
 #include <cstddef>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -143,6 +144,7 @@ public:
   std::vector<clang::FunctionDecl *> Functions;
   std::vector<clang::CXXRecordDecl *> Records;
   std::vector<clang::VarDecl *> Globals;
+  std::set<const clang::VarDecl *> StaticLocals;
   std::map<const clang::VarDecl *, llvm::APSInt> StaticMemberValues;
   std::map<const clang::Decl *, clang::FunctionDecl *> FunctionDeclarations;
   std::map<const clang::Decl *, clang::VarDecl *> GlobalDeclarations;

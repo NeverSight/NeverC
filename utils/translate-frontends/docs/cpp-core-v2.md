@@ -684,6 +684,49 @@ cleanup timing, actual storage identity and deterministic relocation. Native
 O0/O2 results require CI from the implementing revision. Full C++/STL support
 remains unfinished.
 
+## Statically initialized scalar locals
+
+Core v2 admits source-owned static integer, boolean and enum local variables in
+ordinary non-constexpr functions and methods, including constructors and
+destructors. The type must be non-volatile and non-thread-local. Mutable scalars
+without an initializer are statically zero-initialized; explicit initializers
+must be fully defined constant expressions. Const and constexpr locals require
+constant initializers. An ordinary function may contain `static constexpr`; a
+static local inside its actual owning constexpr function is rejected under the
+C++17 contract even if the embedded Clang library only warns about an extension.
+A normal local-class method nested inside a constexpr function is checked as
+its own function.
+
+Each canonical declaration has one typed static object, shared across calls,
+recursive invocations, receiver instances and lexical exits. Distinct functions,
+overloads and sibling scopes retain separate objects even when names match.
+References and pointers to these objects remain valid after the function
+returns. Source access and const rules remain enforced; an automatic local
+that shadows a static variable remains an independent automatic object.
+
+The producer reuses scalar global storage and its existing optional `mutable`
+permission. A local declaration emits no allocation, initializer store, guard
+or cleanup at block entry. Switch case pre-registration uses the same global
+object, including permitted entry past a static declaration. Loop-body static
+variables and for/if/switch initializers retain values when control re-enters
+their scopes. Constant initialization may use checked constexpr functions,
+earlier constant locals, static class constants and unevaluated size queries;
+it creates no runtime call. The entire owned initializer and function source
+is still inspected, including unused declarations and statically skipped code.
+
+Dynamic initialization, initialization guards and their synchronization, TLS,
+volatile storage, local extern declarations, other static local types and
+templates retain separate restrictions. This stage adds no static record
+destruction or exception machinery. V1 profiles retain their previous behavior.
+The static storage rule does not change automatic uninitialized scalar locals.
+
+Native O0/O2 fixtures cover persistent state, shared and distinct addresses,
+recursion, loop re-entry, case jumps, receiver independence and escaped aliases.
+Protocol checks cover exact global values/types/locations, read/write permissions,
+absence of automatic shadows or repeated initializers, call signatures and
+deterministic relocation. Native results require CI from the implementing
+revision; full C++/STL remains unfinished.
+
 ## Mutable scalar globals
 
 Core v2 admits mutable namespace/file-scope globals of the supported integer,
@@ -703,8 +746,9 @@ internal generated names, without adding a public C data-export ABI.
 
 Const globals retain their existing read-only representation. Mutable record,
 array, pointer and reference globals, floating-point/volatile/atomic globals,
-dynamic initialization, thread-local storage and static locals remain outside
-current support. Defined scalar static data members follow the contract below. Nontrivial global object destruction
+dynamic initialization and thread-local storage remain outside current support.
+Statically initialized scalar locals and defined scalar static data members
+follow their separate contracts above. Nontrivial global object destruction
 still requires separate lifetime support. Other profiles retain their prior
 constant-global contract.
 

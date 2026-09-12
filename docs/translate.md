@@ -20,6 +20,8 @@ Core v2 supports named non-template nested records, including private/protected 
 
 Core v2 supports defined integer, boolean and enum static data members, including inline/constexpr and out-of-line definitions, with constant or zero initialization. All instances share one typed storage object. Receiver effects and temporary cleanup remain intact; references to static members outlive temporary receivers. Non-inline const integer, boolean and enum members with checked in-class constant initializers can also be read as values or discarded without a separate definition. These uses create no global object; taking an address or binding a reference to the member still requires a definition in this source unit. Dynamic initialization, other static types and complete STL remain unfinished; native validation requires the implementing revision’s CI.
 
+Core v2 supports non-volatile integer, boolean and enum static locals with zero or fully checked constant initialization. Their values and addresses persist across calls, recursion and block exits; references and pointers remain valid after return. Each source declaration has its own object, including equal-spelled locals in different scopes. Ordinary functions may contain static constexpr locals. Static locals inside constexpr functions, dynamic initialization, thread-local storage and other static local types remain unsupported. Full C++/STL remains unfinished; native validation requires the implementing revision’s CI.
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).
