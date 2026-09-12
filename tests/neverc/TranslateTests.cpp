@@ -4688,6 +4688,242 @@ TEST_F(TranslateTest, CoreV2FrontendRepairsRetainWrittenExceptionSource) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersPreserveStorageAndLifetimes) {
+  const auto Source = tmpFile("class-defaulted-runtime.cpp");
+  const auto Output = tmpFile("class-defaulted-runtime.nc");
+  writeFile(Source, R"cpp(int events[256]={};
+int used=0;
+int live=0;
+int calls=0;
+void mark(int n){events[used++]=n;}
+struct Leaf{
+ int n;Leaf*self;
+ Leaf():n(1),self(this){++live;mark(10);}
+ Leaf(const Leaf&s):n(s.n+10),self(this){++live;mark(20+s.n);}
+ Leaf(Leaf&&s):n(s.n+20),self(this){++live;mark(30+s.n);s.n=-s.n;}
+ Leaf&operator=(const Leaf&s){n=s.n+30;mark(40+s.n);return *this;}
+ Leaf&operator=(Leaf&&s){n=s.n+40;mark(50+s.n);s.n=-s.n;return *this;}
+ ~Leaf(){--live;mark(100+n);}
+};
+template<class T,int N>struct Box{
+ T plain;T value=N;Leaf first;Leaf items[2];
+ Box()=default;Box(const Box&)=default;Box(Box&&)=default;
+ Box&operator=(const Box&)& =default;Box&operator=(Box&&)& =default;
+ ~Box()=default;
+};
+template<class T>struct Outside{
+ T plain;Leaf leaf;
+ Outside();Outside(const Outside&);Outside(Outside&&);
+ Outside&operator=(const Outside&);Outside&operator=(Outside&&);~Outside();
+};
+template<class T>Outside<T>::Outside()=default;
+template<class T>Outside<T>::Outside(const Outside&)=default;
+template<class T>Outside<T>::Outside(Outside&&)=default;
+template<class T>Outside<T>&Outside<T>::operator=(const Outside&)=default;
+template<class T>Outside<T>&Outside<T>::operator=(Outside&&)=default;
+template<class T>Outside<T>::~Outside()=default;
+template<class T>struct Matrix{Leaf a[2][2];T plain;Matrix()=default;Matrix(const Matrix&)=default;Matrix(Matrix&&)=default;Matrix&operator=(const Matrix&)=default;};
+template<class T>struct Trivial{T n;T*p;Trivial(const Trivial&)=default;Trivial&operator=(const Trivial&)=default;};
+template<class T>struct Zero{T n;explicit Zero()=default;~Zero()=default;};
+template<class T>struct Empty{Empty()=default;Empty(const Empty&)=default;Empty&operator=(const Empty&)=default;~Empty()=default;};
+Trivial<int>&left(Trivial<int>&r){++calls;++r.n;return r;}
+const Trivial<int>&right(const Trivial<int>&r){++calls;return r;}
+int consume(Box<int,3>r){return r.first.n;}
+Box<int,3>make(){return Box<int,3>();}
+int defaultLive(const Box<int,3>&r=Box<int,3>()){return live+r.first.n;}
+int main(){
+ {
+  Box<int,3>a;
+  if(a.value!=3||a.first.n!=1||a.first.self!=&a.first||a.items[1].self!=&a.items[1]||used!=3||live!=3)return 1;
+  a.plain=7;a.first.n=1;a.items[0].n=2;a.items[1].n=3;used=0;
+  Box<int,3>b(a);
+  if(b.plain!=7||b.value!=3||b.first.n!=11||b.items[1].n!=13||b.first.self!=&b.first||used!=3||events[0]!=21||events[1]!=22||events[2]!=23)return 2;
+  used=0;Box<int,3>c(static_cast<Box<int,3>&&>(a));
+  if(c.first.n!=21||c.items[1].n!=23||a.first.n!=-1||a.items[1].n!=-3||c.first.self!=&c.first||events[0]!=31||events[1]!=32||events[2]!=33)return 3;
+  used=0;Box<int,3>*result=&(b=c);
+  if(result!=&b||b.first.n!=51||b.items[1].n!=53||live!=9||used!=3||events[0]!=61||events[1]!=62||events[2]!=63||b.first.self!=&b.first)return 4;
+  used=0;result=&(b=static_cast<Box<int,3>&&>(c));
+  if(result!=&b||b.first.n!=61||b.items[1].n!=63||c.first.n!=-21||c.items[1].n!=-23||used!=3||events[0]!=71||events[1]!=72||events[2]!=73||live!=9)return 5;
+  used=0;const Box<int,3>&source=b;
+  if(consume(source)!=71||live!=9||used!=6||events[0]!=81||events[3]!=173||events[5]!=171)return 6;
+  used=0;
+ }
+ if(live!=0||used!=9||events[0]!=77||events[1]!=78||events[2]!=79||events[3]!=163||events[8]!=99)return 7;
+ used=0;
+ {Box<int,3>zero=Box<int,3>();if(zero.plain!=0||zero.value!=3||zero.first.self!=&zero.first)return 8;}
+ used=0;
+ {Outside<int>a;a.plain=7;Outside<int>b(a);Outside<int>c(static_cast<Outside<int>&&>(b));a=c;c=static_cast<Outside<int>&&>(a);
+  if(c.plain!=7||c.leaf.n!=101||a.leaf.n!=-61||c.leaf.self!=&c.leaf||live!=3)return 9;}
+ used=0;
+ {Matrix<int>a=Matrix<int>();a.a[0][0].n=1;a.a[0][1].n=2;a.a[1][0].n=3;a.a[1][1].n=4;used=0;
+  Matrix<int>b(a);if(b.plain!=0||b.a[1][1].n!=14||b.a[1][1].self!=&b.a[1][1]||used!=4||events[0]!=21||events[3]!=24)return 10;
+  used=0;Matrix<int>c(static_cast<Matrix<int>&&>(a));if(c.a[1][1].n!=24||a.a[1][1].n!=-4||events[0]!=31||events[3]!=34)return 11;
+  used=0;b=c;if(b.a[1][1].n!=54||live!=12||used!=4||events[0]!=61||events[3]!=64)return 12;
+  used=0;
+ }
+ if(live||used!=12||events[0]!=124||events[3]!=121||events[4]!=154||events[11]!=99)return 13;
+ {Trivial<int>a{7,nullptr};a.p=&a.n;Trivial<int>b(a);b.n=9;a=b;
+  if(a.n!=9||a.p!=&a.n||b.p!=&a.n)return 14;
+  calls=0;Trivial<int>*alias=&(left(a)=right(a));if(calls!=2||a.n!=10||alias!=&a)return 15;
+  a=b=a;if(a.n!=10||b.n!=10||a.p!=&a.n||b.p!=&a.n)return 16;
+ }
+ {Zero<int>zero{};Zero<unsigned int>other{};Empty<int>a;Empty<int>b(a);a=b;
+  if(zero.n||other.n||&a==&b)return 17;}
+ used=0;
+ {Box<int,3>r=make();if(r.plain||r.first.n!=1||r.first.self!=&r.first||live!=3)return 18;}
+ used=0;if(defaultLive()!=4||live||used!=6)return 19;
+ used=0;
+ {const Box<int,3>&r=Box<int,3>();if(r.plain||live!=3)return 20;}
+ if(live||used!=6)return 21;
+ used=0;
+ {using Alias=Box<int,3>;Alias a;Box<unsigned int,4>b;a.plain=1;b.plain=2;
+  if(a.value!=3||b.value!=4u||a.first.self!=&a.first||b.first.self!=&b.first)return 22;}
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("class-defaulted-runtime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersAcceptSelectedOperations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-constructor", "template<class T>struct R{T n;R()=default;};"},
+      {"promoted-destructor", "template<class T>struct R{~R()=default;};"},
+      {"all-inline", "template<class T>struct R{T n=3;R()=default;R(const R&)=default;R(R&&)=default;R&operator=(const R&)=default;R&operator=(R&&)=default;~R()=default;};int f(){R<int>a;R<int>b(a);R<int>c(static_cast<R<int>&&>(b));a=c;b=static_cast<R<int>&&>(c);return a.n+b.n;}"},
+      {"nonconst-copy", "struct I{int n;I(I&s):n(++s.n){}};template<class T>struct R{T n;I i;R(R&)=default;};R<int>f(R<int>&r){return r;}"},
+      {"nonconst-assignment", "struct I{int n;I&operator=(I&s){n=++s.n;return *this;}};template<class T>struct R{T n;I i;R&operator=(R&)=default;};R<int>&f(R<int>&a,R<int>&b){return a=b;}"},
+      {"copy-ref-qualifier", "template<class T>struct R{T n;R&operator=(const R&)& =default;};R<int>&f(R<int>&a,const R<int>&b){return a=b;}"},
+      {"move-ref-qualifier", "template<class T>struct R{T n;R&operator=(R&&)&&=default;};R<int>&f(R<int>&a,R<int>&b){return static_cast<R<int>&&>(a)=static_cast<R<int>&&>(b);}"},
+      {"empty", "template<class T>struct R{R()=default;R(const R&)=default;R&operator=(const R&)=default;~R()=default;};void f(){R<int>a;R<int>b(a);a=b;}"},
+      {"auto-value", "template<auto N>struct R{int n=N;R()=default;R(const R&)=default;R&operator=(const R&)=default;};int f(){R<3>a;R<3u>b;R<1+2>c(a);c=a;return a.n+b.n+c.n;}"},
+      {"class-instantiation", "struct I{int n;I():n(3){}};template<class T>struct R{T n=4;I i;R()=default;};template struct R<int>;"},
+      {"member-instantiation", "struct I{int n;I():n(3){}};template<class T>struct R{T n=4;I i;R()=default;};template R<int>::R();"},
+      {"forced-copy", "struct I{int n;I(const I&s):n(s.n+1){}};template<class T>struct R{T n;I i;R(const R&)=default;};template R<int>::R(const R<int>&);"},
+      {"forced-assignment", "struct I{int n;I&operator=(const I&s){n=s.n+1;return *this;}};template<class T>struct R{T n;I i;R&operator=(const R&)=default;};template R<int>&R<int>::operator=(const R<int>&);"},
+      {"class-specialization", "template<class T>struct R{T n;R()=default;};template<>struct R<int>{int n=7;R()=default;R(const R&)=default;R&operator=(const R&)=default;};int f(){R<int>a;R<int>b(a);a=b;return a.n;}"},
+      {"member-specialization", "template<class T>struct R{T n=3;R();};template<class T>R<T>::R()=default;template<>R<int>::R()=default;int f(){R<int>a;return a.n;}"},
+      {"visible-later", "template<class T>struct R{T n=3;R();};template struct R<int>;template<class T>R<T>::R()=default;int f(){R<int>a;return a.n;}"},
+      {"lazy-dependent-dmi", "template<class T>struct R{T n=T::missing;R()=default;};static_assert(sizeof(R<int>)==sizeof(int));"},
+      {"lazy-unsupported-dmi", "template<class T>struct R{T n=static_cast<T>(1.0);R()=default;};static_assert(sizeof(R<int>)==sizeof(int));"},
+      {"lazy-deleted-copy", "struct I{int n;I(I&&s):n(s.n){}};template<class T>struct R{T n;I i;R(const R&)=default;};static_assert(sizeof(R<int>)==sizeof(int)*2);"},
+      {"lazy-defaulted-wrapper", "template<class T>struct I{T n;~I(){T::missing();}};template<class T>struct R{I<T>i;~R()=default;};static_assert(sizeof(R<int>)==sizeof(int));"},
+      {"lazy-missing-wrapper", "template<class T>struct I{T n;~I();};template<class T>struct R{I<T>i;~R()=default;};static_assert(sizeof(R<int>)==sizeof(int));"},
+      {"query-dependent-dmi", "template<class T>struct R{T n=T::missing;explicit R()noexcept=default;};int f(){return sizeof(R<int>{});}"},
+      {"query-defaulted-this", "template<class T>struct R{T n;~R()noexcept(sizeof(this->n)>0)=default;};bool f(){return noexcept(R<int>{1});}struct S{int n;int get(){return this->n;}};int g(){S s{3};return s.get();}"},
+      {"query-defaulted-constructor-this", "template<class T>struct R{T n=3;R()noexcept(sizeof(this->n)>0)=default;};bool f(){return noexcept(R<int>());}"},
+      {"nontrivial-array", "struct I{int n;I():n(1){}I(const I&s):n(s.n+1){}I&operator=(const I&s){n=s.n+2;return *this;}};template<class T>struct R{T n;I a[2][2];R()=default;R(const R&)=default;R&operator=(const R&)=default;};void f(){R<int>a=R<int>();R<int>b(a);a=b;}"},
+      {"implicit-members", "struct I{int n;I():n(3){}};template<class T>struct R{T n;I i;};R<int>f(){return R<int>();}"},
+      {"query-outside-default", "template<class T>struct R{T n;R()noexcept;};template<class T>R<T>::R()noexcept=default;bool f(){return noexcept(R<int>());}"},
+      {"query-outside-copy", "template<class T>struct R{T n;R(const R&)noexcept;};template<class T>R<T>::R(const R&)noexcept=default;bool f(const R<int>&r){return noexcept(R<int>(r));}"},
+      {"query-outside-move", "template<class T>struct R{T n;R(R&&)noexcept;};template<class T>R<T>::R(R&&)noexcept=default;bool f(R<int>&r){return noexcept(R<int>(static_cast<R<int>&&>(r)));}"},
+      {"query-outside-copy-assignment", "template<class T>struct R{T n;R&operator=(const R&)noexcept;};template<class T>R<T>&R<T>::operator=(const R&)noexcept=default;bool f(R<int>&a,const R<int>&b){return noexcept(a=b);}"},
+      {"query-outside-move-assignment", "template<class T>struct R{T n;R&operator=(R&&)noexcept;};template<class T>R<T>&R<T>::operator=(R&&)noexcept=default;bool f(R<int>&a,R<int>&b){return noexcept(a=static_cast<R<int>&&>(b));}"},
+      {"query-outside-destructor", "template<class T>struct R{T n;~R()noexcept;};template<class T>R<T>::~R()noexcept=default;bool f(){return noexcept(R<int>{1});}"},
+      {"lazy-explicit-defaulting", "template<class T>struct R{T n=T::missing;R()noexcept=default;};template struct R<int>;static_assert(sizeof(R<int>)==sizeof(int));"},
+      {"all-outside", "template<class T>struct R{T n=3;R();R(const R&);R(R&&);R&operator=(const R&);R&operator=(R&&);~R();};template<class T>R<T>::R()=default;template<class T>R<T>::R(const R&)=default;template<class T>R<T>::R(R&&)=default;template<class T>R<T>&R<T>::operator=(const R&)=default;template<class T>R<T>&R<T>::operator=(R&&)=default;template<class T>R<T>::~R()=default;int f(){R<int>a;R<int>b(a);R<int>c(static_cast<R<int>&&>(b));a=c;b=static_cast<R<int>&&>(c);return a.n+b.n;}"},
+      {"extern-unused", "template<class T>struct R{T n=3;R();};template<class T>R<T>::R()=default;extern template R<int>::R();static_assert(sizeof(R<int>)==sizeof(int));"},
+      {"protocol-storage-source", "int trace=0;\nvoid mark(int n){trace=n;}\nstruct Leaf{\n int n;Leaf*self;\n Leaf():n(1),self(this){mark(1);}\n Leaf(const Leaf&s):n(s.n+10),self(this){mark(2);}\n Leaf(Leaf&&s):n(s.n+20),self(this){s.n=-1;mark(3);}\n Leaf&operator=(const Leaf&s){n=s.n+30;mark(4);return *this;}\n Leaf&operator=(Leaf&&s){n=s.n+40;s.n=-1;mark(5);return *this;}\n ~Leaf(){mark(6);}\n};\ntemplate<class T,int N>struct Box{\n T plain;T value=N;Leaf first;Leaf items[2];\n Box()=default;Box(const Box&)=default;Box(Box&&)=default;\n Box&operator=(const Box&)& =default;Box&operator=(Box&&)& =default;~Box()=default;\n};\ntemplate<class T>struct Outside{T plain;Leaf leaf;Outside();~Outside();};\ntemplate<class T>Outside<T>::Outside()=default;\ntemplate<class T>Outside<T>::~Outside()=default;\ntemplate<class T>struct Trivial{T n;T*p;Trivial(const Trivial&)=default;Trivial&operator=(const Trivial&)=default;};\ntemplate<class T>struct Forced{T n=3;Leaf leaf;Forced();};\ntemplate<class T>Forced<T>::Forced()=default;\ntemplate struct Forced<int>;\nusing Alias=Box<int,3>;\nvoid defaultInit(){Box<int,3>r;Outside<int>o;}\nvoid valueInit(){Box<int,3>r=Box<int,3>();Outside<int>o=Outside<int>();}\nBox<int,3>copy(const Box<int,3>&r){return r;}\nBox<int,3>move(Box<int,3>&r){return static_cast<Box<int,3>&&>(r);}\nBox<int,3>&copyAssign(Box<int,3>&a,const Box<int,3>&b){return a=b;}\nBox<int,3>&moveAssign(Box<int,3>&a,Box<int,3>&b){return a=static_cast<Box<int,3>&&>(b);}\nvoid alias(){Alias r;}\nvoid different(){Box<unsigned int,4>r;}\nTrivial<int>trivialCopy(const Trivial<int>&r){return r;}\nTrivial<int>&trivialAssign(Trivial<int>&a,const Trivial<int>&b){return a=b;}\n"},
+      {"protocol-lazy-source", "template<class T>struct Lazy{\n T n=T::missing;\n Lazy()noexcept;Lazy(const Lazy&)noexcept;Lazy(Lazy&&)noexcept;\n Lazy&operator=(const Lazy&)noexcept;Lazy&operator=(Lazy&&)noexcept;~Lazy()noexcept;\n};\ntemplate<class T>Lazy<T>::Lazy()noexcept=default;\ntemplate<class T>Lazy<T>::Lazy(const Lazy&)noexcept=default;\ntemplate<class T>Lazy<T>::Lazy(Lazy&&)noexcept=default;\ntemplate<class T>Lazy<T>&Lazy<T>::operator=(const Lazy&)noexcept=default;\ntemplate<class T>Lazy<T>&Lazy<T>::operator=(Lazy&&)noexcept=default;\ntemplate<class T>Lazy<T>::~Lazy()noexcept=default;\nbool query(Lazy<int>&a,const Lazy<int>&b){return noexcept(Lazy<int>())&&noexcept(Lazy<int>(b))&&noexcept(Lazy<int>(static_cast<Lazy<int>&&>(a)))&&noexcept(a=b)&&noexcept(a=static_cast<Lazy<int>&&>(a));}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-defaulted-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("class-defaulted-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersRetainSourceBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"selected-dmi", "template<class T>struct R{T n=static_cast<T>(1.0);R()=default;};void f(){R<int>r;}"},
+      {"forced-dmi", "template<class T>struct R{T n=static_cast<T>(1.0);R();};template<class T>R<T>::R()=default;template struct R<int>;"},
+      {"forced-member-dmi", "template<class T>struct R{T n=static_cast<T>(1.0);R();};template<class T>R<T>::R()=default;template R<int>::R();"},
+      {"forced-member-operation", "template<class T>struct I{T n;I(const I&s):n(s.n){double v=1.0;}};template<class T>struct R{I<T>i;R(const R&);};template<class T>R<T>::R(const R&)=default;template struct R<int>;"},
+      {"selected-member-destruction", "template<class T>struct I{T n;~I(){double v=1.0;}};template<class T>struct R{I<T>i;~R()=default;};void f(){R<int>r{{1}};}"},
+      {"query-default-spec", "template<class T>struct R{T n;R()noexcept(sizeof(T)==sizeof(double))=default;};bool f(){return noexcept(R<int>());}"},
+      {"query-copy-spec", "template<class T>struct R{T n;R(const R&)noexcept(sizeof(T)==sizeof(double))=default;};bool f(const R<int>&r){return noexcept(R<int>(r));}"},
+      {"query-assignment-spec", "template<class T>struct R{T n;R&operator=(const R&)noexcept(sizeof(T)==sizeof(double))=default;};bool f(R<int>&a,const R<int>&b){return noexcept(a=b);}"},
+      {"query-destructor-spec", "template<class T>struct R{T n;~R()noexcept(sizeof(this->n)==sizeof(double))=default;};bool f(){return noexcept(R<int>{1});}"},
+      {"attribute", "template<class T>struct R{[[deprecated]]R()=default;};"},
+      {"deleted-written", "template<class T>struct R{R()=delete;};"},
+      {"virtual", "template<class T>struct R{virtual ~R()=default;};"},
+      {"user-assignment", "template<class T>struct R{T n;R&operator=(const R&r){n=r.n;return *this;}};"},
+      {"user-operator", "template<class T>struct R{R()=default;int operator()(){return 3;}};"},
+      {"explicit-destruction", "template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}"},
+      {"outer-type", "template<int N>struct R{R();};template<decltype(static_cast<int>(1.0)) N>R<N>::R()=default;"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-defaulted-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("class-defaulted-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersRetainLanguageDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"defaulted-ordinary", "template<class T>struct R{int f()=default;};"},
+      {"own-constructor-template", "template<class T>struct R{template<class U>R(U)=default;};"},
+      {"copy-extra", "template<class T>struct R{R(const R&,int n=0)=default;};void f(R<int>&r){R<int>x(r);}"},
+      {"deleted-used", "struct I{int n;I(I&&s):n(s.n){}};template<class T>struct R{T n;I i;R(const R&)=default;};R<int>f(const R<int>&r){return r;}"},
+      {"dependent-used", "template<class T>struct R{T n=T::missing;R()=default;};void f(){R<int>r;}"},
+      {"wrong-ref-qualifier", "template<class T>struct R{T n;R&operator=(R&&)&&=default;};void f(R<int>&a,R<int>&b){a=static_cast<R<int>&&>(b);}"},
+      {"private-copy", "template<class T>class R{R(const R&)=default;public:T n;};R<int>f(const R<int>&r){return r;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-defaulted-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("class-defaulted-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersRequireDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"member-constructor", "template<class T>struct I{T n;I();};template<class T>struct R{I<T>i;R()=default;};void f(){R<int>r;}"},
+      {"member-copy", "template<class T>struct I{T n;I(const I&);};template<class T>struct R{I<T>i;R(const R&)=default;};R<int>f(const R<int>&r){return r;}"},
+      {"member-destructor", "template<class T>struct I{T n;~I();};template<class T>struct R{I<T>i;~R()=default;};void f(){R<int>r{{1}};}"},
+      {"direct-result-destructor", "template<class T>struct I{T n;~I();};template<class T>struct R{I<T>i;~R()=default;};R<int>f(){return R<int>{{1}};}"},
+      {"specialization-declaration", "template<class T>struct R{T n;R();};template<class T>R<T>::R()=default;template<>R<int>::R();"},
+      {"extern-default-construction", "template<class T>struct R{T n=3;R();};template<class T>R<T>::R()=default;extern template R<int>::R();void f(){R<int>r;}"},
+      {"extern-copy-assignment", "template<class T>struct R{T n;R&operator=(const R&);};template<class T>R<T>&R<T>::operator=(const R&)=default;extern template R<int>&R<int>::operator=(const R<int>&);void f(R<int>&a,const R<int>&b){a=b;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-defaulted-missing-" + Name + ".cpp");
+    const auto Output = tmpFile("class-defaulted-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV1RejectsClassTemplateDefaultedMembers) {
+  const auto Source = tmpFile("class-defaulted-v1.cpp");
+  const auto Output = tmpFile("class-defaulted-v1.nc");
+  writeFile(Source, "template<class T>struct R{T n;R()=default;};");
+  auto Result = translate(Source, {"-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2ClassTemplateDestructorsPreserveDemandAndLifetimes) {
   const auto Source = tmpFile("class-template-destructors.cpp");
   const auto Output = tmpFile("class-template-destructors.nc");
@@ -4813,7 +5049,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateDestructorsRetainSourceAndDefinitionBou
       {"TR0201-queried-dependent-noexcept-type", "template<class T>struct R{T n;~R()noexcept(sizeof(T)==sizeof(double));};bool query(){return noexcept(R<int>{1});}", "TR0201"},
       {"TR0201-outer-parameter-type", "template<int N>struct R{~R();};template<decltype(static_cast<int>(1.0)) N>R<N>::~R(){}", "TR0201"},
       {"TR0201-attribute", "template<class T>struct R{[[deprecated]]~R(){}};", "TR0201"},
-      {"TR0201-defaulted", "template<class T>struct R{~R()=default;};", "TR0201"},
       {"TR0201-deleted-shape", "template<class T>struct R{~R()=delete;};", "TR0201"},
       {"TR0201-virtual", "template<class T>struct R{virtual ~R(){}};", "TR0201"},
       {"TR0201-explicit-call", "template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}", "TR0201"},
@@ -4989,7 +5224,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBo
       {"attribute", "template<class T>struct R{T n;[[deprecated]]R(T v):n(v){}};", "TR0201"},
       {"parameter-attribute", "template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};", "TR0201"},
       {"delegating", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};", "TR0201"},
-      {"defaulted", "template<class T>struct R{T n;R()=default;};", "TR0201"},
       {"own-template", "template<class T>struct R{T n;template<class U>R(U v):n(v){}};", "TR0201"},
       {"operator", "template<class T>struct R{T n;R(T v):n(v){}T operator()(){return n;}};", "TR0201"},
       {"conversion-function", "template<class T>struct R{T n;R(T v):n(v){}operator T(){return n;}};", "TR0201"},

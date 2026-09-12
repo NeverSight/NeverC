@@ -6441,6 +6441,228 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
 
+    class_defaulted_source = 'int trace=0;\nvoid mark(int n){trace=n;}\nstruct Leaf{\n int n;Leaf*self;\n Leaf():n(1),self(this){mark(1);}\n Leaf(const Leaf&s):n(s.n+10),self(this){mark(2);}\n Leaf(Leaf&&s):n(s.n+20),self(this){s.n=-1;mark(3);}\n Leaf&operator=(const Leaf&s){n=s.n+30;mark(4);return *this;}\n Leaf&operator=(Leaf&&s){n=s.n+40;s.n=-1;mark(5);return *this;}\n ~Leaf(){mark(6);}\n};\ntemplate<class T,int N>struct Box{\n T plain;T value=N;Leaf first;Leaf items[2];\n Box()=default;Box(const Box&)=default;Box(Box&&)=default;\n Box&operator=(const Box&)& =default;Box&operator=(Box&&)& =default;~Box()=default;\n};\ntemplate<class T>struct Outside{T plain;Leaf leaf;Outside();~Outside();};\ntemplate<class T>Outside<T>::Outside()=default;\ntemplate<class T>Outside<T>::~Outside()=default;\ntemplate<class T>struct Trivial{T n;T*p;Trivial(const Trivial&)=default;Trivial&operator=(const Trivial&)=default;};\ntemplate<class T>struct Forced{T n=3;Leaf leaf;Forced();};\ntemplate<class T>Forced<T>::Forced()=default;\ntemplate struct Forced<int>;\nusing Alias=Box<int,3>;\nvoid defaultInit(){Box<int,3>r;Outside<int>o;}\nvoid valueInit(){Box<int,3>r=Box<int,3>();Outside<int>o=Outside<int>();}\nBox<int,3>copy(const Box<int,3>&r){return r;}\nBox<int,3>move(Box<int,3>&r){return static_cast<Box<int,3>&&>(r);}\nBox<int,3>&copyAssign(Box<int,3>&a,const Box<int,3>&b){return a=b;}\nBox<int,3>&moveAssign(Box<int,3>&a,Box<int,3>&b){return a=static_cast<Box<int,3>&&>(b);}\nvoid alias(){Alias r;}\nvoid different(){Box<unsigned int,4>r;}\nTrivial<int>trivialCopy(const Trivial<int>&r){return r;}\nTrivial<int>&trivialAssign(Trivial<int>&a,const Trivial<int>&b){return a=b;}\n'
+    class_defaulted = check("v2-class-defaulted-protocol", class_defaulted_source, profile="cpp-core-v2")
+    cf_functions = {f["name"]: f for f in class_defaulted["functions"]}
+    cf_records = {r["id"]: r for r in class_defaulted["records"]}
+    assert len(cf_functions) == len(class_defaulted["functions"])
+    assert len(cf_records) == len(class_defaulted["records"])
+
+    def cf_line(prefix):
+        lines = [i for i, line in enumerate(class_defaulted_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def cf_function(prefix):
+        found = [f for f in class_defaulted["functions"] if f["loc"]["line"] == cf_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def cf_record(prefix):
+        found = [r for r in class_defaulted["records"] if r["loc"]["line"] == cf_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def cf_member(rid, result, source=None):
+        params = ["ptr:"+rid] + ([source+rid] if source else [])
+        found = [f for f in class_defaulted["functions"]
+                 if f["loc"]["line"] in (cf_line(" Box()"), cf_line(" Box&operator="))
+                 and f["result"] == result and [p["type"] for p in f["params"]] == params
+                 and not f["name"].endswith("_destroy")]
+        assert len(found) == 1, (rid, result, params, found)
+        return found[0]
+
+    copied = cf_function("Box<int,3>copy(")
+    bid = copied["params"][0]["type"].removeprefix("ptr:")
+    box = cf_records[bid]
+    leaf = cf_record("struct Leaf{")
+    lid = leaf["id"]
+    assert [f["type"] for f in box["fields"]] == ["int", "int", lid, "arr:2:"+lid]
+    constructor = cf_member(bid, "void")
+    copy = cf_member(bid, "void", "cptr:")
+    move = cf_member(bid, "void", "ptr:")
+    copy_assignment = cf_member(bid, "ptr:"+bid, "cptr:")
+    move_assignment = cf_member(bid, "ptr:"+bid, "ptr:")
+    destruction = cf_functions[bid+"_destroy"]
+    assert len({f["name"] for f in (constructor, copy, move, copy_assignment, move_assignment, destruction)}) == 6
+    leaf_default = cf_function(" Leaf():")
+    leaf_copy = cf_function(" Leaf(const Leaf&")
+    leaf_move = cf_function(" Leaf(Leaf&&")
+    leaf_copy_assignment = cf_function(" Leaf&operator=(const Leaf&")
+    leaf_move_assignment = cf_function(" Leaf&operator=(Leaf&&")
+    for function, target, count in ((constructor, leaf_default, 3), (copy, leaf_copy, 3),
+                                     (move, leaf_move, 3), (copy_assignment, leaf_copy_assignment, 2),
+                                     (move_assignment, leaf_move_assignment, 2)):
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [target["name"]]*count
+        assert not any(n["op"] == "assign" and n["target"]["type"] == bid for n in function["body"])
+        for arg, parameter in zip(calls[0]["args"], function["params"]):
+            assert np_pointer(function, arg) == ("field", ("parameter", parameter["name"]), box["fields"][2]["name"])
+        if function in (constructor, copy, move):
+            for index, call in enumerate(calls[1:]):
+                for arg, parameter in zip(call["args"], function["params"]):
+                    expected = ("element", ("field", ("parameter", parameter["name"]), box["fields"][3]["name"]), index)
+                    assert np_pointer(function, arg) == expected
+        else:
+            # Sema represents nontrivial array assignment as a counted loop.
+            assert any(n["op"] == "branch" for n in function["body"])
+            returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+            assert np_pointer(function, returned) == ("parameter", function["params"][0]["name"])
+    stores = [n for n in constructor["body"] if n["op"] == "assign" and n["target"]["kind"] == "member"]
+    assert len(stores) == 1 and stores[0]["target"]["name"] == box["fields"][1]["name"]
+    assert gc_identity(constructor, stores[0]["value"]) == 3
+    for function in (copy, move, copy_assignment, move_assignment):
+        stores = [n for n in function["body"] if n["op"] == "assign" and n["target"]["kind"] == "member" and n["target"]["type"] == "int"]
+        assert [n["target"]["name"] for n in stores] == [f["name"] for f in box["fields"][:2]]
+        for node, field in zip(stores, box["fields"]):
+            for expr, parameter in zip((node["target"], node["value"]), function["params"]):
+                assert gc_identity(function, expr) == ("member", ("parameter", parameter["name"]), field["name"])
+    assert [c["callee"] for c in gc_calls(destruction)] == [lid+"_destroy"]*3
+    receiver = ("parameter", destruction["params"][0]["name"])
+    array = ("field", receiver, box["fields"][3]["name"])
+    assert [np_pointer(destruction, c["args"][0]) for c in gc_calls(destruction)] == [
+        ("element", array, 1), ("element", array, 0), ("field", receiver, box["fields"][2]["name"])]
+    for prefix, target in (("Box<int,3>copy(", copy), ("Box<int,3>move(", move),
+                            ("Box<int,3>&copyAssign(", copy_assignment), ("Box<int,3>&moveAssign(", move_assignment)):
+        caller = cf_function(prefix)
+        calls = gc_calls(caller)
+        assert len(calls) == 1 and calls[0]["callee"] == target["name"]
+        for arg, parameter in zip(calls[0]["args"], caller["params"]):
+            assert np_pointer(caller, arg) == ("parameter", parameter["name"])
+        if target["result"] != "void":
+            returned = next(n["value"] for n in caller["body"] if n["op"] == "return")
+            assert di_call_result(caller, returned) == calls[0]["target"]["name"]
+    outside = cf_record("template<class T>struct Outside{")
+    oid = outside["id"]
+    for prefix, zeroed in (("void defaultInit(", []), ("void valueInit(", [bid])):
+        function = cf_function(prefix)
+        zeros = [n["target"]["type"] for n in function["body"] if n["op"] == "assign" and n["target"]["type"] in (bid, oid)]
+        assert zeros == zeroed, (prefix, zeros)
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [constructor["name"], cf_function("template<class T>Outside<T>::Outside(")["name"], oid+"_destroy", bid+"_destroy"]
+        assert np_pointer(function, calls[0]["args"][0]) == np_pointer(function, calls[3]["args"][0])
+        assert np_pointer(function, calls[1]["args"][0]) == np_pointer(function, calls[2]["args"][0])
+    assert gc_calls(cf_function("void alias("))[0]["callee"] == constructor["name"]
+    different = gc_calls(cf_function("void different("))[0]
+    uid = different["args"][0]["type"].removeprefix("ptr:")
+    assert uid != bid and different["callee"] == cf_member(uid, "void")["name"]
+    assert cf_records[uid]["fields"][1]["type"] == "uint"
+    forced = cf_record("template<class T>struct Forced{")
+    forced_constructor = cf_function("template<class T>Forced<T>::Forced(")
+    assert [p["type"] for p in forced_constructor["params"]] == ["ptr:"+forced["id"]]
+    assert [c["callee"] for c in gc_calls(forced_constructor)] == [leaf_default["name"]]
+    assert all(c["callee"] != forced_constructor["name"] for f in class_defaulted["functions"] for c in gc_calls(f))
+    trivial = cf_record("template<class T>struct Trivial{")
+    tid = trivial["id"]
+    for prefix in ("Trivial<int>trivialCopy(", "Trivial<int>&trivialAssign("):
+        function = cf_function(prefix)
+        assert not gc_calls(function)
+        stores = [n for n in function["body"] if n["op"] == "assign" and n["target"]["type"] == tid]
+        assert len(stores) == 1
+        for expr, parameter in zip((stores[0]["target"], stores[0]["value"]), function["params"]):
+            assert gc_identity(function, expr) == ("parameter", parameter["name"])
+    assert not any(f["loc"]["line"] == cf_line("template<class T>struct Trivial{") for f in class_defaulted["functions"])
+    for function in class_defaulted["functions"]:
+        assert not any(n["op"] == "mapped_call" for n in function["body"])
+        for call in gc_calls(function):
+            callee = cf_functions[call["callee"]]
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in callee["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-class-defaulted-relocated-") as temp:
+        relocated = check("class-defaulted-relocated", class_defaulted_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == class_defaulted, "defaulted template identities depend on the absolute root"
+
+    class_defaulted_lazy_source = 'template<class T>struct Lazy{\n T n=T::missing;\n Lazy()noexcept;Lazy(const Lazy&)noexcept;Lazy(Lazy&&)noexcept;\n Lazy&operator=(const Lazy&)noexcept;Lazy&operator=(Lazy&&)noexcept;~Lazy()noexcept;\n};\ntemplate<class T>Lazy<T>::Lazy()noexcept=default;\ntemplate<class T>Lazy<T>::Lazy(const Lazy&)noexcept=default;\ntemplate<class T>Lazy<T>::Lazy(Lazy&&)noexcept=default;\ntemplate<class T>Lazy<T>&Lazy<T>::operator=(const Lazy&)noexcept=default;\ntemplate<class T>Lazy<T>&Lazy<T>::operator=(Lazy&&)noexcept=default;\ntemplate<class T>Lazy<T>::~Lazy()noexcept=default;\nbool query(Lazy<int>&a,const Lazy<int>&b){return noexcept(Lazy<int>())&&noexcept(Lazy<int>(b))&&noexcept(Lazy<int>(static_cast<Lazy<int>&&>(a)))&&noexcept(a=b)&&noexcept(a=static_cast<Lazy<int>&&>(a));}\n'
+    class_defaulted_lazy = check("v2-class-defaulted-lazy-protocol", class_defaulted_lazy_source, profile="cpp-core-v2")
+    assert len(class_defaulted_lazy["records"]) == 1
+    assert len(class_defaulted_lazy["functions"]) == 1
+    assert class_defaulted_lazy["functions"][0]["result"] == "bool"
+    assert not gc_calls(class_defaulted_lazy["functions"][0])
+
+    class_defaulted_positive = {
+        'promoted-constructor': 'template<class T>struct R{T n;R()=default;};',
+        'promoted-destructor': 'template<class T>struct R{~R()=default;};',
+        'all-inline': 'template<class T>struct R{T n=3;R()=default;R(const R&)=default;R(R&&)=default;R&operator=(const R&)=default;R&operator=(R&&)=default;~R()=default;};int f(){R<int>a;R<int>b(a);R<int>c(static_cast<R<int>&&>(b));a=c;b=static_cast<R<int>&&>(c);return a.n+b.n;}',
+        'nonconst-copy': 'struct I{int n;I(I&s):n(++s.n){}};template<class T>struct R{T n;I i;R(R&)=default;};R<int>f(R<int>&r){return r;}',
+        'nonconst-assignment': 'struct I{int n;I&operator=(I&s){n=++s.n;return *this;}};template<class T>struct R{T n;I i;R&operator=(R&)=default;};R<int>&f(R<int>&a,R<int>&b){return a=b;}',
+        'copy-ref-qualifier': 'template<class T>struct R{T n;R&operator=(const R&)& =default;};R<int>&f(R<int>&a,const R<int>&b){return a=b;}',
+        'move-ref-qualifier': 'template<class T>struct R{T n;R&operator=(R&&)&&=default;};R<int>&f(R<int>&a,R<int>&b){return static_cast<R<int>&&>(a)=static_cast<R<int>&&>(b);}',
+        'empty': 'template<class T>struct R{R()=default;R(const R&)=default;R&operator=(const R&)=default;~R()=default;};void f(){R<int>a;R<int>b(a);a=b;}',
+        'auto-value': 'template<auto N>struct R{int n=N;R()=default;R(const R&)=default;R&operator=(const R&)=default;};int f(){R<3>a;R<3u>b;R<1+2>c(a);c=a;return a.n+b.n+c.n;}',
+        'class-instantiation': 'struct I{int n;I():n(3){}};template<class T>struct R{T n=4;I i;R()=default;};template struct R<int>;',
+        'member-instantiation': 'struct I{int n;I():n(3){}};template<class T>struct R{T n=4;I i;R()=default;};template R<int>::R();',
+        'forced-copy': 'struct I{int n;I(const I&s):n(s.n+1){}};template<class T>struct R{T n;I i;R(const R&)=default;};template R<int>::R(const R<int>&);',
+        'forced-assignment': 'struct I{int n;I&operator=(const I&s){n=s.n+1;return *this;}};template<class T>struct R{T n;I i;R&operator=(const R&)=default;};template R<int>&R<int>::operator=(const R<int>&);',
+        'class-specialization': 'template<class T>struct R{T n;R()=default;};template<>struct R<int>{int n=7;R()=default;R(const R&)=default;R&operator=(const R&)=default;};int f(){R<int>a;R<int>b(a);a=b;return a.n;}',
+        'member-specialization': 'template<class T>struct R{T n=3;R();};template<class T>R<T>::R()=default;template<>R<int>::R()=default;int f(){R<int>a;return a.n;}',
+        'visible-later': 'template<class T>struct R{T n=3;R();};template struct R<int>;template<class T>R<T>::R()=default;int f(){R<int>a;return a.n;}',
+        'lazy-dependent-dmi': 'template<class T>struct R{T n=T::missing;R()=default;};static_assert(sizeof(R<int>)==sizeof(int));',
+        'lazy-unsupported-dmi': 'template<class T>struct R{T n=static_cast<T>(1.0);R()=default;};static_assert(sizeof(R<int>)==sizeof(int));',
+        'lazy-deleted-copy': 'struct I{int n;I(I&&s):n(s.n){}};template<class T>struct R{T n;I i;R(const R&)=default;};static_assert(sizeof(R<int>)==sizeof(int)*2);',
+        'lazy-defaulted-wrapper': 'template<class T>struct I{T n;~I(){T::missing();}};template<class T>struct R{I<T>i;~R()=default;};static_assert(sizeof(R<int>)==sizeof(int));',
+        'lazy-missing-wrapper': 'template<class T>struct I{T n;~I();};template<class T>struct R{I<T>i;~R()=default;};static_assert(sizeof(R<int>)==sizeof(int));',
+        'query-dependent-dmi': 'template<class T>struct R{T n=T::missing;explicit R()noexcept=default;};int f(){return sizeof(R<int>{});}',
+        'query-defaulted-this': 'template<class T>struct R{T n;~R()noexcept(sizeof(this->n)>0)=default;};bool f(){return noexcept(R<int>{1});}struct S{int n;int get(){return this->n;}};int g(){S s{3};return s.get();}',
+        'query-defaulted-constructor-this': 'template<class T>struct R{T n=3;R()noexcept(sizeof(this->n)>0)=default;};bool f(){return noexcept(R<int>());}',
+        'nontrivial-array': 'struct I{int n;I():n(1){}I(const I&s):n(s.n+1){}I&operator=(const I&s){n=s.n+2;return *this;}};template<class T>struct R{T n;I a[2][2];R()=default;R(const R&)=default;R&operator=(const R&)=default;};void f(){R<int>a=R<int>();R<int>b(a);a=b;}',
+        'implicit-members': 'struct I{int n;I():n(3){}};template<class T>struct R{T n;I i;};R<int>f(){return R<int>();}',
+        'query-outside-default': 'template<class T>struct R{T n;R()noexcept;};template<class T>R<T>::R()noexcept=default;bool f(){return noexcept(R<int>());}',
+        'query-outside-copy': 'template<class T>struct R{T n;R(const R&)noexcept;};template<class T>R<T>::R(const R&)noexcept=default;bool f(const R<int>&r){return noexcept(R<int>(r));}',
+        'query-outside-move': 'template<class T>struct R{T n;R(R&&)noexcept;};template<class T>R<T>::R(R&&)noexcept=default;bool f(R<int>&r){return noexcept(R<int>(static_cast<R<int>&&>(r)));}',
+        'query-outside-copy-assignment': 'template<class T>struct R{T n;R&operator=(const R&)noexcept;};template<class T>R<T>&R<T>::operator=(const R&)noexcept=default;bool f(R<int>&a,const R<int>&b){return noexcept(a=b);}',
+        'query-outside-move-assignment': 'template<class T>struct R{T n;R&operator=(R&&)noexcept;};template<class T>R<T>&R<T>::operator=(R&&)noexcept=default;bool f(R<int>&a,R<int>&b){return noexcept(a=static_cast<R<int>&&>(b));}',
+        'query-outside-destructor': 'template<class T>struct R{T n;~R()noexcept;};template<class T>R<T>::~R()noexcept=default;bool f(){return noexcept(R<int>{1});}',
+        'lazy-explicit-defaulting': 'template<class T>struct R{T n=T::missing;R()noexcept=default;};template struct R<int>;static_assert(sizeof(R<int>)==sizeof(int));',
+        'all-outside': 'template<class T>struct R{T n=3;R();R(const R&);R(R&&);R&operator=(const R&);R&operator=(R&&);~R();};template<class T>R<T>::R()=default;template<class T>R<T>::R(const R&)=default;template<class T>R<T>::R(R&&)=default;template<class T>R<T>&R<T>::operator=(const R&)=default;template<class T>R<T>&R<T>::operator=(R&&)=default;template<class T>R<T>::~R()=default;int f(){R<int>a;R<int>b(a);R<int>c(static_cast<R<int>&&>(b));a=c;b=static_cast<R<int>&&>(c);return a.n+b.n;}',
+        'extern-unused': 'template<class T>struct R{T n=3;R();};template<class T>R<T>::R()=default;extern template R<int>::R();static_assert(sizeof(R<int>)==sizeof(int));',
+        'protocol-storage-source': 'int trace=0;\nvoid mark(int n){trace=n;}\nstruct Leaf{\n int n;Leaf*self;\n Leaf():n(1),self(this){mark(1);}\n Leaf(const Leaf&s):n(s.n+10),self(this){mark(2);}\n Leaf(Leaf&&s):n(s.n+20),self(this){s.n=-1;mark(3);}\n Leaf&operator=(const Leaf&s){n=s.n+30;mark(4);return *this;}\n Leaf&operator=(Leaf&&s){n=s.n+40;s.n=-1;mark(5);return *this;}\n ~Leaf(){mark(6);}\n};\ntemplate<class T,int N>struct Box{\n T plain;T value=N;Leaf first;Leaf items[2];\n Box()=default;Box(const Box&)=default;Box(Box&&)=default;\n Box&operator=(const Box&)& =default;Box&operator=(Box&&)& =default;~Box()=default;\n};\ntemplate<class T>struct Outside{T plain;Leaf leaf;Outside();~Outside();};\ntemplate<class T>Outside<T>::Outside()=default;\ntemplate<class T>Outside<T>::~Outside()=default;\ntemplate<class T>struct Trivial{T n;T*p;Trivial(const Trivial&)=default;Trivial&operator=(const Trivial&)=default;};\ntemplate<class T>struct Forced{T n=3;Leaf leaf;Forced();};\ntemplate<class T>Forced<T>::Forced()=default;\ntemplate struct Forced<int>;\nusing Alias=Box<int,3>;\nvoid defaultInit(){Box<int,3>r;Outside<int>o;}\nvoid valueInit(){Box<int,3>r=Box<int,3>();Outside<int>o=Outside<int>();}\nBox<int,3>copy(const Box<int,3>&r){return r;}\nBox<int,3>move(Box<int,3>&r){return static_cast<Box<int,3>&&>(r);}\nBox<int,3>&copyAssign(Box<int,3>&a,const Box<int,3>&b){return a=b;}\nBox<int,3>&moveAssign(Box<int,3>&a,Box<int,3>&b){return a=static_cast<Box<int,3>&&>(b);}\nvoid alias(){Alias r;}\nvoid different(){Box<unsigned int,4>r;}\nTrivial<int>trivialCopy(const Trivial<int>&r){return r;}\nTrivial<int>&trivialAssign(Trivial<int>&a,const Trivial<int>&b){return a=b;}\n',
+        'protocol-lazy-source': 'template<class T>struct Lazy{\n T n=T::missing;\n Lazy()noexcept;Lazy(const Lazy&)noexcept;Lazy(Lazy&&)noexcept;\n Lazy&operator=(const Lazy&)noexcept;Lazy&operator=(Lazy&&)noexcept;~Lazy()noexcept;\n};\ntemplate<class T>Lazy<T>::Lazy()noexcept=default;\ntemplate<class T>Lazy<T>::Lazy(const Lazy&)noexcept=default;\ntemplate<class T>Lazy<T>::Lazy(Lazy&&)noexcept=default;\ntemplate<class T>Lazy<T>&Lazy<T>::operator=(const Lazy&)noexcept=default;\ntemplate<class T>Lazy<T>&Lazy<T>::operator=(Lazy&&)noexcept=default;\ntemplate<class T>Lazy<T>::~Lazy()noexcept=default;\nbool query(Lazy<int>&a,const Lazy<int>&b){return noexcept(Lazy<int>())&&noexcept(Lazy<int>(b))&&noexcept(Lazy<int>(static_cast<Lazy<int>&&>(a)))&&noexcept(a=b)&&noexcept(a=static_cast<Lazy<int>&&>(a));}\n',
+    }
+    for name, source in class_defaulted_positive.items():
+        check("v2-class-defaulted-positive-" + name, source, profile="cpp-core-v2")
+    class_defaulted_reject = {
+        'selected-dmi': 'template<class T>struct R{T n=static_cast<T>(1.0);R()=default;};void f(){R<int>r;}',
+        'forced-dmi': 'template<class T>struct R{T n=static_cast<T>(1.0);R();};template<class T>R<T>::R()=default;template struct R<int>;',
+        'forced-member-dmi': 'template<class T>struct R{T n=static_cast<T>(1.0);R();};template<class T>R<T>::R()=default;template R<int>::R();',
+        'forced-member-operation': 'template<class T>struct I{T n;I(const I&s):n(s.n){double v=1.0;}};template<class T>struct R{I<T>i;R(const R&);};template<class T>R<T>::R(const R&)=default;template struct R<int>;',
+        'selected-member-destruction': 'template<class T>struct I{T n;~I(){double v=1.0;}};template<class T>struct R{I<T>i;~R()=default;};void f(){R<int>r{{1}};}',
+        'query-default-spec': 'template<class T>struct R{T n;R()noexcept(sizeof(T)==sizeof(double))=default;};bool f(){return noexcept(R<int>());}',
+        'query-copy-spec': 'template<class T>struct R{T n;R(const R&)noexcept(sizeof(T)==sizeof(double))=default;};bool f(const R<int>&r){return noexcept(R<int>(r));}',
+        'query-assignment-spec': 'template<class T>struct R{T n;R&operator=(const R&)noexcept(sizeof(T)==sizeof(double))=default;};bool f(R<int>&a,const R<int>&b){return noexcept(a=b);}',
+        'query-destructor-spec': 'template<class T>struct R{T n;~R()noexcept(sizeof(this->n)==sizeof(double))=default;};bool f(){return noexcept(R<int>{1});}',
+        'attribute': 'template<class T>struct R{[[deprecated]]R()=default;};',
+        'deleted-written': 'template<class T>struct R{R()=delete;};',
+        'virtual': 'template<class T>struct R{virtual ~R()=default;};',
+        'user-assignment': 'template<class T>struct R{T n;R&operator=(const R&r){n=r.n;return *this;}};',
+        'user-operator': 'template<class T>struct R{R()=default;int operator()(){return 3;}};',
+        'explicit-destruction': 'template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}',
+        'outer-type': 'template<int N>struct R{R();};template<decltype(static_cast<int>(1.0)) N>R<N>::R()=default;',
+    }
+    for name, source in class_defaulted_reject.items():
+        check("v2-class-defaulted-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    class_defaulted_invalid = {
+        'defaulted-ordinary': 'template<class T>struct R{int f()=default;};',
+        'own-constructor-template': 'template<class T>struct R{template<class U>R(U)=default;};',
+        'copy-extra': 'template<class T>struct R{R(const R&,int n=0)=default;};void f(R<int>&r){R<int>x(r);}',
+        'deleted-used': 'struct I{int n;I(I&&s):n(s.n){}};template<class T>struct R{T n;I i;R(const R&)=default;};R<int>f(const R<int>&r){return r;}',
+        'dependent-used': 'template<class T>struct R{T n=T::missing;R()=default;};void f(){R<int>r;}',
+        'wrong-ref-qualifier': 'template<class T>struct R{T n;R&operator=(R&&)&&=default;};void f(R<int>&a,R<int>&b){a=static_cast<R<int>&&>(b);}',
+        'private-copy': 'template<class T>class R{R(const R&)=default;public:T n;};R<int>f(const R<int>&r){return r;}',
+    }
+    for name, source in class_defaulted_invalid.items():
+        check("v2-class-defaulted-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    class_defaulted_missing = {
+        'member-constructor': 'template<class T>struct I{T n;I();};template<class T>struct R{I<T>i;R()=default;};void f(){R<int>r;}',
+        'member-copy': 'template<class T>struct I{T n;I(const I&);};template<class T>struct R{I<T>i;R(const R&)=default;};R<int>f(const R<int>&r){return r;}',
+        'member-destructor': 'template<class T>struct I{T n;~I();};template<class T>struct R{I<T>i;~R()=default;};void f(){R<int>r{{1}};}',
+        'direct-result-destructor': 'template<class T>struct I{T n;~I();};template<class T>struct R{I<T>i;~R()=default;};R<int>f(){return R<int>{{1}};}',
+        'specialization-declaration': 'template<class T>struct R{T n;R();};template<class T>R<T>::R()=default;template<>R<int>::R();',
+        'extern-default-construction': 'template<class T>struct R{T n=3;R();};template<class T>R<T>::R()=default;extern template R<int>::R();void f(){R<int>r;}',
+        'extern-copy-assignment': 'template<class T>struct R{T n;R&operator=(const R&);};template<class T>R<T>&R<T>::operator=(const R&)=default;extern template R<int>&R<int>::operator=(const R<int>&);void f(R<int>&a,const R<int>&b){a=b;}',
+    }
+    for name, source in class_defaulted_missing.items():
+        check("v2-class-defaulted-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-class-defaulted-member", 'template<class T>struct R{T n;R()=default;};', "TR0201")
+
     class_destructors_source = 'int trace=0;\nvoid mark(int n){trace=trace*10+n;}\ntemplate<class T,int N>struct Leaf{T n;Leaf(T v):n(v){}~Leaf(){mark(N);}};\ntemplate<class T>struct Box{Leaf<T,1>first;Leaf<T,2>items[2];Box():first(7),items{8,9}{}~Box(){mark(3);}};\nstruct Wrapper{Box<int>box;};\nstruct OnlyBody{Leaf<int,1>leaf;~OnlyBody(){mark(4);}};\nstruct UnusedDefaulted{Leaf<int,1>leaf;~UnusedDefaulted()=default;};\ntemplate<class T>struct Forced{T n;~Forced(){mark(5);}};\ntemplate struct Forced<int>;\ntemplate<class T>struct Value{T n;~Value(){mark(n);n=99;}};\ntemplate<auto N>struct State{~State(){static int count=N;mark(++count);}};\ntemplate<class T>struct Local{\n T n;\n ~Local(){struct Inside{T n;~Inside(){mark(n);}};Inside v{n};}\n};\nusing Alias=Leaf<int,1>;\nvoid leafInt(){Leaf<int,1>v(4);}\nvoid leafSame(){Alias v(5);}\nvoid leafUnsigned(){Leaf<unsigned int,1>v(6u);}\nvoid leafOther(){Leaf<int,2>v(7);}\nvoid box(){Box<int>b;}\nvoid wrapped(){Wrapper w;}\nint captured(){Value<int>v{7};return v.n;}\nint observe(const Value<int>&v){return v.n;}\nint full(){return observe(Value<int>{3});}\nint consume(Value<int>v){return v.n;}\nValue<int>makeResult(){return Value<int>{4};}\nvoid result(){Value<int>v=makeResult();}\nvoid array(){Value<int>v[2]={{1},{2}};}\nvoid stateInt(){State<3>s;}\nvoid stateSame(){State<1+2>s;}\nvoid stateUnsigned(){State<3u>s;}\nvoid localInt(){Local<int>v{2};}\nvoid localUnsigned(){Local<unsigned int>v{3u};}\n'
     class_destructors = check("v2-class-destructors-protocol", class_destructors_source, profile="cpp-core-v2")
     cd_functions = {f["name"]: f for f in class_destructors["functions"]}
@@ -6640,7 +6862,6 @@ bool query(){return noexcept(Lazy<int>{1});}
         'queried-dependent-noexcept-type': 'template<class T>struct R{T n;~R()noexcept(sizeof(T)==sizeof(double));};bool query(){return noexcept(R<int>{1});}',
         'outer-parameter-type': 'template<int N>struct R{~R();};template<decltype(static_cast<int>(1.0)) N>R<N>::~R(){}',
         'attribute': 'template<class T>struct R{[[deprecated]]~R(){}};',
-        'defaulted': 'template<class T>struct R{~R()=default;};',
         'deleted-shape': 'template<class T>struct R{~R()=delete;};',
         'virtual': 'template<class T>struct R{virtual ~R(){}};',
         'explicit-call': 'template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}',
@@ -6920,7 +7141,6 @@ int privateRead(const Private<int>&v){return v.get();}
         'attribute': 'template<class T>struct R{T n;[[deprecated]]R(T v):n(v){}};',
         'parameter-attribute': 'template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};',
         'delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};',
-        'defaulted': 'template<class T>struct R{T n;R()=default;};',
         'own-template': 'template<class T>struct R{T n;template<class U>R(U v):n(v){}};',
         'operator': 'template<class T>struct R{T n;R(T v):n(v){}T operator()(){return n;}};',
         'conversion-function': 'template<class T>struct R{T n;R(T v):n(v){}operator T(){return n;}};',

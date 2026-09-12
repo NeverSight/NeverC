@@ -57,7 +57,9 @@ static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
 static const ClassTemplateDecl *classFunctionPrimary(const FunctionDecl *F) {
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
   if (!M || (!isa<CXXConstructorDecl, CXXDestructorDecl>(M) &&
-             (M->getKind() != Decl::CXXMethod || !M->getIdentifier())) ||
+             (M->getKind() != Decl::CXXMethod ||
+              (!M->getIdentifier() && !M->isCopyAssignmentOperator() &&
+               !M->isMoveAssignmentOperator()))) ||
       M->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
       !M->getMemberSpecializationInfo() || M->getDescribedFunctionTemplate())
     return nullptr;
@@ -71,6 +73,43 @@ static const ClassTemplateDecl *classFunctionPrimary(const FunctionDecl *F) {
 static bool concreteClassFunction(const FunctionDecl *F) {
   return classFunctionPrimary(F) && !F->isDependentContext() &&
          !F->getType().isNull() && !F->getType()->isDependentType();
+}
+
+// Classification evidence only. In particular, an out-of-line defaulted
+// pattern does not supply an uninstantiated concrete runtime body.
+static const FunctionDecl *defaultedDeclaration(const CXXMethodDecl *M) {
+  if (!M)
+    return nullptr;
+  const bool Specialization =
+      M->getTemplateSpecializationKind() == TSK_ExplicitSpecialization;
+  // A specialization's redeclaration chain can retain an instantiated member.
+  // Only its own spelled template<> declaration establishes defaulting there.
+  for (const auto *D : M->redecls())
+    if (D->isDefaulted() &&
+        (!Specialization || D->getNumTemplateParameterLists()))
+      return D;
+  const auto *Primary = classFunctionPrimary(M);
+  if (!Primary || Specialization)
+    return nullptr;
+  const auto *Pattern =
+      dyn_cast_or_null<CXXMethodDecl>(M->getInstantiatedFromMemberFunction());
+  if (!Pattern || Pattern->getKind() != M->getKind() ||
+      Pattern->getParent()->getCanonicalDecl() !=
+          Primary->getTemplatedDecl()->getCanonicalDecl())
+    return nullptr;
+  for (const auto *D : Pattern->redecls())
+    if (D->isDefaulted())
+      return D;
+  return nullptr;
+}
+
+static bool defaultedSpecialMember(const CXXMethodDecl *M) {
+  if (!defaultedDeclaration(M))
+    return false;
+  if (const auto *C = dyn_cast<CXXConstructorDecl>(M))
+    return C->isDefaultConstructor() || C->isCopyOrMoveConstructor();
+  return isa<CXXDestructorDecl>(M) || M->isCopyAssignmentOperator() ||
+         M->isMoveAssignmentOperator();
 }
 
 bool ordinaryMethod(const CXXMethodDecl *M) {
@@ -208,13 +247,14 @@ bool callableMethod(const CXXMethodDecl *M) {
 static bool defaultedFunction(const CXXMethodDecl *M) {
   if (!M || M->isInvalidDecl() || M->isDeleted() || M->isVirtual() ||
       M->isVariadic() || M->isExplicitObjectMemberFunction() ||
-      M->getTemplatedKind() != FunctionDecl::TK_NonTemplate || M->isConsteval())
+      (M->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       !concreteClassFunction(M)) || M->isConsteval())
     return false;
-  bool Defaulted = false;
+  if (!defaultedDeclaration(M))
+    return false;
   for (const auto *D : M->redecls()) {
     if (D->isInvalidDecl() || D->isDeleted())
       return false;
-    Defaulted |= D->isDefaulted();
     // Preserve lazy unwritten implicit specifications. Written forms must be
     // resolved standard specifications on every redeclaration; normal TypeLoc
     // traversal still inspects the original noexcept expressions.
@@ -227,7 +267,7 @@ static bool defaultedFunction(const CXXMethodDecl *M) {
       return false;
     }
   }
-  return Defaulted;
+  return true;
 }
 
 bool defaultedLifecycle(const CXXMethodDecl *M) {
@@ -1074,22 +1114,28 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!M || !owned(M) || M->isInvalidDecl() || M->hasAttrs() ||
         M->getFriendObjectKind() || M->getDescribedFunctionTemplate() ||
         M->getPrimaryTemplate() || M->isVirtual() || M->isVariadic() ||
-        M->isDeletedAsWritten() || M->isDefaulted() || M->isConsteval() ||
+        M->isDeletedAsWritten() || M->isConsteval() ||
         M->isExplicitObjectMemberFunction() || M->getTrailingRequiresClause() ||
         M->getMethodQualifiers().hasVolatile() ||
         M->getMethodQualifiers().hasRestrict())
       return false;
+    const bool Defaulted = defaultedSpecialMember(M);
+    if (const auto *Defaulting = defaultedDeclaration(M))
+      if (!Defaulted || !owned(Defaulting))
+        return false;
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(M)) {
-      if (!Constructor->isUserProvided() || Constructor->isDelegatingConstructor() ||
+      if ((!Defaulted && !Constructor->isUserProvided()) ||
+          Constructor->isDelegatingConstructor() ||
           Constructor->isInheritingConstructor() || Constructor->isStatic() ||
           Constructor->getMethodQualifiers().getCVRQualifiers())
         return false;
     } else if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(M)) {
-      if (!Destructor->isUserProvided() || Destructor->isStatic() ||
+      if ((!Defaulted && !Destructor->isUserProvided()) || Destructor->isStatic() ||
           Destructor->getNumParams() ||
           Destructor->getMethodQualifiers().getCVRQualifiers())
         return false;
-    } else if (M->getKind() != Decl::CXXMethod || !M->getIdentifier()) {
+    } else if (M->getKind() != Decl::CXXMethod ||
+               (!M->getIdentifier() && !Defaulted)) {
       return false;
     }
     A.chargeExpansion(1, M->getLocation());
@@ -1502,8 +1548,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 
   void queueGenerated(const CXXMethodDecl *Method, SourceLocation L) {
     const FunctionDecl *Definition = nullptr;
-    if (Method->isTrivial() || !Method->hasBody(Definition))
-      return; // Trivial functions and unevaluated uses can have no lazy body.
+    if (Method->isTrivial())
+      return;
+    if (!Method->hasBody(Definition)) {
+      if (concreteClassFunction(Method) && Method->isUsed(/*CheckUsedAttr=*/false))
+        A.reject(L, "generated definition",
+                 "A used nontrivial defaulted member needs a generated definition.", "TR0203");
+      return; // Unevaluated uses can have no lazy body.
+    }
     if (!A.S.owns(A.Sources, Definition->getLocation())) {
       A.reject(L, "generated definition", "The generated definition must be source-owned.", "TR0203");
       return;
@@ -1767,7 +1819,7 @@ public:
           if (!classTemplateShape(Primary) || !classTemplateFunctionShape(Method) ||
               Method->getNumTemplateParameterLists() > 1) {
             A.reject(Method->getLocation(), "class template function pattern",
-                     "An ordinary named method, constructor or destructor of an admitted namespace class template is required.");
+                     "A named method or admitted special member of an owned namespace class template is required.");
             return true;
           }
           for (unsigned I = 0; I < Method->getNumTemplateParameterLists(); ++I) {
@@ -1786,10 +1838,35 @@ public:
         if (const auto *Primary = classFunctionPrimary(Method)) {
           if (!classTemplateShape(Primary) || !classTemplateFunctionShape(Method)) {
             A.reject(Method->getLocation(), "class template function",
-                     "A named method, constructor or destructor instance of an admitted owned primary is required.");
+                     "A named method or special-member instance of an admitted owned primary is required.");
             return true;
           }
           auto Kind = Method->getTemplateSpecializationKind();
+          if (!Method->hasBody() && defaultedSpecialMember(Method)) {
+            if (!Method->isTrivial() && Method->isUsed(/*CheckUsedAttr=*/false)) {
+              A.reject(Method->getLocation(), "generated definition",
+                       "A used nontrivial defaulted member needs a generated definition.", "TR0203");
+              return true;
+            }
+            if (!Method->isReferenced())
+              return true; // Preserve lazy deletion and unresolved specifications.
+            if (!defaultedLifecycle(Method) && !defaultedAssignment(Method) &&
+                !defaultedCopyOrMoveConstructor(dyn_cast<CXXConstructorDecl>(Method))) {
+              A.reject(Method->getLocation(), "defaulted member specification",
+                       "An admitted concrete defaulted special member is required.");
+              return true;
+            }
+            auto *SavedFunction = CurrentFunction;
+            auto *SavedMethod = CurrentMethod;
+            CurrentFunction = Method;
+            CurrentMethod = Method;
+            auto Restore = llvm::make_scope_exit([&] {
+              CurrentFunction = SavedFunction;
+              CurrentMethod = SavedMethod;
+            });
+            const auto *Info = Method->getTypeSourceInfo();
+            return Info && TraverseTypeLoc(Info->getTypeLoc());
+          }
           if (!Method->hasBody() &&
               (Kind == TSK_Undeclared || Kind == TSK_ImplicitInstantiation)) {
             if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method)) {
@@ -1897,11 +1974,14 @@ public:
         continue;
       }
       auto *SavedMethod = CurrentMethod;
+      auto *SavedFunction = CurrentFunction;
       auto SavedOwner = ImplicitInitializerOwner;
       CurrentMethod = Method;
+      CurrentFunction = Method;
       ImplicitInitializerOwner = Method->getLocation();
       auto Restore = llvm::make_scope_exit([&] {
         CurrentMethod = SavedMethod;
+        CurrentFunction = SavedFunction;
         ImplicitInitializerOwner = SavedOwner;
       });
       A.type(Method->getReturnType(), Method->getLocation(), true);
@@ -2267,6 +2347,17 @@ public:
       auto &Declaration = A.FunctionDeclarations[D->getCanonicalDecl()];
       if (!Declaration || D->doesThisDeclarationHaveABody())
         Declaration = D;
+    }
+    // Explicit instantiation can generate a body without a runtime caller.
+    if (ClassMethod && Defaulted && D->hasBody()) {
+      if (isa<CXXDestructorDecl>(D)) {
+        const auto *Body = dyn_cast_or_null<CompoundStmt>(D->getBody());
+        if (!Body || !Body->body_empty())
+          A.reject(D->getLocation(), "defaulted destructor",
+                   "A defaulted destructor requires an empty generated body.");
+      } else {
+        queueGenerated(Method, D->getLocation());
+      }
     }
     // Materialized user destructor bodies retain source-unit checks even if
     // uncalled. Their helpers include the member destruction epilogue.
@@ -2824,7 +2915,8 @@ public:
           Record->getCanonicalDecl() == CurrentMethod->getParent()->getCanonicalDecl() &&
           (callableMethod(CurrentMethod) ||
            supportedConstructor(dyn_cast<CXXConstructorDecl>(CurrentMethod)) ||
-           ordinaryDestructor(dyn_cast<CXXDestructorDecl>(CurrentMethod)));
+           ordinaryDestructor(dyn_cast<CXXDestructorDecl>(CurrentMethod)) ||
+           defaultedLifecycle(CurrentMethod));
       if (!A.S.coreV2() || (!FieldThis && !MethodThis))
         A.reject(L, "this", "This requires its owning field initializer or an admitted instance method.");
     }

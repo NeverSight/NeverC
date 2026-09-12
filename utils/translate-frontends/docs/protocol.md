@@ -160,6 +160,15 @@ actual cleanup and materialized user bodies form a bounded deduplicated work lis
 See [class-template destructors](cpp-core-v2.md#class-template-destructors) for
 definition, lifetime and source boundaries.
 
+Defaulted class-template special members reuse generated constructor/assignment
+and destruction IR. Constructor destinations precede source references;
+assignments return the receiver pointer, and destruction reverses member/array
+order. First-declaration versus out-of-line defaulting preserves value zeroing
+semantics. Trivial operations need no helper; unused queries do not invent one.
+Materialized generated bodies retain source closure, concrete instance identities
+and complete typed call signatures, without runtime template parameters or an
+opaque fallback. See [defaulted class-template special members](cpp-core-v2.md#defaulted-class-template-special-members).
+
 Concrete core-v2 free function-template instances use ordinary function, record,
 scalar-global and call IR. Primary-template ordinals and source identities
 separate otherwise colliding specializations, including their local records and
