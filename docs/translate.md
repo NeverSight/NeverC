@@ -33,13 +33,15 @@ Core v2 verifies source sizes and ABI alignments against NeverC’s own target m
 
 Core v2 supports named nonvirtual member functions of the admitted records, including const overloads, lvalue-qualified methods, static methods and `this`. Calls preserve the original object and evaluate the receiver before arguments. Nonstatic calls on temporary objects, inheritance, templates and general STL remain unsupported.
 
-Core v2 also supports ordinary user-provided constructors for standard-layout records with admitted copy operations. Locals, record fields and array elements are constructed directly in their final storage; fields initialize in declaration order. Explicitly defaulted/delegating constructors, move constructors and exceptions remain unsupported.
+Core v2 also supports ordinary user-provided constructors for standard-layout records with admitted copy operations. Locals, record fields and array elements are constructed directly in their final storage; fields initialize in declaration order. Delegating and move constructors and exceptions remain unsupported.
 
 Core v2 gives each by-value record parameter a separate object and writes record results directly into the caller’s destination. Constructors and methods use the same rules; source-required copies and reference aliases remain intact. For eligible trivial records, other C++17 implementations may introduce additional argument/result copies.
 
 Core v2 supports ordinary user-defined destructors and implicit member destruction on normal exits. Local objects, record fields and array elements are destroyed in reverse order; temporaries end at full-expression boundaries after their values are captured. Returns, branches, loops, break and continue perform the required cleanup. By-value parameters are destroyed when the callee exits; returned objects belong to the caller. Explicit destructor calls, written exception specifications, static destruction and exception unwinding remain unsupported. Implicit nontrivial copying, move operations and full STL support are still under development.
 
-Core v2 executes ordinary user-defined copy constructors and copy assignment operators with a source parameter of type `R&` or `const R&`. Copying uses the actual destination and preserves the function’s side effects and returned reference. Assignment syntax evaluates the right operand first; explicit `operator=` calls evaluate the receiver first. Defaulted special members and implicit nontrivial copying remain unsupported.
+Core v2 executes ordinary user-defined copy constructors and copy assignment operators with a source parameter of type `R&` or `const R&`. Copying uses the actual destination and preserves the function’s side effects and returned reference. Assignment syntax evaluates the right operand first; explicit `operator=` calls evaluate the receiver first. Defaulted copy operations and implicit nontrivial copying remain unsupported.
+
+Core v2 also supports generated/defaulted default constructors and defaulted destructors, including nested record and array members. Default construction uses the actual destination and initializes members in declaration order; value initialization performs only the zero-initialization required by C++. Out-of-line defaulting retains its different initialization rules. Unused or unevaluated defaulted constructors do not require an invented function body. Default member initializers, implicit nontrivial copying, moves and full STL support remain in development.
 
 ## Multi-file projects
 

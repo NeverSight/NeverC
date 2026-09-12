@@ -936,7 +936,15 @@ class FunctionLowering {
         return;
       }
     }
-    if (!ordinaryConstructor(Constructor) || !Constructor->hasBody() ||
+    if (Constructor->isTrivial() && defaultedLifecycle(Constructor) &&
+        Constructor->isDefaultConstructor() && !C->getNumArgs()) {
+      // Clang can omit the body of an explicitly defaulted trivial constructor.
+      // Its declaration still determines default versus value initialization.
+      if (C->requiresZeroInitialization())
+        initializeZero(std::move(Place), T, L);
+      return;
+    }
+    if (!supportedConstructor(Constructor) || !Constructor->hasBody() ||
         C->getNumArgs() != Constructor->getNumParams())
       reject(L, "construction", "Unsupported selected constructor or argument list.");
     if (C->requiresZeroInitialization())
@@ -1406,7 +1414,8 @@ public:
   }
   FunctionLowering(Adapter &A, const CXXRecordDecl *R)
       : A(A), Function(nullptr), DestroyedRecord(R->getDefinition()) {
-    if (const auto *D = DestroyedRecord->getDestructor(); D && !D->isImplicit()) {
+    if (const auto *D = DestroyedRecord->getDestructor();
+        D && !D->isImplicit() && !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D) || !D->hasBody())
         reject(D->getLocation(), "destructor", "An admitted owned destructor definition is required.");
       Function = D->getDefinition();
@@ -1431,7 +1440,7 @@ public:
           Method && !Method->isStatic()) {
         if (!A.S.coreV2() ||
             (!callableMethod(Method) &&
-             !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method))))
+             !supportedConstructor(dyn_cast<CXXConstructorDecl>(Method))))
           reject(L, "method", "Unsupported instance-method or constructor definition.");
         ThisPointer = parameter(Method->getThisType(), L);
       }

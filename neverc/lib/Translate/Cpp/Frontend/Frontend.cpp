@@ -91,6 +91,41 @@ bool callableMethod(const CXXMethodDecl *M) {
   return ordinaryMethod(M) || ordinaryCopyAssignment(M);
 }
 
+bool defaultedLifecycle(const CXXMethodDecl *M) {
+  if (!M || M->isInvalidDecl() || M->isDeleted() || M->isVirtual() ||
+      M->isVariadic() || M->isExplicitObjectMemberFunction() ||
+      M->getTemplatedKind() != FunctionDecl::TK_NonTemplate || M->isConsteval() ||
+      M->getNumParams())
+    return false;
+  if (const auto *C = dyn_cast<CXXConstructorDecl>(M)) {
+    if (!C->isDefaultConstructor() || C->isDelegatingConstructor() ||
+        C->isInheritingConstructor())
+      return false;
+  } else if (!isa<CXXDestructorDecl>(M)) {
+    return false;
+  }
+  bool Defaulted = false;
+  for (const auto *D : M->redecls()) {
+    if (D->isInvalidDecl() || D->isDeleted())
+      return false;
+    Defaulted |= D->isDefaulted();
+    // Defaulted functions have implicit exception specifications. Check the
+    // spelling on every redeclaration, including an out-of-line definition.
+    if (const auto *Info = D->getTypeSourceInfo()) {
+      auto Location = Info->getTypeLoc().getAs<FunctionProtoTypeLoc>();
+      if (!Location || Location.getExceptionSpecRange().isValid())
+        return false;
+    } else if (!D->isImplicit()) {
+      return false;
+    }
+  }
+  return Defaulted;
+}
+
+bool supportedConstructor(const CXXConstructorDecl *C) {
+  return ordinaryConstructor(C) || defaultedLifecycle(C);
+}
+
 const CXXConstructExpr *constructorConversion(const CastExpr *Cast,
                                               ASTContext &Context) {
   if (!Cast || Cast->getCastKind() != CK_ConstructorConversion ||
@@ -103,7 +138,7 @@ const CXXConstructExpr *constructorConversion(const CastExpr *Cast,
   while (const auto *Binding = dyn_cast<CXXBindTemporaryExpr>(Inner))
     Inner = Binding->getSubExpr()->IgnoreParens();
   const auto *Construction = dyn_cast<CXXConstructExpr>(Inner);
-  if (!Construction || !ordinaryConstructor(Construction->getConstructor()) ||
+  if (!Construction || !supportedConstructor(Construction->getConstructor()) ||
       !Context.hasSameUnqualifiedType(Cast->getType(), Construction->getType()))
     return nullptr;
   return Construction;
@@ -460,6 +495,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   SourceLocation ImplicitInitializerOwner;
   std::set<const Expr *> CheckedSemanticInitializers;
   std::set<const CXXConstructExpr *> CheckedConstructions;
+  std::set<const Decl *> QueuedDefaultConstructors;
+  std::vector<const CXXConstructorDecl *> DefaultConstructors;
   bool owned(const Decl *D) {
     return !D->isImplicit() && A.S.owns(A.Sources, D->getLocation());
   }
@@ -550,19 +587,33 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!CheckedConstructions.insert(C).second)
       return;
     const auto *Constructor = C->getConstructor();
-    if (A.S.coreV2() && ordinaryConstructor(Constructor)) {
-      if (!Constructor->hasBody() ||
-          !A.S.owns(A.Sources, Constructor->getLocation()))
+    if (A.S.coreV2() && supportedConstructor(Constructor)) {
+      if (!A.S.owns(A.Sources, Constructor->getLocation())) {
+        A.reject(L, "construction", "The selected constructor must be source-owned.", "TR0203");
+      } else if (defaultedLifecycle(Constructor)) {
+        // Trivial default constructors need no function, even when explicitly
+        // defaulted. Nontrivial definitions are also lazy in unevaluated uses.
+        const FunctionDecl *Definition = nullptr;
+        if (!Constructor->isTrivial() && Constructor->hasBody(Definition)) {
+          if (!A.S.owns(A.Sources, Definition->getLocation()))
+            A.reject(L, "construction", "The generated definition must be source-owned.", "TR0203");
+          else if (QueuedDefaultConstructors.insert(Constructor->getCanonicalDecl()).second) {
+            A.chargeExpansion(1, L);
+            DefaultConstructors.push_back(cast<CXXConstructorDecl>(Definition));
+          }
+        }
+      } else if (!Constructor->hasBody()) {
         A.reject(L, "construction",
                  "The selected constructor requires a source-owned definition.",
                  "TR0203");
+      }
       for (unsigned I = 0; I < C->getNumArgs() &&
                            I < Constructor->getNumParams(); ++I)
         if (Constructor->getParamDecl(I)->getType()->isReferenceType())
           checkBinding(C->getArg(I));
     } else if (!Constructor->isImplicit() || !Constructor->isTrivial()) {
       A.reject(L, "construction",
-               "Only admitted user constructors and implicit trivial "
+               "Only admitted constructors and implicit trivial "
                "default/copy construction are supported.");
     }
   }
@@ -604,7 +655,7 @@ public:
     bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecl(D);
     if (const auto *C = dyn_cast_or_null<CXXConstructorDecl>(D);
         Result && A.S.coreV2() && C && owned(C) &&
-        C->doesThisDeclarationHaveABody()) {
+        !defaultedLifecycle(C) && C->doesThisDeclarationHaveABody()) {
       // RAV skips non-written initializers in both TraverseFunctionHelper and
       // TraverseConstructorInitializer. Inspect these semantic expressions
       // explicitly; written expressions were already visited by RAV.
@@ -630,6 +681,42 @@ public:
     }
     CurrentMethod = Saved;
     return Result;
+  }
+  void finishGeneratedConstructors() {
+    // Drain selected definitions only. Enabling all implicit RAV declarations
+    // would also visit unselected copy/move methods and change their boundary.
+    for (std::size_t Index = 0; Index < DefaultConstructors.size(); ++Index) {
+      const auto *C = DefaultConstructors[Index];
+      const auto *Body = dyn_cast_or_null<CompoundStmt>(C->getBody());
+      if (!defaultedLifecycle(C) || !Body || !Body->body_empty()) {
+        A.reject(C->getLocation(), "generated constructor",
+                 "Expected a defaulted constructor with semantic field initializers and an empty body.");
+        continue;
+      }
+      auto *SavedMethod = CurrentMethod;
+      auto SavedOwner = ImplicitInitializerOwner;
+      CurrentMethod = C;
+      ImplicitInitializerOwner = C->getLocation();
+      auto Restore = llvm::make_scope_exit([&] {
+        CurrentMethod = SavedMethod;
+        ImplicitInitializerOwner = SavedOwner;
+      });
+      A.type(C->getReturnType(), C->getLocation(), true);
+      A.type(C->getThisType(), C->getLocation());
+      std::set<const Decl *> Initialized;
+      for (const auto *I : C->inits()) {
+        if (!I->isMemberInitializer() || I->isPackExpansion() ||
+            I->getMember()->getParent() != C->getParent() || !I->getInit() ||
+            !Initialized.insert(I->getMember()->getCanonicalDecl()).second) {
+          A.reject(C->getLocation(), "generated constructor initializer",
+                   "Only unique direct field initializers are supported.");
+          continue;
+        }
+        TraverseStmt(I->getInit());
+      }
+      TraverseStmt(const_cast<CompoundStmt *>(Body));
+      A.Functions.push_back(const_cast<CXXConstructorDecl *>(C));
+    }
   }
   bool VisitDecl(Decl *D) {
     if (!owned(D))
@@ -681,20 +768,21 @@ public:
       return true;
     A.type(D->getReturnType(), D->getLocation(), true);
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
+    const bool Defaulted = A.S.coreV2() && defaultedLifecycle(Method);
     if ((Method && (!A.S.coreV2() ||
                     (!callableMethod(Method) &&
-                     !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method)) &&
-                     !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(Method))))) ||
+                     !supportedConstructor(dyn_cast<CXXConstructorDecl>(Method)) &&
+                     !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(Method)) && !Defaulted))) ||
         D->isVariadic() ||
         D->getDescribedFunctionTemplate() ||
         D->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
-        D->isDeletedAsWritten() || D->isExplicitlyDefaulted() ||
+        D->isDeletedAsWritten() || (D->isExplicitlyDefaulted() && !Defaulted) ||
         D->isConsteval())
       A.reject(D->getLocation(), "function",
                "This member, template, variadic or special function form is "
                "outside the selected profile.");
     const auto *Prototype = D->getType()->getAs<FunctionProtoType>();
-    if (Prototype && Prototype->hasExceptionSpec() &&
+    if (Prototype && Prototype->hasExceptionSpec() && !Defaulted &&
         !(A.S.coreV2() && ordinaryDestructor(dyn_cast<CXXDestructorDecl>(D))))
       A.reject(D->getLocation(), "exception specification",
                "Exception specifications are outside the core profile.");
@@ -716,7 +804,7 @@ public:
           A.reject(P->getLocation(), "C export",
                    "C ABI exports require scalar results and parameters.");
     }
-    if (!D->hasBody() &&
+    if (!D->hasBody() && !Defaulted &&
         (!A.S.project() || D->getFormalLinkage() == Linkage::Internal))
       A.reject(
           D->getLocation(), "function declaration",
@@ -729,7 +817,7 @@ public:
     }
     // Destructors are emitted once per record, including the implicit member
     // destruction epilogue, rather than as an ordinary body-only function.
-    if (D->doesThisDeclarationHaveABody() && !D->isImplicit() &&
+    if (D->doesThisDeclarationHaveABody() && !D->isImplicit() && !Defaulted &&
         !(A.S.coreV2() && isa<CXXDestructorDecl>(D)))
       A.Functions.push_back(D);
     return true;
@@ -1033,7 +1121,7 @@ public:
     if (const auto *This = dyn_cast<CXXThisExpr>(S))
       if (!A.S.coreV2() || !CurrentMethod || CurrentMethod->isStatic() ||
           (!callableMethod(CurrentMethod) &&
-           !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(CurrentMethod)) &&
+           !supportedConstructor(dyn_cast<CXXConstructorDecl>(CurrentMethod)) &&
            !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(CurrentMethod))))
         A.reject(L, "this",
                  "This requires an admitted instance method or constructor.");
@@ -1107,6 +1195,9 @@ public:
 void Adapter::run() {
   Allowlist Check(*this);
   Check.TraverseDecl(Context.getTranslationUnitDecl());
+  if (!S.Diagnostics.empty())
+    return;
+  Check.finishGeneratedConstructors();
   if (!S.Diagnostics.empty())
     return;
   const auto &Target = Context.getTargetInfo();

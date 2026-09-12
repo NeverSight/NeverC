@@ -228,12 +228,10 @@ int main() {
 
 Zero-initialization follows the selected C++ initialization. User-provided default
 constructors receive no invented zero pass; an omitted scalar member remains
-uninitialized. Supported implicit trivial value initialization still zeroes
-storage when required. Missing record members use Clang's semantic initializer;
-implicit nontrivial default constructors are not synthesized by the translator.
-For example, a user-provided `Outer()` can initialize its `Inner` member with an
-admitted constructor, while an implicit nontrivial `Outer()` remains outside this
-increment. Aggregate initialization remains available where C++ selects it.
+uninitialized. Supported value initialization still zeroes storage when required. Missing record
+members use Clang's semantic initializer; generated/defaulted default constructors
+follow the next section. Aggregate initialization remains available where C++
+selects it.
 
 A materialized record temporary and its field/array views share one destination
 for that evaluation. No extra record copy is inserted during materialization.
@@ -245,13 +243,64 @@ calls on temporary receivers retain their existing rejection boundary. Const
 local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
-Explicitly defaulted/deleted, delegating, inherited and move constructors,
-template and variadic constructors, default arguments and exception specifications
-remain rejected. Implicit nontrivial copying, exception unwinding, allocation, static
+Deleted, delegating, inherited, move, template and variadic constructors,
+explicitly defaulted copy constructors, default arguments and written exception
+specifications remain rejected. Implicit nontrivial copying, exception unwinding, allocation, static
 guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
+
+## Default construction and defaulted destruction
+
+Core v2 admits generated/defaulted default constructors for the same checked
+records, including implicit nontrivial construction of nested record and array
+members. In-class `= default`, `explicit` default constructors and out-of-line
+`= default` definitions are supported. This does not admit default member
+initializers or broaden the existing field, layout, access or base-class rules.
+
+A nontrivial generated constructor becomes a checked `void(ptr:Record)` function.
+Its semantic field initializers use Clang's selected constructors in declaration
+order, with each array element constructed in its own destination. Selected
+definitions are discovered transitively and emitted once; unselected implicit
+copy/move functions are not emitted. There is no replacement source blob or
+external compiler invocation.
+
+Initialization keeps the source distinction between default initialization and
+value initialization. Omitted scalar fields receive no invented stores during
+default initialization. Value initialization first zeroes the object only when
+Clang's selected C++ initialization requires it, then runs member constructors.
+Out-of-line defaulting is user-provided and retains its different zero-initialization
+rules. An admitted trivial default constructor needs no emitted function body,
+even when explicitly defaulted. An unused constructor or a constructor used only
+in an unevaluated expression such as `sizeof(R{})` does not require Clang to
+materialize a body; such expressions introduce no runtime construction or cleanup.
+
+```cpp
+struct Inner {
+  int value;
+  Inner *self;
+  Inner() : value(7), self(this) {}
+};
+struct Outer {
+  int zero;
+  Inner values[2];
+  explicit Outer() = default;
+  ~Outer() = default;
+};
+int main() {
+  Outer value{};
+  return value.zero == 0 && value.values[0].value == 7
+      && value.values[1].self == &value.values[1] ? 0 : 1;
+}
+```
+
+Defaulted nonvirtual destructors, both in-class and out-of-line, use the normal
+reverse member/array cleanup without a user body. Trivial defaulted destructors
+need no call. Deleted/defaulted-deleted functions and written exception
+specifications remain rejected. Implicit nontrivial copying, defaulted copy/move
+operations, default member initializers, exception unwinding and STL remain later
+milestones. Actual execution evidence must come from the implementing revision's CI.
 
 ## Record arguments and results
 
@@ -360,7 +409,7 @@ its result. Reference source parameters do not own or destroy their referents.
 A containing aggregate may be initialized with a member having user-defined
 copy operations without selecting a copy of the containing object. Selected
 implicit nontrivial copy constructors and assignment operators remain rejected,
-including in dead source. Explicitly defaulted/deleted special members, move
+including in dead source. Explicitly defaulted/deleted copy operations, move
 operations, templates, variadic/default arguments, written exception
 specifications, general overloaded operators/conversions, allocation and
 exception unwinding are not added. Existing temporary source-reference and
@@ -381,10 +430,11 @@ above, including out-of-line definitions and implicit destruction of containing
 records. Copy construction and assignment must be admitted independently; a user
 destructor does not by itself require nontrivial copying. The source still has no bases,
 virtual dispatch, unions, reference members or unsupported field layouts.
-Explicitly defaulted/deleted destructors, written `noexcept`/`throw(...)`
-specifications and explicit destructor calls remain rejected, including in dead
-code. An ordinary destructor's implicit C++ exception specification is accepted.
-Every written destructor needs an owned definition.
+Deleted destructors, written `noexcept`/`throw(...)` specifications and explicit
+destructor calls remain rejected, including in dead code. Ordinary and defaulted
+destructors' implicit C++ exception specifications are accepted. Every ordinary
+user destructor needs an owned body; a supported `= default` destructor uses the
+member cleanup described below without requiring a materialized body.
 
 Each record needing destruction has one internal ordinary void function with a
 mutable pointer to its object. It runs the user body, destroys its body locals,
@@ -613,7 +663,9 @@ promotions and conversions, character literals, size queries, scoped and unscope
 enums, signed/unsigned boundary values, overloads, global/aggregate values,
 local declarations, ordinary methods/this and receiver sequencing, static calls,
 const overloads, reference results, direct constructor destinations and field order,
-array filler calls, single-place materialization, pointer/reference aliasing with
+array filler calls, generated/defaulted lifecycle and lazy definitions,
+source-selected user copying and assignment sequencing, normal destruction,
+single-place materialization, pointer/reference aliasing with
 inlining disabled, nested
 const, nulls, reference-return assignment, array initialization and indexing order,
 multidimensional arrays, temporary array reads, switch dispatch/fallthrough,

@@ -188,8 +188,23 @@ argument order remains receiver then source after those effects are captured.
 No new copy opcode or foreign ABI bypass is introduced. Existing signature,
 arity, const qualification, storage and layout checks apply, with the normal
 parameter/result lifetime convention preserved. Implicit trivial copies retain
-ordinary value assignments; implicit nontrivial/defaulted special members and
+ordinary value assignments; implicit nontrivial copying, defaulted copy operations and
 moves remain rejected. See the [source copy contract](cpp-core-v2.md#user-defined-copy-operations).
+
+## Core v2 defaulted lifecycle
+
+Generated/defaulted default constructors use the existing `void(ptr:Record)`
+constructor signature, checked call instructions and explicit destination
+addresses. Their semantic member initialization discovers selected definitions
+transitively; each canonical definition is emitted once. Trivial default
+constructors need no function body. Unevaluated construction can have no Clang
+body and produces no runtime call. Zero-initialization remains an ordinary
+verified initialization only when required by the source C++ initialization;
+out-of-line defaulting does not receive an invented zero pass.
+
+A defaulted destructor uses the same `Record_destroy` helper as implicit member
+cleanup, with no user body. No new opcode, lifecycle field, profile version or
+opaque operation is introduced. See the [defaulted lifecycle contract](cpp-core-v2.md#default-construction-and-defaulted-destruction).
 
 ## Core v2 destruction
 

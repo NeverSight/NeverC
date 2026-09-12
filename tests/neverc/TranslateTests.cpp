@@ -1658,6 +1658,155 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
   expectNoArtifacts(Output);
 }
 
+TEST_F(TranslateTest, CoreV2DefaultedLifecyclePreservesInitializationAndCleanup) {
+  const auto Source = tmpFile("defaulted-lifecycle.cpp");
+  const auto Output = tmpFile("defaulted-lifecycle.nc");
+  writeFile(Source, R"cpp(
+struct Trace { int values[16]; int used; };
+struct Leaf {
+  int value;
+  Leaf *self;
+  Trace *trace;
+  Leaf():value(7),self(this),trace(nullptr){}
+  ~Leaf(){if(trace)trace->values[trace->used++]=value;}
+};
+struct Implicit { int plain; Leaf leaf; };
+struct InClass { int plain; Leaf leaf; InClass()=default; ~InClass()=default; };
+struct Explicit { int plain; Leaf leaf; explicit Explicit()=default; };
+struct OutOfLine { int plain; Leaf leaf; OutOfLine(); ~OutOfLine(); };
+OutOfLine::OutOfLine()=default;
+OutOfLine::~OutOfLine()=default;
+struct Nested { Implicit first; InClass second[2]; };
+struct Trivial { int value; Trivial()=default; ~Trivial()=default; };
+struct ExplicitTrivial { int value; explicit ExplicitTrivial()=default; };
+struct Unused { int value; Unused()=default; ~Unused()=default; };
+struct OnlySize { Leaf leaf; explicit OnlySize()=default; };
+struct Later { Leaf leaf; Later(); ~Later(); };
+Later makeLater(){return Later();}
+Later::Later()=default;
+Later::~Later()=default;
+void returnCleanup(Trace &trace){InClass value;value.leaf.trace=&trace;value.leaf.value=9;return;}
+int main(){
+  Trace trace{{},0};
+  {Implicit value;
+   if(value.leaf.value!=7 || value.leaf.self!=&value.leaf || value.leaf.trace)return 1;
+   value.plain=3;value.leaf.trace=&trace;value.leaf.value=1;}
+  if(trace.used!=1 || trace.values[0]!=1)return 2;
+  {Implicit zero=Implicit();
+   if(zero.plain!=0 || zero.leaf.value!=7 || zero.leaf.self!=&zero.leaf)return 3;}
+  {InClass value;value.plain=4;
+   if(value.leaf.value!=7 || value.leaf.self!=&value.leaf)return 4;
+   value.leaf.trace=&trace;value.leaf.value=2;}
+  if(trace.used!=2 || trace.values[1]!=2)return 5;
+  {InClass zero=InClass();
+   if(zero.plain!=0 || zero.leaf.value!=7 || zero.leaf.self!=&zero.leaf)return 6;}
+  {Explicit zero{};
+   if(zero.plain!=0 || zero.leaf.value!=7 || zero.leaf.self!=&zero.leaf)return 7;}
+  {OutOfLine value;value.plain=5;
+   if(value.leaf.value!=7 || value.leaf.self!=&value.leaf)return 8;
+   value.leaf.trace=&trace;value.leaf.value=3;}
+  if(trace.used!=3 || trace.values[2]!=3)return 9;
+  trace.used=0;
+  {Implicit values[3];
+   for(int i=0;i<3;++i){
+     if(values[i].leaf.value!=7 || values[i].leaf.self!=&values[i].leaf)return 10;
+     values[i].leaf.trace=&trace;values[i].leaf.value=i+1;
+   }}
+  if(trace.used!=3 || trace.values[0]!=3 || trace.values[1]!=2 || trace.values[2]!=1)return 11;
+  trace.used=0;
+  {Nested value;
+   if(value.first.leaf.self!=&value.first.leaf ||
+      value.second[0].leaf.self!=&value.second[0].leaf ||
+      value.second[1].leaf.self!=&value.second[1].leaf)return 12;
+   value.first.leaf.trace=&trace;value.first.leaf.value=1;
+   for(int i=0;i<2;++i){value.second[i].leaf.trace=&trace;value.second[i].leaf.value=i+2;}}
+  if(trace.used!=3 || trace.values[0]!=3 || trace.values[1]!=2 || trace.values[2]!=1)return 13;
+  {Implicit matrix[2][2]{};
+   for(int i=0;i<2;++i)for(int j=0;j<2;++j)
+     if(matrix[i][j].plain!=0 || matrix[i][j].leaf.value!=7 ||
+        matrix[i][j].leaf.self!=&matrix[i][j].leaf)return 14;}
+  Trivial trivial=Trivial();ExplicitTrivial explicit_trivial{};
+  if(trivial.value!=0 || explicit_trivial.value!=0)return 15;
+  ExplicitTrivial uninitialized;uninitialized.value=11;
+  if(uninitialized.value!=11)return 16;
+  trace.used=0;returnCleanup(trace);
+  if(trace.used!=1 || trace.values[0]!=9)return 17;
+  trace.used=0;
+  for(int i=0;i<3;++i){
+    OutOfLine value;value.leaf.trace=&trace;value.leaf.value=i;
+    if(i==1)break;
+  }
+  if(trace.used!=2 || trace.values[0]!=0 || trace.values[1]!=1)return 18;
+  {Later value=makeLater();
+   if(value.leaf.value!=7 || value.leaf.self!=&value.leaf)return 19;}
+  if(sizeof(OnlySize{})!=sizeof(OnlySize))return 20;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("defaulted-lifecycle" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"deleted-constructor", "struct R{int n;R()=delete;};"},
+      {"deleted-destructor", "struct R{int n;~R()=delete;};"},
+      {"defaulted-deleted-constructor", "struct I{int n;I()=delete;};struct R{I i;R()=default;};"},
+      {"defaulted-deleted-destructor", "struct I{int n;~I()=delete;};struct R{I i;~R()=default;};"},
+      {"constructor-noexcept", "struct R{int n;R()noexcept=default;};"},
+      {"constructor-noexcept-false", "struct R{int n;R()noexcept(false)=default;};"},
+      {"destructor-noexcept", "struct R{int n;~R()noexcept=default;};"},
+      {"destructor-throw", "struct R{int n;~R()throw()=default;};"},
+      {"out-of-line-noexcept", "struct R{int n;R()noexcept;};R::R()noexcept=default;"},
+      {"out-of-line-destructor-noexcept", "struct R{int n;~R()noexcept;};R::~R()noexcept=default;"},
+      {"default-member", "struct R{int n=1;R()=default;};"},
+      {"unevaluated-default-member", "struct R{int n=1;explicit R()=default;};int f(){return sizeof(R{});}"},
+      {"nonpublic-field", "class R{int n;public:R()=default;};"},
+      {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
+      {"copy-default", "struct R{int n;R(const R&)=default;};"},
+      {"move-default", "struct R{int n;R(R&&)=default;};"},
+      {"copy-assignment-default", "struct R{int n;R&operator=(const R&)=default;};"},
+      {"explicit-destruction", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},
+      {"temporary-reference", "struct R{int n;explicit R()=default;};int f(){const R&r=R{};return r.n;}"},
+      {"throwing-member-constructor", "struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("defaulted-lifecycle-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("defaulted-lifecycle-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("defaulted-lifecycle-boundary.cpp");
+  const auto Output = tmpFile("defaulted-lifecycle-boundary.nc");
+  for (const std::string &Code : {
+      "struct I{int n;I();};struct R{I i;R()=default;};void f(){R r;}",
+      "struct I{int n;~I();};struct R{I i;~R()=default;};void f(){R r{{1}};}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {
+      "struct R{int n;explicit R()=default;};",
+      "struct R{int n;~R()=default;};"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ConstructorConversionsKeepOneDestinationAndCleanup) {
   const auto Source = tmpFile("constructor-conversion-cleanup.cpp");
   const auto Output = tmpFile("constructor-conversion-cleanup.nc");
@@ -1954,7 +2103,6 @@ TEST_F(TranslateTest, CoreV2RecordDestructionRetainsUnsupportedLifetimeDiagnosti
       {"explicit-noexcept", "struct R{int n;~R()noexcept{}};"},
       {"explicit-noexcept-false", "struct R{int n;~R()noexcept(false){}};"},
       {"explicit-empty-throw", "struct R{int n;~R()throw(){}};"},
-      {"explicit-defaulted", "struct R{int n;~R()=default;};"},
       {"explicit-deleted", "struct R{int n;~R()=delete;};"},
       {"virtual", "struct R{int n;virtual ~R(){}};"},
       {"explicit-call", "struct R{int n;~R(){}};void f(R&r){r.~R();}"},
@@ -2290,12 +2438,9 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};"},
       {"move-constructor", "struct R{int n;R(int v):n(v){} R(R&&v):n(v.n){}};"},
       {"virtual-method", "struct R{int n;R():n(1){} virtual int get(){return n;}};"},
-      {"implicit-nontrivial-default", "struct I{int n;I():n(1){}};struct R{I i;};int f(){R r;return r.i.n;}"},
-      {"implicit-nontrivial-array-default", "struct I{int n;I():n(1){}};struct R{I i[2];};int f(){R r;return r.i[0].n;}"},
       {"template-constructor", "struct R{int n;template<class T> R(T v):n(v){}};"},
       {"variadic-constructor", "struct R{int n;R(int v,...):n(v){}};"},
       {"deleted-constructor", "struct R{int n;R()=delete;};"},
-      {"defaulted-constructor", "struct R{int n;R()=default;};"},
       {"default-argument", "struct R{int n;R(int v=1):n(v){}};"},
       {"noexcept-constructor", "struct R{int n;R() noexcept:n(1){}};"},
       {"private-field", "class R{int n;public:R():n(1){}};"},

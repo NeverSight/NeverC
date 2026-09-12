@@ -247,6 +247,20 @@ def main():
         'user-copy-containing-aggregate': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}~R(){}};struct Box{R r;};int main(){R a(1);Box b{a};return b.r.n-2;}',
         'user-copy-constexpr': 'struct R{int n;constexpr R(int v):n(v){}constexpr R(const R&r):n(r.n+1){}};constexpr R a(1);constexpr R b=a;static_assert(b.n==2);',
     })
+    core_v2.update({
+        'lifecycle-implicit-default': 'struct I{int n;I():n(7){}};struct R{I i;};int f(){R r;return r.i.n;}',
+        'lifecycle-implicit-array-default': 'struct I{int n;I():n(7){}};struct R{I i[2];};int f(){R r;return r.i[1].n;}',
+        'lifecycle-defaulted-nontrivial': 'struct I{int n;I():n(7){}};struct R{I i;R()=default;};int f(){R r;return r.i.n;}',
+        'lifecycle-explicit-trivial-default': 'struct R{int n;explicit R()=default;};int f(){R r;r.n=7;return r.n;}',
+        'lifecycle-explicit-trivial-value': 'struct R{int n;explicit R()=default;};int f(){R r=R();return r.n;}',
+        'lifecycle-defaulted-unused': 'struct R{int n;explicit R()=default;~R()=default;};',
+        'lifecycle-defaulted-out-of-line': 'struct R{int n;R();};R::R()=default;int f(){R r;r.n=7;return r.n;}',
+        'lifecycle-implicit-value-zero': 'struct I{int n;I():n(7){}};struct R{int n;I i;};int f(){R r=R();return r.n;}',
+        'lifecycle-unevaluated-lazy': 'struct I{int n;I(){n=7;}};struct R{I i;explicit R()=default;};int f(){return sizeof(R{});}',
+        'lifecycle-defaulted-member-destructor': 'struct I{int n;~I(){}};struct R{I i;~R()=default;};void f(){R r{{1}};}',
+        'lifecycle-out-of-line-destructor': 'struct I{int n;~I(){}};struct R{I i;~R();};R::~R()=default;void f(){R r{{1}};}',
+        'lifecycle-defaulted-trivial-destructor': 'struct R{int n;~R()=default;};int f(){R r{7};return r.n;}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -546,6 +560,105 @@ void f(int *p){
         relocated = check("conversion-cleanup-relocated", conversion_cleanup_source,
                           root=Path(temp) / "project", profile="cpp-core-v2")
         assert relocated == converted, "conversion cleanup identities depend on the absolute root"
+    defaulted_source = """struct Leaf {
+  int value; Leaf *self;
+  Leaf():value(7),self(this){}
+  ~Leaf(){value=0;}
+};
+struct Implicit { int plain; Leaf leaf; };
+struct Explicit { int plain; Leaf leaf; explicit Explicit()=default; ~Explicit()=default; };
+struct Outside { int plain; Leaf leaf; Outside(); ~Outside(); };
+Outside::Outside()=default;
+Outside::~Outside()=default;
+struct Trivial { int value; explicit Trivial()=default; ~Trivial()=default; };
+struct Lazy { Leaf leaf; explicit Lazy()=default; };
+void defaultInit(){Implicit i;Explicit e;Outside o;Trivial t;}
+void valueInit(){Implicit i=Implicit();Explicit e=Explicit();Outside o=Outside();Trivial t=Trivial();}
+void again(){Implicit first;Implicit second;}
+int query(){return sizeof(Lazy{});}
+"""
+    defaulted = check("v2-defaulted-lifecycle-protocol", defaulted_source, profile="cpp-core-v2")
+    defaulted_records = {r["loc"]["line"]: r for r in defaulted["records"]}
+    defaulted_functions = {f["name"]: f for f in defaulted["functions"]}
+    defaulted_by_line = {f["loc"]["line"]: f for f in defaulted["functions"]}
+    constructors = {}
+    for line in (1, 6, 7, 8, 11, 12):
+        rid = defaulted_records[line]["id"]
+        selected = [f for f in defaulted["functions"] if f["result"] == "void"
+                    and [p["type"] for p in f["params"]] == ["ptr:" + rid]
+                    and f["name"] != rid + "_destroy"]
+        assert len(selected) == (1 if line in (1, 6, 7, 8) else 0), (line, selected)
+        if selected:
+            constructors[line] = selected[0]
+    for line in (6, 7, 8):
+        function = constructors[line]
+        calls = [n for n in function["body"] if n["op"] == "call"]
+        assert len(calls) == 1 and calls[0]["callee"] == constructors[1]["name"], function
+        assert not any(n["op"] == "assign" and n["target"]["kind"] == "member"
+                       for n in function["body"]), "default construction invented scalar initialization"
+        rid = defaulted_records[line]["id"]
+        cleanup = defaulted_functions[rid + "_destroy"]
+        cleanups = [n for n in cleanup["body"] if n["op"] == "call"]
+        assert len(cleanups) == 1 and cleanups[0]["callee"] == defaulted_records[1]["id"] + "_destroy", cleanup
+    default_body, value_body = defaulted_by_line[13], defaulted_by_line[14]
+    for function in (default_body, value_body):
+        calls = [n for n in function["body"] if n["op"] == "call"
+                 and n["callee"] in {f["name"] for f in constructors.values()}]
+        assert [n["callee"] for n in calls] == [constructors[n]["name"] for n in (6, 7, 8)], calls
+        for call in calls:
+            record_type = call["args"][0]["type"].removeprefix("ptr:")
+            local = next(v for v in function["locals"] if v["type"] == record_type)
+            assert storage_pointer_object(function, call["args"][0]) == ("object", local["name"])
+    defaulted_record_ids = {r["id"] for r in defaulted["records"]}
+    zeroed_types = [n["target"]["type"] for n in value_body["body"] if n["op"] == "assign"
+                    and n["target"]["type"] in defaulted_record_ids]
+    assert zeroed_types == [defaulted_records[n]["id"] for n in (6, 7, 11)], zeroed_types
+    assert not any(n["op"] == "assign" and n["target"]["type"] in defaulted_record_ids
+                   for n in default_body["body"]), default_body
+    repeated_calls = [n for n in defaulted_by_line[15]["body"] if n["op"] == "call"
+                      and n["callee"] == constructors[6]["name"]]
+    assert len(repeated_calls) == 2, repeated_calls
+    assert not any(n["op"] == "call" for n in defaulted_by_line[16]["body"]), defaulted_by_line[16]
+    for function in defaulted["functions"]:
+        for node in function["body"]:
+            if node["op"] == "call":
+                callee = defaulted_functions[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]], node
+    with tempfile.TemporaryDirectory(prefix="neverc-defaulted-lifecycle-relocated-") as temp:
+        relocated = check("defaulted-lifecycle-relocated", defaulted_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == defaulted, "defaulted lifecycle identities depend on the absolute root"
+    defaulted_rejected = {
+        'deleted-constructor': 'struct R{int n;R()=delete;};',
+        'deleted-destructor': 'struct R{int n;~R()=delete;};',
+        'defaulted-deleted-constructor': 'struct I{int n;I()=delete;};struct R{I i;R()=default;};',
+        'defaulted-deleted-destructor': 'struct I{int n;~I()=delete;};struct R{I i;~R()=default;};',
+        'constructor-noexcept': 'struct R{int n;R()noexcept=default;};',
+        'constructor-noexcept-false': 'struct R{int n;R()noexcept(false)=default;};',
+        'destructor-noexcept': 'struct R{int n;~R()noexcept=default;};',
+        'destructor-throw': 'struct R{int n;~R()throw()=default;};',
+        'out-of-line-noexcept': 'struct R{int n;R()noexcept;};R::R()noexcept=default;',
+        'out-of-line-destructor-noexcept': 'struct R{int n;~R()noexcept;};R::~R()noexcept=default;',
+        'default-member': 'struct R{int n=1;R()=default;};',
+        'unevaluated-default-member': 'struct R{int n=1;explicit R()=default;};int f(){return sizeof(R{});}',
+        'nonpublic-field': 'class R{int n;public:R()=default;};',
+        'virtual-destructor': 'struct R{int n;virtual ~R()=default;};',
+        'copy-default': 'struct R{int n;R(const R&)=default;};',
+        'move-default': 'struct R{int n;R(R&&)=default;};',
+        'copy-assignment-default': 'struct R{int n;R&operator=(const R&)=default;};',
+        'explicit-destruction': 'struct R{int n;~R()=default;};void f(){R r{1};r.~R();}',
+        'temporary-reference': 'struct R{int n;explicit R()=default;};int f(){const R&r=R{};return r.n;}',
+        'throwing-member-constructor': 'struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};',
+    }
+    for name, source in defaulted_rejected.items():
+        check("v2-defaulted-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+    for name, source in {
+        "constructor": "struct I{int n;I();};struct R{I i;R()=default;};void f(){R r;}",
+        "destructor": "struct I{int n;~I();};struct R{I i;~R()=default;};void f(){R r{{1}};}",
+    }.items():
+        check("v2-defaulted-missing-" + name, source, "TR0203", profile="cpp-core-v2")
+    check("v1-defaulted-constructor", "struct R{int n;explicit R()=default;};", "TR0201")
+    check("v1-defaulted-destructor", "struct R{int n;~R()=default;};", "TR0201")
     destruction_source = """struct R {
   int *value; int tag;
   R(int *v,int n):value(v),tag(n){}
@@ -642,7 +755,6 @@ int main(){int value=0;R result=make(&value);return consume(R(&value,6));}
         'explicit-noexcept': 'struct R{int n;~R()noexcept{}};',
         'explicit-noexcept-false': 'struct R{int n;~R()noexcept(false){}};',
         'explicit-empty-throw': 'struct R{int n;~R()throw(){}};',
-        'explicit-defaulted': 'struct R{int n;~R()=default;};',
         'explicit-deleted': 'struct R{int n;~R()=delete;};',
         'virtual': 'struct R{int n;virtual ~R(){}};',
         'explicit-call': 'struct R{int n;~R(){}};void f(R&r){r.~R();}',
@@ -924,12 +1036,9 @@ int main() {
         'constructor-inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};',
         'constructor-move-constructor': 'struct R{int n;R(int v):n(v){} R(R&&v):n(v.n){}};',
         'constructor-virtual-method': 'struct R{int n;R():n(1){} virtual int get(){return n;}};',
-        'constructor-implicit-nontrivial-default': 'struct I{int n;I():n(1){}};struct R{I i;};int f(){R r;return r.i.n;}',
-        'constructor-implicit-nontrivial-array-default': 'struct I{int n;I():n(1){}};struct R{I i[2];};int f(){R r;return r.i[0].n;}',
         'constructor-template-constructor': 'struct R{int n;template<class T> R(T v):n(v){}};',
         'constructor-variadic-constructor': 'struct R{int n;R(int v,...):n(v){}};',
         'constructor-deleted-constructor': 'struct R{int n;R()=delete;};',
-        'constructor-defaulted-constructor': 'struct R{int n;R()=default;};',
         'constructor-default-argument': 'struct R{int n;R(int v=1):n(v){}};',
         'constructor-noexcept-constructor': 'struct R{int n;R() noexcept:n(1){}};',
         'constructor-private-field': 'class R{int n;public:R():n(1){}};',
