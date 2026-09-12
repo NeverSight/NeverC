@@ -4357,6 +4357,110 @@ TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries
   }
 }
 
+TEST_F(TranslateTest, CoreV2ImportedDefaultsPreserveCallsAndLifetimes) {
+  const auto Source = tmpFile("imported-defaults.cpp");
+  const auto Output = tmpFile("imported-defaults.nc");
+  writeFile(Source, R"cpp(int ticks=0;
+int live=0;
+int tick(){return ++ticks;}
+struct Guard{int n;Guard(int v):n(v){++live;}~Guard(){--live;}};
+namespace Source{int plain(int);int multiple(int,int);int effect(int);int lifetime(const Guard&);int choose(int,int);int choose(bool b){return 9;}}
+namespace First{using Source::plain;using Source::multiple;using Source::effect;using Source::lifetime;using Source::choose;}
+namespace Second{using First::plain;using First::multiple;using First::effect;using First::lifetime;using First::choose;}
+int before(){return Second::plain(7);}
+namespace Source{int multiple(int,int b=4);}
+int Source::plain(int n=3){return n;}
+namespace Source{
+int multiple(int a=3,int b){return a*10+b;}
+int effect(int n=tick()){return n;}
+int lifetime(const Guard&g=Guard(5)){return g.n+live;}
+int choose(int n,int extra=2){return n+extra;}
+}
+namespace Closed{int select(int n){return n+10;}}
+namespace Captured{using Closed::select;}
+namespace Closed{int select(bool b){return 99;}}
+int defaultValue(){return Second::plain();}
+int blockValue(){using Second::plain;return plain();}
+int twoDefaults(){return Second::multiple();}
+int oneDefault(){return Second::multiple(2);}
+int omittedEffect(){return Second::effect();}
+int explicitEffect(){return Second::effect(7);}
+int temporaryDefault(){return Second::lifetime();}
+int chooseInt(){return Second::choose(3);}
+int chooseBool(){return Second::choose(true);}
+int closedOverloads(){return Captured::select(true);}
+int main(){
+ if(before()!=7||defaultValue()!=3||blockValue()!=3)return 1;
+ if(twoDefaults()!=34||oneDefault()!=24)return 2;
+ if(omittedEffect()!=1||ticks!=1)return 3;
+ if(explicitEffect()!=7||ticks!=1)return 4;
+ if(omittedEffect()!=2||ticks!=2)return 5;
+ if(temporaryDefault()!=6||live)return 6;
+ if(chooseInt()!=5||chooseBool()!=9)return 7;
+ if(closedOverloads()!=11)return 8;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("imported-defaults" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ImportedDefaultsAcceptLaterNamespaceDeclarations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"late-default", "namespace N{int f(int);}using N::f;namespace N{int f(int n=3){return n;}}int main(){return f()-3;}"},
+      {"qualified-definition", "namespace N{int f(int);}using N::f;int N::f(int n=3){return n;}int main(){return f()-3;}"},
+      {"namespace-import", "namespace N{int f(int);}namespace A{using N::f;}namespace N{int f(int n=3){return n;}}int main(){return A::f()-3;}"},
+      {"block-import", "namespace N{int f(int);}namespace A{using N::f;}namespace N{int f(int n=3){return n;}}int main(){using A::f;return f()-3;}"},
+      {"reexport", "namespace N{int f(int);}namespace A{using N::f;}namespace B{using A::f;}namespace N{int f(int n=3){return n;}}int main(){return B::f()-3;}"},
+      {"inline-namespace", "namespace N{inline namespace V{int f(int);}}using N::f;namespace N{namespace V{int f(int n=3){return n;}}}int main(){return f()-3;}"},
+      {"multiple-additions", "namespace N{int f(int,int);}using N::f;namespace N{int f(int,int b=4);}namespace N{int f(int a=3,int b){return a*10+b;}}int main(){return f()-34+f(2)-24;}"},
+      {"overload-viability", "namespace N{int f(int,int);int f(bool){return 9;}}using N::f;namespace N{int f(int n,int extra=2){return n+extra;}}int main(){return f(3)-5+f(true)-9;}"},
+      {"no-new-overload", "namespace N{int f(int n){return n+10;}}using N::f;namespace N{int f(bool){return 99;}}int main(){return f(true)-11;}"},
+      {"namespace-binding", "int value=99;namespace N{int value=3;int f(int);}using N::f;namespace N{int f(int n=value){return n;}}int main(){return f()-3;}"},
+      {"side-effects", "int ticks=0;int tick(){return ++ticks;}namespace N{int f(int);}using N::f;namespace N{int f(int n=tick()){return n;}}int main(){int a=f();int b=f(7);int d=f();return a-1+b-7+d-2+ticks-2;}"},
+      {"const-reference-default", "int live=0;struct R{int n;R(int v):n(v){++live;}~R(){--live;}};namespace N{int f(const R&);}using N::f;namespace N{int f(const R&r=R(3)){return r.n+live;}}int main(){int n=f();return n-4+live;}"},
+      {"array-reference-default", "namespace N{int a[2]={3,4};int f(int(&)[2]);}using N::f;namespace N{int f(int(&v)[2]=a){return v[0]+v[1];}}int main(){return f()-7;}"},
+      {"prior-explicit-call", "namespace N{int f(int);}using N::f;int before(){return f(4);}namespace N{int f(int n=3){return n;}}int main(){return before()-4+f()-3;}"},
+      {"cross-namespace-c-defaults", "namespace A{extern \"C\" int f(int);}using A::f;namespace B{extern \"C\" int f(int n=8);}namespace A{extern \"C\" int f(int n=3){return n;}}int main(){return f()-3;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("imported-defaults-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("imported-defaults-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ImportedDefaultsRetainLookupAndScopeBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"before-default", "namespace N{int f(int);}using N::f;int before(){return f();}namespace N{int f(int n=3){return n;}}"},
+      {"new-zero-argument-overload", "namespace N{int f(int n){return n;}}using N::f;namespace N{int f(){return 3;}}int main(){return f();}"},
+      {"block-default-escape", "namespace N{int f(int);void local(){int f(int n=3);f();}}using N::f;namespace N{int f(int n){return n;}}int main(){return f();}"},
+      {"block-default-after-namespace", "namespace N{int f(int);}using N::f;namespace N{void local(){int f(int n=3);f();}int f(int n){return n;}}int main(){return f();}"},
+      {"cross-namespace-c-escape", "namespace A{extern \"C\" int f(int);}using A::f;namespace B{extern \"C\" int f(int n=8);}namespace A{extern \"C\" int f(int n){return n;}}int main(){return f();}"},
+      {"duplicate-default", "namespace N{int f(int n=3);}using N::f;namespace N{int f(int n=3){return n;}}int main(){return f();}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("imported-defaults-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("imported-defaults-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FrontendRepairsPreserveImportsAndExceptionQueries) {
   const auto Source = tmpFile("frontend-repairs.cpp");
   const auto Output = tmpFile("frontend-repairs.nc");

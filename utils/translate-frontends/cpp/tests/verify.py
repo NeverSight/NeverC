@@ -6097,6 +6097,135 @@ int chooseOrdinary(){return candidate(3);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == function_templates, "template identity depends on absolute paths or address order"
 
+    imported_defaults_source = """int ticks=0;
+int live=0;
+int tick(){return ++ticks;}
+struct Guard{int n;Guard(int v):n(v){++live;}~Guard(){--live;}};
+namespace Source{int plain(int);int multiple(int,int);int effect(int);int lifetime(const Guard&);int choose(int,int);int choose(bool b){return 9;}}
+namespace First{using Source::plain;using Source::multiple;using Source::effect;using Source::lifetime;using Source::choose;}
+namespace Second{using First::plain;using First::multiple;using First::effect;using First::lifetime;using First::choose;}
+int before(){return Second::plain(7);}
+namespace Source{int multiple(int,int b=4);}
+int Source::plain(int n=3){return n;}
+namespace Source{
+int multiple(int a=3,int b){return a*10+b;}
+int effect(int n=tick()){return n;}
+int lifetime(const Guard&g=Guard(5)){return g.n+live;}
+int choose(int n,int extra=2){return n+extra;}
+}
+namespace Closed{int select(int n){return n+10;}}
+namespace Captured{using Closed::select;}
+namespace Closed{int select(bool b){return 99;}}
+int defaultValue(){return Second::plain();}
+int blockValue(){using Second::plain;return plain();}
+int twoDefaults(){return Second::multiple();}
+int oneDefault(){return Second::multiple(2);}
+int omittedEffect(){return Second::effect();}
+int explicitEffect(){return Second::effect(7);}
+int temporaryDefault(){return Second::lifetime();}
+int chooseInt(){return Second::choose(3);}
+int chooseBool(){return Second::choose(true);}
+int closedOverloads(){return Captured::select(true);}
+"""
+    imported_defaults = check("v2-imported-defaults-protocol", imported_defaults_source, profile="cpp-core-v2")
+    di_functions = {f["name"]: f for f in imported_defaults["functions"]}
+    assert len(di_functions) == len(imported_defaults["functions"])
+
+    def di_function(prefix):
+        lines = [i for i, line in enumerate(imported_defaults_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        found = [f for f in imported_defaults["functions"] if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    plain = di_function("int Source::plain(")
+    multiple = di_function("int multiple(")
+    effect = di_function("int effect(")
+    tick = di_function("int tick(")
+    for prefix, target, values in (("int before(", plain, [7]),
+                                   ("int defaultValue(", plain, [3]),
+                                   ("int blockValue(", plain, [3]),
+                                   ("int twoDefaults(", multiple, [3, 4]),
+                                   ("int oneDefault(", multiple, [2, 4]),
+                                   ("int explicitEffect(", effect, [7])):
+        caller = di_function(prefix)
+        calls = gc_calls(caller)
+        assert len(calls) == 1 and calls[0]["callee"] == target["name"]
+        assert [gc_identity(caller, a) for a in calls[0]["args"]] == values
+    omitted = gc_calls(di_function("int omittedEffect("))
+    assert [call["callee"] for call in omitted] == [tick["name"], effect["name"]]
+    assert len(omitted[1]["args"]) == 1 and omitted[1]["args"][0]["type"] == "int"
+    def di_call_result(function, expr):
+        if expr["kind"] == "cast":
+            return di_call_result(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        name = expr["name"]
+        if any(call.get("target", {}).get("name") == name for call in gc_calls(function)):
+            return name
+        values = [n["value"] for n in function["body"] if n["op"] == "assign"
+                  and n["target"].get("kind") == "var" and n["target"]["name"] == name]
+        assert len(values) == 1, (name, values)
+        return di_call_result(function, values[0])
+
+    assert di_call_result(di_function("int omittedEffect("), omitted[1]["args"][0]) == omitted[0]["target"]["name"]
+    lifetime = di_function("int lifetime(")
+    lifetime_calls = gc_calls(di_function("int temporaryDefault("))
+    assert len(lifetime_calls) == 3 and lifetime_calls[1]["callee"] == lifetime["name"]
+    constructor, destructor = [di_functions[lifetime_calls[i]["callee"]] for i in (0, 2)]
+    receiver = lifetime["params"][0]["type"]
+    assert receiver.startswith("ptr:")
+    assert [p["type"] for p in constructor["params"]] == [receiver, "int"]
+    assert [p["type"] for p in destructor["params"]] == [receiver]
+    caller = di_function("int temporaryDefault(")
+    assert gc_identity(caller, lifetime_calls[0]["args"][1]) == 5
+    assert np_pointer(caller, lifetime_calls[0]["args"][0]) == np_pointer(caller, lifetime_calls[1]["args"][0])
+    assert np_pointer(caller, lifetime_calls[0]["args"][0]) == np_pointer(caller, lifetime_calls[2]["args"][0])
+    integer = gc_calls(di_function("int chooseInt("))
+    boolean = gc_calls(di_function("int chooseBool("))
+    closed = gc_calls(di_function("int closedOverloads("))
+    assert len(integer) == len(boolean) == len(closed) == 1
+    assert [p["type"] for p in di_functions[integer[0]["callee"]]["params"]] == ["int", "int"]
+    assert [p["type"] for p in di_functions[boolean[0]["callee"]]["params"]] == ["bool"]
+    assert [p["type"] for p in di_functions[closed[0]["callee"]]["params"]] == ["int"]
+    for function in imported_defaults["functions"]:
+        for call in gc_calls(function):
+            assert call["callee"] in di_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in di_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-imported-defaults-relocated-") as temp:
+        relocated = check("v2-imported-defaults-relocated", imported_defaults_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == imported_defaults
+
+    imported_defaults_positive = {
+        'late-default': 'namespace N{int f(int);}using N::f;namespace N{int f(int n=3){return n;}}int main(){return f()-3;}',
+        'qualified-definition': 'namespace N{int f(int);}using N::f;int N::f(int n=3){return n;}int main(){return f()-3;}',
+        'namespace-import': 'namespace N{int f(int);}namespace A{using N::f;}namespace N{int f(int n=3){return n;}}int main(){return A::f()-3;}',
+        'block-import': 'namespace N{int f(int);}namespace A{using N::f;}namespace N{int f(int n=3){return n;}}int main(){using A::f;return f()-3;}',
+        'reexport': 'namespace N{int f(int);}namespace A{using N::f;}namespace B{using A::f;}namespace N{int f(int n=3){return n;}}int main(){return B::f()-3;}',
+        'inline-namespace': 'namespace N{inline namespace V{int f(int);}}using N::f;namespace N{namespace V{int f(int n=3){return n;}}}int main(){return f()-3;}',
+        'multiple-additions': 'namespace N{int f(int,int);}using N::f;namespace N{int f(int,int b=4);}namespace N{int f(int a=3,int b){return a*10+b;}}int main(){return f()-34+f(2)-24;}',
+        'overload-viability': 'namespace N{int f(int,int);int f(bool){return 9;}}using N::f;namespace N{int f(int n,int extra=2){return n+extra;}}int main(){return f(3)-5+f(true)-9;}',
+        'no-new-overload': 'namespace N{int f(int n){return n+10;}}using N::f;namespace N{int f(bool){return 99;}}int main(){return f(true)-11;}',
+        'namespace-binding': 'int value=99;namespace N{int value=3;int f(int);}using N::f;namespace N{int f(int n=value){return n;}}int main(){return f()-3;}',
+        'side-effects': 'int ticks=0;int tick(){return ++ticks;}namespace N{int f(int);}using N::f;namespace N{int f(int n=tick()){return n;}}int main(){int a=f();int b=f(7);int d=f();return a-1+b-7+d-2+ticks-2;}',
+        'const-reference-default': 'int live=0;struct R{int n;R(int v):n(v){++live;}~R(){--live;}};namespace N{int f(const R&);}using N::f;namespace N{int f(const R&r=R(3)){return r.n+live;}}int main(){int n=f();return n-4+live;}',
+        'array-reference-default': 'namespace N{int a[2]={3,4};int f(int(&)[2]);}using N::f;namespace N{int f(int(&v)[2]=a){return v[0]+v[1];}}int main(){return f()-7;}',
+        'prior-explicit-call': 'namespace N{int f(int);}using N::f;int before(){return f(4);}namespace N{int f(int n=3){return n;}}int main(){return before()-4+f()-3;}',
+        'cross-namespace-c-defaults': 'namespace A{extern "C" int f(int);}using A::f;namespace B{extern "C" int f(int n=8);}namespace A{extern "C" int f(int n=3){return n;}}int main(){return f()-3;}',
+    }
+    for name, source in imported_defaults_positive.items():
+        check("v2-imported-defaults-positive-" + name, source, profile="cpp-core-v2")
+    imported_defaults_invalid = {
+        'before-default': 'namespace N{int f(int);}using N::f;int before(){return f();}namespace N{int f(int n=3){return n;}}',
+        'new-zero-argument-overload': 'namespace N{int f(int n){return n;}}using N::f;namespace N{int f(){return 3;}}int main(){return f();}',
+        'block-default-escape': 'namespace N{int f(int);void local(){int f(int n=3);f();}}using N::f;namespace N{int f(int n){return n;}}int main(){return f();}',
+        'block-default-after-namespace': 'namespace N{int f(int);}using N::f;namespace N{void local(){int f(int n=3);f();}int f(int n){return n;}}int main(){return f();}',
+        'cross-namespace-c-escape': 'namespace A{extern "C" int f(int);}using A::f;namespace B{extern "C" int f(int n=8);}namespace A{extern "C" int f(int n){return n;}}int main(){return f();}',
+        'duplicate-default': 'namespace N{int f(int n=3);}using N::f;namespace N{int f(int n=3){return n;}}int main(){return f();}',
+    }
+    for name, source in imported_defaults_invalid.items():
+        check("v2-imported-defaults-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
+
     frontend_repairs_source = """namespace Original{int count=3;using Value=int;int read(int v){return v;}}
 namespace First{using Original::count;using Original::Value;using Original::read;}
 namespace Second{using First::count;using First::Value;using First::read;}

@@ -105,6 +105,72 @@ def isolate_math_calls(source_root):
         path.write_text(text, encoding="utf-8")
 
 
+def fix_imported_namespace_defaults(source_root):
+    # Check both parts before writing either private Clang source file.
+    header_before = "  NamedDecl *getTargetDecl() const { return Underlying; }"
+    header_after = "  NamedDecl *getTargetDecl() const;"
+    source_before = "void UsingShadowDecl::anchor() {}\n\nUsingShadowDecl::UsingShadowDecl("
+    source_after = """void UsingShadowDecl::anchor() {}
+
+NamedDecl *UsingShadowDecl::getTargetDecl() const {
+  // NeverC C++17 imported defaults: later declarations of the same namespace
+  // function contribute defaults without extending the imported overload set.
+  auto *Original = dyn_cast<FunctionDecl>(Underlying);
+  if (!Original || Original->getKind() != Decl::Function ||
+      Original->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !Original->getASTContext().getLangOpts().CPlusPlus ||
+      !Original->getLexicalDeclContext()->getRedeclContext()->isFileContext())
+    return Underlying;
+  const auto *Namespace = Original->getDeclContext()->getRedeclContext();
+  if (!Namespace->isFileContext())
+    return Underlying;
+  Namespace = Namespace->getPrimaryContext();
+  unsigned Required = Original->getMinRequiredArguments();
+  if (!Required)
+    return Underlying;
+  for (auto *Later = Original->getMostRecentDecl(); Later && Later != Original;
+       Later = Later->getPreviousDecl()) {
+    if (!Later->isInvalidDecl() && !Later->isLocalExternDecl() &&
+        Later->getLexicalDeclContext()->getRedeclContext()->isFileContext() &&
+        Later->getDeclContext()->getRedeclContext()->getPrimaryContext() == Namespace &&
+        Later->getMinRequiredArguments() < Required)
+      return Later;
+  }
+  return Underlying;
+}
+
+UsingShadowDecl::UsingShadowDecl("""
+    pairs = (
+        (source_root / "clang/include/clang/AST/DeclCXX.h", header_before, header_after),
+        (source_root / "clang/lib/AST/DeclCXX.cpp", source_before, source_after),
+    )
+    error_message = "Unexpected pinned Clang imported default source pair"
+    updates = []
+    states = []
+    for path, before, after in pairs:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise SystemExit(error_message) from error
+        counts = (text.count(before), text.count(after))
+        if counts == (1, 0):
+            state = 0
+        elif counts == (0, 1):
+            state = 1
+        else:
+            raise SystemExit(error_message)
+        remainder = text.replace((before, after)[state], "", 1)
+        if "NeverC C++17 imported defaults" in remainder or "UsingShadowDecl::getTargetDecl" in remainder:
+            raise SystemExit(error_message)
+        states.append(state)
+        updates.append((path, text.replace(before, after, 1) if state == 0 else text))
+    if states[0] != states[1]:
+        raise SystemExit(error_message)
+    if states[0] == 0:
+        for path, text in updates:
+            path.write_text(text, encoding="utf-8")
+
+
 def fix_nested_friend_access(path):
     # Restrict the pinned access-context walk, preserving canonical function
     # grants. This changes only the extracted private Clang library source.
@@ -279,6 +345,7 @@ _COM_SMARTPTR_TYPEDEF(ISetupInstance2, __uuidof(ISetupInstance2));
 # do not roll back previously completed patches.
 isolate_setup_bstr(args.source / "llvm/lib/WindowsDriver/MSVCPaths.cpp")
 fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
+fix_imported_namespace_defaults(args.source)
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [

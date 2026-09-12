@@ -642,6 +642,15 @@ public:
             "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h": (
                 "#define blake3_compress_in_place llvm_blake3_compress_in_place\n"),
         }
+        original_default_header = ("// Before header sentinel.\n"
+                                   "  NamedDecl *getTargetDecl() const { return Underlying; }\n"
+                                   "// After header sentinel.\n")
+        original_default_source = ("// Before source sentinel.\n"
+                                   "void UsingShadowDecl::anchor() {}\n\n"
+                                   "UsingShadowDecl::UsingShadowDecl(Kind K) {}\n"
+                                   "// After source sentinel.\n")
+        files["clang/include/clang/AST/DeclCXX.h"] = original_default_header
+        files["clang/lib/AST/DeclCXX.cpp"] = original_default_source
         files.update(math_sources)
         for name in notice_names:
             files["llvm/lib/Support/" + name] = (
@@ -697,6 +706,18 @@ public:
             run_script(True)
             access_path = source / "clang/lib/Sema/SemaAccess.cpp"
             self.assertEqual(access_path.read_text(encoding="utf-8"), expected_access)
+            default_header = source / "clang/include/clang/AST/DeclCXX.h"
+            default_source = source / "clang/lib/AST/DeclCXX.cpp"
+            rewritten_default_header = default_header.read_text(encoding="utf-8")
+            rewritten_default_source = default_source.read_text(encoding="utf-8")
+            self.assertEqual(rewritten_default_header, original_default_header.replace(
+                "  NamedDecl *getTargetDecl() const { return Underlying; }",
+                "  NamedDecl *getTargetDecl() const;"))
+            self.assertEqual(rewritten_default_source.count("UsingShadowDecl::getTargetDecl() const"), 1)
+            self.assertEqual(rewritten_default_source.count("NeverC C++17 imported defaults"), 1)
+            self.assertTrue(rewritten_default_source.startswith("// Before source sentinel.\n"))
+            self.assertTrue(rewritten_default_source.endswith(
+                "UsingShadowDecl::UsingShadowDecl(Kind K) {}\n// After source sentinel.\n"))
             rewritten_setup = setup_path.read_text(encoding="utf-8")
             self.assertEqual(rewritten_setup, expected_setup)
             self.assertEqual(rewritten_setup.count(expected_owner), 1)
@@ -726,7 +747,7 @@ public:
             stable = {path: path.read_bytes() for path in (
                 loop, output, notices, source / "llvm/lib/IR/IntrinsicInst.cpp",
                 source / "llvm/include/llvm/Transforms/Utils/Debugify.h",
-                setup_path, access_path, *math_paths.values())}
+                setup_path, access_path, default_header, default_source, *math_paths.values())}
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))
@@ -830,6 +851,42 @@ public:
             run_script(False, "Unexpected pinned Clang nested friend access source in " + str(access_path))
             self.assertEqual(snapshot_all_files(), untouched)
             access_path.write_text(original_access, encoding="utf-8")
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            # The header and definition form one checked patch state. Neither
+            # may change on failure, including a missing second source file.
+            default_states = {
+                "original header only": (original_default_header, rewritten_default_source),
+                "original source only": (rewritten_default_header, original_default_source),
+                "duplicate header": (original_default_header * 2, original_default_source),
+                "duplicate source": (original_default_header, original_default_source * 2),
+                "missing header anchor": ("// No accessor.\n", original_default_source),
+                "missing source anchor": (original_default_header, "// No anchor.\n"),
+                "partial implementation": (rewritten_default_header, rewritten_default_source.replace(
+                    "Later->getMinRequiredArguments() < Required", "true", 1)),
+                "extra definition": (rewritten_default_header, rewritten_default_source +
+                                     "\nNamedDecl *UsingShadowDecl::getTargetDecl() const {}\n"),
+                "extra marker": (original_default_header,
+                                 original_default_source + "// NeverC C++17 imported defaults\n"),
+            }
+            for state, (header_text, source_text) in default_states.items():
+                with self.subTest(imported_default_state=state):
+                    default_header.write_text(header_text, encoding="utf-8")
+                    default_source.write_text(source_text, encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang imported default source pair")
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            for missing in (default_header, default_source):
+                default_header.write_text(original_default_header, encoding="utf-8")
+                default_source.write_text(original_default_source, encoding="utf-8")
+                missing.unlink()
+                untouched = snapshot_all_files()
+                run_script(False, "Unexpected pinned Clang imported default source pair")
+                self.assertEqual(snapshot_all_files(), untouched)
+            default_header.write_text(original_default_header, encoding="utf-8")
+            default_source.write_text(original_default_source, encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))

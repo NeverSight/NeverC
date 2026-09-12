@@ -24,6 +24,13 @@ these functions no implicit enclosing-class access; canonical function grants
 still permit explicit friendship from their own or enclosing classes. Ordinary
 nested member access and non-nested friend contexts are unchanged. The patch
 checks original/rewritten source states and rejects partial or duplicate edits.
+A checked DeclCXX.h/DeclCXX.cpp pair also propagates later namespace default
+arguments through existing using declarations, as required by C++17
+[dcl.fct.default]/9. It selects only a later declaration of the same non-template
+function in the same semantic namespace with additional defaults. Lexical
+block/friend declarations and different namespace default sets remain excluded;
+new overloads are not imported. Both source states are validated before either
+file is rewritten, with idempotent complete pairs and rejected partial pairs.
 Other symbol changes use compilation definitions. NoCrashReporter.h disables
 the private PrettyStackTrace.cpp Darwin process annotation; NeverC owns it.
 On Windows, RewriteSetupCoffSymbols.py isolates five Setup COM GUID identities

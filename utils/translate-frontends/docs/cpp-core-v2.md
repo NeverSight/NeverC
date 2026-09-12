@@ -2202,3 +2202,14 @@ declarators. Written return and parameter types, and non-dependent exception
 expressions, remain checked. Folding a floating-point expression inside an
 exception specification does not admit it into core v2. Queries retain their
 compile-time boolean result and do not execute the queried call.
+
+### Later namespace defaults through imports
+
+A namespace function's later default arguments are available through an earlier
+`using` declaration, including reexports, inline namespaces and qualified
+out-of-line definitions. The function's semantic namespace determines its default
+set. A later block declaration or a distinct namespace cannot contribute defaults
+to that set; a later overload is not added to the earlier import. Calls appearing
+before the default declaration still require explicit arguments. Omitted arguments
+retain declaration-site binding, evaluate once per call, and preserve the existing
+reference temporary lifetime rules.
