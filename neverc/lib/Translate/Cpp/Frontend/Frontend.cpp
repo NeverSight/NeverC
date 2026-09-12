@@ -33,6 +33,21 @@
 using namespace clang;
 namespace nct {
 
+static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
+  if (!Prototype)
+    return false;
+  switch (Prototype->getExceptionSpecType()) {
+  case EST_None:
+  case EST_DynamicNone: // C++17 throw() has the noexcept(true) meaning.
+  case EST_BasicNoexcept:
+  case EST_NoexceptTrue:
+  case EST_NoexceptFalse:
+    return true;
+  default:
+    return false; // No dependent, unresolved, typed or vendor specifications.
+  }
+}
+
 bool ordinaryMethod(const CXXMethodDecl *M) {
   if (!M || M->isImplicit() || !M->getIdentifier() || M->isVirtual() ||
       M->isExplicitObjectMemberFunction() || M->isVariadic() ||
@@ -42,7 +57,7 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
       M->getMethodQualifiers().hasRestrict())
     return false;
   const auto *Prototype = M->getType()->getAs<FunctionProtoType>();
-  return Prototype && !Prototype->hasExceptionSpec();
+  return standardExceptionSpecification(Prototype);
 }
 
 bool ordinaryConstructor(const CXXConstructorDecl *C) {
@@ -66,7 +81,7 @@ bool ordinaryConstructor(const CXXConstructorDecl *C) {
       return false;
   }
   const auto *Prototype = C->getType()->getAs<FunctionProtoType>();
-  return Prototype && !Prototype->hasExceptionSpec();
+  return standardExceptionSpecification(Prototype);
 }
 
 static bool ordinaryAssignment(const CXXMethodDecl *M, bool Move) {
@@ -93,7 +108,7 @@ static bool ordinaryAssignment(const CXXMethodDecl *M, bool Move) {
   return SourceRecord && ResultRecord &&
          SourceRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl() &&
          ResultRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl() &&
-         Prototype && !Prototype->hasExceptionSpec();
+         standardExceptionSpecification(Prototype);
 }
 
 bool ordinaryCopyAssignment(const CXXMethodDecl *M) {
@@ -126,11 +141,13 @@ static bool defaultedFunction(const CXXMethodDecl *M) {
     if (D->isInvalidDecl() || D->isDeleted())
       return false;
     Defaulted |= D->isDefaulted();
-    // Defaulted functions have implicit exception specifications. Check the
-    // spelling on every redeclaration, including an out-of-line definition.
+    // Preserve lazy unwritten implicit specifications. Written forms must be
+    // resolved standard specifications on every redeclaration; normal TypeLoc
+    // traversal still inspects the original noexcept expressions.
     if (const auto *Info = D->getTypeSourceInfo()) {
       auto Location = Info->getTypeLoc().getAs<FunctionProtoTypeLoc>();
-      if (!Location || Location.getExceptionSpecRange().isValid())
+      if (!Location || (Location.getExceptionSpecRange().isValid() &&
+          !standardExceptionSpecification(D->getType()->getAs<FunctionProtoType>())))
         return false;
     } else if (!D->isImplicit()) {
       return false;
@@ -318,12 +335,13 @@ bool ordinaryDestructor(const CXXDestructorDecl *D) {
       D->getTemplatedKind() != FunctionDecl::TK_NonTemplate)
     return false;
   // A spelled destructor without noexcept still has an implicit exception
-  // specification. Only written specifications remain outside this increment.
+  // specification. Keep that lazy state; written forms use the standard gate.
   const auto *Info = D->getTypeSourceInfo();
   if (!Info)
     return false;
   auto Location = Info->getTypeLoc().getAs<FunctionProtoTypeLoc>();
-  return Location && Location.getExceptionSpecRange().isInvalid();
+  return Location && (Location.getExceptionSpecRange().isInvalid() ||
+      standardExceptionSpecification(D->getType()->getAs<FunctionProtoType>()));
 }
 
 bool needsDestruction(QualType T) {
@@ -1056,9 +1074,10 @@ public:
                "outside the selected profile.");
     const auto *Prototype = D->getType()->getAs<FunctionProtoType>();
     if (Prototype && Prototype->hasExceptionSpec() && !Defaulted &&
-        !(A.S.coreV2() && ordinaryDestructor(dyn_cast<CXXDestructorDecl>(D))))
+        !(A.S.coreV2() && (standardExceptionSpecification(Prototype) ||
+                           ordinaryDestructor(dyn_cast<CXXDestructorDecl>(D)))))
       A.reject(D->getLocation(), "exception specification",
-               "Exception specifications are outside the core profile.");
+               "This exception specification is outside the selected profile.");
     if (D->isMain() &&
         (D->getNumParams() ||
          !D->getReturnType()->isSpecificBuiltinType(BuiltinType::Int)))
@@ -1288,7 +1307,7 @@ public:
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
               DefaultStmt, AttributedStmt, CharacterLiteral,
-              UnaryExprOrTypeTraitExpr, CXXThisExpr, CXXDefaultInitExpr>(S)) &&
+              UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr, CXXDefaultInitExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -1300,6 +1319,14 @@ public:
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
+      if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S)) {
+        if (!Query->getOperand() || Query->isTypeDependent() ||
+            Query->isValueDependent() || Query->isInstantiationDependent())
+          A.reject(Query->getExprLoc(), "noexcept query",
+                   "A resolved constant noexcept query is required.");
+        // RAV visits the unevaluated operand and written specification
+        // expressions. Unsupported source must not disappear behind a bool.
+      }
       if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S)) {
         auto Operand = Query->getTypeOfArgument();
         if ((Query->getKind() != UETT_SizeOf && Query->getKind() != UETT_AlignOf) ||

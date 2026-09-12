@@ -349,6 +349,38 @@ def main():
         'generated-move-inline-temporary-assignment': 'struct R{int n;};int f(){R a{1};a=R{2};return (R{3}=R{4}).n+a.n;}',
         'generated-move-inline-temporary-construction': 'struct R{int n;};int f(){R a(static_cast<R&&>(R{1}));return a.n;}',
     })
+    core_v2.update({
+        'noexcept-562-noexcept-constructor': 'struct R{int n;R(const R&r)noexcept:n(r.n){}};',
+        'noexcept-562-noexcept-assignment': 'struct R{int n;R&operator=(const R&r)noexcept{n=r.n;return *this;}};',
+        'noexcept-761-copy-noexcept': 'struct R{int n;R(const R&)noexcept=default;};',
+        'noexcept-761-copy-noexcept-false': 'struct R{int n;R(const R&)noexcept(false)=default;};',
+        'noexcept-761-copy-throw': 'struct R{int n;R(const R&)throw()=default;};',
+        'noexcept-761-out-of-line-noexcept': 'struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;',
+        'noexcept-886-noexcept': 'struct R{int n;R&operator=(const R&)noexcept=default;};',
+        'noexcept-886-noexcept-false': 'struct R{int n;R&operator=(const R&)noexcept(false)=default;};',
+        'noexcept-886-out-of-line-noexcept': 'struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;',
+        'noexcept-1147-method-noexcept': 'struct R{int n;int get()&&noexcept{return n;}};',
+        'noexcept-1286-constructor-noexcept': 'struct R{int n;R(R&&r)noexcept:n(r.n){}};',
+        'noexcept-1286-assignment-noexcept': 'struct R{int n;R&operator=(R&&r)noexcept{n=r.n;return *this;}};',
+        'noexcept-1476-constructor-noexcept': 'struct R{int n;R(R&&)noexcept=default;};',
+        'noexcept-1476-constructor-noexcept-false': 'struct R{int n;R(R&&)noexcept(false)=default;};',
+        'noexcept-1476-constructor-throw': 'struct R{int n;R(R&&)throw()=default;};',
+        'noexcept-1476-assignment-noexcept': 'struct R{int n;R&operator=(R&&)noexcept=default;};',
+        'noexcept-1476-assignment-noexcept-false': 'struct R{int n;R&operator=(R&&)noexcept(false)=default;};',
+        'noexcept-1476-out-of-line-noexcept': 'struct R{int n;R(R&&)noexcept;};R::R(R&&)noexcept=default;',
+        'noexcept-1476-out-of-line-assignment-noexcept': 'struct R{int n;R&operator=(R&&)noexcept;};R&R::operator=(R&&)noexcept=default;',
+        'noexcept-1592-constructor-noexcept': 'struct R{int n;R()noexcept=default;};',
+        'noexcept-1592-constructor-noexcept-false': 'struct R{int n;R()noexcept(false)=default;};',
+        'noexcept-1592-destructor-noexcept': 'struct R{int n;~R()noexcept=default;};',
+        'noexcept-1592-destructor-throw': 'struct R{int n;~R()throw()=default;};',
+        'noexcept-1592-out-of-line-noexcept': 'struct R{int n;R()noexcept;};R::R()noexcept=default;',
+        'noexcept-1592-out-of-line-destructor-noexcept': 'struct R{int n;~R()noexcept;};R::~R()noexcept=default;',
+        'noexcept-1710-explicit-noexcept': 'struct R{int n;~R()noexcept{}};',
+        'noexcept-1710-explicit-noexcept-false': 'struct R{int n;~R()noexcept(false){}};',
+        'noexcept-1710-explicit-empty-throw': 'struct R{int n;~R()throw(){}};',
+        'noexcept-1958-method-noexcept-method': 'struct R{int n;int get()const noexcept{return n;}};',
+        'noexcept-1985-constructor-noexcept-constructor': 'struct R{int n;R() noexcept:n(1){}};',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -569,8 +601,6 @@ int main(){
         'by-value-assignment': 'struct R{int n;R&operator=(R r){n=r.n;return *this;}};',
         'void-assignment': 'struct R{int n;void operator=(const R&r){n=r.n;}};',
         'other-assignment-result': 'struct R{int n;int&operator=(const R&r){n=r.n;return n;}};',
-        'noexcept-constructor': 'struct R{int n;R(const R&r)noexcept:n(r.n){}};',
-        'noexcept-assignment': 'struct R{int n;R&operator=(const R&r)noexcept{n=r.n;return *this;}};',
         'default-argument': 'struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};',
         'arbitrary-operator': 'struct R{int n;R operator+(const R&r){return {n+r.n};}};',
         'temporary-assignment-source': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}',
@@ -761,10 +791,6 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
     generated_copy_rejected = {
         'deleted-copy': 'struct R{int n;R(const R&)=delete;};',
         'defaulted-deleted-copy': 'struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};',
-        'copy-noexcept': 'struct R{int n;R(const R&)noexcept=default;};',
-        'copy-noexcept-false': 'struct R{int n;R(const R&)noexcept(false)=default;};',
-        'copy-throw': 'struct R{int n;R(const R&)throw()=default;};',
-        'out-of-line-noexcept': 'struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;',
         'reference-field': 'struct R{int &n;R(const R&)=default;};',
         'const-field': 'struct R{const int n;R(const R&)=default;};',
         'nonpublic-field': 'class R{int n;public:R(const R&)=default;};',
@@ -886,9 +912,6 @@ void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
     generated_assignment_rejected = {
         'deleted': 'struct R{int n;R&operator=(const R&)=delete;};',
         'defaulted-deleted': 'struct I{int n;I&operator=(const I&)=delete;};struct R{I i;R&operator=(const R&)=default;};',
-        'noexcept': 'struct R{int n;R&operator=(const R&)noexcept=default;};',
-        'noexcept-false': 'struct R{int n;R&operator=(const R&)noexcept(false)=default;};',
-        'out-of-line-noexcept': 'struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;',
         'rvalue-receiver': 'struct R{int n;R&operator=(const R&)&&=default;};',
         'const-field': 'struct R{const int n;R&operator=(const R&)=default;};',
         'reference-field': 'struct R{int&n;R&operator=(const R&)=default;};',
@@ -1163,7 +1186,6 @@ int ordered(R&r,int&trace){return receiver(r,trace).set(argument(trace));}
         'reference-field': 'struct R{int&&n;};',
         'global-reference': 'int n;int&&r=static_cast<int&&>(n);',
         'function-reference': 'int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}',
-        'method-noexcept': 'struct R{int n;int get()&&noexcept{return n;}};',
     }
     for name, source in rvalue_rejected.items():
         check("v2-rvalue_rejected-" + name, source, "TR0201", profile="cpp-core-v2")
@@ -1287,13 +1309,11 @@ R parameterResult(R source){return source;}
         'deleted-constructor': 'struct R{int n;R(R&&)=delete;};',
         'volatile-constructor': 'struct R{int n;R(volatile R&&r):n(r.n){}};',
         'const-volatile-constructor': 'struct R{int n;R(const volatile R&&r):n(r.n){}};',
-        'constructor-noexcept': 'struct R{int n;R(R&&r)noexcept:n(r.n){}};',
         'constructor-default-argument': 'struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};',
         'deleted-assignment': 'struct R{int n;R&operator=(R&&)=delete;};',
         'volatile-assignment-source': 'struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};',
         'const-assignment-receiver': 'struct R{int n;R&operator=(R&&)const{return const_cast<R&>(*this);}};',
         'volatile-assignment-receiver': 'struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};',
-        'assignment-noexcept': 'struct R{int n;R&operator=(R&&r)noexcept{n=r.n;return *this;}};',
         'assignment-void-result': 'struct R{int n;void operator=(R&&r){n=r.n;}};',
         'assignment-const-result': 'struct R{int n;const R&operator=(R&&r){n=r.n;return *this;}};',
         'assignment-other-result': 'struct R{int n;int&operator=(R&&r){n=r.n;return n;}};',
@@ -1478,13 +1498,6 @@ void consume(Box&source){take(static_cast<Box&&>(source));}
         'deleted-assignment': 'struct R{int n;R&operator=(R&&)=delete;};',
         'defaulted-deleted-constructor': 'struct I{int n;I(I&&)=delete;};struct R{I i;R(R&&)=default;};',
         'defaulted-deleted-assignment': 'struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};',
-        'constructor-noexcept': 'struct R{int n;R(R&&)noexcept=default;};',
-        'constructor-noexcept-false': 'struct R{int n;R(R&&)noexcept(false)=default;};',
-        'constructor-throw': 'struct R{int n;R(R&&)throw()=default;};',
-        'assignment-noexcept': 'struct R{int n;R&operator=(R&&)noexcept=default;};',
-        'assignment-noexcept-false': 'struct R{int n;R&operator=(R&&)noexcept(false)=default;};',
-        'out-of-line-noexcept': 'struct R{int n;R(R&&)noexcept;};R::R(R&&)noexcept=default;',
-        'out-of-line-assignment-noexcept': 'struct R{int n;R&operator=(R&&)noexcept;};R&R::operator=(R&&)noexcept=default;',
         'attribute': 'struct R{int n;[[deprecated]] R(R&&)=default;};',
         'reference-field': 'struct R{int&n;R(R&&)=default;};',
         'const-field': 'struct R{const int n;R(R&&)=default;};',
@@ -1521,6 +1534,150 @@ void consume(Box&source){take(static_cast<Box&&>(source));}
     check('v2-generated-move-missing-constructor', 'struct I{int n;I(I&&);};struct R{I i;R(R&&)=default;};R f(R&&r){return static_cast<R&&>(r);}', "TR0203", profile="cpp-core-v2")
     check('v2-generated-move-missing-assignment', 'struct I{int n;I&operator=(I&&);};struct R{I i;R&operator=(R&&)=default;};void f(R&a,R&b){a=static_cast<R&&>(b);}', "TR0203", profile="cpp-core-v2")
     check("v1-generated-move", "struct R{int n;R(R&&)=default;};", "TR0201")
+    noexcept_source = """constexpr bool condition(){return true;}
+int safe(int&n)noexcept(condition()){return ++n;}
+int unsafe(int&n)noexcept(false){return ++n;}
+int plain(int&n){return ++n;}
+int legacy(int&n)throw(){return ++n;}
+int propagated(int&n)noexcept(noexcept(safe(n))){return safe(n);}
+struct Leaf {
+ int n;
+ Leaf(int v)noexcept:n(v){}
+ Leaf(const Leaf&s)noexcept(false):n(s.n){}
+ Leaf(Leaf&&s)noexcept:n(s.n){s.n=-1;}
+ Leaf&operator=(const Leaf&s)noexcept(false){n=s.n;return *this;}
+ Leaf&operator=(Leaf&&s)noexcept{n=s.n;s.n=-2;return *this;}
+ int read()const & noexcept{return n;}
+ int read()&& noexcept(false){return n;}
+ ~Leaf()noexcept{}
+};
+struct Risky{int*n;Risky(int&v)noexcept:n(&v){++v;}~Risky()noexcept(false){++*n;}};
+struct Auto{Leaf leaf;};
+struct Explicit{int n=1;Explicit()noexcept(false)=default;};
+struct Lazy{Leaf leaf;Lazy(Lazy&&)noexcept=default;};
+constexpr bool constant=noexcept(1+2);
+static_assert(constant);
+bool increment(int&n){return noexcept(++n);}
+bool safeQuery(int&n){return noexcept(safe(n));}
+bool unsafeQuery(int&n){return noexcept(unsafe(n));}
+bool plainQuery(int&n){return noexcept(plain(n));}
+bool legacyQuery(int&n){return noexcept(legacy(n));}
+bool propagatedQuery(int&n){return noexcept(propagated(n));}
+bool nested(int&n){return noexcept(noexcept(unsafe(++n)));}
+bool construction(){return noexcept(Leaf(1));}
+bool destruction(int&n){return noexcept(Risky(n));}
+bool copyQuery(Leaf&r){return noexcept(Leaf(r));}
+bool moveQuery(Leaf&r){return noexcept(Leaf(static_cast<Leaf&&>(r)));}
+bool copyAssignQuery(Leaf&a,Leaf&b){return noexcept(a=b);}
+bool moveAssignQuery(Leaf&a,Leaf&b){return noexcept(a=static_cast<Leaf&&>(b));}
+bool methodQuery(Leaf&r){return noexcept(r.read());}
+bool rvalueMethodQuery(Leaf&r){return noexcept(static_cast<Leaf&&>(r).read());}
+bool autoCopy(Auto&r){return noexcept(Auto(r));}
+bool autoMove(Auto&r){return noexcept(Auto(static_cast<Auto&&>(r)));}
+bool explicitQuery(){return noexcept(Explicit());}
+bool lazyQuery(Lazy&r){return noexcept(Lazy(static_cast<Lazy&&>(r)));}
+Leaf selectedCopy(Leaf&r){return Leaf(r);}
+Leaf selectedMove(Leaf&r){return Leaf(static_cast<Leaf&&>(r));}
+Leaf&selectedAssignment(Leaf&a,Leaf&b){return a=static_cast<Leaf&&>(b);}
+"""
+    noexcept_module = check("v2-noexcept-protocol", noexcept_source, profile="cpp-core-v2")
+    nq_functions = {f["name"]: f for f in noexcept_module["functions"]}
+
+    def nq_line(prefix):
+        lines = [i for i, text in enumerate(noexcept_source.splitlines(), 1) if text.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def nq_function(prefix):
+        line = nq_line(prefix)
+        functions = [f for f in noexcept_module["functions"] if f["loc"]["line"] == line]
+        assert len(functions) == 1, (prefix, functions)
+        return functions[0]
+
+    def nq_constant(function, expr):
+        if expr["kind"] == "literal":
+            assert expr["type"] == "bool" and isinstance(expr["value"], bool), expr
+            return expr["value"]
+        assert expr["kind"] == "var", expr
+        assignments = [n["value"] for n in function["body"] if n["op"] == "assign"
+                       and n["target"].get("name") == expr["name"]]
+        assert len(assignments) == 1, (expr, assignments)
+        return nq_constant(function, assignments[0])
+
+    for name, expected in {
+        "increment": True, "safeQuery": True, "unsafeQuery": False, "plainQuery": False,
+        "legacyQuery": True, "propagatedQuery": True, "nested": True, "construction": True,
+        "destruction": False, "copyQuery": False, "moveQuery": True, "copyAssignQuery": False,
+        "moveAssignQuery": True, "methodQuery": True, "rvalueMethodQuery": False,
+        "autoCopy": False, "autoMove": True, "explicitQuery": False, "lazyQuery": True,
+    }.items():
+        function = nq_function("bool " + name + "(")
+        assert function["result"] == "bool" and not gc_calls(function), function
+        assert all(v["type"] == "bool" for v in function["locals"]), function
+        assert all(n["op"] == "return" or (n["op"] == "assign"
+                   and n["target"]["kind"] == "var" and n["target"]["type"] == "bool")
+                   for n in function["body"]), function
+        returns = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returns) == 1 and nq_constant(function, returns[0]) is expected, (name, returns)
+    propagated_function = nq_function("int propagated(")
+    assert [call["callee"] for call in gc_calls(propagated_function)] == [nq_function("int safe(")["name"]]
+    assert not gc_calls(nq_function("int safe(")), "declaration noexcept(condition()) executed its condition"
+    for caller, callee in (("Leaf selectedCopy(", " Leaf(const Leaf&"),
+                           ("Leaf selectedMove(", " Leaf(Leaf&&"),
+                           ("Leaf&selectedAssignment(", " Leaf&operator=(Leaf&&")):
+        function = nq_function(caller)
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == nq_function(callee)["name"], function
+        assert [gc_identity(function, arg) for arg in calls[0]["args"]] == [
+            ("parameter", p["name"]) for p in function["params"]]
+    for function in noexcept_module["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [
+                p["type"] for p in nq_functions[call["callee"]]["params"]], call
+    assert any(g["type"] == "bool" and g["value"]["value"] is True
+               for g in noexcept_module["globals"])
+    with tempfile.TemporaryDirectory(prefix="neverc-noexcept-relocated-") as temp:
+        relocated = check("noexcept-relocated", noexcept_source, root=Path(temp) / "project",
+                          profile="cpp-core-v2")
+        assert relocated == noexcept_module, "noexcept identities depend on the absolute root"
+
+    noexcept_rejected = {
+        'query-size-double': 'bool f(){return noexcept(sizeof(double));}',
+        'unused-query': 'void f(){noexcept(sizeof(double));}',
+        'spec-size-double': 'int f()noexcept(sizeof(double)>0){return 1;}',
+        'short-circuit-spec': 'int f()noexcept(true || noexcept(sizeof(double))){return 1;}',
+        'nested-query': 'bool f(){return noexcept(noexcept(sizeof(double)));}',
+        'defaulted-spec': 'struct R{int n;R()noexcept(sizeof(double)>0)=default;};',
+        'out-of-line-spec': 'struct R{int n;R()noexcept(sizeof(double)>0);};R::R()noexcept(true)=default;',
+        'redeclaration-spec': 'int f()noexcept(sizeof(double)>0);int f()noexcept(true){return 1;}',
+        'default-field-query': 'struct R{bool b=noexcept(sizeof(double));};',
+        'throw-query': 'bool f(){return noexcept(throw 1);}',
+        'throw-body': 'int f()noexcept{throw 1;}',
+        'catch-body': 'int f()noexcept(false){try{return 1;}catch(...){return 2;}}',
+        'vendor-nothrow': '__attribute__((nothrow)) int f(){return 1;}',
+        'dependent-spec': 'template<class T>int f(T&t)noexcept(noexcept(t.get())){return 1;}',
+        'temporary-receiver': 'struct R{int n;int get()noexcept{return n;}};bool f(){return noexcept(R{1}.get());}',
+        'temporary-reference': 'int take(const int&n)noexcept{return n;}bool f(){return noexcept(take(1));}',
+        'explicit-destruction-query': 'struct R{int n;~R()noexcept{}};bool f(R&r){return noexcept(r.~R());}',
+    }
+    for name, source in noexcept_rejected.items():
+        check("v2-" + 'noexcept_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
+    noexcept_invalid = {
+        'nonconstant-spec': 'void f(int n)noexcept(n){}',
+        'incompatible-redeclaration': 'int f()noexcept;int f()noexcept(false){return 1;}',
+        'typed-dynamic-spec': 'int f()throw(int){return 1;}',
+        'invalid-query-operand': 'bool f(){return noexcept(unknown());}',
+    }
+    for name, source in noexcept_invalid.items():
+        check("v2-" + 'noexcept_invalid' + "-" + name, source, "TR0202", profile="cpp-core-v2")
+    noexcept_missing = {
+        'query-call': 'int missing()noexcept;bool f(){return noexcept(missing());}',
+        'query-constructor': 'struct R{int n;R()noexcept;};bool f(){return noexcept(R());}',
+    }
+    for name, source in noexcept_missing.items():
+        check("v2-" + 'noexcept_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
+    check("v1-noexcept-spec", "int f()noexcept{return 1;}", "TR0201")
+    check("v1-noexcept-query", "bool f(){return noexcept(1+2);}", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -1594,12 +1751,6 @@ int query(){return sizeof(Lazy{});}
         'deleted-destructor': 'struct R{int n;~R()=delete;};',
         'defaulted-deleted-constructor': 'struct I{int n;I()=delete;};struct R{I i;R()=default;};',
         'defaulted-deleted-destructor': 'struct I{int n;~I()=delete;};struct R{I i;~R()=default;};',
-        'constructor-noexcept': 'struct R{int n;R()noexcept=default;};',
-        'constructor-noexcept-false': 'struct R{int n;R()noexcept(false)=default;};',
-        'destructor-noexcept': 'struct R{int n;~R()noexcept=default;};',
-        'destructor-throw': 'struct R{int n;~R()throw()=default;};',
-        'out-of-line-noexcept': 'struct R{int n;R()noexcept;};R::R()noexcept=default;',
-        'out-of-line-destructor-noexcept': 'struct R{int n;~R()noexcept;};R::~R()noexcept=default;',
         'nonpublic-field': 'class R{int n;public:R()=default;};',
         'virtual-destructor': 'struct R{int n;virtual ~R()=default;};',
         'explicit-destruction': 'struct R{int n;~R()=default;};void f(){R r{1};r.~R();}',
@@ -1708,9 +1859,6 @@ int main(){int value=0;R result=make(&value);return consume(R(&value,6));}
         assert relocated == destruction, "destructor identities depend on the absolute root"
 
     destruction_rejected = {
-        'explicit-noexcept': 'struct R{int n;~R()noexcept{}};',
-        'explicit-noexcept-false': 'struct R{int n;~R()noexcept(false){}};',
-        'explicit-empty-throw': 'struct R{int n;~R()throw(){}};',
         'explicit-deleted': 'struct R{int n;~R()=delete;};',
         'virtual': 'struct R{int n;virtual ~R(){}};',
         'explicit-call': 'struct R{int n;~R(){}};void f(R&r){r.~R();}',
@@ -1970,7 +2118,6 @@ int main() {
         'method-conversion': 'struct R{int n;operator int()const{return n;}};',
         'method-operator': 'struct R{int n;int operator()()const{return n;}};',
         'method-volatile-method': 'struct R{int n;int get()volatile{return n;}};',
-        'method-noexcept-method': 'struct R{int n;int get()const noexcept{return n;}};',
         'method-mutable-field': 'struct R{mutable int n;int get()const{return n;}};',
         'method-reference-field': 'struct R{int&n;int get()const{return n;}};',
         'method-member-template': 'struct R{int n;template<class T>T get(T v){return v;}};',
@@ -1991,7 +2138,6 @@ int main() {
         'constructor-variadic-constructor': 'struct R{int n;R(int v,...):n(v){}};',
         'constructor-deleted-constructor': 'struct R{int n;R()=delete;};',
         'constructor-default-argument': 'struct R{int n;R(int v=1):n(v){}};',
-        'constructor-noexcept-constructor': 'struct R{int n;R() noexcept:n(1){}};',
         'constructor-private-field': 'class R{int n;public:R():n(1){}};',
         'constructor-protected-field': 'struct R{protected:int n;public:R():n(1){}};',
         'constructor-const-field': 'struct R{const int n;R():n(1){}};',

@@ -129,6 +129,22 @@ Bindings to fresh temporaries remain rejected by the source provenance checks;
 reference uses add no cleanup owner. Protocol major 1 remains unchanged. See the
 [live-object rvalue reference contract](cpp-core-v2.md#live-object-rvalue-references).
 
+## Core v2 noexcept queries
+
+Resolved `noexcept(expression)` uses the existing pure `literal` representation
+with type `bool`, a JSON boolean value and its source location. The value is
+computed by the embedded frontend from C++17 exception specifications and any
+required temporary destruction. No operand instructions, helpers, cleanup owners
+or runtime exception probe are added to the querying function. Standard written
+specifications affect source semantics and query results without changing the
+ordinary emitted function signature or the protocol version.
+
+Source admission still visits every written specification and operand, including
+unused declarations and nested/short-circuited queries. The accepted executable
+subset rejects throw/try/catch and unsupported foreign throwing calls; this wire
+convention does not implement exception propagation, catch, termination or stack
+unwinding. See the [source contract](cpp-core-v2.md#noexcept-declarations-and-queries).
+
 ## Core v2 pointer arithmetic
 
 Typed `binary` `+`/`-` nodes admit complete-object pointers and explicitly

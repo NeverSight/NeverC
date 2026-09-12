@@ -513,6 +513,14 @@ class FunctionLowering {
     if (const auto *C = dyn_cast<CharacterLiteral>(E); C && A.S.coreV2())
       return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), C->getValue()),
                                    unsignedInteger(T)), T, L);
+    if (const auto *Query = dyn_cast<CXXNoexceptExpr>(E); Query && A.S.coreV2()) {
+      if (!Query->getOperand() || Query->isTypeDependent() ||
+          Query->isValueDependent() || Query->isInstantiationDependent())
+        reject(L, "noexcept query", "A resolved constant noexcept query is required.");
+      // Clang accounts for selected function specifications and destruction.
+      // The inspected operand creates no runtime calls, values or cleanup.
+      return boolean(Query->getValue(), L);
+    }
     if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(E); Query && A.S.coreV2()) {
       APValue Value;
       if (!Query->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt())

@@ -1614,8 +1614,6 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
       {"by-value-assignment", "struct R{int n;R&operator=(R r){n=r.n;return *this;}};"},
       {"void-assignment", "struct R{int n;void operator=(const R&r){n=r.n;}};"},
       {"other-assignment-result", "struct R{int n;int&operator=(const R&r){n=r.n;return n;}};"},
-      {"noexcept-constructor", "struct R{int n;R(const R&r)noexcept:n(r.n){}};"},
-      {"noexcept-assignment", "struct R{int n;R&operator=(const R&r)noexcept{n=r.n;return *this;}};"},
       {"default-argument", "struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};"},
       {"arbitrary-operator", "struct R{int n;R operator+(const R&r){return {n+r.n};}};"},
       {"temporary-assignment-source", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}"},
@@ -1648,6 +1646,214 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
   Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
   expectCode(Result, "TR0201");
   expectNoArtifacts(Output);
+}
+
+TEST_F(TranslateTest, CoreV2NoexceptPreservesQueriesAndNormalExecution) {
+  const auto Source = tmpFile("noexcept.cpp");
+  const auto Output = tmpFile("noexcept.nc");
+  writeFile(Source, R"cpp(
+struct Counts { int made,copied,moved,assigned,destroyed; };
+constexpr bool yes(){return true;}
+int certain(int&n)noexcept(yes()){return ++n;}
+int propagated(int&n)noexcept(noexcept(certain(n))){return certain(n);}
+int potential(int&n)noexcept(false){return ++n;}
+int unspecified(int&n){return ++n;}
+int legacy(int&n)throw(){return ++n;}
+bool query(int&n){return noexcept(++n);}
+constexpr bool arithmetic=noexcept(1+2);
+static_assert(arithmetic);
+struct Sure {
+  int n;Counts*counts;Sure*self=this;
+  Sure(Counts&c,int value)noexcept:n(value),counts(&c){++counts->made;}
+  Sure(const Sure&s)noexcept:n(s.n+1),counts(s.counts){++counts->copied;}
+  Sure(Sure&&s)noexcept(noexcept(++s.n)):n(s.n+2),counts(s.counts){++counts->moved;s.n=-1;}
+  Sure&operator=(const Sure&s)noexcept(false){n=s.n+3;++counts->assigned;return *this;}
+  Sure&operator=(Sure&&s)noexcept{n=s.n+4;s.n=-2;++counts->assigned;return *this;}
+  int read()const & noexcept{return n;}
+  int read()&& noexcept(false){return n;}
+  static int bump(int&n)throw(){return ++n;}
+  ~Sure()noexcept{++counts->destroyed;}
+};
+struct Risky {
+  Counts*counts;
+  Risky(Counts&c)noexcept:counts(&c){++counts->made;}
+  ~Risky()noexcept(false){++counts->destroyed;}
+};
+struct Flags { Counts*counts;bool safe=noexcept(++counts->made);bool risky=noexcept(Risky(*counts)); };
+struct DefaultSure {
+  Sure values[2];
+  DefaultSure(DefaultSure&&)noexcept=default;
+  DefaultSure&operator=(DefaultSure&&)noexcept=default;
+  ~DefaultSure()noexcept=default;
+};
+struct PotentialLeaf {
+  int n;PotentialLeaf(int v)noexcept(false):n(v){}
+  PotentialLeaf(PotentialLeaf&&s)noexcept(false):n(s.n+1){s.n=-1;}
+  PotentialLeaf&operator=(PotentialLeaf&&s)noexcept(false){n=s.n+2;s.n=-2;return *this;}
+};
+struct AutoException { PotentialLeaf leaf; };
+struct Defaulted { int n=7;Defaulted()noexcept=default;~Defaulted()noexcept=default; };
+struct DefaultFalse { int n=9;DefaultFalse()noexcept(false)=default; };
+struct Outside {
+  int n=1;Outside()noexcept;Outside(Outside&&)noexcept;
+  Outside&operator=(Outside&&)noexcept;~Outside()noexcept;
+};
+Outside::Outside()noexcept=default;
+Outside::Outside(Outside&&)noexcept=default;
+Outside&Outside::operator=(Outside&&)noexcept=default;
+Outside::~Outside()noexcept=default;
+int redeclared(int&n)noexcept(noexcept(certain(n)));
+int redeclared(int&n)noexcept(true){return ++n;}
+int main(){
+  int n=0;Counts counts{};
+  if(!noexcept(++n) || !query(n) || !noexcept(certain(n)) || !noexcept(propagated(n)))return 1;
+  if(noexcept(potential(n)) || noexcept(unspecified(n)) || !noexcept(legacy(n)))return 2;
+  if(!noexcept(noexcept(potential(++n))) || n)return 3;
+  if(!noexcept(Sure(counts,1)) || noexcept(Risky(counts)) || counts.made || counts.destroyed)return 4;
+  Flags flags{&counts};
+  if(!flags.safe || flags.risky || counts.made || counts.destroyed)return 5;
+  {
+    Sure a(counts,3),b(counts,5);
+    if(!noexcept(Sure(a)) || !noexcept(Sure(static_cast<Sure&&>(a))))return 6;
+    if(noexcept(b=a) || !noexcept(b=static_cast<Sure&&>(a)))return 7;
+    if(!noexcept(a.read()) || noexcept(static_cast<Sure&&>(a).read()) || !noexcept(Sure::bump(n)))return 8;
+    if(counts.made!=2 || counts.copied || counts.moved || counts.assigned || counts.destroyed || a.n!=3 || b.n!=5 || n)return 9;
+    Sure copied(a);Sure moved(static_cast<Sure&&>(a));b=static_cast<Sure&&>(copied);
+    if(counts.copied!=1 || counts.moved!=1 || counts.assigned!=1 || a.n!=-1 || copied.n!=-2 || b.n!=8 || moved.n!=5)return 10;
+    if(copied.self!=&copied || moved.self!=&moved || b.self!=&b)return 11;
+    if(noexcept(b=copied))return 12;
+    b=copied;
+    if(b.n!=1 || counts.assigned!=2)return 13;
+  }
+  if(counts.destroyed!=4)return 14;
+  {Risky object(counts);if(counts.made!=3 || counts.destroyed!=4)return 15;}
+  if(counts.destroyed!=5)return 16;
+  {
+    DefaultSure source{{Sure(counts,1),Sure(counts,2)}};
+    if(!noexcept(DefaultSure(static_cast<DefaultSure&&>(source))) || !noexcept(source=static_cast<DefaultSure&&>(source)))return 17;
+    if(counts.made!=5 || counts.copied!=1 || counts.moved!=1 || counts.assigned!=2 || counts.destroyed!=5)return 18;
+    DefaultSure target(static_cast<DefaultSure&&>(source));
+    if(target.values[0].n!=3 || source.values[1].n!=-1 || target.values[1].self!=&target.values[1] || counts.moved!=3)return 19;
+  }
+  if(counts.destroyed!=9)return 20;
+  AutoException source{PotentialLeaf(1)};
+  if(noexcept(AutoException(static_cast<AutoException&&>(source))) || noexcept(source=static_cast<AutoException&&>(source)) || source.leaf.n!=1)return 21;
+  AutoException target(static_cast<AutoException&&>(source));
+  if(target.leaf.n!=2 || source.leaf.n!=-1)return 22;
+  source=static_cast<AutoException&&>(target);
+  if(source.leaf.n!=4 || target.leaf.n!=-2)return 23;
+  constexpr bool local=noexcept(Defaulted());static_assert(local);
+  if(!local || noexcept(DefaultFalse()) || !noexcept(Outside()))return 24;
+  Defaulted def;DefaultFalse bad;Outside outside;
+  if(def.n!=7 || bad.n!=9 || outside.n!=1)return 25;
+  if(!noexcept(Outside(static_cast<Outside&&>(outside))) || !noexcept(outside=static_cast<Outside&&>(outside)))return 26;
+  Outside second(static_cast<Outside&&>(outside));outside=static_cast<Outside&&>(second);
+  if(outside.n!=1 || second.n!=1)return 27;
+  bool selected=n?noexcept(potential(n)):noexcept(certain(n));
+  if(!selected || !noexcept(redeclared(n)) || n)return 28;
+  if(propagated(n)!=1 || legacy(n)!=2 || Sure::bump(n)!=3 || redeclared(n)!=4 || n!=4)return 29;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("noexcept" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NoexceptAcceptsStandardSpecifications) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"562-noexcept-constructor", "struct R{int n;R(const R&r)noexcept:n(r.n){}};"},
+      {"562-noexcept-assignment", "struct R{int n;R&operator=(const R&r)noexcept{n=r.n;return *this;}};"},
+      {"761-copy-noexcept", "struct R{int n;R(const R&)noexcept=default;};"},
+      {"761-copy-noexcept-false", "struct R{int n;R(const R&)noexcept(false)=default;};"},
+      {"761-copy-throw", "struct R{int n;R(const R&)throw()=default;};"},
+      {"761-out-of-line-noexcept", "struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;"},
+      {"886-noexcept", "struct R{int n;R&operator=(const R&)noexcept=default;};"},
+      {"886-noexcept-false", "struct R{int n;R&operator=(const R&)noexcept(false)=default;};"},
+      {"886-out-of-line-noexcept", "struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;"},
+      {"1147-method-noexcept", "struct R{int n;int get()&&noexcept{return n;}};"},
+      {"1286-constructor-noexcept", "struct R{int n;R(R&&r)noexcept:n(r.n){}};"},
+      {"1286-assignment-noexcept", "struct R{int n;R&operator=(R&&r)noexcept{n=r.n;return *this;}};"},
+      {"1476-constructor-noexcept", "struct R{int n;R(R&&)noexcept=default;};"},
+      {"1476-constructor-noexcept-false", "struct R{int n;R(R&&)noexcept(false)=default;};"},
+      {"1476-constructor-throw", "struct R{int n;R(R&&)throw()=default;};"},
+      {"1476-assignment-noexcept", "struct R{int n;R&operator=(R&&)noexcept=default;};"},
+      {"1476-assignment-noexcept-false", "struct R{int n;R&operator=(R&&)noexcept(false)=default;};"},
+      {"1476-out-of-line-noexcept", "struct R{int n;R(R&&)noexcept;};R::R(R&&)noexcept=default;"},
+      {"1476-out-of-line-assignment-noexcept", "struct R{int n;R&operator=(R&&)noexcept;};R&R::operator=(R&&)noexcept=default;"},
+      {"1592-constructor-noexcept", "struct R{int n;R()noexcept=default;};"},
+      {"1592-constructor-noexcept-false", "struct R{int n;R()noexcept(false)=default;};"},
+      {"1592-destructor-noexcept", "struct R{int n;~R()noexcept=default;};"},
+      {"1592-destructor-throw", "struct R{int n;~R()throw()=default;};"},
+      {"1592-out-of-line-noexcept", "struct R{int n;R()noexcept;};R::R()noexcept=default;"},
+      {"1592-out-of-line-destructor-noexcept", "struct R{int n;~R()noexcept;};R::~R()noexcept=default;"},
+      {"1710-explicit-noexcept", "struct R{int n;~R()noexcept{}};"},
+      {"1710-explicit-noexcept-false", "struct R{int n;~R()noexcept(false){}};"},
+      {"1710-explicit-empty-throw", "struct R{int n;~R()throw(){}};"},
+      {"1958-method-noexcept-method", "struct R{int n;int get()const noexcept{return n;}};"},
+      {"1985-constructor-noexcept-constructor", "struct R{int n;R() noexcept:n(1){}};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("noexcept-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("noexcept-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NoexceptInspectsUnevaluatedSource) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"query-size-double", "bool f(){return noexcept(sizeof(double));}", "TR0201"},
+      {"unused-query", "void f(){noexcept(sizeof(double));}", "TR0201"},
+      {"spec-size-double", "int f()noexcept(sizeof(double)>0){return 1;}", "TR0201"},
+      {"short-circuit-spec", "int f()noexcept(true || noexcept(sizeof(double))){return 1;}", "TR0201"},
+      {"nested-query", "bool f(){return noexcept(noexcept(sizeof(double)));}", "TR0201"},
+      {"defaulted-spec", "struct R{int n;R()noexcept(sizeof(double)>0)=default;};", "TR0201"},
+      {"out-of-line-spec", "struct R{int n;R()noexcept(sizeof(double)>0);};R::R()noexcept(true)=default;", "TR0201"},
+      {"redeclaration-spec", "int f()noexcept(sizeof(double)>0);int f()noexcept(true){return 1;}", "TR0201"},
+      {"default-field-query", "struct R{bool b=noexcept(sizeof(double));};", "TR0201"},
+      {"throw-query", "bool f(){return noexcept(throw 1);}", "TR0201"},
+      {"throw-body", "int f()noexcept{throw 1;}", "TR0201"},
+      {"catch-body", "int f()noexcept(false){try{return 1;}catch(...){return 2;}}", "TR0201"},
+      {"vendor-nothrow", "__attribute__((nothrow)) int f(){return 1;}", "TR0201"},
+      {"dependent-spec", "template<class T>int f(T&t)noexcept(noexcept(t.get())){return 1;}", "TR0201"},
+      {"temporary-receiver", "struct R{int n;int get()noexcept{return n;}};bool f(){return noexcept(R{1}.get());}", "TR0201"},
+      {"temporary-reference", "int take(const int&n)noexcept{return n;}bool f(){return noexcept(take(1));}", "TR0201"},
+      {"explicit-destruction-query", "struct R{int n;~R()noexcept{}};bool f(R&r){return noexcept(r.~R());}", "TR0201"},
+      {"nonconstant-spec", "void f(int n)noexcept(n){}", "TR0202"},
+      {"incompatible-redeclaration", "int f()noexcept;int f()noexcept(false){return 1;}", "TR0202"},
+      {"typed-dynamic-spec", "int f()throw(int){return 1;}", "TR0202"},
+      {"invalid-query-operand", "bool f(){return noexcept(unknown());}", "TR0202"},
+      {"query-call", "int missing()noexcept;bool f(){return noexcept(missing());}", "TR0203"},
+      {"query-constructor", "struct R{int n;R()noexcept;};bool f(){return noexcept(R());}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("noexcept-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("noexcept-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("noexcept-v1.cpp");
+  const auto Output = tmpFile("noexcept-v1.nc");
+  for (const std::string &Code : {"int f()noexcept{return 1;}",
+                                  "bool f(){return noexcept(1+2);}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
 }
 
 TEST_F(TranslateTest, CoreV2GeneratedMovesPreserveMembersSelectionAndLifetimes) {
@@ -1837,13 +2043,6 @@ TEST_F(TranslateTest, CoreV2GeneratedMovesRetainSourceAndLifetimeBoundaries) {
       {"deleted-assignment", "struct R{int n;R&operator=(R&&)=delete;};", "TR0201"},
       {"defaulted-deleted-constructor", "struct I{int n;I(I&&)=delete;};struct R{I i;R(R&&)=default;};", "TR0201"},
       {"defaulted-deleted-assignment", "struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};", "TR0201"},
-      {"constructor-noexcept", "struct R{int n;R(R&&)noexcept=default;};", "TR0201"},
-      {"constructor-noexcept-false", "struct R{int n;R(R&&)noexcept(false)=default;};", "TR0201"},
-      {"constructor-throw", "struct R{int n;R(R&&)throw()=default;};", "TR0201"},
-      {"assignment-noexcept", "struct R{int n;R&operator=(R&&)noexcept=default;};", "TR0201"},
-      {"assignment-noexcept-false", "struct R{int n;R&operator=(R&&)noexcept(false)=default;};", "TR0201"},
-      {"out-of-line-noexcept", "struct R{int n;R(R&&)noexcept;};R::R(R&&)noexcept=default;", "TR0201"},
-      {"out-of-line-assignment-noexcept", "struct R{int n;R&operator=(R&&)noexcept;};R&R::operator=(R&&)noexcept=default;", "TR0201"},
       {"attribute", "struct R{int n;[[deprecated]] R(R&&)=default;};", "TR0201"},
       {"reference-field", "struct R{int&n;R(R&&)=default;};", "TR0201"},
       {"const-field", "struct R{const int n;R(R&&)=default;};", "TR0201"},
@@ -2030,13 +2229,11 @@ TEST_F(TranslateTest, CoreV2UserMovesRetainSourceLifetimeAndGeneratedBoundaries)
       {"deleted-constructor", "struct R{int n;R(R&&)=delete;};", "TR0201"},
       {"volatile-constructor", "struct R{int n;R(volatile R&&r):n(r.n){}};", "TR0201"},
       {"const-volatile-constructor", "struct R{int n;R(const volatile R&&r):n(r.n){}};", "TR0201"},
-      {"constructor-noexcept", "struct R{int n;R(R&&r)noexcept:n(r.n){}};", "TR0201"},
       {"constructor-default-argument", "struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};", "TR0201"},
       {"deleted-assignment", "struct R{int n;R&operator=(R&&)=delete;};", "TR0201"},
       {"volatile-assignment-source", "struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};", "TR0201"},
       {"const-assignment-receiver", "struct R{int n;R&operator=(R&&)const{return const_cast<R&>(*this);}};", "TR0201"},
       {"volatile-assignment-receiver", "struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};", "TR0201"},
-      {"assignment-noexcept", "struct R{int n;R&operator=(R&&r)noexcept{n=r.n;return *this;}};", "TR0201"},
       {"assignment-void-result", "struct R{int n;void operator=(R&&r){n=r.n;}};", "TR0201"},
       {"assignment-const-result", "struct R{int n;const R&operator=(R&&r){n=r.n;return *this;}};", "TR0201"},
       {"assignment-other-result", "struct R{int n;int&operator=(R&&r){n=r.n;return n;}};", "TR0201"},
@@ -2205,7 +2402,6 @@ TEST_F(TranslateTest, CoreV2LiveRvalueReferencesRetainTemporaryAndMoveBoundaries
       {"reference-field", "struct R{int&&n;};", "TR0201"},
       {"global-reference", "int n;int&&r=static_cast<int&&>(n);", "TR0201"},
       {"function-reference", "int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}", "TR0201"},
-      {"method-noexcept", "struct R{int n;int get()&&noexcept{return n;}};", "TR0201"},
       {"direct-lvalue-binding", "void f(){int n=1;int&&r=n;}", "TR0202"},
       {"lvalue-method-on-xvalue", "struct R{int n;int get()&{return n;}};int f(R&r){return static_cast<R&&>(r).get();}", "TR0202"},
       {"rvalue-method-on-lvalue", "struct R{int n;int get()&&{return n;}};int f(R&r){return r.get();}", "TR0202"},
@@ -2570,9 +2766,6 @@ TEST_F(TranslateTest, CoreV2GeneratedAssignmentKeepsBuiltinAndReferenceBoundarie
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"deleted", "struct R{int n;R&operator=(const R&)=delete;};"},
       {"defaulted-deleted", "struct I{int n;I&operator=(const I&)=delete;};struct R{I i;R&operator=(const R&)=default;};"},
-      {"noexcept", "struct R{int n;R&operator=(const R&)noexcept=default;};"},
-      {"noexcept-false", "struct R{int n;R&operator=(const R&)noexcept(false)=default;};"},
-      {"out-of-line-noexcept", "struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;"},
       {"rvalue-receiver", "struct R{int n;R&operator=(const R&)&&=default;};"},
       {"const-field", "struct R{const int n;R&operator=(const R&)=default;};"},
       {"reference-field", "struct R{int&n;R&operator=(const R&)=default;};"},
@@ -2774,10 +2967,6 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"deleted-copy", "struct R{int n;R(const R&)=delete;};"},
       {"defaulted-deleted-copy", "struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};"},
-      {"copy-noexcept", "struct R{int n;R(const R&)noexcept=default;};"},
-      {"copy-noexcept-false", "struct R{int n;R(const R&)noexcept(false)=default;};"},
-      {"copy-throw", "struct R{int n;R(const R&)throw()=default;};"},
-      {"out-of-line-noexcept", "struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;"},
       {"reference-field", "struct R{int &n;R(const R&)=default;};"},
       {"const-field", "struct R{const int n;R(const R&)=default;};"},
       {"nonpublic-field", "class R{int n;public:R(const R&)=default;};"},
@@ -2915,12 +3104,6 @@ TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
       {"deleted-destructor", "struct R{int n;~R()=delete;};"},
       {"defaulted-deleted-constructor", "struct I{int n;I()=delete;};struct R{I i;R()=default;};"},
       {"defaulted-deleted-destructor", "struct I{int n;~I()=delete;};struct R{I i;~R()=default;};"},
-      {"constructor-noexcept", "struct R{int n;R()noexcept=default;};"},
-      {"constructor-noexcept-false", "struct R{int n;R()noexcept(false)=default;};"},
-      {"destructor-noexcept", "struct R{int n;~R()noexcept=default;};"},
-      {"destructor-throw", "struct R{int n;~R()throw()=default;};"},
-      {"out-of-line-noexcept", "struct R{int n;R()noexcept;};R::R()noexcept=default;"},
-      {"out-of-line-destructor-noexcept", "struct R{int n;~R()noexcept;};R::~R()noexcept=default;"},
       {"nonpublic-field", "class R{int n;public:R()=default;};"},
       {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
       {"explicit-destruction", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},
@@ -3249,9 +3432,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2RecordDestructionRetainsUnsupportedLifetimeDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"explicit-noexcept", "struct R{int n;~R()noexcept{}};"},
-      {"explicit-noexcept-false", "struct R{int n;~R()noexcept(false){}};"},
-      {"explicit-empty-throw", "struct R{int n;~R()throw(){}};"},
       {"explicit-deleted", "struct R{int n;~R()=delete;};"},
       {"virtual", "struct R{int n;virtual ~R(){}};"},
       {"explicit-call", "struct R{int n;~R(){}};void f(R&r){r.~R();}"},
@@ -3588,7 +3768,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"variadic-constructor", "struct R{int n;R(int v,...):n(v){}};"},
       {"deleted-constructor", "struct R{int n;R()=delete;};"},
       {"default-argument", "struct R{int n;R(int v=1):n(v){}};"},
-      {"noexcept-constructor", "struct R{int n;R() noexcept:n(1){}};"},
       {"private-field", "class R{int n;public:R():n(1){}};"},
       {"protected-field", "struct R{protected:int n;public:R():n(1){}};"},
       {"const-field", "struct R{const int n;R():n(1){}};"},
@@ -3750,7 +3929,6 @@ TEST_F(TranslateTest, CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries) {
       {"conversion", "struct R{int n;operator int()const{return n;}};"},
       {"operator", "struct R{int n;int operator()()const{return n;}};"},
       {"volatile-method", "struct R{int n;int get()volatile{return n;}};"},
-      {"noexcept-method", "struct R{int n;int get()const noexcept{return n;}};"},
       {"mutable-field", "struct R{mutable int n;int get()const{return n;}};"},
       {"reference-field", "struct R{int&n;int get()const{return n;}};"},
       {"member-template", "struct R{int n;template<class T>T get(T v){return v;}};"},

@@ -229,8 +229,7 @@ the existing temporary-binding restrictions for both static and instance calls.
 
 User-defined operators other than admitted copy assignment, conversions,
 virtual methods, inheritance,
-volatile/restrict methods, default arguments, exception
-specifications, templates and static data remain unsupported. Ordinary
+volatile/restrict methods, default arguments, templates and static data remain unsupported. Ordinary
 constructors and destructors follow the separate rules below. The existing
 implicit trivial copy paths are unchanged.
 These methods do not establish STL container or iterator support. V1 profiles
@@ -295,9 +294,8 @@ calls on temporary receivers retain their existing rejection boundary. Const
 local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
-Deleted, delegating, inherited, template and variadic constructors,
-default arguments and written exception
-specifications remain rejected. Exception unwinding, allocation, static
+Deleted, delegating, inherited, template and variadic constructors
+and default arguments remain rejected. Exception unwinding, allocation, static
 guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
@@ -349,8 +347,7 @@ int main() {
 
 Defaulted nonvirtual destructors, both in-class and out-of-line, use the normal
 reverse member/array cleanup without a user body. Trivial defaulted destructors
-need no call. Deleted/defaulted-deleted functions and written exception
-specifications remain rejected. Exception unwinding and STL remain later
+need no call. Deleted/defaulted-deleted functions remain rejected. Exception unwinding and STL remain later
 milestones. Actual execution evidence must come from the implementing revision's CI.
 
 ## Default member initializers
@@ -516,7 +513,7 @@ A containing aggregate may be initialized with a member having user-defined
 copy operations without selecting a copy of the containing object. Generated
 copy construction and assignment follow the next sections. Deleted special
 members, templates, variadic/default
-arguments, written exception specifications, general overloaded operators/conversions,
+arguments, general overloaded operators/conversions,
 allocation and exception unwinding are not added. Existing temporary source-reference and
 nonstatic temporary-receiver restrictions still apply. Missing definitions and
 invalid source const/access operations remain diagnostics. V1 admission and
@@ -587,7 +584,7 @@ destruction nor a replacement construction.
 
 Deleted functions, volatile/restrict sources
 or receivers, const receivers, other assignment result types, default/variadic
-parameters, written exception specifications, arbitrary operators, inheritance,
+parameters, arbitrary operators, inheritance,
 templates and STL remain outside this increment. Fresh temporary source-reference
 binding and temporary receivers remain rejected, including in dead code. Invalid
 C++ overload, cv/ref or deleted-copy uses retain source diagnostics; missing user
@@ -606,8 +603,9 @@ Core v2 supports implicit and explicitly defaulted move constructors and move
 assignment for the admitted records. Their sole source parameter is mutable
 `R&&` of the same canonical type; assignment returns mutable `R&` and admits
 unqualified, `&` and `&&` receivers. In-class, out-of-line and explicit defaulted
-move constructors retain their C++ initialization rules. Written exception
-specifications remain excluded, including across redeclarations. Invalid C++17
+move constructors retain their C++ initialization rules. Standard resolved
+exception specifications follow the noexcept rules below, including across
+redeclarations. Invalid C++17
 defaulted signatures, such as `const R&&` sources or const receivers, retain
 source diagnostics; this differs from the admitted user-defined const-source moves.
 
@@ -733,7 +731,8 @@ Core v2 admits implicit and explicitly defaulted copy assignment for the same
 checked records. The source parameter is exactly one `R&` or `const R&`, and the
 result is mutable `R&`. The receiver may be unqualified or lvalue-qualified with
 `&`. In-class and out-of-line defaulting preserve their selected operations;
-written exception specifications and deleted functions remain rejected.
+deleted functions remain rejected. Standard resolved exception specifications
+follow the noexcept rules below.
 
 A nontrivial generated assignment becomes a checked
 `ptr:Record(ptr:Record, ptr/cptr:Record)` function. Its synthesized body assigns
@@ -800,9 +799,9 @@ above, including out-of-line definitions and implicit destruction of containing
 records. Copy construction and assignment must be admitted independently; a user
 destructor does not by itself require nontrivial copying. The source still has no bases,
 virtual dispatch, unions, reference members or unsupported field layouts.
-Deleted destructors, written `noexcept`/`throw(...)` specifications and explicit
-destructor calls remain rejected, including in dead code. Ordinary and defaulted
-destructors' implicit C++ exception specifications are accepted. Every ordinary
+Deleted destructors and explicit destructor calls remain rejected, including in
+dead code. Ordinary and defaulted destructors accept implicit exception
+specifications and the resolved standard written forms described below. Every ordinary
 user destructor needs an owned body; a supported `= default` destructor uses the
 member cleanup described below without requiring a materialized body.
 
@@ -868,6 +867,58 @@ cleanup instructions and recursive array destruction. V1 profiles retain their
 original trivial-lifetime boundary. Regression fixtures cover O0/O2 execution,
 protocol ownership and signatures, return capture, member/array order and
 relocation; native success must be established for the implementing revision.
+
+## Noexcept declarations and queries
+
+Core v2 admits standard resolved exception specifications on its supported free
+functions, methods, constructors, copy/move operations and destructors. `noexcept`
+and `noexcept(true)` are nonthrowing; `noexcept(false)` is potentially throwing.
+C++17 `throw()` has the nonthrowing meaning. Computed specifications may use
+admitted constant expressions and nested `noexcept` queries. Clang checks source
+compatibility across redeclarations and out-of-line definitions. Unwritten lazy
+specifications on generated special members retain their normal resolution rules.
+
+A resolved `noexcept(expression)` becomes a typed bool literal with its source
+location. Clang determines the value from the selected functions, implicit or
+explicit specifications and any required temporary destruction. For example, a
+nonthrowing constructor with a potentially throwing destructor makes the complete
+temporary construction query false. A declaration explicitly marked
+`noexcept(false)` remains potentially throwing even if its current body has no
+throwing operation. The query emits no operand calls, mutations, construction,
+materialization or cleanup. Queries work in returns, conditionals, compile-time
+initializers, assertions, field defaults and other exception specifications.
+
+```cpp
+int safe(int &n) noexcept { return ++n; }
+int possible(int &n) noexcept(false) { return ++n; }
+int main() {
+  int n = 0;
+  bool a = noexcept(safe(n));
+  bool b = noexcept(possible(n));
+  return a && !b && n == 0 ? 0 : 1;
+}
+```
+
+Every written specification and query operand is still inspected, including
+unused, nested and short-circuited expressions. Unsupported types and operations
+remain rejected; unevaluated source does not admit templates, function pointers,
+new temporary-reference bindings or explicit destruction. Missing ordinary owned
+definitions remain diagnostics. Dependent/unresolved written specifications,
+vendor forms and C++17-invalid typed dynamic specifications are not accepted.
+V1 profiles retain their original specification/query boundaries.
+
+This stage adds declaration and query semantics within the existing source
+subset. Throwing, catching, termination on an escaping exception and stack
+unwinding require the later exception runtime work; throw/try/catch and foreign
+throwing execution paths remain rejected. No exception behavior is silently
+removed from an accepted throwing body. The frontend is built into NeverC, and
+uses no external Clang executable or opaque source/IR fallback.
+
+O0/O2 no-inline fixtures check query values, zero operand effects, actual calls,
+copy/move and destruction counters, defaulted and out-of-line specifications,
+field defaults and redeclarations. Protocol fixtures check bool literals, no
+query-created owners or calls, selected signatures and deterministic relocation.
+Native execution evidence must come from the implementing revision's CI.
 
 ## Pointer offsets and differences
 
