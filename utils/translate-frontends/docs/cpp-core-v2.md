@@ -375,7 +375,7 @@ Records must be unnested and standard-layout, with no bases. Empty records
 follow the storage contract above. Each
 selected construction, copy or assignment must follow its admitted operation
 contract, including the user moves described below.
-Destruction follows the separate lifetime contract below. Fields remain public, non-mutable, non-const,
+Destruction follows the separate lifetime contract below. Fields remain non-mutable, non-const,
 non-reference and non-bitfield. Default member initializers follow the contract below. Ordinary
 methods may use these records. Allowing a constructor does not admit arbitrary
 class layouts or foreign C++ ABI interchange.
@@ -434,6 +434,38 @@ guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
+
+## Nonpublic data members
+
+Private and protected non-static data members are admitted in otherwise
+supported standard-layout classes. This includes the default private access of
+`class`, explicit access sections, member definitions outside the class,
+ordinary constructors and factories, defaults resolved in class context,
+reference and ordinary pointer getters, private arrays, and selected generated
+copy/move and destruction operations. All non-static data members must still
+meet the standard-layout requirements, including the same access level.
+
+Embedded Clang checks access after source overload/name resolution and before
+translation. A public method can access its class's private state, and a public
+factory can invoke a private constructor where C++ permits it. An illegal
+external field, method, constructor, copy or destructor access still produces
+`TR0202`, including unevaluated source uses. Access checks for a default argument
+belong to its declaration context. Admission does not change which source
+declarations are accessible.
+
+Access labels have no runtime storage or secrecy semantics. The producer emits
+all supported fields with their existing canonical identities, types and target
+layout, and authorized operations use those same fields. No access flag, new IR
+instruction or runtime wrapper is needed. Generated source remains reviewable.
+
+Mixed-access non-standard-layout classes, friend declarations, inheritance,
+nested records and templates remain outside this increment. Bitfields and
+mutable, const, reference or unsupported numeric fields retain their existing
+restrictions. A getter returning a field's ordinary `T*` address does not admit
+pointer-to-member types such as `T C::*`. Older profiles keep their contracts.
+Native O0/O2 fixtures cover state, aliasing, defaulted array copying/moving and
+nontrivial member cleanup; protocol fixtures cover storage, signatures, layout
+and relocation. Native results require CI from the implementing revision.
 
 ## Range-based for
 
@@ -562,7 +594,7 @@ milestones. Actual execution evidence must come from the implementing revision's
 
 ## Default member initializers
 
-Core v2 admits brace-or-equal initializers on the supported public, non-mutable,
+Core v2 admits brace-or-equal initializers on the supported non-mutable,
 non-const, non-reference and non-bitfield record fields. Scalar and pointer
 initializers, earlier-field references, ordinary calls, nested records and bounded
 arrays use the same checked expression and layout rules as explicit initialization.

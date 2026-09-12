@@ -1014,7 +1014,6 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
         'defaulted-deleted-copy': 'struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};',
         'reference-field': 'struct R{int &n;R(const R&)=default;};',
         'const-field': 'struct R{const int n;R(const R&)=default;};',
-        'nonpublic-field': 'class R{int n;public:R(const R&)=default;};',
         'base-copy': 'struct B{int n;};struct R:B{int m;R(const R&)=default;};',
         'lambda-array-copy': 'int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}',
         'decomposed-array-copy': 'int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}',
@@ -1137,7 +1136,6 @@ void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
         'rvalue-receiver': 'struct R{int n;R&operator=(const R&)&&=default;};',
         'const-field': 'struct R{const int n;R&operator=(const R&)=default;};',
         'reference-field': 'struct R{int&n;R&operator=(const R&)=default;};',
-        'private-field': 'class R{int n;public:R&operator=(const R&)=default;};',
         'base-field': 'struct B{int n;};struct R:B{int m;R&operator=(const R&)=default;};',
         'raw-builtin': 'void f(int*a,int*b){__builtin_memcpy(a,b,4);}',
         'dead-builtin': 'void f(int*a,int*b){if(false)__builtin_memcpy(a,b,4);}',
@@ -1273,7 +1271,6 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
         'const-field': 'struct R{const int n=1;};',
         'reference-field': 'struct R{int value;int&ref=value;};',
         'mutable-field': 'struct R{mutable int n=1;};',
-        'private-field': 'class R{int n=1;};',
         'bitfield': 'struct R{int bits:2;int n=1;};',
         'static-member': 'struct R{static int x;int n=1;};int R::x=0;',
         'base': 'struct B{int n=1;};struct R:B{int next=2;};',
@@ -1700,7 +1697,6 @@ void consume(Box&source){take(static_cast<Box&&>(source));}
         'attribute': 'struct R{int n;[[deprecated]] R(R&&)=default;};',
         'reference-field': 'struct R{int&n;R(R&&)=default;};',
         'const-field': 'struct R{const int n;R(R&&)=default;};',
-        'private-field': 'class R{int n;public:R(R&&)=default;};',
         'base': 'struct B{int n;};struct R:B{int value;R(R&&)=default;};',
         'source-builtin': 'struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}',
         'lambda-array': 'int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}',
@@ -3605,6 +3601,223 @@ void adl(){for(int v:Adl::R{{1,2}})tick(v);}
     check("v1-range-for-array", "int main(){int a[1]={1};for(int v:a){}return 0;}", "TR0201")
     check("v1-range-for-record", "struct R{int a[1];int*begin(){return a;}int*end(){return a+1;}};int main(){for(int v:R{{1}}){}return 0;}", "TR0201")
 
+    nonpublic_source = """int tick(int n){return n;}
+class Private {
+ unsigned char tag;
+ int n;
+ int values[2];
+public:
+ Private(int v):tag(1),n(v),values{v,v+1}{}
+ int get()const{return n;}
+ void set(int v){n=v;}
+ int&ref(){return n;}
+ const int&ref()const{return n;}
+ int*data(){return values;}
+ int sum()const{int result=0;for(int v:values)result+=v;return result;}
+};
+struct Twin {unsigned char tag;int n;int values[2];};
+struct Protected {
+protected:int n;
+public:
+ Protected(int v):n(v){}
+ int read()const{return n;}
+};
+class Factory {
+ int n;
+ Factory(int v):n(v){}
+ Factory(const Factory&r):n(r.n){}
+public:
+ static Factory make(int v){return Factory(v);}
+ static Factory clone(const Factory&r){return Factory(r);}
+ int value()const{return n;}
+};
+class Token {
+ int n;
+public:
+ Token(int v):n(v){}
+ Token(const Token&r):n(r.n){}
+ ~Token(){tick(n);}
+};
+class Box {
+ Token items[2];
+public:
+ Box():items{Token(1),Token(2)}{}
+ Box(const Box&)=default;
+ ~Box()=default;
+};
+void use(){Private p(3);p.set(4);tick(p.get());p.ref()=5;tick(p.sum());}
+void factories(){Factory a=Factory::make(3);Factory b=Factory::clone(a);tick(b.value());}
+void boxes(){Box a;Box b=a;}
+"""
+    nonpublic = check("v2-nonpublic-fields-protocol", nonpublic_source, profile="cpp-core-v2")
+    np_functions = {f["name"]: f for f in nonpublic["functions"]}
+
+    def np_line(prefix):
+        found = [i for i, line in enumerate(nonpublic_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def np_record(prefix):
+        found = [r for r in nonpublic["records"] if r["loc"]["line"] == np_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def np_function(prefix, result, parameters):
+        found = [f for f in nonpublic["functions"] if f["loc"]["line"] == np_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    def np_pointer(function, expr):
+        if expr["kind"] == "cast":
+            return np_pointer(function, expr["args"][0])
+        if expr["kind"] in ("address", "array_decay"):
+            return np_place(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        if any(p["name"] == expr["name"] for p in function["params"]):
+            return ("parameter", expr["name"])
+        values = [n["value"] for n in function["body"] if n["op"] == "assign"
+                  and n["target"].get("kind") == "var" and n["target"]["name"] == expr["name"]]
+        assert len(values) == 1, (expr, values)
+        return np_pointer(function, values[0])
+
+    def np_place(function, expr):
+        kind = expr["kind"]
+        if kind == "var":
+            return ("object", expr["name"])
+        if kind == "dereference":
+            return np_pointer(function, expr["args"][0])
+        if kind == "member":
+            return ("field", np_place(function, expr["args"][0]), expr["name"])
+        assert kind == "index", expr
+        return ("element", np_pointer(function, expr["args"][0]), gc_identity(function, expr["args"][1]))
+
+    private = np_record("class Private {")
+    twin = np_record("struct Twin {")
+    protected = np_record("struct Protected {")
+    factory = np_record("class Factory {")
+    token = np_record("class Token {")
+    box = np_record("class Box {")
+    pid, fid, tid, bid = [r["id"] for r in (private, factory, token, box)]
+    assert [f["type"] for f in private["fields"]] == ["u8", "int", "arr:2:int"]
+    assert [f["type"] for f in twin["fields"]] == [f["type"] for f in private["fields"]]
+    assert private["layout"] == twin["layout"]
+    assert all("access" not in f for r in nonpublic["records"] for f in r["fields"])
+    member = private["fields"][1]["name"]
+    ctor = np_function(" Private(int", "void", ["ptr:"+pid, "int"])
+    written = {n["target"]["name"] for n in ctor["body"] if n["op"] == "assign" and n["target"]["kind"] == "member"}
+    assert {f["name"] for f in private["fields"][:2]} <= written
+    for prefix, result, params in ((" int get()", "int", ["cptr:"+pid]),
+                                  (" void set(", "void", ["ptr:"+pid, "int"]),
+                                  (" int&ref()", "ptr:int", ["ptr:"+pid]),
+                                  (" const int&ref()", "cptr:int", ["cptr:"+pid])):
+        function = np_function(prefix, result, params)
+        accesses = [n for n in walk(function["body"]) if n.get("kind") == "member"]
+        assert accesses and all(n["name"] == member for n in accesses), function
+        expected = ("field", ("parameter", function["params"][0]["name"]), member)
+        assert all(np_place(function, n) == expected for n in accesses)
+        assert not gc_calls(function)
+        if result in ("ptr:int", "cptr:int"):
+            returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+            assert len(returned) == 1 and np_pointer(function, returned[0]) == expected
+    setter = np_function(" void set(", "void", ["ptr:"+pid, "int"])
+    assert any(n["op"] == "assign" and n["target"].get("name") == member for n in setter["body"])
+    sum_function = np_function(" int sum()", "int", ["cptr:"+pid])
+    assert not gc_calls(sum_function)
+    assert any(n.get("kind") == "member" and n["name"] == private["fields"][2]["name"] for n in walk(sum_function["body"]))
+    assert any(n["op"] == "branch" for n in sum_function["body"])
+    read = np_function(" int read()", "int", ["cptr:"+protected["id"]])
+    assert any(n.get("kind") == "member" and n["name"] == protected["fields"][0]["name"] for n in walk(read["body"]))
+    factory_ctor = np_function(" Factory(int", "void", ["ptr:"+fid, "int"])["name"]
+    factory_copy = np_function(" Factory(const", "void", ["ptr:"+fid, "cptr:"+fid])["name"]
+    for prefix, params, selected in ((" static Factory make(", ["ptr:"+fid, "int"], factory_ctor),
+                                     (" static Factory clone(", ["ptr:"+fid, "cptr:"+fid], factory_copy)):
+        function = np_function(prefix, "void", params)
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [selected]
+        assert np_pointer(function, calls[0]["args"][0]) == ("parameter", function["params"][0]["name"])
+        assert not any(v["type"] == fid for v in function["locals"])
+    token_copy = np_function(" Token(const", "void", ["ptr:"+tid, "cptr:"+tid])["name"]
+    box_copy = np_function(" Box(const", "void", ["ptr:"+bid, "cptr:"+bid])
+    copies = gc_calls(box_copy)
+    assert [c["callee"] for c in copies] == [token_copy]*2
+    field = box["fields"][0]["name"]
+    for i, call in enumerate(copies):
+        for arg, parameter in zip(call["args"], box_copy["params"]):
+            assert np_pointer(box_copy, arg) == ("element", ("field", ("parameter", parameter["name"]), field), i)
+    destructor = np_functions[bid+"_destroy"]
+    assert [c["callee"] for c in gc_calls(destructor)] == [tid+"_destroy"]*2
+    owner = ("field", ("parameter", destructor["params"][0]["name"]), field)
+    assert [np_pointer(destructor, c["args"][0]) for c in gc_calls(destructor)] == [("element", owner, i) for i in (1, 0)]
+    for function in nonpublic["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in np_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-nonpublic-fields-relocated-") as temp:
+        relocated = check("v2-nonpublic-fields-relocated", nonpublic_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == nonpublic, "field identities depend on the absolute root"
+
+    nonpublic_positive = {
+        'class-default-private': 'class R{int n;public:R(int v):n(v){}int get()const{return n;}};int main(){return R(3).get()-3;}',
+        'explicit-private': 'struct R{private:int n;public:R(int v):n(v){}int get()const{return n;}};int main(){return R(3).get()-3;}',
+        'protected-data': 'struct R{protected:int n;public:R(int v):n(v){}int get()const{return n;}};int main(){return R(3).get()-3;}',
+        'private-helper': 'class R{int n;int impl()const{return n;}public:R(int v):n(v){}int get()const{return impl();}};int main(){return R(3).get()-3;}',
+        'private-factory': 'class R{int n;R(int v):n(v){}public:static R make(int n){return R(n);}int get()const{return n;}};int main(){return R::make(3).get()-3;}',
+        'private-copy': 'class R{int n;R(const R&r):n(r.n){}public:R(int v):n(v){}static R clone(const R&r){return R(r);}int get()const{return n;}};int main(){R r(3);return R::clone(r).get()-3;}',
+        'private-default-name': 'class R{static int seed(){return 3;}int n;public:R(int v=seed()):n(v){}int get()const{return n;}};int main(){return R().get()-3;}',
+        'private-pointer': 'class R{int n;public:R():n(3){}int*data(){return &n;}const int*data()const{return &n;}};int main(){R r;*r.data()=4;const R&v=r;return *v.data()-4;}',
+        'private-array-range': 'class R{int a[2]={1,2};public:int sum()const{int n=0;for(int v:a)n+=v;return n;}};int main(){return R().sum()-3;}',
+        'private-member-cleanup': 'int n;struct V{int v;~V(){n+=v;}};class R{V a[2];public:R():a{{1},{2}}{}};int main(){{R r;}return n-3;}',
+        'private-qualified-definition': 'class R{int n;int impl()const;public:R(int);int get()const;};R::R(int v):n(v){}int R::impl()const{return n;}int R::get()const{return impl();}int main(){return R(3).get()-3;}',
+        'private-same-access-sections': 'class R{int a=1;public:int get()const{return a+b;}private:int b=2;};int main(){return R().get()-3;}',
+        'promoted-1-private-field': 'class R{int n;public:R(R&&)=default;};',
+        'promoted-2-private-field': 'class R{int n=1;};',
+        'promoted-3-private-field': 'class R{int n;public:R&operator=(const R&)=default;};',
+        'promoted-4-nonpublic-field': 'class R{int n;public:R(const R&)=default;};',
+        'promoted-5-nonpublic-field': 'class R{int n;public:R()=default;};',
+        'promoted-6-private-field': 'class R{int n;public:R():n(1){}};',
+        'promoted-7-protected-field': 'struct R{protected:int n;public:R():n(1){}};',
+    }
+    for name, source in nonpublic_positive.items():
+        check("v2-nonpublic-fields-positive-" + name, source, profile="cpp-core-v2")
+    nonpublic_reject = {
+        'mixed-access': 'struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};',
+        'friend': 'class R{int n=1;friend int get(const R&r){return r.n;}};',
+        'inheritance': 'class R{protected:int n=1;};class D:public R{public:int get(){return n;}};',
+        'nested-record': 'class R{struct V{int n;};V v;};',
+        'const-field': 'class R{const int n=1;public:int get()const{return n;}};',
+        'reference-field': 'class R{int&n;public:R(int&v):n(v){}};',
+        'mutable-field': 'class R{mutable int n=1;public:int get()const{return ++n;}};',
+        'bitfield': 'class R{unsigned int n:2;public:R():n(1){}};',
+        'floating-field': 'class R{double n=1.0;};',
+        'unused-floating-helper': 'class R{int n=1;double hidden(){return 1.0;}public:int get()const{return n;}};',
+        'pointer-to-member': 'class R{int n=1;public:static int R::*field(){return &R::n;}};',
+    }
+    for name, source in nonpublic_reject.items():
+        check("v2-nonpublic-fields-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    nonpublic_invalid = {
+        'private-read': 'class R{int n=1;};int f(const R&r){return r.n;}',
+        'private-write': 'class R{int n=1;};void f(R&r){r.n=3;}',
+        'private-address': 'class R{int n=1;};int*f(R&r){return &r.n;}',
+        'protected-read': 'struct R{protected:int n=1;};int f(const R&r){return r.n;}',
+        'private-constructor': 'class R{int n;R():n(1){}};void f(){R r;}',
+        'private-method': 'class R{int n=1;int get()const{return n;}};int f(const R&r){return r.get();}',
+        'private-copy': 'class R{int n;R(const R&r):n(r.n){}public:R(int v):n(v){}};void f(){R a(1);R b=a;}',
+        'private-destructor': 'class R{int n=1;~R(){}};void f(){R r;}',
+        'private-range-begin': 'class R{int a[1]={1};int*begin(){return a;}public:int*end(){return a+1;}};void f(){R r;for(int v:r){}}',
+        'private-range-end': 'class R{int a[1]={1};int*end(){return a+1;}public:int*begin(){return a;}};void f(){R r;for(int v:r){}}',
+        'private-aggregate-initializer': 'class R{int n;};void f(){R r{1};}',
+        'private-unevaluated': 'class R{int n=1;};bool f(const R&r){return noexcept(r.n);}',
+    }
+    for name, source in nonpublic_invalid.items():
+        check("v2-nonpublic-fields-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    nonpublic_missing = {
+    }
+    for name, source in nonpublic_missing.items():
+        check("v2-nonpublic-fields-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-nonpublic-fields-array", "class R{int n=1;};int main(){return 0;}", "TR0201")
+    check("v1-nonpublic-fields-record", "class R{int n;public:R():n(1){}};int main(){R r;return 0;}", "TR0201")
+
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}
 int next(){mark(1);return number;}
@@ -3882,7 +4095,6 @@ int query(){return sizeof(Lazy{});}
         'deleted-destructor': 'struct R{int n;~R()=delete;};',
         'defaulted-deleted-constructor': 'struct I{int n;I()=delete;};struct R{I i;R()=default;};',
         'defaulted-deleted-destructor': 'struct I{int n;~I()=delete;};struct R{I i;~R()=default;};',
-        'nonpublic-field': 'class R{int n;public:R()=default;};',
         'virtual-destructor': 'struct R{int n;virtual ~R()=default;};',
         'explicit-destruction': 'struct R{int n;~R()=default;};void f(){R r{1};r.~R();}',
         'throwing-member-constructor': 'struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};',
@@ -4243,8 +4455,6 @@ int main() {
         'constructor-template-constructor': 'struct R{int n;template<class T> R(T v):n(v){}};',
         'constructor-variadic-constructor': 'struct R{int n;R(int v,...):n(v){}};',
         'constructor-deleted-constructor': 'struct R{int n;R()=delete;};',
-        'constructor-private-field': 'class R{int n;public:R():n(1){}};',
-        'constructor-protected-field': 'struct R{protected:int n;public:R():n(1){}};',
         'constructor-const-field': 'struct R{const int n;R():n(1){}};',
         'constructor-reference-field': 'struct R{int &n;R(int &v):n(v){}};',
         'constructor-mutable-field': 'struct R{mutable int n;R():n(1){}};',

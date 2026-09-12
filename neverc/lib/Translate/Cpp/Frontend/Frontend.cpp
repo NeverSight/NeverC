@@ -1597,10 +1597,9 @@ public:
       return true;
     A.type(D->getType(), D->getLocation());
     if (D->isBitField() || (!A.S.coreV2() && D->hasInClassInitializer()) || D->isMutable() ||
-        (A.S.coreV2() && D->getAccess() != AS_public) ||
         D->getType().isConstQualified() || D->getType()->isReferenceType())
       A.reject(D->getLocation(), "field",
-               "Nonpublic, bitfield and mutable/const/reference fields are unsupported; "
+               "Bitfield and mutable/const/reference fields are unsupported; "
                "default field initializers require core v2.");
     return true;
   }

@@ -114,6 +114,13 @@ inspection and layout verification; unevaluated operands produce no effects.
 The [core v2 contract](cpp-core-v2.md#integer-widths-characters-and-size-queries)
 defines the full admitted boundary. V1 profiles retain their scalar contracts.
 
+Core-v2 private/protected fields use the same typed record fields and checked
+target layout as public fields. Source access is enforced by embedded Clang
+before protocol production; no access flag or runtime privacy mechanism is
+added to the IR. Constructors, methods and generated special members refer to
+the same canonical storage. The [nonpublic data member contract](cpp-core-v2.md#nonpublic-data-members)
+lists the remaining class and field restrictions.
+
 Core-v2 range-based `for` uses the existing local storage, ordinary calls,
 `branch`, `jump` and cleanup instructions. The producer checks the identities of
 the range reference and begin/end declarations, evaluates initialization once,

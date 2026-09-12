@@ -12,6 +12,8 @@ Core v2 supports mutable namespace-scope integer, boolean and enum globals with 
 
 Core v2 supports C++17 range-based `for` over supported fixed arrays and source-defined ranges with resolved member or ADL `begin/end` calls. Value/reference loop variables, record iterators and different sentinel types preserve ordinary call and lifetime rules. Range initialization and `begin/end` run once; iteration objects are destroyed before increment or exit, including `continue`, `break` and `return`. Templates, standard headers, STL containers, structured bindings and C++20 range initializers remain outside this increment. Native validation requires CI from the implementing revision.
 
+Core v2 supports private and protected data members in otherwise supported standard-layout classes. Embedded Clang checks access before translation; authorized methods, constructors, factories, default arguments and generated copy/move operations use the same typed member storage. Illegal outside access remains a C++ diagnostic. Access labels are source rules, not a runtime secrecy feature. Mixed-access non-standard-layout classes, friends, inheritance, nested records and unsupported field types retain their restrictions. Native results require the implementing revision’s CI.
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

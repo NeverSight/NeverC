@@ -2460,6 +2460,203 @@ TEST_F(TranslateTest, CoreV2RangeForRetainsSourceAndTypeBoundaries) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NonpublicFieldsPreserveObjectsAndAccess) {
+  const auto Source = tmpFile("nonpublic-fields.cpp");
+  const auto Output = tmpFile("nonpublic-fields.nc");
+  writeFile(Source, R"cpp(
+int live=0,dead=0,copies=0,moves=0,bad=0,boxDead=0,privateCopies=0,defaults=0;
+class Scalar {
+ int n;
+ int helper()const{return n;}
+public:
+ Scalar(int v):n(v){}
+ int get()const{return helper();}
+ int&ref(){return n;}
+ const int&ref()const{return n;}
+ int*data(){return &n;}
+ const int*data()const{return &n;}
+};
+struct Protected {
+protected:int n;
+public:Protected(int v):n(v){}int add(int v){return n+=v;}
+};
+class Plain {
+ int n=1;int a[2]={2,3};
+public:
+ Plain()=default;
+ Plain(const Plain&)=default;
+ Plain(Plain&&)=default;
+ Plain&operator=(const Plain&)=default;
+ Plain&operator=(Plain&&)=default;
+ int sum()const{return n+a[0]+a[1];}
+ int&ref(){return n;}
+ int*data(){return a;}
+};
+class Factory {
+ int n;
+ Factory(int v):n(v){}
+ Factory(const Factory&r):n(r.n){++privateCopies;}
+public:
+ static Factory make(int v){return Factory(v);}
+ static Factory clone(const Factory&r){return Factory(r);}
+ int get()const{return n;}
+};
+class Outlined {
+ int n;
+ int helper(int v);
+public:Outlined(int v);int add(int v);
+};
+Outlined::Outlined(int v):n(v){}
+int Outlined::helper(int v){return n+=v;}
+int Outlined::add(int v){return helper(v);}
+class PrivateLayout {unsigned char a;int b;};
+struct PublicLayout {unsigned char a;int b;};
+class Value {
+ int n;Value*self;
+public:
+ Value(int v):n(v),self(this){++live;}
+ Value(const Value&r):n(r.n),self(this){++live;++copies;}
+ Value(Value&&r):n(r.n),self(this){r.n=-1;++live;++moves;}
+ ~Value(){if(self!=this)++bad;--live;++dead;}
+ int get()const{return n;}
+ const Value*identity()const{return self;}
+};
+class Box {
+ Value values[2];
+public:
+ Box(int n):values{Value(n),Value(n+1)}{}
+ Box(const Box&)=default;
+ Box(Box&&)=default;
+ ~Box(){++boxDead;}
+ int sum()const{int n=0;for(const auto&v:values)n+=v.get();return n;}
+ const Value&at(int i)const{return values[i];}
+};
+class Defaults {
+ static int seed(){++defaults;return 3;}
+ int n;
+public:Defaults(int v=seed()):n(v){}int get()const{return n;}
+};
+class Filled {
+ int n=2;int a[2]={n,n+1};
+public:int sum()const{int v=n;for(int e:a)v+=e;return v;}
+};
+int main(){
+ Scalar s(5);if(s.get()!=5)return 1;
+ s.ref()=7;if(s.get()!=7||s.data()!=&s.ref())return 2;
+ const Scalar&view=s;if(view.get()!=7||view.data()!=&s.ref()||&view.ref()!=&s.ref())return 3;
+ Protected p(3);if(p.add(5)!=8)return 4;
+ Plain a;if(a.sum()!=6)return 5;
+ Plain b=a;++b.ref();if(a.sum()!=6||b.sum()!=7||a.data()==b.data())return 6;
+ Plain c=static_cast<Plain&&>(b);if(c.sum()!=7||b.sum()!=7||c.data()==b.data())return 7;
+ c=a;c.data()[0]=9;if(c.sum()!=13||a.sum()!=6)return 8;
+ b=static_cast<Plain&&>(c);if(b.sum()!=13||c.sum()!=13||b.data()==c.data())return 9;
+ Factory made=Factory::make(11);if(made.get()!=11||privateCopies)return 10;
+ Factory cloned=Factory::clone(made);if(cloned.get()!=11||made.get()!=11||privateCopies!=1)return 11;
+ Outlined o(4);if(o.add(5)!=9)return 12;
+ if(sizeof(PrivateLayout)!=sizeof(PublicLayout)||alignof(PrivateLayout)!=alignof(PublicLayout))return 13;
+ {
+  Box first(4);if(first.sum()!=9||live!=2||dead||copies||moves||bad)return 14;
+  Box second=first;if(second.sum()!=9||first.sum()!=9||live!=4||copies!=2||moves||bad)return 15;
+  Box third=static_cast<Box&&>(first);if(third.sum()!=9||first.sum()!=-2||live!=6||copies!=2||moves!=2||bad)return 16;
+  if(&second.at(0)==&third.at(0)||second.at(0).identity()!=&second.at(0)||third.at(1).identity()!=&third.at(1))return 17;
+ }
+ if(live||dead!=6||boxDead!=3||bad)return 18;
+ Defaults d;if(d.get()!=3||defaults!=1)return 19;
+ Defaults explicitValue(8);if(explicitValue.get()!=8||defaults!=1)return 20;
+ Filled filled;if(filled.sum()!=7)return 21;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("nonpublic-fields" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NonpublicFieldsAcceptOwnedClassAccess) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"class-default-private", "class R{int n;public:R(int v):n(v){}int get()const{return n;}};int main(){return R(3).get()-3;}"},
+      {"explicit-private", "struct R{private:int n;public:R(int v):n(v){}int get()const{return n;}};int main(){return R(3).get()-3;}"},
+      {"protected-data", "struct R{protected:int n;public:R(int v):n(v){}int get()const{return n;}};int main(){return R(3).get()-3;}"},
+      {"private-helper", "class R{int n;int impl()const{return n;}public:R(int v):n(v){}int get()const{return impl();}};int main(){return R(3).get()-3;}"},
+      {"private-factory", "class R{int n;R(int v):n(v){}public:static R make(int n){return R(n);}int get()const{return n;}};int main(){return R::make(3).get()-3;}"},
+      {"private-copy", "class R{int n;R(const R&r):n(r.n){}public:R(int v):n(v){}static R clone(const R&r){return R(r);}int get()const{return n;}};int main(){R r(3);return R::clone(r).get()-3;}"},
+      {"private-default-name", "class R{static int seed(){return 3;}int n;public:R(int v=seed()):n(v){}int get()const{return n;}};int main(){return R().get()-3;}"},
+      {"private-pointer", "class R{int n;public:R():n(3){}int*data(){return &n;}const int*data()const{return &n;}};int main(){R r;*r.data()=4;const R&v=r;return *v.data()-4;}"},
+      {"private-array-range", "class R{int a[2]={1,2};public:int sum()const{int n=0;for(int v:a)n+=v;return n;}};int main(){return R().sum()-3;}"},
+      {"private-member-cleanup", "int n;struct V{int v;~V(){n+=v;}};class R{V a[2];public:R():a{{1},{2}}{}};int main(){{R r;}return n-3;}"},
+      {"private-qualified-definition", "class R{int n;int impl()const;public:R(int);int get()const;};R::R(int v):n(v){}int R::impl()const{return n;}int R::get()const{return impl();}int main(){return R(3).get()-3;}"},
+      {"private-same-access-sections", "class R{int a=1;public:int get()const{return a+b;}private:int b=2;};int main(){return R().get()-3;}"},
+      {"promoted-1-private-field", "class R{int n;public:R(R&&)=default;};"},
+      {"promoted-2-private-field", "class R{int n=1;};"},
+      {"promoted-3-private-field", "class R{int n;public:R&operator=(const R&)=default;};"},
+      {"promoted-4-nonpublic-field", "class R{int n;public:R(const R&)=default;};"},
+      {"promoted-5-nonpublic-field", "class R{int n;public:R()=default;};"},
+      {"promoted-6-private-field", "class R{int n;public:R():n(1){}};"},
+      {"promoted-7-protected-field", "struct R{protected:int n;public:R():n(1){}};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nonpublic-fields-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("nonpublic-fields-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"mixed-access", "struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};", "TR0201"},
+      {"friend", "class R{int n=1;friend int get(const R&r){return r.n;}};", "TR0201"},
+      {"inheritance", "class R{protected:int n=1;};class D:public R{public:int get(){return n;}};", "TR0201"},
+      {"nested-record", "class R{struct V{int n;};V v;};", "TR0201"},
+      {"const-field", "class R{const int n=1;public:int get()const{return n;}};", "TR0201"},
+      {"reference-field", "class R{int&n;public:R(int&v):n(v){}};", "TR0201"},
+      {"mutable-field", "class R{mutable int n=1;public:int get()const{return ++n;}};", "TR0201"},
+      {"bitfield", "class R{unsigned int n:2;public:R():n(1){}};", "TR0201"},
+      {"floating-field", "class R{double n=1.0;};", "TR0201"},
+      {"unused-floating-helper", "class R{int n=1;double hidden(){return 1.0;}public:int get()const{return n;}};", "TR0201"},
+      {"pointer-to-member", "class R{int n=1;public:static int R::*field(){return &R::n;}};", "TR0201"},
+      {"private-read", "class R{int n=1;};int f(const R&r){return r.n;}", "TR0202"},
+      {"private-write", "class R{int n=1;};void f(R&r){r.n=3;}", "TR0202"},
+      {"private-address", "class R{int n=1;};int*f(R&r){return &r.n;}", "TR0202"},
+      {"protected-read", "struct R{protected:int n=1;};int f(const R&r){return r.n;}", "TR0202"},
+      {"private-constructor", "class R{int n;R():n(1){}};void f(){R r;}", "TR0202"},
+      {"private-method", "class R{int n=1;int get()const{return n;}};int f(const R&r){return r.get();}", "TR0202"},
+      {"private-copy", "class R{int n;R(const R&r):n(r.n){}public:R(int v):n(v){}};void f(){R a(1);R b=a;}", "TR0202"},
+      {"private-destructor", "class R{int n=1;~R(){}};void f(){R r;}", "TR0202"},
+      {"private-range-begin", "class R{int a[1]={1};int*begin(){return a;}public:int*end(){return a+1;}};void f(){R r;for(int v:r){}}", "TR0202"},
+      {"private-range-end", "class R{int a[1]={1};int*end(){return a+1;}public:int*begin(){return a;}};void f(){R r;for(int v:r){}}", "TR0202"},
+      {"private-aggregate-initializer", "class R{int n;};void f(){R r{1};}", "TR0202"},
+      {"private-unevaluated", "class R{int n=1;};bool f(const R&r){return noexcept(r.n);}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nonpublic-fields-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("nonpublic-fields-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"class R{int n=1;};int main(){return 0;}",
+                                  "class R{int n;public:R():n(1){}};int main(){R r;return 0;}"}) {
+    const auto Source = tmpFile("nonpublic-fields-v1.cpp");
+    const auto Output = tmpFile("nonpublic-fields-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DefaultArgumentsPreserveEffectsAndCleanup) {
   const auto Source = tmpFile("default-arguments.cpp");
   const auto Output = tmpFile("default-arguments.nc");
@@ -4238,7 +4435,6 @@ TEST_F(TranslateTest, CoreV2GeneratedMovesRetainSourceAndLifetimeBoundaries) {
       {"attribute", "struct R{int n;[[deprecated]] R(R&&)=default;};", "TR0201"},
       {"reference-field", "struct R{int&n;R(R&&)=default;};", "TR0201"},
       {"const-field", "struct R{const int n;R(R&&)=default;};", "TR0201"},
-      {"private-field", "class R{int n;public:R(R&&)=default;};", "TR0201"},
       {"base", "struct B{int n;};struct R:B{int value;R(R&&)=default;};", "TR0201"},
       {"source-builtin", "struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}", "TR0201"},
       {"lambda-array", "int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}", "TR0201"},
@@ -4734,7 +4930,6 @@ TEST_F(TranslateTest, CoreV2DefaultMembersCheckWrittenAndSelectedExpressions) {
       {"const-field", "struct R{const int n=1;};"},
       {"reference-field", "struct R{int value;int&ref=value;};"},
       {"mutable-field", "struct R{mutable int n=1;};"},
-      {"private-field", "class R{int n=1;};"},
       {"bitfield", "struct R{int bits:2;int n=1;};"},
       {"static-member", "struct R{static int x;int n=1;};int R::x=0;"},
       {"base", "struct B{int n=1;};struct R:B{int next=2;};"},
@@ -4928,7 +5123,6 @@ TEST_F(TranslateTest, CoreV2GeneratedAssignmentKeepsBuiltinAndReferenceBoundarie
       {"rvalue-receiver", "struct R{int n;R&operator=(const R&)&&=default;};"},
       {"const-field", "struct R{const int n;R&operator=(const R&)=default;};"},
       {"reference-field", "struct R{int&n;R&operator=(const R&)=default;};"},
-      {"private-field", "class R{int n;public:R&operator=(const R&)=default;};"},
       {"base-field", "struct B{int n;};struct R:B{int m;R&operator=(const R&)=default;};"},
       {"raw-builtin", "void f(int*a,int*b){__builtin_memcpy(a,b,4);}"},
       {"dead-builtin", "void f(int*a,int*b){if(false)__builtin_memcpy(a,b,4);}"},
@@ -5126,7 +5320,6 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
       {"defaulted-deleted-copy", "struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};"},
       {"reference-field", "struct R{int &n;R(const R&)=default;};"},
       {"const-field", "struct R{const int n;R(const R&)=default;};"},
-      {"nonpublic-field", "class R{int n;public:R(const R&)=default;};"},
       {"base-copy", "struct B{int n;};struct R:B{int m;R(const R&)=default;};"},
       {"lambda-array-copy", "int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}"},
       {"decomposed-array-copy", "int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}"},
@@ -5260,7 +5453,6 @@ TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
       {"deleted-destructor", "struct R{int n;~R()=delete;};"},
       {"defaulted-deleted-constructor", "struct I{int n;I()=delete;};struct R{I i;R()=default;};"},
       {"defaulted-deleted-destructor", "struct I{int n;~I()=delete;};struct R{I i;~R()=default;};"},
-      {"nonpublic-field", "class R{int n;public:R()=default;};"},
       {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
       {"explicit-destruction", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},
       {"throwing-member-constructor", "struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};"},
@@ -5918,8 +6110,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"template-constructor", "struct R{int n;template<class T> R(T v):n(v){}};"},
       {"variadic-constructor", "struct R{int n;R(int v,...):n(v){}};"},
       {"deleted-constructor", "struct R{int n;R()=delete;};"},
-      {"private-field", "class R{int n;public:R():n(1){}};"},
-      {"protected-field", "struct R{protected:int n;public:R():n(1){}};"},
       {"const-field", "struct R{const int n;R():n(1){}};"},
       {"reference-field", "struct R{int &n;R(int &v):n(v){}};"},
       {"mutable-field", "struct R{mutable int n;R():n(1){}};"},
