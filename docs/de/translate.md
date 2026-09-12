@@ -27,6 +27,8 @@ Core v2 unterstützt `switch`/`case`/`default` mit C++17-Initialisierungsanweisu
 
 Core v2 unterstützt jetzt vorzeichenbehaftete und vorzeichenlose Ganzzahlen mit 8, 16, 32 und 64 Bit, Zeichentypen und Zeichenliterale sowie konstante `sizeof`-/`alignof`-Abfragen. Integer-Promotions und Überladungsauflösung erfolgen vor der Normalisierung; `long`, `wchar_t` und der Größentyp folgen der Zielplattform. Auch Enum-Basistypen dürfen schmaler oder breiter sein. Laufzeitzeichenketten und STL sind noch in Entwicklung.
 
+Core v2 unterstützt außerdem Objektzeiger-Offsets, Zeigerdifferenzen, Inkrement/Dekrement und zusammengesetzte Zuweisungen, einschließlich Array-Durchläufen und mehrdimensionaler Schrittweiten. Generierte Hilfsfunktionen erhalten die C++17-Regeln für Nullzeiger plus/minus null und die Differenz zweier Nullzeiger. Zeigerordnung, Zeiger/Ganzzahl-Konvertierungen sowie STL-Container und -Algorithmen bleiben ausgenommen.
+
 Core v2 vergleicht Quelltypgrößen und ABI-Ausrichtungen mit dem eigenen Zielmodell von NeverC, einschließlich Strukturgrößen und Feldoffsets. Statische Zusicherungen im erzeugten Code prüfen das Layout bei der Kompilierung erneut; das Manifest hält diese Angaben fest.
 
 ## Projekte mit mehreren Dateien

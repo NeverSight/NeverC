@@ -97,8 +97,8 @@ expression-form alignment and parameter packs are rejected.
   null initialization (`nullptr`, zero and value initialization), qualification
   conversions and pointer/`void *` round trips preserve the admitted source
   behavior. `const_cast` may adjust qualifications on supported pointer and
-  lvalue-reference types. Pointer arithmetic, difference, ordering and integer
-  reinterpretation remain rejected.
+  lvalue-reference types. Pointer ordering, unary pointer plus and pointer/integer
+  reinterpretation remain rejected. Offsets and differences follow the rules below.
 - A reference binds to the original storage. Returning a reference, assigning
   through that result, references to pointer variables (`int *&`) and conditional,
   comma, assignment and preincrement lvalues preserve identity and sequencing.
@@ -128,6 +128,42 @@ objects; it does not define dangling/invalid pointer behavior or remove C++
 undefined behavior. In particular, casting away `const` does not make an
 originally const object writable. Generated `.nc` source targets NeverC's
 pointer aliasing behavior, not an arbitrary C compiler's alias rules.
+
+## Pointer offsets and differences
+
+Core v2 admits `p + n`, `n + p`, `p - n`, `p - q`, pointer `++`/`--` and
+`+=`/`-=` for pointers to admitted complete object types. Offset operands include
+explicit source integer promotions. Pointer-to-array operations use the entire
+row size; record steps use the independently verified record layout. Offsets
+preserve the pointer type and pointee qualifications. Difference operands must
+point to cv-qualified versions of the same complete type, preserving nested
+pointee types, integer widths and array extents.
+
+The difference result uses the source target's signed `ptrdiff_t`, normalized to
+an admitted 32- or 64-bit carrier. NeverC independently checks its native signed
+ptrdiff width against the pointer width before accepting this operation; emitted
+width/signedness assertions check the compilation context again. Casting the
+result after a narrower native subtraction is not accepted as a substitute.
+
+Private typed emission helpers select `p` for zero offsets and signed zero for
+equal-pointer differences. This preserves the C++17 null-plus/minus-zero and
+null-minus-null rules without unconditionally executing C pointer arithmetic.
+Each argument expression is emitted once; helpers are reused by signature to
+keep deeply nested IR from expanding the output exponentially. Source effects
+are captured before helper calls. Compound assignment evaluates its RHS before
+its LHS, and increment/decrement evaluates its target once.
+
+Direct address formation `&p[n]` uses the same guarded offset; direct `&*p`
+cancels the address/dereference pair. The syntactic left operand remains first
+for `n[p]`. Null `&p[0]`/`&*p` cancellation is the selected implementation behavior,
+not a claim that C++17's null arithmetic rule itself defines null indirection.
+No load, store or member access through null or past-the-end pointers is thereby
+permitted. Array bounds, object lifetimes and representable same-array differences
+retain the defined-source-execution contract.
+
+Pointer ordering (`<`, `<=`, `>`, `>=`), unary pointer `+`, pointer/integer casts,
+void/function/member-pointer arithmetic, and general iterator/container/STL
+implementations remain outside this increment. Pointer `==`/`!=` remain supported.
 
 ## Fixed arrays and initialization
 
@@ -166,8 +202,8 @@ arrays, unsupported element types and nontrivial element construction/destructio
 remain rejected, including in unused or dead code. Indexing requires the same
 valid storage and in-bounds accesses as the source program; the translator does
 not add a runtime bounds-check guarantee. Constant `sizeof` and type-form
-`alignof` are supported under the integral-query rules above; pointer arithmetic
-and pointer difference still require later operation support.
+`alignof` follow the integral-query rules above; pointer offsets and differences
+follow their dedicated contract above.
 
 ## Switch control flow
 

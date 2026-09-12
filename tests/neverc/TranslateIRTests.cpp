@@ -102,8 +102,10 @@ Module module(bool CoreV2 = false) {
 VerificationContext context(const Module &M) {
   VerificationContext C{M.Profile, M.Target.Triple, M.Target.IntBits,
                         M.Target.PointerBits, M.Target.LittleEndian};
-  if (M.Profile == "cpp-core-v2")
+  if (M.Profile == "cpp-core-v2") {
     C.ExpectedCarrierLayout = x64CarrierLayout();
+    C.ExpectedPtrDiffBits = 64;
+  }
   return C;
 }
 void invalid(const Module &M, const std::string &Reason = {}) {
@@ -755,6 +757,128 @@ TEST(TranslateIR, CoreV2DistinguishesPointerGraphsFromByValueCycles) {
   invalid(M, "Unknown");
 }
 
+TEST(TranslateIR, CoreV2PointerOffsetsVerifyPromotionsAndExactResultTypes) {
+  for (auto Element : {intType(), integerType(8), arrayType(intType(), 3),
+                       pointerType(intType())}) {
+    for (bool Const : {false, true}) {
+      auto P = pointerType(Element, Const);
+      for (auto Offset : {intType(), uintType(), integerType(64), integerType(64, true)}) {
+        auto M = module(true);
+        M.Functions[0].Result = P;
+        M.Functions[0].Params = {{"nct_p", P, InputLoc}, {"nct_i", Offset, InputLoc}};
+        auto Pointer = variable("nct_p", P), Index = variable("nct_i", Offset);
+        for (auto Op : {BinaryOperator::Add, BinaryOperator::Subtract}) {
+          M.Functions[0].Body.back() = ret(binary(Op, Pointer, Index, P));
+          Diagnostics D;
+          EmittedSource Output;
+          ASSERT_TRUE(emitNC(M, context(M), Output, D));
+          EXPECT_NE(Output.Text.find("nct_emit_right == 0 ? nct_emit_left"),
+                    std::string::npos);
+        }
+        M.Functions[0].Body.back() = ret(binary(BinaryOperator::Add, Index, Pointer, P));
+        Diagnostics D;
+        EXPECT_TRUE(verifyModule(M, context(M), D));
+        M.Functions[0].Body.back().Value->BinaryOp = BinaryOperator::Subtract;
+        invalid(M, "Pointer offset");
+      }
+    }
+  }
+  auto M = module(true);
+  auto P = pointerType(intType());
+  M.Functions[0].Result = P;
+  M.Functions[0].Params = {{"nct_p", P, InputLoc}};
+  auto Pointer = variable("nct_p", P);
+  M.Functions[0].Body.back() = ret(binary(BinaryOperator::Add, Pointer,
+      literal("1", integerType(8)), P));
+  invalid(M, "promoted integer");
+  M.Functions[0].Body.back() = ret(binary(BinaryOperator::Add, Pointer, literal("1"),
+      pointerType(intType(), true)));
+  invalid(M, "matching result");
+  auto VoidPointer = pointerType({TypeKind::Void, {}});
+  M.Functions[0].Result = VoidPointer;
+  M.Functions[0].Body.back() = ret(binary(BinaryOperator::Add,
+      pointerExpr(ExprKind::Null, VoidPointer), literal("0"), VoidPointer));
+  invalid(M, "complete pointee");
+}
+
+TEST(TranslateIR, CoreV2PointerDifferenceRequiresIndependentNativePtrdiff) {
+  auto M = module(true);
+  auto P = pointerType(intType()), CP = pointerType(intType(), true);
+  auto Difference = integerType(64);
+  M.Functions[0].Result = Difference;
+  M.Functions[0].Params = {{"nct_p", P, InputLoc}, {"nct_q", CP, InputLoc}};
+  M.Functions[0].Body.back() = ret(binary(BinaryOperator::Subtract,
+      variable("nct_p", P), variable("nct_q", CP), Difference));
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("nct_emit_left == nct_emit_right ? (long long)0"),
+            std::string::npos);
+  EXPECT_NE(Output.Text.find("translated ptrdiff width mismatch"), std::string::npos);
+  EXPECT_NE(Output.Text.find("translated ptrdiff must be signed"), std::string::npos);
+  for (unsigned BadWidth : {0u, 16u, 32u}) {
+    auto C = context(M);
+    C.ExpectedPtrDiffBits = BadWidth;
+    D.clear();
+    EXPECT_FALSE(verifyModule(M, C, D));
+  }
+  for (auto BadResult : {intType(), integerType(64, true)}) {
+    auto Bad = M;
+    Bad.Functions[0].Result = BadResult;
+    Bad.Functions[0].Body.back().Value->ValueType = BadResult;
+    invalid(Bad, "ptrdiff width");
+  }
+  for (auto Other : {pointerType(uintType()), pointerType(integerType(8)),
+                    pointerType(arrayType(intType(), 2)),
+                    pointerType({TypeKind::Void, {}})}) {
+    auto Bad = M;
+    Bad.Functions[0].Params[1].ValueType = Other;
+    Bad.Functions[0].Body.back().Value->Args[1].ValueType = Other;
+    invalid(Bad, "matching complete pointees");
+  }
+  auto Bad = M;
+  auto Nested = pointerType(pointerType(intType()));
+  auto DeepConst = pointerType(pointerType(intType(), true));
+  Bad.Functions[0].Params[0].ValueType = Nested;
+  Bad.Functions[0].Params[1].ValueType = DeepConst;
+  Bad.Functions[0].Body.back().Value->Args[0].ValueType = Nested;
+  Bad.Functions[0].Body.back().Value->Args[1].ValueType = DeepConst;
+  invalid(Bad, "matching complete pointees");
+}
+
+TEST(TranslateIR, CoreV2PointerAddressCancellationAndNestedOffsetsStayBounded) {
+  auto M = module(true);
+  auto P = pointerType(intType());
+  M.Functions[0].Result = P;
+  M.Functions[0].Params = {{"nct_p", P, InputLoc}};
+  auto Pointer = variable("nct_p", P);
+  auto Index = pointerExpr(ExprKind::Index, intType(), {Pointer, literal("0")});
+  M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Address, P, {Index}));
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("nct_emit_right == 0 ? nct_emit_left"), std::string::npos);
+  EXPECT_EQ(Output.Text.find("(&("), std::string::npos);
+  auto CP = pointerType(intType(), true);
+  M.Functions[0].Result = CP;
+  M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Address, CP,
+      {pointerExpr(ExprKind::Dereference, intType(), {Pointer})}));
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_EQ(Output.Text.find("(*("), std::string::npos);
+  EXPECT_NE(Output.Text.find("((const int *)(nct_p))"), std::string::npos);
+  M.Functions[0].Result = P;
+  auto Nested = Pointer;
+  for (unsigned Depth = 0; Depth < 48; ++Depth)
+    Nested = binary(BinaryOperator::Add, std::move(Nested), literal("0"), P);
+  M.Functions[0].Body.back() = ret(std::move(Nested));
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_LT(Output.Text.size(), 16000u);
+  EXPECT_EQ(Output.Text.find("nct_emit_pointer_1"), std::string::npos);
+  M.Profile = "cpp-core-v1";
+  M.Target.Carriers.reset();
+  invalid(M, "core v2");
+}
+
 TEST(TranslateIR, CoreV2RejectsPointerIntegerCastsAndOrdering) {
   Type Pointer = pointerType(intType());
   for (const auto &Pair : std::vector<std::pair<Type, Type>>{
@@ -774,7 +898,7 @@ TEST(TranslateIR, CoreV2RejectsPointerIntegerCastsAndOrdering) {
   Diagnostics D;
   EXPECT_TRUE(verifyModule(M, context(M), D));
   M.Functions[0].Body.back().Value->BinaryOp = BinaryOperator::Less;
-  invalid(M, "equality/inequality");
+  invalid(M, "ordering");
 }
 
 TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {

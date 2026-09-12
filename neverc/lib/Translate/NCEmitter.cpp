@@ -1,6 +1,7 @@
 #include "TranslateIR.h"
 #include "TranslateIRInternal.h"
 #include "llvm/TargetParser/Triple.h"
+#include <map>
 #include <set>
 #include <utility>
 
@@ -124,6 +125,38 @@ class Emitter {
   EmittedSource Output;
   uint32_t Line = 1;
   std::set<unsigned> SignedConversions, ArithmeticShifts;
+  struct PointerHelper {
+    Type Left, Right, Result;
+    BinaryOperator Op;
+    std::string Name;
+  };
+  std::vector<PointerHelper> PointerHelpers;
+  std::map<std::string, size_t> PointerHelperIndices;
+  bool HasPointerDifference = false;
+
+  std::string pointerKey(BinaryOperator Op, const Type &Left, const Type &Right,
+                         const Type &Result) {
+    return typeName(Left) + " " + binarySpelling(Op) + " " + typeName(Right) +
+           " " + typeName(Result);
+  }
+  void inspectPointer(BinaryOperator Op, const Type &Left, const Type &Right,
+                      const Type &Result) {
+    auto Key = pointerKey(Op, Left, Right, Result);
+    if (!PointerHelperIndices.emplace(Key, PointerHelpers.size()).second)
+      return;
+    PointerHelpers.push_back(
+        {Left, Right, Result, Op,
+         "nct_emit_pointer_" + std::to_string(PointerHelpers.size())});
+    HasPointerDifference |= Left.Kind == TypeKind::Pointer &&
+                            Right.Kind == TypeKind::Pointer;
+  }
+  std::string pointerCall(BinaryOperator Op, const Expr &Left, const Expr &Right,
+                          const Type &Result) {
+    auto Index = PointerHelperIndices.at(
+        pointerKey(Op, Left.ValueType, Right.ValueType, Result));
+    return PointerHelpers[Index].Name + "(" + expression(Left) + ", " +
+           expression(Right) + ")";
+  }
 
   void line(const std::string &Text, const SourceLocation *Loc = nullptr) {
     Output.Text += Text;
@@ -133,6 +166,18 @@ class Emitter {
     ++Line;
   }
   void inspect(const Expr &E) {
+    if (E.Kind == ExprKind::Binary &&
+        (E.BinaryOp == BinaryOperator::Add ||
+         E.BinaryOp == BinaryOperator::Subtract) &&
+        (E.Args[0].ValueType.Kind == TypeKind::Pointer ||
+         E.Args[1].ValueType.Kind == TypeKind::Pointer))
+      inspectPointer(E.BinaryOp, E.Args[0].ValueType, E.Args[1].ValueType,
+                     E.ValueType);
+    if (E.Kind == ExprKind::Address && E.Args[0].Kind == ExprKind::Index) {
+      const auto &Index = E.Args[0];
+      inspectPointer(BinaryOperator::Add, Index.Args[0].ValueType,
+                     Index.Args[1].ValueType, E.ValueType);
+    }
     if ((E.Kind == ExprKind::Cast &&
          needsSignedConversion(E.Args[0].ValueType, E.ValueType)) ||
         (E.Kind == ExprKind::Binary &&
@@ -149,6 +194,14 @@ class Emitter {
     case ExprKind::Null:
       return "((" + cType(E.ValueType) + ")0)";
     case ExprKind::Address:
+      if (E.Args[0].Kind == ExprKind::Index) {
+        const auto &Index = E.Args[0];
+        return pointerCall(BinaryOperator::Add, Index.Args[0], Index.Args[1],
+                           E.ValueType);
+      }
+      if (E.Args[0].Kind == ExprKind::Dereference)
+        return "((" + cType(E.ValueType) + ")(" +
+               expression(E.Args[0].Args[0]) + "))";
       return "(&(" + expression(E.Args[0]) + "))";
     case ExprKind::Dereference:
       return "(*(" + expression(E.Args[0]) + "))";
@@ -188,6 +241,11 @@ class Emitter {
                                                     : Text;
     }
     case ExprKind::Binary: {
+      if ((E.BinaryOp == BinaryOperator::Add ||
+           E.BinaryOp == BinaryOperator::Subtract) &&
+          (E.Args[0].ValueType.Kind == TypeKind::Pointer ||
+           E.Args[1].ValueType.Kind == TypeKind::Pointer))
+        return pointerCall(E.BinaryOp, E.Args[0], E.Args[1], E.ValueType);
       std::string A = expression(E.Args[0]), B = expression(E.Args[1]);
       auto Bits = E.ValueType.integerBits();
       if (E.ValueType.isSignedInteger() && E.BinaryOp == BinaryOperator::ShiftLeft)
@@ -281,6 +339,14 @@ class Emitter {
              std::to_string(C.ABIAlignBits) +
              ", \"translated carrier alignment mismatch\");");
       }
+    if (HasPointerDifference) {
+      line("static_assert(sizeof(__typeof__((int *)0 - (int *)0)) * "
+           "__CHAR_BIT__ == " +
+           std::to_string(M.Target.PointerBits) +
+           ", \"translated ptrdiff width mismatch\");");
+      line("static_assert(((__typeof__((int *)0 - (int *)0))-1) < 0, "
+           "\"translated ptrdiff must be signed\");");
+    }
     if (M.Profile == "cpp-math-v1") {
       line("static_assert(sizeof(double) * __CHAR_BIT__ == 64, \"translated "
            "math requires binary64 storage\");");
@@ -347,6 +413,26 @@ class Emitter {
              ", \"translated field offset mismatch\");", &R.Loc);
     }
     line("");
+  }
+  void pointerHelpers() {
+    for (const auto &H : PointerHelpers) {
+      const std::string Left = "nct_emit_left", Right = "nct_emit_right";
+      auto Parameters = declaration(H.Left, Left) + ", " +
+                        declaration(H.Right, Right);
+      line("static " + declaration(H.Result, H.Name + "(" + Parameters + ")") +
+           " {");
+      if (H.Left.Kind == TypeKind::Pointer && H.Right.Kind == TypeKind::Pointer) {
+        line("  return " + Left + " == " + Right + " ? (" + cType(H.Result) +
+             ")0 : (" + cType(H.Result) + ")(" + Left + " - " + Right + ");");
+      } else {
+        const auto &Pointer = H.Left.Kind == TypeKind::Pointer ? Left : Right;
+        const auto &Offset = H.Left.Kind == TypeKind::Pointer ? Right : Left;
+        line("  return " + Offset + " == 0 ? " + Pointer + " : " + Pointer +
+             " " + binarySpelling(H.Op) + " " + Offset + ";");
+      }
+      line("}");
+      line("");
+    }
   }
   void inspectModule() {
     for (const auto &G : M.Globals)
@@ -418,6 +504,7 @@ public:
         line("typedef struct " + R.ID + " " + R.ID + ";", &R.Loc);
     for (const auto &R : M.Records)
       record(R);
+    pointerHelpers();
     for (const auto &G : M.Globals)
       line("static const " + cType(G.ValueType) + " " + G.Name + " = " +
                expression(G.Value, true) + ";",

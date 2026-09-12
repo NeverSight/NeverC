@@ -162,6 +162,23 @@ def main():
         "reference-size": "int f(){int n=0;int&r=n;return sizeof(r)==sizeof(int&) ? 0:1;}",
         "record-alignment": "struct R{char c;long long n;}; auto f(){return alignof(R);}",
     })
+    core_v2.update({
+        "pointer-offset": "int*f(int*p,int n){return p+n;}",
+        "integer-pointer-offset": "int*f(int*p,int n){return n+p;}",
+        "pointer-back": "int*f(int*p,long long n){return p-n;}",
+        "pointer-difference": "auto f(const int*a,int*b){return a-b;}",
+        "pointer-row-difference": "auto f(int(*a)[3],const int(*b)[3]){return a-b;}",
+        "pointer-increment": "int*f(int*p){return p++;}",
+        "pointer-preincrement-reference": "int*&f(int*&p){return ++p;}",
+        "pointer-compound-narrow": "int*f(int*p,unsigned char n){p+=n;return p;}",
+        "pointer-zero": "int*f(int*p){return p+0;}",
+        "pointer-null-difference": "auto f(){int*p=nullptr;return p-p;}",
+        "pointer-address-cancel": "int*f(int*p,int n){return &p[n];}",
+        "pointer-deref-cancel": "int*f(int*p){return &*p;}",
+        "pointer-record-offset": "struct R{long long n;char c;};R*f(R*p){return p+1;}",
+        "temporary-pointer-container": "struct E{int n;};struct H{E*p;};int f(E*p){int&r=H{p}.p->n;return r;}",
+        "pointer-iterator-loop": "int f(int*p,int*end){int n=0;for(;p!=end;++p)n+=*p;return n;}",
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     for name, source in {
@@ -195,7 +212,6 @@ def main():
         "reference-field": "struct R{int&r;};",
         "pointer-global": "int*const p=nullptr;",
         "reference-global": "const int x=1; const int&r=x;",
-        "pointer-arithmetic": "int*f(int*p){return p+1;}",
         "pointer-ordering": "bool f(int*a,int*b){return a<b;}",
         "pointer-integer": "unsigned long long f(int*p){return (unsigned long long)p;}",
         "integer-pointer": "int*f(int x){return (int*)x;}",
@@ -230,6 +246,22 @@ def main():
         "floating-size-type": "int main(){return sizeof(double);}",
         "floating-size-value": "int main(){return sizeof(1.0);}",
         "erased-size-operation": "int main(){return sizeof((void(0),1));}",
+    })
+    v2_rejections.update({
+        "pointer-order-less": "bool f(int*a,int*b){return a<b;}",
+        "pointer-order-less-equal": "bool f(int*a,int*b){return a<=b;}",
+        "pointer-order-greater": "bool f(int*a,int*b){return a>b;}",
+        "pointer-order-greater-equal": "bool f(int*a,int*b){return a>=b;}",
+        "dead-pointer-order": "int f(int*p){if(false){bool b=p<p;}return 0;}",
+        "pointer-unary-plus": "int*f(int*p){return +p;}",
+    })
+    v2_rejections.update({
+        "temporary-offset-reference": "struct R{int a[2];};int f(){const int&r=*(R{{1,2}}.a+0);return r;}",
+        "temporary-reverse-offset-reference": "struct R{int a[2];};int f(){const int&r=(0+R{{1,2}}.a)[0];return r;}",
+        "temporary-subtract-reference": "struct R{int a[2];};int f(){const int&r=*(R{{1,2}}.a-0);return r;}",
+        "temporary-arrow-reference": "struct E{int n;};struct R{E a[1];};int f(){const int&r=R{{{1}}}.a->n;return r;}",
+        "temporary-offset-arrow-reference": "struct E{int n;};struct R{E a[1];};int f(){const int&r=(R{{{1}}}.a+0)->n;return r;}",
+        "dead-temporary-offset-reference": "struct R{int a[2];};int f(){if(false){const int&r=*(R{{1,2}}.a+0);}return 0;}",
     })
     for name, source in v2_rejections.items():
         check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")

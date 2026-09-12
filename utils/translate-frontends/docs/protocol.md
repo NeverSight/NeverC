@@ -114,6 +114,19 @@ inspection and layout verification; unevaluated operands produce no effects.
 The [core v2 contract](cpp-core-v2.md#integer-widths-characters-and-size-queries)
 defines the full admitted boundary. V1 profiles retain their scalar contracts.
 
+## Core v2 pointer arithmetic
+
+Typed `binary` `+`/`-` nodes admit complete-object pointers and explicitly
+promoted 32/64-bit offsets, plus cv-compatible pointer differences. Offset
+results match the pointer operand exactly; difference results must match the
+independently verified signed native ptrdiff width. This expectation belongs to
+the consumer context, not to frontend-supplied target evidence. Existing `index`
+and `address` nodes retain their typing rules; direct address-of-index emission
+uses guarded offsets and direct address-of-dereference emission cancels the pair.
+Pure typed emitter helpers preserve null/zero rules and bound output growth;
+they add no protocol call kind. Relational pointer operations remain rejected.
+See the [source and emission contract](cpp-core-v2.md#pointer-offsets-and-differences).
+
 ## Core v2 layout evidence
 
 `cpp-core-v2` requires `target.carrier_layout` and per-record `layout` evidence.

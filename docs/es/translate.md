@@ -27,6 +27,8 @@ Core v2 admite `switch`/`case`/`default`, con sentencias de inicialización de C
 
 Core v2 admite enteros con y sin signo de 8, 16, 32 y 64 bits, tipos y literales de caracteres, y consultas constantes `sizeof`/`alignof`. Las promociones y la resolución de sobrecargas preceden a la normalización; `long`, `wchar_t` y el tipo de tamaño siguen el destino. Los enums también admiten tipos subyacentes más estrechos y más anchos. Las cadenas en ejecución y STL siguen en desarrollo.
 
+Core v2 también admite desplazamientos y diferencias de punteros a objetos, incrementos/decrementos y asignaciones compuestas, incluidos recorridos de arrays y pasos multidimensionales. Las funciones auxiliares generadas conservan las reglas de C++17 para un puntero nulo más o menos cero y la diferencia entre dos punteros nulos. Siguen excluidos el orden entre punteros, las conversiones puntero/entero y los contenedores y algoritmos STL.
+
 Core v2 contrasta los tamaños y las alineaciones ABI de los tipos de origen con el modelo de destino de NeverC, incluidos los tamaños de estructuras y los desplazamientos de campos. Las aserciones estáticas del código generado vuelven a comprobar la disposición al compilar, y el manifiesto registra estos datos.
 
 ## Proyectos de varios archivos

@@ -92,6 +92,10 @@ bool expectedCarrierLayout(VerificationContext &Context, Diagnostics &D,
       uint32_t(Target->getPointerAlign(neverc::LangAS::Default))};
   Context.IntBits = Target->getIntWidth();
   Context.PointerBits = Layout.Carriers[9].SizeBits;
+  auto PtrDiff = Target->getPtrDiffType(neverc::LangAS::Default);
+  Context.ExpectedPtrDiffBits = neverc::TargetInfo::isTypeSigned(PtrDiff)
+                                    ? Target->getTypeWidth(PtrDiff)
+                                    : 0;
   Context.LittleEndian = Target->isLittleEndian();
   Context.ExpectedCarrierLayout = Layout;
   return true;

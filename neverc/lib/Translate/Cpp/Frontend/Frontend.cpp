@@ -345,9 +345,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (const auto *C = dyn_cast<ConditionalOperator>(E))
       return temporaryArrayBase(C->getTrueExpr()) ||
              temporaryArrayBase(C->getFalseExpr());
-    if (const auto *B = dyn_cast<BinaryOperator>(E);
-        B && B->getOpcode() == BO_Comma)
-      return temporaryArrayBase(B->getRHS());
+    if (const auto *B = dyn_cast<BinaryOperator>(E)) {
+      if (B->getOpcode() == BO_Comma)
+        return temporaryArrayBase(B->getRHS());
+      if (B->getType()->isPointerType() &&
+          (B->getOpcode() == BO_Add || B->getOpcode() == BO_Sub))
+        return temporaryArrayBase(B->getLHS()->getType()->isPointerType()
+                                      ? B->getLHS()
+                                      : B->getRHS());
+    }
     if (const auto *U = dyn_cast<UnaryOperator>(E); U && U->getOpcode() == UO_AddrOf)
       return temporaryBinding(U->getSubExpr());
     // A pointer prvalue (including a call result) is not a temporary pointee.
@@ -362,7 +368,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
       return temporaryBinding(W->getSubExpr());
     if (const auto *M = dyn_cast<MemberExpr>(E))
-      return !M->isArrow() && temporaryBinding(M->getBase());
+      return M->isArrow() ? temporaryArrayBase(M->getBase())
+                          : temporaryBinding(M->getBase());
     if (const auto *Index = dyn_cast<ArraySubscriptExpr>(E))
       return temporaryArrayBase(Index->getBase());
     if (const auto *C = dyn_cast<ConditionalOperator>(E))
@@ -701,13 +708,24 @@ public:
         A.reject(
             S->getBeginLoc(), "construction",
             "Only implicit trivial aggregate construction/copy is supported.");
-    if (const auto *U = dyn_cast<UnaryOperator>(S))
+    if (const auto *U = dyn_cast<UnaryOperator>(S)) {
       if ((!A.S.coreV2() &&
            (U->getOpcode() == UO_AddrOf || U->getOpcode() == UO_Deref)) ||
-          (U->isIncrementDecrementOp() && U->getType()->isPointerType()) ||
+          (!A.S.coreV2() && U->isIncrementDecrementOp() &&
+           U->getType()->isPointerType()) ||
+          (U->getOpcode() == UO_Plus &&
+           U->getSubExpr()->getType()->isPointerType()) ||
           U->getOpcode() == UO_Extension)
         A.reject(S->getBeginLoc(), "unary operator",
                  "This pointer operation or GNU extension is unsupported.");
+      if (A.S.coreV2() && U->isIncrementDecrementOp() &&
+          U->getType()->isPointerType()) {
+        auto Pointee = U->getType()->getPointeeType();
+        if (!Pointee->isObjectType() || Pointee->isIncompleteType())
+          A.reject(S->getBeginLoc(), "pointer increment",
+                   "Pointer increment requires a complete object pointee.");
+      }
+    }
     if (const auto *M = dyn_cast<MemberExpr>(S))
       if ((!A.S.coreV2() && M->isArrow()) ||
           !isa<FieldDecl>(M->getMemberDecl()))
@@ -721,9 +739,31 @@ public:
           B && (B->getLHS()->getType()->isPointerType() ||
                 B->getRHS()->getType()->isPointerType()) &&
           B->getOpcode() != BO_Assign && B->getOpcode() != BO_Comma &&
-          B->getOpcode() != BO_EQ && B->getOpcode() != BO_NE)
-        A.reject(S->getBeginLoc(), "pointer binary operator",
-                 "Pointer arithmetic, difference and ordering are unsupported.");
+          B->getOpcode() != BO_EQ && B->getOpcode() != BO_NE) {
+        bool Offset = B->getOpcode() == BO_Add || B->getOpcode() == BO_Sub ||
+                      B->getOpcode() == BO_AddAssign ||
+                      B->getOpcode() == BO_SubAssign;
+        if (!Offset)
+          A.reject(S->getBeginLoc(), "pointer binary operator",
+                   "Only pointer offsets, difference and equality are supported.");
+        for (const auto *Operand : {B->getLHS(), B->getRHS()}) {
+          if (!Operand->getType()->isPointerType())
+            continue;
+          auto Pointee = Operand->getType()->getPointeeType();
+          if (!Pointee->isObjectType() || Pointee->isIncompleteType())
+            A.reject(S->getBeginLoc(), "pointer arithmetic",
+                     "Pointer arithmetic requires complete object pointees.");
+        }
+        if (B->getOpcode() == BO_Sub &&
+            B->getLHS()->getType()->isPointerType() &&
+            B->getRHS()->getType()->isPointerType() &&
+            (!B->getType()->isSignedIntegerType() ||
+             A.Context.getTypeSize(B->getType()) !=
+                 A.Context.getTargetInfo().getPointerWidth(LangAS::Default)))
+          A.reject(S->getBeginLoc(), "pointer difference",
+                   "Source ptrdiff must be signed and match native pointer width.",
+                   "TR0204");
+      }
     }
     if (A.S.math()) {
       if (const auto *U = dyn_cast<UnaryOperator>(S);

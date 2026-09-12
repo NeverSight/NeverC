@@ -108,7 +108,18 @@ class FunctionLowering {
                     llvm::StringRef T, SourceLocation L) {
     // Comparisons of a scoped enum can retain its narrow underlying type in
     // Clang's AST. Promote the normalized values explicitly for NC arithmetic.
-    auto LeftType = *LHS.getString("type"), RightType = *RHS.getString("type");
+    auto LeftType = LHS.getString("type")->str();
+    auto RightType = RHS.getString("type")->str();
+    auto IsPointer = [](llvm::StringRef Type) {
+      return Type.starts_with("ptr:") || Type.starts_with("cptr:");
+    };
+    if ((Op == "+" || Op == "-") &&
+        (IsPointer(LeftType) || IsPointer(RightType))) {
+      if (integerBits(LeftType) && integerBits(LeftType) < 32)
+        LHS = cast(std::move(LHS), "int", L);
+      if (integerBits(RightType) && integerBits(RightType) < 32)
+        RHS = cast(std::move(RHS), "int", L);
+    }
     if (T == "bool" && LeftType == RightType && integerBits(LeftType) &&
         integerBits(LeftType) < 32) {
       LHS = cast(std::move(LHS), "int", L);
@@ -510,6 +521,12 @@ class FunctionLowering {
       if (U->isIncrementDecrementOp()) {
         auto Place = lvalue(U->getSubExpr());
         auto Old = snapshot(Place, L);
+        if (U->getType()->isPointerType()) {
+          auto New = binary(U->isIncrementOp() ? "+" : "-", Old,
+                            one("int", L), T, L);
+          assign(Place, std::move(New), L);
+          return U->isPostfix() ? Old : Place;
+        }
         auto Computation = integerBits(T) < 32 ? std::string("int") : T;
         auto New = binary(U->isIncrementOp() ? "+" : "-", cast(Old, Computation, L),
                           one(Computation, L), Computation, L);

@@ -225,6 +225,8 @@ struct VerificationContext {
   std::vector<std::string> ApprovedSDKIDs, ApprovedMappingIDs;
   // Constructed independently from NeverC target options, never from Module.
   std::optional<CarrierLayout> ExpectedCarrierLayout;
+  // Zero unless the consumer independently found a signed native ptrdiff type.
+  uint32_t ExpectedPtrDiffBits = 0;
 };
 struct SourceMapEntry {
   uint32_t BeginLine = 1;

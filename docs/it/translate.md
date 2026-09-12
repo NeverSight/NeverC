@@ -27,6 +27,8 @@ Core v2 supporta `switch`/`case`/`default`, con istruzioni di inizializzazione C
 
 Core v2 supporta interi con e senza segno a 8, 16, 32 e 64 bit, tipi e letterali carattere e interrogazioni costanti `sizeof`/`alignof`. Promozioni e risoluzione degli overload precedono la normalizzazione; `long`, `wchar_t` e il tipo delle dimensioni seguono la piattaforma. Anche le enumerazioni ammettono tipi sottostanti più stretti o più ampi. Stringhe a runtime e STL sono ancora in sviluppo.
 
+Core v2 supporta anche spostamenti e differenze tra puntatori a oggetti, incrementi/decrementi e assegnazioni composte, inclusi attraversamenti di array e passi multidimensionali. Le funzioni ausiliarie generate preservano le regole C++17 per un puntatore nullo più o meno zero e per la differenza tra due puntatori nulli. Restano esclusi i confronti d’ordine tra puntatori, le conversioni puntatore/intero e i contenitori e algoritmi STL.
+
 Core v2 confronta dimensioni e allineamenti ABI dei tipi sorgente con il modello di destinazione di NeverC, comprese le dimensioni delle strutture e gli offset dei campi. Le asserzioni statiche nel codice generato verificano nuovamente la disposizione in compilazione; il manifest ne registra i dati.
 
 ## Progetti con più file

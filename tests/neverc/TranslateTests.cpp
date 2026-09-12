@@ -1267,6 +1267,163 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2PointerArithmeticPreservesStridesAndSequencing) {
+  const auto Source = tmpFile("pointer-arithmetic.cpp");
+  const auto Output = tmpFile("pointer-arithmetic.nc");
+  writeFile(Source, R"cpp(
+using Distance = decltype(static_cast<int *>(nullptr) - static_cast<int *>(nullptr));
+using Size = decltype(sizeof(int));
+struct Cell { signed char tag; long long value; };
+struct Holder { Cell *pointer; };
+int *offset(int *p, long long n) { return p + n; }
+int *back(int *p, long long n) { return p - n; }
+Distance distance(const int *a, const int *b) { return a - b; }
+int &tick(int &trace, int digit) { trace = trace * 10 + digit; return trace; }
+int choose(int &which, int &trace) { tick(trace, 1); which = 1; return 2; }
+int *&slot(int *&first, int *&second, int &which, int &trace) {
+  tick(trace, 2);
+  return which == 0 ? first : second;
+}
+int *called_pointer(int *p, int &trace) { tick(trace, 1); return p; }
+int called_index(int &trace) { tick(trace, 2); return 1; }
+int main() {
+  int *null = nullptr;
+  if (offset(null, 0) != nullptr || back(null, 0) != nullptr ||
+      0 + null != nullptr || distance(null, null) != 0) return 1;
+  null += 0;
+  null -= 0ull;
+  if (null != nullptr) return 2;
+  int scalar = 41;
+  int *one_past = &scalar + 1;
+  if (*(one_past - 1) != 41 || one_past - &scalar != 1 ||
+      &scalar - one_past != -1) return 3;
+  int values[5] = {2, 3, 5, 7, 11};
+  int *begin = values;
+  int *end = values + 5;
+  int total = 0;
+  for (int *it = begin; it != end; ++it) total += *it;
+  if (total != 28 || end - begin != 5 || begin - end != -5) return 4;
+  int *p = begin;
+  int *old = p++;
+  if (old != begin || p != begin + 1) return 5;
+  old = p--;
+  if (old != begin + 1 || p != begin) return 6;
+  int *&same = ++p;
+  same += static_cast<unsigned char>(2);
+  if (p != begin + 3) return 7;
+  --p;
+  p -= static_cast<short>(1);
+  if (p != begin + 1) return 8;
+  if (offset(p, -1) != begin || back(p, -1) != begin + 2) return 9;
+  unsigned long long wide = 4;
+  if (*(begin + wide) != 11 || *(wide + begin) != 11 ||
+      *(end - static_cast<Size>(1)) != 11) return 10;
+  const int *constant = end;
+  if (constant - begin != 5 || begin - constant != -5 ||
+      *(constant - 2) != 7 || (constant + 0) != end) return 11;
+  int matrix[2][3] = {{1, 2, 3}, {5, 7, 11}};
+  int (*row)[3] = matrix;
+  int (*next_row)[3] = row + 1;
+  if ((*next_row)[2] != 11 || next_row - row != 1 ||
+      row - next_row != -1) return 12;
+  const int (*const_row)[3] = matrix;
+  if ((const_row + 2) - row != 2 || (*(const_row + 1))[1] != 7) return 13;
+  Cell cells[2] = {{1, 17}, {2, 23}};
+  Cell *cell = cells;
+  cell++;
+  if (cell->value != 23 || cell - cells != 1 || (cell - 1)->tag != 1) return 14;
+  int *pointers[2] = {begin, end};
+  int **iterator = pointers;
+  if (*(iterator + 1) != end || (iterator + 2) - iterator != 2) return 15;
+  int *first = begin;
+  int *second = begin;
+  int which = 0, trace = 0;
+  slot(first, second, which, trace) += choose(which, trace);
+  if (trace != 12 || first != begin || second != begin + 2) return 16;
+  trace = 0;
+  old = slot(first, second, which, trace)++;
+  if (trace != 2 || old != begin + 2 || second != begin + 3) return 17;
+  trace = 0;
+  int *from_calls = called_pointer(begin, trace) + called_index(trace);
+  if (from_calls != begin + 1 || (trace != 12 && trace != 21)) return 18;
+  int index = 0;
+  int *reversed = &(index = 1)[(index = 2, values)];
+  if (reversed != begin + 1 || index != 2) return 19;
+  int *formed = &values[index++];
+  if (formed != begin + 2 || index != 3) return 20;
+  int *formed_end = &values[5];
+  if (formed_end != end || &*end != end || formed_end - begin != 5) return 21;
+  int *const *qualified_iterator = pointers;
+  if (qualified_iterator + 1 != &pointers[1]) return 22;
+  // Address cancellation is the documented selected null behavior. No load,
+  // store, member access or invalid element is evaluated through these values.
+  if (&null[0] != nullptr || &*null != nullptr || &0[null] != nullptr) return 23;
+  int (*null_row)[3] = nullptr;
+  if (null_row + 0 != nullptr || null_row - null_row != 0) return 24;
+  if (distance(constant, constant) != 0 || (end - 5) != begin) return 25;
+  long long &live = Holder{&cells[0]}.pointer->value;
+  live += 14;
+  if (cells[0].value != 31) return 26;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  auto Text = readFile(Output);
+  EXPECT_NE(Text.find("translated ptrdiff width mismatch"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pointer-arithmetic" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerArithmeticKeepsUnsupportedOperationsRejected) {
+  const std::vector<std::string> Sources = {
+      "bool f(int*a,int*b){return a<b;}",
+      "bool f(int*a,int*b){return a<=b;}",
+      "bool f(int*a,int*b){return a>b;}",
+      "bool f(int*a,int*b){return a>=b;}",
+      "int f(int*p){if(false){bool b=p<p;}return 0;}",
+      "void*f(void*p){return p+1;}",
+      "void f(void*p){++p;}",
+      "auto f(void*a,void*b){return a-b;}",
+      "struct R; R*f(R*p){return p+1;}",
+      "auto f(int*a,unsigned int*b){return a-b;}",
+      "auto f(int(*a)[2],int(*b)[3]){return a-b;}",
+      "unsigned long long f(int*p){return (unsigned long long)p;}",
+      "int*f(int x){return (int*)x;}",
+      "struct R{int x;}; auto f(){return &R::x;}",
+      "int g(){return 0;} auto f(){return &g+1;}",
+      "int*f(int*p,__int128 n){return p+n;}",
+      "struct R{int a[2];};int f(){const int&r=*(R{{1,2}}.a+0);return r;}",
+      "struct R{int a[2];};int f(){const int&r=(0+R{{1,2}}.a)[0];return r;}",
+      "struct R{int a[2];};int f(){const int&r=*(R{{1,2}}.a-0);return r;}",
+      "struct E{int n;};struct R{E a[1];};int f(){const int&r=R{{{1}}}.a->n;return r;}",
+      "struct E{int n;};struct R{E a[1];};int f(){const int&r=(R{{{1}}}.a+0)->n;return r;}",
+      "struct R{int a[2];};int f(){if(false){const int&r=*(R{{1,2}}.a+0);}return 0;}"};
+  for (size_t I = 0; I < Sources.size(); ++I) {
+    SCOPED_TRACE(Sources[I]);
+    const auto Source = tmpFile("pointer-reject-" + std::to_string(I) + ".cpp");
+    const auto Output = tmpFile("pointer-reject-" + std::to_string(I) + ".nc");
+    writeFile(Source, Sources[I]);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0202"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("v1-pointer-offset.cpp");
+  const auto Output = tmpFile("v1-pointer-offset.nc");
+  writeFile(Source, "int*f(int*p){return p+1;}");
+  auto Result = translate(Source, {"-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
   struct Rejection {
     const char *Name;
@@ -1289,7 +1446,6 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
       {"pointer-global", "int *const value=nullptr;", "TR0201"},
       {"reference-global", "const int value=1; const int &alias=value;",
        "TR0201"},
-      {"pointer-arithmetic", "int *f(int *p){return p+1;}", "TR0201"},
       {"pointer-ordering", "bool f(int *a,int *b){return a<b;}", "TR0201"},
       {"function-pointer", "int f(int (*call)()){return call();}", "TR0201"},
       {"unsupported-pointee", "float *f(float *p){return p;}", "TR0201"},

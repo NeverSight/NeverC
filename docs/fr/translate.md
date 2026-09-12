@@ -27,6 +27,8 @@ Core v2 prend en charge `switch`/`case`/`default`, les instructions d’initiali
 
 Core v2 prend désormais en charge les entiers signés et non signés de 8, 16, 32 et 64 bits, les types et littéraux caractères, ainsi que les requêtes constantes `sizeof`/`alignof`. Les promotions et la résolution des surcharges précèdent la normalisation ; `long`, `wchar_t` et le type de taille suivent la cible. Les types sous-jacents des enums peuvent aussi être plus étroits ou plus larges. Les chaînes à l’exécution et la STL restent en développement.
 
+Core v2 prend aussi en charge les décalages et différences de pointeurs sur objets, leur incrémentation/décrémentation et les affectations composées, avec parcours des tableaux et pas multidimensionnels. Les fonctions auxiliaires générées préservent les règles C++17 pour un pointeur nul plus ou moins zéro et la différence de deux pointeurs nuls. Les comparaisons d’ordre entre pointeurs, les conversions pointeur/entier et les conteneurs et algorithmes STL restent exclus.
+
 Core v2 compare les tailles et alignements ABI des types source au modèle cible propre à NeverC, y compris la taille des structures et les décalages des champs. Des assertions statiques vérifient à nouveau cette disposition à la compilation, et le manifeste en conserve les données.
 
 ## Projets à plusieurs fichiers

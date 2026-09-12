@@ -741,11 +741,38 @@ class Verifier {
       if (!Arity(2))
         return false;
       const Type &A = E.Args[0].ValueType, &B = E.Args[1].ValueType;
-      if (A.Kind == TypeKind::Pointer || B.Kind == TypeKind::Pointer)
-        return (A == B && E.ValueType.Kind == TypeKind::Bool &&
-                (E.BinaryOp == BinaryOperator::Equal ||
-                 E.BinaryOp == BinaryOperator::NotEqual)) ||
-               error(E.Loc, "Pointers permit only equally typed equality/inequality.");
+      if (A.Kind == TypeKind::Pointer || B.Kind == TypeKind::Pointer) {
+        if (E.BinaryOp == BinaryOperator::Equal ||
+            E.BinaryOp == BinaryOperator::NotEqual)
+          return (A == B && E.ValueType.Kind == TypeKind::Bool) ||
+                 error(E.Loc, "Pointer equality requires equally typed operands.");
+        if (E.BinaryOp == BinaryOperator::Less ||
+            E.BinaryOp == BinaryOperator::LessEqual ||
+            E.BinaryOp == BinaryOperator::Greater ||
+            E.BinaryOp == BinaryOperator::GreaterEqual)
+          return error(E.Loc, "Pointer ordering remains unsupported.");
+        if (A.Kind == TypeKind::Pointer && B.Kind == TypeKind::Pointer) {
+          if (E.BinaryOp != BinaryOperator::Subtract ||
+              A.Elements[0] != B.Elements[0] ||
+              !completeObject(A.Elements[0]))
+            return error(E.Loc, "Pointer difference requires matching complete "
+                                "pointees.");
+          return (E.ValueType.isSignedInteger() &&
+                  E.ValueType.integerBits() == M.Target.PointerBits &&
+                  Context.ExpectedPtrDiffBits == M.Target.PointerBits) ||
+                 error(E.Loc, "Pointer difference requires independently "
+                              "verified native ptrdiff width.");
+        }
+        const bool PointerOnLeft = A.Kind == TypeKind::Pointer;
+        const Type &Pointer = PointerOnLeft ? A : B;
+        const Type &Offset = PointerOnLeft ? B : A;
+        return ((E.BinaryOp == BinaryOperator::Add ||
+                 (PointerOnLeft && E.BinaryOp == BinaryOperator::Subtract)) &&
+                completeObject(Pointer.Elements[0]) &&
+                Offset.isPromotedInteger() && E.ValueType == Pointer) ||
+               error(E.Loc, "Pointer offset requires a complete pointee, "
+                            "promoted integer and matching result.");
+      }
       bool Compare = false, Shift = false;
       switch (E.BinaryOp) {
       case BinaryOperator::Equal:
@@ -846,6 +873,15 @@ class Verifier {
            A.Count == B.Count && A.IntegerBits == B.IntegerBits &&
            ((A.Kind != TypeKind::Pointer && A.Kind != TypeKind::Array) ||
             sameUnqualified(A.Elements[0], B.Elements[0]));
+  }
+  bool completeObject(const Type &T) {
+    if (T.Kind == TypeKind::Void)
+      return false;
+    if (T.Kind == TypeKind::Record)
+      return Records.count(T.RecordID) != 0;
+    if (T.Kind == TypeKind::Array)
+      return completeObject(T.Elements[0]);
+    return true;
   }
   std::size_t storageUnits(const Type &T) {
     if (T.Kind == TypeKind::Record) {
