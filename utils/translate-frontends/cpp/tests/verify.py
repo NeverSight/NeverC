@@ -293,6 +293,19 @@ def main():
         'generated-copy-implicit-containing-copy': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};Box b=a;}',
         'generated-copy-implicit-containing-copy-dead': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};if(false){Box b=a;}}',
     })
+    core_v2.update({
+        'default-member-scalar-self': 'struct R{int n=3;int next=n+4;R*self=this;};int main(){R r;return r.next==7&&r.self==&r?0:1;}',
+        'default-member-const-object': 'struct R{int n=3;R*self=this;};int main(){const R r{};return r.self!=&r;}',
+        'default-member-array-default': 'struct R{int n=3;int values[2][2]={{n},{n+1}};};int main(){R r[2]={{4}};return r[0].values[1][0]==5&&r[1].values[1][0]==4?0:1;}',
+        'default-member-member-call': 'struct R{int n=3;int get(){return n;}int next=get();};int main(){R r{};return r.next-3;}',
+        'default-member-unused': 'struct R{int n=1;R*self=this;};',
+        'default-member-old-assignment': 'struct R{int n=1;R&operator=(const R&)=default;};',
+        'default-member-old-copy': 'struct R{int n=1;R(const R&)=default;};',
+        'default-member-old-copy-query': 'struct R{int n=1;R(const R&)=default;};int f(const R&r){return sizeof(R(r));}',
+        'default-member-old-default': 'struct R{int n=1;R()=default;};',
+        'default-member-old-default-query': 'struct R{int n=1;explicit R()=default;};int f(){return sizeof(R{});}',
+        'default-member-old-user-constructor': 'struct R{int n=1;R(){}};',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -713,8 +726,6 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
         'out-of-line-noexcept': 'struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;',
         'move-default': 'struct R{int n;R(R&&)=default;};',
         'move-assignment-default': 'struct R{int n;R&operator=(R&&)=default;};',
-        'default-member': 'struct R{int n=1;R(const R&)=default;};',
-        'unevaluated-default-member': 'struct R{int n=1;R(const R&)=default;};int f(const R&r){return sizeof(R(r));}',
         'reference-field': 'struct R{int &n;R(const R&)=default;};',
         'const-field': 'struct R{const int n;R(const R&)=default;};',
         'nonpublic-field': 'class R{int n;public:R(const R&)=default;};',
@@ -841,7 +852,6 @@ void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
         'out-of-line-noexcept': 'struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;',
         'rvalue-receiver': 'struct R{int n;R&operator=(const R&)&&=default;};',
         'move-assignment': 'struct R{int n;R&operator=(R&&)=default;};',
-        'default-member': 'struct R{int n=1;R&operator=(const R&)=default;};',
         'const-field': 'struct R{const int n;R&operator=(const R&)=default;};',
         'reference-field': 'struct R{int&n;R&operator=(const R&)=default;};',
         'private-field': 'class R{int n;public:R&operator=(const R&)=default;};',
@@ -868,6 +878,140 @@ void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
     check("v2-generated-assignment-missing", "struct I{int n;I&operator=(const I&);};struct R{I i;R&operator=(const R&)=default;};void f(R&a,const R&b){a=b;}",
           "TR0203", profile="cpp-core-v2")
     check("v1-defaulted-assignment", "struct R{int n;R&operator=(const R&)=default;};", "TR0201")
+    default_member_source = """struct Outer;
+struct Inner { Outer*outer;Inner*self=this; };
+struct Outer { int n=3;Inner inner={this};Outer*self=this; };
+struct Caller;
+struct Target { Caller*caller;Target*self=this; };
+struct Caller { int n;Target make(){return {this};} };
+Outer make(){return {};}
+struct Defaults { int n=7;Defaults*self=this;Defaults()=default; };
+Defaults construct(){return Defaults();}
+struct Lazy { int n=9;Lazy*self=this;Lazy()=default; };
+int query(){return sizeof(Lazy{});}
+"""
+    defaults = check("v2-default-member-destinations", default_member_source, profile="cpp-core-v2")
+    dm_records = {r["loc"]["line"]: r for r in defaults["records"]}
+    dm_functions = {f["name"]: f for f in defaults["functions"]}
+    dm_by_line = {f["loc"]["line"]: f for f in defaults["functions"]}
+
+    def dm_stores(function):
+        return [n for n in function["body"] if n["op"] == "assign" and n["target"]["kind"] == "member"]
+
+    def dm_member(base, field):
+        return ("member", base, field["name"])
+
+    # Nested explicit outer-this and selected inner-this must be different
+    # pointers; the subsequent outer default must restore the outer receiver.
+    function = dm_by_line[7]
+    outer = ("parameter", function["params"][0]["name"])
+    inner = dm_member(outer, dm_records[3]["fields"][1])
+    stores = dm_stores(function)
+    assert len(stores) == 4 and not gc_calls(function), function
+    expected = [(dm_member(outer, dm_records[3]["fields"][0]), 3),
+                (dm_member(inner, dm_records[2]["fields"][0]), outer),
+                (dm_member(inner, dm_records[2]["fields"][1]), inner),
+                (dm_member(outer, dm_records[3]["fields"][2]), outer)]
+    assert [(gc_identity(function, n["target"]), gc_identity(function, n["value"])) for n in stores] == expected
+    assert not any(v["type"] in (dm_records[2]["id"], dm_records[3]["id"])
+                   for v in function["locals"]), function
+    function = dm_by_line[6]
+    assert [p["type"] for p in function["params"]] == ["ptr:" + dm_records[5]["id"], "ptr:" + dm_records[6]["id"]]
+    target, caller = [("parameter", p["name"]) for p in function["params"]]
+    stores = dm_stores(function)
+    assert [(gc_identity(function, n["target"]), gc_identity(function, n["value"])) for n in stores] == [
+        (dm_member(target, dm_records[5]["fields"][0]), caller),
+        (dm_member(target, dm_records[5]["fields"][1]), target)]
+    constructor = next(f for f in defaults["functions"] if f["result"] == "void"
+                       and [p["type"] for p in f["params"]] == ["ptr:" + dm_records[8]["id"]])
+    receiver = ("parameter", constructor["params"][0]["name"])
+    assert [(gc_identity(constructor, n["target"]), gc_identity(constructor, n["value"]))
+            for n in dm_stores(constructor)] == [
+        (dm_member(receiver, dm_records[8]["fields"][0]), 7),
+        (dm_member(receiver, dm_records[8]["fields"][1]), receiver)]
+    function = dm_by_line[9]
+    calls = gc_calls(function)
+    assert len(calls) == 1 and calls[0]["callee"] == constructor["name"], calls
+    assert gc_identity(function, calls[0]["args"][0]) == ("parameter", function["params"][0]["name"])
+    assert not gc_calls(dm_by_line[11]), dm_by_line[11]
+    assert not any(f["params"] and f["params"][0]["type"] == "ptr:" + dm_records[10]["id"]
+                   for f in defaults["functions"]), "unevaluated default construction invented a body"
+    for function in defaults["functions"]:
+        for node in gc_calls(function):
+            callee = dm_functions[node["callee"]]
+            assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-default-member-relocated-") as temp:
+        relocated = check("default-member-relocated", default_member_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == defaults, "default initializer identities depend on the absolute root"
+
+    default_cleanup_source = """struct Log { int n; };
+int mark(Log&l,int n){l.n=l.n*10+n;return n;}
+struct Temp { Log*log;Temp(Log&l):log(&l){}~Temp(){mark(*log,3);} };
+struct Aggregate { Log*log;int first=(Temp(*log),mark(*log,1));int second=mark(*log,2); };
+struct Constructor { Log*log;int first=(Temp(*log),mark(*log,1));int second=mark(*log,2);Constructor(Log&l):log(&l){} };
+struct Copy { Log*log;int n=mark(*log,4);Copy(Log&l):log(&l){}Copy(const Copy&s):log(s.log){} };
+void aggregate(Log&l){Aggregate a{&l};}
+void skipped(Log&l){Aggregate a{&l,7,8};}
+Aggregate copied(const Aggregate&s){return s;}
+void assigned(Aggregate&a,const Aggregate&s){a=s;}
+"""
+    cleanup_defaults = check("v2-default-member-cleanup", default_cleanup_source, profile="cpp-core-v2")
+    dc_records = {r["loc"]["line"]: r for r in cleanup_defaults["records"]}
+    dc_functions = {f["name"]: f for f in cleanup_defaults["functions"]}
+    dc_by_line = {f["loc"]["line"]: f for f in cleanup_defaults["functions"]}
+    mark_name = dc_by_line[2]["name"]
+    destructor_name = dc_records[3]["id"] + "_destroy"
+    temp_ctor = next(f["name"] for f in cleanup_defaults["functions"] if f["result"] == "void"
+                     and [p["type"] for p in f["params"]] == ["ptr:" + dc_records[3]["id"], "ptr:" + dc_records[1]["id"]])
+    constructor = next(f for f in cleanup_defaults["functions"] if f["result"] == "void"
+                       and [p["type"] for p in f["params"]] == ["ptr:" + dc_records[5]["id"], "ptr:" + dc_records[1]["id"]])
+    for function, expected in ((dc_by_line[7], [temp_ctor, mark_name, mark_name, destructor_name]),
+                               (constructor, [temp_ctor, mark_name, destructor_name, mark_name])):
+        calls = gc_calls(function)
+        assert [n["callee"] for n in calls] == expected, calls
+        construction = next(n for n in calls if n["callee"] == temp_ctor)
+        cleanup = next(n for n in calls if n["callee"] == destructor_name)
+        assert storage_pointer_object(function, construction["args"][0]) == storage_pointer_object(function, cleanup["args"][0])
+        assert sum(v["type"] == dc_records[3]["id"] for v in function["locals"]) == 1
+    for line in (8, 9, 10):
+        assert not gc_calls(dc_by_line[line]), "overrides and generated copies/assignments reran defaults"
+    user_copy = next(f for f in cleanup_defaults["functions"] if f["result"] == "void"
+                     and [p["type"] for p in f["params"]] == ["ptr:" + dc_records[6]["id"], "cptr:" + dc_records[6]["id"]])
+    assert [n["callee"] for n in gc_calls(user_copy)] == [mark_name], user_copy
+    for function in cleanup_defaults["functions"]:
+        for node in gc_calls(function):
+            callee = dc_functions[node["callee"]]
+            assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]]
+
+    default_member_rejected = {
+        'const-field': 'struct R{const int n=1;};',
+        'reference-field': 'struct R{int value;int&ref=value;};',
+        'mutable-field': 'struct R{mutable int n=1;};',
+        'private-field': 'class R{int n=1;};',
+        'bitfield': 'struct R{int bits:2;int n=1;};',
+        'static-member': 'struct R{static int x;int n=1;};int R::x=0;',
+        'base': 'struct B{int n=1;};struct R:B{int next=2;};',
+        'attribute': 'struct R{[[maybe_unused]] int n=1;};',
+        'floating-default': 'struct R{int n=static_cast<int>(1.5);};',
+        'lambda-unused': 'struct R{int n=[](){return 1;}();};',
+        'lambda-overridden': 'struct R{int n=[](){return 1;}();};void f(){R r{7};}',
+        'throw-unused': 'struct R{int n=(throw 1,2);};',
+        'throw-overridden': 'struct R{int n=(throw 1,2);R():n(7){}};',
+        'new-default': 'struct R{int*p=new int(1);};',
+        'reinterpret-default': 'struct R{int*p=reinterpret_cast<int*>(1);};',
+        'temporary-reference': 'int take(const int&n){return n;}struct R{int n=take(1);};',
+        'temporary-receiver': 'struct A{int n;int get(){return n;}};struct R{int n=A{1}.get();};',
+        'move-constructor': 'struct R{int n=1;R(R&&s):n(s.n){}};',
+        'template-default': 'template<class T>struct R{T n=1;};',
+        'excessive-array': 'struct R{int n[65537]={1};};',
+        'address-of-member': 'struct R{int n=1;int R::*p=&R::n;};',
+    }
+    for name, source in default_member_rejected.items():
+        check("v2-default-member-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+    check("v2-default-member-missing", "int missing();struct R{int n=missing();};void f(){R r{7};}",
+          "TR0203", profile="cpp-core-v2")
+    check("v1-default-member", "struct R{int n=1;};", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -947,8 +1091,6 @@ int query(){return sizeof(Lazy{});}
         'destructor-throw': 'struct R{int n;~R()throw()=default;};',
         'out-of-line-noexcept': 'struct R{int n;R()noexcept;};R::R()noexcept=default;',
         'out-of-line-destructor-noexcept': 'struct R{int n;~R()noexcept;};R::~R()noexcept=default;',
-        'default-member': 'struct R{int n=1;R()=default;};',
-        'unevaluated-default-member': 'struct R{int n=1;explicit R()=default;};int f(){return sizeof(R{});}',
         'nonpublic-field': 'class R{int n;public:R()=default;};',
         'virtual-destructor': 'struct R{int n;virtual ~R()=default;};',
         'move-default': 'struct R{int n;R(R&&)=default;};',
@@ -1352,7 +1494,6 @@ int main() {
         'constructor-const-field': 'struct R{const int n;R():n(1){}};',
         'constructor-reference-field': 'struct R{int &n;R(int &v):n(v){}};',
         'constructor-mutable-field': 'struct R{mutable int n;R():n(1){}};',
-        'constructor-default-member-initializer': 'struct R{int n=1;R(){}};',
         'constructor-nested-record': 'struct R{struct I{int n;};I i;R():i{1}{}};',
         'constructor-union': 'union R{int n;unsigned u;R():n(1){}};',
         'constructor-bitfield': 'struct R{unsigned n:3;R():n(1){}};',

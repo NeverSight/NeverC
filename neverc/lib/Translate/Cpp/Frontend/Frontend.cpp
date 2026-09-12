@@ -587,6 +587,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
   const CXXMethodDecl *CurrentMethod = nullptr;
+  const FieldDecl *CurrentDefaultField = nullptr;
   SourceLocation ImplicitInitializerOwner;
   std::set<const Expr *> CheckedSemanticInitializers;
   std::set<const CXXConstructExpr *> CheckedConstructions;
@@ -740,6 +741,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       }
       if (!CheckedSemanticInitializers.insert(E).second)
         continue;
+      if (A.S.coreV2())
+        if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(E)) {
+          // The wrapper has no children. A syntactic aggregate traversal alone
+          // would miss its selected default, including generated constructions.
+          auto PreviousOwner = ImplicitInitializerOwner;
+          ImplicitInitializerOwner = Owner;
+          auto Restore = llvm::make_scope_exit([&] { ImplicitInitializerOwner = PreviousOwner; });
+          TraverseStmt(const_cast<CXXDefaultInitExpr *>(Default));
+          continue;
+        }
       if (const auto *C = dyn_cast<CXXConstructExpr>(E))
         checkConstruction(C, C->getExprLoc().isValid() ? C->getExprLoc() : Owner);
       for (const auto *Child : E->children())
@@ -751,6 +762,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
   bool TraverseDecl(Decl *D) {
+    auto *SavedField = CurrentDefaultField;
+    if (auto *Field = dyn_cast_or_null<FieldDecl>(D))
+      CurrentDefaultField = owned(Field) && Field->hasInClassInitializer() ? Field : nullptr;
+    auto RestoreField = llvm::make_scope_exit([&] { CurrentDefaultField = SavedField; });
     auto *Saved = CurrentMethod;
     if (D && isa<FunctionDecl>(D))
       CurrentMethod = dyn_cast<CXXMethodDecl>(D);
@@ -826,6 +841,32 @@ public:
       TraverseStmt(const_cast<CompoundStmt *>(Body));
       A.Functions.push_back(const_cast<CXXMethodDecl *>(Method));
     }
+  }
+  bool TraverseCXXDefaultInitExpr(CXXDefaultInitExpr *Default) {
+    const auto *Field = Default->getField();
+    auto L = Default->getUsedLocation();
+    if (L.isInvalid() && Field)
+      L = Field->getLocation();
+    auto SavedOwner = ImplicitInitializerOwner;
+    ImplicitInitializerOwner = L;
+    auto RestoreOwner = llvm::make_scope_exit([&] { ImplicitInitializerOwner = SavedOwner; });
+    if (!WalkUpFromCXXDefaultInitExpr(Default))
+      return false;
+    if (!A.S.coreV2() || !Field || !owned(Field) || !Field->hasInClassInitializer() ||
+        !isa<CXXRecordDecl>(Field->getParent()) || !Default->getExpr() ||
+        !A.Context.hasSameUnqualifiedType(Field->getType(), Default->getType()) ||
+        !A.Context.hasSameUnqualifiedType(Default->getExpr()->getType(), Default->getType())) {
+      A.reject(L, "default member initializer", "Expected a selected source-owned field initializer.");
+      return true;
+    }
+    A.type(A.Context.getRecordType(Field->getParent()), L);
+    A.chargeExpansion(1, L);
+    auto *SavedField = CurrentDefaultField;
+    CurrentDefaultField = Field;
+    auto RestoreField = llvm::make_scope_exit([&] { CurrentDefaultField = SavedField; });
+    // Synchronous traversal keeps the field context alive. Use the selected
+    // expression, which can include Clang's semantic rewrite of the default.
+    return TraverseStmt(Default->getExpr());
   }
   bool TraverseArrayInitLoopExpr(ArrayInitLoopExpr *Loop) {
     // Use synchronous traversal: RAV's queued traversal would inspect children
@@ -1050,12 +1091,12 @@ public:
     if (!owned(D))
       return true;
     A.type(D->getType(), D->getLocation());
-    if (D->isBitField() || D->hasInClassInitializer() || D->isMutable() ||
+    if (D->isBitField() || (!A.S.coreV2() && D->hasInClassInitializer()) || D->isMutable() ||
         (A.S.coreV2() && D->getAccess() != AS_public) ||
         D->getType().isConstQualified() || D->getType()->isReferenceType())
       A.reject(D->getLocation(), "field",
-               "Nonpublic, bitfield, mutable/const/reference fields and default "
-               "field initializers are unsupported.");
+               "Nonpublic, bitfield and mutable/const/reference fields are unsupported; "
+               "default field initializers require core v2.");
     return true;
   }
   bool VisitStmt(Stmt *S) {
@@ -1162,7 +1203,7 @@ public:
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
               DefaultStmt, AttributedStmt, CharacterLiteral,
-              UnaryExprOrTypeTraitExpr, CXXThisExpr>(S)) &&
+              UnaryExprOrTypeTraitExpr, CXXThisExpr, CXXDefaultInitExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -1298,13 +1339,18 @@ public:
                    "Pointer increment requires a complete object pointee.");
       }
     }
-    if (const auto *This = dyn_cast<CXXThisExpr>(S))
-      if (!A.S.coreV2() || !CurrentMethod || CurrentMethod->isStatic() ||
-          (!callableMethod(CurrentMethod) &&
-           !supportedConstructor(dyn_cast<CXXConstructorDecl>(CurrentMethod)) &&
-           !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(CurrentMethod))))
-        A.reject(L, "this",
-                 "This requires an admitted instance method or constructor.");
+    if (const auto *This = dyn_cast<CXXThisExpr>(S)) {
+      const auto *Record = This->getType()->getPointeeType()->getAsCXXRecordDecl();
+      bool FieldThis = CurrentDefaultField && Record &&
+          Record->getCanonicalDecl() == CurrentDefaultField->getParent()->getCanonicalDecl();
+      bool MethodThis = CurrentMethod && !CurrentMethod->isStatic() && Record &&
+          Record->getCanonicalDecl() == CurrentMethod->getParent()->getCanonicalDecl() &&
+          (callableMethod(CurrentMethod) ||
+           supportedConstructor(dyn_cast<CXXConstructorDecl>(CurrentMethod)) ||
+           ordinaryDestructor(dyn_cast<CXXDestructorDecl>(CurrentMethod)));
+      if (!A.S.coreV2() || (!FieldThis && !MethodThis))
+        A.reject(L, "this", "This requires its owning field initializer or an admitted instance method.");
+    }
     if (const auto *Reference = dyn_cast<DeclRefExpr>(S))
       if (const auto *Method = dyn_cast<CXXMethodDecl>(Reference->getDecl());
           Method && !Method->isImplicit() && !DirectMethodCallees.count(Reference))

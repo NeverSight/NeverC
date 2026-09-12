@@ -1652,6 +1652,195 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
   expectNoArtifacts(Output);
 }
 
+TEST_F(TranslateTest, CoreV2DefaultMembersPreserveDestinationsOverridesAndCleanup) {
+  const auto Source = tmpFile("default-members.cpp");
+  const auto Output = tmpFile("default-members.nc");
+  writeFile(Source, R"cpp(
+struct Plain {
+  int n=3;
+  int next=n+4;
+  Plain*self=this;
+  int values[2][2]={{n,next},{next+1,n+9}};
+};
+struct Defaulted { int n=7;Defaulted*self=this;Defaulted()=default; };
+struct Log { int used;int events[64]; };
+int mark(Log&log,int n){log.events[log.used++]=n;return n;}
+struct Counted {
+  Log*log;
+  int first=mark(*log,1);
+  int second=first+mark(*log,2);
+  Counted*self=this;
+};
+struct Constructed {
+  Log*log;
+  int first=mark(*log,1);
+  int second=first+mark(*log,2);
+  Constructed*self=this;
+  Constructed(Log&l):log(&l){}
+  Constructed(Log&l,int n):second(n),log(&l),first(n+1){}
+};
+struct UserCopy {
+  Log*log;
+  int n=mark(*log,4);
+  UserCopy*self=this;
+  UserCopy(Log&l):log(&l){}
+  UserCopy(const UserCopy&s):log(s.log){}
+};
+struct Outer;
+struct Inner { Outer*outer;Inner*self=this;int n=6; };
+struct Outer {
+  int n=5;
+  Inner inner={this};
+  Outer*last=this;
+  int after=inner.n+n;
+};
+struct Caller;
+struct Target { Caller*caller;Target*self=this;int n=9; };
+struct Caller { int n;Target make(){return {this};} };
+struct MemberCall { int n=8;int read(){return n+1;}int next=read(); };
+struct Leaf {
+  int n=7;
+  Leaf*self=this;
+  Leaf()=default;
+  Leaf(int x):n(x){}
+};
+struct Nest { Leaf first=Leaf(3);Leaf items[2][2]={{Leaf(4)},{}}; };
+struct Temp {
+  Log*log;int n;
+  Temp(Log&l,int value):log(&l),n(value){}
+  ~Temp(){mark(*log,n+10);}
+};
+struct AggregateCleanup {
+  Log*log;
+  int first=(Temp(*log,3),mark(*log,4));
+  int second=mark(*log,5);
+};
+struct ConstructorCleanup {
+  Log*log;
+  int first=(Temp(*log,3),mark(*log,4));
+  int second=mark(*log,5);
+  ConstructorCleanup(Log&l):log(&l){}
+};
+struct Lazy { int n=11;Lazy*self=this;Lazy()=default; };
+int query(){return sizeof(Lazy{});}
+int main(){
+  Plain p;
+  if(p.n!=3 || p.next!=7 || p.self!=&p || p.values[1][1]!=12)return 1;
+  Plain value{};
+  if(value.n!=3 || value.next!=7 || value.self!=&value)return 2;
+  const Plain constant{};
+  if(constant.n!=3 || constant.self!=&constant)return 3;
+  Plain override{20,21};
+  if(override.n!=20 || override.next!=21 || override.self!=&override || override.values[0][0]!=20 || override.values[1][0]!=22)return 4;
+  Plain partial[3]={{},{8}};
+  if(partial[0].next!=7 || partial[1].next!=12 || partial[2].next!=7)return 5;
+  for(int i=0;i<3;++i)if(partial[i].self!=&partial[i])return 6;
+  Plain copied=p;
+  if(copied.self!=&p || copied.next!=7)return 7;
+  copied=override;
+  if(copied.self!=&override || copied.next!=21)return 8;
+  Defaulted first;Defaulted second{};
+  if(first.n!=7 || first.self!=&first || second.n!=7 || second.self!=&second)return 9;
+  Log log{0,{}};
+  Counted counted{&log};
+  if(log.used!=2 || log.events[0]!=1 || log.events[1]!=2 || counted.first!=1 || counted.second!=3 || counted.self!=&counted)return 10;
+  Counted copy=counted;
+  if(log.used!=2 || copy.self!=&counted)return 11;
+  copy=counted;
+  if(log.used!=2 || copy.self!=&counted)return 12;
+  log.used=0;
+  Counted oneOverride{&log,9};
+  if(log.used!=1 || log.events[0]!=2 || oneOverride.second!=11 || oneOverride.self!=&oneOverride)return 13;
+  log.used=0;
+  Counted allOverride{&log,9,10,nullptr};
+  if(log.used || allOverride.self!=nullptr)return 14;
+  Constructed constructed(log);
+  if(log.used!=2 || log.events[0]!=1 || log.events[1]!=2 || constructed.second!=3 || constructed.self!=&constructed)return 15;
+  log.used=0;
+  Constructed explicitMembers(log,9);
+  if(log.used || explicitMembers.first!=10 || explicitMembers.second!=9 || explicitMembers.self!=&explicitMembers)return 16;
+  UserCopy original(log);UserCopy userCopy=original;
+  if(log.used!=2 || log.events[0]!=4 || log.events[1]!=4 || original.self!=&original || userCopy.self!=&userCopy)return 17;
+  Outer outer{};
+  if(outer.inner.outer!=&outer || outer.inner.self!=&outer.inner || outer.last!=&outer || outer.after!=11)return 18;
+  Outer outerDefault;
+  if(outerDefault.inner.outer!=&outerDefault || outerDefault.inner.self!=&outerDefault.inner || outerDefault.last!=&outerDefault)return 19;
+  Caller caller{1};Target target=caller.make();
+  if(target.caller!=&caller || target.self!=&target || target.n!=9)return 20;
+  MemberCall member{};
+  if(member.n!=8 || member.next!=9)return 21;
+  Nest nest{};
+  if(nest.first.n!=3 || nest.first.self!=&nest.first || nest.items[0][0].n!=4 || nest.items[0][1].n!=7 || nest.items[1][1].n!=7)return 22;
+  for(int i=0;i<2;++i)for(int j=0;j<2;++j)if(nest.items[i][j].self!=&nest.items[i][j])return 23;
+  log.used=0;
+  AggregateCleanup aggregate{&log};
+  if(log.used!=3 || log.events[0]!=4 || log.events[1]!=5 || log.events[2]!=13 || aggregate.first!=4 || aggregate.second!=5)return 24;
+  log.used=0;
+  ConstructorCleanup constructor(log);
+  if(log.used!=3 || log.events[0]!=4 || log.events[1]!=13 || log.events[2]!=5 || constructor.first!=4 || constructor.second!=5)return 25;
+  log.used=0;
+  AggregateCleanup skip{&log,8,9};
+  if(log.used || skip.first!=8 || skip.second!=9 || query()!=sizeof(Lazy))return 26;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("default-members" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultMembersCheckWrittenAndSelectedExpressions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"const-field", "struct R{const int n=1;};"},
+      {"reference-field", "struct R{int value;int&ref=value;};"},
+      {"mutable-field", "struct R{mutable int n=1;};"},
+      {"private-field", "class R{int n=1;};"},
+      {"bitfield", "struct R{int bits:2;int n=1;};"},
+      {"static-member", "struct R{static int x;int n=1;};int R::x=0;"},
+      {"base", "struct B{int n=1;};struct R:B{int next=2;};"},
+      {"attribute", "struct R{[[maybe_unused]] int n=1;};"},
+      {"floating-default", "struct R{int n=static_cast<int>(1.5);};"},
+      {"lambda-unused", "struct R{int n=[](){return 1;}();};"},
+      {"lambda-overridden", "struct R{int n=[](){return 1;}();};void f(){R r{7};}"},
+      {"throw-unused", "struct R{int n=(throw 1,2);};"},
+      {"throw-overridden", "struct R{int n=(throw 1,2);R():n(7){}};"},
+      {"new-default", "struct R{int*p=new int(1);};"},
+      {"reinterpret-default", "struct R{int*p=reinterpret_cast<int*>(1);};"},
+      {"temporary-reference", "int take(const int&n){return n;}struct R{int n=take(1);};"},
+      {"temporary-receiver", "struct A{int n;int get(){return n;}};struct R{int n=A{1}.get();};"},
+      {"move-constructor", "struct R{int n=1;R(R&&s):n(s.n){}};"},
+      {"template-default", "template<class T>struct R{T n=1;};"},
+      {"excessive-array", "struct R{int n[65537]={1};};"},
+      {"address-of-member", "struct R{int n=1;int R::*p=&R::n;};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("default-member-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("default-member-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("default-member-boundary.cpp");
+  const auto Output = tmpFile("default-member-boundary.nc");
+  writeFile(Source, "int missing();struct R{int n=missing();};void f(){R r{7};}");
+  auto Missing = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  expectCode(Missing, "TR0203");
+  expectNoArtifacts(Output);
+  writeFile(Source, "struct R{int n=1;};");
+  auto Old = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Old, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2GeneratedAssignmentPreservesMemberEffectsAndSequencing) {
   const auto Source = tmpFile("generated-assignment.cpp");
   const auto Output = tmpFile("generated-assignment.nc");
@@ -1811,7 +2000,6 @@ TEST_F(TranslateTest, CoreV2GeneratedAssignmentKeepsBuiltinAndReferenceBoundarie
       {"out-of-line-noexcept", "struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;"},
       {"rvalue-receiver", "struct R{int n;R&operator=(const R&)&&=default;};"},
       {"move-assignment", "struct R{int n;R&operator=(R&&)=default;};"},
-      {"default-member", "struct R{int n=1;R&operator=(const R&)=default;};"},
       {"const-field", "struct R{const int n;R&operator=(const R&)=default;};"},
       {"reference-field", "struct R{int&n;R&operator=(const R&)=default;};"},
       {"private-field", "class R{int n;public:R&operator=(const R&)=default;};"},
@@ -2018,8 +2206,6 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
       {"out-of-line-noexcept", "struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;"},
       {"move-default", "struct R{int n;R(R&&)=default;};"},
       {"move-assignment-default", "struct R{int n;R&operator=(R&&)=default;};"},
-      {"default-member", "struct R{int n=1;R(const R&)=default;};"},
-      {"unevaluated-default-member", "struct R{int n=1;R(const R&)=default;};int f(const R&r){return sizeof(R(r));}"},
       {"reference-field", "struct R{int &n;R(const R&)=default;};"},
       {"const-field", "struct R{const int n;R(const R&)=default;};"},
       {"nonpublic-field", "class R{int n;public:R(const R&)=default;};"},
@@ -2163,8 +2349,6 @@ TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
       {"destructor-throw", "struct R{int n;~R()throw()=default;};"},
       {"out-of-line-noexcept", "struct R{int n;R()noexcept;};R::R()noexcept=default;"},
       {"out-of-line-destructor-noexcept", "struct R{int n;~R()noexcept;};R::~R()noexcept=default;"},
-      {"default-member", "struct R{int n=1;R()=default;};"},
-      {"unevaluated-default-member", "struct R{int n=1;explicit R()=default;};int f(){return sizeof(R{});}"},
       {"nonpublic-field", "class R{int n;public:R()=default;};"},
       {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
       {"move-default", "struct R{int n;R(R&&)=default;};"},
@@ -2842,7 +3026,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"const-field", "struct R{const int n;R():n(1){}};"},
       {"reference-field", "struct R{int &n;R(int &v):n(v){}};"},
       {"mutable-field", "struct R{mutable int n;R():n(1){}};"},
-      {"default-member-initializer", "struct R{int n=1;R(){}};"},
       {"nested-record", "struct R{struct I{int n;};I i;R():i{1}{}};"},
       {"union", "union R{int n;unsigned u;R():n(1){}};"},
       {"bitfield", "struct R{unsigned n:3;R():n(1){}};"},

@@ -26,6 +26,11 @@ class FunctionLowering {
   std::vector<Expression> LiveFlags;
   std::string DestructionEnd;
   std::optional<Expression> ThisPointer, ResultPlace;
+  struct InitializationReceiver {
+    const CXXRecordDecl *Record;
+    Expression Pointer;
+  };
+  std::optional<InitializationReceiver> DefaultReceiver;
   std::map<const Decl *, Expression> Storage;
   std::map<const OpaqueValueExpr *, Expression> ArraySources;
   struct ArrayIndex {
@@ -1036,6 +1041,9 @@ class FunctionLowering {
                                 {"loc", A.loc(L)}});
   }
   void constructorInitializers(const CXXConstructorDecl *C) {
+    auto SavedReceiver = DefaultReceiver;
+    DefaultReceiver = InitializationReceiver{C->getParent()->getCanonicalDecl(), *ThisPointer};
+    auto RestoreReceiver = llvm::make_scope_exit([&] { DefaultReceiver = std::move(SavedReceiver); });
     std::map<const Decl *, const Expr *> Initializers;
     auto L = C->getLocation();
     for (const auto *I : C->inits()) {
@@ -1071,6 +1079,17 @@ class FunctionLowering {
       return;
     }
     if (A.S.coreV2()) {
+      if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Init)) {
+        if (!DefaultReceiver ||
+            Default->getField()->getParent()->getCanonicalDecl() != DefaultReceiver->Record ||
+            Place.getString("type") != type(Default->getType(), L))
+          reject(L, "default member initializer", "The selected default requires its actual owning destination.");
+        auto SavedThis = ThisPointer;
+        ThisPointer = DefaultReceiver->Pointer;
+        auto RestoreThis = llvm::make_scope_exit([&] { ThisPointer = std::move(SavedThis); });
+        initialize(std::move(Place), Default->getExpr(), L);
+        return;
+      }
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(Init)) {
         initialize(std::move(Place), M->getSubExpr(), L);
         return;
@@ -1186,7 +1205,15 @@ class FunctionLowering {
         I && I->getType()->isRecordType()) {
       if (I->isSyntacticForm() && I->getSemanticForm())
         I = I->getSemanticForm();
-      auto Fields = I->getType()->getAsCXXRecordDecl()->getDefinition()->fields();
+      const auto *Record = I->getType()->getAsCXXRecordDecl()->getDefinition();
+      auto SavedReceiver = DefaultReceiver;
+      if (A.S.coreV2())
+        DefaultReceiver = InitializationReceiver{
+            Record->getCanonicalDecl(), address(Place, I->getType().getUnqualifiedType(), L)};
+      auto RestoreReceiver = llvm::make_scope_exit([&] { DefaultReceiver = std::move(SavedReceiver); });
+      // Explicit clauses keep the enclosing expression's this. Only a selected
+      // default temporarily rebinds it to this aggregate's construction storage.
+      auto Fields = Record->fields();
       if (I->getNumInits() != std::distance(Fields.begin(), Fields.end()))
         reject(L, "aggregate initialization",
                "Incomplete semantic field initializer list.");

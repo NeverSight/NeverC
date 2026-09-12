@@ -212,6 +212,23 @@ bound the expansion. Full-expression cleanup and complete-object ownership are
 unchanged. Unused or unevaluated copies emit no invented function body or runtime
 call. See the [generated copy contract](cpp-core-v2.md#generated-copy-construction).
 
+## Core v2 default member initialization
+
+Checked default member initializers use the existing typed member/index stores,
+addresses and direct calls. Protocol major 1 and the core v2 version remain unchanged.
+No default-initializer opcode, opaque source object or external compiler call is
+introduced. Selected defaults use the actual destination receiver; explicit
+aggregate clauses keep their enclosing lexical `this`. Nested defaults restore
+both contexts after their own initialization.
+
+Generated copy and assignment instructions preserve the source values and selected
+member operations without rerunning defaults. Ordinary user copy constructors can
+select defaults for omitted members. Constructor member full expressions and whole
+aggregate initialization retain their existing temporary cleanup boundaries and
+complete-object ownership. Written defaults and selected semantic expressions are
+both checked, even if the source never uses the default at runtime. See the
+[default member initializer contract](cpp-core-v2.md#default-member-initializers).
+
 ## Core v2 generated assignment calls
 
 Generated nontrivial copy assignment uses the existing record-reference result,

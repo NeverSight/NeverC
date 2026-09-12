@@ -192,7 +192,7 @@ Records must be nonempty, unnested and standard-layout, with no bases. Each
 selected construction, copy or assignment must follow its admitted operation
 contract; move operations remain unsupported.
 Destruction follows the separate lifetime contract below. Fields remain public, non-mutable, non-const,
-non-reference and non-bitfield, without default member initializers. Ordinary
+non-reference and non-bitfield. Default member initializers follow the contract below. Ordinary
 methods may use these records. Allowing a constructor does not admit arbitrary
 class layouts or foreign C++ ABI interchange.
 
@@ -256,8 +256,8 @@ dynamic, pointer and array global forms remain rejected. V1 profiles continue to
 Core v2 admits generated/defaulted default constructors for the same checked
 records, including implicit nontrivial construction of nested record and array
 members. In-class `= default`, `explicit` default constructors and out-of-line
-`= default` definitions are supported. This does not admit default member
-initializers or broaden the existing field, layout, access or base-class rules.
+`= default` definitions are supported. Default member initializers follow their
+separate contract; field types, layout, access and base-class rules still apply.
 
 A nontrivial generated constructor becomes a checked `void(ptr:Record)` function.
 Its semantic field initializers use Clang's selected constructors in declaration
@@ -298,8 +298,63 @@ int main() {
 Defaulted nonvirtual destructors, both in-class and out-of-line, use the normal
 reverse member/array cleanup without a user body. Trivial defaulted destructors
 need no call. Deleted/defaulted-deleted functions and written exception
-specifications remain rejected. Move operations, default member initializers, exception unwinding and STL remain later
+specifications remain rejected. Move operations, exception unwinding and STL remain later
 milestones. Actual execution evidence must come from the implementing revision's CI.
+
+## Default member initializers
+
+Core v2 admits brace-or-equal initializers on the supported public, non-mutable,
+non-const, non-reference and non-bitfield record fields. Scalar and pointer
+initializers, earlier-field references, ordinary calls, nested records and bounded
+arrays use the same checked expression and layout rules as explicit initialization.
+Written defaults are checked even when unused or always overridden. A selected
+Clang default-initializer wrapper is checked explicitly, including its semantic
+expression; an empty AST child list cannot hide unsupported source or calls.
+
+Initialization follows member declaration and array element order. A selected
+initializer executes once for each actual destination, without an intermediate
+record copy. Its `this` points to the object that owns that field, including while
+a const complete object is being constructed. Explicit constructor initializers
+or aggregate clauses suppress only the corresponding field's default. Omitted
+array elements retain their selected initialization, including nested defaults.
+
+The initialization destination and the enclosing expression's `this` are separate.
+An explicit aggregate clause in a caller method keeps the caller's `this`. A nested
+default temporarily uses the inner object's `this`, then restores the outer one.
+This also preserves an explicit outer-object pointer passed from one default into
+an inner aggregate that has its own self-pointer default:
+
+```cpp
+struct Outer;
+struct Inner { Outer *outer; Inner *self = this; };
+struct Outer { Inner inner = {this}; Outer *self = this; };
+int main() {
+  Outer value{};
+  return value.inner.outer == &value && value.inner.self == &value.inner
+      && value.self == &value ? 0 : 1;
+}
+```
+
+Implicit/defaulted copy construction and assignment use their selected member
+operations and do not rerun default member initializers. Trivial copies preserve
+stored pointer values, including a source self pointer. An ordinary user-defined
+copy constructor can select a default for a field omitted from its own initializer
+list, just like other user constructors.
+
+Default initialization adds no independent lifetime boundary. Each constructor
+member initializer retains its full-expression cleanup; temporary objects from
+aggregate clauses survive through the complete aggregate initialization. The
+existing complete-object cleanup owner remains responsible for normal destruction.
+Reference lifetime extension, temporary method receivers, static initialization
+outside the current contract, exceptions, moves, templates and STL are not enabled
+by admitting field defaults. Unevaluated construction introduces no runtime default
+calls or invented generated body. V1 profiles continue to reject field defaults.
+
+Regression fixtures cover defaults and overrides, nested receiver identities,
+partial arrays, generated and user copying, declaration order and distinct
+constructor/aggregate temporary cleanup order at O0 and O2 with inlining disabled.
+Protocol assertions check destination identity, helper signatures, lazy definitions
+and deterministic relocation. Native results require the implementing revision's CI.
 
 ## Record arguments and results
 
@@ -466,8 +521,7 @@ or purely unevaluated defaulted copies do not need a materialized Clang body.
 An admitted trivial copy also needs no function body. Runtime nontrivial copies
 must have a checked materialized definition.
 
-Moves, default member initializers,
-unsupported layouts, temporary source-reference lifetime extension, exceptions,
+Moves, unsupported layouts, temporary source-reference lifetime extension, exceptions,
 templates and STL headers remain outside this increment. Array extent, object
 storage and expanded-node limits still apply. Regression fixtures cover selected
 calls, nested source/destination indices, one source-array capture, mutable source
