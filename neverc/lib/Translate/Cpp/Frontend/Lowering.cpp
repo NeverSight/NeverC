@@ -11,12 +11,28 @@ using Expression = json::Object;
 class FunctionLowering {
   Adapter &A;
   FunctionDecl *Function;
+  const CXXRecordDecl *DestroyedRecord = nullptr;
   json::Array Parameters, Locals, Body;
+  struct OwnedObject {
+    Expression Place, Live;
+    QualType Type;
+    SourceLocation Location;
+  };
+  struct CleanupFrame {
+    std::vector<OwnedObject> Objects;
+  };
+  std::vector<CleanupFrame> Scopes, FullExpressions;
+  std::vector<Expression> LiveFlags;
+  std::string DestructionEnd;
   std::optional<Expression> ThisPointer, ResultPlace;
   std::map<const Decl *, Expression> Storage;
   std::map<std::string, std::vector<std::string>> Edges;
   // Every breakable construct has an exit; only loops have a continue target.
-  std::vector<std::pair<std::string, std::string>> ControlTargets;
+  struct ControlTarget {
+    std::string Break, Continue;
+    std::size_t BreakDepth, ContinueDepth;
+  };
+  std::vector<ControlTarget> ControlTargets;
   struct SwitchFrame {
     std::map<const SwitchCase *, std::string> Labels;
     std::set<const Stmt *> Entries;
@@ -438,6 +454,8 @@ class FunctionLowering {
       case CK_LValueToRValue:
         return snapshot(cast(expression(C->getSubExpr()), T, L), L);
       case CK_NoOp:
+        if (C->isPRValue() && recordValue(C->getType()))
+          return materialize(C, L);
         if (A.S.coreV2() && C->isLValue())
           return lvalue(C);
         return cast(expression(C->getSubExpr()), T, L);
@@ -560,7 +578,8 @@ class FunctionLowering {
              "Only implicit trivial aggregate copy assignment is supported.");
     }
     if (const auto *Call = dyn_cast<CallExpr>(E))
-      return call(Call);
+      return Call->isPRValue() && recordValue(Call->getType())
+                 ? materialize(Call, L) : call(Call);
     if (const auto *U = dyn_cast<UnaryOperator>(E)) {
       if (A.S.coreV2() && U->getOpcode() == UO_AddrOf)
         return address(lvalue(U->getSubExpr()), U->getSubExpr()->getType(), L);
@@ -632,6 +651,8 @@ class FunctionLowering {
           L);
     }
     if (const auto *C = dyn_cast<ConditionalOperator>(E)) {
+      if (C->isPRValue() && recordValue(C->getType()))
+        return materialize(C, L);
       if (A.S.coreV2() && C->isLValue())
         return lvalue(C);
       auto Condition = expression(C->getCond());
@@ -704,6 +725,102 @@ class FunctionLowering {
     return index(decay(std::move(Place), "ptr:" + T, L),
                  A.literal(llvm::APSInt(llvm::APInt(32, N), false), "int", L), T, L);
   }
+  void destroy(Expression Place, QualType T, SourceLocation L) {
+    if (!A.S.coreV2() || !needsDestruction(T))
+      return;
+    if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
+      auto Element = Array->getElementType();
+      auto Count = Array->getSize().getLimitedValue(65537);
+      if (!Count || Count > 65536 || A.storageUnits(T) > 200000)
+        reject(L, "array destruction", "Array destruction exceeds the storage limit.");
+      for (unsigned N = Count; N > 0; --N) {
+        A.chargeExpansion(1, L);
+        destroy(initialElement(Place, Element, N - 1, L), Element, L);
+      }
+      return;
+    }
+    const auto *Record = T->getAsCXXRecordDecl();
+    if (!Record || !Record->getDefinition())
+      reject(L, "destruction", "A complete admitted record is required.");
+    json::Array Args;
+    Args.push_back(snapshot(address(std::move(Place), T.getUnqualifiedType(), L), L));
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.destructionName(Record)},
+                                {"args", std::move(Args)},
+                                {"loc", A.loc(L)}});
+  }
+  void own(Expression Place, QualType T, SourceLocation L, CleanupFrame &Frame) {
+    if (!A.S.coreV2() || !needsDestruction(T))
+      return;
+    // Register only after initialization completes. A containing temporary's
+    // initializer can itself complete other temporaries before this object.
+    auto Live = temporary("bool", L);
+    A.chargeExpansion(1 + generatedNodes(Live), L);
+    LiveFlags.push_back(Live);
+    assign(Live, boolean(true, L), L);
+    Frame.Objects.push_back({std::move(Place), std::move(Live), T, L});
+  }
+  void cleanup(const CleanupFrame &Frame) {
+    for (auto I = Frame.Objects.rbegin(); I != Frame.Objects.rend(); ++I) {
+      auto Yes = labelName(), End = labelName();
+      A.chargeExpansion(4 + generatedNodes(I->Live), I->Location);
+      branch(I->Live, Yes, End, I->Location);
+      label(Yes, I->Location);
+      assign(I->Live, boolean(false, I->Location), I->Location);
+      destroy(I->Place, I->Type, I->Location);
+      jump(End, I->Location);
+      label(End, I->Location);
+    }
+  }
+  void cleanupScopes(std::size_t Depth) {
+    for (std::size_t I = Scopes.size(); I > Depth; --I)
+      cleanup(Scopes[I - 1]);
+  }
+  void beginFullExpression() { FullExpressions.emplace_back(); }
+  void endFullExpression() {
+    cleanup(FullExpressions.back());
+    FullExpressions.pop_back();
+  }
+  void scopedStatement(const Stmt *S) {
+    Scopes.emplace_back();
+    statement(S);
+    if (Open)
+      cleanup(Scopes.back());
+    Scopes.pop_back();
+  }
+  Expression condition(const Expr *E) {
+    if (!A.S.coreV2())
+      return expression(E);
+    beginFullExpression();
+    // Finish the contextual bool conversion before destruction can mutate its
+    // source. Branches use only this captured value after cleanup.
+    auto Value = snapshot(cast(expression(E), "bool", E->getExprLoc()), E->getExprLoc());
+    endFullExpression();
+    return Value;
+  }
+  void expressionStatement(const Expr *E) {
+    beginFullExpression();
+    discard(E);
+    endFullExpression();
+  }
+  void destructionMembers() {
+    auto L = DestroyedRecord->getLocation();
+    std::vector<const FieldDecl *> Fields;
+    for (const auto *Field : DestroyedRecord->getDefinition()->fields())
+      Fields.push_back(Field);
+    for (auto I = Fields.rbegin(); I != Fields.rend(); ++I) {
+      const auto *Field = *I;
+      if (!needsDestruction(Field->getType()))
+        continue;
+      Expression Member{{"kind", "member"},
+                        {"type", type(Field->getType(), L)},
+                        {"name", A.name(Field)},
+                        {"args", json::Array{dereference(*ThisPointer, L)}},
+                        {"loc", A.loc(L)}};
+      destroy(std::move(Member), Field->getType(), L);
+    }
+  }
   void initializeZero(Expression Place, QualType T, SourceLocation L) {
     if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
       auto Element = Array->getElementType();
@@ -764,6 +881,11 @@ class FunctionLowering {
                      ? recordTemporary(Init->getType(), L)
                      : temporary(type(Init->getType(), L), L);
     initialize(Place, Init, L);
+    if (A.S.coreV2() && needsDestruction(Init->getType())) {
+      if (FullExpressions.empty())
+        reject(L, "temporary lifetime", "No enclosing full-expression cleanup frame.");
+      own(Place, Init->getType(), L, FullExpressions.back());
+    }
     return Place;
   }
   void construct(Expression Place, QualType T, const CXXConstructExpr *C,
@@ -836,7 +958,9 @@ class FunctionLowering {
                         {"name", A.name(Field)},
                         {"args", json::Array{dereference(*ThisPointer, L)}},
                         {"loc", A.loc(L)}};
+      beginFullExpression();
       initialize(std::move(Member), Found->second, L);
+      endFullExpression();
     }
   }
   void initialize(Expression Place, const Expr *Init, SourceLocation L) {
@@ -976,18 +1100,21 @@ class FunctionLowering {
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
     auto Place = localStorage(V);
+    beginFullExpression();
     if (V->getType()->isLValueReferenceType()) {
-      assign(std::move(Place), bind(V->getInit(), V->getType()), L);
-      return;
+      assign(Place, bind(V->getInit(), V->getType()), L);
+    } else {
+      bool DefaultOnly = false;
+      if (const auto *C = dyn_cast_or_null<CXXConstructExpr>(V->getInit()))
+        DefaultOnly = C->getConstructor()->isDefaultConstructor() &&
+                      C->getConstructor()->isTrivial() && !C->getNumArgs() &&
+                      !C->requiresZeroInitialization();
+      if (V->getInit() && !DefaultOnly)
+        initialize(Place, V->getInit(), L);
+      if (A.S.coreV2() && needsDestruction(V->getType()))
+        own(Place, V->getType(), L, Scopes.back());
     }
-    if (!V->getInit())
-      return;
-    if (const auto *C = dyn_cast<CXXConstructExpr>(V->getInit());
-        C && C->getConstructor()->isDefaultConstructor() &&
-        C->getConstructor()->isTrivial() && !C->getNumArgs() &&
-        !C->requiresZeroInitialization())
-      return;
-    initialize(std::move(Place), V->getInit(), L);
+    endFullExpression();
   }
   void registerSwitchStorage(const Stmt *S) {
     if (!S)
@@ -1012,9 +1139,11 @@ class FunctionLowering {
   }
   void switchStatement(const SwitchStmt *S) {
     auto L = S->getSwitchLoc();
+    Scopes.emplace_back();
     statement(S->getInit());
     if (S->getConditionVariable())
       declaration(S->getConditionVariable());
+    beginFullExpression();
     auto Selector = snapshot(expression(S->getCond()), L);
     auto SelectorType = Selector.getString("type")->str();
     if (!integerBits(SelectorType))
@@ -1023,6 +1152,7 @@ class FunctionLowering {
       SelectorType = "int";
       Selector = snapshot(cast(std::move(Selector), SelectorType, L), L);
     }
+    endFullExpression();
     auto Normalize = [&](const llvm::APSInt &Value) {
       auto Result = Value.extOrTrunc(integerBits(SelectorType));
       Result.setIsUnsigned(unsignedInteger(SelectorType));
@@ -1076,13 +1206,15 @@ class FunctionLowering {
     // portions of the body; ordinary pre-case effects are pruned afterwards.
     label(labelName(), L);
     Switches.push_back(std::move(Frame));
-    ControlTargets.emplace_back(End, std::string());
-    statement(S->getBody());
+    ControlTargets.push_back({End, {}, Scopes.size(), Scopes.size()});
+    scopedStatement(S->getBody());
     ControlTargets.pop_back();
     Switches.pop_back();
     if (Open)
       jump(End, L);
     label(End, L);
+    cleanup(Scopes.back());
+    Scopes.pop_back();
   }
   void statement(const Stmt *S) {
     if (!S)
@@ -1110,8 +1242,12 @@ class FunctionLowering {
       return;
     }
     if (const auto *C = dyn_cast<CompoundStmt>(S)) {
+      Scopes.emplace_back();
       for (const auto *Child : C->body())
         statement(Child);
+      if (Open)
+        cleanup(Scopes.back());
+      Scopes.pop_back();
     } else if (const auto *D = dyn_cast<DeclStmt>(S)) {
       for (const auto *Decl : D->decls()) {
         if (const auto *V = dyn_cast<VarDecl>(Decl))
@@ -1123,6 +1259,7 @@ class FunctionLowering {
       }
     } else if (const auto *R = dyn_cast<ReturnStmt>(S)) {
       json::Object Return{{"op", "return"}, {"loc", A.loc(L)}};
+      beginFullExpression();
       if (R->getRetValue() && ResultPlace) {
         initialize(*ResultPlace, R->getRetValue(), L);
       } else if (R->getRetValue()) {
@@ -1130,57 +1267,75 @@ class FunctionLowering {
                          ? bind(R->getRetValue(), Function->getReturnType())
                          : expression(R->getRetValue());
         if (!Value.empty())
-          Return["value"] = std::move(Value);
+          Return["value"] = A.S.coreV2() ? snapshot(std::move(Value), L)
+                                         : std::move(Value);
       }
-      Body.push_back(std::move(Return));
-      Open = false;
+      endFullExpression();
+      cleanupScopes(0);
+      if (DestroyedRecord) {
+        jump(DestructionEnd, L);
+      } else {
+        Body.push_back(std::move(Return));
+        Open = false;
+      }
     } else if (const auto *I = dyn_cast<IfStmt>(S)) {
+      Scopes.emplace_back();
       statement(I->getInit());
       if (I->getConditionVariable())
         declaration(I->getConditionVariable());
-      auto Condition = expression(I->getCond());
+      auto Condition = condition(I->getCond());
       auto Yes = labelName(), No = labelName(), End = labelName();
       branch(std::move(Condition), Yes, No, L, I->getCond());
       label(Yes, L);
-      statement(I->getThen());
+      scopedStatement(I->getThen());
       bool ThenOpen = Open;
       if (Open)
         jump(End, L);
       label(No, L);
-      statement(I->getElse());
+      scopedStatement(I->getElse());
       bool ElseOpen = Open;
       if (Open)
         jump(End, L);
-      if (ThenOpen || ElseOpen)
+      if (ThenOpen || ElseOpen) {
         label(End, L);
+        cleanup(Scopes.back());
+      }
+      Scopes.pop_back();
     } else if (const auto *W = dyn_cast<WhileStmt>(S)) {
+      Scopes.emplace_back();
       auto Test = labelName(), Loop = labelName(), End = labelName();
       jump(Test, L);
       label(Test, L);
       if (W->getConditionVariable())
         declaration(W->getConditionVariable());
-      branch(expression(W->getCond()), Loop, End, L, W->getCond());
+      branch(condition(W->getCond()), Loop, End, L, W->getCond());
       label(Loop, L);
-      ControlTargets.emplace_back(End, Test);
-      statement(W->getBody());
+      ControlTargets.push_back({End, Test, Scopes.size(), Scopes.size() - 1});
+      scopedStatement(W->getBody());
       ControlTargets.pop_back();
-      if (Open)
+      if (Open) {
+        cleanup(Scopes.back());
         jump(Test, L);
+      }
       label(End, L);
+      cleanup(Scopes.back());
+      Scopes.pop_back();
     } else if (const auto *D = dyn_cast<DoStmt>(S)) {
       auto Loop = labelName(), Test = labelName(), End = labelName();
       jump(Loop, L);
       label(Loop, L);
-      ControlTargets.emplace_back(End, Test);
-      statement(D->getBody());
+      ControlTargets.push_back({End, Test, Scopes.size(), Scopes.size()});
+      scopedStatement(D->getBody());
       ControlTargets.pop_back();
       if (Open)
         jump(Test, L);
       label(Test, L);
-      branch(expression(D->getCond()), Loop, End, L, D->getCond());
+      branch(condition(D->getCond()), Loop, End, L, D->getCond());
       label(End, L);
     } else if (const auto *F = dyn_cast<ForStmt>(S)) {
+      Scopes.emplace_back(); // for-init storage outlives every iteration.
       statement(F->getInit());
+      Scopes.emplace_back(); // The condition variable also lives through Step.
       auto Test = labelName(), Loop = labelName(), Step = labelName(),
            End = labelName();
       jump(Test, L);
@@ -1188,34 +1343,41 @@ class FunctionLowering {
       if (F->getConditionVariable())
         declaration(F->getConditionVariable());
       if (F->getCond())
-        branch(expression(F->getCond()), Loop, End, L, F->getCond());
+        branch(condition(F->getCond()), Loop, End, L, F->getCond());
       else
         jump(Loop, L);
       label(Loop, L);
-      ControlTargets.emplace_back(End, Step);
-      statement(F->getBody());
+      ControlTargets.push_back({End, Step, Scopes.size(), Scopes.size()});
+      scopedStatement(F->getBody());
       ControlTargets.pop_back();
       if (Open)
         jump(Step, L);
       label(Step, L);
       if (F->getInc())
-        discard(F->getInc());
+        expressionStatement(F->getInc());
+      cleanup(Scopes.back());
       jump(Test, L);
       label(End, L);
+      cleanup(Scopes.back());
+      Scopes.pop_back();
+      cleanup(Scopes.back());
+      Scopes.pop_back();
     } else if (isa<BreakStmt, ContinueStmt>(S)) {
       if (isa<BreakStmt>(S)) {
         if (ControlTargets.empty())
           reject(L, "break", "No enclosing supported loop or switch.");
-        jump(ControlTargets.back().first, L);
+        cleanupScopes(ControlTargets.back().BreakDepth);
+        jump(ControlTargets.back().Break, L);
       } else {
         auto Loop = std::find_if(ControlTargets.rbegin(), ControlTargets.rend(),
-                                 [](const auto &Target) { return !Target.second.empty(); });
+                                 [](const auto &Target) { return !Target.Continue.empty(); });
         if (Loop == ControlTargets.rend())
           reject(L, "continue", "No enclosing supported loop.");
-        jump(Loop->second, L);
+        cleanupScopes(Loop->ContinueDepth);
+        jump(Loop->Continue, L);
       }
     } else if (const auto *E = dyn_cast<Expr>(S)) {
-      discard(E);
+      expressionStatement(E);
     } else if (!isa<NullStmt>(S)) {
       reject(L, S->getStmtClassName(),
              "Statement has no supported core lowering.");
@@ -1226,45 +1388,100 @@ public:
   FunctionLowering(Adapter &A, FunctionDecl *F) : A(A), Function(F) {
     Prefix = "nct_f" + digest(A.name(F)).substr(0, 12) + "_";
   }
-  json::Object run() {
-    auto L = Function->getLocation();
-    auto ResultType = type(Function->getReturnType(), L, true);
-    if (recordValue(Function->getReturnType()))
-      ResultPlace = dereference(
-          parameter(parameterType(Function->getReturnType()), L), L);
-    if (const auto *Method = dyn_cast<CXXMethodDecl>(Function);
-        Method && !Method->isStatic()) {
-      if (!A.S.coreV2() ||
-          (!ordinaryMethod(Method) &&
-           !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method))))
-        reject(L, "method", "Unsupported instance-method or constructor definition.");
-      ThisPointer = parameter(Method->getThisType(), L);
+  FunctionLowering(Adapter &A, const CXXRecordDecl *R)
+      : A(A), Function(nullptr), DestroyedRecord(R->getDefinition()) {
+    if (const auto *D = DestroyedRecord->getDestructor(); D && !D->isImplicit()) {
+      if (!ordinaryDestructor(D) || !D->hasBody())
+        reject(D->getLocation(), "destructor", "An admitted owned destructor definition is required.");
+      Function = D->getDefinition();
     }
-    for (const auto *P : Function->parameters()) {
-      auto Place = parameter(parameterType(P->getType()), P->getLocation());
-      Storage.emplace(P->getCanonicalDecl(),
-                      (P->getType()->isLValueReferenceType() ||
-                       recordValue(P->getType()))
-                          ? dereference(std::move(Place), P->getLocation())
-                          : std::move(Place));
+    Prefix = "nct_f" + digest(A.destructionName(R)).substr(0, 12) + "_";
+  }
+  json::Object run() {
+    auto L = Function ? Function->getLocation() : DestroyedRecord->getLocation();
+    auto Name = DestroyedRecord ? A.destructionName(DestroyedRecord)
+                                : A.name(Function);
+    auto ResultType = DestroyedRecord ? std::string("void")
+                                     : type(Function->getReturnType(), L, true);
+    if (DestroyedRecord) {
+      ThisPointer = parameter(A.Context.getPointerType(
+                                  A.Context.getRecordType(DestroyedRecord)), L);
+      DestructionEnd = labelName();
+    } else {
+      if (recordValue(Function->getReturnType()))
+        ResultPlace = dereference(
+            parameter(parameterType(Function->getReturnType()), L), L);
+      if (const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+          Method && !Method->isStatic()) {
+        if (!A.S.coreV2() ||
+            (!ordinaryMethod(Method) &&
+             !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method))))
+          reject(L, "method", "Unsupported instance-method or constructor definition.");
+        ThisPointer = parameter(Method->getThisType(), L);
+      }
+      for (const auto *P : Function->parameters()) {
+        auto Place = parameter(parameterType(P->getType()), P->getLocation());
+        Storage.emplace(P->getCanonicalDecl(),
+                        (P->getType()->isLValueReferenceType() ||
+                         recordValue(P->getType()))
+                            ? dereference(std::move(Place), P->getLocation())
+                            : std::move(Place));
+      }
     }
     Entry = labelName();
     label(Entry, L);
-    if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Function))
+    Scopes.emplace_back(); // By-value parameters end after body locals.
+    if (Function && !DestroyedRecord)
+      for (const auto *P : Function->parameters())
+        if (recordValue(P->getType()) && needsDestruction(P->getType()))
+          own(storage(P, P->getLocation()), P->getType(), P->getLocation(), Scopes.back());
+    if (const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function))
       constructorInitializers(Constructor);
-    statement(Function->getBody());
-    if (Open && reachable().count(Current)) {
+    if (Function)
+      statement(Function->getBody());
+    if (DestroyedRecord) {
+      if (Open) {
+        cleanupScopes(0);
+        jump(DestructionEnd, L);
+      }
+      label(DestructionEnd, L);
+      destructionMembers();
+      Body.push_back(json::Object{{"op", "return"}, {"loc", A.loc(L)}});
+      Open = false;
+    } else if (Open && reachable().count(Current)) {
+      if (!Function->isMain() && ResultType != "void")
+        reject(L, "function return",
+               "A reachable nonvoid function path falls through without returning.");
+      cleanupScopes(0);
       if (Function->isMain()) {
         Body.push_back(json::Object{{"op", "return"},
                                     {"value", A.zero(A.Context.IntTy, L)},
                                     {"loc", A.loc(L)}});
-      } else if (ResultType == "void") {
+      } else {
         Body.push_back(json::Object{{"op", "return"}, {"loc", A.loc(L)}});
-      } else
-        reject(L, "function return",
-               "A reachable nonvoid function path falls through without "
-               "returning.");
+      }
+      Open = false;
     }
+    Scopes.pop_back();
+    // Flags discovered in later branches must be initialized before any path
+    // can inspect them. Reset-on-cleanup makes the same source place reusable
+    // on the next loop iteration, without branch-local uninitialized flags.
+    json::Array WithFlags;
+    for (auto &V : Body) {
+      bool IsEntry = V.getAsObject()->getString("op") == "label" &&
+                     V.getAsObject()->getString("label") == Entry;
+      WithFlags.push_back(std::move(V));
+      if (IsEntry)
+        for (const auto &Flag : LiveFlags) {
+          auto Zero = boolean(false, L);
+          A.chargeExpansion(1 + generatedNodes(Flag) + generatedNodes(Zero), L);
+          WithFlags.push_back(json::Object{{"op", "assign"},
+                                           {"target", json::Object(Flag)},
+                                           {"value", std::move(Zero)},
+                                           {"loc", A.loc(L)}});
+        }
+    }
+    Body = std::move(WithFlags);
     auto Reachable = reachable();
     json::Array Pruned;
     bool Keep = false;
@@ -1276,10 +1493,10 @@ public:
         Pruned.push_back(std::move(V));
     }
     return json::Object{
-        {"name", A.name(Function)},
+        {"name", Name},
         {"result", ResultPlace ? "void" : ResultType},
-        {"internal", Function->getFormalLinkage() == Linkage::Internal},
-        {"c_export", Function->isExternC() &&
+        {"internal", DestroyedRecord || Function->getFormalLinkage() == Linkage::Internal},
+        {"c_export", !DestroyedRecord && Function->isExternC() &&
                          Function->getFormalLinkage() != Linkage::Internal},
         {"params", std::move(Parameters)},
         {"locals", std::move(Locals)},
@@ -1290,5 +1507,8 @@ public:
 
 json::Object Adapter::lower(FunctionDecl *Function) {
   return FunctionLowering(*this, Function).run();
+}
+json::Object Adapter::lowerDestruction(const CXXRecordDecl *Record) {
+  return FunctionLowering(*this, Record).run();
 }
 } // namespace nct

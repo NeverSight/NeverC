@@ -4,6 +4,7 @@
 #include "clang/AST/Attr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -52,6 +53,31 @@ bool ordinaryConstructor(const CXXConstructorDecl *C) {
     return false;
   const auto *Prototype = C->getType()->getAs<FunctionProtoType>();
   return Prototype && !Prototype->hasExceptionSpec();
+}
+
+bool ordinaryDestructor(const CXXDestructorDecl *D) {
+  if (!D || D->isImplicit() || !D->isUserProvided() || D->isVirtual() ||
+      D->isDeletedAsWritten() || D->isExplicitlyDefaulted() ||
+      D->getTemplatedKind() != FunctionDecl::TK_NonTemplate)
+    return false;
+  // A spelled destructor without noexcept still has an implicit exception
+  // specification. Only written specifications remain outside this increment.
+  const auto *Info = D->getTypeSourceInfo();
+  if (!Info)
+    return false;
+  auto Location = Info->getTypeLoc().getAs<FunctionProtoTypeLoc>();
+  return Location && Location.getExceptionSpecRange().isInvalid();
+}
+
+bool needsDestruction(QualType T) {
+  while (const auto *Array = dyn_cast<ArrayType>(T.getCanonicalType().getTypePtr()))
+    T = Array->getElementType();
+  const auto *Record = T->getAsCXXRecordDecl();
+  return Record && !Record->hasTrivialDestructor();
+}
+
+std::string Adapter::destructionName(const CXXRecordDecl *Record) {
+  return name(Record) + "_destroy";
 }
 
 const Expr *directMethodReference(const CallExpr *Call) {
@@ -602,7 +628,8 @@ public:
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
     if ((Method && (!A.S.coreV2() ||
                     (!ordinaryMethod(Method) &&
-                     !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method))))) ||
+                     !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method)) &&
+                     !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(Method))))) ||
         D->isVariadic() ||
         D->getDescribedFunctionTemplate() ||
         D->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
@@ -612,7 +639,8 @@ public:
                "This member, template, variadic or special function form is "
                "outside the selected profile.");
     const auto *Prototype = D->getType()->getAs<FunctionProtoType>();
-    if (Prototype && Prototype->hasExceptionSpec())
+    if (Prototype && Prototype->hasExceptionSpec() &&
+        !(A.S.coreV2() && ordinaryDestructor(dyn_cast<CXXDestructorDecl>(D))))
       A.reject(D->getLocation(), "exception specification",
                "Exception specifications are outside the core profile.");
     if (D->isMain() &&
@@ -644,7 +672,10 @@ public:
       if (!Declaration || D->doesThisDeclarationHaveABody())
         Declaration = D;
     }
-    if (D->doesThisDeclarationHaveABody() && !D->isImplicit())
+    // Destructors are emitted once per record, including the implicit member
+    // destruction epilogue, rather than as an ordinary body-only function.
+    if (D->doesThisDeclarationHaveABody() && !D->isImplicit() &&
+        !(A.S.coreV2() && isa<CXXDestructorDecl>(D)))
       A.Functions.push_back(D);
     return true;
   }
@@ -657,6 +688,12 @@ public:
                "Static data members require class storage and initialization lowering.");
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
       checkBinding(D->getInit());
+    if (A.S.coreV2() && !D->isLocalVarDeclOrParm() &&
+        needsDestruction(D->getType())) {
+      A.reject(D->getLocation(), "global destruction",
+               "Global records requiring destruction need static lifetime lowering.");
+      return true;
+    }
     if (!D->isLocalVarDeclOrParm() &&
         (D->getType()->isPointerType() || D->getType()->isReferenceType() ||
          (A.S.coreV2() && containsArray(D->getType())))) {
@@ -705,17 +742,22 @@ public:
                  "Incomplete records are unsupported.");
       return true;
     }
+    // Nontrivial destruction does not imply nontrivial copying. Keep copying
+    // independently bounded while admitting owned destruction of these records.
+    const bool SupportedCopies = D->hasTrivialCopyConstructor() &&
+                                 D->hasTrivialCopyAssignment() &&
+                                 !D->hasNonTrivialMoveConstructor() &&
+                                 !D->hasNonTrivialMoveAssignment();
     const bool ConstructedRecord = A.S.coreV2() && D->isStandardLayout() &&
-                                   D->isTriviallyCopyable() &&
-                                   D->hasTrivialDestructor();
+                                   SupportedCopies;
     if (D->isUnion() || (!D->isAggregate() && !ConstructedRecord) ||
-        (A.S.coreV2() && (!D->isStandardLayout() || !D->isTriviallyCopyable() ||
-                         !D->hasTrivialDestructor())) || D->field_empty() ||
+        (A.S.coreV2() && (!D->isStandardLayout() || !SupportedCopies)) ||
+        D->field_empty() ||
         D->getNumBases() || D->getDescribedClassTemplate() ||
         D->getDeclContext()->isRecord())
       A.reject(D->getLocation(), "record",
                "Only nonempty, unnested standard-layout records with trivial "
-               "copying and destruction, supported constructors and no bases "
+               "copying, supported construction/destruction and no bases "
                "are admitted.");
     A.Records.push_back(D);
     return true;
@@ -856,6 +898,9 @@ public:
     if (const auto *C = dyn_cast<CallExpr>(S)) {
       const auto *F = C->getDirectCallee();
       const auto *Method = dyn_cast_or_null<CXXMethodDecl>(F);
+      if (A.S.coreV2() && isa_and_nonnull<CXXDestructorDecl>(F))
+        A.reject(S->getBeginLoc(), "explicit destructor call",
+                 "Explicit destruction requires separate lifetime restart rules.");
       if (A.S.coreV2() && Method && ordinaryMethod(Method)) {
         const auto *Reference = directMethodReference(C);
         if (!Reference)
@@ -927,7 +972,8 @@ public:
     if (const auto *This = dyn_cast<CXXThisExpr>(S))
       if (!A.S.coreV2() || !CurrentMethod || CurrentMethod->isStatic() ||
           (!ordinaryMethod(CurrentMethod) &&
-           !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(CurrentMethod))))
+           !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(CurrentMethod)) &&
+           !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(CurrentMethod))))
         A.reject(L, "this",
                  "This requires an admitted instance method or constructor.");
     if (const auto *Reference = dyn_cast<DeclRefExpr>(S))
@@ -1042,6 +1088,10 @@ void Adapter::run() {
   }
   for (auto *F : Functions)
     FunctionData.push_back(lower(F));
+  if (S.coreV2())
+    for (const auto *R : Records)
+      if (needsDestruction(Context.getRecordType(R)))
+        FunctionData.push_back(lowerDestruction(R));
   if (S.project())
     addProjectMetadata();
   if (S.math()) {

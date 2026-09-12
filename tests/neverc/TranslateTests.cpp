@@ -1463,6 +1463,283 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RecordDestructionPreservesLifetimeAndExitOrder) {
+  const auto Source = tmpFile("record-destruction.cpp");
+  const auto Output = tmpFile("record-destruction.nc");
+  writeFile(Source, R"cpp(
+// Execution fixture for the admitted C++17 destruction and lifetime rules.
+struct Trace {
+  int values[64];
+  int used;
+  void add(int value) { values[used++]=value; }
+  void clear() { used=0; }
+  bool matches(const int *expected,int count) const {
+    if(used!=count)return false;
+    for(int i=0;i<count;++i)if(values[i]!=expected[i])return false;
+    return true;
+  }
+};
+struct Guard {
+  Trace *trace;
+  int id;
+  Guard *self;
+  Guard(Trace &log,int value):trace(&log),id(value),self(this){trace->add(id);}
+  ~Guard(){trace->add(-id);}
+  static void mark(Trace &trace){trace.add(9);}
+};
+struct Outer {
+  Guard first,second;
+  Trace *trace;
+  Outer(Trace &log):first(log,1),second(log,2),trace(&log){}
+  ~Outer(){Guard local(*trace,3);trace->add(9);return;}
+};
+struct ImplicitOuter { Guard first,second; };
+struct Pair { int first,second; };
+struct Reset {
+  int *value,*count;
+  ~Reset(){*value=0;++*count;}
+};
+struct D { Trace *trace; int id; ~D(){trace->add(id);} };
+struct NestedD { D value; };
+D resultD(Trace &trace,int id){return {&trace,id};}
+struct Increment {
+  int *value;
+  explicit Increment(int &n):value(&n){}
+  ~Increment(){++*value;}
+};
+Guard make(Trace &trace,int id){return Guard(trace,id);}
+Guard forward(Trace &trace,int id){return make(trace,id);}
+Guard named(Trace &trace,int id){Guard local(trace,id);return local;}
+int parameter(Guard guard){return guard.self==&guard?guard.id:-99;}
+int parameters(Guard first,Guard second,Trace &trace){trace.add(9);return first.id+second.id;}
+int scalarArguments(int a,int b,Trace &trace){trace.add(9);return a+b;}
+int capture(int &value){Increment local(value);return value;}
+int &captureReference(int &value){Increment local(value);return value;}
+struct InitializerTemps {
+  int first,second,array[2];
+  InitializerTemps(Trace &trace):first(Guard(trace,1).id),
+    second((trace.add(9),2)),array{Guard(trace,2).id,(trace.add(8),3)}{}
+};
+struct ParameterOwner {
+  int value;
+  ParameterOwner(Guard guard):value(guard.id){guard.trace->add(9);}
+};
+struct OutOfLine { Trace *trace; ~OutOfLine(); };
+OutOfLine::~OutOfLine(){trace->add(7);}
+Guard &alias(Guard &guard){return guard;}
+Guard recursive(Trace &trace,int depth){
+  if(!depth)return Guard(trace,8);
+  Guard local(trace,depth);
+  return recursive(trace,depth-1);
+}
+struct MethodParameter {
+  Trace *trace;
+  int consume(Guard guard){trace->add(9);return guard.id;}
+};
+struct ArrayGuard { Guard values[2]; };
+int captureTemporary(int &value,int &cleanups){return (Reset{&value,&cleanups},value);}
+int main(){
+  Trace trace{{},0};
+  {Guard first(trace,1);{Guard second(trace,2);}}
+  const int block_expected[4]={1,2,-2,-1};
+  if(!trace.matches(block_expected,4))return 1;
+  trace.clear();
+  {Guard array[2][2]={{Guard(trace,1),Guard(trace,2)},{Guard(trace,3),Guard(trace,4)}};}
+  const int array_expected[8]={1,2,3,4,-4,-3,-2,-1};
+  if(!trace.matches(array_expected,8))return 2;
+  trace.clear();
+  {Outer outer(trace);}
+  const int outer_expected[7]={1,2,3,9,-3,-2,-1};
+  if(!trace.matches(outer_expected,7))return 3;
+  trace.clear();
+  {ImplicitOuter outer{Guard(trace,1),Guard(trace,2)};}
+  if(!trace.matches(block_expected,4))return 4;
+  trace.clear();
+  {Guard result=forward(trace,4);if(result.self!=&result)return 5;}
+  const int result_expected[2]={4,-4};
+  if(!trace.matches(result_expected,2))return 6;
+  trace.clear();
+  if(parameter(Guard(trace,5))!=5)return 7;
+  const int parameter_expected[2]={5,-5};
+  if(!trace.matches(parameter_expected,2))return 8;
+  trace.clear();
+  if(parameters(Guard(trace,1),Guard(trace,2),trace)!=3)return 9;
+  const int parameters_expected[5]={1,2,9,-2,-1};
+  const int parameters_reverse[5]={2,1,9,-1,-2};
+  if(!trace.matches(parameters_expected,5) && !trace.matches(parameters_reverse,5))return 10;
+  trace.clear();
+  if(scalarArguments(Guard(trace,1).id,Guard(trace,2).id,trace)!=3)return 11;
+  if(!trace.matches(parameters_expected,5) && !trace.matches(parameters_reverse,5))return 12;
+  trace.clear();
+  int choose=1;
+  (choose?Guard(trace,1):Guard(trace,2)).id;
+  false && Guard(trace,3).id;
+  true || Guard(trace,4).id;
+  const int conditional_expected[2]={1,-1};
+  if(!trace.matches(conditional_expected,2))return 13;
+  trace.clear();
+  for(Guard outer(trace,1);choose<4;++choose){
+    Guard inner(trace,choose+1);
+    if(choose==1)continue;
+    break;
+  }
+  const int for_expected[6]={1,2,-2,3,-3,-1};
+  if(!trace.matches(for_expected,6))return 14;
+  trace.clear();
+  for(int i=0;i<2;++i){
+    Guard loop(trace,1);
+    switch(Guard init(trace,2);i){
+      case 0:{Guard branch(trace,3);continue;}
+      default:{Guard branch(trace,4);break;}
+    }
+  }
+  const int switch_expected[12]={1,2,3,-3,-2,-1,1,2,4,-4,-2,-1};
+  if(!trace.matches(switch_expected,12))return 15;
+  trace.clear();
+  if(Guard init(trace,1);choose==2)Guard body(trace,2);
+  if(!trace.matches(block_expected,4))return 16;
+  trace.clear();
+  {Guard copy_source(trace,6);if(parameter(copy_source)!=-99)return 17;}
+  const int copy_expected[3]={6,-6,-6};
+  if(!trace.matches(copy_expected,3))return 18;
+  trace.clear();
+  {Guard result=named(trace,7);if(result.id!=7)return 19;}
+  const int named_expected[3]={7,-7,-7};
+  if(!trace.matches(named_expected,3))return 20;
+  int value=3;
+  if(capture(value)!=3 || value!=4)return 21;
+  if(&captureReference(value)!=&value || value!=5)return 22;
+  trace.clear();
+  int comma=(Guard(trace,1).id,Guard(trace,2).id);
+  if(comma!=2 || !trace.matches(block_expected,4))return 23;
+  trace.clear();
+  int loops=0;
+  do{Guard body(trace,++loops);continue;}while(loops<2);
+  const int repeat_expected[4]={1,-1,2,-2};
+  if(!trace.matches(repeat_expected,4))return 24;
+  trace.clear();
+  Pair pair{Guard(trace,1).id,(trace.add(9),2)};
+  const int aggregate_expected[3]={1,9,-1};
+  if(pair.first!=1 || pair.second!=2 || !trace.matches(aggregate_expected,3))return 25;
+  int condition=1,cleanups=0,hits=0;
+  if((Reset{&condition,&cleanups},condition))++hits;
+  if(hits!=1 || condition!=0 || cleanups!=1)return 26;
+  condition=1;cleanups=0;hits=0;
+  while((Reset{&condition,&cleanups},condition))++hits;
+  if(hits!=1 || condition!=0 || cleanups!=2)return 27;
+  condition=1;cleanups=0;hits=0;
+  for(;(Reset{&condition,&cleanups},condition);)++hits;
+  if(hits!=1 || condition!=0 || cleanups!=2)return 28;
+  condition=1;cleanups=0;hits=0;
+  do{++hits;}while((Reset{&condition,&cleanups},condition));
+  if(hits!=2 || condition!=0 || cleanups!=2)return 29;
+  condition=7;cleanups=0;hits=0;
+  switch((Reset{&condition,&cleanups},condition)){case 7:hits=1;break;default:hits=2;}
+  if(hits!=1 || condition!=0 || cleanups!=1)return 30;
+  trace.clear();
+  D{&trace,(D{&trace,1},2)};
+  const int completion_expected[2]={2,1};
+  if(!trace.matches(completion_expected,2))return 31;
+  trace.clear();
+  resultD(trace,(D{&trace,1},2));
+  if(!trace.matches(completion_expected,2))return 32;
+  trace.clear();
+  NestedD{{&trace,(D{&trace,1},2)}};
+  if(!trace.matches(completion_expected,2))return 33;
+  trace.clear();
+  InitializerTemps initializer(trace);
+  const int initializer_expected[6]={1,-1,9,2,8,-2};
+  if(initializer.first!=1 || initializer.second!=2 || initializer.array[1]!=3 ||
+     !trace.matches(initializer_expected,6))return 34;
+  trace.clear();
+  {ParameterOwner owner(Guard(trace,4));if(owner.value!=4)return 35;}
+  const int owner_expected[3]={4,9,-4};
+  if(!trace.matches(owner_expected,3))return 36;
+  trace.clear();
+  Guard(trace,1).mark(trace);
+  if(!trace.matches(aggregate_expected,3))return 37;
+  trace.clear();
+  {OutOfLine out{&trace};{Guard local(trace,1);alias(local).id;}}
+  const int alias_expected[3]={1,-1,7};
+  if(!trace.matches(alias_expected,3))return 38;
+  value=7;cleanups=0;
+  if(captureTemporary(value,cleanups)!=7 || value!=0 || cleanups!=1)return 39;
+  trace.clear();
+  {Guard result=recursive(trace,2);if(result.self!=&result)return 40;}
+  const int recursive_expected[6]={2,1,8,-1,-2,-8};
+  if(!trace.matches(recursive_expected,6))return 41;
+  trace.clear();
+  MethodParameter method{&trace};
+  if(method.consume(Guard(trace,4))!=4 || !trace.matches(owner_expected,3))return 42;
+  trace.clear();
+  int element=ArrayGuard{{Guard(trace,1),Guard(trace,2)}}.values[1].id;
+  if(element!=2 || !trace.matches(block_expected,4))return 43;
+  trace.clear();
+  {D elements[2];for(int i=0;i<2;++i){elements[i].trace=&trace;elements[i].id=i+1;}}
+  if(!trace.matches(completion_expected,2))return 44;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("record-destruction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RecordDestructionRetainsUnsupportedLifetimeDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"explicit-noexcept", "struct R{int n;~R()noexcept{}};"},
+      {"explicit-noexcept-false", "struct R{int n;~R()noexcept(false){}};"},
+      {"explicit-empty-throw", "struct R{int n;~R()throw(){}};"},
+      {"explicit-defaulted", "struct R{int n;~R()=default;};"},
+      {"explicit-deleted", "struct R{int n;~R()=delete;};"},
+      {"virtual", "struct R{int n;virtual ~R(){}};"},
+      {"explicit-call", "struct R{int n;~R(){}};void f(R&r){r.~R();}"},
+      {"explicit-dead-call", "struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}"},
+      {"explicit-alias-call", "struct R{int n;~R(){}};using T=R;void f(R&r){r.~T();}"},
+      {"copy-constructor", "struct R{int n;R(const R&r):n(r.n){}~R(){}};"},
+      {"move-constructor", "struct R{int n;R(R&&r):n(r.n){}~R(){}};"},
+      {"copy-assignment", "struct R{int n;R&operator=(const R&r){n=r.n;return *this;}~R(){}};"},
+      {"global", "struct R{int n;~R(){}};const R r{1};"},
+      {"global-containing", "struct R{int n;~R(){}};struct Box{R r;};const Box box{{1}};"},
+      {"static-local", "struct R{int n;~R(){}};int f(){static R r{1};return r.n;}"},
+      {"thread-local", "struct R{int n;~R(){}};int f(){thread_local R r{1};return r.n;}"},
+      {"reference-extension", "struct R{int n;~R(){}};int f(){const R&r=R{1};return r.n;}"},
+      {"temporary-receiver", "struct R{int n;~R(){}int get(){return n;}};int f(){return R{1}.get();}"},
+      {"allocation", "struct R{int n;~R(){}};R*f(){return new R{1};}"},
+      {"delete", "struct R{int n;~R(){}};void f(R*p){delete p;}"},
+      {"unwinding", "struct R{int n;~R(){}};void f(){R r{1};throw 7;}"},
+      {"body-throw", "struct R{int n;~R(){throw 7;}};"},
+      {"body-try", "struct R{int n;~R(){try{n=1;}catch(...){n=2;}}};"},
+      {"cleanup-expansion", "struct R{int n;~R(){}};void f(){R r[65536];}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("destruction-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("destruction-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("destruction-definition.cpp");
+  const auto Output = tmpFile("destruction-definition.nc");
+  writeFile(Source, "struct R{int n;~R();};int main(){R r{1};return r.n;}");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  expectCode(Result, "TR0203");
+  expectNoArtifacts(Output);
+  writeFile(Source, "struct R{int n;~R(){}};int main(){R r{1};return r.n;}");
+  Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2RecordCallsPreserveObjectStorageAndSourceCopies) {
   const auto Source = tmpFile("record-call-storage.cpp");
   const auto Output = tmpFile("record-call-storage.nc");
@@ -1580,7 +1857,6 @@ TEST_F(TranslateTest, CoreV2RecordCallsRetainLifetimeAndSourceTypeBoundaries) {
       {"record-result-fallthrough", "struct R{int n;};R f(bool b){if(b)return {1};}"},
       {"record-copy-constructor", "struct R{int n;R(int v):n(v){}R(const R&x):n(x.n){}};int f(R x){return x.n;}"},
       {"record-move-constructor", "struct R{int n;R(int v):n(v){}R(R&&x):n(x.n){}};R f(){return R(1);}"},
-      {"record-destructor", "struct R{int n;R(int v):n(v){}~R(){}};R f(){return R(1);}"},
       {"record-result-reference-binding", "struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}"},
       {"record-result-method-receiver", "struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}"},
       {"record-result-c-export", "struct R{int n;};extern \"C\" R exported(){return {1};}"},
@@ -1760,7 +2036,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};"},
       {"copy-constructor", "struct R{int n;R(int v):n(v){} R(const R&v):n(v.n){}};"},
       {"move-constructor", "struct R{int n;R(int v):n(v){} R(R&&v):n(v.n){}};"},
-      {"destructor", "struct R{int n;R():n(1){} ~R(){}};"},
       {"virtual-method", "struct R{int n;R():n(1){} virtual int get(){return n;}};"},
       {"implicit-nontrivial-default", "struct I{int n;I():n(1){}};struct R{I i;};int f(){R r;return r.i.n;}"},
       {"implicit-nontrivial-array-default", "struct I{int n;I():n(1){}};struct R{I i[2];};int f(){R r;return r.i[0].n;}"},
@@ -1929,7 +2204,6 @@ TEST_F(TranslateTest, CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries) {
       {"static-function-pointer", "struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}"},
       {"virtual-method", "struct R{int n;virtual int get(){return n;}};"},
       {"base-class", "struct B{int n;};struct R:B{int get(){return n;}};"},
-      {"destructor", "struct R{int n;~R(){}};"},
       {"conversion", "struct R{int n;operator int()const{return n;}};"},
       {"operator", "struct R{int n;int operator()()const{return n;}};"},
       {"volatile-method", "struct R{int n;int get()volatile{return n;}};"},

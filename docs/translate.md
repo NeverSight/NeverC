@@ -21,7 +21,7 @@ The `cpp-core-v1` profile accepts one self-contained C++17 source without includ
 
 Select `--profile cpp-core-v2` to add checked `typedef`/`using` aliases, enums with supported integral underlying types, `static_assert`, bounded object pointers and lvalue references. References preserve aliases, including parameters and returned references; nested pointee `const` and null pointers are supported. The single-source and no-include restrictions still apply. See the [core v2 contract](../utils/translate-frontends/docs/cpp-core-v2.md).
 
-Core v2 also adds fixed-size local arrays and array fields, multidimensional indexing, and pointers/references to arrays. Partial initialization zero-initializes omitted scalar elements; record elements follow their selected initialization; element initialization preserves source order and aliasing. Extents and initializer expansion are bounded. Global arrays, variable-length arrays and nontrivial element destruction remain unsupported.
+Core v2 also adds fixed-size local arrays and array fields, multidimensional indexing, and pointers/references to arrays. Partial initialization zero-initializes omitted scalar elements; record elements follow their selected initialization; element initialization preserves source order and aliasing. Extents and initializer expansion are bounded. Global arrays and variable-length arrays remain unsupported.
 
 Core v2 supports `switch`/`case`/`default`, including C++17 init-statements, fallthrough and validated `[[fallthrough]]` annotations. Selector evaluation occurs once; nested switches and loops retain their own `break` and `continue` targets. GNU case ranges and other statement attributes remain rejected.
 
@@ -33,9 +33,11 @@ Core v2 verifies source sizes and ABI alignments against NeverC’s own target m
 
 Core v2 supports named nonvirtual member functions of the admitted records, including const overloads, lvalue-qualified methods, static methods and `this`. Calls preserve the original object and evaluate the receiver before arguments. Nonstatic calls on temporary objects, inheritance, templates and general STL remain unsupported.
 
-Core v2 also supports ordinary user-provided constructors for standard-layout records with trivial copying and destruction. Locals, record fields and array elements are constructed directly in their final storage; fields initialize in declaration order. Explicitly defaulted/delegating constructors, user-defined copy/move constructors, destructors, cleanup and exceptions remain unsupported.
+Core v2 also supports ordinary user-provided constructors for standard-layout records with trivial copying. Locals, record fields and array elements are constructed directly in their final storage; fields initialize in declaration order. Explicitly defaulted/delegating constructors, user-defined copy/move constructors and exceptions remain unsupported.
 
-Core v2 gives each by-value record parameter a separate object and writes record results directly into the caller’s destination. This convention also covers constructors and methods; source-required copies remain copies, while references retain aliases. It is NeverC’s chosen behavior for the admitted trivial records, not a universal C++17 address guarantee. Nontrivial copy/move, destruction, cleanup and full STL support remain under development.
+Core v2 gives each by-value record parameter a separate object and writes record results directly into the caller’s destination. Constructors and methods use the same rules; source-required copies and reference aliases remain intact. For eligible trivial records, other C++17 implementations may introduce additional argument/result copies.
+
+Core v2 supports ordinary user-defined destructors and implicit member destruction on normal exits. Local objects, record fields and array elements are destroyed in reverse order; temporaries end at full-expression boundaries after their values are captured. Returns, branches, loops, break and continue perform the required cleanup. By-value parameters are destroyed when the callee exits; returned objects belong to the caller. Explicit destructor calls, written exception specifications, static destruction and exception unwinding remain unsupported. Nontrivial copy/move and full STL support are still under development.
 
 ## Multi-file projects
 

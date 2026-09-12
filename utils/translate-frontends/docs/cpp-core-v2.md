@@ -175,10 +175,11 @@ rejected, including in dead/folded code. A pointer field of a temporary containe
 may still point to a separate live object. Explicit reference arguments retain
 the existing temporary-binding restrictions for both static and instance calls.
 
-User-defined destructors, operators/conversions, virtual methods,
-inheritance, volatile/restrict and rvalue-qualified methods, default arguments,
-exception specifications, templates, static data and nontrivial destruction
-remain unsupported. Ordinary constructors follow the separate rules below. The existing implicit trivial copy paths are unchanged.
+User-defined operators/conversions, virtual methods, inheritance,
+volatile/restrict and rvalue-qualified methods, default arguments, exception
+specifications, templates and static data remain unsupported. Ordinary
+constructors and destructors follow the separate rules below. The existing
+implicit trivial copy paths are unchanged.
 These methods do not establish STL container or iterator support. V1 profiles
 retain their rejected-method boundary.
 
@@ -186,8 +187,9 @@ retain their rejected-method boundary.
 
 Core v2 admits ordinary user-provided default, converting and multi-argument
 constructors, including `explicit`, `constexpr` and out-of-line definitions.
-Records must be nonempty, unnested, standard-layout and trivially copyable, with
-trivial destruction and no bases. Fields remain public, non-mutable, non-const,
+Records must be nonempty, unnested and standard-layout, with trivial copy
+construction/assignment, no nontrivial move operations and no bases. Destruction
+follows the separate lifetime contract below. Fields remain public, non-mutable, non-const,
 non-reference and non-bitfield, without default member initializers. Ordinary
 methods may use these records. Allowing a constructor does not admit arbitrary
 class layouts or foreign C++ ABI interchange.
@@ -243,11 +245,11 @@ qualifications.
 
 Explicitly defaulted/deleted, delegating, inherited, user-defined copy/move,
 template and variadic constructors, default arguments and exception specifications
-remain rejected. User destructors, nontrivial copying, cleanup/unwinding, allocation,
-static guards, inheritance, virtual dispatch and STL are still outside this
-increment. Compile-time const scalar/record globals may use an admitted constexpr
-constructor after source inspection; dynamic, pointer and array global restrictions
-remain unchanged. V1 profiles continue to reject user constructors.
+remain rejected. Nontrivial copying, exception unwinding, allocation, static
+guards, inheritance, virtual dispatch and STL are still outside this increment.
+Compile-time const scalar/record globals may use an admitted constexpr
+constructor after source inspection; records requiring destruction and existing
+dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
 
 ## Record arguments and results
 
@@ -292,9 +294,84 @@ trivial records. C++17 permits other implementations to introduce eligible
 trivial function argument/result copies; this is not a universal language address
 guarantee. An intentional copy retains stored pointers and does not repair them.
 Named-local or named-parameter returns keep Clang's selected copy/move operation;
-NeverC does not infer NRVO by aliasing the source to the destination. Nontrivial
-copy/move, destruction, parameter cleanup and exception unwinding are still
-rejected and require separate lifetime support before broader C++/STL admission.
+NeverC does not infer NRVO by aliasing the source to the destination. Normal
+destruction and parameter cleanup follow the contract below. Nontrivial copy/move
+and exception unwinding still require further support before broader C++/STL
+admission.
+
+## Record destruction and normal lifetimes
+
+Core v2 admits ordinary user-provided destructors of the records described
+above, including out-of-line definitions and implicit destruction of containing
+records. Copy construction and assignment must remain trivial; a user destructor
+does not by itself require nontrivial copying. The source still has no bases,
+virtual dispatch, unions, reference members or unsupported field layouts.
+Explicitly defaulted/deleted destructors, written `noexcept`/`throw(...)`
+specifications and explicit destructor calls remain rejected, including in dead
+code. An ordinary destructor's implicit C++ exception specification is accepted.
+Every written destructor needs an owned definition.
+
+Each record needing destruction has one internal ordinary void function with a
+mutable pointer to its object. It runs the user body, destroys its body locals,
+and then destroys members in reverse declaration order. Arrays recurse in
+reverse index order. Early `return;` in a destructor still reaches member
+cleanup. Implicit containing-record destruction is synthesized from the checked
+record fields, independent of whether Clang has instantiated an implicit body.
+These functions and calls retain the existing typed protocol verification.
+
+Automatic objects become live only after initialization completes. Normal scope
+exit, `return`, `break` and `continue` destroy the live objects in exited scopes
+in reverse completion order. Implicit scopes around unbraced statement bodies
+are included. A for-init object lives through the loop; condition-variable scope
+follows its statement, including the for increment. Branches and repeated
+iterations never destroy skipped or already cleaned objects. Storage declarations
+at function entry do not start source object lifetimes.
+
+Temporary objects are owned by their enclosing full-expression. Cleanup runs
+in reverse order of completed initialization at declaration initializers,
+expression statements, conditions, return operands, for increments and each
+constructor member initializer. Temporaries in an aggregate initializer remain
+alive through all clauses of that initializer. Nested call arguments do not
+prematurely clean enclosing temporaries. Short-circuit and conditional expressions
+clean only the temporaries actually initialized on the selected path. Conditions
+capture their converted bool value, switch selectors their promoted value, and
+return operands their value or destination before temporary cleanup can change
+an aliased source object. The final false loop condition also performs cleanup.
+
+A by-value record parameter is owned by the callee. NeverC evaluates its arguments
+left to right and destroys parameter objects in reverse order after body locals,
+at callee exit. C++17 permits implementations to choose callee-exit or enclosing
+full-expression destruction for parameters; this profile consistently selects
+callee-exit destruction. Caller argument temporaries other than the parameter
+objects keep their enclosing full-expression lifetime. The caller owns a record
+result and destroys it according to its destination's lifetime. An intentional
+source copy has its own lifetime; stored pointer values are not repaired.
+
+```cpp
+struct AddOnExit {
+  int *value;
+  int amount;
+  ~AddOnExit() { *value += amount; }
+};
+int saved(int &value) {
+  AddOnExit local{&value, 2};
+  return value;
+}
+int main() {
+  int value = 3;
+  int before = saved(value);
+  return before == 3 && value == 5 ? 0 : 1;
+}
+```
+
+This increment covers normal completion only. Throw/catch, stack unwinding,
+partial construction rollback, allocation/deallocation, static/global object
+destruction, reference lifetime extension and nonstatic calls on temporary
+receivers remain rejected. Existing expansion/storage limits also bound emitted
+cleanup instructions and recursive array destruction. V1 profiles retain their
+original trivial-lifetime boundary. Regression fixtures cover O0/O2 execution,
+protocol ownership and signatures, return capture, member/array order and
+relocation; native success must be established for the implementing revision.
 
 ## Pointer offsets and differences
 
@@ -366,8 +443,8 @@ int main() {
 ```
 
 Global arrays and global records containing arrays, zero-length and variable-length
-arrays, unsupported element types and nontrivial element destruction
-remain rejected, including in unused or dead code. Indexing requires the same
+arrays and unsupported element types remain rejected, including in unused or
+dead code. Admitted record elements follow the normal destruction rules above. Indexing requires the same
 valid storage and in-bounds accesses as the source program; the translator does
 not add a runtime bounds-check guarantee. Constant `sizeof` and type-form
 `alignof` follow the integral-query rules above; pointer offsets and differences
@@ -436,7 +513,7 @@ a separate generated header belongs to project mode.
 ## Remaining scope and wire representation
 
 128-bit and extended integers, floating-point types,
-classes requiring nontrivial copying/destruction or cleanup, templates, exceptions, STL headers
+classes requiring nontrivial copying or exception unwinding, templates, exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2
 does not implicitly combine their capabilities.

@@ -69,6 +69,8 @@ bool validExportName(llvm::StringRef Name);
 bool isolateProjectEnvironment();
 bool ordinaryMethod(const clang::CXXMethodDecl *Method);
 bool ordinaryConstructor(const clang::CXXConstructorDecl *Constructor);
+bool ordinaryDestructor(const clang::CXXDestructorDecl *Destructor);
+bool needsDestruction(clang::QualType Type);
 const clang::Expr *directMethodReference(const clang::CallExpr *Call);
 
 // Canonical integral carrier spellings after Clang resolves source types.
@@ -121,6 +123,8 @@ public:
   json::Object constant(const clang::APValue &V, clang::QualType T,
                         clang::SourceLocation L);
   json::Object lower(clang::FunctionDecl *Function);
+  std::string destructionName(const clang::CXXRecordDecl *Record);
+  json::Object lowerDestruction(const clang::CXXRecordDecl *Record);
   void run();
 };
 } // namespace nct

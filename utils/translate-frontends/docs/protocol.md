@@ -64,7 +64,7 @@ Types are strings: `int`, `uint`, `bool`, `void`, or the identifier of a record.
 
 Identifiers are ASCII C identifiers. Non-C-export declarations use an `nct_` prefix and a deterministic digest of their semantic identity. Internal-linkage identities include the normalized relative source path. Native C exports retain their explicit source name and must use scalar signatures; `main` retains its spelling, int return, and empty argument list. All emitted identifiers reject NC keywords and reserved runtime/compiler spellings, including the emitter-private `nct_emit_` prefix. Record typedefs, globals and functions occupy one disjoint ordinary-identifier namespace; parameters and locals are mutually distinct and cannot shadow module declarations. Field names are distinct within each record. Source C exports may not use the generated `nct_` namespace. Identifiers never depend on AST addresses or absolute roots.
 
-Globals are `{name,type,value,loc}`. Their values must be fully folded literal/aggregate trees: the frontend resolves constant references, operators and conversions before serialization. They represent only checked compile-time constants and are never assignable. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. This is sound only for the admitted trivial value types without references, addresses, destructors or variable-sized objects.
+Globals are `{name,type,value,loc}`. Their values must be fully folded literal/aggregate trees: the frontend resolves constant references, operators and conversions before serialization. They represent only checked compile-time constants and are never assignable. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. The v1 profiles restrict this representation to their admitted trivial value types. Core v2 represents source aliases, addressable storage and lifetimes through explicit operations described below; declarations at entry do not perform initialization or start object lifetimes.
 
 ## Pure expressions
 
@@ -151,7 +151,7 @@ Local, field and array-element construction passes the actual destination addres
 array fillers produce one call per element. Direct initialization and temporary
 materialization do not insert an intermediate record copy. Intentional source
 copies retain their existing value representation. Record parameters/results
-use the explicit call-storage convention below. No destruction or cleanup protocol is implied.
+use the explicit call-storage and destruction conventions below.
 See the [constructor and lifetime contract](cpp-core-v2.md#ordinary-record-constructors).
 
 ## Core v2 record call storage
@@ -169,8 +169,29 @@ Nested direct returns forward the same place. Intentional lvalue argument copies
 and named-object return copies use ordinary checked record assignments; their
 source and destination remain distinct. Signatures, arity, pointee identities and
 record layouts are validated by the existing consumer. This convention applies
-to core v2 only and does not admit a foreign ABI, nontrivial copying/destruction,
-cleanup or exception unwinding. See the [source contract](cpp-core-v2.md#record-arguments-and-results).
+to core v2 only and does not admit a foreign ABI, nontrivial copying or exception
+unwinding. Normal cleanup follows the explicit destruction convention below. See the [source contract](cpp-core-v2.md#record-arguments-and-results).
+
+## Core v2 destruction
+
+A record requiring destruction emits one deterministic internal function named
+`<record-id>_destroy`, returning `void` and taking mutable `ptr:<record-id>`.
+Its body contains ordinary verified operations: user destructor statements,
+body-local cleanup and reverse member/array destruction. Implicit containing
+record destructors use the same representation. No opaque cleanup opcode or
+unchecked C++ ABI call is introduced.
+
+The frontend emits bool live flags, initialized at function entry, set after
+object initialization completes and cleared before each cleanup call. Checked
+branches, labels and jumps select only live objects on normal exits and at
+full-expression boundaries. Cleanup expansion uses the existing generated-node
+budget. Source locals and temporaries have separate cleanup ownership; callees
+own by-value record parameters and callers own result destinations. Conditions,
+selectors and return values are captured before cleanup can mutate their source
+storage. The consumer validates flags, control flow, calls and signatures using
+its ordinary rules; source lifetime scheduling is the frontend's responsibility.
+See the [normal lifetime contract](cpp-core-v2.md#record-destruction-and-normal-lifetimes)
+for initialization order, temporary boundaries and unsupported unwind paths.
 
 ## Core v2 layout evidence
 

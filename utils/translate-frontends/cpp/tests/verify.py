@@ -220,6 +220,20 @@ def main():
         'call-record-conditional-result': 'struct R{int n;R(int v):n(v){}};R f(int n){return R(n);}int main(){int n=3;R r=n==3?f(7):f(9);return r.n-7;}',
         'call-record-comma-result': 'struct R{int n;R(int v):n(v){}};R f(int n){return R(n);}int main(){int n=3;R r=(++n,f(n));return r.n-4;}',
     })
+    core_v2.update({
+        'destruction-local': 'struct R{int n;~R(){}};void f(){R r{1};}',
+        'destruction-out-of-line': 'struct R{int n;~R();};R::~R(){n=0;}void f(){R r{1};}',
+        'destruction-implicit-container': 'struct R{int n;~R(){}};struct Box{R r[2];};void f(){Box b{{{1},{2}}};}',
+        'destruction-const': 'struct R{int n;~R(){n=0;}};void f(){const R r{1};}',
+        'destruction-uninitialized': 'struct R{int n;~R(){n=0;}};void f(){R r;}',
+        'destruction-array-filler': 'struct R{int n;R():n(7){}~R(){}};void f(){R r[2]={};}',
+        'destruction-reference-call': 'struct R{int n;~R(){}};R&alias(R&r){return r;}int f(){R r{1};return alias(r).n;}',
+        'destruction-member-initializer': 'struct R{int n;~R(){}};struct Box{int n;Box():n(R{1}.n){}};',
+        'destruction-conditional': 'struct R{int n;~R(){}};int f(bool b){return (b?R{1}:R{2}).n;}',
+        'destruction-parameter': 'struct R{int n;~R(){}};int f(R r){return r.n;}int main(){return f(R{1})-1;}',
+        'destruction-result': 'struct R{int n;~R(){}};R f(){return {1};}int main(){R r=f();return r.n-1;}',
+        'destruction-named-copy': 'struct R{int n;~R(){}};R f(R r){R copy=r;copy=r;return copy;}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -353,6 +367,129 @@ int main() {
     assert [p["type"] for p in old_identity["params"]] == [old_record_id], old_identity
     check("v2-record-parameter-const-write", "struct R{int n;};int f(const R r){r.n=1;return r.n;}",
           "TR0202", profile="cpp-core-v2")
+    destruction_source = """struct R {
+  int *value; int tag;
+  R(int *v,int n):value(v),tag(n){}
+  ~R(){*value=*value*10+tag;}
+};
+struct Box { R first; R second[2]; };
+R make(int *value){return R(value,1);}
+int consume(R value){return value.tag;}
+int capture(int *value){R local(value,2);return *value;}
+void aggregate(int *value){Box box{R(value,1),{R(value,2),R(value,3)}};}
+void flow(int *value,bool b){if(b)R local(value,4);while(b){R local(value,5);break;}}
+int main(){int value=0;R result=make(&value);return consume(R(&value,6));}
+"""
+    destruction = check("v2-destruction-protocol", destruction_source, profile="cpp-core-v2")
+    destruction_records = {r["loc"]["line"]: r for r in destruction["records"]}
+    destruction_functions = {f["name"]: f for f in destruction["functions"]}
+    destruction_by_line = {f["loc"]["line"]: f for f in destruction["functions"]}
+    record, box = destruction_records[1], destruction_records[6]
+    destructors = {r["id"]: destruction_functions[r["id"] + "_destroy"]
+                   for r in (record, box)}
+    for rid, function in destructors.items():
+        assert function["result"] == "void" and function["internal"] and not function["c_export"], function
+        assert [p["type"] for p in function["params"]] == ["ptr:" + rid], function
+    for function in destruction["functions"]:
+        for instruction in function["body"]:
+            if instruction["op"] == "call":
+                callee = destruction_functions[instruction["callee"]]
+                assert [a["type"] for a in instruction["args"]] == [p["type"] for p in callee["params"]], instruction
+                if callee["result"] == "void":
+                    assert "target" not in instruction, instruction
+    destructor_name = destructors[record["id"]]["name"]
+
+    def destruction_calls(function, name=destructor_name):
+        return [n for n in function["body"] if n["op"] == "call" and n["callee"] == name]
+
+    # Function result storage belongs to its caller; parameter storage belongs
+    # to the callee. Neither path may manufacture another owned copy.
+    assert not destruction_calls(destruction_by_line[7])
+    consume = destruction_by_line[8]
+    consumed = destruction_calls(consume)
+    assert len(consumed) == 1, consumed
+    assert storage_pointer_object(consume, consumed[0]["args"][0]) == (
+        "parameter", consume["params"][0]["name"])
+    main_destruct = destruction_functions["main"]
+    caller_cleanup = destruction_calls(main_destruct)
+    assert len(caller_cleanup) == 1, caller_cleanup
+    make_call = next(n for n in main_destruct["body"] if n["op"] == "call"
+                     and n["callee"] == destruction_by_line[7]["name"])
+    parameter_call = next(n for n in main_destruct["body"] if n["op"] == "call"
+                          and n["callee"] == consume["name"])
+    result_object = storage_pointer_object(main_destruct, make_call["args"][0])
+    assert result_object == storage_pointer_object(main_destruct, caller_cleanup[0]["args"][0])
+    assert result_object != storage_pointer_object(main_destruct, parameter_call["args"][0])
+    capture = destruction_by_line[9]
+    returned = next(n["value"] for n in capture["body"] if n["op"] == "return")
+    assert returned["kind"] == "var", returned
+    captured_at = [i for i, n in enumerate(capture["body"]) if n["op"] == "assign"
+                   and n["target"].get("kind") == "var" and n["target"]["name"] == returned["name"]]
+    cleanup_at = [i for i, n in enumerate(capture["body"]) if n["op"] == "call" and n["callee"] == destructor_name]
+    assert len(captured_at) == len(cleanup_at) == 1 and captured_at[0] < cleanup_at[0], capture
+
+    # Implicit member destruction is derived from the record, including reverse
+    # array indices. It cannot depend on a lazily emitted Clang destructor body.
+    box_destructor = destructors[box["id"]]
+    members = destruction_calls(box_destructor)
+    assert len(members) == 3, members
+
+    def destruction_place(function, pointer):
+        if pointer["kind"] == "var":
+            assignments = [n["value"] for n in function["body"] if n["op"] == "assign"
+                           and n["target"].get("kind") == "var" and n["target"]["name"] == pointer["name"]]
+            assert len(assignments) == 1, pointer
+            return destruction_place(function, assignments[0])
+        assert pointer["kind"] == "address", pointer
+        return pointer["args"][0]
+
+    for invocation, expected_index in zip(members[:2], (1, 0)):
+        place = destruction_place(box_destructor, invocation["args"][0])
+        assert place["kind"] == "index" and place["args"][1]["value"] == expected_index, place
+        array = place["args"][0]
+        assert array["kind"] == "array_decay" and array["args"][0]["name"] == box["fields"][1]["name"], array
+    last_member = destruction_place(box_destructor, members[2]["args"][0])
+    assert last_member["kind"] == "member" and last_member["name"] == box["fields"][0]["name"], last_member
+    aggregate = destruction_by_line[10]
+    assert len(destruction_calls(aggregate, box_destructor["name"])) == 1
+    assert not destruction_calls(aggregate), aggregate
+    assert len(destruction_calls(destruction_by_line[11])) == 2
+    with tempfile.TemporaryDirectory(prefix="neverc-destruction-relocated-") as temp:
+        relocated = check("destruction-relocated", destruction_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == destruction, "destructor identities depend on the absolute root"
+
+    destruction_rejected = {
+        'explicit-noexcept': 'struct R{int n;~R()noexcept{}};',
+        'explicit-noexcept-false': 'struct R{int n;~R()noexcept(false){}};',
+        'explicit-empty-throw': 'struct R{int n;~R()throw(){}};',
+        'explicit-defaulted': 'struct R{int n;~R()=default;};',
+        'explicit-deleted': 'struct R{int n;~R()=delete;};',
+        'virtual': 'struct R{int n;virtual ~R(){}};',
+        'explicit-call': 'struct R{int n;~R(){}};void f(R&r){r.~R();}',
+        'explicit-dead-call': 'struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}',
+        'explicit-alias-call': 'struct R{int n;~R(){}};using T=R;void f(R&r){r.~T();}',
+        'copy-constructor': 'struct R{int n;R(const R&r):n(r.n){}~R(){}};',
+        'move-constructor': 'struct R{int n;R(R&&r):n(r.n){}~R(){}};',
+        'copy-assignment': 'struct R{int n;R&operator=(const R&r){n=r.n;return *this;}~R(){}};',
+        'global': 'struct R{int n;~R(){}};const R r{1};',
+        'global-containing': 'struct R{int n;~R(){}};struct Box{R r;};const Box box{{1}};',
+        'static-local': 'struct R{int n;~R(){}};int f(){static R r{1};return r.n;}',
+        'thread-local': 'struct R{int n;~R(){}};int f(){thread_local R r{1};return r.n;}',
+        'reference-extension': 'struct R{int n;~R(){}};int f(){const R&r=R{1};return r.n;}',
+        'temporary-receiver': 'struct R{int n;~R(){}int get(){return n;}};int f(){return R{1}.get();}',
+        'allocation': 'struct R{int n;~R(){}};R*f(){return new R{1};}',
+        'delete': 'struct R{int n;~R(){}};void f(R*p){delete p;}',
+        'unwinding': 'struct R{int n;~R(){}};void f(){R r{1};throw 7;}',
+        'body-throw': 'struct R{int n;~R(){throw 7;}};',
+        'body-try': 'struct R{int n;~R(){try{n=1;}catch(...){n=2;}}};',
+        'cleanup-expansion': 'struct R{int n;~R(){}};void f(){R r[65536];}',
+    }
+    for name, source in destruction_rejected.items():
+        check("v2-destruction-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+    check("v2-destructor-definition", "struct R{int n;~R();};void f(){R r{1};}",
+          "TR0203", profile="cpp-core-v2")
+    check("v1-destructor-still-rejected", "struct R{int n;~R(){}};void f(){R r{1};}", "TR0201")
     constructor_source = """struct R {
   int first, second;
   R *self;
@@ -502,7 +639,6 @@ int main() {
         'record-result-fallthrough': 'struct R{int n;};R f(bool b){if(b)return {1};}',
         'record-copy-constructor': 'struct R{int n;R(int v):n(v){}R(const R&x):n(x.n){}};int f(R x){return x.n;}',
         'record-move-constructor': 'struct R{int n;R(int v):n(v){}R(R&&x):n(x.n){}};R f(){return R(1);}',
-        'record-destructor': 'struct R{int n;R(int v):n(v){}~R(){}};R f(){return R(1);}',
         'record-result-reference-binding': 'struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}',
         'record-result-method-receiver': 'struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}',
         'record-result-c-export': 'struct R{int n;};extern "C" R exported(){return {1};}',
@@ -590,7 +726,6 @@ int main() {
         'method-static-function-pointer': 'struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}',
         'method-virtual-method': 'struct R{int n;virtual int get(){return n;}};',
         'method-base-class': 'struct B{int n;};struct R:B{int get(){return n;}};',
-        'method-destructor': 'struct R{int n;~R(){}};',
         'method-conversion': 'struct R{int n;operator int()const{return n;}};',
         'method-operator': 'struct R{int n;int operator()()const{return n;}};',
         'method-volatile-method': 'struct R{int n;int get()volatile{return n;}};',
@@ -613,7 +748,6 @@ int main() {
         'constructor-inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};',
         'constructor-copy-constructor': 'struct R{int n;R(int v):n(v){} R(const R&v):n(v.n){}};',
         'constructor-move-constructor': 'struct R{int n;R(int v):n(v){} R(R&&v):n(v.n){}};',
-        'constructor-destructor': 'struct R{int n;R():n(1){} ~R(){}};',
         'constructor-virtual-method': 'struct R{int n;R():n(1){} virtual int get(){return n;}};',
         'constructor-implicit-nontrivial-default': 'struct I{int n;I():n(1){}};struct R{I i;};int f(){R r;return r.i.n;}',
         'constructor-implicit-nontrivial-array-default': 'struct I{int n;I():n(1){}};struct R{I i[2];};int f(){R r;return r.i[0].n;}',
