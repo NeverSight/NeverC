@@ -186,6 +186,10 @@ target_include_directories(nevercCppFrontendBridge PRIVATE
   "${LLVM_BINARY_DIR}/tools/clang/include"
   "${LLVM_MAIN_SRC_DIR}/include" "${LLVM_BINARY_DIR}/include")
 target_link_libraries(nevercCppFrontendBridge PRIVATE clangTooling clangIndex)
+# The bridge consumes the static closure even when the host uses clang's GNU
+# driver on Windows (where upstream's MSVC-only propagation does not apply).
+# Keep CLANG_ABI declarations from introducing dllimport references.
+target_compile_definitions(nevercCppFrontendBridge PRIVATE CLANG_BUILD_STATIC)
 # Lowering's local Failure exception is caught inside our ASTConsumer callback.
 # LLVM/Clang themselves remain built without EH/RTTI. In particular, enabling
 # RTTI only here would require typeinfo for upstream's non-RTTI base classes.
