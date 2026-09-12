@@ -24,6 +24,8 @@ Core v2 admite variables locales estáticas no volatile de tipo entero, booleano
 
 Core v2 admite espacios de nombres inline, alias, directivas using y declaraciones using resueltas en espacios de nombres y bloques. Las funciones, variables, tipos y enumeradores sin ámbito importados conservan su identidad, las reglas de búsqueda, los controles de acceso y la vida de los objetos. Los espacios inline conservan la búsqueda combinada con el padre y la búsqueda dependiente de argumentos en ambas direcciones, incluso al anidarlos o reabrirlos. La importación de miembros de clase, los constructores heredados, las plantillas y las importaciones de enumeradores o sintaxis inline anidada explícita de C++20 quedan fuera de esta etapa; C++/STL completo sigue pendiente.
 
+Core v2 admite if constexpr de C++17 resuelto fuera de plantillas. Solo la rama seleccionada genera código de ejecución; se conservan las instrucciones de inicialización, el almacenamiento de variables de condición y la destrucción por ámbito. Ambas ramas fuente se comprueban y el perfil sigue exigiendo definiciones de funciones y globales declaradas aunque solo se usen en una rama descartada. Las ramas dependientes de plantillas y if consteval de C++23 siguen excluidos; C++/STL completo está pendiente.
+
 ## Instalación y traducción escalar
 
 Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).

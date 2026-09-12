@@ -4134,6 +4134,159 @@ TEST_F(TranslateTest, CoreV2InlineNamespacesRetainSourceClosureAndLanguageBounda
   }
 }
 
+TEST_F(TranslateTest, CoreV2ConstexprIfPreservesSelectionInitializationAndCleanup) {
+  const auto Source = tmpFile("constexpr_if.cpp");
+  const auto Output = tmpFile("constexpr_if.nc");
+  writeFile(Source, R"cpp(
+int calls=0;
+int tick(){return ++calls;}
+constexpr bool choose(){return true;}
+struct Choice {
+ bool value;
+ constexpr Choice(bool b):value(b){}
+ constexpr explicit operator bool()const{return value;}
+};
+struct Trace {
+ int*trace;int id;
+ Trace(int*p,int n):trace(p),id(n){*trace=*trace*10+id;}
+ ~Trace(){*trace=*trace*10+id+4;}
+};
+int selected(){if constexpr(true)return 3;else return tick();}
+int opposite(){if constexpr(false)return tick();else return 4;}
+int empty(){if constexpr(false)tick();return 5;}
+int initializer(){if constexpr(int n=tick();false)return n;else return n+6;}
+int conditionVariable(){if constexpr(const int n=3)return n;else return 0;}
+int recordVariable(){if constexpr(constexpr Choice c{true})return c.value?7:0;else return 0;}
+int conversion(){if constexpr(Choice{false})return tick();else return 8;}
+int nested(){if constexpr(choose()){if constexpr(false)return tick();else return 9;}else return 0;}
+auto deduced(){if constexpr(true)return 10;else return Choice{true};}
+int query(){if constexpr(sizeof(int)==4&&noexcept(1+1))return 11;else return tick();}
+int normal(){int t=0;if constexpr(Trace one(&t,1);true){Trace two(&t,2);t=t*10+3;}return t;}
+int noBody(){int t=0;if constexpr(Trace one(&t,1);false){Trace unused(&t,2);}return t;}
+int otherBody(){int t=0;if constexpr(Trace one(&t,1);false){Trace unused(&t,2);}else{Trace three(&t,3);}return t;}
+int captured(int&t){if constexpr(Trace one(&t,1);true){Trace two(&t,2);return t;}else return 0;}
+int breaking(){int t=0;for(int i=0;i<3;++i){if constexpr(Trace one(&t,1);true){Trace two(&t,2);break;}t=99;}return t;}
+int continuing(){int t=0;for(int i=0;i<2;++i){if constexpr(Trace one(&t,1);true){Trace two(&t,2);continue;}t=99;}return t;}
+int inSwitch(int which){int t=0;switch(which){case 0:if constexpr(false){Trace unused(&t,9);int array[2]={1,2};t=array[0];}else{Trace selected(&t,1);}break;default:t=3;}return t;}
+int nestedSwitch(){int t=0;if constexpr(Trace one(&t,1);true){switch(2){case 2:{Trace two(&t,2);break;}default:break;}}return t;}
+int shadows(){int n=3;if constexpr(int n=7;true){if(n!=7)return 0;}return n;}
+#define SELECT constexpr(true)
+int macro(){if SELECT return 12;else return 0;}
+int main(){
+  if(selected()!=3||opposite()!=4||empty()!=5||calls!=0)return 1;
+  if(initializer()!=7||calls!=1)return 2;
+  if(conditionVariable()!=3||recordVariable()!=7)return 3;
+  if(conversion()!=8||calls!=1)return 4;
+  if(nested()!=9||deduced()!=10||query()!=11)return 5;
+  if(normal()!=12365)return 6;
+  if(noBody()!=15||otherBody()!=1375)return 7;
+  int trace=0;
+  if(captured(trace)!=12||trace!=1265)return 8;
+  if(breaking()!=1265)return 9;
+  if(continuing()!=12651265)return 10;
+  if(inSwitch(0)!=15||inSwitch(1)!=3)return 11;
+  if(nestedSwitch()!=1265)return 12;
+  if(shadows()!=3||macro()!=12||calls!=1)return 13;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("constexpr_if" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConstexprIfAcceptsResolvedConstantConditions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"true", "int f(){if constexpr(true)return 3;else return 4;}"},
+      {"false", "int f(){if constexpr(false)return 3;else return 4;}"},
+      {"empty", "int f(){if constexpr(false)return 3;return 4;}"},
+      {"nested", "int f(){if constexpr(true){if constexpr(false)return 3;else return 4;}return 0;}"},
+      {"else-if", "int f(){if constexpr(false)return 1;else if constexpr(true)return 3;else return 4;}"},
+      {"integer", "int f(){if constexpr(3)return 3;else return 4;}"},
+      {"enum", "enum E{n=3};int f(){if constexpr(n==3)return 3;else return 4;}"},
+      {"query", "int f(){if constexpr(sizeof(int)==4&&alignof(int)==4)return 3;else return 4;}"},
+      {"noexcept", "int f(){if constexpr(noexcept(1+1))return 3;else return 4;}"},
+      {"constexpr-function", "constexpr bool choose(){int n=2;return ++n==3;}int f(){if constexpr(choose())return 3;else return 4;}"},
+      {"constexpr-member", "struct R{constexpr bool yes()const{return true;}};int f(){if constexpr(R{}.yes())return 3;else return 4;}"},
+      {"constexpr-conversion", "struct R{constexpr explicit operator bool()const{return true;}};int f(){if constexpr(R{})return 3;else return 4;}"},
+      {"init-call", "int count=0;int next(){return ++count;}int f(){if constexpr(int n=next();true)return n;else return 0;}int main(){return f()!=1||f()!=2;}"},
+      {"init-empty", "int count=0;void f(){if constexpr(++count;false){++count;}}int main(){f();return count-1;}"},
+      {"condition-variable", "int f(){if constexpr(const int n=3)return n;else return 4;}"},
+      {"condition-record", "struct R{bool value;constexpr explicit operator bool()const{return value;}};int f(){if constexpr(constexpr R r{true})return r.value;else return 0;}"},
+      {"auto-return", "struct R{int n;};auto f(){if constexpr(true)return 3;else return R{4};}int main(){return f()-3;}"},
+      {"auto-return-record", "struct R{int n;};auto f(){if constexpr(false)return 3;else return R{4};}int main(){return f().n-4;}"},
+      {"record-init-lifetime", "struct R{int*p;R(int*q):p(q){++*p;}~R(){++*p;}};int f(){int n=0;if constexpr(R r(&n);false)++n;return n;}"},
+      {"discarded-record", "struct R{int*p;R(int*q):p(q){++*p;}~R(){++*p;}};int f(){int n=0;if constexpr(false){R r(&n);}return n;}"},
+      {"loop-break", "int f(){int n=0;while(true){if constexpr(true){++n;break;}}return n;}"},
+      {"loop-continue", "int f(){int n=0;for(int i=0;i<2;++i){if constexpr(true){++n;continue;}n=99;}return n;}"},
+      {"outer-switch", "struct R{int n;};int f(int n){switch(n){case 0:if constexpr(false){R unused{3};int a[2]={1,2};return a[0];}else return 4;default:return 0;}}"},
+      {"inner-switch", "int f(int n){if constexpr(true){switch(n){case 0:return 3;default:return 4;}}return 0;}"},
+      {"aliases", "namespace N{int n=3;}int f(){if constexpr(true){namespace A=N;using A::n;return n;}else return 0;}"},
+      {"static-local", "int f(){if constexpr(true){static int n=3;return ++n;}else return 0;}"},
+      {"macro", "#define YES true\nint f(){if constexpr(YES)return 3;else return 0;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("constexpr_if-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("constexpr_if-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"discarded-floating", "int f(){if constexpr(false){double n=3;return static_cast<int>(n);}return 0;}", "TR0201"},
+      {"discarded-new", "int f(){if constexpr(false){int*p=new int(3);}return 0;}", "TR0201"},
+      {"discarded-throw", "int f(){if constexpr(false)throw 3;return 0;}", "TR0201"},
+      {"discarded-type", "int f(){if constexpr(false){using T=double;}return 0;}", "TR0201"},
+      {"discarded-attribute", "int f(){if constexpr(false){[[maybe_unused]] int n=3;}return 0;}", "TR0201"},
+      {"folded-condition", "int f(){if constexpr(static_cast<int>(3.0)==3)return 1;else return 0;}", "TR0201"},
+      {"folded-function", "constexpr bool f(){return static_cast<int>(3.0)==3;}int g(){if constexpr(f())return 1;else return 0;}", "TR0201"},
+      {"template", "template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else return 0;}", "TR0201"},
+      {"if-consteval", "int f(){if consteval{return 1;}else{return 0;}}", "TR0201"},
+      {"if-not-consteval", "int f(){if !consteval{return 1;}else{return 0;}}", "TR0201"},
+      {"if-not-keyword", "int f(){if not consteval{return 1;}else{return 0;}}", "TR0201"},
+      {"inactive-include", "#if 0\n#include \"missing.h\"\n#endif\nint f(){if constexpr(true)return 3;else return 0;}", "TR0201"},
+      {"nonconstant", "int f(bool b){if constexpr(b)return 1;else return 0;}", "TR0202"},
+      {"nonconstexpr-call", "bool f(){return true;}int g(){if constexpr(f())return 1;else return 0;}", "TR0202"},
+      {"nonconstant-variable", "int f(){if constexpr(int n=3)return n;else return 0;}", "TR0202"},
+      {"discarded-assert", "int f(){if constexpr(false){static_assert(false,\"invalid\");}return 0;}", "TR0202"},
+      {"discarded-source-error", "int f(){if constexpr(false){int n=\"invalid\";}return 0;}", "TR0202"},
+      {"crossing-case", "void f(int n){switch(n){if constexpr(true){case 0:break;}}}", "TR0202"},
+      {"condition-scope", "int f(){if constexpr(const int n=3){}return n;}", "TR0202"},
+      {"break-without-loop", "void f(){if constexpr(true)break;}", "TR0202"},
+      {"discarded-function", "int missing();int f(){if constexpr(false)return missing();return 0;}", "TR0203"},
+      {"discarded-global", "extern int missing;int f(){if constexpr(false)return missing;return 0;}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("constexpr_if-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("constexpr_if-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"int f(){if constexpr(true)return 3;else return 4;}",
+                                  "int f(){if consteval{return 3;}else{return 4;}}"}) {
+    const auto Source = tmpFile("constexpr_if-v1.cpp");
+    const auto Output = tmpFile("constexpr_if-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DefaultArgumentsPreserveEffectsAndCleanup) {
   const auto Source = tmpFile("default-arguments.cpp");
   const auto Output = tmpFile("default-arguments.nc");

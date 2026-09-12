@@ -1489,6 +1489,8 @@ class FunctionLowering {
   void registerSwitchStorage(const Stmt *S) {
     if (!S)
       return;
+    if (const auto *I = dyn_cast<IfStmt>(S); I && A.S.coreV2() && I->isConstexpr())
+      return; // An outer case cannot enter it; selected lowering owns its locals.
     if (const auto *D = dyn_cast<DeclStmt>(S))
       for (const auto *Declaration : D->decls())
         if (const auto *V = dyn_cast<VarDecl>(Declaration))
@@ -1655,6 +1657,16 @@ class FunctionLowering {
       statement(I->getInit());
       if (I->getConditionVariable())
         declaration(I->getConditionVariable());
+      if (I->isConstexpr() && A.S.coreV2()) {
+        auto Selected = I->getNondiscardedCase(A.Context);
+        if (!Selected)
+          reject(L, "if constexpr", "Expected a checked constant branch selection.");
+        scopedStatement(*Selected);
+        if (Open)
+          cleanup(Scopes.back());
+        Scopes.pop_back();
+        return;
+      }
       auto Condition = condition(I->getCond());
       auto Yes = labelName(), No = labelName(), End = labelName();
       branch(std::move(Condition), Yes, No, L, I->getCond());

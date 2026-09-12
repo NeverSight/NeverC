@@ -24,6 +24,8 @@ Core v2 supporta variabili locali statiche non volatile di tipo intero, booleano
 
 Core v2 supporta namespace inline, alias di namespace, direttive using e dichiarazioni using risolte nei namespace e nei blocchi. Funzioni, variabili, tipi ed enumeratori senza ambito importati conservano identità, ricerca dei nomi, controlli di accesso e durata degli oggetti. I namespace inline preservano la ricerca combinata con il namespace padre e la ricerca dipendente dagli argomenti in entrambe le direzioni, anche con annidamento e riapertura. Importazioni di membri di classe, costruttori ereditati, template e importazioni di enumeratori o sintassi inline annidata esplicita di C++20 restano esclusi; il supporto completo C++/STL non è ancora terminato.
 
+Core v2 supporta if constexpr C++17 risolto fuori dai template. Solo il ramo scelto genera codice eseguibile; istruzioni di inizializzazione, memoria delle variabili di condizione e distruzione in base all’ambito restano preservate. Entrambi i rami sorgente vengono controllati e il profilo richiede ancora definizioni per funzioni e globali dichiarate anche quando usate solo in un ramo scartato. Rami dipendenti da template e if consteval C++23 restano esclusi; il supporto completo C++/STL è incompleto.
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

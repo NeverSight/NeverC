@@ -24,6 +24,8 @@ Core v2 supports non-volatile integer, boolean and enum static locals with zero 
 
 Core v2 supports inline namespaces, namespace aliases, using-directives and resolved using-declarations in namespace and block scopes. Imported functions, variables, types and unscoped enumerators keep their original identities, lookup rules, access checks and object lifetimes. Inline namespaces preserve combined parent lookup and argument-dependent lookup in both directions, including nested and reopened namespaces. Class member imports, inherited constructors, templates and C++20 enumerator or explicit nested-inline syntax remain outside this stage; full C++/STL is still unfinished.
 
+Core v2 supports resolved non-template C++17 if constexpr. Only the selected branch generates runtime code; init-statements, condition-variable storage and object cleanup still follow their scopes. Both source branches remain checked, and the current profile still requires declared functions and globals to have definitions even when used only in a discarded branch. Dependent template branches and C++23 if consteval remain unsupported; full C++/STL is unfinished.
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

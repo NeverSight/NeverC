@@ -2322,9 +2322,20 @@ public:
                  "Double arithmetic and compound assignments are outside the "
                  "bounded math profile.");
     }
-    if (const auto *I = dyn_cast<IfStmt>(S); I && I->isConstexpr())
-      A.reject(S->getBeginLoc(), "if constexpr",
-               "Compile-time branches are outside the core profile.");
+    if (const auto *I = dyn_cast<IfStmt>(S)) {
+      if (I->isConsteval())
+        A.reject(L, "if consteval", "Consteval branches require C++23.");
+      else if (I->isConstexpr()) {
+        const auto *Condition = I->getCond();
+        if (!A.S.coreV2() || !Condition || Condition->isTypeDependent() ||
+            Condition->isValueDependent() || Condition->isInstantiationDependent() ||
+            !I->getNondiscardedCase(A.Context))
+          A.reject(L, "if constexpr",
+                   "A resolved core-v2 constant condition is required.");
+        // RAV still checks the condition and both source substatements. A
+        // present selection containing nullptr means false without an else.
+      }
+    }
     return true;
   }
 };

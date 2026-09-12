@@ -5600,6 +5600,208 @@ int main(){return boolChoice()-20;}
     check("v1-inline-namespaces-top", "inline namespace N{int n=3;}", "TR0201")
     check("v1-inline-namespaces-inner", "namespace N{inline namespace V{int n=3;}}", "TR0201")
 
+    constexpr_if_source = """int calls=0;
+int tick(){return ++calls;}
+int left(){return 3;}
+int right(){return 4;}
+constexpr bool choose(){return true;}
+struct Choice {
+ bool value;
+ constexpr Choice(bool b):value(b){}
+ constexpr explicit operator bool()const{return value;}
+};
+struct Unused { int data[2]; };
+struct Result { int n; };
+struct Trace {
+ int*trace;int id;
+ Trace(int*p,int n):trace(p),id(n){*trace=*trace*10+id;}
+ ~Trace(){*trace=*trace*10+id+4;}
+};
+int selected(){if constexpr(true)return left();else return right();}
+int opposite(){if constexpr(false)return left();else return right();}
+int folded(){if constexpr(choose())return left();else return right();}
+int initializer(){if constexpr(int n=tick();false)return right();else return n;}
+int conditionVariable(){if constexpr(const int n=3)return n;else return 0;}
+int recordVariable(){if constexpr(constexpr Choice c{true})return c.value;else return 0;}
+int temporaryCondition(){if constexpr(Choice{true})return left();else return right();}
+auto deduced(){if constexpr(true)return 7;else return Result{9};}
+auto recordResult(){if constexpr(false)return 7;else return Result{9};}
+void discarded(){if constexpr(false){Unused u{};int a[2]={1,2};}}
+int switchDiscard(int n){switch(n){case 0:if constexpr(false){Unused u{};int a[2]={1,2};return a[0];}else return 2;default:return 3;}}
+void normal(int&t){if constexpr(Trace one(&t,1);true){Trace two(&t,2);t=t*10+3;}}
+void noBody(int&t){if constexpr(Trace one(&t,1);false){Trace unused(&t,2);}}
+int captured(int&t){if constexpr(Trace one(&t,1);true){Trace two(&t,2);return t;}else return 0;}
+void breaking(int&t){for(int i=0;i<3;++i){if constexpr(Trace one(&t,1);true){Trace two(&t,2);break;}}}
+void continuing(int&t){for(int i=0;i<2;++i){if constexpr(Trace one(&t,1);true){Trace two(&t,2);continue;}}}
+int main(){return selected()-3;}
+"""
+    constexpr_if = check("v2-constexpr-if-protocol", constexpr_if_source, profile="cpp-core-v2")
+    ci_functions = {f["name"]: f for f in constexpr_if["functions"]}
+
+    def ci_line(prefix):
+        lines = [i for i, line in enumerate(constexpr_if_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def ci_function(prefix, result, parameters):
+        found = [f for f in constexpr_if["functions"] if f["loc"]["line"] == ci_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    def ci_record(prefix):
+        found = [r for r in constexpr_if["records"] if r["loc"]["line"] == ci_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    choice = ci_record("struct Choice {")
+    unused = ci_record("struct Unused {")
+    result = ci_record("struct Result {")
+    trace = ci_record("struct Trace {")
+    left = ci_function("int left()", "int", [])
+    right = ci_function("int right()", "int", [])
+    tick = ci_function("int tick()", "int", [])
+    chooser = ci_function("constexpr bool choose()", "bool", [])
+    constructor = ci_function(" constexpr Choice(", "void", ["ptr:"+choice["id"], "bool"])
+    conversion = ci_function(" constexpr explicit operator bool()", "bool", ["cptr:"+choice["id"]])
+    for prefix, callee in (("int selected()", left), ("int opposite()", right),
+                           ("int folded()", left), ("int temporaryCondition()", left)):
+        function = ci_function(prefix, "int", [])
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == callee["name"]
+        assert not any(n["op"] == "branch" for n in function["body"]), "constexpr condition became a runtime branch"
+        assert not any(v["type"] in (choice["id"], unused["id"]) for v in function["locals"])
+    initializer = ci_function("int initializer()", "int", [])
+    calls = gc_calls(initializer)
+    assert len(calls) == 1 and calls[0]["callee"] == tick["name"]
+    assert not any(n["op"] == "branch" for n in initializer["body"])
+    # Follow value captures back to the call result; the initializer still runs.
+    returned = next(n["value"] for n in initializer["body"] if n["op"] == "return")
+    while returned["kind"] == "var" and returned["name"] != calls[0]["target"]["name"]:
+        values = [n["value"] for n in initializer["body"] if n["op"] == "assign"
+                  and n["target"].get("name") == returned["name"]]
+        assert len(values) == 1, returned
+        returned = values[0]
+    assert returned.get("name") == calls[0]["target"]["name"]
+    variable = ci_function("int conditionVariable()", "int", [])
+    assert [gc_identity(variable, n["value"]) for n in variable["body"] if n["op"] == "return"] == [3]
+    assert not gc_calls(variable) and not any(n["op"] == "branch" for n in variable["body"])
+    record_variable = ci_function("int recordVariable()", "int", [])
+    calls = gc_calls(record_variable)
+    assert len(calls) == 1 and calls[0]["callee"] == constructor["name"]
+    assert gc_identity(record_variable, calls[0]["args"][1]) == 1
+    place = np_pointer(record_variable, calls[0]["args"][0])
+    reads = [n for n in walk(record_variable["body"]) if n.get("kind") == "member"]
+    assert reads and all(np_place(record_variable, n["args"][0]) == place for n in reads)
+    assert all(n["callee"] not in (chooser["name"], conversion["name"]) for n in gc_calls(record_variable))
+    deduced = ci_function("auto deduced()", "int", [])
+    assert [gc_identity(deduced, n["value"]) for n in deduced["body"] if n["op"] == "return"] == [7]
+    assert not any(v["type"] == result["id"] for v in deduced["locals"])
+    record_result = ci_function("auto recordResult()", "void", ["ptr:"+result["id"]])
+    stores = [n for n in record_result["body"] if n["op"] == "assign" and n["target"].get("kind") == "member"]
+    assert len(stores) == 1 and stores[0]["target"]["name"] == result["fields"][0]["name"]
+    assert gc_identity(record_result, stores[0]["value"]) == 9
+    assert np_place(record_result, stores[0]["target"]["args"][0]) == ("parameter", record_result["params"][0]["name"])
+    discarded = ci_function("void discarded()", "void", [])
+    assert discarded["locals"] == [] and not gc_calls(discarded)
+    assert all(n["op"] in ("label", "return") for n in discarded["body"])
+    switched = ci_function("int switchDiscard(", "int", ["int"])
+    assert not any(v["type"] == unused["id"] or v["type"].startswith("arr:") for v in switched["locals"]), "switch pre-registration allocated discarded storage"
+    assert not gc_calls(switched)
+    ctor = ci_function(" Trace(int*", "void", ["ptr:"+trace["id"], "ptr:int", "int"])
+    destructor_name = trace["id"]+"_destroy"
+    for prefix, result_type, count in (("void normal(", "void", 2), ("void noBody(", "void", 1),
+                                        ("int captured(", "int", 2), ("void breaking(", "void", 2),
+                                        ("void continuing(", "void", 2)):
+        function = ci_function(prefix, result_type, ["ptr:int"])
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [ctor["name"]]*count + [destructor_name]*count
+        constructed = [np_pointer(function, c["args"][0]) for c in calls[:count]]
+        destroyed = [np_pointer(function, c["args"][0]) for c in calls[count:]]
+        assert len(set(constructed)) == count and destroyed == list(reversed(constructed))
+        assert sum(v["type"] == trace["id"] for v in function["locals"]) == count
+        assert [gc_identity(function, c["args"][2]) for c in calls[:count]] == list(range(1, count+1))
+        if result_type == "int":
+            returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+            captures = [i for i, n in enumerate(function["body"]) if n["op"] == "assign" and n["target"].get("name") == returned.get("name")]
+            cleanups = [i for i, n in enumerate(function["body"]) if n["op"] == "call" and n["callee"] == destructor_name]
+            assert len(captures) == 1 and captures[0] < min(cleanups)
+    for function in constexpr_if["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in ci_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-constexpr-if-relocated-") as temp:
+        relocated = check("v2-constexpr-if-relocated", constexpr_if_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == constexpr_if, "constexpr-if identities depend on the absolute root"
+
+    constexpr_if_positive = {
+        'true': 'int f(){if constexpr(true)return 3;else return 4;}',
+        'false': 'int f(){if constexpr(false)return 3;else return 4;}',
+        'empty': 'int f(){if constexpr(false)return 3;return 4;}',
+        'nested': 'int f(){if constexpr(true){if constexpr(false)return 3;else return 4;}return 0;}',
+        'else-if': 'int f(){if constexpr(false)return 1;else if constexpr(true)return 3;else return 4;}',
+        'integer': 'int f(){if constexpr(3)return 3;else return 4;}',
+        'enum': 'enum E{n=3};int f(){if constexpr(n==3)return 3;else return 4;}',
+        'query': 'int f(){if constexpr(sizeof(int)==4&&alignof(int)==4)return 3;else return 4;}',
+        'noexcept': 'int f(){if constexpr(noexcept(1+1))return 3;else return 4;}',
+        'constexpr-function': 'constexpr bool choose(){int n=2;return ++n==3;}int f(){if constexpr(choose())return 3;else return 4;}',
+        'constexpr-member': 'struct R{constexpr bool yes()const{return true;}};int f(){if constexpr(R{}.yes())return 3;else return 4;}',
+        'constexpr-conversion': 'struct R{constexpr explicit operator bool()const{return true;}};int f(){if constexpr(R{})return 3;else return 4;}',
+        'init-call': 'int count=0;int next(){return ++count;}int f(){if constexpr(int n=next();true)return n;else return 0;}int main(){return f()!=1||f()!=2;}',
+        'init-empty': 'int count=0;void f(){if constexpr(++count;false){++count;}}int main(){f();return count-1;}',
+        'condition-variable': 'int f(){if constexpr(const int n=3)return n;else return 4;}',
+        'condition-record': 'struct R{bool value;constexpr explicit operator bool()const{return value;}};int f(){if constexpr(constexpr R r{true})return r.value;else return 0;}',
+        'auto-return': 'struct R{int n;};auto f(){if constexpr(true)return 3;else return R{4};}int main(){return f()-3;}',
+        'auto-return-record': 'struct R{int n;};auto f(){if constexpr(false)return 3;else return R{4};}int main(){return f().n-4;}',
+        'record-init-lifetime': 'struct R{int*p;R(int*q):p(q){++*p;}~R(){++*p;}};int f(){int n=0;if constexpr(R r(&n);false)++n;return n;}',
+        'discarded-record': 'struct R{int*p;R(int*q):p(q){++*p;}~R(){++*p;}};int f(){int n=0;if constexpr(false){R r(&n);}return n;}',
+        'loop-break': 'int f(){int n=0;while(true){if constexpr(true){++n;break;}}return n;}',
+        'loop-continue': 'int f(){int n=0;for(int i=0;i<2;++i){if constexpr(true){++n;continue;}n=99;}return n;}',
+        'outer-switch': 'struct R{int n;};int f(int n){switch(n){case 0:if constexpr(false){R unused{3};int a[2]={1,2};return a[0];}else return 4;default:return 0;}}',
+        'inner-switch': 'int f(int n){if constexpr(true){switch(n){case 0:return 3;default:return 4;}}return 0;}',
+        'aliases': 'namespace N{int n=3;}int f(){if constexpr(true){namespace A=N;using A::n;return n;}else return 0;}',
+        'static-local': 'int f(){if constexpr(true){static int n=3;return ++n;}else return 0;}',
+        'macro': '#define YES true\nint f(){if constexpr(YES)return 3;else return 0;}',
+    }
+    for name, source in constexpr_if_positive.items():
+        check("v2-constexpr-if-positive-" + name, source, profile="cpp-core-v2")
+    constexpr_if_reject = {
+        'discarded-floating': 'int f(){if constexpr(false){double n=3;return static_cast<int>(n);}return 0;}',
+        'discarded-new': 'int f(){if constexpr(false){int*p=new int(3);}return 0;}',
+        'discarded-throw': 'int f(){if constexpr(false)throw 3;return 0;}',
+        'discarded-type': 'int f(){if constexpr(false){using T=double;}return 0;}',
+        'discarded-attribute': 'int f(){if constexpr(false){[[maybe_unused]] int n=3;}return 0;}',
+        'folded-condition': 'int f(){if constexpr(static_cast<int>(3.0)==3)return 1;else return 0;}',
+        'folded-function': 'constexpr bool f(){return static_cast<int>(3.0)==3;}int g(){if constexpr(f())return 1;else return 0;}',
+        'template': 'template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else return 0;}',
+        'if-consteval': 'int f(){if consteval{return 1;}else{return 0;}}',
+        'if-not-consteval': 'int f(){if !consteval{return 1;}else{return 0;}}',
+        'if-not-keyword': 'int f(){if not consteval{return 1;}else{return 0;}}',
+        'inactive-include': '#if 0\n#include "missing.h"\n#endif\nint f(){if constexpr(true)return 3;else return 0;}',
+    }
+    for name, source in constexpr_if_reject.items():
+        check("v2-constexpr-if-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    constexpr_if_invalid = {
+        'nonconstant': 'int f(bool b){if constexpr(b)return 1;else return 0;}',
+        'nonconstexpr-call': 'bool f(){return true;}int g(){if constexpr(f())return 1;else return 0;}',
+        'nonconstant-variable': 'int f(){if constexpr(int n=3)return n;else return 0;}',
+        'discarded-assert': 'int f(){if constexpr(false){static_assert(false,"invalid");}return 0;}',
+        'discarded-source-error': 'int f(){if constexpr(false){int n="invalid";}return 0;}',
+        'crossing-case': 'void f(int n){switch(n){if constexpr(true){case 0:break;}}}',
+        'condition-scope': 'int f(){if constexpr(const int n=3){}return n;}',
+        'break-without-loop': 'void f(){if constexpr(true)break;}',
+    }
+    for name, source in constexpr_if_invalid.items():
+        check("v2-constexpr-if-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    constexpr_if_missing = {
+        'discarded-function': 'int missing();int f(){if constexpr(false)return missing();return 0;}',
+        'discarded-global': 'extern int missing;int f(){if constexpr(false)return missing;return 0;}',
+    }
+    for name, source in constexpr_if_missing.items():
+        check("v2-constexpr-if-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-constexpr-if", "int f(){if constexpr(true)return 3;else return 4;}", "TR0201")
+    check("v1-consteval-if", "int f(){if consteval{return 3;}else{return 4;}}", "TR0201")
+
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}
 int next(){mark(1);return number;}

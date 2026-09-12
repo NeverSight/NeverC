@@ -24,6 +24,8 @@ Core v2 unterstützt nicht-volatile statische lokale Variablen mit Ganzzahl-, bo
 
 Core v2 unterstützt Inline-Namespaces, Namespace-Aliasse sowie using-Direktiven und aufgelöste using-Deklarationen in Namespace- und Blockbereichen. Importierte Funktionen, Variablen, Typen und unbeschränkte Enumeratoren behalten ihre Identität, Namensauflösung, Zugriffskontrollen und Objektlebensdauer. Inline-Namespaces bewahren die gemeinsame Suche mit dem übergeordneten Namespace und die argumentabhängige Suche in beide Richtungen, auch bei Verschachtelung und Wiederöffnung. Klassenmember-Importe, geerbte Konstruktoren, Templates sowie C++20-Enumeratorimporte und explizite verschachtelte inline-Syntax sind nicht enthalten; vollständiges C++/STL ist weiterhin nicht erreicht.
 
+Core v2 unterstützt aufgelöstes C++17 if constexpr außerhalb von Templates. Nur der gewählte Zweig erzeugt Laufzeitcode; Initialisierungsanweisungen, Speicher für Bedingungsvariablen und Objektbereinigung bleiben erhalten. Beide Quellzweige werden geprüft, und das aktuelle Profil verlangt Definitionen deklarierter Funktionen und globaler Variablen auch bei ausschließlicher Nutzung im verworfenen Zweig. Abhängige Template-Zweige und C++23 if consteval bleiben ausgeschlossen; vollständiges C++/STL ist noch nicht erreicht.
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

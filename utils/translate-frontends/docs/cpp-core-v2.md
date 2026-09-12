@@ -684,6 +684,48 @@ cleanup timing, actual storage identity and deterministic relocation. Native
 O0/O2 results require CI from the implementing revision. Full C++/STL support
 remains unfinished.
 
+## Resolved constexpr-if
+
+Core v2 admits non-template C++17 `if constexpr` with a resolved constant bool
+condition, including supported integer/enum conversions, size/alignment and
+noexcept queries, constexpr function/member calls and constexpr conversions.
+Only the selected substatement emits runtime operations. A false condition
+without an else selects an empty body. Nested and else-if forms retain this
+selection, including non-template auto return deduction that ignores discarded
+return types.
+
+The init-statement still executes once, and a condition-variable declaration
+still creates and initializes its object. Their scope covers the selected body.
+Evaluating the constant condition itself generates no runtime call, conversion,
+temporary object or conditional branch. In particular, a declared literal-record
+condition variable retains storage while a temporary used only to compute the
+constant condition does not.
+
+Selected-body and initializer objects retain reverse-order destruction on normal
+exit, return, break and continue. Return values are captured before cleanup.
+The constexpr-if introduces no loop control target. An outer switch cannot
+dispatch into a constexpr-if substatement, so its storage pre-registration stops
+at that statement; normal selected lowering allocates the live declarations.
+Discarded automatic arrays and records are not allocated, including in that
+switch combination. Nested switches retain their own case registration.
+
+Both owned source branches and the complete condition source are still checked,
+even when discarded or folded. Unsupported source operations and declarations
+retain their diagnostics, and invalid non-template discarded code remains a
+source error. This stage retains the profile's stricter complete-definition
+requirement for declared functions and globals, even when their only uses are
+discarded. The standard's discarded ODR-use exemption and dependent template
+instantiation need further closure work; this is not a claim of complete
+constexpr-if or template support. Static scalar declarations in discarded source
+may remain canonical globals but add no runtime body or initialization effects.
+
+C++23 `if consteval` and its negated spellings remain explicitly rejected before
+ordinary-if lowering. Old profiles retain their constexpr-if boundary. Native
+O0/O2 fixtures and protocol assertions cover selection, runtime initializers,
+condition variables, return deduction, cleanup, switch storage and relocation.
+Native validation requires the implementing revision's CI; full C++/STL remains
+unfinished.
+
 ## Inline namespaces
 
 Core v2 admits source-owned C++17 named and anonymous inline namespaces,

@@ -129,6 +129,14 @@ Receiver effects and cleanup stay explicit; discarded and unevaluated values
 emit no scalar storage. Source address/reference uses still require a real
 definition. See [declaration-only static constants](cpp-core-v2.md#declaration-only-static-constant-values).
 
+Resolved core-v2 constexpr-if emits only its selected substatement after normal
+init-statement and condition-variable initialization. It adds no condition
+evaluation or runtime selection branch; normal cleanup flags may still branch.
+Discarded automatic declarations do not become locals, including during outer
+switch pre-registration. No new IR operation is needed. See
+[resolved constexpr-if](cpp-core-v2.md#resolved-constexpr-if) for the complete-source
+and definition-closure limits that remain in this profile.
+
 Core-v2 inline namespaces retain their canonical namespace-qualified source
 identities. Parent and explicitly qualified uses share original symbols; distinct
 version namespaces do not merge. Inline visibility and bidirectional ADL require
