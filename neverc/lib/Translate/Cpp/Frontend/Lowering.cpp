@@ -10,7 +10,7 @@ using Expression = json::Object;
 
 class FunctionLowering {
   Adapter &A;
-  FunctionDecl *Function;
+  const FunctionDecl *Function;
   const CXXRecordDecl *DestroyedRecord = nullptr;
   json::Array Parameters, Locals, Body;
   struct OwnedObject {
@@ -1385,7 +1385,7 @@ class FunctionLowering {
   }
 
 public:
-  FunctionLowering(Adapter &A, FunctionDecl *F) : A(A), Function(F) {
+  FunctionLowering(Adapter &A, const FunctionDecl *F) : A(A), Function(F) {
     Prefix = "nct_f" + digest(A.name(F)).substr(0, 12) + "_";
   }
   FunctionLowering(Adapter &A, const CXXRecordDecl *R)
