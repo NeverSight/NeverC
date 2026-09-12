@@ -273,6 +273,10 @@ def main():
         'generated-copy-unevaluated-lazy-copy': 'struct I{int n;I(const I&s){n=s.n+1;}};struct R{I i;R(const R&)=default;};int f(const R&s){return sizeof(R(s));}',
         'generated-copy-mutable-source': 'struct I{int n;I(I&s):n(++s.n){}};struct R{I i[2];~R()=default;};R f(R&s){return s;}',
     })
+    core_v2.update({
+        'generated-copy-implicit-containing-copy': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};Box b=a;}',
+        'generated-copy-implicit-containing-copy-dead': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};if(false){Box b=a;}}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -500,8 +504,6 @@ int main(){
         'move-constructor': 'struct R{int n;R(R&&r):n(r.n){}};',
         'move-assignment': 'struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};',
         'arbitrary-operator': 'struct R{int n;R operator+(const R&r){return {n+r.n};}};',
-        'implicit-containing-copy': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};Box b=a;}',
-        'implicit-containing-copy-dead': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};if(false){Box b=a;}}',
         'implicit-containing-assignment': 'struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};a=b;}',
         'implicit-containing-assignment-dead': 'struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};if(false)a=b;}',
         'temporary-assignment-source': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}',
@@ -615,7 +617,8 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
         if kind in ("cast", "address", "dereference", "array_decay"):
             return gc_identity(function, expr["args"][0])
         if kind == "literal":
-            return expr["value"]
+            # Integer carriers encode their values as decimal strings.
+            return int(expr["value"])
         if kind == "member":
             return ("member", gc_identity(function, expr["args"][0]), expr["name"])
         if kind == "index":
@@ -695,7 +698,6 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
         'copy-noexcept-false': 'struct R{int n;R(const R&)noexcept(false)=default;};',
         'copy-throw': 'struct R{int n;R(const R&)throw()=default;};',
         'out-of-line-noexcept': 'struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;',
-        'volatile-copy': 'struct R{int n;R(const volatile R&)=default;};',
         'move-default': 'struct R{int n;R(R&&)=default;};',
         'move-assignment-default': 'struct R{int n;R&operator=(R&&)=default;};',
         'copy-assignment-default': 'struct R{int n;R&operator=(const R&)=default;};',
@@ -712,6 +714,8 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
         'decomposed-array-copy': 'int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}',
         'copy-expansion': 'struct I{int n;I(const I&s):n(s.n){}};struct R{I items[65536];~R()=default;};R f(const R&s){return s;}',
     }
+    check("v2-generated-copy-invalid-volatile", "struct R{int n;R(const volatile R&)=default;};",
+          "TR0202", profile="cpp-core-v2")
     for name, source in generated_copy_rejected.items():
         check("v2-generated-copy-reject-" + name, source, "TR0201", profile="cpp-core-v2")
     check("v2-generated-copy-missing", "struct I{int n;I(const I&);};struct R{I i;R(const R&)=default;};R f(const R&s){return s;}",

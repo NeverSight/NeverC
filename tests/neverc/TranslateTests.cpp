@@ -1621,8 +1621,6 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
       {"move-constructor", "struct R{int n;R(R&&r):n(r.n){}};"},
       {"move-assignment", "struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};"},
       {"arbitrary-operator", "struct R{int n;R operator+(const R&r){return {n+r.n};}};"},
-      {"implicit-containing-copy", "struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};Box b=a;}"},
-      {"implicit-containing-copy-dead", "struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};if(false){Box b=a;}}"},
       {"implicit-containing-assignment", "struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};a=b;}"},
       {"implicit-containing-assignment-dead", "struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};if(false)a=b;}"},
       {"temporary-assignment-source", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}"},
@@ -1814,7 +1812,6 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
       {"copy-noexcept-false", "struct R{int n;R(const R&)noexcept(false)=default;};"},
       {"copy-throw", "struct R{int n;R(const R&)throw()=default;};"},
       {"out-of-line-noexcept", "struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;"},
-      {"volatile-copy", "struct R{int n;R(const volatile R&)=default;};"},
       {"move-default", "struct R{int n;R(R&&)=default;};"},
       {"move-assignment-default", "struct R{int n;R&operator=(R&&)=default;};"},
       {"copy-assignment-default", "struct R{int n;R&operator=(const R&)=default;};"},
@@ -1842,6 +1839,10 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
   }
   const auto Source = tmpFile("generated-copy-boundary.cpp");
   const auto Output = tmpFile("generated-copy-boundary.nc");
+  writeFile(Source, "struct R{int n;R(const volatile R&)=default;};");
+  auto Invalid = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  expectCode(Invalid, "TR0202");
+  expectNoArtifacts(Output);
   writeFile(Source, "struct I{int n;I(const I&);};struct R{I i;R(const R&)=default;};R f(const R&s){return s;}");
   auto Missing = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
   expectCode(Missing, "TR0203");
