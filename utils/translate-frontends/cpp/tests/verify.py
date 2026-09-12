@@ -1614,7 +1614,7 @@ Leaf&selectedAssignment(Leaf&a,Leaf&b){return a=static_cast<Leaf&&>(b);}
         function = nq_function("bool " + name + "(")
         assert function["result"] == "bool" and not gc_calls(function), function
         assert all(v["type"] == "bool" for v in function["locals"]), function
-        assert all(n["op"] == "return" or (n["op"] == "assign"
+        assert all(n["op"] in ("label", "return") or (n["op"] == "assign"
                    and n["target"]["kind"] == "var" and n["target"]["type"] == "bool")
                    for n in function["body"]), function
         returns = [n["value"] for n in function["body"] if n["op"] == "return"]
