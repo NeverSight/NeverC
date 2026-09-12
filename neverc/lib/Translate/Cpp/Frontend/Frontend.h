@@ -22,6 +22,7 @@ class CXXConstructExpr;
 class CXXDefaultArgExpr;
 class CXXForRangeStmt;
 class MaterializeTemporaryExpr;
+class SubstNonTypeTemplateParmExpr;
 class InitListExpr;
 class Expr;
 }
@@ -102,6 +103,9 @@ const clang::VarDecl *automaticTemporaryOwner(
 const clang::Expr *referenceListInitializer(const clang::InitListExpr *List,
                                           clang::ASTContext &Context);
 const clang::InitListExpr *emptyVoidInitializer(const clang::Expr *Expression);
+const clang::Expr *scalarTemplateReplacement(
+    const clang::SubstNonTypeTemplateParmExpr *Substitution,
+    clang::ASTContext &Context);
 const clang::Expr *defaultArgumentInitializer(const clang::ParmVarDecl *Parameter,
                                                clang::ASTContext &Context);
 const clang::Expr *selectedDefaultArgument(const clang::CXXDefaultArgExpr *Default,

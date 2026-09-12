@@ -583,6 +583,12 @@ class FunctionLowering {
     auto T = type(E->getType(), L, true);
     if (auto Value = staticMemberValue(E))
       return std::move(*Value);
+    if (const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
+      const auto *Replacement = scalarTemplateReplacement(Substitution, A.Context);
+      if (!A.S.coreV2() || !Replacement)
+        reject(L, "template value replacement", "A checked scalar template replacement is required.");
+      return expression(Replacement);
+    }
     if (isa<ArrayInitIndexExpr>(E)) {
       if (!A.S.coreV2() || ArrayIndices.empty())
         reject(L, "array copy index", "No semantic element-copy index is active.");

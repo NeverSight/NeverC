@@ -692,13 +692,35 @@ remains unfinished.
 ## Concrete free function templates
 
 Core v2 admits source-owned namespace/free function templates with one to 64
-non-pack, unconstrained type parameters and supported concrete type arguments.
-Embedded Clang performs deduction, overload ordering, substitution and explicit
-specialization/instantiation. Type-parameter defaults, namespace imports,
-recursion and nested calls use the same ordinary typed function lowering.
-Class, member, friend and operator templates, non-type/template-template
-parameters, parameter packs, abbreviated/constrained templates and standard
-headers remain outside this stage.
+non-pack, unconstrained parameters, mixing supported types with integer, boolean
+and enum values. Embedded Clang performs deduction, overload ordering,
+substitution and explicit specialization/instantiation. Type-parameter defaults,
+namespace imports, recursion and nested calls use ordinary typed functions.
+Class, member, friend and operator templates, template-template parameters,
+parameter packs, abbreviated/constrained templates and standard headers remain
+outside this stage.
+
+Scalar non-type parameters include C++17 `template<auto N>` and dependent scalar
+types such as `template<class T, T N>`. Every materialized value argument must
+resolve to an integral argument with a supported concrete integer/bool/enum type.
+Pointers, references, null pointers, function/member pointers and class values
+are not admitted, even through `auto` or a dependent parameter type. Non-type
+template-parameter defaults, including inherited defaults, remain unsupported;
+this does not affect supported type defaults or instantiated function defaults.
+
+The substituted scalar becomes an ordinary typed constant; `N` does not become
+a runtime function parameter or mutable local. Array-bound deduction, fixed
+local extents, loop and switch constants, finite recursion using `if constexpr`,
+function default arguments and constant static-local initialization use existing
+lowering. Equivalent constant arguments share a specialization; different values
+or deduced argument types preserve distinct instance identities and storage.
+
+The producer checks written non-type parameter types and explicit argument
+expressions before erasure, including `sizeof`/`decltype` source expressions and
+explicit instantiation/specialization arguments. Unsupported floating operations
+cannot disappear behind an integer result. Direct dependent `T` and `auto` type
+metadata stay lazy; other expression-bearing dependent parameter types must pass
+the ordinary source checks and are not generally admitted by this increment.
 
 Generic patterns do not become runtime functions. The producer checks template
 metadata and every materialized concrete body, including unused explicit
@@ -733,10 +755,12 @@ Core v2 enables the pinned post-C++17 extension diagnostic groups and rejects
 those warnings as TR0201 even in uninstantiated patterns or discarded branches.
 Actual C++ source errors remain TR0202. Other profiles are unchanged.
 
-Native O0/O2 fixtures cover deduction, defaults, static storage, cleanup,
-recursion, specialization and explicit instantiation. Protocol checks assert
-complete call signatures, distinct primary and local identities, macro
-collisions, forward local-record returns and relocation stability. Native
+Native O0/O2 fixtures cover type/value deduction, integer widths, array bounds,
+defaults, static storage, cleanup, recursion, specialization and explicit
+instantiation. Protocol checks assert complete call signatures, scalar constants
+without runtime template parameters, equivalent and distinct argument identities,
+recursive call closure, selected cleanup, distinct primary/local identities,
+macro collisions, forward local-record returns and relocation stability. Native
 validation requires the implementing revision's CI. Full C++/STL remains
 unfinished; this stage does not add standard headers or containers.
 

@@ -132,9 +132,13 @@ definition. See [declaration-only static constants](cpp-core-v2.md#declaration-o
 Concrete core-v2 free function-template instances use ordinary function, record,
 scalar-global and call IR. Primary-template ordinals and source identities
 separate otherwise colliding specializations, including their local records and
-static variables. Patterns and uninstantiated defaults emit no runtime entities.
-See [concrete free function templates](cpp-core-v2.md#concrete-free-function-templates)
-for type-parameter limits, instantiation checks and remaining definition limits.
+static variables. Scalar non-type arguments lower to existing integer/bool/enum
+literals and never add runtime template parameters. Equal constant arguments
+share a specialization; different values or deduced argument types keep distinct
+identities, including static storage. Patterns and uninstantiated defaults emit
+no runtime entities. See [concrete free function templates](cpp-core-v2.md#concrete-free-function-templates)
+for mixed type/value parameter limits, written-source checks, deferred non-type
+defaults and remaining definition limits.
 
 Resolved core-v2 constexpr-if emits only its selected substatement after normal
 init-statement and condition-variable initialization. It adds no condition

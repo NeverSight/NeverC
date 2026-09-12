@@ -543,6 +543,44 @@ static bool concreteFreeFunctionTemplate(const FunctionDecl *F) {
          !F->getType().isNull() && !F->getType()->isDependentType();
 }
 
+static const FunctionTemplateDecl *scalarTemplateOwner(
+    const SubstNonTypeTemplateParmExpr *E) {
+  if (!E)
+    return nullptr;
+  if (const auto *Function = dyn_cast<FunctionDecl>(E->getAssociatedDecl()))
+    return concreteFreeFunctionTemplate(Function) ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Template = dyn_cast<FunctionTemplateDecl>(E->getAssociatedDecl());
+  return Template && Template->getTemplatedDecl()->getKind() == Decl::Function
+             ? Template : nullptr;
+}
+
+const Expr *scalarTemplateReplacement(const SubstNonTypeTemplateParmExpr *E,
+                                      ASTContext &Context) {
+  if (!E || E->getType().isNull() || !E->isPRValue() ||
+      !E->getType()->isIntegralOrEnumerationType() || E->isTypeDependent() ||
+      E->isValueDependent() || E->isInstantiationDependent() ||
+      E->getPackIndex() || E->isReferenceParameter())
+    return nullptr;
+  const auto *Primary = scalarTemplateOwner(E);
+  if (!Primary || !Primary->getTemplateParameters() ||
+      E->getIndex() >= Primary->getTemplateParameters()->size())
+    return nullptr;
+  // getParameter() performs an unchecked index and cast in pinned Clang.
+  const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(
+      Primary->getTemplateParameters()->getParam(E->getIndex()));
+  if (!Parameter || Parameter->getDepth() || Parameter->isParameterPack())
+    return nullptr;
+  const auto *Replacement = E->getReplacement();
+  if (!Replacement || Replacement->getType().isNull() ||
+      !Replacement->isPRValue() || Replacement->isTypeDependent() ||
+      Replacement->isValueDependent() || Replacement->isInstantiationDependent() ||
+      !Context.hasSameType(E->getType(), Replacement->getType()))
+    return nullptr;
+  APValue Value;
+  return Replacement->isCXX11ConstantExpr(Context, &Value) && Value.isInt()
+             ? Replacement : nullptr;
+}
+
 static bool lazyTemplateDefault(const ParmVarDecl *P) {
   return P && P->hasDefaultArg() && !P->hasUnparsedDefaultArg() &&
          P->hasUninstantiatedDefaultArg() &&
@@ -973,9 +1011,21 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Pattern->getTrailingRequiresClause() || Pattern->hasAttrs())
       return false;
     for (const auto *Parameter : *Parameters) {
-      const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
-      if (!Type || !owned(Type) || Type->isInvalidDecl() || Type->hasAttrs() ||
-          Type->getDepth() || Type->isParameterPack() || Type->hasTypeConstraint())
+      if (!owned(Parameter) || Parameter->isInvalidDecl() || Parameter->hasAttrs())
+        return false;
+      if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter)) {
+        if (Type->getDepth() || Type->isParameterPack() || Type->hasTypeConstraint())
+          return false;
+        continue;
+      }
+      const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter);
+      if (!Value || Value->getDepth() || Value->isParameterPack() ||
+          Value->hasDefaultArgument() || Value->getType().isNull())
+        return false;
+      auto T = Value->getType();
+      if (T.isVolatileQualified() || T.isRestrictQualified() ||
+          (!T->isDependentType() && !T->isUndeducedAutoType() &&
+           !T->isIntegralOrEnumerationType()))
         return false;
     }
     for (const auto *Parameter : Pattern->parameters())
@@ -1405,10 +1455,17 @@ public:
       return false;
     if (!functionTemplateShape(D)) {
       A.reject(D->getLocation(), "function template",
-               "Only ordinary owned namespace function templates with up to 64 non-pack type parameters are supported.");
+               "Only ordinary owned namespace function templates with up to 64 non-pack type or scalar value parameters are supported.");
       return true;
     }
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
+    // TypeLoc retains source expressions that disappear from a folded type.
+    // Direct dependent T/auto have no expression and remain lazy metadata.
+    for (const auto *Parameter : *D->getTemplateParameters())
+      if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter))
+        if (const auto *Info = Value->getTypeSourceInfo();
+            Info && !TraverseTypeLoc(Info->getTypeLoc()))
+          return false;
     // Sema has finished. Inspect materialized definitions, not dependent
     // patterns or unused overload candidates that have only a signature.
     if (D != D->getCanonicalDecl())
@@ -1425,6 +1482,12 @@ public:
       }
     }
     return true;
+  }
+  bool TraverseTemplateArgumentLoc(const TemplateArgumentLoc &Argument) {
+    if (A.S.coreV2() && Argument.getArgument().getKind() == TemplateArgument::Integral)
+      if (auto *Written = Argument.getSourceIntegralExpression())
+        return TraverseStmt(Written);
+    return RecursiveASTVisitor<Allowlist>::TraverseTemplateArgumentLoc(Argument);
   }
   bool TraverseParmVarDecl(ParmVarDecl *D) {
     if (!A.S.coreV2() || !lazyTemplateDefault(D))
@@ -1804,13 +1867,24 @@ public:
                  "A concrete specialization must match an admitted owned primary template.");
         return true;
       }
-      for (const auto &Argument : Arguments->asArray()) {
+      for (unsigned Index = 0; Index < Arguments->size(); ++Index) {
+        const auto &Argument = Arguments->get(Index);
         A.chargeExpansion(1, D->getLocation());
-        if (Argument.getKind() != TemplateArgument::Type ||
-            Argument.getAsType().isNull() || Argument.getAsType()->isDependentType())
-          A.reject(D->getLocation(), "template argument", "A resolved supported type argument is required.");
-        else
-          A.type(Argument.getAsType(), D->getLocation(), true);
+        if (isa<TemplateTypeParmDecl>(Primary->getTemplateParameters()->getParam(Index))) {
+          if (Argument.getKind() != TemplateArgument::Type ||
+              Argument.getAsType().isNull() || Argument.getAsType()->isDependentType())
+            A.reject(D->getLocation(), "template argument", "A resolved supported type argument is required.");
+          else
+            A.type(Argument.getAsType(), D->getLocation(), true);
+        } else if (Argument.getKind() != TemplateArgument::Integral ||
+                   Argument.getIntegralType().isNull() ||
+                   Argument.getIntegralType()->isDependentType() ||
+                   !Argument.getIntegralType()->isIntegralOrEnumerationType()) {
+          A.reject(D->getLocation(), "template argument",
+                   "A resolved integer, boolean or enum value argument is required.");
+        } else {
+          A.type(Argument.getIntegralType(), D->getLocation());
+        }
       }
     }
     A.type(D->getReturnType(), D->getLocation(), true);
@@ -2110,8 +2184,18 @@ public:
       return true;
     auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
                                         : ImplicitInitializerOwner;
-    if (A.S.coreV2())
+    if (A.S.coreV2()) {
       checkStaticValueUse(S);
+      if (const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(S)) {
+        A.chargeExpansion(1, L);
+        if (!scalarTemplateReplacement(Substitution, A.Context) ||
+            !owned(Substitution->getAssociatedDecl()) ||
+            !owned(Substitution->getParameter()) ||
+            !functionTemplateShape(scalarTemplateOwner(Substitution)))
+          A.reject(L, "template value replacement",
+                   "A checked scalar replacement from an owned free function template is required.");
+      }
+    }
     if (A.S.coreV2())
       if (const auto *List = emptyVoidInitializer(dyn_cast<Expr>(S)))
         EmptyVoidLists.insert(List);
@@ -2230,7 +2314,8 @@ public:
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
               DefaultStmt, AttributedStmt, CharacterLiteral,
               UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
-              CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt>(S)) &&
+              CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt,
+              SubstNonTypeTemplateParmExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,

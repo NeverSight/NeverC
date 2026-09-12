@@ -4359,6 +4359,178 @@ TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries
   }
 }
 
+TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesPreserveValuesAndInstances) {
+  const auto Source = tmpFile("non-type-function-templates.cpp");
+  const auto Output = tmpFile("non-type-function-templates.nc");
+  writeFile(Source, R"cpp(enum class Mode:unsigned int{left=2,right=7};
+template<int N>int value(){return N;}
+template<long long N>long long signedValue(){return N;}
+template<unsigned long long N>unsigned long long unsignedValue(){return N;}
+template<auto N>auto automatic(){return N;}
+template<class T,T N>T typed(){return N;}
+template<Mode N>Mode mode(){return N;}
+template<int N>int&state(){static int n=N;return n;}
+template<int N>int&otherState(){static int n=N;return n;}
+template<auto N>int&autoState(){static int n=0;return n;}
+template<int N>int sum(int(&a)[N]){int n=0;for(int i=0;i<N;++i)n+=a[i];return n;}
+template<int N>int count(){if constexpr(N==0)return 0;else return N+count<N-1>();}
+template<int N>int withDefault(int n=N){return n+N;}
+template<int N>int specialized(){return N;}
+template<>int specialized<3>(){return 17;}
+template int value<7>();
+template<int N>int later();
+template<int N>int later(){return N+1;}
+namespace Values{template<int N>int get(){return N;}}
+using Values::get;
+int live=0;
+int trace=0;
+struct Guard{int n;Guard(int v):n(v){++live;}~Guard(){trace=trace*10+n;n=99;--live;}};
+struct Plain{int n;};
+template<int N>int guarded(){Guard value(N);return value.n;}
+template<bool B>auto choose(){if constexpr(B){Guard value(4);return value.n;}else return Plain{9};}
+template<int N>int localArray(){int a[N]={};a[N-1]=N;return sizeof(a)/sizeof(int)+a[N-1];}
+template<int N>int select(int n){switch(n){case N:return 3;default:return 1;}}
+int main(){
+ if(value<-3>()!=-3||value<7>()!=7)return 1;
+ if(signedValue<-2147483649LL>()!=-2147483649LL)return 2;
+ if(unsignedValue<0xffffffffffffffffULL>()!=0xffffffffffffffffULL)return 3;
+ if(!automatic<true>()||automatic<'A'>()!='A'||automatic<0xffffffffu>()!=0xffffffffu)return 4;
+ if(typed<int,-5>()!=-5||!typed<bool,true>())return 5;
+ if(mode<Mode::right>()!=Mode::right||typed<Mode,Mode::left>()!=Mode::left)return 6;
+ int a[3]={1,2,3};if(sum(a)!=6)return 7;
+ if(count<5>()!=15)return 8;
+ if(withDefault<3>()!=6||withDefault<3>(5)!=8)return 9;
+ if(specialized<3>()!=17||specialized<4>()!=4)return 10;
+ if(later<2>()!=3||get<6>()!=6)return 11;
+ if(&state<1+2>()!=&state<3>()||state<3>()!=3)return 12;
+ ++state<3>();if(state<3>()!=4||state<4>()!=4||&state<3>()==&state<4>())return 13;
+ if(&state<3>()==&otherState<3>()||otherState<3>()!=3)return 14;
+ ++autoState<1>();if(autoState<1>()!=1||autoState<1u>()||&autoState<1>()==&autoState<1u>())return 15;
+ if(guarded<2>()!=2||trace!=2||live)return 16;
+ if(choose<true>()!=4||trace!=24||live)return 17;
+ Plain plain=choose<false>();if(plain.n!=9||trace!=24||live)return 18;
+ if(localArray<4>()!=8)return 19;
+ if(select<7>(7)!=3||select<7>(4)!=1)return 20;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("non-type-function-templates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesAcceptResolvedScalarArguments) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unused", "template<int N>int f(){return N;}"},
+      {"signed", "template<int N>int f(){return N;}int main(){return f<-3>()+3;}"},
+      {"bool", "template<bool B>bool f(){return B;}int main(){return !f<true>();}"},
+      {"enum", "enum class E:unsigned int{x=3};template<E N>E f(){return N;}int main(){return static_cast<unsigned int>(f<E::x>())-3u;}"},
+      {"unsigned-max", "template<unsigned long long N>unsigned long long f(){return N;}int main(){return f<0xffffffffffffffffULL>()!=0xffffffffffffffffULL;}"},
+      {"signed-wide", "template<long long N>long long f(){return N;}int main(){return f<-2147483649LL>()!=-2147483649LL;}"},
+      {"auto-int", "template<auto N>auto f(){return N;}int main(){return f<3>()-3;}"},
+      {"auto-bool", "template<auto N>auto f(){return N;}int main(){return !f<true>();}"},
+      {"auto-enum", "enum class E:unsigned int{x=3};template<auto N>auto f(){return N;}int main(){return f<E::x>()!=E::x;}"},
+      {"dependent-type", "template<class T,T N>T f(){return N;}int main(){return f<int,3>()-3;}"},
+      {"type-default", "template<class T=int,T N>T f(){return N;}int main(){return f<int,3>()-3;}"},
+      {"mixed-order", "template<int N,class T>T f(T v){return v+N;}int main(){return f<3>(2)-5;}"},
+      {"array-deduction", "template<int N>int f(int(&a)[N]){return N+a[N-1];}int main(){int a[3]={1,2,3};return f(a)-6;}"},
+      {"array-size-type", "template<decltype(sizeof(int)) N>int f(int(&a)[N]){return N+a[N-1];}int main(){int a[2]={1,2};return f(a)-4;}"},
+      {"written-decltype", "template<decltype(1) N>int f(){return N;}int main(){return f<3>()-3;}"},
+      {"written-sizeof", "template<int N>int f(){return N;}int main(){return f<sizeof(int)>()-sizeof(int);}"},
+      {"explicit-instantiation", "template<int N>int f(){return N;}template int f<3>();int main(){return f<3>()-3;}"},
+      {"explicit-specialization", "template<int N>int f(){return N;}template<>int f<3>(){return 7;}int main(){return f<3>()-7;}"},
+      {"redeclared", "template<int N>int f();template<int N>int f(){return N;}int main(){return f<3>()-3;}"},
+      {"ordinary-overload", "int f(int n){return n;}template<int N>int f(){return N;}int main(){return f(2)+f<3>()-5;}"},
+      {"namespace-import", "namespace A{template<int N>int f(){return N;}}using A::f;int main(){return f<3>()-3;}"},
+      {"recursive", "template<int N>int f(){if constexpr(N==0)return 0;else return N+f<N-1>();}int main(){return f<4>()-10;}"},
+      {"function-default", "template<int N>int f(int n=N){return n;}int main(){return f<3>()-3;}"},
+      {"lazy-function-default", "template<class T,int N>int f(int n=T::missing+N){return n;}int main(){return f<int,3>(4)-4;}"},
+      {"static-state", "template<int N>int&f(){static int n=N;return n;}int main(){++f<3>();return f<3>()-4;}"},
+      {"static-constant", "template<int N>int f(){static const int n=N;return n;}int main(){return f<3>()-3;}"},
+      {"case-label", "template<int N>int f(int n){switch(n){case N:return 3;default:return 1;}}int main(){return f<2>(2)-3;}"},
+      {"fixed-local-array", "template<int N>int f(){int a[N]={};a[N-1]=N;return a[N-1];}int main(){return f<3>()-3;}"},
+      {"constexpr-declaration", "template<int N>constexpr int f(){return N;}static_assert(f<3>()==3);int main(){return f<3>()-3;}"},
+      {"bool-branch", "template<bool B>int f(){if constexpr(B)return 3;else return 4;}int main(){return f<true>()+f<false>()-7;}"},
+      {"discarded-dependent-body", "template<int N>int f(){if constexpr(N==0)return 3;else{double d=N;return static_cast<int>(d);}}int main(){return f<0>()-3;}"},
+      {"mixed-64", "template<class T0,int N1,class T2,int N3,class T4,int N5,class T6,int N7,class T8,int N9,class T10,int N11,class T12,int N13,class T14,int N15,class T16,int N17,class T18,int N19,class T20,int N21,class T22,int N23,class T24,int N25,class T26,int N27,class T28,int N29,class T30,int N31,class T32,int N33,class T34,int N35,class T36,int N37,class T38,int N39,class T40,int N41,class T42,int N43,class T44,int N45,class T46,int N47,class T48,int N49,class T50,int N51,class T52,int N53,class T54,int N55,class T56,int N57,class T58,int N59,class T60,int N61,class T62,int N63>int f(){return N1;}int main(){return f<int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1>()-1;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nttp-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("nttp-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesRetainSourceAndValueBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"default-value", "template<int N=3>int f(){return N;}int main(){return f<>();}", "TR0201"},
+      {"default-unused", "template<int N=3>int f(){return N;}", "TR0201"},
+      {"default-inherited", "template<int N=3>int f();template<int N>int f(){return N;}int main(){return f<3>();}", "TR0201"},
+      {"value-pack", "template<int... N>int f(){return sizeof...(N);}int main(){return f<1,2>();}", "TR0201"},
+      {"template-template", "template<template<class>class T,int N>int f(){return N;}", "TR0201"},
+      {"pointer-parameter", "int n=3;template<int*P>int f(){return *P;}int main(){return f<&n>();}", "TR0201"},
+      {"reference-parameter", "int n=3;template<int&N>int f(){return N;}int main(){return f<n>();}", "TR0201"},
+      {"function-parameter", "int g(){return 3;}template<int(*F)()>int f(){return F();}int main(){return f<g>();}", "TR0201"},
+      {"member-pointer", "struct R{int n;};template<int R::*P>int f(){return 1;}int main(){return f<&R::n>();}", "TR0201"},
+      {"auto-pointer", "int n=3;template<auto N>int f(){return 1;}int main(){return f<&n>();}", "TR0201"},
+      {"auto-null", "template<auto N>int f(){return 1;}int main(){return f<nullptr>();}", "TR0201"},
+      {"dependent-pointer", "int n=3;template<class T,T N>int f(){return 1;}int main(){return f<int*,&n>();}", "TR0201"},
+      {"selected-floating-body", "template<int N>int f(){double d=N;return static_cast<int>(d);}int main(){return f<3>();}", "TR0201"},
+      {"selected-floating-default", "template<int N>int f(int n=static_cast<int>(1.0)+N){return n;}int main(){return f<3>();}", "TR0201"},
+      {"argument-floating-cast", "template<int N>int f(){return N;}int main(){return f<static_cast<int>(1.0)>();}", "TR0201"},
+      {"instantiation-floating-cast", "template<int N>int f(){return N;}template int f<static_cast<int>(1.0)>();", "TR0201"},
+      {"specialization-floating-cast", "template<int N>int f(){return N;}template<>int f<static_cast<int>(1.0)>(){return 1;}", "TR0201"},
+      {"parameter-decltype-float", "template<decltype(static_cast<int>(1.0)) N>int f(){return N;}int main(){return f<1>();}", "TR0201"},
+      {"parameter-decltype-sizeof-float", "template<decltype(sizeof(double)) N>int f(){return N;}int main(){return f<1>();}", "TR0201"},
+      {"argument-sizeof-float", "template<int N>int f(){return N;}int main(){return f<sizeof(double)>();}", "TR0201"},
+      {"oversized-array", "template<int N>int f(){int a[N]={};return a[0];}int main(){return f<65537>();}", "TR0201"},
+      {"zero-array", "template<int N>int f(){int a[N];return 0;}int main(){return f<0>();}", "TR0201"},
+      {"class-template", "template<int N>struct R{int n=N;};int main(){R<3>r;return r.n;}", "TR0201"},
+      {"member-template", "struct R{template<int N>int f(){return N;}};int main(){R r;return r.f<3>();}", "TR0201"},
+      {"mixed-65", "template<class T0,int N1,class T2,int N3,class T4,int N5,class T6,int N7,class T8,int N9,class T10,int N11,class T12,int N13,class T14,int N15,class T16,int N17,class T18,int N19,class T20,int N21,class T22,int N23,class T24,int N25,class T26,int N27,class T28,int N29,class T30,int N31,class T32,int N33,class T34,int N35,class T36,int N37,class T38,int N39,class T40,int N41,class T42,int N43,class T44,int N45,class T46,int N47,class T48,int N49,class T50,int N51,class T52,int N53,class T54,int N55,class T56,int N57,class T58,int N59,class T60,int N61,class T62,int N63,class T64>int f(){return N1;}int main(){return f<int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int>()-1;}", "TR0201"},
+      {"nonconstant", "template<int N>int f(){return N;}int main(){int n=3;return f<n>();}", "TR0202"},
+      {"narrowing", "template<unsigned char N>int f(){return N;}int main(){return f<256>();}", "TR0202"},
+      {"deduction-mismatch", "template<int N>int f(int(&a)[N]){return N;}int main(){int a[2]={};return f<3>(a);}", "TR0202"},
+      {"negative-array", "template<int N>int f(){int a[N];return 1;}int main(){return f<-1>();}", "TR0202"},
+      {"missing-value-argument", "template<int N>int f(){return N;}int main(){return f<>();}", "TR0202"},
+      {"floating-parameter", "template<double N>int f(){return 1;}", "TR0202"},
+      {"class-parameter", "struct R{int n;};template<R N>int f(){return 1;}", "TR0202"},
+      {"floating-argument", "template<int N>int f(){return N;}int main(){return f<1.0>();}", "TR0202"},
+      {"selected", "template<int N>int f();int main(){return f<3>();}", "TR0203"},
+      {"unevaluated-size", "template<int N>int f();int main(){return sizeof(f<3>());}", "TR0203"},
+      {"unevaluated-noexcept", "template<int N>int f()noexcept;int main(){return noexcept(f<3>());}", "TR0203"},
+      {"explicit-extern", "template<int N>int f();extern template int f<3>();", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nttp-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("nttp-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"template<int N>int f(){return N;}int main(){return f<3>();}",
+                                 "template<auto N>auto f(){return N;}int main(){return f<3>();}"}) {
+    const auto Source = tmpFile("nttp-v1.cpp");
+    const auto Output = tmpFile("nttp-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionTemplatesPreserveSpecializationIdentityAndLifetime) {
   const auto Source = tmpFile("function_templates.cpp");
   const auto Output = tmpFile("function_templates.nc");
@@ -4508,7 +4680,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"friend", "struct R{template<class T>friend T f(T v){return v;}};", "TR0201"},
       {"operator", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}", "TR0201"},
       {"pack", "template<class...T>int f(T...v){return 1;}", "TR0201"},
-      {"non-type", "template<int N>int f(){return N;}", "TR0201"},
       {"template-template", "template<template<class>class T>int f(){return 1;}", "TR0201"},
       {"variable", "template<class T>int value=3;", "TR0201"},
       {"alias", "template<class T>using Alias=T;", "TR0201"},
