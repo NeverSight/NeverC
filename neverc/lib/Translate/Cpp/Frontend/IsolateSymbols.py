@@ -105,6 +105,49 @@ def isolate_math_calls(source_root):
         path.write_text(text, encoding="utf-8")
 
 
+def fix_nested_friend_access(path):
+    # Restrict the pinned access-context walk, preserving canonical function
+    # grants. This changes only the extracted private Clang library source.
+    before = """      } else if (isa<FunctionDecl>(DC)) {
+        FunctionDecl *Function = cast<FunctionDecl>(DC);
+        Functions.push_back(Function->getCanonicalDecl());
+        if (Function->getFriendObjectKind())
+          DC = Function->getLexicalDeclContext();
+        else
+          DC = Function->getDeclContext();
+      } else if (DC->isFileContext()) {"""
+    after = """      } else if (isa<FunctionDecl>(DC)) {
+        FunctionDecl *Function = cast<FunctionDecl>(DC);
+        Functions.push_back(Function->getCanonicalDecl());
+        // C++17 [class.nest]/4: a nested inline friend has no implicit access
+        // to enclosing classes. Its own explicit friendship remains above.
+        const auto *LexicalRecord =
+            dyn_cast<CXXRecordDecl>(Function->getLexicalDeclContext());
+        if (Function->getFriendObjectKind() &&
+            !(LexicalRecord && isa<CXXRecordDecl>(LexicalRecord->getDeclContext())))
+          DC = Function->getLexicalDeclContext();
+        else
+          DC = Function->getDeclContext();
+      } else if (DC->isFileContext()) {"""
+    error_message = "Unexpected pinned Clang nested friend access source in " + str(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        block = before
+    elif counts == (0, 1):
+        block = after
+    else:
+        raise SystemExit(error_message)
+    remainder = text.replace(block, "", 1)
+    if "LexicalRecord" in remainder or "C++17 [class.nest]/4" in remainder:
+        raise SystemExit(error_message)
+    if block == before:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 # Only the two Setup discovery outputs in the pinned MSVCPaths.cpp need this
 # owner. Keep it in the private llvm namespace and leave the host SDK intact.
 SETUP_BSTR_OWNER = """namespace llvm {
@@ -235,6 +278,7 @@ _COM_SMARTPTR_TYPEDEF(ISetupInstance2, __uuidof(ISetupInstance2));
 # Check Setup source before any other patch writes. Later unrelated failures
 # do not roll back previously completed patches.
 isolate_setup_bstr(args.source / "llvm/lib/WindowsDriver/MSVCPaths.cpp")
+fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [

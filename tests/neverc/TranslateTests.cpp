@@ -3068,6 +3068,64 @@ int main(){
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedFriendsKeepExplicitGrants) {
+  const auto Source = tmpFile("nested-friend-grants.cpp");
+  const auto Output = tmpFile("nested-friend-grants.nc");
+  writeFile(Source, R"cpp(int acquire();
+int live=0;
+class Grant {
+ int n=3;
+ friend int read(const Grant&);
+ friend int read(const Grant&,int);
+public:
+ class Inner {
+  int own=5;
+ public:
+  friend int inside(const Inner&i){return i.own;}
+  friend int read(const Grant&r){return r.n;}
+  friend int read(const Grant&r,int add){return r.n+add;}
+  int member(const Grant&r)const{return r.n+own;}
+ };
+};
+struct Public {
+ int n=7;
+ struct Inner {
+  friend int publicRead(const Public&r){return r.n;}
+ };
+};
+int publicRead(const Public&);
+class Life {
+ int n;
+ Life():n(9){++live;}
+ ~Life(){n=99;--live;}
+ friend int acquire();
+public:
+ struct Inner {
+  friend int acquire(){Life item;return item.n;}
+ };
+};
+int main(){
+ Grant outer;Grant::Inner inner;Public publicValue{7};
+ if(inside(inner)!=5)return 1;
+ if(read(outer)!=3||read(outer,4)!=7)return 2;
+ if(inner.member(outer)!=8)return 3;
+ if(publicRead(publicValue)!=7)return 4;
+ if(acquire()!=9||live)return 5;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("nested-friend-grants" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NestedRecordsAcceptResolvedDefinitions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"public", "struct R{struct I{int n;};I i;};int main(){R r{{3}};return r.i.n-3;}"},
@@ -3133,6 +3191,22 @@ TEST_F(TranslateTest, CoreV2NestedRecordsRetainAccessAndSourceBoundaries) {
       {"cyclic-by-value", "struct R{struct I{R r;};I i;};", "TR0202"},
       {"distinct-conversion", "struct A{struct I{int n;};};struct B{struct I{int n;};};void f(){A::I a{1};B::I b=a;}", "TR0202"},
       {"nested-friend-without-outer-grant", "class R{int n=1;struct I{friend int get(const R&r){return r.n;}};};", "TR0202"},
+      {"nested-friend-private-field", "class R{int n=1;public:struct I{friend int get(const R&r){return r.n;}};};", "TR0202"},
+      {"nested-friend-protected-field", "class R{protected:int n=1;public:struct I{friend int get(const R&r){return r.n;}};};", "TR0202"},
+      {"nested-friend-static-method", "class R{static int value(){return 1;}public:struct I{friend int get(){return R::value();}};};", "TR0202"},
+      {"nested-friend-static-data", "class R{static const int n=1;public:struct I{friend int get(){return R::n;}};};", "TR0202"},
+      {"nested-friend-type", "class R{using Value=int;public:struct I{friend int get(){R::Value n=1;return n;}};};", "TR0202"},
+      {"nested-friend-return-type", "class R{using Value=int;public:struct I{friend Value get(){return 1;}};};", "TR0202"},
+      {"nested-friend-enum", "class R{enum E{x=1};public:struct I{friend int get(){return R::x;}};};", "TR0202"},
+      {"nested-friend-constructor", "class R{R(){}public:struct I{friend int get(){R r;return 1;}};};", "TR0202"},
+      {"nested-friend-destructor", "class R{~R(){}public:struct I{friend int get(){R r;return 1;}};};", "TR0202"},
+      {"nested-friend-default", "class R{static const int n=1;public:struct I{friend int get(int value=R::n){return value;}};};", "TR0202"},
+      {"nested-friend-unevaluated", "class R{int n=1;public:struct I{friend int get(const R&r){return sizeof(r.n);}};};", "TR0202"},
+      {"nested-friend-out-of-line-type", "class R{int n=1;public:struct I;};struct R::I{friend int get(const R&r){return r.n;}};", "TR0202"},
+      {"nested-friend-out-of-line-function", "class R{int n=1;public:struct I{friend int get(const R&);};};int get(const R&r){return r.n;}", "TR0202"},
+      {"nested-friend-wrong-overload", "class R{int n=1;friend int get(const R&);public:struct I{friend int get(const R&r){return r.n;}friend int get(const R&r,int){return r.n;}};};", "TR0202"},
+      {"nested-friend-local-class", "class R{int n=1;public:struct I{friend int get(const R&r){struct L{static int read(const R&r){return r.n;}};return L::read(r);}};};", "TR0202"},
+      {"nested-friend-transitive-grant", "class R{int n=1;friend struct A;public:struct I{friend int get(const R&r){return r.n;}};};struct A{friend int get(const R&);};", "TR0202"},
       {"invalid-nested-access", "struct R{class I{int n=1;};};int f(const R::I&i){return i.n;}", "TR0202"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
@@ -3528,7 +3602,8 @@ TEST_F(TranslateTest, CoreV2StaticConstantValuesRequireDefinitionsForIdentity) {
       {"folded-body", "constexpr int f(){return static_cast<int>(1.0);}struct R{static const int n=f();};", "TR0201"},
       {"array", "struct R{static const int n[2];};", "TR0201"},
       {"pointer", "struct R{static const int*n;};", "TR0201"},
-      {"volatile", "struct R{static const volatile int n=3;};", "TR0201"},
+      {"volatile-in-class-initializer", "struct R{static const volatile int n=3;};", "TR0202"},
+      {"volatile-storage", "struct R{static const volatile int n;};const volatile int R::n=3;", "TR0201"},
       {"tls", "struct R{static thread_local const int n=3;};", "TR0201"},
       {"variable-template", "struct R{template<class T>static const int n=3;};", "TR0201"},
       {"private", "class R{static const int n=3;};int f(){return R::n;}", "TR0202"},

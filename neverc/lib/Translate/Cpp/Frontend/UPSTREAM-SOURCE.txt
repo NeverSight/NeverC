@@ -18,6 +18,12 @@ perform the same double promotions as the integer/mixed cmath overloads. This
 avoids emitting shared global MSVC math templates while preserving getter
 evaluation, integer negation, and the existing outer float/half conversions.
 All three math sources are checked before any of those files is rewritten.
+The same checked patch step corrects SemaAccess.cpp's effective-context walk
+for friend functions declared in nested classes. C++17 [class.nest]/4 gives
+these functions no implicit enclosing-class access; canonical function grants
+still permit explicit friendship from their own or enclosing classes. Ordinary
+nested member access and non-nested friend contexts are unchanged. The patch
+checks original/rewritten source states and rejects partial or duplicate edits.
 Other symbol changes use compilation definitions. NoCrashReporter.h disables
 the private PrettyStackTrace.cpp Darwin process annotation; NeverC owns it.
 On Windows, RewriteSetupCoffSymbols.py isolates five Setup COM GUID identities

@@ -4310,6 +4310,105 @@ void useRange(){for(int&v:Range{})tick(v);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == nested_records, "nested identities depend on the absolute root"
 
+    nested_grants_source = """int acquire();
+int live=0;
+class Grant {
+ int n=3;
+ friend int read(const Grant&);
+ friend int read(const Grant&,int);
+public:
+ class Inner {
+  int own=5;
+ public:
+  friend int inside(const Inner&i){return i.own;}
+  friend int read(const Grant&r){return r.n;}
+  friend int read(const Grant&r,int add){return r.n+add;}
+  int member(const Grant&r)const{return r.n+own;}
+ };
+};
+struct Public {
+ int n=7;
+ struct Inner {
+  friend int publicRead(const Public&r){return r.n;}
+ };
+};
+int publicRead(const Public&);
+class Life {
+ int n;
+ Life():n(9){++live;}
+ ~Life(){n=99;--live;}
+ friend int acquire();
+public:
+ struct Inner {
+  friend int acquire(){Life item;return item.n;}
+ };
+};
+int main(){
+ Grant outer;Grant::Inner inner;Public publicValue{7};
+ if(inside(inner)!=5)return 1;
+ if(read(outer)!=3||read(outer,4)!=7)return 2;
+ if(inner.member(outer)!=8)return 3;
+ if(publicRead(publicValue)!=7)return 4;
+ if(acquire()!=9||live)return 5;
+ return 0;
+}
+"""
+    nested_grants = check("v2-nested-friend-grants", nested_grants_source, profile="cpp-core-v2")
+    ng_functions = {f["name"]: f for f in nested_grants["functions"]}
+    assert len(ng_functions) == len(nested_grants["functions"])
+
+    def ng_line(prefix):
+        found = [i for i, line in enumerate(nested_grants_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def ng_record(prefix):
+        found = [r for r in nested_grants["records"] if r["loc"]["line"] == ng_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def ng_function(prefix):
+        found = [f for f in nested_grants["functions"] if f["loc"]["line"] == ng_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    grant = ng_record("class Grant {")
+    inner = ng_record(" class Inner {")
+    public_record = ng_record("struct Public {")
+    life = ng_record("class Life {")
+    for prefix, record, params in (
+            ("  friend int inside(", inner, []),
+            ("  friend int read(const Grant&r){", grant, []),
+            ("  friend int read(const Grant&r,int", grant, ["int"]),
+            ("  friend int publicRead(", public_record, [])):
+        function = ng_function(prefix)
+        assert function["result"] == "int"
+        assert [p["type"] for p in function["params"]] == ["cptr:"+record["id"], *params]
+        accesses = [n for n in walk(function["body"]) if n.get("kind") == "member"]
+        expected = ("field", ("parameter", function["params"][0]["name"]), record["fields"][0]["name"])
+        assert accesses and all(np_place(function, n) == expected for n in accesses)
+        assert not gc_calls(function)
+    assert ng_function("  friend int read(const Grant&r){")["name"] != ng_function("  friend int read(const Grant&r,int")["name"]
+    acquire = ng_function("  friend int acquire(){")
+    assert acquire["result"] == "int" and not acquire["params"]
+    calls = gc_calls(acquire)
+    assert [c["callee"] for c in calls] == [ng_function(" Life():")["name"], life["id"]+"_destroy"]
+    assert np_pointer(acquire, calls[0]["args"][0]) == np_pointer(acquire, calls[1]["args"][0])
+    assert sum(v["type"] == life["id"] for v in acquire["locals"]) == 1
+    returned = [n["value"] for n in acquire["body"] if n["op"] == "return"]
+    assert len(returned) == 1 and returned[0]["kind"] == "var"
+    captures = [i for i, n in enumerate(acquire["body"]) if n["op"] == "assign"
+                and n["target"].get("kind") == "var" and n["target"]["name"] == returned[0]["name"]]
+    assert len(captures) == 1 and captures[0] < acquire["body"].index(calls[1])
+    for function in nested_grants["functions"]:
+        for call in gc_calls(function):
+            assert call["callee"] in ng_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in ng_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-nested-grants-relocated-") as temp:
+        relocated = check("v2-nested-friend-grants-relocated", nested_grants_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == nested_grants
+
     nested_records_positive = {
         'unevaluated-outer-field': 'class R{int n;public:struct I{int size()const{return sizeof(n);}};};int main(){R::I i;return i.size()-sizeof(int);}',
         'public': 'struct R{struct I{int n;};I i;};int main(){R r{{3}};return r.i.n-3;}',
@@ -4361,6 +4460,22 @@ void useRange(){for(int&v:Range{})tick(v);}
     for name, source in nested_records_reject.items():
         check("v2-nested-records-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
     nested_records_invalid = {
+        'nested-friend-private-field': 'class R{int n=1;public:struct I{friend int get(const R&r){return r.n;}};};',
+        'nested-friend-protected-field': 'class R{protected:int n=1;public:struct I{friend int get(const R&r){return r.n;}};};',
+        'nested-friend-static-method': 'class R{static int value(){return 1;}public:struct I{friend int get(){return R::value();}};};',
+        'nested-friend-static-data': 'class R{static const int n=1;public:struct I{friend int get(){return R::n;}};};',
+        'nested-friend-type': 'class R{using Value=int;public:struct I{friend int get(){R::Value n=1;return n;}};};',
+        'nested-friend-return-type': 'class R{using Value=int;public:struct I{friend Value get(){return 1;}};};',
+        'nested-friend-enum': 'class R{enum E{x=1};public:struct I{friend int get(){return R::x;}};};',
+        'nested-friend-constructor': 'class R{R(){}public:struct I{friend int get(){R r;return 1;}};};',
+        'nested-friend-destructor': 'class R{~R(){}public:struct I{friend int get(){R r;return 1;}};};',
+        'nested-friend-default': 'class R{static const int n=1;public:struct I{friend int get(int value=R::n){return value;}};};',
+        'nested-friend-unevaluated': 'class R{int n=1;public:struct I{friend int get(const R&r){return sizeof(r.n);}};};',
+        'nested-friend-out-of-line-type': 'class R{int n=1;public:struct I;};struct R::I{friend int get(const R&r){return r.n;}};',
+        'nested-friend-out-of-line-function': 'class R{int n=1;public:struct I{friend int get(const R&);};};int get(const R&r){return r.n;}',
+        'nested-friend-wrong-overload': 'class R{int n=1;friend int get(const R&);public:struct I{friend int get(const R&r){return r.n;}friend int get(const R&r,int){return r.n;}};};',
+        'nested-friend-local-class': 'class R{int n=1;public:struct I{friend int get(const R&r){struct L{static int read(const R&r){return r.n;}};return L::read(r);}};};',
+        'nested-friend-transitive-grant': 'class R{int n=1;friend struct A;public:struct I{friend int get(const R&r){return r.n;}};};struct A{friend int get(const R&);};',
         'nested-friend-without-outer-grant': 'class R{int n=1;struct I{friend int get(const R&r){return r.n;}};};',
         'private-type': 'class R{struct I{int n;};};R::I f(){return R::I{1};}',
         'protected-type': 'class R{protected:struct I{int n;};};R::I f(){return R::I{1};}',
@@ -4842,13 +4957,14 @@ bool pure(){return noexcept(Values::first);}
         'folded-body': 'constexpr int f(){return static_cast<int>(1.0);}struct R{static const int n=f();};',
         'array': 'struct R{static const int n[2];};',
         'pointer': 'struct R{static const int*n;};',
-        'volatile': 'struct R{static const volatile int n=3;};',
+        'volatile-storage': 'struct R{static const volatile int n;};const volatile int R::n=3;',
         'tls': 'struct R{static thread_local const int n=3;};',
         'variable-template': 'struct R{template<class T>static const int n=3;};',
     }
     for name, source in static_values_reject.items():
         check("v2-static-values-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
     static_values_invalid = {
+        'volatile-in-class-initializer': 'struct R{static const volatile int n=3;};',
         'private': 'class R{static const int n=3;};int f(){return R::n;}',
         'write': 'struct R{static const int n=3;};void f(){R::n=4;}',
         'bad-initializer': 'int f(){return 3;}struct R{static const int n=f();};',

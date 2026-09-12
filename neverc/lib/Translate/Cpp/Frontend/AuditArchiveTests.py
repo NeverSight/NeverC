@@ -604,7 +604,32 @@ public:
         expected_setup_preamble = (setup_preamble[:-len("#endif\n")] + "\n" +
                                    expected_owner + "#endif\n")
         expected_setup = expected_setup_preamble + "\n" + expected_setup_calls
+        # Pinned EffectiveContext branch, with independent expected output.
+        # These text fixtures check patch states; native access tests exercise
+        # actual C++ name/type/constructor/destructor and friendship semantics.
+        original_access = """      } else if (isa<FunctionDecl>(DC)) {
+        FunctionDecl *Function = cast<FunctionDecl>(DC);
+        Functions.push_back(Function->getCanonicalDecl());
+        if (Function->getFriendObjectKind())
+          DC = Function->getLexicalDeclContext();
+        else
+          DC = Function->getDeclContext();
+      } else if (DC->isFileContext()) {"""
+        expected_access = """      } else if (isa<FunctionDecl>(DC)) {
+        FunctionDecl *Function = cast<FunctionDecl>(DC);
+        Functions.push_back(Function->getCanonicalDecl());
+        // C++17 [class.nest]/4: a nested inline friend has no implicit access
+        // to enclosing classes. Its own explicit friendship remains above.
+        const auto *LexicalRecord =
+            dyn_cast<CXXRecordDecl>(Function->getLexicalDeclContext());
+        if (Function->getFriendObjectKind() &&
+            !(LexicalRecord && isa<CXXRecordDecl>(LexicalRecord->getDeclContext())))
+          DC = Function->getLexicalDeclContext();
+        else
+          DC = Function->getDeclContext();
+      } else if (DC->isFileContext()) {"""
         files = {
+            "clang/lib/Sema/SemaAccess.cpp": original_access,
             "llvm/lib/WindowsDriver/MSVCPaths.cpp": original_setup,
             "llvm/lib/IR/IntrinsicInst.cpp": intrinsic,
             "llvm/include/llvm/Transforms/Utils/Debugify.h": debugify,
@@ -670,6 +695,8 @@ public:
             setup_path.write_text(original_setup, encoding="utf-8")
 
             run_script(True)
+            access_path = source / "clang/lib/Sema/SemaAccess.cpp"
+            self.assertEqual(access_path.read_text(encoding="utf-8"), expected_access)
             rewritten_setup = setup_path.read_text(encoding="utf-8")
             self.assertEqual(rewritten_setup, expected_setup)
             self.assertEqual(rewritten_setup.count(expected_owner), 1)
@@ -699,7 +726,7 @@ public:
             stable = {path: path.read_bytes() for path in (
                 loop, output, notices, source / "llvm/lib/IR/IntrinsicInst.cpp",
                 source / "llvm/include/llvm/Transforms/Utils/Debugify.h",
-                setup_path, *math_paths.values())}
+                setup_path, access_path, *math_paths.values())}
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))
@@ -775,6 +802,34 @@ public:
                     self.assertEqual(snapshot_all_files(), untouched, state)
             for name, contents in files.items():
                 (source / name).write_text(contents, encoding="utf-8")
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            access_states = {
+                "missing branch": "",
+                "duplicate original": original_access * 2,
+                "duplicate rewritten": expected_access * 2,
+                "mixed branches": original_access + expected_access,
+                "partial condition": original_access.replace(
+                    "if (Function->getFriendObjectKind())", "if (false)", 1),
+                "missing function identity": expected_access.replace(
+                    "        Functions.push_back(Function->getCanonicalDecl());\n", "", 1),
+                "partial nesting check": expected_access.replace(
+                    "LexicalRecord->getDeclContext()", "Function->getDeclContext()", 1),
+                "extra marker": original_access + "\nconst auto *LexicalRecord = nullptr;\n",
+            }
+            for state, contents in access_states.items():
+                with self.subTest(nested_friend_access_state=state):
+                    access_path.write_text(contents, encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang nested friend access source in " + str(access_path))
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            access_path.unlink()
+            untouched = snapshot_all_files()
+            run_script(False, "Unexpected pinned Clang nested friend access source in " + str(access_path))
+            self.assertEqual(snapshot_all_files(), untouched)
+            access_path.write_text(original_access, encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))

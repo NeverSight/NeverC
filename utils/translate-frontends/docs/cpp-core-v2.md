@@ -445,6 +445,11 @@ C++ source access, including legal aliases, factories, nested member definitions
 and out-of-line definitions. A nested member can access its enclosing class's
 private fields through an explicit enclosing object. The enclosing class does
 not gain access to the nested class's private members without a valid grant.
+A friend function defined inside a nested class does not inherit access to
+its enclosing classes. The embedded frontend corrects the pinned Clang access
+context for this C++17 rule, covering fields, types, defaults and selected
+constructors/destructors. Explicit function friendship from the nested or
+enclosing class still applies; granting one overload does not grant another.
 Local named nested records follow the existing local-class rules.
 
 Each declaration retains its canonical scope identity: two `Owner::Item` types
