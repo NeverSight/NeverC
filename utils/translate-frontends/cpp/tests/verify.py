@@ -3816,6 +3816,51 @@ void boxes(){Box a;Box b=a;}
     check("v1-nonpublic-fields-array", "class R{int n=1;};int main(){return 0;}", "TR0201")
     check("v1-nonpublic-fields-record", "class R{int n;public:R():n(1){}};int main(){R r;return 0;}", "TR0201")
 
+    folded_void_source = """static_assert((void(0),true));
+enum E:int{value=(void(0),3)};
+int touch(int&n){return ++n;}
+int selected(int n){switch(n){case (void(0),1):return 7;default:return 9;}}
+int queried(int&n){return sizeof((void(touch(n)),1));}
+void evaluated(int&n){(void(touch(n)));}
+int folded(){return value;}
+"""
+    folded_void = check("v2-folded-void-protocol", folded_void_source, profile="cpp-core-v2")
+
+    def fv_function(prefix, result, parameters):
+        lines = [i for i, line in enumerate(folded_void_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        found = [f for f in folded_void["functions"] if f["loc"]["line"] == lines[0]
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    touch = fv_function("int touch(", "int", ["ptr:int"])["name"]
+    for prefix, parameters, value in (("int queried(", ["ptr:int"], 4), ("int folded(", [], 3)):
+        function = fv_function(prefix, "int", parameters)
+        assert not gc_calls(function)
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and gc_identity(function, returned[0]) == value
+    evaluated = fv_function("void evaluated(", "void", ["ptr:int"])
+    assert [c["callee"] for c in gc_calls(evaluated)] == [touch]
+    selected = fv_function("int selected(", "int", ["int"])
+    assert not gc_calls(selected)
+    assert any(n["op"] == "branch" for n in selected["body"])
+    assert {gc_identity(selected, n["value"]) for n in selected["body"] if n["op"] == "return"} == {7, 9}
+    folded_void_positive = {
+        'switch-folded-cast': 'int f(int n){switch(n){case (void(0),1):return 7;default:return 9;}}',
+        'erased-size-operation': 'int main(){return sizeof((void(0),1));}',
+        'folded-functional-void': 'static_assert((void(0),true)); int main(){}',
+    }
+    for name, source in folded_void_positive.items():
+        check("v2-folded-void-positive-" + name, source, profile="cpp-core-v2")
+    folded_void_reject = {
+        'unsupported-void-sizeof': 'int f(){return sizeof((void(1.0),1));}',
+        'unsupported-void-case': 'int f(int n){switch(n){case (void(1.0),1):return 7;default:return 9;}}',
+        'unsupported-void-assert': 'static_assert((void(1.0),true));int main(){}',
+    }
+    for name, source in folded_void_reject.items():
+        check("v2-folded-void-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
     friends_source = """int tick(int n){return n;}
 class R;
 class Other;
@@ -4604,7 +4649,6 @@ int main() {
         "global-array-field": "struct R{int a[2];}; constexpr R r{{1,2}};",
         "array-bound": "using Large=int[65537]; int main(){}",
         "array-product": "using Large=int[65536][65536]; int main(){}",
-        "folded-functional-void": "static_assert((void(0),true)); int main(){}",
         "array-initialization-budget": "int f(){int a[65536]={}; return a[0];}",
         "array-temporary-dereference": "struct R{int a[2];}; int f(){const int&r=*R{{1,2}}.a; return r;}",
     })
@@ -4612,7 +4656,6 @@ int main() {
         "switch-case-range": "int f(int n){switch(n){case 1 ... 3:return 7;default:return 9;}}",
         "switch-dead-range": "int f(int n){if(false){switch(n){case 1 ... 3:return 7;}}return 0;}",
         "switch-other-attribute": "int f(int n){switch(n){case 0:[[likely]];case 1:return 7;default:return 9;}}",
-        "switch-folded-cast": "int f(int n){switch(n){case (void(0),1):return 7;default:return 9;}}",
     })
     v2_rejections.update({
         "void-size": "static_assert(sizeof(void)>0); int main(){}",
@@ -4621,7 +4664,6 @@ int main() {
         "expression-alignment": "int main(){int n=0; return alignof(n);}",
         "floating-size-type": "int main(){return sizeof(double);}",
         "floating-size-value": "int main(){return sizeof(1.0);}",
-        "erased-size-operation": "int main(){return sizeof((void(0),1));}",
     })
     v2_rejections.update({
         "pointer-order-less": "bool f(int*a,int*b){return a<b;}",

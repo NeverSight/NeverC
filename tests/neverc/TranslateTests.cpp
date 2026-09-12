@@ -964,8 +964,6 @@ TEST_F(TranslateTest, CoreV2SwitchRejectsUnsupportedCasesAndInvalidEntries) {
        "int f(int n){if(false){switch(n){case 1 ... 3:return 7;}}return 0;}", "TR0201"},
       {"switch-other-attribute",
        "int f(int n){switch(n){case 0:[[likely]];case 1:return 7;default:return 9;}}", "TR0201"},
-      {"switch-folded-cast",
-       "int f(int n){switch(n){case (void(0),1):return 7;default:return 9;}}", "TR0201"},
       {"switch-pointer-selector",
        "int f(int*p){switch(p){default:return 0;}}", "TR0202"},
       {"switch-nonconstant-case",
@@ -2650,6 +2648,71 @@ TEST_F(TranslateTest, CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries) {
     const auto Output = tmpFile("nonpublic-fields-v1.nc");
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FoldedVoidPreservesEvaluationRules) {
+  const auto Source = tmpFile("folded-void.cpp");
+  const auto Output = tmpFile("folded-void.nc");
+  writeFile(Source, R"cpp(
+static_assert((void(0),true));
+enum E:int{value=(void(0),3)};
+int touch(int&n){return ++n;}
+int selected(int n){switch(n){case (void(0),1):return 7;default:return 9;}}
+int queried(int&n){return sizeof((void(touch(n)),1));}
+void evaluated(int&n){(void(touch(n)));}
+int main(){
+ int count=0;
+ if(selected(1)!=7)return 1;
+ if(selected(2)!=9)return 2;
+ if(queried(count)!=4||count)return 3;
+ evaluated(count);if(count!=1)return 4;
+ if(value!=3)return 5;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("folded-void" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FoldedVoidAcceptsSupportedErasedOperations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"switch-folded-cast", "int f(int n){switch(n){case (void(0),1):return 7;default:return 9;}}"},
+      {"erased-size-operation", "int main(){return sizeof((void(0),1));}"},
+      {"folded-functional-void", "static_assert((void(0),true)); int main(){}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("folded-void-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("folded-void-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FoldedVoidStillInspectsUnsupportedOperands) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unsupported-void-sizeof", "int f(){return sizeof((void(1.0),1));}"},
+      {"unsupported-void-case", "int f(int n){switch(n){case (void(1.0),1):return 7;default:return 9;}}"},
+      {"unsupported-void-assert", "static_assert((void(1.0),true));int main(){}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("folded-void-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("folded-void-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     expectCode(Result, "TR0201");
     expectNoArtifacts(Output);
   }
@@ -6611,8 +6674,7 @@ TEST_F(TranslateTest, CoreV2IntegerExpansionRejectsUnsupportedTypesAndSizeQuerie
       "int main(){int n=0; return __alignof__(n);}",
       "int main(){int n=0; return alignof(n);}",
       "int main(){return sizeof(double);}",
-      "int main(){return sizeof(1.0);}",
-      "int main(){return sizeof((void(0),1));}"};
+      "int main(){return sizeof(1.0);}"};
   for (size_t I = 0; I < Sources.size(); ++I) {
     SCOPED_TRACE(Sources[I]);
     const auto Source = tmpFile("integer-reject" + std::to_string(I) + ".cpp");
