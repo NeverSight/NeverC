@@ -18,6 +18,8 @@ Core v2 accepte les fonctions amies non templates et les types amis résolus dan
 
 Core v2 accepte les records imbriqués nommés non templates, y compris les types privés ou protégés exposés par des alias ou fabriques autorisés. Chaque objet conserve son propre stockage et récepteur ; références explicites à l’objet externe, identité de type par portée, copies et déplacements de membres et tableaux, destruction et itérateurs imbriqués conservent leur sémantique habituelle. Les dépendances par valeur sont émises en premier. Records imbriqués anonymes, templates, héritage et STL complète restent à réaliser ; la validation native exige le CI de la révision concernée.
 
+Core v2 accepte les membres statiques définis de type entier, booléen ou énumération, avec définitions inline/constexpr ou hors classe et initialisation constante ou à zéro. Toutes les instances partagent le même stockage typé. Les effets du récepteur et la destruction des temporaires sont conservés ; les références aux membres statiques restent valides après un récepteur temporaire. Une définition dans la même unité source est actuellement requise même pour lire seulement la valeur d’une constante non inline. Initialisation dynamique, autres types statiques et STL complète restent inachevés ; la validation native exige le CI de la révision concernée.
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).

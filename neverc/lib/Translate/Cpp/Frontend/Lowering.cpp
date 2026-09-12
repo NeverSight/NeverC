@@ -248,6 +248,14 @@ class FunctionLowering {
     if (const auto *R = dyn_cast<DeclRefExpr>(E))
       return storage(R->getDecl(), E->getExprLoc());
     if (const auto *M = dyn_cast<MemberExpr>(E)) {
+      if (A.S.coreV2())
+        if (const auto *V = dyn_cast<VarDecl>(M->getMemberDecl());
+            V && V->isStaticDataMember()) {
+          // The receiver contributes effects, not storage or a dereference.
+          // Any temporary receiver retains its ordinary full-expression cleanup.
+          discard(M->getBase());
+          return storage(V, L);
+        }
       // Never snapshot a whole base record just to access one of its fields.
       return Expression{{"kind", "member"},
                         {"type", type(M->getType(), M->getExprLoc())},

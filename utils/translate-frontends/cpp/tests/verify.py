@@ -1272,7 +1272,6 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
         'reference-field': 'struct R{int value;int&ref=value;};',
         'mutable-field': 'struct R{mutable int n=1;};',
         'bitfield': 'struct R{int bits:2;int n=1;};',
-        'static-member': 'struct R{static int x;int n=1;};int R::x=0;',
         'base': 'struct B{int n=1;};struct R:B{int next=2;};',
         'attribute': 'struct R{[[maybe_unused]] int n=1;};',
         'floating-default': 'struct R{int n=static_cast<int>(1.5);};',
@@ -3299,7 +3298,6 @@ int main(){return read();}
         'atomic': '_Atomic(int) value;',
         'tls': 'thread_local int value;',
         'static-local': 'int f(){static int value;return ++value;}',
-        'static-member': 'struct R{static int value;};int R::value=1;',
         'folded-unsupported': 'int value=static_cast<int>(1.0);',
         'unused-folded-unsupported': 'constexpr int f(){return static_cast<int>(1.0);}int value=f();',
         'variable-template': 'template<class T> int value=1;',
@@ -4397,6 +4395,262 @@ void useRange(){for(int&v:Range{})tick(v);}
             check(f"v2-nested-record-depth-{dependency_first}-{depth}", source,
                   "TR0201" if depth == 65 else None, profile="cpp-core-v2")
 
+    static_members_source = """int tick(int n){return n;}
+constexpr int seed(){return 7;}
+struct Shared {
+ inline static int value=2;
+ inline static int zero;
+ inline static bool enabled=false;
+ static const int inside=3;
+ static const int outside;
+ static constexpr int constant=5;
+ int field;
+};
+const int Shared::inside;
+const int Shared::outside=4;
+constexpr int Shared::constant;
+struct Other {inline static int value=6;};
+struct Nested {struct Item{inline static int value=7;};};
+class Hidden {
+ inline static int secret=8;
+public:static int&ref(){return secret;}
+};
+struct Receiver {
+ inline static int shared=11;
+ static constexpr int constant=12;
+ Receiver(){tick(1);}
+ ~Receiver(){tick(2);}
+};
+struct Default {
+ inline static int initial=seed();
+ int n=initial;
+};
+Shared&select(Shared&r){tick(0);return r;}
+Shared*choosePointer(Shared&r){tick(0);return &r;}
+Receiver make(){return Receiver();}
+int read(){return Shared::value;}
+int&ref(){return Shared::value;}
+const int&fixed(){return Shared::constant;}
+int*pointer(){return &Shared::value;}
+void dot(Shared&r){select(r).value=13;}
+int arrow(Shared&r){return choosePointer(r)->value;}
+int&lasting(){return make().shared;}
+int*lastingPointer(){return &make().shared;}
+const int&lastingConst(){return make().constant;}
+void temporaryWrite(){make().shared=14;tick(3);}
+void discarded(Shared&r){select(r).value;}
+int bump(int&n=Shared::value){return ++n;}
+int defaults(){return bump();}
+int unevaluated(){return sizeof(make().shared);}
+"""
+    static_members = check("v2-static-members-protocol", static_members_source, profile="cpp-core-v2")
+    sm_functions = {f["name"]: f for f in static_members["functions"]}
+    sm_globals = {g["name"]: g for g in static_members["globals"]}
+    assert len(sm_globals) == len(static_members["globals"]), "static redeclarations duplicated storage"
+    assert len(sm_functions) == len(static_members["functions"])
+
+    def sm_line(prefix):
+        found = [i for i, line in enumerate(static_members_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def sm_global(prefix, kind, value, mutable):
+        found = [g for g in static_members["globals"] if g["loc"]["line"] == sm_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        glob = found[0]
+        assert glob["type"] == kind and glob["value"]["kind"] == "literal"
+        assert glob["value"]["type"] == kind
+        assert glob["value"]["value"] == (value if kind == "bool" else str(value))
+        assert glob.get("mutable", False) is mutable
+        if not mutable:
+            assert "mutable" not in glob
+        return glob["name"]
+
+    def sm_record(prefix):
+        found = [r for r in static_members["records"] if r["loc"]["line"] == sm_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def sm_function(prefix, result, parameters):
+        found = [f for f in static_members["functions"] if f["loc"]["line"] == sm_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    value = sm_global(" inline static int value=2;", "int", 2, True)
+    zero = sm_global(" inline static int zero;", "int", 0, True)
+    enabled = sm_global(" inline static bool enabled=", "bool", False, True)
+    inside = sm_global("const int Shared::inside;", "int", 3, False)
+    outside = sm_global("const int Shared::outside=", "int", 4, False)
+    constant = sm_global(" static constexpr int constant=5;", "int", 5, False)
+    other = sm_global("struct Other {", "int", 6, True)
+    nested = sm_global("struct Nested {", "int", 7, True)
+    secret = sm_global(" inline static int secret=", "int", 8, True)
+    shared = sm_global(" inline static int shared=", "int", 11, True)
+    receiver_constant = sm_global(" static constexpr int constant=12;", "int", 12, False)
+    initial = sm_global(" inline static int initial=", "int", 7, True)
+    assert len(sm_globals) == 12
+    assert len({value, other, nested}) == 3
+    assert all(g["loc"]["line"] != sm_line("constexpr int Shared::constant;") for g in static_members["globals"])
+    record = sm_record("struct Shared {")
+    receiver = sm_record("struct Receiver {")
+    hidden = sm_record("class Hidden {")
+    assert [f["type"] for f in record["fields"]] == ["int"]
+    assert record["layout"] == {"size_bits": 32, "abi_align_bits": 32, "field_offsets_bits": [0]}
+    for empty_record in (receiver, hidden, sm_record("struct Other {")):
+        assert empty_record["fields"] == [] and empty_record["layout"] == {
+            "size_bits": 8, "abi_align_bits": 8, "field_offsets_bits": []}
+    for r in static_members["records"]:
+        assert all(f["name"] not in sm_globals for f in r["fields"])
+    for prefix, result, glob in (("int&ref(", "ptr:int", value),
+                                 ("const int&fixed(", "cptr:int", constant),
+                                 ("int*pointer(", "ptr:int", value),
+                                 ("public:static int&ref(", "ptr:int", secret)):
+        function = sm_function(prefix, result, [])
+        returns = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returns) == 1 and np_pointer(function, returns[0]) == ("object", glob)
+        assert not gc_calls(function)
+    read = sm_function("int read(", "int", [])
+    assert any(n.get("kind") == "var" and n.get("name") == value for n in walk(read["body"]))
+    assert not gc_calls(read)
+    rid = record["id"]
+    select = sm_function("Shared&select(", "ptr:"+rid, ["ptr:"+rid])["name"]
+    choose_pointer = sm_function("Shared*choosePointer(", "ptr:"+rid, ["ptr:"+rid])["name"]
+    dot = sm_function("void dot(", "void", ["ptr:"+rid])
+    arrow = sm_function("int arrow(", "int", ["ptr:"+rid])
+    discarded = sm_function("void discarded(", "void", ["ptr:"+rid])
+    for function, callee in ((dot, select), (arrow, choose_pointer), (discarded, select)):
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [callee]
+        assert np_pointer(function, calls[0]["args"][0]) == ("parameter", function["params"][0]["name"])
+        assert not any(n.get("kind") == "member" for n in walk(function["body"])), function
+        # Reference forwarding may spell &*parameter without loading it. The
+        # result of select/choosePointer must never be dereferenced for a static.
+        forwarded = {id(n["args"][0]) for n in walk(function["body"])
+                     if n.get("kind") == "address" and n["args"][0].get("kind") == "dereference"}
+        assert all(id(n) in forwarded for n in walk(function["body"])
+                   if n.get("kind") == "dereference"), function
+        assert not any(v["type"] == rid for v in function["locals"])
+    writes = [n for n in dot["body"] if n["op"] == "assign" and n["target"].get("name") == value]
+    assert len(writes) == 1 and gc_identity(dot, writes[0]["value"]) == 13
+    assert any(n.get("name") == value for n in walk(arrow["body"]))
+    assert not any(n.get("name") == value for n in walk(discarded["body"]))
+    receiver_id = receiver["id"]
+    make = sm_function("Receiver make(", "void", ["ptr:"+receiver_id])["name"]
+    destroy = receiver_id+"_destroy"
+    for prefix, result, glob in (("int&lasting(", "ptr:int", shared),
+                                 ("int*lastingPointer(", "ptr:int", shared),
+                                 ("const int&lastingConst(", "cptr:int", receiver_constant)):
+        function = sm_function(prefix, result, [])
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [make, destroy]
+        destination = np_pointer(function, calls[0]["args"][0])
+        assert destination != ("object", glob)
+        assert np_pointer(function, calls[1]["args"][0]) == destination
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and np_pointer(function, returned[0]) == ("object", glob)
+        assert sum(v["type"] == receiver_id for v in function["locals"]) == 1
+    tick = sm_function("int tick(", "int", ["int"])["name"]
+    temporary_write = sm_function("void temporaryWrite(", "void", [])
+    calls = gc_calls(temporary_write)
+    assert [c["callee"] for c in calls] == [make, destroy, tick]
+    store_index = [i for i, n in enumerate(temporary_write["body"])
+                   if n["op"] == "assign" and n["target"].get("name") == shared]
+    destroy_index = [i for i, n in enumerate(temporary_write["body"])
+                     if n["op"] == "call" and n["callee"] == destroy]
+    assert len(store_index) == len(destroy_index) == 1 and store_index[0] < destroy_index[0]
+    bump = sm_function("int bump(", "int", ["ptr:int"])["name"]
+    defaults = sm_function("int defaults(", "int", [])
+    calls = gc_calls(defaults)
+    assert [c["callee"] for c in calls] == [bump]
+    assert np_pointer(defaults, calls[0]["args"][0]) == ("object", value)
+    unevaluated = sm_function("int unevaluated(", "int", [])
+    assert not gc_calls(unevaluated)
+    assert [gc_identity(unevaluated, n["value"]) for n in unevaluated["body"] if n["op"] == "return"] == [4]
+    seed = sm_function("constexpr int seed(", "int", [])["name"]
+    assert not any(c["callee"] == seed for f in static_members["functions"] for c in gc_calls(f))
+    for function in static_members["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in sm_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-static-members-relocated-") as temp:
+        relocated = check("v2-static-members-relocated", static_members_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == static_members, "static member identities depend on the absolute root"
+
+    static_members_positive = {
+        'inline-zero': 'struct R{inline static int n;};int main(){return R::n;}',
+        'inline-value': 'struct R{inline static int n=3;};int main(){return ++R::n-4;}',
+        'out-of-line': 'struct R{static int n;};int R::n=3;int main(){return R::n-3;}',
+        'const-out-of-line': 'struct R{static const int n;};const int R::n=3;int main(){const int&r=R::n;return r-3;}',
+        'class-initializer': 'struct R{static const int n=3;};const int R::n;int main(){const int*r=&R::n;return *r-3;}',
+        'constexpr-inline': 'struct R{static constexpr int n=3;};int main(){const int&r=R::n;return &r!=&R::n;}',
+        'constexpr-redeclaration': 'struct R{static constexpr int n=3;};constexpr int R::n;int main(){return R::n-3;}',
+        'inline-const': 'struct R{inline static const int n=3;};int main(){return *&R::n-3;}',
+        'bool-enum': 'struct R{enum class E:unsigned int{a=1u,b=2u};inline static bool ok=false;inline static E e=E::a;};int main(){R::ok=true;R::e=R::E::b;return !R::ok||static_cast<unsigned int>(R::e)!=2u;}',
+        'const-receiver': 'struct R{inline static int n=1;};int main(){const R r{};r.n=3;return R::n-3;}',
+        'private': 'class R{inline static int n=3;public:static int&ref(){return n;}};int main(){R::ref()=4;return R::ref()-4;}',
+        'friend': 'class R{inline static int n=3;friend int get(const R&){return n;}};int main(){R r;return get(r)-3;}',
+        'nested': 'struct R{struct I{inline static int n=3;};};int main(){return R::I::n-3;}',
+        'distinct': 'struct A{inline static int n=1;};struct B{inline static int n=2;};int main(){A::n=3;return B::n-2;}',
+        'default-reference': 'struct R{inline static int n=1;};int f(int&n=R::n){return ++n;}int main(){return f()-2;}',
+        'default-member': 'struct R{inline static int initial=1;int n=initial;};int main(){R a;R::initial=3;R b;return a.n+b.n-4;}',
+        'constant-call': 'constexpr int seed(){return 3;}struct R{inline static int n=seed();};int main(){return R::n-3;}',
+        'initializer-class-scope': 'struct R{static constexpr int first=2;static int second;};int R::second=first+1;int main(){return R::second-3;}',
+        'shared-reference': 'struct R{inline static int n=1;int&ref(){return n;}};int main(){R a,b;a.ref()=3;return &a.ref()!=&b.ref();}',
+        'partial-receiver': 'struct R{int uninitialized;inline static int n=3;};int main(){R r;return r.n-3;}',
+        'receiver-effects': 'struct R{inline static int n=3;};R&get(R&r,int&n){++n;return r;}int main(){R r;int n=0;get(r,n).n=4;return n+R::n-5;}',
+        'lasting-reference': 'int dead=0;struct R{inline static int n=3;~R(){++dead;}};int&f(){return R{}.n;}int main(){int&r=f();return &r!=&R::n||dead!=1;}',
+        'lasting-pointer': 'struct R{inline static int n=3;~R(){}};int*f(){return &R{}.n;}int main(){return f()!=&R::n;}',
+        'lasting-const-reference': 'struct R{static constexpr int n=3;~R(){}};const int&f(){return R{}.n;}int main(){return &f()!=&R::n;}',
+        'promoted-1': 'struct R{static int x;int n=1;};int R::x=0;',
+        'promoted-2': 'struct R{static int value;};int R::value=1;',
+        'promoted-3': 'struct R{int n;static int value;int get(){return value;}};int R::value=1;',
+        'promoted-4': 'struct R{int n;static int value;R():n(1){}};int R::value=1;',
+    }
+    for name, source in static_members_positive.items():
+        check("v2-static-members-positive-" + name, source, profile="cpp-core-v2")
+    static_members_reject = {
+        'dynamic-call': 'int value(){return 3;}struct R{inline static int n=value();};',
+        'dynamic-write': 'int n=0;struct R{inline static int value=++n;};',
+        'floating': 'struct R{inline static double n=1.0;};',
+        'pointer': 'struct R{inline static int*n=nullptr;};',
+        'reference': 'int n=0;struct R{inline static int&value=n;};',
+        'array': 'struct R{inline static int a[2]={1,2};};',
+        'record': 'struct I{int n;};struct R{inline static I i{1};};',
+        'tls': 'struct R{inline static thread_local int n=1;};',
+        'volatile': 'struct R{inline static volatile int n=1;};',
+        'variable-template': 'struct R{template<class T>inline static int n=1;};',
+        'dependent': 'template<class T>struct R{inline static T n=1;};',
+        'folded-unsupported': 'struct R{inline static int n=static_cast<int>(1.0);};',
+        'folded-body': 'constexpr int f(){return static_cast<int>(1.0);}struct R{inline static int n=f();};',
+        'static-local': 'int f(){static int n=1;return ++n;}',
+    }
+    for name, source in static_members_reject.items():
+        check("v2-static-members-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    static_members_invalid = {
+        'private': 'class R{inline static int n=1;};int f(){return R::n;}',
+        'protected': 'class R{protected:inline static int n=1;};int f(){return R::n;}',
+        'write-const': 'struct R{static constexpr int n=1;};void f(){R::n=2;}',
+        'duplicate': 'struct R{static int n;};int R::n=1;int R::n=2;',
+        'noninline-initializer': 'struct R{static int n=1;};',
+        'local-class': 'int f(){struct R{static int n;};return 0;}',
+        'const-pointer': 'struct R{static constexpr int n=1;};int*f(){return &R::n;}',
+    }
+    for name, source in static_members_invalid.items():
+        check("v2-static-members-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    static_members_missing = {
+        'mutable-definition': 'struct R{static int n;};int f(){return R::n;}',
+        'const-definition': 'struct R{int n;static const int value=1;int get(){return value;}};',
+        'unused-definition': 'struct R{static int n;};',
+        'default-definition': 'struct R{static int n;};int f(int&n=R::n){return n;}',
+        'unevaluated-definition': 'struct R{static int n;};int f(){return sizeof(R::n);}',
+        'const-address': 'struct R{static const int n=1;};const int*f(){return &R::n;}',
+    }
+    for name, source in static_members_missing.items():
+        check("v2-static-members-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-static-members-outline", "struct R{int n;static int value;};int R::value=1;", "TR0201")
+    check("v1-static-members-inline", "struct R{int n;inline static int value=1;};", "TR0201")
+
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}
 int next(){mark(1);return number;}
@@ -5019,8 +5273,6 @@ int main() {
         'method-mutable-field': 'struct R{mutable int n;int get()const{return n;}};',
         'method-reference-field': 'struct R{int&n;int get()const{return n;}};',
         'method-member-template': 'struct R{int n;template<class T>T get(T v){return v;}};',
-        'method-static-data': 'struct R{int n;static int value;int get(){return value;}};int R::value=1;',
-        'method-constant-static-data': 'struct R{int n;static const int value=1;int get(){return value;}};',
         'method-method-comma-callee': 'struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}',
     })
     v2_rejections.update({
@@ -5036,7 +5288,6 @@ int main() {
         'constructor-mutable-field': 'struct R{mutable int n;R():n(1){}};',
         'constructor-union': 'union R{int n;unsigned u;R():n(1){}};',
         'constructor-bitfield': 'struct R{unsigned n:3;R():n(1){}};',
-        'constructor-static-data': 'struct R{int n;static int value;R():n(1){}};int R::value=1;',
         'constructor-folded-unsupported-initializer': 'struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;',
         'constructor-folded-throw-body': 'struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);',
         'constructor-dynamic-global': 'struct R{int n;R():n(1){}};R global;',

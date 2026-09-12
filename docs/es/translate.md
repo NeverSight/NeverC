@@ -18,6 +18,8 @@ Core v2 admite funciones amigas no plantilla y tipos amigos resueltos en las cla
 
 Core v2 admite registros anidados con nombre y sin plantillas, incluidos tipos privados o protegidos expuestos mediante alias o fábricas permitidos. Cada objeto conserva su almacenamiento y receptor; las referencias explícitas al objeto exterior, la identidad de tipo por ámbito, copias y movimientos de miembros y arrays, destrucción e iteradores anidados mantienen su semántica habitual. Las dependencias por valor se emiten primero. Los registros anidados anónimos, las plantillas, la herencia y la STL completa siguen pendientes; la validación nativa requiere el CI de la revisión que lo implementa.
 
+Core v2 admite miembros estáticos definidos de tipo entero, booleano o enumeración, con definiciones inline/constexpr o fuera de la clase e inicialización constante o a cero. Todas las instancias comparten el mismo almacenamiento tipado. Se conservan los efectos del receptor y la destrucción de temporales; las referencias a miembros estáticos sobreviven al receptor temporal. Actualmente se exige una definición en la misma unidad fuente incluso al leer solo el valor de una constante no inline. La inicialización dinámica, otros tipos estáticos y la STL completa siguen pendientes; la validación nativa requiere el CI de la revisión correspondiente.
+
 ## Instalación y traducción escalar
 
 Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).

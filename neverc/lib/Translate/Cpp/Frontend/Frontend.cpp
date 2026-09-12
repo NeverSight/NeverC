@@ -1001,9 +1001,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return temporaryBinding(C->getSubExpr(), AllowFullExpression, ExpectedExtender);
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
       return temporaryBinding(W->getSubExpr(), AllowFullExpression, ExpectedExtender);
-    if (const auto *M = dyn_cast<MemberExpr>(E))
+    if (const auto *M = dyn_cast<MemberExpr>(E)) {
+      if (A.S.coreV2())
+        if (const auto *V = dyn_cast<VarDecl>(M->getMemberDecl());
+            V && V->isStaticDataMember())
+          return false; // Static storage does not inherit its receiver's lifetime.
       return M->isArrow() ? temporaryArrayBase(M->getBase(), AllowFullExpression, ExpectedExtender)
                           : temporaryBinding(M->getBase(), AllowFullExpression, ExpectedExtender);
+    }
     if (const auto *Index = dyn_cast<ArraySubscriptExpr>(E))
       return temporaryArrayBase(Index->getBase(), AllowFullExpression, ExpectedExtender);
     if (const auto *C = dyn_cast<ConditionalOperator>(E))
@@ -1514,9 +1519,52 @@ public:
                "Only resolved core-v2 parameter defaults are supported.");
       return true;
     }
-    if (A.S.coreV2() && D->isStaticDataMember())
-      A.reject(D->getLocation(), "static data member",
-               "Static data members require class storage and initialization lowering.");
+    if (A.S.coreV2() && D->isStaticDataMember()) {
+      const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+      if (D->getKind() != Decl::Var || !Parent || !owned(Parent) ||
+          Parent->isDependentContext() ||
+          !D->getType()->isIntegralOrEnumerationType() ||
+          D->getTLSKind() != VarDecl::TLS_None ||
+          D->getType().isVolatileQualified()) {
+        A.reject(D->getLocation(), "static data member",
+                 "Only non-thread-local scalar members in supported owned classes are admitted.");
+        return true;
+      }
+      auto *Definition = D->getDefinition();
+      const auto *DefinitionParent = Definition
+          ? dyn_cast<CXXRecordDecl>(Definition->getDeclContext()) : nullptr;
+      if (!Definition || !owned(Definition) || Definition->getKind() != Decl::Var ||
+          !Definition->isStaticDataMember() || !DefinitionParent ||
+          DefinitionParent->getCanonicalDecl() != Parent->getCanonicalDecl() ||
+          Definition->getCanonicalDecl() != D->getCanonicalDecl() ||
+          !A.Context.hasSameType(Definition->getType(), D->getType())) {
+        A.reject(D->getLocation(), "static data definition",
+                 "A scalar static member requires one source-owned definition in this unit.",
+                 "TR0203");
+        return true;
+      }
+      const VarDecl *InitializingDecl = nullptr;
+      if (const auto *Init = Definition->getAnyInitializer(InitializingDecl)) {
+        APValue Value;
+        if (!InitializingDecl || !owned(InitializingDecl) ||
+            InitializingDecl->getCanonicalDecl() != D->getCanonicalDecl() ||
+            !A.Context.hasSameType(InitializingDecl->getType(), D->getType()) ||
+            !Init->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt()) {
+          A.reject(D->getLocation(), "static data initializer",
+                   "A scalar static member requires a source-owned constant initializer.");
+          return true;
+        }
+      } else if (D->getType().isConstQualified()) {
+        A.reject(D->getLocation(), "static data initializer",
+                 "A const static member requires an initializer in this unit.");
+        return true;
+      }
+      if (CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
+        A.Globals.push_back(Definition);
+      // A non-inline const member's initializer can belong to its in-class
+      // declaration. RAV still checks every written initializer and body.
+      return true;
+    }
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
       checkBinding(D->getInit(), HasDefault,
                    D->getKind() == Decl::Var && D->isLocalVarDecl() && D->hasLocalStorage()
@@ -1932,11 +1980,15 @@ public:
           Method && !Method->isImplicit() && !DirectMethodCallees.count(Reference))
         A.reject(Reference->getExprLoc(), "method value",
                  "A method name is supported only as a direct call target.");
-    if (const auto *M = dyn_cast<MemberExpr>(S))
+    if (const auto *M = dyn_cast<MemberExpr>(S)) {
+      const auto *V = dyn_cast<VarDecl>(M->getMemberDecl());
+      const bool StaticData = A.S.coreV2() && V && V->isStaticDataMember();
       if ((!A.S.coreV2() && M->isArrow()) ||
-          (!isa<FieldDecl>(M->getMemberDecl()) && !DirectMethodCallees.count(M)))
+          (!isa<FieldDecl>(M->getMemberDecl()) && !StaticData &&
+           !DirectMethodCallees.count(M)))
         A.reject(S->getBeginLoc(), "member access",
-                 "Only aggregate fields and direct ordinary method calls are supported.");
+                 "Only fields, core-v2 scalar static data and direct method calls are supported.");
+    }
     if (A.S.coreV2()) {
       if (const auto *R = dyn_cast<ReturnStmt>(S);
           R && R->getRetValue() && R->getRetValue()->isGLValue())
@@ -2104,7 +2156,9 @@ void Adapter::run() {
   for (const auto *G : Globals) {
     const bool Mutable = S.coreV2() && !G->getType().isConstQualified();
     json::Object Initializer;
-    if (const auto *Init = G->getInit()) {
+    const auto *Init = S.coreV2() && G->isStaticDataMember()
+                           ? G->getAnyInitializer() : G->getInit();
+    if (Init) {
       APValue Value;
       if (!Init->isCXX11ConstantExpr(Context, &Value) || (Mutable && !Value.isInt()))
         throw Failure{};

@@ -230,7 +230,8 @@ live object. Static/instance reference arguments share the full-expression
 temporary-call contract below; they introduce no reference lifetime extension.
 
 Virtual methods, inheritance,
-volatile/restrict methods, templates and static data remain unsupported. Ordinary
+volatile/restrict methods and templates remain unsupported. Defined scalar
+static data follows its separate storage contract below. Ordinary
 constructors and destructors follow the separate rules below. The existing
 implicit trivial copy paths are unchanged.
 These methods do not establish STL container or iterator support. V1 profiles
@@ -589,6 +590,54 @@ structured bindings, C++20 range init-statements and coroutine range loops
 remain outside this increment. Existing extent and expansion budgets still
 apply, and older profiles retain their previous range-loop rejection.
 
+## Defined scalar static data members
+
+Core v2 admits source-owned definitions of non-volatile integer, boolean and enum
+static data members in supported non-template classes. This includes C++17
+inline and constexpr definitions and ordinary out-of-line definitions. Mutable
+members use constant or static zero initialization. Const members require a
+fully defined constant initializer. For a non-inline const integral member, the
+initializer may reside in the in-class declaration while the definition appears
+out of line. Redundant constexpr redeclarations retain the original definition.
+All written initializers and selected operations remain checked before folding.
+
+A static member has one canonical global storage object, shared by every instance;
+it contributes no field or size to its class. A static-only class therefore
+retains the empty-record layout. Mutable members use the existing scalar global
+write permission; const members remain read-only with const-qualified addresses.
+Private/protected access and class scopes remain embedded Clang source rules.
+Nested classes and equal-spelled members preserve distinct canonical identities.
+
+Access through `object.member` or `pointer->member` evaluates the explicit object
+expression once for its effects, then uses the static storage. It does not read
+the receiver's fields or dereference the resulting pointer to obtain the static
+member. An uninitialized ordinary receiver field remains unread, and a const
+receiver does not make a mutable static member const. Discarded accesses still
+preserve receiver effects. Unevaluated and skipped operands retain their normal
+semantics.
+
+A temporary receiver is destroyed at its ordinary full-expression boundary.
+References or addresses to a static member designate separate static storage and
+remain valid after that receiver is destroyed; no receiver lifetime extension
+is introduced. Default arguments and default member initializers access the same
+global object, including later changes to mutable values.
+
+This stage requires a definition in the same source unit for every declared
+static member. A missing definition reports `TR0203`, including a non-inline
+const integral declaration used only for its value. Such non-ODR-used constants
+can be valid C++17, but their declaration-only constant lowering remains future
+work. The producer does not invent a storage definition for them. This is a
+translation source-closure restriction, not a claim that C++ requires a separate
+definition for every such value use.
+
+Dynamic initialization, static pointer/reference/array/record objects, TLS,
+static locals and templates retain their restrictions. There is no startup or
+static-destruction function in this representation. Older profiles retain their
+existing behavior. Native O0/O2 fixtures and protocol checks cover shared state,
+canonical definitions, initializer ownership, receiver effects, actual addresses,
+const permissions, temporary cleanup, default arguments and relocation. Native
+validation requires the implementing revision's CI; full C++/STL remains unfinished.
+
 ## Mutable scalar globals
 
 Core v2 admits mutable namespace/file-scope globals of the supported integer,
@@ -608,8 +657,8 @@ internal generated names, without adding a public C data-export ABI.
 
 Const globals retain their existing read-only representation. Mutable record,
 array, pointer and reference globals, floating-point/volatile/atomic globals,
-dynamic initialization, thread-local storage, static locals and static data
-members remain outside this increment. Nontrivial global object destruction
+dynamic initialization, thread-local storage and static locals remain outside
+current support. Defined scalar static data members follow the contract below. Nontrivial global object destruction
 still requires separate lifetime support. Other profiles retain their prior
 constant-global contract.
 

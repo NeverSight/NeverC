@@ -114,6 +114,14 @@ inspection and layout verification; unevaluated operands produce no effects.
 The [core v2 contract](cpp-core-v2.md#integer-widths-characters-and-size-queries)
 defines the full admitted boundary. V1 profiles retain their scalar contracts.
 
+Defined core-v2 scalar static data members reuse ordinary typed globals and the
+optional `mutable` flag. A canonical definition yields one global with that
+definition's location; a checked initializer may belong to its in-class
+redeclaration. Static members never enter a record's fields/layout. Member access
+retains receiver effects before using global storage, whose lifetime is
+independent of any temporary receiver. See [defined scalar static data members](cpp-core-v2.md#defined-scalar-static-data-members)
+for const permissions, source closure and initialization restrictions.
+
 Core-v2 named nested records use the existing record IDs, fields, layouts and
 ordinary member signatures. Canonical source scopes distinguish equal-spelled
 types. No enclosing-object field or extra receiver is added. The producer orders

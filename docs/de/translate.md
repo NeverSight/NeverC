@@ -18,6 +18,8 @@ Core v2 unterstützt aufgelöste Nicht-Template-Friend-Funktionen und Friend-Typ
 
 Core v2 unterstützt benannte verschachtelte Records ohne Templates, auch private und geschützte Typen über zulässige Aliase oder Fabrikfunktionen. Eigener Speicher und Empfänger, explizite Referenzen auf äußere Objekte, Typidentität pro Gültigkeitsbereich, Kopieren und Verschieben von Membern und Arrays, Zerstörung und verschachtelte Iteratoren behalten ihre normale Semantik. Wertabhängigkeiten werden zuerst ausgegeben. Anonyme verschachtelte Records, Templates, Vererbung und vollständige STL-Unterstützung stehen noch aus; native Validierung benötigt CI der implementierenden Revision.
 
+Core v2 unterstützt definierte statische Datenmember mit Ganzzahl-, booleschem oder Enum-Typ, einschließlich Inline-/constexpr- und ausgelagerter Definitionen mit konstanter oder Nullinitialisierung. Alle Instanzen teilen denselben typisierten Speicher. Empfängereffekte und temporäre Zerstörung bleiben erhalten; Referenzen auf statische Member überleben temporäre Empfänger. Derzeit ist auch für reine Wertzugriffe auf Nicht-Inline-Konstanten eine Definition in derselben Quelldatei nötig. Dynamische Initialisierung, andere statische Typen und vollständige STL-Unterstützung stehen aus; native Validierung benötigt CI der implementierenden Revision.
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

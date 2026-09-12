@@ -18,6 +18,8 @@ Core v2 supporta funzioni friend non template e tipi friend risolti nelle classi
 
 Core v2 supporta record annidati con nome e non template, compresi tipi privati o protetti esposti tramite alias o factory consentiti. Ogni oggetto conserva memoria e ricevitore propri; riferimenti espliciti all’oggetto esterno, identità di tipo per ambito, copia e spostamento di membri e array, distruzione e iteratori annidati mantengono la normale semantica. Le dipendenze per valore sono emesse per prime. Record annidati anonimi, template, ereditarietà e STL completa restano da implementare; la verifica nativa richiede il CI della revisione corrispondente.
 
+Core v2 supporta membri statici definiti di tipo intero, booleano o enumerazione, incluse definizioni inline/constexpr e fuori classe con inizializzazione costante o a zero. Tutte le istanze condividono la stessa memoria tipizzata. Gli effetti del ricevitore e la distruzione dei temporanei sono preservati; i riferimenti ai membri statici sopravvivono ai ricevitori temporanei. Attualmente serve una definizione nella stessa unità sorgente anche per leggere soltanto il valore di una costante non inline. Inizializzazione dinamica, altri tipi statici e STL completa restano incompleti; la verifica nativa richiede il CI della revisione corrispondente.
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).
