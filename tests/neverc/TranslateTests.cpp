@@ -1890,7 +1890,7 @@ struct Reference {
 struct ConstReference { int n; operator const int&() const { return n; } };
 struct XReference { int n; operator int&&() { return static_cast<int&&>(n); } };
 enum class Code : unsigned short { ok=65000 };
-struct EnumSource { operator Code() const { return Code::ok; } };
+struct EnumSource { Code value; operator Code() const { return value; } };
 struct Target {
   int n; Counts *counts; Target *self=this;
   Target(int value,Counts &c):n(value),counts(&c) { ++counts->made; }
@@ -1956,7 +1956,7 @@ int main() {
   if(&readonly!=&constReference.n)return 20;
   XReference xreference{5}; int &&xalias=xreference; xalias=17;
   if(xreference.n!=17||&xalias!=&xreference.n)return 21;
-  EnumSource enumSource{}; Code code=enumSource;
+  EnumSource enumSource{Code::ok}; Code code=enumSource;
   if(code!=Code::ok)return 22;
   if(converted!=23||static_cast<int>(pure)!=23)return 23;
   Risky risky{6};

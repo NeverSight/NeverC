@@ -817,10 +817,13 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
     gc_functions = {f["name"]: f for f in generated_copy["functions"]}
     gc_by_line = {f["loc"]["line"]: f for f in generated_copy["functions"]}
     gc_constructors = {}
+    leaf_copy_lines = [i for i, text in enumerate(generated_copy_source.splitlines(), 1)
+                       if text.startswith(" Leaf(const Leaf&s)")]
+    assert len(leaf_copy_lines) == 1, leaf_copy_lines
     for line in (1, 6, 7, 8, 10, 11, 12, 13, 14):
         rid = gc_records[line]["id"]
         source_kind = "ptr:" if line in (12, 13) else "cptr:"
-        locations = (4,) if line == 1 else ((8, 9) if line == 8 else (line,))
+        locations = leaf_copy_lines if line == 1 else ((8, 9) if line == 8 else (line,))
         # A free function returning this record can have the same hidden
         # result/source signature. Select the constructor's source identity.
         selected = [f for f in generated_copy["functions"] if f["result"] == "void"
