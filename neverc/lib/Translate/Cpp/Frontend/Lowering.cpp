@@ -1213,7 +1213,7 @@ class FunctionLowering {
       if (!defaultedCopyOrMoveConstructor(dyn_cast<CXXConstructorDecl>(Function)) ||
           !Array || !Source || !Source->isGLValue() ||
           Source->getValueKind() != Common->getValueKind() ||
-          (cast<CXXConstructorDecl>(Function)->isCopyConstructor() && !Source->isLValue()) ||
+          (llvm::cast<CXXConstructorDecl>(Function)->isCopyConstructor() && !Source->isLValue()) ||
           ArraySources.count(Common) ||
           Place.getString("type") != type(Loop->getType(), L))
         reject(L, "array initialization", "Expected admitted semantic member-array copying or moving.");
