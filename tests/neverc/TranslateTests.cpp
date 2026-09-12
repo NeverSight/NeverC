@@ -1123,7 +1123,7 @@ TEST_F(TranslateTest, CoreV2ArrayScopeRejectsUnsupportedStorage) {
       {"dead-variable-array",
        "int f(int n){if(false){int a[n];} return 0;}", "TR0201"},
       {"unsupported-element",
-       "int f(){char a[2]; return 0;}", "TR0201"},
+       "int f(){float a[2]; return 0;}", "TR0201"},
       {"global-array",
        "const int a[2]={1,2};", "TR0201"},
       {"global-array-field",
@@ -1292,7 +1292,7 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
       {"pointer-arithmetic", "int *f(int *p){return p+1;}", "TR0201"},
       {"pointer-ordering", "bool f(int *a,int *b){return a<b;}", "TR0201"},
       {"function-pointer", "int f(int (*call)()){return call();}", "TR0201"},
-      {"unsupported-pointee", "char *f(char *p){return p;}", "TR0201"},
+      {"unsupported-pointee", "float *f(float *p){return p;}", "TR0201"},
       {"const-write", "void f(const int *p){*p=1;}", "TR0202"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -1302,6 +1302,164 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
     auto Result = translate(
         Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     expectCode(Result, Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2IntegerWidthsCharactersAndSizeQueriesPreserveValues) {
+  const auto Source = tmpFile("integer-widths.cpp");
+  const auto Output = tmpFile("integer-widths.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+using Signed64 = long long;
+using Unsigned64 = unsigned long long;
+enum class Tiny : unsigned char { high = 255 };
+enum class Wide : Unsigned64 { high = 0xffffffffffffffffull };
+enum class Flag : bool { off = false, on = true };
+struct Mixed { signed char byte; Signed64 wide; char16_t unit; };
+int choose(signed char) { return 1; }
+int choose(short) { return 2; }
+int choose(long) { return 3; }
+int choose(Signed64) { return 4; }
+Signed64 &alias(Signed64 &value) { return value; }
+int tiny_switch(Tiny value) {
+  switch (value) {case Tiny::high: return 7; default: return 9;}
+}
+int wide_switch(Unsigned64 value) {
+  switch (value) {
+  case 0xffffffffffffffffull: return 11;
+  case 0x8000000000000000ull: return 13;
+  default: return 17;
+  }
+}
+int main() {
+  signed char small = 127;
+  signed char previous = small++;
+  if (previous != 127 || small != -128) return 1;
+  --small;
+  if (small != 127) return 2;
+  unsigned char byte = 255;
+  if (byte + 1 != 256 || byte * 2 != 510) return 3;
+  ++byte;
+  if (byte != 0) return 4;
+  short narrow = -32767 - 1;
+  narrow -= 1;
+  if (narrow != 32767) return 5;
+  unsigned short units = 65535;
+  if (units + 1 != 65536) return 6;
+  ++units;
+  if (units != 0) return 7;
+  Signed64 minimum = -9223372036854775807ll - 1ll;
+  Signed64 maximum = 9223372036854775807ll;
+  Unsigned64 all = 0xffffffffffffffffull;
+  if (static_cast<Signed64>(all) != -1ll ||
+      static_cast<Signed64>(0x8000000000000000ull) != minimum) return 8;
+  if (static_cast<signed char>(all) != -1 ||
+      static_cast<short>(all) != -1 || static_cast<int>(all) != -1) return 9;
+  if (static_cast<Unsigned64>(-1) != all ||
+      static_cast<unsigned char>(-1ll) != 255) return 10;
+  if ((1ll << 63) != minimum || (minimum >> 63) != -1ll ||
+      (minimum >> 1) != -4611686018427387904ll) return 11;
+  if ((all >> 63) != 1ull || (1ull << 63) != 0x8000000000000000ull)
+    return 12;
+  if (maximum + -1ll != 9223372036854775806ll || all + 1ull != 0ull)
+    return 13;
+  if (!(-1ll < 1u) || (-1ll < 1ull)) return 14;
+  if (choose(static_cast<signed char>(1)) != 1 ||
+      choose(static_cast<short>(1)) != 2 || choose(1L) != 3 || choose(1LL) != 4)
+    return 15;
+  Signed64 values[3] = {minimum, maximum};
+  Size index = 1;
+  alias(values[index]) = 0x100000001ll;
+  if (values[0] != minimum || values[1] != 4294967297ll || values[2] != 0)
+    return 16;
+  wchar_t wide = L'\u4e2d';
+  char16_t utf16 = u'\u4e2d';
+  char32_t utf32 = U'\U0001f600';
+  char raw = '\xff';
+  if (static_cast<unsigned int>(wide) != 0x4e2du || utf16 != 0x4e2d ||
+      utf32 != 0x1f600u || static_cast<unsigned char>(raw) != 255) return 17;
+  if (tiny_switch(Tiny::high) != 7 || wide_switch(all) != 11 ||
+      wide_switch(0x8000000000000000ull) != 13 || wide_switch(0) != 17) return 18;
+  if (!(Tiny::high == static_cast<Tiny>(255)) ||
+      !(static_cast<Tiny>(1) < Tiny::high)) return 25;
+  if (Flag::off == Flag::on || !(Flag::off < Flag::on)) return 26;
+  Flag flag = Flag::on;
+  switch (flag) {case Flag::on: break; default: return 19;}
+  int effects = 0;
+  Size size = sizeof(++effects);
+  if (size != sizeof(int) || effects != 0) return 20;
+  int &reference = effects;
+  if (sizeof(reference) != sizeof(int) || sizeof(int&) != sizeof(int)) return 21;
+  if (sizeof(values) != 3 * sizeof(Signed64) || sizeof(Signed64) != 8 ||
+      sizeof(short) != 2 || sizeof(unsigned char) != 1) return 22;
+  if (sizeof(long) != __SIZEOF_LONG__ || sizeof(wchar_t) != __SIZEOF_WCHAR_T__)
+    return 23;
+  if (alignof(Mixed) < alignof(Signed64) || alignof(short) > sizeof(short))
+    return 24;
+  Mixed record{-128, minimum, utf16};
+  if (record.byte != -128 || record.wide != minimum || record.unit != utf16)
+    return 27;
+  if (static_cast<int>(0x80000001ll) != -2147483647 ||
+      static_cast<short>(0x8001ll) != -32767 ||
+      static_cast<signed char>(0x81ll) != -127 ||
+      static_cast<signed char>(-129ll) != 127 ||
+      static_cast<int>(minimum) != 0) return 28;
+  if (0x100000001ll * 3 != 12884901891ll ||
+      (-9223372036854775807ll / 3) != -3074457345618258602ll ||
+      (-9223372036854775807ll % 3) != -1ll) return 29;
+  if ((-1ll & 0xffffffffu) != 4294967295ll) return 30;
+  static_assert(sizeof(Signed64) == 8);
+  static_assert(sizeof(char16_t) == 2 && sizeof(char32_t) == 4);
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("integer-widths" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2IntegerExpansionRejectsUnsupportedTypesAndSizeQueries) {
+  const std::vector<std::string> Sources = {
+      "using Wide=__int128; int main(){}",
+      "int main(){if(false){unsigned __int128 hidden=0;} return 0;}",
+      "using Wide=_BitInt(65); int main(){}",
+      "static_assert(sizeof(void)>0); int main(){}",
+      "int f(){return 0;} int main(){return sizeof(f);}",
+      "int main(){int n=0; return __alignof__(n);}",
+      "int main(){int n=0; return alignof(n);}",
+      "int main(){return sizeof(double);}",
+      "int main(){return sizeof(1.0);}",
+      "int main(){return sizeof((void(0),1));}"};
+  for (size_t I = 0; I < Sources.size(); ++I) {
+    SCOPED_TRACE(Sources[I]);
+    const auto Source = tmpFile("integer-reject" + std::to_string(I) + ".cpp");
+    const auto Output = tmpFile("integer-reject" + std::to_string(I) + ".nc");
+    writeFile(Source, Sources[I]);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    // Some extended integer forms are rejected by Clang on individual targets;
+    // on others the owned-source allowlist diagnoses them before lowering.
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_TRUE(Result.stderrContains("TR0201") || Result.stderrContains("TR0202"))
+        << Result.out << Result.err;
+    expectNoArtifacts(Output);
+  }
+  for (const auto &SourceText : {
+           "int main(){long long value=1; return value;}",
+           "int main(){char value='a'; return value;}",
+           "int main(){return sizeof(int);}"}) {
+    const auto Source = tmpFile("v1-integer-reject.cpp");
+    const auto Output = tmpFile("v1-integer-reject.nc");
+    writeFile(Source, SourceText);
+    auto Result = translate(Source, {"-o", Output.string()});
+    expectCode(Result, "TR0201");
     expectNoArtifacts(Output);
   }
 }
@@ -1472,21 +1630,16 @@ TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"pointer-alias", "using Hidden = char *;", "TR0201"},
+      {"pointer-alias", "using Hidden = float *;", "TR0201"},
       {"volatile-alias", "using Hidden = volatile int;", "TR0201"},
       {"function-alias", "using Hidden = void();", "TR0201"},
       {"alias-template", "template<class T> using Hidden = T;", "TR0201"},
-      {"wide-enum", "enum class E : unsigned long long { value = 0 };",
-       "TR0201"},
-      {"narrow-enum", "enum class E : unsigned char { value = 0 };",
-       "TR0201"},
-      {"bool-enum", "enum class E : bool { value = false };", "TR0201"},
       {"folded-enum",
        "enum E : int { value = (static_cast<void>(0), 1) };", "TR0201"},
       {"folded-assertion",
        "static_assert((static_cast<void>(0), true), \"checked condition\");",
        "TR0201"},
-      {"wide-assertion", "static_assert(1L == 1L, \"checked types\");",
+      {"floating-assertion", "static_assert(1.0 == 1.0, \"checked types\");",
        "TR0201"},
       {"runtime-string",
        "static_assert(true, \"message\"); const char *value = \"runtime\";",

@@ -19,11 +19,13 @@ neverc output.nc -c -o output.o
 
 The `cpp-core-v1` profile accepts one self-contained C++17 source without includes. It supports `int`, `unsigned int`, `bool`, `void`, trivial aggregate types, free functions, namespaces, overloads and the documented control flow. Every declaration in the input is checked, including unused code.
 
-Select `--profile cpp-core-v2` to add checked `typedef`/`using` aliases, enums with 32-bit `int` or `unsigned int` underlying types, `static_assert`, bounded object pointers and lvalue references. References preserve aliases, including parameters and returned references; nested pointee `const` and null pointers are supported. The single-source and no-include restrictions still apply. See the [core v2 contract](../utils/translate-frontends/docs/cpp-core-v2.md).
+Select `--profile cpp-core-v2` to add checked `typedef`/`using` aliases, enums with supported integral underlying types, `static_assert`, bounded object pointers and lvalue references. References preserve aliases, including parameters and returned references; nested pointee `const` and null pointers are supported. The single-source and no-include restrictions still apply. See the [core v2 contract](../utils/translate-frontends/docs/cpp-core-v2.md).
 
 Core v2 also adds fixed-size local arrays and array fields, multidimensional indexing, and pointers/references to arrays. Partial initialization fills remaining elements with zero; element initialization preserves source order and aliasing. Extents and initializer expansion are bounded. Global arrays, variable-length arrays and nontrivial element lifetimes remain unsupported.
 
 Core v2 supports `switch`/`case`/`default`, including C++17 init-statements, fallthrough and validated `[[fallthrough]]` annotations. Selector evaluation occurs once; nested switches and loops retain their own `break` and `continue` targets. GNU case ranges and other statement attributes remain rejected.
+
+Core v2 now supports signed and unsigned 8-, 16-, 32- and 64-bit integers, character types and literals, and constant `sizeof`/`alignof` queries. Source promotions and overload resolution precede width normalization; `long`, `wchar_t` and the size type follow the selected target. This includes narrow and wide enum underlying types. Runtime strings and STL are still being developed.
 
 Core v2 verifies source sizes and ABI alignments against NeverC’s own target model, including aggregate sizes and field offsets. Generated assertions check the recorded layout again during compilation, and the manifest records this evidence.
 

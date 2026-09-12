@@ -16,9 +16,9 @@ namespace neverc::translate {
 std::string typeName(const Type &T) {
   switch (T.Kind) {
   case TypeKind::Int:
-    return "int";
+    return T.IntegerBits ? "i" + std::to_string(T.IntegerBits) : "int";
   case TypeKind::UInt:
-    return "uint";
+    return T.IntegerBits ? "u" + std::to_string(T.IntegerBits) : "uint";
   case TypeKind::Bool:
     return "bool";
   case TypeKind::Void:
@@ -168,6 +168,15 @@ public:
       T.Kind = TypeKind::Int;
     else if (S == "uint")
       T.Kind = TypeKind::UInt;
+    else if (S == "i8" || S == "u8" || S == "i16" || S == "u16" ||
+             S == "i64" || S == "u64") {
+      T.Kind = S.front() == 'i' ? TypeKind::Int : TypeKind::UInt;
+      if (S.drop_front().getAsInteger(10, T.IntegerBits))
+        return error("Invalid integer width.");
+    } else if (S.size() > 1 && (S.front() == 'i' || S.front() == 'u') &&
+               std::all_of(S.begin() + 1, S.end(),
+                           [](char C) { return C >= '0' && C <= '9'; }))
+      return error("Noncanonical or unsupported integer width.");
     else if (S == "bool")
       T.Kind = TypeKind::Bool;
     else if (S == "void")
@@ -533,8 +542,9 @@ bool identifier(llvm::StringRef N) {
               .Default(false);
 }
 
-bool canonicalInteger(llvm::StringRef S, TypeKind K) {
-  if (K != TypeKind::Int && K != TypeKind::UInt)
+bool canonicalInteger(llvm::StringRef S, const Type &T) {
+  auto K = T.Kind;
+  if (!T.isInteger())
     return false;
   bool Negative = S.consume_front("-");
   if (S.empty() || (Negative && K == TypeKind::UInt) ||
@@ -546,9 +556,11 @@ bool canonicalInteger(llvm::StringRef S, TypeKind K) {
   uint64_t V;
   if (S.getAsInteger(10, V))
     return false;
-  return V <= (K == TypeKind::UInt ? UINT64_C(4294967295)
-               : Negative          ? UINT64_C(2147483648)
-                                   : UINT64_C(2147483647));
+  const unsigned Bits = T.integerBits();
+  const uint64_t UnsignedMax = Bits == 64 ? UINT64_MAX : (UINT64_C(1) << Bits) - 1;
+  const uint64_t SignedLimit = UINT64_C(1) << (Bits - 1);
+  return V <= (K == TypeKind::UInt ? UnsignedMax
+               : Negative ? SignedLimit : SignedLimit - 1);
 }
 
 class Verifier {
@@ -594,6 +606,10 @@ class Verifier {
         ((Depth || T.Kind == TypeKind::Pointer || T.Kind == TypeKind::Array) &&
          ++Nodes > MaxProtocolNodes))
       return error(L, "IR type depth/node limit exceeded.");
+    if (T.IntegerBits &&
+        (!T.isInteger() || M.Profile != "cpp-core-v2" ||
+         (T.IntegerBits != 8 && T.IntegerBits != 16 && T.IntegerBits != 64)))
+      return error(L, "Explicit 8/16/64-bit integers require core v2 scalar types.");
     if (T.Kind == TypeKind::Pointer) {
       if (M.Profile != "cpp-core-v2" || !T.RecordID.empty() || T.Count ||
           T.Elements.size() != 1)
@@ -660,7 +676,7 @@ class Verifier {
       return lvalue(E.Args[0], Storage, !E.ValueType.PointeeConst);
     case ExprKind::Index:
       return (Arity(2) && E.Args[0].ValueType.Kind == TypeKind::Pointer &&
-              E.Args[1].ValueType.isInteger() &&
+              E.Args[1].ValueType.isPromotedInteger() &&
               E.ValueType == E.Args[0].ValueType.Elements[0]) ||
              error(E.Loc, "Index requires a nonvoid element pointer and promoted integer.");
     case ExprKind::Null:
@@ -685,7 +701,7 @@ class Verifier {
         HasSignalingNaNLiteral = true;
       return E.ValueType.Kind == TypeKind::Bool ||
              E.ValueType.Kind == TypeKind::Double ||
-             canonicalInteger(E.Integer, E.ValueType.Kind) ||
+             canonicalInteger(E.Integer, E.ValueType) ||
              error(E.Loc, "Invalid scalar literal value or range.");
     case ExprKind::Var: {
       if (!Arity(0))
@@ -717,7 +733,7 @@ class Verifier {
                 E.UnaryOp != UnaryOperator::BitNot) ||
                error(E.Loc,
                      "Math unary +/- requires a double operand and result.");
-      return (E.Args[0].ValueType.isInteger() &&
+      return (E.Args[0].ValueType.isPromotedInteger() &&
               E.ValueType == E.Args[0].ValueType) ||
              error(E.Loc, "Unary arithmetic requires an explicitly promoted "
                           "integer operand.");
@@ -762,7 +778,7 @@ class Verifier {
                 E.ValueType.Kind == TypeKind::Bool) ||
                error(E.Loc, "The math profile permits double comparisons but "
                             "excludes binary floating arithmetic.");
-      if (!A.isInteger() || !B.isInteger())
+      if (!A.isPromotedInteger() || !B.isPromotedInteger())
         return error(E.Loc,
                      "Binary operands must include source integer promotions.");
       if (!Shift && A != B)
@@ -826,7 +842,8 @@ class Verifier {
     return error(E.Loc, "Unknown expression kind.");
   }
   bool sameUnqualified(const Type &A, const Type &B) {
-    return A.Kind == B.Kind && A.RecordID == B.RecordID && A.Count == B.Count &&
+    return A.Kind == B.Kind && A.RecordID == B.RecordID &&
+           A.Count == B.Count && A.IntegerBits == B.IntegerBits &&
            ((A.Kind != TypeKind::Pointer && A.Kind != TypeKind::Array) ||
             sameUnqualified(A.Elements[0], B.Elements[0]));
   }
@@ -1077,8 +1094,12 @@ class Verifier {
     const auto &C = Context.ExpectedCarrierLayout->Carriers;
     switch (T.Kind) {
     case TypeKind::Bool: return C[0];
-    case TypeKind::Int: return C[5];
-    case TypeKind::UInt: return C[6];
+    case TypeKind::Int:
+    case TypeKind::UInt: {
+      unsigned Bits = T.integerBits();
+      unsigned Slot = Bits == 8 ? 1 : Bits == 16 ? 3 : Bits == 32 ? 5 : 7;
+      return C[Slot + (T.Kind == TypeKind::UInt)];
+    }
     case TypeKind::Pointer: return C[9];
     case TypeKind::Record: {
       auto It = Records.find(T.RecordID);

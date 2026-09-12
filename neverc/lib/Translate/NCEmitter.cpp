@@ -1,10 +1,37 @@
 #include "TranslateIR.h"
 #include "TranslateIRInternal.h"
 #include "llvm/TargetParser/Triple.h"
+#include <set>
 #include <utility>
 
 namespace neverc::translate {
 namespace {
+std::string integerCarrier(const Type &T) {
+  unsigned Bits = T.integerBits();
+  unsigned Slot = Bits == 8 ? 1 : Bits == 16 ? 3 : Bits == 32 ? 5 : 7;
+  return CarrierSpellings[Slot + (T.Kind == TypeKind::UInt)];
+}
+std::string unsignedCarrier(unsigned Bits) {
+  Type T{TypeKind::UInt, {}};
+  T.IntegerBits = Bits == 32 ? 0 : Bits;
+  return integerCarrier(T);
+}
+std::string signedCarrier(unsigned Bits) {
+  Type T{TypeKind::Int, {}};
+  T.IntegerBits = Bits == 32 ? 0 : Bits;
+  return integerCarrier(T);
+}
+std::string conversionHelper(unsigned Bits) {
+  return "nct_emit_u" + std::to_string(Bits) + "_to_i" + std::to_string(Bits);
+}
+std::string shiftHelper(unsigned Bits) {
+  return "nct_emit_i" + std::to_string(Bits) + "_shr";
+}
+bool needsSignedConversion(const Type &From, const Type &To) {
+  return To.isSignedInteger() && From.isInteger() &&
+         (From.integerBits() > To.integerBits() ||
+          (From.Kind == TypeKind::UInt && From.integerBits() == To.integerBits()));
+}
 std::string declaration(const Type &T, std::string Name, bool Const = false) {
   if (T.Kind == TypeKind::Pointer) {
     Name = std::string(Const ? "*const" : "*") +
@@ -17,7 +44,7 @@ std::string declaration(const Type &T, std::string Name, bool Const = false) {
     return declaration(T.Elements[0],
                        Name + "[" + std::to_string(T.Count) + "]", Const);
   return std::string(Const ? "const " : "") +
-         (T.Kind == TypeKind::UInt ? "unsigned int" : typeName(T)) +
+         (T.isInteger() ? integerCarrier(T) : typeName(T)) +
          (Name.empty() ? "" : " " + Name);
 }
 std::string cType(const Type &T) {
@@ -96,8 +123,7 @@ class Emitter {
   const Module &M;
   EmittedSource Output;
   uint32_t Line = 1;
-  bool NeedsUnsignedConversion = false;
-  bool NeedsArithmeticShift = false;
+  std::set<unsigned> SignedConversions, ArithmeticShifts;
 
   void line(const std::string &Text, const SourceLocation *Loc = nullptr) {
     Output.Text += Text;
@@ -107,16 +133,14 @@ class Emitter {
     ++Line;
   }
   void inspect(const Expr &E) {
-    if ((E.Kind == ExprKind::Cast && E.ValueType.Kind == TypeKind::Int &&
-         E.Args[0].ValueType.Kind == TypeKind::UInt) ||
+    if ((E.Kind == ExprKind::Cast &&
+         needsSignedConversion(E.Args[0].ValueType, E.ValueType)) ||
         (E.Kind == ExprKind::Binary &&
-         E.BinaryOp == BinaryOperator::ShiftLeft &&
-         E.ValueType.Kind == TypeKind::Int))
-      NeedsUnsignedConversion = true;
+         E.BinaryOp == BinaryOperator::ShiftLeft && E.ValueType.isSignedInteger()))
+      SignedConversions.insert(E.ValueType.integerBits());
     if (E.Kind == ExprKind::Binary &&
-        E.BinaryOp == BinaryOperator::ShiftRight &&
-        E.ValueType.Kind == TypeKind::Int)
-      NeedsArithmeticShift = true;
+        E.BinaryOp == BinaryOperator::ShiftRight && E.ValueType.isSignedInteger())
+      ArithmeticShifts.insert(E.ValueType.integerBits());
     for (const auto &A : E.Args)
       inspect(A);
   }
@@ -137,6 +161,15 @@ class Emitter {
         return E.Boolean ? "true" : "false";
       if (E.ValueType.Kind == TypeKind::Double)
         return binary64Literal(E.Binary64Bits);
+      if (E.ValueType.integerBits() < 32)
+        return "((" + cType(E.ValueType) + ")(" + E.Integer + "))";
+      if (E.ValueType.integerBits() == 64) {
+        if (E.ValueType.Kind == TypeKind::UInt)
+          return E.Integer + "ull";
+        if (E.Integer == "-9223372036854775808")
+          return "(-9223372036854775807ll - 1ll)";
+        return "(" + E.Integer + "ll)";
+      }
       if (E.ValueType.Kind == TypeKind::UInt)
         return E.Integer + "u";
       if (E.Integer == "-2147483648")
@@ -156,21 +189,21 @@ class Emitter {
     }
     case ExprKind::Binary: {
       std::string A = expression(E.Args[0]), B = expression(E.Args[1]);
-      if (E.ValueType.Kind == TypeKind::Int &&
-          E.BinaryOp == BinaryOperator::ShiftLeft)
-        return "nct_emit_u32_to_i32(((unsigned int)(" + A + ")) << (" + B +
-               "))";
-      if (E.ValueType.Kind == TypeKind::Int &&
-          E.BinaryOp == BinaryOperator::ShiftRight)
-        return "nct_emit_i32_shr(" + A + ", (unsigned int)(" + B + "))";
+      auto Bits = E.ValueType.integerBits();
+      if (E.ValueType.isSignedInteger() && E.BinaryOp == BinaryOperator::ShiftLeft)
+        return conversionHelper(Bits) + "(((" + unsignedCarrier(Bits) + ")(" +
+               A + ")) << (" + B + "))";
+      if (E.ValueType.isSignedInteger() && E.BinaryOp == BinaryOperator::ShiftRight)
+        return shiftHelper(Bits) + "(" + A + ", (" + unsignedCarrier(Bits) +
+               ")(" + B + "))";
       std::string Text =
           "((" + A + ") " + binarySpelling(E.BinaryOp) + " (" + B + "))";
       return E.ValueType.Kind == TypeKind::Bool ? "((bool)" + Text + ")" : Text;
     }
     case ExprKind::Cast:
-      if (E.ValueType.Kind == TypeKind::Int &&
-          E.Args[0].ValueType.Kind == TypeKind::UInt)
-        return "nct_emit_u32_to_i32(" + expression(E.Args[0]) + ")";
+      if (needsSignedConversion(E.Args[0].ValueType, E.ValueType))
+        return conversionHelper(E.ValueType.integerBits()) + "(" +
+               expression(E.Args[0]) + ")";
       return "((" + cType(E.ValueType) + ")(" + expression(E.Args[0]) + "))";
     case ExprKind::Member:
       return "((" + expression(E.Args[0]) + ")." + E.Name + ")";
@@ -267,23 +300,28 @@ class Emitter {
     line("");
   }
   void helpers() {
-    if (NeedsUnsignedConversion) {
-      line("/* Pin the source frontend's two's-complement uint-to-int "
-           "conversion. */");
-      line("static int nct_emit_u32_to_i32(unsigned int nct_emit_u) {");
-      line("  return nct_emit_u <= 2147483647u ? (int)nct_emit_u");
-      line("      : -1 - (int)(4294967295u - nct_emit_u);");
+    for (unsigned Bits : SignedConversions) {
+      const auto Signed = signedCarrier(Bits), Unsigned = unsignedCarrier(Bits);
+      const uint64_t Max = Bits == 64 ? UINT64_MAX : (UINT64_C(1) << Bits) - 1;
+      const std::string Suffix = Bits == 64 ? "ull" : "u";
+      line("/* Pin the source frontend's two's-complement uint-to-int conversion. */");
+      line("static " + Signed + " " + conversionHelper(Bits) + "(" + Unsigned +
+           " nct_emit_u) {");
+      line("  return nct_emit_u <= " + std::to_string(Max >> 1) + Suffix +
+           " ? (" + Signed + ")nct_emit_u");
+      line("      : -1 - (" + Signed + ")(" + std::to_string(Max) + Suffix +
+           " - nct_emit_u);");
       line("}");
       line("");
     }
-    if (NeedsArithmeticShift) {
-      line("/* Preserve arithmetic right shift without implementation-defined "
-           "C behavior. */");
-      line("static int nct_emit_i32_shr(int nct_emit_a, unsigned int "
-           "nct_emit_b) {");
-      line("  return nct_emit_a < 0 ? -1 - (int)((~(unsigned int)nct_emit_a) "
-           ">> nct_emit_b)");
-      line("      : (int)((unsigned int)nct_emit_a >> nct_emit_b);");
+    for (unsigned Bits : ArithmeticShifts) {
+      const auto Signed = signedCarrier(Bits), Unsigned = unsignedCarrier(Bits);
+      line("/* Preserve arithmetic right shift without implementation-defined C behavior. */");
+      line("static " + Signed + " " + shiftHelper(Bits) + "(" + Signed +
+           " nct_emit_a, " + Unsigned + " nct_emit_b) {");
+      line("  return nct_emit_a < 0 ? -1 - (" + Signed + ")((~(" + Unsigned +
+           ")nct_emit_a) >> nct_emit_b)");
+      line("      : (" + Signed + ")((" + Unsigned + ")nct_emit_a >> nct_emit_b);");
       line("}");
       line("");
     }

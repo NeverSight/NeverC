@@ -19,11 +19,13 @@ neverc output.nc -c -o output.o
 
 Das Profil `cpp-core-v1` akzeptiert eine eigenständige C++17-Datei ohne Includes. Unterstützt werden `int`, `unsigned int`, `bool`, `void`, triviale Aggregattypen, freie Funktionen, Namensräume, Überladungen und der dokumentierte Kontrollfluss. Alle projekteigenen Deklarationen werden geprüft, auch unbenutzter Code.
 
-Mit `--profile cpp-core-v2` werden geprüfte `typedef`-/`using`-Typaliase, Aufzählungen mit dem 32-Bit-Basistyp `int` oder `unsigned int`, `static_assert` sowie Objektzeiger und Lvalue-Referenzen in begrenztem Umfang unterstützt. Referenzparameter und zurückgegebene Referenzen erhalten die Aliasbeziehungen; Nullzeiger und verschachtelte `const`-Qualifikationen werden unterstützt. Die Beschränkung auf eine Quelldatei ohne Includes bleibt bestehen. Siehe den [core-v2-Vertrag](../../utils/translate-frontends/docs/cpp-core-v2.md).
+Mit `--profile cpp-core-v2` werden geprüfte `typedef`-/`using`-Typaliase, Aufzählungen mit unterstützten ganzzahligen Basistypen, `static_assert` sowie Objektzeiger und Lvalue-Referenzen in begrenztem Umfang unterstützt. Referenzparameter und zurückgegebene Referenzen erhalten die Aliasbeziehungen; Nullzeiger und verschachtelte `const`-Qualifikationen werden unterstützt. Die Beschränkung auf eine Quelldatei ohne Includes bleibt bestehen. Siehe den [core-v2-Vertrag](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
 Core v2 ergänzt lokale Arrays fester Länge und Array-Felder, mehrdimensionale Indizierung sowie Zeiger und Referenzen auf Arrays. Bei Teilinitialisierung werden übrige Elemente mit null initialisiert; Reihenfolge und Aliasbeziehungen bleiben erhalten. Array-Länge und Initialisierungsexpansion sind begrenzt. Globale Arrays, Arrays variabler Länge und nichttriviale Elementlebenszeiten bleiben ausgeschlossen.
 
 Core v2 unterstützt `switch`/`case`/`default` mit C++17-Initialisierungsanweisungen, Fallthrough und geprüften `[[fallthrough]]`-Annotationen. Der Selektor wird einmal ausgewertet; verschachtelte Switches und Schleifen behalten ihre `break`-/`continue`-Ziele. GNU-Case-Bereiche und andere Anweisungsattribute bleiben ausgeschlossen.
+
+Core v2 unterstützt jetzt vorzeichenbehaftete und vorzeichenlose Ganzzahlen mit 8, 16, 32 und 64 Bit, Zeichentypen und Zeichenliterale sowie konstante `sizeof`-/`alignof`-Abfragen. Integer-Promotions und Überladungsauflösung erfolgen vor der Normalisierung; `long`, `wchar_t` und der Größentyp folgen der Zielplattform. Auch Enum-Basistypen dürfen schmaler oder breiter sein. Laufzeitzeichenketten und STL sind noch in Entwicklung.
 
 Core v2 vergleicht Quelltypgrößen und ABI-Ausrichtungen mit dem eigenen Zielmodell von NeverC, einschließlich Strukturgrößen und Feldoffsets. Statische Zusicherungen im erzeugten Code prüfen das Layout bei der Kompilierung erneut; das Manifest hält diese Angaben fest.
 

@@ -1,8 +1,8 @@
-# C++ core v2: declarations, pointers, references and arrays
+# C++ core v2: integral types, declarations and object storage
 
 `cpp-core-v2` is an experimental, explicitly selected extension of the
 single-source `cpp-core-v1` contract. It adds the declarations, bounded pointer
-and reference operations, and fixed arrays below. It is a step toward broader C++17 translation;
+and reference operations, fixed arrays, integer widths and size queries below. It is a step toward broader C++17 translation;
 it does not claim complete C++17 or STL support. The existing core, project and math v1 profiles retain
 their accepted-input contracts.
 
@@ -22,7 +22,7 @@ C++17 source without includes and uses the existing native hosted target rules.
 | Construct | Translation behavior |
 | --- | --- |
 | `typedef` and non-template `using` aliases | Resolve to the supported underlying type. Namespace and local aliases, alias chains, and aliases for supported records or `void` are checked before erasure. An unused alias cannot introduce an unsupported type. |
-| Scoped and unscoped enums | Accept an established `int` or `unsigned int` underlying type, each exactly 32 bits. Other underlying types remain rejected. |
+| Scoped and unscoped enums | Accept an established supported integral underlying type, including narrow/wide integers and `bool`. |
 | Enum constants and values | Preserve resolved enumerator values, source conversions, parameters/results, locals, compile-time globals and supported aggregate fields using the corresponding scalar IR type. Clang resolves distinct enum types and overloads before lowering. |
 | `static_assert` | Clang checks the assertion. The translator inspects its condition for unsupported types and operations before erasing it; the optional diagnostic message is not runtime string input. |
 
@@ -50,10 +50,47 @@ and enumerator initializers. For example, a cast to `void` is not yet admitted
 by this profile. A successful `static_assert(true, "message")` does not admit
 runtime string literals or `std::string`.
 
+## Integer widths, characters and size queries
+
+Core v2 admits signed and unsigned 8-, 16-, 32- and 64-bit integer storage.
+This covers `char`, `signed char`, `unsigned char`, `short`, `int`, `long`,
+`long long`, their unsigned forms, `wchar_t`, `char16_t` and `char32_t`.
+`bool` keeps its distinct boolean representation. Enums may use any admitted
+integral underlying type, including `bool`; opaque fixed-underlying enums are
+checked before erasure. Ordinary and wide/UTF character literals use the values
+resolved by the pinned Clang frontend. Runtime string literals remain outside
+this increment.
+
+Clang resolves the source types, promotions and overloads first. The typed IR
+then records signedness and width using canonical `int`, `uint`, `i8`, `u8`,
+`i16`, `u16`, `i64` and `u64` spellings. `i32` and `u32` are not aliases.
+The corresponding native emission carriers are signed/unsigned char, short,
+int and long long. Every source type must match its carrier's size and ABI
+alignment. Target-dependent `long`, `wchar_t` and the type of `sizeof` therefore
+follow the selected target; normalization does not promise C++ nominal or
+foreign binary ABI identity. Source-derived overload names remain distinct.
+
+Narrow arithmetic is explicitly promoted before execution, including narrow
+increment/decrement. Integer literals remain exact decimal strings, including
+64-bit extrema. Out-of-range signed conversions follow the pinned Clang
+frontend's two's-complement result: conversion to an N-bit unsigned carrier
+is followed by a representable signed mapping of the upper half. Signed left
+shift and arithmetic right shift use helpers of the same width. The existing
+source-defined-execution boundary still applies to signed overflow, division
+by zero and invalid shift counts.
+
+Standard constant `sizeof` and type-form `alignof` are admitted for supported
+types. Operand types and expressions are inspected for unsupported constructs;
+operand side effects are never lowered (`sizeof(++value)` leaves `value`
+unchanged). References use their referent's size/alignment. Record and array
+queries use the verified source/target layout evidence below. Queries on void,
+functions, unsupported or variable-length types, GNU preferred alignment,
+expression-form alignment and parameter packs are rejected.
+
 ## Object pointers and lvalue references
 
 - Local variables, free-function parameters and results may use object pointers
-  and lvalue references. Supported pointees are `int`, `unsigned int`, `bool`,
+  and lvalue references. Supported pointees are the admitted integer and character types, `bool`,
   the admitted enums, complete trivial records and admitted fixed arrays; `void *` is supported without
   dereferencing `void`. Function and member pointers remain unsupported.
 - Address, dereference, `->`, pointer equality/inequality, conversion to `bool`,
@@ -128,12 +165,13 @@ Global arrays and global records containing arrays, zero-length and variable-len
 arrays, unsupported element types and nontrivial element construction/destruction
 remain rejected, including in unused or dead code. Indexing requires the same
 valid storage and in-bounds accesses as the source program; the translator does
-not add a runtime bounds-check guarantee. `sizeof`, `alignof`, pointer arithmetic
-and pointer difference still require later type/operation support.
+not add a runtime bounds-check guarantee. Constant `sizeof` and type-form
+`alignof` are supported under the integral-query rules above; pointer arithmetic
+and pointer difference still require later operation support.
 
 ## Switch control flow
 
-Core v2 accepts `switch`, `case` and `default` with supported promoted 32-bit
+Core v2 accepts `switch`, `case` and `default` with supported promoted 32- or 64-bit
 integer/enum selectors. C++17 switch init-statements and condition variables are
 initialized once, and the selector is evaluated once before dispatch. Case values
 are checked constant expressions; normal fallthrough and Clang-validated
@@ -168,9 +206,7 @@ int main() {
 Experimental core v2 now requires `target.carrier_layout` in frontend responses
 and manifests. It contains `char_bits: 8` and exact `size_bits`/`abi_align_bits`
 entries named `bool`, `i8`, `u8`, `i16`, `u16`, `int`, `uint`, `i64`, `u64` and
-`default-pointer`. These name the native emission carriers; the layout table
-alone does not add new source integer types. Core v2 still admits the source
-types described above.
+`default-pointer`. These name the native emission carriers for the admitted source types.
 
 The driver independently constructs NeverC's target model for its recorded
 C23 validation options. The verifier compares all source carrier evidence
@@ -195,7 +231,7 @@ a separate generated header belongs to project mode.
 
 ## Remaining scope and wire representation
 
-Additional integer widths, floating-point types,
+128-bit and extended integers, floating-point types,
 classes with nontrivial lifetime behavior, templates, exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2
@@ -214,7 +250,8 @@ The manifest records `profile: cpp-core-v2`
 and `profile_version: 2`; existing profiles continue to record profile version
 1. A frontend response for another profile is rejected.
 
-The regression cases cover generated execution at O0/O2, scoped and unscoped
+The regression cases cover generated execution at O0/O2, narrow/wide integer
+promotions and conversions, character literals, size queries, scoped and unscoped
 enums, signed/unsigned boundary values, overloads, global/aggregate values,
 local declarations, pointer/reference aliasing with inlining disabled, nested
 const, nulls, reference-return assignment, array initialization and indexing order,

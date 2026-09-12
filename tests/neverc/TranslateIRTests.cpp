@@ -9,6 +9,11 @@ const SourceLocation InputLoc{"input.cpp", 1, 1};
 Type intType() { return {TypeKind::Int, {}}; }
 Type uintType() { return {TypeKind::UInt, {}}; }
 Type boolType() { return {TypeKind::Bool, {}}; }
+Type integerType(unsigned Bits, bool Unsigned = false) {
+  Type T{Unsigned ? TypeKind::UInt : TypeKind::Int, {}};
+  T.IntegerBits = Bits == 32 ? 0 : Bits;
+  return T;
+}
 Type pointerType(Type Pointee, bool Const = false) {
   return {TypeKind::Pointer, {}, {std::move(Pointee)}, Const};
 }
@@ -169,6 +174,133 @@ TEST(TranslateIR, CoreV2ParsesVerifiesAndEmitsWithMatchingProfile) {
   ASSERT_TRUE(emitNC(M, context(M), Output, D));
   EXPECT_NE(Output.Text.find("profile cpp-core-v2"), std::string::npos);
   EXPECT_EQ(M.Exports.front().Result, "bool");
+}
+
+TEST(TranslateIR, CoreV2IntegerWidthsParseCanonicalBoundaryValues) {
+  struct ValueCase { const char *Type, *Value, *Emitted; };
+  for (const auto &Case : std::vector<ValueCase>{
+           {"i8", "-128", "((signed char)(-128))"},
+           {"u8", "255", "((unsigned char)(255))"},
+           {"i16", "-32768", "((short)(-32768))"},
+           {"u16", "65535", "((unsigned short)(65535))"},
+           {"i64", "-9223372036854775808", "(-9223372036854775807ll - 1ll)"},
+           {"i64", "9223372036854775807", "(9223372036854775807ll)"},
+           {"u64", "18446744073709551615", "18446744073709551615ull"}}) {
+    SCOPED_TRACE(Case.Type);
+    auto JSON = wireModule(true);
+    replaceOnce(JSON, "\"result\": \"bool\"", std::string("\"result\":\"") + Case.Type + "\"");
+    replaceOnce(JSON, "\"type\": \"bool\", \"value\": true",
+                std::string("\"type\":\"") + Case.Type + "\",\"value\":\"" + Case.Value + "\"");
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(JSON, M, D));
+    EXPECT_EQ(typeName(M.Functions[0].Result), Case.Type);
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find(Case.Emitted), std::string::npos) << Output.Text;
+  }
+  for (const auto *Bad : {"i32", "u32", "i08", "u128", "i0", "u65"}) {
+    auto JSON = wireModule(true);
+    replaceOnce(JSON, "\"result\": \"bool\"", std::string("\"result\":\"") + Bad + "\"");
+    Module M;
+    Diagnostics D;
+    EXPECT_FALSE(parseModule(JSON, M, D));
+  }
+}
+
+TEST(TranslateIR, CoreV2IntegerWidthsRejectInvalidRangesAndUnpromotedOperations) {
+  for (const auto &Pair : std::vector<std::pair<Type, std::string>>{
+           {integerType(8), "128"}, {integerType(8), "-129"},
+           {integerType(8, true), "256"}, {integerType(8, true), "-1"},
+           {integerType(16), "32768"}, {integerType(16), "-32769"},
+           {integerType(16, true), "65536"},
+           {integerType(64), "9223372036854775808"},
+           {integerType(64), "-9223372036854775809"},
+           {integerType(64, true), "18446744073709551616"},
+           {integerType(64), "-0"}, {integerType(64), "01"}}) {
+    auto M = module(true);
+    M.Functions[0].Result = Pair.first;
+    M.Functions[0].Body.back() = ret(literal(Pair.second, Pair.first));
+    invalid(M, "literal value or range");
+  }
+  auto M = module(true);
+  auto Narrow = integerType(8, true);
+  M.Functions[0].Result = Narrow;
+  M.Functions[0].Body.back() = ret(binary(BinaryOperator::Add,
+      literal("1", Narrow), literal("2", Narrow), Narrow));
+  invalid(M, "source integer promotions");
+  auto Unary = pointerExpr(ExprKind::Unary, Narrow, {literal("1", Narrow)});
+  Unary.UnaryOp = UnaryOperator::Plus;
+  M.Functions[0].Body.back() = ret(std::move(Unary));
+  invalid(M, "promoted");
+  auto ElementPointer = pointerType(Narrow);
+  M.Functions[0].Params = {{"nct_bytes", ElementPointer, InputLoc}};
+  M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Index, Narrow,
+      {variable("nct_bytes", ElementPointer), literal("0", Narrow)}));
+  invalid(M, "promoted integer");
+  M.Functions[0].Params.clear();
+  M.Functions[0].Result = intType();
+  M.Functions[0].Body.back() = ret(binary(BinaryOperator::Add,
+      pointerExpr(ExprKind::Cast, intType(), {literal("1", Narrow)}),
+      pointerExpr(ExprKind::Cast, intType(), {literal("2", Narrow)})));
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  auto From = pointerType(integerType(8));
+  auto To = pointerType(integerType(16));
+  M.Functions[0].Params = {{"nct_p", From, InputLoc}};
+  M.Functions[0].Result = To;
+  M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Cast, To,
+      {variable("nct_p", From)}));
+  invalid(M, "pointer conversion");
+}
+
+TEST(TranslateIR, CoreV2IntegerWidthsCannotBypassTypeOrProfileRules) {
+  for (auto Bad : {boolType(), pointerType(intType()),
+                   arrayType(intType(), 2), intType()}) {
+    Bad.IntegerBits = Bad.Kind == TypeKind::Int ? 32 : 8;
+    auto M = module(true);
+    M.Functions[0].Result = Bad;
+    invalid(M, "require core v2 scalar types");
+  }
+  auto M = module();
+  M.Functions[0].Result = integerType(64);
+  invalid(M, "require core v2 scalar types");
+}
+
+TEST(TranslateIR, CoreV2EmitsSeparateSignedConversionAndShiftWidths) {
+  auto M = module(true);
+  auto U64 = integerType(64, true), I64 = integerType(64);
+  for (unsigned Bits : {8, 16, 32, 64}) {
+    Function F = M.Functions[0];
+    F.Name = "convert" + std::to_string(Bits);
+    F.Result = integerType(Bits);
+    F.Params = {{"nct_input", U64, InputLoc}};
+    F.Body.back() = ret(pointerExpr(ExprKind::Cast, F.Result,
+                                    {variable("nct_input", U64)}));
+    M.Functions.push_back(std::move(F));
+  }
+  Function Shift = M.Functions[0];
+  Shift.Name = "shift";
+  Shift.Result = I64;
+  Shift.Params = {{"nct_input", I64, InputLoc}};
+  Shift.Body.back() = ret(binary(BinaryOperator::ShiftRight,
+      variable("nct_input", I64), literal("63"), I64));
+  M.Functions.push_back(Shift);
+  Shift.Name = "leftshift";
+  Shift.Body.back().Value->BinaryOp = BinaryOperator::ShiftLeft;
+  M.Functions.push_back(Shift);
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  for (unsigned Bits : {8, 16, 32, 64})
+    EXPECT_NE(Output.Text.find("nct_emit_u" + std::to_string(Bits) +
+                              "_to_i" + std::to_string(Bits)), std::string::npos);
+  EXPECT_NE(Output.Text.find("static long long nct_emit_i64_shr(long long"),
+            std::string::npos);
+  EXPECT_NE(Output.Text.find("18446744073709551615ull - nct_emit_u"),
+            std::string::npos);
+  EXPECT_NE(Output.Text.find("nct_emit_u64_to_i64(((unsigned long long)"),
+            std::string::npos);
 }
 
 TEST(TranslateIR, CoreV2RequiresIndependentCarrierLayout) {

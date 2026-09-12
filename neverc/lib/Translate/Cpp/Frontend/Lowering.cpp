@@ -50,7 +50,7 @@ class FunctionLowering {
     return variable(Name, Type, L);
   }
   Expression one(llvm::StringRef T, SourceLocation L) {
-    return A.literal(llvm::APSInt(llvm::APInt(32, 1), T == "uint"), T, L);
+    return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), 1), unsignedInteger(T)), T, L);
   }
   Expression boolean(bool Value, SourceLocation L) {
     return Expression{{"kind", "literal"},
@@ -106,6 +106,14 @@ class FunctionLowering {
   }
   Expression binary(llvm::StringRef Op, Expression LHS, Expression RHS,
                     llvm::StringRef T, SourceLocation L) {
+    // Comparisons of a scoped enum can retain its narrow underlying type in
+    // Clang's AST. Promote the normalized values explicitly for NC arithmetic.
+    auto LeftType = *LHS.getString("type"), RightType = *RHS.getString("type");
+    if (T == "bool" && LeftType == RightType && integerBits(LeftType) &&
+        integerBits(LeftType) < 32) {
+      LHS = cast(std::move(LHS), "int", L);
+      RHS = cast(std::move(RHS), "int", L);
+    }
     return Expression{{"kind", "binary"},
                       {"type", T.str()},
                       {"operator", Op.str()},
@@ -303,7 +311,18 @@ class FunctionLowering {
     auto L = E->getExprLoc();
     auto T = type(E->getType(), L, true);
     if (const auto *I = dyn_cast<IntegerLiteral>(E))
-      return A.literal(llvm::APSInt(I->getValue(), T == "uint"), T, L);
+      return A.literal(llvm::APSInt(I->getValue(), unsignedInteger(T)), T, L);
+    if (const auto *C = dyn_cast<CharacterLiteral>(E); C && A.S.coreV2())
+      return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), C->getValue()),
+                                   unsignedInteger(T)), T, L);
+    if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(E); Query && A.S.coreV2()) {
+      APValue Value;
+      if (!Query->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt())
+        reject(L, "size/alignment query", "A checked constant integer query is required.");
+      // Its operand has been inspected by the allowlist. Never lower effects
+      // from an unevaluated operand (for example sizeof(++value)).
+      return A.literal(Value.getInt(), T, L);
+    }
     if (const auto *F = dyn_cast<FloatingLiteral>(E))
       return A.floatingLiteral(F->getValue(), L);
     if (const auto *B = dyn_cast<CXXBoolLiteralExpr>(E))
@@ -315,8 +334,8 @@ class FunctionLowering {
     if (const auto *R = dyn_cast<DeclRefExpr>(E)) {
       if (A.S.coreV2())
         if (const auto *Enumerator = dyn_cast<EnumConstantDecl>(R->getDecl())) {
-          llvm::APSInt Value = Enumerator->getInitVal().extOrTrunc(32);
-          Value.setIsUnsigned(T == "uint");
+          llvm::APSInt Value = Enumerator->getInitVal().extOrTrunc(integerBits(T));
+          Value.setIsUnsigned(unsignedInteger(T));
           return A.literal(Value, T, L);
         }
       return storage(R->getDecl(), L);
@@ -491,8 +510,10 @@ class FunctionLowering {
       if (U->isIncrementDecrementOp()) {
         auto Place = lvalue(U->getSubExpr());
         auto Old = snapshot(Place, L);
-        auto New = binary(U->isIncrementOp() ? "+" : "-", Old, one(T, L), T, L);
-        assign(Place, std::move(New), L);
+        auto Computation = integerBits(T) < 32 ? std::string("int") : T;
+        auto New = binary(U->isIncrementOp() ? "+" : "-", cast(Old, Computation, L),
+                          one(Computation, L), Computation, L);
+        assign(Place, cast(std::move(New), T, L), L);
         return U->isPostfix() ? Old : Place;
       }
       auto Arg = expression(U->getSubExpr());
@@ -778,11 +799,15 @@ class FunctionLowering {
       declaration(S->getConditionVariable());
     auto Selector = snapshot(expression(S->getCond()), L);
     auto SelectorType = Selector.getString("type")->str();
-    if (SelectorType != "int" && SelectorType != "uint")
-      reject(L, "switch selector", "Only promoted int/uint selectors are supported.");
+    if (!integerBits(SelectorType))
+      reject(L, "switch selector", "Only supported integral selectors are supported.");
+    if (integerBits(SelectorType) < 32) {
+      SelectorType = "int";
+      Selector = snapshot(cast(std::move(Selector), SelectorType, L), L);
+    }
     auto Normalize = [&](const llvm::APSInt &Value) {
-      auto Result = Value.extOrTrunc(32);
-      Result.setIsUnsigned(SelectorType == "uint");
+      auto Result = Value.extOrTrunc(integerBits(SelectorType));
+      Result.setIsUnsigned(unsignedInteger(SelectorType));
       return Result;
     };
     std::optional<llvm::APSInt> Known;

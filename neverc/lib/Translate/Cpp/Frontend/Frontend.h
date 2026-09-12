@@ -63,6 +63,19 @@ std::string digest(llvm::StringRef Text);
 bool validExportName(llvm::StringRef Name);
 bool isolateProjectEnvironment();
 
+// Canonical integral carrier spellings after Clang resolves source types.
+inline unsigned integerBits(llvm::StringRef T) {
+  if (T == "bool") return 1;
+  if (T == "i8" || T == "u8") return 8;
+  if (T == "i16" || T == "u16") return 16;
+  if (T == "i64" || T == "u64") return 64;
+  if (T == "int" || T == "uint") return 32;
+  return 0;
+}
+inline bool unsignedInteger(llvm::StringRef T) {
+  return T == "uint" || T == "u8" || T == "u16" || T == "u64" || T == "bool";
+}
+
 class Adapter {
 public:
   State &S;

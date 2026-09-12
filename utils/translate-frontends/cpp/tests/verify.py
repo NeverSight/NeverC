@@ -141,6 +141,27 @@ def main():
         "switch-unsigned-enum": "enum class E:unsigned int{top=0xffffffffu};int f(E n){switch(n){case E::top:return 7;default:return 9;}}int main(){return f(E::top)-7;}",
         "switch-empty": "int main(){int n=0;switch(++n){n=9;}return n-1;}",
     })
+    core_v2.update({
+        "narrow-enum": "enum class E:unsigned char{v=255}; bool f(E e){return e==E::v;}",
+        "wide-enum": "enum class E:unsigned long long{v=0xffffffffffffffffull}; E f(){return E::v;}",
+        "bool-enum": "enum class E:bool{off=false,on=true}; bool f(){return E::off<E::on;}",
+        "long-assertion": "static_assert(1L==1L); int main(){}",
+        "character-alias": "using Character=char; Character*f(Character*p){return p;}",
+        "narrow-array": "int main(){unsigned char a[2]={255}; ++a[0]; return a[0]+a[1];}",
+        "wide-array": "long long f(){long long a[2]={0x100000001ll}; return a[0];}",
+        "signed-narrow": "signed char f(long long x){return static_cast<signed char>(x);}",
+        "unsigned-wide": "unsigned long long f(int x){return static_cast<unsigned long long>(x);}",
+        "narrow-promotion": "int f(unsigned char x){return x+1;}",
+        "narrow-increment": "short f(short x){return ++x;}",
+        "wide-shift": "long long f(long long x){return x>>63;}",
+        "wide-switch": "int f(unsigned long long x){switch(x){case 0xffffffffffffffffull:return 1;default:return 0;}}",
+        "bool-switch": "enum class E:bool{off=false,on=true}; int f(E e){switch(e){case E::on:return 1;default:return 0;}}",
+        "narrow-switch": "enum class E:unsigned char{v=255}; int f(E e){switch(e){case E::v:return 1;default:return 0;}}",
+        "size-alias": "using Size=decltype(sizeof(int)); Size f(){return sizeof(int);}",
+        "unevaluated-size": "int f(){int n=0; auto size=sizeof(++n); return n;}",
+        "reference-size": "int f(){int n=0;int&r=n;return sizeof(r)==sizeof(int&) ? 0:1;}",
+        "record-alignment": "struct R{char c;long long n;}; auto f(){return alignof(R);}",
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     for name, source in {
@@ -155,16 +176,13 @@ def main():
         check("v1-still-rejects-" + name, source, "TR0201")
     v2_rejections = {
         "untyped-assembly-string": 'asm(""); int main(){}',
-        "unsupported-pointer-alias": "using Hidden=char*; int main(){}",
+        "unsupported-pointer-alias": "using Hidden=float*; int main(){}",
         "unused-volatile-alias": "using Hidden=volatile int; int main(){}",
         "unused-function-alias": "using Hidden=void(); int main(){}",
         "alias-template": "template<class T> using Hidden=T; int main(){}",
-        "narrow-enum": "enum class E:unsigned char{v=1}; int main(){}",
-        "wide-enum": "enum class E:unsigned long long{v=1}; int main(){}",
-        "bool-enum": "enum class E:bool{v=true}; int main(){}",
         "folded-enum-cast": "enum E:int{v=(static_cast<void>(0),1)}; int main(){}",
         "folded-assert-cast": "static_assert((static_cast<void>(0),true),\"condition\"); int main(){}",
-        "folded-assert-type": "static_assert(1L==1L,\"condition\"); int main(){}",
+        "folded-assert-type": "static_assert(1.0==1.0,\"condition\"); int main(){}",
         "runtime-string": "static_assert(true,\"message\"); const char *s=\"runtime\"; int main(){}",
     }
     v2_rejections.update({
@@ -203,6 +221,15 @@ def main():
         "switch-dead-range": "int f(int n){if(false){switch(n){case 1 ... 3:return 7;}}return 0;}",
         "switch-other-attribute": "int f(int n){switch(n){case 0:[[likely]];case 1:return 7;default:return 9;}}",
         "switch-folded-cast": "int f(int n){switch(n){case (void(0),1):return 7;default:return 9;}}",
+    })
+    v2_rejections.update({
+        "void-size": "static_assert(sizeof(void)>0); int main(){}",
+        "function-size": "int f(){return 0;} int main(){return sizeof(f);}",
+        "preferred-alignment": "int main(){int n=0; return __alignof__(n);}",
+        "expression-alignment": "int main(){int n=0; return alignof(n);}",
+        "floating-size-type": "int main(){return sizeof(double);}",
+        "floating-size-value": "int main(){return sizeof(1.0);}",
+        "erased-size-operation": "int main(){return sizeof((void(0),1));}",
     })
     for name, source in v2_rejections.items():
         check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")

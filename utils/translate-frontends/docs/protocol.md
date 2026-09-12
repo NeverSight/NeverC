@@ -101,6 +101,19 @@ The consumer validates the entire module and all referenced symbols, types, fiel
 
 NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record frontend and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
 
+## Core v2 integral representations
+
+Core v2 adds canonical `i8`, `u8`, `i16`, `u16`, `i64` and `u64` type spellings;
+`int`/`uint` remain the only canonical 32-bit forms. Literals are exact decimal
+strings within the signed/unsigned range. Arithmetic and indices require
+explicitly promoted 32- or 64-bit operands. Narrow storage, character values and
+source enum types are normalized only after Clang resolves the source operations
+and overloads. Integer conversions and shifts use width-matched emission helpers.
+Constant `sizeof`/type-form `alignof` become exact literals after owned-source
+inspection and layout verification; unevaluated operands produce no effects.
+The [core v2 contract](cpp-core-v2.md#integer-widths-characters-and-size-queries)
+defines the full admitted boundary. V1 profiles retain their scalar contracts.
+
 ## Core v2 layout evidence
 
 `cpp-core-v2` requires `target.carrier_layout` and per-record `layout` evidence.

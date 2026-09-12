@@ -186,6 +186,37 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     return std::string(Pointee.isConstQualified() ? "cptr:" : "ptr:") + Element;
   }
   if (const auto *B = dyn_cast<BuiltinType>(C)) {
+    if (S.coreV2() && B->isInteger() && B->getKind() != BuiltinType::Bool) {
+      unsigned Bits = Context.getTypeSize(T);
+      bool Signed = T->isSignedIntegerType();
+      QualType Carrier;
+      switch (Bits) {
+      case 8:
+        Carrier = Signed ? Context.SignedCharTy : Context.UnsignedCharTy;
+        break;
+      case 16:
+        Carrier = Signed ? Context.ShortTy : Context.UnsignedShortTy;
+        break;
+      case 32:
+        Carrier = Signed ? Context.IntTy : Context.UnsignedIntTy;
+        break;
+      case 64:
+        Carrier = Signed ? Context.LongLongTy : Context.UnsignedLongLongTy;
+        break;
+      default:
+        reject(L, "integer width",
+               "Only 8-, 16-, 32- and 64-bit integers are supported.");
+        return {};
+      }
+      if (Context.getTypeSize(T) != Context.getTypeSize(Carrier) ||
+          Context.getTypeAlign(T) != Context.getTypeAlign(Carrier)) {
+        reject(L, "integer layout",
+               "Source integer and emission carrier layouts differ.", "TR0204");
+        return {};
+      }
+      return Bits == 32 ? (Signed ? "int" : "uint")
+                        : std::string(Signed ? "i" : "u") + std::to_string(Bits);
+    }
     switch (B->getKind()) {
     case BuiltinType::Int:
       return "int";
@@ -208,13 +239,10 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
   if (S.coreV2())
     if (const auto *E = dyn_cast<EnumType>(C)) {
       QualType Underlying = E->getDecl()->getIntegerType();
-      if (!Underlying.isNull() &&
-          (Underlying->isSpecificBuiltinType(BuiltinType::Int) ||
-           Underlying->isSpecificBuiltinType(BuiltinType::UInt)))
+      if (!Underlying.isNull() && Underlying->isIntegerType())
         return type(Underlying, L);
       reject(L, "enum underlying type",
-             "Core v2 enums require an established int or unsigned int "
-             "underlying type.");
+             "Core v2 enums require an established supported integral underlying type.");
       return {};
     }
   if (const auto *R = C->getAs<RecordType>()) {
@@ -235,7 +263,9 @@ json::Object Adapter::literal(const llvm::APSInt &V, llvm::StringRef T,
     O["value"] = !V.isZero();
   else {
     llvm::SmallString<32> Text;
-    V.toString(Text, 10);
+    auto Value = V.extOrTrunc(integerBits(T));
+    Value.setIsUnsigned(unsignedInteger(T));
+    Value.toString(Text, 10);
     O["value"] = Text.str().str();
   }
   return O;
@@ -268,7 +298,7 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
                         {"args", std::move(Args)},
                         {"loc", loc(L)}};
   }
-  return literal(llvm::APSInt(32, Kind == "uint"), Kind, L);
+  return literal(llvm::APSInt(integerBits(Kind), unsignedInteger(Kind)), Kind, L);
 }
 
 json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
@@ -595,7 +625,8 @@ public:
         !(A.S.coreV2() &&
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
-              DefaultStmt, AttributedStmt>(S)) &&
+              DefaultStmt, AttributedStmt, CharacterLiteral,
+              UnaryExprOrTypeTraitExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -607,6 +638,17 @@ public:
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
+      if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S)) {
+        auto Operand = Query->getTypeOfArgument();
+        if ((Query->getKind() != UETT_SizeOf && Query->getKind() != UETT_AlignOf) ||
+            (Query->getKind() == UETT_AlignOf && !Query->isArgumentType()) ||
+            Operand->isVoidType() || Operand->isFunctionType() ||
+            Operand->isVariablyModifiedType() || Operand->isDependentType())
+          A.reject(Query->getExprLoc(), "size/alignment query",
+                   "Only standard constant sizeof and type-form alignof are supported.");
+        else
+          A.type(Operand, Query->getExprLoc());
+      }
       if (const auto *C = dyn_cast<CaseStmt>(S); C && C->getRHS())
         A.reject(S->getBeginLoc(), "case range",
                  "GNU case ranges are outside the core v2 profile.");

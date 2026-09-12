@@ -21,15 +21,20 @@ struct Type {
   std::vector<Type> Elements;
   bool PointeeConst = false;
   uint32_t Count = 0;
+  // Zero preserves the canonical legacy int/uint (32-bit) representation.
+  uint32_t IntegerBits = 0;
   bool operator==(const Type &Other) const {
     return Kind == Other.Kind && RecordID == Other.RecordID &&
            Elements == Other.Elements && PointeeConst == Other.PointeeConst &&
-           Count == Other.Count;
+           Count == Other.Count && IntegerBits == Other.IntegerBits;
   }
   bool operator!=(const Type &Other) const { return !(*this == Other); }
   bool isInteger() const {
     return Kind == TypeKind::Int || Kind == TypeKind::UInt;
   }
+  unsigned integerBits() const { return IntegerBits ? IntegerBits : 32; }
+  bool isSignedInteger() const { return Kind == TypeKind::Int; }
+  bool isPromotedInteger() const { return isInteger() && integerBits() >= 32; }
   bool isScalar() const {
     return isInteger() || Kind == TypeKind::Bool || Kind == TypeKind::Double ||
            Kind == TypeKind::Pointer;

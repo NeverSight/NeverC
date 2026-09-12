@@ -19,11 +19,13 @@ neverc output.nc -c -o output.o
 
 El perfil `cpp-core-v1` acepta un único archivo C++17 autónomo sin includes. Admite `int`, `unsigned int`, `bool`, `void`, tipos agregados triviales, funciones no miembro, espacios de nombres, sobrecargas y el flujo de control documentado. Se comprueban todas las declaraciones de entrada, incluido el código no utilizado.
 
-Seleccione `--profile cpp-core-v2` para añadir alias `typedef`/`using` comprobados, enumeraciones de base `int` o `unsigned int` de 32 bits, `static_assert`, punteros a objetos y referencias a lvalues dentro de un alcance limitado. Los parámetros y resultados por referencia conservan los alias; se admiten punteros nulos y calificaciones `const` anidadas. Se mantienen las restricciones de un solo archivo fuente y sin includes. Consulte el [contrato de core v2](../../utils/translate-frontends/docs/cpp-core-v2.md).
+Seleccione `--profile cpp-core-v2` para añadir alias `typedef`/`using` comprobados, enumeraciones con tipos subyacentes enteros admitidos, `static_assert`, punteros a objetos y referencias a lvalues dentro de un alcance limitado. Los parámetros y resultados por referencia conservan los alias; se admiten punteros nulos y calificaciones `const` anidadas. Se mantienen las restricciones de un solo archivo fuente y sin includes. Consulte el [contrato de core v2](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
 Core v2 añade arrays locales de tamaño fijo y campos de array, indexación multidimensional y punteros o referencias a arrays. La inicialización parcial rellena con cero los elementos restantes y conserva el orden y los alias. El tamaño y la expansión de la inicialización tienen límites. Los arrays globales, los de longitud variable y los elementos con gestión de vida no trivial siguen sin admitirse.
 
 Core v2 admite `switch`/`case`/`default`, con sentencias de inicialización de C++17, continuación entre casos y anotaciones `[[fallthrough]]` validadas. El selector se evalúa una vez y los switches y bucles anidados conservan los destinos de `break`/`continue`. Se rechazan los rangos case de GNU y otros atributos de sentencia.
+
+Core v2 admite enteros con y sin signo de 8, 16, 32 y 64 bits, tipos y literales de caracteres, y consultas constantes `sizeof`/`alignof`. Las promociones y la resolución de sobrecargas preceden a la normalización; `long`, `wchar_t` y el tipo de tamaño siguen el destino. Los enums también admiten tipos subyacentes más estrechos y más anchos. Las cadenas en ejecución y STL siguen en desarrollo.
 
 Core v2 contrasta los tamaños y las alineaciones ABI de los tipos de origen con el modelo de destino de NeverC, incluidos los tamaños de estructuras y los desplazamientos de campos. Las aserciones estáticas del código generado vuelven a comprobar la disposición al compilar, y el manifiesto registra estos datos.
 

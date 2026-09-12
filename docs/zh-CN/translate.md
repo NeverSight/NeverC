@@ -19,11 +19,13 @@ neverc output.nc -c -o output.o
 
 `cpp-core-v1` 接受一个不含 include 的独立 C++17 源文件，支持 `int`、`unsigned int`、`bool`、`void`、简单聚合类型、自由函数、命名空间、重载及文档列出的控制流。所有项目声明都会检查，包括未使用的代码。
 
-使用 `--profile cpp-core-v2` 可增加经过检查的 `typedef`／`using` 类型别名、底层类型为 32 位 `int` 或 `unsigned int` 的枚举、`static_assert`，以及限定范围的对象指针与左值引用。引用保留别名关系，包括参数和返回引用；支持多层指针的 `const` 与空指针。仍限单个源文件，且不允许 include。详见 [core v2 支持范围](../../utils/translate-frontends/docs/cpp-core-v2.md)。
+使用 `--profile cpp-core-v2` 可增加经过检查的 `typedef`／`using` 类型别名、底层类型为受支持整数类型的枚举、`static_assert`，以及限定范围的对象指针与左值引用。引用保留别名关系，包括参数和返回引用；支持多层指针的 `const` 与空指针。仍限单个源文件，且不允许 include。详见 [core v2 支持范围](../../utils/translate-frontends/docs/cpp-core-v2.md)。
 
 core v2 还增加了固定长度的局部数组与数组字段、多维下标访问，以及数组指针和引用。部分初始化会将剩余元素置零；元素初始化保留源码顺序与别名关系。数组长度与初始化展开量有上限。全局数组、变长数组及元素的非平凡生命周期仍未支持。
 
 core v2 支持 `switch`／`case`／`default`，包括 C++17 初始化语句、分支贯穿及经过验证的 `[[fallthrough]]` 标注。选择器只求值一次；嵌套 switch 和循环保留各自的 `break`／`continue` 目标。GNU case 范围及其他语句属性仍被拒绝。
+
+Core v2 现支持有符号和无符号的 8／16／32／64 位整数、字符类型及字面量，以及常量 `sizeof`／`alignof` 查询。先按源 C++ 规则完成整数提升与重载决议，再归一化位宽；`long`、`wchar_t` 和大小类型遵循目标平台。枚举也支持窄整数和宽整数作为底层类型。运行时字符串与 STL 仍在开发中。
 
 Core v2 会用 NeverC 自身的目标模型核对源类型的尺寸与 ABI 对齐，包括结构体大小和字段偏移。生成代码通过编译期断言再次检查布局，清单同时记录这些校验依据。
 
