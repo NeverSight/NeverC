@@ -1013,6 +1013,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
   const CXXMethodDecl *CurrentMethod = nullptr;
+  const FunctionDecl *CurrentFunction = nullptr;
   const FieldDecl *CurrentDefaultField = nullptr;
   SourceLocation ImplicitInitializerOwner;
   std::set<const Expr *> CheckedSemanticInitializers;
@@ -1212,7 +1213,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     unsigned Links = 0;
     while (const auto *Shadow = dyn_cast_or_null<UsingShadowDecl>(Target)) {
       A.chargeExpansion(1, D->getLocation());
-      if (Shadow->getKind() != Decl::UsingShadow || !owned(Shadow) ||
+      if (Shadow->getKind() != Decl::UsingShadow ||
+          !A.S.owns(A.Sources, Shadow->getLocation()) ||
           Shadow->isInvalidDecl() || ++Links > 64 ||
           !Seen.insert(Shadow).second ||
           !usingShape(dyn_cast_or_null<UsingDecl>(Shadow->getIntroducer()))) {
@@ -1685,6 +1687,57 @@ public:
     const auto *Info = D->getTypeSourceInfo();
     return !Info || TraverseTypeLoc(Info->getTypeLoc());
   }
+  bool TraverseFunctionProtoTypeLoc(FunctionProtoTypeLoc TL) {
+    auto Normal = [&] {
+      return RecursiveASTVisitor<Allowlist>::TraverseFunctionProtoTypeLoc(TL);
+    };
+    if (!A.S.coreV2() ||
+        (!concreteFreeFunctionTemplate(CurrentFunction) &&
+         !concreteClassFunction(CurrentFunction)))
+      return Normal();
+    const auto *Info = CurrentFunction->getTypeSourceInfo();
+    auto Outer = Info ? Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>()
+                      : FunctionProtoTypeLoc();
+    if (!Outer || Outer.getOpaqueData() != TL.getOpaqueData() ||
+        Outer.getType() != TL.getType())
+      return Normal();
+    const auto *Written = TL.getTypePtr();
+    const auto *Resolved = CurrentFunction->getType()->getAs<FunctionProtoType>();
+    const auto *OldExpression = Written->getNoexceptExpr();
+    if (!Resolved || !OldExpression ||
+        (!OldExpression->isTypeDependent() && !OldExpression->isValueDependent() &&
+         !OldExpression->isInstantiationDependent()) ||
+        OldExpression == Resolved->getNoexceptExpr())
+      return Normal();
+    auto *Expression = Resolved->getNoexceptExpr();
+    if (!standardExceptionSpecification(Resolved) ||
+        (Expression && (Expression->isTypeDependent() || Expression->isValueDependent() ||
+                        Expression->isInstantiationDependent()))) {
+      A.reject(CurrentFunction->getLocation(), "template exception specification",
+               "A concrete function requires a resolved standard exception specification.");
+      return true;
+    }
+    // Instantiation can replace FunctionDecl's type while its TypeSourceInfo
+    // retains the primary's dependent noexcept. Keep all other written source.
+    if (!WalkUpFromFunctionProtoTypeLoc(TL) ||
+        (shouldWalkTypesOfTypeLocs() &&
+         !WalkUpFromFunctionProtoType(const_cast<FunctionProtoType *>(Written))) ||
+        !TraverseTypeLoc(TL.getReturnLoc()))
+      return false;
+    for (unsigned I = 0; I < TL.getNumParams(); ++I) {
+      if (auto *Parameter = TL.getParam(I)) {
+        if (!TraverseDecl(Parameter))
+          return false;
+      } else if (I < Written->getNumParams() &&
+                 !TraverseType(Written->getParamType(I))) {
+        return false;
+      }
+    }
+    for (auto Exception : Written->exceptions())
+      if (!TraverseType(Exception))
+        return false;
+    return !Expression || TraverseStmt(Expression);
+  }
   bool TraverseDecl(Decl *D) {
     if (A.S.coreV2()) {
       if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(D);
@@ -1741,6 +1794,10 @@ public:
           concreteFreeFunctionTemplate(Function) &&
           !CheckedTemplateDeclarations.insert(Function).second)
         return true;
+    auto *SavedFunction = CurrentFunction;
+    if (auto *Function = dyn_cast_or_null<FunctionDecl>(D))
+      CurrentFunction = Function;
+    auto RestoreFunction = llvm::make_scope_exit([&] { CurrentFunction = SavedFunction; });
     auto *SavedField = CurrentDefaultField;
     if (auto *Field = dyn_cast_or_null<FieldDecl>(D))
       CurrentDefaultField = owned(Field) && Field->hasInClassInitializer() ? Field : nullptr;

@@ -5883,14 +5883,14 @@ int main(){return selected()-3;}
         'discarded-attribute': 'int f(){if constexpr(false){[[maybe_unused]] int n=3;}return 0;}',
         'folded-condition': 'int f(){if constexpr(static_cast<int>(3.0)==3)return 1;else return 0;}',
         'folded-function': 'constexpr bool f(){return static_cast<int>(3.0)==3;}int g(){if constexpr(f())return 1;else return 0;}',
-        'if-consteval': 'int f(){if consteval{return 1;}else{return 0;}}',
-        'if-not-consteval': 'int f(){if !consteval{return 1;}else{return 0;}}',
-        'if-not-keyword': 'int f(){if not consteval{return 1;}else{return 0;}}',
         'inactive-include': '#if 0\n#include "missing.h"\n#endif\nint f(){if constexpr(true)return 3;else return 0;}',
     }
     for name, source in constexpr_if_reject.items():
         check("v2-constexpr-if-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
     constexpr_if_invalid = {
+        'if-consteval': 'int f(){if consteval{return 1;}else{return 0;}}',
+        'if-not-consteval': 'int f(){if !consteval{return 1;}else{return 0;}}',
+        'if-not-keyword': 'int f(){if not consteval{return 1;}else{return 0;}}',
         'nonconstant': 'int f(bool b){if constexpr(b)return 1;else return 0;}',
         'nonconstexpr-call': 'bool f(){return true;}int g(){if constexpr(f())return 1;else return 0;}',
         'nonconstant-variable': 'int f(){if constexpr(int n=3)return n;else return 0;}',
@@ -5909,7 +5909,7 @@ int main(){return selected()-3;}
     for name, source in constexpr_if_missing.items():
         check("v2-constexpr-if-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     check("v1-constexpr-if", "int f(){if constexpr(true)return 3;else return 4;}", "TR0201")
-    check("v1-consteval-if", "int f(){if consteval{return 3;}else{return 4;}}", "TR0201")
+    check("v1-consteval-if", "int f(){if consteval{return 3;}else{return 4;}}", "TR0202")
 
     function_templates_source = """struct R{int n;};
 struct Trace{
@@ -6096,6 +6096,103 @@ int chooseOrdinary(){return candidate(3);}
         relocated = check("v2-function-templates-relocated", function_templates_source,
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == function_templates, "template identity depends on absolute paths or address order"
+
+    frontend_repairs_source = """namespace Original{int count=3;using Value=int;int read(int v){return v;}}
+namespace First{using Original::count;using Original::Value;using Original::read;}
+namespace Second{using First::count;using First::Value;using First::read;}
+template<class T>int query(T v)noexcept(sizeof(T)==sizeof(int)){return v;}
+template<int N>int valueQuery()noexcept(N>0){return N;}
+template<class T>int (parenthesized)(T v)noexcept(sizeof(T)==sizeof(int)){return v;}
+template<class T,int N>struct Box{T n;Box(T v)noexcept(N>0):n(v){}T get()const noexcept(sizeof(T)==sizeof(int)){return n;}};
+template<class T>struct Later{T n;Later(T v)noexcept(sizeof(T)==sizeof(int));T get()const noexcept(sizeof(T)==sizeof(int));};
+template<class T>Later<T>::Later(T v)noexcept(sizeof(T)==sizeof(int)):n(v){}
+template<class T>T Later<T>::get()const noexcept(sizeof(T)==sizeof(int)){return n;}
+int callInt(int v){return query(v);}
+int callBool(bool v){return query(v);}
+int callThree(){return valueQuery<3>();}
+int callZero(){return valueQuery<0>();}
+int callParens(int v){return parenthesized(v);}
+int callBox(int v){Box<int,3>b(v);return b.get();}
+int callFalseBox(int v){Box<int,0>b(v);return b.get();}
+int callLater(int v){Later<int>b(v);return b.get();}
+bool intFlag(){return noexcept(query(1));}
+bool boolFlag(){return noexcept(query(true));}
+bool threeFlag(){return noexcept(valueQuery<3>());}
+bool zeroFlag(){return noexcept(valueQuery<0>());}
+bool ctorFlag(){return noexcept(Box<int,3>(1));}
+bool falseCtorFlag(){return noexcept(Box<int,0>(1));}
+int imports(){using Second::Value;using Second::read;Value n=Second::count;return read(n);}
+"""
+    frontend_repairs = check("v2-frontend-repairs-protocol", frontend_repairs_source, profile="cpp-core-v2")
+    fr_functions = {f["name"]: f for f in frontend_repairs["functions"]}
+    assert len(fr_functions) == len(frontend_repairs["functions"])
+
+    def fr_function(prefix):
+        lines = [i for i, line in enumerate(frontend_repairs_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        found = [f for f in frontend_repairs["functions"] if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    for prefix, value in (("bool intFlag(", True), ("bool boolFlag(", False),
+                          ("bool threeFlag(", True), ("bool zeroFlag(", False),
+                          ("bool ctorFlag(", True), ("bool falseCtorFlag(", False)):
+        function = fr_function(prefix)
+        assert function["result"] == "bool" and not function["params"]
+        assert not gc_calls(function), "noexcept operand must not execute"
+        literals = [n for n in walk(function["body"]) if n.get("kind") == "literal" and n.get("type") == "bool"]
+        assert literals and all(n["value"] is value for n in literals), (prefix, literals)
+    targets = []
+    for prefix, params in (("int callInt(", ["int"]), ("int callBool(", ["bool"]),
+                           ("int callThree(", []), ("int callZero(", []),
+                           ("int callParens(", ["int"])):
+        calls = gc_calls(fr_function(prefix))
+        assert len(calls) == 1
+        target = fr_functions[calls[0]["callee"]]
+        assert target["result"] == "int" and [p["type"] for p in target["params"]] == params
+        targets.append(target["name"])
+    assert len(targets) == len(set(targets))
+    for function in frontend_repairs["functions"]:
+        for call in gc_calls(function):
+            assert call["callee"] in fr_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in fr_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-frontend-repairs-relocated-") as temp:
+        relocated = check("v2-frontend-repairs-relocated", frontend_repairs_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == frontend_repairs
+
+    frontend_repairs_positive = {
+        'shadow-reexports': 'namespace N{int n=3;using T=int;int f(int v){return v;}}namespace A{using N::n;using N::T;using N::f;}namespace B{using A::n;using A::T;using A::f;}int main(){using B::T;using B::f;T v=B::n;return f(v)-3;}',
+        'noexcept-resolved': 'template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){return v;}int main(){return f(3)-3;}',
+        'noexcept-false': 'template<class T>int f(T v)noexcept(sizeof(T)!=sizeof(int)){return v;}int main(){return f(3)-3+noexcept(f(3));}',
+        'noexcept-parens': 'template<class T>int (f)(T v)noexcept(sizeof(T)==sizeof(int)){return v;}int main(){return f(3)-3;}',
+        'noexcept-value': 'template<int N>int f()noexcept(N>0){return N;}int main(){return f<3>()-3+f<0>();}',
+        'noexcept-method': 'template<class T>struct R{T n;T get()const noexcept(sizeof(T)==sizeof(int)){return n;}};int main(){R<int>r{3};return r.get()-3;}',
+        'noexcept-method-value': 'template<int N>struct R{int get()const noexcept(N>0){return N;}};int main(){R<3>a;R<0>b;return a.get()-3+b.get();}',
+        'noexcept-constructor': 'template<class T>struct R{T n;R(T v)noexcept(sizeof(T)==sizeof(int)):n(v){}};int main(){R<int>r(3);return r.n-3;}',
+        'noexcept-constructor-value': 'template<int N>struct R{int n;R()noexcept(N>0):n(N){}};int main(){R<3>a;R<0>b;return a.n-3+b.n;}',
+        'noexcept-out-of-line': 'template<class T>struct R{T n;R(T v)noexcept(sizeof(T)==sizeof(int));T get()const noexcept(sizeof(T)==sizeof(int));};template<class T>R<T>::R(T v)noexcept(sizeof(T)==sizeof(int)):n(v){}template<class T>T R<T>::get()const noexcept(sizeof(T)==sizeof(int)){return n;}int main(){R<int>r(3);return r.get()-3;}',
+        'noexcept-explicit-specialization': 'template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){return v;}template<>int f<int>(int v)noexcept(true){return v+1;}int main(){return f(3)-4;}',
+        'noexcept-local-method': 'template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){struct R{int get()const noexcept(sizeof(int)==4){return 3;}};R r;return r.get()+v;}int main(){return f(3)-6;}',
+        'noexcept-written-decltype': 'template<class T>auto f(decltype(static_cast<T>(1)) v)noexcept(sizeof(T)==sizeof(int))->decltype(static_cast<T>(1)){return v;}int main(){return f<int>(3)-3;}',
+        'consteval-local': 'int main(){int consteval=3;return consteval-3;}',
+        'consteval-function': 'int consteval(int n){return n;}int main(){return consteval(3)-3;}',
+        'consteval-template': 'template<class T>int f(T consteval){if constexpr(sizeof(T)==sizeof(int))return consteval;else return 0;}int main(){return f(3)-3;}',
+    }
+    for name, source in frontend_repairs_positive.items():
+        check("v2-frontend-repairs-positive-" + name, source, profile="cpp-core-v2")
+    frontend_repairs_reject = {
+        'noexcept-selected-floating': 'template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)&&1.0>0.0){return v;}int main(){return f(3);}',
+        'noexcept-method-floating': 'template<class T>struct R{int get()const noexcept(sizeof(T)==sizeof(int)&&1.0>0.0){return 3;}};int main(){R<int>r;return r.get();}',
+        'noexcept-constructor-floating': 'template<class T>struct R{int n;R()noexcept(sizeof(T)==sizeof(int)&&1.0>0.0):n(3){}};int main(){R<int>r;return r.n;}',
+        'noexcept-return-source': 'template<class T>auto f(T v)noexcept(sizeof(T)==sizeof(int))->decltype(static_cast<T>(1.0)){return v;}int main(){return f(3);}',
+        'noexcept-parameter-source': 'template<class T>int f(decltype(static_cast<T>(1.0)) v)noexcept(sizeof(T)==sizeof(int)){return v;}int main(){return f<int>(3);}',
+        'noexcept-redeclaration-source': 'template<class T>int f(T v)noexcept(true);template<class T>int f(T v)noexcept(1.0>0.0){return v;}int main(){return f(3);}',
+        'noexcept-ordinary-source': 'int f(int v)noexcept(1.0>0.0){return v;}int main(){return f(3);}',
+        'noexcept-local-method-source': 'template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){struct R{int get()const noexcept(1.0>0.0){return 3;}};R r;return r.get()+v;}int main(){return f(3);}',
+    }
+    for name, source in frontend_repairs_reject.items():
+        check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
 
     class_constructors_source = """struct Guard{int n;Guard(int v):n(v){}~Guard(){n=99;}};
 template<class T,int N>struct Box{
@@ -7200,8 +7297,6 @@ Plain chosenRecord(){return choose<false>();}
         'active-include': '#include <utility>\ntemplate<class T>T f(T v){return v;}',
         'inactive-include': '#if 0\n#include <utility>\n#endif\ntemplate<class T>T f(T v){return v;}',
         'non-template-discarded': 'int f(){if constexpr(true)return 1;else return static_cast<int>(1.0);}',
-        'unused-consteval': 'template<class T>int f(){if consteval{return 1;}else{return 2;}}',
-        'discarded-consteval': 'template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else{if consteval{return 2;}else{return 3;}}}int main(){return f<int>();}',
         'lambda-template-list': 'template<class T>void f(){auto fn=[]<class U>(U v){return v;};}',
         'designated-init': 'template<class T>T f(){return T{.n=1};}',
         'range-init': 'template<class T>void f(T&a){for(int n=0;auto x:a){++n;}}',
@@ -7211,6 +7306,8 @@ Plain chosenRecord(){return choose<false>();}
     for name, source in function_templates_reject.items():
         check("v2-function-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
     function_templates_invalid = {
+        'unused-consteval': 'template<class T>int f(){if consteval{return 1;}else{return 2;}}',
+        'discarded-consteval': 'template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else{if consteval{return 2;}else{return 3;}}}int main(){return f<int>();}',
         'deduction': 'template<class T>T f(T a,T b){return a;}int main(){return f(1,true);}',
         'no-argument': 'template<class T>T f(){return T{};}int main(){return f();}',
         'too-many-arguments': 'template<class T>T f(T v){return v;}int main(){return f<int,bool>(1);}',

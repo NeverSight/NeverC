@@ -4321,9 +4321,9 @@ TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries
       {"discarded-attribute", "int f(){if constexpr(false){[[maybe_unused]] int n=3;}return 0;}", "TR0201"},
       {"folded-condition", "int f(){if constexpr(static_cast<int>(3.0)==3)return 1;else return 0;}", "TR0201"},
       {"folded-function", "constexpr bool f(){return static_cast<int>(3.0)==3;}int g(){if constexpr(f())return 1;else return 0;}", "TR0201"},
-      {"if-consteval", "int f(){if consteval{return 1;}else{return 0;}}", "TR0201"},
-      {"if-not-consteval", "int f(){if !consteval{return 1;}else{return 0;}}", "TR0201"},
-      {"if-not-keyword", "int f(){if not consteval{return 1;}else{return 0;}}", "TR0201"},
+      {"if-consteval", "int f(){if consteval{return 1;}else{return 0;}}", "TR0202"},
+      {"if-not-consteval", "int f(){if !consteval{return 1;}else{return 0;}}", "TR0202"},
+      {"if-not-keyword", "int f(){if not consteval{return 1;}else{return 0;}}", "TR0202"},
       {"inactive-include", "#if 0\n#include \"missing.h\"\n#endif\nint f(){if constexpr(true)return 3;else return 0;}", "TR0201"},
       {"nonconstant", "int f(bool b){if constexpr(b)return 1;else return 0;}", "TR0202"},
       {"nonconstexpr-call", "bool f(){return true;}int g(){if constexpr(f())return 1;else return 0;}", "TR0202"},
@@ -4345,12 +4345,115 @@ TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries
     expectCode(Result, Diagnostic);
     expectNoArtifacts(Output);
   }
-  for (const std::string &Code : {"int f(){if constexpr(true)return 3;else return 4;}",
-                                  "int f(){if consteval{return 3;}else{return 4;}}"}) {
+  for (const auto &[Code, Diagnostic] : std::vector<std::pair<std::string, std::string>>{
+           {"int f(){if constexpr(true)return 3;else return 4;}", "TR0201"},
+           {"int f(){if consteval{return 3;}else{return 4;}}", "TR0202"}}) {
     const auto Source = tmpFile("constexpr_if-v1.cpp");
     const auto Output = tmpFile("constexpr_if-v1.nc");
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FrontendRepairsPreserveImportsAndExceptionQueries) {
+  const auto Source = tmpFile("frontend-repairs.cpp");
+  const auto Output = tmpFile("frontend-repairs.nc");
+  writeFile(Source, R"cpp(namespace Original{int count=3;using Value=int;int read(int v){return v;}}
+namespace First{using Original::count;using Original::Value;using Original::read;}
+namespace Second{using First::count;using First::Value;using First::read;}
+template<class T>int query(T v)noexcept(sizeof(T)==sizeof(int)){return v;}
+template<int N>int valueQuery()noexcept(N>0){return N;}
+template<class T>int (parenthesized)(T v)noexcept(sizeof(T)==sizeof(int)){return v;}
+template<class T,int N>struct Box{T n;Box(T v)noexcept(N>0):n(v){}T get()const noexcept(sizeof(T)==sizeof(int)){return n;}};
+template<class T>struct Later{T n;Later(T v)noexcept(sizeof(T)==sizeof(int));T get()const noexcept(sizeof(T)==sizeof(int));};
+template<class T>Later<T>::Later(T v)noexcept(sizeof(T)==sizeof(int)):n(v){}
+template<class T>T Later<T>::get()const noexcept(sizeof(T)==sizeof(int)){return n;}
+int callInt(int v){return query(v);}
+int callBool(bool v){return query(v);}
+int callThree(){return valueQuery<3>();}
+int callZero(){return valueQuery<0>();}
+int callParens(int v){return parenthesized(v);}
+int callBox(int v){Box<int,3>b(v);return b.get();}
+int callFalseBox(int v){Box<int,0>b(v);return b.get();}
+int callLater(int v){Later<int>b(v);return b.get();}
+bool intFlag(){return noexcept(query(1));}
+bool boolFlag(){return noexcept(query(true));}
+bool threeFlag(){return noexcept(valueQuery<3>());}
+bool zeroFlag(){return noexcept(valueQuery<0>());}
+bool ctorFlag(){return noexcept(Box<int,3>(1));}
+bool falseCtorFlag(){return noexcept(Box<int,0>(1));}
+int imports(){using Second::Value;using Second::read;Value n=Second::count;return read(n);}
+int main(){
+ if(callInt(3)!=3||callBool(true)!=1)return 1;
+ if(!intFlag()||boolFlag())return 2;
+ if(callThree()!=3||callZero()!=0||!threeFlag()||zeroFlag())return 3;
+ if(callParens(4)!=4)return 4;
+ if(callBox(5)!=5||callFalseBox(6)!=6||!ctorFlag()||falseCtorFlag())return 5;
+ if(callLater(7)!=7)return 6;
+ if(imports()!=3)return 7;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("frontend-repairs" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FrontendRepairsAcceptSourceOwnedConcreteFunctions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"shadow-reexports", "namespace N{int n=3;using T=int;int f(int v){return v;}}namespace A{using N::n;using N::T;using N::f;}namespace B{using A::n;using A::T;using A::f;}int main(){using B::T;using B::f;T v=B::n;return f(v)-3;}"},
+      {"noexcept-resolved", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){return v;}int main(){return f(3)-3;}"},
+      {"noexcept-false", "template<class T>int f(T v)noexcept(sizeof(T)!=sizeof(int)){return v;}int main(){return f(3)-3+noexcept(f(3));}"},
+      {"noexcept-parens", "template<class T>int (f)(T v)noexcept(sizeof(T)==sizeof(int)){return v;}int main(){return f(3)-3;}"},
+      {"noexcept-value", "template<int N>int f()noexcept(N>0){return N;}int main(){return f<3>()-3+f<0>();}"},
+      {"noexcept-method", "template<class T>struct R{T n;T get()const noexcept(sizeof(T)==sizeof(int)){return n;}};int main(){R<int>r{3};return r.get()-3;}"},
+      {"noexcept-method-value", "template<int N>struct R{int get()const noexcept(N>0){return N;}};int main(){R<3>a;R<0>b;return a.get()-3+b.get();}"},
+      {"noexcept-constructor", "template<class T>struct R{T n;R(T v)noexcept(sizeof(T)==sizeof(int)):n(v){}};int main(){R<int>r(3);return r.n-3;}"},
+      {"noexcept-constructor-value", "template<int N>struct R{int n;R()noexcept(N>0):n(N){}};int main(){R<3>a;R<0>b;return a.n-3+b.n;}"},
+      {"noexcept-out-of-line", "template<class T>struct R{T n;R(T v)noexcept(sizeof(T)==sizeof(int));T get()const noexcept(sizeof(T)==sizeof(int));};template<class T>R<T>::R(T v)noexcept(sizeof(T)==sizeof(int)):n(v){}template<class T>T R<T>::get()const noexcept(sizeof(T)==sizeof(int)){return n;}int main(){R<int>r(3);return r.get()-3;}"},
+      {"noexcept-explicit-specialization", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){return v;}template<>int f<int>(int v)noexcept(true){return v+1;}int main(){return f(3)-4;}"},
+      {"noexcept-local-method", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){struct R{int get()const noexcept(sizeof(int)==4){return 3;}};R r;return r.get()+v;}int main(){return f(3)-6;}"},
+      {"noexcept-written-decltype", "template<class T>auto f(decltype(static_cast<T>(1)) v)noexcept(sizeof(T)==sizeof(int))->decltype(static_cast<T>(1)){return v;}int main(){return f<int>(3)-3;}"},
+      {"consteval-local", "int main(){int consteval=3;return consteval-3;}"},
+      {"consteval-function", "int consteval(int n){return n;}int main(){return consteval(3)-3;}"},
+      {"consteval-template", "template<class T>int f(T consteval){if constexpr(sizeof(T)==sizeof(int))return consteval;else return 0;}int main(){return f(3)-3;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("frontend-repairs-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("frontend-repairs-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FrontendRepairsRetainWrittenExceptionSource) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"noexcept-selected-floating", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)&&1.0>0.0){return v;}int main(){return f(3);}"},
+      {"noexcept-method-floating", "template<class T>struct R{int get()const noexcept(sizeof(T)==sizeof(int)&&1.0>0.0){return 3;}};int main(){R<int>r;return r.get();}"},
+      {"noexcept-constructor-floating", "template<class T>struct R{int n;R()noexcept(sizeof(T)==sizeof(int)&&1.0>0.0):n(3){}};int main(){R<int>r;return r.n;}"},
+      {"noexcept-return-source", "template<class T>auto f(T v)noexcept(sizeof(T)==sizeof(int))->decltype(static_cast<T>(1.0)){return v;}int main(){return f(3);}"},
+      {"noexcept-parameter-source", "template<class T>int f(decltype(static_cast<T>(1.0)) v)noexcept(sizeof(T)==sizeof(int)){return v;}int main(){return f<int>(3);}"},
+      {"noexcept-redeclaration-source", "template<class T>int f(T v)noexcept(true);template<class T>int f(T v)noexcept(1.0>0.0){return v;}int main(){return f(3);}"},
+      {"noexcept-ordinary-source", "int f(int v)noexcept(1.0>0.0){return v;}int main(){return f(3);}"},
+      {"noexcept-local-method-source", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){struct R{int get()const noexcept(1.0>0.0){return 3;}};R r;return r.get()+v;}int main(){return f(3);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("frontend-repairs-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("frontend-repairs-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     expectCode(Result, "TR0201");
     expectNoArtifacts(Output);
   }
@@ -5240,8 +5343,8 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"active-include", "#include <utility>\ntemplate<class T>T f(T v){return v;}", "TR0201"},
       {"inactive-include", "#if 0\n#include <utility>\n#endif\ntemplate<class T>T f(T v){return v;}", "TR0201"},
       {"non-template-discarded", "int f(){if constexpr(true)return 1;else return static_cast<int>(1.0);}", "TR0201"},
-      {"unused-consteval", "template<class T>int f(){if consteval{return 1;}else{return 2;}}", "TR0201"},
-      {"discarded-consteval", "template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else{if consteval{return 2;}else{return 3;}}}int main(){return f<int>();}", "TR0201"},
+      {"unused-consteval", "template<class T>int f(){if consteval{return 1;}else{return 2;}}", "TR0202"},
+      {"discarded-consteval", "template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else{if consteval{return 2;}else{return 3;}}}int main(){return f<int>();}", "TR0202"},
       {"lambda-template-list", "template<class T>void f(){auto fn=[]<class U>(U v){return v;};}", "TR0201"},
       {"designated-init", "template<class T>T f(){return T{.n=1};}", "TR0201"},
       {"range-init", "template<class T>void f(T&a){for(int n=0;auto x:a){++n;}}", "TR0201"},

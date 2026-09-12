@@ -924,8 +924,9 @@ support. See the concrete free function-template rules above. Static scalar
 declarations in discarded source
 may remain canonical globals but add no runtime body or initialization effects.
 
-C++23 `if consteval` and its negated spellings remain explicitly rejected before
-ordinary-if lowering. Old profiles retain their constexpr-if boundary. Native
+C++23 `if consteval` and its negated spellings produce C++17 parse errors
+(`TR0202`) before ordinary-if lowering; `consteval` remains a valid C++17
+identifier. Recognized later-language extensions retain `TR0201`. Old profiles retain their constexpr-if boundary. Native
 O0/O2 fixtures and protocol assertions cover selection, runtime initializers,
 condition variables, return deduction, cleanup, switch storage and relocation.
 Native validation requires the implementing revision's CI; full C++/STL remains
@@ -2190,3 +2191,14 @@ old-profile rejection and consumer profile/version boundaries. CI evidence must
 be recorded against the
 revision that runs these cases; earlier core v1 CI results do not establish
 core v2 execution support.
+
+### Concrete template exception source
+
+For materialized free function templates and admitted class-template functions,
+the frontend checks the resolved semantic `noexcept` expression when Clang's
+written function type retains the primary's dependent expression. The match is
+limited to that declaration's own function TypeLoc, including parenthesized
+declarators. Written return and parameter types, and non-dependent exception
+expressions, remain checked. Folding a floating-point expression inside an
+exception specification does not admit it into core v2. Queries retain their
+compile-time boolean result and do not execute the queried call.
