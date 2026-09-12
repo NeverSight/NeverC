@@ -1140,6 +1140,26 @@ public:
       A.Functions.push_back(const_cast<CXXMethodDecl *>(Method));
     }
   }
+  bool TraverseMaterializeTemporaryExpr(MaterializeTemporaryExpr *Temporary) {
+    if (!A.S.coreV2())
+      return RecursiveASTVisitor<Allowlist>::TraverseMaterializeTemporaryExpr(Temporary);
+    if (!WalkUpFromMaterializeTemporaryExpr(Temporary))
+      return false;
+    if (const auto *Descriptor = Temporary->getLifetimeExtendedTemporaryDecl()) {
+      if (Descriptor->getTemporaryExpr() != Temporary->getSubExpr() ||
+          Descriptor->getExtendingDecl() != Temporary->getExtendingDecl() ||
+          Descriptor->getStorageDuration() != Temporary->getStorageDuration()) {
+        A.reject(Temporary->getExprLoc(), "temporary lifetime",
+                 "The lifetime descriptor must identify this materialized temporary.");
+        return true;
+      }
+    }
+    // RAV otherwise visits a LifetimeExtendedTemporaryDecl that Clang creates
+    // without setting isImplicit(). It describes this same operand, not a
+    // source declaration. WalkUp has checked its type, duration and owner;
+    // inspect the operand synchronously without broadening declaration admission.
+    return TraverseStmt(Temporary->getSubExpr());
+  }
   bool TraverseCXXDefaultArgExpr(CXXDefaultArgExpr *Default) {
     const auto *P = Default->getParam();
     auto L = Default->getUsedLocation();

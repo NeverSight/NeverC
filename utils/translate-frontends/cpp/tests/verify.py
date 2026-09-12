@@ -425,6 +425,7 @@ def main():
         'temporary-call-1854-temporary-reference': 'struct R{int n;};int operator+(const R&a,const R&b){return a.n+b.n;}int f(R&r){return r+R{1};}',
         'temporary-call-1855-unevaluated-temporary': 'struct R{int n;int operator()()const noexcept{return n;}};bool f(){return noexcept(R{1}());}',
         'temporary-call-2047-fresh-receiver': 'struct R{int n;operator int()const{return n;}};int f(){return R{1};}',
+        'record-result-method-receiver': 'struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}',
         'temporary-call-2053-query-fresh-receiver': 'struct R{operator int()const noexcept{return 1;}};bool f(){return noexcept(static_cast<int>(R{}));}',
         'temporary-call-2270-temporary-receiver': 'struct R{int n;~R(){}int get(){return n;}};int f(){return R{1}.get();}',
         'temporary-call-2449-temporary-reference-argument': 'int f(const int&r){return r;} int main(){return f(1);}',
@@ -447,6 +448,7 @@ def main():
         'temporary-call-cpp-scalar-reference-argument': 'int f(const int &x){return x;} int main(){return f(42);}',
     })
     core_v2.update({
+        'record-result-reference-binding': 'struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}',
         'automatic-reference-promoted-1': 'struct I{int n;I(const I&s):n(s.n){}};struct R{I i;R(const R&)=default;};void f(const R&s){const R&r=R(s);}',
         'automatic-reference-promoted-2': 'void f(){int&&r=1;}',
         'automatic-reference-promoted-3': 'void f(){int&&r=static_cast<int&&>(1);}',
@@ -484,7 +486,8 @@ def main():
         'automatic-reference-brace-live': 'int f(int&n){int&r{n};return ++r;}',
         'automatic-reference-brace-parameter': 'int take(const int&n){return n;}int f(){return take({4});}',
         'automatic-reference-brace-constructor-parameter': 'struct R{int n;R(const int&r):n(r){}};int f(){R r({5});return r.n;}',
-        'automatic-reference-brace-record-conversion': 'struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v={r};return v.n;}',
+        'automatic-reference-brace-record-conversion': 'struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v={static_cast<V>(r)};return v.n;}',
+        'automatic-reference-unbraced-record-conversion': 'struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v=r;return v.n;}',
         'automatic-reference-constexpr-reference': 'struct R{int n;};constexpr int f(){const R&r{R{7}};return r.n;}constexpr int n=f();static_assert(n==7);',
     })
     core_v2.update({
@@ -2079,6 +2082,11 @@ long long promotion(S&r){return r;}
 int explicitName(S&r){return r.operator int();}
 bool logicalAnd(S&a,S&b){return a&&b;}
 bool logicalOr(S&a,S&b){return a||b;}
+bool constantAnd(const S&a,const S&b){return a&&b;}
+bool constantOr(const S&a,const S&b){return a||b;}
+bool castMutable(S&r){return static_cast<bool>(r);}
+bool castConst(const S&r){return static_cast<bool>(r);}
+bool mutableQuery(S&r){return noexcept(static_cast<bool>(r));}
 int&alias(Ref&r){return r;}
 R result(Factory&r){return r;}
 R explicitResult(Factory&r){return r.operator R();}
@@ -2120,10 +2128,14 @@ bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
         assert not any(v["type"] in uc_records.values() for v in function["locals"]), function
     assert uc_function("long long promotion(")["result"] == "i64"
     bool_name = uc_function(" explicit operator bool(")["name"]
-    for prefix in ("bool logicalAnd(", "bool logicalOr("):
+    for prefix, selected, branch in (
+            ("bool logicalAnd(", selected_int[0]["name"], "true"),
+            ("bool logicalOr(", selected_int[0]["name"], "false"),
+            ("bool constantAnd(", bool_name, "true"),
+            ("bool constantOr(", bool_name, "false")):
         function = uc_function(prefix)
         calls = gc_calls(function)
-        assert [c["callee"] for c in calls] == [bool_name, bool_name], function
+        assert [c["callee"] for c in calls] == [selected, selected], function
         assert [storage_pointer_object(function, c["args"][0]) for c in calls] == [
             ("parameter", p["name"]) for p in function["params"]]
         positions = [i for i, node in enumerate(function["body"]) if node["op"] == "call"]
@@ -2131,7 +2143,15 @@ bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
         branches = [n for n in between if n["op"] == "branch"]
         labels = [n["label"] for n in between if n["op"] == "label"]
         assert len(branches) == 1 and labels, function
-        assert labels[-1] == branches[0]["true" if prefix == "bool logicalAnd(" else "false"], function
+        assert labels[-1] == branches[0][branch], function
+    for prefix, selected in (("bool castMutable(", selected_int[0]["name"]),
+                             ("bool castConst(", bool_name)):
+        function = uc_function(prefix)
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == selected, function
+        assert storage_pointer_object(function, calls[0]["args"][0]) == (
+            "parameter", function["params"][0]["name"]), function
+
 
     def uc_reference_origin(function, expr):
         if expr["kind"] in ("cast", "address", "dereference"):
@@ -2185,11 +2205,12 @@ bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
         assert storage_pointer_object(function, calls[1]["args"][0]) == ("parameter", function["params"][0]["name"])
         assert uc_reference_origin(function, calls[1]["args"][1]) == conversion_name
         assert not any(v["type"] == rid for v in function["locals"]), function
-    for prefix in ("bool query(", "bool recordQuery("):
+    for prefix, expected in (("bool query(", True), ("bool recordQuery(", True),
+                             ("bool mutableQuery(", False)):
         function = uc_function(prefix)
         assert not gc_calls(function) and not any(v["type"] in uc_records.values() for v in function["locals"]), function
         returns = [n["value"] for n in function["body"] if n["op"] == "return"]
-        assert len(returns) == 1 and nq_constant(function, returns[0]) is True
+        assert len(returns) == 1 and nq_constant(function, returns[0]) is expected
     for function in conversions["functions"]:
         for call in gc_calls(function):
             callee = uc_functions[call["callee"]]
@@ -2517,6 +2538,9 @@ int converted(){Source s{13};const int&r{s};mark();return r;}
         assert relocated == extended, "automatic reference identities depend on the absolute root"
 
     automatic_reference_rejected = {
+        'extended-unused-float-operand': 'int f(){const int&r=static_cast<int>(1.0);return r;}',
+        'extended-dead-float-operand': 'struct R{int n;};int f(){if(false){const R&r=R{static_cast<int>(1.0)};}return 0;}',
+        'extended-query-float-operand': 'int f(){const bool&r=noexcept(static_cast<int>(1.0));return r;}',
         'fresh-brace-scalar-return': 'const int&f(){return {1};}',
         'fresh-equal-record-return': 'struct R{int n;};const R&f(){return {R{1}};}',
         'fresh-brace-member-return': 'struct R{int n;};const int&f(){return {R{1}.n};}',
@@ -2533,6 +2557,7 @@ int converted(){Source s{13};const int&r{s};mark();return r;}
     for name, source in automatic_reference_rejected.items():
         check("v2-" + 'automatic_reference_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
     automatic_reference_invalid = {
+        'aggregate-list-conversion': 'struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v={r};return v.n;}',
         'mutable-scalar': 'void f(){int&r{1};}',
         'mutable-record': 'struct R{int n;};void f(){R&r={R{1}};}',
         'const-mutation': 'void f(){const int&r{1};++r;}',
@@ -3692,8 +3717,6 @@ int main() {
     v2_rejections = {
         'record-parameter-expansion': 'struct R{int n[65536];};int ignore(R a,R b,R c,R d){return 0;}int f(){R r;for(int i=0;i<65536;++i)r.n[i]=0;return ignore(r,r,r,r);}',
         'record-result-fallthrough': 'struct R{int n;};R f(bool b){if(b)return {1};}',
-        'record-result-reference-binding': 'struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}',
-        'record-result-method-receiver': 'struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}',
         'record-result-c-export': 'struct R{int n;};extern "C" R exported(){return {1};}',
         'record-parameter-c-export': 'struct R{int n;};extern "C" int exported(R r){return r.n;}',
         "untyped-assembly-string": 'asm(""); int main(){}',

@@ -1911,6 +1911,11 @@ constexpr int converted=pure;
 static_assert(converted==23,"conversion constant");
 static_assert(noexcept(pure.operator int()),"conversion specification");
 struct Risky { int n; operator int() const noexcept(false) { return n; } };
+struct Choice {
+  int *trace;
+  operator int() & { *trace=*trace*10+1; return 0; }
+  explicit operator bool() const noexcept { *trace=*trace*10+2; return true; }
+};
 int main() {
   Counts counts{0,0,0,0,0}; Source source{4,&counts};
   int n=source;
@@ -1934,7 +1939,9 @@ int main() {
   counts.converted=0; int rounds=0;
   while(source){++rounds;source.n=0;}
   if(rounds!=1||counts.converted!=2)return 10;
-  if(!noexcept(static_cast<bool>(source))||counts.converted!=2)return 11;
+  static_assert(!noexcept(static_cast<bool>(source)), "mutable receiver selects int conversion");
+  static_assert(noexcept(static_cast<bool>(fixed)), "const receiver selects bool conversion");
+  if(noexcept(static_cast<bool>(source))||!noexcept(static_cast<bool>(fixed))||counts.converted!=2)return 11;
   Explicit explicitValue{9}; int direct(explicitValue);
   if(direct!=9||static_cast<int>(explicitValue)!=9||int(explicitValue)!=9)return 12;
   int order=0; Ordered ordered{7,&order};
@@ -1978,6 +1985,16 @@ int main() {
     if(objects.made!=7||objects.destroyed!=2)return 33;
   }
   if(objects.destroyed!=9)return 34;
+  int trace=0; Choice choice{&trace}; const Choice &constantChoice=choice;
+  if(static_cast<bool>(choice)||trace!=1)return 35;
+  trace=0;if(!static_cast<bool>(constantChoice)||trace!=2)return 36;
+  trace=0;if(choice)return 37;
+  if(trace!=1)return 38;
+  trace=0;if(!constantChoice||trace!=2)return 39;
+  trace=0;if((choice&&constantChoice)||trace!=1)return 40;
+  trace=0;if(!(choice||constantChoice)||trace!=12)return 41;
+  trace=0;if((constantChoice&&choice)||trace!=21)return 42;
+  trace=0;if(!(constantChoice||choice)||trace!=2)return 43;
   return 0;
 }
 )cpp");
@@ -3093,6 +3110,7 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2AutomaticReferencesAcceptLocalExtensions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"record-result-reference-binding", "struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}"},
       {"promoted-1", "struct I{int n;I(const I&s):n(s.n){}};struct R{I i;R(const R&)=default;};void f(const R&s){const R&r=R(s);}"},
       {"promoted-2", "void f(){int&&r=1;}"},
       {"promoted-3", "void f(){int&&r=static_cast<int&&>(1);}"},
@@ -3130,7 +3148,8 @@ TEST_F(TranslateTest, CoreV2AutomaticReferencesAcceptLocalExtensions) {
       {"brace-live", "int f(int&n){int&r{n};return ++r;}"},
       {"brace-parameter", "int take(const int&n){return n;}int f(){return take({4});}"},
       {"brace-constructor-parameter", "struct R{int n;R(const int&r):n(r){}};int f(){R r({5});return r.n;}"},
-      {"brace-record-conversion", "struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v={r};return v.n;}"},
+      {"brace-record-conversion", "struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v={static_cast<V>(r)};return v.n;}"},
+      {"unbraced-record-conversion", "struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v=r;return v.n;}"},
       {"constexpr-reference", "struct R{int n;};constexpr int f(){const R&r{R{7}};return r.n;}constexpr int n=f();static_assert(n==7);"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -3145,6 +3164,9 @@ TEST_F(TranslateTest, CoreV2AutomaticReferencesAcceptLocalExtensions) {
 
 TEST_F(TranslateTest, CoreV2AutomaticReferencesRetainLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"extended-unused-float-operand", "int f(){const int&r=static_cast<int>(1.0);return r;}", "TR0201"},
+      {"extended-dead-float-operand", "struct R{int n;};int f(){if(false){const R&r=R{static_cast<int>(1.0)};}return 0;}", "TR0201"},
+      {"extended-query-float-operand", "int f(){const bool&r=noexcept(static_cast<int>(1.0));return r;}", "TR0201"},
       {"fresh-brace-scalar-return", "const int&f(){return {1};}", "TR0201"},
       {"fresh-equal-record-return", "struct R{int n;};const R&f(){return {R{1}};}", "TR0201"},
       {"fresh-brace-member-return", "struct R{int n;};const int&f(){return {R{1}.n};}", "TR0201"},
@@ -3163,6 +3185,7 @@ TEST_F(TranslateTest, CoreV2AutomaticReferencesRetainLifetimeBoundaries) {
       {"deleted-copy", "struct R{int n;R(int v):n(v){}R(const R&)=delete;};void f(){const R&r=R(1);R copy(r);}", "TR0202"},
       {"deleted-move", "struct R{int n;R(int v):n(v){}R(R&&)=delete;};void f(){R&&r=R(1);R moved(static_cast<R&&>(r));}", "TR0202"},
       {"narrow-brace", "void f(){const unsigned char&r{300};}", "TR0202"},
+      {"aggregate-list-conversion", "struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v={r};return v.n;}", "TR0202"},
       {"constructor", "struct R{int n;R(int);};void f(){const R&r=R(1);}", "TR0203"},
       {"destructor", "struct R{int n;~R();};void f(){const R&r{R{1}};}", "TR0203"},
   };
@@ -3337,6 +3360,7 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2TemporaryCallsAcceptFullExpressionBindings) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"record-result-method-receiver", "struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}"},
       {"user-copy-temporary-receiver", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}"},
       {"940-temporary-source", "struct R{int n;R&operator=(const R&)=default;};void f(R&r){r=R{1};}"},
       {"941-temporary-receiver", "struct R{int n;R&operator=(const R&)=default;};void f(const R&s){R{1}=s;}"},
@@ -5324,8 +5348,6 @@ TEST_F(TranslateTest, CoreV2RecordCallsRetainLifetimeAndSourceTypeBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"record-parameter-expansion", "struct R{int n[65536];};int ignore(R a,R b,R c,R d){return 0;}int f(){R r;for(int i=0;i<65536;++i)r.n[i]=0;return ignore(r,r,r,r);}"},
       {"record-result-fallthrough", "struct R{int n;};R f(bool b){if(b)return {1};}"},
-      {"record-result-reference-binding", "struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}"},
-      {"record-result-method-receiver", "struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}"},
       {"record-result-c-export", "struct R{int n;};extern \"C\" R exported(){return {1};}"},
       {"record-parameter-c-export", "struct R{int n;};extern \"C\" int exported(R r){return r.n;}"},
   };
