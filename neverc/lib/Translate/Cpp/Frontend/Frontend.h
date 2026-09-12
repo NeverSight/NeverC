@@ -141,6 +141,7 @@ public:
   clang::ASTContext &Context;
   clang::SourceManager &Sources;
   std::map<const clang::Decl *, std::string> Names;
+  std::map<const clang::FunctionTemplateDecl *, std::size_t> TemplateOrdinals;
   std::vector<clang::FunctionDecl *> Functions;
   std::vector<clang::CXXRecordDecl *> Records;
   std::vector<clang::VarDecl *> Globals;

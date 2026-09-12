@@ -3,11 +3,13 @@
 #include "BuildID.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -533,13 +535,28 @@ const InitListExpr *emptyVoidInitializer(const Expr *E) {
   return List;
 }
 
+// Shape only: Allowlist separately validates the primary, arguments and body.
+static bool concreteFreeFunctionTemplate(const FunctionDecl *F) {
+  return F && F->getKind() == Decl::Function && F->getIdentifier() &&
+         F->getTemplatedKind() == FunctionDecl::TK_FunctionTemplateSpecialization &&
+         F->getPrimaryTemplate() && !F->isDependentContext() &&
+         !F->getType().isNull() && !F->getType()->isDependentType();
+}
+
+static bool lazyTemplateDefault(const ParmVarDecl *P) {
+  return P && P->hasDefaultArg() && !P->hasUnparsedDefaultArg() &&
+         P->hasUninstantiatedDefaultArg() &&
+         concreteFreeFunctionTemplate(dyn_cast<FunctionDecl>(P->getDeclContext()));
+}
+
 const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context) {
   if (!P || P->isImplicit() || P->isInvalidDecl() || !P->hasDefaultArg() ||
       P->hasUnparsedDefaultArg() || P->hasUninstantiatedDefaultArg() ||
       P->getType().isNull() || P->getType()->isDependentType())
     return nullptr;
   const auto *F = dyn_cast<FunctionDecl>(P->getDeclContext());
-  if (!F || F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+  if (!F || (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+             !concreteFreeFunctionTemplate(F)) ||
       P->getFunctionScopeIndex() >= F->getNumParams() ||
       F->getParamDecl(P->getFunctionScopeIndex()) != P)
     return nullptr;
@@ -929,6 +946,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const CXXConstructExpr *> CheckedConstructions;
   std::set<const VarDecl *> CheckedScalarGlobals;
   std::set<const UsingShadowDecl *> CheckedUsingShadows;
+  std::set<const FunctionDecl *> CheckedTemplateDeclarations;
   std::set<const Expr *> CheckedDiscardedResults, DiscardedStaticValues;
   std::set<const Decl *> QueuedGeneratedMethods;
   std::vector<const CXXMethodDecl *> GeneratedMethods;
@@ -938,6 +956,33 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!D->isImplicit())
       return A.S.owns(A.Sources, D->getLocation());
     return A.rangeForOwner(dyn_cast<VarDecl>(D)) != nullptr;
+  }
+  bool functionTemplateShape(const FunctionTemplateDecl *D) {
+    if (!D || !owned(D) || D->isInvalidDecl() ||
+        !isa<TranslationUnitDecl, NamespaceDecl>(D->getDeclContext()) ||
+        !isa<TranslationUnitDecl, NamespaceDecl>(D->getLexicalDeclContext()))
+      return false;
+    const auto *Parameters = D->getTemplateParameters();
+    const auto *Pattern = D->getTemplatedDecl();
+    if (!Parameters || !Parameters->size() || Parameters->size() > 64 ||
+        Parameters->hasAssociatedConstraints() || D->isAbbreviated() ||
+        !owned(Pattern) || Pattern->isInvalidDecl() ||
+        Pattern->getKind() != Decl::Function || !Pattern->getIdentifier() ||
+        Pattern->isVariadic() || Pattern->isDeletedAsWritten() ||
+        Pattern->isDefaulted() || Pattern->isConsteval() ||
+        Pattern->getTrailingRequiresClause() || Pattern->hasAttrs())
+      return false;
+    for (const auto *Parameter : *Parameters) {
+      const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
+      if (!Type || !owned(Type) || Type->isInvalidDecl() || Type->hasAttrs() ||
+          Type->getDepth() || Type->isParameterPack() || Type->hasTypeConstraint())
+        return false;
+    }
+    for (const auto *Parameter : Pattern->parameters())
+      if (!owned(Parameter) || Parameter->isInvalidDecl() ||
+          Parameter->hasAttrs() || Parameter->isParameterPack())
+        return false;
+    return true;
   }
   bool importContext(const DeclContext *Context) {
     if (!Context || Context->isDependentContext())
@@ -993,8 +1038,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Supported = Enum && owned(Enum) && !Enum->isScoped() &&
                     importContext(Enum->getDeclContext());
       } else {
-        Supported = isa<FunctionDecl, VarDecl, TypedefNameDecl, CXXRecordDecl,
-                        EnumDecl>(Target) && importContext(Target->getDeclContext());
+        Supported = (isa<FunctionDecl, VarDecl, TypedefNameDecl, CXXRecordDecl,
+                         EnumDecl>(Target) ||
+                     functionTemplateShape(dyn_cast<FunctionTemplateDecl>(Target))) &&
+                    importContext(Target->getDeclContext());
       }
     }
     if (!Supported) {
@@ -1321,7 +1368,80 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
+  void indexFunctionTemplates() {
+    if (!A.S.coreV2())
+      return;
+    std::vector<Decl *> Work{A.Context.getTranslationUnitDecl()};
+    A.chargeExpansion(1, Work.back()->getLocation());
+    while (!Work.empty()) {
+      auto *D = Work.back();
+      Work.pop_back();
+      if (auto *Template = dyn_cast<FunctionTemplateDecl>(D); Template && owned(Template)) {
+        auto *Canonical = Template->getCanonicalDecl();
+        if (!A.TemplateOrdinals.count(Canonical))
+          A.TemplateOrdinals.emplace(Canonical, A.TemplateOrdinals.size());
+      }
+      const DeclContext *Context = nullptr;
+      if (auto *Unit = dyn_cast<TranslationUnitDecl>(D))
+        Context = Unit;
+      else if (auto *Namespace = dyn_cast<NamespaceDecl>(D); Namespace && owned(Namespace))
+        Context = Namespace;
+      else if (auto *Linkage = dyn_cast<LinkageSpecDecl>(D); Linkage && owned(Linkage))
+        Context = Linkage;
+      if (!Context)
+        continue;
+      auto Begin = Work.size();
+      for (auto *Child : Context->decls()) {
+        A.chargeExpansion(1, Child->getLocation());
+        Work.push_back(Child);
+      }
+      std::reverse(Work.begin() + Begin, Work.end());
+    }
+  }
+  bool TraverseFunctionTemplateDecl(FunctionTemplateDecl *D) {
+    if (!A.S.coreV2() || !owned(D))
+      return RecursiveASTVisitor<Allowlist>::TraverseFunctionTemplateDecl(D);
+    if (!WalkUpFromFunctionTemplateDecl(D))
+      return false;
+    if (!functionTemplateShape(D)) {
+      A.reject(D->getLocation(), "function template",
+               "Only ordinary owned namespace function templates with up to 64 non-pack type parameters are supported.");
+      return true;
+    }
+    A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
+    // Sema has finished. Inspect materialized definitions, not dependent
+    // patterns or unused overload candidates that have only a signature.
+    if (D != D->getCanonicalDecl())
+      return true;
+    for (auto *Specialization : D->specializations()) {
+      for (auto *Declaration : Specialization->redecls()) {
+        A.chargeExpansion(1, Declaration->getLocation());
+        auto Kind = Declaration->getTemplateSpecializationKind();
+        if (!Declaration->hasBody() &&
+            (Kind == TSK_Undeclared || Kind == TSK_ImplicitInstantiation))
+          continue;
+        if (!TraverseDecl(Declaration))
+          return false;
+      }
+    }
+    return true;
+  }
+  bool TraverseParmVarDecl(ParmVarDecl *D) {
+    if (!A.S.coreV2() || !lazyTemplateDefault(D))
+      return RecursiveASTVisitor<Allowlist>::TraverseParmVarDecl(D);
+    // RAV normally traverses the uninstantiated pattern expression here.
+    // Its concrete type is still checked; only Sema-selected defaults run.
+    if (!WalkUpFromParmVarDecl(D))
+      return false;
+    const auto *Info = D->getTypeSourceInfo();
+    return !Info || TraverseTypeLoc(Info->getTypeLoc());
+  }
   bool TraverseDecl(Decl *D) {
+    if (A.S.coreV2())
+      if (const auto *Function = dyn_cast_or_null<FunctionDecl>(D);
+          concreteFreeFunctionTemplate(Function) &&
+          !CheckedTemplateDeclarations.insert(Function).second)
+        return true;
     auto *SavedField = CurrentDefaultField;
     if (auto *Field = dyn_cast_or_null<FieldDecl>(D))
       CurrentDefaultField = owned(Field) && Field->hasInClassInitializer() ? Field : nullptr;
@@ -1552,7 +1672,7 @@ public:
     const bool ExtendedDeclaration =
         A.S.coreV2() &&
         (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl, FriendDecl,
-             NamespaceAliasDecl, UsingDirectiveDecl, UsingDecl>(D) ||
+             NamespaceAliasDecl, UsingDirectiveDecl, UsingDecl, FunctionTemplateDecl>(D) ||
          D->getKind() == Decl::UsingShadow ||
          (isa<AccessSpecDecl>(D) && D->getDeclContext()->isRecord()));
     if (!ExtendedDeclaration &&
@@ -1674,6 +1794,25 @@ public:
   bool VisitFunctionDecl(FunctionDecl *D) {
     if (!owned(D))
       return true;
+    const bool Template = A.S.coreV2() && concreteFreeFunctionTemplate(D);
+    if (Template) {
+      const auto *Primary = D->getPrimaryTemplate();
+      const auto *Arguments = D->getTemplateSpecializationArgs();
+      if (!functionTemplateShape(Primary) || !Arguments ||
+          Arguments->size() != Primary->getTemplateParameters()->size()) {
+        A.reject(D->getLocation(), "template specialization",
+                 "A concrete specialization must match an admitted owned primary template.");
+        return true;
+      }
+      for (const auto &Argument : Arguments->asArray()) {
+        A.chargeExpansion(1, D->getLocation());
+        if (Argument.getKind() != TemplateArgument::Type ||
+            Argument.getAsType().isNull() || Argument.getAsType()->isDependentType())
+          A.reject(D->getLocation(), "template argument", "A resolved supported type argument is required.");
+        else
+          A.type(Argument.getAsType(), D->getLocation(), true);
+      }
+    }
     A.type(D->getReturnType(), D->getLocation(), true);
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
     const bool Defaulted = A.S.coreV2() &&
@@ -1685,7 +1824,7 @@ public:
                      !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(Method)) && !Defaulted))) ||
         D->isVariadic() ||
         D->getDescribedFunctionTemplate() ||
-        D->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        (D->getTemplatedKind() != FunctionDecl::TK_NonTemplate && !Template) ||
         D->isDeletedAsWritten() || (D->isExplicitlyDefaulted() && !Defaulted) ||
         D->isConsteval())
       A.reject(D->getLocation(), "function",
@@ -1743,6 +1882,8 @@ public:
     A.type(D->getType(), D->getLocation());
     const auto *Parameter = dyn_cast<ParmVarDecl>(D);
     const bool HasDefault = Parameter && Parameter->hasDefaultArg();
+    if (A.S.coreV2() && lazyTemplateDefault(Parameter))
+      return true;
     if (HasDefault && (!A.S.coreV2() ||
                        !defaultArgumentInitializer(Parameter, A.Context))) {
       A.reject(D->getLocation(), "default argument",
@@ -1818,7 +1959,8 @@ public:
           !Parent || !LexicalParent || !owned(Parent) ||
           Parent->getCanonicalDecl() != LexicalParent->getCanonicalDecl() ||
           Parent->isDependentContext() || Parent->isConstexpr() ||
-          Parent->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+          (Parent->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+           !concreteFreeFunctionTemplate(Parent)) ||
           D->hasExternalStorage() || D->getTLSKind() != VarDecl::TLS_None ||
           D->getType().isVolatileQualified() ||
           !D->getType()->isIntegralOrEnumerationType() || Definition != D) {
@@ -2411,6 +2553,7 @@ static void orderCoreV2Records(Adapter &A) {
 
 void Adapter::run() {
   Allowlist Check(*this);
+  Check.indexFunctionTemplates();
   Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (!S.Diagnostics.empty())
     return;
@@ -2539,13 +2682,30 @@ void Adapter::run() {
 
 class Diagnostics : public DiagnosticConsumer {
   State &S;
+  std::set<unsigned> LaterStandardDiagnostics;
 
 public:
-  explicit Diagnostics(State &S) : S(S) {}
+  explicit Diagnostics(State &S) : S(S) {
+    if (!S.coreV2())
+      return;
+    DiagnosticIDs IDs;
+    for (auto Group : {"c++20-extensions", "c++23-extensions", "c++26-extensions"}) {
+      llvm::SmallVector<diag::kind, 128> Values;
+      if (IDs.getDiagnosticsInGroup(diag::Flavor::WarningOrError, Group, Values)) {
+        S.diagnose("TR0102", "C++ language version",
+                   "The embedded frontend is missing a required language diagnostic group.",
+                   "Use a compatible NeverC frontend build.");
+        continue;
+      }
+      LaterStandardDiagnostics.insert(Values.begin(), Values.end());
+    }
+  }
   void HandleDiagnostic(DiagnosticsEngine::Level Level,
                         const Diagnostic &D) override {
     DiagnosticConsumer::HandleDiagnostic(Level, D);
-    if (Level < DiagnosticsEngine::Error)
+    const bool LaterStandard = Level == DiagnosticsEngine::Warning &&
+                               LaterStandardDiagnostics.count(D.getID());
+    if (Level < DiagnosticsEngine::Error && !LaterStandard)
       return;
     llvm::SmallString<256> Message;
     D.FormatDiagnostic(Message);
@@ -2560,7 +2720,7 @@ public:
       if (S.project())
         File = S.sourcePath(D.getSourceManager(), D.getLocation());
     }
-    S.diagnose("TR0202", "C++ source", Message,
+    S.diagnose(LaterStandard ? "TR0201" : "TR0202", "C++ source", Message,
                "Fix the C++17 source diagnostic before translating.", Line,
                Column, File);
   }
@@ -3083,6 +3243,9 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
         "-std=c++17",          "-nostdinc", "-nostdinc++",
         "-fsyntax-only",       "-target",   S.Target};
     Args.insert(Args.end(), S.Arguments.begin(), S.Arguments.end());
+    if (S.coreV2())
+      Args.insert(Args.end(), {"-Wc++20-extensions", "-Wc++23-extensions",
+                               "-Wc++26-extensions"});
     if (S.math()) {
       Args.insert(Args.end(),
                   {"-fno-fast-math", "-ffp-contract=off", "-resource-dir",

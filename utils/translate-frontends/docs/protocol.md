@@ -129,6 +129,13 @@ Receiver effects and cleanup stay explicit; discarded and unevaluated values
 emit no scalar storage. Source address/reference uses still require a real
 definition. See [declaration-only static constants](cpp-core-v2.md#declaration-only-static-constant-values).
 
+Concrete core-v2 free function-template instances use ordinary function, record,
+scalar-global and call IR. Primary-template ordinals and source identities
+separate otherwise colliding specializations, including their local records and
+static variables. Patterns and uninstantiated defaults emit no runtime entities.
+See [concrete free function templates](cpp-core-v2.md#concrete-free-function-templates)
+for type-parameter limits, instantiation checks and remaining definition limits.
+
 Resolved core-v2 constexpr-if emits only its selected substatement after normal
 init-statement and condition-variable initialization. It adds no condition
 evaluation or runtime selection branch; normal cleanup flags may still branch.

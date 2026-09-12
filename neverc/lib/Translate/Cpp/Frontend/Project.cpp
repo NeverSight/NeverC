@@ -1,4 +1,5 @@
 #include "Frontend.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Index/USRGeneration.h"
@@ -122,6 +123,34 @@ std::string Adapter::identity(const NamedDecl *D) {
     throw Failure{};
   }
   auto Identity = USR.str().str();
+  if (S.coreV2()) {
+    if (const auto *Primary = dyn_cast<FunctionTemplateDecl>(D->getCanonicalDecl())) {
+      auto Found = TemplateOrdinals.find(Primary);
+      auto L = Sources.getExpansionLoc(Primary->getLocation());
+      if (Found == TemplateOrdinals.end() || L.isInvalid() || !S.owns(Sources, L)) {
+        reject(D->getLocation(), "template identity",
+               "The canonical source template was not indexed.", "TR0102");
+        throw Failure{};
+      }
+      Identity = "template:" + std::to_string(Found->second) + ":" + S.Relative +
+                 ":" + std::to_string(Sources.getFileOffset(L)) + ":" + Identity;
+    } else {
+      const FunctionDecl *Owner = dyn_cast<FunctionDecl>(D);
+      if (!Owner || !Owner->getPrimaryTemplate()) {
+        Owner = nullptr;
+        for (const DeclContext *C = D->getDeclContext(); C; C = C->getParent())
+          if (const auto *Function = dyn_cast<FunctionDecl>(C);
+              Function && Function->getPrimaryTemplate()) {
+            Owner = Function;
+            break;
+          }
+      }
+      // Clang's specialization USR omits its primary template. The same
+      // prefix also separates static locals and local record/field identities.
+      if (Owner)
+        Identity = identity(Owner->getPrimaryTemplate()) + ":instance:" + Identity;
+    }
+  }
   if (S.project()) {
     auto Owner = ownerTU(D);
     if (!Owner.empty())

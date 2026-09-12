@@ -230,7 +230,7 @@ live object. Static/instance reference arguments share the full-expression
 temporary-call contract below; they introduce no reference lifetime extension.
 
 Virtual methods, inheritance,
-volatile/restrict methods and templates remain unsupported. Defined scalar
+volatile/restrict methods and member templates remain unsupported. Defined scalar
 static data follows its separate storage contract below. Ordinary
 constructors and destructors follow the separate rules below. The existing
 implicit trivial copy paths are unchanged.
@@ -239,8 +239,8 @@ retain their rejected-method boundary.
 
 ## Default arguments
 
-Core v2 supports resolved default arguments on admitted non-template free
-functions, methods, call operators and user constructors. User-provided copy and
+Core v2 supports resolved default arguments on admitted free functions, including concrete function-template instances, and on methods,
+call operators and user constructors. User-provided copy and
 move constructors can have trailing default parameters after their required
 source reference. Implicit and explicitly defaulted special members retain their
 separate signature restrictions. Clang checks declaration visibility, inherited
@@ -272,10 +272,10 @@ explicit empty braces. Thus `R a[2] = {};` and `R b[2] = {{}, {}};` can observe
 different counts of simultaneously live default-argument temporaries. The array
 continues to own its elements and destroys them in reverse order.
 
-Both declared defaults and selected call-site semantic expressions are fully
-inspected, even when unused, explicitly overridden, folded in constexpr code or
+In non-template declarations, both declared defaults and selected call-site
+semantic expressions are fully inspected, even when unused, explicitly overridden, folded in constexpr code or
 inside a noexcept query. Queries create no runtime default effects. Unsupported
-operand types, volatile objects, strings, function/member pointers, templates,
+operand types, volatile objects, strings, function/member pointers, unsupported template forms,
 allocation and throwing remain diagnosed under their existing boundaries.
 Invalid C++ defaults or calls remain Clang diagnostics; missing required owned
 definitions remain definition errors. Only core v2 gains this support.
@@ -330,7 +330,7 @@ requires the implementing revision's CI; full C++/STL remains unfinished.
 Core v2 admits ordinary empty standard-layout records, including stateless
 functors and conversion objects, with the same method, constructor, destructor,
 source ownership and type checks as other records. No bases, unions, nesting,
-virtual dispatch, templates, packing or custom alignment are added. Other
+virtual dispatch, class templates, packing or custom alignment are added. Other
 profiles retain their nonempty-record boundary.
 
 The source field list and layout offset list stay empty. The consumer independently
@@ -470,7 +470,7 @@ both are admitted under these contracts.
 
 Anonymous nested structs, including typedef-named anonymous nested definitions,
 remain rejected; a named tag with a typedef alias is supported. Existing
-non-nested anonymous-record behavior is unchanged. Unions, templates, inheritance,
+non-nested anonymous-record behavior is unchanged. Unions, class templates, inheritance,
 virtual dispatch and unsupported field/body operations retain their restrictions,
 including unused nested definitions. Older profiles continue to reject nested
 records. Full C++ and STL remain unfinished.
@@ -508,7 +508,7 @@ The allowlist still traverses each written friend type, owned forward tag,
 function signature, default and body. Unused, dead and folded operations are
 not exempt. Template/dependent/pack friend forms and any friend marked unsupported
 by the embedded frontend are rejected. Existing class, field, storage and type
-restrictions remain, as do older profiles' friend rejection. Templates and full
+restrictions remain, as do older profiles' friend rejection. Other template forms and full
 STL support require further work.
 
 Native O0/O2 fixtures cover lookup, overloads, repeated declarations, private
@@ -540,7 +540,7 @@ layout, and authorized operations use those same fields. No access flag, new IR
 instruction or runtime wrapper is needed. Generated source remains reviewable.
 
 Mixed-access non-standard-layout classes, friend templates, inheritance,
-anonymous nested records and templates remain outside current support. Bitfields and
+anonymous nested records and class templates remain outside current support. Bitfields and
 mutable, const, reference or unsupported numeric fields retain their existing
 restrictions. A getter returning a field's ordinary `T*` address does not admit
 pointer-to-member types such as `T C::*`. Older profiles keep their contracts.
@@ -585,7 +585,7 @@ fixtures. Protocol checks cover actual storage identities, complete signatures,
 one-time initialization, cleanup paths and relocation. Native results require
 CI from the implementing revision.
 
-Templates, standard headers and STL containers, initializer-list ranges,
+Class templates, standard headers and STL containers, initializer-list ranges,
 structured bindings, C++20 range init-statements and coroutine range loops
 remain outside this increment. Existing extent and expansion budgets still
 apply, and older profiles retain their previous range-loop rejection.
@@ -629,7 +629,7 @@ members used only for their checked values follow the
 They need no invented storage definition.
 
 Dynamic initialization, static pointer/reference/array/record objects, TLS,
-static locals and templates retain their restrictions. There is no startup or
+static locals and class templates retain their restrictions. There is no startup or
 static-destruction function in this representation. Older profiles retain their
 existing behavior. Native O0/O2 fixtures and protocol checks cover shared state,
 canonical definitions, initializer ownership, receiver effects, actual addresses,
@@ -675,7 +675,7 @@ This also applies in discarded or statically skipped expressions, and to
 reference defaults. Creating a new prvalue, such as `+R::value`, can instead
 bind its own temporary to a const reference. A mutable member or const member
 without a usable constant initializer retains the definition requirement.
-TLS, static locals, other static types, dynamic initialization and templates
+TLS, static locals, other static types, dynamic initialization and other template forms
 retain their separate restrictions. V1 profiles retain their previous behavior.
 
 Paired native and protocol fixtures cover value widths, constant-expression
@@ -684,10 +684,62 @@ cleanup timing, actual storage identity and deterministic relocation. Native
 O0/O2 results require CI from the implementing revision. Full C++/STL support
 remains unfinished.
 
+## Concrete free function templates
+
+Core v2 admits source-owned namespace/free function templates with one to 64
+non-pack, unconstrained type parameters and supported concrete type arguments.
+Embedded Clang performs deduction, overload ordering, substitution and explicit
+specialization/instantiation. Type-parameter defaults, namespace imports,
+recursion and nested calls use the same ordinary typed function lowering.
+Class, member, friend and operator templates, non-type/template-template
+parameters, parameter packs, abbreviated/constrained templates and standard
+headers remain outside this stage.
+
+Generic patterns do not become runtime functions. The producer checks template
+metadata and every materialized concrete body, including unused explicit
+instantiation definitions and explicit specializations. It does not force bodies
+for unselected overload candidates. Uninstantiated bodies and lazy function
+parameter defaults may contain operations outside the runtime subset; when
+instantiated, their concrete types and operations receive ordinary checks.
+Selected defaults execute anew at each omitted argument. An explicitly supplied
+argument does not instantiate a still-lazy default. This template-specific rule
+does not weaken checking of ordinary non-template functions or their defaults.
+
+Template-dependent `if constexpr` uses Clang's selected instantiated branch;
+the discarded dependent branch is not instantiated or lowered. Initializers,
+selected object storage, return capture and scope cleanup retain ordinary rules.
+Non-template `if constexpr` still checks both original source branches.
+
+Every concrete function has one identity including its primary template and
+actual arguments. A bounded declaration pre-index assigns deterministic primary
+ordinals before any type checking, so forward references to a later template's
+local record work. Ordinals distinguish even macro-generated primary templates
+whose Clang USRs and expansion locations collide. Instance-local records,
+fields, parameters and scalar static variables inherit that identity. Repeated
+calls and redeclarations share storage; distinct instances or primaries do not.
+No generic source blob, opaque IR or new runtime dispatch is emitted.
+
+The current single-unit definition restriction remains: selected calls need a
+body, explicit declarations need an in-unit definition, and a signature-only
+call still fails under `sizeof` or `noexcept`. Generic uninstantiated declarations
+and unselected implicit overload candidates alone do not require a body.
+These remaining closure limits mean full C++ template support is unfinished.
+Core v2 enables the pinned post-C++17 extension diagnostic groups and rejects
+those warnings as TR0201 even in uninstantiated patterns or discarded branches.
+Actual C++ source errors remain TR0202. Other profiles are unchanged.
+
+Native O0/O2 fixtures cover deduction, defaults, static storage, cleanup,
+recursion, specialization and explicit instantiation. Protocol checks assert
+complete call signatures, distinct primary and local identities, macro
+collisions, forward local-record returns and relocation stability. Native
+validation requires the implementing revision's CI. Full C++/STL remains
+unfinished; this stage does not add standard headers or containers.
+
 ## Resolved constexpr-if
 
-Core v2 admits non-template C++17 `if constexpr` with a resolved constant bool
-condition, including supported integer/enum conversions, size/alignment and
+Core v2 admits C++17 `if constexpr` in ordinary functions and admitted concrete
+free function-template instances with a resolved constant bool condition,
+including supported integer/enum conversions, size/alignment and
 noexcept queries, constexpr function/member calls and constexpr conversions.
 Only the selected substatement emits runtime operations. A false condition
 without an else selects an empty body. Nested and else-if forms retain this
@@ -709,14 +761,16 @@ at that statement; normal selected lowering allocates the live declarations.
 Discarded automatic arrays and records are not allocated, including in that
 switch combination. Nested switches retain their own case registration.
 
-Both owned source branches and the complete condition source are still checked,
-even when discarded or folded. Unsupported source operations and declarations
+In non-template functions, both owned source branches and the complete condition
+source are still checked, even when discarded or folded. In concrete template
+instances, Clang does not instantiate a discarded dependent branch. Unsupported source operations and declarations
 retain their diagnostics, and invalid non-template discarded code remains a
 source error. This stage retains the profile's stricter complete-definition
 requirement for declared functions and globals, even when their only uses are
-discarded. The standard's discarded ODR-use exemption and dependent template
-instantiation need further closure work; this is not a claim of complete
-constexpr-if or template support. Static scalar declarations in discarded source
+discarded. The standard's full discarded ODR-use exemption and remaining template
+forms need further closure work; this is not complete constexpr-if or template
+support. See the concrete free function-template rules above. Static scalar
+declarations in discarded source
 may remain canonical globals but add no runtime body or initialization effects.
 
 C++23 `if consteval` and its negated spellings remain explicitly rejected before
@@ -750,7 +804,7 @@ status. Macro-spelled C++17 inline declarations and namespace separators remain
 admitted. A namespace first declared non-inline cannot later become inline;
 Clang's source diagnostic is preserved.
 
-Namespace attributes, templates, unsupported types/bodies, foreign includes and
+Namespace attributes, unsupported template forms/types/bodies, foreign includes and
 missing required definitions retain their restrictions, including unused and
 statically skipped code. Old profiles retain their existing inline namespace
 boundary. No header, SDK or standard-library support is implied by namespace
@@ -790,10 +844,12 @@ C++17 for/if/switch init-statements; source errors remain source errors.
 Alias target walks and using-shadow chains are bounded to 64 links, cycle
 checked, source-ownership checked and charged against the existing expansion
 budget. Importing a name never exempts its original type, initializer, defaults,
-body or definition from full source validation, even when unused or statically
-skipped. Source errors retain TR0202 and missing required definitions TR0203.
+body or definition from its applicable source validation. Ordinary non-template
+source remains checked even when unused or statically skipped. Source errors retain TR0202 and missing required definitions TR0203.
 
-Class-member imports, inherited constructors, templates/dependent/pack forms,
+Admitted free function templates may also be imported; their lazy patterns and
+materialized bodies follow the separate template rules above. Class-member
+imports, inherited constructors, class templates and dependent/pack import forms,
 foreign targets and unsupported source types or bodies remain
 excluded. C++20 using-enum and scoped-enumerator imports remain rejected under
 the C++17 contract even when the embedded library only issues an extension
@@ -808,7 +864,8 @@ remains unfinished.
 ## Statically initialized scalar locals
 
 Core v2 admits source-owned static integer, boolean and enum local variables in
-ordinary non-constexpr functions and methods, including constructors and
+ordinary non-constexpr functions, admitted concrete free function-template
+instances and methods, including constructors and
 destructors. The type must be non-volatile and non-thread-local. Mutable scalars
 without an initializer are statically zero-initialized; explicit initializers
 must be fully defined constant expressions. Const and constexpr locals require
@@ -837,7 +894,7 @@ is still inspected, including unused declarations and statically skipped code.
 
 Dynamic initialization, initialization guards and their synchronization, TLS,
 volatile storage, local extern declarations, other static local types and
-templates retain separate restrictions. This stage adds no static record
+other template forms retain separate restrictions. This stage adds no static record
 destruction or exception machinery. V1 profiles retain their previous behavior.
 The static storage rule does not change automatic uninitialized scalar locals.
 
@@ -977,7 +1034,7 @@ member initializer retains its full-expression cleanup; temporary objects from
 aggregate clauses survive through the complete aggregate initialization. The
 existing complete-object cleanup owner remains responsible for normal destruction.
 Reference-field lifetime extension, static initialization
-outside the current contract, exceptions, templates and STL are not enabled
+outside the current contract, exceptions, other template forms and STL are not enabled
 by admitting field defaults. Unevaluated construction introduces no runtime default
 calls or invented generated body. V1 profiles continue to reject field defaults.
 
@@ -1095,7 +1152,7 @@ its result. Reference source parameters do not own or destroy their referents.
 A containing aggregate may be initialized with a member having user-defined
 copy operations without selecting a copy of the containing object. Generated
 copy construction and assignment follow the next sections. Deleted special
-members, templates, variadic/default
+members, member templates, variadic/default
 arguments,
 allocation and exception unwinding are not added. Temporary source-reference
 arguments and receivers follow the full-expression call contract below. Missing definitions and
@@ -1169,7 +1226,7 @@ destruction nor a replacement construction.
 
 Deleted functions, volatile/restrict sources
 or receivers, variadic parameters, inheritance,
-templates and STL remain outside this increment. Temporary source-reference
+other template forms and STL remain outside this increment. Temporary source-reference
 arguments and receivers follow the full-expression call contract below. Invalid
 C++ overload, cv/ref or deleted-copy uses retain source diagnostics; missing user
 definitions retain the missing-definition diagnostic. V1 profiles reject user moves.
@@ -1247,7 +1304,7 @@ callee; selected return moves initialize the caller's result. Direct prvalue
 forwarding adds no extra operation and no NRVO heuristic aliases named objects.
 Array extents, storage and expanded-node budgets remain enforced. Unsupported
 layouts, deleted operations, broader temporary lifetimes, exceptions,
-templates and STL still require further work; v1 profiles are unchanged.
+other template forms and STL still require further work; v1 profiles are unchanged.
 
 O0/O2 no-inline fixtures cover selected copy fallback, member/array order, self
 and chained assignment, operand effects, pointer values, defaults, by-value and
@@ -1302,7 +1359,7 @@ An admitted trivial copy also needs no function body. Runtime nontrivial copies
 must have a checked materialized definition.
 
 Unsupported layouts, static reference lifetime extension, exceptions,
-templates and STL headers remain outside this increment. Array extent, object
+other template forms and STL headers remain outside this increment. Array extent, object
 storage and expanded-node limits still apply. Regression fixtures cover selected
 calls, nested source/destination indices, one source-array capture, mutable source
 overloads, pointer identity, side effects, value parameters, return copies,
@@ -1470,7 +1527,7 @@ pointer. Record results use the existing hidden destination before receiver and
 parameters. Reference results preserve their aliases, including subscript and
 increment results. Taking an overloaded operator's function/member address still
 requires later function-pointer support. Conversion functions follow their separate
-contract below. This stage does not admit templates, friend declarations,
+contract below. This stage does not admit operator templates, dependent friend declarations,
 virtual dispatch or allocation/deallocation operators. Temporary call operands
 follow the separate full-expression contract below.
 
@@ -1523,7 +1580,7 @@ lifetime counts. Protocol fixtures check selected identities and full signatures
 free/member argument offsets, parameter capture versus destruction order, direct
 result storage, cleanup and deterministic relocation. Unsupported code is still
 inspected inside unused functions and noexcept queries. V1 admission is unchanged;
-templates, library headers and complete STL remain in development. Native evidence
+operator templates, library headers and complete STL remain in development. Native evidence
 must come from the implementing revision's CI.
 
 ## User-defined conversion functions
@@ -1573,7 +1630,7 @@ volatile/restrict receivers, unsupported result types and function/member
 pointers remain excluded. Full-expression temporary receivers and converted
 reference arguments follow the next section. Automatic local reference extension
 has its own contract below. Static lifetime extension, allocation,
-exception execution, templates and complete STL still require further work.
+exception execution, remaining template forms and complete STL still require further work.
 Unsupported bodies and operands remain checked even in unused declarations,
 constexpr initializers, static assertions and noexcept queries. V1 is unchanged.
 
@@ -1632,7 +1689,7 @@ full-expression; saving the alias does not create a new owner or lifetime
 extension. The defined-execution source contract does not promise general
 interprocedural dangling-reference diagnosis. Automatic local extension follows
 the next section. Static lifetime extension, fresh reference returns, unsupported
-types, exception execution, templates and complete STL still require further
+types, exception execution, remaining template forms and complete STL still require further
 work. This stage adds no wire opcode or external runtime and leaves v1 unchanged.
 
 O0/O2 no-inline fixtures check real storage, scalar/reference conversion, temporary
@@ -1693,7 +1750,7 @@ storing it does not extend the temporary passed to that call.
 
 Static/global/thread-local reference lifetimes, reference fields, structured
 bindings, unsupported types, exception unwinding,
-templates and complete STL remain outside this increment. V1 is unchanged. O0/O2
+remaining template forms and complete STL remain outside this increment. V1 is unchanged. O0/O2
 no-inline fixtures cover storage identity, braces, subobjects, nested lifetimes,
 copy/move/return ordering, conditional owners and loop exits. Protocol fixtures
 check complete signatures, actual destinations, guarded cleanup and relocation;
@@ -1742,7 +1799,7 @@ only constructed arrays, loop evaluations recreate their lifetimes, and return,
 break and continue clean the appropriate scopes. Array construction needs no
 external helper or memory-copy call. Static/global/thread-local lifetimes,
 reference fields, fresh reference returns, non-extended pointer-derived bindings,
-unsupported element types, explicit destruction, allocation, unwinding, templates
+unsupported element types, explicit destruction, allocation, unwinding, other template forms
 and complete STL remain outside this increment. V1 and protocol major 1 are unchanged.
 
 O0/O2 no-inline fixtures cover real element addresses, reference calls, decay,
@@ -1784,7 +1841,8 @@ int main() {
 
 Every written specification and query operand is still inspected, including
 unused, nested and short-circuited expressions. Unsupported types and operations
-remain rejected; unevaluated source does not admit templates, function pointers,
+remain rejected; unevaluated source still rejects signature-only template calls without definitions,
+function pointers,
 unsupported lifetime extension or explicit destruction. Missing ordinary owned
 definitions remain diagnostics. Dependent/unresolved written specifications,
 vendor forms and C++17-invalid typed dynamic specifications are not accepted.
@@ -1944,7 +2002,7 @@ a separate generated header belongs to project mode.
 ## Remaining scope and wire representation
 
 128-bit and extended integers, floating-point types,
-exception unwinding, templates,
+exception unwinding, other template forms,
 exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2

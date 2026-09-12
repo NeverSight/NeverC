@@ -3709,7 +3709,6 @@ TEST_F(TranslateTest, CoreV2StaticLocalsRetainInitializationAndLanguageBoundarie
       {"record", "struct R{int n;};int f(){static R r{3};return r.n;}", "TR0201"},
       {"record-destruction", "struct R{int n;~R(){}};int f(){static R r{3};return r.n;}", "TR0201"},
       {"extern", "int value=3;int f(){extern int value;return value;}", "TR0201"},
-      {"template", "template<class T>int f(){static int n=3;return n;}", "TR0201"},
       {"constexpr-function", "constexpr int f(bool b){if(b){static int n=3;return n;}return 0;}", "TR0201"},
       {"constexpr-method", "struct R{constexpr int f(bool b)const{if(b){static const int n=3;return n;}return 0;}};", "TR0201"},
       {"constexpr-skipped", "constexpr int f(){if(false){static int n=3;}return 0;}", "TR0201"},
@@ -3888,7 +3887,6 @@ TEST_F(TranslateTest, CoreV2NameImportsRetainSourceClosureAndLanguageBoundaries)
       {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct D:B{using B::B;};", "TR0201"},
       {"dependent", "template<class T>struct R:T{using T::n;};", "TR0201"},
       {"pack", "template<class...T>struct R:T...{using T::n...;};", "TR0201"},
-      {"import-template", "namespace N{template<class T>T f(T n){return n;}}using N::f;", "TR0201"},
       {"import-template-type", "namespace N{template<class T>struct R{T n;};}using N::R;", "TR0201"},
       {"unsupported-type", "namespace N{using T=double;}using N::T;", "TR0201"},
       {"unused-body", "namespace N{int f(){double n=3;return static_cast<int>(n);}}using N::f;", "TR0201"},
@@ -4251,7 +4249,6 @@ TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries
       {"discarded-attribute", "int f(){if constexpr(false){[[maybe_unused]] int n=3;}return 0;}", "TR0201"},
       {"folded-condition", "int f(){if constexpr(static_cast<int>(3.0)==3)return 1;else return 0;}", "TR0201"},
       {"folded-function", "constexpr bool f(){return static_cast<int>(3.0)==3;}int g(){if constexpr(f())return 1;else return 0;}", "TR0201"},
-      {"template", "template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else return 0;}", "TR0201"},
       {"if-consteval", "int f(){if consteval{return 1;}else{return 0;}}", "TR0201"},
       {"if-not-consteval", "int f(){if !consteval{return 1;}else{return 0;}}", "TR0201"},
       {"if-not-keyword", "int f(){if not consteval{return 1;}else{return 0;}}", "TR0201"},
@@ -4280,6 +4277,216 @@ TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries
                                   "int f(){if consteval{return 3;}else{return 4;}}"}) {
     const auto Source = tmpFile("constexpr_if-v1.cpp");
     const auto Output = tmpFile("constexpr_if-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTemplatesPreserveSpecializationIdentityAndLifetime) {
+  const auto Source = tmpFile("function_templates.cpp");
+  const auto Output = tmpFile("function_templates.nc");
+  writeFile(Source, R"cpp(
+int defaultCalls=0;
+int live=0;
+struct DefaultRecord{DefaultRecord(){++live;}~DefaultRecord(){--live;}};
+template<class T>int byDefault(T v=T{}){return live;}
+template<class T>int refDefault(const T&v=T{}){return live;}
+int nextDefault(){return ++defaultCalls;}
+struct R { int n; };
+struct Trace {
+ int*p;int id;
+ Trace(int*q,int n):p(q),id(n){*p=*p*10+id;}
+ ~Trace(){*p=*p*10+id+4;}
+};
+template<class T>T identity(T v){return v;}
+template<class T>T& alias(T&v){return v;}
+template<class T>T* pointer(T*p){return p;}
+template<class T=int>T zero(){return T{};}
+template<class T>int defaults(T v=T{},int n=nextDefault()){return v+n;}
+template<class T>int lazy(T v=T::missing){return v;}
+template<class T>T recursive(T n){return n? n+recursive<T>(n-1):0;}
+template<class T>T nested(T v){return identity(identity(v));}
+template<class T>int sum(T&a){int n=0;for(auto&v:a){++v;n+=v;}return n;}
+template<class T>int count(){static int n=0;return ++n;}
+template<class T>auto select(int*p){if constexpr(sizeof(T)==sizeof(int)){Trace a(p,1);Trace b(p,2);return *p;}else{return R{9};}}
+template<class T>int discarded(){if constexpr(sizeof(T)==sizeof(int))return 3;else return T::missing+static_cast<int>(1.0);}
+template<class T>int specialized(T v){return 1;}
+template<>int specialized<int>(int v){return 7;}
+template<class T>T explicitOnly(T v){return v;}
+template int explicitOnly<int>(int);
+namespace N { struct Item{int n;};template<class T>int read(const T&t){return t.n;} }
+namespace Import { template<class T>T take(T v){return v;} }
+using Import::take;
+int overload(int v){return 8;}
+template<class T>int overload(T v){return 2;}
+template<class T,class=typename T::tag>int sfinae(T v){return 4;}
+int sfinae(int v){return 5;}
+struct Tagged{using tag=int;int n;};
+namespace Collision {
+ template<class T>int value(T v){static int n=0;return ++n;}
+ int early(){return value(1);}
+ template<class T>int value(int v){static int n=10;return ++n;}
+ int late(){return value<int>(1);}
+}
+template<class T>auto first(T);
+template<class T>auto second(T v){struct Local{T n;};return Local{v};}
+template<class T>auto first(T v){return second(v);}
+#define PRIMARY(M) template<class T>auto macro(T v)->decltype(v.M){return v.M;}
+#define PAIR PRIMARY(a) PRIMARY(b)
+struct MacroTypes{int a;bool b;};
+PAIR
+template int macro<MacroTypes>(MacroTypes);
+template bool macro<MacroTypes>(MacroTypes);
+int main(){
+ if(identity(3)!=3 || identity<int>(4)!=4 || !identity(true) || identity(5u)!=5u)return 1;
+ R r{7};if(identity(r).n!=7)return 2;
+ int n=3;alias(n)=9;if(n!=9 || pointer(&n)!=&n)return 3;
+ if(zero()!=0 || zero<bool>() || zero<R>().n!=0)return 4;
+ defaultCalls=0;int a=defaults<int>();int b=defaults(4);if(a!=1 || b!=6 || defaultCalls!=2)return 5;
+ if(lazy(7)!=7)return 6;
+ if(recursive(4)!=10 || nested(6)!=6)return 7;
+ int items[2]={1,2};if(sum(items)!=5 || items[0]!=2 || items[1]!=3)return 8;
+ int c=count<int>();int d=count<int>();int e=count<bool>();if(c!=1 || d!=2 || e!=1)return 9;
+ int trace=0;int captured=select<int>(&trace);if(captured!=12 || trace!=1265)return 10;
+ if(select<unsigned char>(&trace).n!=9 || trace!=1265)return 11;
+ if(discarded<int>()!=3)return 12;
+ if(specialized(2)!=7 || specialized(true)!=1 || explicitOnly(8)!=8)return 13;
+ N::Item item{11};if(read(item)!=11 || take(12)!=12)return 14;
+ if(overload(3)!=8 || overload(true)!=2)return 15;
+ Tagged tagged{1};if(sfinae(1)!=5 || sfinae(tagged)!=4)return 16;
+ int early=Collision::early();int late=Collision::late();int again=Collision::early();if(early!=1 || late!=11 || again!=2)return 17;
+ if(first(17).n!=17)return 18;
+ int valueAlive=byDefault<DefaultRecord>();if(valueAlive!=1 || live!=0)return 19;
+ int referenceAlive=refDefault<DefaultRecord>();if(referenceAlive!=1 || live!=0)return 20;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function_templates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTemplatesAcceptConcreteTypeInstances) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"deduced", "template<class T>T id(T v){return v;}int main(){return id(3)-3;}"},
+      {"explicit", "template<class T>T id(T v){return v;}int main(){return id<int>(3)-3;}"},
+      {"default-type", "template<class T=int>T zero(){return T{};}int main(){return zero();}"},
+      {"default-redecl", "template<class T=int>T zero();template<class U>U zero(){return U{};}int main(){return zero();}"},
+      {"default-dependent-type", "template<class T,class U=T>U convert(T v){return v;}int main(){return convert(3)-3;}"},
+      {"void-type", "template<class T>int tag(){return 3;}int main(){return tag<void>()-3;}"},
+      {"reference-type", "template<class T>T id(T v){return v;}int main(){int n=3;id<int&>(n)=4;return n-4;}"},
+      {"const-pointer", "template<class T>T* id(T*p){return p;}int main(){const int n=3;return *id(&n)-3;}"},
+      {"record-return", "struct R{int n;};template<class T>T id(T v){return v;}int main(){return id(R{3}).n-3;}"},
+      {"range-array", "template<class T>int sum(T&a){int n=0;for(auto&x:a)n+=x;return n;}int main(){int a[2]={1,2};return sum(a)-3;}"},
+      {"constexpr", "template<class T>constexpr T add(T n){return n+1;}static_assert(add(2)==3,\"value\");int main(){return add(3)-4;}"},
+      {"constexpr-discarded", "template<class T>int f(){if constexpr(sizeof(T)==sizeof(int))return 3;else return T::missing;}int main(){return f<int>()-3;}"},
+      {"constexpr-return-types", "struct R{int n;};template<class T>auto f(){if constexpr(sizeof(T)==sizeof(int))return 3;else return R{4};}int main(){return f<int>()+f<bool>().n-7;}"},
+      {"unused-floating-pattern", "template<class T>double f(T v){double x=1.0;return x+v;}int main(){return 0;}"},
+      {"discarded-floating-branch", "template<class T>int f(){if constexpr(sizeof(T)==sizeof(int))return 3;else return static_cast<int>(1.0);}int main(){return f<int>()-3;}"},
+      {"lazy-invalid-default", "template<class T>int f(T v=T::missing){return v;}int main(){return f(3)-3;}"},
+      {"lazy-floating-default", "template<class T>int f(T v=static_cast<T>(1.0)){return v;}int main(){return f(3)-3;}"},
+      {"selected-default", "template<class T>int f(T v=T{}){return v;}int main(){return f<int>();}"},
+      {"specialization", "template<class T>int f(T v){return 1;}template<>int f<int>(int v){return 3;}int main(){return f(1)-3;}"},
+      {"specialization-forward", "template<class T>int f(T);template<>int f<int>(int);template<>int f<int>(int v){return v;}int main(){return f(3)-3;}"},
+      {"explicit-definition", "template<class T>T f(T v){return v;}template int f<int>(int);"},
+      {"extern-defined", "template<class T>T f(T v){return v;}extern template int f<int>(int);template int f<int>(int);int main(){return f(3)-3;}"},
+      {"candidate-without-body", "template<class T>int f(T v){double unused=1.0;return 2;}int f(int v){return 3;}int main(){return f(1)-3;}"},
+      {"sfinae", "template<class T,class=typename T::tag>int f(T v){return 2;}int f(int v){return 3;}int main(){return f(1)-3;}"},
+      {"nested-redeclare", "template<class T>auto first(T);template<class T>auto second(T n){struct R{T n;};return R{n};}template<class T>auto first(T n){return second(n);}int main(){return first(3).n-3;}"},
+      {"namespace-import", "namespace N{template<class T>T f(T v){return v;}}namespace A=N;using A::f;int main(){return f(3)-3;}"},
+      {"inline-namespace", "namespace N{inline namespace V{template<class T>T f(T v){return v;}}}int main(){return N::f(3)-3;}"},
+      {"static-identity", "template<class T>int f(){static int n=0;return ++n;}int main(){int a=f<int>();int b=f<int>();int c=f<bool>();return a+b+c-4;}"},
+      {"function-reference", "template<class T>T&& move(T&v){return static_cast<T&&>(v);}int main(){int n=3;int&&r=move(n);r=4;return n-4;}"},
+      {"noexcept-resolved", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){return v;}int main(){return f(3)-3;}"},
+      {"static-template-pattern", "template<class T>int f(){static int n=3;return n;}"},
+      {"import-template-pattern", "namespace N{template<class T>T f(T n){return n;}}using N::f;"},
+      {"constexpr-template-pattern", "template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else return 0;}"},
+      {"default-template-pattern", "template<class T>int f(T n=T{}){return 1;}"},
+      {"exception-template-pattern", "template<class T>int f(T&t)noexcept(noexcept(t.get())){return 1;}"},
+      {"type-parameter-limit-64", "template<class T0,class T1,class T2,class T3,class T4,class T5,class T6,class T7,class T8,class T9,class T10,class T11,class T12,class T13,class T14,class T15,class T16,class T17,class T18,class T19,class T20,class T21,class T22,class T23,class T24,class T25,class T26,class T27,class T28,class T29,class T30,class T31,class T32,class T33,class T34,class T35,class T36,class T37,class T38,class T39,class T40,class T41,class T42,class T43,class T44,class T45,class T46,class T47,class T48,class T49,class T50,class T51,class T52,class T53,class T54,class T55,class T56,class T57,class T58,class T59,class T60,class T61,class T62,class T63>int f(){return 1;}int main(){return f<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>()-1;}"},
+      {"record-default-lifetime", "int live=0;struct R{R(){++live;}~R(){--live;}};template<class T>int f(T v=T{}){return live;}int main(){int n=f<R>();return n-1+live;}"},
+      {"reference-default-lifetime", "int live=0;struct R{R(){++live;}~R(){--live;}};template<class T>int f(const T&v=T{}){return live;}int main(){int n=f<R>();return n-1+live;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("function_templates-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("function_templates-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"class", "template<class T>struct R{T n;};", "TR0201"},
+      {"member", "struct R{template<class T>T f(T v){return v;}};", "TR0201"},
+      {"friend", "struct R{template<class T>friend T f(T v){return v;}};", "TR0201"},
+      {"operator", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}", "TR0201"},
+      {"pack", "template<class...T>int f(T...v){return 1;}", "TR0201"},
+      {"non-type", "template<int N>int f(){return N;}", "TR0201"},
+      {"template-template", "template<template<class>class T>int f(){return 1;}", "TR0201"},
+      {"variable", "template<class T>int value=3;", "TR0201"},
+      {"alias", "template<class T>using Alias=T;", "TR0201"},
+      {"float-argument", "template<class T>int f(){return 1;}int main(){return f<double>();}", "TR0201"},
+      {"float-signature", "template<class T>double f(T n){return n;}int main(){return static_cast<int>(f(1));}", "TR0201"},
+      {"float-body", "template<class T>int f(T n){double x=1.0;return n;}int main(){return f(1);}", "TR0201"},
+      {"floating-selected-default", "template<class T>int f(T n=static_cast<T>(1.0)){return n;}int main(){return f<int>();}", "TR0201"},
+      {"explicit-unsupported-body", "template<class T>int f(T n){double x=1.0;return n;}template int f<int>(int);", "TR0201"},
+      {"specialization-unsupported-body", "template<class T>int f(T n){return n;}template<>int f<int>(int n){double x=1.0;return n;}", "TR0201"},
+      {"runtime-dead-body", "template<class T>int f(T n){if(false){double x=1.0;}return n;}int main(){return f(1);}", "TR0201"},
+      {"allocation", "template<class T>T* f(){return new T{};}int main(){return *f<int>();}", "TR0201"},
+      {"dynamic-static", "int value=1;template<class T>int f(){static int n=value;return n;}int main(){return f<int>();}", "TR0201"},
+      {"constexpr-static", "template<class T>constexpr int f(){static int n=1;return n;}int main(){return f<int>();}", "TR0201"},
+      {"function-value", "template<class T>T f(T n){return n;}int main(){auto p=&f<int>;return p(1);}", "TR0201"},
+      {"attribute", "template<class T>[[nodiscard]]T f(T v){return v;}", "TR0201"},
+      {"parameter-attribute", "template<class T>T f([[maybe_unused]]T v){return v;}", "TR0201"},
+      {"active-include", "#include <utility>\ntemplate<class T>T f(T v){return v;}", "TR0201"},
+      {"inactive-include", "#if 0\n#include <utility>\n#endif\ntemplate<class T>T f(T v){return v;}", "TR0201"},
+      {"non-template-discarded", "int f(){if constexpr(true)return 1;else return static_cast<int>(1.0);}", "TR0201"},
+      {"unused-consteval", "template<class T>int f(){if consteval{return 1;}else{return 2;}}", "TR0201"},
+      {"discarded-consteval", "template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else{if consteval{return 2;}else{return 3;}}}int main(){return f<int>();}", "TR0201"},
+      {"lambda-template-list", "template<class T>void f(){auto fn=[]<class U>(U v){return v;};}", "TR0201"},
+      {"designated-init", "template<class T>T f(){return T{.n=1};}", "TR0201"},
+      {"range-init", "template<class T>void f(T&a){for(int n=0;auto x:a){++n;}}", "TR0201"},
+      {"generic-designator-macro", "#define INIT(T) T{.n=1}\ntemplate<class T>T f(){return INIT(T);}", "TR0201"},
+      {"type-parameter-limit-65", "template<class T0,class T1,class T2,class T3,class T4,class T5,class T6,class T7,class T8,class T9,class T10,class T11,class T12,class T13,class T14,class T15,class T16,class T17,class T18,class T19,class T20,class T21,class T22,class T23,class T24,class T25,class T26,class T27,class T28,class T29,class T30,class T31,class T32,class T33,class T34,class T35,class T36,class T37,class T38,class T39,class T40,class T41,class T42,class T43,class T44,class T45,class T46,class T47,class T48,class T49,class T50,class T51,class T52,class T53,class T54,class T55,class T56,class T57,class T58,class T59,class T60,class T61,class T62,class T63,class T64>int f(){return 1;}int main(){return f<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>()-1;}", "TR0201"},
+      {"deduction", "template<class T>T f(T a,T b){return a;}int main(){return f(1,true);}", "TR0202"},
+      {"no-argument", "template<class T>T f(){return T{};}int main(){return f();}", "TR0202"},
+      {"too-many-arguments", "template<class T>T f(T v){return v;}int main(){return f<int,bool>(1);}", "TR0202"},
+      {"selected-invalid-default", "template<class T>int f(T n=T::missing){return n;}int main(){return f<int>();}", "TR0202"},
+      {"selected-invalid-branch", "template<class T>int f(){if constexpr(sizeof(T)==4)return T::missing;else return 1;}int main(){return f<int>();}", "TR0202"},
+      {"late-specialization", "template<class T>int f(T n){return 1;}int g(){return f(1);}template<>int f<int>(int n){return 2;}", "TR0202"},
+      {"bad-explicit-definition", "template<class T>int f(T v){return T::missing;}template int f<int>(int);", "TR0202"},
+      {"ambiguous", "template<class T>int f(T,int){return 1;}template<class T>int f(int,T){return 2;}int main(){return f(1,1);}", "TR0202"},
+      {"selected-declaration", "template<class T>T f(T);int main(){return f(1);}", "TR0203"},
+      {"external-instantiation", "template<class T>T f(T v){return v;}extern template int f<int>(int);int main(){return f(1);}", "TR0203"},
+      {"unused-specialization", "template<class T>T f(T);template<>int f<int>(int);", "TR0203"},
+      {"sizeof-signature-only", "template<class T>T f(T v){return v;}int main(){return sizeof(f(1));}", "TR0203"},
+      {"noexcept-signature-only", "template<class T>T f(T v){return v;}int main(){return noexcept(f(1));}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("function_templates-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("function_templates-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"template<class T>T f(T v){return v;}int main(){return f(3);}",
+                                  "template<class T>T f(T v){return v;}"}) {
+    const auto Source = tmpFile("function_templates-v1.cpp");
+    const auto Output = tmpFile("function_templates-v1.nc");
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
     expectCode(Result, "TR0201");
@@ -4506,7 +4713,6 @@ TEST_F(TranslateTest, CoreV2DefaultArgumentsRetainSourceAndParameterBoundaries) 
       {"throw", "int f(int n=(throw 1,2)){return n;}", "TR0201"},
       {"function-pointer", "void g(){}void f(void(*p)()=g){}", "TR0201"},
       {"member-pointer", "struct R{int n;};void f(int R::*p=&R::n){}", "TR0201"},
-      {"dependent", "template<class T>int f(T n=T{}){return 1;}", "TR0201"},
       {"array-global", "int a[2]={1,2};int f(int*p=a){return *p;}", "TR0201"},
       {"fresh-reference-return", "int f(const int&r=1){return r;}const int&g(){return 1;}", "TR0201"},
       {"unsupported-default-record", "struct R{double n;};int f(R r=R{1.0}){return 1;}", "TR0201"},
@@ -5845,7 +6051,6 @@ TEST_F(TranslateTest, CoreV2NoexceptInspectsUnevaluatedSource) {
       {"throw-body", "int f()noexcept{throw 1;}", "TR0201"},
       {"catch-body", "int f()noexcept(false){try{return 1;}catch(...){return 2;}}", "TR0201"},
       {"vendor-nothrow", "__attribute__((nothrow)) int f(){return 1;}", "TR0201"},
-      {"dependent-spec", "template<class T>int f(T&t)noexcept(noexcept(t.get())){return 1;}", "TR0201"},
       {"explicit-destruction-query", "struct R{int n;~R()noexcept{}};bool f(R&r){return noexcept(r.~R());}", "TR0201"},
       {"nonconstant-spec", "void f(int n)noexcept(n){}", "TR0202"},
       {"incompatible-redeclaration", "int f()noexcept;int f()noexcept(false){return 1;}", "TR0202"},
