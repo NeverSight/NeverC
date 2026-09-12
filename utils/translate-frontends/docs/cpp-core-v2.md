@@ -330,7 +330,7 @@ requires the implementing revision's CI; full C++/STL remains unfinished.
 Core v2 admits ordinary empty standard-layout records, including stateless
 functors and conversion objects, with the same method, constructor, destructor,
 source ownership and type checks as other records. No bases, unions, nesting,
-virtual dispatch, class templates, packing or custom alignment are added. Other
+virtual dispatch, unrestricted class templates, packing or custom alignment are added. Other
 profiles retain their nonempty-record boundary.
 
 The source field list and layout offset list stay empty. The consumer independently
@@ -691,20 +691,20 @@ remains unfinished.
 
 ## Concrete aggregate class templates
 
-Core v2 admits concrete namespace-scope aggregate class-template instances with
+Core v2 admits concrete namespace-scope standard-layout class-template instances with
 one to 64 non-pack type or scalar integer/bool/enum parameters. Scalar `auto`
 and dependent scalar parameters follow the same argument rules as free function
 templates. Type defaults, explicit instantiation and explicit specialization,
 including forward declarations followed by definitions, are supported.
 
 Patterns and explicit specializations may declare fields, ordinary type aliases,
-enums, static assertions, access labels and ordinary named methods as described
-below. A materialized instance must be a
-complete standard-layout aggregate whose fields satisfy the ordinary type,
+enums, static assertions, access labels, ordinary named methods and user-provided
+constructors as described below. Aggregates and constructed instances must be
+complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
-remain checked when selected. Constructors/destructors, operators/conversions,
-member function templates,
-static data, friends, nested records/templates, bases and partial specializations
+remain checked when selected. Explicit defaulted members, destructors,
+operators/conversions, member function templates, static data, friends, nested
+records/templates, bases and partial specializations
 remain outside this class-template increment. Non-type defaults, packs,
 template-template parameters and non-scalar value arguments remain excluded.
 
@@ -735,7 +735,7 @@ C++/STL, standard headers and library containers remain unfinished.
 
 ## Ordinary class-template member functions
 
-Admitted aggregate class templates may contain ordinary named instance and static
+Admitted standard-layout class templates may contain ordinary named instance and static
 member functions with no own template parameters. Const and lvalue/rvalue
 reference-qualified overloads, resolved defaults and noexcept, constexpr methods,
 static factories, member begin/end ranges and scalar static locals use the
@@ -757,7 +757,7 @@ the same source checks as the primary parameter list before metadata is erased.
 Selected default/noexcept expressions and materialized signatures/bodies must pass
 the ordinary profile checks. Attributes, virtual/variadic/deleted methods,
 volatile/restrict qualifiers and member function templates are excluded. The class
-must remain an admitted standard-layout aggregate; constructor/destructor,
+must remain an admitted standard-layout record; explicit defaulted members, destructors,
 operator/conversion, static data, friend, nested/partial-template and base support
 is not expanded here.
 
@@ -774,6 +774,42 @@ fixtures inspect signatures, selected callees, default values, local record/stat
 identities, range calls, cleanup and relocation. Native results require CI of the
 implementing revision. Complete C++/STL and standard-library containers remain
 unfinished.
+
+## Class-template constructors
+
+Concrete namespace class-template instances support user-provided ordinary,
+explicit/converting, copy and move constructors. This includes default arguments,
+constexpr/resolved noexcept, out-of-line definitions and explicit instantiation or
+specialization. Instances may be non-aggregates but must remain standard-layout
+records with the existing field and no-base restrictions. Existing named methods
+also work on these constructed instances.
+
+Unused constructor bodies, initializers and defaults stay lazy. Selected
+construction requires an in-unit materialized definition, including constructions
+under sizeof/noexcept; explicit constructor declarations retain the definition
+requirement. Every instantiated body and initializer is checked, including
+non-written semantic member initializers. Written outer parameter types on
+out-of-line definitions are checked before dependent metadata is discarded.
+Extra copy-constructor defaults may stay uninstantiated when all arguments are
+explicit; omitted defaults still undergo ordinary per-use source and type checks.
+
+Constructors return void and receive destination storage before their runtime
+parameters. Member initialization follows declaration order, even when the source
+initializer list is ordered differently. Copy and move source references preserve
+the existing binding rules; destinations have their own storage and source
+mutation is retained. Ordinary member/array construction and destruction,
+temporary lifetime extension, by-value arguments and return storage use existing
+operations. Constructor-local records and scalar static locals retain concrete
+class-instance identities. No template argument becomes a runtime parameter.
+
+Delegating/inherited constructors, explicit defaulted class-template members,
+explicit template destructors, operators/conversions and own member templates are
+not included. Implicit special-member support is unchanged. In particular,
+ordinary nontrivial fields may use their existing destruction, but this increment
+does not change generation of destruction helpers for template-defined destructors.
+Native O0/O2 and protocol fixtures cover calls, defaults, copy/move storage,
+initialization order, member/array lifetimes, identities and relocation. Native
+results require the implementing revision's CI; complete C++/STL remains unfinished.
 
 ## Concrete free function templates
 

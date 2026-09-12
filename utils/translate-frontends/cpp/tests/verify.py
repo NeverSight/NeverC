@@ -6097,6 +6097,291 @@ int chooseOrdinary(){return candidate(3);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == function_templates, "template identity depends on absolute paths or address order"
 
+    class_constructors_source = """struct Guard{int n;Guard(int v):n(v){}~Guard(){n=99;}};
+template<class T,int N>struct Box{
+ T n;
+ Box(T v=N):n(v){}
+ Box(const Box&s,int extra=N):n(s.n+extra){}
+ Box(Box&&s):n(s.n){s.n=-1;}
+};
+template<class T,int N>struct Order{T first,second;Order(T v):second(first+N),first(v){}};
+template<class T>struct Local{T n;Local(T v){struct Inside{T n;};Inside local{v};n=local.n;}};
+template<auto N>struct State{int*p;State(){static int n=N;p=&n;}};
+template<auto N>struct OtherState{int*p;OtherState(){static int n=N;p=&n;}};
+template<class T>struct WithGuard{Guard member;Guard items[2];WithGuard(T v):member(v),items{Guard(v+1),Guard(v+2)}{}};
+Box<int,3> makeInt(int v){return Box<int,3>(v);}
+Box<int,1+2> makeSame(int v){return Box<int,1+2>(v);}
+Box<unsigned int,3> makeUnsigned(unsigned int v){return Box<unsigned int,3>(v);}
+Box<int,4> makeFour(int v){return Box<int,4>(v);}
+Box<int,3> makeDefault(){return Box<int,3>();}
+Box<int,3> copyDefault(const Box<int,3>&v){return Box<int,3>(v);}
+Box<int,3> copyExplicit(const Box<int,3>&v){return Box<int,3>(v,5);}
+Box<int,3> moveValue(Box<int,3>&v){return Box<int,3>(static_cast<Box<int,3>&&>(v));}
+Order<int,2> ordered(int v){return Order<int,2>(v);}
+Local<int> localInt(int v){return Local<int>(v);}
+Local<unsigned int> localUnsigned(unsigned int v){return Local<unsigned int>(v);}
+State<3> firstState(){return State<3>();}
+State<1+2> sameState(){return State<1+2>();}
+State<4> nextState(){return State<4>();}
+State<3u> unsignedState(){return State<3u>();}
+OtherState<3> otherState(){return OtherState<3>();}
+int cleanup(){WithGuard<int>v(3);return v.member.n;}
+template<class T>class Private{T n;public:Private(T v):n(v){}T get()const{return n;}};
+Private<int> privateValue(int v){return Private<int>(v);}
+int privateRead(const Private<int>&v){return v.get();}
+"""
+    class_constructors = check("v2-class-constructors-protocol", class_constructors_source, profile="cpp-core-v2")
+    cc_records = {r["id"]: r for r in class_constructors["records"]}
+    cc_functions = {f["name"]: f for f in class_constructors["functions"]}
+    cc_globals = {g["name"]: g for g in class_constructors["globals"]}
+    assert len(cc_records) == len(class_constructors["records"])
+    assert len(cc_functions) == len(class_constructors["functions"])
+    assert len(cc_globals) == len(class_constructors["globals"])
+
+    def cc_line(prefix):
+        lines = [i for i, line in enumerate(class_constructors_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def cc_function(prefix):
+        found = [f for f in class_constructors["functions"] if f["loc"]["line"] == cc_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def cc_selected(prefix):
+        calls = gc_calls(cc_function(prefix))
+        assert len(calls) == 1, (prefix, calls)
+        return cc_functions[calls[0]["callee"]]
+
+    def cc_signature(function, result, params):
+        assert function["result"] == result and [p["type"] for p in function["params"]] == params, function
+
+    def cc_members(function, expr):
+        pending = [expr]
+        expanded = set()
+        result = []
+        while pending:
+            current = pending.pop()
+            if current.get("kind") == "member":
+                result.append(current["name"])
+            pending.extend(current.get("args", []))
+            if current.get("kind") == "var" and current["name"] not in expanded:
+                name = current["name"]
+                expanded.add(name)
+                if not any(p["name"] == name for p in function["params"]):
+                    values = [n["value"] for n in function["body"] if n["op"] == "assign"
+                              and n["target"].get("kind") == "var" and n["target"]["name"] == name]
+                    assert len(values) == 1, (name, values)
+                    pending.extend(values)
+        return result
+
+    constructors = []
+    records = []
+    for prefix, scalar in (("Box<int,3> makeInt(", "int"), ("Box<unsigned int,3> makeUnsigned(", "uint"),
+                           ("Box<int,4> makeFour(", "int")):
+        caller = cc_function(prefix)
+        constructor = cc_selected(prefix)
+        receiver = caller["params"][0]["type"]
+        assert receiver.startswith("ptr:")
+        record = cc_records[receiver[4:]]
+        constructors.append(constructor)
+        records.append(record)
+        assert [f["type"] for f in record["fields"]] == [scalar]
+        cc_signature(caller, "void", [receiver, scalar])
+        cc_signature(constructor, "void", [receiver, scalar])
+        assert constructor["loc"]["line"] == cc_line(" Box(T v=")
+        call = gc_calls(caller)[0]
+        assert np_pointer(caller, call["args"][0]) == ("parameter", caller["params"][0]["name"])
+        assert gc_identity(caller, call["args"][1]) == ("parameter", caller["params"][1]["name"])
+        writes = [n for n in constructor["body"] if n["op"] == "assign" and n["target"].get("kind") == "member"]
+        assert len(writes) == 1
+        assert np_place(constructor, writes[0]["target"]) == ("field", ("parameter", constructor["params"][0]["name"]), record["fields"][0]["name"])
+        assert gc_identity(constructor, writes[0]["value"]) == ("parameter", constructor["params"][1]["name"])
+    assert len({f["name"] for f in constructors}) == 3
+    assert len({r["id"] for r in records}) == 3
+    assert len({r["fields"][0]["name"] for r in records}) == 3
+    assert cc_selected("Box<int,1+2> makeSame(")["name"] == constructors[0]["name"]
+    default = cc_function("Box<int,3> makeDefault(")
+    assert cc_selected("Box<int,3> makeDefault(")["name"] == constructors[0]["name"]
+    assert gc_identity(default, gc_calls(default)[0]["args"][1]) == 3
+    rid = records[0]["id"]
+    copy = cc_selected("Box<int,3> copyDefault(")
+    assert copy["name"] == cc_selected("Box<int,3> copyExplicit(")["name"]
+    cc_signature(copy, "void", ["ptr:"+rid, "cptr:"+rid, "int"])
+    for prefix, value in (("Box<int,3> copyDefault(", 3), ("Box<int,3> copyExplicit(", 5)):
+        caller = cc_function(prefix)
+        cc_signature(caller, "void", ["ptr:"+rid, "cptr:"+rid])
+        call = gc_calls(caller)[0]
+        assert np_pointer(caller, call["args"][0]) == ("parameter", caller["params"][0]["name"])
+        assert np_pointer(caller, call["args"][1]) == ("parameter", caller["params"][1]["name"])
+        assert gc_identity(caller, call["args"][2]) == value
+    move = cc_selected("Box<int,3> moveValue(")
+    cc_signature(move, "void", ["ptr:"+rid, "ptr:"+rid])
+    assert move["name"] not in (copy["name"], constructors[0]["name"])
+    move_writes = [n for n in move["body"] if n["op"] == "assign" and n["target"].get("kind") == "member"]
+    assert [np_place(move, n["target"]) for n in move_writes] == [
+        ("field", ("parameter", move["params"][0]["name"]), records[0]["fields"][0]["name"]),
+        ("field", ("parameter", move["params"][1]["name"]), records[0]["fields"][0]["name"])]
+    assert gc_identity(move, move_writes[0]["value"]) == ("member", ("parameter", move["params"][1]["name"]), records[0]["fields"][0]["name"])
+    ordered = cc_selected("Order<int,2> ordered(")
+    ordered_record = cc_records[ordered["params"][0]["type"][4:]]
+    fields = ordered_record["fields"]
+    writes = [n for n in ordered["body"] if n["op"] == "assign" and n["target"].get("kind") == "member"]
+    assert [n["target"]["name"] for n in writes] == [f["name"] for f in fields]
+    accesses = cc_members(ordered, writes[1]["value"])
+    assert accesses == [fields[0]["name"]]
+    local_records = []
+    for prefix, scalar in (("Local<int> localInt(", "int"), ("Local<unsigned int> localUnsigned(", "uint")):
+        constructor = cc_selected(prefix)
+        types = {v["type"] for v in constructor["locals"] if v["type"] in cc_records}
+        assert len(types) == 1, (prefix, types)
+        record = cc_records[next(iter(types))]
+        assert [f["type"] for f in record["fields"]] == [scalar]
+        local_records.append(record)
+    assert local_records[0]["id"] != local_records[1]["id"]
+    assert local_records[0]["fields"][0]["name"] != local_records[1]["fields"][0]["name"]
+    assert cc_selected("State<3> firstState(")["name"] == cc_selected("State<1+2> sameState(")["name"]
+    storage = []
+    for prefix in ("State<3> firstState(", "State<4> nextState(", "State<3u> unsignedState(", "OtherState<3> otherState("):
+        constructor = cc_selected(prefix)
+        assert constructor["result"] == "void" and len(constructor["params"]) == 1
+        names = {n["name"] for n in walk(constructor["body"]) if n.get("kind") == "var" and n.get("name") in cc_globals}
+        assert len(names) == 1
+        storage.append(cc_globals[next(iter(names))])
+    assert len(cc_globals) == len({g["name"] for g in storage}) == 4
+    assert all(g["type"] == "int" and g["mutable"] for g in storage)
+    assert [int(g["value"]["value"]) for g in storage] == [3, 4, 3, 3]
+    guard = next(r for r in class_constructors["records"] if r["loc"]["line"] == cc_line("struct Guard{"))
+    cleanup = cc_function("int cleanup(")
+    calls = gc_calls(cleanup)
+    assert len(calls) == 2
+    owner = cc_records[calls[0]["args"][0]["type"][4:]]
+    assert [f["type"] for f in owner["fields"]] == [guard["id"], "arr:2:"+guard["id"]]
+    assert calls[1]["callee"] == owner["id"]+"_destroy"
+    assert gc_identity(cleanup, calls[0]["args"][1]) == 3
+    assert np_pointer(cleanup, calls[0]["args"][0]) == np_pointer(cleanup, calls[1]["args"][0])
+    constructor = cc_functions[calls[0]["callee"]]
+    initializers = gc_calls(constructor)
+    assert len(initializers) == 3
+    owner_param = ("parameter", constructor["params"][0]["name"])
+    field_base = ("field", owner_param, owner["fields"][1]["name"])
+    assert [np_pointer(constructor, n["args"][0]) for n in initializers] == [
+        ("field", owner_param, owner["fields"][0]["name"]), ("element", field_base, 0), ("element", field_base, 1)]
+    destructor = cc_functions[calls[1]["callee"]]
+    destroys = gc_calls(destructor)
+    assert len(destroys) == 3 and all(n["callee"] == guard["id"]+"_destroy" for n in destroys)
+    destroyed_param = ("parameter", destructor["params"][0]["name"])
+    field_base = ("field", destroyed_param, owner["fields"][1]["name"])
+    assert [np_pointer(destructor, n["args"][0]) for n in destroys] == [
+        ("element", field_base, 1), ("element", field_base, 0), ("field", destroyed_param, owner["fields"][0]["name"])]
+    returned = next(n["value"] for n in cleanup["body"] if n["op"] == "return")
+    captures = [i for i, n in enumerate(cleanup["body"]) if n["op"] == "assign" and n["target"].get("name") == returned.get("name")]
+    assert len(captures) == 1 and captures[0] < cleanup["body"].index(calls[1])
+    private_constructor = cc_selected("Private<int> privateValue(")
+    private_record = cc_records[private_constructor["params"][0]["type"][4:]]
+    assert [f["type"] for f in private_record["fields"]] == ["int"]
+    assert private_record["layout"] == records[0]["layout"]
+    private_getter = cc_selected("int privateRead(")
+    cc_signature(private_getter, "int", ["cptr:"+private_record["id"]])
+    assert {n["name"] for n in walk(private_getter["body"]) if n.get("kind") == "member"} == {private_record["fields"][0]["name"]}
+    for function in class_constructors["functions"]:
+        for call in gc_calls(function):
+            assert call["callee"] in cc_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in cc_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-class-constructors-relocated-") as temp:
+        relocated = check("v2-class-constructors-relocated", class_constructors_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == class_constructors
+    class_constructors_positive = {
+        'constructor': 'template<class T>struct R{T n;R(T v):n(v){}};',
+        'parameter': 'template<class T>struct R{T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
+        'default': 'template<class T,int N>struct R{T n;R(T v=N):n(v){}};int main(){R<int,3>r;return r.n;}',
+        'explicit': 'template<class T>struct R{T n;explicit R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
+        'conversion': 'template<class T>struct R{T n;R(T v):n(v){}};int main(){R<int>r=3;return r.n;}',
+        'copy': 'template<class T>struct R{T n;R(T v):n(v){}R(const R&r):n(r.n+1){}};int main(){R<int>a(3);R<int>b=a;return b.n;}',
+        'move': 'template<class T>struct R{T n;R(T v):n(v){}R(R&&r):n(r.n){r.n=-1;}};int main(){R<int>a(3);R<int>b(static_cast<R<int>&&>(a));return b.n;}',
+        'lazy-extra-copy-default': 'template<class T>struct R{T n;R(T v):n(v){}R(const R&r,int v=T::missing):n(r.n+v){}};int main(){R<int>a(3);R<int>b(a,4);return b.n;}',
+        'copy-default': 'template<class T,int N>struct R{T n;R(T v):n(v){}R(const R&r,int v=N):n(r.n+v){}};int main(){R<int,2>a(3);R<int,2>b=a;return b.n;}',
+        'lazy-body': 'template<class T>struct R{T n;R(){n=T::missing;}};int read(R<int>&r){return r.n;}',
+        'lazy-initializer': 'template<class T>struct R{T n;R():n(T::missing){}};int read(R<int>&r){return r.n;}',
+        'lazy-default': 'template<class T>struct R{T n;R(T v=T::missing):n(v){}};int main(){R<int>r(3);return r.n;}',
+        'lazy-missing': 'template<class T>struct R{T n;R();};int read(R<int>&r){return r.n;}',
+        'overload-candidate': 'template<class T>struct R{T n;R(T v):n(v){}R(T*);};int main(){R<int>r(3);return r.n;}',
+        'out-of-line': 'template<class T>struct R{T n;R(T);};template<class T>R<T>::R(T v):n(v){}int main(){R<int>r(3);return r.n;}',
+        'out-of-line-int-spelling': 'template<int N>struct R{int n;R();};template<decltype(1) N>R<N>::R():n(N){}int main(){R<3>r;return r.n;}',
+        'out-of-line-size-spelling': 'template<decltype(sizeof(int)) N>struct R{int n;R();};template<decltype(sizeof(int)) N>R<N>::R():n(static_cast<int>(N)){}int main(){R<3>r;return r.n;}',
+        'explicit-class': 'template<class T>struct R{T n;R(T v):n(v){}};template struct R<int>;',
+        'explicit-member': 'template<class T>struct R{T n;R(T v):n(v){}};template R<int>::R(int);',
+        'explicit-specialization': 'template<class T>struct R{T n;R(T v):n(v){}};template<>R<int>::R(int v):n(v+1){}int main(){R<int>r(3);return r.n;}',
+        'full-class-specialization': 'template<class T>struct R{T n;};template<>struct R<int>{int n;R(int v):n(v){}};int main(){R<int>r(3);return r.n;}',
+        'constexpr-noexcept': 'template<class T>struct R{T n;constexpr R(T v)noexcept:n(v){}};static_assert(R<int>(3).n==3);int main(){R<int>r(4);return r.n;}',
+        'implicit-field-initializer': 'struct I{int n;I():n(3){}};template<class T>struct R{I value;T n=4;R(){}};int main(){R<int>r;return r.value.n+r.n;}',
+        'field-array': 'struct I{int n;I():n(3){}};template<class T>struct R{I a[2];T n;R(T v):n(v){}};int main(){R<int>r(4);return r.a[1].n+r.n;}',
+        'array-filler': 'template<class T>struct R{T n;R():n(3){}R(T v):n(v){}};int main(){R<int>r[2]={R<int>(4)};return r[1].n;}',
+        'early-return': 'template<class T>struct R{T n;R(T v):n(v){if(v)return;n=3;}};int main(){R<int>r(4);return r.n;}',
+        'private-inside': 'template<class T>struct R{T n;static R make(T v){return R(v);}private:R(T v):n(v){}};int main(){R<int>r=R<int>::make(3);return r.n;}',
+        'namespace-import': 'namespace N{template<class T>struct R{T n;R(T v):n(v){}};}using N::R;int main(){R<int>r(3);return r.n;}',
+        'private-field': 'template<class T>class R{T n;};int main(){R<int>r;return sizeof(r);}',
+        'private-constructor-field': 'template<class T>class R{T n;public:R(T v):n(v){}T get()const{return n;}};int main(){R<int>r(3);return r.get();}',
+        'protected-constructor-field': 'template<class T>class R{protected:T n;public:R(T v):n(v){}T get()const{return n;}};int main(){R<int>r(3);return r.get();}',
+    }
+    for name, source in class_constructors_positive.items():
+        check("v2-class-constructors-positive-" + name, source, profile="cpp-core-v2")
+    class_constructors_reject = {
+        'floating-initializer': 'template<class T>struct R{T n;R():n(static_cast<int>(1.0)){}};int main(){R<int>r;return r.n;}',
+        'floating-body': 'template<class T>struct R{T n;R():n(3){double v=1.0;}};int main(){R<int>r;return r.n;}',
+        'floating-default': 'template<class T>struct R{T n;R(T v=static_cast<int>(1.0)):n(v){}};int main(){R<int>r;return r.n;}',
+        'floating-noexcept': 'template<class T>struct R{T n;R()noexcept(1.0>0.0):n(3){}};int main(){R<int>r;return r.n;}',
+        'forced-initializer': 'template<class T>struct R{T n;R():n(static_cast<int>(1.0)){}};template struct R<int>;',
+        'out-of-line-floating-type': 'template<int N>struct R{int n;R();};template<decltype(static_cast<int>(1.0)) N>R<N>::R():n(N){}',
+        'out-of-line-floating-size': 'template<decltype(sizeof(int)) N>struct R{int n;R();};template<decltype(sizeof(double)) N>R<N>::R():n(static_cast<int>(N)){}',
+        'attribute': 'template<class T>struct R{T n;[[deprecated]]R(T v):n(v){}};',
+        'parameter-attribute': 'template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};',
+        'delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};',
+        'defaulted': 'template<class T>struct R{T n;R()=default;};',
+        'destructor': 'template<class T>struct R{T n;R(T v):n(v){}~R(){}};',
+        'own-template': 'template<class T>struct R{T n;template<class U>R(U v):n(v){}};',
+        'operator': 'template<class T>struct R{T n;R(T v):n(v){}T operator()(){return n;}};',
+        'conversion-function': 'template<class T>struct R{T n;R(T v):n(v){}operator T(){return n;}};',
+        'static-data': 'template<class T>struct R{T n;static int v;R(T x):n(x){}};',
+        'base': 'struct I{int n;};template<class T>struct R:I{R(){}};',
+        'reference-field': 'template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}',
+        'const-field': 'template<class T>struct R{const T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
+        'floating-field': 'template<class T>struct R{double n;R(T v):n(v){}};int main(){R<int>r(3);return 0;}',
+        'mixed-access-layout': 'template<class T>class R{T n;public:T m;R(T v):n(v),m(v){}T get(){return n;}};int main(){R<int>r(3);return r.get();}',
+    }
+    for name, source in class_constructors_reject.items():
+        check("v2-class-constructors-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    class_constructors_invalid = {
+        'private': 'template<class T>struct R{T n;private:R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
+        'move-const': 'template<class T>struct R{T n;R(T v):n(v){}R(R&&r):n(r.n){}};int main(){const R<int>a(3);R<int>b(static_cast<const R<int>&&>(a));return b.n;}',
+        'copy-nonconst': 'template<class T>struct R{T n;R(T v):n(v){}R(R&r):n(r.n){}};int main(){const R<int>a(3);R<int>b(a);return b.n;}',
+        'selected-body': 'template<class T>struct R{T n;R(){n=T::missing;}};int main(){R<int>r;return r.n;}',
+        'selected-initializer': 'template<class T>struct R{T n;R():n(T::missing){}};int main(){R<int>r;return r.n;}',
+        'selected-default': 'template<class T>struct R{T n;R(T v=T::missing):n(v){}};int main(){R<int>r;return r.n;}',
+        'selected-copy-default': 'template<class T>struct R{T n;R(T v):n(v){}R(const R&r,int v=T::missing):n(r.n+v){}};int main(){R<int>a(3);R<int>b=a;return b.n;}',
+        'missing-argument': 'template<class T>struct R{T n;R(T v):n(v){}};int main(){R<int>r;return r.n;}',
+        'bad-member': 'template<class T>struct R{T n;R():missing(3){}};int main(){R<int>r;return r.n;}',
+        'late-specialization': 'template<class T>struct R{T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}template<>R<int>::R(int v):n(v+1){}',
+        'explicit-missing-definition': 'template<class T>struct R{T n;R(T);};template R<int>::R(int);',
+        'private-field-access': 'template<class T>class R{T n;public:R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
+        'protected-field-access': 'template<class T>class R{protected:T n;public:R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
+    }
+    for name, source in class_constructors_invalid.items():
+        check("v2-class-constructors-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    class_constructors_missing = {
+        'ordinary': 'template<class T>struct R{T n;R(T);};int main(){R<int>r(3);return r.n;}',
+        'copy': 'template<class T>struct R{T n;R(T v):n(v){}R(const R&);};int main(){R<int>a(3);R<int>b=a;return b.n;}',
+        'move': 'template<class T>struct R{T n;R(T v):n(v){}R(R&&);};int main(){R<int>a(3);R<int>b(static_cast<R<int>&&>(a));return b.n;}',
+        'sizeof': 'template<class T>struct R{T n;R(T v):n(v){}};int main(){return sizeof(R<int>(3));}',
+        'noexcept': 'template<class T>struct R{T n;R(T v)noexcept:n(v){}};int main(){return noexcept(R<int>(3));}',
+        'explicit-extern': 'template<class T>struct R{T n;R(T);};extern template R<int>::R(int);',
+        'explicit-specialization': 'template<class T>struct R{T n;R(T v):n(v){}};template<>R<int>::R(int);',
+    }
+    for name, source in class_constructors_missing.items():
+        check("v2-class-constructors-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-class-constructor", "template<class T>struct R{T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}", "TR0201")
+
     class_methods_source = """struct Guard{int n;Guard(int v):n(v){}~Guard(){n=99;}};
 template<class T,int N>struct Box{
  T n;
@@ -6329,7 +6614,6 @@ int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;r
         'volatile': 'template<class T>struct R{int f()volatile{return 1;}};',
         'deleted': 'template<class T>struct R{int f()=delete;};',
         'member-template': 'template<class T>struct R{template<class U>U f(U v){return v;}};',
-        'constructor': 'template<class T>struct R{T n;R(T v):n(v){}};',
         'destructor': 'template<class T>struct R{T n;~R(){}};',
         'operator': 'template<class T>struct R{T n;T operator()(){return n;}};',
         'conversion': 'template<class T>struct R{T n;operator int(){return 1;}};',
@@ -6578,7 +6862,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'value-pack': 'template<int...N>struct R{int n;};',
         'type-pack': 'template<class...T>struct R{int n;};',
         'template-template': 'template<template<class>class T>struct R{int n;};',
-        'constructor': 'template<class T>struct R{T n;R(T v):n(v){}};',
         'destructor': 'template<class T>struct R{T n;~R(){}};',
         'friend': 'template<class T>struct R{T n;friend int get(R r){return r.n;}};',
         'static-member': 'template<class T>struct R{inline static T n=1;};',
@@ -6590,7 +6873,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'selected-partial': 'template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};int main(){int n=3;R<int*>r{&n};return *r.n;}',
         'union': 'template<class T>union R{T n;int m;};',
         'base': 'struct B{int n;};template<class T>struct R:B{T m;};',
-        'private-field': 'template<class T>class R{T n;};int main(){R<int>r;return sizeof(r);}',
         'bitfield': 'template<class T>struct R{unsigned int n:3;};int main(){R<int>r{};return r.n;}',
         'mutable-field': 'template<class T>struct R{mutable T n;};int main(){R<int>r{3};return r.n;}',
         'const-field': 'template<class T>struct R{const T n;};int main(){R<int>r{3};return r.n;}',

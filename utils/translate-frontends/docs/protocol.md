@@ -129,21 +129,28 @@ Receiver effects and cleanup stay explicit; discarded and unevaluated values
 emit no scalar storage. Source address/reference uses still require a real
 definition. See [declaration-only static constants](cpp-core-v2.md#declaration-only-static-constant-values).
 
-Concrete core-v2 aggregate class-template instances use ordinary record/layout
+Concrete core-v2 standard-layout class-template instances use ordinary record/layout
 IR and existing field, array, copy and cleanup operations. Actual arguments
 participate in canonical record/field identity; equivalent arguments share a
 type, while different values, types or primaries remain distinct. Value arguments
 become typed constants, with no runtime template parameters. By-value dependencies
-remain ordered before their owners. See [aggregate class templates](cpp-core-v2.md#concrete-aggregate-class-templates)
+remain ordered before their owners. See [concrete class templates](cpp-core-v2.md#concrete-aggregate-class-templates)
 for source checks, declaration shape and remaining member/template limits.
 
-Ordinary named methods of admitted aggregate class-template instances use the
+Ordinary named methods of admitted standard-layout class-template instances use the
 existing function ABI: a cv-qualified receiver for instance methods, hidden
 storage for record results, and no receiver for static methods. Class arguments
 participate in method, local record/field and scalar static-storage identities.
 Equivalent instances share identities; differing values/types/primaries do not.
 No runtime template parameter is emitted. See [class-template methods](cpp-core-v2.md#ordinary-class-template-member-functions)
 for lazy bodies/defaults, source checks and definition requirements.
+
+User-provided class-template constructors use ordinary void functions with a
+destination pointer followed by runtime parameters. Copy/move source references,
+member declaration order, existing field/array cleanup and per-instance local
+identities are preserved. Selected constructors need materialized definitions;
+unused bodies/defaults remain lazy. See [class-template constructors](cpp-core-v2.md#class-template-constructors)
+for declaration, default-argument and lifetime boundaries.
 
 Concrete core-v2 free function-template instances use ordinary function, record,
 scalar-global and call IR. Primary-template ordinals and source identities

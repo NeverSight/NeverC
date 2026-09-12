@@ -54,9 +54,10 @@ static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
 }
 
 // Identity only: unused member instances can have an undeduced auto return.
-static const ClassTemplateDecl *classMethodPrimary(const FunctionDecl *F) {
+static const ClassTemplateDecl *classFunctionPrimary(const FunctionDecl *F) {
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
-  if (!M || M->getKind() != Decl::CXXMethod || !M->getIdentifier() ||
+  if (!M || (!isa<CXXConstructorDecl>(M) &&
+             (M->getKind() != Decl::CXXMethod || !M->getIdentifier())) ||
       M->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
       !M->getMemberSpecializationInfo() || M->getDescribedFunctionTemplate())
     return nullptr;
@@ -67,8 +68,8 @@ static const ClassTemplateDecl *classMethodPrimary(const FunctionDecl *F) {
   return Record->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>();
 }
 
-static bool concreteClassMethod(const FunctionDecl *F) {
-  return classMethodPrimary(F) && !F->isDependentContext() &&
+static bool concreteClassFunction(const FunctionDecl *F) {
+  return classFunctionPrimary(F) && !F->isDependentContext() &&
          !F->getType().isNull() && !F->getType()->isDependentType();
 }
 
@@ -76,7 +77,7 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
   if (!M || M->isImplicit() || !M->getIdentifier() || M->isVirtual() ||
       M->isExplicitObjectMemberFunction() || M->isVariadic() ||
       (M->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteClassMethod(M)) ||
+       !concreteClassFunction(M)) ||
       M->isDeletedAsWritten() || M->isExplicitlyDefaulted() || M->isConsteval() ||
       M->getMethodQualifiers().hasVolatile() ||
       M->getMethodQualifiers().hasRestrict())
@@ -127,7 +128,8 @@ bool ordinaryConversion(const CXXConversionDecl *C) {
 
 bool ordinaryConstructor(const CXXConstructorDecl *C) {
   if (!C || C->isImplicit() || !C->isUserProvided() || C->isVariadic() ||
-      C->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      (C->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       !concreteClassFunction(C)) ||
       C->isDeletedAsWritten() || C->isExplicitlyDefaulted() || C->isConsteval() ||
       C->isDelegatingConstructor() ||
       C->isInheritingConstructor())
@@ -138,7 +140,7 @@ bool ordinaryConstructor(const CXXConstructorDecl *C) {
     for (unsigned I = 1; I < C->getNumParams(); ++I) {
       const auto *P = C->getParamDecl(I);
       if (!P->hasDefaultArg() || P->hasUnparsedDefaultArg() ||
-          P->hasUninstantiatedDefaultArg())
+          (P->hasUninstantiatedDefaultArg() && !concreteClassFunction(C)))
         return false;
     }
     auto Source = C->getParamDecl(0)->getType();
@@ -618,7 +620,7 @@ static bool lazyTemplateDefault(const ParmVarDecl *P) {
       !P->hasUninstantiatedDefaultArg())
     return false;
   const auto *Function = dyn_cast<FunctionDecl>(P->getDeclContext());
-  return concreteFreeFunctionTemplate(Function) || concreteClassMethod(Function);
+  return concreteFreeFunctionTemplate(Function) || concreteClassFunction(Function);
 }
 
 const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context) {
@@ -628,7 +630,7 @@ const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context
     return nullptr;
   const auto *F = dyn_cast<FunctionDecl>(P->getDeclContext());
   if (!F || (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-             !concreteFreeFunctionTemplate(F) && !concreteClassMethod(F)) ||
+             !concreteFreeFunctionTemplate(F) && !concreteClassFunction(F)) ||
       P->getFunctionScopeIndex() >= F->getNumParams() ||
       F->getParamDecl(P->getFunctionScopeIndex()) != P)
     return nullptr;
@@ -1054,9 +1056,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return true;
   }
-  bool classTemplateMethodShape(const CXXMethodDecl *M) {
+  bool classTemplateFunctionShape(const CXXMethodDecl *M) {
     if (!M || !owned(M) || M->isInvalidDecl() || M->hasAttrs() ||
-        M->getKind() != Decl::CXXMethod || !M->getIdentifier() ||
         M->getFriendObjectKind() || M->getDescribedFunctionTemplate() ||
         M->getPrimaryTemplate() || M->isVirtual() || M->isVariadic() ||
         M->isDeletedAsWritten() || M->isDefaulted() || M->isConsteval() ||
@@ -1064,6 +1065,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         M->getMethodQualifiers().hasVolatile() ||
         M->getMethodQualifiers().hasRestrict())
       return false;
+    if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(M)) {
+      if (!Constructor->isUserProvided() || Constructor->isDelegatingConstructor() ||
+          Constructor->isInheritingConstructor() || Constructor->isStatic() ||
+          Constructor->getMethodQualifiers().getCVRQualifiers())
+        return false;
+    } else if (M->getKind() != Decl::CXXMethod || !M->getIdentifier()) {
+      return false;
+    }
     A.chargeExpansion(1, M->getLocation());
     for (const auto *Parameter : M->parameters()) {
       A.chargeExpansion(1, Parameter->getLocation());
@@ -1081,7 +1090,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!owned(Member) || Member->isInvalidDecl() || Member->hasAttrs() ||
           (!isa<FieldDecl, TypedefNameDecl, EnumDecl, EnumConstantDecl,
                 StaticAssertDecl, AccessSpecDecl>(Member) &&
-           !classTemplateMethodShape(dyn_cast<CXXMethodDecl>(Member))))
+           !classTemplateFunctionShape(dyn_cast<CXXMethodDecl>(Member))))
         return false;
     }
     return true;
@@ -1620,7 +1629,7 @@ public:
       return false;
     if (!classTemplateShape(D)) {
       A.reject(D->getLocation(), "class template",
-               "Only owned namespace aggregate templates with supported parameters and field/type/named-method declarations are admitted.");
+               "Only owned namespace class templates with supported parameters and field/type/named-method/constructor declarations are admitted.");
       return true;
     }
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
@@ -1684,17 +1693,17 @@ public:
             Primary && Method->getParent()->isDependentContext()) {
           // Out-of-line definitions are separate declarations in the namespace.
           // Their own outer parameter spelling must be checked before erasure.
-          if (!classTemplateShape(Primary) || !classTemplateMethodShape(Method) ||
+          if (!classTemplateShape(Primary) || !classTemplateFunctionShape(Method) ||
               Method->getNumTemplateParameterLists() > 1) {
-            A.reject(Method->getLocation(), "class template method pattern",
-                     "An ordinary named method of an admitted namespace class template is required.");
+            A.reject(Method->getLocation(), "class template function pattern",
+                     "An ordinary named method or constructor of an admitted namespace class template is required.");
             return true;
           }
           for (unsigned I = 0; I < Method->getNumTemplateParameterLists(); ++I) {
             const auto *Parameters = Method->getTemplateParameterList(I);
             A.chargeExpansion(1, Method->getLocation());
             if (!templateParametersShape(Parameters)) {
-              A.reject(Method->getLocation(), "method template parameters",
+              A.reject(Method->getLocation(), "class function template parameters",
                        "An admitted outer class parameter list is required.");
               return true;
             }
@@ -1703,19 +1712,19 @@ public:
           }
           return true; // No uninstantiated body, qualifier or function default.
         }
-        if (const auto *Primary = classMethodPrimary(Method)) {
-          if (!classTemplateShape(Primary) || !classTemplateMethodShape(Method)) {
-            A.reject(Method->getLocation(), "class template method",
-                     "A named method instance of an admitted owned primary is required.");
+        if (const auto *Primary = classFunctionPrimary(Method)) {
+          if (!classTemplateShape(Primary) || !classTemplateFunctionShape(Method)) {
+            A.reject(Method->getLocation(), "class template function",
+                     "A named method or constructor instance of an admitted owned primary is required.");
             return true;
           }
           auto Kind = Method->getTemplateSpecializationKind();
           if (!Method->hasBody() &&
               (Kind == TSK_Undeclared || Kind == TSK_ImplicitInstantiation))
             return true; // Includes still-undeduced auto results of unused methods.
-          if (!concreteClassMethod(Method)) {
-            A.reject(Method->getLocation(), "class template method type",
-                     "A materialized method requires a resolved function type.");
+          if (!concreteClassFunction(Method)) {
+            A.reject(Method->getLocation(), "class template function type",
+                     "A materialized member function requires a resolved type.");
             return true;
           }
           if (!CheckedTemplateDeclarations.insert(Method).second)
@@ -2086,7 +2095,7 @@ public:
     if (!owned(D))
       return true;
     const bool Template = A.S.coreV2() && concreteFreeFunctionTemplate(D);
-    const bool ClassMethod = A.S.coreV2() && concreteClassMethod(D);
+    const bool ClassMethod = A.S.coreV2() && concreteClassFunction(D);
     if (Template) {
       const auto *Primary = D->getPrimaryTemplate();
       const auto *Arguments = D->getTemplateSpecializationArgs();
@@ -2246,7 +2255,7 @@ public:
           Parent->getCanonicalDecl() != LexicalParent->getCanonicalDecl() ||
           Parent->isDependentContext() || Parent->isConstexpr() ||
           (Parent->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-           !concreteFreeFunctionTemplate(Parent) && !concreteClassMethod(Parent)) ||
+           !concreteFreeFunctionTemplate(Parent) && !concreteClassFunction(Parent)) ||
           D->hasExternalStorage() || D->getTLSKind() != VarDecl::TLS_None ||
           D->getType().isVolatileQualified() ||
           !D->getType()->isIntegralOrEnumerationType() || Definition != D) {
@@ -2367,9 +2376,9 @@ public:
         const auto *Primary = Specialization->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>();
         if (Specialization->getKind() != Decl::ClassTemplateSpecialization ||
             D->isDependentContext() || !classTemplateShape(Primary) ||
-            !D->isAggregate() || !classTemplateMembers(D)) {
+            !D->isStandardLayout() || !classTemplateMembers(D)) {
           A.reject(D->getLocation(), "class template specialization",
-                   "A concrete aggregate specialization of an admitted owned primary is required.");
+                   "A concrete standard-layout specialization of an admitted owned primary is required.");
           return true;
         }
         checkTemplateArguments(Primary->getTemplateParameters(),
