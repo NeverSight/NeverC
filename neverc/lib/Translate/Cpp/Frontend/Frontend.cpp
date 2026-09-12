@@ -108,8 +108,14 @@ bool ordinaryConstructor(const CXXConstructorDecl *C) {
       C->isInheritingConstructor())
     return false;
   if (C->isCopyOrMoveConstructor()) {
-    if (C->getNumParams() != 1)
+    if (!C->getNumParams())
       return false;
+    for (unsigned I = 1; I < C->getNumParams(); ++I) {
+      const auto *P = C->getParamDecl(I);
+      if (!P->hasDefaultArg() || P->hasUnparsedDefaultArg() ||
+          P->hasUninstantiatedDefaultArg())
+        return false;
+    }
     auto Source = C->getParamDecl(0)->getType();
     if (C->isMoveConstructor() ? !Source->isRValueReferenceType()
                                : !Source->isLValueReferenceType())
@@ -447,6 +453,42 @@ const InitListExpr *emptyVoidInitializer(const Expr *E) {
       (!List->getType().isNull() && !List->getType()->isVoidType()))
     return nullptr;
   return List;
+}
+
+const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context) {
+  if (!P || P->isImplicit() || P->isInvalidDecl() || !P->hasDefaultArg() ||
+      P->hasUnparsedDefaultArg() || P->hasUninstantiatedDefaultArg() ||
+      P->getType().isNull() || P->getType()->isDependentType())
+    return nullptr;
+  const auto *F = dyn_cast<FunctionDecl>(P->getDeclContext());
+  if (!F || F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      P->getFunctionScopeIndex() >= F->getNumParams() ||
+      F->getParamDecl(P->getFunctionScopeIndex()) != P)
+    return nullptr;
+  const auto *Init = P->getDefaultArg();
+  if (!Init || Init->getType().isNull() || Init->isTypeDependent() ||
+      Init->isValueDependent() || Init->isInstantiationDependent() ||
+      !Context.hasSameUnqualifiedType(P->getType().getNonReferenceType(),
+                                      Init->getType()))
+    return nullptr;
+  return Init;
+}
+
+const Expr *selectedDefaultArgument(const CXXDefaultArgExpr *Default,
+                                    ASTContext &Context) {
+  if (!Default || !defaultArgumentInitializer(Default->getParam(), Context) ||
+      Default->getType().isNull() || Default->isTypeDependent() ||
+      Default->isValueDependent() || Default->isInstantiationDependent())
+    return nullptr;
+  // getExpr() selects Sema's per-use rewrite when one exists. Its original
+  // parameter initializer remains independently checked at the declaration.
+  const auto *Init = Default->getExpr();
+  if (!Init || Init->getType().isNull() || Init->isTypeDependent() ||
+      Init->isValueDependent() || Init->isInstantiationDependent() ||
+      !Context.hasSameType(Default->getType(), Init->getType()) ||
+      Default->getValueKind() != Init->getValueKind())
+    return nullptr;
+  return Init;
 }
 
 bool ordinaryDestructor(const CXXDestructorDecl *D) {
@@ -817,6 +859,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   bool temporaryArrayBase(const Expr *E, bool AllowFullExpression = false,
                           const VarDecl *ExpectedExtender = nullptr) {
     E = E->IgnoreParens();
+    if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(E)) {
+      const auto *Init = selectedDefaultArgument(Default, A.Context);
+      return !Init || temporaryArrayBase(Init, AllowFullExpression, ExpectedExtender);
+    }
     if (const auto *List = dyn_cast<InitListExpr>(E)) {
       const auto *Init = referenceListInitializer(List, A.Context);
       return !Init || temporaryArrayBase(Init, AllowFullExpression, ExpectedExtender);
@@ -851,6 +897,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   bool temporaryBinding(const Expr *E, bool AllowFullExpression = false,
                         const VarDecl *ExpectedExtender = nullptr) {
     E = E->IgnoreParens();
+    if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(E)) {
+      const auto *Init = selectedDefaultArgument(Default, A.Context);
+      return !Init || temporaryBinding(Init, AllowFullExpression, ExpectedExtender);
+    }
     if (const auto *List = dyn_cast<InitListExpr>(E)) {
       const auto *Init = referenceListInitializer(List, A.Context);
       return !Init || temporaryBinding(Init, AllowFullExpression, ExpectedExtender);
@@ -915,6 +965,20 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                "The temporary does not have an admitted lifetime for this reference binding.");
   }
 
+  void checkDefaultArgument(const Expr *E, const FunctionDecl *F, unsigned Index,
+                            SourceLocation L) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(E->IgnoreParens());
+    if (!Default)
+      return;
+    const auto *P = Default->getParam();
+    const auto *Owner = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
+    if (!selectedDefaultArgument(Default, A.Context) || !owned(P) || !Owner ||
+        !F || Owner->getCanonicalDecl() != F->getCanonicalDecl() ||
+        P->getFunctionScopeIndex() != Index)
+      A.reject(L, "default argument",
+               "The selected parameter and call argument slot must agree.");
+  }
+
   void queueGenerated(const CXXMethodDecl *Method, SourceLocation L) {
     const FunctionDecl *Definition = nullptr;
     if (Method->isTrivial() || !Method->hasBody(Definition))
@@ -948,9 +1012,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       const bool InlineMove = Constructor->isImplicit() && Constructor->isTrivial() &&
                               Constructor->isMoveConstructor();
       for (unsigned I = 0; I < C->getNumArgs() &&
-                           I < Constructor->getNumParams(); ++I)
+                           I < Constructor->getNumParams(); ++I) {
+        checkDefaultArgument(C->getArg(I), Constructor, I, L);
         if (!InlineMove && Constructor->getParamDecl(I)->getType()->isReferenceType())
           checkBinding(C->getArg(I), true);
+      }
     } else if (!Constructor->isImplicit() || !Constructor->isTrivial()) {
       A.reject(L, "construction",
                "Only admitted constructors and implicit trivial "
@@ -1073,6 +1139,35 @@ public:
       TraverseStmt(const_cast<CompoundStmt *>(Body));
       A.Functions.push_back(const_cast<CXXMethodDecl *>(Method));
     }
+  }
+  bool TraverseCXXDefaultArgExpr(CXXDefaultArgExpr *Default) {
+    const auto *P = Default->getParam();
+    auto L = Default->getUsedLocation();
+    if (L.isInvalid() && P)
+      L = P->getLocation();
+    auto SavedOwner = ImplicitInitializerOwner;
+    auto *SavedField = CurrentDefaultField;
+    auto *SavedMethod = CurrentMethod;
+    ImplicitInitializerOwner = L;
+    CurrentDefaultField = nullptr;
+    CurrentMethod = nullptr;
+    auto Restore = llvm::make_scope_exit([&] {
+      ImplicitInitializerOwner = SavedOwner;
+      CurrentDefaultField = SavedField;
+      CurrentMethod = SavedMethod;
+    });
+    if (!WalkUpFromCXXDefaultArgExpr(Default))
+      return false;
+    const auto *Init = selectedDefaultArgument(Default, A.Context);
+    if (!A.S.coreV2() || !Init || !owned(P) || !A.S.owns(A.Sources, L)) {
+      A.reject(L, "default argument",
+               "A resolved source-owned parameter default is required.");
+      return true;
+    }
+    A.chargeExpansion(1, L);
+    // This AST node has no children. Traverse its selected expression now,
+    // without borrowing a caller's this or caching a per-use runtime value.
+    return TraverseStmt(const_cast<Expr *>(Init));
   }
   bool TraverseCXXDefaultInitExpr(CXXDefaultInitExpr *Default) {
     const auto *Field = Default->getField();
@@ -1253,11 +1348,19 @@ public:
     if (!owned(D))
       return true;
     A.type(D->getType(), D->getLocation());
+    const auto *Parameter = dyn_cast<ParmVarDecl>(D);
+    const bool HasDefault = Parameter && Parameter->hasDefaultArg();
+    if (HasDefault && (!A.S.coreV2() ||
+                       !defaultArgumentInitializer(Parameter, A.Context))) {
+      A.reject(D->getLocation(), "default argument",
+               "Only resolved core-v2 parameter defaults are supported.");
+      return true;
+    }
     if (A.S.coreV2() && D->isStaticDataMember())
       A.reject(D->getLocation(), "static data member",
                "Static data members require class storage and initialization lowering.");
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
-      checkBinding(D->getInit(), false,
+      checkBinding(D->getInit(), HasDefault,
                    D->getKind() == Decl::Var && D->isLocalVarDecl() && D->hasLocalStorage()
                        ? D->getCanonicalDecl() : nullptr);
     if (A.S.coreV2() && !D->isLocalVarDeclOrParm() &&
@@ -1278,9 +1381,6 @@ public:
       A.reject(D->getLocation(), "storage duration",
                "Static/thread-local locals and local extern declarations are "
                "unsupported.");
-    if (const auto *P = dyn_cast<ParmVarDecl>(D); P && P->hasDefaultArg())
-      A.reject(D->getLocation(), "default argument",
-               "Default arguments are outside the core profile.");
     if (!D->isLocalVarDeclOrParm()) {
       if (A.S.project()) {
         auto &Declaration = A.GlobalDeclarations[D->getCanonicalDecl()];
@@ -1465,7 +1565,8 @@ public:
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
               DefaultStmt, AttributedStmt, CharacterLiteral,
-              UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr, CXXDefaultInitExpr>(S)) &&
+              UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
+              CXXDefaultInitExpr, CXXDefaultArgExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -1561,9 +1662,11 @@ public:
         }
       }
       if (A.S.coreV2() && F && !InlineMove && (!Method || callableMethod(Method)))
-        for (unsigned I = 0; I < F->getNumParams() && I + ArgumentOffset < C->getNumArgs(); ++I)
+        for (unsigned I = 0; I < F->getNumParams() && I + ArgumentOffset < C->getNumArgs(); ++I) {
+          checkDefaultArgument(C->getArg(I + ArgumentOffset), F, I, L);
           if (F->getParamDecl(I)->getType()->isReferenceType())
             checkBinding(C->getArg(I + ArgumentOffset), true);
+        }
       if (A.S.math() && F &&
           (F->getBuiltinID() || !A.S.owns(A.Sources, F->getLocation()))) {
         if (A.mapping(C).empty())

@@ -201,6 +201,23 @@ and early exits use the existing control-flow cleanup. Protocol major 1 and its
 opcodes remain unchanged. See the
 [source lifetime contract](cpp-core-v2.md#automatic-local-reference-lifetime-extension).
 
+## Core v2 default argument evaluation
+
+Default arguments are expanded at the selected call site using checked semantic
+expressions from source-owned parameters. The wire signature has no optional
+parameters or default metadata: ordinary calls contain every argument, with the
+same reference carriers and actual record parameter destinations as explicit
+arguments. Defaults are never executed in a callee prologue or cached by AST
+identity. Explicit arguments omit their default's runtime instructions while
+source admission still inspects the default expression.
+
+Default-argument temporaries use the existing typed storage and cleanup guards.
+Array elements with omitted initializers and generated whole-array copying use
+a cleanup frame per element; explicit array clauses keep the enclosing complete
+expression. The containing array retains element ownership. No opcode, schema
+or protocol version is added. See the
+[default argument source contract](cpp-core-v2.md#default-arguments).
+
 ## Core v2 void expression effects
 
 Void casts and value initialization have no semantic value carrier. Source effects

@@ -1018,6 +1018,15 @@ class FunctionLowering {
   }
   Expression argument(const Expr *Arg, QualType ParameterType) {
     auto L = Arg->getExprLoc();
+    if (A.S.coreV2())
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Arg)) {
+        const auto *Init = selectedDefaultArgument(Default, A.Context);
+        if (!Init)
+          reject(L, "default argument",
+                 "A checked selected default expression is required.");
+        A.chargeExpansion(1, L);
+        return argument(Init, ParameterType);
+      }
     if (ParameterType->isReferenceType())
       return snapshot(bind(Arg, ParameterType), L);
     if (recordValue(ParameterType)) {
@@ -1086,7 +1095,11 @@ class FunctionLowering {
         reject(L, "array construction", "Array construction exceeds the storage limit.");
       for (unsigned N = 0; N < Count; ++N) {
         A.chargeExpansion(1, L);
+        // A shared array construction has no explicit element clauses.
+        // Default-argument temporaries end before constructing the next element.
+        beginFullExpression();
         construct(initialElement(Place, Element, N, L), Element, C, L);
+        endFullExpression();
       }
       return;
     }
@@ -1289,8 +1302,12 @@ class FunctionLowering {
         A.chargeExpansion(1, L);
         ArrayIndices.push_back({N, L});
         auto RestoreIndex = llvm::make_scope_exit([&] { ArrayIndices.pop_back(); });
+        // Copying an entire array gives each element's constructor defaults
+        // their own temporary cleanup boundary, while the array owns elements.
+        beginFullExpression();
         initialize(initialElement(Place, Array->getElementType(), unsigned(N), L),
                    Loop->getSubExpr(), L);
+        endFullExpression();
       }
       return;
     }
@@ -1312,11 +1329,18 @@ class FunctionLowering {
           reject(L, "array initialization", "Too many semantic initializers.");
         for (unsigned N = 0; N < Count; ++N) {
           auto Target = initialElement(Place, Element, N, L);
-          const Expr *Value = N < I->getNumInits() ? I->getInit(N) : I->getArrayFiller();
+          const bool Omitted = N >= I->getNumInits();
+          const Expr *Value = Omitted ? I->getArrayFiller() : I->getInit(N);
+          // Explicit clauses retain the enclosing list's full expression.
+          // Only omitted elements use the default-argument array exception.
+          if (Omitted)
+            beginFullExpression();
           if (Value)
             initialize(std::move(Target), Value, L);
           else
             initializeZero(std::move(Target), Element, L);
+          if (Omitted)
+            endFullExpression();
         }
         return;
       }

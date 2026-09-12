@@ -71,6 +71,8 @@ Core v2 supporta classi vuote a layout standard e oggetti funzione o conversione
 
 Core v2 supporta conversioni a void, `void()` e `void{}`, insieme ad alias void compatibili, chiamate, ritorni, espressioni virgola e rami condizionali. Scartare un lvalue non volatile conserva gli effetti del ricevitore e dell’indice senza leggerne il valore memorizzato. Gli oggetti temporanei vengono comunque costruiti e distrutti alla fine dell’espressione completa originale. Non vengono generate variabili o valori void. Gli operandi costanti e noexcept restano verificati. Oggetti volatile, tipi non supportati, template e STL completa restano fuori da questa fase.
 
+Core v2 supporta argomenti predefiniti per funzioni, metodi, operatori di chiamata e costruttori utente ammessi, inclusi parametri finali dei costruttori di copia e spostamento. I nomi vengono risolti alla dichiarazione e le espressioni valutate a ogni chiamata che omette l’argomento. Identità e durata di riferimenti e valori restano invariate. Gli elementi di array senza inizializzatore e le copie generate distruggono i temporanei degli argomenti predefiniti prima dell’elemento successivo; le clausole esplicite conservano il limite dell’espressione completa esterna. Anche i valori inutilizzati o sostituiti vengono verificati. Template e STL completa restano incompleti.
+
 ## Progetti con più file
 
 Selezionare esplicitamente le unità di traduzione da un database di compilazione e specificare la directory radice del progetto. Il frontend integrato analizza ogni unità separatamente; la fusione verifica definizioni, collegamento, tipi condivisi e il rispetto della regola di definizione unica (ODR) mediante verifiche conservative.

@@ -71,6 +71,8 @@ Core v2 supports empty standard-layout classes and stateless callable/conversion
 
 Core v2 supports casts to void, `void()` and `void{}`, including supported void aliases, calls, returns, comma expressions and conditional branches. Discarding a nonvolatile lvalue preserves receiver/index effects without reading its stored value; discarding a temporary still constructs and destroys it at the existing full-expression boundary. No void variable or value carrier is emitted. Constant and noexcept operands remain fully checked. Volatile objects, unsupported operand types, templates and complete STL remain outside this increment.
 
+Core v2 supports resolved default arguments for admitted functions, methods, call operators and user constructors, including trailing defaults on user copy/move constructors. Defaults retain declaration-time name lookup and are evaluated on each call that omits the argument. Reference and value arguments keep their normal identity and cleanup. Array elements with omitted initializers and generated array copies clean up default-argument temporaries before the next element; explicit array clauses retain the enclosing full expression. Unused and overridden defaults remain checked. Templates and complete STL remain unfinished.
+
 ## Multi-file projects
 
 Select the translation units explicitly from a compilation database and set the project root directory. The built-in frontend analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).

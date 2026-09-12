@@ -1595,7 +1595,6 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
       {"deleted-assignment", "struct R{int n;R&operator=(const R&)=delete;};"},
       {"volatile-constructor", "struct R{int n;R(const volatile R&r):n(r.n){}};"},
       {"volatile-assignment", "struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};"},
-      {"default-argument", "struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -1823,7 +1822,6 @@ TEST_F(TranslateTest, CoreV2OperatorsRetainSourceAndLifetimeBoundaries) {
       {"volatile-receiver", "struct R{int n;int operator()()volatile{return n;}};", "TR0201"},
       {"volatile-argument", "struct R{int n;int operator+(volatile R&r)const{return r.n;}};", "TR0201"},
       {"template", "struct R{int n;template<class T>int operator()(T v){return n;}};", "TR0201"},
-      {"default-argument", "struct R{int n;int operator()(int v=1){return n+v;}};", "TR0201"},
       {"friend", "struct R{int n;friend int operator+(const R&r,int v){return r.n+v;}};", "TR0201"},
       {"member-pointer", "struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}", "TR0201"},
       {"free-pointer", "struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}", "TR0201"},
@@ -2023,7 +2021,6 @@ TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
       {"unused-throw", "struct R{operator int()const{throw 1;}};", "TR0201"},
       {"query-throw", "struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}", "TR0201"},
       {"folded-float", "struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,\"value\");", "TR0201"},
-      {"default-argument", "int g(int n=1){return n;}struct R{operator int()const{return g();}};", "TR0201"},
       {"virtual", "struct R{virtual operator int()const{return 1;}};", "TR0201"},
       {"explicit-copy", "struct R{explicit operator int()const{return 1;}};int f(){R r;int n=r;return n;}", "TR0202"},
       {"parameters", "struct R{operator int(int n){return n;}};", "TR0202"},
@@ -2048,6 +2045,265 @@ TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
   for (const std::string &Code : {
       "struct R{int n;operator int()const{return n;}};",
       "struct R{explicit operator bool()const{return true;}};bool f(R&r){return static_cast<bool>(r);}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultArgumentsPreserveEffectsAndCleanup) {
+  const auto Source = tmpFile("default-arguments.cpp");
+  const auto Output = tmpFile("default-arguments.nc");
+  writeFile(Source, R"cpp(
+int calls=0,value=7,trace=0,traceOn=0,tokenLive=0,tokenMade=0,tokenDead=0,bad=0;
+int recordLive=0,recordMade=0,recordDead=0,recordCopied=0,recordMoved=0,recordLog=0,elementDead=0;
+int next(){return ++calls;}
+int&alias(){++calls;return value;}
+int*pointer(){++calls;return &value;}
+void reset(){calls=trace=traceOn=tokenLive=tokenMade=tokenDead=bad=0;recordLive=recordMade=recordDead=recordCopied=recordMoved=recordLog=elementDead=0;}
+struct Token{
+ int n;Token*self;
+ Token(int v):n(v),self(this){++tokenLive;++tokenMade;if(traceOn)trace=trace*10+1;}
+ ~Token(){if(self!=this)++bad;--tokenLive;++tokenDead;if(traceOn)trace=trace*10+3;}
+};
+struct Record{
+ int n;Record*self;
+ Record(int v=next()):n(v),self(this){++recordLive;++recordMade;}
+ Record(const Record&r,int extra=next()):n(r.n+extra),self(this){++recordLive;++recordMade;++recordCopied;}
+ Record(Record&&r,int extra=next()):n(r.n+extra),self(this){++recordLive;++recordMade;++recordMoved;r.n=0;}
+ ~Record(){if(self!=this)++bad;--recordLive;++recordDead;recordLog=recordLog*10+n;}
+ Record&get(){return *this;}
+};
+struct Element{
+ int seen;
+ Element(const Token&t=Token(1)):seen(tokenLive){if(t.n!=1)++bad;if(traceOn)trace=trace*10+2;}
+ Element(const Element&e,const Token&t=Token(1)):seen(tokenLive){if(t.n!=1)++bad;if(traceOn)trace=trace*10+2;}
+ Element(Element&&e,const Token&t=Token(1)):seen(tokenLive){if(t.n!=1)++bad;if(traceOn)trace=trace*10+2;}
+ ~Element(){++elementDead;}
+};
+struct Group{Element elements[2];};
+struct Methods{
+ int n;
+ int get(int v=next()){return n+v;}
+ static int stat(int v=next()){return v;}
+ int operator()(int v=next()){return n+v;}
+};
+namespace Defaults{int number=11;int read(int n=number){return n;}}
+int scalar(int n=next()){return n;}
+int nested(int n=scalar()){return n;}
+int added(int a,int b=4);
+int added(int a=3,int b){return a*10+b;}
+int reference(int&n=alias()){return ++n;}
+int pointed(int*p=pointer()){return ++*p;}
+int constantReference(const int&n=next()){return n;}
+int observed(const Token&t=Token(5)){return tokenLive*10+t.n;}
+int observedMember(const int&n=Token(6).n){return tokenLive*10+n;}
+using Values=int[2];
+int arrayReference(const Values&v=Values{3,4}){return v[0]+v[1];}
+int recordValue(Record r=Record(2)){return r.n;}
+int recordCopy(Record r=Record(2).get()){return r.n;}
+int recordMove(Record r=static_cast<Record&&>(Record(2))){return r.n;}
+struct Empty{};
+int empty(Empty e=Empty{}){return sizeof(e);}
+int mixed(int explicitValue,int omitted=next()){return explicitValue*10+omitted;}
+int observeTokens(){return tokenLive;}
+constexpr int folded(int n=7){return n;}
+constexpr int foldedValue=folded();
+enum class Mode:unsigned char{on=9};
+int narrow(unsigned char n=255,Mode m=Mode::on,bool b=true){return n+static_cast<int>(m)+(b?1:0);}
+void quiet(int n=1)noexcept{}
+void throwingDefault(int n=next())noexcept{}
+static_assert(folded()==7&&noexcept(quiet())&&!noexcept(throwingDefault()));
+int main(){
+ reset();int a=scalar(),b=scalar();
+ if(a!=1||b!=2||calls!=2)return 1;
+ if(scalar(9)!=9||calls!=2)return 2;
+ if(nested()!=3||calls!=3)return 3;
+ if(added()!=34||added(8)!=84||added(8,9)!=89)return 4;
+ int number=99;
+ if(Defaults::read()!=11||number!=99)return 5;
+ Defaults::number=12;
+ if(Defaults::read()!=12)return 6;
+ if(narrow()!=265||narrow(1,Mode::on,false)!=10)return 7;
+ reset();Methods methods{10};
+ if(methods.get()!=11||Methods::stat()!=2||methods()!=13||calls!=3)return 8;
+ reset();value=7;
+ if(reference()!=8||value!=8||calls!=1)return 9;
+ if(pointed()!=9||value!=9||calls!=2)return 10;
+ if(constantReference()!=3||calls!=3)return 11;
+ if(arrayReference()!=7)return 12;
+ reset();int observedValue=observed();
+ if(observedValue!=15||tokenLive||tokenMade!=1||tokenDead!=1||bad)return 13;
+ reset();observedValue=observedMember();
+ if(observedValue!=16||tokenLive||tokenMade!=1||tokenDead!=1||bad)return 14;
+ reset();int stillLive=(observed(),observeTokens());
+ if(stillLive!=1||tokenLive||tokenMade!=1||tokenDead!=1)return 15;
+ reset();int fromValue=recordValue();
+ if(fromValue!=2||recordLive||recordMade!=1||recordDead!=1||recordCopied||recordMoved||bad||recordLog!=2)return 16;
+ reset();fromValue=recordCopy();
+ if(fromValue!=3||calls!=1||recordLive||recordMade!=2||recordDead!=2||recordCopied!=1||recordMoved||bad||recordLog!=32)return 17;
+ reset();fromValue=recordMove();
+ if(fromValue!=3||calls!=1||recordLive||recordMade!=2||recordDead!=2||recordCopied||recordMoved!=1||bad||recordLog!=30)return 18;
+ if(empty()!=1)return 19;
+ reset();
+ {Record first;Record second;
+  if(first.n!=1||second.n!=2||calls!=2||recordLive!=2||recordMade!=2||bad)return 20;}
+ if(recordLive||recordDead!=2||recordLog!=21)return 21;
+ reset();
+ {Record first(5);Record second(first);Record third(static_cast<Record&&>(first));
+  if(second.n!=6||third.n!=7||first.n||calls!=2||recordCopied!=1||recordMoved!=1||bad)return 22;}
+ if(recordLive||recordDead!=3||recordLog!=760)return 23;
+ reset();
+ {Record first(5);Record second(first,0);Record third(static_cast<Record&&>(first),0);
+  if(second.n!=5||third.n!=5||calls||recordCopied!=1||recordMoved!=1||bad)return 24;}
+ reset();traceOn=1;
+ {Element values[2];
+  if(trace!=123123||values[0].seen!=1||values[1].seen!=1||tokenLive||tokenMade!=2||tokenDead!=2||bad)return 25;}
+ if(elementDead!=2)return 26;
+ reset();traceOn=1;
+ {Element values[2]={};
+  if(trace!=123123||values[0].seen!=1||values[1].seen!=1||tokenLive||bad)return 27;}
+ reset();traceOn=1;
+ {Element values[2]={{},{}};
+  if(trace!=121233||values[0].seen!=1||values[1].seen!=2||tokenLive||tokenMade!=2||tokenDead!=2||bad)return 28;}
+ reset();traceOn=1;
+ {Element values[2]={Element()};
+  if(trace!=121233||values[0].seen!=1||values[1].seen!=2||tokenLive||tokenMade!=2||tokenDead!=2||bad)return 29;}
+ reset();traceOn=1;
+ {Element values[1][2];
+  if(trace!=123123||values[0][0].seen!=1||values[0][1].seen!=1||tokenLive||bad)return 30;}
+ reset();traceOn=1;
+ {Group group;
+  if(trace!=123123||group.elements[0].seen!=1||group.elements[1].seen!=1||tokenLive||bad)return 31;}
+ reset();
+ {Group source;trace=0;traceOn=1;Group copy(source);
+  if(trace!=123123||copy.elements[0].seen!=1||copy.elements[1].seen!=1||tokenLive||tokenMade!=4||tokenDead!=4||bad)return 32;}
+ if(elementDead!=4)return 33;
+ reset();traceOn=1;
+ {Element object;int after=tokenLive;
+  if(trace!=123||object.seen!=1||after||bad)return 34;}
+ reset();traceOn=1;int active=(static_cast<void>(Element()),observeTokens());
+ if(active!=1||trace!=123||tokenLive||elementDead!=1||bad)return 35;
+ reset();int combination=mixed(next());
+ if(combination!=12||calls!=2)return 36;
+ reset();bool pure=noexcept(quiet());bool effect=noexcept(throwingDefault());
+ if(!pure||effect||calls||tokenLive||recordLive||foldedValue!=7)return 37;
+ reset();for(int i=0;i<3;++i){if(scalar()!=i+1)return 38;}
+ if(calls!=3)return 39;
+ reset();
+ {Group source;trace=0;traceOn=1;Group moved(static_cast<Group&&>(source));
+  if(trace!=123123||moved.elements[0].seen!=1||moved.elements[1].seen!=1||tokenLive||tokenMade!=4||tokenDead!=4||bad)return 40;}
+ if(elementDead!=4)return 41;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("default-arguments" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultArgumentsAcceptSelectedParameterDefaults) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"scalar", "int f(int n=3){return n;}int main(){return f()-3;}"},
+      {"nested", "int n=0;int g(int x=++n){return x;}int f(int x=g()){return x;}"},
+      {"override", "int n=0;int f(int x=++n){return x;}int main(){return f(0)+n;}"},
+      {"namespace", "namespace N{int n=3;int f(int x=n){return x;}}int main(){int n=4;return N::f()-3;}"},
+      {"redeclaration", "int f(int a,int b=4);int f(int a=3,int b){return a+b;}int main(){return f()-7;}"},
+      {"inherited", "int f(int n=3);int f(int n){return n;}int main(){return f()-3;}"},
+      {"nonfirst", "int f(int a,int b=2,int c=3){return a+b+c;}int main(){return f(1)-6;}"},
+      {"enum", "enum class E:unsigned char{yes=9};int f(E e=E::yes){return static_cast<int>(e);}"},
+      {"bool", "bool f(bool b=true){return b;}"},
+      {"narrow", "int f(unsigned char n=255){return n;}"},
+      {"pointer", "int n=1;int f(int*p=&n){return ++*p;}"},
+      {"null", "int f(int*p=nullptr){return p?1:0;}"},
+      {"reference", "int n=1;int f(int&r=n){return ++r;}"},
+      {"scalar-temporary", "int f(const int&r=3){return r;}"},
+      {"array-temporary", "using A=int[2];int f(const A&r=A{3,4}){return r[0]+r[1];}"},
+      {"record-reference", "struct R{int n;~R(){}};int f(const R&r=R{3}){return r.n;}"},
+      {"subobject", "struct R{int n;~R(){}};int f(const int&r=R{3}.n){return r;}"},
+      {"record-value", "struct R{int n;~R(){}};int f(R r=R{3}){return r.n;}"},
+      {"record-copy", "struct R{int n;R(int v):n(v){}R(const R&r,int e=1):n(r.n+e){}R&get(){return *this;}};int f(R r=R(2).get()){return r.n;}"},
+      {"empty", "struct R{};int f(R r=R{}){return sizeof(r);}"},
+      {"method", "struct R{int n;int f(int a=2)const{return n+a;}};int main(){R r{1};return r.f()-3;}"},
+      {"static-method", "struct R{static int f(int n=1){return n;}};int main(){return R::f()-1;}"},
+      {"constructor", "struct R{int n;R(int v=1):n(v){}};int main(){R r;return r.n-1;}"},
+      {"array-default-constructor", "struct T{int n;~T(){}};struct R{int n;R(const T&t=T{1}):n(t.n){}};int main(){R r[2];return r[0].n+r[1].n-2;}"},
+      {"array-copy-constructor", "struct T{int n;~T(){}};struct R{int n;R():n(1){}R(const R&r,const T&t=T{2}):n(r.n+t.n){}};struct A{R r[2];};int main(){A a;A b=a;return b.r[0].n+b.r[1].n-6;}"},
+      {"dmi", "int g(int n=2){return n;}struct R{int n=g();};int main(){R r{};return r.n-2;}"},
+      {"constexpr", "constexpr int f(int n=3){return n;}static_assert(f()==3);"},
+      {"query", "void f(int n=3)noexcept{}static_assert(noexcept(f()));"},
+      {"void-comma", "int f(int n=(void{},3)){return n;}static_assert(noexcept(void{}));"},
+      {"promotion-1", "int g(int n=1){return n;}struct R{operator int()const{return g();}};"},
+      {"promotion-2", "struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};"},
+      {"promotion-3", "struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};"},
+      {"promotion-4", "struct R{int n;R(int v=1):n(v){}};"},
+      {"promotion-5", "struct R{int n;int get(int v=1){return n+v;}};int f(){R r{1};return r.get();}"},
+      {"promotion-6", "struct R{int n;int operator()(int v=1){return n+v;}};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("default-arguments-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("default-arguments-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultArgumentsRetainSourceAndParameterBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"floating", "int f(int n=(static_cast<void>(1.0),1)){return n;}", "TR0201"},
+      {"overridden-floating", "int f(int n=(static_cast<void>(1.0),1)){return n;}int main(){return f(0);}", "TR0201"},
+      {"constexpr-floating", "constexpr int f(int n=(static_cast<void>(1.0),1)){return n;}static_assert(f()==1);", "TR0201"},
+      {"noexcept-floating", "void f(int n=(static_cast<void>(1.0),1))noexcept{}static_assert(noexcept(f()));", "TR0201"},
+      {"volatile", "volatile int n=1;int f(int x=n){return x;}", "TR0201"},
+      {"string", "int f(int n=(static_cast<void>(\"x\"),1)){return n;}", "TR0201"},
+      {"lambda", "int f(int n=(static_cast<void>([]{}),1)){return n;}", "TR0201"},
+      {"allocation", "int f(int*p=new int(1)){return *p;}", "TR0201"},
+      {"throw", "int f(int n=(throw 1,2)){return n;}", "TR0201"},
+      {"function-pointer", "void g(){}void f(void(*p)()=g){}", "TR0201"},
+      {"member-pointer", "struct R{int n;};void f(int R::*p=&R::n){}", "TR0201"},
+      {"dependent", "template<class T>int f(T n=T{}){return 1;}", "TR0201"},
+      {"array-global", "int a[2]={1,2};int f(int*p=a){return *p;}", "TR0201"},
+      {"fresh-reference-return", "int f(const int&r=1){return r;}const int&g(){return 1;}", "TR0201"},
+      {"unsupported-default-record", "struct R{double n;};int f(R r=R{1.0}){return 1;}", "TR0201"},
+      {"unsupported-unused-default", "int f(int n=(static_cast<void>(\"unused\"),1)){return n;}", "TR0201"},
+      {"expanded-default-storage", "struct R{int values[32768];};int f(const R&r=R{}){return r.values[0];}int main(){return f();}", "TR0201"},
+      {"nontrailing", "int f(int a=1,int b){return a+b;}", "TR0202"},
+      {"redefined", "int f(int n=1);int f(int n=2){return n;}", "TR0202"},
+      {"parameter-reference", "int f(int a,int b=a){return b;}", "TR0202"},
+      {"method-this", "struct R{int n;int f(int x=this->n){return x;}};", "TR0202"},
+      {"method-field", "struct R{int n;int f(int x=n){return x;}};", "TR0202"},
+      {"mutable-temporary-reference", "int f(int&r=1){return r;}", "TR0202"},
+      {"bad-conversion", "int f(int n=nullptr){return n;}", "TR0202"},
+      {"call-arity", "int f(int a,int b=1){return a+b;}int main(){return f();}", "TR0202"},
+      {"defaulted-copy-extra", "struct R{int n;R(const R&r,int n=0)=default;};", "TR0202"},
+      {"default-call", "int g();int f(int n=g()){return n;}", "TR0203"},
+      {"overridden-missing", "int g();int f(int n=g()){return n;}int main(){return f(0);}", "TR0203"},
+      {"default-destructor", "struct R{int n;~R();};int f(const R&r=R{1}){return r.n;}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("default-arguments-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("default-arguments-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("default-arguments-v1.cpp");
+  const auto Output = tmpFile("default-arguments-v1.nc");
+  for (const std::string &Code : {
+      "int f(int n=1){return n;}",
+      "struct R{int n;R(int v=1):n(v){}};"}) {
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
     expectCode(Result, "TR0201");
@@ -3742,7 +3998,6 @@ TEST_F(TranslateTest, CoreV2UserMovesRetainSourceLifetimeAndGeneratedBoundaries)
       {"deleted-constructor", "struct R{int n;R(R&&)=delete;};", "TR0201"},
       {"volatile-constructor", "struct R{int n;R(volatile R&&r):n(r.n){}};", "TR0201"},
       {"const-volatile-constructor", "struct R{int n;R(const volatile R&&r):n(r.n){}};", "TR0201"},
-      {"constructor-default-argument", "struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};", "TR0201"},
       {"deleted-assignment", "struct R{int n;R&operator=(R&&)=delete;};", "TR0201"},
       {"volatile-assignment-source", "struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};", "TR0201"},
       {"volatile-assignment-receiver", "struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};", "TR0201"},
@@ -5250,7 +5505,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"template-constructor", "struct R{int n;template<class T> R(T v):n(v){}};"},
       {"variadic-constructor", "struct R{int n;R(int v,...):n(v){}};"},
       {"deleted-constructor", "struct R{int n;R()=delete;};"},
-      {"default-argument", "struct R{int n;R(int v=1):n(v){}};"},
       {"private-field", "class R{int n;public:R():n(1){}};"},
       {"protected-field", "struct R{protected:int n;public:R():n(1){}};"},
       {"const-field", "struct R{const int n;R():n(1){}};"},
@@ -5403,7 +5657,6 @@ TEST_F(TranslateTest, CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries) {
       {"reference-field", "struct R{int&n;int get()const{return n;}};"},
       {"member-template", "struct R{int n;template<class T>T get(T v){return v;}};"},
       {"static-data", "struct R{int n;static int value;int get(){return value;}};int R::value=1;"},
-      {"default-argument", "struct R{int n;int get(int v=1){return n+v;}};int f(){R r{1};return r.get();}"},
       {"constant-static-data", "struct R{int n;static const int value=1;int get(){return value;}};"},
       {"method-comma-callee", "struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}"},
   };

@@ -564,6 +564,43 @@ def main():
         'void-expression-folded-promotion-3': 'enum E:int{v=(static_cast<void>(0),1)}; int main(){}',
         'void-expression-folded-promotion-4': 'static_assert((static_cast<void>(0),true),"condition"); int main(){}',
     })
+    core_v2.update({
+        'default-argument-scalar': 'int f(int n=3){return n;}int main(){return f()-3;}',
+        'default-argument-nested': 'int n=0;int g(int x=++n){return x;}int f(int x=g()){return x;}',
+        'default-argument-override': 'int n=0;int f(int x=++n){return x;}int main(){return f(0)+n;}',
+        'default-argument-namespace': 'namespace N{int n=3;int f(int x=n){return x;}}int main(){int n=4;return N::f()-3;}',
+        'default-argument-redeclaration': 'int f(int a,int b=4);int f(int a=3,int b){return a+b;}int main(){return f()-7;}',
+        'default-argument-inherited': 'int f(int n=3);int f(int n){return n;}int main(){return f()-3;}',
+        'default-argument-nonfirst': 'int f(int a,int b=2,int c=3){return a+b+c;}int main(){return f(1)-6;}',
+        'default-argument-enum': 'enum class E:unsigned char{yes=9};int f(E e=E::yes){return static_cast<int>(e);}',
+        'default-argument-bool': 'bool f(bool b=true){return b;}',
+        'default-argument-narrow': 'int f(unsigned char n=255){return n;}',
+        'default-argument-pointer': 'int n=1;int f(int*p=&n){return ++*p;}',
+        'default-argument-null': 'int f(int*p=nullptr){return p?1:0;}',
+        'default-argument-reference': 'int n=1;int f(int&r=n){return ++r;}',
+        'default-argument-scalar-temporary': 'int f(const int&r=3){return r;}',
+        'default-argument-array-temporary': 'using A=int[2];int f(const A&r=A{3,4}){return r[0]+r[1];}',
+        'default-argument-record-reference': 'struct R{int n;~R(){}};int f(const R&r=R{3}){return r.n;}',
+        'default-argument-subobject': 'struct R{int n;~R(){}};int f(const int&r=R{3}.n){return r;}',
+        'default-argument-record-value': 'struct R{int n;~R(){}};int f(R r=R{3}){return r.n;}',
+        'default-argument-record-copy': 'struct R{int n;R(int v):n(v){}R(const R&r,int e=1):n(r.n+e){}R&get(){return *this;}};int f(R r=R(2).get()){return r.n;}',
+        'default-argument-empty': 'struct R{};int f(R r=R{}){return sizeof(r);}',
+        'default-argument-method': 'struct R{int n;int f(int a=2)const{return n+a;}};int main(){R r{1};return r.f()-3;}',
+        'default-argument-static-method': 'struct R{static int f(int n=1){return n;}};int main(){return R::f()-1;}',
+        'default-argument-constructor': 'struct R{int n;R(int v=1):n(v){}};int main(){R r;return r.n-1;}',
+        'default-argument-array-default-constructor': 'struct T{int n;~T(){}};struct R{int n;R(const T&t=T{1}):n(t.n){}};int main(){R r[2];return r[0].n+r[1].n-2;}',
+        'default-argument-array-copy-constructor': 'struct T{int n;~T(){}};struct R{int n;R():n(1){}R(const R&r,const T&t=T{2}):n(r.n+t.n){}};struct A{R r[2];};int main(){A a;A b=a;return b.r[0].n+b.r[1].n-6;}',
+        'default-argument-dmi': 'int g(int n=2){return n;}struct R{int n=g();};int main(){R r{};return r.n-2;}',
+        'default-argument-constexpr': 'constexpr int f(int n=3){return n;}static_assert(f()==3);',
+        'default-argument-query': 'void f(int n=3)noexcept{}static_assert(noexcept(f()));',
+        'default-argument-void-comma': 'int f(int n=(void{},3)){return n;}static_assert(noexcept(void{}));',
+        'default-argument-promotion-1': 'int g(int n=1){return n;}struct R{operator int()const{return g();}};',
+        'default-argument-promotion-2': 'struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};',
+        'default-argument-promotion-3': 'struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};',
+        'default-argument-promotion-4': 'struct R{int n;R(int v=1):n(v){}};',
+        'default-argument-promotion-5': 'struct R{int n;int get(int v=1){return n+v;}};int f(){R r{1};return r.get();}',
+        'default-argument-promotion-6': 'struct R{int n;int operator()(int v=1){return n+v;}};',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -779,7 +816,6 @@ int main(){
         'deleted-assignment': 'struct R{int n;R&operator=(const R&)=delete;};',
         'volatile-constructor': 'struct R{int n;R(const volatile R&r):n(r.n){}};',
         'volatile-assignment': 'struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};',
-        'default-argument': 'struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};',
     }
     for name, source in user_copy_rejected.items():
         check("v2-user-copy-reject-" + name, source, "TR0201", profile="cpp-core-v2")
@@ -1479,7 +1515,6 @@ R parameterResult(R source){return source;}
         'deleted-constructor': 'struct R{int n;R(R&&)=delete;};',
         'volatile-constructor': 'struct R{int n;R(volatile R&&r):n(r.n){}};',
         'const-volatile-constructor': 'struct R{int n;R(const volatile R&&r):n(r.n){}};',
-        'constructor-default-argument': 'struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};',
         'deleted-assignment': 'struct R{int n;R&operator=(R&&)=delete;};',
         'volatile-assignment-source': 'struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};',
         'volatile-assignment-receiver': 'struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};',
@@ -1979,7 +2014,6 @@ P explicitValue(P&a,P&b){return operator-=(a,b);}
         'volatile-receiver': 'struct R{int n;int operator()()volatile{return n;}};',
         'volatile-argument': 'struct R{int n;int operator+(volatile R&r)const{return r.n;}};',
         'template': 'struct R{int n;template<class T>int operator()(T v){return n;}};',
-        'default-argument': 'struct R{int n;int operator()(int v=1){return n+v;}};',
         'friend': 'struct R{int n;friend int operator+(const R&r,int v){return r.n+v;}};',
         'member-pointer': 'struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}',
         'free-pointer': 'struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}',
@@ -2177,7 +2211,6 @@ bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
         'unused-throw': 'struct R{operator int()const{throw 1;}};',
         'query-throw': 'struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}',
         'folded-float': 'struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,"value");',
-        'default-argument': 'int g(int n=1){return n;}struct R{operator int()const{return g();}};',
         'virtual': 'struct R{virtual operator int()const{return 1;}};',
     }
     for name, source in conversion_rejected.items():
@@ -3107,6 +3140,208 @@ static_assert((static_cast<void>(0),true));
         check("v2-" + 'void_expression_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
     check("v1-void-expression-reference", "void f(){static_cast<void>(1);}", "TR0201")
     check("v1-void-expression-decay", "void f(){void();}", "TR0201")
+    default_argument_source = """int number=1;
+void mark(int n){number+=n;}
+int next(){mark(1);return number;}
+int&refer(){mark(2);return number;}
+struct Token {
+ int n;
+ Token(int v):n(v){mark(1);}
+ ~Token(){mark(3);}
+};
+struct Value {
+ int n;
+ Value(int v=next()):n(v){mark(2);}
+ Value(const Value&r,int extra=next()):n(r.n+extra){mark(4);}
+ ~Value(){mark(6);}
+};
+struct Element {
+ int n;
+ Element(const Token&t=Token(1)):n(t.n){mark(2);}
+ Element(const Element&e,const Token&t=Token(1)):n(e.n+t.n){mark(4);}
+ ~Element(){mark(5);}
+};
+struct Group { Element values[2]; };
+int scalar(int n=next()){return n;}
+void omitted(){scalar();scalar();}
+void supplied(){scalar(4);}
+int reference(int&r=refer()){return ++r;}
+void aliasCall(){reference();}
+int object(Value v=Value(5)){return v.n;}
+void byValue(){object();}
+int temporary(const Token&t=Token(1)){return t.n;}
+void callTemporary(){temporary();mark(9);}
+void comma(){temporary(),mark(9);}
+void defaultArray(){Element values[2];mark(9);}
+void emptyArray(){Element values[2]={};mark(9);}
+void explicitArray(){Element values[2]={{},{}};mark(9);}
+void partialArray(){Element values[2]={Element()};mark(9);}
+void copyArray(){Group first;Group second(first);mark(9);}
+void constructed(){Value value;}
+void copied(){Value first(5);Value second(first);}
+constexpr int constant(int n=7){return n;}
+constexpr int folded=constant();
+void quiet(int n=1)noexcept{}
+void noisy(int n=next())noexcept{}
+bool query(){return noexcept(quiet());}
+bool noisyQuery(){return noexcept(noisy());}
+"""
+    default_arguments = check("default-arguments", default_argument_source, profile="cpp-core-v2")
+    da_functions = {f["name"]: f for f in default_arguments["functions"]}
+
+    def da_line(prefix):
+        matches = [i for i, line in enumerate(default_argument_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def da_function(prefix, result, parameters):
+        matches = [f for f in default_arguments["functions"] if f["loc"]["line"] == da_line(prefix)
+                   and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(matches) == 1, (prefix, result, parameters, matches)
+        return matches[0]
+
+    def da_record(prefix):
+        matches = [r["id"] for r in default_arguments["records"] if r["loc"]["line"] == da_line(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    token = da_record("struct Token {")
+    value = da_record("struct Value {")
+    element = da_record("struct Element {")
+    group = da_record("struct Group {")
+    mark = da_function("void mark(", "void", ["int"])["name"]
+    next_value = da_function("int next(", "int", [])["name"]
+    refer = da_function("int&refer(", "ptr:int", [])["name"]
+    token_ctor = da_function(" Token(int v)", "void", ["ptr:"+token, "int"])["name"]
+    token_dtor = token+"_destroy"
+    value_ctor = da_function(" Value(int v=", "void", ["ptr:"+value, "int"])["name"]
+    value_copy = da_function(" Value(const Value&", "void", ["ptr:"+value, "cptr:"+value, "int"])["name"]
+    element_ctor = da_function(" Element(const Token&", "void", ["ptr:"+element, "cptr:"+token])["name"]
+    element_copy = da_function(" Element(const Element&", "void", ["ptr:"+element, "cptr:"+element, "cptr:"+token])["name"]
+    scalar = da_function("int scalar(", "int", ["int"])
+    assert not gc_calls(scalar), scalar
+    omitted = da_function("void omitted(", "void", [])
+    assert [c["callee"] for c in gc_calls(omitted)] == [next_value, scalar["name"]]*2
+    supplied = da_function("void supplied(", "void", [])
+    assert [c["callee"] for c in gc_calls(supplied)] == [scalar["name"]]
+    assert gc_identity(supplied, gc_calls(supplied)[0]["args"][0]) == 4
+    reference = da_function("int reference(", "int", ["ptr:int"])
+    assert not gc_calls(reference)
+    alias = da_function("void aliasCall(", "void", [])
+    alias_calls = gc_calls(alias)
+    assert [c["callee"] for c in alias_calls] == [refer, reference["name"]]
+    assert alias_calls[1]["args"][0]["kind"] == "var"
+    def da_alias_result(expr):
+        if expr["kind"] in ("cast", "address", "dereference"):
+            return da_alias_result(expr["args"][0])
+        assert expr["kind"] == "var", expr
+        if expr["name"] == alias_calls[0]["target"]["name"]:
+            return True
+        values = [n["value"] for n in alias["body"] if n["op"] == "assign" and n["target"].get("name") == expr["name"]]
+        assert len(values) == 1, values
+        return da_alias_result(values[0])
+    assert da_alias_result(alias_calls[1]["args"][0])
+    object_function = da_function("int object(", "int", ["ptr:"+value])
+    assert [c["callee"] for c in gc_calls(object_function)] == [value+"_destroy"]
+    by_value = da_function("void byValue(", "void", [])
+    calls = gc_calls(by_value)
+    assert [c["callee"] for c in calls] == [value_ctor, object_function["name"]]
+    assert ve_pointer(by_value, calls[0]["args"][0]) == ve_pointer(by_value, calls[1]["args"][0])
+    assert len([v for v in by_value["locals"] if v["type"] == value]) == 1
+    temporary = da_function("int temporary(", "int", ["cptr:"+token])
+    assert not gc_calls(temporary)
+    for prefix, expected in (("void callTemporary(", [token_ctor, temporary["name"], token_dtor, mark]),
+                             ("void comma(", [token_ctor, temporary["name"], mark, token_dtor])):
+        function = da_function(prefix, "void", [])
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == expected
+        constructed = next(c for c in calls if c["callee"] == token_ctor)
+        destroyed = next(c for c in calls if c["callee"] == token_dtor)
+        assert ve_pointer(function, constructed["args"][0]) == ve_pointer(function, destroyed["args"][0])
+    for prefix, interleaved in (("void defaultArray(", True), ("void emptyArray(", True),
+                                ("void explicitArray(", False), ("void partialArray(", False)):
+        function = da_function(prefix, "void", [])
+        calls = gc_calls(function)
+        expected = ([token_ctor, element_ctor, token_dtor]*2 if interleaved else
+                    [token_ctor, element_ctor]*2+[token_dtor]*2)+[mark, element+"_destroy", element+"_destroy"]
+        assert [c["callee"] for c in calls] == expected, function
+        constructed = [ve_pointer(function, c["args"][0]) for c in calls if c["callee"] == token_ctor]
+        destroyed = [ve_pointer(function, c["args"][0]) for c in calls if c["callee"] == token_dtor]
+        assert len(set(constructed)) == 2
+        assert destroyed == (constructed if interleaved else constructed[::-1])
+        arrays = [v for v in function["locals"] if v["type"] == "arr:2:"+element]
+        assert len(arrays) == 1 and not any(v["type"] == element for v in function["locals"])
+        base = ("object", arrays[0]["name"])
+        assert [ve_pointer(function, c["args"][0]) for c in calls if c["callee"] == element_ctor] == [("element", base, i) for i in (0, 1)]
+        assert [ve_pointer(function, c["args"][0]) for c in calls if c["callee"] == element+"_destroy"] == [("element", base, i) for i in (1, 0)]
+    group_copy = da_function("struct Group {", "void", ["ptr:"+group, "cptr:"+group])
+    assert [c["callee"] for c in gc_calls(group_copy)] == [token_ctor, element_copy, token_dtor]*2
+    group_tokens = [ve_pointer(group_copy, c["args"][0]) for c in gc_calls(group_copy) if c["callee"] == token_ctor]
+    assert len(set(group_tokens)) == 2
+    assert [ve_pointer(group_copy, c["args"][0]) for c in gc_calls(group_copy) if c["callee"] == token_dtor] == group_tokens
+    constructed = da_function("void constructed(", "void", [])
+    assert [c["callee"] for c in gc_calls(constructed)] == [next_value, value_ctor, value+"_destroy"]
+    copied = da_function("void copied(", "void", [])
+    assert [c["callee"] for c in gc_calls(copied)] == [value_ctor, next_value, value_copy, value+"_destroy", value+"_destroy"]
+    assert all(c["callee"] != next_value for c in gc_calls(da_functions[value_ctor]))
+    assert all(c["callee"] != next_value for c in gc_calls(da_functions[value_copy]))
+    for prefix, expected in (("bool query(", True), ("bool noisyQuery(", False)):
+        function = da_function(prefix, "bool", [])
+        assert not gc_calls(function)
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and nq_constant(function, returned[0]) is expected
+    for function in default_arguments["functions"]:
+        for call in gc_calls(function):
+            callee = da_functions[call["callee"]]
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in callee["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-default-arguments-relocated-") as temp:
+        relocated = check("default-arguments-relocated", default_argument_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == default_arguments, "default argument identities depend on the absolute root"
+
+    default_argument_rejected = {
+        'floating': 'int f(int n=(static_cast<void>(1.0),1)){return n;}',
+        'overridden-floating': 'int f(int n=(static_cast<void>(1.0),1)){return n;}int main(){return f(0);}',
+        'constexpr-floating': 'constexpr int f(int n=(static_cast<void>(1.0),1)){return n;}static_assert(f()==1);',
+        'noexcept-floating': 'void f(int n=(static_cast<void>(1.0),1))noexcept{}static_assert(noexcept(f()));',
+        'volatile': 'volatile int n=1;int f(int x=n){return x;}',
+        'string': 'int f(int n=(static_cast<void>("x"),1)){return n;}',
+        'lambda': 'int f(int n=(static_cast<void>([]{}),1)){return n;}',
+        'allocation': 'int f(int*p=new int(1)){return *p;}',
+        'throw': 'int f(int n=(throw 1,2)){return n;}',
+        'function-pointer': 'void g(){}void f(void(*p)()=g){}',
+        'member-pointer': 'struct R{int n;};void f(int R::*p=&R::n){}',
+        'dependent': 'template<class T>int f(T n=T{}){return 1;}',
+        'array-global': 'int a[2]={1,2};int f(int*p=a){return *p;}',
+        'fresh-reference-return': 'int f(const int&r=1){return r;}const int&g(){return 1;}',
+        'unsupported-default-record': 'struct R{double n;};int f(R r=R{1.0}){return 1;}',
+        'unsupported-unused-default': 'int f(int n=(static_cast<void>("unused"),1)){return n;}',
+        'expanded-default-storage': 'struct R{int values[32768];};int f(const R&r=R{}){return r.values[0];}int main(){return f();}',
+    }
+    for name, source in default_argument_rejected.items():
+        check("v2-" + 'default_argument_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
+    default_argument_invalid = {
+        'nontrailing': 'int f(int a=1,int b){return a+b;}',
+        'redefined': 'int f(int n=1);int f(int n=2){return n;}',
+        'parameter-reference': 'int f(int a,int b=a){return b;}',
+        'method-this': 'struct R{int n;int f(int x=this->n){return x;}};',
+        'method-field': 'struct R{int n;int f(int x=n){return x;}};',
+        'mutable-temporary-reference': 'int f(int&r=1){return r;}',
+        'bad-conversion': 'int f(int n=nullptr){return n;}',
+        'call-arity': 'int f(int a,int b=1){return a+b;}int main(){return f();}',
+        'defaulted-copy-extra': 'struct R{int n;R(const R&r,int n=0)=default;};',
+    }
+    for name, source in default_argument_invalid.items():
+        check("v2-" + 'default_argument_invalid' + "-" + name, source, "TR0202", profile="cpp-core-v2")
+    default_argument_missing = {
+        'default-call': 'int g();int f(int n=g()){return n;}',
+        'overridden-missing': 'int g();int f(int n=g()){return n;}int main(){return f(0);}',
+        'default-destructor': 'struct R{int n;~R();};int f(const R&r=R{1}){return r.n;}',
+    }
+    for name, source in default_argument_missing.items():
+        check("v2-" + 'default_argument_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
+    check("v1-default-argument-function", "int f(int n=1){return n;}", "TR0201")
+    check("v1-default-argument-constructor", "struct R{int n;R(int v=1):n(v){}};", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -3534,7 +3769,6 @@ int main() {
         'method-reference-field': 'struct R{int&n;int get()const{return n;}};',
         'method-member-template': 'struct R{int n;template<class T>T get(T v){return v;}};',
         'method-static-data': 'struct R{int n;static int value;int get(){return value;}};int R::value=1;',
-        'method-default-argument': 'struct R{int n;int get(int v=1){return n+v;}};int f(){R r{1};return r.get();}',
         'method-constant-static-data': 'struct R{int n;static const int value=1;int get(){return value;}};',
         'method-method-comma-callee': 'struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}',
     })
@@ -3546,7 +3780,6 @@ int main() {
         'constructor-template-constructor': 'struct R{int n;template<class T> R(T v):n(v){}};',
         'constructor-variadic-constructor': 'struct R{int n;R(int v,...):n(v){}};',
         'constructor-deleted-constructor': 'struct R{int n;R()=delete;};',
-        'constructor-default-argument': 'struct R{int n;R(int v=1):n(v){}};',
         'constructor-private-field': 'class R{int n;public:R():n(1){}};',
         'constructor-protected-field': 'struct R{protected:int n;public:R():n(1){}};',
         'constructor-const-field': 'struct R{const int n;R():n(1){}};',

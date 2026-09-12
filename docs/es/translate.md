@@ -71,6 +71,8 @@ Core v2 admite clases vacías de disposición estándar y objetos de función o 
 
 Core v2 admite conversiones a void, `void()` y `void{}`, con alias void compatibles, llamadas, retornos, expresiones coma y ramas condicionales. Descartar un lvalue no volatile conserva los efectos del receptor y del índice sin leer su valor almacenado. Los temporales siguen construyéndose y destruyéndose al final de la expresión completa original. No se generan variables ni valores void. Los operandos constantes y noexcept siguen verificándose. Los objetos volatile, tipos no admitidos, plantillas y STL completa quedan fuera de esta etapa.
 
+Core v2 admite argumentos predeterminados en funciones, métodos, operadores de llamada y constructores de usuario compatibles, incluidos parámetros finales de constructores de copia y movimiento. Los nombres se resuelven en la declaración y las expresiones se evalúan en cada llamada que omite el argumento. Se conservan la identidad y la vida útil de referencias y valores. Los elementos de array sin inicializador y las copias generadas destruyen los temporales predeterminados antes del siguiente elemento; las cláusulas explícitas conservan la expresión completa exterior. También se comprueban los valores no usados o sustituidos. Las plantillas y la STL completa siguen pendientes.
+
 ## Proyectos de varios archivos
 
 Seleccione explícitamente las unidades de traducción en una base de datos de compilación y especifique el directorio raíz del proyecto. El frontend integrado analiza cada unidad por separado; la fusión verifica definiciones, enlace, tipos compartidos y el cumplimiento de la regla de una sola definición (ODR) mediante comprobaciones conservadoras.

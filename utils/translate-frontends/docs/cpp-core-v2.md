@@ -230,11 +230,61 @@ live object. Static/instance reference arguments share the full-expression
 temporary-call contract below; they introduce no reference lifetime extension.
 
 Virtual methods, inheritance,
-volatile/restrict methods, default arguments, templates and static data remain unsupported. Ordinary
+volatile/restrict methods, templates and static data remain unsupported. Ordinary
 constructors and destructors follow the separate rules below. The existing
 implicit trivial copy paths are unchanged.
 These methods do not establish STL container or iterator support. V1 profiles
 retain their rejected-method boundary.
+
+## Default arguments
+
+Core v2 supports resolved default arguments on admitted non-template free
+functions, methods, call operators and user constructors. User-provided copy and
+move constructors can have trailing default parameters after their required
+source reference. Implicit and explicitly defaulted special members retain their
+separate signature restrictions. Clang checks declaration visibility, inherited
+or added defaults across redeclarations, overload resolution and source access.
+Names in a default refer to declarations at its declaration point, not similarly
+named locals at the call site.
+
+Each omitted argument evaluates its selected semantic default expression anew
+at that call. Explicit supplied arguments suppress runtime evaluation of the
+corresponding defaults. Defaults do not become callee prologue code, optional
+wire parameters or stored AST values. Every emitted call has the full checked
+parameter signature. Existing receiver and argument sequencing rules apply.
+
+Admitted scalar, enum, pointer and reference defaults use their normal typed
+representations. Reference defaults can alias live objects or bind admitted
+full-expression temporaries and their subobjects. Record values construct in
+actual parameter destinations with the selected copy/move and callee parameter
+cleanup. Reference arguments do not add a second owner or extend lifetimes past
+the enclosing call's full expression. Defaults can contain calls, conversions,
+comma expressions and supported record/array initialization.
+
+Array default initialization has a distinct cleanup boundary. When an element
+has no corresponding initializer, temporaries created in its constructor defaults
+are destroyed before the next element is constructed. Generated whole-array
+copying also cleans each element's constructor-default temporaries before the
+next element. Reusing the semantic filler never reuses a runtime object. Explicit
+array initializer clauses retain the outer full-expression lifetime, including
+explicit empty braces. Thus `R a[2] = {};` and `R b[2] = {{}, {}};` can observe
+different counts of simultaneously live default-argument temporaries. The array
+continues to own its elements and destroys them in reverse order.
+
+Both declared defaults and selected call-site semantic expressions are fully
+inspected, even when unused, explicitly overridden, folded in constexpr code or
+inside a noexcept query. Queries create no runtime default effects. Unsupported
+operand types, volatile objects, strings, function/member pointers, templates,
+allocation and throwing remain diagnosed under their existing boundaries.
+Invalid C++ defaults or calls remain Clang diagnostics; missing required owned
+definitions remain definition errors. Only core v2 gains this support.
+
+O0/O2 no-inline fixtures check repeated evaluation, declaration lookup, explicit
+overrides, references, actual value destinations, copy/move defaults, omitted
+versus explicit array elements, generated array copying/moving and query purity.
+Protocol fixtures check complete calls, source effects, cleanup order and
+relocation. Native evidence requires implementing CI. Complete C++/STL remains
+unfinished, and translation currently supports C++ only.
 
 ## Void and discarded-value expressions
 
@@ -379,7 +429,7 @@ local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
 Deleted, delegating, inherited, template and variadic constructors
-and default arguments remain rejected. Exception unwinding, allocation, static
+remain rejected. Exception unwinding, allocation, static
 guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
@@ -540,8 +590,9 @@ still requires further support before broader C++/STL admission.
 
 ## User-defined copy operations
 
-Core v2 supports ordinary user-provided copy constructors with exactly one
-source parameter, `R&` or `const R&` for the same canonical record. They may be
+Core v2 supports ordinary user-provided copy constructors whose first source
+parameter is `R&` or `const R&` for the same canonical record. Additional parameters
+may have admitted default arguments under the default argument rules. They may be
 `explicit`, `constexpr` or defined out of line. Field initialization follows the
 constructor rules, and the selected source function runs directly on the actual
 destination. Passing the source reference does not first read or snapshot the
@@ -611,8 +662,9 @@ and full native CI results.
 
 ## User-defined move operations
 
-Core v2 supports ordinary user-provided move constructors with exactly one
-`R&&` or `const R&&` source parameter of the same canonical record. `explicit`,
+Core v2 supports ordinary user-provided move constructors whose first source
+parameter is `R&&` or `const R&&` of the same canonical record. Additional parameters
+may have admitted default arguments under the default argument rules. `explicit`,
 `constexpr` and out-of-line definitions retain their C++ rules. A conventional move
 assignment takes the same source reference and returns mutable `R&`; its mutable
 receiver may be unqualified, `&`-qualified or `&&`-qualified. Source references
@@ -668,7 +720,7 @@ The callee still destroys by-value parameters. Assignment adds neither an implic
 destruction nor a replacement construction.
 
 Deleted functions, volatile/restrict sources
-or receivers, default/variadic parameters, inheritance,
+or receivers, variadic parameters, inheritance,
 templates and STL remain outside this increment. Temporary source-reference
 arguments and receivers follow the full-expression call contract below. Invalid
 C++ overload, cv/ref or deleted-copy uses retain source diagnostics; missing user

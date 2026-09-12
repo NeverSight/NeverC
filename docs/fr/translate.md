@@ -71,6 +71,8 @@ Core v2 prend en charge les classes vides à disposition standard et les objets 
 
 Core v2 prend en charge les conversions vers void, `void()` et `void{}`, avec les alias void compatibles, appels, retours, expressions virgule et branches conditionnelles. Ignorer une lvalue non volatile conserve les effets du récepteur et de l’index sans lire sa valeur stockée. Les temporaires sont toujours construits et détruits à la fin de l’expression complète d’origine. Aucune variable ni valeur void n’est générée. Les opérandes constants et noexcept restent vérifiés. Les objets volatile, types non pris en charge, templates et STL complète restent hors de cette étape.
 
+Core v2 accepte les arguments par défaut des fonctions, méthodes, opérateurs d’appel et constructeurs utilisateur pris en charge, y compris les paramètres supplémentaires des constructeurs de copie et de déplacement. Les noms sont résolus au point de déclaration et les expressions évaluées à chaque appel qui omet l’argument. Identité et durée de vie des références et valeurs sont conservées. Pour les éléments de tableau sans initialiseur et les copies de tableau générées, les temporaires des arguments par défaut sont détruits avant l’élément suivant ; les clauses explicites gardent la limite de l’expression complète. Les valeurs inutilisées ou remplacées restent vérifiées. Les templates et la STL complète restent inachevés.
+
 ## Projets à plusieurs fichiers
 
 Sélectionnez explicitement les unités de traduction dans une base de données de compilation et indiquez le répertoire racine du projet. Le frontend intégré analyse chaque unité séparément ; la fusion vérifie les définitions, la liaison, les types partagés et le respect de la règle de définition unique (ODR) de façon conservatrice.
