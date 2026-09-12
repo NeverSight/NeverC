@@ -4691,11 +4691,55 @@ TEST_F(TranslateTest, CoreV2FrontendRepairsRetainWrittenExceptionSource) {
 TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersPreserveStorageAndLifetimes) {
   const auto Source = tmpFile("class-defaulted-runtime.cpp");
   const auto Output = tmpFile("class-defaulted-runtime.nc");
-  writeFile(Source, R"cpp(int events[256]={};
+  writeFile(Source, R"cpp(int event0=0;
+int event1=0;
+int event2=0;
+int event3=0;
+int event4=0;
+int event5=0;
+int event6=0;
+int event7=0;
+int event8=0;
+int event9=0;
+int event10=0;
+int event11=0;
 int used=0;
 int live=0;
 int calls=0;
-void mark(int n){events[used++]=n;}
+void mark(int n){
+ switch(used++){
+ case 0:event0=n;break;
+ case 1:event1=n;break;
+ case 2:event2=n;break;
+ case 3:event3=n;break;
+ case 4:event4=n;break;
+ case 5:event5=n;break;
+ case 6:event6=n;break;
+ case 7:event7=n;break;
+ case 8:event8=n;break;
+ case 9:event9=n;break;
+ case 10:event10=n;break;
+ case 11:event11=n;break;
+ default:break;
+ }
+}
+int event(int index){
+ switch(index){
+ case 0:return event0;
+ case 1:return event1;
+ case 2:return event2;
+ case 3:return event3;
+ case 4:return event4;
+ case 5:return event5;
+ case 6:return event6;
+ case 7:return event7;
+ case 8:return event8;
+ case 9:return event9;
+ case 10:return event10;
+ case 11:return event11;
+ default:return -1;
+ }
+}
 struct Leaf{
  int n;Leaf*self;
  Leaf():n(1),self(this){++live;mark(10);}
@@ -4737,18 +4781,18 @@ int main(){
   if(a.value!=3||a.first.n!=1||a.first.self!=&a.first||a.items[1].self!=&a.items[1]||used!=3||live!=3)return 1;
   a.plain=7;a.first.n=1;a.items[0].n=2;a.items[1].n=3;used=0;
   Box<int,3>b(a);
-  if(b.plain!=7||b.value!=3||b.first.n!=11||b.items[1].n!=13||b.first.self!=&b.first||used!=3||events[0]!=21||events[1]!=22||events[2]!=23)return 2;
+  if(b.plain!=7||b.value!=3||b.first.n!=11||b.items[1].n!=13||b.first.self!=&b.first||used!=3||event(0)!=21||event(1)!=22||event(2)!=23)return 2;
   used=0;Box<int,3>c(static_cast<Box<int,3>&&>(a));
-  if(c.first.n!=21||c.items[1].n!=23||a.first.n!=-1||a.items[1].n!=-3||c.first.self!=&c.first||events[0]!=31||events[1]!=32||events[2]!=33)return 3;
+  if(c.first.n!=21||c.items[1].n!=23||a.first.n!=-1||a.items[1].n!=-3||c.first.self!=&c.first||event(0)!=31||event(1)!=32||event(2)!=33)return 3;
   used=0;Box<int,3>*result=&(b=c);
-  if(result!=&b||b.first.n!=51||b.items[1].n!=53||live!=9||used!=3||events[0]!=61||events[1]!=62||events[2]!=63||b.first.self!=&b.first)return 4;
+  if(result!=&b||b.first.n!=51||b.items[1].n!=53||live!=9||used!=3||event(0)!=61||event(1)!=62||event(2)!=63||b.first.self!=&b.first)return 4;
   used=0;result=&(b=static_cast<Box<int,3>&&>(c));
-  if(result!=&b||b.first.n!=61||b.items[1].n!=63||c.first.n!=-21||c.items[1].n!=-23||used!=3||events[0]!=71||events[1]!=72||events[2]!=73||live!=9)return 5;
+  if(result!=&b||b.first.n!=61||b.items[1].n!=63||c.first.n!=-21||c.items[1].n!=-23||used!=3||event(0)!=71||event(1)!=72||event(2)!=73||live!=9)return 5;
   used=0;const Box<int,3>&source=b;
-  if(consume(source)!=71||live!=9||used!=6||events[0]!=81||events[3]!=173||events[5]!=171)return 6;
+  if(consume(source)!=71||live!=9||used!=6||event(0)!=81||event(3)!=173||event(5)!=171)return 6;
   used=0;
  }
- if(live!=0||used!=9||events[0]!=77||events[1]!=78||events[2]!=79||events[3]!=163||events[8]!=99)return 7;
+ if(live!=0||used!=9||event(0)!=77||event(1)!=78||event(2)!=79||event(3)!=163||event(8)!=99)return 7;
  used=0;
  {Box<int,3>zero=Box<int,3>();if(zero.plain!=0||zero.value!=3||zero.first.self!=&zero.first)return 8;}
  used=0;
@@ -4756,12 +4800,12 @@ int main(){
   if(c.plain!=7||c.leaf.n!=101||a.leaf.n!=-61||c.leaf.self!=&c.leaf||live!=3)return 9;}
  used=0;
  {Matrix<int>a=Matrix<int>();a.a[0][0].n=1;a.a[0][1].n=2;a.a[1][0].n=3;a.a[1][1].n=4;used=0;
-  Matrix<int>b(a);if(b.plain!=0||b.a[1][1].n!=14||b.a[1][1].self!=&b.a[1][1]||used!=4||events[0]!=21||events[3]!=24)return 10;
-  used=0;Matrix<int>c(static_cast<Matrix<int>&&>(a));if(c.a[1][1].n!=24||a.a[1][1].n!=-4||events[0]!=31||events[3]!=34)return 11;
-  used=0;b=c;if(b.a[1][1].n!=54||live!=12||used!=4||events[0]!=61||events[3]!=64)return 12;
+  Matrix<int>b(a);if(b.plain!=0||b.a[1][1].n!=14||b.a[1][1].self!=&b.a[1][1]||used!=4||event(0)!=21||event(3)!=24)return 10;
+  used=0;Matrix<int>c(static_cast<Matrix<int>&&>(a));if(c.a[1][1].n!=24||a.a[1][1].n!=-4||event(0)!=31||event(3)!=34)return 11;
+  used=0;b=c;if(b.a[1][1].n!=54||live!=12||used!=4||event(0)!=61||event(3)!=64)return 12;
   used=0;
  }
- if(live||used!=12||events[0]!=124||events[3]!=121||events[4]!=154||events[11]!=99)return 13;
+ if(live||used!=12||event(0)!=124||event(3)!=121||event(4)!=154||event(11)!=99)return 13;
  {Trivial<int>a{7,nullptr};a.p=&a.n;Trivial<int>b(a);b.n=9;a=b;
   if(a.n!=9||a.p!=&a.n||b.p!=&a.n)return 14;
   calls=0;Trivial<int>*alias=&(left(a)=right(a));if(calls!=2||a.n!=10||alias!=&a)return 15;
