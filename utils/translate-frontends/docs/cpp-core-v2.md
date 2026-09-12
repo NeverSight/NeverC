@@ -120,9 +120,10 @@ int main() {
 }
 ```
 
-Reference lifetime extension for temporaries (including conversion-created
-values and subobjects), reference fields and pointer/reference
-globals (including pointer-valued global aggregate fields) are rejected.
+Automatic local reference lifetime extension, including converted values and
+record subobjects, follows the dedicated contract below. Reference fields and
+pointer/reference globals (including pointer-valued global aggregate fields)
+remain rejected.
 Unused/dead bindings are checked too. Standalone
 `nullptr_t` variables are not supported. The contract covers accesses to live
 objects; it does not define dangling/invalid pointer behavior or remove C++
@@ -169,10 +170,10 @@ admitted assignment can operate on a live xvalue receiver.
 The provenance check still follows materialization and binding wrappers, nested
 member/array access, casts, conditionals and comma expressions. Call-site
 bindings and receivers may use full-expression temporaries under the contract
-below. Direct local-reference lifetime extension and fresh-reference returns
-remain rejected, including converted values and subobjects in dead code. Reference fields, reference globals, function references,
-volatile types, lifetime extension and arbitrary dangling-reference analysis are
-not enabled. Invalid C++ category/qualification uses retain source diagnostics.
+below. Automatic local extension follows its exact-owner contract below;
+fresh-reference returns remain rejected, including converted values and subobjects
+in dead code. Reference fields/globals, function references, volatile types,
+static lifetime extension and arbitrary dangling-reference analysis are not enabled. Invalid C++ category/qualification uses retain source diagnostics.
 V1 profiles continue to reject rvalue references and methods.
 
 Fixtures exercise alias mutation, selected overloads, named-reference categories,
@@ -289,7 +290,8 @@ Temporary field reads and by-value function arguments/results are supported for
 the admitted records, using the explicit call storage described below. C++17
 permits implementation copies of eligible trivial class function arguments/results;
 NeverC selects direct destinations for prvalues and retains source-required copies. Temporary reference arguments and receivers use the full-expression call
-contract below; local/returned reference lifetime extension remains excluded. Const
+contract below; automatic local extension follows its own contract, while fresh
+reference returns remain excluded. Const
 local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
@@ -393,7 +395,7 @@ Default initialization adds no independent lifetime boundary. Each constructor
 member initializer retains its full-expression cleanup; temporary objects from
 aggregate clauses survive through the complete aggregate initialization. The
 existing complete-object cleanup owner remains responsible for normal destruction.
-Reference lifetime extension, static initialization
+Reference-field lifetime extension, static initialization
 outside the current contract, exceptions, templates and STL are not enabled
 by admitting field defaults. Unevaluated construction introduces no runtime default
 calls or invented generated body. V1 profiles continue to reject field defaults.
@@ -652,8 +654,8 @@ remain supported through ordinary full-expression materialization and inline
 stores, without a helper call or lifetime extension. The analogous implicit
 trivial move-construction path is preserved. Ordinary/defaulted/user move calls
 and explicit member calls also admit full-expression temporary sources and
-receivers under the contract below. This does not extend local/returned
-reference lifetimes.
+receivers under the contract below. Automatic local reference extension is
+handled separately and is never inferred from a copy or move call.
 
 Move construction and assignment leave complete-object cleanup ownership intact.
 Both moved-from sources and destinations are destroyed normally. By-value
@@ -716,7 +718,7 @@ or purely unevaluated defaulted copies do not need a materialized Clang body.
 An admitted trivial copy also needs no function body. Runtime nontrivial copies
 must have a checked materialized definition.
 
-Unsupported layouts, temporary source-reference lifetime extension, exceptions,
+Unsupported layouts, static reference lifetime extension, exceptions,
 templates and STL headers remain outside this increment. Array extent, object
 storage and expanded-node limits still apply. Regression fixtures cover selected
 calls, nested source/destination indices, one source-array capture, mutable source
@@ -820,7 +822,8 @@ follows its statement, including the for increment. Branches and repeated
 iterations never destroy skipped or already cleaned objects. Storage declarations
 at function entry do not start source object lifetimes.
 
-Temporary objects are owned by their enclosing full-expression. Cleanup runs
+Temporaries without automatic local-reference lifetime extension are owned by
+their enclosing full-expression. Cleanup runs
 in reverse order of completed initialization at declaration initializers,
 expression statements, conditions, return operands, for increments and each
 constructor member initializer. Temporaries in an aggregate initializer remain
@@ -860,8 +863,8 @@ int main() {
 
 This increment covers normal completion only. Throw/catch, stack unwinding,
 partial construction rollback, allocation/deallocation, static/global object
-destruction and reference lifetime extension remain rejected. Temporary calls
-follow the separate full-expression contract below. Existing expansion/storage limits also bound emitted
+destruction remain rejected. Temporary calls and automatic local reference
+extension follow their separate contracts below. Existing expansion/storage limits also bound emitted
 cleanup instructions and recursive array destruction. V1 profiles retain their
 original trivial-lifetime boundary. Regression fixtures cover O0/O2 execution,
 protocol ownership and signatures, return capture, member/array order and
@@ -985,7 +988,8 @@ int main() {
 Conversion functions have no explicit parameters. Virtual/template conversions,
 volatile/restrict receivers, unsupported result types and function/member
 pointers remain excluded. Full-expression temporary receivers and converted
-reference arguments follow the next section. Reference lifetime extension, allocation,
+reference arguments follow the next section. Automatic local reference extension
+has its own contract below. Static lifetime extension, allocation,
 exception execution, templates and complete STL still require further work.
 Unsupported bodies and operands remain checked even in unused declarations,
 constexpr initializers, static assertions and noexcept queries. V1 is unchanged.
@@ -1003,8 +1007,9 @@ functions, constructors, methods, operators and conversion functions. Materializ
 scalar, enum, pointer and record values must have Clang's `SD_FullExpression`
 duration, no extending declaration, and a matching prvalue initializer. Every
 materialization is checked during recursive source inspection, including erased
-noexcept/sizeof/static-assert paths, and again during lowering. Local/returned
-reference bindings retain their stricter lifetime boundary.
+noexcept/sizeof/static-assert paths, and again during lowering. Local references
+require the separate automatic-owner proof below; fresh reference returns remain
+rejected.
 
 Each evaluation initializes real addressable storage once. A scalar reference
 argument receives that storage's address; const/reference qualifiers retain their
@@ -1040,8 +1045,9 @@ Reference parameters do not extend a temporary's lifetime. A reference returned
 through a call may be used while its temporary remains alive within that same
 full-expression; saving the alias does not create a new owner or lifetime
 extension. The defined-execution source contract does not promise general
-interprocedural dangling-reference diagnosis. Direct automatic/static lifetime
-extension, fresh reference returns, standalone array temporaries, unsupported
+interprocedural dangling-reference diagnosis. Automatic local extension follows
+the next section. Static lifetime extension, fresh reference returns, standalone
+array temporaries, unsupported
 types, exception execution, templates and complete STL still require further
 work. This stage adds no wire opcode or external runtime and leaves v1 unchanged.
 
@@ -1050,6 +1056,62 @@ receivers and subobjects, user/generated moves, call sequencing, parameter versu
 caller destruction, result destinations, default/member initializers, conditions
 and loops. Protocol fixtures check full signatures, addresses, cleanup guards,
 reverse destruction and relocation. Native evidence requires the implementing CI.
+
+## Automatic local reference lifetime extension
+
+Core v2 preserves C++17 lifetime extension for ordinary automatic local lvalue
+and rvalue references to admitted scalar, enum, pointer and record temporaries.
+The materialized object must have Clang's `SD_Automatic` duration and name that
+exact ordinary local reference variable as its extending declaration. The
+materialized type must be non-array and match its prvalue initializer. This proof
+is checked during full source inspection and again when binding the variable.
+Const qualification and reference value categories retain their existing rules.
+
+Direct braces (`const R &r{R{1}}`) and equal braces (`R &&r = {R{1}}`) preserve the
+same actual storage. Only a semantic single-element transparent glvalue list with
+the same type and value category is unwrapped. Semantic materializations hidden
+behind the written list still undergo the full source checks, including dead,
+constexpr and unevaluated source. A reference-list wrapper never constructs a
+second aggregate or bypasses the lifetime-owner checks.
+
+```cpp
+struct Value { int n; };
+int main() {
+  const Value &record{Value{4}};
+  int &&element = Value{5}.n;
+  ++element;
+  return record.n + element == 10 ? 0 : 1;
+}
+```
+
+The extended object is constructed in one actual destination and survives the
+initializer's full-expression. Its destructor belongs to the reference's lexical
+scope, with reverse construction order alongside ordinary local objects. Member
+and direct array-subobject references keep the complete record alive when Clang
+records the extension. Nested call temporaries in the same initializer retain
+their shorter full-expression lifetime; they are not adopted by the reference.
+Conditional branches clean only their constructed owners. Loop conditions and
+bodies recreate storage lifetimes each iteration; for-init references live through
+the loop, for-condition references through its increment, and the final false
+condition also cleans its object. Return, break and continue perform the same
+scope cleanup. A returned value is constructed or captured before that cleanup.
+
+Rebinding a reference to an existing alias adds no owner and does not re-extend
+its source. Subsequent copies/moves preserve their selected constructor and
+separate destination. Reference-returning calls, pointer arithmetic, dereference
+and arrow access do not acquire extension merely by eventually reaching a
+temporary: Clang must identify the exact extending variable. Known direct local
+bindings through non-extended temporary subobject paths remain rejected. An alias
+returned through a call has no general interprocedural dangling-use guarantee;
+storing it does not extend the temporary passed to that call.
+
+Static/global/thread-local reference lifetimes, reference fields, structured
+bindings, standalone array temporaries, unsupported types, exception unwinding,
+templates and complete STL remain outside this increment. V1 is unchanged. O0/O2
+no-inline fixtures cover storage identity, braces, subobjects, nested lifetimes,
+copy/move/return ordering, conditional owners and loop exits. Protocol fixtures
+check complete signatures, actual destinations, guarded cleanup and relocation;
+native execution claims require CI at the implementing revision.
 
 ## Noexcept declarations and queries
 
@@ -1085,7 +1147,7 @@ int main() {
 Every written specification and query operand is still inspected, including
 unused, nested and short-circuited expressions. Unsupported types and operations
 remain rejected; unevaluated source does not admit templates, function pointers,
-reference lifetime extension or explicit destruction. Missing ordinary owned
+unsupported lifetime extension or explicit destruction. Missing ordinary owned
 definitions remain diagnostics. Dependent/unresolved written specifications,
 vendor forms and C++17-invalid typed dynamic specifications are not accepted.
 V1 profiles retain their original specification/query boundaries.
@@ -1160,7 +1222,8 @@ implementations remain outside this increment. Pointer `==`/`!=` remain supporte
   to arrays. A const record's array cannot be used to obtain a mutable element
   pointer. Reads such as `make_record().values[0]` materialize an admitted record temporary
   for the full expression. Call-site references to temporary record subobjects
-  share that lifetime; direct local-reference extension remains rejected.
+  share that lifetime. An automatic local reference extends the complete record
+  only when Clang identifies that reference as its extending declaration.
 
 ```cpp
 using Row = int[3];

@@ -31,6 +31,11 @@ class FunctionLowering {
     Expression Pointer;
   };
   std::optional<InitializationReceiver> DefaultReceiver;
+  struct ReferenceInitializer {
+    const VarDecl *Variable;
+    std::size_t ScopeIndex;
+  };
+  std::optional<ReferenceInitializer> ActiveReferenceInitializer;
   std::map<const Decl *, Expression> Storage;
   std::map<const OpaqueValueExpr *, Expression> ArraySources;
   struct ArrayIndex {
@@ -268,6 +273,12 @@ class FunctionLowering {
         if (!Selected)
           reject(L, "user conversion", "Unsupported reference conversion wrapper.");
         return call(Selected);
+      }
+      if (const auto *List = dyn_cast<InitListExpr>(E)) {
+        const auto *Init = referenceListInitializer(List, A.Context);
+        if (!Init)
+          reject(L, "reference initializer", "A transparent single-element reference list is required.");
+        return lvalue(Init);
       }
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E))
         return materializeTemporary(M, L);
@@ -631,6 +642,8 @@ class FunctionLowering {
     if (isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(E))
       return A.zero(E->getType(), L);
     if (const auto *I = dyn_cast<InitListExpr>(E)) {
+      if (A.S.coreV2() && E->isGLValue())
+        return lvalue(I);
       if (A.S.coreV2() && E->getType()->isRecordType())
         return materialize(I, L);
       if (I->isSyntacticForm() && I->getSemanticForm())
@@ -1012,10 +1025,19 @@ class FunctionLowering {
       reject(L, "temporary lifetime", "A checked enclosing full-expression is required.");
   }
   Expression materializeTemporary(const MaterializeTemporaryExpr *M, SourceLocation L) {
-    checkTemporary(M, L);
-    return materialize(M->getSubExpr(), L);
+    if (fullExpressionTemporary(M, A.Context)) {
+      checkTemporary(M, L);
+      return materialize(M->getSubExpr(), L);
+    }
+    const auto *Owner = automaticTemporaryOwner(M, A.Context);
+    if (!Owner || !ActiveReferenceInitializer ||
+        Owner != ActiveReferenceInitializer->Variable ||
+        ActiveReferenceInitializer->ScopeIndex >= Scopes.size())
+      reject(L, "temporary lifetime", "The exact automatic reference initializer and scope are required.");
+    return materialize(M->getSubExpr(), L, ActiveReferenceInitializer->ScopeIndex);
   }
-  Expression materialize(const Expr *Init, SourceLocation L) {
+  Expression materialize(const Expr *Init, SourceLocation L,
+                         std::optional<std::size_t> ScopeIndex = std::nullopt) {
     // One addressable destination per evaluation. Reusing an AST node (for
     // example an array filler) must not reuse a previously constructed object.
     auto Place = recordValue(Init->getType())
@@ -1023,9 +1045,17 @@ class FunctionLowering {
                      : temporary(type(Init->getType(), L), L);
     initialize(Place, Init, L);
     if (A.S.coreV2() && needsDestruction(Init->getType())) {
-      if (FullExpressions.empty())
-        reject(L, "temporary lifetime", "No enclosing full-expression cleanup frame.");
-      own(Place, Init->getType(), L, FullExpressions.back());
+      // Resolve the frame after recursive initialization; vector growth must
+      // never invalidate a retained frame pointer or reference.
+      if (ScopeIndex) {
+        if (*ScopeIndex >= Scopes.size())
+          reject(L, "temporary lifetime", "The extending reference scope no longer exists.");
+        own(Place, Init->getType(), L, Scopes[*ScopeIndex]);
+      } else {
+        if (FullExpressions.empty())
+          reject(L, "temporary lifetime", "No enclosing full-expression cleanup frame.");
+        own(Place, Init->getType(), L, FullExpressions.back());
+      }
     }
     return Place;
   }
@@ -1318,6 +1348,15 @@ class FunctionLowering {
     auto Place = localStorage(V);
     beginFullExpression();
     if (V->getType()->isReferenceType()) {
+      auto Previous = ActiveReferenceInitializer;
+      auto Restore = llvm::make_scope_exit([&] { ActiveReferenceInitializer = Previous; });
+      ActiveReferenceInitializer.reset();
+      if (A.S.coreV2() && V->getKind() == Decl::Var && !V->isImplicit() &&
+          V->isLocalVarDecl() && V->hasLocalStorage()) {
+        if (Scopes.empty())
+          reject(L, "reference lifetime", "An automatic reference requires a lexical scope.");
+        ActiveReferenceInitializer = ReferenceInitializer{V->getCanonicalDecl(), Scopes.size() - 1};
+      }
       assign(Place, bind(V->getInit(), V->getType()), L);
     } else {
       bool DefaultOnly = false;

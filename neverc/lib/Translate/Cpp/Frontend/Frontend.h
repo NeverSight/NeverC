@@ -18,6 +18,7 @@ class CallExpr;
 class CastExpr;
 class CXXConstructExpr;
 class MaterializeTemporaryExpr;
+class InitListExpr;
 class Expr;
 }
 
@@ -92,6 +93,10 @@ std::optional<GeneratedArrayAssignment> generatedArrayAssignment(
 bool callableMethod(const clang::CXXMethodDecl *Method);
 bool fullExpressionTemporary(const clang::MaterializeTemporaryExpr *Temporary,
                              clang::ASTContext &Context);
+const clang::VarDecl *automaticTemporaryOwner(
+    const clang::MaterializeTemporaryExpr *Temporary, clang::ASTContext &Context);
+const clang::Expr *referenceListInitializer(const clang::InitListExpr *List,
+                                          clang::ASTContext &Context);
 bool ordinaryConstructor(const clang::CXXConstructorDecl *Constructor);
 const clang::CXXConstructExpr *constructorConversion(const clang::CastExpr *Cast,
                                                    clang::ASTContext &Context);

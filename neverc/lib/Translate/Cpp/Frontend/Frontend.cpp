@@ -392,10 +392,40 @@ const CallExpr *userConversionCall(const CastExpr *Cast, ASTContext &Context) {
   return Call;
 }
 
-bool fullExpressionTemporary(const MaterializeTemporaryExpr *M, ASTContext &Context) {
-  return M && M->getStorageDuration() == SD_FullExpression && !M->getExtendingDecl() &&
-         !M->getType()->isArrayType() && M->getSubExpr() && M->getSubExpr()->isPRValue() &&
+static bool temporaryShape(const MaterializeTemporaryExpr *M, ASTContext &Context) {
+  return M && !M->getType()->isArrayType() && M->getSubExpr() &&
+         M->getSubExpr()->isPRValue() &&
          Context.hasSameUnqualifiedType(M->getType(), M->getSubExpr()->getType());
+}
+bool fullExpressionTemporary(const MaterializeTemporaryExpr *M, ASTContext &Context) {
+  return temporaryShape(M, Context) && M->getStorageDuration() == SD_FullExpression &&
+         !M->getExtendingDecl();
+}
+const VarDecl *automaticTemporaryOwner(const MaterializeTemporaryExpr *M,
+                                      ASTContext &Context) {
+  if (!temporaryShape(M, Context) || M->getStorageDuration() != SD_Automatic)
+    return nullptr;
+  const auto *Owner = dyn_cast_or_null<VarDecl>(M->getExtendingDecl());
+  if (!Owner || Owner->getKind() != Decl::Var || Owner->isImplicit() ||
+      !Owner->isLocalVarDecl() || !Owner->hasLocalStorage() ||
+      !Owner->getType()->isReferenceType())
+    return nullptr;
+  return Owner->getCanonicalDecl();
+}
+const Expr *referenceListInitializer(const InitListExpr *List, ASTContext &Context) {
+  if (!List)
+    return nullptr;
+  if (List->isSyntacticForm() && List->getSemanticForm())
+    List = List->getSemanticForm();
+  // isTransparent() asserts semantic form and a single element for glvalues.
+  if (!List->isSemanticForm() || !List->isGLValue() || List->getNumInits() != 1 ||
+      !List->getInit(0) || List->hasArrayFiller() || List->hasDesignatedInit() ||
+      List->getInitializedFieldInUnion() || !List->isTransparent())
+    return nullptr;
+  const auto *Init = List->getInit(0);
+  return Context.hasSameType(List->getType(), Init->getType()) &&
+                 List->getValueKind() == Init->getValueKind()
+             ? Init : nullptr;
 }
 
 bool ordinaryDestructor(const CXXDestructorDecl *D) {
@@ -762,68 +792,79 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   // Follow the identity of an lvalue, not arbitrary call arguments. A by-value
   // temporary passed to a function returning some other live object is safe.
-  bool temporaryArrayBase(const Expr *E, bool AllowFullExpression = false) {
+  bool temporaryArrayBase(const Expr *E, bool AllowFullExpression = false,
+                          const VarDecl *ExpectedExtender = nullptr) {
     E = E->IgnoreParens();
+    if (const auto *List = dyn_cast<InitListExpr>(E)) {
+      const auto *Init = referenceListInitializer(List, A.Context);
+      return !Init || temporaryArrayBase(Init, AllowFullExpression, ExpectedExtender);
+    }
     if (E->getType()->isArrayType())
-      return temporaryBinding(E, AllowFullExpression);
+      return temporaryBinding(E, AllowFullExpression, ExpectedExtender);
     if (const auto *C = dyn_cast<CastExpr>(E)) {
       if (C->getCastKind() == CK_ArrayToPointerDecay)
-        return temporaryBinding(C->getSubExpr(), AllowFullExpression);
+        return temporaryBinding(C->getSubExpr(), AllowFullExpression, ExpectedExtender);
       if (C->getCastKind() == CK_NoOp || C->getCastKind() == CK_BitCast)
-        return temporaryArrayBase(C->getSubExpr(), AllowFullExpression);
+        return temporaryArrayBase(C->getSubExpr(), AllowFullExpression, ExpectedExtender);
     }
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
-      return temporaryArrayBase(W->getSubExpr(), AllowFullExpression);
+      return temporaryArrayBase(W->getSubExpr(), AllowFullExpression, ExpectedExtender);
     if (const auto *C = dyn_cast<ConditionalOperator>(E))
-      return temporaryArrayBase(C->getTrueExpr(), AllowFullExpression) ||
-             temporaryArrayBase(C->getFalseExpr(), AllowFullExpression);
+      return temporaryArrayBase(C->getTrueExpr(), AllowFullExpression, ExpectedExtender) ||
+             temporaryArrayBase(C->getFalseExpr(), AllowFullExpression, ExpectedExtender);
     if (const auto *B = dyn_cast<BinaryOperator>(E)) {
       if (B->getOpcode() == BO_Comma)
-        return temporaryArrayBase(B->getRHS(), AllowFullExpression);
+        return temporaryArrayBase(B->getRHS(), AllowFullExpression, ExpectedExtender);
       if (B->getType()->isPointerType() &&
           (B->getOpcode() == BO_Add || B->getOpcode() == BO_Sub))
         return temporaryArrayBase(B->getLHS()->getType()->isPointerType()
                                       ? B->getLHS()
-                                      : B->getRHS(), AllowFullExpression);
+                                      : B->getRHS(), AllowFullExpression, ExpectedExtender);
     }
     if (const auto *U = dyn_cast<UnaryOperator>(E); U && U->getOpcode() == UO_AddrOf)
-      return temporaryBinding(U->getSubExpr(), AllowFullExpression);
+      return temporaryBinding(U->getSubExpr(), AllowFullExpression, ExpectedExtender);
     // A pointer prvalue (including a call result) is not a temporary pointee.
     return false;
   }
-  bool temporaryBinding(const Expr *E, bool AllowFullExpression = false) {
+  bool temporaryBinding(const Expr *E, bool AllowFullExpression = false,
+                        const VarDecl *ExpectedExtender = nullptr) {
     E = E->IgnoreParens();
+    if (const auto *List = dyn_cast<InitListExpr>(E)) {
+      const auto *Init = referenceListInitializer(List, A.Context);
+      return !Init || temporaryBinding(Init, AllowFullExpression, ExpectedExtender);
+    }
     if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E)) {
       auto Found = ArraySources.find(Opaque);
-      return Found == ArraySources.end() || temporaryBinding(Found->second, AllowFullExpression);
+      return Found == ArraySources.end() || temporaryBinding(Found->second, AllowFullExpression, ExpectedExtender);
     }
     if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E))
-      return !AllowFullExpression || !fullExpressionTemporary(M, A.Context);
+      return !(AllowFullExpression && fullExpressionTemporary(M, A.Context)) &&
+             !(ExpectedExtender && automaticTemporaryOwner(M, A.Context) == ExpectedExtender);
     if (isa<CXXBindTemporaryExpr>(E))
       return true;
     if (const auto *C = dyn_cast<CastExpr>(E))
-      return temporaryBinding(C->getSubExpr(), AllowFullExpression);
+      return temporaryBinding(C->getSubExpr(), AllowFullExpression, ExpectedExtender);
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
-      return temporaryBinding(W->getSubExpr(), AllowFullExpression);
+      return temporaryBinding(W->getSubExpr(), AllowFullExpression, ExpectedExtender);
     if (const auto *M = dyn_cast<MemberExpr>(E))
-      return M->isArrow() ? temporaryArrayBase(M->getBase(), AllowFullExpression)
-                          : temporaryBinding(M->getBase(), AllowFullExpression);
+      return M->isArrow() ? temporaryArrayBase(M->getBase(), AllowFullExpression, ExpectedExtender)
+                          : temporaryBinding(M->getBase(), AllowFullExpression, ExpectedExtender);
     if (const auto *Index = dyn_cast<ArraySubscriptExpr>(E))
-      return temporaryArrayBase(Index->getBase(), AllowFullExpression);
+      return temporaryArrayBase(Index->getBase(), AllowFullExpression, ExpectedExtender);
     if (const auto *C = dyn_cast<ConditionalOperator>(E))
-      return temporaryBinding(C->getTrueExpr(), AllowFullExpression) ||
-             temporaryBinding(C->getFalseExpr(), AllowFullExpression);
+      return temporaryBinding(C->getTrueExpr(), AllowFullExpression, ExpectedExtender) ||
+             temporaryBinding(C->getFalseExpr(), AllowFullExpression, ExpectedExtender);
     if (const auto *B = dyn_cast<BinaryOperator>(E)) {
       if (B->getOpcode() == BO_Comma)
-        return temporaryBinding(B->getRHS(), AllowFullExpression);
+        return temporaryBinding(B->getRHS(), AllowFullExpression, ExpectedExtender);
       if (B->isAssignmentOp())
-        return temporaryBinding(B->getLHS(), AllowFullExpression);
+        return temporaryBinding(B->getLHS(), AllowFullExpression, ExpectedExtender);
     }
     if (const auto *U = dyn_cast<UnaryOperator>(E)) {
       if (U->getOpcode() == UO_Deref)
-        return temporaryArrayBase(U->getSubExpr(), AllowFullExpression);
+        return temporaryArrayBase(U->getSubExpr(), AllowFullExpression, ExpectedExtender);
       if (U->isIncrementDecrementOp())
-        return temporaryBinding(U->getSubExpr(), AllowFullExpression);
+        return temporaryBinding(U->getSubExpr(), AllowFullExpression, ExpectedExtender);
     }
     // An xvalue can still designate a live object. Temporary wrappers above
     // retain their own rejection; changing category alone creates no owner.
@@ -845,10 +886,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return false;
   }
-  void checkBinding(const Expr *E, bool AllowFullExpression = false) {
-    if (E && temporaryBinding(E, AllowFullExpression))
+  void checkBinding(const Expr *E, bool AllowFullExpression = false,
+                    const VarDecl *ExpectedExtender = nullptr) {
+    if (E && temporaryBinding(E, AllowFullExpression, ExpectedExtender))
       A.reject(E->getExprLoc(), "reference binding",
-               "Binding references to temporaries requires lifetime lowering.");
+               "The temporary does not have an admitted lifetime for this reference binding.");
   }
 
   void queueGenerated(const CXXMethodDecl *Method, SourceLocation L) {
@@ -906,6 +948,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           I = I->getSemanticForm();
         if (!CheckedSemanticInitializers.insert(I).second)
           continue;
+        if (I->isGLValue() && !referenceListInitializer(I, A.Context))
+          A.reject(Owner, "reference initializer", "A transparent single-element reference list is required.");
         for (const auto *Init : I->inits())
           if (Init) Work.push_back(Init);
         if (const auto *Filler = I->getArrayFiller())
@@ -914,21 +958,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       }
       if (!CheckedSemanticInitializers.insert(E).second)
         continue;
-      if (A.S.coreV2())
-        if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(E)) {
-          // The wrapper has no children. A syntactic aggregate traversal alone
-          // would miss its selected default, including generated constructions.
-          auto PreviousOwner = ImplicitInitializerOwner;
-          ImplicitInitializerOwner = Owner;
-          auto Restore = llvm::make_scope_exit([&] { ImplicitInitializerOwner = PreviousOwner; });
-          TraverseStmt(const_cast<CXXDefaultInitExpr *>(Default));
-          continue;
-        }
-      if (const auto *C = dyn_cast<CXXConstructExpr>(E))
-        checkConstruction(C, C->getExprLoc().isValid() ? C->getExprLoc() : Owner);
-      for (const auto *Child : E->children())
-        if (const auto *Expression = dyn_cast_or_null<Expr>(Child))
-          Work.push_back(Expression);
+      // A reference temporary can itself contain a semantic initializer list
+      // with an implicit conversion call. Traverse every semantic element;
+      // inspecting only constructors or outer materializations misses those
+      // calls when RAV follows the nested list's written form instead.
+      auto PreviousOwner = ImplicitInitializerOwner;
+      ImplicitInitializerOwner = Owner;
+      auto Restore = llvm::make_scope_exit([&] { ImplicitInitializerOwner = PreviousOwner; });
+      TraverseStmt(const_cast<Expr *>(E));
     }
   }
 
@@ -1198,7 +1235,9 @@ public:
       A.reject(D->getLocation(), "static data member",
                "Static data members require class storage and initialization lowering.");
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
-      checkBinding(D->getInit());
+      checkBinding(D->getInit(), false,
+                   D->getKind() == Decl::Var && D->isLocalVarDecl() && D->hasLocalStorage()
+                       ? D->getCanonicalDecl() : nullptr);
     if (A.S.coreV2() && !D->isLocalVarDeclOrParm() &&
         needsDestruction(D->getType())) {
       A.reject(D->getLocation(), "global destruction",
@@ -1400,9 +1439,9 @@ public:
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(S);
-          M && !fullExpressionTemporary(M, A.Context))
+          M && !fullExpressionTemporary(M, A.Context) && !automaticTemporaryOwner(M, A.Context))
         A.reject(L, "temporary lifetime",
-                 "Only non-array temporaries ending at this full-expression are supported.");
+                 "A non-array full-expression temporary or checked automatic reference owner is required.");
       if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S)) {
         if (!Query->getOperand() || Query->isTypeDependent() ||
             Query->isValueDependent() || Query->isInstantiationDependent())

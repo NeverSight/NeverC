@@ -185,6 +185,22 @@ no call argument transfers a temporary's ownership merely by being a reference.
 No wire opcode or additional lifetime flag is needed. See the
 [source contract](cpp-core-v2.md#full-expression-temporary-calls).
 
+## Core v2 automatic reference storage
+
+An admitted automatic reference uses its usual `ptr:`/`cptr:` alias to an actual
+local scalar or record destination. The frontend verifies the exact canonical
+extending variable, storage duration and initializer shape. Transparent semantic
+reference lists retain that address; their hidden materializations undergo the
+same source inspection as written expressions. No aggregate copy is introduced.
+
+Destructible extended objects use the existing live flags and lexical scope
+cleanup calls. Nested full-expression temporaries retain separate cleanup frames.
+Reference rebinding adds no owner; copied or moved values keep their own selected
+construction and destination. Conditions, loop increments, repeated evaluations
+and early exits use the existing control-flow cleanup. Protocol major 1 and its
+opcodes remain unchanged. See the
+[source lifetime contract](cpp-core-v2.md#automatic-local-reference-lifetime-extension).
+
 ## Core v2 noexcept queries
 
 Resolved `noexcept(expression)` uses the existing pure `literal` representation
@@ -290,7 +306,7 @@ by-value parameter/result storage conventions apply. No move opcode, foreign ABI
 record snapshot or implicit ownership transfer is introduced. A source object
 remains alive after moving, and the existing complete-object owners retain normal
 cleanup. Protocol major 1 is unchanged. Generated/defaulted moves follow the
-contract below; general reference lifetime extension remains excluded. See the
+contract below; automatic local extension follows its separate contract. See the
 [user move contract](cpp-core-v2.md#user-defined-move-operations).
 
 ## Core v2 generated move calls

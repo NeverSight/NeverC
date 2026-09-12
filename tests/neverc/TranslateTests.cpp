@@ -1138,10 +1138,6 @@ TEST_F(TranslateTest, CoreV2ArrayScopeRejectsUnsupportedStorage) {
        "void f(){const int a[2]={1,2}; a[0]=3;}", "TR0202"},
       {"const-record-array-write",
        "struct R{int a[2];}; void f(const R*p){p->a[0]=3;}", "TR0202"},
-      {"array-temporary-subobject",
-       "struct R{int a[2];}; int f(){const int &r=R{{1,2}}.a[0]; return r;}", "TR0201"},
-      {"array-temporary-comma",
-       "struct R{int a[2];}; int f(){int n=0; const int &r=(++n,R{{1,2}}.a)[0]; return r;}", "TR0201"},
       {"array-temporary-dereference",
        "struct R{int a[2];}; int f(){const int &r=*R{{1,2}}.a; return r;}", "TR0201"},
       {"array-initialization-budget",
@@ -1433,14 +1429,6 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"temporary-reference",
-       "int f(){const int &value=42; return value;}", "TR0201"},
-      {"dead-temporary-reference",
-       "int f(){if(false){const int &value=42;} return 0;}", "TR0201"},
-      {"conversion-temporary",
-       "int f(){int x=1; const unsigned int &r=x; return r;}", "TR0201"},
-      {"temporary-subobject",
-       "struct R{int x;}; int f(){const int &r=R{1}.x; return r;}", "TR0201"},
       {"reference-field", "struct R{int &value;};", "TR0201"},
       {"pointer-global", "int *const value=nullptr;", "TR0201"},
       {"reference-global", "const int value=1; const int &alias=value;",
@@ -2032,8 +2020,7 @@ TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
       {"template", "struct R{template<class T>operator T()const{return T{};}};", "TR0201"},
       {"member-address", "struct R{operator int()const{return 1;}};auto f(){return &R::operator int;}", "TR0201"},
       {"function-pointer", "using F=int(*)();int g(){return 1;}struct R{operator F()const{return g;}};", "TR0201"},
-      {"fresh-reference", "struct R{int n;operator int()const{return n;}};int f(){R r{1};const int&n=r;return n;}", "TR0201"},
-      {"fresh-record-reference", "struct T{int n;};struct R{operator T()const{return {1};}};int f(){R r;const T&t=r;return t.n;}", "TR0201"},
+      {"empty-record-conversion", "struct T{int n;};struct R{operator T()const{return {1};}};int f(){R r;const T&t=r;return t.n;}", "TR0201"},
       {"unused-throw", "struct R{operator int()const{throw 1;}};", "TR0201"},
       {"query-throw", "struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}", "TR0201"},
       {"folded-float", "struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,\"value\");", "TR0201"},
@@ -2062,6 +2049,228 @@ TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
   for (const std::string &Code : {
       "struct R{int n;operator int()const{return n;}};",
       "struct R{explicit operator bool()const{return true;}};bool f(R&r){return static_cast<bool>(r);}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AutomaticReferencesPreserveStorageAndCleanup) {
+  const auto Source = tmpFile("automatic-references.cpp");
+  const auto Output = tmpFile("automatic-references.nc");
+  writeFile(Source, R"cpp(
+int alive=0,made=0,dead=0,copies=0,moves=0,bad=0;
+void reset(){alive=made=dead=copies=moves=bad=0;}
+struct R {
+ int n; R*self;
+ R(int v):n(v),self(this){++alive;++made;}
+ R(const R&r):n(r.n),self(this){++alive;++made;++copies;}
+ R(R&&r):n(r.n),self(this){r.n=-1;++alive;++made;++moves;}
+ ~R(){if(self!=this)++bad;--alive;++dead;}
+ explicit operator bool()const{return n!=0;}
+};
+struct Group{R array[2];};
+struct Source{int n;operator int()const{return n;}operator R()const{return R(n);}};
+struct Literal{int n;};
+constexpr int folded(){const Literal&r{Literal{9}};const int&n={r.n};return n;}
+constexpr int constant=folded();
+static_assert(constant==9);
+enum class E:unsigned char{value=7};
+int read(const R&r){if(alive<1||r.self!=&r)++bad;return r.n;}
+int number(const int&n){return n;}
+const R&alias(const R&r){return r;}
+R factory(int n){return R(n);}
+R copyResult(){const R&r{R(8)};return r;}
+R moveResult(){R&&r={R(9)};return static_cast<R&&>(r);}
+int early(){const R&r=R(10);R ordinary(11);return read(r)+ordinary.n;}
+int select(bool b){const R&r=b?R(12):R(13);return read(r);}
+int selectMember(bool b){const int&r=b?R(14).n:R(15).n;return r;}
+int log=0;
+struct Tag{int n;Tag(int v):n(v){}~Tag(){log=log*10+n;}};
+int main(){
+ {const int&a{1};int&&b={2};b+=3;const int&&c=6;
+  int x=8;int*const&p{&x};E&&e={E::value};const unsigned&u=x;
+  Source s{4};const int&converted{s};
+  if(a!=1||b!=5||c!=6||*p!=8||static_cast<int>(e)!=7||u!=8||converted!=4||constant!=9)return 1;}
+ reset();
+ {const R&a{R(1)};R&&b={R(2)};R&again=b;const R&same={a};++again.n;
+  if(alive!=2||dead||copies||moves||a.self!=&a||b.self!=&b||&same!=&a||b.n!=3)return 2;}
+ if(alive||dead!=2||bad)return 3;
+ reset();
+ {const int&a{R(3).n};int&&b={R(4).n};++b;
+  if(a!=3||b!=5||alive!=2||dead)return 4;}
+ if(alive||dead!=2||bad)return 5;
+ reset();
+ {const R(&array)[2]=Group{{R(5),R(6)}}.array;const R&same{array[1]};
+  if(alive!=2||dead||read(same)!=6||array[0].self!=&array[0])return 6;}
+ if(alive||dead!=2||bad)return 7;
+ reset();
+ {const int&a={(Group{{R(7),R(8)}}.array)[1].n};
+  if(a!=8||alive!=2||dead)return 8;}
+ if(alive||dead!=2||bad)return 9;
+ reset();
+ {const R&outer{R(read(R(4)))};
+  if(read(outer)!=4||alive!=1||made!=2||dead!=1||copies||moves)return 10;}
+ if(alive||dead!=2||bad)return 11;
+ reset();
+ {const R&a=factory(5);Source s{6};R&&b={static_cast<R>(s)};
+  if(read(a)!=5||read(b)!=6||alive!=2||dead||copies||moves)return 12;}
+ if(alive||dead!=2||bad)return 13;
+ reset();
+ {const R&a=R(7);R copy(a);R&&b=R(8);R moved(static_cast<R&&>(b));
+  if(alive!=4||copies!=1||moves!=1||copy.n!=7||moved.n!=8||b.n!=-1)return 14;}
+ if(alive||dead!=4||bad)return 15;
+ reset();
+ {R copy=copyResult();R moved=moveResult();
+  if(alive!=2||made!=4||dead!=2||copies!=1||moves!=1||copy.n!=8||moved.n!=9)return 16;}
+ if(alive||dead!=4||bad)return 17;
+ reset();
+ int result=early();if(result!=21||alive||dead!=2||bad)return 18;
+ reset();
+ int a=select(true);int b=select(false);int c=selectMember(true);int d=selectMember(false);
+ if(a!=12||b!=13||c!=14||d!=15||alive||made!=4||dead!=4||bad)return 19;
+ reset();
+ {int n=0;R&&r=(++n,static_cast<R&&>(R(16)));
+  if(n!=1||r.n!=16||alive!=1||dead||copies||moves)return 20;}
+ if(alive||dead!=1||bad)return 21;
+ {const Tag&a=Tag(1);Tag ordinary(2);const Tag&b={Tag(3)};if(log)return 22;}
+ if(log!=321)return 23;
+ reset();
+ if(const R&r{R(17)};r){if(read(r)!=17||alive!=1||dead)return 24;}
+ if(alive||dead!=1||bad)return 25;
+ switch(const R&r=R(18);r.n){case 18:if(alive!=1||dead!=1)return 26;break;default:return 27;}
+ if(alive||dead!=2||bad)return 28;
+ reset();
+ int n=3,sum=0;
+ while(const R&r=R(n--)){if(alive!=1||dead!=3-r.n)return 29;sum+=r.n;if(r.n==2)continue;}
+ if(sum!=6||alive||made!=4||dead!=4||bad)return 30;
+ reset();n=3;
+ while(const R&r{R(n--)}){const R&body=R(20);if(alive!=2)return 31;if(r.n==2)break;}
+ if(alive||made!=4||dead!=4||bad)return 32;
+ reset();n=2;sum=0;
+ for(const R&outer=R(21);const R&condition=R(n--);sum+=alive){
+  if(alive!=2||read(outer)!=21)return 33;const R&body=R(22);if(alive!=3)return 34;continue;
+ }
+ if(sum!=4||alive||made!=6||dead!=6||bad)return 35;
+ reset();
+ for(int i=0;i<3;++i){const R&r=R(i);if(alive!=1||dead!=i)return 36;}
+ if(alive||made!=3||dead!=3||bad)return 37;
+ reset();
+ {const R&expired=alias({R(23)});if(alive||dead!=1||made!=1)return 38;}
+ if(alive||dead!=1||bad)return 39;
+ reset();
+ int braced=number({24})+read({R(25)});
+ if(braced!=49||alive||made!=1||dead!=1||bad)return 40;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("automatic-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AutomaticReferencesAcceptLocalExtensions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-1", "struct I{int n;I(const I&s):n(s.n){}};struct R{I i;R(const R&)=default;};void f(const R&s){const R&r=R(s);}"},
+      {"promoted-2", "void f(){int&&r=1;}"},
+      {"promoted-3", "void f(){int&&r=static_cast<int&&>(1);}"},
+      {"promoted-4", "void f(){const int&&r=1;}"},
+      {"promoted-5", "struct R{int n;};void f(){R&&r=R{1};}"},
+      {"promoted-6", "struct R{int n;};void f(){R&&r=static_cast<R&&>(R{1});}"},
+      {"promoted-7", "struct R{int n;};void f(){int&&r=R{1}.n;}"},
+      {"promoted-8", "struct R{int a[2];};void f(){int&&r=R{{1,2}}.a[0];}"},
+      {"promoted-9", "struct R{int n;};void f(bool b,R&live){R&&r=b?static_cast<R&&>(live):R{1};}"},
+      {"promoted-10", "struct R{int n;};void f(){int n=0;R&&r=(++n,R{1});}"},
+      {"promoted-11", "struct R{int n;operator int()const{return n;}};int f(){R r{1};const int&n=r;return n;}"},
+      {"promoted-12", "int f(){const int&r=1;return r;}"},
+      {"promoted-13", "int f(){int&&r=1;return r;}"},
+      {"promoted-14", "struct R{int n;};int f(){const R&r=R{1};return r.n;}"},
+      {"promoted-15", "struct R{int n;};int f(){R&&r=R{1};return r.n;}"},
+      {"promoted-16", "struct R{int n;};int f(){const int&r=R{1}.n;return r;}"},
+      {"promoted-17", "struct R{int a[2];};int f(){const int&r=R{{1,2}}.a[0];return r;}"},
+      {"promoted-18", "struct R{int n;explicit R()=default;};int f(){const R&r=R{};return r.n;}"},
+      {"promoted-19", "struct R{int n;~R(){}};int f(){const R&r=R{1};return r.n;}"},
+      {"promoted-20", "int f(){const int&r=1; return r;}"},
+      {"promoted-21", "int f(){if(false){const int&r=1;} return 0;}"},
+      {"promoted-22", "int f(){int x=1; const unsigned int&r=x; return r;}"},
+      {"promoted-23", "struct R{int x;}; int f(){const int&r=R{1}.x; return r;}"},
+      {"promoted-24", "struct R{int a[2];}; int f(){int n=0; const int&r=(++n,R{{1,2}}.a)[0]; return r;}"},
+      {"promoted-25", "struct R{int a[2];}; int f(){const int&r=R{{1,2}}.a[0]; return r;}"},
+      {"promoted-26", "struct R{int a[2];}; int f(){const int &r=R{{1,2}}.a[0]; return r;}"},
+      {"promoted-27", "struct R{int a[2];}; int f(){int n=0; const int &r=(++n,R{{1,2}}.a)[0]; return r;}"},
+      {"promoted-28", "int f(){const int &value=42; return value;}"},
+      {"promoted-29", "int f(){if(false){const int &value=42;} return 0;}"},
+      {"promoted-30", "int f(){int x=1; const unsigned int &r=x; return r;}"},
+      {"promoted-31", "struct R{int x;}; int f(){const int &r=R{1}.x; return r;}"},
+      {"brace-scalar", "int f(){const int&r{1};return r;}"},
+      {"equal-brace-record", "struct R{int n;};int f(){const R&r={R{2}};return r.n;}"},
+      {"brace-subobject", "struct R{int n;};int f(){int&&r{R{3}.n};return ++r;}"},
+      {"brace-live", "int f(int&n){int&r{n};return ++r;}"},
+      {"brace-parameter", "int take(const int&n){return n;}int f(){return take({4});}"},
+      {"brace-constructor-parameter", "struct R{int n;R(const int&r):n(r){}};int f(){R r({5});return r.n;}"},
+      {"brace-record-conversion", "struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v={r};return v.n;}"},
+      {"constexpr-reference", "struct R{int n;};constexpr int f(){const R&r{R{7}};return r.n;}constexpr int n=f();static_assert(n==7);"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("automatic-references-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("automatic-references-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AutomaticReferencesRetainLifetimeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"fresh-brace-scalar-return", "const int&f(){return {1};}", "TR0201"},
+      {"fresh-equal-record-return", "struct R{int n;};const R&f(){return {R{1}};}", "TR0201"},
+      {"fresh-brace-member-return", "struct R{int n;};const int&f(){return {R{1}.n};}", "TR0201"},
+      {"static-brace", "int f(){static const int&r{1};return r;}", "TR0201"},
+      {"tls-brace", "int f(){thread_local const int&r{1};return r;}", "TR0201"},
+      {"global-brace", "const int&r{1};", "TR0201"},
+      {"reference-field", "struct R{const int&r;};int f(){R r{1};return r.r;}", "TR0201"},
+      {"array-owner", "void f(){const int(&r)[2]={1,2};}", "TR0201"},
+      {"dead-array-owner", "void f(){if(false){const int(&r)[2]={1,2};}}", "TR0201"},
+      {"constexpr-array-owner", "constexpr int f(){const int(&r)[2]={1,2};return r[0];}constexpr int n=f();", "TR0201"},
+      {"query-braced-array", "void take(const int(&)[2])noexcept{}bool f(){return noexcept(take({1,2}));}", "TR0201"},
+      {"braced-array-argument", "void take(const int(&)[2]){}void f(){take({1,2});}", "TR0201"},
+      {"braced-offset", "struct R{int a[2];};int f(){const int&r{*(R{{1,2}}.a+1)};return r;}", "TR0201"},
+      {"braced-arrow", "struct I{int n;};struct R{I a[2];};int f(){const int&r{(R{{{1},{2}}}.a+1)->n};return r;}", "TR0201"},
+      {"unused-throw", "struct R{int n;~R(){throw 1;}};void f(){const R&r{R{1}};}", "TR0201"},
+      {"constexpr-unsupported", "constexpr int f(){const double&r{1.0};return 1;}constexpr int n=f();", "TR0201"},
+      {"volatile-owner", "void f(){const volatile int&&r=1;}", "TR0201"},
+      {"mutable-scalar", "void f(){int&r{1};}", "TR0202"},
+      {"mutable-record", "struct R{int n;};void f(){R&r={R{1}};}", "TR0202"},
+      {"const-mutation", "void f(){const int&r{1};++r;}", "TR0202"},
+      {"deleted-copy", "struct R{int n;R(int v):n(v){}R(const R&)=delete;};void f(){const R&r=R(1);R copy(r);}", "TR0202"},
+      {"deleted-move", "struct R{int n;R(int v):n(v){}R(R&&)=delete;};void f(){R&&r=R(1);R moved(static_cast<R&&>(r));}", "TR0202"},
+      {"narrow-brace", "void f(){const unsigned char&r{300};}", "TR0202"},
+      {"constructor", "struct R{int n;R(int);};void f(){const R&r=R(1);}", "TR0203"},
+      {"destructor", "struct R{int n;~R();};void f(){const R&r{R{1}};}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("automatic-references-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("automatic-references-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("automatic-references-v1.cpp");
+  const auto Output = tmpFile("automatic-references-v1.nc");
+  for (const std::string &Code : {
+      "int f(){const int&r{1};return r;}",
+      "struct R{int n;};int f(){const R&r={R{1}};return r.n;}"}) {
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
     expectCode(Result, "TR0201");
@@ -2275,13 +2484,7 @@ TEST_F(TranslateTest, CoreV2TemporaryCallsAcceptFullExpressionBindings) {
 
 TEST_F(TranslateTest, CoreV2TemporaryCallsRetainLifetimeExtensionBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"scalar-extension", "int f(){const int&r=1;return r;}", "TR0201"},
-      {"scalar-rvalue-extension", "int f(){int&&r=1;return r;}", "TR0201"},
-      {"record-extension", "struct R{int n;};int f(){const R&r=R{1};return r.n;}", "TR0201"},
-      {"record-rvalue-extension", "struct R{int n;};int f(){R&&r=R{1};return r.n;}", "TR0201"},
-      {"member-extension", "struct R{int n;};int f(){const int&r=R{1}.n;return r;}", "TR0201"},
-      {"array-member-extension", "struct R{int a[2];};int f(){const int&r=R{{1,2}}.a[0];return r;}", "TR0201"},
-      {"converted-extension", "struct R{operator int()const{return 1;}};int f(){R r;const int&n=r;return n;}", "TR0201"},
+      {"empty-conversion-record", "struct R{operator int()const{return 1;}};int f(){R r;const int&n=r;return n;}", "TR0201"},
       {"fresh-return", "const int&f(){return 1;}", "TR0201"},
       {"fresh-record-return", "struct R{int n;};const R&f(){return R{1};}", "TR0201"},
       {"static-extension", "int f(){static const int&r=1;return r;}", "TR0201"},
@@ -2718,7 +2921,6 @@ TEST_F(TranslateTest, CoreV2GeneratedMovesRetainSourceAndLifetimeBoundaries) {
       {"const-field", "struct R{const int n;R(R&&)=default;};", "TR0201"},
       {"private-field", "class R{int n;public:R(R&&)=default;};", "TR0201"},
       {"base", "struct B{int n;};struct R:B{int value;R(R&&)=default;};", "TR0201"},
-      {"temporary-ordinary-reference", "struct R{int n;};void f(){R&&r=R{1};}", "TR0201"},
       {"source-builtin", "struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}", "TR0201"},
       {"lambda-array", "int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}", "TR0201"},
       {"expansion", "struct I{int n;I(I&&s):n(s.n){}};struct R{I items[65536];R(R&&)=default;};R f(R&&s){return static_cast<R&&>(s);}", "TR0201"},
@@ -3038,16 +3240,7 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2LiveRvalueReferencesRetainTemporaryAndMoveBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"scalar-temporary", "void f(){int&&r=1;}", "TR0201"},
-      {"scalar-cast-temporary", "void f(){int&&r=static_cast<int&&>(1);}", "TR0201"},
-      {"const-scalar-temporary", "void f(){const int&&r=1;}", "TR0201"},
       {"reference-return", "int&&f(){return 1;}", "TR0201"},
-      {"record-temporary", "struct R{int n;};void f(){R&&r=R{1};}", "TR0201"},
-      {"cast-record-temporary", "struct R{int n;};void f(){R&&r=static_cast<R&&>(R{1});}", "TR0201"},
-      {"temporary-field", "struct R{int n;};void f(){int&&r=R{1}.n;}", "TR0201"},
-      {"temporary-array-element", "struct R{int a[2];};void f(){int&&r=R{{1,2}}.a[0];}", "TR0201"},
-      {"temporary-conditional", "struct R{int n;};void f(bool b,R&live){R&&r=b?static_cast<R&&>(live):R{1};}", "TR0201"},
-      {"temporary-comma", "struct R{int n;};void f(){int n=0;R&&r=(++n,R{1});}", "TR0201"},
       {"volatile-reference", "int f(volatile int&&n){return n;}", "TR0201"},
       {"reference-field", "struct R{int&&n;};", "TR0201"},
       {"global-reference", "int n;int&&r=static_cast<int&&>(n);", "TR0201"},
@@ -3617,7 +3810,6 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
       {"const-field", "struct R{const int n;R(const R&)=default;};"},
       {"nonpublic-field", "class R{int n;public:R(const R&)=default;};"},
       {"base-copy", "struct B{int n;};struct R:B{int m;R(const R&)=default;};"},
-      {"temporary-reference", "struct I{int n;I(const I&s):n(s.n){}};struct R{I i;R(const R&)=default;};void f(const R&s){const R&r=R(s);}"},
       {"lambda-array-copy", "int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}"},
       {"decomposed-array-copy", "int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}"},
       {"copy-expansion", "struct I{int n;I(const I&s):n(s.n){}};struct R{I items[65536];~R()=default;};R f(const R&s){return s;}"},
@@ -3753,7 +3945,6 @@ TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
       {"nonpublic-field", "class R{int n;public:R()=default;};"},
       {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
       {"explicit-destruction", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},
-      {"temporary-reference", "struct R{int n;explicit R()=default;};int f(){const R&r=R{};return r.n;}"},
       {"throwing-member-constructor", "struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -4087,7 +4278,6 @@ TEST_F(TranslateTest, CoreV2RecordDestructionRetainsUnsupportedLifetimeDiagnosti
       {"global-containing", "struct R{int n;~R(){}};struct Box{R r;};const Box box{{1}};"},
       {"static-local", "struct R{int n;~R(){}};int f(){static R r{1};return r.n;}"},
       {"thread-local", "struct R{int n;~R(){}};int f(){thread_local R r{1};return r.n;}"},
-      {"reference-extension", "struct R{int n;~R(){}};int f(){const R&r=R{1};return r.n;}"},
       {"allocation", "struct R{int n;~R(){}};R*f(){return new R{1};}"},
       {"delete", "struct R{int n;~R(){}};void f(R*p){delete p;}"},
       {"unwinding", "struct R{int n;~R(){}};void f(){R r{1};throw 7;}"},
