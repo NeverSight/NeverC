@@ -137,6 +137,14 @@ become typed constants, with no runtime template parameters. By-value dependenci
 remain ordered before their owners. See [aggregate class templates](cpp-core-v2.md#concrete-aggregate-class-templates)
 for source checks, declaration shape and remaining member/template limits.
 
+Ordinary named methods of admitted aggregate class-template instances use the
+existing function ABI: a cv-qualified receiver for instance methods, hidden
+storage for record results, and no receiver for static methods. Class arguments
+participate in method, local record/field and scalar static-storage identities.
+Equivalent instances share identities; differing values/types/primaries do not.
+No runtime template parameter is emitted. See [class-template methods](cpp-core-v2.md#ordinary-class-template-member-functions)
+for lazy bodies/defaults, source checks and definition requirements.
+
 Concrete core-v2 free function-template instances use ordinary function, record,
 scalar-global and call IR. Primary-template ordinals and source identities
 separate otherwise colliding specializations, including their local records and

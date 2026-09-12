@@ -3566,7 +3566,6 @@ void adl(){for(int v:Adl::R{{1,2}})tick(v);}
         'floating-comparison-body': 'struct I{int*p;int&operator*(){return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{double v=1.0;return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}',
         'floating-dereference-body': 'struct I{int*p;int&operator*(){double v=1.0;return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}',
         'floating-increment-body': 'struct I{int*p;int&operator*(){return *p;}I&operator++(){double v=1.0;++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}',
-        'template-range': 'template<class T>struct R{T a[1];T*begin(){return a;}T*end(){return a+1;}};void f(){for(int v:R<int>{{1}}){}}',
         'inherited-range': 'struct B{int a[1];int*begin(){return a;}int*end(){return a+1;}};struct R:B{};void f(){R r;for(int v:r){}}',
         'resource-range': 'void f(){int a[65537]={};for(int v:a){}}',
     }
@@ -6098,6 +6097,279 @@ int chooseOrdinary(){return candidate(3);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == function_templates, "template identity depends on absolute paths or address order"
 
+    class_methods_source = """struct Guard{int n;Guard(int v):n(v){}~Guard(){n=99;}};
+template<class T,int N>struct Box{
+ T n;
+ T get(T v=N)const{return n+v;}
+ void set(T v){n=v;}
+ T&ref()&{return n;}
+ const T&ref()const&{return n;}
+ int category()&{return 1;}
+ int category()&&{return 2;}
+ static T twice(T v){return v+v;}
+ static Box make(T v){return Box{v};}
+ auto local()const{struct Local{T n;};return Local{n};}
+ int cleanup(){Guard g(N);return g.n;}
+};
+template<auto N>struct Counter{static int&state(){static int n=N;return n;}};
+template<auto N>struct OtherCounter{static int&state(){static int n=N;return n;}};
+template<class T,int N>struct Fixed{T a[N];T*begin(){return a;}T*end(){return a+N;}};
+int getInt(const Box<int,3>&v){return v.get();}
+int getSame(const Box<int,1+2>&v){return v.get();}
+unsigned int getUnsigned(const Box<unsigned int,3>&v){return v.get();}
+int getFour(const Box<int,4>&v){return v.get();}
+void setInt(Box<int,3>&v,int n){v.set(n);}
+int&refInt(Box<int,3>&v){return v.ref();}
+const int&refConst(const Box<int,3>&v){return v.ref();}
+int lvalue(Box<int,3>&v){return v.category();}
+int rvalue(Box<int,3>&v){return static_cast<Box<int,3>&&>(v).category();}
+int twiceInt(int n){return Box<int,3>::twice(n);}
+Box<int,3> makeInt(int n){return Box<int,3>::make(n);}
+int localInt(const Box<int,3>&v){auto r=v.local();return r.n;}
+unsigned int localUnsigned(const Box<unsigned int,3>&v){auto r=v.local();return r.n;}
+int cleanupInt(Box<int,3>&v){return v.cleanup();}
+int&firstState(){return Counter<3>::state();}
+int&sameState(){return Counter<1+2>::state();}
+int&nextState(){return Counter<4>::state();}
+int&unsignedState(){return Counter<3u>::state();}
+int&otherState(){return OtherCounter<3>::state();}
+int sumRange(Fixed<int,3>&v){int n=0;for(int&x:v){++x;n+=x;}return n;}
+int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;return 0;}
+"""
+    class_methods = check("v2-class-methods-protocol", class_methods_source, profile="cpp-core-v2")
+    cm_records = {r["id"]: r for r in class_methods["records"]}
+    cm_functions = {f["name"]: f for f in class_methods["functions"]}
+    cm_globals = {g["name"]: g for g in class_methods["globals"]}
+    assert len(cm_records) == len(class_methods["records"])
+    assert len(cm_functions) == len(class_methods["functions"])
+    assert len(cm_globals) == len(class_methods["globals"])
+
+    def cm_line(prefix):
+        lines = [i for i, line in enumerate(class_methods_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def cm_function(prefix):
+        found = [f for f in class_methods["functions"] if f["loc"]["line"] == cm_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def cm_selected(prefix):
+        calls = gc_calls(cm_function(prefix))
+        assert len(calls) == 1, (prefix, calls)
+        return cm_functions[calls[0]["callee"]]
+
+    def cm_signature(function, result, params):
+        assert function["result"] == result and [p["type"] for p in function["params"]] == params, function
+
+    getter = cm_selected("int getInt(")
+    assert getter["name"] == cm_selected("int getSame(")["name"]
+    unsigned_getter = cm_selected("unsigned int getUnsigned(")
+    four_getter = cm_selected("int getFour(")
+    assert len({f["name"] for f in (getter, unsigned_getter, four_getter)}) == 3
+    instances = []
+    for prefix, function, value_type, default in (("int getInt(", getter, "int", 3),
+                                                 ("unsigned int getUnsigned(", unsigned_getter, "uint", 3),
+                                                 ("int getFour(", four_getter, "int", 4)):
+        caller = cm_function(prefix)
+        receiver = caller["params"][0]["type"]
+        assert receiver.startswith("cptr:")
+        record = cm_records[receiver[5:]]
+        instances.append(record)
+        assert [f["type"] for f in record["fields"]] == [value_type]
+        cm_signature(function, value_type, [receiver, value_type])
+        assert function["loc"]["line"] == cm_line(" T get(")
+        call = gc_calls(caller)[0]
+        assert np_pointer(caller, call["args"][0]) == ("parameter", caller["params"][0]["name"])
+        assert gc_identity(caller, call["args"][1]) == default
+        accesses = [n for n in walk(function["body"]) if n.get("kind") == "member"]
+        assert accesses and all(n["name"] == record["fields"][0]["name"] for n in accesses)
+    assert len({r["id"] for r in instances}) == 3
+    assert len({r["fields"][0]["name"] for r in instances}) == 3
+    record = instances[0]
+    rid = record["id"]
+    member = record["fields"][0]["name"]
+    setter = cm_selected("void setInt(")
+    cm_signature(setter, "void", ["ptr:"+rid, "int"])
+    writes = [n for n in setter["body"] if n["op"] == "assign" and n["target"].get("kind") == "member"]
+    assert len(writes) == 1 and writes[0]["target"]["name"] == member
+    assert gc_identity(setter, writes[0]["value"]) == ("parameter", setter["params"][1]["name"])
+    for prefix, result, receiver in (("int&refInt(", "ptr:int", "ptr:"+rid),
+                                     ("const int&refConst(", "cptr:int", "cptr:"+rid)):
+        selected = cm_selected(prefix)
+        cm_signature(selected, result, [receiver])
+        returned = [n["value"] for n in selected["body"] if n["op"] == "return"]
+        assert len(returned) == 1
+        assert np_pointer(selected, returned[0]) == ("field", ("parameter", selected["params"][0]["name"]), member)
+    left, right = cm_selected("int lvalue("), cm_selected("int rvalue(")
+    assert left["name"] != right["name"]
+    for selected, value in ((left, 1), (right, 2)):
+        cm_signature(selected, "int", ["ptr:"+rid])
+        assert [gc_identity(selected, n["value"]) for n in selected["body"] if n["op"] == "return"] == [value]
+    cm_signature(cm_selected("int twiceInt("), "int", ["int"])
+    factory = cm_selected("Box<int,3> makeInt(")
+    cm_signature(factory, "void", ["ptr:"+rid, "int"])
+    factory_caller = cm_function("Box<int,3> makeInt(")
+    cm_signature(factory_caller, "void", ["ptr:"+rid, "int"])
+    factory_call = gc_calls(factory_caller)[0]
+    assert np_pointer(factory_caller, factory_call["args"][0]) == ("parameter", factory_caller["params"][0]["name"])
+    locals_by_instance = []
+    for prefix, owner, scalar in (("int localInt(", instances[0], "int"),
+                                  ("unsigned int localUnsigned(", instances[1], "uint")):
+        selected = cm_selected(prefix)
+        assert selected["result"] == "void" and len(selected["params"]) == 2
+        local_id = selected["params"][0]["type"][4:]
+        local_record = cm_records[local_id]
+        cm_signature(selected, "void", ["ptr:"+local_id, "cptr:"+owner["id"]])
+        assert [f["type"] for f in local_record["fields"]] == [scalar]
+        locals_by_instance.append(local_record)
+    assert locals_by_instance[0]["id"] != locals_by_instance[1]["id"]
+    assert locals_by_instance[0]["fields"][0]["name"] != locals_by_instance[1]["fields"][0]["name"]
+    assert cm_selected("int&firstState(")["name"] == cm_selected("int&sameState(")["name"]
+    storage = []
+    for prefix in ("int&firstState(", "int&nextState(", "int&unsignedState(", "int&otherState("):
+        selected = cm_selected(prefix)
+        cm_signature(selected, "ptr:int", [])
+        names = {n["name"] for n in walk(selected["body"]) if n.get("kind") == "var" and n.get("name") in cm_globals}
+        assert len(names) == 1, (selected, names)
+        storage.append(cm_globals[next(iter(names))])
+    assert len(cm_globals) == len({g["name"] for g in storage}) == 4
+    assert all(g["type"] == "int" and g["mutable"] and g["value"]["kind"] == "literal" for g in storage)
+    assert [int(g["value"]["value"]) for g in storage] == [3, 4, 3, 3]
+    guard = next(r for r in class_methods["records"] if r["loc"]["line"] == cm_line("struct Guard{"))
+    cleanup = cm_selected("int cleanupInt(")
+    calls = gc_calls(cleanup)
+    assert len(calls) == 2 and calls[1]["callee"] == guard["id"]+"_destroy"
+    assert gc_identity(cleanup, calls[0]["args"][1]) == 3
+    assert np_pointer(cleanup, calls[0]["args"][0]) == np_pointer(cleanup, calls[1]["args"][0])
+    returned = next(n["value"] for n in cleanup["body"] if n["op"] == "return")
+    captures = [i for i, n in enumerate(cleanup["body"]) if n["op"] == "assign" and n["target"].get("name") == returned.get("name")]
+    assert len(captures) == 1 and captures[0] < cleanup["body"].index(calls[1])
+    range_function = cm_function("int sumRange(")
+    range_calls = gc_calls(range_function)
+    assert len(range_calls) == 2 and range_calls[0]["callee"] != range_calls[1]["callee"]
+    range_receiver = range_function["params"][0]
+    range_record = cm_records[range_receiver["type"][4:]]
+    assert [f["type"] for f in range_record["fields"]] == ["arr:3:int"]
+    for call in range_calls:
+        cm_signature(cm_functions[call["callee"]], "ptr:int", [range_receiver["type"]])
+        assert np_pointer(range_function, call["args"][0]) == ("parameter", range_receiver["name"])
+    # Mutation through a range reference must retain an actual dereferenced store.
+    assert any(n["op"] == "assign" and n["target"].get("kind") == "dereference" for n in range_function["body"])
+    early = cm_function("int earlyRange(")
+    early_calls = gc_calls(early)
+    owner = next(r for r in class_methods["records"] if [f["type"] for f in r["fields"]] == ["arr:2:"+guard["id"]])
+    destructor = cm_functions[owner["id"]+"_destroy"]
+    destroys = gc_calls(destructor)
+    assert len(destroys) == 2 and all(c["callee"] == guard["id"]+"_destroy" for c in destroys)
+    base = ("field", ("parameter", destructor["params"][0]["name"]), owner["fields"][0]["name"])
+    assert [np_pointer(destructor, c["args"][0]) for c in destroys] == [("element", base, 1), ("element", base, 0)]
+    assert sum(cm_functions[c["callee"]]["result"] == "ptr:"+guard["id"] for c in early_calls) == 2
+    returned = [n["value"] for n in early["body"] if n["op"] == "return"]
+    captured = [i for i, n in enumerate(early["body"]) if n["op"] == "assign" and any(v.get("kind") == "member" for v in walk(n["value"]))
+                and any(v.get("name") == n["target"].get("name") for v in returned)]
+    assert len(captured) == 1
+    assert any(i > captured[0] and n["op"] == "call" and n["callee"] == destructor["name"] for i, n in enumerate(early["body"]))
+    for function in class_methods["functions"]:
+        for call in gc_calls(function):
+            assert call["callee"] in cm_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in cm_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-class-methods-relocated-") as temp:
+        relocated = check("v2-class-methods-relocated", class_methods_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == class_methods
+    class_methods_positive = {
+        'member-function': 'template<class T>struct R{T n;T get(){return n;}};',
+        'explicit-specialization-member': 'template<class T>struct R{T n;};template<>struct R<int>{int n;int f(){return n;}};',
+        'template-range': 'template<class T>struct R{T a[1];T*begin(){return a;}T*end(){return a+1;}};void f(){for(int v:R<int>{{1}}){}}',
+        'getter': 'template<class T>struct R{T n;T get()const{return n;}};int main(){R<int>r{3};return r.get();}',
+        'const-overload': 'template<class T>struct R{T n;T&get(){return n;}const T&get()const{return n;}};int main(){R<int>r{3};const R<int>&c=r;return r.get()+c.get();}',
+        'ref-overload': 'template<class T>struct R{T n;int f()&{return 1;}int f()&&{return 2;}};int main(){R<int>r{3};return r.f()+static_cast<R<int>&&>(r).f();}',
+        'static-factory': 'template<class T>struct R{T n;static R make(T v){return R{v};}};int main(){R<int>r=R<int>::make(3);return r.n;}',
+        'by-value': 'template<class T>struct R{T n;T read(R v)const{return v.n;}R copy()const{return R{n};}};int main(){R<int>r{3};return r.read(r.copy());}',
+        'free-template-call': 'template<class T>T twice(T v){return v+v;}template<class T>struct R{T n;T f(){return twice(n);}};int main(){R<int>r{3};return r.f();}',
+        'lazy-body': 'template<class T>struct R{T n;int unused(){return T::missing;}};int main(){R<int>r{3};return r.n;}',
+        'lazy-auto': 'template<class T>struct R{T n;auto unused(){return T::missing;}};int main(){R<int>r{3};return r.n;}',
+        'lazy-default': 'template<class T>struct R{T f(T v=T::missing){return v;}};int main(){R<int>r{};return r.f(3);}',
+        'lazy-missing': 'template<class T>struct R{T n;T missing();};int main(){R<int>r{3};return r.n;}',
+        'lazy-floating': 'template<class T>struct R{T n;int unused(){return static_cast<int>(1.0);}};int main(){R<int>r{3};return r.n;}',
+        'out-of-line': 'template<class T>struct R{T n;T f()const;};template<class T>T R<T>::f()const{return n;}int main(){R<int>r{3};return r.f();}',
+        'out-of-line-integer-spelling': 'template<int N>struct R{int f();};template<decltype(1) N>int R<N>::f(){return N;}int main(){R<3>r{};return r.f();}',
+        'out-of-line-size-spelling': 'template<decltype(sizeof(int)) N>struct R{int f();};template<decltype(sizeof(int)) N>int R<N>::f(){return static_cast<int>(N);}int main(){R<3>r{};return r.f();}',
+        'explicit-class-instantiation': 'template<class T>struct R{T f(){return 3;}};template struct R<int>;',
+        'explicit-class-visible-only': 'template<class T>struct R{T n;T missing();T f(){return n;}};template struct R<int>;int main(){R<int>r{3};return r.f();}',
+        'explicit-method-instantiation': 'template<class T>struct R{T f(){return 3;}};template int R<int>::f();',
+        'explicit-method-specialization': 'template<class T>struct R{T f(){return 1;}};template<>int R<int>::f(){return 3;}int main(){R<int>r{};return r.f();}',
+        'explicit-method-forward': 'template<class T>struct R{T f(){return 1;}};template<>int R<int>::f();template<>int R<int>::f(){return 3;}int main(){R<int>r{};return r.f();}',
+        'namespace-import': 'namespace N{template<class T>struct R{T n;T f(){return n;}};}using N::R;int main(){R<int>r{3};return r.f();}',
+        'scalar-default': 'template<int N>struct R{int f(int v=N){return v;}};int main(){R<3>r{};return r.f();}',
+        'scalar-noexcept': 'template<int N>struct R{int f()noexcept(N>0){return N;}};int main(){R<3>r{};return r.f();}',
+        'constant-method': 'template<class T>struct R{T n;constexpr T f()const noexcept{return n;}};static_assert(R<int>{3}.f()==3);int main(){return R<int>{4}.f();}',
+        'static-local': 'template<auto N>struct R{static int&f(){static int n=N;return n;}};int main(){return R<3>::f()+R<3u>::f();}',
+        'local-record': 'template<class T>struct R{T n;auto f(){struct L{T n;};return L{n};}};int main(){R<int>r{3};auto v=r.f();return v.n;}',
+        'signature-candidate': 'template<class T>struct R{int f(int v){return v;}int f(T*);};int main(){R<unsigned int>r{};return r.f(3);}',
+        'private-inside': 'template<class T>struct R{T n;T f(){return inner();}private:T inner(){return n;}};int main(){R<int>r{3};return r.f();}',
+        'full-specialization-call': 'template<class T>struct R{T n;};template<>struct R<int>{int n;int f(){return n;}};int main(){R<int>r{3};return r.f();}',
+        'overload-selected-default': 'template<class T>struct R{T f(T v=3){return v;}T f(T v,T w){return v+w;}};int main(){R<int>r{};return r.f()+r.f(1,2);}',
+    }
+    for name, source in class_methods_positive.items():
+        check("v2-class-methods-positive-" + name, source, profile="cpp-core-v2")
+    class_methods_reject = {
+        'used-floating-body': 'template<class T>struct R{int f(){return static_cast<int>(1.0);}};int main(){R<int>r{};return r.f();}',
+        'floating-result': 'template<class T>struct R{double f(){return 1.0;}};int main(){R<int>r{};return static_cast<int>(r.f());}',
+        'floating-default': 'template<class T>struct R{int f(int v=static_cast<int>(1.0)){return v;}};int main(){R<int>r{};return r.f();}',
+        'floating-noexcept': 'template<class T>struct R{int f()noexcept(1.0>0.0){return 1;}};int main(){R<int>r{};return r.f();}',
+        'forced-floating': 'template<class T>struct R{int f(){return static_cast<int>(1.0);}};template struct R<int>;',
+        'out-of-line-floating-spelling': 'template<int N>struct R{int f();};template<decltype(static_cast<int>(1.0)) N>int R<N>::f(){return N;}',
+        'out-of-line-floating-size': 'template<decltype(sizeof(int)) N>struct R{int f();};template<decltype(sizeof(double)) N>int R<N>::f(){return static_cast<int>(N);}',
+        'method-attribute': 'template<class T>struct R{[[nodiscard]] int f(){return 1;}};',
+        'parameter-attribute': 'template<class T>struct R{int f([[maybe_unused]]int v){return v;}};',
+        'virtual': 'template<class T>struct R{virtual int f(){return 1;}};',
+        'variadic': 'template<class T>struct R{int f(int v,...){return v;}};',
+        'volatile': 'template<class T>struct R{int f()volatile{return 1;}};',
+        'deleted': 'template<class T>struct R{int f()=delete;};',
+        'member-template': 'template<class T>struct R{template<class U>U f(U v){return v;}};',
+        'constructor': 'template<class T>struct R{T n;R(T v):n(v){}};',
+        'destructor': 'template<class T>struct R{T n;~R(){}};',
+        'operator': 'template<class T>struct R{T n;T operator()(){return n;}};',
+        'conversion': 'template<class T>struct R{T n;operator int(){return 1;}};',
+        'static-data': 'template<class T>struct R{static int n;int f(){return n;}};',
+        'friend': 'template<class T>struct R{friend int f(R r){return 1;}};',
+        'nested-record': 'template<class T>struct R{struct I{int n;};int f(){return 1;}};',
+        'partial': 'template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;int f(){return 1;}};',
+        'bases': 'struct B{int n;};template<class T>struct R:B{int f(){return n;}};',
+        'dynamic-static': 'template<class T>struct R{static int f(int v){static int n=v;return n;}};int main(){return R<int>::f(3);}',
+    }
+    for name, source in class_methods_reject.items():
+        check("v2-class-methods-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    class_methods_invalid = {
+        'private-call': 'template<class T>struct R{T n;private:T f(){return n;}};int main(){R<int>r{3};return r.f();}',
+        'const-mutation': 'template<class T>struct R{T n;void f()const{++n;}};int main(){R<int>r{3};r.f();}',
+        'wrong-ref-qualifier': 'template<class T>struct R{T n;T f()&{return n;}};int main(){return R<int>{3}.f();}',
+        'used-invalid-body': 'template<class T>struct R{int f(){return T::missing;}};int main(){R<int>r{};return r.f();}',
+        'used-invalid-auto': 'template<class T>struct R{auto f(){return T::missing;}};int main(){R<int>r{};return r.f();}',
+        'used-invalid-default': 'template<class T>struct R{T f(T v=T::missing){return v;}};int main(){R<int>r{};return r.f();}',
+        'bad-reference-binding': 'template<class T>struct R{T f(T&v){return v;}};int main(){R<int>r{};return r.f(3);}',
+        'specialization-after-use': 'template<class T>struct R{T f(){return 1;}};int main(){R<int>r{};return r.f();}template<>int R<int>::f(){return 2;}',
+        'bad-return': 'template<class T>struct R{T*f(){return 3;}};int main(){R<int>r{};return *r.f();}',
+        'explicit-missing-instantiation': 'template<class T>struct R{T f();};template int R<int>::f();',
+    }
+    for name, source in class_methods_invalid.items():
+        check("v2-class-methods-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    class_methods_missing = {
+        'used-missing': 'template<class T>struct R{T f();};int main(){R<int>r{};return r.f();}',
+        'sizeof-missing': 'template<class T>struct R{T f();};int main(){R<int>r{};return sizeof(r.f());}',
+        'noexcept-missing': 'template<class T>struct R{T f()noexcept;};int main(){R<int>r{};return noexcept(r.f());}',
+        'explicit-specialization-missing': 'template<class T>struct R{T f(){return 1;}};template<>int R<int>::f();',
+        'explicit-instantiation-declaration': 'template<class T>struct R{T f();};extern template int R<int>::f();',
+        'full-specialization-missing': 'template<class T>struct R{T n;};template<>struct R<int>{int n;int f();};',
+        'sizeof-uninstantiated-body': 'template<class T>struct R{T f(){return 1;}};int main(){R<int>r{};return sizeof(r.f());}',
+        'noexcept-uninstantiated-body': 'template<class T>struct R{T f()noexcept{return 1;}};int main(){R<int>r{};return noexcept(r.f());}',
+    }
+    for name, source in class_methods_missing.items():
+        check("v2-class-methods-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-class-method", "template<class T>struct R{T n;T f(){return n;}};int main(){R<int>r{3};return r.f();}", "TR0201")
+
     class_templates_source = """enum class Mode:unsigned int{right=7};
 template<class T>struct Box{T n;};
 template<class T>struct Node{T n;Node*next;};
@@ -6306,7 +6578,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'value-pack': 'template<int...N>struct R{int n;};',
         'type-pack': 'template<class...T>struct R{int n;};',
         'template-template': 'template<template<class>class T>struct R{int n;};',
-        'member-function': 'template<class T>struct R{T n;T get(){return n;}};',
         'constructor': 'template<class T>struct R{T n;R(T v):n(v){}};',
         'destructor': 'template<class T>struct R{T n;~R(){}};',
         'friend': 'template<class T>struct R{T n;friend int get(R r){return r.n;}};',
@@ -6331,7 +6602,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'floating-specialization': 'template<int N>struct R{int n;};template<>struct R<static_cast<int>(1.0)>{int n;};',
         'floating-parameter-type': 'template<decltype(static_cast<int>(1.0)) N>struct R{int n;};',
         'floating-default-type': 'template<class T=decltype(static_cast<int>(1.0))>struct R{T n;};int main(){R<>r{1};return r.n;}',
-        'explicit-specialization-member': 'template<class T>struct R{T n;};template<>struct R<int>{int n;int f(){return n;}};',
         'mixed-65': 'template<class T0,int N1,class T2,int N3,class T4,int N5,class T6,int N7,class T8,int N9,class T10,int N11,class T12,int N13,class T14,int N15,class T16,int N17,class T18,int N19,class T20,int N21,class T22,int N23,class T24,int N25,class T26,int N27,class T28,int N29,class T30,int N31,class T32,int N33,class T34,int N35,class T36,int N37,class T38,int N39,class T40,int N41,class T42,int N43,class T44,int N45,class T46,int N47,class T48,int N49,class T50,int N51,class T52,int N53,class T54,int N55,class T56,int N57,class T58,int N59,class T60,int N61,class T62,int N63,class T64>struct R{int n=N1;};int main(){R<int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int>r{};return r.n-1;}',
     }
     for name, source in class_templates_reject.items():

@@ -590,7 +590,7 @@ fixtures. Protocol checks cover actual storage identities, complete signatures,
 one-time initialization, cleanup paths and relocation. Native results require
 CI from the implementing revision.
 
-Class templates with explicit members, standard headers and STL containers, initializer-list ranges,
+Unsupported class-template forms, standard headers and STL containers, initializer-list ranges,
 structured bindings, C++20 range init-statements and coroutine range loops
 remain outside this increment. Existing extent and expansion budgets still
 apply, and older profiles retain their previous range-loop rejection.
@@ -698,10 +698,12 @@ templates. Type defaults, explicit instantiation and explicit specialization,
 including forward declarations followed by definitions, are supported.
 
 Patterns and explicit specializations may declare fields, ordinary type aliases,
-enums, static assertions and access labels. A materialized instance must be a
+enums, static assertions, access labels and ordinary named methods as described
+below. A materialized instance must be a
 complete standard-layout aggregate whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
-remain checked when selected. Explicit member functions/constructors/destructors,
+remain checked when selected. Constructors/destructors, operators/conversions,
+member function templates,
 static data, friends, nested records/templates, bases and partial specializations
 remain outside this class-template increment. Non-type defaults, packs,
 template-template parameters and non-scalar value arguments remain excluded.
@@ -730,6 +732,48 @@ copying, returns and destruction. Protocol fixtures check identities, fields,
 extents/layouts, dependency order, scalar values, signatures, cleanup order and
 relocation. Native validation requires the implementing revision's CI. Full
 C++/STL, standard headers and library containers remain unfinished.
+
+## Ordinary class-template member functions
+
+Admitted aggregate class templates may contain ordinary named instance and static
+member functions with no own template parameters. Const and lvalue/rvalue
+reference-qualified overloads, resolved defaults and noexcept, constexpr methods,
+static factories, member begin/end ranges and scalar static locals use the
+existing method and lifetime rules. Explicit class/method instantiation, explicit
+method specialization and in-unit out-of-line definitions are supported. Explicit
+full class specializations keep the eager checks of ordinary non-template methods.
+
+Primary method bodies and unused defaults remain lazy. Only concrete methods with
+materialized definitions are translated; every such body is checked, including
+those forced by explicit instantiation. An unused implicit member declaration may
+remain without a body or a deduced auto result. A selected call, including a call
+under sizeof/noexcept, still requires a definition. Explicit member instantiation
+or specialization declarations retain the in-unit definition requirement. Explicit
+class instantiation forces only the member definitions visible at that point.
+
+Each method declaration's shape is checked even when its body remains lazy.
+Written outer template parameter types on separate out-of-line definitions receive
+the same source checks as the primary parameter list before metadata is erased.
+Selected default/noexcept expressions and materialized signatures/bodies must pass
+the ordinary profile checks. Attributes, virtual/variadic/deleted methods,
+volatile/restrict qualifiers and member function templates are excluded. The class
+must remain an admitted standard-layout aggregate; constructor/destructor,
+operator/conversion, static data, friend, nested/partial-template and base support
+is not expanded here.
+
+Methods use ordinary typed functions: instance receivers keep their cv-qualified
+pointer, record results use existing hidden result storage, and static functions
+have no receiver parameter. Equivalent class arguments share method and local
+storage identity; different values, types or primaries remain distinct. Local
+records and their fields also retain per-instance identities. There is no runtime
+template parameter or opaque fallback. Member ranges preserve one-time range
+initialization and reference mutation; return values are captured before cleanup.
+
+Native O0/O2 fixtures cover these calls, identities, storage and lifetimes. Protocol
+fixtures inspect signatures, selected callees, default values, local record/static
+identities, range calls, cleanup and relocation. Native results require CI of the
+implementing revision. Complete C++/STL and standard-library containers remain
+unfinished.
 
 ## Concrete free function templates
 
