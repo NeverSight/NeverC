@@ -73,6 +73,8 @@ bool ordinaryMethod(const clang::CXXMethodDecl *Method);
 bool ordinaryCopyAssignment(const clang::CXXMethodDecl *Method);
 bool defaultedCopyAssignment(const clang::CXXMethodDecl *Method);
 bool supportedCopyAssignment(const clang::CXXMethodDecl *Method);
+bool ordinaryMoveAssignment(const clang::CXXMethodDecl *Method);
+bool supportedAssignment(const clang::CXXMethodDecl *Method);
 struct GeneratedArrayAssignment {
   const clang::Expr *Destination, *Source;
   clang::QualType Type;

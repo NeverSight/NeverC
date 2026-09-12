@@ -161,9 +161,9 @@ int main() {
 
 Reference declarations, arguments and results add no complete-object cleanup
 owner. Passing a live xvalue by value or returning it as a value follows Clang's
-selected admitted copy or existing implicit trivial operation; this stage does
-not force copying when a different operation was selected. Ordinary/defaulted
-move constructors and move assignment remain a following increment. Copy
+selected admitted copy/move or existing implicit trivial operation. User moves
+follow their separate contract below; generated/defaulted moves remain a
+following increment. Copy
 assignment declarations retain their own receiver restrictions; an unqualified
 admitted assignment can operate on a live xvalue receiver.
 
@@ -243,7 +243,7 @@ Core v2 admits ordinary user-provided default, converting and multi-argument
 constructors, including `explicit`, `constexpr` and out-of-line definitions.
 Records must be nonempty, unnested and standard-layout, with no bases. Each
 selected construction, copy or assignment must follow its admitted operation
-contract; move operations remain unsupported.
+contract, including the user moves described below.
 Destruction follows the separate lifetime contract below. Fields remain public, non-mutable, non-const,
 non-reference and non-bitfield. Default member initializers follow the contract below. Ordinary
 methods may use these records. Allowing a constructor does not admit arbitrary
@@ -296,9 +296,9 @@ calls on temporary receivers retain their existing rejection boundary. Const
 local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
-Deleted, delegating, inherited, move, template and variadic constructors,
+Deleted, delegating, inherited, template and variadic constructors,
 default arguments and written exception
-specifications remain rejected. Implicit nontrivial copying, exception unwinding, allocation, static
+specifications remain rejected. Exception unwinding, allocation, static
 guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
@@ -351,7 +351,7 @@ int main() {
 Defaulted nonvirtual destructors, both in-class and out-of-line, use the normal
 reverse member/array cleanup without a user body. Trivial defaulted destructors
 need no call. Deleted/defaulted-deleted functions and written exception
-specifications remain rejected. Move operations, exception unwinding and STL remain later
+specifications remain rejected. Generated/defaulted moves, exception unwinding and STL remain later
 milestones. Actual execution evidence must come from the implementing revision's CI.
 
 ## Default member initializers
@@ -399,7 +399,7 @@ member initializer retains its full-expression cleanup; temporary objects from
 aggregate clauses survive through the complete aggregate initialization. The
 existing complete-object cleanup owner remains responsible for normal destruction.
 Reference lifetime extension, temporary method receivers, static initialization
-outside the current contract, exceptions, moves, templates and STL are not enabled
+outside the current contract, exceptions, generated/defaulted moves, templates and STL are not enabled
 by admitting field defaults. Unevaluated construction introduces no runtime default
 calls or invented generated body. V1 profiles continue to reject field defaults.
 
@@ -455,7 +455,7 @@ user-defined copying instead executes its selected source body.
 Named-local or named-parameter returns keep Clang's selected copy/move operation;
 NeverC does not infer NRVO by aliasing the source to the destination. Normal
 destruction and parameter cleanup follow the contract below. User-defined copy
-operations follow the next sections; moves and
+and move operations follow the next sections; generated/defaulted moves and
 exception unwinding still require further support before broader C++/STL admission.
 
 ## User-defined copy operations
@@ -516,7 +516,7 @@ its result. Reference source parameters do not own or destroy their referents.
 A containing aggregate may be initialized with a member having user-defined
 copy operations without selecting a copy of the containing object. Generated
 copy construction and assignment follow the next sections. Deleted special
-members, move operations, templates, variadic/default
+members, generated/defaulted moves, templates, variadic/default
 arguments, written exception specifications, general overloaded operators/conversions,
 allocation and exception unwinding are not added. Existing temporary source-reference and
 nonstatic temporary-receiver restrictions still apply. Missing definitions and
@@ -528,6 +528,78 @@ source overloads, selected calls, field/array initialization, partially initiali
 objects, parameter and result lifetimes, return copies, operand ordering and
 relocation. Runtime validation uses the implementing revision's O0/O2 no-inline
 and full native CI results.
+
+## User-defined move operations
+
+Core v2 supports ordinary user-provided move constructors with exactly one
+`R&&` or `const R&&` source parameter of the same canonical record. `explicit`,
+`constexpr` and out-of-line definitions retain their C++ rules. An admitted move
+assignment takes the same source reference and returns mutable `R&`; its mutable
+receiver may be unqualified, `&`-qualified or `&&`-qualified. Source references
+must designate existing live objects under the reference-provenance contract.
+
+Clang selects the operation before lowering. A named rvalue-reference expression
+remains an lvalue and can therefore select copying. A cast to `R&&` does not
+itself guarantee a move: copy fallback and explicit-constructor rules still
+apply. For example, copy initialization excludes an explicit move constructor;
+direct initialization can select it. Distinct copy/move and const-source overloads
+retain distinct canonical identities even when their pointer signatures match.
+
+Construction calls the selected function with the actual destination, followed
+by the live source address. Field initialization and selected field defaults
+observe that destination. No intermediate record copy or self-pointer repair is
+inserted. By-value arguments use separate caller-prepared objects; selected
+return moves construct into the hidden result destination. Direct C++17 prvalue
+forwarding still introduces no extra copy or move. NeverC does not infer NRVO.
+
+```cpp
+struct Item {
+  int value;
+  Item *self = this;
+  Item(int n) : value(n) {}
+  explicit Item(Item &&source) : value(source.value + 1) { source.value = -1; }
+  Item &operator=(Item &&source) {
+    value = source.value + 2;
+    source.value = -2;
+    return *this;
+  }
+};
+int main() {
+  Item source(3);
+  Item target(static_cast<Item&&>(source));
+  if (target.value != 4 || target.self != &target || source.value != -1) return 1;
+  source = static_cast<Item&&>(target);
+  return source.value == 6 && target.value == -2 ? 0 : 2;
+}
+```
+
+Assignment executes the selected body once and preserves its returned reference,
+including a reference to an object other than the receiver. Self-assignment and
+source mutation follow that body. In a chain, the returned reference determines
+the next operation's source category. Operator syntax captures the source before
+the receiver; explicit member syntax captures the receiver first. Source values
+are read by the selected body after those operand effects.
+
+A move does not end the source lifetime or transfer cleanup responsibility.
+Source and destination complete objects retain their normal owners and destruction
+order; references and member initialization add no separate complete-object owner.
+The callee still destroys by-value parameters. Assignment adds neither an implicit
+destruction nor a replacement construction.
+
+Generated/defaulted move operations, deleted functions, volatile/restrict sources
+or receivers, const receivers, other assignment result types, default/variadic
+parameters, written exception specifications, arbitrary operators, inheritance,
+templates and STL remain outside this increment. Fresh temporary source-reference
+binding and temporary receivers remain rejected, including in dead code. Invalid
+C++ overload, cv/ref or deleted-copy uses retain source diagnostics; missing user
+definitions retain the missing-definition diagnostic. V1 profiles reject user moves.
+
+O0/O2 no-inline fixtures cover const and explicit moves, copy fallback, named
+rvalue references, operand effects, returned aliases, member/array destinations,
+out-of-line definitions, ref-qualified assignment and source/target destruction.
+Protocol checks assert full signatures, selected identities, final storage,
+absence of extra copying/owners and deterministic relocation. Native execution
+evidence must come from the implementing revision's CI.
 
 ## Generated copy construction
 
@@ -574,7 +646,7 @@ or purely unevaluated defaulted copies do not need a materialized Clang body.
 An admitted trivial copy also needs no function body. Runtime nontrivial copies
 must have a checked materialized definition.
 
-Moves, unsupported layouts, temporary source-reference lifetime extension, exceptions,
+Generated/defaulted moves, unsupported layouts, temporary source-reference lifetime extension, exceptions,
 templates and STL headers remain outside this increment. Array extent, object
 storage and expanded-node limits still apply. Regression fixtures cover selected
 calls, nested source/destination indices, one source-array capture, mutable source
@@ -588,7 +660,7 @@ Core v2 admits implicit and explicitly defaulted copy assignment for the same
 checked records. The source parameter is exactly one `R&` or `const R&`, and the
 result is mutable `R&`. The receiver may be unqualified or lvalue-qualified with
 `&`. In-class and out-of-line defaulting preserve their selected operations;
-written exception specifications, deleted functions and moves remain rejected.
+written exception specifications, deleted functions and generated/defaulted moves remain rejected.
 
 A nontrivial generated assignment becomes a checked
 `ptr:Record(ptr:Record, ptr/cptr:Record)` function. Its synthesized body assigns
@@ -864,7 +936,7 @@ a separate generated header belongs to project mode.
 ## Remaining scope and wire representation
 
 128-bit and extended integers, floating-point types,
-move operations, exception unwinding, templates,
+generated/defaulted moves, exception unwinding, templates,
 exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2

@@ -49,51 +49,71 @@ bool ordinaryConstructor(const CXXConstructorDecl *C) {
   if (!C || C->isImplicit() || !C->isUserProvided() || C->isVariadic() ||
       C->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       C->isDeletedAsWritten() || C->isExplicitlyDefaulted() || C->isConsteval() ||
-      C->isMoveConstructor() || C->isDelegatingConstructor() ||
+      C->isDelegatingConstructor() ||
       C->isInheritingConstructor())
     return false;
-  if (C->isCopyConstructor()) {
+  if (C->isCopyOrMoveConstructor()) {
     if (C->getNumParams() != 1)
       return false;
     auto Source = C->getParamDecl(0)->getType();
-    if (!Source->isLValueReferenceType() ||
-        Source->getPointeeType().isVolatileQualified() ||
-        Source->getPointeeType().isRestrictQualified())
+    if (C->isMoveConstructor() ? !Source->isRValueReferenceType()
+                               : !Source->isLValueReferenceType())
+      return false;
+    auto Pointee = Source->getPointeeType();
+    const auto *Record = Pointee->getAsCXXRecordDecl();
+    if (Pointee.isVolatileQualified() || Pointee.isRestrictQualified() ||
+        !Record || Record->getCanonicalDecl() != C->getParent()->getCanonicalDecl())
       return false;
   }
   const auto *Prototype = C->getType()->getAs<FunctionProtoType>();
   return Prototype && !Prototype->hasExceptionSpec();
 }
 
-bool ordinaryCopyAssignment(const CXXMethodDecl *M) {
+static bool ordinaryAssignment(const CXXMethodDecl *M, bool Move) {
   if (!M || M->isImplicit() || !M->isUserProvided() ||
-      !M->isCopyAssignmentOperator() || M->isVirtual() ||
+      (Move ? !M->isMoveAssignmentOperator() : !M->isCopyAssignmentOperator()) ||
+      M->isVirtual() ||
       M->isExplicitObjectMemberFunction() || M->isVariadic() ||
       M->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       M->isDeletedAsWritten() || M->isExplicitlyDefaulted() || M->isConsteval() ||
       M->getNumParams() != 1 || M->getMethodQualifiers().getCVRQualifiers() ||
-      M->getRefQualifier() == RQ_RValue)
+      (!Move && M->getRefQualifier() == RQ_RValue))
     return false;
   auto Source = M->getParamDecl(0)->getType();
   auto Result = M->getReturnType();
-  if (!Source->isLValueReferenceType() ||
+  if ((Move ? !Source->isRValueReferenceType() : !Source->isLValueReferenceType()) ||
       Source->getPointeeType().isVolatileQualified() ||
       Source->getPointeeType().isRestrictQualified() ||
       !Result->isLValueReferenceType() ||
       Result->getPointeeType().getQualifiers().getCVRQualifiers())
     return false;
+  const auto *SourceRecord = Source->getPointeeType()->getAsCXXRecordDecl();
   const auto *ResultRecord = Result->getPointeeType()->getAsCXXRecordDecl();
   const auto *Prototype = M->getType()->getAs<FunctionProtoType>();
-  return ResultRecord && ResultRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl() &&
+  return SourceRecord && ResultRecord &&
+         SourceRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl() &&
+         ResultRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl() &&
          Prototype && !Prototype->hasExceptionSpec();
+}
+
+bool ordinaryCopyAssignment(const CXXMethodDecl *M) {
+  return ordinaryAssignment(M, false);
+}
+
+bool ordinaryMoveAssignment(const CXXMethodDecl *M) {
+  return ordinaryAssignment(M, true);
 }
 
 bool supportedCopyAssignment(const CXXMethodDecl *M) {
   return ordinaryCopyAssignment(M) || defaultedCopyAssignment(M);
 }
 
+bool supportedAssignment(const CXXMethodDecl *M) {
+  return supportedCopyAssignment(M) || ordinaryMoveAssignment(M);
+}
+
 bool callableMethod(const CXXMethodDecl *M) {
-  return ordinaryMethod(M) || supportedCopyAssignment(M);
+  return ordinaryMethod(M) || supportedAssignment(M);
 }
 
 static bool defaultedFunction(const CXXMethodDecl *M) {
@@ -283,7 +303,7 @@ const Expr *directMethodReference(const CallExpr *Call) {
     D = Member->getMemberDecl();
   else if (const auto *Reference = dyn_cast<DeclRefExpr>(E);
            Reference && (M->isStatic() ||
-                         (isa<CXXOperatorCallExpr>(Call) && supportedCopyAssignment(M))))
+                         (isa<CXXOperatorCallExpr>(Call) && supportedAssignment(M))))
     D = Reference->getDecl();
   return D && D->getCanonicalDecl() == M->getCanonicalDecl() ? E : nullptr;
 }
@@ -1256,10 +1276,10 @@ public:
                                  Method->isImplicit() && Method->isTrivial() &&
                                  Operator->getNumArgs() == 2;
         if (!TrivialAssignment &&
-            !(supportedCopyAssignment(Method) && Operator->getOperator() == OO_Equal &&
+            !(supportedAssignment(Method) && Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
           A.reject(L, "overloaded operator",
-                   "Only admitted copy assignment and implicit trivial assignment are supported.");
+                   "Only admitted copy/move assignment and implicit trivial assignment are supported.");
       }
       if (A.S.coreV2() && Method && callableMethod(Method)) {
         const auto *Reference = directMethodReference(C);

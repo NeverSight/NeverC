@@ -415,7 +415,7 @@ class FunctionLowering {
       reject(L, "call",
              "Call target is not a supported defined function.");
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-    if (Operator && (!A.S.coreV2() || !supportedCopyAssignment(Method) ||
+    if (Operator && (!A.S.coreV2() || !supportedAssignment(Method) ||
                      Operator->getOperator() != OO_Equal))
       reject(L, "operator call", "Unsupported selected operator function.");
     unsigned ArgumentOffset = Operator ? 1 : 0;
@@ -664,10 +664,10 @@ class FunctionLowering {
         assign(Left, std::move(Right), L);
         return Left;
       }
-      if (A.S.coreV2() && supportedCopyAssignment(Method))
+      if (A.S.coreV2() && supportedAssignment(Method))
         return call(Call);
       reject(L, "overloaded operator",
-             "Only admitted copy assignment and implicit trivial assignment are supported.");
+             "Only admitted copy/move assignment and implicit trivial assignment are supported.");
     }
     if (const auto *Call = dyn_cast<CallExpr>(E))
       return Call->isPRValue() && recordValue(Call->getType())

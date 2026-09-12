@@ -182,10 +182,9 @@ Record-result calls omit `target` and pass the actual destination address;
 record returns initialize that destination and emit a value-less `return`.
 Nested direct returns forward the same place. Intentional lvalue argument copies
 and named-object return copies use ordinary checked record assignments for trivial
-copying, or selected user/generated copy calls described below; source and destination remain distinct. Signatures, arity, pointee identities and
+copying, or selected user copy/move and generated copy calls described below; source and destination remain distinct. Signatures, arity, pointee identities and
 record layouts are validated by the existing consumer. This convention applies
-to core v2 only and does not admit a foreign ABI, moves
-or exception unwinding. Normal cleanup follows the explicit destruction convention below. See the [source contract](cpp-core-v2.md#record-arguments-and-results).
+to core v2 only and does not admit a foreign ABI or exception unwinding. Normal cleanup follows the explicit destruction convention below. See the [source contract](cpp-core-v2.md#record-arguments-and-results).
 
 ## Core v2 user copy calls
 
@@ -203,8 +202,24 @@ argument order remains receiver then source after those effects are captured.
 No new copy opcode or foreign ABI bypass is introduced. Existing signature,
 arity, const qualification, storage and layout checks apply, with the normal
 parameter/result lifetime convention preserved. Implicit trivial copies retain
-ordinary value assignments; generated copy assignment follows below and moves
-remain rejected. See the [source copy contract](cpp-core-v2.md#user-defined-copy-operations).
+ordinary value assignments; generated copy assignment and user moves follow below. See the [source copy contract](cpp-core-v2.md#user-defined-copy-operations).
+
+## Core v2 user move calls
+
+An admitted user move constructor uses `void(ptr:Record, ptr/cptr:Record)`;
+move assignment uses `ptr:Record(ptr:Record, ptr/cptr:Record)`. The first pointer
+is the actual destination or receiver and the second is the live source reference.
+Copy/move and const-source overloads retain distinct canonical function identities
+even where their complete signatures coincide. Calls retain the selected body
+and assignment's actual returned reference.
+
+Existing constructor destinations, operator-versus-member evaluation order and
+by-value parameter/result storage conventions apply. No move opcode, foreign ABI,
+record snapshot or implicit ownership transfer is introduced. A source object
+remains alive after moving, and the existing complete-object owners retain normal
+cleanup. Protocol major 1 is unchanged. Generated/defaulted moves and fresh
+temporary reference binding remain excluded. See the
+[user move contract](cpp-core-v2.md#user-defined-move-operations).
 
 ## Core v2 generated copy calls
 
