@@ -580,7 +580,7 @@ std::size_t Adapter::storageUnits(QualType T, unsigned Depth) {
     if (Found != StorageUnits.end())
       return Found->second;
     StorageUnits.emplace(R, Limit + 1);
-    std::size_t Units = 0;
+    std::size_t Units = R->field_empty() ? 1 : 0;
     for (const auto *F : R->fields()) {
       auto Added = storageUnits(F->getType(), Depth + 1);
       if (Added > Limit - Units)
@@ -1298,12 +1298,14 @@ public:
     // selecting its unsupported implicit nontrivial copy constructor.
     const bool ConstructedRecord = A.S.coreV2() && D->isStandardLayout();
     if (D->isUnion() || (!D->isAggregate() && !ConstructedRecord) ||
-        (A.S.coreV2() && !D->isStandardLayout()) || D->field_empty() ||
+        (A.S.coreV2() && !D->isStandardLayout()) ||
+        (!A.S.coreV2() && D->field_empty()) ||
         D->getNumBases() || D->getDescribedClassTemplate() ||
         D->getDeclContext()->isRecord())
       A.reject(D->getLocation(), "record",
-               "Only nonempty, unnested standard-layout records with supported "
-               "selected special members and no bases are admitted.");
+               "Only unnested standard-layout records with supported selected "
+               "special members and no bases are admitted; "
+               "empty records require core v2.");
     A.Records.push_back(D);
     return true;
   }

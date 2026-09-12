@@ -389,7 +389,7 @@ class FunctionLowering {
       if (Element->isArrayType())
         copyAssignedArray(std::move(Destination), std::move(Source),
                           Element, SourceElement, L);
-      else
+      else if (!emptyRecord(Element))
         assign(std::move(Destination), std::move(Source), L);
     }
   }
@@ -510,7 +510,8 @@ class FunctionLowering {
       // Read fields only here, after receiver effects, and return the receiver
       // lvalue. Assignment creates no complete-object lifetime or helper call.
       auto Receiver = dereference(*Args[0].getAsObject(), L);
-      assign(Receiver, dereference(*Args[1].getAsObject(), L), L);
+      if (!emptyRecord(A.Context.getRecordType(Method->getParent())))
+        assign(Receiver, dereference(*Args[1].getAsObject(), L), L);
       return Receiver;
     }
     chargeCall(Args, L);
@@ -963,6 +964,11 @@ class FunctionLowering {
   bool recordValue(QualType T) const {
     return A.S.coreV2() && T->isRecordType();
   }
+  bool emptyRecord(QualType T) const {
+    const auto *R = T->getAsCXXRecordDecl();
+    return A.S.coreV2() && R && R->getDefinition() &&
+           R->getDefinition()->field_empty();
+  }
   bool aggregateValue(QualType T) const {
     return A.S.coreV2() && (T->isRecordType() || T->isArrayType());
   }
@@ -1067,7 +1073,11 @@ class FunctionLowering {
       reject(L, "construction", "Constructor and destination types differ.");
     if (Constructor->isImplicit() && Constructor->isTrivial()) {
       if (Constructor->isCopyOrMoveConstructor() && C->getNumArgs() == 1) {
-        assign(std::move(Place), expression(C->getArg(0)), L);
+        auto Source = expression(C->getArg(0));
+        // An empty copy still evaluates its source, including calls and
+        // temporary lifetimes, but has no semantic data fields to copy.
+        if (!emptyRecord(T))
+          assign(std::move(Place), std::move(Source), L);
         return;
       }
       if (Constructor->isDefaultConstructor() && !C->getNumArgs()) {
@@ -1079,8 +1089,10 @@ class FunctionLowering {
     if (Constructor->isTrivial() && defaultedCopyOrMoveConstructor(Constructor) &&
         C->getNumArgs() == 1) {
       // A trivial copy preserves stored fields, including pointers into the
-      // source. Only selected nontrivial copies invoke member constructors.
-      assign(std::move(Place), expression(C->getArg(0)), L);
+      // source. Empty records only retain the source evaluation effects.
+      auto Source = expression(C->getArg(0));
+      if (!emptyRecord(T))
+        assign(std::move(Place), std::move(Source), L);
       return;
     }
     if (Constructor->isTrivial() && defaultedLifecycle(Constructor) &&

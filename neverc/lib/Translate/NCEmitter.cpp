@@ -398,6 +398,10 @@ class Emitter {
              R.ID + " {", &R.Loc);
     for (const auto &F : R.Fields)
       line("  " + declaration(F.ValueType, F.Name) + ";", &R.Loc);
+    if (ForwardDeclared && R.Fields.empty()) {
+      line("  /* C++ empty-object storage and identity; not a source field. */", &R.Loc);
+      line("  unsigned char nct_emit_empty_storage;", &R.Loc);
+    }
     line(ForwardDeclared ? "};" : "} " + R.ID + ";", &R.Loc);
     if (R.Layout) {
       line("static_assert(sizeof(" + R.ID + ") * __CHAR_BIT__ == " +

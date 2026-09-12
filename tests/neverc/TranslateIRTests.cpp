@@ -402,6 +402,121 @@ TEST(TranslateIR, CoreV2RecordLayoutChecksOffsetsPaddingAndNestedStorage) {
   invalid(M, "requires core v2");
 }
 
+TEST(TranslateIR, CoreV2EmptyRecordsHaveOneByteStorageWithoutSourceFields) {
+  auto M = module(true);
+  Type Empty{TypeKind::Record, "nct_empty"};
+  M.Records = {
+      {"nct_empty", {}, InputLoc, RecordLayout{{8, 8}, {}}},
+      {"nct_outer", {{"first", Empty}, {"items", arrayType(Empty, 2)},
+                      {"value", intType()}}, InputLoc,
+       RecordLayout{{64, 32}, {0, 8, 32}}}};
+  M.Functions[0].Locals.push_back({"nct_object", Empty, InputLoc});
+  Instruction Assign;
+  Assign.Op = InstructionKind::Assign;
+  Assign.Loc = InputLoc;
+  Assign.Target = variable("nct_object", Empty);
+  Assign.Value = pointerExpr(ExprKind::Aggregate, Empty);
+  M.Functions[0].Body = {label(), Assign, ret(literal("0"))};
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  const std::string Carrier = "unsigned char nct_emit_empty_storage;";
+  const auto At = Output.Text.find(Carrier);
+  ASSERT_NE(At, std::string::npos);
+  EXPECT_EQ(Output.Text.find(Carrier, At + Carrier.size()), std::string::npos);
+  EXPECT_NE(Output.Text.find("sizeof(nct_empty) * __CHAR_BIT__ == 8"), std::string::npos);
+  EXPECT_NE(Output.Text.find("alignof(nct_empty) * __CHAR_BIT__ == 8"), std::string::npos);
+  EXPECT_NE(Output.Text.find("__builtin_offsetof(nct_outer, items) * __CHAR_BIT__ == 8"), std::string::npos);
+  EXPECT_NE(Output.Text.find("(nct_empty){}"), std::string::npos);
+  EXPECT_EQ(Output.Text.find("__builtin_offsetof(nct_empty,"), std::string::npos);
+  EXPECT_TRUE(M.Records[0].Fields.empty());
+  EXPECT_TRUE(M.Records[0].Layout->FieldOffsetsBits.empty());
+}
+
+TEST(TranslateIR, CoreV2EmptyRecordLayoutRequiresExactIndependentEvidence) {
+  auto Base = module(true);
+  Base.Records.push_back({"nct_empty", {}, InputLoc, RecordLayout{{8, 8}, {}}});
+  for (auto Bad : {StorageLayout{0, 8}, StorageLayout{16, 8},
+                   StorageLayout{8, 16}, StorageLayout{8, 0}}) {
+    auto M = Base;
+    M.Records[0].Layout->Storage = Bad;
+    invalid(M, "size or alignment disagrees");
+  }
+  auto M = Base;
+  M.Records[0].Layout.reset();
+  invalid(M, "Missing record layout");
+  M = Base;
+  M.Records[0].Layout->FieldOffsetsBits = {0};
+  invalid(M, "mismatched field offsets");
+  M = module();
+  M.Records.push_back({"nct_empty", {}, InputLoc});
+  invalid(M, "Empty records require core v2");
+}
+
+TEST(TranslateIR, CoreV2EmptyRecordCarrierIsNotAProtocolMemberOrInitializer) {
+  auto M = module(true);
+  Type Empty{TypeKind::Record, "nct_empty"};
+  M.Records.push_back({"nct_empty", {}, InputLoc, RecordLayout{{8, 8}, {}}});
+  M.Functions[0].Locals.push_back({"nct_object", Empty, InputLoc});
+  auto Member = pointerExpr(ExprKind::Member, integerType(8, true),
+                             {variable("nct_object", Empty)});
+  Member.Name = "nct_emit_empty_storage";
+  M.Functions[0].Result = integerType(8, true);
+  M.Functions[0].Body.back() = ret(Member);
+  invalid(M, "Unknown member");
+  M.Functions[0].Result = intType();
+  M.Functions[0].Body.back() = ret(literal("0"));
+  Instruction Assign;
+  Assign.Op = InstructionKind::Assign;
+  Assign.Loc = InputLoc;
+  Assign.Target = variable("nct_object", Empty);
+  Assign.Value = pointerExpr(ExprKind::Aggregate, Empty, {literal("0")});
+  M.Functions[0].Body.insert(M.Functions[0].Body.begin() + 1, Assign);
+  invalid(M, "incorrect operand count");
+}
+
+TEST(TranslateIR, CoreV2EmptyElementsConsumeArrayStorageBudget) {
+  auto M = module(true);
+  Type Empty{TypeKind::Record, "nct_empty"};
+  M.Records.push_back({"nct_empty", {}, InputLoc, RecordLayout{{8, 8}, {}}});
+  M.Functions[0].Locals.push_back({"nct_items", arrayType(Empty, 65536), InputLoc});
+  Diagnostics D;
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  M.Functions[0].Locals[0].ValueType = arrayType(arrayType(Empty, 512), 512);
+  invalid(M, "Array storage expansion");
+  M = module(true);
+  M.Records.push_back({"nct_cycle", {{"self", {TypeKind::Record, "nct_cycle"}}},
+                        InputLoc, RecordLayout{{8, 8}, {0}}});
+  invalid(M, "forward/cyclic");
+}
+
+TEST(TranslateIR, CoreV2EmptyRecordWireRetainsEmptyOffsetAndFieldArrays) {
+  const std::string Record = R"json({"id":"nct_empty",
+    "loc":{"file":"input.cpp","line":1,"column":1},"fields":[],
+    "layout":{"size_bits":8,"abi_align_bits":8,"field_offsets_bits":[]}})json";
+  auto Base = wireModule(true);
+  replaceOnce(Base, "\"records\": []", "\"records\": [" + Record + "]");
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(Base, M, D));
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  ASSERT_EQ(M.Records.size(), 1u);
+  EXPECT_TRUE(M.Records[0].Fields.empty());
+  EXPECT_TRUE(M.Records[0].Layout->FieldOffsetsBits.empty());
+  for (const auto &Change : std::vector<std::pair<std::string, std::string>>{
+           {"\"size_bits\":8", "\"size_bits\":16"},
+           {"\"abi_align_bits\":8", "\"abi_align_bits\":16"},
+           {"\"field_offsets_bits\":[]", "\"field_offsets_bits\":[0]"}}) {
+    auto JSON = Base;
+    replaceOnce(JSON, Change.first, Change.second);
+    ASSERT_TRUE(parseModule(JSON, M, D));
+    invalid(M);
+  }
+  auto JSON = Base;
+  replaceOnce(JSON, "\"layout\":", "\"missing\":");
+  EXPECT_FALSE(parseModule(JSON, M, D));
+}
+
 TEST(TranslateIR, CoreV2RecordLayoutWireRejectsMissingAndMalformedEvidence) {
   const std::string Record = R"json({"id":"nct_record",
     "loc":{"file":"input.cpp","line":1,"column":1},

@@ -67,6 +67,8 @@ Core v2 amplía la vida de temporales mediante referencias locales automáticas 
 
 Core v2 también admite arrays temporales independientes de tamaño fijo en llamadas, conversión a puntero, indexación, expresiones descartadas y referencias locales automáticas. Cada array tiene un destino real; valores escalares, constructores e inicializadores predeterminados compartidos inicializan directamente cada elemento en orden, sin propietarios adicionales. Cuando C++ extiende la vida, las referencias a filas o elementos multidimensionales conservan el array completo. Los elementos se destruyen en orden inverso al terminar la expresión completa o el ámbito de la referencia. Se mantienen las direcciones tipadas y los límites existentes de tamaño, almacenamiento y expansión. C++/STL completo sigue en desarrollo.
 
+Core v2 admite clases vacías de disposición estándar y objetos de función o conversión sin estado. Los objetos vacíos conservan el tamaño y la alineación de un byte de C++, almacenamiento separado cuando corresponde, constructores y operadores seleccionados y destrucción normal. Las copias triviales siguen evaluando sus operandos; los elementos vacíos de arrays y registros contenedores cuentan para el límite de almacenamiento. El NC generado usa un byte interno y la lista de campos fuente permanece vacía. La herencia, las plantillas y la STL completa siguen en desarrollo.
+
 ## Proyectos de varios archivos
 
 Seleccione explícitamente las unidades de traducción en una base de datos de compilación y especifique el directorio raíz del proyecto. El frontend integrado analiza cada unidad por separado; la fusión verifica definiciones, enlace, tipos compartidos y el cumplimiento de la regla de una sola definición (ODR) mediante comprobaciones conservadoras.

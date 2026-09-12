@@ -235,11 +235,55 @@ implicit trivial copy paths are unchanged.
 These methods do not establish STL container or iterator support. V1 profiles
 retain their rejected-method boundary.
 
+## Empty record storage and operations
+
+Core v2 admits ordinary empty standard-layout records, including stateless
+functors and conversion objects, with the same method, constructor, destructor,
+source ownership and type checks as other records. No bases, unions, nesting,
+virtual dispatch, templates, packing or custom alignment are added. Other
+profiles retain their nonempty-record boundary.
+
+The source field list and layout offset list stay empty. The consumer independently
+requires size 8 bits and ABI alignment 8 bits. Generated NC declares one internal
+`unsigned char nct_emit_empty_storage` only for a fieldless record because a native
+NC empty struct has size zero. This byte provides actual object size and identity;
+it is absent from source fields, protocol member lookup and field-offset assertions.
+Size/alignment assertions remain. Empty array elements have a one-byte stride and
+contribute at least one unit each to existing storage and expansion budgets.
+Containing-record fields keep their independently checked natural offsets.
+
+Construction uses the actual local, subobject, parameter or caller result storage.
+Selected user constructors, copies, moves, assignments, operators and destructors
+still execute. Trivial empty copying evaluates the source expression but performs
+no data-field store. Trivial assignment captures both operands in the existing
+C++17 order and returns the receiver alias without a carrier copy. Direct empty
+aggregate initialization can emit no field stores; preserved zero-field constant
+or aggregate values retain their normal `{}` initialization. Trivial containing
+record copies can still copy object representation with NeverC's aggregate memcpy.
+
+Local objects, reference-extended temporaries, full-expression temporaries and
+arrays retain their existing complete-object cleanup ownership. Aliases create
+no extra owner. Empty constexpr values and admitted trivial constant globals keep
+normal definition checking. Nontrivial global destruction remains unsupported.
+
+The internal byte is not a semantic source field. Existing pointer conversions
+can still reach object representation through byte pointers; absence of a named
+field does not make that memory inaccessible. Exact padding/representation probe
+results remain outside this profile's contract. Generated field operations do not
+introduce scalar reads or comparisons of the internal byte.
+
+Fixtures cover source effects, distinct addresses, array stride, nested layouts,
+by-value parameters, returned values, selected conversions, cleanup, protocol
+signatures and forged layout evidence. Successful manifests use an empty
+`field_offsets_bits` array as allowed by the manifest schema. Native verification
+requires CI for the implementing revision. Full C++/STL remains unfinished.
+
 ## Ordinary record constructors
 
 Core v2 admits ordinary user-provided default, converting and multi-argument
 constructors, including `explicit`, `constexpr` and out-of-line definitions.
-Records must be nonempty, unnested and standard-layout, with no bases. Each
+Records must be unnested and standard-layout, with no bases. Empty records
+follow the storage contract above. Each
 selected construction, copy or assignment must follow its admitted operation
 contract, including the user moves described below.
 Destruction follows the separate lifetime contract below. Fields remain public, non-mutable, non-const,

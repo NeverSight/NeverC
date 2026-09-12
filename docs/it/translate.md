@@ -67,6 +67,8 @@ Core v2 estende ora la durata dei temporanei legati a normali riferimenti locali
 
 Core v2 supporta anche array temporanei autonomi a dimensione fissa nelle chiamate, conversioni a puntatore, indicizzazione, espressioni scartate e riferimenti locali automatici. Ogni array ha una destinazione effettiva; valori scalari, costruttori e inizializzatori predefiniti condivisi inizializzano direttamente gli elementi in ordine, senza proprietari aggiuntivi. Quando C++ estende la durata, i riferimenti a righe o elementi multidimensionali conservano l’array completo. Gli elementi vengono distrutti in ordine inverso alla fine dell’espressione completa o dell’ambito del riferimento. Restano gli indirizzi tipizzati e i limiti esistenti di dimensione, memoria ed espansione. C++/STL completa resta in sviluppo.
 
+Core v2 supporta classi vuote a layout standard e oggetti funzione o conversione senza stato. Gli oggetti vuoti mantengono dimensione e allineamento C++ di un byte, memoria distinta quando richiesta, costruttori e operatori selezionati e distruzione normale. Le copie banali valutano comunque gli operandi; gli elementi vuoti di array e record contenitori rientrano nei limiti di memoria. Il codice NC generato usa un byte interno e la lista dei campi sorgente resta vuota. Ereditarietà, template e STL completa sono ancora in sviluppo.
+
 ## Progetti con più file
 
 Selezionare esplicitamente le unità di traduzione da un database di compilazione e specificare la directory radice del progetto. Il frontend integrato analizza ogni unità separatamente; la fusione verifica definizioni, collegamento, tipi condivisi e il rispetto della regola di definizione unica (ODR) mediante verifiche conservative.

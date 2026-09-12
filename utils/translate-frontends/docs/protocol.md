@@ -201,6 +201,24 @@ and early exits use the existing control-flow cleanup. Protocol major 1 and its
 opcodes remain unchanged. See the
 [source lifetime contract](cpp-core-v2.md#automatic-local-reference-lifetime-extension).
 
+## Core v2 empty record layout
+
+A core-v2 empty record keeps `fields: []` and layout evidence
+`size_bits: 8`, `abi_align_bits: 8`, `field_offsets_bits: []`. Independent verification
+requires exactly that layout. Record storage accounting assigns at least one unit
+to an empty object, including array elements and containing-record members.
+Protocol major 1 and the record schema fields are unchanged; the manifest schema
+now permits empty offset arrays and retains its core-v2-only `record_layouts` rule.
+
+The NC emitter supplies one internal unsigned-char storage member and retains
+size/alignment assertions. The member has no protocol field entry or field-offset
+assertion and cannot be selected by a verified `member` expression. Existing byte
+pointer conversions can reach representation; exact representation contents are
+outside the source contract. No source-field operation reads that internal byte.
+Zero-field aggregates have arity zero. Trivial copies preserve operand evaluation
+without data-field stores; selected calls, actual destinations, aliases and cleanup
+use the ordinary record ABI. See the [empty record source contract](cpp-core-v2.md#empty-record-storage-and-operations).
+
 ## Core v2 array temporary storage
 
 A standalone array temporary uses one `arr:<extent>:<element>` local, including

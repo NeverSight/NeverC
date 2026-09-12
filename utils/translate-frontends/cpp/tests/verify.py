@@ -509,6 +509,32 @@ def main():
         'array-temporary-braced-live-array': 'using A=int[2];int f(A&a){A&r{a};return ++r[0];}',
         'array-temporary-array-rvalue-parameter': 'using A=int[2];int read(A&&a){return ++a[0];}int f(){return read(A{1,2});}',
     })
+    core_v2.update({
+        'empty-record-aggregate': 'struct E{};int f(){E a,b{},c=a;return sizeof(E)==1&&&a!=&b&&&a!=&c?0:1;}',
+        'empty-record-class': 'class E{};int f(){E e;return sizeof(e);}',
+        'empty-record-defaulted': 'struct E{E()=default;E(const E&)=default;E&operator=(const E&)=default;~E()=default;};void f(){E a;E b=a;a=b;}',
+        'empty-record-move': 'struct E{E()=default;E(E&&)=default;E&operator=(E&&)=default;};void f(){E a;E b=static_cast<E&&>(a);a=static_cast<E&&>(b);}',
+        'empty-record-user-special-members': 'struct E{E(){}E(const E&){}E(E&&){}E&operator=(const E&){return *this;}~E(){}};void f(){E a;E b=a;E c=static_cast<E&&>(a);a=b;}',
+        'empty-record-out-of-line': 'struct E{E();~E();};E::E(){}E::~E(){}void f(){E e;}',
+        'empty-record-constexpr': 'struct E{};constexpr E e{};static_assert(sizeof(e)==1);int f(){return alignof(E);}',
+        'empty-record-callable': 'struct F{constexpr int operator()(int n)const noexcept{return n+1;}};constexpr F f{};static_assert(f(1)==2);int g(){return F{}(3);}',
+        'empty-record-enum-conversion': 'enum class C:unsigned char{one=1};struct E{operator C()const{return C::one;}};int f(){E e;C c=e;return static_cast<int>(c);}',
+        'empty-record-empty-conversion-record': 'struct R{operator int()const{return 1;}};int f(){R r;const int&n=r;return n;}',
+        'empty-record-empty-record-conversion': 'struct T{int n;};struct R{operator T()const{return {1};}};int f(){R r;const T&t=r;return t.n;}',
+        'empty-record-empty-result': 'struct E{};struct F{operator E()const{return {};}};E f(){F f;return f;}',
+        'empty-record-reference-result': 'int n=0;struct F{operator int&()const{return n;}};void f(){F f;int&r=f;r=1;}',
+        'empty-record-by-value': 'struct E{};bool f(E a,E b){return &a!=&b;}bool g(){E e;return f(e,e);}',
+        'empty-record-return': 'struct E{E(){}~E(){}};E f(){return E();}void g(){E e=f();}',
+        'empty-record-full-expression': 'struct E{E(){}~E(){}int f()const{return 1;}};int f(){return E{}.f();}',
+        'empty-record-local-reference': 'struct E{E(){}~E(){}};void f(){const E&e=E();E&&r=E();}',
+        'empty-record-array': 'struct E{E(){}~E(){}};using A=E[2];void f(){const A&a={E(),E()};}',
+        'empty-record-array-element': 'struct E{E(){}~E(){}};using A=E[2];void f(){const E&e=A{E(),E()}[1];}',
+        'empty-record-nested-members': 'struct E{};struct R{E first,second;int n;E a[2];};int f(){R r{{},{},1,{{},{}}};R s=r;return s.n;}',
+        'empty-record-generated-array-assignment': 'struct E{};struct L{int n;L&operator=(const L&r){n=r.n;return *this;}};struct R{E a[2];L l;};void f(R&a,const R&b){a=b;}',
+        'empty-record-generated-array-copy': 'struct E{};struct L{int n;L(const L&r):n(r.n){}};struct R{E a[2];L l;};R f(const R&r){return r;}',
+        'empty-record-constructor-receiver': 'int bad=0;struct E{E(E*p){if(this!=p)++bad;}};int f(){E e(&e);return bad;}',
+        'empty-record-query': 'struct E{E()noexcept{}~E()noexcept{}};static_assert(noexcept(E()));static_assert(sizeof(E{})==1);',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -2119,7 +2145,6 @@ bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
         'template': 'struct R{template<class T>operator T()const{return T{};}};',
         'member-address': 'struct R{operator int()const{return 1;}};auto f(){return &R::operator int;}',
         'function-pointer': 'using F=int(*)();int g(){return 1;}struct R{operator F()const{return g;}};',
-        'empty-record-conversion': 'struct T{int n;};struct R{operator T()const{return {1};}};int f(){R r;const T&t=r;return t.n;}',
         'unused-throw': 'struct R{operator int()const{throw 1;}};',
         'query-throw': 'struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}',
         'folded-float': 'struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,"value");',
@@ -2266,7 +2291,6 @@ bool query(){return noexcept(R(1).get(2));}
         assert relocated == temporary_calls, "temporary-call identities depend on the absolute root"
 
     temporary_call_rejected = {
-        'empty-conversion-record': 'struct R{operator int()const{return 1;}};int f(){R r;const int&n=r;return n;}',
         'fresh-return': 'const int&f(){return 1;}',
         'fresh-record-return': 'struct R{int n;};const R&f(){return R{1};}',
         'static-extension': 'int f(){static const int&r=1;return r;}',
@@ -2652,6 +2676,224 @@ bool query(){return noexcept(Items{R(1),R(2)});}
         check("v2-" + 'array_temporary_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
     check("v1-array-temporary-reference", "using A=int[2];int f(){const A&r={1,2};return r[0];}", "TR0201")
     check("v1-array-temporary-decay", "using A=int[2];int f(){return A{1,2}[0];}", "TR0201")
+    er_schema = json.loads((repository / "utils/translate-frontends/docs/schemas/manifest.schema.json").read_text())
+    er_layout_schema = er_schema["properties"]["record_layouts"]["items"]["properties"]
+    assert er_layout_schema["field_offsets_bits"]["minItems"] == 0
+    assert er_layout_schema["size_bits"]["minimum"] == 8
+    er_profile_rules = [rule for rule in er_schema["allOf"]
+                        if "record_layouts" in rule.get("then", {}).get("required", [])]
+    assert len(er_profile_rules) == 1
+    assert er_profile_rules[0]["if"]["properties"]["profile"]["const"] == "cpp-core-v2"
+    assert er_profile_rules[0]["else"]["not"]["required"] == ["record_layouts"]
+    empty_record_source = """int count=0;
+void mark(){++count;}
+struct E{};
+constexpr E global{};
+constexpr E otherGlobal{};
+struct C {
+ C(){mark();}
+ C(const C&s){mark();}
+ ~C(){mark();}
+ int operator()()const{mark();return 1;}
+};
+struct F {
+ operator E()const{return {};}
+};
+struct D {D()=default;D(const D&)=default;D&operator=(const D&)=default;};
+struct Holder{E a[2];int n;};
+E&left(E&e){mark();return e;}
+const E&right(const E&e){mark();return e;}
+E trivialCopy(const E&e){return right(e);}
+E&assignment(E&a,const E&b){return left(a)=right(b);}
+E&explicitAssignment(E&a,const E&b){return left(a).operator=(right(b));}
+D defaultedCopy(const D&d){return d;}
+D&defaultedAssignment(D&a,const D&b){return a=b;}
+void identities(){E a,b;mark();}
+E result(){return E{};}
+E converted(const F&f){return f;}
+int params(E a,E b){return &a==&b?0:1;}
+int pass(const E&e){return params(e,e);}
+C userCopy(const C&c){return c;}
+void local(){const C&c=C();const C&alias{c};mark();}
+void argument(const C&c){mark();}
+void full(){argument(C());mark();}
+void array(){const C(&a)[2]={C(),C()};mark();}
+void discarded(){using A=C[2];A{C(),C()};mark();}
+bool query(){return noexcept(C());}
+"""
+    empty_records = check("v2-empty-records-protocol", empty_record_source, profile="cpp-core-v2")
+    er_functions = {f["name"]: f for f in empty_records["functions"]}
+
+    def er_line(prefix):
+        matches = [i for i, line in enumerate(empty_record_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def er_function(prefix, result=None, parameters=None):
+        matches = [f for f in empty_records["functions"] if f["loc"]["line"] == er_line(prefix)
+                   and (result is None or f["result"] == result)
+                   and (parameters is None or [p["type"] for p in f["params"]] == parameters)]
+        assert len(matches) == 1, (prefix, result, parameters, matches)
+        return matches[0]
+
+    def er_record(prefix):
+        matches = [r for r in empty_records["records"] if r["loc"]["line"] == er_line(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def er_pointer(function, expr):
+        if expr["kind"] == "cast":
+            return er_pointer(function, expr["args"][0])
+        if expr["kind"] in ("address", "array_decay"):
+            return er_place(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        values = [n["value"] for n in function["body"] if n["op"] == "assign"
+                  and n["target"].get("name") == expr["name"]]
+        if values:
+            assert len(values) == 1, values
+            return er_pointer(function, values[0])
+        calls = [n for n in gc_calls(function) if n.get("target", {}).get("name") == expr["name"]]
+        if calls:
+            assert len(calls) == 1 and calls[0]["callee"] in (er_left, er_right), calls
+            return er_pointer(function, calls[0]["args"][0])
+        assert any(p["name"] == expr["name"] for p in function["params"]), expr
+        return ("parameter", expr["name"])
+
+    def er_place(function, expr):
+        if expr["kind"] == "var":
+            return ("object", expr["name"])
+        if expr["kind"] == "dereference":
+            return er_pointer(function, expr["args"][0])
+        assert expr["kind"] == "index", expr
+        return ("element", er_pointer(function, expr["args"][0]), gc_identity(function, expr["args"][1]))
+
+    er_empty = [er_record(prefix) for prefix in ("struct E", "struct C", "struct F", "struct D")]
+    for record in er_empty:
+        assert record["fields"] == []
+        assert record["layout"] == {"size_bits": 8, "abi_align_bits": 8, "field_offsets_bits": []}
+    eid, cid, fid, did = [r["id"] for r in er_empty]
+    globals_of_e = [g for g in empty_records["globals"] if g["type"] == eid]
+    assert len(globals_of_e) == 2 and globals_of_e[0]["name"] != globals_of_e[1]["name"]
+    assert all(g["value"]["kind"] == "aggregate" and g["value"]["args"] == [] for g in globals_of_e)
+    holder = er_record("struct Holder")
+    assert holder["layout"] == {"size_bits": 64, "abi_align_bits": 32, "field_offsets_bits": [0, 32]}
+    assert [f["type"] for f in holder["fields"]] == ["arr:2:"+eid, "int"]
+    er_left = er_function("E&left(", "ptr:"+eid, ["ptr:"+eid])["name"]
+    er_right = er_function("const E&right(", "cptr:"+eid, ["cptr:"+eid])["name"]
+    er_mark = er_function("void mark(", "void", [])["name"]
+    copy = er_function("E trivialCopy(", "void", ["ptr:"+eid, "cptr:"+eid])
+    assert [c["callee"] for c in gc_calls(copy)] == [er_right], copy
+    assert not any(n["op"] == "assign" and n["target"]["type"] == eid for n in copy["body"]), copy
+    for prefix, callees in (("E&assignment(", [er_right, er_left]),
+                            ("E&explicitAssignment(", [er_left, er_right])):
+        function = er_function(prefix, "ptr:"+eid, ["ptr:"+eid, "cptr:"+eid])
+        assert [c["callee"] for c in gc_calls(function)] == callees, function
+        assert not any(n["op"] == "assign" and n["target"]["type"] == eid for n in function["body"]), function
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1
+        assert er_pointer(function, returned[0]) == ("parameter", function["params"][0]["name"])
+    for prefix, result, parameters in (("D defaultedCopy(", "void", ["ptr:"+did, "cptr:"+did]),
+                                      ("D&defaultedAssignment(", "ptr:"+did, ["ptr:"+did, "cptr:"+did])):
+        function = er_function(prefix, result, parameters)
+        assert not gc_calls(function)
+        assert not any(n["op"] == "assign" and n["target"]["type"] == did for n in function["body"])
+    identities = er_function("void identities(", "void", [])
+    places = [v for v in identities["locals"] if v["type"] == eid]
+    assert len(places) == 2 and places[0]["name"] != places[1]["name"]
+    result = er_function("E result(", "void", ["ptr:"+eid])
+    assert not gc_calls(result) and not any(v["type"] == eid for v in result["locals"])
+    conversion = er_function(" operator E(", "void", ["ptr:"+eid, "cptr:"+fid])
+    converted = er_function("E converted(", "void", ["ptr:"+eid, "cptr:"+fid])
+    assert [c["callee"] for c in gc_calls(converted)] == [conversion["name"]]
+    call = gc_calls(converted)[0]
+    assert [er_pointer(converted, a) for a in call["args"]] == [("parameter", p["name"]) for p in converted["params"]]
+    params = er_function("int params(", "int", ["ptr:"+eid, "ptr:"+eid])
+    passed = er_function("int pass(", "int", ["cptr:"+eid])
+    call = gc_calls(passed)
+    assert len(call) == 1 and call[0]["callee"] == params["name"], passed
+    destinations = [er_pointer(passed, a) for a in call[0]["args"]]
+    assert len(set(destinations)) == 2 and all(d[0] == "object" for d in destinations), destinations
+    ctor = er_function(" C(){", "void", ["ptr:"+cid])["name"]
+    copy_ctor = er_function(" C(const C&s)", "void", ["ptr:"+cid, "cptr:"+cid])["name"]
+    copied = er_function("C userCopy(", "void", ["ptr:"+cid, "cptr:"+cid])
+    assert [c["callee"] for c in gc_calls(copied)] == [copy_ctor]
+    assert [er_pointer(copied, a) for a in gc_calls(copied)[0]["args"]] == [("parameter", p["name"]) for p in copied["params"]]
+    destructor = cid+"_destroy"
+    argument = er_function("void argument(", "void", ["cptr:"+cid])["name"]
+    for prefix, expected in (("void local(", [ctor, er_mark, destructor]),
+                             ("void full(", [ctor, argument, destructor, er_mark])):
+        function = er_function(prefix, "void", [])
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == expected, function
+        objects = [v for v in function["locals"] if v["type"] == cid]
+        assert len(objects) == 1
+        places = [er_pointer(function, c["args"][0]) for c in calls if c["callee"] in (ctor, destructor)]
+        assert places == [("object", objects[0]["name"])]*2
+        flags = [n["target"]["name"] for n in function["body"] if n["op"] == "assign" and n["value"].get("value") is True]
+        assert len(flags) == 1, function
+    for prefix, expected in (("void array(", [ctor, ctor, er_mark, destructor, destructor]),
+                             ("void discarded(", [ctor, ctor, destructor, destructor, er_mark])):
+        function = er_function(prefix, "void", [])
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == expected, function
+        arrays = [v for v in function["locals"] if v["type"] == "arr:2:"+cid]
+        assert len(arrays) == 1 and not any(v["type"] == cid for v in function["locals"])
+        root = ("object", arrays[0]["name"])
+        assert [er_pointer(function, c["args"][0]) for c in calls if c["callee"] == ctor] == [("element", root, i) for i in (0, 1)]
+        assert [er_pointer(function, c["args"][0]) for c in calls if c["callee"] == destructor] == [("element", root, i) for i in (1, 0)]
+    query = er_function("bool query(", "bool", [])
+    assert not gc_calls(query)
+    returned = [n["value"] for n in query["body"] if n["op"] == "return"]
+    assert len(returned) == 1 and nq_constant(query, returned[0]) is False
+    for function in empty_records["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in er_functions[call["callee"]]["params"]], call
+    for node in walk(empty_records):
+        assert not (node.get("kind") == "member" and node.get("name") == "nct_emit_empty_storage"), node
+        if node.get("kind") == "aggregate" and node.get("type") in (eid, cid, fid, did):
+            assert node["args"] == [], node
+    with tempfile.TemporaryDirectory(prefix="neverc-empty-records-relocated-") as temp:
+        relocated = check("empty-records-relocated", empty_record_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == empty_records, "empty record identities depend on the absolute root"
+
+    empty_record_rejected = {
+        'base': 'struct E{};struct D:E{};',
+        'union': 'union E{};',
+        'virtual': 'struct E{virtual void f(){}};',
+        'nested': 'struct E{struct I{};};',
+        'template': 'template<class T>struct E{};E<int> e;',
+        'overaligned': 'struct alignas(2) E{};',
+        'attribute': 'struct __attribute__((packed)) E{};',
+        'reference-field': 'struct E{int&r;};',
+        'static-reference': 'struct E{};void f(){static const E&e=E{};}',
+        'thread-reference': 'struct E{};void f(){thread_local const E&e=E{};}',
+        'escaping-reference': 'struct E{};const E&f(){return E{};}',
+        'unevaluated-unsupported': 'struct E{operator double()const{return 1.0;}};bool f(){E e;return noexcept(static_cast<double>(e));}',
+        'extent-limit': 'struct E{};using A=E[65537];',
+        'storage-limit': 'struct E{};using A=E[512][512];',
+        'global-destruction': 'struct E{~E(){}};const E e{};',
+    }
+    for name, source in empty_record_rejected.items():
+        check("v2-" + 'empty_record_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
+    empty_record_invalid = {
+        'initializer-arity': 'struct E{};void f(){E e{1};}',
+        'missing-field': 'struct E{};int f(){E e;return e.n;}',
+        'private-carrier-name': 'struct E{};int f(){E e;return e.nct_emit_empty_storage;}',
+        'deleted-copy': 'struct E{E()=default;E(const E&)=delete;};void f(){E a;E b=a;}',
+        'deleted-move': 'struct E{E()=default;E(E&&)=delete;};void f(){E a;E b=static_cast<E&&>(a);}',
+        'mutable-reference': 'struct E{};void f(){E&r=E{};}',
+    }
+    for name, source in empty_record_invalid.items():
+        check("v2-" + 'empty_record_invalid' + "-" + name, source, "TR0202", profile="cpp-core-v2")
+    empty_record_missing = {
+        'constructor': 'struct E{E();};void f(){E e;}',
+        'destructor': 'struct E{~E();};void f(){E e;}',
+    }
+    for name, source in empty_record_missing.items():
+        check("v2-" + 'empty_record_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
+    check("v1-empty-record-reference", "struct E{};void f(){E e;}", "TR0201")
+    check("v1-empty-record-decay", "struct F{int operator()()const{return 1;}};int f(){F f;return f();}", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}

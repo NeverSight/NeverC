@@ -67,6 +67,8 @@ Core v2 now extends temporary lifetimes for ordinary automatic local references,
 
 Core v2 also supports standalone fixed-array temporaries in calls, decay/indexing, discarded expressions and automatic local references. Each array has one actual destination; scalar stores, record constructors and shared default fillers initialize individual elements in order without creating extra element owners. Multidimensional row/element references keep the complete array alive when C++ grants extension. Cleanup destroys elements in reverse order at the full-expression or reference-scope boundary. Array references retain their typed addresses, and existing extent, storage and expansion limits apply. Full C++/STL remains in development.
 
+Core v2 supports empty standard-layout classes and stateless callable/conversion objects. Empty objects keep their C++ size and alignment of one byte, distinct storage where required, selected constructors/operators and normal cleanup. Trivial copies still evaluate their operands; arrays and containing records count empty elements against storage limits. The generated NC uses an internal storage byte, while source fields remain empty. Inheritance, templates and complete STL remain in development.
+
 ## Multi-file projects
 
 Select the translation units explicitly from a compilation database and set the project root directory. The built-in frontend analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).

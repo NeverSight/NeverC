@@ -2020,7 +2020,6 @@ TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
       {"template", "struct R{template<class T>operator T()const{return T{};}};", "TR0201"},
       {"member-address", "struct R{operator int()const{return 1;}};auto f(){return &R::operator int;}", "TR0201"},
       {"function-pointer", "using F=int(*)();int g(){return 1;}struct R{operator F()const{return g;}};", "TR0201"},
-      {"empty-record-conversion", "struct T{int n;};struct R{operator T()const{return {1};}};int f(){R r;const T&t=r;return t.n;}", "TR0201"},
       {"unused-throw", "struct R{operator int()const{throw 1;}};", "TR0201"},
       {"query-throw", "struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}", "TR0201"},
       {"folded-float", "struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,\"value\");", "TR0201"},
@@ -2049,6 +2048,263 @@ TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
   for (const std::string &Code : {
       "struct R{int n;operator int()const{return n;}};",
       "struct R{explicit operator bool()const{return true;}};bool f(R&r){return static_cast<bool>(r);}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyRecordsPreserveStorageAndCleanup) {
+  const auto Source = tmpFile("empty-records.cpp");
+  const auto Output = tmpFile("empty-records.nc");
+  writeFile(Source, R"cpp(
+int live=0,made=0,dead=0,copied=0,moved=0,assigned=0,moveAssigned=0,bad=0,converted=0,sequence=0,value=9;
+void reset(){live=made=dead=copied=moved=assigned=moveAssigned=bad=converted=sequence=0;}
+struct E {};
+struct Defaults {
+ Defaults()=default;
+ Defaults(const Defaults&)=default;
+ Defaults(Defaults&&)=default;
+ Defaults&operator=(const Defaults&)=default;
+ Defaults&operator=(Defaults&&)=default;
+ ~Defaults()=default;
+};
+struct Layout { E first; E second; int n; E items[3]; };
+struct Callable { constexpr int operator()(int n)const noexcept{return n+3;} };
+constexpr E constant{};
+constexpr E anotherConstant{};
+constexpr Callable callable{};
+constexpr int folded=callable(4);
+static_assert(sizeof(E)==1&&alignof(E)==1&&sizeof(Defaults)==1&&folded==7);
+struct Life {
+ Life(){++live;++made;}
+ Life(const Life&s){++live;++made;++copied;if(this==&s)++bad;}
+ Life(Life&&s){++live;++made;++moved;if(this==&s)++bad;}
+ Life&operator=(const Life&s){++assigned;return *this;}
+ Life&operator=(Life&&s){++moveAssigned;return *this;}
+ ~Life(){--live;++dead;}
+ bool same(const Life*p)const{return this==p;}
+ operator int()const{++converted;return 7;}
+};
+struct Factory { operator Life()const{return Life();} };
+struct Reference { operator int&()const{return value;} };
+enum class Code:unsigned char{one=1};
+struct EnumSource { operator Code()const{return Code::one;} };
+struct First { First(){sequence=sequence*10+1;}~First(){sequence=sequence*10+2;} };
+struct Second { Second(){sequence=sequence*10+3;}~Second(){sequence=sequence*10+4;} };
+struct Nested { First first; Second second; };
+struct Bundle { E items[2];int n; };
+struct Managed { Life items[2]; };
+using Pair=Life[2];using EmptyArray=E[3];
+E&left(E&e,int&order){order=order*10+1;return e;}
+const E&right(const E&e,int&order){order=order*10+2;return e;}
+Defaults&defaultLeft(Defaults&e,int&order){order=order*10+1;return e;}
+const Defaults&defaultRight(const Defaults&e,int&order){order=order*10+2;return e;}
+E fresh(){return E{};}
+int parameters(E a,E b,const E*p){return &a!=&b&&&a!=p&&&b!=p?1:0;}
+int consume(Life a,Life b,const Life*p){return a.same(&a)&&b.same(&b)&&&a!=&b&&&a!=p&&&b!=p?live:-1;}
+int read(const Life&r){return r.same(&r)?live:-1;}
+Life result(){return Life();}
+int early(){const Life&r=Life();return live;}
+int arrayEarly(){const Pair&r={Life(),Life()};return live;}
+int main(){
+ E a,b{},c=a,d=static_cast<E&&>(a);E array[3]{};
+ if(sizeof(a)!=1||alignof(E)!=1||&a==&b||&a==&c||&c==&d||&array[0]==&array[1]||&array[2]-&array[0]!=2)return 1;
+ if(&constant==&a||&constant==&anotherConstant||sizeof(constant)!=1||folded!=7||Callable{}(6)!=9)return 2;
+ Layout layout{{},{},11,{{},{},{}}};
+ if(sizeof(Layout)!=12||alignof(Layout)!=alignof(int)||&layout.first==&layout.second||&layout.items[0]==&layout.items[1]||layout.n!=11)return 3;
+ int order=0;E copy=right(a,order);
+ if(order!=2||&copy==&a)return 4;
+ order=0;E&alias=(left(a,order)=right(b,order));
+ if(order!=21||&alias!=&a)return 5;
+ order=0;E&explicitAlias=left(a,order).operator=(right(b,order));
+ if(order!=12||&explicitAlias!=&a)return 6;
+ order=0;E movedEmpty=static_cast<E&&>(left(a,order));
+ if(order!=1||&movedEmpty==&a)return 7;
+ Defaults first,second{};order=0;Defaults third=defaultRight(first,order);
+ if(order!=2||&first==&third)return 8;
+ order=0;Defaults&assignedEmpty=(defaultLeft(first,order)=defaultRight(second,order));
+ if(order!=21||&assignedEmpty!=&first)return 9;
+ Defaults fourth=static_cast<Defaults&&>(third);Defaults&moveAlias=(second=static_cast<Defaults&&>(fourth));
+ if(&fourth==&third||&moveAlias!=&second)return 10;
+ Bundle bundle{{{},{}},17},other=bundle;other.n=23;bundle=other;
+ if(bundle.n!=23||&bundle.items[0]==&other.items[0]||&bundle.items[0]==&bundle.items[1])return 11;
+ const E&r=fresh();E&&rr=E{};const EmptyArray&empty={};
+ if(&r==&rr||&empty[0]==&empty[1]||parameters(a,a,&a)!=1)return 12;
+ Reference reference;int&ref=reference;ref=13;EnumSource enumeration;Code code=enumeration;
+ if(value!=13||code!=Code::one)return 13;
+ reset();
+ {Life original;Life copyOf=original;Life movedFrom=static_cast<Life&&>(copyOf);
+  if(live!=3||made!=3||copied!=1||moved!=1||dead||bad||!movedFrom.same(&movedFrom))return 14;
+  Life&copyAlias=(original=copyOf);Life&assignedMove=(copyOf=static_cast<Life&&>(movedFrom));
+  if(assigned!=1||moveAssigned!=1||&copyAlias!=&original||&assignedMove!=&copyOf)return 15;}
+ if(live||dead!=3||bad)return 16;
+ reset();
+ {Factory factory;Life object=factory;Life returned=result();
+  if(live!=2||made!=2||copied||moved||bad||!object.same(&object)||!returned.same(&returned))return 17;
+  if(consume(object,object,&object)!=4||live!=2||copied!=2||dead!=2||bad)return 18;}
+ if(live||dead!=4||bad)return 19;
+ reset();int number=Life();
+ if(number!=7||converted!=1||live||made!=1||dead!=1)return 20;
+ reset();number=read(Life());
+ if(number!=1||live||made!=1||dead!=1)return 21;
+ reset();
+ {const Life&extended=Life();const Life&same{extended};Life&&rvalue=Life();
+  if(live!=2||made!=2||dead||&same!=&extended||&extended==&rvalue)return 22;}
+ if(live||dead!=2||bad)return 23;
+ reset();
+ {const Pair&pair={Life(),Life()};const Life&element=pair[1];
+  if(live!=2||dead||&element!=&pair[1]||&pair[0]==&pair[1]||&pair[1]-&pair[0]!=1)return 24;}
+ if(live||dead!=2||bad)return 25;
+ reset();
+ {const Life&element=Pair{Life(),Life()}[1];if(live!=2||dead||!element.same(&element))return 26;}
+ if(live||dead!=2||bad)return 27;
+ reset();
+ {Managed managed;Managed copiedManaged=managed;Managed movedManaged=static_cast<Managed&&>(copiedManaged);
+  if(live!=6||made!=6||copied!=2||moved!=2||dead||bad)return 28;}
+ if(live||dead!=6||bad)return 29;
+ reset();number=early();int arrayNumber=arrayEarly();
+ if(number!=1||arrayNumber!=2||live||made!=3||dead!=3)return 30;
+ reset();
+ for(int i=0;i<3;++i){const Life&one=Life();if(live!=1||dead!=i)return 31;if(i==1)continue;}
+ if(live||made!=3||dead!=3)return 32;
+ reset();
+ for(int i=0;i<3;++i){const Pair&pair={Life(),Life()};if(live!=2)return 33;if(i==1)break;}
+ if(live||made!=4||dead!=4)return 34;
+ reset();
+ {const Life&selected=true?Life():Life();if(live!=1||made!=1||dead)return 35;}
+ if(live||dead!=1)return 36;
+ reset();Pair{Life(),Life()};
+ if(live||made!=2||dead!=2)return 37;
+ reset();{Nested nested;}
+ if(sequence!=1342)return 38;
+ reset();{First a;Second b;}
+ if(sequence!=1342)return 39;
+ reset();bool quiet=noexcept(Life());unsigned long long size=sizeof(Life{});
+ if(quiet||size!=1||live||made||dead)return 40;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  auto Manifest = llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Object = Manifest->getAsObject();
+  ASSERT_NE(Object, nullptr);
+  const auto *Records = Object->getArray("record_layouts");
+  ASSERT_NE(Records, nullptr);
+  unsigned EmptyRecords = 0;
+  for (const auto &Value : *Records) {
+    const auto *Record = Value.getAsObject();
+    ASSERT_NE(Record, nullptr);
+    const auto *Offsets = Record->getArray("field_offsets_bits");
+    ASSERT_NE(Offsets, nullptr);
+    if (!Offsets->empty())
+      continue;
+    ++EmptyRecords;
+    int64_t Size = 0, Alignment = 0;
+    ASSERT_TRUE(Record->getInteger("size_bits", Size));
+    ASSERT_TRUE(Record->getInteger("abi_align_bits", Alignment));
+    EXPECT_EQ(Size, 8);
+    EXPECT_EQ(Alignment, 8);
+  }
+  EXPECT_EQ(EmptyRecords, 9u);
+  auto Text = readFile(Output);
+  const std::string Carrier = "unsigned char nct_emit_empty_storage;";
+  unsigned Carriers = 0;
+  for (auto At = Text.find(Carrier); At != std::string::npos;
+       At = Text.find(Carrier, At + Carrier.size()))
+    ++Carriers;
+  EXPECT_EQ(Carriers, EmptyRecords);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("empty-records" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyRecordsAcceptOrdinaryOperations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"aggregate", "struct E{};int f(){E a,b{},c=a;return sizeof(E)==1&&&a!=&b&&&a!=&c?0:1;}"},
+      {"class", "class E{};int f(){E e;return sizeof(e);}"},
+      {"defaulted", "struct E{E()=default;E(const E&)=default;E&operator=(const E&)=default;~E()=default;};void f(){E a;E b=a;a=b;}"},
+      {"move", "struct E{E()=default;E(E&&)=default;E&operator=(E&&)=default;};void f(){E a;E b=static_cast<E&&>(a);a=static_cast<E&&>(b);}"},
+      {"user-special-members", "struct E{E(){}E(const E&){}E(E&&){}E&operator=(const E&){return *this;}~E(){}};void f(){E a;E b=a;E c=static_cast<E&&>(a);a=b;}"},
+      {"out-of-line", "struct E{E();~E();};E::E(){}E::~E(){}void f(){E e;}"},
+      {"constexpr", "struct E{};constexpr E e{};static_assert(sizeof(e)==1);int f(){return alignof(E);}"},
+      {"callable", "struct F{constexpr int operator()(int n)const noexcept{return n+1;}};constexpr F f{};static_assert(f(1)==2);int g(){return F{}(3);}"},
+      {"enum-conversion", "enum class C:unsigned char{one=1};struct E{operator C()const{return C::one;}};int f(){E e;C c=e;return static_cast<int>(c);}"},
+      {"empty-conversion-record", "struct R{operator int()const{return 1;}};int f(){R r;const int&n=r;return n;}"},
+      {"empty-record-conversion", "struct T{int n;};struct R{operator T()const{return {1};}};int f(){R r;const T&t=r;return t.n;}"},
+      {"empty-result", "struct E{};struct F{operator E()const{return {};}};E f(){F f;return f;}"},
+      {"reference-result", "int n=0;struct F{operator int&()const{return n;}};void f(){F f;int&r=f;r=1;}"},
+      {"by-value", "struct E{};bool f(E a,E b){return &a!=&b;}bool g(){E e;return f(e,e);}"},
+      {"return", "struct E{E(){}~E(){}};E f(){return E();}void g(){E e=f();}"},
+      {"full-expression", "struct E{E(){}~E(){}int f()const{return 1;}};int f(){return E{}.f();}"},
+      {"local-reference", "struct E{E(){}~E(){}};void f(){const E&e=E();E&&r=E();}"},
+      {"array", "struct E{E(){}~E(){}};using A=E[2];void f(){const A&a={E(),E()};}"},
+      {"array-element", "struct E{E(){}~E(){}};using A=E[2];void f(){const E&e=A{E(),E()}[1];}"},
+      {"nested-members", "struct E{};struct R{E first,second;int n;E a[2];};int f(){R r{{},{},1,{{},{}}};R s=r;return s.n;}"},
+      {"generated-array-assignment", "struct E{};struct L{int n;L&operator=(const L&r){n=r.n;return *this;}};struct R{E a[2];L l;};void f(R&a,const R&b){a=b;}"},
+      {"generated-array-copy", "struct E{};struct L{int n;L(const L&r):n(r.n){}};struct R{E a[2];L l;};R f(const R&r){return r;}"},
+      {"constructor-receiver", "int bad=0;struct E{E(E*p){if(this!=p)++bad;}};int f(){E e(&e);return bad;}"},
+      {"query", "struct E{E()noexcept{}~E()noexcept{}};static_assert(noexcept(E()));static_assert(sizeof(E{})==1);"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("empty-records-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("empty-records-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"base", "struct E{};struct D:E{};", "TR0201"},
+      {"union", "union E{};", "TR0201"},
+      {"virtual", "struct E{virtual void f(){}};", "TR0201"},
+      {"nested", "struct E{struct I{};};", "TR0201"},
+      {"template", "template<class T>struct E{};E<int> e;", "TR0201"},
+      {"overaligned", "struct alignas(2) E{};", "TR0201"},
+      {"attribute", "struct __attribute__((packed)) E{};", "TR0201"},
+      {"reference-field", "struct E{int&r;};", "TR0201"},
+      {"static-reference", "struct E{};void f(){static const E&e=E{};}", "TR0201"},
+      {"thread-reference", "struct E{};void f(){thread_local const E&e=E{};}", "TR0201"},
+      {"escaping-reference", "struct E{};const E&f(){return E{};}", "TR0201"},
+      {"unevaluated-unsupported", "struct E{operator double()const{return 1.0;}};bool f(){E e;return noexcept(static_cast<double>(e));}", "TR0201"},
+      {"extent-limit", "struct E{};using A=E[65537];", "TR0201"},
+      {"storage-limit", "struct E{};using A=E[512][512];", "TR0201"},
+      {"global-destruction", "struct E{~E(){}};const E e{};", "TR0201"},
+      {"initializer-arity", "struct E{};void f(){E e{1};}", "TR0202"},
+      {"missing-field", "struct E{};int f(){E e;return e.n;}", "TR0202"},
+      {"private-carrier-name", "struct E{};int f(){E e;return e.nct_emit_empty_storage;}", "TR0202"},
+      {"deleted-copy", "struct E{E()=default;E(const E&)=delete;};void f(){E a;E b=a;}", "TR0202"},
+      {"deleted-move", "struct E{E()=default;E(E&&)=delete;};void f(){E a;E b=static_cast<E&&>(a);}", "TR0202"},
+      {"mutable-reference", "struct E{};void f(){E&r=E{};}", "TR0202"},
+      {"constructor", "struct E{E();};void f(){E e;}", "TR0203"},
+      {"destructor", "struct E{~E();};void f(){E e;}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("empty-records-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("empty-records-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("empty-records-v1.cpp");
+  const auto Output = tmpFile("empty-records-v1.nc");
+  for (const std::string &Code : {
+      "struct E{};void f(){E e;}",
+      "struct F{int operator()()const{return 1;}};int f(){F f;return f();}"}) {
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
     expectCode(Result, "TR0201");
@@ -2678,7 +2934,6 @@ TEST_F(TranslateTest, CoreV2TemporaryCallsAcceptFullExpressionBindings) {
 
 TEST_F(TranslateTest, CoreV2TemporaryCallsRetainLifetimeExtensionBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"empty-conversion-record", "struct R{operator int()const{return 1;}};int f(){R r;const int&n=r;return n;}", "TR0201"},
       {"fresh-return", "const int&f(){return 1;}", "TR0201"},
       {"fresh-record-return", "struct R{int n;};const R&f(){return R{1};}", "TR0201"},
       {"static-extension", "int f(){static const int&r=1;return r;}", "TR0201"},

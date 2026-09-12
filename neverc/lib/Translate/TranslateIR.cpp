@@ -1122,9 +1122,9 @@ class Verifier {
     return true;
   }
   // Current records have only ordinary fields, with no bases, packing,
-  // bitfields, custom alignment or lifetime-managed subobjects. Reconstruct
-  // their natural layout from independently verified carriers. Pointer layout
-  // never traverses its pointee, so recursive record pointers are bounded.
+  // bitfields or custom alignment. Reconstruct their natural layout from
+  // independently verified carriers; lifecycle calls do not change storage.
+  // Pointer layout never traverses its pointee, so recursive pointers are bounded.
   static constexpr uint64_t MaxLayoutBits = uint64_t(MaxProtocolNodes) * 128;
   std::optional<StorageLayout> storageLayout(const Type &T) const {
     const auto &C = Context.ExpectedCarrierLayout->Carriers;
@@ -1157,7 +1157,8 @@ class Verifier {
       return !R.Layout || error(R.Loc, "Record layout evidence requires core v2.");
     if (!R.Layout || R.Layout->FieldOffsetsBits.size() != R.Fields.size())
       return error(R.Loc, "Missing record layout or mismatched field offsets.");
-    uint64_t End = 0;
+    // A complete empty C++ object occupies one byte; it has no field offsets.
+    uint64_t End = R.Fields.empty() ? 8 : 0;
     uint32_t Align = 8;
     for (size_t I = 0; I < R.Fields.size(); ++I) {
       auto Field = storageLayout(R.Fields[I].ValueType);
@@ -1240,8 +1241,8 @@ public:
       if (!loc(R.Loc) || !name(R.ID, R.Loc, true) ||
           !Symbols.insert(R.ID).second)
         return error(R.Loc, "Invalid or duplicate record identifier.");
-      if (R.Fields.empty())
-        return error(R.Loc, "Empty records are outside the core profile.");
+      if (R.Fields.empty() && M.Profile != "cpp-core-v2")
+        return error(R.Loc, "Empty records require core v2.");
       std::set<std::string> Fields;
       for (const auto &F : R.Fields)
         if (!name(F.Name, R.Loc) || !Fields.insert(F.Name).second ||
@@ -1251,7 +1252,7 @@ public:
       if (!recordLayout(R))
         return false;
       Records.emplace(R.ID, &R);
-      std::size_t Units = 0;
+      std::size_t Units = R.Fields.empty() ? 1 : 0;
       bool HasArray = false;
       for (const auto &F : R.Fields)
         HasArray |= containsArray(F.ValueType);

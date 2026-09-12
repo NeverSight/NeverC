@@ -67,6 +67,8 @@ Core v2 verlängert nun die Lebensdauer temporärer Werte durch gewöhnliche aut
 
 Core v2 unterstützt auch eigenständige temporäre Arrays fester Größe in Aufrufen, bei Zeigerumwandlung/Indizierung, verworfenen Ausdrücken und automatischen lokalen Referenzen. Jedes Array besitzt ein tatsächliches Ziel; Skalare, Record-Konstruktoren und gemeinsame Standardinitialisierer initialisieren die Elemente direkt in Reihenfolge, ohne zusätzliche Elementbesitzer. Bei zulässiger C++-Lebensdauerverlängerung halten Zeilen-/Elementreferenzen mehrdimensionaler Arrays das gesamte Array am Leben. Die Elemente werden am Ende des vollständigen Ausdrucks oder Referenzbereichs rückwärts zerstört. Typisierte Adressen sowie bestehende Größen-, Speicher- und Expansionsgrenzen bleiben erhalten. Vollständiges C++/STL bleibt in Entwicklung.
 
+Core v2 unterstützt leere Standard-Layout-Klassen sowie zustandslose Funktions- und Konvertierungsobjekte. Leere Objekte behalten C++-Größe und Ausrichtung von je einem Byte, erforderlichen getrennten Speicher, ausgewählte Konstruktoren und Operatoren sowie normale Destruktion. Triviale Kopien werten ihre Operanden weiterhin aus; leere Elemente in Arrays und umschließenden Records zählen zum Speicherlimit. Der erzeugte NC-Code nutzt ein internes Speicherbyte, die Quellfeldliste bleibt leer. Vererbung, Templates und die vollständige STL sind weiter in Entwicklung.
+
 ## Projekte mit mehreren Dateien
 
 Wählen Sie Übersetzungseinheiten ausdrücklich aus einer Kompilierungsdatenbank aus und geben Sie das Projektstammverzeichnis an. Das integrierte Frontend analysiert jede Einheit einzeln; die Zusammenführung prüft Definitionen, Bindung, gemeinsame Typen und die Einhaltung der Ein-Definitions-Regel (ODR) anhand konservativer Prüfungen.
