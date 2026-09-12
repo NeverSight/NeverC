@@ -5449,7 +5449,10 @@ int main(){int value=0;R result=make(&value);return consume(R(&value,6));}
 
     for invocation, expected_index in zip(members[:2], (1, 0)):
         place = destruction_place(box_destructor, invocation["args"][0])
-        assert place["kind"] == "index" and place["args"][1]["value"] == expected_index, place
+        assert place["kind"] == "index", place
+        index = place["args"][1]
+        assert index["kind"] == "literal" and index["type"] == "int", index
+        assert index["value"] == str(expected_index), index
         array = place["args"][0]
         assert array["kind"] == "array_decay" and array["args"][0]["name"] == box["fields"][1]["name"], array
     last_member = destruction_place(box_destructor, members[2]["args"][0])

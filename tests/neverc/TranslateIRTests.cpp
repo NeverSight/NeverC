@@ -1321,7 +1321,7 @@ TEST(TranslateIR, VerifiesRecordDependencyAndConstantRules) {
   M.Functions.front().Body.insert(M.Functions.front().Body.begin() + 1, Assign);
   invalid(M, "not writable");
   M.Functions.front().Body[1].Target->Args = {Aggregate};
-  invalid(M, "mutable local");
+  invalid(M, "mutable storage");
 }
 
 TEST(TranslateIR, RejectsTargetAndDependencyMismatches) {
