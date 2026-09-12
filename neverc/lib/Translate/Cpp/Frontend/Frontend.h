@@ -13,6 +13,11 @@
 #include <string>
 #include <vector>
 
+namespace clang {
+class CallExpr;
+class Expr;
+}
+
 namespace nct {
 namespace json = llvm::json;
 struct Failure {};
@@ -62,6 +67,8 @@ struct State {
 std::string digest(llvm::StringRef Text);
 bool validExportName(llvm::StringRef Name);
 bool isolateProjectEnvironment();
+bool ordinaryMethod(const clang::CXXMethodDecl *Method);
+const clang::Expr *directMethodReference(const clang::CallExpr *Call);
 
 // Canonical integral carrier spellings after Clang resolves source types.
 inline unsigned integerBits(llvm::StringRef T) {

@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <thread>
+#include <utility>
 
 #ifndef _WIN32
 #include <cerrno>
@@ -1460,6 +1461,159 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
     expectCode(Result, Case.Code);
     expectNoArtifacts(Output);
   }
+}
+
+TEST_F(TranslateTest, CoreV2RecordMethodsPreserveReceiverIdentityAndSequencing) {
+  const auto Source = tmpFile("record-methods.cpp");
+  const auto Output = tmpFile("record-methods.nc");
+  writeFile(Source, R"cpp(
+struct Counter {
+  int value;
+  int spare;
+  int *pointer;
+  int values[2];
+  int get() const;
+  void set(int n) & { value = n; }
+  Counter &add(int n) { this->value += n; return *this; }
+  Counter *self() { return this; }
+  int &front() { return values[0]; }
+  const int &front() const { return values[0]; }
+  int &pointed() const { return *pointer; }
+  int kind() { return 1; }
+  int kind() const { return 2; }
+  int choose(signed char) const { return 3; }
+  int choose(short) const { return 5; }
+  int choose(long) const { return 7; }
+  int choose(long long) const { return 11; }
+  int recursive(int n) const { return n == 0 ? get() : recursive(n - 1) + 1; }
+  static int plus(int a, int b) { return a + b; }
+};
+int Counter::get() const { return value; }
+struct Access {
+  int value;
+private:
+  int implementation() const { return value; }
+public:
+  int get() const { return implementation(); }
+};
+struct Handle { Counter *pointer; };
+Counter *receiver(Counter *p, int &trace) { trace = trace * 10 + 1; return p; }
+int argument(Counter *&p, Counter &other, int &trace) {
+  trace = trace * 10 + 2;
+  p = &other;
+  return 5;
+}
+Counter static_receiver(int &trace) {
+  trace = trace * 10 + 1;
+  return Counter{1, 2, nullptr, {3, 4}};
+}
+int static_argument(int &trace) { trace = trace * 10 + 2; return 17; }
+int main() {
+  Counter partial;
+  partial.value = 13;
+  if (partial.get() != 13) return 1;
+  partial.set(19);
+  if (partial.value != 19) return 2;
+  int pointed = 23;
+  Counter first{2, 101, &pointed, {3, 5}};
+  Counter second{7, 103, &pointed, {11, 13}};
+  const Counter &constant = first;
+  if (first.kind() != 1 || constant.kind() != 2) return 3;
+  Counter &same = first.add(17);
+  if (&same != &first || first.value != 19 || first.self() != &first) return 4;
+  first.front() = 29;
+  constant.pointed() = 31;
+  if (constant.front() != 29 || pointed != 31) return 5;
+  if (constant.choose(static_cast<signed char>(1)) != 3 ||
+      constant.choose(static_cast<short>(1)) != 5 ||
+      constant.choose(1L) != 7 || constant.choose(1LL) != 11) return 6;
+  if (constant.recursive(3) != 22) return 7;
+  Counter *pointer = &first;
+  int trace = 0;
+  receiver(pointer, trace)->add(argument(pointer, second, trace));
+  if (trace != 12 || pointer != &second || first.value != 24 || second.value != 7)
+    return 8;
+  trace = 0;
+  if (static_receiver(trace).plus(static_argument(trace), 2) != 19 || trace != 12)
+    return 9;
+  trace = 0;
+  if ((receiver(&first, trace))->plus(1, 2) != 3 || trace != 1) return 10;
+  if (Counter::plus(3, 5) != 8 || ((Counter::plus))(7, 11) != 18) return 11;
+  Access access{37};
+  if (access.get() != 37 || Handle{&first}.pointer->get() != 24) return 12;
+  Counter copied = first;
+  second = copied;
+  if (copied.get() != 24 || second.get() != 24 || second.values[0] != 29 ||
+      copied.self() == first.self() || second.pointer != &pointed) return 13;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("record-methods" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"temporary-dot", "struct R{int n;int get()const{return n;}};int f(){return R{1}.get();}"},
+      {"temporary-arrow", "struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return H{{{1}}}.a->get();}"},
+      {"temporary-arrow-offset", "struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return (H{{{1}}}.a+0)->get();}"},
+      {"dead-temporary-receiver", "struct R{int n;int get()const{return n;}};int f(){if(false)return R{1}.get();return 0;}"},
+      {"folded-temporary-receiver", "struct R{int n;constexpr int get()const{return n;}};static_assert(R{1}.get()==1);"},
+      {"folded-static-function-value", "struct R{int n;static int get(){return 1;}};static_assert((R::get,true));"},
+      {"folded-parenthesized-static-value", "struct R{int n;static int get(){return 1;}};static_assert(((R::get),true));"},
+      {"method-pointer", "struct R{int n;int get(){return n;}};auto f(){return &R::get;}"},
+      {"static-function-pointer", "struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}"},
+      {"virtual-method", "struct R{int n;virtual int get(){return n;}};"},
+      {"base-class", "struct B{int n;};struct R:B{int get(){return n;}};"},
+      {"constructor", "struct R{int n;R(int v):n(v){}};"},
+      {"destructor", "struct R{int n;~R(){}};"},
+      {"conversion", "struct R{int n;operator int()const{return n;}};"},
+      {"operator", "struct R{int n;int operator()()const{return n;}};"},
+      {"volatile-method", "struct R{int n;int get()volatile{return n;}};"},
+      {"rvalue-method", "struct R{int n;int get()&&{return n;}};"},
+      {"noexcept-method", "struct R{int n;int get()const noexcept{return n;}};"},
+      {"mutable-field", "struct R{mutable int n;int get()const{return n;}};"},
+      {"reference-field", "struct R{int&n;int get()const{return n;}};"},
+      {"member-template", "struct R{int n;template<class T>T get(T v){return v;}};"},
+      {"static-data", "struct R{int n;static int value;int get(){return value;}};int R::value=1;"},
+      {"default-argument", "struct R{int n;int get(int v=1){return n+v;}};int f(){R r{1};return r.get();}"},
+      {"constant-static-data", "struct R{int n;static const int value=1;int get(){return value;}};"},
+      {"method-temporary-reference-argument", "struct R{int n;int get(const int&v){return n+v;}};int f(){R r{1};return r.get(2);}"},
+      {"static-temporary-reference-argument", "struct R{int n;static int get(const int&v){return v;}};int f(){return R::get(2);}"},
+      {"method-comma-callee", "struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}"},
+      {"temporary-reverse-arrow-offset", "struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return (0+H{{{1}}}.a)->get();}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.first);
+    const auto Source = tmpFile(Case.first + ".cpp");
+    const auto Output = tmpFile(Case.first + ".nc");
+    writeFile(Source, Case.second);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("const-method-write.cpp");
+  const auto Output = tmpFile("const-method-write.nc");
+  writeFile(Source, "struct R{int n;void set()const{n=1;}};");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  expectCode(Result, "TR0202");
+  expectNoArtifacts(Output);
+}
+
+TEST_F(TranslateTest, CoreV2RecordMethodsDoNotBroadenCoreV1) {
+  const auto Source = tmpFile("v1-record-methods.cpp");
+  const auto Output = tmpFile("v1-record-methods.nc");
+  writeFile(Source, "struct R{int n;int get()const{return n;}};int main(){R r{1};return r.get()-1;}");
+  auto Result = translate(Source, {"-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
 }
 
 TEST_F(TranslateTest, CoreV2IntegerWidthsCharactersAndSizeQueriesPreserveValues) {

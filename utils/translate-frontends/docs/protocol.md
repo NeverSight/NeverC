@@ -127,6 +127,18 @@ Pure typed emitter helpers preserve null/zero rules and bound output growth;
 they add no protocol call kind. Relational pointer operations remain rejected.
 See the [source and emission contract](cpp-core-v2.md#pointer-offsets-and-differences).
 
+## Core v2 method calls
+
+Ordinary methods reuse the existing function/`call` representation. A nonstatic
+method has an explicit first `ptr:<record>` or `cptr:<record>` parameter; callers
+capture the receiver before explicit arguments. Static methods have no hidden
+parameter, while any written object expression is evaluated/discarded first.
+The consumer checks the complete ordinary signature, including receiver type,
+qualifications and arity. No special member-call node, implicit receiver or
+unchecked class ABI is introduced. Method names preserve canonical declaration
+identity before source type normalization; methods are never C exports.
+See the [source admission and lifetime rules](cpp-core-v2.md#ordinary-record-methods).
+
 ## Core v2 layout evidence
 
 `cpp-core-v2` requires `target.carrier_layout` and per-record `layout` evidence.

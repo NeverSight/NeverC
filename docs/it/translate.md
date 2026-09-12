@@ -31,6 +31,8 @@ Core v2 supporta anche spostamenti e differenze tra puntatori a oggetti, increme
 
 Core v2 confronta dimensioni e allineamenti ABI dei tipi sorgente con il modello di destinazione di NeverC, comprese le dimensioni delle strutture e gli offset dei campi. Le asserzioni statiche nel codice generato verificano nuovamente la disposizione in compilazione; il manifest ne registra i dati.
 
+Core v2 supporta le funzioni membro nominate non virtuali degli aggregati triviali ammessi, inclusi overload const, metodi qualificati lvalue, metodi statici e `this`. Le chiamate preservano l’identità dell’oggetto originale e valutano il ricevente prima degli argomenti. Restano esclusi le chiamate non statiche su oggetti temporanei, le funzioni membro speciali, l’ereditarietà, i template e la STL generale.
+
 ## Progetti con più file
 
 Selezionare esplicitamente le unità di traduzione da un database di compilazione e specificare la directory radice del progetto. Il frontend integrato analizza ogni unità separatamente; la fusione verifica definizioni, collegamento, tipi condivisi e il rispetto della regola di definizione unica (ODR) mediante verifiche conservative.

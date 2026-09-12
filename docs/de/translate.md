@@ -31,6 +31,8 @@ Core v2 unterstützt außerdem Objektzeiger-Offsets, Zeigerdifferenzen, Inkremen
 
 Core v2 vergleicht Quelltypgrößen und ABI-Ausrichtungen mit dem eigenen Zielmodell von NeverC, einschließlich Strukturgrößen und Feldoffsets. Statische Zusicherungen im erzeugten Code prüfen das Layout bei der Kompilierung erneut; das Manifest hält diese Angaben fest.
 
+Core v2 unterstützt benannte nichtvirtuelle Memberfunktionen der zugelassenen trivialen Aggregate, einschließlich const-Überladungen, lvalue-qualifizierter Methoden, statischer Methoden und `this`. Aufrufe erhalten die Identität des ursprünglichen Objekts und werten das Empfängerobjekt vor den Argumenten aus. Nichtstatische Aufrufe auf temporären Objekten, spezielle Memberfunktionen, Vererbung, Templates und allgemeine STL-Unterstützung fehlen noch.
+
 ## Projekte mit mehreren Dateien
 
 Wählen Sie Übersetzungseinheiten ausdrücklich aus einer Kompilierungsdatenbank aus und geben Sie das Projektstammverzeichnis an. Das integrierte Frontend analysiert jede Einheit einzeln; die Zusammenführung prüft Definitionen, Bindung, gemeinsame Typen und die Einhaltung der Ein-Definitions-Regel (ODR) anhand konservativer Prüfungen.

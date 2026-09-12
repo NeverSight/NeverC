@@ -31,6 +31,8 @@ Core v2 also supports object-pointer offsets, differences, increment/decrement a
 
 Core v2 verifies source sizes and ABI alignments against NeverC’s own target model, including aggregate sizes and field offsets. Generated assertions check the recorded layout again during compilation, and the manifest records this evidence.
 
+Core v2 supports named nonvirtual member functions of the admitted trivial aggregates, including const overloads, lvalue-qualified methods, static methods and `this`. Calls preserve the original object and evaluate the receiver before arguments. Nonstatic calls on temporary objects, special members, inheritance, templates and general STL remain unsupported.
+
 ## Multi-file projects
 
 Select the translation units explicitly from a compilation database and set the project root directory. The built-in frontend analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).

@@ -12,6 +12,7 @@ class FunctionLowering {
   Adapter &A;
   FunctionDecl *Function;
   json::Array Parameters, Locals, Body;
+  std::optional<Expression> ThisPointer;
   std::map<const Decl *, Expression> Storage;
   std::map<std::string, std::vector<std::string>> Edges;
   // Every breakable construct has an exit; only loops have a continue target.
@@ -321,6 +322,11 @@ class FunctionLowering {
   Expression expression(const Expr *E) {
     auto L = E->getExprLoc();
     auto T = type(E->getType(), L, true);
+    if (isa<CXXThisExpr>(E)) {
+      if (!A.S.coreV2() || !ThisPointer)
+        reject(L, "this", "No supported instance-method receiver is active.");
+      return *ThisPointer;
+    }
     if (const auto *I = dyn_cast<IntegerLiteral>(E))
       return A.literal(llvm::APSInt(I->getValue(), unsignedInteger(T)), T, L);
     if (const auto *C = dyn_cast<CharacterLiteral>(E); C && A.S.coreV2())
@@ -469,6 +475,7 @@ class FunctionLowering {
     }
     if (const auto *Call = dyn_cast<CallExpr>(E)) {
       auto *Callee = Call->getDirectCallee();
+      const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Callee);
       auto Mapping = A.mapping(Call);
       if (!Mapping.empty()) {
         json::Array Args;
@@ -486,10 +493,30 @@ class FunctionLowering {
           (!Callee->hasBody() &&
            (!A.S.project() ||
             Callee->getFormalLinkage() == Linkage::Internal)) ||
-          isa<CXXMethodDecl>(Callee))
+          (Method && (!A.S.coreV2() || !ordinaryMethod(Method))))
         reject(L, "call",
-               "Call target is not a supported defined free function.");
+               "Call target is not a supported defined function.");
       json::Array Args;
+      if (Method) {
+        const auto *Reference = directMethodReference(Call);
+        if (!Reference)
+          reject(L, "method call", "Methods require a direct named callee.");
+        if (const auto *Member = dyn_cast<MemberExpr>(Reference)) {
+          const auto *Base = Member->getBase();
+          if (Method->isStatic()) {
+            discard(Base);
+          } else {
+            // C++17 evaluates the receiver before explicit arguments. Capture
+            // its pointer now: an argument may reseat a source pointer alias.
+            // Taking the address also avoids reading unrelated record fields.
+            auto Receiver = Member->isArrow()
+                                ? expression(Base)
+                                : address(lvalue(Base), Base->getType(), L);
+            Args.push_back(snapshot(
+                cast(std::move(Receiver), type(Method->getThisType(), L), L), L));
+          }
+        }
+      }
       for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
         const auto *Arg = Call->getArg(I);
         auto ParameterType = Callee->getParamDecl(I)->getType();
@@ -1026,6 +1053,16 @@ public:
   json::Object run() {
     auto L = Function->getLocation();
     auto ResultType = type(Function->getReturnType(), L, true);
+    if (const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+        Method && !Method->isStatic()) {
+      if (!A.S.coreV2() || !ordinaryMethod(Method))
+        reject(L, "method", "Unsupported instance-method definition.");
+      auto Name = Prefix + "p" + std::to_string(++Serial);
+      auto T = type(Method->getThisType(), L);
+      Parameters.push_back(json::Object{
+          {"name", Name}, {"type", T}, {"loc", A.loc(L)}});
+      ThisPointer = variable(Name, T, L);
+    }
     for (const auto *P : Function->parameters()) {
       auto Name = Prefix + "p" + std::to_string(++Serial);
       auto T = type(P->getType(), P->getLocation());

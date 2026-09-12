@@ -2,9 +2,10 @@
 
 `cpp-core-v2` is an experimental, explicitly selected extension of the
 single-source `cpp-core-v1` contract. It adds the declarations, bounded pointer
-and reference operations, fixed arrays, integer widths and size queries below. It is a step toward broader C++17 translation;
-it does not claim complete C++17 or STL support. The existing core, project and math v1 profiles retain
-their accepted-input contracts.
+and reference operations, fixed arrays, integer widths, size queries and ordinary
+record methods below. It is a step toward broader C++17 translation; it does not
+claim complete C++17 or STL support. The existing core, project and math v1
+profiles retain their accepted-input contracts.
 
 ```sh
 neverc translate --from cpp --profile cpp-core-v2 input.cpp -o output.nc
@@ -89,7 +90,7 @@ expression-form alignment and parameter packs are rejected.
 
 ## Object pointers and lvalue references
 
-- Local variables, free-function parameters and results may use object pointers
+- Local variables and supported function parameters/results may use object pointers
   and lvalue references. Supported pointees are the admitted integer and character types, `bool`,
   the admitted enums, complete trivial records and admitted fixed arrays; `void *` is supported without
   dereferencing `void`. Function and member pointers remain unsupported.
@@ -128,6 +129,58 @@ objects; it does not define dangling/invalid pointer behavior or remove C++
 undefined behavior. In particular, casting away `const` does not make an
 originally const object writable. Generated `.nc` source targets NeverC's
 pointer aliasing behavior, not an arbitrary C compiler's alias rules.
+
+## Ordinary record methods
+
+Core v2 admits named nonvirtual member functions of the supported trivial
+aggregates: nonstatic methods with no cv qualifier or with `const`, optional
+lvalue ref qualification (`&`), and static methods. Clang resolves access,
+overloads and out-of-line definitions before normalization. Explicit access
+specifiers are compile-time syntax only; data fields must still satisfy the
+aggregate restrictions. Private helper methods do not change object layout.
+
+A nonstatic method becomes an ordinary generated function whose first parameter
+is a pointer to the original object (`const` for a const method). `this`, implicit
+field access, nested calls, recursion, returning `this`, and returning `*this`
+or a field by lvalue reference preserve storage identity. Calling a method does
+not copy the receiver or read unrelated uninitialized fields. Methods have no
+C export ABI; canonical identities distinguish declaring types, overloads and
+cv/ref qualifications.
+
+The receiver expression is evaluated and its pointer captured before explicit
+arguments, including when an argument reseats a pointer used as the receiver.
+Static calls through an object evaluate/discard that object expression before
+arguments and have no hidden pointer parameter; `make_record().static_method()`
+is allowed for an otherwise admitted trivial result. A class-qualified static
+call has no object expression. Methods are direct named call targets only;
+function values and member pointers remain rejected even in folded source.
+
+```cpp
+struct Counter {
+  int value;
+  Counter &add(int n) { value += n; return *this; }
+  int get() const { return value; }
+};
+int main() {
+  Counter counter{3};
+  Counter &same = counter.add(4);
+  return &same == &counter && counter.get() == 7 ? 0 : 1;
+}
+```
+
+Nonstatic dot calls initially require a non-temporary lvalue receiver. Arrow
+calls may use pointer prvalues to live storage, but temporary-subobject identity
+through array decay, pointer offsets, comma and conditional expressions is
+rejected, including in dead/folded code. A pointer field of a temporary container
+may still point to a separate live object. Explicit reference arguments retain
+the existing temporary-binding restrictions for both static and instance calls.
+
+Constructors/destructors, user-defined operators/conversions, virtual methods,
+inheritance, volatile/restrict and rvalue-qualified methods, default arguments,
+exception specifications, templates, static data and nontrivial lifetime behavior
+remain unsupported. The existing implicit trivial copy paths are unchanged.
+These methods do not establish STL container or iterator support. V1 profiles
+retain their rejected-method boundary.
 
 ## Pointer offsets and differences
 
@@ -289,7 +342,8 @@ and `profile_version: 2`; existing profiles continue to record profile version
 The regression cases cover generated execution at O0/O2, narrow/wide integer
 promotions and conversions, character literals, size queries, scoped and unscoped
 enums, signed/unsigned boundary values, overloads, global/aggregate values,
-local declarations, pointer/reference aliasing with inlining disabled, nested
+local declarations, ordinary methods/this and receiver sequencing, static calls,
+const overloads, reference results, pointer/reference aliasing with inlining disabled, nested
 const, nulls, reference-return assignment, array initialization and indexing order,
 multidimensional arrays, temporary array reads, switch dispatch/fallthrough,
 nested case entry and loop control, constant selectors, resource limits, unsupported

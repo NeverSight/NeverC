@@ -179,8 +179,75 @@ def main():
         "temporary-pointer-container": "struct E{int n;};struct H{E*p;};int f(E*p){int&r=H{p}.p->n;return r;}",
         "pointer-iterator-loop": "int f(int*p,int*end){int n=0;for(;p!=end;++p)n+=*p;return n;}",
     })
+    core_v2.update({
+        'method-out-of-line': 'struct R{int n;int get()const;};int R::get()const{return n;}int f(){R r{7};return r.get();}',
+        'method-mutating-reference': 'struct R{int n;R&add(int v){n+=v;return *this;}};int f(){R r{1};return r.add(6).n;}',
+        'method-array-reference': 'struct R{int a[2];int&front(){return a[0];}};int f(){R r{{1,2}};r.front()=7;return r.a[0];}',
+        'method-static-temporary': 'struct R{int n;static int add(int x){return x+1;}};R make(int&n){++n;return {1};}int f(){int n=0;return make(n).add(n);}',
+        'method-pointer-prvalue': 'struct R{int n;int get(){return n;}};R*id(R*p){return p;}int f(){R r{7};return id(&r)->get();}',
+        'method-live-pointer-temporary-container': 'struct R{int n;int get(){return n;}};struct H{R*p;};int f(){R r{7};return H{&r}.p->get();}',
+        'method-private-helper': 'struct R{int n;private:int impl()const{return n;}public:int get()const{return impl();}};int f(){R r{7};return r.get();}',
+        'method-folded-valid-call': 'struct R{int n;static constexpr int get(){return 7;}};static_assert(R::get()==7);',
+        'method-const-folded-live-call': 'struct R{int n;constexpr int get()const{return n;}};constexpr R r{7};static_assert(r.get()==7);',
+        'method-discarded-partial-static': 'struct R{int n;static int get(){return 7;}};int f(){R r;return r.get();}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
+    method_source = """struct R {
+  int value, spare;
+  int get() const { return value; }
+  R& add(int n) { value+=n; return *this; }
+  R* self() { return this; }
+  int& field() { return value; }
+  int read() const & { return get(); }
+  static int plus(int a,int b) { return a+b; }
+  int choose(signed char) const { return 3; }
+  int choose(short) const { return 5; }
+};
+int main() {
+  R r; r.value=7;
+  const R& c=r;
+  r.add(2).field()=11;
+  return c.read()==11 && r.self()==&r && R::plus(2,3)==5 &&
+    ((r.plus))(3,4)==7 && c.choose(static_cast<signed char>(1))==3 &&
+    c.choose(static_cast<short>(1))==5 ? 0:1;
+}
+"""
+    methods = check("v2-method-signatures", method_source, profile="cpp-core-v2")
+    record_id = methods["records"][0]["id"]
+    method_signatures = {
+        3: ("int", ["cptr:" + record_id]),
+        4: ("ptr:" + record_id, ["ptr:" + record_id, "int"]),
+        5: ("ptr:" + record_id, ["ptr:" + record_id]),
+        6: ("ptr:int", ["ptr:" + record_id]),
+        7: ("int", ["cptr:" + record_id]),
+        8: ("int", ["int", "int"]),
+        9: ("int", ["cptr:" + record_id, "i8"]),
+        10: ("int", ["cptr:" + record_id, "i16"]),
+    }
+    method_functions = {f["loc"]["line"]: f for f in methods["functions"]
+                        if f["loc"]["line"] in method_signatures}
+    assert set(method_functions) == set(method_signatures), methods
+    assert len({f["name"] for f in method_functions.values()}) == len(method_signatures)
+    for line, (result_type, parameter_types) in method_signatures.items():
+        function = method_functions[line]
+        assert function["result"] == result_type, function
+        assert [p["type"] for p in function["params"]] == parameter_types, function
+        assert not function["c_export"], function
+    functions_by_name = {f["name"]: f for f in methods["functions"]}
+    called_methods = set()
+    for node in walk(methods["functions"]):
+        if node.get("op") == "call":
+            callee = functions_by_name[node["callee"]]
+            assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]], node
+            called_methods.add(callee["name"])
+        if node.get("op") == "assign":
+            assert node["value"]["type"] != record_id, "receiver copied as a whole record"
+    assert called_methods == {f["name"] for f in method_functions.values()}, called_methods
+    with tempfile.TemporaryDirectory(prefix="neverc-methods-relocated-") as temp:
+        relocated = check("methods-relocated", method_source, root=Path(temp) / "project",
+                          profile="cpp-core-v2")
+        assert relocated == methods, "method identities depend on the absolute root"
     for name, source in {
         "alias": "using I=int; int main(){}",
         "typedef": "typedef int I; int main(){}",
@@ -263,6 +330,36 @@ def main():
         "temporary-offset-arrow-reference": "struct E{int n;};struct R{E a[1];};int f(){const int&r=(R{{{1}}}.a+0)->n;return r;}",
         "dead-temporary-offset-reference": "struct R{int a[2];};int f(){if(false){const int&r=*(R{{1,2}}.a+0);}return 0;}",
     })
+    v2_rejections.update({
+        'method-temporary-dot': 'struct R{int n;int get()const{return n;}};int f(){return R{1}.get();}',
+        'method-temporary-arrow': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return H{{{1}}}.a->get();}',
+        'method-temporary-arrow-offset': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return (H{{{1}}}.a+0)->get();}',
+        'method-dead-temporary-receiver': 'struct R{int n;int get()const{return n;}};int f(){if(false)return R{1}.get();return 0;}',
+        'method-folded-temporary-receiver': 'struct R{int n;constexpr int get()const{return n;}};static_assert(R{1}.get()==1);',
+        'method-folded-static-function-value': 'struct R{int n;static int get(){return 1;}};static_assert((R::get,true));',
+        'method-folded-parenthesized-static-value': 'struct R{int n;static int get(){return 1;}};static_assert(((R::get),true));',
+        'method-method-pointer': 'struct R{int n;int get(){return n;}};auto f(){return &R::get;}',
+        'method-static-function-pointer': 'struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}',
+        'method-virtual-method': 'struct R{int n;virtual int get(){return n;}};',
+        'method-base-class': 'struct B{int n;};struct R:B{int get(){return n;}};',
+        'method-constructor': 'struct R{int n;R(int v):n(v){}};',
+        'method-destructor': 'struct R{int n;~R(){}};',
+        'method-conversion': 'struct R{int n;operator int()const{return n;}};',
+        'method-operator': 'struct R{int n;int operator()()const{return n;}};',
+        'method-volatile-method': 'struct R{int n;int get()volatile{return n;}};',
+        'method-rvalue-method': 'struct R{int n;int get()&&{return n;}};',
+        'method-noexcept-method': 'struct R{int n;int get()const noexcept{return n;}};',
+        'method-mutable-field': 'struct R{mutable int n;int get()const{return n;}};',
+        'method-reference-field': 'struct R{int&n;int get()const{return n;}};',
+        'method-member-template': 'struct R{int n;template<class T>T get(T v){return v;}};',
+        'method-static-data': 'struct R{int n;static int value;int get(){return value;}};int R::value=1;',
+        'method-default-argument': 'struct R{int n;int get(int v=1){return n+v;}};int f(){R r{1};return r.get();}',
+        'method-constant-static-data': 'struct R{int n;static const int value=1;int get(){return value;}};',
+        'method-method-temporary-reference-argument': 'struct R{int n;int get(const int&v){return n+v;}};int f(){R r{1};return r.get(2);}',
+        'method-static-temporary-reference-argument': 'struct R{int n;static int get(const int&v){return v;}};int f(){return R::get(2);}',
+        'method-method-comma-callee': 'struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}',
+        'method-temporary-reverse-arrow-offset': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return (0+H{{{1}}}.a)->get();}',
+    })
     for name, source in v2_rejections.items():
         check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")
     check("v2-failed-assert", "static_assert(false,\"must fail\"); int main(){}",
@@ -319,6 +416,7 @@ def main():
         "union": 'union U {int x;bool y;}; int main(){}',
         "bitfield": 'struct P{int x:2;}; int main(){}',
         "constructor": 'struct P{P(){} int x;}; int main(){}',
+        "method": 'struct R{int n;int get()const{return n;}};int main(){R r{1};return r.get()-1;}',
         "template": 'template<class T> int f(T x){return 0;} int main(){}',
         "lambda": 'int main(){auto f=[](){return 1;};return f();}',
         "exception": 'int main(){throw 1;}',

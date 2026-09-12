@@ -31,6 +31,8 @@ Core v2 prend aussi en charge les décalages et différences de pointeurs sur ob
 
 Core v2 compare les tailles et alignements ABI des types source au modèle cible propre à NeverC, y compris la taille des structures et les décalages des champs. Des assertions statiques vérifient à nouveau cette disposition à la compilation, et le manifeste en conserve les données.
 
+Core v2 prend en charge les fonctions membres nommées non virtuelles des agrégats triviaux admis, dont les surcharges const, les méthodes qualifiées lvalue, les méthodes statiques et `this`. Les appels conservent l’identité de l’objet et évaluent le récepteur avant les arguments. Les appels non statiques sur des objets temporaires, les fonctions membres spéciales, l’héritage, les templates et la STL générale restent non pris en charge.
+
 ## Projets à plusieurs fichiers
 
 Sélectionnez explicitement les unités de traduction dans une base de données de compilation et indiquez le répertoire racine du projet. Le frontend intégré analyse chaque unité séparément ; la fusion vérifie les définitions, la liaison, les types partagés et le respect de la règle de définition unique (ODR) de façon conservatrice.

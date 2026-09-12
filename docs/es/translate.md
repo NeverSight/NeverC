@@ -31,6 +31,8 @@ Core v2 también admite desplazamientos y diferencias de punteros a objetos, inc
 
 Core v2 contrasta los tamaños y las alineaciones ABI de los tipos de origen con el modelo de destino de NeverC, incluidos los tamaños de estructuras y los desplazamientos de campos. Las aserciones estáticas del código generado vuelven a comprobar la disposición al compilar, y el manifiesto registra estos datos.
 
+Core v2 admite funciones miembro con nombre no virtuales de los agregados triviales aceptados, incluidas las sobrecargas const, los métodos cualificados para lvalue, los métodos estáticos y `this`. Las llamadas conservan la identidad del objeto original y evalúan el receptor antes que los argumentos. Aún no se admiten llamadas no estáticas sobre objetos temporales, funciones miembro especiales, herencia, plantillas ni la STL general.
+
 ## Proyectos de varios archivos
 
 Seleccione explícitamente las unidades de traducción en una base de datos de compilación y especifique el directorio raíz del proyecto. El frontend integrado analiza cada unidad por separado; la fusión verifica definiciones, enlace, tipos compartidos y el cumplimiento de la regla de una sola definición (ODR) mediante comprobaciones conservadoras.

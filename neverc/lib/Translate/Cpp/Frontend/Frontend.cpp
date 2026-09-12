@@ -31,6 +31,44 @@
 using namespace clang;
 namespace nct {
 
+bool ordinaryMethod(const CXXMethodDecl *M) {
+  if (!M || M->isImplicit() || !M->getIdentifier() || M->isVirtual() ||
+      M->isExplicitObjectMemberFunction() || M->isVariadic() ||
+      M->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      M->isDeletedAsWritten() || M->isExplicitlyDefaulted() || M->isConsteval() ||
+      M->getMethodQualifiers().hasVolatile() ||
+      M->getMethodQualifiers().hasRestrict() || M->getRefQualifier() == RQ_RValue)
+    return false;
+  const auto *Prototype = M->getType()->getAs<FunctionProtoType>();
+  return Prototype && !Prototype->hasExceptionSpec();
+}
+
+const Expr *directMethodReference(const CallExpr *Call) {
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+  if (!ordinaryMethod(M))
+    return nullptr;
+  const Expr *E = Call->getCallee();
+  while (true) {
+    if (const auto *P = dyn_cast<ParenExpr>(E)) {
+      E = P->getSubExpr();
+      continue;
+    }
+    if (const auto *C = dyn_cast<ImplicitCastExpr>(E);
+        C && C->getCastKind() == CK_FunctionToPointerDecay) {
+      E = C->getSubExpr();
+      continue;
+    }
+    break;
+  }
+  const ValueDecl *D = nullptr;
+  if (const auto *Member = dyn_cast<MemberExpr>(E))
+    D = Member->getMemberDecl();
+  else if (const auto *Reference = dyn_cast<DeclRefExpr>(E);
+           M->isStatic() && Reference)
+    D = Reference->getDecl();
+  return D && D->getCanonicalDecl() == M->getCanonicalDecl() ? E : nullptr;
+}
+
 std::string digest(llvm::StringRef Text) {
   return llvm::toHex(llvm::SHA256::hash(llvm::arrayRefFromStringRef(Text)),
                      true);
@@ -325,6 +363,8 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::map<const CXXRecordDecl *, bool> HasArray;
+  std::set<const Expr *> DirectMethodCallees;
+  const CXXMethodDecl *CurrentMethod = nullptr;
   bool owned(const Decl *D) {
     return !D->isImplicit() && A.S.owns(A.Sources, D->getLocation());
   }
@@ -413,6 +453,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
+  bool TraverseDecl(Decl *D) {
+    auto *Saved = CurrentMethod;
+    if (D && isa<FunctionDecl>(D))
+      CurrentMethod = dyn_cast<CXXMethodDecl>(D);
+    bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecl(D);
+    CurrentMethod = Saved;
+    return Result;
+  }
   bool VisitDecl(Decl *D) {
     if (!owned(D))
       return true;
@@ -421,7 +469,8 @@ public:
                "Source declaration attributes are unsupported.");
     const bool ExtendedDeclaration =
         A.S.coreV2() &&
-        isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl>(D);
+        (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl>(D) ||
+         (isa<AccessSpecDecl>(D) && D->getDeclContext()->isRecord()));
     if (!ExtendedDeclaration &&
         !isa<NamespaceDecl, LinkageSpecDecl, FunctionDecl, VarDecl,
              CXXRecordDecl, FieldDecl>(D))
@@ -461,14 +510,16 @@ public:
     if (!owned(D))
       return true;
     A.type(D->getReturnType(), D->getLocation(), true);
-    if (isa<CXXMethodDecl>(D) || D->isVariadic() ||
+    const auto *Method = dyn_cast<CXXMethodDecl>(D);
+    if ((Method && (!A.S.coreV2() || !ordinaryMethod(Method))) ||
+        D->isVariadic() ||
         D->getDescribedFunctionTemplate() ||
         D->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
         D->isDeletedAsWritten() || D->isExplicitlyDefaulted() ||
         D->isConsteval())
       A.reject(D->getLocation(), "function",
-               "Members, templates, variadics and special function forms are "
-               "unsupported.");
+               "This member, template, variadic or special function form is "
+               "outside the selected profile.");
     const auto *Prototype = D->getType()->getAs<FunctionProtoType>();
     if (Prototype && Prototype->hasExceptionSpec())
       A.reject(D->getLocation(), "exception specification",
@@ -510,6 +561,9 @@ public:
     if (!owned(D))
       return true;
     A.type(D->getType(), D->getLocation());
+    if (A.S.coreV2() && D->isStaticDataMember())
+      A.reject(D->getLocation(), "static data member",
+               "Static data members require class storage and initialization lowering.");
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
       checkBinding(D->getInit());
     if (!D->isLocalVarDeclOrParm() &&
@@ -583,6 +637,22 @@ public:
   bool VisitStmt(Stmt *S) {
     if (!S || !A.S.owns(A.Sources, S->getBeginLoc()))
       return true;
+    // The visitor is preorder. Mark only the direct callee path before its
+    // children are inspected, including Clang's BoundMemberTy expressions.
+    if (A.S.coreV2())
+      if (const auto *Call = dyn_cast<CallExpr>(S))
+        if (const auto *Leaf = directMethodReference(Call)) {
+          const Expr *E = Call->getCallee();
+          while (true) {
+            DirectMethodCallees.insert(E);
+            if (E == Leaf)
+              break;
+            if (const auto *P = dyn_cast<ParenExpr>(E))
+              E = P->getSubExpr();
+            else
+              E = cast<ImplicitCastExpr>(E)->getSubExpr();
+          }
+        }
     if (const auto *E = dyn_cast<Expr>(S)) {
       // Clang's unevaluated diagnostic strings have no QualType. They can
       // appear below an already rejected declaration (for example a v1
@@ -623,7 +693,8 @@ public:
       const auto *Cast = dyn_cast<ImplicitCastExpr>(E);
       bool FunctionDecay =
           Cast && Cast->getCastKind() == CK_FunctionToPointerDecay;
-      if (!FunctionDecay && !E->getType()->isFunctionType() &&
+      if (!DirectMethodCallees.count(E) && !FunctionDecay &&
+          !E->getType()->isFunctionType() &&
           !(A.S.coreV2() &&
             isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())))
         A.type(E->getType(), E->getExprLoc(), true);
@@ -633,7 +704,7 @@ public:
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
               DefaultStmt, AttributedStmt, CharacterLiteral,
-              UnaryExprOrTypeTraitExpr>(S)) &&
+              UnaryExprOrTypeTraitExpr, CXXThisExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -671,7 +742,22 @@ public:
     }
     if (const auto *C = dyn_cast<CallExpr>(S)) {
       const auto *F = C->getDirectCallee();
-      if (A.S.coreV2() && F && !isa<CXXMethodDecl>(F))
+      const auto *Method = dyn_cast_or_null<CXXMethodDecl>(F);
+      if (A.S.coreV2() && Method && ordinaryMethod(Method)) {
+        const auto *Reference = directMethodReference(C);
+        if (!Reference)
+          A.reject(S->getBeginLoc(), "method call",
+                   "Methods require a direct named callee.");
+        else if (!Method->isStatic()) {
+          const auto *Member = cast<MemberExpr>(Reference);
+          const auto *Base = Member->getBase();
+          if (Member->isArrow() ? temporaryArrayBase(Base)
+                                : temporaryBinding(Base))
+            A.reject(Base->getExprLoc(), "method receiver",
+                     "Temporary object receivers require lifetime lowering.");
+        }
+      }
+      if (A.S.coreV2() && F && (!Method || ordinaryMethod(Method)))
         for (unsigned I = 0; I < C->getNumArgs() && I < F->getNumParams(); ++I)
           if (F->getParamDecl(I)->getType()->isReferenceType())
             checkBinding(C->getArg(I));
@@ -726,11 +812,21 @@ public:
                    "Pointer increment requires a complete object pointee.");
       }
     }
+    if (const auto *This = dyn_cast<CXXThisExpr>(S))
+      if (!A.S.coreV2() || !ordinaryMethod(CurrentMethod) ||
+          CurrentMethod->isStatic())
+        A.reject(This->getExprLoc(), "this",
+                 "This is supported only within an ordinary instance method.");
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(S))
+      if (const auto *Method = dyn_cast<CXXMethodDecl>(Reference->getDecl());
+          Method && !Method->isImplicit() && !DirectMethodCallees.count(Reference))
+        A.reject(Reference->getExprLoc(), "method value",
+                 "A method name is supported only as a direct call target.");
     if (const auto *M = dyn_cast<MemberExpr>(S))
       if ((!A.S.coreV2() && M->isArrow()) ||
-          !isa<FieldDecl>(M->getMemberDecl()))
+          (!isa<FieldDecl>(M->getMemberDecl()) && !DirectMethodCallees.count(M)))
         A.reject(S->getBeginLoc(), "member access",
-                 "Only direct aggregate field access is supported.");
+                 "Only aggregate fields and direct ordinary method calls are supported.");
     if (A.S.coreV2()) {
       if (const auto *R = dyn_cast<ReturnStmt>(S);
           R && R->getRetValue() && R->getRetValue()->isGLValue())
