@@ -700,7 +700,11 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
     for line in (1, 6, 7, 8, 10, 11, 12, 13, 14):
         rid = gc_records[line]["id"]
         source_kind = "ptr:" if line in (12, 13) else "cptr:"
+        locations = (4,) if line == 1 else ((8, 9) if line == 8 else (line,))
+        # A free function returning this record can have the same hidden
+        # result/source signature. Select the constructor's source identity.
         selected = [f for f in generated_copy["functions"] if f["result"] == "void"
+                    and f["loc"]["line"] in locations
                     and [p["type"] for p in f["params"]] == ["ptr:" + rid, source_kind + rid]]
         assert len(selected) == (0 if line in (10, 14) else 1), (line, selected)
         if selected:
@@ -840,7 +844,9 @@ void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
     for line in (1, 4, 5, 6, 7, 9, 10, 11, 12):
         rid = ga_records[line]["id"]
         source_kind = "ptr:" if line in (10, 11) else "cptr:"
+        locations = (2,) if line == 1 else ((7, 8) if line == 7 else (line,))
         selected = [f for f in generated_assignment["functions"] if f["result"] == "ptr:" + rid
+                    and f["loc"]["line"] in locations
                     and [p["type"] for p in f["params"]] == ["ptr:" + rid, source_kind + rid]]
         assert len(selected) == (0 if line in (5, 9, 12) else 1), (line, selected)
         if selected:
@@ -984,6 +990,7 @@ int query(){return sizeof(Lazy{});}
         (dm_member(target, dm_records[5]["fields"][0]), caller),
         (dm_member(target, dm_records[5]["fields"][1]), target)]
     constructor = next(f for f in defaults["functions"] if f["result"] == "void"
+                       and f["loc"]["line"] == 8
                        and [p["type"] for p in f["params"]] == ["ptr:" + dm_records[8]["id"]])
     receiver = ("parameter", constructor["params"][0]["name"])
     assert [(gc_identity(constructor, n["target"]), gc_identity(constructor, n["value"]))
@@ -1024,8 +1031,10 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
     mark_name = dc_by_line[2]["name"]
     destructor_name = dc_records[3]["id"] + "_destroy"
     temp_ctor = next(f["name"] for f in cleanup_defaults["functions"] if f["result"] == "void"
+                     and f["loc"]["line"] == 3
                      and [p["type"] for p in f["params"]] == ["ptr:" + dc_records[3]["id"], "ptr:" + dc_records[1]["id"]])
     constructor = next(f for f in cleanup_defaults["functions"] if f["result"] == "void"
+                       and f["loc"]["line"] == 5
                        and [p["type"] for p in f["params"]] == ["ptr:" + dc_records[5]["id"], "ptr:" + dc_records[1]["id"]])
     for function, expected in ((dc_by_line[7], [temp_ctor, mark_name, mark_name, destructor_name]),
                                (constructor, [temp_ctor, mark_name, destructor_name, mark_name])):
@@ -1038,6 +1047,7 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
     for line in (8, 9, 10):
         assert not gc_calls(dc_by_line[line]), "overrides and generated copies/assignments reran defaults"
     user_copy = next(f for f in cleanup_defaults["functions"] if f["result"] == "void"
+                     and f["loc"]["line"] == 6
                      and [p["type"] for p in f["params"]] == ["ptr:" + dc_records[6]["id"], "cptr:" + dc_records[6]["id"]])
     assert [n["callee"] for n in gc_calls(user_copy)] == [mark_name], user_copy
     for function in cleanup_defaults["functions"]:
@@ -1702,7 +1712,9 @@ int query(){return sizeof(Lazy{});}
     constructors = {}
     for line in (1, 6, 7, 8, 11, 12):
         rid = defaulted_records[line]["id"]
+        locations = (3,) if line == 1 else ((8, 9) if line == 8 else (line,))
         selected = [f for f in defaulted["functions"] if f["result"] == "void"
+                    and f["loc"]["line"] in locations
                     and [p["type"] for p in f["params"]] == ["ptr:" + rid]
                     and f["name"] != rid + "_destroy"]
         assert len(selected) == (1 if line in (1, 6, 7, 8) else 0), (line, selected)
