@@ -4862,10 +4862,12 @@ TEST_F(TranslateTest, CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBo
     EXPECT_NE(Result.err.find(Diagnostic), std::string::npos) << Result.err;
   }
   const auto Source = tmpFile("class-constructor-v1.cpp");
+  const auto Output = tmpFile("class-constructor-v1.nc");
   writeFile(Source, "template<class T>struct R{T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}");
-  auto Result = translate(Source);
+  auto Result = translate(Source, {"-o", Output.string()});
   EXPECT_NE(Result.exitCode, 0) << Result.out;
   EXPECT_NE(Result.err.find("TR0201"), std::string::npos) << Result.err;
+  expectNoArtifacts(Output);
 }
 
 TEST_F(TranslateTest, CoreV2ClassTemplateMethodsPreserveCallsAndLifetimes) {
@@ -5045,10 +5047,12 @@ TEST_F(TranslateTest, CoreV2ClassTemplateMethodsRetainSourceAndDefinitionBoundar
     EXPECT_NE(Result.err.find(Diagnostic), std::string::npos) << Result.err;
   }
   const auto Source = tmpFile("class-method-v1.cpp");
+  const auto Output = tmpFile("class-method-v1.nc");
   writeFile(Source, "template<class T>struct R{T n;T f(){return n;}};int main(){R<int>r{3};return r.f();}");
-  auto Result = translate(Source);
+  auto Result = translate(Source, {"-o", Output.string()});
   EXPECT_NE(Result.exitCode, 0) << Result.out;
   EXPECT_NE(Result.err.find("TR0201"), std::string::npos) << Result.err;
+  expectNoArtifacts(Output);
 }
 
 TEST_F(TranslateTest, CoreV2AggregateClassTemplatesPreserveStorageAndLifetimes) {
@@ -5227,10 +5231,12 @@ TEST_F(TranslateTest, CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundari
   for (const auto &Code : {"template<class T>struct R{T n;};int main(){R<int>r{3};return r.n;}",
                            "template<int N>struct R{int n=N;};int main(){R<3>r{};return r.n;}"}) {
     const auto Source = tmpFile("aggregate-class-v1.cpp");
+    const auto Output = tmpFile("aggregate-class-v1.nc");
     writeFile(Source, Code);
-    auto Result = translate(Source);
+    auto Result = translate(Source, {"-o", Output.string()});
     EXPECT_NE(Result.exitCode, 0) << Result.out;
     EXPECT_NE(Result.err.find("TR0201"), std::string::npos) << Result.err;
+    expectNoArtifacts(Output);
   }
 }
 
