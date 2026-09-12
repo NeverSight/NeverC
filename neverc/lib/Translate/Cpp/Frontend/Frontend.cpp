@@ -393,8 +393,9 @@ const CallExpr *userConversionCall(const CastExpr *Cast, ASTContext &Context) {
 }
 
 static bool temporaryShape(const MaterializeTemporaryExpr *M, ASTContext &Context) {
-  return M && !M->getType()->isArrayType() && M->getSubExpr() &&
-         M->getSubExpr()->isPRValue() &&
+  return M && (!M->getType()->isArrayType() ||
+               Context.getAsConstantArrayType(M->getType())) &&
+         M->getSubExpr() && M->getSubExpr()->isPRValue() &&
          Context.hasSameUnqualifiedType(M->getType(), M->getSubExpr()->getType());
 }
 bool fullExpressionTemporary(const MaterializeTemporaryExpr *M, ASTContext &Context) {
@@ -1441,7 +1442,7 @@ public:
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(S);
           M && !fullExpressionTemporary(M, A.Context) && !automaticTemporaryOwner(M, A.Context))
         A.reject(L, "temporary lifetime",
-                 "A non-array full-expression temporary or checked automatic reference owner is required.");
+                 "A checked full-expression temporary or exact automatic reference owner is required.");
       if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S)) {
         if (!Query->getOperand() || Query->isTypeDependent() ||
             Query->isValueDependent() || Query->isInstantiationDependent())

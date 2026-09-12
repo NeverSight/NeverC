@@ -487,6 +487,28 @@ def main():
         'automatic-reference-brace-record-conversion': 'struct V{int n;};struct R{int n;operator V()const{return V{n};}};int f(){R r{6};const V&v={r};return v.n;}',
         'automatic-reference-constexpr-reference': 'struct R{int n;};constexpr int f(){const R&r{R{7}};return r.n;}constexpr int n=f();static_assert(n==7);',
     })
+    core_v2.update({
+        'array-temporary-promoted-array-argument': 'using A=int[2];void take(const int(&)[2]){}void f(){take(A{1,2});}',
+        'array-temporary-promoted-dead-array-argument': 'using A=int[2];void take(const int(&)[2]){}void f(){if(false)take(A{1,2});}',
+        'array-temporary-promoted-query-array-argument': 'using A=int[2];void take(const int(&)[2])noexcept{}bool f(){return noexcept(take(A{1,2}));}',
+        'array-temporary-promoted-query-array-expression': 'using A=int[2];bool f(){return noexcept(A{1,2}[0]);}',
+        'array-temporary-promoted-array-owner': 'void f(){const int(&r)[2]={1,2};}',
+        'array-temporary-promoted-dead-array-owner': 'void f(){if(false){const int(&r)[2]={1,2};}}',
+        'array-temporary-promoted-constexpr-array-owner': 'constexpr int f(){const int(&r)[2]={1,2};return r[0];}constexpr int n=f();',
+        'array-temporary-promoted-query-braced-array': 'void take(const int(&)[2])noexcept{}bool f(){return noexcept(take({1,2}));}',
+        'array-temporary-promoted-braced-array-argument': 'void take(const int(&)[2]){}void f(){take({1,2});}',
+        'array-temporary-scalar-discard': 'using A=int[2];void f(){A{1,2};}',
+        'array-temporary-record-discard': 'struct R{int n;~R(){}};using A=R[2];void f(){A{{1},{2}};}',
+        'array-temporary-scalar-decay': 'using A=int[2];int read(const int*p){return p[0]+p[1];}int f(){return read(A{1,2});}',
+        'array-temporary-scalar-index': 'using A=int[2];int f(){return A{1,2}[1];}',
+        'array-temporary-record-element-receiver': 'struct R{int n;int get()const{return n;}};using A=R[2];int f(){return A{{1},{2}}[1].get();}',
+        'array-temporary-rvalue-array-reference': 'using A=int[2];int f(){A&&r={1,2};return ++r[1];}',
+        'array-temporary-direct-element-extension': 'using A=int[2];int f(){const int&r=A{1,2}[1];return r;}',
+        'array-temporary-row-extension': 'using A=int[2][2];int f(){const int(&r)[2]=A{{1,2},{3,4}}[1];return r[0];}',
+        'array-temporary-array-comma': 'using A=int[2];int f(){int n=0;const A&r=(++n,A{1,2});return n+r[0];}',
+        'array-temporary-braced-live-array': 'using A=int[2];int f(A&a){A&r{a};return ++r[0];}',
+        'array-temporary-array-rvalue-parameter': 'using A=int[2];int read(A&&a){return ++a[0];}int f(){return read(A{1,2});}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -2246,10 +2268,6 @@ bool query(){return noexcept(R(1).get(2));}
         'fresh-record-return': 'struct R{int n;};const R&f(){return R{1};}',
         'static-extension': 'int f(){static const int&r=1;return r;}',
         'global-extension': 'const int&r=1;',
-        'array-argument': 'using A=int[2];void take(const int(&)[2]){}void f(){take(A{1,2});}',
-        'dead-array-argument': 'using A=int[2];void take(const int(&)[2]){}void f(){if(false)take(A{1,2});}',
-        'query-array-argument': 'using A=int[2];void take(const int(&)[2])noexcept{}bool f(){return noexcept(take(A{1,2}));}',
-        'query-array-expression': 'using A=int[2];bool f(){return noexcept(A{1,2}[0]);}',
         'unused-throw': 'struct R{int get()const{throw 1;}};int f(){return R{}.get();}',
         'query-float': 'struct R{double get()const noexcept{return 1.0;}};bool f(){return noexcept(R{}.get());}',
     }
@@ -2417,11 +2435,6 @@ int converted(){Source s{13};const int&r{s};mark();return r;}
         'tls-brace': 'int f(){thread_local const int&r{1};return r;}',
         'global-brace': 'const int&r{1};',
         'reference-field': 'struct R{const int&r;};int f(){R r{1};return r.r;}',
-        'array-owner': 'void f(){const int(&r)[2]={1,2};}',
-        'dead-array-owner': 'void f(){if(false){const int(&r)[2]={1,2};}}',
-        'constexpr-array-owner': 'constexpr int f(){const int(&r)[2]={1,2};return r[0];}constexpr int n=f();',
-        'query-braced-array': 'void take(const int(&)[2])noexcept{}bool f(){return noexcept(take({1,2}));}',
-        'braced-array-argument': 'void take(const int(&)[2]){}void f(){take({1,2});}',
         'braced-offset': 'struct R{int a[2];};int f(){const int&r{*(R{{1,2}}.a+1)};return r;}',
         'braced-arrow': 'struct I{int n;};struct R{I a[2];};int f(){const int&r{(R{{{1},{2}}}.a+1)->n};return r;}',
         'unused-throw': 'struct R{int n;~R(){throw 1;}};void f(){const R&r{R{1}};}',
@@ -2448,6 +2461,194 @@ int converted(){Source s{13};const int&r{s};mark();return r;}
         check("v2-" + 'automatic_reference_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
     check("v1-automatic-scalar-reference", "int f(){const int&r{1};return r;}", "TR0201")
     check("v1-automatic-record-reference", "struct R{int n;};int f(){const R&r={R{1}};return r.n;}", "TR0201")
+    array_temporary_source = """struct R {
+ int n;R*self;
+ R():n(0),self(this){}
+ R(int value):n(value),self(this){}
+ ~R(){n=0;}
+};
+using Items=R[2];using Triple=R[3];using Grid=R[2][2];using Numbers=int[3];
+int read(const R(&a)[2]){return a[0].n+a[1].n;}
+int sum(const int(&a)[3]){return a[0]+a[1]+a[2];}
+void mark(){}
+int argument(){int n=read(Items{R(1),R(2)});mark();return n;}
+int braced(){int n=read({R(3),R(4)});mark();return n;}
+int local(){const Items&r={R(5),R(6)};const Items&same{r};mark();return read(same);}
+int element(){const R&r=Items{R(7),R(8)}[1];mark();return r.n;}
+int row(){const R(&r)[2]=Grid{{R(1),R(2)},{R(3),R(4)}}[1];mark();return read(r);}
+void discarded(){Items{R(1),R(2)};mark();}
+void defaults(){Triple{R(3)};mark();}
+int nested(){const Items&r={R(read(Items{R(1),R(2)})),R(3)};mark();return read(r);}
+int branch(bool b){const R&r=b?Items{R(1),R(2)}[0]:Items{R(3),R(4)}[1];mark();return r.n;}
+void loop(int n){for(int i=0;i<n;++i){const Items&r={R(1),R(2)};mark();}}
+int scalar(){const Numbers&r={1,2,3};mark();return sum(r);}
+bool query(){return noexcept(Items{R(1),R(2)});}
+"""
+    array_temporaries = check("v2-standalone-array-temporaries-protocol", array_temporary_source, profile="cpp-core-v2")
+    at_functions = {f["name"]: f for f in array_temporaries["functions"]}
+
+    def at_line(prefix):
+        matches = [i for i, line in enumerate(array_temporary_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def at_function(prefix):
+        matches = [f for f in array_temporaries["functions"] if f["loc"]["line"] == at_line(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def at_pointer(function, expr):
+        if expr["kind"] == "cast":
+            return at_pointer(function, expr["args"][0])
+        if expr["kind"] in ("address", "array_decay"):
+            return at_place(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        values = [n["value"] for n in function["body"] if n["op"] == "assign" and n["target"].get("name") == expr["name"]]
+        if values:
+            assert len(values) == 1, values
+            return at_pointer(function, values[0])
+        assert any(p["name"] == expr["name"] for p in function["params"]), expr
+        return ("parameter", expr["name"])
+
+    def at_place(function, expr):
+        if expr["kind"] == "var":
+            return ("object", expr["name"])
+        if expr["kind"] == "dereference":
+            return at_pointer(function, expr["args"][0])
+        assert expr["kind"] == "index", expr
+        return ("element", at_pointer(function, expr["args"][0]), gc_identity(function, expr["args"][1]))
+
+    rid = next(r["id"] for r in array_temporaries["records"] if r["loc"]["line"] == at_line("struct R {"))
+    constructor = at_function(" R(int value)")["name"]
+    default = at_function(" R():")["name"]
+    read = at_function("int read(")["name"]
+    mark = at_function("void mark(")["name"]
+    destructor = rid+"_destroy"
+    assert [p["type"] for p in at_functions[read]["params"]] == ["cptr:arr:2:"+rid]
+    for prefix in ("int argument(", "int braced(", "int local(", "int element(", "void discarded("):
+        function = at_function(prefix)
+        arrays = [v for v in function["locals"] if v["type"] == "arr:2:"+rid]
+        assert len(arrays) == 1 and not any(v["type"] == rid for v in function["locals"]), function
+        root = ("object", arrays[0]["name"])
+        calls = gc_calls(function)
+        constructors = [c for c in calls if c["callee"] == constructor]
+        destructors = [c for c in calls if c["callee"] == destructor]
+        assert [at_pointer(function, c["args"][0]) for c in constructors] == [("element", root, i) for i in (0, 1)]
+        assert [at_pointer(function, c["args"][0]) for c in destructors] == [("element", root, i) for i in (1, 0)]
+        callees = [c["callee"] for c in calls]
+        if prefix in ("int argument(", "int braced("):
+            assert callees == [constructor, constructor, read, destructor, destructor, mark], function
+            assert at_pointer(function, calls[2]["args"][0]) == root
+        elif prefix == "int local(":
+            assert callees == [constructor, constructor, mark, read, destructor, destructor], function
+            assert at_pointer(function, calls[3]["args"][0]) == root
+        elif prefix == "int element(":
+            assert callees == [constructor, constructor, mark, destructor, destructor], function
+        else:
+            assert callees == [constructor, constructor, destructor, destructor, mark], function
+        flags = [n["target"]["name"] for n in function["body"] if n["op"] == "assign" and n["value"].get("value") is True]
+        assert len(flags) == 1, function
+        values = [n["value"]["value"] for n in function["body"] if n["op"] == "assign" and n["target"].get("name") == flags[0]]
+        assert values == [False, True, False], function
+    row = at_function("int row(")
+    arrays = [v for v in row["locals"] if v["type"] == "arr:2:arr:2:"+rid]
+    assert len(arrays) == 1 and not any(v["type"] in (rid, "arr:2:"+rid) for v in row["locals"]), row
+    root = ("object", arrays[0]["name"])
+    cells = [("element", ("element", root, i), j) for i in (0, 1) for j in (0, 1)]
+    calls = gc_calls(row)
+    assert [c["callee"] for c in calls] == [constructor]*4+[mark, read]+[destructor]*4, row
+    assert [at_pointer(row, c["args"][0]) for c in calls[:4]] == cells
+    assert at_pointer(row, calls[5]["args"][0]) == ("element", root, 1)
+    assert [at_pointer(row, c["args"][0]) for c in calls[-4:]] == cells[::-1]
+    defaults = at_function("void defaults(")
+    calls = gc_calls(defaults)
+    assert [c["callee"] for c in calls] == [constructor, default, default, destructor, destructor, destructor, mark], defaults
+    arrays = [v for v in defaults["locals"] if v["type"] == "arr:3:"+rid]
+    assert len(arrays) == 1 and not any(v["type"] == rid for v in defaults["locals"])
+    root = ("object", arrays[0]["name"])
+    assert [at_pointer(defaults, c["args"][0]) for c in calls[:3]] == [("element", root, i) for i in range(3)]
+    assert [at_pointer(defaults, c["args"][0]) for c in calls[3:6]] == [("element", root, i) for i in (2, 1, 0)]
+    nested = at_function("int nested(")
+    calls = gc_calls(nested)
+    assert [c["callee"] for c in calls] == [constructor, constructor, read, constructor, constructor, destructor, destructor, mark, read, destructor, destructor], nested
+    arrays = [v for v in nested["locals"] if v["type"] == "arr:2:"+rid]
+    assert len(arrays) == 2 and not any(v["type"] == rid for v in nested["locals"]), nested
+    inner = at_pointer(nested, calls[2]["args"][0])
+    outer = at_pointer(nested, calls[8]["args"][0])
+    assert inner != outer
+    assert [at_pointer(nested, calls[i]["args"][0]) for i in (5, 6, 9, 10)] == [
+        ("element", root, index) for root in (inner, outer) for index in (1, 0)]
+    branch = at_function("int branch(")
+    calls = gc_calls(branch)
+    assert [c["callee"] for c in calls] == [constructor]*4+[mark]+[destructor]*4, branch
+    constructed = [at_pointer(branch, c["args"][0]) for c in calls[:4]]
+    assert len(set(constructed)) == 4
+    assert [at_pointer(branch, c["args"][0]) for c in calls[-4:]] == constructed[::-1]
+    flags = [n["target"]["name"] for n in branch["body"] if n["op"] == "assign" and n["value"].get("value") is True]
+    assert len(set(flags)) == 2, branch
+    for flag in flags:
+        values = [n["value"]["value"] for n in branch["body"] if n["op"] == "assign" and n["target"].get("name") == flag]
+        assert values == [False, True, False], branch
+        assert any(n["op"] == "branch" and n["condition"].get("name") == flag for n in branch["body"])
+    loop = at_function("void loop(")
+    assert [c["callee"] for c in gc_calls(loop)] == [constructor, constructor, mark, destructor, destructor], loop
+    assert len([v for v in loop["locals"] if v["type"] == "arr:2:"+rid]) == 1
+    scalar = at_function("int scalar(")
+    assert [c["callee"] for c in gc_calls(scalar)] == [mark, at_function("int sum(")["name"]], scalar
+    arrays = [v for v in scalar["locals"] if v["type"] == "arr:3:int"]
+    assert len(arrays) == 1
+    assert at_pointer(scalar, gc_calls(scalar)[1]["args"][0]) == ("object", arrays[0]["name"])
+    query = at_function("bool query(")
+    assert not gc_calls(query) and not any(v["type"].startswith("arr:") for v in query["locals"]), query
+    returned = [n["value"] for n in query["body"] if n["op"] == "return"]
+    assert len(returned) == 1 and nq_constant(query, returned[0]) is False
+    for function in array_temporaries["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in at_functions[call["callee"]]["params"]], call
+    with tempfile.TemporaryDirectory(prefix="neverc-array-temporaries-relocated-") as temp:
+        relocated = check("array-temporaries-relocated", array_temporary_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == array_temporaries, "array temporary identities depend on the absolute root"
+
+    array_temporary_rejected = {
+        'static-array': 'int f(){static const int(&r)[2]={1,2};return r[0];}',
+        'global-array': 'const int(&r)[2]={1,2};',
+        'tls-array': 'int f(){thread_local const int(&r)[2]={1,2};return r[0];}',
+        'reference-field': 'struct R{const int(&a)[2];};void f(){R r{{1,2}};}',
+        'fresh-array-return': 'using A=int[2];const A&f(){return A{1,2};}',
+        'fresh-element-return': 'using A=int[2];const int&f(){return A{1,2}[0];}',
+        'pointer-offset-reference': 'using A=int[2];int f(){const int&r=*(A{1,2}+1);return r;}',
+        'dereference-reference': 'using A=int[2];int f(){const int&r=*A{1,2};return r;}',
+        'float-element': 'void f(){const double(&r)[2]={1.0,2.0};}',
+        'volatile-element': 'void f(){const volatile int(&&r)[2]={1,2};}',
+        'vla': 'void f(int n){int a[n];}',
+        'unknown-bound': 'extern int a[];',
+        'zero-bound': 'using A=int[0];void f(){const A&r={};}',
+        'extent-limit': 'using A=int[65537];void f(){const A&r={};}',
+        'storage-limit': 'using A=int[512][512];void f(){const A&r={};}',
+        'expanded-storage-budget': 'using A=int[32768];void f(){const A&r={};}',
+        'query-unsupported': 'using A=double[2];bool f(){return noexcept(A{1.0,2.0}[0]);}',
+    }
+    for name, source in array_temporary_rejected.items():
+        check("v2-" + 'array_temporary_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
+    array_temporary_invalid = {
+        'mutable-array-reference': 'using A=int[2];void f(){A&r={1,2};}',
+        'const-array-write': 'using A=int[2];void f(){const A&r={1,2};r[0]=3;}',
+        'array-assignment': 'using A=int[2];void f(){A&&a={1,2};A&&b={3,4};a=b;}',
+        'narrow-element': 'void f(){const unsigned char(&r)[2]={1,300};}',
+        'too-many': 'void f(){const int(&r)[2]={1,2,3};}',
+        'deleted-move': 'struct R{int n;R(int v):n(v){}R(R&&)=delete;};using A=R[2];void f(){R r(1);const A&a={static_cast<R&&>(r),R(2)};}',
+    }
+    for name, source in array_temporary_invalid.items():
+        check("v2-" + 'array_temporary_invalid' + "-" + name, source, "TR0202", profile="cpp-core-v2")
+    array_temporary_missing = {
+        'constructor': 'struct R{int n;R(int);};using A=R[2];void f(){const A&r={R(1),R(2)};}',
+        'destructor': 'struct R{int n;~R();};using A=R[2];void f(){const A&r={{1},{2}};}',
+    }
+    for name, source in array_temporary_missing.items():
+        check("v2-" + 'array_temporary_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
+    check("v1-array-temporary-reference", "using A=int[2];int f(){const A&r={1,2};return r[0];}", "TR0201")
+    check("v1-array-temporary-decay", "using A=int[2];int f(){return A{1,2}[0];}", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}

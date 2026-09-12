@@ -2056,6 +2056,205 @@ TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayTemporariesPreserveStorageAndCleanup) {
+  const auto Source = tmpFile("array-temporaries.cpp");
+  const auto Output = tmpFile("array-temporaries.nc");
+  writeFile(Source, R"cpp(
+int alive=0,made=0,dead=0,copies=0,moves=0,bad=0,log=0;
+void reset(){alive=made=dead=copies=moves=bad=log=0;}
+struct R {
+ int n;R*self;
+ R():n(0),self(this){++alive;++made;}
+ R(int value):n(value),self(this){++alive;++made;}
+ R(const R&r):n(r.n),self(this){++alive;++made;++copies;}
+ R(R&&r):n(r.n),self(this){r.n=0;++alive;++made;++moves;}
+ ~R(){if(self!=this)++bad;log=log*10+n;--alive;++dead;}
+ int get()const{return self==this?n:-1;}
+};
+using Items=R[2];using Triple=R[3];using Grid=R[2][2];using Numbers=int[3];
+enum class E:unsigned char{one=1,two=2};using Enums=E[2];using Pointers=int*[2];
+int read(const R(&a)[2]){if(alive<2||a[0].self!=&a[0]||a[1].self!=&a[1])++bad;return a[0].n+a[1].n;}
+int mutate(R(&&a)[2]){++a[0].n;return read(a);}
+int sum(const int(&a)[3]){return a[0]+a[1]+a[2];}
+int pointer(const int*p){return p[1];}
+int bump(int&n){return ++n;}
+struct Holder{int n;Holder(const R(&a)[2]):n(read(a)){}};
+struct Default{int n=read(Items{R(1),R(2)});};
+int early(){const Items&r={R(3),R(4)};return read(r);}
+int selected(bool b){const R&r=b?Items{R(1),R(2)}[0]:Items{R(3),R(4)}[1];return r.get();}
+constexpr int folded(){const Numbers&r={1,2,3};return r[1];}
+constexpr int constant=folded();static_assert(constant==2);
+int main(){
+ {const Numbers&r={1,2,3};Numbers&&s={4,5,6};++s[0];
+  const int&e=Numbers{7,8,9}[1];const Numbers&same{r};
+  int a=10,b=11;const Pointers&p={&a,&b};*p[1]=12;
+  const Enums&enums={E::one,E::two};
+  if(sum(r)!=6||sum(s)!=16||e!=8||&same!=&r||b!=12||static_cast<int>(enums[1])!=2||constant!=2)return 1;}
+ int n=0;int value=sum(Numbers{bump(n),bump(n),bump(n)});
+ if(value!=6||n!=3||pointer(Numbers{4,5,6})!=5)return 2;
+ reset();value=read(Items{R(1),R(2)});
+ if(value!=3||alive||made!=2||dead!=2||copies||moves||bad||log!=21)return 3;
+ reset();value=read({R(3),R(4)});
+ if(value!=7||alive||made!=2||dead!=2||bad||log!=43)return 4;
+ reset();value=mutate(Items{R(1),R(2)});
+ if(value!=4||alive||made!=2||dead!=2||copies||moves||bad||log!=22)return 5;
+ reset();value=Items{R(5),R(6)}[1].get();
+ if(value!=6||alive||made!=2||dead!=2||bad||log!=65)return 6;
+ reset();
+ {Holder h(Items{R(1),R(2)});if(h.n!=3||alive||dead!=2||bad)return 7;}
+ reset();
+ {Default d{};if(d.n!=3||alive||made!=2||dead!=2||bad)return 8;}
+ reset();Items{R(1),R(2)};
+ if(alive||made!=2||dead!=2||bad||log!=21)return 9;
+ reset();Triple{R(3)};
+ if(alive||made!=3||dead!=3||bad||log!=3)return 10;
+ reset();
+ {const Items&r{R(1),R(2)};const Items&same={r};
+  if(read(r)!=3||alive!=2||dead||&same!=&r||copies||moves||bad)return 11;}
+ if(alive||dead!=2||bad||log!=21)return 12;
+ reset();
+ {Items&&r={R(3),R(4)};++r[0].n;
+  if(read(r)!=8||alive!=2||dead||r[0].self!=&r[0]||r[1].self!=&r[1])return 13;}
+ if(alive||dead!=2||bad||log!=44)return 14;
+ reset();
+ {const R&r=Items{R(1),R(2)}[1];R copy(r);
+  if(r.get()!=2||copy.n!=2||alive!=3||dead||copies!=1||moves||bad)return 15;}
+ if(alive||dead!=3||bad||log!=221)return 16;
+ reset();
+ {const R(&row)[2]=Grid{{R(1),R(2)},{R(3),R(4)}}[1];
+  if(read(row)!=7||alive!=4||dead||bad)return 17;}
+ if(alive||made!=4||dead!=4||bad||log!=4321)return 18;
+ reset();
+ {Grid&&grid={{R(1),R(2)},{R(3),R(4)}};
+  if(grid[1][1].get()!=4||grid[0][0].self!=&grid[0][0]||alive!=4||dead)return 19;}
+ if(alive||dead!=4||bad||log!=4321)return 20;
+ reset();
+ {const Triple&r={R(5)};if(alive!=3||dead||r[0].get()!=5||r[1].get()!=0||r[2].get()!=0||&r[1]==&r[2])return 21;}
+ if(alive||made!=3||dead!=3||bad||log!=5)return 22;
+ reset();
+ {const Items&r=Items{R(read(Items{R(1),R(2)})),R(4)};
+  if(read(r)!=7||alive!=2||made!=4||dead!=2||bad||log!=21)return 23;}
+ if(alive||dead!=4||bad||log!=2143)return 24;
+ reset();
+ {const R&first=R(1);const Items&middle={R(2),R(3)};R last(4);
+  if(alive!=4||dead)return 25;}
+ if(alive||dead!=4||bad||log!=4321)return 26;
+ reset();value=early();
+ if(value!=7||alive||dead!=2||bad||log!=43)return 27;
+ reset();value=selected(true);int other=selected(false);
+ if(value!=1||other!=4||alive||made!=4||dead!=4||bad||log!=2143)return 28;
+ reset();n=0;
+ {const Items&r=(++n,Items{R(1),R(2)});if(n!=1||read(r)!=3||alive!=2||dead)return 29;}
+ if(alive||dead!=2||bad||log!=21)return 30;
+ reset();
+ for(int i=0;i<3;++i){const Items&r={R(1),R(2)};if(alive!=2||dead!=i*2)return 31;if(i==1)continue;}
+ if(alive||made!=6||dead!=6||bad||log!=212121)return 32;
+ reset();
+ for(int i=0;i<3;++i){const Items&r={R(3),R(4)};if(alive!=2)return 33;if(i==1)break;}
+ if(alive||made!=4||dead!=4||bad||log!=4343)return 34;
+ reset();n=0;
+ for(int i=0;i<2;++i)n+=read(Items{R(1),R(2)});
+ if(n!=6||alive||made!=4||dead!=4||bad||log!=2121)return 35;
+ reset();
+ bool quiet=noexcept(Items{R(1),R(2)});unsigned long long size=sizeof(Items{R(1),R(2)});
+ if(quiet||size!=sizeof(Items)||alive||made||dead||bad)return 36;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-temporaries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayTemporariesAcceptBoundedLifetimes) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-array-argument", "using A=int[2];void take(const int(&)[2]){}void f(){take(A{1,2});}"},
+      {"promoted-dead-array-argument", "using A=int[2];void take(const int(&)[2]){}void f(){if(false)take(A{1,2});}"},
+      {"promoted-query-array-argument", "using A=int[2];void take(const int(&)[2])noexcept{}bool f(){return noexcept(take(A{1,2}));}"},
+      {"promoted-query-array-expression", "using A=int[2];bool f(){return noexcept(A{1,2}[0]);}"},
+      {"promoted-array-owner", "void f(){const int(&r)[2]={1,2};}"},
+      {"promoted-dead-array-owner", "void f(){if(false){const int(&r)[2]={1,2};}}"},
+      {"promoted-constexpr-array-owner", "constexpr int f(){const int(&r)[2]={1,2};return r[0];}constexpr int n=f();"},
+      {"promoted-query-braced-array", "void take(const int(&)[2])noexcept{}bool f(){return noexcept(take({1,2}));}"},
+      {"promoted-braced-array-argument", "void take(const int(&)[2]){}void f(){take({1,2});}"},
+      {"scalar-discard", "using A=int[2];void f(){A{1,2};}"},
+      {"record-discard", "struct R{int n;~R(){}};using A=R[2];void f(){A{{1},{2}};}"},
+      {"scalar-decay", "using A=int[2];int read(const int*p){return p[0]+p[1];}int f(){return read(A{1,2});}"},
+      {"scalar-index", "using A=int[2];int f(){return A{1,2}[1];}"},
+      {"record-element-receiver", "struct R{int n;int get()const{return n;}};using A=R[2];int f(){return A{{1},{2}}[1].get();}"},
+      {"rvalue-array-reference", "using A=int[2];int f(){A&&r={1,2};return ++r[1];}"},
+      {"direct-element-extension", "using A=int[2];int f(){const int&r=A{1,2}[1];return r;}"},
+      {"row-extension", "using A=int[2][2];int f(){const int(&r)[2]=A{{1,2},{3,4}}[1];return r[0];}"},
+      {"array-comma", "using A=int[2];int f(){int n=0;const A&r=(++n,A{1,2});return n+r[0];}"},
+      {"braced-live-array", "using A=int[2];int f(A&a){A&r{a};return ++r[0];}"},
+      {"array-rvalue-parameter", "using A=int[2];int read(A&&a){return ++a[0];}int f(){return read(A{1,2});}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("array-temporaries-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("array-temporaries-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayTemporariesRetainTypeAndLifetimeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"static-array", "int f(){static const int(&r)[2]={1,2};return r[0];}", "TR0201"},
+      {"global-array", "const int(&r)[2]={1,2};", "TR0201"},
+      {"tls-array", "int f(){thread_local const int(&r)[2]={1,2};return r[0];}", "TR0201"},
+      {"reference-field", "struct R{const int(&a)[2];};void f(){R r{{1,2}};}", "TR0201"},
+      {"fresh-array-return", "using A=int[2];const A&f(){return A{1,2};}", "TR0201"},
+      {"fresh-element-return", "using A=int[2];const int&f(){return A{1,2}[0];}", "TR0201"},
+      {"pointer-offset-reference", "using A=int[2];int f(){const int&r=*(A{1,2}+1);return r;}", "TR0201"},
+      {"dereference-reference", "using A=int[2];int f(){const int&r=*A{1,2};return r;}", "TR0201"},
+      {"float-element", "void f(){const double(&r)[2]={1.0,2.0};}", "TR0201"},
+      {"volatile-element", "void f(){const volatile int(&&r)[2]={1,2};}", "TR0201"},
+      {"vla", "void f(int n){int a[n];}", "TR0201"},
+      {"unknown-bound", "extern int a[];", "TR0201"},
+      {"zero-bound", "using A=int[0];void f(){const A&r={};}", "TR0201"},
+      {"extent-limit", "using A=int[65537];void f(){const A&r={};}", "TR0201"},
+      {"storage-limit", "using A=int[512][512];void f(){const A&r={};}", "TR0201"},
+      {"expanded-storage-budget", "using A=int[32768];void f(){const A&r={};}", "TR0201"},
+      {"query-unsupported", "using A=double[2];bool f(){return noexcept(A{1.0,2.0}[0]);}", "TR0201"},
+      {"mutable-array-reference", "using A=int[2];void f(){A&r={1,2};}", "TR0202"},
+      {"const-array-write", "using A=int[2];void f(){const A&r={1,2};r[0]=3;}", "TR0202"},
+      {"array-assignment", "using A=int[2];void f(){A&&a={1,2};A&&b={3,4};a=b;}", "TR0202"},
+      {"narrow-element", "void f(){const unsigned char(&r)[2]={1,300};}", "TR0202"},
+      {"too-many", "void f(){const int(&r)[2]={1,2,3};}", "TR0202"},
+      {"deleted-move", "struct R{int n;R(int v):n(v){}R(R&&)=delete;};using A=R[2];void f(){R r(1);const A&a={static_cast<R&&>(r),R(2)};}", "TR0202"},
+      {"constructor", "struct R{int n;R(int);};using A=R[2];void f(){const A&r={R(1),R(2)};}", "TR0203"},
+      {"destructor", "struct R{int n;~R();};using A=R[2];void f(){const A&r={{1},{2}};}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("array-temporaries-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("array-temporaries-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("array-temporaries-v1.cpp");
+  const auto Output = tmpFile("array-temporaries-v1.nc");
+  for (const std::string &Code : {
+      "using A=int[2];int f(){const A&r={1,2};return r[0];}",
+      "using A=int[2];int f(){return A{1,2}[0];}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AutomaticReferencesPreserveStorageAndCleanup) {
   const auto Source = tmpFile("automatic-references.cpp");
   const auto Output = tmpFile("automatic-references.nc");
@@ -2238,11 +2437,6 @@ TEST_F(TranslateTest, CoreV2AutomaticReferencesRetainLifetimeBoundaries) {
       {"tls-brace", "int f(){thread_local const int&r{1};return r;}", "TR0201"},
       {"global-brace", "const int&r{1};", "TR0201"},
       {"reference-field", "struct R{const int&r;};int f(){R r{1};return r.r;}", "TR0201"},
-      {"array-owner", "void f(){const int(&r)[2]={1,2};}", "TR0201"},
-      {"dead-array-owner", "void f(){if(false){const int(&r)[2]={1,2};}}", "TR0201"},
-      {"constexpr-array-owner", "constexpr int f(){const int(&r)[2]={1,2};return r[0];}constexpr int n=f();", "TR0201"},
-      {"query-braced-array", "void take(const int(&)[2])noexcept{}bool f(){return noexcept(take({1,2}));}", "TR0201"},
-      {"braced-array-argument", "void take(const int(&)[2]){}void f(){take({1,2});}", "TR0201"},
       {"braced-offset", "struct R{int a[2];};int f(){const int&r{*(R{{1,2}}.a+1)};return r;}", "TR0201"},
       {"braced-arrow", "struct I{int n;};struct R{I a[2];};int f(){const int&r{(R{{{1},{2}}}.a+1)->n};return r;}", "TR0201"},
       {"unused-throw", "struct R{int n;~R(){throw 1;}};void f(){const R&r{R{1}};}", "TR0201"},
@@ -2489,10 +2683,6 @@ TEST_F(TranslateTest, CoreV2TemporaryCallsRetainLifetimeExtensionBoundaries) {
       {"fresh-record-return", "struct R{int n;};const R&f(){return R{1};}", "TR0201"},
       {"static-extension", "int f(){static const int&r=1;return r;}", "TR0201"},
       {"global-extension", "const int&r=1;", "TR0201"},
-      {"array-argument", "using A=int[2];void take(const int(&)[2]){}void f(){take(A{1,2});}", "TR0201"},
-      {"dead-array-argument", "using A=int[2];void take(const int(&)[2]){}void f(){if(false)take(A{1,2});}", "TR0201"},
-      {"query-array-argument", "using A=int[2];void take(const int(&)[2])noexcept{}bool f(){return noexcept(take(A{1,2}));}", "TR0201"},
-      {"query-array-expression", "using A=int[2];bool f(){return noexcept(A{1,2}[0]);}", "TR0201"},
       {"unused-throw", "struct R{int get()const{throw 1;}};int f(){return R{}.get();}", "TR0201"},
       {"query-float", "struct R{double get()const noexcept{return 1.0;}};bool f(){return noexcept(R{}.get());}", "TR0201"},
       {"mutable-reference", "void take(int&){}void f(){take(1);}", "TR0202"},

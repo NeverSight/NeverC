@@ -201,6 +201,22 @@ and early exits use the existing control-flow cleanup. Protocol major 1 and its
 opcodes remain unchanged. See the
 [source lifetime contract](cpp-core-v2.md#automatic-local-reference-lifetime-extension).
 
+## Core v2 array temporary storage
+
+A standalone array temporary uses one `arr:<extent>:<element>` local, including
+nested array carriers. Element initialization uses typed index places under that
+array; record constructor destination pointers refer directly to those places.
+Reference parameters carry `ptr:arr:...` or `cptr:arr:...`; array decay retains the
+same array address. Discarded array prvalues also receive real storage. The
+frontend charges actual storage and generated initialization against its budgets.
+
+One live flag guards complete-array cleanup. Destructor calls target the same
+element places in reverse order, including multidimensional rows and shared
+semantic default fillers. Full-expression and exact automatic reference owners
+use their existing cleanup frames; element aliases add no owner. There is no
+array by-value call convention, new opcode or protocol version. See the
+[source array lifetime contract](cpp-core-v2.md#standalone-fixed-array-temporary-lifetimes).
+
 ## Core v2 noexcept queries
 
 Resolved `noexcept(expression)` uses the existing pure `literal` representation

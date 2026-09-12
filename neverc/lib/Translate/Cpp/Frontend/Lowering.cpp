@@ -450,7 +450,7 @@ class FunctionLowering {
     bool HasRecordResult = recordValue(Callee->getReturnType());
     if (HasRecordResult) {
       Result = Destination ? std::move(*Destination)
-                           : recordTemporary(Callee->getReturnType(), L);
+                           : objectTemporary(Callee->getReturnType(), L);
       if (Result.getString("type") != type(Callee->getReturnType(), L))
         reject(L, "call result", "Call and result destination types differ.");
       Args.push_back(snapshot(
@@ -588,7 +588,7 @@ class FunctionLowering {
       case CK_LValueToRValue:
         return snapshot(cast(expression(C->getSubExpr()), T, L), L);
       case CK_NoOp:
-        if (C->isPRValue() && recordValue(C->getType()))
+        if (C->isPRValue() && aggregateValue(C->getType()))
           return materialize(C, L);
         if (A.S.coreV2() && C->isGLValue())
           return lvalue(C);
@@ -644,27 +644,10 @@ class FunctionLowering {
     if (const auto *I = dyn_cast<InitListExpr>(E)) {
       if (A.S.coreV2() && E->isGLValue())
         return lvalue(I);
-      if (A.S.coreV2() && E->getType()->isRecordType())
+      if (aggregateValue(E->getType()))
         return materialize(I, L);
       if (I->isSyntacticForm() && I->getSemanticForm())
         I = I->getSemanticForm();
-      if (const auto *Array = A.Context.getAsConstantArrayType(E->getType());
-          Array && A.S.coreV2()) {
-        json::Array Values;
-        auto Count = Array->getSize().getLimitedValue(65537);
-        if (I->getNumInits() > Count)
-          reject(L, "array initialization", "Too many semantic initializers.");
-        A.chargeExpansion(2, L);
-        for (uint64_t N = 0; N < Count; ++N) {
-          const Expr *Init = N < I->getNumInits() ? I->getInit(unsigned(N))
-                                                 : I->getArrayFiller();
-          auto Value = Init ? expression(Init) : A.zero(Array->getElementType(), L);
-          A.chargeExpansion(generatedNodes(Value), L);
-          Values.push_back(std::move(Value));
-        }
-        return Expression{{"kind", "aggregate"}, {"type", T},
-                          {"args", std::move(Values)}, {"loc", A.loc(L)}};
-      }
       if (!E->getType()->isRecordType()) {
         if (!I->getNumInits())
           return A.zero(E->getType(), L);
@@ -980,6 +963,9 @@ class FunctionLowering {
   bool recordValue(QualType T) const {
     return A.S.coreV2() && T->isRecordType();
   }
+  bool aggregateValue(QualType T) const {
+    return A.S.coreV2() && (T->isRecordType() || T->isArrayType());
+  }
   QualType parameterType(QualType T) const {
     return recordValue(T) ? A.Context.getPointerType(T.getUnqualifiedType()) : T;
   }
@@ -992,7 +978,7 @@ class FunctionLowering {
         {"name", Name}, {"type", Kind}, {"loc", A.loc(L)}});
     return Place;
   }
-  Expression recordTemporary(QualType T, SourceLocation L) {
+  Expression objectTemporary(QualType T, SourceLocation L) {
     auto Kind = type(T, L);
     // These new caller-owned objects must count against the same bounded
     // expansion budget as their initialization and call instructions.
@@ -1007,7 +993,7 @@ class FunctionLowering {
       // A by-value parameter is a separate object even when the same lvalue
       // supplies multiple arguments. A prvalue constructs here directly; the
       // selected implicit copy/move expression retains intentional copies.
-      auto Place = recordTemporary(ParameterType, L);
+      auto Place = objectTemporary(ParameterType, L);
       initialize(Place, Arg, L);
       return snapshot(address(std::move(Place),
                               ParameterType.getUnqualifiedType(), L), L);
@@ -1038,10 +1024,11 @@ class FunctionLowering {
   }
   Expression materialize(const Expr *Init, SourceLocation L,
                          std::optional<std::size_t> ScopeIndex = std::nullopt) {
-    // One addressable destination per evaluation. Reusing an AST node (for
-    // example an array filler) must not reuse a previously constructed object.
-    auto Place = recordValue(Init->getType())
-                     ? recordTemporary(Init->getType(), L)
+    // One addressable destination per evaluation, including a discarded array
+    // for which Clang omitted an MTE. Elements initialize directly in this
+    // complete object; reusing a filler AST never reuses an element lifetime.
+    auto Place = aggregateValue(Init->getType())
+                     ? objectTemporary(Init->getType(), L)
                      : temporary(type(Init->getType(), L), L);
     initialize(Place, Init, L);
     if (A.S.coreV2() && needsDestruction(Init->getType())) {
@@ -1209,16 +1196,16 @@ class FunctionLowering {
     }
     if (const auto *C = dyn_cast<CastExpr>(Init);
         A.S.coreV2() && C && C->getCastKind() == CK_NoOp && C->isPRValue() &&
-        C->getType()->isRecordType() &&
+        aggregateValue(C->getType()) &&
         A.Context.hasSameUnqualifiedType(C->getType(), C->getSubExpr()->getType())) {
-      // C++17 initializes the destination directly through typed construction
-      // wrappers such as R r = R{1, r.first}. A real copy still takes the value
+      // C++17 initializes the actual record or array destination through typed
+      // construction wrappers. A real copy still takes the value
       // path once recursion reaches its constructor or source object.
       initialize(std::move(Place), C->getSubExpr(), L);
       return;
     }
-    if (A.S.coreV2() && Init->isPRValue() && Init->getType()->isRecordType()) {
-      if (const auto *Call = dyn_cast<CallExpr>(Init)) {
+    if (Init->isPRValue() && aggregateValue(Init->getType())) {
+      if (const auto *Call = dyn_cast<CallExpr>(Init); Call && recordValue(Init->getType())) {
         call(Call, std::move(Place));
         return;
       }

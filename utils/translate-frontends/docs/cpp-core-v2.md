@@ -1004,7 +1004,8 @@ unevaluated queries and relocation. Native results require the implementing CI.
 
 Core v2 admits temporary receivers and temporary reference arguments for ordinary
 functions, constructors, methods, operators and conversion functions. Materialized
-scalar, enum, pointer and record values must have Clang's `SD_FullExpression`
+scalar, enum, pointer, record and bounded fixed-array values must have Clang's
+`SD_FullExpression`
 duration, no extending declaration, and a matching prvalue initializer. Every
 materialization is checked during recursive source inspection, including erased
 noexcept/sizeof/static-assert paths, and again during lowering. Local references
@@ -1016,8 +1017,9 @@ argument receives that storage's address; const/reference qualifiers retain thei
 typed carriers. Temporary objects keep their actual receiver identity and may
 use selected const/ref-qualified methods. Subobjects, array decay, offsets,
 arrow access and returned reference aliases remain views of the same owner.
-Standalone array temporaries are excluded in this stage; array subobjects of
-an admitted record temporary share that record's storage and cleanup.
+Standalone fixed-array temporaries use their own complete array destination
+and cleanup under the array contract below. Array subobjects of an admitted
+record temporary share that record's storage and cleanup.
 
 Temporary arguments and receivers remain alive throughout argument evaluation,
 the selected call, result construction and callee parameter destruction. They
@@ -1046,8 +1048,7 @@ through a call may be used while its temporary remains alive within that same
 full-expression; saving the alias does not create a new owner or lifetime
 extension. The defined-execution source contract does not promise general
 interprocedural dangling-reference diagnosis. Automatic local extension follows
-the next section. Static lifetime extension, fresh reference returns, standalone
-array temporaries, unsupported
+the next section. Static lifetime extension, fresh reference returns, unsupported
 types, exception execution, templates and complete STL still require further
 work. This stage adds no wire opcode or external runtime and leaves v1 unchanged.
 
@@ -1060,10 +1061,12 @@ reverse destruction and relocation. Native evidence requires the implementing CI
 ## Automatic local reference lifetime extension
 
 Core v2 preserves C++17 lifetime extension for ordinary automatic local lvalue
-and rvalue references to admitted scalar, enum, pointer and record temporaries.
+and rvalue references to admitted scalar, enum, pointer, record and bounded
+fixed-array temporaries.
 The materialized object must have Clang's `SD_Automatic` duration and name that
 exact ordinary local reference variable as its extending declaration. The
-materialized type must be non-array and match its prvalue initializer. This proof
+materialized type must match its prvalue initializer; arrays must have complete
+fixed bounds within the array/storage limits. This proof
 is checked during full source inspection and again when binding the variable.
 Const qualification and reference value categories retain their existing rules.
 
@@ -1106,12 +1109,64 @@ returned through a call has no general interprocedural dangling-use guarantee;
 storing it does not extend the temporary passed to that call.
 
 Static/global/thread-local reference lifetimes, reference fields, structured
-bindings, standalone array temporaries, unsupported types, exception unwinding,
+bindings, unsupported types, exception unwinding,
 templates and complete STL remain outside this increment. V1 is unchanged. O0/O2
 no-inline fixtures cover storage identity, braces, subobjects, nested lifetimes,
 copy/move/return ordering, conditional owners and loop exits. Protocol fixtures
 check complete signatures, actual destinations, guarded cleanup and relocation;
 native execution claims require CI at the implementing revision.
+
+## Standalone fixed-array temporary lifetimes
+
+Core v2 admits standalone temporaries of bounded fixed-array types with supported
+scalar, enum, pointer or record elements, including multidimensional arrays.
+Array extents remain 1..65536; complete storage and generated expansion each
+remain bounded by the existing 200000-unit limits. Materialization charges the
+actual array storage as well as emitted initialization. Array types and hidden
+semantic initializers remain checked even in dead, constexpr or unevaluated code.
+
+Each evaluation allocates one actual complete array. Elements initialize directly
+at their final indices in source order. Omitted/default fillers are evaluated
+separately for each destination, so record self-addresses and selected calls are
+preserved. Direct element initialization creates no independent element owner.
+Discarded array prvalues also use real storage, even when Clang omits an explicit
+materialization node. Typed array brace wrappers and comma expressions preserve
+the same destination; this does not add array assignment or a by-value array ABI.
+
+```cpp
+using Values = int[3];
+int sum(const Values &values) { return values[0] + values[1] + values[2]; }
+int main() {
+  const Values &local = {1, 2, 3};
+  int &&element = Values{4, 5, 6}[1];
+  ++element;
+  return sum(local) + sum(Values{2, 3, 4}) + element == 21 ? 0 : 1;
+}
+```
+
+Arrays passed by reference, decayed to pointers, indexed or used as temporary
+element receivers retain their complete owner until the enclosing full-expression
+ends. Automatic array references, or permitted direct row/element references,
+keep the complete array alive to their lexical scope's end only when Clang names
+that exact reference as its extending declaration. Braced bindings use the same
+checked semantic reference-list rules. References and pointer views retain their
+typed addresses and introduce no owner. Nested argument temporaries keep their
+separate full-expression lifetime; alias rebinding never extends it further.
+
+A destructible array registers one complete owner after initialization and cleans
+its elements in reverse dimension/element order. Conditional branches destroy
+only constructed arrays, loop evaluations recreate their lifetimes, and return,
+break and continue clean the appropriate scopes. Array construction needs no
+external helper or memory-copy call. Static/global/thread-local lifetimes,
+reference fields, fresh reference returns, non-extended pointer-derived bindings,
+unsupported element types, explicit destruction, allocation, unwinding, templates
+and complete STL remain outside this increment. V1 and protocol major 1 are unchanged.
+
+O0/O2 no-inline fixtures cover real element addresses, reference calls, decay,
+subscripts, default fillers, discarded arrays, nested temporaries, multidimensional
+ownership and early exits. Protocol assertions inspect complete typed signatures,
+actual array/element destinations, one cleanup guard per array, reverse destruction,
+query purity and relocation. Native execution evidence requires the implementing CI.
 
 ## Noexcept declarations and queries
 
