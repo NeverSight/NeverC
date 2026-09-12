@@ -1463,6 +1463,146 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RecordCallsPreserveObjectStorageAndSourceCopies) {
+  const auto Source = tmpFile("record-call-storage.cpp");
+  const auto Output = tmpFile("record-call-storage.nc");
+  writeFile(Source, R"cpp(
+// The self-address checks pin NeverC's selected storage convention for these
+// trivial records; C++17 permits other implementations to introduce copies.
+struct R {
+  int value;
+  R *self;
+  explicit R(int n):value(n),self(this){}
+  R plus(int n) const { return R(value+n); }
+  R combine(R other) const { return R(value+other.value); }
+  static R build(int n) { return R(n); }
+};
+struct Pair { R first; R second; };
+struct Consumer {
+  R member;
+  bool distinct_parameter;
+  explicit Consumer(R value):member(value.value+1),
+    distinct_parameter(value.self==&value && &member!=&value){}
+};
+R make(int n) { return R(n); }
+R forward(int n) { return make(n); }
+R recursive(int n) { if(n==0)return R(1);return recursive(n-1); }
+R named(int n) { R local(n); return local; }
+R identity(R value) { return value; }
+int observe(R value) { return value.self==&value ? value.value : -1; }
+int copied(R value,const R &original) {
+  return value.self==&original && &value!=&original && value.value==original.value;
+}
+int mutate(R value,R &original) { value.value+=5;return value.value+original.value; }
+int twice(R first,R second) {
+  first.value=7;
+  return &first!=&second && second.value==3;
+}
+int constant(const R value) { return value.value; }
+R &alias(R &value) { return value; }
+R *receiver(R *pointer,int &trace) { trace=trace*10+1;return pointer; }
+R argument(R *&pointer,R &other,int &trace) {
+  trace=trace*10+2;pointer=&other;return R(5);
+}
+R effect(int &trace,int digit) { trace=trace*10+digit;return R(digit); }
+int sum(R first,R second) { return first.value+second.value; }
+struct ArrayResult { int values[2]; };
+ArrayResult arrayResult() { return {{61,67}}; }
+struct OrderedResult { int first,second; };
+OrderedResult ordered(OrderedResult *result) { return {71,result->first+2}; }
+const R qualifiedResult() { return R(79); }
+struct Aggregate { int value; };
+int aggregateArgument(Aggregate value) { return value.value; }
+int main() {
+  R direct=make(3);
+  R forwarded=forward(5);
+  if(direct.value!=3 || direct.self!=&direct ||
+     forwarded.value!=5 || forwarded.self!=&forwarded) return 1;
+  R nested=direct.plus(4);
+  R static_result=R::build(11);
+  if(nested.value!=7 || nested.self!=&nested ||
+     static_result.value!=11 || static_result.self!=&static_result) return 2;
+  Pair pair{make(13),forward(17)};
+  if(pair.first.value!=13 || pair.first.self!=&pair.first ||
+     pair.second.value!=17 || pair.second.self!=&pair.second) return 3;
+  R array[2]={make(19),forward(23)};
+  if(array[0].value!=19 || array[0].self!=&array[0] ||
+     array[1].value!=23 || array[1].self!=&array[1]) return 4;
+  if(observe(R(29))!=29 || observe(make(31))!=31) return 5;
+  if(!copied(direct,direct)) return 6;
+  if(mutate(direct,direct)!=11 || direct.value!=3) return 7;
+  if(!twice(direct,direct) || direct.value!=3) return 8;
+  if(constant(direct)!=3 || &alias(direct)!=&direct) return 9;
+  Consumer consumer(R(37));
+  if(!consumer.distinct_parameter || consumer.member.value!=38 ||
+     consumer.member.self!=&consumer.member) return 10;
+  R repeated=recursive(4);
+  if(repeated.value!=1 || repeated.self!=&repeated) return 11;
+  // Named returns may select a source copy/move. Do not inspect a self pointer
+  // after the referenced local/parameter has ended its lifetime.
+  if(named(41).value!=41 || identity(direct).value!=3) return 12;
+  R *pointer=&direct;
+  int trace=0;
+  R combined=receiver(pointer,trace)->combine(argument(pointer,forwarded,trace));
+  if(combined.value!=8 || combined.self!=&combined || pointer!=&forwarded ||
+     trace!=12 || direct.value!=3 || forwarded.value!=5) return 13;
+  R conditional=direct.value==3?make(43):make(47);
+  R comma=(++trace,forward(53));
+  if(conditional.value!=43 || conditional.self!=&conditional ||
+     comma.value!=53 || comma.self!=&comma || trace!=13) return 14;
+  trace=0;
+  if(sum(effect(trace,1),effect(trace,2))!=3 || (trace!=12 && trace!=21)) return 15;
+  if(make(59).value!=59) return 16;
+  if(arrayResult().values[1]!=67) return 17;
+  OrderedResult in_place=ordered(&in_place);
+  if(in_place.first!=71 || in_place.second!=73) return 18;
+  R qualified=qualifiedResult();
+  if(qualified.value!=79 || qualified.self!=&qualified) return 19;
+  if(aggregateArgument({83})!=83) return 20;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("record-call-storage" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RecordCallsRetainLifetimeAndSourceTypeBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"record-parameter-expansion", "struct R{int n[65536];};int ignore(R a,R b,R c,R d){return 0;}int f(){R r;for(int i=0;i<65536;++i)r.n[i]=0;return ignore(r,r,r,r);}"},
+      {"record-result-fallthrough", "struct R{int n;};R f(bool b){if(b)return {1};}"},
+      {"record-copy-constructor", "struct R{int n;R(int v):n(v){}R(const R&x):n(x.n){}};int f(R x){return x.n;}"},
+      {"record-move-constructor", "struct R{int n;R(int v):n(v){}R(R&&x):n(x.n){}};R f(){return R(1);}"},
+      {"record-destructor", "struct R{int n;R(int v):n(v){}~R(){}};R f(){return R(1);}"},
+      {"record-result-reference-binding", "struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}"},
+      {"record-result-method-receiver", "struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}"},
+      {"record-result-c-export", "struct R{int n;};extern \"C\" R exported(){return {1};}"},
+      {"record-parameter-c-export", "struct R{int n;};extern \"C\" int exported(R r){return r.n;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("call-storage-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("call-storage-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("call-storage-const-write.cpp");
+  const auto Output = tmpFile("call-storage-const-write.nc");
+  writeFile(Source, "struct R{int n;};int f(const R r){r.n=1;return r.n;}");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  expectCode(Result, "TR0202");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2RecordConstructorsPreserveDestinationsAndInitializationOrder) {
   const auto Source = tmpFile("record-constructors.cpp");
   const auto Output = tmpFile("record-constructors.nc");

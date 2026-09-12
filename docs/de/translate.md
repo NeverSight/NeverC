@@ -35,6 +35,8 @@ Core v2 unterstützt benannte nichtvirtuelle Memberfunktionen der zugelassenen R
 
 Core v2 unterstützt außerdem gewöhnliche benutzerdefinierte Konstruktoren für Record-Typen mit Standardlayout sowie trivialem Kopieren und Zerstören. Lokale Objekte, Felder und Array-Elemente werden direkt an ihrem endgültigen Speicherort konstruiert; Felder werden in Deklarationsreihenfolge initialisiert. Explizit als default markierte oder delegierende Konstruktoren, benutzerdefinierte Kopier-/Move-Konstruktoren und Destruktoren, Aufräumlogik und Ausnahmen fehlen noch.
 
+Core v2 erzeugt für jeden per Wert übergebenen Record-Parameter ein eigenes Objekt und schreibt Record-Rückgaben direkt in den Zielspeicher des Aufrufers. Dies gilt auch für Konstruktoren und Methoden; erforderliche Kopien und Referenzaliase bleiben erhalten. Das ist die von NeverC gewählte Umsetzung für die unterstützten trivialen Records, keine allgemeine Adressgarantie von C++17. Nichttriviales Kopieren und Verschieben, Destruktion, Bereinigung und vollständige STL-Unterstützung sind noch in Entwicklung.
+
 ## Projekte mit mehreren Dateien
 
 Wählen Sie Übersetzungseinheiten ausdrücklich aus einer Kompilierungsdatenbank aus und geben Sie das Projektstammverzeichnis an. Das integrierte Frontend analysiert jede Einheit einzeln; die Zusammenführung prüft Definitionen, Bindung, gemeinsame Typen und die Einhaltung der Ein-Definitions-Regel (ODR) anhand konservativer Prüfungen.

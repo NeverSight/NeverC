@@ -138,8 +138,9 @@ overloads and out-of-line definitions before normalization. Explicit access
 specifiers are compile-time syntax only; data fields must still satisfy the
 field and layout restrictions. Private helper methods do not change object layout.
 
-A nonstatic method becomes an ordinary generated function whose first parameter
-is a pointer to the original object (`const` for a const method). `this`, implicit
+A nonstatic method becomes an ordinary generated function with a pointer to the
+original object (`const` for a const method), after a hidden record-result pointer
+when present and before explicit source parameters. `this`, implicit
 field access, nested calls, recursion, returning `this`, and returning `*this`
 or a field by lvalue reference preserve storage identity. Calling a method does
 not copy the receiver or read unrelated uninitialized fields. Methods have no
@@ -149,7 +150,7 @@ cv/ref qualifications.
 The receiver expression is evaluated and its pointer captured before explicit
 arguments, including when an argument reseats a pointer used as the receiver.
 Static calls through an object evaluate/discard that object expression before
-arguments and have no hidden pointer parameter; `make_record().static_method()`
+arguments and have no receiver parameter; `make_record().static_method()`
 is allowed for an otherwise admitted record result. A class-qualified static
 call has no object expression. Methods are direct named call targets only;
 function values and member pointers remain rejected even in folded source.
@@ -233,9 +234,9 @@ increment. Aggregate initialization remains available where C++ selects it.
 A materialized record temporary and its field/array views share one destination
 for that evaluation. No extra record copy is inserted during materialization.
 Temporary field reads and by-value function arguments/results are supported for
-the admitted records. C++17 permits implementation copies of eligible trivial
-class function arguments/results; their addresses are not promised to equal a
-caller's final object address. Reference binding to temporaries and nonstatic
+the admitted records, using the explicit call storage described below. C++17
+permits implementation copies of eligible trivial class function arguments/results;
+NeverC selects direct destinations for prvalues and retains source-required copies. Reference binding to temporaries and nonstatic
 calls on temporary receivers retain their existing rejection boundary. Const
 local destinations are constructed once; subsequent accesses keep source const
 qualifications.
@@ -247,6 +248,53 @@ static guards, inheritance, virtual dispatch and STL are still outside this
 increment. Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; dynamic, pointer and array global restrictions
 remain unchanged. V1 profiles continue to reject user constructors.
+
+## Record arguments and results
+
+In core v2, a source by-value record parameter denotes a distinct object prepared
+by the caller. The generated function receives a mutable pointer to that object;
+source constness still controls permitted access in the function body. An lvalue
+argument initializes a separate copy, even when the same source object supplies
+two parameters. Reference parameters retain their original aliases. Ordinary
+constructors, static methods and instance methods use the same argument rules.
+
+A record-returning function has a wire result of `void` and a first mutable
+result pointer. An instance receiver, when present, follows that result pointer;
+explicit source parameters come afterward. Constructors only have their existing
+destination pointer and do not gain a second result pointer. Source declarations
+and overload identities are resolved before this internal convention is applied;
+it is not a foreign C++ binary ABI. Scalar, pointer, reference and v1 calls retain
+their existing conventions.
+
+Direct prvalue calls construct in the selected local, field, array element,
+parameter or materialized temporary. A direct returned call forwards the same
+result destination. Conditional/comma initialization and nested calls preserve
+source effects; receiver capture still precedes explicit arguments. Every
+invocation has distinct parameter storage, including recursion. Temporary places
+and generated calls count against the existing expansion budget.
+
+```cpp
+struct Item {
+  int value;
+  Item *self;
+  explicit Item(int n) : value(n), self(this) {}
+};
+Item make(int n) { return Item(n); }
+int main() {
+  Item direct = make(7);
+  Item copy = direct;
+  return direct.self == &direct && copy.self == &direct ? 0 : 1;
+}
+```
+
+The self-address check selects NeverC's direct-storage behavior for the admitted
+trivial records. C++17 permits other implementations to introduce eligible
+trivial function argument/result copies; this is not a universal language address
+guarantee. An intentional copy retains stored pointers and does not repair them.
+Named-local or named-parameter returns keep Clang's selected copy/move operation;
+NeverC does not infer NRVO by aliasing the source to the destination. Nontrivial
+copy/move, destruction, parameter cleanup and exception unwinding are still
+rejected and require separate lifetime support before broader C++/STL admission.
 
 ## Pointer offsets and differences
 

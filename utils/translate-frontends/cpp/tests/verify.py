@@ -209,8 +209,150 @@ def main():
         'constructor-trivial-copy': 'struct R{int n;R(int v):n(v){}};int f(){R a(7);R b=a;b=a;return b.n;}',
         'constructor-record-result': 'struct R{int n;R(int v):n(v){}};R make(){return R(7);}int f(){return make().n;}',
     })
+    core_v2.update({
+        'call-record-recursive': 'struct R{int n;R(int v):n(v){}};R f(int n){if(!n)return R(1);return f(n-1);}int main(){return f(3).n-1;}',
+        'call-record-array-field': 'struct R{int n[2];};R f(){return {{3,5}};}int main(){return f().n[1]-5;}',
+        'call-record-qualified-result': 'struct R{int n;R(int v):n(v){}};const R f(){return R(7);}int main(){R r=f();return r.n-7;}',
+        'call-record-aggregate-argument': 'struct R{int n;};int f(R r){return r.n;}int main(){return f({7})-7;}',
+        'call-record-pointer-alias': 'struct R{int n;};int f(R r,R&source){r.n+=2;return source.n;}int main(){R r{7};return f(r,r)-7;}',
+        'call-record-ordered-result': 'struct R{int a,b;};R f(R*p){return {7,p->a+2};}int main(){R r=f(&r);return r.b-9;}',
+        'call-record-converting-return': 'struct R{int n;R(int v):n(v){}};R f(){return 7;}int main(){return f().n-7;}',
+        'call-record-conditional-result': 'struct R{int n;R(int v):n(v){}};R f(int n){return R(n);}int main(){int n=3;R r=n==3?f(7):f(9);return r.n-7;}',
+        'call-record-comma-result': 'struct R{int n;R(int v):n(v){}};R f(int n){return R(n);}int main(){int n=3;R r=(++n,f(n));return r.n-4;}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
+    # The generated C++17 record calling convention owns parameter/result
+    # objects explicitly. These checks pin NeverC's choice, not a universal
+    # identity guarantee for trivial classes under [class.temporary].
+    call_storage_source = """struct R {
+  int value; R *self;
+  explicit R(int n):value(n),self(this){}
+  R combine(R other) const { return R(value+other.value); }
+  static R build(int n) { return R(n); }
+};
+struct Box { R value; explicit Box(R x):value(x.value){} };
+R make(int n) { return R(n); }
+R forward(int n) { return make(n); }
+R named(int n) { R local(n); return local; }
+R identity(R value) { return value; }
+int read(R value) { return value.value; }
+int constant(const R value) { return value.value; }
+int two(R first,R second) { first.value=1;return second.value; }
+R& alias(R& value) { return value; }
+int main() {
+  R x=make(3);
+  R y=forward(5);
+  R z=x.combine(R(7));
+  Box box(R(11));
+  int first=read(R(13));
+  int second=two(x,x);
+  return first+second;
+}
+"""
+    call_storage = check("v2-record-call-storage", call_storage_source, profile="cpp-core-v2")
+    storage_records = {r["loc"]["line"]: r["id"] for r in call_storage["records"]}
+    rid, bid = storage_records[1], storage_records[7]
+    storage_signatures = {
+        3: ("void", ["ptr:" + rid, "int"]),
+        4: ("void", ["ptr:" + rid, "cptr:" + rid, "ptr:" + rid]),
+        5: ("void", ["ptr:" + rid, "int"]),
+        7: ("void", ["ptr:" + bid, "ptr:" + rid]),
+        8: ("void", ["ptr:" + rid, "int"]),
+        9: ("void", ["ptr:" + rid, "int"]),
+        10: ("void", ["ptr:" + rid, "int"]),
+        11: ("void", ["ptr:" + rid, "ptr:" + rid]),
+        12: ("int", ["ptr:" + rid]),
+        13: ("int", ["ptr:" + rid]),
+        14: ("int", ["ptr:" + rid, "ptr:" + rid]),
+        15: ("ptr:" + rid, ["ptr:" + rid]),
+    }
+    storage_functions = {f["loc"]["line"]: f for f in call_storage["functions"]}
+    storage_by_name = {f["name"]: f for f in call_storage["functions"]}
+    for line, (result, params) in storage_signatures.items():
+        function = storage_functions[line]
+        assert function["result"] == result, function
+        assert [p["type"] for p in function["params"]] == params, function
+    for function in call_storage["functions"]:
+        assert function["result"] not in (rid, bid), function
+        assert all(p["type"] not in (rid, bid) for p in function["params"]), function
+        for node in function["body"]:
+            if node.get("op") == "call":
+                callee = storage_by_name[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]], node
+                if callee["result"] == "void":
+                    assert "target" not in node, node
+            if node.get("op") == "return" and function["result"] == "void":
+                assert "value" not in node, node
+
+    def storage_pointer_object(function, pointer):
+        if pointer["kind"] == "cast":
+            return storage_pointer_object(function, pointer["args"][0])
+        if pointer["kind"] == "address":
+            return storage_place(function, pointer["args"][0])
+        assert pointer["kind"] == "var", pointer
+        values = [n["value"] for n in function["body"] if n.get("op") == "assign"
+                  and n["target"].get("kind") == "var" and n["target"]["name"] == pointer["name"]]
+        if values:
+            assert len(values) == 1, values
+            return storage_pointer_object(function, values[0])
+        assert any(p["name"] == pointer["name"] for p in function["params"]), pointer
+        return ("parameter", pointer["name"])
+
+    def storage_place(function, place):
+        if place["kind"] == "var":
+            return ("object", place["name"])
+        assert place["kind"] == "dereference", place
+        return storage_pointer_object(function, place["args"][0])
+
+    forwarded_function = storage_functions[9]
+    forwarded_calls = [n for n in forwarded_function["body"] if n.get("op") == "call"]
+    assert len(forwarded_calls) == 1 and forwarded_calls[0]["callee"] == storage_functions[8]["name"]
+    assert storage_pointer_object(forwarded_function, forwarded_calls[0]["args"][0]) == (
+        "parameter", forwarded_function["params"][0]["name"])
+    assert not any(v["type"] == rid for v in forwarded_function["locals"]), forwarded_function
+    for line in (4, 5, 8, 9):
+        assert not any(n.get("op") == "assign" and n["value"]["type"] == rid
+                       for n in storage_functions[line]["body"]), storage_functions[line]
+    # Named-local and named-parameter returns retain Clang's selected source
+    # copy/move. The hidden result object must not alias either source object.
+    for line in (10, 11):
+        function = storage_functions[line]
+        copies = [n for n in function["body"] if n.get("op") == "assign" and n["value"]["type"] == rid]
+        assert len(copies) == 1, function
+        assert storage_place(function, copies[0]["target"]) == ("parameter", function["params"][0]["name"])
+        assert storage_place(function, copies[0]["target"]) != storage_place(function, copies[0]["value"])
+    main_storage = next(f for f in call_storage["functions"] if f["name"] == "main")
+    record_locals = [v for v in main_storage["locals"] if v["type"] == rid]
+    assert len(record_locals) == 8, record_locals
+    assert sum(v["type"] == bid for v in main_storage["locals"]) == 1, main_storage
+    copied_arguments = [n for n in main_storage["body"] if n.get("op") == "assign" and n["value"]["type"] == rid]
+    assert len(copied_arguments) == 2, copied_arguments
+    source_object = next(v for v in record_locals if v["loc"]["line"] == 17)
+    assert all(storage_place(main_storage, n["value"]) == ("object", source_object["name"])
+               for n in copied_arguments), copied_arguments
+    twin_call = next(n for n in main_storage["body"] if n.get("op") == "call"
+                     and n["callee"] == storage_functions[14]["name"])
+    twin_objects = [storage_pointer_object(main_storage, a) for a in twin_call["args"]]
+    assert len(set(twin_objects)) == 2 and ("object", source_object["name"]) not in twin_objects, twin_call
+    assert set(twin_objects) == {storage_place(main_storage, n["target"]) for n in copied_arguments}
+    for declaration_line, callee_line in ((17, 8), (18, 9), (19, 4)):
+        local = next(v for v in record_locals if v["loc"]["line"] == declaration_line)
+        invocation = next(n for n in main_storage["body"] if n.get("op") == "call"
+                          and n["callee"] == storage_functions[callee_line]["name"])
+        assert storage_pointer_object(main_storage, invocation["args"][0]) == ("object", local["name"])
+    with tempfile.TemporaryDirectory(prefix="neverc-record-call-storage-relocated-") as temp:
+        relocated = check("record-call-storage-relocated", call_storage_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == call_storage, "call storage identities depend on the absolute root"
+    old_record_source = "struct R{int n;};R identity(R value){return value;}int main(){R r={1};return identity(r).n-1;}"
+    old_records = check("v1-record-value-signatures", old_record_source)
+    old_record_id = old_records["records"][0]["id"]
+    old_identity = next(f for f in old_records["functions"] if f["name"] != "main")
+    assert old_identity["result"] == old_record_id, old_identity
+    assert [p["type"] for p in old_identity["params"]] == [old_record_id], old_identity
+    check("v2-record-parameter-const-write", "struct R{int n;};int f(const R r){r.n=1;return r.n;}",
+          "TR0202", profile="cpp-core-v2")
     constructor_source = """struct R {
   int first, second;
   R *self;
@@ -356,6 +498,15 @@ int main() {
     }.items():
         check("v1-still-rejects-" + name, source, "TR0201")
     v2_rejections = {
+        'record-parameter-expansion': 'struct R{int n[65536];};int ignore(R a,R b,R c,R d){return 0;}int f(){R r;for(int i=0;i<65536;++i)r.n[i]=0;return ignore(r,r,r,r);}',
+        'record-result-fallthrough': 'struct R{int n;};R f(bool b){if(b)return {1};}',
+        'record-copy-constructor': 'struct R{int n;R(int v):n(v){}R(const R&x):n(x.n){}};int f(R x){return x.n;}',
+        'record-move-constructor': 'struct R{int n;R(int v):n(v){}R(R&&x):n(x.n){}};R f(){return R(1);}',
+        'record-destructor': 'struct R{int n;R(int v):n(v){}~R(){}};R f(){return R(1);}',
+        'record-result-reference-binding': 'struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}',
+        'record-result-method-receiver': 'struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}',
+        'record-result-c-export': 'struct R{int n;};extern "C" R exported(){return {1};}',
+        'record-parameter-c-export': 'struct R{int n;};extern "C" int exported(R r){return r.n;}',
         "untyped-assembly-string": 'asm(""); int main(){}',
         "unsupported-pointer-alias": "using Hidden=float*; int main(){}",
         "unused-volatile-alias": "using Hidden=volatile int; int main(){}",

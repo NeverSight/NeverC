@@ -12,7 +12,7 @@ class FunctionLowering {
   Adapter &A;
   FunctionDecl *Function;
   json::Array Parameters, Locals, Body;
-  std::optional<Expression> ThisPointer;
+  std::optional<Expression> ThisPointer, ResultPlace;
   std::map<const Decl *, Expression> Storage;
   std::map<std::string, std::vector<std::string>> Edges;
   // Every breakable construct has an exit; only loops have a continue target.
@@ -316,6 +316,85 @@ class FunctionLowering {
                          {"loc", A.loc(L)}};
     return Value;
   }
+  Expression call(const CallExpr *Call,
+                  std::optional<Expression> Destination = std::nullopt) {
+    auto L = Call->getExprLoc();
+    auto T = type(Call->getType(), L, true);
+    auto *Callee = Call->getDirectCallee();
+    const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Callee);
+    auto Mapping = A.mapping(Call);
+    if (!Mapping.empty()) {
+      json::Array Args;
+      for (const auto *Arg : Call->arguments())
+        Args.push_back(expression(Arg));
+      auto Result = temporary(T, L);
+      Body.push_back(json::Object{{"op", "mapped_call"},
+                                  {"mapping", Mapping},
+                                  {"args", std::move(Args)},
+                                  {"target", json::Object(Result)},
+                                  {"loc", A.loc(L)}});
+      return Result;
+    }
+    if (!Callee ||
+        (!Callee->hasBody() &&
+         (!A.S.project() ||
+          Callee->getFormalLinkage() == Linkage::Internal)) ||
+        (Method && (!A.S.coreV2() || !ordinaryMethod(Method))))
+      reject(L, "call",
+             "Call target is not a supported defined function.");
+    if (Call->getNumArgs() != Callee->getNumParams())
+      reject(L, "call", "Call and source parameter counts differ.");
+    json::Array Args;
+    Expression Result;
+    bool HasRecordResult = recordValue(Callee->getReturnType());
+    if (HasRecordResult) {
+      Result = Destination ? std::move(*Destination)
+                           : recordTemporary(Callee->getReturnType(), L);
+      if (Result.getString("type") != type(Callee->getReturnType(), L))
+        reject(L, "call result", "Call and result destination types differ.");
+      Args.push_back(snapshot(
+          address(Result, Callee->getReturnType().getUnqualifiedType(), L), L));
+    } else if (Destination) {
+      reject(L, "call result", "Only record results accept a destination.");
+    }
+    if (Method) {
+      const auto *Reference = directMethodReference(Call);
+      if (!Reference)
+        reject(L, "method call", "Methods require a direct named callee.");
+      if (const auto *Member = dyn_cast<MemberExpr>(Reference)) {
+        const auto *Base = Member->getBase();
+        if (Method->isStatic()) {
+          discard(Base);
+        } else {
+          // C++17 evaluates the receiver before explicit arguments. Capture
+          // its pointer now: an argument may reseat a source pointer alias.
+          // Taking the address also avoids reading unrelated record fields.
+          auto Receiver = Member->isArrow()
+                              ? expression(Base)
+                              : address(lvalue(Base), Base->getType(), L);
+          Args.push_back(snapshot(
+              cast(std::move(Receiver), type(Method->getThisType(), L), L), L));
+        }
+      }
+    }
+    for (unsigned I = 0; I < Call->getNumArgs(); ++I)
+      Args.push_back(argument(Call->getArg(I),
+                              Callee->getParamDecl(I)->getType()));
+    chargeCall(Args, L);
+    json::Object Instruction{{"op", "call"},
+                             {"callee", A.name(Callee)},
+                             {"args", std::move(Args)},
+                             {"loc", A.loc(L)}};
+    auto ResultType = type(Callee->getReturnType(), L, true);
+    if (!HasRecordResult && ResultType != "void") {
+      Result = temporary(ResultType, L);
+      Instruction["target"] = json::Object(Result);
+    }
+    Body.push_back(std::move(Instruction));
+    if (Callee->getReturnType()->isLValueReferenceType())
+      return dereference(std::move(Result), L);
+    return Result;
+  }
   Expression expression(const Expr *E) {
     auto L = E->getExprLoc();
     auto T = type(E->getType(), L, true);
@@ -480,73 +559,8 @@ class FunctionLowering {
       reject(L, "overloaded operator",
              "Only implicit trivial aggregate copy assignment is supported.");
     }
-    if (const auto *Call = dyn_cast<CallExpr>(E)) {
-      auto *Callee = Call->getDirectCallee();
-      const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Callee);
-      auto Mapping = A.mapping(Call);
-      if (!Mapping.empty()) {
-        json::Array Args;
-        for (const auto *Arg : Call->arguments())
-          Args.push_back(expression(Arg));
-        auto Result = temporary(T, L);
-        Body.push_back(json::Object{{"op", "mapped_call"},
-                                    {"mapping", Mapping},
-                                    {"args", std::move(Args)},
-                                    {"target", json::Object(Result)},
-                                    {"loc", A.loc(L)}});
-        return Result;
-      }
-      if (!Callee ||
-          (!Callee->hasBody() &&
-           (!A.S.project() ||
-            Callee->getFormalLinkage() == Linkage::Internal)) ||
-          (Method && (!A.S.coreV2() || !ordinaryMethod(Method))))
-        reject(L, "call",
-               "Call target is not a supported defined function.");
-      json::Array Args;
-      if (Method) {
-        const auto *Reference = directMethodReference(Call);
-        if (!Reference)
-          reject(L, "method call", "Methods require a direct named callee.");
-        if (const auto *Member = dyn_cast<MemberExpr>(Reference)) {
-          const auto *Base = Member->getBase();
-          if (Method->isStatic()) {
-            discard(Base);
-          } else {
-            // C++17 evaluates the receiver before explicit arguments. Capture
-            // its pointer now: an argument may reseat a source pointer alias.
-            // Taking the address also avoids reading unrelated record fields.
-            auto Receiver = Member->isArrow()
-                                ? expression(Base)
-                                : address(lvalue(Base), Base->getType(), L);
-            Args.push_back(snapshot(
-                cast(std::move(Receiver), type(Method->getThisType(), L), L), L));
-          }
-        }
-      }
-      for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
-        const auto *Arg = Call->getArg(I);
-        auto ParameterType = Callee->getParamDecl(I)->getType();
-        if (ParameterType->isLValueReferenceType())
-          Args.push_back(snapshot(bind(Arg, ParameterType), Arg->getExprLoc()));
-        else
-          Args.push_back(expression(Arg));
-      }
-      json::Object Instruction{{"op", "call"},
-                               {"callee", A.name(Callee)},
-                               {"args", std::move(Args)},
-                               {"loc", A.loc(L)}};
-      Expression Result;
-      auto ResultType = type(Callee->getReturnType(), L, true);
-      if (ResultType != "void") {
-        Result = temporary(ResultType, L);
-        Instruction["target"] = json::Object(Result);
-      }
-      Body.push_back(std::move(Instruction));
-      if (Callee->getReturnType()->isLValueReferenceType())
-        return dereference(std::move(Result), L);
-      return Result;
-    }
+    if (const auto *Call = dyn_cast<CallExpr>(E))
+      return call(Call);
     if (const auto *U = dyn_cast<UnaryOperator>(E)) {
       if (A.S.coreV2() && U->getOpcode() == UO_AddrOf)
         return address(lvalue(U->getSubExpr()), U->getSubExpr()->getType(), L);
@@ -700,10 +714,55 @@ class FunctionLowering {
     }
     assign(std::move(Place), A.zero(T, L), L);
   }
+  bool recordValue(QualType T) const {
+    return A.S.coreV2() && T->isRecordType();
+  }
+  QualType parameterType(QualType T) const {
+    return recordValue(T) ? A.Context.getPointerType(T.getUnqualifiedType()) : T;
+  }
+  Expression parameter(QualType T, SourceLocation L) {
+    auto Name = Prefix + "p" + std::to_string(++Serial);
+    auto Kind = type(T, L);
+    auto Place = variable(Name, Kind, L);
+    A.chargeExpansion(1 + generatedNodes(Place), L);
+    Parameters.push_back(json::Object{
+        {"name", Name}, {"type", Kind}, {"loc", A.loc(L)}});
+    return Place;
+  }
+  Expression recordTemporary(QualType T, SourceLocation L) {
+    auto Kind = type(T, L);
+    // These new caller-owned objects must count against the same bounded
+    // expansion budget as their initialization and call instructions.
+    A.chargeExpansion(A.storageUnits(T), L);
+    return temporary(Kind, L);
+  }
+  Expression argument(const Expr *Arg, QualType ParameterType) {
+    auto L = Arg->getExprLoc();
+    if (ParameterType->isLValueReferenceType())
+      return snapshot(bind(Arg, ParameterType), L);
+    if (recordValue(ParameterType)) {
+      // A by-value parameter is a separate object even when the same lvalue
+      // supplies multiple arguments. A prvalue constructs here directly; the
+      // selected implicit copy/move expression retains intentional copies.
+      auto Place = recordTemporary(ParameterType, L);
+      initialize(Place, Arg, L);
+      return snapshot(address(std::move(Place),
+                              ParameterType.getUnqualifiedType(), L), L);
+    }
+    return expression(Arg);
+  }
+  void chargeCall(const json::Array &Args, SourceLocation L) {
+    std::size_t Nodes = 1;
+    for (const auto &Arg : Args)
+      Nodes += generatedNodes(*Arg.getAsObject());
+    A.chargeExpansion(Nodes, L);
+  }
   Expression materialize(const Expr *Init, SourceLocation L) {
     // One addressable destination per evaluation. Reusing an AST node (for
     // example an array filler) must not reuse a previously constructed object.
-    auto Place = temporary(type(Init->getType(), L), L);
+    auto Place = recordValue(Init->getType())
+                     ? recordTemporary(Init->getType(), L)
+                     : temporary(type(Init->getType(), L), L);
     initialize(Place, Init, L);
     return Place;
   }
@@ -744,17 +803,10 @@ class FunctionLowering {
       initializeZero(Place, T, L);
     json::Array Args;
     Args.push_back(snapshot(address(std::move(Place), T.getUnqualifiedType(), L), L));
-    for (unsigned I = 0; I < C->getNumArgs(); ++I) {
-      const auto *Arg = C->getArg(I);
-      auto Parameter = Constructor->getParamDecl(I)->getType();
-      Args.push_back(Parameter->isLValueReferenceType()
-                         ? snapshot(bind(Arg, Parameter), L)
-                         : expression(Arg));
-    }
-    std::size_t Nodes = 1;
-    for (const auto &Arg : Args)
-      Nodes += generatedNodes(*Arg.getAsObject());
-    A.chargeExpansion(Nodes, L);
+    for (unsigned I = 0; I < C->getNumArgs(); ++I)
+      Args.push_back(argument(C->getArg(I),
+                              Constructor->getParamDecl(I)->getType()));
+    chargeCall(Args, L);
     Body.push_back(json::Object{{"op", "call"},
                                 {"callee", A.name(Constructor)},
                                 {"args", std::move(Args)},
@@ -832,6 +884,10 @@ class FunctionLowering {
       return;
     }
     if (A.S.coreV2() && Init->isPRValue() && Init->getType()->isRecordType()) {
+      if (const auto *Call = dyn_cast<CallExpr>(Init)) {
+        call(Call, std::move(Place));
+        return;
+      }
       if (const auto *B = dyn_cast<BinaryOperator>(Init);
           B && B->getOpcode() == BO_Comma) {
         discard(B->getLHS());
@@ -1067,7 +1123,9 @@ class FunctionLowering {
       }
     } else if (const auto *R = dyn_cast<ReturnStmt>(S)) {
       json::Object Return{{"op", "return"}, {"loc", A.loc(L)}};
-      if (R->getRetValue()) {
+      if (R->getRetValue() && ResultPlace) {
+        initialize(*ResultPlace, R->getRetValue(), L);
+      } else if (R->getRetValue()) {
         auto Value = Function->getReturnType()->isLValueReferenceType()
                          ? bind(R->getRetValue(), Function->getReturnType())
                          : expression(R->getRetValue());
@@ -1171,26 +1229,22 @@ public:
   json::Object run() {
     auto L = Function->getLocation();
     auto ResultType = type(Function->getReturnType(), L, true);
+    if (recordValue(Function->getReturnType()))
+      ResultPlace = dereference(
+          parameter(parameterType(Function->getReturnType()), L), L);
     if (const auto *Method = dyn_cast<CXXMethodDecl>(Function);
         Method && !Method->isStatic()) {
       if (!A.S.coreV2() ||
           (!ordinaryMethod(Method) &&
            !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method))))
         reject(L, "method", "Unsupported instance-method or constructor definition.");
-      auto Name = Prefix + "p" + std::to_string(++Serial);
-      auto T = type(Method->getThisType(), L);
-      Parameters.push_back(json::Object{
-          {"name", Name}, {"type", T}, {"loc", A.loc(L)}});
-      ThisPointer = variable(Name, T, L);
+      ThisPointer = parameter(Method->getThisType(), L);
     }
     for (const auto *P : Function->parameters()) {
-      auto Name = Prefix + "p" + std::to_string(++Serial);
-      auto T = type(P->getType(), P->getLocation());
-      Parameters.push_back(json::Object{
-          {"name", Name}, {"type", T}, {"loc", A.loc(P->getLocation())}});
-      auto Place = variable(Name, T, P->getLocation());
+      auto Place = parameter(parameterType(P->getType()), P->getLocation());
       Storage.emplace(P->getCanonicalDecl(),
-                      P->getType()->isLValueReferenceType()
+                      (P->getType()->isLValueReferenceType() ||
+                       recordValue(P->getType()))
                           ? dereference(std::move(Place), P->getLocation())
                           : std::move(Place));
     }
@@ -1223,7 +1277,7 @@ public:
     }
     return json::Object{
         {"name", A.name(Function)},
-        {"result", ResultType},
+        {"result", ResultPlace ? "void" : ResultType},
         {"internal", Function->getFormalLinkage() == Linkage::Internal},
         {"c_export", Function->isExternC() &&
                          Function->getFormalLinkage() != Linkage::Internal},

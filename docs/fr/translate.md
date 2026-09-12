@@ -35,6 +35,8 @@ Core v2 prend en charge les fonctions membres nommées non virtuelles des types 
 
 Core v2 prend aussi en charge les constructeurs ordinaires définis par l’utilisateur pour les enregistrements à disposition standard, avec copie et destruction triviales. Objets locaux, champs et éléments de tableau sont construits directement dans leur stockage final, avec initialisation des champs dans l’ordre de déclaration. Les constructeurs explicitement default, délégués ou de copie/déplacement définis par l’utilisateur, les destructeurs, le nettoyage et les exceptions restent exclus.
 
+Core v2 crée un objet distinct pour chaque paramètre de type enregistrement passé par valeur et écrit le résultat directement dans la destination de l’appelant. Les constructeurs et méthodes suivent les mêmes règles ; les copies requises et les alias des références sont conservés. Ce comportement est le choix de NeverC pour les enregistrements triviaux acceptés, et non une garantie universelle d’adresse en C++17. La copie et le déplacement non triviaux, la destruction, le nettoyage et la prise en charge complète de la STL restent en développement.
+
 ## Projets à plusieurs fichiers
 
 Sélectionnez explicitement les unités de traduction dans une base de données de compilation et indiquez le répertoire racine du projet. Le frontend intégré analyse chaque unité séparément ; la fusion vérifie les définitions, la liaison, les types partagés et le respect de la règle de définition unique (ODR) de façon conservatrice.

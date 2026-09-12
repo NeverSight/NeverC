@@ -35,6 +35,8 @@ Core v2 supports named nonvirtual member functions of the admitted records, incl
 
 Core v2 also supports ordinary user-provided constructors for standard-layout records with trivial copying and destruction. Locals, record fields and array elements are constructed directly in their final storage; fields initialize in declaration order. Explicitly defaulted/delegating constructors, user-defined copy/move constructors, destructors, cleanup and exceptions remain unsupported.
 
+Core v2 gives each by-value record parameter a separate object and writes record results directly into the caller’s destination. This convention also covers constructors and methods; source-required copies remain copies, while references retain aliases. It is NeverC’s chosen behavior for the admitted trivial records, not a universal C++17 address guarantee. Nontrivial copy/move, destruction, cleanup and full STL support remain under development.
+
 ## Multi-file projects
 
 Select the translation units explicitly from a compilation database and set the project root directory. The built-in frontend analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).

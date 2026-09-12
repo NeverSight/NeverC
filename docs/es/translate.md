@@ -35,6 +35,8 @@ Core v2 admite funciones miembro con nombre no virtuales de los tipos de registr
 
 Core v2 también admite constructores ordinarios definidos por el usuario para registros con disposición estándar, copia trivial y destrucción trivial. Los objetos locales, campos y elementos de array se construyen directamente en su almacenamiento final; los campos se inicializan en orden de declaración. Siguen excluidos los constructores explícitamente default, delegados y de copia/movimiento definidos por el usuario, los destructores, la limpieza y las excepciones.
 
+Core v2 crea un objeto independiente para cada parámetro de registro pasado por valor y escribe los resultados directamente en el destino del llamador. Los constructores y métodos siguen las mismas reglas; se conservan las copias necesarias y los alias de las referencias. Es el comportamiento elegido por NeverC para los registros triviales admitidos, no una garantía universal de direcciones en C++17. La copia y el movimiento no triviales, la destrucción, la limpieza y el soporte completo de STL siguen en desarrollo.
+
 ## Proyectos de varios archivos
 
 Seleccione explícitamente las unidades de traducción en una base de datos de compilación y especifique el directorio raíz del proyecto. El frontend integrado analiza cada unidad por separado; la fusión verifica definiciones, enlace, tipos compartidos y el cumplimiento de la regla de una sola definición (ODR) mediante comprobaciones conservadoras.

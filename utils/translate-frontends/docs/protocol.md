@@ -130,9 +130,10 @@ See the [source and emission contract](cpp-core-v2.md#pointer-offsets-and-differ
 ## Core v2 method calls
 
 Ordinary methods reuse the existing function/`call` representation. A nonstatic
-method has an explicit first `ptr:<record>` or `cptr:<record>` parameter; callers
-capture the receiver before explicit arguments. Static methods have no hidden
-parameter, while any written object expression is evaluated/discarded first.
+method has an explicit `ptr:<record>` or `cptr:<record>` receiver parameter,
+after a record-result pointer when present; callers capture the receiver before
+explicit arguments. Static methods have no receiver parameter, while any written
+object expression is evaluated/discarded first.
 The consumer checks the complete ordinary signature, including receiver type,
 qualifications and arity. No special member-call node, implicit receiver or
 unchecked class ABI is introduced. Method names preserve canonical declaration
@@ -149,9 +150,27 @@ The frontend places field initialization in declaration order before the body.
 Local, field and array-element construction passes the actual destination address;
 array fillers produce one call per element. Direct initialization and temporary
 materialization do not insert an intermediate record copy. Intentional source
-copies and permitted trivial class function argument/result copies retain their
-existing value representation. No destruction or cleanup protocol is implied.
+copies retain their existing value representation. Record parameters/results
+use the explicit call-storage convention below. No destruction or cleanup protocol is implied.
 See the [constructor and lifetime contract](cpp-core-v2.md#ordinary-record-constructors).
+
+## Core v2 record call storage
+
+For a source record result, the wire function result is `void` and the first
+parameter is mutable `ptr:<record>` result storage. An instance receiver follows
+it; constructors retain only their existing destination pointer. Each by-value
+record parameter is normalized to mutable `ptr:<record>` for a distinct object
+initialized by the caller. Source references continue to carry aliases and source
+constness remains checked before lowering. No new IR node is introduced.
+
+Record-result calls omit `target` and pass the actual destination address;
+record returns initialize that destination and emit a value-less `return`.
+Nested direct returns forward the same place. Intentional lvalue argument copies
+and named-object return copies use ordinary checked record assignments; their
+source and destination remain distinct. Signatures, arity, pointee identities and
+record layouts are validated by the existing consumer. This convention applies
+to core v2 only and does not admit a foreign ABI, nontrivial copying/destruction,
+cleanup or exception unwinding. See the [source contract](cpp-core-v2.md#record-arguments-and-results).
 
 ## Core v2 layout evidence
 

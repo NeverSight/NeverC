@@ -35,6 +35,8 @@ Core v2 supporta le funzioni membro nominate non virtuali degli tipi record amme
 
 Core v2 supporta anche costruttori ordinari definiti dall’utente per record con layout standard, copia e distruzione triviali. Oggetti locali, campi ed elementi di array vengono costruiti direttamente nella memoria finale; i campi sono inizializzati nell’ordine di dichiarazione. Restano esclusi costruttori esplicitamente default, deleganti e di copia/spostamento definiti dall’utente, distruttori, operazioni di pulizia ed eccezioni.
 
+Core v2 crea un oggetto distinto per ogni parametro record passato per valore e scrive i risultati direttamente nella destinazione del chiamante. Le stesse regole valgono per costruttori e metodi; le copie richieste e gli alias dei riferimenti vengono conservati. È il comportamento scelto da NeverC per i record triviali supportati, non una garanzia universale sugli indirizzi in C++17. Copia e spostamento non triviali, distruzione, pulizia e supporto completo alla STL restano in sviluppo.
+
 ## Progetti con più file
 
 Selezionare esplicitamente le unità di traduzione da un database di compilazione e specificare la directory radice del progetto. Il frontend integrato analizza ogni unità separatamente; la fusione verifica definizioni, collegamento, tipi condivisi e il rispetto della regola di definizione unica (ODR) mediante verifiche conservative.
