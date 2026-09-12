@@ -10,6 +10,8 @@ Experimental `neverc translate` emits reviewable `.nc` source through `cpp-core-
 
 Core v2 supports mutable namespace-scope integer, boolean and enum globals with zero initialization or a fully checked constant initializer. Their storage and addresses persist across calls; references, pointers and parameter defaults access the same variable. An `extern` declaration must resolve to a definition in this source unit. Const globals remain read-only. Dynamic initialization, global records/arrays/pointers/references, thread-local storage and static locals retain their separate restrictions.
 
+Core v2 supports C++17 range-based `for` over supported fixed arrays and source-defined ranges with resolved member or ADL `begin/end` calls. Value/reference loop variables, record iterators and different sentinel types preserve ordinary call and lifetime rules. Range initialization and `begin/end` run once; iteration objects are destroyed before increment or exit, including `continue`, `break` and `return`. Templates, standard headers, STL containers, structured bindings and C++20 range initializers remain outside this increment. Native validation requires CI from the implementing revision.
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

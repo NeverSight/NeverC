@@ -3329,6 +3329,282 @@ int main(){return read();}
     check("v1-mutable-global-zero", "int value;int main(){return value;}", "TR0201")
     check("v1-mutable-global-write", "int value=1;int main(){return ++value;}", "TR0201")
 
+    range_for_source = """int tick(int v){return v;}
+struct Element {
+ int n;
+ Element(int v):n(v){}
+ Element(const Element&e):n(e.n){}
+ ~Element(){tick(n);}
+};
+struct Body {
+ Body(){tick(1);}
+ ~Body(){tick(2);}
+};
+struct Iterator {
+ int*p;
+ Iterator(int*q):p(q){}
+ ~Iterator(){tick(3);}
+ Iterator&operator++(){++p;return *this;}
+ Element operator*(){return Element(*p);}
+ bool operator!=(const Iterator&r)const{return p!=r.p;}
+};
+struct Sentinel {
+ int*p;
+ Sentinel(int*q):p(q){}
+ ~Sentinel(){tick(4);}
+};
+bool operator!=(const Iterator&i,const Sentinel&s){return i.p!=s.p;}
+struct Range {
+ int a[2];
+ Range():a{1,2}{}
+ ~Range(){tick(5);}
+ Iterator begin(){return Iterator(a);}
+ Iterator end(){return Iterator(a+2);}
+};
+Range make(){return Range();}
+struct Different {
+ int a[2];
+ Iterator begin() {return Iterator(a);}
+ Sentinel end(){return Sentinel(a+2);}
+};
+void normal(){for(auto&&e:make()){Body b;tick(e.n);}}
+void breakPath(){for(auto&&e:make()){Body b;if(e.n)break;tick(e.n);}}
+void continuePath(){for(auto&&e:make()){Body b;if(e.n)continue;tick(e.n);}}
+int returnPath(){for(auto&&e:make()){Body b;if(e.n)return e.n;tick(e.n);}return 0;}
+void copied(){Element items[2]={Element(1),Element(2)};for(Element e:items)tick(e.n);}
+void aliases(){int a[2]={1,2};for(int&v:a)++v;}
+void different(){for(auto&&e:Different{{1,2}})tick(e.n);}
+using Array=int[2];
+void arrayTemporary(){for(int v:Array{1,2})tick(v);}
+void memberTemporary(){for(int v:Range().a)tick(v);}
+namespace Adl {
+ struct R{int a[2];};
+ int*begin(R&r){return r.a;}
+ int*end(R&r){return r.a+2;}
+}
+void adl(){for(int v:Adl::R{{1,2}})tick(v);}
+"""
+    range_for = check("v2-range-for-protocol", range_for_source, profile="cpp-core-v2")
+    rf_functions = {f["name"]: f for f in range_for["functions"]}
+
+    def rf_line(prefix):
+        found = [i for i, line in enumerate(range_for_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def rf_record(prefix):
+        found = [r["id"] for r in range_for["records"] if r["loc"]["line"] == rf_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def rf_function(prefix, result, parameters):
+        found = [f for f in range_for["functions"] if f["loc"]["line"] == rf_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    rf_element = rf_record("struct Element {")
+    rf_body = rf_record("struct Body {")
+    rf_iterator = rf_record("struct Iterator {")
+    rf_sentinel = rf_record("struct Sentinel {")
+    rf_range = rf_record("struct Range {")
+    rf_different = rf_record("struct Different {")
+    rf_adl = rf_record(" struct R{")
+    rf_tick = rf_function("int tick(", "int", ["int"])["name"]
+    rf_make = rf_function("Range make(", "void", ["ptr:"+rf_range])["name"]
+    rf_begin = rf_function(" Iterator begin(){return Iterator(a);}", "void", ["ptr:"+rf_iterator, "ptr:"+rf_range])["name"]
+    rf_end = rf_function(" Iterator end(){return Iterator(a+2);}", "void", ["ptr:"+rf_iterator, "ptr:"+rf_range])["name"]
+    rf_increment = rf_function(" Iterator&operator++(", "ptr:"+rf_iterator, ["ptr:"+rf_iterator])["name"]
+    rf_dereference = rf_function(" Element operator*(", "void", ["ptr:"+rf_element, "ptr:"+rf_iterator])["name"]
+    rf_compare = rf_function(" bool operator!=(", "bool", ["cptr:"+rf_iterator, "cptr:"+rf_iterator])["name"]
+    rf_body_ctor = rf_function(" Body(){", "void", ["ptr:"+rf_body])["name"]
+    rf_element_ctor = rf_function(" Element(int", "void", ["ptr:"+rf_element, "int"])["name"]
+    rf_element_copy = rf_function(" Element(const", "void", ["ptr:"+rf_element, "cptr:"+rf_element])["name"]
+    rf_element_dtor, rf_body_dtor = rf_element+"_destroy", rf_body+"_destroy"
+    rf_iterator_dtor, rf_range_dtor = rf_iterator+"_destroy", rf_range+"_destroy"
+    normal = rf_function("void normal(", "void", [])
+    normal_calls = gc_calls(normal)
+    normal_order = [rf_make, rf_begin, rf_end, rf_compare, rf_dereference, rf_body_ctor,
+                    rf_tick, rf_body_dtor, rf_element_dtor, rf_increment,
+                    rf_iterator_dtor, rf_iterator_dtor, rf_range_dtor]
+    assert [c["callee"] for c in normal_calls] == normal_order, normal
+    made, begun, ended, compared, dereferenced, body_constructed = normal_calls[:6]
+    range_place = ve_pointer(normal, made["args"][0])
+    begin_place, end_place = [ve_pointer(normal, c["args"][0]) for c in (begun, ended)]
+    assert begin_place != end_place
+    assert [ve_pointer(normal, c["args"][1]) for c in (begun, ended)] == [range_place]*2
+    assert [ve_pointer(normal, a) for a in compared["args"]] == [begin_place, end_place]
+    assert ve_pointer(normal, dereferenced["args"][1]) == begin_place
+    assert ve_pointer(normal, normal_calls[9]["args"][0]) == begin_place
+    assert [ve_pointer(normal, c["args"][0]) for c in normal_calls[10:]] == [end_place, begin_place, range_place]
+    assert ve_pointer(normal, normal_calls[7]["args"][0]) == ve_pointer(normal, body_constructed["args"][0])
+    assert ve_pointer(normal, normal_calls[8]["args"][0]) == ve_pointer(normal, dereferenced["args"][0])
+    assert [sum(v["type"] == t for v in normal["locals"])
+            for t in (rf_range, rf_iterator, rf_element, rf_body)] == [1, 2, 1, 1]
+
+    # Explore one iteration and the exit using public IR control flow. Boolean
+    # stores resolve cleanup guards; unknown source conditions explore both arms.
+    # This checks effects on abrupt edges as well as the normal instruction list.
+    def rf_paths(function):
+        body = function["body"]
+        labels = {n["label"]: i for i, n in enumerate(body) if n["op"] == "label"}
+        def known(expr, values):
+            if expr["kind"] == "literal" and expr["type"] == "bool":
+                return expr["value"]
+            if expr["kind"] == "cast":
+                return known(expr["args"][0], values)
+            if expr["kind"] == "var":
+                return values.get(expr["name"])
+            return None
+        work, paths = [(0, {}, (), 0, 0)], set()
+        while work:
+            pc, values, calls, comparisons, steps = work.pop()
+            assert steps < len(body)*4, (function["name"], pc, calls)
+            node = body[pc]
+            op = node["op"]
+            if op == "return":
+                paths.add(calls)
+                continue
+            if op == "assign" and node["target"]["kind"] == "var":
+                values = dict(values, **{node["target"]["name"]: known(node["value"], values)})
+            if op == "call":
+                calls += (node["callee"],)
+                target_value = None
+                if node["callee"] == rf_compare:
+                    comparisons += 1
+                    assert comparisons <= 2, calls
+                    target_value = comparisons == 1
+                if "target" in node:
+                    values = dict(values, **{node["target"]["name"]: target_value})
+            if op == "branch":
+                condition = known(node["condition"], values)
+                choices = (True, False) if condition is None else (condition,)
+                for choice in choices:
+                    assert isinstance(choice, bool), (node, choice)
+                    work.append((labels[node["true" if choice else "false"]], values,
+                                 calls, comparisons, steps+1))
+            else:
+                work.append((labels[node["label"]] if op == "jump" else pc+1,
+                             values, calls, comparisons, steps+1))
+        return paths
+
+    prefix = (rf_make, rf_begin, rf_end, rf_compare, rf_dereference, rf_body_ctor)
+    iteration_cleanup = (rf_body_dtor, rf_element_dtor)
+    range_cleanup = (rf_iterator_dtor, rf_iterator_dtor, rf_range_dtor)
+    normal_path = prefix+(rf_tick,)+iteration_cleanup+(rf_increment, rf_compare)+range_cleanup
+    assert rf_paths(normal) == {normal_path}
+    assert rf_paths(rf_function("void breakPath(", "void", [])) == {
+        normal_path, prefix+iteration_cleanup+range_cleanup}
+    assert rf_paths(rf_function("void continuePath(", "void", [])) == {
+        normal_path, prefix+iteration_cleanup+(rf_increment, rf_compare)+range_cleanup}
+    assert rf_paths(rf_function("int returnPath(", "int", [])) == {
+        normal_path, prefix+iteration_cleanup+range_cleanup}
+
+    copied = rf_function("void copied(", "void", [])
+    copied_calls = gc_calls(copied)
+    assert [c["callee"] for c in copied_calls] == [rf_element_ctor]*2+[rf_element_copy, rf_tick]+[rf_element_dtor]*3
+    copy_place = ve_pointer(copied, copied_calls[2]["args"][0])
+    assert ve_pointer(copied, copied_calls[4]["args"][0]) == copy_place
+    arrays = [v for v in copied["locals"] if v["type"] == "arr:2:"+rf_element]
+    assert len(arrays) == 1 and sum(v["type"] == rf_element for v in copied["locals"]) == 1
+    aliases = rf_function("void aliases(", "void", [])
+    assert not gc_calls(aliases)
+    assert any(n["op"] == "assign" and n["target"]["kind"] == "dereference"
+               and n["target"]["type"] == "int" for n in aliases["body"])
+    different = rf_function("void different(", "void", [])
+    different_begin = rf_function(" Iterator begin() {", "void", ["ptr:"+rf_iterator, "ptr:"+rf_different])["name"]
+    different_end = rf_function(" Sentinel end(){", "void", ["ptr:"+rf_sentinel, "ptr:"+rf_different])["name"]
+    different_compare = rf_function("bool operator!=(", "bool", ["cptr:"+rf_iterator, "cptr:"+rf_sentinel])["name"]
+    assert [c["callee"] for c in gc_calls(different)] == [different_begin, different_end,
+        different_compare, rf_dereference, rf_tick, rf_element_dtor, rf_increment,
+        rf_sentinel+"_destroy", rf_iterator_dtor]
+    array_temporary = rf_function("void arrayTemporary(", "void", [])
+    assert [c["callee"] for c in gc_calls(array_temporary)] == [rf_tick]
+    assert sum(v["type"] == "arr:2:int" for v in array_temporary["locals"]) == 1
+    range_ctor = rf_function(" Range():", "void", ["ptr:"+rf_range])["name"]
+    member_temporary = rf_function("void memberTemporary(", "void", [])
+    assert [c["callee"] for c in gc_calls(member_temporary)] == [range_ctor, rf_tick, rf_range_dtor]
+    adl_begin = rf_function(" int*begin(R&", "ptr:int", ["ptr:"+rf_adl])["name"]
+    adl_end = rf_function(" int*end(R&", "ptr:int", ["ptr:"+rf_adl])["name"]
+    assert [c["callee"] for c in gc_calls(rf_function("void adl(", "void", []))] == [adl_begin, adl_end, rf_tick]
+    for function in range_for["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in rf_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-range-for-relocated-") as temp:
+        relocated = check("v2-range-for-relocated", range_for_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == range_for, "range-for identities depend on the absolute root"
+
+    range_for_positive = {
+        'array-value': 'int main(){int a[2]={1,2},n=0;for(int v:a)n+=v;return n-3;}',
+        'array-reference': 'int main(){int a[2]={1,2};for(int&v:a)++v;return a[0]+a[1]-5;}',
+        'array-forward-reference': 'int main(){int a[2]={1,2};for(auto&&v:a)++v;return a[0]-2;}',
+        'const-array': 'int main(){const int a[2]={1,2};int n=0;for(const auto&v:a)n+=v;return n-3;}',
+        'enum-array': 'enum class E:unsigned char{a=1,b=2};int main(){E a[2]={E::a,E::b};int n=0;for(E e:a)n+=static_cast<int>(e);return n-3;}',
+        'multidimensional': 'int main(){int a[2][2]={{1,2},{3,4}},n=0;for(auto&row:a)for(int&v:row)n+=v;return n-10;}',
+        'array-temporary': 'using A=int[2];int main(){int n=0;for(int v:A{1,2})n+=v;return n-3;}',
+        'record-member-temporary': 'struct R{int a[2];~R(){}};int main(){int n=0;for(int v:R{{1,2}}.a)n+=v;return n-3;}',
+        'member-range': 'struct R{int a[2];int*begin(){return a;}int*end(){return a+2;}};int main(){int n=0;for(int v:R{{1,2}})n+=v;return n-3;}',
+        'const-member-range': 'struct R{int a[2];const int*begin()const{return a;}const int*end()const{return a+2;}};int main(){const R r{{1,2}};int n=0;for(int v:r)n+=v;return n-3;}',
+        'adl-range': 'namespace N{struct R{int a[2];};int*begin(R&r){return r.a;}int*end(R&r){return r.a+2;}}int main(){int n=0;for(int v:N::R{{1,2}})n+=v;return n-3;}',
+        'adl-single-member-name': 'namespace N{struct R{int a[2];int begin;};int*begin(R&r){return r.a;}int*end(R&r){return r.a+2;}}int main(){int n=0;for(int v:N::R{{1,2},0})n+=v;return n-3;}',
+        'defaulted-begin-end': 'int count;int next(){return ++count;}struct R{int a[2];int*begin(int n=next()){return a;}int*end(int n=next()){return a+2;}};int main(){for(int v:R{{1,2}}){}return count-2;}',
+        'member-body-this': 'struct R{int a[2];int sum()const{int n=0;for(int v:a)n+=v;return n;}};int main(){return R{{1,2}}.sum()-3;}',
+        'constructor-body': 'struct R{int n;R(){n=0;int a[2]={1,2};for(int v:a)n+=v;}};int main(){return R().n-3;}',
+        'destructor-body': 'int count;struct R{int a[2];~R(){for(int v:a)count+=v;}};int main(){{R r{{1,2}};}return count-3;}',
+        'constexpr-body': 'constexpr int sum(){int a[2]={1,2},n=0;for(int v:a)n+=v;return n;}static_assert(sum()==3);int main(){return sum()-3;}',
+        'nested-switch': 'int main(){int a[2]={1,2},n=0;for(int v:a){switch(v){case 1:continue;default:break;}n+=v;}return n-2;}',
+        'empty-range': 'struct R{int*b;int*e;int*begin(){return b;}int*end(){return e;}};int main(){for(int v:R{nullptr,nullptr})return 1;return 0;}',
+        'user-loop-names': 'int main(){int range=4,begin=5,end=6,a[1]={1};for(int v:a)range+=v;return range+begin+end-16;}',
+        'record-iterator': 'struct I{int*p;I&operator++(){++p;return *this;}int&operator*(){return *p;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[2];I begin(){return {a};}I end(){return {a+2};}};int main(){int n=0;for(int v:R{{1,2}})n+=v;return n-3;}',
+        'different-sentinel': 'struct S{int*p;};struct I{int*p;I&operator++(){++p;return *this;}int&operator*(){return *p;}bool operator!=(const I&r)const{return p!=r.p;}};bool operator!=(const I&i,const S&s){return i.p!=s.p;}struct R{int a[2];I begin(){return {a};}S end(){return {a+2};}};int main(){int n=0;for(int v:R{{1,2}})n+=v;return n-3;}',
+        'copied-element': 'struct E{int n;E(int v):n(v){}E(const E&e):n(e.n){}~E(){}};int main(){E a[2]={E(1),E(2)};int n=0;for(E v:a)n+=v.n;return n-3;}',
+        'prvalue-element-reference': 'struct E{int n;~E(){}};struct I{int*p;I&operator++(){++p;return *this;}E operator*(){return {*p};}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[2];I begin(){return {a};}I end(){return {a+2};}};int main(){int n=0;for(auto&&v:R{{1,2}})n+=v.n;return n-3;}',
+        'prvalue-element-value': 'struct E{int n;~E(){}};struct I{int*p;I&operator++(){++p;return *this;}E operator*(){return {*p};}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[2];I begin(){return {a};}I end(){return {a+2};}};int main(){int n=0;for(E v:R{{1,2}})n+=v.n;return n-3;}',
+    }
+    for name, source in range_for_positive.items():
+        check("v2-range-for-positive-" + name, source, profile="cpp-core-v2")
+    range_for_reject = {
+        'cxx20-init-statement': 'void f(){for(int a[1]={1};int v:a){}}',
+        'floating-range': 'void f(){double a[1]={1.0};for(auto v:a){}}',
+        'volatile-range': 'void f(){volatile int a[1]={1};for(auto&v:a){}}',
+        'structured-binding': 'struct R{int a,b;};void f(){R a[1]={{1,2}};for(auto [x,y]:a){}}',
+        'unused-floating-body': 'void f(){int a[1]={1};for(int v:a){double unused=1.0;}}',
+        'dead-floating-body': 'void f(){int a[1]={1};if(false)for(int v:a){double unused=1.0;}}',
+        'floating-begin-body': 'struct R{int a[1];int*begin(){double v=1.0;return a;}int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}',
+        'floating-begin-default': 'struct R{int a[1];int*begin(double v=1.0){return a;}int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}',
+        'floating-comparison-body': 'struct I{int*p;int&operator*(){return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{double v=1.0;return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}',
+        'floating-dereference-body': 'struct I{int*p;int&operator*(){double v=1.0;return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}',
+        'floating-increment-body': 'struct I{int*p;int&operator*(){return *p;}I&operator++(){double v=1.0;++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}',
+        'template-range': 'template<class T>struct R{T a[1];T*begin(){return a;}T*end(){return a+1;}};void f(){for(int v:R<int>{{1}}){}}',
+        'inherited-range': 'struct B{int a[1];int*begin(){return a;}int*end(){return a+1;}};struct R:B{};void f(){R r;for(int v:r){}}',
+        'resource-range': 'void f(){int a[65537]={};for(int v:a){}}',
+    }
+    for name, source in range_for_reject.items():
+        check("v2-range-for-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    range_for_invalid = {
+        'static-loop-variable': 'void f(){int a[1]={1};for(static int v:a){}}',
+        'pointer-range': 'void f(int*p){for(int v:p){}}',
+        'missing-begin': 'struct R{};void f(){for(int v:R{}){}}',
+        'both-member-names': 'namespace N{struct R{int begin,end;};int*begin(R&r){return &r.begin;}int*end(R&r){return &r.end;}}void f(){for(int v:N::R{1,2}){}}',
+        'ordinary-lookup-not-adl': 'namespace N{struct R{int a[1];};}int*begin(N::R&r){return r.a;}int*end(N::R&r){return r.a+1;}void f(){for(int v:N::R{{1}}){}}',
+        'const-element-write': 'void f(){const int a[1]={1};for(int&v:a){}}',
+        'prvalue-nonconst-lvalue': 'struct E{int n;~E(){}};struct I{int*p;I&operator++(){++p;return *this;}E operator*(){return {*p};}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[2];I begin(){return {a};}I end(){return {a+2};}};void f(){for(E&v:R{{1,2}}){}}',
+        'deleted-begin': 'struct R{int*begin()=delete;int*end(){return nullptr;}};void f(){for(int v:R{}){}}',
+        'missing-increment': 'struct I{int*p;int&operator*(){return *p;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}',
+    }
+    for name, source in range_for_invalid.items():
+        check("v2-range-for-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    range_for_missing = {
+        'external-begin': 'struct R{int a[1];int*begin();int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}',
+        'external-end': 'struct R{int a[1];int*begin(){return a;}int*end();};void f(){for(int v:R{{1}}){}}',
+        'external-increment': 'struct I{int*p;int&operator*(){return *p;}I&operator++();bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}',
+    }
+    for name, source in range_for_missing.items():
+        check("v2-range-for-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-range-for-array", "int main(){int a[1]={1};for(int v:a){}return 0;}", "TR0201")
+    check("v1-range-for-record", "struct R{int a[1];int*begin(){return a;}int*end(){return a+1;}};int main(){for(int v:R{{1}}){}return 0;}", "TR0201")
+
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}
 int next(){mark(1);return number;}

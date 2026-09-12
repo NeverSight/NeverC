@@ -10,6 +10,8 @@ Il comando sperimentale `neverc translate` genera sorgenti `.nc` verificabili co
 
 Core v2 supporta variabili globali modificabili di tipo intero, booleano ed enumerazione nell’ambito di un namespace, con inizializzazione a zero o mediante una costante completamente verificata. Memoria e indirizzo persistono tra le chiamate; riferimenti, puntatori e argomenti predefiniti accedono alla stessa variabile. Una dichiarazione `extern` richiede una definizione nella stessa unità sorgente. Le globali const restano di sola lettura. Restano le restrizioni specifiche per inizializzazione dinamica, record/array/puntatori/riferimenti globali, memoria locale al thread e variabili locali statiche.
 
+Core v2 supporta i cicli `for` su intervalli di C++17 per gli array fissi ammessi e gli intervalli definiti nel sorgente, con chiamate risolte a `begin/end` tramite membri o ADL. Variabili per valore o riferimento, iteratori di tipo record e sentinelle di tipo diverso mantengono le normali regole di chiamata e durata. L’intervallo e `begin/end` vengono inizializzati una sola volta; gli oggetti di ogni iterazione vengono distrutti prima dell’incremento o dell’uscita, anche con `continue`, `break` e `return`. Template, header standard, contenitori STL, binding strutturati e istruzioni di inizializzazione C++20 restano fuori da questa estensione. La verifica nativa richiede il CI della revisione che la implementa.
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

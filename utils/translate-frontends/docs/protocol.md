@@ -114,6 +114,15 @@ inspection and layout verification; unevaluated operands produce no effects.
 The [core v2 contract](cpp-core-v2.md#integer-widths-characters-and-size-queries)
 defines the full admitted boundary. V1 profiles retain their scalar contracts.
 
+Core-v2 range-based `for` uses the existing local storage, ordinary calls,
+`branch`, `jump` and cleanup instructions. The producer checks the identities of
+the range reference and begin/end declarations, evaluates initialization once,
+and emits separate range and iteration cleanup scopes. Value loop variables
+and iterator results keep their typed destinations; reference loop variables
+keep aliases. Abrupt exits clean up the scopes they leave. No range opcode,
+untyped payload or external compiler process is added. This increment does not
+admit templates or STL containers; see the [core v2 contract](cpp-core-v2.md#range-based-for).
+
 ## Core v2 live rvalue references
 
 Supported live-object rvalue references use the same `ptr:`/`cptr:` carriers as

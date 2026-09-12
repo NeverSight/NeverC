@@ -18,6 +18,7 @@ class CallExpr;
 class CastExpr;
 class CXXConstructExpr;
 class CXXDefaultArgExpr;
+class CXXForRangeStmt;
 class MaterializeTemporaryExpr;
 class InitListExpr;
 class Expr;
@@ -103,6 +104,10 @@ const clang::Expr *defaultArgumentInitializer(const clang::ParmVarDecl *Paramete
                                                clang::ASTContext &Context);
 const clang::Expr *selectedDefaultArgument(const clang::CXXDefaultArgExpr *Default,
                                           clang::ASTContext &Context);
+struct RangeForComponents {
+  const clang::VarDecl *Range, *Begin, *End, *Variable;
+};
+std::optional<RangeForComponents> rangeForComponents(const clang::CXXForRangeStmt *Loop);
 bool ordinaryConstructor(const clang::CXXConstructorDecl *Constructor);
 const clang::CXXConstructExpr *constructorConversion(const clang::CastExpr *Cast,
                                                    clang::ASTContext &Context);
@@ -141,6 +146,7 @@ public:
   std::map<const clang::Decl *, clang::VarDecl *> GlobalDeclarations;
   std::map<std::string, json::Object> MappedFunctions;
   std::map<const clang::CXXRecordDecl *, std::size_t> StorageUnits;
+  std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::size_t ExpandedNodes = 0;
   Adapter(State &S, clang::ASTContext &C)
       : S(S), Context(C), Sources(C.getSourceManager()) {}
@@ -164,6 +170,9 @@ public:
   json::Object zero(clang::QualType T, clang::SourceLocation L);
   json::Object constant(const clang::APValue &V, clang::QualType T,
                         clang::SourceLocation L);
+  bool registerRangeFor(const clang::CXXForRangeStmt *Loop);
+  const clang::CXXForRangeStmt *rangeForOwner(const clang::VarDecl *Variable) const;
+  const clang::VarDecl *temporaryOwner(const clang::MaterializeTemporaryExpr *Temporary);
   json::Object lower(clang::FunctionDecl *Function);
   std::string destructionName(const clang::CXXRecordDecl *Record);
   json::Object lowerDestruction(const clang::CXXRecordDecl *Record);

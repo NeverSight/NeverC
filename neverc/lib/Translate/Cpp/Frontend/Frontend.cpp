@@ -4,6 +4,7 @@
 #include "clang/AST/Attr.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/AST/StmtCXX.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/Builtins.h"
@@ -418,6 +419,81 @@ const VarDecl *automaticTemporaryOwner(const MaterializeTemporaryExpr *M,
       !Owner->getType()->isReferenceType())
     return nullptr;
   return Owner->getCanonicalDecl();
+}
+std::optional<RangeForComponents> rangeForComponents(const CXXForRangeStmt *Loop) {
+  auto Resolved = [](const Expr *E) {
+    return E && !E->getType().isNull() && !E->isTypeDependent() &&
+           !E->isValueDependent() && !E->isInstantiationDependent();
+  };
+  if (!Loop || Loop->getInit() || Loop->getCoawaitLoc().isValid() ||
+      !Loop->getBody() || !Resolved(Loop->getCond()) ||
+      !Loop->getCond()->getType()->isBooleanType() || !Resolved(Loop->getInc()))
+    return std::nullopt;
+  auto Variable = [&](const DeclStmt *Statement) -> const VarDecl * {
+    if (!Statement || !Statement->isSingleDecl())
+      return nullptr;
+    const auto *V = dyn_cast<VarDecl>(Statement->getSingleDecl());
+    if (!V || V->getKind() != Decl::Var || V->isInvalidDecl() ||
+        !V->isLocalVarDecl() || !V->hasLocalStorage() ||
+        V->getType().isNull() || !Resolved(V->getInit()))
+      return nullptr;
+    return V;
+  };
+  RangeForComponents Parts{Variable(Loop->getRangeStmt()),
+                           Variable(Loop->getBeginStmt()),
+                           Variable(Loop->getEndStmt()),
+                           Variable(Loop->getLoopVarStmt())};
+  if (!Parts.Range || !Parts.Begin || !Parts.End || !Parts.Variable ||
+      !Parts.Range->isImplicit() || !Parts.Begin->isImplicit() ||
+      !Parts.End->isImplicit() || Parts.Variable->isImplicit() ||
+      !Parts.Variable->isCXXForRangeDecl() ||
+      !Parts.Range->getType()->isReferenceType())
+    return std::nullopt;
+  std::set<const VarDecl *> Identities;
+  for (const auto *V : {Parts.Range, Parts.Begin, Parts.End, Parts.Variable})
+    if (!Identities.insert(V->getCanonicalDecl()).second)
+      return std::nullopt;
+  return Parts;
+}
+bool Adapter::registerRangeFor(const CXXForRangeStmt *Loop) {
+  const auto Parts = rangeForComponents(Loop);
+  if (!S.coreV2() || !Parts || !S.owns(Sources, Loop->getForLoc()))
+    return false;
+  for (const auto *V : {Parts->Range, Parts->Begin, Parts->End}) {
+    auto Found = RangeDeclarations.find(V->getCanonicalDecl());
+    if (Found != RangeDeclarations.end() && Found->second != Loop)
+      return false;
+  }
+  for (const auto *V : {Parts->Range, Parts->Begin, Parts->End})
+    RangeDeclarations.emplace(V->getCanonicalDecl(), Loop);
+  return true;
+}
+const CXXForRangeStmt *Adapter::rangeForOwner(const VarDecl *Variable) const {
+  if (!S.coreV2() || !Variable)
+    return nullptr;
+  auto Found = RangeDeclarations.find(Variable->getCanonicalDecl());
+  if (Found == RangeDeclarations.end() || !S.owns(Sources, Found->second->getForLoc()))
+    return nullptr;
+  const auto Parts = rangeForComponents(Found->second);
+  if (!Parts)
+    return nullptr;
+  for (const auto *V : {Parts->Range, Parts->Begin, Parts->End})
+    if (Variable->getCanonicalDecl() == V->getCanonicalDecl())
+      return Found->second;
+  return nullptr;
+}
+const VarDecl *Adapter::temporaryOwner(const MaterializeTemporaryExpr *Temporary) {
+  if (const auto *Owner = automaticTemporaryOwner(Temporary, Context))
+    return Owner;
+  if (!temporaryShape(Temporary, Context) || Temporary->getStorageDuration() != SD_Automatic)
+    return nullptr;
+  const auto *Owner = dyn_cast_or_null<VarDecl>(Temporary->getExtendingDecl());
+  const auto *Loop = rangeForOwner(Owner);
+  const auto Parts = rangeForComponents(Loop);
+  // Only __range's exact declaration can extend a temporary to loop scope.
+  // The other registered declarations are ordinary iterator owners.
+  return Parts && Owner->getCanonicalDecl() == Parts->Range->getCanonicalDecl()
+             ? Owner->getCanonicalDecl() : nullptr;
 }
 const Expr *referenceListInitializer(const InitListExpr *List, ASTContext &Context) {
   if (!List)
@@ -853,7 +929,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const Decl *> QueuedGeneratedMethods;
   std::vector<const CXXMethodDecl *> GeneratedMethods;
   bool owned(const Decl *D) {
-    return !D->isImplicit() && A.S.owns(A.Sources, D->getLocation());
+    if (!D)
+      return false;
+    if (!D->isImplicit())
+      return A.S.owns(A.Sources, D->getLocation());
+    return A.rangeForOwner(dyn_cast<VarDecl>(D)) != nullptr;
   }
   // Follow the identity of an lvalue, not arbitrary call arguments. A by-value
   // temporary passed to a function returning some other live object is safe.
@@ -912,7 +992,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E))
       return !(AllowFullExpression && fullExpressionTemporary(M, A.Context)) &&
-             !(ExpectedExtender && automaticTemporaryOwner(M, A.Context) == ExpectedExtender);
+             !(ExpectedExtender && A.temporaryOwner(M) == ExpectedExtender);
     if (isa<CXXBindTemporaryExpr>(E))
       return true;
     if (const auto *C = dyn_cast<CastExpr>(E))
@@ -1140,6 +1220,34 @@ public:
       TraverseStmt(const_cast<CompoundStmt *>(Body));
       A.Functions.push_back(const_cast<CXXMethodDecl *>(Method));
     }
+  }
+  bool TraverseCXXForRangeStmt(CXXForRangeStmt *Loop) {
+    if (!A.S.coreV2())
+      return RecursiveASTVisitor<Allowlist>::TraverseCXXForRangeStmt(Loop);
+    const auto SavedOwner = ImplicitInitializerOwner;
+    ImplicitInitializerOwner = Loop->getForLoc();
+    auto RestoreOwner = llvm::make_scope_exit([&] { ImplicitInitializerOwner = SavedOwner; });
+    if (!WalkUpFromCXXForRangeStmt(Loop))
+      return false;
+    const auto Parts = rangeForComponents(Loop);
+    if (!Parts || !A.registerRangeFor(Loop)) {
+      A.reject(Loop->getForLoc(), "range for",
+               "A resolved C++17 range with one ordinary loop variable is required.");
+      return true;
+    }
+    // RAV omits these declarations and their resolved calls by default.
+    // Register all three identities before checking a range initializer's MTE.
+    for (const auto *V : {Parts->Range, Parts->Begin, Parts->End}) {
+      if (!WalkUpFromVarDecl(const_cast<VarDecl *>(V)) ||
+          !TraverseStmt(const_cast<Expr *>(V->getInit())))
+        return false;
+    }
+    // The written type still needs ordinary declaration traversal. RAV skips
+    // the semantic initializer of the user isCXXForRangeDecl variable.
+    return TraverseDecl(const_cast<VarDecl *>(Parts->Variable)) &&
+           TraverseStmt(const_cast<Expr *>(Parts->Variable->getInit())) &&
+           TraverseStmt(Loop->getCond()) && TraverseStmt(Loop->getInc()) &&
+           TraverseStmt(Loop->getBody());
   }
   bool TraverseMaterializeTemporaryExpr(MaterializeTemporaryExpr *Temporary) {
     if (!A.S.coreV2())
@@ -1620,7 +1728,7 @@ public:
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
               DefaultStmt, AttributedStmt, CharacterLiteral,
               UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
-              CXXDefaultInitExpr, CXXDefaultArgExpr>(S)) &&
+              CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -1633,7 +1741,7 @@ public:
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(S);
-          M && !fullExpressionTemporary(M, A.Context) && !automaticTemporaryOwner(M, A.Context))
+          M && !fullExpressionTemporary(M, A.Context) && !A.temporaryOwner(M))
         A.reject(L, "temporary lifetime",
                  "A checked full-expression temporary or exact automatic reference owner is required.");
       if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S)) {

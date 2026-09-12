@@ -2228,6 +2228,238 @@ TEST_F(TranslateTest, CoreV2MutableScalarGlobalsRetainTypeAndInitializationBound
   }
 }
 
+TEST_F(TranslateTest, CoreV2RangeForPreservesIterationAndCleanup) {
+  const auto Source = tmpFile("range-for.cpp");
+  const auto Output = tmpFile("range-for.nc");
+  writeFile(Source, R"cpp(
+int begins=0,ends=0,comparisons=0,increments=0,dereferences=0,rangeEvaluations=0;
+int rangeLive=0,rangeDead=0,iteratorLive=0,iteratorCopies=0,sentinelLive=0,bad=0;
+int elementLive=0,elementMade=0,elementDead=0,elementCopies=0,bodyLive=0,bodyDead=0;
+long long events=0,elementEvents=0;
+void reset(){begins=ends=comparisons=increments=dereferences=rangeEvaluations=0;
+ rangeLive=rangeDead=iteratorLive=iteratorCopies=sentinelLive=bad=0;
+ elementLive=elementMade=elementDead=elementCopies=bodyLive=bodyDead=0;events=elementEvents=0;}
+int beginMark(){return ++begins;}
+int endMark(){return ++ends;}
+struct Range{
+ int a[2];Range*self;
+ Range(int n):a{n,n+1},self(this){++rangeLive;}
+ Range(const Range&r):a{r.a[0],r.a[1]},self(this){++rangeLive;++iteratorCopies;}
+ ~Range(){if(self!=this)++bad;--rangeLive;++rangeDead;}
+ int*begin(int token=beginMark()){return a;}
+ int*end(int token=endMark()){return a+2;}
+ const int*begin(int token=beginMark())const{return a;}
+ const int*end(int token=endMark())const{return a+2;}
+ int sum()const{int n=0;for(int v:*this)n+=v;return n;}
+};
+Range makeRange(int n){++rangeEvaluations;return Range(n);}
+struct Pointers{int*b;int*e;int*begin(){++begins;return b;}int*end(){++ends;return e;}};
+namespace Adl{
+ struct Range{int a[2];};
+ int*begin(Range&r){++begins;return r.a;}
+ int*end(Range&r){++ends;return r.a+2;}
+}
+struct Iterator{
+ int*p;int id;Iterator*self;
+ Iterator(int*q,int n):p(q),id(n),self(this){++iteratorLive;events=events*10+id;}
+ Iterator(const Iterator&r):p(r.p),id(r.id),self(this){++iteratorLive;++iteratorCopies;}
+ ~Iterator(){if(self!=this)++bad;--iteratorLive;events=events*10+id+5;}
+ Iterator&operator++(){if(bodyLive)++bad;++increments;++p;return *this;}
+ int&operator*(){++dereferences;return *p;}
+ bool operator!=(const Iterator&r)const{++comparisons;return p!=r.p;}
+};
+struct Iterated{
+ int a[2];Iterated*self;
+ Iterated(int n):a{n,n+1},self(this){++rangeLive;}
+ ~Iterated(){if(self!=this)++bad;--rangeLive;++rangeDead;events=events*10+9;}
+ Iterator begin(){++begins;return Iterator(a,1);}
+ Iterator end(){++ends;return Iterator(a+2,2);}
+};
+struct Sentinel{
+ int*p;Sentinel*self;
+ Sentinel(int*q):p(q),self(this){++sentinelLive;events=events*10+4;}
+ ~Sentinel(){if(self!=this)++bad;--sentinelLive;events=events*10+8;}
+};
+bool operator!=(const Iterator&i,const Sentinel&s){++comparisons;return i.p!=s.p;}
+struct Different{
+ int a[2];
+ Different(int n):a{n,n+1}{++rangeLive;}
+ ~Different(){--rangeLive;++rangeDead;events=events*10+9;}
+ Iterator begin(){++begins;return Iterator(a,1);}
+ Sentinel end(){++ends;return Sentinel(a+2);}
+};
+struct Element{
+ int n;Element*self;
+ Element(int v):n(v),self(this){++elementLive;++elementMade;}
+ Element(const Element&r):n(r.n),self(this){++elementLive;++elementMade;++elementCopies;}
+ ~Element(){if(self!=this)++bad;--elementLive;++elementDead;elementEvents=elementEvents*10+n;}
+};
+struct ValueIterator{
+ int*p;
+ ValueIterator&operator++(){if(elementLive||bodyLive)++bad;++increments;++p;return *this;}
+ Element operator*(){++dereferences;return Element(*p);}
+ bool operator!=(const ValueIterator&r)const{if(elementLive)++bad;++comparisons;return p!=r.p;}
+};
+struct Values{int a[2];ValueIterator begin(){++begins;return {a};}ValueIterator end(){++ends;return {a+2};}};
+struct Body{Body(){++bodyLive;}~Body(){--bodyLive;++bodyDead;}};
+int early(){for(int n:Iterated(5)){Body body;return n;}return -1;}
+int earlyValue(){for(auto&&v:Values{{7,8}}){Body body;return v.n;}return -1;}
+int switched(){int sum=0;for(int n:Iterated(1)){Body body;switch(n){case 1:continue;default:break;}sum+=n;}return sum;}
+using Array=int[3];
+enum class E:unsigned char{one=1,two=2};
+int main(){
+ int sum=0,a[3]={1,2,3};for(int n:a)sum+=n;
+ if(sum!=6)return 1;
+ for(auto&n:a)n+=2;sum=0;for(auto&&n:a)sum+=n;
+ if(sum!=12||a[0]!=3||a[2]!=5)return 2;
+ const int fixed[2]={4,5};sum=0;for(const auto&n:fixed)sum+=n;
+ E enums[2]={E::one,E::two};for(E e:enums)sum+=static_cast<int>(e);
+ if(sum!=12)return 3;
+ int grid[2][2]={{1,2},{3,4}};sum=0;for(auto&row:grid)for(int&n:row){++n;sum+=n;}
+ if(sum!=14||grid[0][0]!=2||grid[1][1]!=5)return 4;
+ sum=0;for(int n:Array{6,7,8})sum+=n;if(sum!=21)return 5;
+ reset();sum=0;for(int&n:makeRange(1)){if(rangeLive!=1||rangeDead)return 6;n+=2;sum+=n;}
+ if(sum!=7||rangeEvaluations!=1||begins!=1||ends!=1||rangeLive||rangeDead!=1||iteratorCopies||bad)return 7;
+ reset();sum=0;for(int n:Range(3).a){if(rangeLive!=1||rangeDead)return 8;sum+=n;}
+ if(sum!=7||rangeLive||rangeDead!=1||begins||ends||bad)return 9;
+ reset();{const Range r(4);sum=0;for(const int&n:r)sum+=n;
+  if(sum!=9||begins!=1||ends!=1||r.sum()!=9||begins!=2||ends!=2||rangeLive!=1)return 10;}
+ if(rangeLive||rangeDead!=1||bad)return 11;
+ reset();Pointers empty{nullptr,nullptr};sum=0;for(int n:empty)sum+=n;
+ if(sum||begins!=1||ends!=1)return 12;
+ reset();Adl::Range adl{{5,6}};sum=0;for(auto&n:adl){n+=1;sum+=n;}
+ if(sum!=13||begins!=1||ends!=1||adl.a[0]!=6||adl.a[1]!=7)return 13;
+ reset();sum=0;for(int n:Iterated(1)){if(rangeLive!=1||iteratorLive!=2||rangeDead)return 14;sum+=n;}
+ if(sum!=3||begins!=1||ends!=1||comparisons!=3||increments!=2||dereferences!=2||iteratorLive||rangeLive||rangeDead!=1||iteratorCopies||events!=12769||bad)return 15;
+ reset();sum=0;for(int n:Different(3)){if(rangeLive!=1||iteratorLive!=1||sentinelLive!=1)return 16;sum+=n;}
+ if(sum!=7||comparisons!=3||increments!=2||dereferences!=2||iteratorLive||sentinelLive||rangeLive||rangeDead!=1||iteratorCopies||events!=14869||bad)return 17;
+ reset();{Element items[2]={Element(1),Element(2)};sum=0;
+  for(Element value:items){if(elementLive!=3||value.self!=&value)return 18;sum+=value.n;}
+  if(sum!=3||elementLive!=2||elementCopies!=2||elementDead!=2||elementEvents!=12||bad)return 19;}
+ if(elementLive||elementMade!=4||elementDead!=4||elementEvents!=1221||bad)return 20;
+ reset();{Element items[2]={Element(1),Element(2)};sum=0;for(auto&value:items){++value.n;sum+=value.n;}
+  if(sum!=5||elementLive!=2||elementCopies||elementDead||bad)return 21;}
+ if(elementLive||elementDead!=2||elementEvents!=32||bad)return 22;
+ reset();sum=0;for(auto&&value:Values{{3,4}}){Body body;if(elementLive!=1||value.self!=&value)return 23;sum+=value.n;}
+ if(sum!=7||elementLive||elementMade!=2||elementDead!=2||elementCopies||elementEvents!=34||bodyLive||bodyDead!=2||comparisons!=3||increments!=2||bad)return 24;
+ reset();sum=0;for(auto&&value:Values{{1,2}}){Body body;++sum;if(value.n==1)continue;break;}
+ if(sum!=2||elementLive||elementDead!=2||elementEvents!=12||bodyLive||bodyDead!=2||comparisons!=2||increments!=1||bad)return 25;
+ reset();sum=0;for(int n:Iterated(1)){Body body;sum+=n;if(n==1)continue;break;}
+ if(sum!=3||bodyLive||bodyDead!=2||iteratorLive||rangeLive||rangeDead!=1||comparisons!=2||increments!=1||events!=12769||bad)return 26;
+ reset();int result=early();
+ if(result!=5||bodyLive||bodyDead!=1||iteratorLive||rangeLive||rangeDead!=1||comparisons!=1||increments||dereferences!=1||events!=12769||bad)return 27;
+ reset();result=earlyValue();
+ if(result!=7||elementLive||elementMade!=1||elementDead!=1||elementEvents!=7||bodyLive||bodyDead!=1||comparisons!=1||increments||bad)return 28;
+ reset();result=switched();
+ if(result!=2||bodyLive||bodyDead!=2||iteratorLive||rangeLive||rangeDead!=1||comparisons!=3||increments!=2||events!=12769||bad)return 29;
+ reset();sum=0;int outer[2]={1,2};for(int n:outer)for(int v:Iterated(n)){Body body;sum+=v;}
+ if(sum!=8||begins!=2||ends!=2||rangeLive||rangeDead!=2||iteratorLive||bodyLive||bodyDead!=4||events!=1276912769LL||bad)return 30;
+ reset();sum=0;for(int n:(++rangeEvaluations,Range(5)))sum+=n;
+ if(sum!=11||rangeEvaluations!=1||begins!=1||ends!=1||rangeLive||rangeDead!=1||bad)return 31;
+ reset();sum=0;for(Element value:Values{{1,2}}){if(elementLive!=1||value.self!=&value)return 32;sum+=value.n;}
+ if(sum!=3||elementMade!=2||elementDead!=2||elementLive||elementCopies||elementEvents!=12||bad)return 33;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("range-for" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RangeForAcceptsResolvedRanges) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"array-value", "int main(){int a[2]={1,2},n=0;for(int v:a)n+=v;return n-3;}"},
+      {"array-reference", "int main(){int a[2]={1,2};for(int&v:a)++v;return a[0]+a[1]-5;}"},
+      {"array-forward-reference", "int main(){int a[2]={1,2};for(auto&&v:a)++v;return a[0]-2;}"},
+      {"const-array", "int main(){const int a[2]={1,2};int n=0;for(const auto&v:a)n+=v;return n-3;}"},
+      {"enum-array", "enum class E:unsigned char{a=1,b=2};int main(){E a[2]={E::a,E::b};int n=0;for(E e:a)n+=static_cast<int>(e);return n-3;}"},
+      {"multidimensional", "int main(){int a[2][2]={{1,2},{3,4}},n=0;for(auto&row:a)for(int&v:row)n+=v;return n-10;}"},
+      {"array-temporary", "using A=int[2];int main(){int n=0;for(int v:A{1,2})n+=v;return n-3;}"},
+      {"record-member-temporary", "struct R{int a[2];~R(){}};int main(){int n=0;for(int v:R{{1,2}}.a)n+=v;return n-3;}"},
+      {"member-range", "struct R{int a[2];int*begin(){return a;}int*end(){return a+2;}};int main(){int n=0;for(int v:R{{1,2}})n+=v;return n-3;}"},
+      {"const-member-range", "struct R{int a[2];const int*begin()const{return a;}const int*end()const{return a+2;}};int main(){const R r{{1,2}};int n=0;for(int v:r)n+=v;return n-3;}"},
+      {"adl-range", "namespace N{struct R{int a[2];};int*begin(R&r){return r.a;}int*end(R&r){return r.a+2;}}int main(){int n=0;for(int v:N::R{{1,2}})n+=v;return n-3;}"},
+      {"adl-single-member-name", "namespace N{struct R{int a[2];int begin;};int*begin(R&r){return r.a;}int*end(R&r){return r.a+2;}}int main(){int n=0;for(int v:N::R{{1,2},0})n+=v;return n-3;}"},
+      {"defaulted-begin-end", "int count;int next(){return ++count;}struct R{int a[2];int*begin(int n=next()){return a;}int*end(int n=next()){return a+2;}};int main(){for(int v:R{{1,2}}){}return count-2;}"},
+      {"member-body-this", "struct R{int a[2];int sum()const{int n=0;for(int v:a)n+=v;return n;}};int main(){return R{{1,2}}.sum()-3;}"},
+      {"constructor-body", "struct R{int n;R(){n=0;int a[2]={1,2};for(int v:a)n+=v;}};int main(){return R().n-3;}"},
+      {"destructor-body", "int count;struct R{int a[2];~R(){for(int v:a)count+=v;}};int main(){{R r{{1,2}};}return count-3;}"},
+      {"constexpr-body", "constexpr int sum(){int a[2]={1,2},n=0;for(int v:a)n+=v;return n;}static_assert(sum()==3);int main(){return sum()-3;}"},
+      {"nested-switch", "int main(){int a[2]={1,2},n=0;for(int v:a){switch(v){case 1:continue;default:break;}n+=v;}return n-2;}"},
+      {"empty-range", "struct R{int*b;int*e;int*begin(){return b;}int*end(){return e;}};int main(){for(int v:R{nullptr,nullptr})return 1;return 0;}"},
+      {"user-loop-names", "int main(){int range=4,begin=5,end=6,a[1]={1};for(int v:a)range+=v;return range+begin+end-16;}"},
+      {"record-iterator", "struct I{int*p;I&operator++(){++p;return *this;}int&operator*(){return *p;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[2];I begin(){return {a};}I end(){return {a+2};}};int main(){int n=0;for(int v:R{{1,2}})n+=v;return n-3;}"},
+      {"different-sentinel", "struct S{int*p;};struct I{int*p;I&operator++(){++p;return *this;}int&operator*(){return *p;}bool operator!=(const I&r)const{return p!=r.p;}};bool operator!=(const I&i,const S&s){return i.p!=s.p;}struct R{int a[2];I begin(){return {a};}S end(){return {a+2};}};int main(){int n=0;for(int v:R{{1,2}})n+=v;return n-3;}"},
+      {"copied-element", "struct E{int n;E(int v):n(v){}E(const E&e):n(e.n){}~E(){}};int main(){E a[2]={E(1),E(2)};int n=0;for(E v:a)n+=v.n;return n-3;}"},
+      {"prvalue-element-reference", "struct E{int n;~E(){}};struct I{int*p;I&operator++(){++p;return *this;}E operator*(){return {*p};}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[2];I begin(){return {a};}I end(){return {a+2};}};int main(){int n=0;for(auto&&v:R{{1,2}})n+=v.n;return n-3;}"},
+      {"prvalue-element-value", "struct E{int n;~E(){}};struct I{int*p;I&operator++(){++p;return *this;}E operator*(){return {*p};}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[2];I begin(){return {a};}I end(){return {a+2};}};int main(){int n=0;for(E v:R{{1,2}})n+=v.n;return n-3;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("range-for-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("range-for-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RangeForRetainsSourceAndTypeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"cxx20-init-statement", "void f(){for(int a[1]={1};int v:a){}}", "TR0201"},
+      {"floating-range", "void f(){double a[1]={1.0};for(auto v:a){}}", "TR0201"},
+      {"volatile-range", "void f(){volatile int a[1]={1};for(auto&v:a){}}", "TR0201"},
+      {"structured-binding", "struct R{int a,b;};void f(){R a[1]={{1,2}};for(auto [x,y]:a){}}", "TR0201"},
+      {"unused-floating-body", "void f(){int a[1]={1};for(int v:a){double unused=1.0;}}", "TR0201"},
+      {"dead-floating-body", "void f(){int a[1]={1};if(false)for(int v:a){double unused=1.0;}}", "TR0201"},
+      {"floating-begin-body", "struct R{int a[1];int*begin(){double v=1.0;return a;}int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"floating-begin-default", "struct R{int a[1];int*begin(double v=1.0){return a;}int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"floating-comparison-body", "struct I{int*p;int&operator*(){return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{double v=1.0;return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"floating-dereference-body", "struct I{int*p;int&operator*(){double v=1.0;return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"floating-increment-body", "struct I{int*p;int&operator*(){return *p;}I&operator++(){double v=1.0;++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"template-range", "template<class T>struct R{T a[1];T*begin(){return a;}T*end(){return a+1;}};void f(){for(int v:R<int>{{1}}){}}", "TR0201"},
+      {"inherited-range", "struct B{int a[1];int*begin(){return a;}int*end(){return a+1;}};struct R:B{};void f(){R r;for(int v:r){}}", "TR0201"},
+      {"resource-range", "void f(){int a[65537]={};for(int v:a){}}", "TR0201"},
+      {"static-loop-variable", "void f(){int a[1]={1};for(static int v:a){}}", "TR0202"},
+      {"pointer-range", "void f(int*p){for(int v:p){}}", "TR0202"},
+      {"missing-begin", "struct R{};void f(){for(int v:R{}){}}", "TR0202"},
+      {"both-member-names", "namespace N{struct R{int begin,end;};int*begin(R&r){return &r.begin;}int*end(R&r){return &r.end;}}void f(){for(int v:N::R{1,2}){}}", "TR0202"},
+      {"ordinary-lookup-not-adl", "namespace N{struct R{int a[1];};}int*begin(N::R&r){return r.a;}int*end(N::R&r){return r.a+1;}void f(){for(int v:N::R{{1}}){}}", "TR0202"},
+      {"const-element-write", "void f(){const int a[1]={1};for(int&v:a){}}", "TR0202"},
+      {"prvalue-nonconst-lvalue", "struct E{int n;~E(){}};struct I{int*p;I&operator++(){++p;return *this;}E operator*(){return {*p};}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[2];I begin(){return {a};}I end(){return {a+2};}};void f(){for(E&v:R{{1,2}}){}}", "TR0202"},
+      {"deleted-begin", "struct R{int*begin()=delete;int*end(){return nullptr;}};void f(){for(int v:R{}){}}", "TR0202"},
+      {"missing-increment", "struct I{int*p;int&operator*(){return *p;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0202"},
+      {"external-begin", "struct R{int a[1];int*begin();int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}", "TR0203"},
+      {"external-end", "struct R{int a[1];int*begin(){return a;}int*end();};void f(){for(int v:R{{1}}){}}", "TR0203"},
+      {"external-increment", "struct I{int*p;int&operator*(){return *p;}I&operator++();bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("range-for-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("range-for-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"int main(){int a[1]={1};for(int v:a){}return 0;}",
+                                  "struct R{int a[1];int*begin(){return a;}int*end(){return a+1;}};int main(){for(int v:R{{1}}){}return 0;}"}) {
+    const auto Source = tmpFile("range-for-v1.cpp");
+    const auto Output = tmpFile("range-for-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DefaultArgumentsPreserveEffectsAndCleanup) {
   const auto Source = tmpFile("default-arguments.cpp");
   const auto Output = tmpFile("default-arguments.nc");

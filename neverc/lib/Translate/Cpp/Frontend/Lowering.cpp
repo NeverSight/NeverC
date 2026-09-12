@@ -1,5 +1,6 @@
 #include "Frontend.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/StmtCXX.h"
 #include "llvm/ADT/ScopeExit.h"
 #include <algorithm>
 #include <optional>
@@ -1055,7 +1056,7 @@ class FunctionLowering {
       checkTemporary(M, L);
       return materialize(M->getSubExpr(), L);
     }
-    const auto *Owner = automaticTemporaryOwner(M, A.Context);
+    const auto *Owner = A.temporaryOwner(M);
     if (!Owner || !ActiveReferenceInitializer ||
         Owner != ActiveReferenceInitializer->Variable ||
         ActiveReferenceInitializer->ScopeIndex >= Scopes.size())
@@ -1399,7 +1400,11 @@ class FunctionLowering {
       auto Previous = ActiveReferenceInitializer;
       auto Restore = llvm::make_scope_exit([&] { ActiveReferenceInitializer = Previous; });
       ActiveReferenceInitializer.reset();
-      if (A.S.coreV2() && V->getKind() == Decl::Var && !V->isImplicit() &&
+      const auto Range = rangeForComponents(A.rangeForOwner(V));
+      const bool RangeReference = Range &&
+          Range->Range->getCanonicalDecl() == V->getCanonicalDecl();
+      if (A.S.coreV2() && V->getKind() == Decl::Var &&
+          (!V->isImplicit() || RangeReference) &&
           V->isLocalVarDecl() && V->hasLocalStorage()) {
         if (Scopes.empty())
           reject(L, "reference lifetime", "An automatic reference requires a lexical scope.");
@@ -1635,6 +1640,38 @@ class FunctionLowering {
       label(Test, L);
       branch(condition(D->getCond()), Loop, End, L, D->getCond());
       label(End, L);
+    } else if (const auto *F = dyn_cast<CXXForRangeStmt>(S)) {
+      const auto Parts = rangeForComponents(F);
+      if (!A.S.coreV2() || !Parts || A.rangeForOwner(Parts->Range) != F ||
+          A.rangeForOwner(Parts->Begin) != F || A.rangeForOwner(Parts->End) != F)
+        reject(L, "range for", "A checked range and its exact hidden declarations are required.");
+      Scopes.emplace_back(); // Range and iterators outlive all iterations.
+      declaration(Parts->Range);
+      declaration(Parts->Begin);
+      declaration(Parts->End);
+      const auto LoopDepth = Scopes.size();
+      auto Test = labelName(), Loop = labelName(), Step = labelName(),
+           End = labelName();
+      jump(Test, L);
+      label(Test, L);
+      branch(condition(F->getCond()), Loop, End, L, F->getCond());
+      label(Loop, L);
+      Scopes.emplace_back(); // The loop variable owns only this iteration.
+      declaration(Parts->Variable);
+      ControlTargets.push_back({End, Step, LoopDepth, LoopDepth});
+      scopedStatement(F->getBody());
+      ControlTargets.pop_back();
+      if (Open) {
+        cleanup(Scopes.back());
+        jump(Step, L);
+      }
+      Scopes.pop_back();
+      label(Step, L);
+      expressionStatement(F->getInc());
+      jump(Test, L);
+      label(End, L);
+      cleanup(Scopes.back());
+      Scopes.pop_back();
     } else if (const auto *F = dyn_cast<ForStmt>(S)) {
       Scopes.emplace_back(); // for-init storage outlives every iteration.
       statement(F->getInit());

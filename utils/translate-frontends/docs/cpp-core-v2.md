@@ -435,6 +435,48 @@ Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
 
+## Range-based for
+
+Core v2 admits resolved C++17 range-based `for` statements over supported fixed
+arrays and source-defined records. It preserves the embedded frontend's selected
+member or ADL `begin/end` calls, including default arguments, overloaded iterator
+comparison/dereference/increment and a different C++17 sentinel type. Every
+selected declaration, initializer, operation and body must satisfy the existing
+type, definition and source-ownership checks. This includes unused or folded
+source operations. The frontend remains built in; no external Clang executable
+is used.
+
+The range initializer runs once, followed by `begin` and then `end`, also once.
+The condition precedes each iteration. A value loop variable uses its selected
+copy or direct prvalue destination; references alias the selected element.
+The loop variable and any temporary whose lifetime it extends are destroyed
+after the body and before increment. `continue` performs that cleanup before
+increment, `break` skips increment and leaves the range scope, and `return`
+captures its result before cleaning up the body, iteration and range scopes.
+The end iterator is destroyed before the begin iterator and then the range.
+Nested loops and switches retain their own control targets.
+
+Only the exact three hidden declarations belonging to a checked range statement
+are admitted. Their names do not grant access to implicit declarations generally.
+The exact hidden range reference may extend its C++17 temporary to the loop's
+scope; supported member/array subobjects retain the complete temporary owner.
+Per-iteration references can extend their own temporary only to that iteration.
+This does not extend temporaries returned through dangling references or add
+C++23 lifetime rules.
+
+The lowering uses existing typed storage, calls, branches and cleanup guards.
+No new instruction or opaque range representation is introduced. Fixed arrays,
+array temporaries, const ranges, ADL lookup, record iterators, distinct sentinels,
+copies, aliases, per-iteration prvalues and abrupt exits have native O0/O2
+fixtures. Protocol checks cover actual storage identities, complete signatures,
+one-time initialization, cleanup paths and relocation. Native results require
+CI from the implementing revision.
+
+Templates, standard headers and STL containers, initializer-list ranges,
+structured bindings, C++20 range init-statements and coroutine range loops
+remain outside this increment. Existing extent and expansion budgets still
+apply, and older profiles retain their previous range-loop rejection.
+
 ## Mutable scalar globals
 
 Core v2 admits mutable namespace/file-scope globals of the supported integer,
