@@ -2943,7 +2943,6 @@ bool query(){return noexcept(C());}
         'base': 'struct E{};struct D:E{};',
         'union': 'union E{};',
         'virtual': 'struct E{virtual void f(){}};',
-        'nested': 'struct E{struct I{};};',
         'template': 'template<class T>struct E{};E<int> e;',
         'overaligned': 'struct alignas(2) E{};',
         'attribute': 'struct __attribute__((packed)) E{};',
@@ -3782,7 +3781,6 @@ void boxes(){Box a;Box b=a;}
     nonpublic_reject = {
         'mixed-access': 'struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};',
         'inheritance': 'class R{protected:int n=1;};class D:public R{public:int get(){return n;}};',
-        'nested-record': 'class R{struct V{int n;};V v;};',
         'const-field': 'class R{const int n=1;public:int get()const{return n;}};',
         'reference-field': 'class R{int&n;public:R(int&v):n(v){}};',
         'mutable-field': 'class R{mutable int n=1;public:int get()const{return ++n;}};',
@@ -4044,7 +4042,6 @@ void members(){R r(3);Other other(4);Reader reader;Inspector inspector;tick(read
         'floating-default': 'class R{int n=1;friend int get(const R&r,double v=1.0){return r.n;}};',
         'floating-friend-type': 'class R{int n=1;friend double;};',
         'dead-floating-body': 'class R{int n=1;friend int get(const R&r){if(false){double ignored=1.0;}return r.n;}};',
-        'nested-record': 'class R{struct V{int n;};friend int get(const R&){return 1;}};',
         'inheritance': 'struct B{int n;};class R:public B{friend int get(const R&r){return r.n;}};',
     }
     for name, source in friends_reject.items():
@@ -4069,6 +4066,336 @@ void members(){R r(3);Other other(4);Reader reader;Inspector inspector;tick(read
         check("v2-friends-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     check("v1-friends-array", "struct R{int n;friend int get(const R&r){return r.n;}};int main(){R r{1};return get(r)-1;}", "TR0201")
     check("v1-friends-record", "struct A{int n;};struct R{int n;friend struct A;};int main(){return 0;}", "TR0201")
+
+    nested_records_source = """int tick(int n){return n;}
+class Outer {
+ int seed;
+ class Inner {
+  int n;
+ public:
+  Inner(int v):n(v){}
+  int own()const{return n;}
+  int combined(const Outer&o)const{return n+o.seed;}
+ };
+public:
+ using Item=Inner;
+ Outer(int n):seed(n){}
+ Item make(int n)const{return Item(n+seed);}
+};
+struct First {
+ struct Item {int n;}; // First
+ Item item;
+};
+struct Second {
+ struct Item {int n;}; // Second
+ Item item;
+};
+int identify(const First::Item&i){return i.n;}
+int identify(const Second::Item&i){return i.n+1;}
+struct Deep {
+ struct Middle {
+  struct Leaf {int n;};
+  Leaf leaf;
+ };
+ Middle middle;
+ Middle::Leaf array[2];
+};
+struct Links {
+ struct B;
+ struct A {A*self;B*other;};
+ struct B {A*other;};
+ A first;
+ B second;
+};
+struct Empty {
+ struct Item {};
+ Item first,second;
+};
+struct Outlined {struct Item;};
+struct Outlined::Item {
+ int n;
+ int get()const;
+};
+int Outlined::Item::get()const{return n;}
+struct Owned {
+ struct Element {
+  int n;
+  Element(int v):n(v){}
+  Element(const Element&s):n(s.n){tick(n);}
+  Element(Element&&s):n(s.n){s.n=0;tick(n);}
+  ~Element(){tick(n);}
+ };
+ Element first;
+ Element array[2];
+ Owned():first(1),array{Element(2),Element(3)}{}
+ Owned(const Owned&)=default;
+ Owned(Owned&&)=default;
+ ~Owned()=default;
+};
+class Range {
+ int values[2];
+ class Iterator {
+  int*p;
+ public:
+  Iterator(int*q):p(q){}
+  int&operator*()const{return *p;}
+  Iterator&operator++(){++p;return *this;}
+  bool operator!=(const Iterator&i)const{return p!=i.p;}
+ };
+public:
+ Range():values{1,2}{}
+ Iterator begin(){return Iterator(values);}
+ Iterator end(){return Iterator(values+2);}
+};
+void useOuter(){Outer o(3);Outer::Item i(4);tick(i.own());tick(i.combined(o));auto m=o.make(5);tick(m.own());}
+void useOwned(){Owned a;Owned b=a;Owned c=static_cast<Owned&&>(b);tick(0);}
+void useRange(){for(int&v:Range{})tick(v);}
+"""
+    nested_records = check("v2-nested-records-protocol", nested_records_source, profile="cpp-core-v2")
+    nr_functions = {f["name"]: f for f in nested_records["functions"]}
+    nr_records = {r["id"]: r for r in nested_records["records"]}
+    assert len(nr_functions) == len(nested_records["functions"])
+    assert len(nr_records) == len(nested_records["records"])
+
+    def nr_line(prefix):
+        found = [i for i, line in enumerate(nested_records_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def nr_record(prefix):
+        found = [r for r in nested_records["records"] if r["loc"]["line"] == nr_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def nr_function(prefix, result, parameters):
+        found = [f for f in nested_records["functions"] if f["loc"]["line"] == nr_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    # Source scope is identity; equal names/layouts do not merge declarations.
+    first = nr_record("struct First {")
+    second = nr_record("struct Second {")
+    first_item = nr_record(" struct Item {int n;}; // First")
+    second_item = nr_record(" struct Item {int n;}; // Second")
+    assert first_item["id"] != second_item["id"]
+    assert first_item["layout"] == second_item["layout"]
+    for owner, item in ((first, first_item), (second, second_item)):
+        assert [f["type"] for f in owner["fields"]] == [item["id"]]
+    left = nr_function("int identify(const First", "int", ["cptr:"+first_item["id"]])
+    right = nr_function("int identify(const Second", "int", ["cptr:"+second_item["id"]])
+    assert left["name"] != right["name"]
+    order = {r["id"]: i for i, r in enumerate(nested_records["records"])}
+    for record in nested_records["records"]:
+        for field in record["fields"]:
+            leaf = field["type"]
+            while leaf.startswith("arr:"):
+                leaf = leaf.split(":", 2)[2]
+            if leaf in nr_records:
+                assert order[leaf] < order[record["id"]], (record, leaf)
+    deep = nr_record("struct Deep {")
+    middle = nr_record(" struct Middle {")
+    leaf = nr_record("  struct Leaf {")
+    assert [f["type"] for f in deep["fields"]] == [middle["id"], "arr:2:"+leaf["id"]]
+    assert [f["type"] for f in middle["fields"]] == [leaf["id"]]
+    assert deep["layout"] == {"size_bits": 96, "abi_align_bits": 32, "field_offsets_bits": [0, 32]}
+    assert middle["layout"] == leaf["layout"] == first_item["layout"] == {
+        "size_bits": 32, "abi_align_bits": 32, "field_offsets_bits": [0]}
+    a = nr_record(" struct A {")
+    b = nr_record(" struct B {A*")
+    assert [f["type"] for f in a["fields"]] == ["ptr:"+a["id"], "ptr:"+b["id"]]
+    assert [f["type"] for f in b["fields"]] == ["ptr:"+a["id"]]
+    # Pointer cycles require forward declarations, not a by-value sorting edge.
+    assert order[a["id"]] < order[b["id"]]
+    empty = nr_record("struct Empty {")
+    empty_item = nr_record(" struct Item {};")
+    assert empty_item["fields"] == [] and empty_item["layout"] == {
+        "size_bits": 8, "abi_align_bits": 8, "field_offsets_bits": []}
+    assert [f["type"] for f in empty["fields"]] == [empty_item["id"]]*2
+    assert empty["layout"] == {"size_bits": 16, "abi_align_bits": 8, "field_offsets_bits": [0, 8]}
+    outlined = nr_record("struct Outlined::Item {")
+    outlined_get = nr_function("int Outlined::Item::get(", "int", ["cptr:"+outlined["id"]])
+    assert not gc_calls(outlined_get)
+    outer = nr_record("class Outer {")
+    inner = nr_record(" class Inner {")
+    oid, iid = outer["id"], inner["id"]
+    assert [f["type"] for f in outer["fields"]] == ["int"]
+    assert [f["type"] for f in inner["fields"]] == ["int"]
+    assert inner["layout"] == outer["layout"] == first_item["layout"]
+    own = nr_function("  int own(", "int", ["cptr:"+iid])
+    combined = nr_function("  int combined(", "int", ["cptr:"+iid, "cptr:"+oid])
+    for function, expected in (
+        (own, {("field", ("parameter", own["params"][0]["name"]), inner["fields"][0]["name"])}),
+        (combined, {("field", ("parameter", combined["params"][0]["name"]), inner["fields"][0]["name"]),
+                    ("field", ("parameter", combined["params"][1]["name"]), outer["fields"][0]["name"])})):
+        accesses = {np_place(function, n) for n in walk(function["body"]) if n.get("kind") == "member"}
+        assert accesses == expected, (function, accesses, expected)
+        assert not gc_calls(function)
+    inner_ctor = nr_function("  Inner(int", "void", ["ptr:"+iid, "int"])["name"]
+    outer_ctor = nr_function(" Outer(int", "void", ["ptr:"+oid, "int"])["name"]
+    factory = nr_function(" Item make(", "void", ["ptr:"+iid, "cptr:"+oid, "int"])
+    calls = gc_calls(factory)
+    assert [c["callee"] for c in calls] == [inner_ctor]
+    assert np_pointer(factory, calls[0]["args"][0]) == ("parameter", factory["params"][0]["name"])
+    assert not any(v["type"] in (iid, oid) for v in factory["locals"])
+    use_outer = nr_function("void useOuter(", "void", [])
+    tick = nr_function("int tick(", "int", ["int"])["name"]
+    calls = gc_calls(use_outer)
+    assert [c["callee"] for c in calls] == [outer_ctor, inner_ctor, own["name"], tick,
+        combined["name"], tick, factory["name"], own["name"], tick]
+    outer_storage, inner_storage = [np_pointer(use_outer, c["args"][0]) for c in calls[:2]]
+    assert [np_pointer(use_outer, arg) for arg in calls[4]["args"]] == [inner_storage, outer_storage]
+    assert np_pointer(use_outer, calls[6]["args"][1]) == outer_storage
+    assert np_pointer(use_outer, calls[6]["args"][0]) == np_pointer(use_outer, calls[7]["args"][0])
+    owned = nr_record("struct Owned {")
+    element = nr_record(" struct Element {")
+    wid, eid = owned["id"], element["id"]
+    field, array = [f["name"] for f in owned["fields"]]
+    assert [f["type"] for f in owned["fields"]] == [eid, "arr:2:"+eid]
+    selected_ctor = nr_function("  Element(int", "void", ["ptr:"+eid, "int"])["name"]
+    selected_copy = nr_function("  Element(const", "void", ["ptr:"+eid, "cptr:"+eid])["name"]
+    selected_move = nr_function("  Element(Element&&", "void", ["ptr:"+eid, "ptr:"+eid])["name"]
+    default_ctor = nr_function(" Owned():", "void", ["ptr:"+wid])
+    copy_ctor = nr_function(" Owned(const", "void", ["ptr:"+wid, "cptr:"+wid])
+    move_ctor = nr_function(" Owned(Owned&&", "void", ["ptr:"+wid, "ptr:"+wid])
+
+    def nr_members(parameter):
+        owner = ("parameter", parameter["name"])
+        return [("field", owner, field)] + [("element", ("field", owner, array), i) for i in (0, 1)]
+
+    calls = gc_calls(default_ctor)
+    assert [c["callee"] for c in calls] == [selected_ctor]*3
+    assert [np_pointer(default_ctor, c["args"][0]) for c in calls] == nr_members(default_ctor["params"][0])
+    assert [gc_identity(default_ctor, c["args"][1]) for c in calls] == [1, 2, 3]
+    for function, selected in ((copy_ctor, selected_copy), (move_ctor, selected_move)):
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [selected]*3
+        for i, parameter in enumerate(function["params"]):
+            assert [np_pointer(function, c["args"][i]) for c in calls] == nr_members(parameter)
+    destructor = nr_functions[wid+"_destroy"]
+    calls = gc_calls(destructor)
+    assert [c["callee"] for c in calls] == [eid+"_destroy"]*3
+    assert [np_pointer(destructor, c["args"][0]) for c in calls] == list(reversed(nr_members(destructor["params"][0])))
+    use_owned = nr_function("void useOwned(", "void", [])
+    calls = gc_calls(use_owned)
+    assert [c["callee"] for c in calls] == [default_ctor["name"], copy_ctor["name"], move_ctor["name"], tick] + [wid+"_destroy"]*3
+    destinations = [np_pointer(use_owned, c["args"][0]) for c in calls[:3]]
+    assert len(set(destinations)) == 3
+    assert [np_pointer(use_owned, c["args"][0]) for c in calls[4:]] == list(reversed(destinations))
+    assert [np_pointer(use_owned, calls[i]["args"][1]) for i in (1, 2)] == destinations[:2]
+    range_record = nr_record("class Range {")
+    iterator = nr_record(" class Iterator {")
+    rid, itid = range_record["id"], iterator["id"]
+    assert [f["type"] for f in iterator["fields"]] == ["ptr:int"]
+    range_ctor = nr_function(" Range():", "void", ["ptr:"+rid])["name"]
+    iterator_ctor = nr_function("  Iterator(int*", "void", ["ptr:"+itid, "ptr:int"])["name"]
+    begin = nr_function(" Iterator begin(", "void", ["ptr:"+itid, "ptr:"+rid])
+    end = nr_function(" Iterator end(", "void", ["ptr:"+itid, "ptr:"+rid])
+    for function in (begin, end):
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [iterator_ctor]
+        assert np_pointer(function, calls[0]["args"][0]) == ("parameter", function["params"][0]["name"])
+    comparison = nr_function("  bool operator!=(", "bool", ["cptr:"+itid, "cptr:"+itid])["name"]
+    dereference = nr_function("  int&operator*(", "ptr:int", ["cptr:"+itid])["name"]
+    increment = nr_function("  Iterator&operator++(", "ptr:"+itid, ["ptr:"+itid])["name"]
+    use_range = nr_function("void useRange(", "void", [])
+    calls = gc_calls(use_range)
+    assert [c["callee"] for c in calls] == [range_ctor, begin["name"], end["name"], comparison, dereference, tick, increment]
+    assert np_pointer(use_range, calls[1]["args"][1]) == np_pointer(use_range, calls[0]["args"][0]) == np_pointer(use_range, calls[2]["args"][1])
+    begin_storage, end_storage = [np_pointer(use_range, c["args"][0]) for c in calls[1:3]]
+    assert begin_storage != end_storage
+    assert [np_pointer(use_range, a) for a in calls[3]["args"]] == [begin_storage, end_storage]
+    assert [np_pointer(use_range, calls[i]["args"][0]) for i in (4, 6)] == [begin_storage]*2
+    for function in nested_records["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in nr_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-nested-records-relocated-") as temp:
+        relocated = check("v2-nested-records-relocated", nested_records_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == nested_records, "nested identities depend on the absolute root"
+
+    nested_records_positive = {
+        'unevaluated-outer-field': 'class R{int n;public:struct I{int size()const{return sizeof(n);}};};int main(){R::I i;return i.size()-sizeof(int);}',
+        'public': 'struct R{struct I{int n;};I i;};int main(){R r{{3}};return r.i.n-3;}',
+        'private-alias': 'class R{class I{int n;public:I(int v):n(v){}int get()const{return n;}};public:using Item=I;};int main(){R::Item i(3);return i.get()-3;}',
+        'protected-alias': 'class R{protected:struct I{int n;};public:using Item=I;};int main(){R::Item i{3};return i.n-3;}',
+        'private-factory-auto': 'class R{struct I{int n;};public:static I make(){return I{3};}};int main(){auto i=R::make();return i.n-3;}',
+        'explicit-outer': 'class R{int n=3;public:struct I{int n=4;int get(const R&r)const{return n+r.n;}};};int main(){R r;R::I i;return i.get(r)-7;}',
+        'inner-friend': 'struct R{class I{int n=3;friend struct R;};I i;int get()const{return i.n;}};int main(){R r;return r.get()-3;}',
+        'out-of-line-type': 'struct R{struct I;};struct R::I{int n;};int main(){R::I i{3};return i.n-3;}',
+        'out-of-line-member': 'struct R{struct I{int n;I(int);int get()const;};};R::I::I(int v):n(v){}int R::I::get()const{return n;}int main(){R::I i(3);return i.get()-3;}',
+        'distinct-scopes': 'struct A{struct I{int n;};};struct B{struct I{int n;};};int f(const A::I&i){return i.n;}int f(const B::I&i){return i.n+1;}int main(){A::I a{3};B::I b{3};return f(a)+f(b)-7;}',
+        'multilevel-array': 'struct R{struct I{struct V{int n;};V v[2];};I i;};int main(){R r{{{{1},{2}}}};return r.i.v[1].n-2;}',
+        'forward-self': 'struct R{struct I;struct I{I*p;};};int main(){R::I i{nullptr};i.p=&i;return i.p!=&i;}',
+        'mutual-pointers': 'struct R{struct B;struct A{B*p;};struct B{A*p;};};int main(){R::A a{nullptr};R::B b{&a};a.p=&b;return a.p->p!=&a;}',
+        'empty': 'struct R{struct I{};I a,b;};int main(){R r;return &r.a==&r.b;}',
+        'alias-enum': 'struct R{struct I{using N=unsigned int;enum class E:N{x=3};N get()const{return static_cast<N>(E::x);}};};int main(){R::I i;return i.get()-3u;}',
+        'local': 'int main(){struct R{struct I{int n;};I i;};R r{{3}};return r.i.n-3;}',
+        'nested-range': 'class R{class I{int*p;public:I(int*q):p(q){}int&operator*(){return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};int a[2]={1,2};public:I begin(){return I(a);}I end(){return I(a+2);}};int main(){int n=0;for(int v:R{})n+=v;return n-3;}',
+        'generated-copy': 'struct R{struct I{int n;I(int v):n(v){}I(const I&i):n(i.n+1){}};I i[2];};int main(){R a{{1,2}};R b=a;return b.i[0].n+b.i[1].n-5;}',
+        'generated-move': 'struct R{struct I{int n;I(int v):n(v){}I(I&&i):n(i.n){i.n=0;}};I i[2];};int main(){R a{{1,2}};R b=static_cast<R&&>(a);return a.i[0].n+a.i[1].n+b.i[1].n-2;}',
+        'nested-destructor': 'int n=0;struct R{struct I{int id;~I(){n=n*10+id;}};I i[2];};int main(){{R r{{{1},{2}}};}return n-21;}',
+        'tagged-typedef': 'struct R{typedef struct I{int n;} Item;Item item;};int main(){R r{{3}};return r.item.n-3;}',
+        'existing-top-level-anonymous': 'typedef struct{int n;} R;int main(){R r{3};return r.n-3;}',
+        'promoted-1': 'class R{struct V{int n;};V v;};',
+        'promoted-2': 'class R{struct V{int n;};friend int get(const R&){return 1;}};',
+        'promoted-3': 'struct R{struct I{int n;};I i;R():i{1}{}};',
+        'promoted-4': 'struct E{struct I{};};',
+    }
+    for name, source in nested_records_positive.items():
+        check("v2-nested-records-positive-" + name, source, profile="cpp-core-v2")
+    nested_records_reject = {
+        'anonymous-field': 'struct R{struct{int n;} value;};',
+        'anonymous-typedef': 'struct R{typedef struct{int n;} I;I i;};',
+        'nested-template': 'struct R{template<class T>struct I{T n;};};',
+        'dependent-type': 'template<class T>struct R{struct I{T n;};};',
+        'union': 'struct R{union I{int n;unsigned int u;};};',
+        'anonymous-union': 'struct R{union{int n;unsigned int u;};};',
+        'inherited': 'struct R{struct B{int n;};struct I:B{};};',
+        'virtual': 'struct R{struct I{virtual int get(){return 1;}};};',
+        'float-field': 'struct R{struct I{double n;};};',
+        'bitfield': 'struct R{struct I{int n:2;};};',
+        'reference-field': 'struct R{struct I{int&n;};};',
+        'const-field': 'struct R{struct I{const int n;};};',
+        'mutable-field': 'struct R{struct I{mutable int n;};};',
+        'unused-body': 'struct R{struct I{int get(){double d=1.0;return 1;}};};',
+        'erased-alias': 'struct R{struct I{using Unsupported=double;int n;};};',
+        'oversized-array': 'struct R{struct I{int a[65537];};I i;};',
+    }
+    for name, source in nested_records_reject.items():
+        check("v2-nested-records-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    nested_records_invalid = {
+        'nested-friend-without-outer-grant': 'class R{int n=1;struct I{friend int get(const R&r){return r.n;}};};',
+        'private-type': 'class R{struct I{int n;};};R::I f(){return R::I{1};}',
+        'protected-type': 'class R{protected:struct I{int n;};};R::I f(){return R::I{1};}',
+        'outer-without-grant': 'struct R{class I{int n=1;};I i;int get()const{return i.n;}};',
+        'without-outer-object': 'class R{int n=1;public:struct I{int get()const{return n;}};};',
+        'incomplete-by-value': 'struct R{struct I;I i;};struct R::I{int n;};',
+        'cyclic-by-value': 'struct R{struct I{R r;};I i;};',
+        'distinct-conversion': 'struct A{struct I{int n;};};struct B{struct I{int n;};};void f(){A::I a{1};B::I b=a;}',
+        'invalid-nested-access': 'struct R{class I{int n=1;};};int f(const R::I&i){return i.n;}',
+    }
+    for name, source in nested_records_invalid.items():
+        check("v2-nested-records-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    nested_records_missing = {
+    }
+    for name, source in nested_records_missing.items():
+        check("v2-nested-records-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-nested-records-field", "struct R{struct I{int n;};I i;};int main(){R r{{1}};return r.i.n-1;}", "TR0201")
+    check("v1-nested-records-type", "struct R{struct I{int n;};int n;};int main(){R::I i{1};return i.n-1;}", "TR0201")
+
+    # Cached earlier roots and preorder nested declarations enforce the same
+    # by-value depth bound. Pointer cycles are covered independently above.
+    for dependency_first in (False, True):
+        for depth in (64, 65):
+            if dependency_first:
+                source = "struct R0{int n;};" + "".join(
+                    f"struct R{i}{{R{i-1} value;}};" for i in range(1, depth+1))
+            else:
+                source = "".join(f"struct R{i}{{" for i in range(depth+1)) + "int n;};"
+                source += "".join(f"R{i} value;}};" for i in range(depth, 0, -1))
+            check(f"v2-nested-record-depth-{dependency_first}-{depth}", source,
+                  "TR0201" if depth == 65 else None, profile="cpp-core-v2")
 
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}
@@ -4707,7 +5034,6 @@ int main() {
         'constructor-const-field': 'struct R{const int n;R():n(1){}};',
         'constructor-reference-field': 'struct R{int &n;R(int &v):n(v){}};',
         'constructor-mutable-field': 'struct R{mutable int n;R():n(1){}};',
-        'constructor-nested-record': 'struct R{struct I{int n;};I i;R():i{1}{}};',
         'constructor-union': 'union R{int n;unsigned u;R():n(1){}};',
         'constructor-bitfield': 'struct R{unsigned n:3;R():n(1){}};',
         'constructor-static-data': 'struct R{int n;static int value;R():n(1){}};int R::value=1;',

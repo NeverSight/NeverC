@@ -371,7 +371,8 @@ requires CI for the implementing revision. Full C++/STL remains unfinished.
 
 Core v2 admits ordinary user-provided default, converting and multi-argument
 constructors, including `explicit`, `constexpr` and out-of-line definitions.
-Records must be unnested and standard-layout, with no bases. Empty records
+Records must be standard-layout with no bases; named non-template nested
+records follow the scope contract below. Empty records
 follow the storage contract above. Each
 selected construction, copy or assignment must follow its admitted operation
 contract, including the user moves described below.
@@ -435,6 +436,50 @@ Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
 
+## Named nested records
+
+Core v2 admits named non-template nested classes and structs with the supported
+standard layout and fields. Public, private and protected nested types preserve
+C++ source access, including legal aliases, factories, nested member definitions
+and out-of-line definitions. A nested member can access its enclosing class's
+private fields through an explicit enclosing object. The enclosing class does
+not gain access to the nested class's private members without a valid grant.
+Local named nested records follow the existing local-class rules.
+
+Each declaration retains its canonical scope identity: two `Owner::Item` types
+with the same spelling and layout remain distinct. A nested object has only its
+own fields and the ordinary receiver for its member functions. There is no
+implicit pointer to an enclosing object. Source aliases, enums and legal
+friend declarations remain checked before erasure.
+
+The producer emits record definitions in a stable order with by-value field
+and fixed-array element dependencies first. The protocol verifier and emitted
+source continue to require complete by-value dependencies. Self and mutual
+pointer references use forward declarations and add no sorting edge. Definitions
+are visited once, with a 64-level by-value depth bound and the existing expanded
+node budget; cached dependencies retain their full depth. Source-invalid cyclic
+or incomplete by-value fields produce C++ diagnostics.
+
+Construction, generated copy/move, assignment and destruction use actual nested
+field or array-element storage. Construction follows field and element order;
+cleanup reverses it. Named nested empty records keep their storage identity.
+Private nested iterator types work with the ordinary selected range operations.
+A record-typed data member and a nested type declaration are separate concepts;
+both are admitted under these contracts.
+
+Anonymous nested structs, including typedef-named anonymous nested definitions,
+remain rejected; a named tag with a typedef alias is supported. Existing
+non-nested anonymous-record behavior is unchanged. Unions, templates, inheritance,
+virtual dispatch and unsupported field/body operations retain their restrictions,
+including unused nested definitions. Older profiles continue to reject nested
+records. Full C++ and STL remain unfinished.
+
+Native O0/O2 fixtures cover access, scope identity, layouts, aliases, factories,
+local and out-of-line definitions, pointer cycles, generated operations, cleanup
+and nested iterators. Protocol fixtures check dependency order, receiver types,
+actual destinations, reverse destruction and relocation. Native results require
+CI from the implementing revision.
+
 ## Non-template friends
 
 Core v2 admits resolved non-template friend functions and friend type declarations
@@ -494,7 +539,7 @@ layout, and authorized operations use those same fields. No access flag, new IR
 instruction or runtime wrapper is needed. Generated source remains reviewable.
 
 Mixed-access non-standard-layout classes, friend templates, inheritance,
-nested records and templates remain outside this increment. Bitfields and
+anonymous nested records and templates remain outside current support. Bitfields and
 mutable, const, reference or unsupported numeric fields retain their existing
 restrictions. A getter returning a field's ordinary `T*` address does not admit
 pointer-to-member types such as `T C::*`. Older profiles keep their contracts.

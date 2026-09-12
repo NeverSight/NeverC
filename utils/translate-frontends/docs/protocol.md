@@ -114,6 +114,14 @@ inspection and layout verification; unevaluated operands produce no effects.
 The [core v2 contract](cpp-core-v2.md#integer-widths-characters-and-size-queries)
 defines the full admitted boundary. V1 profiles retain their scalar contracts.
 
+Core-v2 named nested records use the existing record IDs, fields, layouts and
+ordinary member signatures. Canonical source scopes distinguish equal-spelled
+types. No enclosing-object field or extra receiver is added. The producer orders
+by-value record/array dependencies before users; the verifier still rejects
+forward or cyclic by-value dependencies. Pointer dependencies retain forward
+declarations. See [named nested records](cpp-core-v2.md#named-nested-records)
+for source access, bounded sorting and object lifetime rules.
+
 Resolved core-v2 non-template friend declarations are source-level grants,
 checked by embedded Clang and the producer's complete declaration/body traversal.
 They introduce no IR access flag or runtime operation. Hidden free friends retain

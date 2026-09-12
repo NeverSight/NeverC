@@ -2612,7 +2612,6 @@ TEST_F(TranslateTest, CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"mixed-access", "struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};", "TR0201"},
       {"inheritance", "class R{protected:int n=1;};class D:public R{public:int get(){return n;}};", "TR0201"},
-      {"nested-record", "class R{struct V{int n;};V v;};", "TR0201"},
       {"const-field", "class R{const int n=1;public:int get()const{return n;}};", "TR0201"},
       {"reference-field", "class R{int&n;public:R(int&v):n(v){}};", "TR0201"},
       {"mutable-field", "class R{mutable int n=1;public:int get()const{return ++n;}};", "TR0201"},
@@ -2879,7 +2878,6 @@ TEST_F(TranslateTest, CoreV2FriendsRetainAccessAndSourceBoundaries) {
       {"floating-default", "class R{int n=1;friend int get(const R&r,double v=1.0){return r.n;}};", "TR0201"},
       {"floating-friend-type", "class R{int n=1;friend double;};", "TR0201"},
       {"dead-floating-body", "class R{int n=1;friend int get(const R&r){if(false){double ignored=1.0;}return r.n;}};", "TR0201"},
-      {"nested-record", "class R{struct V{int n;};friend int get(const R&){return 1;}};", "TR0201"},
       {"inheritance", "struct B{int n;};class R:public B{friend int get(const R&r){return r.n;}};", "TR0201"},
       {"nonfriend-private", "class R{int n=1;friend int get(const R&r){return r.n;}};int other(const R&r){return r.n;}", "TR0202"},
       {"not-reciprocal", "class B;class A{int n=1;friend class B;public:int get(const B&);};class B{int n=2;};int A::get(const B&b){return b.n;}", "TR0202"},
@@ -2909,6 +2907,287 @@ TEST_F(TranslateTest, CoreV2FriendsRetainAccessAndSourceBoundaries) {
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
     expectCode(Result, "TR0201");
     expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedRecordsPreserveTypesAndLifetimes) {
+  const auto Source = tmpFile("nested-records.cpp");
+  const auto Output = tmpFile("nested-records.nc");
+  writeFile(Source, R"cpp(
+int live=0,copies=0,moves=0,bad=0;
+long long trace=0;
+class Outer {
+ int seed;
+ class Inner {
+  int value;
+ public:
+  Inner(int n):value(n){}
+  int own()const{return value;}
+  int combined(const Outer&o)const{return value+o.seed;}
+ };
+protected:
+ struct Protected {int n;};
+public:
+ using Item=Inner;
+ using Visible=Protected;
+ Outer(int n):seed(n){}
+ Item make(int n)const{return Item(n+seed);}
+};
+class Granted {
+ class Inner {
+  int n;
+  friend class Granted;
+ public:Inner(int v):n(v){}
+ };
+ Inner inner;
+public:Granted(int n):inner(n){}
+ int get()const{return inner.n;}
+};
+struct Outlined {struct Item;};
+struct Outlined::Item {
+ int n;
+ Item(int v);
+ int get()const;
+};
+Outlined::Item::Item(int v):n(v){}
+int Outlined::Item::get()const{return n;}
+struct Left {struct Item{int n;};Item item;};
+struct Right {struct Item{int n;};Item item;};
+int identify(const Left::Item&i){return i.n+1;}
+int identify(const Right::Item&i){return i.n+2;}
+struct Deep {
+ struct Middle {
+  struct Leaf {int n;};
+  Leaf leaf;
+ };
+ Middle middle;
+ Middle::Leaf extra[2];
+};
+struct Links {
+ struct B;
+ struct A {int n;A*self;B*other;};
+ struct B {int n;A*other;};
+ A first;
+ B second;
+};
+struct Empty {
+ struct Item {};
+ Item first,second;
+};
+struct Flags {
+ struct Item {
+  enum class Mode:unsigned int {value=7u};
+  using Count=unsigned int;
+  Count get()const{return static_cast<Count>(Mode::value);}
+ };
+};
+struct Owned {
+ struct Item {
+  int n;
+  Item*self;
+  Item(int v):n(v),self(this){++live;}
+  Item(const Item&s):n(s.n),self(this){++live;++copies;}
+  Item(Item&&s):n(s.n),self(this){s.n=0;++live;++moves;}
+  Item&operator=(const Item&s){n=s.n;++copies;return *this;}
+  Item&operator=(Item&&s){n=s.n;s.n=0;++moves;return *this;}
+  ~Item(){if(self!=this)++bad;--live;trace=trace*10+n;}
+ };
+ Item first;
+ Item items[2];
+ Owned():first(1),items{Item(2),Item(3)}{}
+ Owned(const Owned&)=default;
+ Owned(Owned&&)=default;
+ Owned&operator=(const Owned&)=default;
+ Owned&operator=(Owned&&)=default;
+ ~Owned()=default;
+};
+class Range {
+ int values[3];
+ class Iterator {
+  int*p;
+ public:
+  Iterator(int*q):p(q){}
+  int&operator*()const{return *p;}
+  Iterator&operator++(){++p;return *this;}
+  friend bool operator!=(const Iterator&a,const Iterator&b){return a.p!=b.p;}
+ };
+public:
+ Range():values{2,3,4}{}
+ Iterator begin(){return Iterator(values);}
+ Iterator end(){return Iterator(values+3);}
+ int sum()const{return values[0]+values[1]+values[2];}
+};
+int local(){struct Local{struct Item{int n;};Item item;};Local l{{13}};return l.item.n;}
+int main(){
+ Outer outer(5);Outer::Item inner(3);
+ if(inner.own()!=3||inner.combined(outer)!=8)return 1;
+ auto made=outer.make(4);if(made.own()!=9||made.combined(outer)!=14)return 2;
+ Outer::Visible visible{6};if(visible.n!=6)return 3;
+ Granted granted(7);if(granted.get()!=7)return 4;
+ Outlined::Item outlined(8);if(outlined.get()!=8)return 5;
+ Left left{{9}};Right right{{9}};
+ if(identify(left.item)!=10||identify(right.item)!=11)return 6;
+ Deep deep{{{1}},{{2},{3}}};if(deep.middle.leaf.n!=1||deep.extra[0].n!=2||deep.extra[1].n!=3)return 7;
+ Deep copied=deep;copied.middle.leaf.n=4;copied.extra[0].n=5;
+ if(deep.middle.leaf.n!=1||deep.extra[0].n!=2||copied.middle.leaf.n!=4||copied.extra[0].n!=5)return 8;
+ Links links{{10,nullptr,nullptr},{11,nullptr}};
+ links.first.self=&links.first;links.first.other=&links.second;links.second.other=&links.first;
+ if(links.first.self!=&links.first||links.first.other->n!=11||links.second.other->n!=10)return 9;
+ Empty empty;if(sizeof(Empty::Item)!=1||&empty.first==&empty.second)return 10;
+ Flags::Item flags;if(flags.get()!=7u)return 11;
+ if(local()!=13)return 12;
+ {
+  Owned original;
+  if(live!=3||original.first.self!=&original.first||original.items[1].self!=&original.items[1])return 13;
+  {
+   Owned copy=original;
+   if(live!=6||copies!=3||copy.first.self!=&copy.first||copy.items[0].self!=&copy.items[0])return 14;
+   Owned moved=static_cast<Owned&&>(copy);
+   if(live!=9||moves!=3||moved.items[1].self!=&moved.items[1]||copy.items[1].n)return 15;
+   copy=original;
+   if(copies!=6||copy.items[0].n!=2||copy.items[0].self!=&copy.items[0])return 16;
+   moved=static_cast<Owned&&>(copy);
+   if(moves!=6||moved.items[0].n!=2||copy.items[0].n||moved.items[0].self!=&moved.items[0])return 17;
+  }
+  if(live!=3||bad||trace!=321000)return 18;
+ }
+ if(live||bad||trace!=321000321LL)return 19;
+ Range range;int sum=0;for(int&v:range){++v;sum+=v;}
+ if(sum!=12||range.sum()!=12)return 20;
+ sum=0;for(int v:Range{})sum+=v;if(sum!=9)return 21;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("nested-records" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedRecordsAcceptResolvedDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"public", "struct R{struct I{int n;};I i;};int main(){R r{{3}};return r.i.n-3;}"},
+      {"private-alias", "class R{class I{int n;public:I(int v):n(v){}int get()const{return n;}};public:using Item=I;};int main(){R::Item i(3);return i.get()-3;}"},
+      {"protected-alias", "class R{protected:struct I{int n;};public:using Item=I;};int main(){R::Item i{3};return i.n-3;}"},
+      {"private-factory-auto", "class R{struct I{int n;};public:static I make(){return I{3};}};int main(){auto i=R::make();return i.n-3;}"},
+      {"explicit-outer", "class R{int n=3;public:struct I{int n=4;int get(const R&r)const{return n+r.n;}};};int main(){R r;R::I i;return i.get(r)-7;}"},
+      {"inner-friend", "struct R{class I{int n=3;friend struct R;};I i;int get()const{return i.n;}};int main(){R r;return r.get()-3;}"},
+      {"out-of-line-type", "struct R{struct I;};struct R::I{int n;};int main(){R::I i{3};return i.n-3;}"},
+      {"out-of-line-member", "struct R{struct I{int n;I(int);int get()const;};};R::I::I(int v):n(v){}int R::I::get()const{return n;}int main(){R::I i(3);return i.get()-3;}"},
+      {"distinct-scopes", "struct A{struct I{int n;};};struct B{struct I{int n;};};int f(const A::I&i){return i.n;}int f(const B::I&i){return i.n+1;}int main(){A::I a{3};B::I b{3};return f(a)+f(b)-7;}"},
+      {"multilevel-array", "struct R{struct I{struct V{int n;};V v[2];};I i;};int main(){R r{{{{1},{2}}}};return r.i.v[1].n-2;}"},
+      {"forward-self", "struct R{struct I;struct I{I*p;};};int main(){R::I i{nullptr};i.p=&i;return i.p!=&i;}"},
+      {"mutual-pointers", "struct R{struct B;struct A{B*p;};struct B{A*p;};};int main(){R::A a{nullptr};R::B b{&a};a.p=&b;return a.p->p!=&a;}"},
+      {"empty", "struct R{struct I{};I a,b;};int main(){R r;return &r.a==&r.b;}"},
+      {"alias-enum", "struct R{struct I{using N=unsigned int;enum class E:N{x=3};N get()const{return static_cast<N>(E::x);}};};int main(){R::I i;return i.get()-3u;}"},
+      {"local", "int main(){struct R{struct I{int n;};I i;};R r{{3}};return r.i.n-3;}"},
+      {"nested-range", "class R{class I{int*p;public:I(int*q):p(q){}int&operator*(){return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};int a[2]={1,2};public:I begin(){return I(a);}I end(){return I(a+2);}};int main(){int n=0;for(int v:R{})n+=v;return n-3;}"},
+      {"generated-copy", "struct R{struct I{int n;I(int v):n(v){}I(const I&i):n(i.n+1){}};I i[2];};int main(){R a{{1,2}};R b=a;return b.i[0].n+b.i[1].n-5;}"},
+      {"generated-move", "struct R{struct I{int n;I(int v):n(v){}I(I&&i):n(i.n){i.n=0;}};I i[2];};int main(){R a{{1,2}};R b=static_cast<R&&>(a);return a.i[0].n+a.i[1].n+b.i[1].n-2;}"},
+      {"nested-destructor", "int n=0;struct R{struct I{int id;~I(){n=n*10+id;}};I i[2];};int main(){{R r{{{1},{2}}};}return n-21;}"},
+      {"tagged-typedef", "struct R{typedef struct I{int n;} Item;Item item;};int main(){R r{{3}};return r.item.n-3;}"},
+      {"existing-top-level-anonymous", "typedef struct{int n;} R;int main(){R r{3};return r.n-3;}"},
+      {"unevaluated-outer-field", "class R{int n;public:struct I{int size()const{return sizeof(n);}};};int main(){R::I i;return i.size()-sizeof(int);}"},
+      {"promoted-1", "class R{struct V{int n;};V v;};"},
+      {"promoted-2", "class R{struct V{int n;};friend int get(const R&){return 1;}};"},
+      {"promoted-3", "struct R{struct I{int n;};I i;R():i{1}{}};"},
+      {"promoted-4", "struct E{struct I{};};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nested-records-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("nested-records-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedRecordsRetainAccessAndSourceBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"anonymous-field", "struct R{struct{int n;} value;};", "TR0201"},
+      {"anonymous-typedef", "struct R{typedef struct{int n;} I;I i;};", "TR0201"},
+      {"nested-template", "struct R{template<class T>struct I{T n;};};", "TR0201"},
+      {"dependent-type", "template<class T>struct R{struct I{T n;};};", "TR0201"},
+      {"union", "struct R{union I{int n;unsigned int u;};};", "TR0201"},
+      {"anonymous-union", "struct R{union{int n;unsigned int u;};};", "TR0201"},
+      {"inherited", "struct R{struct B{int n;};struct I:B{};};", "TR0201"},
+      {"virtual", "struct R{struct I{virtual int get(){return 1;}};};", "TR0201"},
+      {"float-field", "struct R{struct I{double n;};};", "TR0201"},
+      {"bitfield", "struct R{struct I{int n:2;};};", "TR0201"},
+      {"reference-field", "struct R{struct I{int&n;};};", "TR0201"},
+      {"const-field", "struct R{struct I{const int n;};};", "TR0201"},
+      {"mutable-field", "struct R{struct I{mutable int n;};};", "TR0201"},
+      {"unused-body", "struct R{struct I{int get(){double d=1.0;return 1;}};};", "TR0201"},
+      {"erased-alias", "struct R{struct I{using Unsupported=double;int n;};};", "TR0201"},
+      {"oversized-array", "struct R{struct I{int a[65537];};I i;};", "TR0201"},
+      {"private-type", "class R{struct I{int n;};};R::I f(){return R::I{1};}", "TR0202"},
+      {"protected-type", "class R{protected:struct I{int n;};};R::I f(){return R::I{1};}", "TR0202"},
+      {"outer-without-grant", "struct R{class I{int n=1;};I i;int get()const{return i.n;}};", "TR0202"},
+      {"without-outer-object", "class R{int n=1;public:struct I{int get()const{return n;}};};", "TR0202"},
+      {"incomplete-by-value", "struct R{struct I;I i;};struct R::I{int n;};", "TR0202"},
+      {"cyclic-by-value", "struct R{struct I{R r;};I i;};", "TR0202"},
+      {"distinct-conversion", "struct A{struct I{int n;};};struct B{struct I{int n;};};void f(){A::I a{1};B::I b=a;}", "TR0202"},
+      {"nested-friend-without-outer-grant", "class R{int n=1;struct I{friend int get(const R&r){return r.n;}};};", "TR0202"},
+      {"invalid-nested-access", "struct R{class I{int n=1;};};int f(const R::I&i){return i.n;}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nested-records-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("nested-records-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"struct R{struct I{int n;};I i;};int main(){R r{{1}};return r.i.n-1;}",
+                                  "struct R{struct I{int n;};int n;};int main(){R::I i{1};return i.n-1;}"}) {
+    const auto Source = tmpFile("nested-records-v1.cpp");
+    const auto Output = tmpFile("nested-records-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedRecordsBoundDependencyDepth) {
+  for (bool DependencyFirst : {false, true}) {
+    for (unsigned Depth : {64u, 65u}) {
+      SCOPED_TRACE(DependencyFirst);
+      SCOPED_TRACE(Depth);
+      std::string Code;
+      if (DependencyFirst) {
+        Code = "struct R0{int n;};";
+        for (unsigned I = 1; I <= Depth; ++I)
+          Code += "struct R" + std::to_string(I) + "{R" +
+                  std::to_string(I - 1) + " value;};";
+      } else {
+        for (unsigned I = 0; I <= Depth; ++I)
+          Code += "struct R" + std::to_string(I) + "{";
+        Code += "int n;};";
+        for (unsigned I = Depth; I > 0; --I)
+          Code += "R" + std::to_string(I) + " value;};";
+      }
+      const auto Name = "nested-record-depth-" + std::to_string(DependencyFirst) +
+                        "-" + std::to_string(Depth);
+      const auto Source = tmpFile(Name + ".cpp");
+      const auto Output = tmpFile(Name + ".nc");
+      writeFile(Source, Code);
+      auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+      if (Depth == 64)
+        EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+      else {
+        expectCode(Result, "TR0201");
+        expectNoArtifacts(Output);
+      }
+    }
   }
 }
 
@@ -3589,7 +3868,6 @@ TEST_F(TranslateTest, CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries) {
       {"base", "struct E{};struct D:E{};", "TR0201"},
       {"union", "union E{};", "TR0201"},
       {"virtual", "struct E{virtual void f(){}};", "TR0201"},
-      {"nested", "struct E{struct I{};};", "TR0201"},
       {"template", "template<class T>struct E{};E<int> e;", "TR0201"},
       {"overaligned", "struct alignas(2) E{};", "TR0201"},
       {"attribute", "struct __attribute__((packed)) E{};", "TR0201"},
@@ -6368,7 +6646,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"const-field", "struct R{const int n;R():n(1){}};"},
       {"reference-field", "struct R{int &n;R(int &v):n(v){}};"},
       {"mutable-field", "struct R{mutable int n;R():n(1){}};"},
-      {"nested-record", "struct R{struct I{int n;};I i;R():i{1}{}};"},
       {"union", "union R{int n;unsigned u;R():n(1){}};"},
       {"bitfield", "struct R{unsigned n:3;R():n(1){}};"},
       {"static-data", "struct R{int n;static int value;R():n(1){}};int R::value=1;"},

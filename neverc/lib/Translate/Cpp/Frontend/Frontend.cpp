@@ -18,6 +18,7 @@
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FileSystem.h"
@@ -1612,11 +1613,12 @@ public:
         (A.S.coreV2() && !D->isStandardLayout()) ||
         (!A.S.coreV2() && D->field_empty()) ||
         D->getNumBases() || D->getDescribedClassTemplate() ||
-        D->getDeclContext()->isRecord())
+        (D->getDeclContext()->isRecord() &&
+         (!A.S.coreV2() || !D->getIdentifier())))
       A.reject(D->getLocation(), "record",
-               "Only unnested standard-layout records with supported selected "
-               "special members and no bases are admitted; "
-               "empty records require core v2.");
+               "Only standard-layout records with supported selected special "
+               "members and no bases are admitted; empty and named nested "
+               "records require core v2.");
     A.Records.push_back(D);
     return true;
   }
@@ -1992,6 +1994,75 @@ public:
   }
 };
 
+// RAV visits an enclosing record before its nested declarations. By-value
+// fields require complete definitions in both the protocol and emitted source;
+// pointer fields only require the existing forward declarations.
+static void orderCoreV2Records(Adapter &A) {
+  llvm::DenseMap<const CXXRecordDecl *, std::size_t> Indices;
+  for (std::size_t I = 0; I < A.Records.size(); ++I) {
+    const auto *R = A.Records[I];
+    A.chargeExpansion(1, R->getLocation());
+    if (!Indices.try_emplace(R->getCanonicalDecl(), I).second) {
+      A.reject(R->getLocation(), "record definition",
+               "A record definition was collected more than once.");
+      throw Failure{};
+    }
+  }
+  enum class Visit { Unvisited, Active, Done };
+  std::vector<Visit> State(A.Records.size(), Visit::Unvisited);
+  std::vector<unsigned> Heights(A.Records.size(), 0);
+  std::vector<CXXRecordDecl *> Ordered;
+  Ordered.reserve(A.Records.size());
+  auto Order = [&](auto &&Self, std::size_t I, unsigned Depth) -> void {
+    auto *R = A.Records[I];
+    if (Depth > 64 || State[I] == Visit::Active) {
+      A.reject(R->getLocation(), "record dependency",
+               "By-value record dependencies are cyclic or exceed the depth limit.");
+      throw Failure{};
+    }
+    if (State[I] == Visit::Done)
+      return;
+    State[I] = Visit::Active;
+    for (const auto *F : R->fields()) {
+      A.chargeExpansion(1, F->getLocation());
+      QualType T = F->getType();
+      unsigned ArrayDepth = 0;
+      while (const auto *Array = A.Context.getAsConstantArrayType(T)) {
+        if (++ArrayDepth > 64) {
+          A.reject(F->getLocation(), "record dependency",
+                   "Array field nesting exceeds the depth limit.");
+          throw Failure{};
+        }
+        A.chargeExpansion(1, F->getLocation());
+        T = Array->getElementType();
+      }
+      const auto *Dependency = T->getAsCXXRecordDecl();
+      if (!Dependency)
+        continue;
+      auto Found = Indices.find(Dependency->getCanonicalDecl());
+      if (Found == Indices.end()) {
+        A.reject(F->getLocation(), "record dependency",
+                 "A by-value field requires a checked source-owned record definition.");
+        throw Failure{};
+      }
+      Self(Self, Found->second, Depth + 1);
+      // Cache subtree height as well as visitation. A dependency emitted by an
+      // earlier root still contributes its full depth to the current record.
+      if (Heights[Found->second] >= 64) {
+        A.reject(F->getLocation(), "record dependency",
+                 "By-value record nesting exceeds the depth limit.");
+        throw Failure{};
+      }
+      Heights[I] = std::max(Heights[I], Heights[Found->second] + 1);
+    }
+    State[I] = Visit::Done;
+    Ordered.push_back(R);
+  };
+  for (std::size_t I = 0; I < A.Records.size(); ++I)
+    Order(Order, I, 0);
+  A.Records = std::move(Ordered);
+}
+
 void Adapter::run() {
   Allowlist Check(*this);
   Check.TraverseDecl(Context.getTranslationUnitDecl());
@@ -2000,6 +2071,8 @@ void Adapter::run() {
   Check.finishGeneratedMethods();
   if (!S.Diagnostics.empty())
     return;
+  if (S.coreV2())
+    orderCoreV2Records(*this);
   const auto &Target = Context.getTargetInfo();
   if (Target.getIntWidth() != 32 || Target.getCharWidth() != 8 ||
       !Target.isLittleEndian()) {
