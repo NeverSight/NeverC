@@ -4357,6 +4357,131 @@ TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries
   }
 }
 
+TEST_F(TranslateTest, CoreV2NestedFriendDeclarationsPreserveGrantsAndDefaults) {
+  const auto Source = tmpFile("nested-friend-declarations.cpp");
+  const auto Output = tmpFile("nested-friend-declarations.nc");
+  writeFile(Source, R"cpp(int ticks=0;
+int live=0;
+struct Guard{int n;Guard(int v):n(v){++live;}~Guard(){--live;}};
+class Outer{
+ using Hidden=int;
+ static const int secret=9;
+public:
+ class Inner{
+  using Value=Hidden;
+  static int next(){return ++ticks;}
+ public:
+  int n;
+  friend Value read(Inner v,Value add){return v.n+add;}
+  friend int effect(Inner,int value=next()){return value;}
+  friend int guard(Inner,const Guard&g=Guard(5)){return g.n+live;}
+ };
+ struct Member{int get(int value=secret)const{return value;}};
+ static const int visible=7;
+ struct Public{friend int publicDefault(Public,int value=Outer::visible){return value;}};
+};
+int granted(int);
+class Grant{using Value=int;friend int granted(int);public:struct Inner{friend Value granted(int n){return n;}};};
+int readCall(int n){return read(Outer::Inner{n},2);}
+int omittedCall(){return effect(Outer::Inner{3});}
+int explicitCall(){return effect(Outer::Inner{3},7);}
+int guardCall(){return guard(Outer::Inner{3});}
+int memberCall(){Outer::Member m;return m.get();}
+int publicCall(){return publicDefault(Outer::Public{});}
+int grantedCall(){return granted(6);}
+int main(){
+ if(readCall(3)!=5)return 1;
+ if(omittedCall()!=1||ticks!=1)return 2;
+ if(explicitCall()!=7||ticks!=1)return 3;
+ if(omittedCall()!=2||ticks!=2)return 4;
+ if(guardCall()!=6||live)return 5;
+ if(memberCall()!=9||publicCall()!=7)return 6;
+ if(grantedCall()!=6)return 7;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("nested-friend-declarations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedFriendDeclarationsAcceptFunctionPrivileges) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"own-return-alias", "class R{public:class I{using Value=int;public:friend Value get(I,int n){return n;}};};int main(){return get(R::I{},3)-3;}"},
+      {"own-parameter-alias", "class R{public:class I{using Value=int;public:friend int get(I,Value n){return n;}};};int main(){return get(R::I{},3)-3;}"},
+      {"inner-alias-to-outer", "class R{using Hidden=int;public:class I{using Value=Hidden;public:friend Value get(I,Value n){return n;}};};int main(){return get(R::I{},3)-3;}"},
+      {"own-default-constant", "class R{public:class I{static const int n=3;public:friend int get(I,int value=n){return value;}};};int main(){return get(R::I{})-3;}"},
+      {"own-default-call", "int ticks=0;class R{public:class I{static int next(){return ++ticks;}public:friend int get(I,int n=next()){return n;}};};int main(){int a=get(R::I{});int b=get(R::I{},7);return a-1+b-7+ticks-1;}"},
+      {"own-array-bound", "class R{public:class I{static const int n=2;public:friend int get(I,int(&v)[n]){return v[0]+v[1];}};};int main(){int a[2]={3,4};return get(R::I{},a)-7;}"},
+      {"public-return-alias", "class R{public:using Value=int;struct I{friend Value get(I,int n){return n;}};};int main(){return get(R::I{},3)-3;}"},
+      {"public-default", "class R{public:static const int n=3;struct I{friend int get(I,int value=R::n){return value;}};};int main(){return get(R::I{})-3;}"},
+      {"explicit-outer-grant", "int get(int);class R{using Value=int;friend int get(int);public:struct I{friend Value get(int n){return n;}};};int main(){return get(3)-3;}"},
+      {"ordinary-nested-member", "class R{using Value=int;static const int n=3;public:struct I{Value get(int value=n)const{return value;}};};int main(){R::I i;return i.get()-3;}"},
+      {"own-trailing-return", "class R{public:class I{using Value=int;public:friend auto get(I,int n)->Value{return n;}};};int main(){return get(R::I{},3)-3;}"},
+      {"deep-own-alias", "class Outer{public:class R{public:class I{using Value=int;public:friend Value get(I,int n){return n;}};};};int main(){return get(Outer::R::I{},3)-3;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nested-friend-declarations-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("nested-friend-declarations-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedFriendDeclarationsRejectImplicitEnclosingPrivileges) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"outer-parameter-alias", "class R{using Value=int;public:struct I{friend int get(I,Value n){return n;}};};"},
+      {"outer-trailing-return", "class R{using Value=int;public:struct I{friend auto get(I)->Value{return 1;}};};"},
+      {"outer-qualified-return", "class R{using Value=int;public:struct I{friend R::Value get(I){return 1;}};};"},
+      {"outer-return-decltype", "class R{static int make(){return 3;}public:struct I{friend auto get(I)->decltype(R::make()){return 1;}};};"},
+      {"outer-array-bound", "class R{static const int n=2;public:struct I{friend int get(I,int(&v)[R::n]){return v[0];}};};"},
+      {"outer-protected-alias", "class R{protected:using Value=int;public:struct I{friend Value get(I){return 1;}};};"},
+      {"outer-private-parameter-type", "class R{struct Hidden{};public:struct I{friend int get(I,Hidden){return 1;}};};"},
+      {"outer-default-type", "class R{struct Hidden{};public:struct I{friend int get(I,int n=sizeof(R::Hidden)){return n;}};};"},
+      {"outer-default-call", "class R{static int next(){return 3;}public:struct I{friend int get(I,int n=R::next()){return n;}};};"},
+      {"outer-default-constructor", "class R{R(int){}public:struct I{friend int get(I,const R&v=R(3)){return 1;}};};"},
+      {"outer-default-destructor", "class R{~R(){}public:R(int){}struct I{friend int get(I,const R&v=R(3)){return 1;}};};"},
+      {"unrelated-overload-grant", "int get(bool);class R{using Value=int;friend int get(bool);public:struct I{friend Value get(int n){return n;}};};int get(bool){return 0;}"},
+      {"deep-outer-alias", "class Outer{using Value=int;public:struct R{struct I{friend Value get(I){return 1;}};};};"},
+      {"immediate-nomination", "class D{class E{class F{};friend void use(D::E::F&);};friend void use(D::E::F&);};"},
+      {"deep-immediate-nomination", "class Outer{class D{class E{class F{};friend void use(D::E::F&);};friend void use(D::E::F&);};};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nested-friend-declarations-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("nested-friend-declarations-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NestedFriendDeclarationsRetainNonFunctionBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"nonfunction-type-friend", "class R{class Hidden{};public:struct I{friend class R::Hidden;};};"},
+      {"nonfunction-template-friend", "class R{template<class T>struct Hidden{};public:struct I{template<class T>friend struct R::Hidden;};};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nested-friend-declarations-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("nested-friend-declarations-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ImportedDefaultsPreserveCallsAndLifetimes) {
   const auto Source = tmpFile("imported-defaults.cpp");
   const auto Output = tmpFile("imported-defaults.nc");

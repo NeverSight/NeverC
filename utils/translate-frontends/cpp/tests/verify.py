@@ -6226,6 +6226,124 @@ int closedOverloads(){return Captured::select(true);}
     for name, source in imported_defaults_invalid.items():
         check("v2-imported-defaults-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
 
+    friend_declarations_source = """int ticks=0;
+int live=0;
+struct Guard{int n;Guard(int v):n(v){++live;}~Guard(){--live;}};
+class Outer{
+ using Hidden=int;
+ static const int secret=9;
+public:
+ class Inner{
+  using Value=Hidden;
+  static int next(){return ++ticks;}
+ public:
+  int n;
+  friend Value read(Inner v,Value add){return v.n+add;}
+  friend int effect(Inner,int value=next()){return value;}
+  friend int guard(Inner,const Guard&g=Guard(5)){return g.n+live;}
+ };
+ struct Member{int get(int value=secret)const{return value;}};
+ static const int visible=7;
+ struct Public{friend int publicDefault(Public,int value=Outer::visible){return value;}};
+};
+int granted(int);
+class Grant{using Value=int;friend int granted(int);public:struct Inner{friend Value granted(int n){return n;}};};
+int readCall(int n){return read(Outer::Inner{n},2);}
+int omittedCall(){return effect(Outer::Inner{3});}
+int explicitCall(){return effect(Outer::Inner{3},7);}
+int guardCall(){return guard(Outer::Inner{3});}
+int memberCall(){Outer::Member m;return m.get();}
+int publicCall(){return publicDefault(Outer::Public{});}
+int grantedCall(){return granted(6);}
+"""
+    friend_declarations = check("v2-friend-declarations-protocol", friend_declarations_source, profile="cpp-core-v2")
+    fd_functions = {f["name"]: f for f in friend_declarations["functions"]}
+    assert len(fd_functions) == len(friend_declarations["functions"])
+
+    def fd_function(prefix):
+        lines = [i for i, line in enumerate(friend_declarations_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        found = [f for f in friend_declarations["functions"] if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    read = fd_function("  friend Value read(")
+    effect = fd_function("  friend int effect(")
+    next_value = fd_function("  static int next(")
+    guard = fd_function("  friend int guard(")
+    assert read["result"] == effect["result"] == guard["result"] == "int"
+    assert len(read["params"]) == len(effect["params"]) == len(guard["params"]) == 2
+    receiver = read["params"][0]["type"]
+    assert receiver.startswith("ptr:") and effect["params"][0]["type"] == guard["params"][0]["type"] == receiver
+    assert read["params"][1]["type"] == effect["params"][1]["type"] == "int"
+    assert not next_value["params"], "static default helper has no receiver"
+    omitted = gc_calls(fd_function("int omittedCall("))
+    explicit = gc_calls(fd_function("int explicitCall("))
+    assert [call["callee"] for call in omitted] == [next_value["name"], effect["name"]]
+    assert di_call_result(fd_function("int omittedCall("), omitted[1]["args"][1]) == omitted[0]["target"]["name"]
+    assert len(explicit) == 1 and explicit[0]["callee"] == effect["name"]
+    assert gc_identity(fd_function("int explicitCall("), explicit[0]["args"][1]) == 7
+    caller = fd_function("int guardCall(")
+    calls = gc_calls(caller)
+    assert len(calls) == 3 and calls[1]["callee"] == guard["name"]
+    constructor, destructor = [fd_functions[calls[i]["callee"]] for i in (0, 2)]
+    guard_pointer = guard["params"][1]["type"]
+    assert [p["type"] for p in constructor["params"]] == [guard_pointer, "int"]
+    assert [p["type"] for p in destructor["params"]] == [guard_pointer]
+    assert gc_identity(caller, calls[0]["args"][1]) == 5
+    assert np_pointer(caller, calls[0]["args"][0]) == np_pointer(caller, calls[1]["args"][1])
+    assert np_pointer(caller, calls[0]["args"][0]) == np_pointer(caller, calls[2]["args"][0])
+    for function in friend_declarations["functions"]:
+        for call in gc_calls(function):
+            assert call["callee"] in fd_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in fd_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-friend-declarations-relocated-") as temp:
+        relocated = check("v2-friend-declarations-relocated", friend_declarations_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == friend_declarations
+
+    friend_declarations_positive = {
+        'own-return-alias': 'class R{public:class I{using Value=int;public:friend Value get(I,int n){return n;}};};int main(){return get(R::I{},3)-3;}',
+        'own-parameter-alias': 'class R{public:class I{using Value=int;public:friend int get(I,Value n){return n;}};};int main(){return get(R::I{},3)-3;}',
+        'inner-alias-to-outer': 'class R{using Hidden=int;public:class I{using Value=Hidden;public:friend Value get(I,Value n){return n;}};};int main(){return get(R::I{},3)-3;}',
+        'own-default-constant': 'class R{public:class I{static const int n=3;public:friend int get(I,int value=n){return value;}};};int main(){return get(R::I{})-3;}',
+        'own-default-call': 'int ticks=0;class R{public:class I{static int next(){return ++ticks;}public:friend int get(I,int n=next()){return n;}};};int main(){int a=get(R::I{});int b=get(R::I{},7);return a-1+b-7+ticks-1;}',
+        'own-array-bound': 'class R{public:class I{static const int n=2;public:friend int get(I,int(&v)[n]){return v[0]+v[1];}};};int main(){int a[2]={3,4};return get(R::I{},a)-7;}',
+        'public-return-alias': 'class R{public:using Value=int;struct I{friend Value get(I,int n){return n;}};};int main(){return get(R::I{},3)-3;}',
+        'public-default': 'class R{public:static const int n=3;struct I{friend int get(I,int value=R::n){return value;}};};int main(){return get(R::I{})-3;}',
+        'explicit-outer-grant': 'int get(int);class R{using Value=int;friend int get(int);public:struct I{friend Value get(int n){return n;}};};int main(){return get(3)-3;}',
+        'ordinary-nested-member': 'class R{using Value=int;static const int n=3;public:struct I{Value get(int value=n)const{return value;}};};int main(){R::I i;return i.get()-3;}',
+        'own-trailing-return': 'class R{public:class I{using Value=int;public:friend auto get(I,int n)->Value{return n;}};};int main(){return get(R::I{},3)-3;}',
+        'deep-own-alias': 'class Outer{public:class R{public:class I{using Value=int;public:friend Value get(I,int n){return n;}};};};int main(){return get(Outer::R::I{},3)-3;}',
+    }
+    for name, source in friend_declarations_positive.items():
+        check("v2-friend-declarations-positive-" + name, source, profile="cpp-core-v2")
+    friend_declarations_invalid = {
+        'outer-parameter-alias': 'class R{using Value=int;public:struct I{friend int get(I,Value n){return n;}};};',
+        'outer-trailing-return': 'class R{using Value=int;public:struct I{friend auto get(I)->Value{return 1;}};};',
+        'outer-qualified-return': 'class R{using Value=int;public:struct I{friend R::Value get(I){return 1;}};};',
+        'outer-return-decltype': 'class R{static int make(){return 3;}public:struct I{friend auto get(I)->decltype(R::make()){return 1;}};};',
+        'outer-array-bound': 'class R{static const int n=2;public:struct I{friend int get(I,int(&v)[R::n]){return v[0];}};};',
+        'outer-protected-alias': 'class R{protected:using Value=int;public:struct I{friend Value get(I){return 1;}};};',
+        'outer-private-parameter-type': 'class R{struct Hidden{};public:struct I{friend int get(I,Hidden){return 1;}};};',
+        'outer-default-type': 'class R{struct Hidden{};public:struct I{friend int get(I,int n=sizeof(R::Hidden)){return n;}};};',
+        'outer-default-call': 'class R{static int next(){return 3;}public:struct I{friend int get(I,int n=R::next()){return n;}};};',
+        'outer-default-constructor': 'class R{R(int){}public:struct I{friend int get(I,const R&v=R(3)){return 1;}};};',
+        'outer-default-destructor': 'class R{~R(){}public:R(int){}struct I{friend int get(I,const R&v=R(3)){return 1;}};};',
+        'unrelated-overload-grant': 'int get(bool);class R{using Value=int;friend int get(bool);public:struct I{friend Value get(int n){return n;}};};int get(bool){return 0;}',
+        'deep-outer-alias': 'class Outer{using Value=int;public:struct R{struct I{friend Value get(I){return 1;}};};};',
+        'immediate-nomination': 'class D{class E{class F{};friend void use(D::E::F&);};friend void use(D::E::F&);};',
+        'deep-immediate-nomination': 'class Outer{class D{class E{class F{};friend void use(D::E::F&);};friend void use(D::E::F&);};};',
+    }
+    for name, source in friend_declarations_invalid.items():
+        check("v2-friend-declarations-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
+    friend_declarations_reject = {
+        'nonfunction-type-friend': 'class R{class Hidden{};public:struct I{friend class R::Hidden;};};',
+        'nonfunction-template-friend': 'class R{template<class T>struct Hidden{};public:struct I{template<class T>friend struct R::Hidden;};};',
+    }
+    for name, source in friend_declarations_reject.items():
+        check("v2-friend-declarations-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+
     frontend_repairs_source = """namespace Original{int count=3;using Value=int;int read(int v){return v;}}
 namespace First{using Original::count;using Original::Value;using Original::read;}
 namespace Second{using First::count;using First::Value;using First::read;}

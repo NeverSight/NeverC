@@ -24,6 +24,14 @@ these functions no implicit enclosing-class access; canonical function grants
 still permit explicit friendship from their own or enclosing classes. Ordinary
 nested member access and non-nested friend contexts are unchanged. The patch
 checks original/rewritten source states and rejects partial or duplicate edits.
+The supplemental declaration check keeps immediate nominated-name access
+validation before redeclaration merging and rechecks only completed friend
+functions with their canonical grants. A private DelayedDiagnostic flag leaves
+type-friend and existing diagnostic behavior unchanged. Late-parsed nested
+friend defaults use a matching temporary function scope/context, preserving
+lexical lookup and restoring parser/Sema state afterwards. SemaAccess.cpp,
+DelayedDiagnostic.h and ParseCXXInlineMethods.cpp are validated as one source
+group before any supplemental rewrite; mixed or partial groups are rejected.
 A checked DeclCXX.h/DeclCXX.cpp pair also propagates later namespace default
 arguments through existing using declarations, as required by C++17
 [dcl.fct.default]/9. It selects only a later declaration of the same non-template

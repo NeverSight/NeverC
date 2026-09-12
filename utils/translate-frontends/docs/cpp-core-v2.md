@@ -2213,3 +2213,16 @@ to that set; a later overload is not added to the earlier import. Calls appearin
 before the default declaration still require explicit arguments. Omitted arguments
 retain declaration-site binding, evaluate once per call, and preserve the existing
 reference temporary lifetime rules.
+
+### Nested friend declaration access
+
+Access to a nested friend function's return type, parameter types and default
+arguments uses that function's own privileges. Its friendship with the nested
+class does not implicitly grant access to private or protected names of an outer
+class. Explicit grants and accessible inner aliases remain valid. Nominated names
+are also checked in the befriending class before redeclaration merging. Ordinary
+nested member access and non-function friend declaration checks retain their
+existing behavior; type-friend translation remains outside the current profile.
+The embedded parser preserves lexical lookup while checking late default arguments
+in the function context. Omitted defaults keep their call-site evaluation and
+cleanup behavior.

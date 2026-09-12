@@ -651,6 +651,15 @@ public:
                                    "// After source sentinel.\n")
         files["clang/include/clang/AST/DeclCXX.h"] = original_default_header
         files["clang/lib/AST/DeclCXX.cpp"] = original_default_source
+        original_declaration_access = '    if (!IsFriendDeclaration) {\n      S.DelayedDiagnostics.add(DelayedDiagnostic::makeAccess(Loc, Entity));\n      return Sema::AR_delayed;\n    }\n  }\n\n  EffectiveContext EC(S.CurContext);\n\nvoid Sema::HandleDelayedAccessCheck(DelayedDiagnostic &DD, Decl *D) {\n  // Access control for names used in the declarations of functions'
+        rewritten_declaration_access = "    if (!IsFriendDeclaration) {\n      S.DelayedDiagnostics.add(DelayedDiagnostic::makeAccess(Loc, Entity));\n      return Sema::AR_delayed;\n    }\n    // Retain the immediate nominated-name check before redeclaration merging,\n    // then check the completed nested friend function's own access context.\n    const auto *NestedClass = dyn_cast<CXXRecordDecl>(S.CurContext);\n    if (NestedClass && isa<CXXRecordDecl>(NestedClass->getDeclContext())) {\n      auto Diagnostic = DelayedDiagnostic::makeAccess(Loc, Entity);\n      Diagnostic.NestedFriendAccess = true;\n      S.DelayedDiagnostics.add(Diagnostic);\n    }\n  }\n\n  EffectiveContext EC(S.CurContext);\n\nvoid Sema::HandleDelayedAccessCheck(DelayedDiagnostic &DD, Decl *D) {\n  // Supplemental function checks must not change type-friend declarations,\n  // including the ClassTemplateDecl returned by a templated friend tag.\n  if (DD.NestedFriendAccess &&\n      !isa<FunctionDecl, FunctionTemplateDecl>(D))\n    return;\n  // Access control for names used in the declarations of functions"
+        files['clang/lib/Sema/SemaAccess.cpp'] += "\n\n" + original_declaration_access
+        original_declaration_marker = '  DDKind Kind;\n  bool Triggered;\n\n  SourceLocation Loc;'
+        rewritten_declaration_marker = '  DDKind Kind;\n  bool Triggered;\n  bool NestedFriendAccess = false;\n\n  SourceLocation Loc;'
+        files['clang/include/clang/Sema/DelayedDiagnostic.h'] = original_declaration_marker
+        original_declaration_parser = '    std::unique_ptr<CachedTokens> Toks = std::move(LM.DefaultArgs[I].Toks);\n    if (Toks) {\n      ParenBraceBracketBalancer BalancerRAIIObj(*this);'
+        rewritten_declaration_parser = "    std::unique_ptr<CachedTokens> Toks = std::move(LM.DefaultArgs[I].Toks);\n    if (Toks) {\n      // A nested friend default uses the function's access context while\n      // preserving the surrounding class scopes for lexical name lookup.\n      auto *Function = dyn_cast<FunctionDecl>(LM.Method);\n      if (const auto *Template = dyn_cast<FunctionTemplateDecl>(LM.Method))\n        Function = Template->getTemplatedDecl();\n      const auto *Lexical = Function\n          ? dyn_cast<CXXRecordDecl>(Function->getLexicalDeclContext()) : nullptr;\n      bool NestedFriendDefault = Function && Function->getFriendObjectKind() &&\n          Lexical && isa<CXXRecordDecl>(Lexical->getDeclContext());\n      ParseScope DefaultScope(this, Scope::FnScope, NestedFriendDefault);\n      std::optional<Sema::ContextRAII> DefaultContext;\n      std::optional<Sema::FunctionScopeRAII> DefaultFunctionScope;\n      if (NestedFriendDefault) {\n        DefaultContext.emplace(Actions, Function, /*NewThisContext=*/false);\n        DefaultFunctionScope.emplace(Actions);\n        Actions.PushFunctionScope();\n      }\n      ParenBraceBracketBalancer BalancerRAIIObj(*this);"
+        files['clang/lib/Parse/ParseCXXInlineMethods.cpp'] = original_declaration_parser
         files.update(math_sources)
         for name in notice_names:
             files["llvm/lib/Support/" + name] = (
@@ -705,7 +714,8 @@ public:
 
             run_script(True)
             access_path = source / "clang/lib/Sema/SemaAccess.cpp"
-            self.assertEqual(access_path.read_text(encoding="utf-8"), expected_access)
+            self.assertEqual(access_path.read_text(encoding="utf-8"),
+                             expected_access + "\n\n" + rewritten_declaration_access)
             default_header = source / "clang/include/clang/AST/DeclCXX.h"
             default_source = source / "clang/lib/AST/DeclCXX.cpp"
             rewritten_default_header = default_header.read_text(encoding="utf-8")
@@ -718,6 +728,10 @@ public:
             self.assertTrue(rewritten_default_source.startswith("// Before source sentinel.\n"))
             self.assertTrue(rewritten_default_source.endswith(
                 "UsingShadowDecl::UsingShadowDecl(Kind K) {}\n// After source sentinel.\n"))
+            declaration_marker = source / "clang/include/clang/Sema/DelayedDiagnostic.h"
+            declaration_parser = source / "clang/lib/Parse/ParseCXXInlineMethods.cpp"
+            self.assertEqual(declaration_marker.read_text(encoding="utf-8"), rewritten_declaration_marker)
+            self.assertEqual(declaration_parser.read_text(encoding="utf-8"), rewritten_declaration_parser)
             rewritten_setup = setup_path.read_text(encoding="utf-8")
             self.assertEqual(rewritten_setup, expected_setup)
             self.assertEqual(rewritten_setup.count(expected_owner), 1)
@@ -747,7 +761,8 @@ public:
             stable = {path: path.read_bytes() for path in (
                 loop, output, notices, source / "llvm/lib/IR/IntrinsicInst.cpp",
                 source / "llvm/include/llvm/Transforms/Utils/Debugify.h",
-                setup_path, access_path, default_header, default_source, *math_paths.values())}
+                setup_path, access_path, default_header, default_source, declaration_marker,
+                declaration_parser, *math_paths.values())}
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))
@@ -850,7 +865,60 @@ public:
             untouched = snapshot_all_files()
             run_script(False, "Unexpected pinned Clang nested friend access source in " + str(access_path))
             self.assertEqual(snapshot_all_files(), untouched)
-            access_path.write_text(original_access, encoding="utf-8")
+            access_path.write_text(original_access + "\n\n" + rewritten_declaration_access, encoding="utf-8")
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            # All supplemental friend sources are preflighted as one group.
+            # Keep the prior body-context patch intact while varying this group.
+            declaration_paths = (access_path, declaration_marker, declaration_parser)
+            declaration_original = (expected_access + "\n\n" + original_declaration_access,
+                                    original_declaration_marker, original_declaration_parser)
+            declaration_rewritten = (expected_access + "\n\n" + rewritten_declaration_access,
+                                     rewritten_declaration_marker, rewritten_declaration_parser)
+            for mask in range(1, 7):
+                with self.subTest(nested_declaration_mixed_state=mask):
+                    for index, path in enumerate(declaration_paths):
+                        path.write_text((declaration_rewritten if mask & (1 << index) else
+                                         declaration_original)[index], encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang nested friend declaration source group")
+                    self.assertEqual(snapshot_all_files(), untouched)
+            for fragment in ("Diagnostic.NestedFriendAccess = true;", "if (DD.NestedFriendAccess &&"):
+                for path, text in zip(declaration_paths, declaration_rewritten):
+                    path.write_text(text, encoding="utf-8")
+                access_path.write_text(declaration_rewritten[0].replace(fragment, "", 1), encoding="utf-8")
+                untouched = snapshot_all_files()
+                run_script(False, "Unexpected pinned Clang nested friend declaration source group")
+                self.assertEqual(snapshot_all_files(), untouched)
+            for index, path in enumerate(declaration_paths):
+                for state in ("missing file", "missing anchor", "duplicate block", "extra marker"):
+                    with self.subTest(nested_declaration_path=index, state=state):
+                        for target, text in zip(declaration_paths, declaration_rewritten):
+                            target.write_text(text, encoding="utf-8")
+                        if state == "missing file":
+                            path.unlink()
+                        elif state == "missing anchor":
+                            text = declaration_rewritten[index]
+                            token = ("Diagnostic.NestedFriendAccess = true;", "bool NestedFriendAccess = false;",
+                                     "DefaultContext.emplace(Actions, Function, /*NewThisContext=*/false);")[index]
+                            path.write_text(text.replace(token, "", 1), encoding="utf-8")
+                        elif state == "duplicate block":
+                            extra = (rewritten_declaration_access, rewritten_declaration_marker,
+                                     rewritten_declaration_parser)[index]
+                            path.write_text(declaration_rewritten[index] + "\n" + extra, encoding="utf-8")
+                        else:
+                            path.write_text(declaration_rewritten[index] + "\n// NestedFriendAccess\n", encoding="utf-8")
+                        untouched = snapshot_all_files()
+                        # Missing SemaAccess is rejected by the preceding body patch.
+                        error = ("Unexpected pinned Clang nested friend access source in " + str(path)
+                                 if index == 0 and state == "missing file" else
+                                 "Unexpected pinned Clang nested friend declaration source group")
+                        run_script(False, error)
+                        self.assertEqual(snapshot_all_files(), untouched)
+            for path, text in zip(declaration_paths, declaration_original):
+                path.write_text(text, encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))

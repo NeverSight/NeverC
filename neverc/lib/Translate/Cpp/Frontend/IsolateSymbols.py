@@ -171,6 +171,113 @@ UsingShadowDecl::UsingShadowDecl("""
             path.write_text(text, encoding="utf-8")
 
 
+def fix_nested_friend_declaration_access(source_root):
+    # Keep the supplemental checks together: access queue, diagnostic marker,
+    # and the late default's matching parser/Sema function context.
+    groups = (
+        ('clang/lib/Sema/SemaAccess.cpp', (
+            ("""    if (!IsFriendDeclaration) {
+      S.DelayedDiagnostics.add(DelayedDiagnostic::makeAccess(Loc, Entity));
+      return Sema::AR_delayed;
+    }
+  }
+
+  EffectiveContext EC(S.CurContext);""",
+             """    if (!IsFriendDeclaration) {
+      S.DelayedDiagnostics.add(DelayedDiagnostic::makeAccess(Loc, Entity));
+      return Sema::AR_delayed;
+    }
+    // Retain the immediate nominated-name check before redeclaration merging,
+    // then check the completed nested friend function's own access context.
+    const auto *NestedClass = dyn_cast<CXXRecordDecl>(S.CurContext);
+    if (NestedClass && isa<CXXRecordDecl>(NestedClass->getDeclContext())) {
+      auto Diagnostic = DelayedDiagnostic::makeAccess(Loc, Entity);
+      Diagnostic.NestedFriendAccess = true;
+      S.DelayedDiagnostics.add(Diagnostic);
+    }
+  }
+
+  EffectiveContext EC(S.CurContext);"""),
+            ("""void Sema::HandleDelayedAccessCheck(DelayedDiagnostic &DD, Decl *D) {
+  // Access control for names used in the declarations of functions""",
+             """void Sema::HandleDelayedAccessCheck(DelayedDiagnostic &DD, Decl *D) {
+  // Supplemental function checks must not change type-friend declarations,
+  // including the ClassTemplateDecl returned by a templated friend tag.
+  if (DD.NestedFriendAccess &&
+      !isa<FunctionDecl, FunctionTemplateDecl>(D))
+    return;
+  // Access control for names used in the declarations of functions"""),
+        )),
+        ('clang/include/clang/Sema/DelayedDiagnostic.h', (
+            ("""  DDKind Kind;
+  bool Triggered;
+
+  SourceLocation Loc;""",
+             """  DDKind Kind;
+  bool Triggered;
+  bool NestedFriendAccess = false;
+
+  SourceLocation Loc;"""),
+        )),
+        ('clang/lib/Parse/ParseCXXInlineMethods.cpp', (
+            ("""    std::unique_ptr<CachedTokens> Toks = std::move(LM.DefaultArgs[I].Toks);
+    if (Toks) {
+      ParenBraceBracketBalancer BalancerRAIIObj(*this);""",
+             """    std::unique_ptr<CachedTokens> Toks = std::move(LM.DefaultArgs[I].Toks);
+    if (Toks) {
+      // A nested friend default uses the function's access context while
+      // preserving the surrounding class scopes for lexical name lookup.
+      auto *Function = dyn_cast<FunctionDecl>(LM.Method);
+      if (const auto *Template = dyn_cast<FunctionTemplateDecl>(LM.Method))
+        Function = Template->getTemplatedDecl();
+      const auto *Lexical = Function
+          ? dyn_cast<CXXRecordDecl>(Function->getLexicalDeclContext()) : nullptr;
+      bool NestedFriendDefault = Function && Function->getFriendObjectKind() &&
+          Lexical && isa<CXXRecordDecl>(Lexical->getDeclContext());
+      ParseScope DefaultScope(this, Scope::FnScope, NestedFriendDefault);
+      std::optional<Sema::ContextRAII> DefaultContext;
+      std::optional<Sema::FunctionScopeRAII> DefaultFunctionScope;
+      if (NestedFriendDefault) {
+        DefaultContext.emplace(Actions, Function, /*NewThisContext=*/false);
+        DefaultFunctionScope.emplace(Actions);
+        Actions.PushFunctionScope();
+      }
+      ParenBraceBracketBalancer BalancerRAIIObj(*this);"""),
+        )),
+    )
+    error_message = "Unexpected pinned Clang nested friend declaration source group"
+    updates = []
+    states = []
+    for relative, replacements in groups:
+        path = source_root / relative
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise SystemExit(error_message) from error
+        counts = [(text.count(before), text.count(after)) for before, after in replacements]
+        if all(count == (1, 0) for count in counts):
+            state = 0
+        elif all(count == (0, 1) for count in counts):
+            state = 1
+        else:
+            raise SystemExit(error_message)
+        remainder = text
+        for pair in replacements:
+            remainder = remainder.replace(pair[state], "", 1)
+        if "NestedFriendAccess" in remainder or "NestedFriendDefault" in remainder:
+            raise SystemExit(error_message)
+        states.append(state)
+        if state == 0:
+            for before, after in replacements:
+                text = text.replace(before, after, 1)
+        updates.append((path, text))
+    if len(set(states)) != 1:
+        raise SystemExit(error_message)
+    if states[0] == 0:
+        for path, text in updates:
+            path.write_text(text, encoding="utf-8")
+
+
 def fix_nested_friend_access(path):
     # Restrict the pinned access-context walk, preserving canonical function
     # grants. This changes only the extracted private Clang library source.
@@ -345,6 +452,7 @@ _COM_SMARTPTR_TYPEDEF(ISetupInstance2, __uuidof(ISetupInstance2));
 # do not roll back previously completed patches.
 isolate_setup_bstr(args.source / "llvm/lib/WindowsDriver/MSVCPaths.cpp")
 fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
+fix_nested_friend_declaration_access(args.source)
 fix_imported_namespace_defaults(args.source)
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
