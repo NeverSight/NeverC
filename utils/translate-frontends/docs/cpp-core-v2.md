@@ -161,9 +161,8 @@ int main() {
 
 Reference declarations, arguments and results add no complete-object cleanup
 owner. Passing a live xvalue by value or returning it as a value follows Clang's
-selected admitted copy/move or existing implicit trivial operation. User moves
-follow their separate contract below; generated/defaulted moves remain a
-following increment. Copy
+selected admitted copy/move or existing implicit trivial operation. User and generated moves
+follow their separate contracts below. Copy
 assignment declarations retain their own receiver restrictions; an unqualified
 admitted assignment can operate on a live xvalue receiver.
 
@@ -351,7 +350,7 @@ int main() {
 Defaulted nonvirtual destructors, both in-class and out-of-line, use the normal
 reverse member/array cleanup without a user body. Trivial defaulted destructors
 need no call. Deleted/defaulted-deleted functions and written exception
-specifications remain rejected. Generated/defaulted moves, exception unwinding and STL remain later
+specifications remain rejected. Exception unwinding and STL remain later
 milestones. Actual execution evidence must come from the implementing revision's CI.
 
 ## Default member initializers
@@ -399,7 +398,7 @@ member initializer retains its full-expression cleanup; temporary objects from
 aggregate clauses survive through the complete aggregate initialization. The
 existing complete-object cleanup owner remains responsible for normal destruction.
 Reference lifetime extension, temporary method receivers, static initialization
-outside the current contract, exceptions, generated/defaulted moves, templates and STL are not enabled
+outside the current contract, exceptions, templates and STL are not enabled
 by admitting field defaults. Unevaluated construction introduces no runtime default
 calls or invented generated body. V1 profiles continue to reject field defaults.
 
@@ -455,8 +454,8 @@ user-defined copying instead executes its selected source body.
 Named-local or named-parameter returns keep Clang's selected copy/move operation;
 NeverC does not infer NRVO by aliasing the source to the destination. Normal
 destruction and parameter cleanup follow the contract below. User-defined copy
-and move operations follow the next sections; generated/defaulted moves and
-exception unwinding still require further support before broader C++/STL admission.
+and generated copy/move operations follow the next sections. Exception unwinding
+still requires further support before broader C++/STL admission.
 
 ## User-defined copy operations
 
@@ -516,7 +515,7 @@ its result. Reference source parameters do not own or destroy their referents.
 A containing aggregate may be initialized with a member having user-defined
 copy operations without selecting a copy of the containing object. Generated
 copy construction and assignment follow the next sections. Deleted special
-members, generated/defaulted moves, templates, variadic/default
+members, templates, variadic/default
 arguments, written exception specifications, general overloaded operators/conversions,
 allocation and exception unwinding are not added. Existing temporary source-reference and
 nonstatic temporary-receiver restrictions still apply. Missing definitions and
@@ -586,7 +585,7 @@ order; references and member initialization add no separate complete-object owne
 The callee still destroys by-value parameters. Assignment adds neither an implicit
 destruction nor a replacement construction.
 
-Generated/defaulted move operations, deleted functions, volatile/restrict sources
+Deleted functions, volatile/restrict sources
 or receivers, const receivers, other assignment result types, default/variadic
 parameters, written exception specifications, arbitrary operators, inheritance,
 templates and STL remain outside this increment. Fresh temporary source-reference
@@ -600,6 +599,80 @@ out-of-line definitions, ref-qualified assignment and source/target destruction.
 Protocol checks assert full signatures, selected identities, final storage,
 absence of extra copying/owners and deterministic relocation. Native execution
 evidence must come from the implementing revision's CI.
+
+## Generated move construction and assignment
+
+Core v2 supports implicit and explicitly defaulted move constructors and move
+assignment for the admitted records. Their sole source parameter is mutable
+`R&&` of the same canonical type; assignment returns mutable `R&` and admits
+unqualified, `&` and `&&` receivers. In-class, out-of-line and explicit defaulted
+move constructors retain their C++ initialization rules. Written exception
+specifications remain excluded, including across redeclarations. Invalid C++17
+defaulted signatures, such as `const R&&` sources or const receivers, retain
+source diagnostics; this differs from the admitted user-defined const-source moves.
+
+Selected generated definitions are discovered transitively and emitted once.
+Unused, unevaluated and trivial functions need no invented body. Nontrivial
+construction uses the actual destination and initializes members in declaration
+order; nested array sources are captured once per enclosing row, with elements
+initialized in increasing index order. Each member retains the copy or move that
+Clang selected. A member with no move operation may therefore execute its copy
+constructor or copy assignment. Generated moves never rerun default member
+initializers or repair stored self pointers.
+
+```cpp
+struct Leaf {
+  int value;
+  Leaf *self = this;
+  Leaf(int n) : value(n) {}
+  Leaf(Leaf &&source) : value(source.value + 1) { source.value = -1; }
+};
+struct Box {
+  Leaf items[2];
+  Box(Box &&) = default;
+};
+int main() {
+  Box source{{Leaf(3), Leaf(5)}};
+  Box target(static_cast<Box&&>(source));
+  return target.items[0].value == 4 && source.items[0].value == -1
+      && target.items[1].self == &target.items[1] ? 0 : 1;
+}
+```
+
+Generated nontrivial assignment executes selected member functions and nested
+array loops, then returns its own receiver. A member's different returned alias
+does not change that enclosing result. Scalar arrays and arrays with a selected
+trivial assignment use bounded typed stores, including trivial copy fallback and
+records whose constructors or destructors are nontrivial. Only Clang's checked
+generated member-array copy shape is recognized; no runtime memory-copy import
+or ordinary source builtin is admitted.
+
+Trivial moves retain stored field and pointer values. Assignment captures source
+and receiver references in the syntax-required order, then reads source values
+after operand effects. The old inline implicit trivial move operation also uses
+this sequencing. Its previously admitted temporary sources and operator receivers
+remain supported through ordinary full-expression materialization and inline
+stores, without a helper call or lifetime extension. The analogous implicit
+trivial move-construction path is preserved. This narrow compatibility behavior
+does not admit temporary bindings for ordinary reference declarations, parameters
+or results, explicitly defaulted/user move calls, or explicit member calls on
+temporary receivers.
+
+Move construction and assignment leave complete-object cleanup ownership intact.
+Both moved-from sources and destinations are destroyed normally. By-value
+parameters still own separate caller-prepared storage and are destroyed by the
+callee; selected return moves initialize the caller's result. Direct prvalue
+forwarding adds no extra operation and no NRVO heuristic aliases named objects.
+Array extents, storage and expanded-node budgets remain enforced. Unsupported
+layouts, deleted operations, broader temporary lifetimes, exceptions, general
+operators, templates and STL still require further work; v1 profiles are unchanged.
+
+O0/O2 no-inline fixtures cover selected copy fallback, member/array order, self
+and chained assignment, operand effects, pointer values, defaults, by-value and
+result storage, cleanup and existing inline temporary behavior. Protocol fixtures
+check canonical functions, complete signatures, array source/destination indices,
+typed stores, lazy definitions, ownership and deterministic relocation. Native
+execution evidence must come from the implementing revision's CI.
 
 ## Generated copy construction
 
@@ -646,7 +719,7 @@ or purely unevaluated defaulted copies do not need a materialized Clang body.
 An admitted trivial copy also needs no function body. Runtime nontrivial copies
 must have a checked materialized definition.
 
-Generated/defaulted moves, unsupported layouts, temporary source-reference lifetime extension, exceptions,
+Unsupported layouts, temporary source-reference lifetime extension, exceptions,
 templates and STL headers remain outside this increment. Array extent, object
 storage and expanded-node limits still apply. Regression fixtures cover selected
 calls, nested source/destination indices, one source-array capture, mutable source
@@ -660,7 +733,7 @@ Core v2 admits implicit and explicitly defaulted copy assignment for the same
 checked records. The source parameter is exactly one `R&` or `const R&`, and the
 result is mutable `R&`. The receiver may be unqualified or lvalue-qualified with
 `&`. In-class and out-of-line defaulting preserve their selected operations;
-written exception specifications, deleted functions and generated/defaulted moves remain rejected.
+written exception specifications and deleted functions remain rejected.
 
 A nontrivial generated assignment becomes a checked
 `ptr:Record(ptr:Record, ptr/cptr:Record)` function. Its synthesized body assigns
@@ -936,7 +1009,7 @@ a separate generated header belongs to project mode.
 ## Remaining scope and wire representation
 
 128-bit and extended integers, floating-point types,
-generated/defaulted moves, exception unwinding, templates,
+exception unwinding, templates,
 exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2

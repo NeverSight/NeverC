@@ -333,6 +333,22 @@ def main():
         'user-move-previously-rejected-3': 'struct R{int n;R&operator=(R&&s){n=s.n;return *this;}};',
         'user-move-previously-rejected-7': 'struct R{int n;R(int v):n(v){} R(R&&v):n(v.n){}};',
     })
+    core_v2.update({
+        'generated-move-defaulted-constructor': 'struct R{int n;R(R&&)=default;};',
+        'generated-move-defaulted-assignment': 'struct R{int n;R&operator=(R&&)=default;};',
+        'generated-move-implicit-nontrivial-constructor': 'struct I{int n;I(I&&s):n(s.n+1){s.n=-1;}};struct R{I items[2];};R f(R&&s){return static_cast<R&&>(s);}',
+        'generated-move-implicit-nontrivial-assignment': 'struct I{int n;I&operator=(I&&s){n=s.n+1;s.n=-1;return *this;}};struct R{I items[2];};R&f(R&a,R&b){return a=static_cast<R&&>(b);}',
+        'generated-move-copy-fallback-constructor': 'struct I{int n;I(const I&s):n(s.n+1){}};struct R{I items[2];R(R&&)=default;};R f(R&&s){return static_cast<R&&>(s);}',
+        'generated-move-copy-fallback-assignment': 'struct I{int n;I&operator=(const I&s){n=s.n+1;return *this;}};struct R{I items[2];R&operator=(R&&)=default;};R&f(R&a,R&b){return a=static_cast<R&&>(b);}',
+        'generated-move-trivial-operator': 'struct R{int n[2];R&operator=(R&&)=default;};R&f(R&a,R&b){return a=static_cast<R&&>(b);}',
+        'generated-move-trivial-member': 'struct R{int n[2];R&operator=(R&&)=default;};R&f(R&a,R&b){return a.operator=(static_cast<R&&>(b));}',
+        'generated-move-trivial-arrow': 'struct R{int n[2];R&operator=(R&&)=default;};R&f(R*a,R*b){return a->operator=(static_cast<R&&>(*b));}',
+        'generated-move-rvalue-qualified': 'struct R{int n;R&operator=(R&&)&&=default;};R&f(R&a,R&b){return static_cast<R&&>(a)=static_cast<R&&>(b);}',
+        'generated-move-unused-nontrivial': 'struct I{int n;I(I&&s):n(s.n+1){}};struct R{I i;R(R&&)=default;};',
+        'generated-move-unevaluated': 'struct I{int n;I(I&&s):n(s.n+1){}};struct R{I i;R(R&&)=default;};int f(R&&s){return sizeof(R(static_cast<R&&>(s)));}',
+        'generated-move-inline-temporary-assignment': 'struct R{int n;};int f(){R a{1};a=R{2};return (R{3}=R{4}).n+a.n;}',
+        'generated-move-inline-temporary-construction': 'struct R{int n;};int f(){R a(static_cast<R&&>(R{1}));return a.n;}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -749,8 +765,6 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
         'copy-noexcept-false': 'struct R{int n;R(const R&)noexcept(false)=default;};',
         'copy-throw': 'struct R{int n;R(const R&)throw()=default;};',
         'out-of-line-noexcept': 'struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;',
-        'move-default': 'struct R{int n;R(R&&)=default;};',
-        'move-assignment-default': 'struct R{int n;R&operator=(R&&)=default;};',
         'reference-field': 'struct R{int &n;R(const R&)=default;};',
         'const-field': 'struct R{const int n;R(const R&)=default;};',
         'nonpublic-field': 'class R{int n;public:R(const R&)=default;};',
@@ -876,7 +890,6 @@ void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
         'noexcept-false': 'struct R{int n;R&operator=(const R&)noexcept(false)=default;};',
         'out-of-line-noexcept': 'struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;',
         'rvalue-receiver': 'struct R{int n;R&operator=(const R&)&&=default;};',
-        'move-assignment': 'struct R{int n;R&operator=(R&&)=default;};',
         'const-field': 'struct R{const int n;R&operator=(const R&)=default;};',
         'reference-field': 'struct R{int&n;R&operator=(const R&)=default;};',
         'private-field': 'class R{int n;public:R&operator=(const R&)=default;};',
@@ -1151,8 +1164,6 @@ int ordered(R&r,int&trace){return receiver(r,trace).set(argument(trace));}
         'global-reference': 'int n;int&&r=static_cast<int&&>(n);',
         'function-reference': 'int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}',
         'method-noexcept': 'struct R{int n;int get()&&noexcept{return n;}};',
-        'defaulted-move': 'struct R{int n;R(R&&)=default;};',
-        'defaulted-move-assignment': 'struct R{int n;R&operator=(R&&)=default;};',
     }
     for name, source in rvalue_rejected.items():
         check("v2-rvalue_rejected-" + name, source, "TR0201", profile="cpp-core-v2")
@@ -1274,13 +1285,11 @@ R parameterResult(R source){return source;}
 
     user_move_rejected = {
         'deleted-constructor': 'struct R{int n;R(R&&)=delete;};',
-        'defaulted-constructor': 'struct R{int n;R(R&&)=default;};',
         'volatile-constructor': 'struct R{int n;R(volatile R&&r):n(r.n){}};',
         'const-volatile-constructor': 'struct R{int n;R(const volatile R&&r):n(r.n){}};',
         'constructor-noexcept': 'struct R{int n;R(R&&r)noexcept:n(r.n){}};',
         'constructor-default-argument': 'struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};',
         'deleted-assignment': 'struct R{int n;R&operator=(R&&)=delete;};',
-        'defaulted-assignment': 'struct R{int n;R&operator=(R&&)=default;};',
         'volatile-assignment-source': 'struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};',
         'const-assignment-receiver': 'struct R{int n;R&operator=(R&&)const{return const_cast<R&>(*this);}};',
         'volatile-assignment-receiver': 'struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};',
@@ -1309,6 +1318,209 @@ R parameterResult(R source){return source;}
     check('v2-user-move-missing-constructor', 'struct R{int n;R(R&&);};', "TR0203", profile="cpp-core-v2")
     check('v2-user-move-missing-assignment', 'struct R{int n;R&operator=(R&&);};', "TR0203", profile="cpp-core-v2")
     check("v1-user-move", "struct R{int n;R(R&&r):n(r.n){}};", "TR0201")
+    generated_move_source = """struct Leaf { int n;Leaf*self=this;Leaf*alias=this;
+ Leaf(int v):n(v){}
+ Leaf(const Leaf&s):n(s.n+100){}
+ Leaf(Leaf&&s):n(s.n+10){s.n=-1;}
+ Leaf&operator=(const Leaf&s){n=s.n+30;return *alias;}
+ Leaf&operator=(Leaf&&s){n=s.n+20;s.n=-1;return *alias;}
+ ~Leaf(){}
+};
+struct CopyOnly{int n;CopyOnly(int v):n(v){}CopyOnly(const CopyOnly&s):n(s.n+100){}CopyOnly&operator=(const CopyOnly&s){n=s.n+30;return *this;}~CopyOnly(){}};
+struct Plain{int n;Plain*self=this;Plain(int v):n(v){}Plain(const Plain&s):n(s.n){}~Plain(){}};
+struct MovePlain{int n;MovePlain*self=this;MovePlain(int v):n(v){}MovePlain&operator=(MovePlain&&)=default;~MovePlain(){}};
+struct Inner{Leaf items[2];};
+struct Box{int scalar[2][2];Inner inner;Leaf grid[2][2];CopyOnly fallback[2];Box*self=this;Box(Box&&)=default;Box&operator=(Box&&)=default;};
+struct ArrayAssignment{Plain copied[2];MovePlain moved[2];Leaf leaf;};
+struct Outside{Leaf leaf;Outside(Outside&&);Outside&operator=(Outside&&);};
+Outside::Outside(Outside&&)=default;
+Outside&Outside::operator=(Outside&&)=default;
+struct Trivial{int values[2];Trivial*self=this;Trivial(Trivial&&)=default;Trivial&operator=(Trivial&&)=default;};
+struct Lazy{Leaf leaf;Lazy(Lazy&&)=default;Lazy&operator=(Lazy&&)=default;};
+Box build(Box&&source){return static_cast<Box&&>(source);}
+void twice(Box&a,Box&b){a=static_cast<Box&&>(b);a.operator=(static_cast<Box&&>(b));}
+ArrayAssignment&assignArrays(ArrayAssignment&a,ArrayAssignment&b){return a=static_cast<ArrayAssignment&&>(b);}
+Outside outside(Outside&&source){return static_cast<Outside&&>(source);}
+Outside&assignOutside(Outside&a,Outside&b){return a=static_cast<Outside&&>(b);}
+Trivial trivialMove(Trivial&&source){return static_cast<Trivial&&>(source);}
+Trivial&trivialAssign(Trivial&a,Trivial&b){return a=static_cast<Trivial&&>(b);}
+Trivial&trivialMember(Trivial&a,Trivial&b){return a.operator=(static_cast<Trivial&&>(b));}
+int query(Lazy&source){return sizeof(Lazy(static_cast<Lazy&&>(source)));}
+int queryAssignment(Lazy&a,Lazy&b){return sizeof(a=static_cast<Lazy&&>(b));}
+Box&&right(Box&r){return static_cast<Box&&>(r);}
+Box&left(Box&r){return r;}
+void ordered(Box&a,Box&b){left(a)=right(b);}
+void memberOrdered(Box&a,Box&b){left(a).operator=(right(b));}
+struct Simple{int n;};
+Simple makeSimple(){return {1};}
+Simple&compatAssign(Simple&r){return r=Simple{2};}
+Simple compatConstruct(){return Simple(static_cast<Simple&&>(Simple{3}));}
+int compatReceiver(){return (Simple{4}=Simple{5}).n;}
+int take(Box value){return value.grid[0][0].n;}
+void consume(Box&source){take(static_cast<Box&&>(source));}
+"""
+    generated_moves = check("v2-generated-move-protocol", generated_move_source, profile="cpp-core-v2")
+    gm_records = {r["loc"]["line"]: r for r in generated_moves["records"]}
+    gm_functions = {f["name"]: f for f in generated_moves["functions"]}
+    gm_lines = {f["loc"]["line"]: f for f in generated_moves["functions"]}
+
+    def gm_helper(record_line, assignment=False, source_const=False):
+        rid = gm_records[record_line]["id"]
+        result = "ptr:" + rid if assignment else "void"
+        params = ["ptr:" + rid, ("cptr:" if source_const else "ptr:") + rid]
+        locations = (1, 3, 4, 5, 6) if record_line == 1 else ((15, 16, 17) if record_line == 15 else (record_line,))
+        functions = [f for f in generated_moves["functions"] if f["result"] == result
+                     and f["loc"]["line"] in locations
+                     and [p["type"] for p in f["params"]] == params]
+        assert len(functions) == 1, (record_line, assignment, functions)
+        return functions[0]
+
+    gm_leaf_move = gm_helper(1)
+    gm_leaf_assignment = gm_helper(1, assignment=True)
+    gm_copy = gm_helper(9, source_const=True)
+    gm_copy_assignment = gm_helper(9, assignment=True, source_const=True)
+    gm_inner = gm_helper(12)
+    gm_box = gm_helper(13)
+    gm_box_assignment = gm_helper(13, assignment=True)
+    assert [c["callee"] for c in gc_calls(gm_inner)] == [gm_leaf_move["name"]] * 2
+    assert [c["callee"] for c in gc_calls(gm_box)] == [
+        gm_inner["name"], *([gm_leaf_move["name"]] * 4), *([gm_copy["name"]] * 2)]
+    for i, call in enumerate(gc_calls(gm_inner)):
+        for arg, parameter in zip(call["args"], gm_inner["params"]):
+            assert gc_identity(gm_inner, arg) == (
+                "index", ("member", ("parameter", parameter["name"]), gm_records[12]["fields"][0]["name"]), i)
+    fields = gm_records[13]["fields"]
+    for call, (row, col) in zip(gc_calls(gm_box)[1:5], ((0, 0), (0, 1), (1, 0), (1, 1))):
+        for arg, parameter in zip(call["args"], gm_box["params"]):
+            assert gc_identity(gm_box, arg) == (
+                "index", ("index", ("member", ("parameter", parameter["name"]), fields[2]["name"]), row), col)
+    for i, call in enumerate(gc_calls(gm_box)[5:]):
+        for arg, parameter in zip(call["args"], gm_box["params"]):
+            assert gc_identity(gm_box, arg) == (
+                "index", ("member", ("parameter", parameter["name"]), fields[3]["name"]), i)
+    source_arrays = [n for n in gm_box["body"] if n["op"] == "assign"
+                     and n["value"]["kind"] == "address"
+                     and n["value"]["args"][0]["type"].startswith("arr:")]
+    assert len(source_arrays) == 7, source_arrays
+    self_store = next(n for n in gm_box["body"] if n["op"] == "assign"
+                      and n["target"].get("name") == fields[4]["name"])
+    assert gc_identity(gm_box, self_store["value"]) == (
+        "member", ("parameter", gm_box["params"][1]["name"]), fields[4]["name"])
+    assert [c["callee"] for c in gc_calls(gm_box_assignment)] == [
+        gm_helper(12, assignment=True)["name"], gm_leaf_assignment["name"], gm_copy_assignment["name"]]
+    scalar_stores = [n for n in gm_box_assignment["body"] if n["op"] == "assign"
+                     and n["target"]["kind"] == "index" and n["target"]["type"] == "int"]
+    assert len(scalar_stores) == 4, scalar_stores
+    for node, (row, col) in zip(scalar_stores, ((0, 0), (0, 1), (1, 0), (1, 1))):
+        for expr, parameter in zip((node["target"], node["value"]), gm_box_assignment["params"]):
+            assert gc_identity(gm_box_assignment, expr) == (
+                "index", ("index", ("member", ("parameter", parameter["name"]), fields[0]["name"]), row), col)
+    for record_line in (12, 13, 14, 15):
+        function = gm_helper(record_line, assignment=True)
+        returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+        assert gc_identity(function, returned) == ("parameter", function["params"][0]["name"])
+        assert not any(n["op"] == "assign" and n["target"]["type"] == gm_records[record_line]["id"]
+                       for n in function["body"]), function
+        assert not any(v["type"] == gm_records[record_line]["id"] for v in function["locals"])
+    array_assignment = gm_helper(14, assignment=True)
+    assert [c["callee"] for c in gc_calls(array_assignment)] == [gm_leaf_assignment["name"]]
+    for record_line, field_index in ((10, 0), (11, 1)):
+        stores = [n for n in array_assignment["body"] if n["op"] == "assign"
+                  and n["target"]["type"] == gm_records[record_line]["id"]]
+        assert len(stores) == 2, stores
+        for index_value, node in enumerate(stores):
+            for expr, parameter in zip((node["target"], node["value"]), array_assignment["params"]):
+                assert gc_identity(array_assignment, expr) == (
+                    "index", ("member", ("parameter", parameter["name"]),
+                              gm_records[14]["fields"][field_index]["name"]), index_value)
+    for line, selected in ((20, gm_box), (22, array_assignment), (23, gm_helper(15)),
+                           (24, gm_helper(15, assignment=True))):
+        function = gm_lines[line]
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == selected["name"], calls
+        assert [gc_identity(function, arg) for arg in calls[0]["args"]] == [
+            ("parameter", p["name"]) for p in function["params"]]
+    assert [c["callee"] for c in gc_calls(gm_lines[21])] == [gm_box_assignment["name"]] * 2
+    for line in (25, 26, 27):
+        function = gm_lines[line]
+        assert not gc_calls(function), function
+        stores = [n for n in function["body"] if n["op"] == "assign"
+                  and n["target"]["type"] == gm_records[18]["id"]]
+        assert len(stores) == 1 and [gc_identity(function, expr) for expr in (
+            stores[0]["target"], stores[0]["value"])] == [
+                ("parameter", p["name"]) for p in function["params"]], stores
+    for line in (28, 29, 36, 37, 38):
+        assert not gc_calls(gm_lines[line]), gm_lines[line]
+    for record_line in (18, 19, 34):
+        rid = gm_records[record_line]["id"]
+        assert not any(f["loc"]["line"] == record_line and f["result"] in ("void", "ptr:" + rid)
+                       and [p["type"] for p in f["params"]] == ["ptr:" + rid] * 2
+                       for f in generated_moves["functions"]), record_line
+    assert [c["callee"] for c in gc_calls(gm_lines[32])] == [gm_lines[30]["name"], gm_lines[31]["name"], gm_box_assignment["name"]]
+    assert [c["callee"] for c in gc_calls(gm_lines[33])] == [gm_lines[31]["name"], gm_lines[30]["name"], gm_box_assignment["name"]]
+    function = gm_lines[40]
+    calls = gc_calls(function)
+    assert [c["callee"] for c in calls] == [gm_box["name"], gm_lines[39]["name"]], calls
+    assert storage_pointer_object(function, calls[0]["args"][0]) == storage_pointer_object(function, calls[1]["args"][0])
+    assert storage_pointer_object(function, calls[0]["args"][1]) == ("parameter", function["params"][0]["name"])
+    assert [c["callee"] for c in gc_calls(gm_lines[39])] == [gm_records[13]["id"] + "_destroy"]
+    for function in generated_moves["functions"]:
+        for call in gc_calls(function):
+            callee = gm_functions[call["callee"]]
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in callee["params"]], call
+    with tempfile.TemporaryDirectory(prefix="neverc-generated-move-relocated-") as temp:
+        relocated = check("generated-move-relocated", generated_move_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == generated_moves, "generated move identities depend on the absolute root"
+
+    generated_move_rejected = {
+        'deleted-constructor': 'struct R{int n;R(R&&)=delete;};',
+        'deleted-assignment': 'struct R{int n;R&operator=(R&&)=delete;};',
+        'defaulted-deleted-constructor': 'struct I{int n;I(I&&)=delete;};struct R{I i;R(R&&)=default;};',
+        'defaulted-deleted-assignment': 'struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};',
+        'constructor-noexcept': 'struct R{int n;R(R&&)noexcept=default;};',
+        'constructor-noexcept-false': 'struct R{int n;R(R&&)noexcept(false)=default;};',
+        'constructor-throw': 'struct R{int n;R(R&&)throw()=default;};',
+        'assignment-noexcept': 'struct R{int n;R&operator=(R&&)noexcept=default;};',
+        'assignment-noexcept-false': 'struct R{int n;R&operator=(R&&)noexcept(false)=default;};',
+        'out-of-line-noexcept': 'struct R{int n;R(R&&)noexcept;};R::R(R&&)noexcept=default;',
+        'out-of-line-assignment-noexcept': 'struct R{int n;R&operator=(R&&)noexcept;};R&R::operator=(R&&)noexcept=default;',
+        'attribute': 'struct R{int n;[[deprecated]] R(R&&)=default;};',
+        'reference-field': 'struct R{int&n;R(R&&)=default;};',
+        'const-field': 'struct R{const int n;R(R&&)=default;};',
+        'private-field': 'class R{int n;public:R(R&&)=default;};',
+        'base': 'struct B{int n;};struct R:B{int value;R(R&&)=default;};',
+        'temporary-defaulted-constructor': 'struct R{int n;R(R&&)=default;};void f(){R r(static_cast<R&&>(R{1}));}',
+        'temporary-defaulted-assignment-source': 'struct R{int n;R&operator=(R&&)=default;};void f(R&r){r=R{1};}',
+        'temporary-defaulted-assignment-receiver': 'struct R{int n;R&operator=(R&&)=default;};void f(R&r){R{1}=static_cast<R&&>(r);}',
+        'temporary-implicit-member-source': 'struct R{int n;};void f(R&r){r.operator=(R{1});}',
+        'temporary-implicit-member-receiver': 'struct R{int n;};void f(R&r){R{1}.operator=(static_cast<R&&>(r));}',
+        'temporary-ordinary-reference': 'struct R{int n;};void f(){R&&r=R{1};}',
+        'temporary-nontrivial-implicit-constructor': 'struct I{int n;I(int v):n(v){}I(I&&r):n(r.n){}};struct R{I i;};void f(){R r(static_cast<R&&>(R{I(1)}));}',
+        'temporary-nontrivial-implicit-assignment': 'struct I{int n;I&operator=(I&&r){n=r.n;return *this;}};struct R{I i;};void f(R&r){r=R{{1}};}',
+        'source-builtin': 'struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}',
+        'lambda-array': 'int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}',
+        'expansion': 'struct I{int n;I(I&&s):n(s.n){}};struct R{I items[65536];R(R&&)=default;};R f(R&&s){return static_cast<R&&>(s);}',
+    }
+    for name, source in generated_move_rejected.items():
+        check("v2-" + 'generated_move_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
+    generated_move_invalid = {
+        'const-constructor-source': 'struct R{int n;R(const R&&)=default;};',
+        'volatile-constructor-source': 'struct R{int n;R(volatile R&&)=default;};',
+        'const-assignment-source': 'struct R{int n;R&operator=(const R&&)=default;};',
+        'volatile-assignment-source': 'struct R{int n;R&operator=(volatile R&&)=default;};',
+        'const-assignment-receiver': 'struct R{int n;R&operator=(R&&)const=default;};',
+        'volatile-assignment-receiver': 'struct R{int n;R&operator=(R&&)volatile=default;};',
+        'const-assignment-result': 'struct R{int n;const R&operator=(R&&)=default;};',
+        'value-assignment-result': 'struct R{int n;R operator=(R&&)=default;};',
+        'lvalue-binding': 'struct R{int n;R(R&&)=default;};void f(R&r){R s(r);}',
+        'invalid-ref-receiver': 'struct R{int n;R&operator=(R&&)&&=default;};void f(R&a,R&b){a=static_cast<R&&>(b);}',
+    }
+    for name, source in generated_move_invalid.items():
+        check("v2-" + 'generated_move_invalid' + "-" + name, source, "TR0202", profile="cpp-core-v2")
+    check('v2-generated-move-missing-constructor', 'struct I{int n;I(I&&);};struct R{I i;R(R&&)=default;};R f(R&&r){return static_cast<R&&>(r);}', "TR0203", profile="cpp-core-v2")
+    check('v2-generated-move-missing-assignment', 'struct I{int n;I&operator=(I&&);};struct R{I i;R&operator=(R&&)=default;};void f(R&a,R&b){a=static_cast<R&&>(b);}', "TR0203", profile="cpp-core-v2")
+    check("v1-generated-move", "struct R{int n;R(R&&)=default;};", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -1390,7 +1602,6 @@ int query(){return sizeof(Lazy{});}
         'out-of-line-destructor-noexcept': 'struct R{int n;~R()noexcept;};R::~R()noexcept=default;',
         'nonpublic-field': 'class R{int n;public:R()=default;};',
         'virtual-destructor': 'struct R{int n;virtual ~R()=default;};',
-        'move-default': 'struct R{int n;R(R&&)=default;};',
         'explicit-destruction': 'struct R{int n;~R()=default;};void f(){R r{1};r.~R();}',
         'temporary-reference': 'struct R{int n;explicit R()=default;};int f(){const R&r=R{};return r.n;}',
         'throwing-member-constructor': 'struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};',

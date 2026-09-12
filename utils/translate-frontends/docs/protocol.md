@@ -217,9 +217,27 @@ Existing constructor destinations, operator-versus-member evaluation order and
 by-value parameter/result storage conventions apply. No move opcode, foreign ABI,
 record snapshot or implicit ownership transfer is introduced. A source object
 remains alive after moving, and the existing complete-object owners retain normal
-cleanup. Protocol major 1 is unchanged. Generated/defaulted moves and fresh
-temporary reference binding remain excluded. See the
+cleanup. Protocol major 1 is unchanged. Generated/defaulted moves follow the
+contract below; general fresh temporary reference binding remains excluded. See the
 [user move contract](cpp-core-v2.md#user-defined-move-operations).
+
+## Core v2 generated move calls
+
+Generated nontrivial move constructors and assignment use the same complete
+pointer signatures as user moves. Canonical selected definitions retain source
+locations and are emitted once. The generated body's selected leaf calls remain
+copy or move calls according to source overload resolution; matching pointer
+carriers do not merge distinct function identities.
+
+Semantic member-array moves preserve source addresses and increasing element
+order. A checked generated trivial array assignment becomes bounded typed
+stores, including selected copy fallback; no memory-copy import or move opcode
+is introduced. Trivial complete-record operations remain ordinary value stores
+after reference capture, preserving stored pointers. Existing implicit trivial
+inline temporary operations retain full-expression materialization without a
+helper call or a new lifetime-extension rule. Complete objects retain their
+normal cleanup ownership after moving. Protocol major 1 remains unchanged. See
+the [generated move contract](cpp-core-v2.md#generated-move-construction-and-assignment).
 
 ## Core v2 generated copy calls
 

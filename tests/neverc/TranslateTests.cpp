@@ -1650,6 +1650,252 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
   expectNoArtifacts(Output);
 }
 
+TEST_F(TranslateTest, CoreV2GeneratedMovesPreserveMembersSelectionAndLifetimes) {
+  const auto Source = tmpFile("generated-moves.cpp");
+  const auto Output = tmpFile("generated-moves.nc");
+  writeFile(Source, R"cpp(
+struct Log { int copies,moves,copyAssignments,moveAssignments,destroyed,defaults,used;int order[128]; };
+void mark(Log&log,int n){log.order[log.used++]=n;}
+struct Leaf {
+  int n;Log*log;Leaf*self=this;Leaf*alias=this;
+  Leaf(int value,Log&l):n(value),log(&l){}
+  Leaf(const Leaf&s):n(s.n+100),log(s.log){++log->copies;mark(*log,s.n+100);}
+  Leaf(Leaf&&s):n(s.n+10),log(s.log){++log->moves;mark(*log,s.n);s.n=-s.n;}
+  Leaf&operator=(const Leaf&s){n=s.n+30;++log->copyAssignments;mark(*log,s.n+100);return *alias;}
+  Leaf&operator=(Leaf&&s){int old=s.n;n=old+20;if(this!=&s)s.n=-old;++log->moveAssignments;mark(*log,old);return *alias;}
+  ~Leaf(){++log->destroyed;}
+};
+struct CopyOnly {
+  int n;Log*log;CopyOnly*self=this;
+  CopyOnly(int value,Log&l):n(value),log(&l){}
+  CopyOnly(const CopyOnly&s):n(s.n+100),log(s.log){++log->copies;mark(*log,s.n+100);}
+  CopyOnly&operator=(const CopyOnly&s){n=s.n+30;++log->copyAssignments;mark(*log,s.n+100);return *this;}
+  ~CopyOnly(){++log->destroyed;}
+};
+struct Box {
+  int scalar[2];Leaf grid[2][2];CopyOnly fallback[2];Box*self=this;
+  int cookie=++grid[0][0].log->defaults;
+  Box(Box&&)=default;
+  Box&operator=(Box&&)=default;
+  Box&operator=(const Box&)=default;
+  ~Box()=default;
+};
+Box make(Log&log){return {{7,8},{{Leaf(1,log),Leaf(2,log)},{Leaf(3,log),Leaf(4,log)}},{CopyOnly(5,log),CopyOnly(6,log)}};}
+Box forward(Log&log){return make(log);}
+Box moved(Box&&source){return static_cast<Box&&>(source);}
+Box parameter(Box source){return source;}
+Box&&right(Box&r,int&t){t=t*10+2;return static_cast<Box&&>(r);}
+Box&left(Box&target,Box&source,int&t){t=t*10+1;source.grid[0][0].n=77;return target;}
+struct Implicit { Leaf items[2]; };
+struct Outside {
+  Leaf leaf;Outside*self=this;
+  Outside(int n,Log&l):leaf(n,l){}
+  Outside(Outside&&);
+  Outside&operator=(Outside&&);
+};
+Outside::Outside(Outside&&)=default;
+Outside&Outside::operator=(Outside&&)=default;
+struct Explicit {
+  Leaf leaf;Explicit(int n,Log&l):leaf(n,l){}
+  explicit Explicit(Explicit&&)=default;
+};
+struct Qualified { Leaf leaf;Qualified&operator=(Qualified&&) & =default; };
+struct RvalueQualified { Leaf leaf;RvalueQualified&operator=(RvalueQualified&&) && =default; };
+struct Trivial {
+  int values[2];Trivial*self=this;
+  Trivial(Trivial&&)=default;Trivial&operator=(Trivial&&)=default;
+};
+Trivial&mutate(Trivial&target,Trivial&source,int&t){t=t*10+1;source.values[0]=77;return target;}
+Trivial&&select(Trivial&source,int&t){t=t*10+2;return static_cast<Trivial&&>(source);}
+Trivial&reseat(Trivial&target,Trivial*&pointer,Trivial&other){pointer=&other;return target;}
+struct Plain {
+  int n;Log*log;Plain*self=this;
+  Plain(int value,Log&l):n(value),log(&l){}
+  Plain(const Plain&s):n(s.n),log(s.log){++log->copies;}
+  ~Plain(){++log->destroyed;}
+};
+struct MovePlain {
+  int n;Log*log;MovePlain*self=this;
+  MovePlain(int value,Log&l):n(value),log(&l){}
+  MovePlain&operator=(MovePlain&&)=default;
+  ~MovePlain(){++log->destroyed;}
+};
+struct AssignArrays { Plain copied[2];MovePlain moved[2];Leaf leaf; };
+struct Cleanup { int n;Log*log;~Cleanup(){++log->destroyed;} };
+struct Wrapper { Cleanup member; };
+struct Simple { int n; };
+int main(){
+  Log construction{};
+  {
+    Box source=forward(construction);Box target(static_cast<Box&&>(source));
+    if(construction.moves!=4 || construction.copies!=2 || construction.defaults!=1 || construction.destroyed)return 1;
+    if(target.grid[0][0].n!=11 || target.grid[1][1].n!=14 || source.grid[0][1].n!=-2 || source.grid[1][0].n!=-3)return 2;
+    if(target.fallback[0].n!=105 || target.fallback[1].n!=106 || source.fallback[0].n!=5)return 3;
+    if(target.grid[1][0].self!=&target.grid[1][0] || target.fallback[1].self!=&target.fallback[1])return 4;
+    if(target.self!=&source || target.cookie!=1 || target.scalar[0]!=7 || target.scalar[1]!=8)return 5;
+    if(construction.used!=6 || construction.order[0]!=1 || construction.order[1]!=2 || construction.order[2]!=3 || construction.order[3]!=4 || construction.order[4]!=105 || construction.order[5]!=106)return 6;
+  }
+  if(construction.destroyed!=12)return 7;
+  Log assignment{};
+  {
+    Box source=make(assignment),target=make(assignment);
+    target.grid[0][0].alias=&source.grid[1][1];
+    if(&(target=static_cast<Box&&>(source))!=&target)return 8;
+    if(target.grid[0][0].n!=21 || target.grid[1][1].n!=24 || source.grid[1][1].n!=-4 || target.fallback[0].n!=35 || source.fallback[0].n!=5)return 9;
+    if(assignment.moveAssignments!=4 || assignment.copyAssignments!=2 || assignment.moves || assignment.copies || assignment.destroyed)return 10;
+    if(assignment.defaults!=2 || target.cookie!=1 || target.self!=&source || target.grid[0][0].self!=&target.grid[0][0])return 11;
+    if(assignment.order[0]!=1 || assignment.order[3]!=4 || assignment.order[4]!=105 || assignment.order[5]!=106)return 12;
+    if(&(target=static_cast<Box&&>(target))!=&target || target.grid[0][0].n!=41 || target.fallback[0].n!=65)return 13;
+    Box outer=make(assignment);
+    outer=target=static_cast<Box&&>(source);
+    if(target.grid[0][0].n!=19 || source.grid[0][0].n!=1 || outer.grid[0][0].n!=49 || outer.fallback[0].n!=65)return 14;
+    int trace=0;
+    left(target,source,trace)=right(source,trace);
+    if(trace!=21 || target.grid[0][0].n!=97 || source.grid[0][0].n!=-77)return 15;
+    trace=0;
+    left(target,source,trace).operator=(right(source,trace));
+    if(trace!=12 || target.grid[0][0].n!=97 || source.grid[0][0].n!=-77 || assignment.defaults!=3)return 16;
+  }
+  if(assignment.destroyed!=18)return 17;
+  Log calls{};
+  {
+    Box source=make(calls);Box result=moved(static_cast<Box&&>(source));
+    if(calls.moves!=4 || calls.copies!=2 || result.grid[0][0].n!=11 || result.grid[0][0].self!=&result.grid[0][0])return 18;
+    Box returned=parameter(static_cast<Box&&>(result));
+    if(calls.moves!=12 || calls.copies!=6 || calls.destroyed!=6 || calls.defaults!=1 || returned.grid[0][0].n!=31 || returned.fallback[0].n!=305 || returned.grid[0][0].self!=&returned.grid[0][0])return 19;
+  }
+  if(calls.destroyed!=24)return 20;
+  Log variants{};
+  {
+    Implicit source{{Leaf(1,variants),Leaf(2,variants)}};
+    Implicit target(static_cast<Implicit&&>(source));
+    if(target.items[1].n!=12 || target.items[0].self!=&target.items[0] || variants.moves!=2)return 21;
+    target=static_cast<Implicit&&>(source);
+    if(target.items[0].n!=19 || source.items[0].n!=1 || variants.moveAssignments!=2)return 22;
+    Outside a(3,variants);Outside b(static_cast<Outside&&>(a));
+    if(b.leaf.n!=13 || b.leaf.self!=&b.leaf || b.self!=&a)return 23;
+    if(&(a=static_cast<Outside&&>(b))!=&a || a.leaf.n!=33 || b.leaf.n!=-13 || a.leaf.self!=&a.leaf)return 24;
+    Explicit x(4,variants);Explicit y(static_cast<Explicit&&>(x));
+    if(y.leaf.n!=14 || x.leaf.n!=-4 || y.leaf.self!=&y.leaf)return 25;
+    Qualified qa{Leaf(5,variants)},qb{Leaf(6,variants)};
+    if(&(qa=static_cast<Qualified&&>(qb))!=&qa || qa.leaf.n!=26 || qb.leaf.n!=-6)return 26;
+    RvalueQualified ra{Leaf(7,variants)},rb{Leaf(8,variants)};
+    if(&(static_cast<RvalueQualified&&>(ra)=static_cast<RvalueQualified&&>(rb))!=&ra || ra.leaf.n!=28 || rb.leaf.n!=-8)return 27;
+  }
+  if(variants.destroyed!=12)return 28;
+  Trivial source{{3,4}},target(static_cast<Trivial&&>(source)),other{{5,6}};
+  if(target.values[0]!=3 || target.self!=&source || source.values[0]!=3)return 29;
+  int trace=0;
+  mutate(target,source,trace)=select(source,trace);
+  if(trace!=21 || target.values[0]!=77 || target.self!=&source)return 30;
+  source.values[0]=3;trace=0;
+  mutate(target,source,trace).operator=(select(source,trace));
+  if(trace!=12 || target.values[0]!=77)return 31;
+  Trivial*pointer=&source;
+  reseat(target,pointer,other)=static_cast<Trivial&&>(*pointer);
+  if(pointer!=&other || target.values[0]!=77 || target.self!=&source)return 32;
+  if(&(target=static_cast<Trivial&&>(target))!=&target || target.values[0]!=77)return 33;
+  Log arrays{};
+  {
+    AssignArrays a{{Plain(1,arrays),Plain(2,arrays)},{MovePlain(3,arrays),MovePlain(4,arrays)},Leaf(5,arrays)};
+    AssignArrays b{{Plain(6,arrays),Plain(7,arrays)},{MovePlain(8,arrays),MovePlain(9,arrays)},Leaf(10,arrays)};
+    if(&(a=static_cast<AssignArrays&&>(b))!=&a || a.copied[1].n!=7 || a.moved[0].n!=8 || a.leaf.n!=30 || b.leaf.n!=-10)return 34;
+    if(a.copied[0].self!=&b.copied[0] || a.moved[1].self!=&b.moved[1] || a.leaf.self!=&a.leaf)return 35;
+    if(arrays.moves || arrays.copies || arrays.copyAssignments || arrays.moveAssignments!=1 || arrays.destroyed)return 36;
+  }
+  if(arrays.destroyed!=10)return 37;
+  Simple simple{1};simple=Simple{2};Simple constructed(static_cast<Simple&&>(Simple{3}));
+  if(simple.n!=2 || constructed.n!=3 || (Simple{4}=Simple{5}).n!=5)return 38;
+  Log compatibility{};
+  {
+    Wrapper value(static_cast<Wrapper&&>(Wrapper{{1,&compatibility}}));
+    if(value.member.n!=1 || compatibility.destroyed!=1)return 39;
+    value=Wrapper{{2,&compatibility}};
+    if(value.member.n!=2 || compatibility.destroyed!=2)return 40;
+    int n=(Wrapper{{3,&compatibility}}=Wrapper{{4,&compatibility}}).member.n;
+    if(n!=4 || compatibility.destroyed!=4)return 41;
+  }
+  if(compatibility.destroyed!=5)return 42;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("generated-moves" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2GeneratedMovesRetainSourceAndLifetimeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"deleted-constructor", "struct R{int n;R(R&&)=delete;};", "TR0201"},
+      {"deleted-assignment", "struct R{int n;R&operator=(R&&)=delete;};", "TR0201"},
+      {"defaulted-deleted-constructor", "struct I{int n;I(I&&)=delete;};struct R{I i;R(R&&)=default;};", "TR0201"},
+      {"defaulted-deleted-assignment", "struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};", "TR0201"},
+      {"constructor-noexcept", "struct R{int n;R(R&&)noexcept=default;};", "TR0201"},
+      {"constructor-noexcept-false", "struct R{int n;R(R&&)noexcept(false)=default;};", "TR0201"},
+      {"constructor-throw", "struct R{int n;R(R&&)throw()=default;};", "TR0201"},
+      {"assignment-noexcept", "struct R{int n;R&operator=(R&&)noexcept=default;};", "TR0201"},
+      {"assignment-noexcept-false", "struct R{int n;R&operator=(R&&)noexcept(false)=default;};", "TR0201"},
+      {"out-of-line-noexcept", "struct R{int n;R(R&&)noexcept;};R::R(R&&)noexcept=default;", "TR0201"},
+      {"out-of-line-assignment-noexcept", "struct R{int n;R&operator=(R&&)noexcept;};R&R::operator=(R&&)noexcept=default;", "TR0201"},
+      {"attribute", "struct R{int n;[[deprecated]] R(R&&)=default;};", "TR0201"},
+      {"reference-field", "struct R{int&n;R(R&&)=default;};", "TR0201"},
+      {"const-field", "struct R{const int n;R(R&&)=default;};", "TR0201"},
+      {"private-field", "class R{int n;public:R(R&&)=default;};", "TR0201"},
+      {"base", "struct B{int n;};struct R:B{int value;R(R&&)=default;};", "TR0201"},
+      {"temporary-defaulted-constructor", "struct R{int n;R(R&&)=default;};void f(){R r(static_cast<R&&>(R{1}));}", "TR0201"},
+      {"temporary-defaulted-assignment-source", "struct R{int n;R&operator=(R&&)=default;};void f(R&r){r=R{1};}", "TR0201"},
+      {"temporary-defaulted-assignment-receiver", "struct R{int n;R&operator=(R&&)=default;};void f(R&r){R{1}=static_cast<R&&>(r);}", "TR0201"},
+      {"temporary-implicit-member-source", "struct R{int n;};void f(R&r){r.operator=(R{1});}", "TR0201"},
+      {"temporary-implicit-member-receiver", "struct R{int n;};void f(R&r){R{1}.operator=(static_cast<R&&>(r));}", "TR0201"},
+      {"temporary-ordinary-reference", "struct R{int n;};void f(){R&&r=R{1};}", "TR0201"},
+      {"temporary-nontrivial-implicit-constructor", "struct I{int n;I(int v):n(v){}I(I&&r):n(r.n){}};struct R{I i;};void f(){R r(static_cast<R&&>(R{I(1)}));}", "TR0201"},
+      {"temporary-nontrivial-implicit-assignment", "struct I{int n;I&operator=(I&&r){n=r.n;return *this;}};struct R{I i;};void f(R&r){r=R{{1}};}", "TR0201"},
+      {"source-builtin", "struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}", "TR0201"},
+      {"lambda-array", "int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}", "TR0201"},
+      {"expansion", "struct I{int n;I(I&&s):n(s.n){}};struct R{I items[65536];R(R&&)=default;};R f(R&&s){return static_cast<R&&>(s);}", "TR0201"},
+      {"const-constructor-source", "struct R{int n;R(const R&&)=default;};", "TR0202"},
+      {"volatile-constructor-source", "struct R{int n;R(volatile R&&)=default;};", "TR0202"},
+      {"const-assignment-source", "struct R{int n;R&operator=(const R&&)=default;};", "TR0202"},
+      {"volatile-assignment-source", "struct R{int n;R&operator=(volatile R&&)=default;};", "TR0202"},
+      {"const-assignment-receiver", "struct R{int n;R&operator=(R&&)const=default;};", "TR0202"},
+      {"volatile-assignment-receiver", "struct R{int n;R&operator=(R&&)volatile=default;};", "TR0202"},
+      {"const-assignment-result", "struct R{int n;const R&operator=(R&&)=default;};", "TR0202"},
+      {"value-assignment-result", "struct R{int n;R operator=(R&&)=default;};", "TR0202"},
+      {"lvalue-binding", "struct R{int n;R(R&&)=default;};void f(R&r){R s(r);}", "TR0202"},
+      {"invalid-ref-receiver", "struct R{int n;R&operator=(R&&)&&=default;};void f(R&a,R&b){a=static_cast<R&&>(b);}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("generated-moves-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("generated-moves-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("generated-moves-definition.cpp");
+  const auto Output = tmpFile("generated-moves-definition.nc");
+  for (const std::string &Code : {
+      "struct I{int n;I(I&&);};struct R{I i;R(R&&)=default;};R f(R&&r){return static_cast<R&&>(r);}",
+      "struct I{int n;I&operator=(I&&);};struct R{I i;R&operator=(R&&)=default;};void f(R&a,R&b){a=static_cast<R&&>(b);}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+  writeFile(Source, "struct R{int n;R(R&&)=default;};");
+  auto Old = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Old, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2UserMovesPreserveSelectedCallsAliasesAndCleanup) {
   const auto Source = tmpFile("user-moves.cpp");
   const auto Output = tmpFile("user-moves.nc");
@@ -1782,13 +2028,11 @@ int main(){
 TEST_F(TranslateTest, CoreV2UserMovesRetainSourceLifetimeAndGeneratedBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"deleted-constructor", "struct R{int n;R(R&&)=delete;};", "TR0201"},
-      {"defaulted-constructor", "struct R{int n;R(R&&)=default;};", "TR0201"},
       {"volatile-constructor", "struct R{int n;R(volatile R&&r):n(r.n){}};", "TR0201"},
       {"const-volatile-constructor", "struct R{int n;R(const volatile R&&r):n(r.n){}};", "TR0201"},
       {"constructor-noexcept", "struct R{int n;R(R&&r)noexcept:n(r.n){}};", "TR0201"},
       {"constructor-default-argument", "struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};", "TR0201"},
       {"deleted-assignment", "struct R{int n;R&operator=(R&&)=delete;};", "TR0201"},
-      {"defaulted-assignment", "struct R{int n;R&operator=(R&&)=default;};", "TR0201"},
       {"volatile-assignment-source", "struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};", "TR0201"},
       {"const-assignment-receiver", "struct R{int n;R&operator=(R&&)const{return const_cast<R&>(*this);}};", "TR0201"},
       {"volatile-assignment-receiver", "struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};", "TR0201"},
@@ -1962,8 +2206,6 @@ TEST_F(TranslateTest, CoreV2LiveRvalueReferencesRetainTemporaryAndMoveBoundaries
       {"global-reference", "int n;int&&r=static_cast<int&&>(n);", "TR0201"},
       {"function-reference", "int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}", "TR0201"},
       {"method-noexcept", "struct R{int n;int get()&&noexcept{return n;}};", "TR0201"},
-      {"defaulted-move", "struct R{int n;R(R&&)=default;};", "TR0201"},
-      {"defaulted-move-assignment", "struct R{int n;R&operator=(R&&)=default;};", "TR0201"},
       {"direct-lvalue-binding", "void f(){int n=1;int&&r=n;}", "TR0202"},
       {"lvalue-method-on-xvalue", "struct R{int n;int get()&{return n;}};int f(R&r){return static_cast<R&&>(r).get();}", "TR0202"},
       {"rvalue-method-on-lvalue", "struct R{int n;int get()&&{return n;}};int f(R&r){return r.get();}", "TR0202"},
@@ -2332,7 +2574,6 @@ TEST_F(TranslateTest, CoreV2GeneratedAssignmentKeepsBuiltinAndReferenceBoundarie
       {"noexcept-false", "struct R{int n;R&operator=(const R&)noexcept(false)=default;};"},
       {"out-of-line-noexcept", "struct R{int n;R&operator=(const R&)noexcept;};R&R::operator=(const R&)noexcept=default;"},
       {"rvalue-receiver", "struct R{int n;R&operator=(const R&)&&=default;};"},
-      {"move-assignment", "struct R{int n;R&operator=(R&&)=default;};"},
       {"const-field", "struct R{const int n;R&operator=(const R&)=default;};"},
       {"reference-field", "struct R{int&n;R&operator=(const R&)=default;};"},
       {"private-field", "class R{int n;public:R&operator=(const R&)=default;};"},
@@ -2537,8 +2778,6 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
       {"copy-noexcept-false", "struct R{int n;R(const R&)noexcept(false)=default;};"},
       {"copy-throw", "struct R{int n;R(const R&)throw()=default;};"},
       {"out-of-line-noexcept", "struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;"},
-      {"move-default", "struct R{int n;R(R&&)=default;};"},
-      {"move-assignment-default", "struct R{int n;R&operator=(R&&)=default;};"},
       {"reference-field", "struct R{int &n;R(const R&)=default;};"},
       {"const-field", "struct R{const int n;R(const R&)=default;};"},
       {"nonpublic-field", "class R{int n;public:R(const R&)=default;};"},
@@ -2684,7 +2923,6 @@ TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
       {"out-of-line-destructor-noexcept", "struct R{int n;~R()noexcept;};R::~R()noexcept=default;"},
       {"nonpublic-field", "class R{int n;public:R()=default;};"},
       {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
-      {"move-default", "struct R{int n;R(R&&)=default;};"},
       {"explicit-destruction", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},
       {"temporary-reference", "struct R{int n;explicit R()=default;};int f(){const R&r=R{};return r.n;}"},
       {"throwing-member-constructor", "struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};"},

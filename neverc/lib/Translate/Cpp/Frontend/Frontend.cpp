@@ -109,7 +109,7 @@ bool supportedCopyAssignment(const CXXMethodDecl *M) {
 }
 
 bool supportedAssignment(const CXXMethodDecl *M) {
-  return supportedCopyAssignment(M) || ordinaryMoveAssignment(M);
+  return supportedCopyAssignment(M) || ordinaryMoveAssignment(M) || defaultedMoveAssignment(M);
 }
 
 bool callableMethod(const CXXMethodDecl *M) {
@@ -181,9 +181,48 @@ bool defaultedCopyAssignment(const CXXMethodDecl *M) {
          ResultRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl();
 }
 
+bool defaultedMoveConstructor(const CXXConstructorDecl *C) {
+  if (!defaultedFunction(C) || !C->isMoveConstructor() ||
+      C->isDelegatingConstructor() || C->isInheritingConstructor() ||
+      C->getNumParams() != 1)
+    return false;
+  auto Source = C->getParamDecl(0)->getType();
+  if (!Source->isRValueReferenceType())
+    return false;
+  auto Pointee = Source->getPointeeType();
+  const auto *Record = Pointee->getAsCXXRecordDecl();
+  return !Pointee.getQualifiers().getCVRQualifiers() && Record &&
+         Record->getCanonicalDecl() == C->getParent()->getCanonicalDecl();
+}
+
+bool defaultedCopyOrMoveConstructor(const CXXConstructorDecl *C) {
+  return defaultedCopyConstructor(C) || defaultedMoveConstructor(C);
+}
+
+bool defaultedMoveAssignment(const CXXMethodDecl *M) {
+  if (!defaultedFunction(M) || !M->isMoveAssignmentOperator() ||
+      M->getNumParams() != 1 || M->getMethodQualifiers().getCVRQualifiers())
+    return false;
+  auto Source = M->getParamDecl(0)->getType();
+  auto Result = M->getReturnType();
+  if (!Source->isRValueReferenceType() || !Result->isLValueReferenceType() ||
+      Source->getPointeeType().getQualifiers().getCVRQualifiers() ||
+      Result->getPointeeType().getQualifiers().getCVRQualifiers())
+    return false;
+  const auto *SourceRecord = Source->getPointeeType()->getAsCXXRecordDecl();
+  const auto *ResultRecord = Result->getPointeeType()->getAsCXXRecordDecl();
+  return SourceRecord && ResultRecord &&
+         SourceRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl() &&
+         ResultRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl();
+}
+
+bool defaultedAssignment(const CXXMethodDecl *M) {
+  return defaultedCopyAssignment(M) || defaultedMoveAssignment(M);
+}
+
 std::optional<GeneratedArrayAssignment> generatedArrayAssignment(
     const CallExpr *Call, const CXXMethodDecl *Owner, ASTContext &Context) {
-  if (!defaultedCopyAssignment(Owner) || !Call || Call->getNumArgs() != 3 ||
+  if (!defaultedAssignment(Owner) || !Call || Call->getNumArgs() != 3 ||
       !Call->getDirectCallee() ||
       Call->getDirectCallee()->getBuiltinID() != Builtin::BI__builtin_memcpy)
     return std::nullopt;
@@ -201,13 +240,28 @@ std::optional<GeneratedArrayAssignment> generatedArrayAssignment(
     return Address && Address->getOpcode() == UO_AddrOf
                ? dyn_cast<MemberExpr>(Address->getSubExpr()->IgnoreParens()) : nullptr;
   };
+  const bool Moving = defaultedMoveAssignment(Owner);
   const auto *To = MemberAddress(Call->getArg(0));
   const auto *From = MemberAddress(Call->getArg(1));
   if (!To || !From || !To->isArrow() || From->isArrow() ||
-      !To->isLValue() || !From->isLValue() || To->getType().isConstQualified() ||
+      !To->isLValue() || (Moving ? !From->isXValue() : !From->isLValue()) ||
+      To->getType().isConstQualified() ||
       !isa<CXXThisExpr>(To->getBase()->IgnoreParenImpCasts()))
     return std::nullopt;
-  const auto *Parameter = dyn_cast<DeclRefExpr>(From->getBase()->IgnoreParenImpCasts());
+  const Expr *Base = From->getBase()->IgnoreParens();
+  if (Moving) {
+    // Sema's CastForMoving builds exactly static_cast<R&&>(the parameter).
+    // Its generated address-of-xvalue is valid here; no source builtin or
+    // arbitrary cast gains admission from recognizing this internal shape.
+    const auto *Cast = dyn_cast<CXXStaticCastExpr>(Base);
+    if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue() ||
+        !Cast->getSubExpr()->isLValue() ||
+        !Context.hasSameType(Cast->getType(), Cast->getSubExpr()->getType()) ||
+        !Context.hasSameType(Cast->getType(), Owner->getParamDecl(0)->getType()->getPointeeType()))
+      return std::nullopt;
+    Base = Cast->getSubExpr()->IgnoreParens();
+  }
+  const auto *Parameter = dyn_cast<DeclRefExpr>(Base->IgnoreParenImpCasts());
   const auto *Field = dyn_cast<FieldDecl>(To->getMemberDecl());
   const auto *Bytes = dyn_cast<IntegerLiteral>(Call->getArg(2)->IgnoreParenImpCasts());
   if (!Field || !Parameter || !Bytes ||
@@ -226,7 +280,9 @@ std::optional<GeneratedArrayAssignment> generatedArrayAssignment(
   auto Element = Context.getBaseElementType(T);
   const auto *Record = Element->getAsCXXRecordDecl();
   if (!(Element->isIntegerType() || Element->isEnumeralType() ||
-        Element->isPointerType() || (Record && Record->hasTrivialCopyAssignment())))
+        Element->isPointerType() ||
+        (Record && (Record->hasTrivialCopyAssignment() ||
+                    (Moving && Record->hasTrivialMoveAssignment())))))
     return std::nullopt;
   // Sema emits this shape only after selecting trivial assignment. Construction
   // and destruction may still be nontrivial; never substitute those operations.
@@ -235,7 +291,7 @@ std::optional<GeneratedArrayAssignment> generatedArrayAssignment(
 
 bool supportedConstructor(const CXXConstructorDecl *C) {
   return ordinaryConstructor(C) || defaultedLifecycle(C) ||
-         defaultedCopyConstructor(C);
+         defaultedCopyOrMoveConstructor(C);
 }
 
 const CXXConstructExpr *constructorConversion(const CastExpr *Cast,
@@ -725,16 +781,21 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (A.S.coreV2() && supportedConstructor(Constructor)) {
       if (!A.S.owns(A.Sources, Constructor->getLocation())) {
         A.reject(L, "construction", "The selected constructor must be source-owned.", "TR0203");
-      } else if (defaultedLifecycle(Constructor) || defaultedCopyConstructor(Constructor)) {
+      } else if (defaultedLifecycle(Constructor) || defaultedCopyOrMoveConstructor(Constructor)) {
         queueGenerated(Constructor, L);
       } else if (!Constructor->hasBody()) {
         A.reject(L, "construction",
                  "The selected constructor requires a source-owned definition.",
                  "TR0203");
       }
+      // Preserve the existing inline implicit/trivial move operation, whose
+      // source can already be materialized for this one value copy. This is
+      // not a general reference binding or a call to a user/defaulted helper.
+      const bool InlineMove = Constructor->isImplicit() && Constructor->isTrivial() &&
+                              Constructor->isMoveConstructor();
       for (unsigned I = 0; I < C->getNumArgs() &&
                            I < Constructor->getNumParams(); ++I)
-        if (Constructor->getParamDecl(I)->getType()->isReferenceType())
+        if (!InlineMove && Constructor->getParamDecl(I)->getType()->isReferenceType())
           checkBinding(C->getArg(I));
     } else if (!Constructor->isImplicit() || !Constructor->isTrivial()) {
       A.reject(L, "construction",
@@ -794,7 +855,7 @@ public:
     bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecl(D);
     if (const auto *C = dyn_cast_or_null<CXXConstructorDecl>(D);
         Result && A.S.coreV2() && C && owned(C) &&
-        !defaultedLifecycle(C) && !defaultedCopyConstructor(C) &&
+        !defaultedLifecycle(C) && !defaultedCopyOrMoveConstructor(C) &&
         C->doesThisDeclarationHaveABody()) {
       // RAV skips non-written initializers in both TraverseFunctionHelper and
       // TraverseConstructorInitializer. Inspect these semantic expressions
@@ -829,8 +890,8 @@ public:
       const auto *Method = GeneratedMethods[Index];
       const auto *C = dyn_cast<CXXConstructorDecl>(Method);
       const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
-      if (!Body || (C ? ((!defaultedLifecycle(C) && !defaultedCopyConstructor(C)) ||
-                         !Body->body_empty()) : !defaultedCopyAssignment(Method))) {
+      if (!Body || (C ? ((!defaultedLifecycle(C) && !defaultedCopyOrMoveConstructor(C)) ||
+                         !Body->body_empty()) : !defaultedAssignment(Method))) {
         A.reject(Method->getLocation(), "generated method",
                  "Expected an admitted defaulted definition with a semantic body.");
         continue;
@@ -900,8 +961,10 @@ public:
     const auto *Common = Loop->getCommonExpr();
     const auto *Source = Common ? Common->getSourceExpr() : nullptr;
     if (!A.S.coreV2() || !L.isValid() ||
-        !defaultedCopyConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) ||
-        !Array || !Source || !Source->isLValue() || !Common->isLValue() ||
+        !defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) ||
+        !Array || !Source || !Source->isGLValue() ||
+        Source->getValueKind() != Common->getValueKind() ||
+        (cast<CXXConstructorDecl>(CurrentMethod)->isCopyConstructor() && !Source->isLValue()) ||
         !A.Context.hasSameUnqualifiedType(Source->getType(), Loop->getType()) ||
         !A.Context.hasSameType(Source->getType(), Common->getType()) ||
         !Loop->getSubExpr() ||
@@ -910,7 +973,7 @@ public:
         !Array->getSize().getLimitedValue(65537) ||
         Array->getSize().getLimitedValue(65537) > 65536 ||
         A.storageUnits(Loop->getType()) > 200000 || ArraySources.count(Common)) {
-      A.reject(L, "generated array copy", "Expected a bounded semantic member-array copy.");
+      A.reject(L, "generated array initialization", "Expected bounded semantic member-array copying or moving.");
       return true;
     }
     A.chargeExpansion(1, L);
@@ -977,8 +1040,8 @@ public:
     A.type(D->getReturnType(), D->getLocation(), true);
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
     const bool Defaulted = A.S.coreV2() &&
-        (defaultedLifecycle(Method) || defaultedCopyAssignment(Method) ||
-         defaultedCopyConstructor(dyn_cast_or_null<CXXConstructorDecl>(Method)));
+        (defaultedLifecycle(Method) || defaultedAssignment(Method) ||
+         defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(Method)));
     if ((Method && (!A.S.coreV2() ||
                     (!callableMethod(Method) &&
                      !supportedConstructor(dyn_cast<CXXConstructorDecl>(Method)) &&
@@ -1217,7 +1280,7 @@ public:
     const auto *Opaque = dyn_cast<OpaqueValueExpr>(S);
     const bool GeneratedArrayNode = A.S.coreV2() &&
         ImplicitInitializerOwner.isValid() &&
-        defaultedCopyConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) &&
+        defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) &&
         (isa<ArrayInitLoopExpr>(S) || (Opaque && ArraySources.count(Opaque)) ||
          (isa<ArrayInitIndexExpr>(S) && ArrayIndexDepth));
     if (!GeneratedArrayNode && !(A.S.math() && isa<FloatingLiteral>(S)) &&
@@ -1271,6 +1334,11 @@ public:
                  "Explicit destruction requires separate lifetime restart rules.");
       const auto *Operator = dyn_cast<CXXOperatorCallExpr>(C);
       unsigned ArgumentOffset = Operator && Method && !Method->isStatic() ? 1 : 0;
+      // This inline operator form already supports materialized temporaries.
+      // Keep its narrow boundary while sharing reference capture and stores.
+      const bool InlineMove = A.S.coreV2() && Operator && Method &&
+          Operator->getOperator() == OO_Equal && Operator->getNumArgs() == 2 &&
+          Method->isImplicit() && Method->isTrivial() && Method->isMoveAssignmentOperator();
       if (A.S.coreV2() && Operator) {
         bool TrivialAssignment = Operator->getOperator() == OO_Equal && Method &&
                                  Method->isImplicit() && Method->isTrivial() &&
@@ -1286,7 +1354,7 @@ public:
         if (!Reference)
           A.reject(S->getBeginLoc(), "method call",
                    "Methods require a checked direct callee.");
-        else if (!Method->isStatic()) {
+        else if (!Method->isStatic() && !InlineMove) {
           const Expr *Base = nullptr;
           bool Arrow = false;
           if (Operator && C->getNumArgs()) {
@@ -1300,7 +1368,7 @@ public:
                      "A supported live object receiver is required.");
         }
       }
-      if (A.S.coreV2() && F && (!Method || callableMethod(Method)))
+      if (A.S.coreV2() && F && !InlineMove && (!Method || callableMethod(Method)))
         for (unsigned I = 0; I < F->getNumParams() && I + ArgumentOffset < C->getNumArgs(); ++I)
           if (F->getParamDecl(I)->getType()->isReferenceType())
             checkBinding(C->getArg(I + ArgumentOffset));
@@ -1313,10 +1381,10 @@ public:
                    "TR0203");
         return true;
       }
-      const bool GeneratedAssignment = A.S.coreV2() && defaultedCopyAssignment(Method);
+      const bool GeneratedAssignment = A.S.coreV2() && defaultedAssignment(Method);
       if (GeneratedAssignment) {
         if (!A.S.owns(A.Sources, Method->getLocation()))
-          A.reject(L, "copy assignment", "The selected assignment must be source-owned.", "TR0203");
+          A.reject(L, "assignment", "The selected assignment must be source-owned.", "TR0203");
         else
           queueGenerated(Method, L);
       }

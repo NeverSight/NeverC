@@ -72,6 +72,8 @@ bool isolateProjectEnvironment();
 bool ordinaryMethod(const clang::CXXMethodDecl *Method);
 bool ordinaryCopyAssignment(const clang::CXXMethodDecl *Method);
 bool defaultedCopyAssignment(const clang::CXXMethodDecl *Method);
+bool defaultedMoveAssignment(const clang::CXXMethodDecl *Method);
+bool defaultedAssignment(const clang::CXXMethodDecl *Method);
 bool supportedCopyAssignment(const clang::CXXMethodDecl *Method);
 bool ordinaryMoveAssignment(const clang::CXXMethodDecl *Method);
 bool supportedAssignment(const clang::CXXMethodDecl *Method);
@@ -89,6 +91,8 @@ const clang::CXXConstructExpr *constructorConversion(const clang::CastExpr *Cast
 bool ordinaryDestructor(const clang::CXXDestructorDecl *Destructor);
 bool defaultedLifecycle(const clang::CXXMethodDecl *Method);
 bool defaultedCopyConstructor(const clang::CXXConstructorDecl *Constructor);
+bool defaultedMoveConstructor(const clang::CXXConstructorDecl *Constructor);
+bool defaultedCopyOrMoveConstructor(const clang::CXXConstructorDecl *Constructor);
 bool supportedConstructor(const clang::CXXConstructorDecl *Constructor);
 bool needsDestruction(clang::QualType Type);
 const clang::Expr *directMethodReference(const clang::CallExpr *Call);

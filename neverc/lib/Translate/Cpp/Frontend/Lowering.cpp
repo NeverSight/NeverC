@@ -405,7 +405,7 @@ class FunctionLowering {
                           Copy->Type, Copy->Source->getType(), L);
         return cast(std::move(To), type(Call->getType(), L), L);
       }
-    const bool TrivialAssignment = A.S.coreV2() && defaultedCopyAssignment(Method) &&
+    const bool TrivialAssignment = A.S.coreV2() && defaultedAssignment(Method) &&
                                    Method->isTrivial();
     if (!Callee ||
         (!TrivialAssignment && !Callee->hasBody() &&
@@ -658,7 +658,7 @@ class FunctionLowering {
           dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
       if (Call->getOperator() == OO_Equal && Method && Method->isImplicit() &&
           Method->isTrivial() && Call->getNumArgs() == 2 &&
-          (!A.S.coreV2() || !Method->isCopyAssignmentOperator())) {
+          !A.S.coreV2()) {
         auto Right = expression(Call->getArg(1));
         auto Left = lvalue(Call->getArg(0));
         assign(Left, std::move(Right), L);
@@ -1010,7 +1010,7 @@ class FunctionLowering {
         return;
       }
     }
-    if (Constructor->isTrivial() && defaultedCopyConstructor(Constructor) &&
+    if (Constructor->isTrivial() && defaultedCopyOrMoveConstructor(Constructor) &&
         C->getNumArgs() == 1) {
       // A trivial copy preserves stored fields, including pointers into the
       // source. Only selected nontrivial copies invoke member constructors.
@@ -1155,13 +1155,16 @@ class FunctionLowering {
       const auto *Array = A.Context.getAsConstantArrayType(Loop->getType());
       const auto *Common = Loop->getCommonExpr();
       const auto *Source = Common ? Common->getSourceExpr() : nullptr;
-      if (!defaultedCopyConstructor(dyn_cast<CXXConstructorDecl>(Function)) ||
-          !Array || !Source || !Source->isLValue() || ArraySources.count(Common) ||
+      if (!defaultedCopyOrMoveConstructor(dyn_cast<CXXConstructorDecl>(Function)) ||
+          !Array || !Source || !Source->isGLValue() ||
+          Source->getValueKind() != Common->getValueKind() ||
+          (cast<CXXConstructorDecl>(Function)->isCopyConstructor() && !Source->isLValue()) ||
+          ArraySources.count(Common) ||
           Place.getString("type") != type(Loop->getType(), L))
-        reject(L, "array copy", "Expected an admitted semantic member-array copy.");
+        reject(L, "array initialization", "Expected admitted semantic member-array copying or moving.");
       auto Count = Array->getSize().getLimitedValue(65537);
       if (!Count || Count > 65536 || A.storageUnits(Loop->getType()) > 200000)
-        reject(L, "array copy", "Array copying exceeds the storage limit.");
+        reject(L, "array initialization", "Array initialization exceeds the storage limit.");
       // Capture the source address once before introducing the inner index.
       // This retains the outer index for a nested array's common expression.
       auto Pointer = snapshot(address(lvalue(Source), Source->getType(), L), L);
