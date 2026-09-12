@@ -3738,6 +3738,236 @@ TEST_F(TranslateTest, CoreV2StaticLocalsRetainInitializationAndLanguageBoundarie
   }
 }
 
+TEST_F(TranslateTest, CoreV2NameImportsPreserveLookupStorageAndCleanup) {
+  const auto Source = tmpFile("imports.cpp");
+  const auto Output = tmpFile("imports.nc");
+  writeFile(Source, R"cpp(
+namespace Origin {
+int state=3;
+const int constant=7;
+enum E { first=4 };
+using Number=int;
+struct R { int n; };
+int choose(int){return 10;}
+int change(int&n,int amount=2){n+=amount;return n;}
+int operator+(const R&r,int n){return r.n+n;}
+namespace Nested { int get(){return 8;} }
+}
+namespace Alias=Origin;
+namespace Again=Alias;
+namespace Imported {
+using Origin::state,Origin::constant,Origin::E,Origin::first;
+using Origin::Number,Origin::R,Origin::choose;
+using Origin::choose;
+}
+namespace Origin { int choose(bool){return 20;} }
+namespace Directed { using namespace Again; int select(){return choose(true);} }
+namespace Later { using Origin::choose; }
+namespace Reexport { using Imported::state;using Imported::R; }
+namespace Defaults { int value(int); }
+namespace DefaultUse { using Defaults::value; }
+namespace Defaults { int value(int n=6){return n;} }
+namespace Other { int state=19; }
+namespace { int hidden=11; }
+namespace AnonymousUse { using ::hidden; }
+namespace Friends {
+struct R { int n;friend int read(const R&r){return r.n;} };
+}
+namespace Guard {
+struct R { int*trace;R(int*p):trace(p){*trace=*trace*10+1;}~R(){*trace=*trace*10+2;} };
+}
+int*aliasAddress(){namespace Local=Again;return &Local::state;}
+int*importAddress(){using Reexport::state;return &state;}
+int importChange(){using Origin::change;using Imported::state;return change(state);}
+int localHide(){using namespace Origin;int state=23;return state;}
+int qualified(){using Other::state;return state+Origin::state;}
+int operators(){using Origin::operator+;using Reexport::R;return operator+(R{5},3);}
+int localEnum(){enum E{entry=12};{using E::entry;return entry;}}
+struct LocalEnum { int get(){enum E{entry=13};{using E::entry;return entry;}} };
+int bodies(){
+  int total=0;
+  for(int i=0;i<2;++i){namespace N=Origin::Nested;using N::get;total+=get();}
+  if(true){using Origin::first;total+=first;}
+  switch(1){case 1:using Origin::constant;total+=constant;break;default:break;}
+  return total;
+}
+int cleanup(){int trace=0;{using Guard::R;R r(&trace);namespace N=Origin;using N::first;trace=trace*10+first;}return trace;}
+int main(){
+  if(Alias::Nested::get()!=8||Again::Nested::get()!=8)return 1;
+  if(aliasAddress()!=&Origin::state||importAddress()!=&Origin::state)return 2;
+  if(importChange()!=5||Origin::state!=5)return 3;
+  if(&Imported::constant!=&Origin::constant||Imported::constant!=7)return 4;
+  if(Imported::choose(true)!=10)return 5;
+  if(Directed::select()!=20||Later::choose(true)!=20)return 6;
+  if(Origin::choose(1)!=10||Alias::choose(true)!=20)return 7;
+  if(DefaultUse::value()!=6)return 8;
+  if(localHide()!=23||qualified()!=24)return 9;
+  Imported::Number n=3;Imported::E e=Imported::first;
+  if(n!=3||e!=Origin::first)return 10;
+  Reexport::R object{9};Origin::R&reference=object;
+  if(reference.n!=9||&reference!=&object||sizeof(object)!=sizeof(Origin::R))return 11;
+  if(operators()!=8)return 12;
+  if(localEnum()!=12)return 13;
+  LocalEnum local;
+  if(local.get()!=13)return 14;
+  if(bodies()!=27)return 15;
+  if(cleanup()!=142)return 16;
+  if(AnonymousUse::hidden!=11||&AnonymousUse::hidden!=&hidden)return 17;
+  using Friends::R;R r{17};
+  if(read(r)!=17)return 18;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("imports" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NameImportsAcceptResolvedNamespaceAndBlockDeclarations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"alias", "namespace N{int f(){return 3;}}namespace A=N;int main(){return A::f()-3;}"},
+      {"alias-chain", "namespace N{int n=3;}namespace A=N;namespace B=A;int main(){return &B::n!=&N::n;}"},
+      {"nested-alias", "namespace N{namespace Inner{int n=3;}}namespace A=N::Inner;int main(){return A::n-3;}"},
+      {"block-alias", "namespace N{int n=3;}int f(){namespace A=N;return A::n;}"},
+      {"alias-repeated", "namespace N{int n=3;}namespace A=N;namespace A=N;int f(){return A::n;}"},
+      {"directive", "namespace N{int n=3;}using namespace N;int f(){return n;}"},
+      {"block-directive", "namespace N{int n=3;}int f(){using namespace N;return ++n;}"},
+      {"alias-directive", "namespace N{int n=3;}namespace A=N;using namespace A;int f(){return n;}"},
+      {"anonymous", "namespace{int n=3;}namespace N{using ::n;}int*f(){return &N::n;}"},
+      {"reopened", "namespace N{int f(int){return 1;}}namespace A=N;namespace N{int f(bool){return 2;}}int main(){return A::f(true)-2;}"},
+      {"function-overloads", "namespace N{int f(int){return 1;}int f(bool){return 2;}}using N::f;int main(){return f(true)-2;}"},
+      {"early-overloads", "namespace N{int f(int){return 1;}}using N::f;namespace N{int f(bool){return 2;}}int main(){return f(true)-1;}"},
+      {"directive-late-overloads", "namespace N{int f(int){return 1;}}using namespace N;namespace N{int f(bool){return 2;}}int main(){return f(true)-2;}"},
+      {"late-default", "namespace N{int f(int);}using N::f;namespace N{int f(int n=3){return n;}}int main(){return f()-3;}"},
+      {"mutable-global", "namespace N{int n=3;}using N::n;int main(){int*p=&n;*p=4;return N::n-4;}"},
+      {"const-global", "namespace N{const int n=3;}using N::n;const int*f(){return &n;}int main(){return f()!=&N::n;}"},
+      {"record", "namespace N{struct R{int n;};}using N::R;int main(){R r{3};N::R&v=r;return v.n-3;}"},
+      {"alias-type", "namespace N{using Number=int;}using N::Number;Number f(){return 3;}"},
+      {"typedef-type", "namespace N{typedef int Number;}using N::Number;Number f(){return 3;}"},
+      {"enum-type", "namespace N{enum class E:int{n=3};}using N::E;int main(){return static_cast<int>(E::n)-3;}"},
+      {"enum-namespace-value", "namespace N{enum E{n=3};}using N::n;int main(){return n-3;}"},
+      {"enum-qualified-value", "namespace N{enum E{n=3};}using N::E::n;int main(){return n-3;}"},
+      {"enum-local-value", "int f(){enum E{n=4};{using E::n;return n;}}"},
+      {"enum-method-value", "struct R{int f(){enum E{n=4};{using E::n;return n;}}};int main(){R r;return r.f()-4;}"},
+      {"reexport", "namespace N{int n=3;}namespace A{using N::n;}namespace B{using A::n;}int main(){return &B::n!=&N::n;}"},
+      {"repeat", "namespace N{int n=3;}using N::n;using N::n;int f(){using N::n;using N::n;return n;}"},
+      {"comma", "namespace N{int a=1,b=2;}using N::a,N::b;int f(){using N::a,N::b;return a+b;}"},
+      {"local-hiding", "namespace N{int n=3;}int f(){using namespace N;int n=4;return n;}"},
+      {"operator", "namespace N{struct R{int n;};int operator+(const R&r,int n){return r.n+n;}}using N::operator+;int main(){return operator+(N::R{3},2)-5;}"},
+      {"adl", "namespace N{struct R{int n;};int f(const R&r){return r.n;}}using N::R;int main(){R r{3};return f(r)-3;}"},
+      {"hidden-friend", "namespace N{struct R{int n;friend int f(const R&r){return r.n;}};}using N::R;int main(){R r{3};return f(r)-3;}"},
+      {"body-erasure", "namespace N{int n=3;}int f(){for(int i=0;i<1;++i){namespace A=N;using A::n;if(n)return n;}return 0;}"},
+      {"switch-erasure", "namespace N{int n=3;}int f(){switch(1){case 1:using N::n;namespace A=N;return n+A::n;default:return 0;}}"},
+      {"unused", "namespace N{int n=3;}namespace A=N;using namespace A;using A::n;void f(){using A::n;namespace B=A;}"},
+      {"existing-declaration", "namespace N{int f(){return 3;}using N::f;}int main(){return N::f()-3;}"},
+      {"typename", "namespace N{struct R{int n;};}using typename N::R;int main(){R r{3};return r.n-3;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("imports-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("imports-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NameImportsRetainSourceClosureAndLanguageBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"scoped-enumerator", "enum class E{n=3};using E::n;int f(){return static_cast<int>(n);}", "TR0201"},
+      {"scoped-enumerator-local", "int f(){enum class E{n=3};using E::n;return static_cast<int>(n);}", "TR0201"},
+      {"using-enum", "enum class E{n=3};using enum E;int f(){return static_cast<int>(n);}", "TR0201"},
+      {"class-using", "struct B{int n;};struct D:B{using B::n;};", "TR0201"},
+      {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct D:B{using B::B;};", "TR0201"},
+      {"dependent", "template<class T>struct R:T{using T::n;};", "TR0201"},
+      {"pack", "template<class...T>struct R:T...{using T::n...;};", "TR0201"},
+      {"import-template", "namespace N{template<class T>T f(T n){return n;}}using N::f;", "TR0201"},
+      {"import-template-type", "namespace N{template<class T>struct R{T n;};}using N::R;", "TR0201"},
+      {"inline-namespace", "namespace N{inline namespace V{int n=3;}}using N::n;", "TR0201"},
+      {"unsupported-type", "namespace N{using T=double;}using N::T;", "TR0201"},
+      {"unused-body", "namespace N{int f(){double n=3;return static_cast<int>(n);}}using N::f;", "TR0201"},
+      {"unused-initializer", "namespace N{int n=static_cast<int>(3.0);}using N::n;", "TR0201"},
+      {"skipped-body", "namespace N{int f(){if(false){double n=3;}return 0;}}using N::f;", "TR0201"},
+      {"folded-body", "namespace N{constexpr int f(){return static_cast<int>(3.0);}}using N::f;const int value=f();", "TR0201"},
+      {"inactive-include", "#if 0\n#include \"missing.h\"\n#endif\nnamespace N{int n=3;}using N::n;", "TR0201"},
+      {"active-include", "#include <vector>\nnamespace N{int n=3;}using N::n;", "TR0201"},
+      {"missing-namespace", "namespace A=Missing;", "TR0202"},
+      {"missing-name", "namespace N{}using N::missing;", "TR0202"},
+      {"namespace-as-using", "namespace N{namespace Inner{}}using N::Inner;", "TR0202"},
+      {"ambiguous-directive", "namespace A{int n=1;}namespace B{int n=2;}using namespace A;using namespace B;int f(){return n;}", "TR0202"},
+      {"conflicting-using", "namespace A{int n=1;}namespace B{int n=2;}using A::n;using B::n;", "TR0202"},
+      {"private-member", "class R{static const int n=3;};using R::n;", "TR0202"},
+      {"class-member", "struct R{static const int n=3;};using R::n;", "TR0202"},
+      {"member-enumerator", "struct R{enum E{n=3};};using R::E::n;", "TR0202"},
+      {"member-type", "struct R{using T=int;};using R::T;", "TR0202"},
+      {"for-init-using", "namespace N{int n=3;}void f(){for(using N::n;;)break;}", "TR0202"},
+      {"if-init-using", "namespace N{int n=3;}void f(){if(using N::n;true){}}", "TR0202"},
+      {"switch-init-using", "namespace N{int n=3;}void f(){switch(using N::n;0){}}", "TR0202"},
+      {"for-init-directive", "namespace N{}void f(){for(using namespace N;;)break;}", "TR0202"},
+      {"if-init-alias", "namespace N{}void f(){if(namespace A=N;true){}}", "TR0202"},
+      {"alias-conflict", "namespace N{}int A;namespace A=N;", "TR0202"},
+      {"out-of-scope", "namespace N{int n=3;}int f(){{using N::n;}return n;}", "TR0202"},
+      {"const-write", "namespace N{const int n=3;}using N::n;void f(){n=4;}", "TR0202"},
+      {"hidden-friend-import", "namespace N{struct R{int n;friend int read(const R&r){return r.n;}};}using N::read;", "TR0202"},
+      {"function", "namespace N{int f();}using N::f;int main(){return f();}", "TR0203"},
+      {"unused-function", "namespace N{int f();}using N::f;", "TR0203"},
+      {"global", "namespace N{extern int n;}using N::n;int f(){return n;}", "TR0203"},
+      {"unused-global", "namespace N{extern int n;}using N::n;", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("imports-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("imports-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"namespace N{int n=3;}namespace A=N;",
+                                  "namespace N{int n=3;}using namespace N;",
+                                  "namespace N{int n=3;}using N::n;"}) {
+    const auto Source = tmpFile("imports-v1.cpp");
+    const auto Output = tmpFile("imports-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NameImportsBoundNamespaceAliasChains) {
+  for (unsigned Count : {64u, 65u}) {
+    for (bool Directive : {false, true}) {
+      SCOPED_TRACE(Count);
+      SCOPED_TRACE(Directive);
+      std::string Code = "namespace Original{int n=3;}namespace A0=Original;";
+      for (unsigned I = 1; I < Count; ++I)
+        Code += "namespace A" + std::to_string(I) + "=A" + std::to_string(I - 1) + ";";
+      const auto Last = "A" + std::to_string(Count - 1);
+      Code += Directive ? "using namespace " + Last + ";int f(){return n;}"
+                        : "int f(){return " + Last + "::n;}";
+      const auto Stem = "imports-boundary-" + std::to_string(Count) + (Directive ? "-directive" : "-alias");
+      const auto Source = tmpFile(Stem + ".cpp");
+      const auto Output = tmpFile(Stem + ".nc");
+      writeFile(Source, Code);
+      auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+      if (Count == 64)
+        EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+      else {
+        expectCode(Result, "TR0201");
+        expectNoArtifacts(Output);
+      }
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DefaultArgumentsPreserveEffectsAndCleanup) {
   const auto Source = tmpFile("default-arguments.cpp");
   const auto Output = tmpFile("default-arguments.nc");

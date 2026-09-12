@@ -22,6 +22,8 @@ Core v2 supports defined integer, boolean and enum static data members, includin
 
 Core v2 supports non-volatile integer, boolean and enum static locals with zero or fully checked constant initialization. Their values and addresses persist across calls, recursion and block exits; references and pointers remain valid after return. Each source declaration has its own object, including equal-spelled locals in different scopes. Ordinary functions may contain static constexpr locals. Static locals inside constexpr functions, dynamic initialization, thread-local storage and other static local types remain unsupported. Full C++/STL remains unfinished; native validation requires the implementing revision’s CI.
 
+Core v2 supports namespace aliases, using-directives and resolved using-declarations in namespace and block scopes. Imported functions, variables, types and unscoped enumerators keep their original identities, lookup rules, access checks and object lifetimes. Class member imports, inherited constructors, templates, inline namespaces and C++20 enumerator imports remain outside this stage; full C++/STL is still unfinished.
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

@@ -1624,7 +1624,9 @@ class FunctionLowering {
           declaration(V);
         else if (!isa<CXXRecordDecl>(Decl) &&
                  !(A.S.coreV2() &&
-                   isa<TypedefNameDecl, EnumDecl, StaticAssertDecl>(Decl)))
+                   (isa<TypedefNameDecl, EnumDecl, StaticAssertDecl, NamespaceAliasDecl,
+                        UsingDirectiveDecl, UsingDecl>(Decl) ||
+                    Decl->getKind() == clang::Decl::UsingShadow)))
           reject(L, "declaration statement", "Unsupported local declaration.");
       }
     } else if (const auto *R = dyn_cast<ReturnStmt>(S)) {

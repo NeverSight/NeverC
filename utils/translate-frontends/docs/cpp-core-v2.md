@@ -684,6 +684,49 @@ cleanup timing, actual storage identity and deterministic relocation. Native
 O0/O2 results require CI from the implementing revision. Full C++/STL support
 remains unfinished.
 
+## Resolved namespace imports
+
+Core v2 admits namespace aliases, using-directives and ordinary resolved
+using-declarations in namespace and block scopes. Aliases and directives may
+refer to source-owned nested, anonymous or reopened namespaces, including
+chains of namespace aliases. Imported functions, variables, typedefs, record
+and enum types, and unscoped enumerators keep their original canonical source
+declarations. This includes unscoped enumerators local to an ordinary function
+or method and imported into a nested block. Repeated imports and C++17
+comma-separated using-declarators create no duplicate definitions.
+
+Embedded Clang resolves lookup at each use: a using-declaration imports the
+overloads visible at its declaration, a using-directive can see later namespace
+additions, and later valid default arguments remain available. Local hiding,
+qualified lookup, access control, argument-dependent lookup and hidden friends
+retain those resolved meanings. The producer never repeats lookup against the
+final namespace contents or creates alias wrapper functions.
+
+Lookup declarations add no runtime storage, initialization or cleanup. Imported
+and qualified names address the same object, preserve const permissions, and
+use the same record layout and typed call signatures. Block imports preserve
+surrounding effects and object destruction, including loop, if and switch
+bodies. Namespace aliases and using-declarations/directives are not valid
+C++17 for/if/switch init-statements; source errors remain source errors.
+
+Alias target walks and using-shadow chains are bounded to 64 links, cycle
+checked, source-ownership checked and charged against the existing expansion
+budget. Importing a name never exempts its original type, initializer, defaults,
+body or definition from full source validation, even when unused or statically
+skipped. Source errors retain TR0202 and missing required definitions TR0203.
+
+Class-member imports, inherited constructors, templates/dependent/pack forms,
+inline namespaces, foreign targets and unsupported source types or bodies remain
+excluded. C++20 using-enum and scoped-enumerator imports remain rejected under
+the C++17 contract even when the embedded library only issues an extension
+warning. Old profiles and header/library restrictions are unchanged.
+
+Native O0/O2 fixtures cover lookup differences, canonical addresses, mutation,
+type identity and cleanup. Protocol checks verify original IDs, exact overload
+signatures, defaults, layouts, declaration erasure and deterministic relocation.
+Native validation requires CI for the implementing revision. Full C++/STL
+remains unfinished.
+
 ## Statically initialized scalar locals
 
 Core v2 admits source-owned static integer, boolean and enum local variables in

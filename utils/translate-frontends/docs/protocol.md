@@ -129,6 +129,13 @@ Receiver effects and cleanup stay explicit; discarded and unevaluated values
 emit no scalar storage. Source address/reference uses still require a real
 definition. See [declaration-only static constants](cpp-core-v2.md#declaration-only-static-constant-values).
 
+Core-v2 namespace aliases and resolved using imports are lookup-only source
+declarations. They produce no IR entity, wrapper, storage, initializer or
+cleanup; uses retain original canonical type/object/function IDs and the exact
+overload selected at the source use. No protocol field or consumer extension is
+needed. See [resolved namespace imports](cpp-core-v2.md#resolved-namespace-imports)
+for ownership, source closure and C++17 lookup boundaries.
+
 Statically initialized core-v2 scalar locals reuse canonical typed globals and
 the optional `mutable` flag. Their source declaration locations and identities
 distinguish functions, overloads and lexical scopes. Local declarations and

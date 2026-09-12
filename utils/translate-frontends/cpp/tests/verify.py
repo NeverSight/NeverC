@@ -5081,6 +5081,283 @@ int*address(){return &state();}
     check("v1-static-locals-mutable", "int f(){static int n;return ++n;}", "TR0201")
     check("v1-static-locals-const", "int f(){static const int n=3;return n;}", "TR0201")
 
+    imports_source = """namespace Original {
+int state=3;
+const int constant=7;
+enum E { entry=4 };
+using Number=int;
+struct R { int n; };
+int choose(int){return 10;}
+int change(int&n,int amount=2){n+=amount;return n;}
+void mark(int&n){n=n*10+4;}
+}
+namespace Alias=Original;
+namespace Again=Alias;
+namespace Early {
+using Original::choose;
+using Original::choose;
+using Original::state,Original::constant,Original::R,Original::Number;
+using Original::E,Original::entry;
+}
+namespace Reexport {
+using Early::state;
+using Early::R;
+}
+namespace Original {
+int choose(bool){return 20;}
+}
+namespace Directed {
+using namespace Again;
+int late(){return choose(true);}
+}
+namespace Other {
+int state=19;
+}
+namespace Defaults { int value(int); }
+namespace DefaultUse {
+using Defaults::value;
+}
+namespace Defaults {
+int value(int n=6){return n;}
+}
+namespace Guard {
+struct G {
+ int*trace;
+ G(int*p):trace(p){*trace=*trace*10+1;}
+ ~G(){*trace=*trace*10+2;}
+};
+}
+int early(){return Early::choose(true);}
+int original(){return Original::choose(true);}
+int lateImport(){using Original::choose;return choose(true);}
+int defaulted(){return DefaultUse::value();}
+int*originalAddress(){return &Original::state;}
+int*aliasAddress(){namespace Local=Again;return &Local::state;}
+int*importAddress(){using Reexport::state;return &state;}
+const int*constantAddress(){using Early::constant;return &constant;}
+void write(int value){using Early::state;state=value;}
+int change(){using Original::change;using Early::state;return change(state);}
+int hidden(){using namespace Original;int state=23;return state;}
+int other(){using Other::state;return state;}
+Reexport::R&same(Early::R&r){return r;}
+Early::Number enumValue(){using Early::entry;return entry;}
+int localEnum(){enum E{entry=12};{using E::entry;return entry;}}
+void cleanup(int&trace){
+ using Guard::G;
+ G g(&trace);
+ namespace Local=Original;
+ using Local::mark;
+ mark(trace);
+}
+int main(){return early()-10;}
+"""
+    imports = check("v2-name-imports-protocol", imports_source, profile="cpp-core-v2")
+    ni_functions = {f["name"]: f for f in imports["functions"]}
+    assert len(ni_functions) == len(imports["functions"]), "imports duplicated function definitions"
+
+    def ni_line(prefix):
+        lines = [i for i, line in enumerate(imports_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def ni_function(prefix, result, parameters):
+        found = [f for f in imports["functions"] if f["loc"]["line"] == ni_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    def ni_global(prefix, value, mutable):
+        found = [g for g in imports["globals"] if g["loc"]["line"] == ni_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        result = found[0]
+        assert result["type"] == "int" and result["value"]["kind"] == "literal"
+        assert result["value"]["type"] == "int" and result["value"]["value"] == str(value)
+        assert result.get("mutable", False) == mutable
+        if not mutable:
+            assert "mutable" not in result
+        return result
+
+    assert len(imports["globals"]) == 3
+    state = ni_global("int state=3;", 3, True)
+    constant = ni_global("const int constant=7;", 7, False)
+    other_state = ni_global("int state=19;", 19, True)
+    assert state["name"] != other_state["name"]
+    assert len(imports["records"]) == 2
+    records = {r["loc"]["line"]: r for r in imports["records"]}
+    record = records[ni_line("struct R {")]
+    guard = records[ni_line("struct G {")]
+    rid, gid = record["id"], guard["id"]
+    assert [f["type"] for f in record["fields"]] == ["int"]
+    assert record["layout"] == {"size_bits": 32, "abi_align_bits": 32, "field_offsets_bits": [0]}
+    assert [f["type"] for f in guard["fields"]] == ["ptr:int"]
+    choose_int = ni_function("int choose(int)", "int", ["int"])
+    choose_bool = ni_function("int choose(bool)", "int", ["bool"])
+    assert choose_int["name"] != choose_bool["name"]
+    for prefix, callee in (("int early()", choose_int), ("int original()", choose_bool),
+                           ("int lateImport()", choose_bool), ("int late()", choose_bool)):
+        function = ni_function(prefix, "int", [])
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == callee["name"]
+        assert [a["type"] for a in calls[0]["args"]] == [p["type"] for p in callee["params"]]
+        assert gc_identity(function, calls[0]["args"][0]) == 1
+    defaulted = ni_function("int defaulted()", "int", [])
+    default_callee = ni_function("int value(int n=6)", "int", ["int"])
+    calls = gc_calls(defaulted)
+    assert len(calls) == 1 and calls[0]["callee"] == default_callee["name"]
+    assert gc_identity(defaulted, calls[0]["args"][0]) == 6
+    for prefix, global_value, result in (("int*originalAddress()", state, "ptr:int"),
+                                         ("int*aliasAddress()", state, "ptr:int"),
+                                         ("int*importAddress()", state, "ptr:int"),
+                                         ("const int*constantAddress()", constant, "cptr:int")):
+        function = ni_function(prefix, result, [])
+        assert not gc_calls(function)
+        assert [np_pointer(function, n["value"]) for n in function["body"] if n["op"] == "return"] == [("object", global_value["name"])]
+    write = ni_function("void write(", "void", ["int"])
+    writes = [n for n in write["body"] if n["op"] == "assign" and n["target"].get("name") == state["name"]]
+    assert len(writes) == 1
+    assert gc_identity(write, writes[0]["value"]) == ("parameter", write["params"][0]["name"])
+    change = ni_function("int change()", "int", [])
+    change_callee = ni_function("int change(int&", "int", ["ptr:int", "int"])
+    calls = gc_calls(change)
+    assert len(calls) == 1 and calls[0]["callee"] == change_callee["name"]
+    assert np_pointer(change, calls[0]["args"][0]) == ("object", state["name"])
+    assert gc_identity(change, calls[0]["args"][1]) == 2
+    hidden = ni_function("int hidden()", "int", [])
+    assert [gc_identity(hidden, n["value"]) for n in hidden["body"] if n["op"] == "return"] == [23]
+    assert not any(n.get("kind") == "var" and n.get("name") in {state["name"], other_state["name"]} for n in walk(hidden["body"]))
+    other = ni_function("int other()", "int", [])
+    assert {n["name"] for n in walk(other["body"]) if n.get("kind") == "var" and n.get("name") in {state["name"], other_state["name"]}} == {other_state["name"]}
+    same = ni_function("Reexport::R&same(", "ptr:"+rid, ["ptr:"+rid])
+    assert [np_pointer(same, n["value"]) for n in same["body"] if n["op"] == "return"] == [("parameter", same["params"][0]["name"])]
+    for prefix, value in (("Early::Number enumValue()", 4), ("int localEnum()", 12)):
+        function = ni_function(prefix, "int", [])
+        assert not gc_calls(function)
+        assert [gc_identity(function, n["value"]) for n in function["body"] if n["op"] == "return"] == [value]
+    cleanup = ni_function("void cleanup(", "void", ["ptr:int"])
+    constructor = ni_function(" G(int*", "void", ["ptr:"+gid, "ptr:int"])
+    mark = ni_function("void mark(", "void", ["ptr:int"])
+    calls = gc_calls(cleanup)
+    assert [call["callee"] for call in calls] == [constructor["name"], mark["name"], gid+"_destroy"]
+    assert np_pointer(cleanup, calls[0]["args"][0]) == np_pointer(cleanup, calls[2]["args"][0])
+    assert np_pointer(cleanup, calls[0]["args"][1]) == np_pointer(cleanup, calls[1]["args"][0]) == ("parameter", cleanup["params"][0]["name"])
+    import_lines = {i for i, line in enumerate(imports_source.splitlines(), 1)
+                    if line.lstrip().startswith("using ") or (line.lstrip().startswith("namespace ") and "=" in line)}
+    for collection in (imports["globals"], imports["records"], imports["functions"]):
+        assert not any(item["loc"]["line"] in import_lines for item in collection), "lookup declaration created an entity"
+    for function in imports["functions"]:
+        assert not any(n["loc"]["line"] in import_lines for n in function["body"]), "lookup declaration emitted an operation"
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in ni_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-name-imports-relocated-") as temp:
+        relocated = check("v2-name-imports-relocated", imports_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == imports, "namespace imports changed identities after relocation"
+
+    imports_positive = {
+        'alias': 'namespace N{int f(){return 3;}}namespace A=N;int main(){return A::f()-3;}',
+        'alias-chain': 'namespace N{int n=3;}namespace A=N;namespace B=A;int main(){return &B::n!=&N::n;}',
+        'nested-alias': 'namespace N{namespace Inner{int n=3;}}namespace A=N::Inner;int main(){return A::n-3;}',
+        'block-alias': 'namespace N{int n=3;}int f(){namespace A=N;return A::n;}',
+        'alias-repeated': 'namespace N{int n=3;}namespace A=N;namespace A=N;int f(){return A::n;}',
+        'directive': 'namespace N{int n=3;}using namespace N;int f(){return n;}',
+        'block-directive': 'namespace N{int n=3;}int f(){using namespace N;return ++n;}',
+        'alias-directive': 'namespace N{int n=3;}namespace A=N;using namespace A;int f(){return n;}',
+        'anonymous': 'namespace{int n=3;}namespace N{using ::n;}int*f(){return &N::n;}',
+        'reopened': 'namespace N{int f(int){return 1;}}namespace A=N;namespace N{int f(bool){return 2;}}int main(){return A::f(true)-2;}',
+        'function-overloads': 'namespace N{int f(int){return 1;}int f(bool){return 2;}}using N::f;int main(){return f(true)-2;}',
+        'early-overloads': 'namespace N{int f(int){return 1;}}using N::f;namespace N{int f(bool){return 2;}}int main(){return f(true)-1;}',
+        'directive-late-overloads': 'namespace N{int f(int){return 1;}}using namespace N;namespace N{int f(bool){return 2;}}int main(){return f(true)-2;}',
+        'late-default': 'namespace N{int f(int);}using N::f;namespace N{int f(int n=3){return n;}}int main(){return f()-3;}',
+        'mutable-global': 'namespace N{int n=3;}using N::n;int main(){int*p=&n;*p=4;return N::n-4;}',
+        'const-global': 'namespace N{const int n=3;}using N::n;const int*f(){return &n;}int main(){return f()!=&N::n;}',
+        'record': 'namespace N{struct R{int n;};}using N::R;int main(){R r{3};N::R&v=r;return v.n-3;}',
+        'alias-type': 'namespace N{using Number=int;}using N::Number;Number f(){return 3;}',
+        'typedef-type': 'namespace N{typedef int Number;}using N::Number;Number f(){return 3;}',
+        'enum-type': 'namespace N{enum class E:int{n=3};}using N::E;int main(){return static_cast<int>(E::n)-3;}',
+        'enum-namespace-value': 'namespace N{enum E{n=3};}using N::n;int main(){return n-3;}',
+        'enum-qualified-value': 'namespace N{enum E{n=3};}using N::E::n;int main(){return n-3;}',
+        'enum-local-value': 'int f(){enum E{n=4};{using E::n;return n;}}',
+        'enum-method-value': 'struct R{int f(){enum E{n=4};{using E::n;return n;}}};int main(){R r;return r.f()-4;}',
+        'reexport': 'namespace N{int n=3;}namespace A{using N::n;}namespace B{using A::n;}int main(){return &B::n!=&N::n;}',
+        'repeat': 'namespace N{int n=3;}using N::n;using N::n;int f(){using N::n;using N::n;return n;}',
+        'comma': 'namespace N{int a=1,b=2;}using N::a,N::b;int f(){using N::a,N::b;return a+b;}',
+        'local-hiding': 'namespace N{int n=3;}int f(){using namespace N;int n=4;return n;}',
+        'operator': 'namespace N{struct R{int n;};int operator+(const R&r,int n){return r.n+n;}}using N::operator+;int main(){return operator+(N::R{3},2)-5;}',
+        'adl': 'namespace N{struct R{int n;};int f(const R&r){return r.n;}}using N::R;int main(){R r{3};return f(r)-3;}',
+        'hidden-friend': 'namespace N{struct R{int n;friend int f(const R&r){return r.n;}};}using N::R;int main(){R r{3};return f(r)-3;}',
+        'body-erasure': 'namespace N{int n=3;}int f(){for(int i=0;i<1;++i){namespace A=N;using A::n;if(n)return n;}return 0;}',
+        'switch-erasure': 'namespace N{int n=3;}int f(){switch(1){case 1:using N::n;namespace A=N;return n+A::n;default:return 0;}}',
+        'unused': 'namespace N{int n=3;}namespace A=N;using namespace A;using A::n;void f(){using A::n;namespace B=A;}',
+        'existing-declaration': 'namespace N{int f(){return 3;}using N::f;}int main(){return N::f()-3;}',
+        'typename': 'namespace N{struct R{int n;};}using typename N::R;int main(){R r{3};return r.n-3;}',
+    }
+    for name, source in imports_positive.items():
+        check("v2-name-imports-positive-" + name, source, profile="cpp-core-v2")
+    imports_reject = {
+        'scoped-enumerator': 'enum class E{n=3};using E::n;int f(){return static_cast<int>(n);}',
+        'scoped-enumerator-local': 'int f(){enum class E{n=3};using E::n;return static_cast<int>(n);}',
+        'using-enum': 'enum class E{n=3};using enum E;int f(){return static_cast<int>(n);}',
+        'class-using': 'struct B{int n;};struct D:B{using B::n;};',
+        'inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct D:B{using B::B;};',
+        'dependent': 'template<class T>struct R:T{using T::n;};',
+        'pack': 'template<class...T>struct R:T...{using T::n...;};',
+        'import-template': 'namespace N{template<class T>T f(T n){return n;}}using N::f;',
+        'import-template-type': 'namespace N{template<class T>struct R{T n;};}using N::R;',
+        'inline-namespace': 'namespace N{inline namespace V{int n=3;}}using N::n;',
+        'unsupported-type': 'namespace N{using T=double;}using N::T;',
+        'unused-body': 'namespace N{int f(){double n=3;return static_cast<int>(n);}}using N::f;',
+        'unused-initializer': 'namespace N{int n=static_cast<int>(3.0);}using N::n;',
+        'skipped-body': 'namespace N{int f(){if(false){double n=3;}return 0;}}using N::f;',
+        'folded-body': 'namespace N{constexpr int f(){return static_cast<int>(3.0);}}using N::f;const int value=f();',
+        'inactive-include': '#if 0\n#include "missing.h"\n#endif\nnamespace N{int n=3;}using N::n;',
+        'active-include': '#include <vector>\nnamespace N{int n=3;}using N::n;',
+    }
+    for name, source in imports_reject.items():
+        check("v2-name-imports-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    imports_invalid = {
+        'missing-namespace': 'namespace A=Missing;',
+        'missing-name': 'namespace N{}using N::missing;',
+        'namespace-as-using': 'namespace N{namespace Inner{}}using N::Inner;',
+        'ambiguous-directive': 'namespace A{int n=1;}namespace B{int n=2;}using namespace A;using namespace B;int f(){return n;}',
+        'conflicting-using': 'namespace A{int n=1;}namespace B{int n=2;}using A::n;using B::n;',
+        'private-member': 'class R{static const int n=3;};using R::n;',
+        'class-member': 'struct R{static const int n=3;};using R::n;',
+        'member-enumerator': 'struct R{enum E{n=3};};using R::E::n;',
+        'member-type': 'struct R{using T=int;};using R::T;',
+        'for-init-using': 'namespace N{int n=3;}void f(){for(using N::n;;)break;}',
+        'if-init-using': 'namespace N{int n=3;}void f(){if(using N::n;true){}}',
+        'switch-init-using': 'namespace N{int n=3;}void f(){switch(using N::n;0){}}',
+        'for-init-directive': 'namespace N{}void f(){for(using namespace N;;)break;}',
+        'if-init-alias': 'namespace N{}void f(){if(namespace A=N;true){}}',
+        'alias-conflict': 'namespace N{}int A;namespace A=N;',
+        'out-of-scope': 'namespace N{int n=3;}int f(){{using N::n;}return n;}',
+        'const-write': 'namespace N{const int n=3;}using N::n;void f(){n=4;}',
+        'hidden-friend-import': 'namespace N{struct R{int n;friend int read(const R&r){return r.n;}};}using N::read;',
+    }
+    for name, source in imports_invalid.items():
+        check("v2-name-imports-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    imports_missing = {
+        'function': 'namespace N{int f();}using N::f;int main(){return f();}',
+        'unused-function': 'namespace N{int f();}using N::f;',
+        'global': 'namespace N{extern int n;}using N::n;int f(){return n;}',
+        'unused-global': 'namespace N{extern int n;}using N::n;',
+    }
+    for name, source in imports_missing.items():
+        check("v2-name-imports-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-name-imports-alias", "namespace N{int n=3;}namespace A=N;", "TR0201")
+    check("v1-name-imports-declaration", "namespace N{int n=3;}using N::n;", "TR0201")
+    check("v1-name-imports-directive", "namespace N{int n=3;}using namespace N;", "TR0201")
+
+    for alias_count in (64, 65):
+        for directive in (False, True):
+            source = "namespace Original{int n=3;}namespace A0=Original;"
+            source += "".join(f"namespace A{i}=A{i-1};" for i in range(1, alias_count))
+            last = f"A{alias_count-1}"
+            source += (f"using namespace {last};int f(){{return n;}}" if directive
+                       else f"int f(){{return {last}::n;}}")
+            check(f"v2-name-imports-boundary-{alias_count}-{directive}", source,
+                  None if alias_count == 64 else "TR0201", profile="cpp-core-v2")
+
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}
 int next(){mark(1);return number;}

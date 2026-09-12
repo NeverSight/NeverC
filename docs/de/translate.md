@@ -22,6 +22,8 @@ Core v2 unterstützt definierte statische Datenmember mit Ganzzahl-, booleschem 
 
 Core v2 unterstützt nicht-volatile statische lokale Variablen mit Ganzzahl-, booleschem oder Enum-Typ und Nullinitialisierung oder geprüfter konstanter Initialisierung. Werte und Adressen bleiben über Aufrufe, Rekursion und Blockende hinweg erhalten; Referenzen und Zeiger bleiben nach der Rückkehr gültig. Gleichnamige Variablen in verschiedenen Gültigkeitsbereichen sind getrennte Objekte. Statische constexpr-Variablen in gewöhnlichen Funktionen sind zulässig. Statische lokale Variablen in constexpr-Funktionen, dynamische Initialisierung, Thread-lokaler Speicher und andere statische lokale Typen werden weiterhin nicht unterstützt. Vollständiges C++/STL ist noch nicht erreicht; native Validierung benötigt CI der implementierenden Revision.
 
+Core v2 unterstützt Namespace-Aliasse sowie using-Direktiven und aufgelöste using-Deklarationen in Namespace- und Blockbereichen. Importierte Funktionen, Variablen, Typen und unbeschränkte Enumeratoren behalten ihre Identität, Namensauflösung, Zugriffskontrollen und Objektlebensdauer. Klassenmember-Importe, geerbte Konstruktoren, Templates, Inline-Namespaces und C++20-Enumeratorimporte sind in dieser Stufe nicht enthalten; vollständiges C++/STL ist weiterhin nicht erreicht.
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

@@ -22,6 +22,8 @@ Core v2 supporta membri statici definiti di tipo intero, booleano o enumerazione
 
 Core v2 supporta variabili locali statiche non volatile di tipo intero, booleano o enumerazione con inizializzazione a zero o costante verificata. Valori e indirizzi persistono tra chiamate, ricorsione e uscite dai blocchi; riferimenti e puntatori restano validi dopo il ritorno. Variabili omonime in ambiti diversi sono oggetti distinti. Le locali static constexpr sono ammesse nelle funzioni ordinarie. Le locali statiche nelle funzioni constexpr, l’inizializzazione dinamica, la memoria locale al thread e gli altri tipi locali statici restano esclusi. C++/STL completo resta incompleto; la verifica nativa richiede il CI della revisione corrispondente.
 
+Core v2 supporta alias di namespace, direttive using e dichiarazioni using risolte nei namespace e nei blocchi. Funzioni, variabili, tipi ed enumeratori senza ambito importati conservano identità, regole di ricerca dei nomi, controlli di accesso e durata degli oggetti. Importazioni di membri di classe, costruttori ereditati, template, namespace inline e importazioni di enumeratori C++20 restano fuori da questa fase; il supporto completo C++/STL non è ancora terminato.
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

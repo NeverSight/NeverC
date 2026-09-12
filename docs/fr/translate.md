@@ -22,6 +22,8 @@ Core v2 accepte les membres statiques définis de type entier, booléen ou énum
 
 Core v2 accepte les variables locales statiques non volatile de type entier, booléen ou énumération, avec initialisation à zéro ou initialisation constante vérifiée. Valeurs et adresses persistent entre les appels, la récursion et les sorties de bloc ; références et pointeurs restent valides après le retour. Des variables homonymes dans des portées différentes désignent des objets distincts. Les locales static constexpr sont admises dans les fonctions ordinaires. Les locales statiques dans les fonctions constexpr, l’initialisation dynamique, le stockage local aux threads et les autres types statiques restent exclus. C++/STL complet reste inachevé ; la validation native exige le CI de la révision concernée.
 
+Core v2 accepte les alias d’espaces de noms, les directives using et les déclarations using résolues dans les espaces de noms et les blocs. Les fonctions, variables, types et énumérateurs non délimités importés conservent leur identité, la recherche de noms, les contrôles d’accès et la durée de vie des objets. Les imports de membres de classe, constructeurs hérités, templates, espaces de noms inline et imports d’énumérateurs C++20 restent hors de cette étape ; C++/STL complet reste inachevé.
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).

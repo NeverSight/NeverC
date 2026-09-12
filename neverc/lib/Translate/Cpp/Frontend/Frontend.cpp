@@ -928,6 +928,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const InitListExpr *> EmptyVoidLists;
   std::set<const CXXConstructExpr *> CheckedConstructions;
   std::set<const VarDecl *> CheckedScalarGlobals;
+  std::set<const UsingShadowDecl *> CheckedUsingShadows;
   std::set<const Expr *> CheckedDiscardedResults, DiscardedStaticValues;
   std::set<const Decl *> QueuedGeneratedMethods;
   std::vector<const CXXMethodDecl *> GeneratedMethods;
@@ -937,6 +938,74 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!D->isImplicit())
       return A.S.owns(A.Sources, D->getLocation());
     return A.rangeForOwner(dyn_cast<VarDecl>(D)) != nullptr;
+  }
+  bool importContext(const DeclContext *Context) {
+    if (!Context || Context->isDependentContext())
+      return false;
+    Context = Context->getRedeclContext();
+    return isa<TranslationUnitDecl, NamespaceDecl, FunctionDecl>(Context);
+  }
+  bool usingShape(const UsingDecl *D) {
+    return D && owned(D) && !D->isInvalidDecl() &&
+           D->getUsingLoc().isValid() && importContext(D->getDeclContext()) &&
+           D->getQualifier() && !D->getQualifier()->isDependent();
+  }
+  bool namespaceTarget(const NamedDecl *Target, SourceLocation L) {
+    std::set<const NamedDecl *> Seen;
+    unsigned Aliases = 0;
+    while (Target && owned(Target) && !Target->isInvalidDecl()) {
+      A.chargeExpansion(1, L);
+      if (!Seen.insert(Target).second)
+        break;
+      if (const auto *N = dyn_cast<NamespaceDecl>(Target))
+        return !N->isDependentContext() && !N->isInline();
+      const auto *Alias = dyn_cast<NamespaceAliasDecl>(Target);
+      if (!Alias || ++Aliases > 64 ||
+          !importContext(Alias->getDeclContext()) ||
+          (Alias->getQualifier() && Alias->getQualifier()->isDependent()))
+        break;
+      Target = Alias->getAliasedNamespace();
+    }
+    return false;
+  }
+  void usingTarget(const UsingShadowDecl *D) {
+    if (CheckedUsingShadows.count(D))
+      return;
+    const NamedDecl *Target = D;
+    std::set<const UsingShadowDecl *> Seen;
+    unsigned Links = 0;
+    while (const auto *Shadow = dyn_cast_or_null<UsingShadowDecl>(Target)) {
+      A.chargeExpansion(1, D->getLocation());
+      if (Shadow->getKind() != Decl::UsingShadow || !owned(Shadow) ||
+          Shadow->isInvalidDecl() || ++Links > 64 ||
+          !Seen.insert(Shadow).second ||
+          !usingShape(dyn_cast_or_null<UsingDecl>(Shadow->getIntroducer()))) {
+        A.reject(D->getLocation(), "using declaration",
+                 "Expected a bounded chain of ordinary source-owned namespace or block imports.");
+        return;
+      }
+      Target = Shadow->getTargetDecl();
+    }
+    bool Supported = Target && owned(Target) && !Target->isInvalidDecl();
+    if (Supported) {
+      if (const auto *Constant = dyn_cast<EnumConstantDecl>(Target)) {
+        const auto *Enum = dyn_cast<EnumDecl>(Constant->getDeclContext());
+        Supported = Enum && owned(Enum) && !Enum->isScoped() &&
+                    importContext(Enum->getDeclContext());
+      } else {
+        Supported = isa<FunctionDecl, VarDecl, TypedefNameDecl, CXXRecordDecl,
+                        EnumDecl>(Target) && importContext(Target->getDeclContext());
+      }
+    }
+    if (!Supported) {
+      A.reject(D->getLocation(), "using target",
+               "An owned namespace or block declaration, or an unscoped non-member enumerator, is required.");
+      return;
+    }
+    A.chargeExpansion(1, D->getLocation());
+    CheckedUsingShadows.insert(D);
+    // The normal traversal still checks every original target's type, body and
+    // definition. Imports add no source entities or emitted storage of their own.
   }
   // Clang 20 does not consistently mark discarded uses as NOUR_Discarded.
   // Track only the potential results of actual discarded-value contexts, never
@@ -1482,7 +1551,9 @@ public:
                "Source declaration attributes are unsupported.");
     const bool ExtendedDeclaration =
         A.S.coreV2() &&
-        (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl, FriendDecl>(D) ||
+        (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl, FriendDecl,
+             NamespaceAliasDecl, UsingDirectiveDecl, UsingDecl>(D) ||
+         D->getKind() == Decl::UsingShadow ||
          (isa<AccessSpecDecl>(D) && D->getDeclContext()->isRecord()));
     if (!ExtendedDeclaration &&
         !isa<NamespaceDecl, LinkageSpecDecl, FunctionDecl, VarDecl,
@@ -1497,6 +1568,44 @@ public:
         A.reject(D->getLocation(), "owned std namespace",
                  "Owned declarations cannot extend or impersonate an approved "
                  "standard-library namespace.");
+    return true;
+  }
+  bool VisitNamespaceAliasDecl(NamespaceAliasDecl *D) {
+    if (owned(D) && A.S.coreV2() &&
+        (D->isInvalidDecl() || !importContext(D->getDeclContext()) ||
+         !namespaceTarget(D, D->getLocation())))
+      A.reject(D->getLocation(), "namespace alias",
+               "Expected a bounded alias chain to an owned non-inline namespace.");
+    return true;
+  }
+  bool VisitUsingDirectiveDecl(UsingDirectiveDecl *D) {
+    if (owned(D) && A.S.coreV2() &&
+        (D->isInvalidDecl() || !importContext(D->getDeclContext()) ||
+         (D->getQualifier() && D->getQualifier()->isDependent()) ||
+         !namespaceTarget(D->getNominatedNamespaceAsWritten(), D->getUsingLoc())))
+      A.reject(D->getUsingLoc(), "using directive",
+               "Expected a resolved directive to an owned non-inline namespace.");
+    return true;
+  }
+  bool VisitUsingDecl(UsingDecl *D) {
+    if (!owned(D) || !A.S.coreV2())
+      return true;
+    if (!usingShape(D)) {
+      A.reject(D->getLocation(), "using declaration",
+               "Expected an ordinary resolved using-declaration in namespace or block scope.");
+      return true;
+    }
+    // A repeated import may have no new shadows. Lookup and overload visibility
+    // are already resolved by Clang at each source use, including later defaults.
+    for (const auto *Shadow : D->shadows()) {
+      A.chargeExpansion(1, D->getLocation());
+      usingTarget(Shadow);
+    }
+    return true;
+  }
+  bool VisitUsingShadowDecl(UsingShadowDecl *D) {
+    if (owned(D) && A.S.coreV2())
+      usingTarget(D);
     return true;
   }
   bool VisitFriendDecl(FriendDecl *D) {
