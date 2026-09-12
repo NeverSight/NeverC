@@ -928,6 +928,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const InitListExpr *> EmptyVoidLists;
   std::set<const CXXConstructExpr *> CheckedConstructions;
   std::set<const VarDecl *> CheckedScalarGlobals;
+  std::set<const Expr *> CheckedDiscardedResults, DiscardedStaticValues;
   std::set<const Decl *> QueuedGeneratedMethods;
   std::vector<const CXXMethodDecl *> GeneratedMethods;
   bool owned(const Decl *D) {
@@ -936,6 +937,110 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!D->isImplicit())
       return A.S.owns(A.Sources, D->getLocation());
     return A.rangeForOwner(dyn_cast<VarDecl>(D)) != nullptr;
+  }
+  // Clang 20 does not consistently mark discarded uses as NOUR_Discarded.
+  // Track only the potential results of actual discarded-value contexts, never
+  // arbitrary descendants such as address operands or reference call arguments.
+  void discardedStaticResults(const Expr *E, unsigned Depth = 0) {
+    if (!E || E->getType().isNull() || !E->isGLValue() ||
+        E->getType().isVolatileQualified() ||
+        !E->getType()->isIntegralOrEnumerationType())
+      return;
+    if (Depth > 64) {
+      A.reject(E->getExprLoc(), "discarded constant",
+               "Discarded-value potential results exceed the depth limit.");
+      throw Failure{};
+    }
+    if (!CheckedDiscardedResults.insert(E).second)
+      return;
+    A.chargeExpansion(1, E->getExprLoc());
+    if (const auto *P = dyn_cast<ParenExpr>(E)) {
+      discardedStaticResults(P->getSubExpr(), Depth + 1);
+      return;
+    }
+    if (const auto *W = dyn_cast<ExprWithCleanups>(E)) {
+      if (!A.Context.hasSameType(W->getType(), W->getSubExpr()->getType()) ||
+          W->getValueKind() != W->getSubExpr()->getValueKind()) {
+        A.reject(E->getExprLoc(), "discarded constant",
+                 "A cleanup wrapper must preserve its operand's type and value category.");
+        throw Failure{};
+      }
+      discardedStaticResults(W->getSubExpr(), Depth + 1);
+      return;
+    }
+    if (const auto *C = dyn_cast<ImplicitCastExpr>(E);
+        C && C->getCastKind() == CK_NoOp &&
+        A.Context.hasSameUnqualifiedType(C->getType(), C->getSubExpr()->getType())) {
+      discardedStaticResults(C->getSubExpr(), Depth + 1);
+      return;
+    }
+    if (const auto *C = dyn_cast<ConditionalOperator>(E)) {
+      discardedStaticResults(C->getTrueExpr(), Depth + 1);
+      discardedStaticResults(C->getFalseExpr(), Depth + 1);
+      return;
+    }
+    if (const auto *B = dyn_cast<BinaryOperator>(E); B && B->getOpcode() == BO_Comma) {
+      discardedStaticResults(B->getRHS(), Depth + 1);
+      return;
+    }
+    const ValueDecl *Declaration = nullptr;
+    if (const auto *R = dyn_cast<DeclRefExpr>(E))
+      Declaration = R->getDecl();
+    else if (const auto *M = dyn_cast<MemberExpr>(E))
+      Declaration = M->getMemberDecl();
+    const auto *V = dyn_cast_or_null<VarDecl>(Declaration);
+    if (V && V->isStaticDataMember() && V->getType().isConstQualified() &&
+        !V->getDefinition())
+      DiscardedStaticValues.insert(E);
+  }
+  void checkStaticValueUse(const Stmt *S) {
+    auto Statement = [&](const Stmt *Body) {
+      discardedStaticResults(dyn_cast_or_null<Expr>(Body));
+    };
+    if (const auto *Block = dyn_cast<CompoundStmt>(S))
+      for (const auto *Child : Block->body())
+        Statement(Child);
+    if (const auto *I = dyn_cast<IfStmt>(S)) {
+      Statement(I->getThen());
+      Statement(I->getElse());
+    }
+    if (const auto *F = dyn_cast<ForStmt>(S)) {
+      Statement(F->getInit());
+      discardedStaticResults(F->getInc());
+      Statement(F->getBody());
+    }
+    if (const auto *F = dyn_cast<CXXForRangeStmt>(S))
+      Statement(F->getBody());
+    if (const auto *W = dyn_cast<WhileStmt>(S))
+      Statement(W->getBody());
+    if (const auto *D = dyn_cast<DoStmt>(S))
+      Statement(D->getBody());
+    if (const auto *W = dyn_cast<SwitchStmt>(S))
+      Statement(W->getBody());
+    if (const auto *C = dyn_cast<SwitchCase>(S))
+      Statement(C->getSubStmt());
+    if (const auto *B = dyn_cast<BinaryOperator>(S); B && B->getOpcode() == BO_Comma)
+      discardedStaticResults(B->getLHS());
+    if (const auto *C = dyn_cast<CastExpr>(S); C && C->getCastKind() == CK_ToVoid)
+      discardedStaticResults(C->getSubExpr());
+
+    const ValueDecl *Declaration = nullptr;
+    NonOdrUseReason Reason = NOUR_None;
+    if (const auto *R = dyn_cast<DeclRefExpr>(S)) {
+      Declaration = R->getDecl();
+      Reason = R->isNonOdrUse();
+    } else if (const auto *M = dyn_cast<MemberExpr>(S)) {
+      Declaration = M->getMemberDecl();
+      Reason = M->isNonOdrUse();
+    }
+    const auto *V = dyn_cast_or_null<VarDecl>(Declaration);
+    if (V && V->isStaticDataMember() && V->getType().isConstQualified() &&
+        !V->getType().isVolatileQualified() &&
+        V->getType()->isIntegralOrEnumerationType() && !V->getDefinition() &&
+        Reason == NOUR_None && !DiscardedStaticValues.count(cast<Expr>(S)))
+      A.reject(S->getBeginLoc(), "static data definition",
+               "An address or reference use of a static constant requires a definition.",
+               "TR0203");
   }
   // Follow the identity of an lvalue, not arbitrary call arguments. A by-value
   // temporary passed to a function returning some other live object is safe.
@@ -1531,6 +1636,20 @@ public:
         return true;
       }
       auto *Definition = D->getDefinition();
+      if (!Definition && !D->isInline() && D->getType().isConstQualified()) {
+        const VarDecl *InitializingDecl = nullptr;
+        const auto *Init = D->getAnyInitializer(InitializingDecl);
+        APValue Value;
+        if (Init && InitializingDecl && owned(InitializingDecl) &&
+            InitializingDecl->getCanonicalDecl() == D->getCanonicalDecl() &&
+            A.Context.hasSameType(InitializingDecl->getType(), D->getType()) &&
+            D->isUsableInConstantExpressions(A.Context) &&
+            Init->isCXX11ConstantExpr(A.Context, &Value) && Value.isInt()) {
+          if (A.StaticMemberValues.emplace(D->getCanonicalDecl(), Value.getInt()).second)
+            A.chargeExpansion(1, D->getLocation());
+          return true; // Checked value metadata, not a storage definition.
+        }
+      }
       const auto *DefinitionParent = Definition
           ? dyn_cast<CXXRecordDecl>(Definition->getDeclContext()) : nullptr;
       if (!Definition || !owned(Definition) || Definition->getKind() != Decl::Var ||
@@ -1687,6 +1806,8 @@ public:
       return true;
     auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
                                         : ImplicitInitializerOwner;
+    if (A.S.coreV2())
+      checkStaticValueUse(S);
     if (A.S.coreV2())
       if (const auto *List = emptyVoidInitializer(dyn_cast<Expr>(S)))
         EmptyVoidLists.insert(List);

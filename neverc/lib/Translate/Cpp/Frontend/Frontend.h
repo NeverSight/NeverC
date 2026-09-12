@@ -4,6 +4,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/Basic/FileEntry.h"
+#include "llvm/ADT/APSInt.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/VirtualFileSystem.h"
@@ -142,6 +143,7 @@ public:
   std::vector<clang::FunctionDecl *> Functions;
   std::vector<clang::CXXRecordDecl *> Records;
   std::vector<clang::VarDecl *> Globals;
+  std::map<const clang::VarDecl *, llvm::APSInt> StaticMemberValues;
   std::map<const clang::Decl *, clang::FunctionDecl *> FunctionDeclarations;
   std::map<const clang::Decl *, clang::VarDecl *> GlobalDeclarations;
   std::map<std::string, json::Object> MappedFunctions;

@@ -601,7 +601,7 @@ initializer may reside in the in-class declaration while the definition appears
 out of line. Redundant constexpr redeclarations retain the original definition.
 All written initializers and selected operations remain checked before folding.
 
-A static member has one canonical global storage object, shared by every instance;
+A defined static member has one canonical global storage object, shared by every instance;
 it contributes no field or size to its class. A static-only class therefore
 retains the empty-record layout. Mutable members use the existing scalar global
 write permission; const members remain read-only with const-qualified addresses.
@@ -622,13 +622,11 @@ remain valid after that receiver is destroyed; no receiver lifetime extension
 is introduced. Default arguments and default member initializers access the same
 global object, including later changes to mutable values.
 
-This stage requires a definition in the same source unit for every declared
-static member. A missing definition reports `TR0203`, including a non-inline
-const integral declaration used only for its value. Such non-ODR-used constants
-can be valid C++17, but their declaration-only constant lowering remains future
-work. The producer does not invent a storage definition for them. This is a
-translation source-closure restriction, not a claim that C++ requires a separate
-definition for every such value use.
+Members requiring storage must have a definition in the same source unit;
+otherwise translation reports `TR0203`. Non-inline const integral or enum
+members used only for their checked values follow the
+[declaration-only constant contract](#declaration-only-static-constant-values).
+They need no invented storage definition.
 
 Dynamic initialization, static pointer/reference/array/record objects, TLS,
 static locals and templates retain their restrictions. There is no startup or
@@ -637,6 +635,54 @@ existing behavior. Native O0/O2 fixtures and protocol checks cover shared state,
 canonical definitions, initializer ownership, receiver effects, actual addresses,
 const permissions, temporary cleanup, default arguments and relocation. Native
 validation requires the implementing revision's CI; full C++/STL remains unfinished.
+
+## Declaration-only static constant values
+
+Core v2 admits non-inline const integer, boolean and enum static members with
+source-owned in-class constant initializers, even without an out-of-line
+definition, when their uses do not require an object identity. The embedded
+Clang library resolves each use and initializer. The producer checks the entire
+owned source, including unused declarations, folded initializers and constexpr
+function bodies, before emitting any artifact. Unsupported operations cannot be
+hidden inside a folded constant.
+
+Direct value reads become exact typed literals. Values used by a glvalue
+conditional or comma expression may use fresh internal scalar storage to pass
+through the existing typed control flow; those objects are value carriers, not
+definitions of the source static member. No global, record field, initializer
+function, opaque payload or external compiler invocation is introduced. If the
+source provides a real definition, accesses keep that canonical global object
+and its address identity instead.
+
+Constant values work in ordinary arithmetic, parameter defaults, default member
+initializers, static assertions, enum initializers and fixed array extents.
+Private/protected access, nested class scopes and a member function referring
+to a later-declared constant retain the source language rules. Unevaluated
+`sizeof` and `noexcept` operands create neither storage nor effects.
+
+Discarded expressions also need no constant object. This includes bare expression
+statements, explicit void casts, the left side of a comma, discarded conditional
+results and loop expressions. Only the potential results of the discarded
+expression receive this treatment; it does not propagate into arbitrary
+children, receiver arguments, address operands or explicit reference casts.
+Through `object.member` or `pointer->member`, the receiver still executes once
+and any temporary receiver is destroyed at its ordinary full-expression
+boundary. A skipped conditional arm produces no effects or cleanup.
+
+Taking an address, returning or binding a reference, or passing the member to a
+reference parameter requires a definition and reports `TR0203` if it is absent.
+This also applies in discarded or statically skipped expressions, and to
+reference defaults. Creating a new prvalue, such as `+R::value`, can instead
+bind its own temporary to a const reference. A mutable member or const member
+without a usable constant initializer retains the definition requirement.
+TLS, static locals, other static types, dynamic initialization and templates
+retain their separate restrictions. V1 profiles retain their previous behavior.
+
+Paired native and protocol fixtures cover value widths, constant-expression
+contexts, selected branches, missing-definition diagnostics, receiver effects,
+cleanup timing, actual storage identity and deterministic relocation. Native
+O0/O2 results require CI from the implementing revision. Full C++/STL support
+remains unfinished.
 
 ## Mutable scalar globals
 

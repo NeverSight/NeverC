@@ -236,9 +236,43 @@ class FunctionLowering {
     reject(L, "storage reference",
            "No supported local, parameter or global storage declaration.");
   }
+  std::optional<Expression> staticMemberValue(const Expr *E) {
+    if (!A.S.coreV2())
+      return std::nullopt;
+    const ValueDecl *Declaration = nullptr;
+    const auto *Member = dyn_cast<MemberExpr>(E);
+    NonOdrUseReason Reason = NOUR_None;
+    if (const auto *R = dyn_cast<DeclRefExpr>(E)) {
+      Declaration = R->getDecl();
+      Reason = R->isNonOdrUse();
+    } else if (Member) {
+      Declaration = Member->getMemberDecl();
+      Reason = Member->isNonOdrUse();
+    }
+    const auto *V = dyn_cast_or_null<VarDecl>(Declaration);
+    if (!V)
+      return std::nullopt;
+    auto Found = A.StaticMemberValues.find(V->getCanonicalDecl());
+    if (Found == A.StaticMemberValues.end())
+      return std::nullopt;
+    auto L = E->getExprLoc();
+    if (Reason != NOUR_Constant)
+      reject(L, "static constant value",
+             "Only a checked non-ODR constant value can be materialized without a definition.");
+    if (Member)
+      discard(Member->getBase());
+    return A.literal(Found->second, type(E->getType(), L), L);
+  }
   Expression lvalue(const Expr *E) {
     E = E->IgnoreParens();
     auto L = E->getExprLoc();
+    if (auto Value = staticMemberValue(E)) {
+      // A glvalue conditional read may need an internal address. Source ODR-use
+      // was rejected before lowering; this fresh scalar is only a value carrier.
+      auto Place = temporary(*Value->getString("type"), L);
+      assign(Place, std::move(*Value), L);
+      return Place;
+    }
     if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E)) {
       auto Found = ArraySources.find(Opaque);
       if (Found == ArraySources.end())
@@ -541,6 +575,8 @@ class FunctionLowering {
   Expression expression(const Expr *E) {
     auto L = E->getExprLoc();
     auto T = type(E->getType(), L, true);
+    if (auto Value = staticMemberValue(E))
+      return std::move(*Value);
     if (isa<ArrayInitIndexExpr>(E)) {
       if (!A.S.coreV2() || ArrayIndices.empty())
         reject(L, "array copy index", "No semantic element-copy index is active.");
@@ -835,6 +871,11 @@ class FunctionLowering {
   void discard(const Expr *E) {
     if (A.S.coreV2()) {
       if (const auto *C = dyn_cast<ConstantExpr>(E)) {
+        discard(C->getSubExpr());
+        return;
+      }
+      if (const auto *C = dyn_cast<ImplicitCastExpr>(E);
+          C && C->getCastKind() == CK_NoOp && C->isGLValue()) {
         discard(C->getSubExpr());
         return;
       }

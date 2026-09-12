@@ -4640,7 +4640,6 @@ int unevaluated(){return sizeof(make().shared);}
         check("v2-static-members-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
     static_members_missing = {
         'mutable-definition': 'struct R{static int n;};int f(){return R::n;}',
-        'const-definition': 'struct R{int n;static const int value=1;int get(){return value;}};',
         'unused-definition': 'struct R{static int n;};',
         'default-definition': 'struct R{static int n;};int f(int&n=R::n){return n;}',
         'unevaluated-definition': 'struct R{static int n;};int f(){return sizeof(R::n);}',
@@ -4650,6 +4649,236 @@ int unevaluated(){return sizeof(make().shared);}
         check("v2-static-members-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     check("v1-static-members-outline", "struct R{int n;static int value;};int R::value=1;", "TR0201")
     check("v1-static-members-inline", "struct R{int n;inline static int value=1;};", "TR0201")
+
+    static_values_source = """int tick(int n){return n;}
+struct Values {
+ static const int first=3;
+ static const int second=5;
+};
+struct Defined {static const int value=7;};
+const int Defined::value;
+struct Early {
+ int get()const{return later;}
+ static const int later=9;
+};
+struct Receiver {
+ static const int value=11;
+ int field;
+ Receiver(){tick(1);}
+ ~Receiver(){tick(2);}
+};
+Receiver make(){return Receiver();}
+struct Default {int n=Values::first;};
+int direct(){return Values::first;}
+int conditional(bool choose){return choose?Values::first:Values::second;}
+int mixed(bool choose,const int&v){return choose?Values::first:v;}
+int comma(int&n){return (++n,Values::first);}
+int effect(){return make().value;}
+int effectConditional(bool choose){return choose?make().value:Values::first;}
+void bare(){make().value;}
+void discardedConditional(bool choose){choose?make().value:Values::first;}
+void discardedMixed(bool choose,int&v){choose?Values::first:v;}
+void plainDiscard(){Values::first;(void)Values::second;(Values::first,Values::second);}
+int takes(int n=Values::first){return n;}
+int defaults(){return takes();}
+int takeReference(const int&n){return n;}
+int newValue(){return takeReference(+Values::first);}
+void construct(){Default d;tick(d.n);}
+const int*definedAddress(){return &Defined::value;}
+int query(){return sizeof(&Values::first);}
+bool pure(){return noexcept(Values::first);}
+"""
+    static_values = check("v2-static-values-protocol", static_values_source, profile="cpp-core-v2")
+    sv_functions = {f["name"]: f for f in static_values["functions"]}
+
+    def sv_line(prefix):
+        found = [i for i, line in enumerate(static_values_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def sv_record(prefix):
+        found = [r for r in static_values["records"] if r["loc"]["line"] == sv_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def sv_function(prefix, result, parameters):
+        found = [f for f in static_values["functions"] if f["loc"]["line"] == sv_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    assert len(static_values["globals"]) == 1, "declaration-only constants invented storage"
+    defined = static_values["globals"][0]
+    assert defined["loc"]["line"] == sv_line("const int Defined::value;")
+    assert defined["type"] == "int" and defined["value"]["kind"] == "literal"
+    assert defined["value"]["value"] == "7" and "mutable" not in defined
+    for prefix in ("struct Values {", "struct Defined {", "struct Early {"):
+        record = sv_record(prefix)
+        assert record["fields"] == [] and record["layout"] == {
+            "size_bits": 8, "abi_align_bits": 8, "field_offsets_bits": []}
+    direct = sv_function("int direct(", "int", [])
+    early = sv_function(" int get(", "int", ["cptr:"+sv_record("struct Early {")["id"]])
+    for function, value in ((direct, 3), (early, 9)):
+        assert not gc_calls(function)
+        assert [gc_identity(function, n["value"]) for n in function["body"] if n["op"] == "return"] == [value]
+        assert not any(n.get("kind") in ("address", "member") for n in walk(function["body"]))
+    conditional = sv_function("int conditional(", "int", ["bool"])
+    mixed = sv_function("int mixed(", "int", ["bool", "cptr:int"])
+    for function, values in ((conditional, {3, 5}), (mixed, {3})):
+        assert not gc_calls(function)
+        assert any(n["op"] == "branch" for n in function["body"])
+        literal_stores = [n for n in function["body"] if n["op"] == "assign"
+                          and n["target"]["kind"] == "var" and n["target"]["type"] == "int"
+                          and n["value"].get("kind") == "literal"]
+        assert {gc_identity(function, n["value"]) for n in literal_stores} == values
+        places = {("object", n["target"]["name"]) for n in literal_stores}
+        addresses = [np_pointer(function, n) for n in walk(function["body"])
+                     if n.get("kind") == "address" and n["type"] == "cptr:int"]
+        assert places <= set(addresses)
+        if function is conditional:
+            assert set(addresses) == places
+        else:
+            assert set(addresses) == places | {("parameter", function["params"][1]["name"])}
+        assert all(n["value"]["type"] == "int" for n in function["body"] if n["op"] == "return")
+    comma = sv_function("int comma(", "int", ["ptr:int"])
+    assert not gc_calls(comma)
+    assert [gc_identity(comma, n["value"]) for n in comma["body"] if n["op"] == "return"] == [3]
+    assert any(n["op"] == "assign" and n["target"]["kind"] == "dereference" for n in comma["body"])
+    receiver = sv_record("struct Receiver {")
+    assert [f["type"] for f in receiver["fields"]] == ["int"]
+    rid = receiver["id"]
+    make = sv_function("Receiver make(", "void", ["ptr:"+rid])["name"]
+    for prefix, result, params in (("int effect(", "int", []),
+                                   ("int effectConditional(", "int", ["bool"]),
+                                   ("void bare(", "void", []),
+                                   ("void discardedConditional(", "void", ["bool"])):
+        function = sv_function(prefix, result, params)
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [make, rid+"_destroy"]
+        assert np_pointer(function, calls[0]["args"][0]) == np_pointer(function, calls[1]["args"][0])
+        assert sum(v["type"] == rid for v in function["locals"]) == 1
+        assert not any(n.get("kind") == "member" for n in walk(function["body"]))
+        if result == "void":
+            assert not any(v["type"] == "int" for v in function["locals"]), "discarded constant created storage"
+        elif not params:
+            assert [gc_identity(function, n["value"]) for n in function["body"] if n["op"] == "return"] == [11]
+        if params:
+            assert any(n["op"] == "branch" for n in function["body"])
+    plain_discard = sv_function("void plainDiscard(", "void", [])
+    discarded_mixed = sv_function("void discardedMixed(", "void", ["bool", "ptr:int"])
+    for function in (plain_discard, discarded_mixed):
+        assert not gc_calls(function)
+        assert not any(v["type"] in ("int", "ptr:int", "cptr:int") for v in function["locals"])
+        assert not any(n.get("kind") in ("address", "dereference", "member") for n in walk(function["body"]))
+    assert not any(n.get("name") == discarded_mixed["params"][1]["name"] for n in walk(discarded_mixed["body"]))
+    takes = sv_function("int takes(", "int", ["int"])["name"]
+    defaults = sv_function("int defaults(", "int", [])
+    calls = gc_calls(defaults)
+    assert [c["callee"] for c in calls] == [takes]
+    assert gc_identity(defaults, calls[0]["args"][0]) == 3
+    take_reference = sv_function("int takeReference(", "int", ["cptr:int"])["name"]
+    new_value = sv_function("int newValue(", "int", [])
+    calls = gc_calls(new_value)
+    assert [c["callee"] for c in calls] == [take_reference]
+    place = np_pointer(new_value, calls[0]["args"][0])
+    assert place[0] == "object" and any(v["name"] == place[1] and v["type"] == "int" for v in new_value["locals"])
+    stores = [n for n in new_value["body"] if n["op"] == "assign" and n["target"].get("name") == place[1]]
+    plus = [n for n in new_value["body"] if n["op"] == "assign"
+            and n["value"].get("kind") == "unary" and n["value"].get("operator") == "+"]
+    assert len(plus) == 1 and gc_identity(new_value, plus[0]["value"]["args"][0]) == 3
+    assert len(stores) == 1 and stores[0]["value"] == plus[0]["target"]
+    default_record = sv_record("struct Default {")
+    default_constructor = sv_function("struct Default {", "void", ["ptr:"+default_record["id"]])
+    assert not gc_calls(default_constructor)
+    stores = [n for n in default_constructor["body"] if n["op"] == "assign"
+              and n["target"].get("name") == default_record["fields"][0]["name"]]
+    assert len(stores) == 1 and gc_identity(default_constructor, stores[0]["value"]) == 3
+    defined_address = sv_function("const int*definedAddress(", "cptr:int", [])
+    assert [np_pointer(defined_address, n["value"]) for n in defined_address["body"] if n["op"] == "return"] == [("object", defined["name"])]
+    query = sv_function("int query(", "int", [])
+    pure = sv_function("bool pure(", "bool", [])
+    assert not gc_calls(query) and not gc_calls(pure)
+    assert [gc_identity(query, n["value"]) for n in query["body"] if n["op"] == "return"] == [static_values["target"]["pointer_bits"]//8]
+    assert [gc_identity(pure, n["value"]) for n in pure["body"] if n["op"] == "return"] == [True]
+    for function in static_values["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in sv_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-static-values-relocated-") as temp:
+        relocated = check("v2-static-values-relocated", static_values_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == static_values, "static value identities depend on the absolute root"
+
+    static_values_positive = {
+        'qualified': 'struct R{static const int n=3;};int main(){return R::n-3;}',
+        'unused': 'struct R{static const int n=3;};',
+        'early': 'struct R{int get()const{return n;}static const int n=3;};int main(){R r;return r.get()-3;}',
+        'bool-enum': 'struct R{enum class E:unsigned int{a=3};static const bool b=true;static const E e=E::a;};int main(){return !R::b||static_cast<unsigned int>(R::e)!=3u;}',
+        'widths': 'struct R{static const signed char a=-1;static const unsigned short b=65535;static const long long c=-2147483649LL;static const unsigned long long d=0xffffffffffffffffULL;};int main(){return R::a!=-1||R::b!=65535||R::c!=-2147483649LL||R::d!=0xffffffffffffffffULL;}',
+        'private': 'class R{static const int n=3;public:static int get(){return n;}};int main(){return R::get()-3;}',
+        'protected': 'class R{protected:static const int n=3;public:static int get(){return n;}};int main(){return R::get()-3;}',
+        'nested': 'struct R{struct I{static const int n=3;};};int main(){return R::I::n-3;}',
+        'constant-contexts': 'struct R{static const int n=3;};static_assert(R::n==3);enum E{x=R::n};int main(){int a[R::n]={1,2,3};return a[x-1]-3;}',
+        'conditional': 'struct R{static const int a=3,b=5;};int f(bool b){return b?R::a:R::b;}int main(){return f(true)+f(false)-8;}',
+        'mixed-conditional': 'struct R{static const int n=3;};int f(bool b,int&n){return b?R::n:n;}int main(){int n=5;return f(true,n)+f(false,n)-8;}',
+        'comma': 'struct R{static const int n=3;};int f(int&n){return (++n,R::n);}int main(){int n=0;int v=f(n);return v+n-4;}',
+        'default-value': 'struct R{static const int n=3;};int f(int n=R::n){return n;}int main(){return f()-3;}',
+        'default-member': 'struct R{static const int n=3;int value=n;};int main(){R r;return r.value-3;}',
+        'new-prvalue-reference': 'struct R{static const int n=3;};int f(const int&n){return n;}int main(){return f(+R::n)-3;}',
+        'discard': 'struct R{static const int n=3;};void f(){R::n;(void)R::n;}',
+        'discard-comma': 'struct R{static const int a=3,b=5;};void f(){(R::a,R::b);}',
+        'discard-conditional': 'struct R{static const int n=3;};void f(bool b,int&n){b?R::n:n;}',
+        'discard-if': 'struct R{static const int n=3;};void f(bool b){if(b)R::n;else R::n;}',
+        'discard-loops': 'struct R{static const int n=3;};void f(){for(R::n;false;R::n)R::n;while(false)R::n;do R::n;while(false);}',
+        'discard-case': 'struct R{static const int n=3;};void f(int n){switch(n){case 1:R::n;break;default:R::n;}}',
+        'discard-range': 'struct R{static const int n=3;};void f(){int a[1]={1};for(int v:a)R::n;}',
+        'discard-temporary': 'int dead=0;struct R{static const int n=3;~R(){++dead;}};int main(){R{}.n;return dead-1;}',
+        'discard-conditional-temporary': 'int dead=0;struct R{static const int n=3;~R(){++dead;}};int main(){true?R{}.n:R::n;false?R{}.n:R::n;return dead-1;}',
+        'query': 'struct R{static const int n=3;};int main(){return sizeof(R::n)!=sizeof(int)||sizeof(&R::n)!=sizeof(const int*)||!noexcept(R::n);}',
+        'with-definition': 'struct R{static const int n=3;};const int R::n;int main(){const int&r=R::n;return &r!=&R::n;}',
+        'promoted-1': 'struct R{int n;static const int value=1;int get(){return value;}};',
+    }
+    for name, source in static_values_positive.items():
+        check("v2-static-values-positive-" + name, source, profile="cpp-core-v2")
+    static_values_reject = {
+        'floating': 'struct R{static const double n;};const double R::n=1.0;',
+        'folded-float': 'struct R{static const int n=static_cast<int>(1.0);};',
+        'folded-body': 'constexpr int f(){return static_cast<int>(1.0);}struct R{static const int n=f();};',
+        'array': 'struct R{static const int n[2];};',
+        'pointer': 'struct R{static const int*n;};',
+        'volatile': 'struct R{static const volatile int n=3;};',
+        'tls': 'struct R{static thread_local const int n=3;};',
+        'variable-template': 'struct R{template<class T>static const int n=3;};',
+    }
+    for name, source in static_values_reject.items():
+        check("v2-static-values-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    static_values_invalid = {
+        'private': 'class R{static const int n=3;};int f(){return R::n;}',
+        'write': 'struct R{static const int n=3;};void f(){R::n=4;}',
+        'bad-initializer': 'int f(){return 3;}struct R{static const int n=f();};',
+    }
+    for name, source in static_values_invalid.items():
+        check("v2-static-values-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    static_values_missing = {
+        'address': 'struct R{static const int n=3;};const int*f(){return &R::n;}',
+        'reference': 'struct R{static const int n=3;};const int&f(){return R::n;}',
+        'local-reference': 'struct R{static const int n=3;};void f(){const int&r=R::n;}',
+        'default-reference': 'struct R{static const int n=3;};int f(const int&n=R::n){return n;}',
+        'conditional-reference': 'struct R{static const int a=3,b=5;};const int&f(bool b){return b?R::a:R::b;}',
+        'reference-argument': 'struct R{static const int n=3;};int f(const int&n){return n;}int g(){return f(R::n);}',
+        'discarded-address': 'struct R{static const int n=3;};void f(){(void)&R::n;}',
+        'discarded-parenthesized-address': 'struct R{static const int n=3;};void f(){(&((R::n)));}',
+        'discarded-reference-call': 'struct R{static const int n=3;};int use(const int&n){return n;}void f(){use(R::n);}',
+        'discarded-reference-cast': 'struct R{static const int n=3;};void f(){static_cast<const int&>(R::n);}',
+        'discarded-hidden-reference': 'struct R{static const int n=3;};struct S{static const int n=4;};S make(const int&n){return S{};}void f(){make(R::n).n;}',
+        'dead-address': 'struct R{static const int n=3;};void f(){if(false){(void)&R::n;}}',
+        'folded-address': 'struct R{static const int n=3;};static_assert(&R::n!=nullptr);',
+        'missing-initializer': 'struct R{static const int n;};',
+        'mutable-still-missing': 'struct R{static int n;};',
+    }
+    for name, source in static_values_missing.items():
+        check("v2-static-values-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-static-values-method", "struct R{int n;static const int value=3;int get(){return value;}};", "TR0201")
+    check("v1-static-values-assertion", "struct R{int n;static const int value=3;};static_assert(R::value==3);", "TR0201")
 
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}

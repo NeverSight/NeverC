@@ -122,6 +122,13 @@ retains receiver effects before using global storage, whose lifetime is
 independent of any temporary receiver. See [defined scalar static data members](cpp-core-v2.md#defined-scalar-static-data-members)
 for const permissions, source closure and initialization restrictions.
 
+Declaration-only core-v2 static constants use frontend-only checked integer
+values, emitted as ordinary typed literals and, where glvalue control flow
+requires it, fresh local value carriers. They emit no source global or field.
+Receiver effects and cleanup stay explicit; discarded and unevaluated values
+emit no scalar storage. Source address/reference uses still require a real
+definition. See [declaration-only static constants](cpp-core-v2.md#declaration-only-static-constant-values).
+
 Core-v2 named nested records use the existing record IDs, fields, layouts and
 ordinary member signatures. Canonical source scopes distinguish equal-spelled
 types. No enclosing-object field or extra receiver is added. The producer orders

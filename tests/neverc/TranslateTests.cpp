@@ -3357,7 +3357,6 @@ TEST_F(TranslateTest, CoreV2StaticMembersRetainStorageAndSourceBoundaries) {
       {"local-class", "int f(){struct R{static int n;};return 0;}", "TR0202"},
       {"const-pointer", "struct R{static constexpr int n=1;};int*f(){return &R::n;}", "TR0202"},
       {"mutable-definition", "struct R{static int n;};int f(){return R::n;}", "TR0203"},
-      {"const-definition", "struct R{int n;static const int value=1;int get(){return value;}};", "TR0203"},
       {"unused-definition", "struct R{static int n;};", "TR0203"},
       {"default-definition", "struct R{static int n;};int f(int&n=R::n){return n;}", "TR0203"},
       {"unevaluated-definition", "struct R{static int n;};int f(){return sizeof(R::n);}", "TR0203"},
@@ -3376,6 +3375,196 @@ TEST_F(TranslateTest, CoreV2StaticMembersRetainStorageAndSourceBoundaries) {
                                   "struct R{int n;inline static int value=1;};"}) {
     const auto Source = tmpFile("static_members-v1.cpp");
     const auto Output = tmpFile("static_members-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticConstantValuesPreserveEffectsAndLifetimes) {
+  const auto Source = tmpFile("static_values.cpp");
+  const auto Output = tmpFile("static_values.nc");
+  writeFile(Source, R"cpp(
+int made=0,dead=0,calls=0;
+struct Values {
+ static const int first=3;
+ static const int second=5;
+ static const bool enabled=true;
+ enum class Mode:unsigned int{high=0xffffffffu};
+ static const Mode mode=Mode::high;
+ static const unsigned long long wide=0xffffffffffffffffULL;
+};
+struct Traits {static const int count=2;};
+static_assert(Values::first==3);
+enum Selected {entry=Values::second};
+class Access {
+ static const int value=7;
+protected:static const int protectedValue=8;
+public:
+ int early()const{return later;}
+ static const int later=9;
+ int get()const{return value+protectedValue;}
+ friend int read(const Access&){return value;}
+};
+struct Nested {struct Item{static const int value=10;};};
+constexpr int seed(){return 11;}
+struct Computed {static const int value=seed();};
+struct Receiver {
+ static const int value=12;
+ int ignored;
+ Receiver(){++made;}
+ ~Receiver(){++dead;}
+};
+Receiver make(){++calls;return Receiver();}
+Receiver&select(Receiver&r){++calls;return r;}
+Receiver*pointer(Receiver&r){++calls;return &r;}
+int byValue(int n=Values::first){return n;}
+int byReference(const int&n){return n;}
+struct Default {int n=Computed::value;};
+struct Defined {static const int value=13;};
+const int Defined::value;
+int counted(){++calls;return 0;}
+int main(){
+ if(Values::first!=3||(Values::second)!=5||!Values::enabled)return 1;
+ if(static_cast<unsigned int>(Values::mode)!=0xffffffffu||Values::wide!=0xffffffffffffffffULL)return 2;
+ int array[Traits::count]={1,2};if(array[1]!=2||entry!=5)return 3;
+ Access access;if(access.get()!=15||read(access)!=7||access.early()!=9)return 4;
+ if(Nested::Item::value!=10||Computed::value!=11)return 5;
+ Default d;if(byValue()!=3||byValue(4)!=4||d.n!=11)return 6;
+ if(byReference(+Values::first)!=3)return 7;
+ int live=17;bool choose=true;
+ int a=choose?Values::first:Values::second;choose=false;
+ int b=choose?Values::first:Values::second;if(a!=3||b!=5)return 8;
+ choose=true;int c=choose?Values::first:live;choose=false;
+ int e=choose?Values::first:live;if(c!=3||e!=17)return 9;
+ calls=0;int f=(counted(),Values::first);
+ int g=(true?(counted(),Values::second):(counted(),Values::first));
+ if(f!=3||g!=5||calls!=2)return 10;
+ int h=true?(false?Values::first:Values::second):live;if(h!=5)return 11;
+ const int&defined=Defined::value;if(&defined!=&Defined::value||defined!=13)return 12;
+ Values::first;(void)Values::first;(Values::first,Values::second);
+ (choose?Values::first:live);if(live!=17)return 13;
+ if(true)Values::first;else Values::second;
+ int n=0;for(Values::first;n<1;(void)Values::second){++n;}
+ while(n<2)Values::first,++n;
+ do {Values::second;++n;}while(n<3);
+ switch(n){case 3:Values::first;break;default:Values::second;}
+ if(n!=3)return 14;
+ if(sizeof(Values::first)!=sizeof(int)||sizeof(&Values::first)!=sizeof(const int*)||!noexcept(Values::first))return 15;
+ made=dead=calls=0;
+ int temporary_value=make().value;
+ if(temporary_value!=12||made!=1||dead!=1||calls!=1)return 16;
+ make().value;if(made!=2||dead!=2||calls!=2)return 17;
+ (void)make().value;if(made!=3||dead!=3||calls!=3)return 18;
+ (true?make().value:Values::first);if(made!=4||dead!=4||calls!=4)return 19;
+ (false?make().value:Values::first);if(made!=4||dead!=4||calls!=4)return 20;
+ int selected=true?make().value:Values::first;
+ if(selected!=12||made!=5||dead!=5||calls!=5)return 21;
+ {
+  Receiver receiver;
+  int direct=select(receiver).value;int indirect=pointer(receiver)->value;
+  if(direct!=12||indirect!=12||calls!=7||made!=6||dead!=5)return 22;
+ }
+ if(made!=6||dead!=6)return 23;
+ if(sizeof(make().value)!=sizeof(int)||noexcept(make().value)||calls!=7||made!=6||dead!=6)return 24;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("static_values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticConstantValuesAcceptCheckedNonOdrUses) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"qualified", "struct R{static const int n=3;};int main(){return R::n-3;}"},
+      {"unused", "struct R{static const int n=3;};"},
+      {"early", "struct R{int get()const{return n;}static const int n=3;};int main(){R r;return r.get()-3;}"},
+      {"bool-enum", "struct R{enum class E:unsigned int{a=3};static const bool b=true;static const E e=E::a;};int main(){return !R::b||static_cast<unsigned int>(R::e)!=3u;}"},
+      {"widths", "struct R{static const signed char a=-1;static const unsigned short b=65535;static const long long c=-2147483649LL;static const unsigned long long d=0xffffffffffffffffULL;};int main(){return R::a!=-1||R::b!=65535||R::c!=-2147483649LL||R::d!=0xffffffffffffffffULL;}"},
+      {"private", "class R{static const int n=3;public:static int get(){return n;}};int main(){return R::get()-3;}"},
+      {"protected", "class R{protected:static const int n=3;public:static int get(){return n;}};int main(){return R::get()-3;}"},
+      {"nested", "struct R{struct I{static const int n=3;};};int main(){return R::I::n-3;}"},
+      {"constant-contexts", "struct R{static const int n=3;};static_assert(R::n==3);enum E{x=R::n};int main(){int a[R::n]={1,2,3};return a[x-1]-3;}"},
+      {"conditional", "struct R{static const int a=3,b=5;};int f(bool b){return b?R::a:R::b;}int main(){return f(true)+f(false)-8;}"},
+      {"mixed-conditional", "struct R{static const int n=3;};int f(bool b,int&n){return b?R::n:n;}int main(){int n=5;return f(true,n)+f(false,n)-8;}"},
+      {"comma", "struct R{static const int n=3;};int f(int&n){return (++n,R::n);}int main(){int n=0;int v=f(n);return v+n-4;}"},
+      {"default-value", "struct R{static const int n=3;};int f(int n=R::n){return n;}int main(){return f()-3;}"},
+      {"default-member", "struct R{static const int n=3;int value=n;};int main(){R r;return r.value-3;}"},
+      {"new-prvalue-reference", "struct R{static const int n=3;};int f(const int&n){return n;}int main(){return f(+R::n)-3;}"},
+      {"discard", "struct R{static const int n=3;};void f(){R::n;(void)R::n;}"},
+      {"discard-comma", "struct R{static const int a=3,b=5;};void f(){(R::a,R::b);}"},
+      {"discard-conditional", "struct R{static const int n=3;};void f(bool b,int&n){b?R::n:n;}"},
+      {"discard-if", "struct R{static const int n=3;};void f(bool b){if(b)R::n;else R::n;}"},
+      {"discard-loops", "struct R{static const int n=3;};void f(){for(R::n;false;R::n)R::n;while(false)R::n;do R::n;while(false);}"},
+      {"discard-case", "struct R{static const int n=3;};void f(int n){switch(n){case 1:R::n;break;default:R::n;}}"},
+      {"discard-range", "struct R{static const int n=3;};void f(){int a[1]={1};for(int v:a)R::n;}"},
+      {"discard-temporary", "int dead=0;struct R{static const int n=3;~R(){++dead;}};int main(){R{}.n;return dead-1;}"},
+      {"discard-conditional-temporary", "int dead=0;struct R{static const int n=3;~R(){++dead;}};int main(){true?R{}.n:R::n;false?R{}.n:R::n;return dead-1;}"},
+      {"query", "struct R{static const int n=3;};int main(){return sizeof(R::n)!=sizeof(int)||sizeof(&R::n)!=sizeof(const int*)||!noexcept(R::n);}"},
+      {"with-definition", "struct R{static const int n=3;};const int R::n;int main(){const int&r=R::n;return &r!=&R::n;}"},
+      {"promoted-1", "struct R{int n;static const int value=1;int get(){return value;}};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static_values-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("static_values-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticConstantValuesRequireDefinitionsForIdentity) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"floating", "struct R{static const double n;};const double R::n=1.0;", "TR0201"},
+      {"folded-float", "struct R{static const int n=static_cast<int>(1.0);};", "TR0201"},
+      {"folded-body", "constexpr int f(){return static_cast<int>(1.0);}struct R{static const int n=f();};", "TR0201"},
+      {"array", "struct R{static const int n[2];};", "TR0201"},
+      {"pointer", "struct R{static const int*n;};", "TR0201"},
+      {"volatile", "struct R{static const volatile int n=3;};", "TR0201"},
+      {"tls", "struct R{static thread_local const int n=3;};", "TR0201"},
+      {"variable-template", "struct R{template<class T>static const int n=3;};", "TR0201"},
+      {"private", "class R{static const int n=3;};int f(){return R::n;}", "TR0202"},
+      {"write", "struct R{static const int n=3;};void f(){R::n=4;}", "TR0202"},
+      {"bad-initializer", "int f(){return 3;}struct R{static const int n=f();};", "TR0202"},
+      {"address", "struct R{static const int n=3;};const int*f(){return &R::n;}", "TR0203"},
+      {"reference", "struct R{static const int n=3;};const int&f(){return R::n;}", "TR0203"},
+      {"local-reference", "struct R{static const int n=3;};void f(){const int&r=R::n;}", "TR0203"},
+      {"default-reference", "struct R{static const int n=3;};int f(const int&n=R::n){return n;}", "TR0203"},
+      {"conditional-reference", "struct R{static const int a=3,b=5;};const int&f(bool b){return b?R::a:R::b;}", "TR0203"},
+      {"reference-argument", "struct R{static const int n=3;};int f(const int&n){return n;}int g(){return f(R::n);}", "TR0203"},
+      {"discarded-address", "struct R{static const int n=3;};void f(){(void)&R::n;}", "TR0203"},
+      {"discarded-parenthesized-address", "struct R{static const int n=3;};void f(){(&((R::n)));}", "TR0203"},
+      {"discarded-reference-call", "struct R{static const int n=3;};int use(const int&n){return n;}void f(){use(R::n);}", "TR0203"},
+      {"discarded-reference-cast", "struct R{static const int n=3;};void f(){static_cast<const int&>(R::n);}", "TR0203"},
+      {"discarded-hidden-reference", "struct R{static const int n=3;};struct S{static const int n=4;};S make(const int&n){return S{};}void f(){make(R::n).n;}", "TR0203"},
+      {"dead-address", "struct R{static const int n=3;};void f(){if(false){(void)&R::n;}}", "TR0203"},
+      {"folded-address", "struct R{static const int n=3;};static_assert(&R::n!=nullptr);", "TR0203"},
+      {"missing-initializer", "struct R{static const int n;};", "TR0203"},
+      {"mutable-still-missing", "struct R{static int n;};", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static_values-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("static_values-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"struct R{int n;static const int value=3;int get(){return value;}};",
+                                  "struct R{int n;static const int value=3;};static_assert(R::value==3);"}) {
+    const auto Source = tmpFile("static_values-v1.cpp");
+    const auto Output = tmpFile("static_values-v1.nc");
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
     expectCode(Result, "TR0201");
