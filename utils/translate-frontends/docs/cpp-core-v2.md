@@ -475,7 +475,7 @@ both are admitted under these contracts.
 
 Anonymous nested structs, including typedef-named anonymous nested definitions,
 remain rejected; a named tag with a typedef alias is supported. Existing
-non-nested anonymous-record behavior is unchanged. Unions, class templates, inheritance,
+non-nested anonymous-record behavior is unchanged. Unions, nested class templates, inheritance,
 virtual dispatch and unsupported field/body operations retain their restrictions,
 including unused nested definitions. Older profiles continue to reject nested
 records. Full C++ and STL remain unfinished.
@@ -545,7 +545,7 @@ layout, and authorized operations use those same fields. No access flag, new IR
 instruction or runtime wrapper is needed. Generated source remains reviewable.
 
 Mixed-access non-standard-layout classes, friend templates, inheritance,
-anonymous nested records and class templates remain outside current support. Bitfields and
+anonymous nested records and nested class templates remain outside current support. Bitfields and
 mutable, const, reference or unsupported numeric fields retain their existing
 restrictions. A getter returning a field's ordinary `T*` address does not admit
 pointer-to-member types such as `T C::*`. Older profiles keep their contracts.
@@ -590,7 +590,7 @@ fixtures. Protocol checks cover actual storage identities, complete signatures,
 one-time initialization, cleanup paths and relocation. Native results require
 CI from the implementing revision.
 
-Class templates, standard headers and STL containers, initializer-list ranges,
+Class templates with explicit members, standard headers and STL containers, initializer-list ranges,
 structured bindings, C++20 range init-statements and coroutine range loops
 remain outside this increment. Existing extent and expansion budgets still
 apply, and older profiles retain their previous range-loop rejection.
@@ -689,6 +689,48 @@ cleanup timing, actual storage identity and deterministic relocation. Native
 O0/O2 results require CI from the implementing revision. Full C++/STL support
 remains unfinished.
 
+## Concrete aggregate class templates
+
+Core v2 admits concrete namespace-scope aggregate class-template instances with
+one to 64 non-pack type or scalar integer/bool/enum parameters. Scalar `auto`
+and dependent scalar parameters follow the same argument rules as free function
+templates. Type defaults, explicit instantiation and explicit specialization,
+including forward declarations followed by definitions, are supported.
+
+Patterns and explicit specializations may declare fields, ordinary type aliases,
+enums, static assertions and access labels. A materialized instance must be a
+complete standard-layout aggregate whose fields satisfy the ordinary type,
+array, storage and lifetime rules. Existing implicit special-member operations
+remain checked when selected. Explicit member functions/constructors/destructors,
+static data, friends, nested records/templates, bases and partial specializations
+remain outside this class-template increment. Non-type defaults, packs,
+template-template parameters and non-scalar value arguments remain excluded.
+
+The producer traverses materialized records without enabling unrestricted
+implicit AST traversal. Dependent field types and unused field defaults stay
+lazy until Clang instantiates them; selected field initializers and instantiated
+aliases/assertions receive ordinary checks. Written parameter types, type
+defaults and explicit argument expressions are checked before erasure, including
+explicit instantiation/specialization arguments. Direct dependent type metadata
+can remain lazy; expression-bearing dependent default types must still pass the
+source-expression checks. Unsupported floating expressions cannot be hidden by
+an integral argument or a `decltype` result. Ordinary non-template declarations
+retain their existing checks.
+
+Each instance becomes an ordinary record with explicit fields and native layout
+evidence. Equivalent arguments and aliases share the canonical type; different
+values, actual types and primaries retain distinct record/field identities.
+By-value dependencies are emitted before their containing records. Fixed arrays,
+reference mutation, parameter/return storage, copy and field/array destruction
+use the existing typed operations, with return capture before cleanup. There is
+no runtime template parameter, opaque source or template interpreter.
+
+Native O0/O2 fixtures exercise storage, deduction, default field initialization,
+copying, returns and destruction. Protocol fixtures check identities, fields,
+extents/layouts, dependency order, scalar values, signatures, cleanup order and
+relocation. Native validation requires the implementing revision's CI. Full
+C++/STL, standard headers and library containers remain unfinished.
+
 ## Concrete free function templates
 
 Core v2 admits source-owned namespace/free function templates with one to 64
@@ -696,7 +738,7 @@ non-pack, unconstrained parameters, mixing supported types with integer, boolean
 and enum values. Embedded Clang performs deduction, overload ordering,
 substitution and explicit specialization/instantiation. Type-parameter defaults,
 namespace imports, recursion and nested calls use ordinary typed functions.
-Class, member, friend and operator templates, template-template parameters,
+Member, friend and operator templates, template-template parameters,
 parameter packs, abbreviated/constrained templates and standard headers remain
 outside this stage.
 
@@ -878,7 +920,7 @@ source remains checked even when unused or statically skipped. Source errors ret
 
 Admitted free function templates may also be imported; their lazy patterns and
 materialized bodies follow the separate template rules above. Class-member
-imports, inherited constructors, class templates and dependent/pack import forms,
+imports, inherited constructors, unsupported class-template forms and dependent/pack import forms,
 foreign targets and unsupported source types or bodies remain
 excluded. C++20 using-enum and scoped-enumerator imports remain rejected under
 the C++17 contract even when the embedded library only issues an extension

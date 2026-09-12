@@ -5415,7 +5415,6 @@ int main(){return early()-10;}
         'inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct D:B{using B::B;};',
         'dependent': 'template<class T>struct R:T{using T::n;};',
         'pack': 'template<class...T>struct R:T...{using T::n...;};',
-        'import-template-type': 'namespace N{template<class T>struct R{T n;};}using N::R;',
         'unsupported-type': 'namespace N{using T=double;}using N::T;',
         'unused-body': 'namespace N{int f(){double n=3;return static_cast<int>(n);}}using N::f;',
         'unused-initializer': 'namespace N{int n=static_cast<int>(3.0);}using N::n;',
@@ -5678,7 +5677,6 @@ int main(){return boolChoice()-20;}
         'macro-nested-inline': '#define INLINE inline\nnamespace N::INLINE V{int n=3;}',
         'macro-argument-inline': '#define ID(x) x\nnamespace N::ID(inline) V{int n=3;}',
         'attribute': 'namespace N{inline namespace [[deprecated]] V{int n=3;}}',
-        'template': 'namespace N{inline namespace V{template<class T>struct R{T n;};}}',
         'unused-type': 'namespace N{inline namespace V{using T=double;}}',
         'unused-body': 'namespace N{inline namespace V{int f(){double n=3;return static_cast<int>(n);}}}',
         'skipped-body': 'namespace N{inline namespace V{int f(){if(false){double n=3;}return 0;}}}',
@@ -6100,6 +6098,261 @@ int chooseOrdinary(){return candidate(3);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == function_templates, "template identity depends on absolute paths or address order"
 
+    class_templates_source = """enum class Mode:unsigned int{right=7};
+template<class T>struct Box{T n;};
+template<class T>struct Node{T n;Node*next;};
+template<class T>struct SelfAlias{using type=SelfAlias;T n;};
+template<class T>struct Other{T n;};
+template<class T,int N>struct Fixed{T a[N];};
+template<int N>struct Value{int n=N;};
+template<auto N>struct Automatic{decltype(N) n=N;};
+template<class T,class U=T>struct Pair{T first;U second;};
+template<class T>struct Specialized{T n;};
+template<>struct Specialized<int>;
+template<>struct Specialized<int>{int first;bool second;};
+using IntBox=Box<int>;
+struct Guard{int n;Guard(int v):n(v){}~Guard(){n=99;}};
+Box<int> makeInt(){return Box<int>{3};}
+IntBox sameInt(){return IntBox{3};}
+Box<unsigned int> makeUnsigned(){return Box<unsigned int>{4u};}
+Other<int> otherInt(){return Other<int>{3};}
+Box<Box<int>> nested(){return Box<Box<int>>{{5}};}
+Fixed<int,2> makeTwo(){return Fixed<int,2>{{1,2}};}
+Fixed<int,3> makeThree(){return Fixed<int,3>{{1,2,3}};}
+Value<3> makeValue(){return Value<3>{};}
+Value<1+2> sameValue(){return Value<1+2>{};}
+Value<4> differentValue(){return Value<4>{};}
+Automatic<1> signedValue(){return Automatic<1>{};}
+Automatic<1u> unsignedValue(){return Automatic<1u>{};}
+Automatic<Mode::right> enumValue(){return Automatic<Mode::right>{};}
+Pair<int> defaultPair(){return Pair<int>{6,7};}
+Specialized<int> specialized(){return Specialized<int>{8,true};}
+int readValue(Box<int> value){return value.n;}
+int&referenceValue(Box<int>&value){return value.n;}
+void mutate(Box<int>&value,int n){value.n=n;}
+int cleanup(){Box<Guard>value{Guard(4)};return value.n.n;}
+void arrayCleanup(){Fixed<Guard,2>value{{Guard(1),Guard(2)}};}
+int temporaryCleanup(){const Box<Guard>&value=Box<Guard>{Guard(3)};return value.n.n;}
+Node<int> makeNode(){return Node<int>{3,nullptr};}
+SelfAlias<int> selfInstance(){return SelfAlias<int>{4};}
+SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
+"""
+    class_templates = check("v2-class-templates-protocol", class_templates_source, profile="cpp-core-v2")
+    ct_records = {r["id"]: r for r in class_templates["records"]}
+    ct_functions = {f["name"]: f for f in class_templates["functions"]}
+    assert len(ct_records) == len(class_templates["records"])
+    assert len(ct_functions) == len(class_templates["functions"])
+
+    def ct_line(prefix):
+        found = [i for i, line in enumerate(class_templates_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def ct_function(prefix):
+        found = [f for f in class_templates["functions"] if f["loc"]["line"] == ct_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def ct_result(prefix):
+        f = ct_function(prefix)
+        assert f["result"] == "void" and len(f["params"]) == 1
+        assert f["params"][0]["type"].startswith("ptr:")
+        return ct_records[f["params"][0]["type"][4:]]
+
+    def ct_scalar(prefix, ty, value):
+        function = ct_function(prefix)
+        record = ct_result(prefix)
+        assert [f["type"] for f in record["fields"]] == [ty]
+        field = record["fields"][0]["name"]
+        writes = [n for n in function["body"] if n["op"] == "assign"
+                  and n["target"].get("kind") == "member" and n["target"]["name"] == field]
+        assert len(writes) == 1 and writes[0]["value"]["type"] == ty
+        assert gc_identity(function, writes[0]["value"]) == value
+        assert np_place(function, writes[0]["target"]) == ("field", ("parameter", function["params"][0]["name"]), field)
+        return record
+
+    int_box = ct_scalar("Box<int> makeInt(", "int", 3)
+    assert ct_result("IntBox sameInt(")["id"] == int_box["id"]
+    uint_box = ct_scalar("Box<unsigned int> makeUnsigned(", "uint", 4)
+    other_box = ct_scalar("Other<int> otherInt(", "int", 3)
+    assert len({int_box["id"], uint_box["id"], other_box["id"]}) == 3
+    assert len({int_box["fields"][0]["name"], uint_box["fields"][0]["name"], other_box["fields"][0]["name"]}) == 3
+    nested = ct_result("Box<Box<int>> nested(")
+    assert [f["type"] for f in nested["fields"]] == [int_box["id"]]
+    assert class_templates["records"].index(int_box) < class_templates["records"].index(nested)
+    for prefix, size in (("Fixed<int,2> makeTwo(", 2), ("Fixed<int,3> makeThree(", 3)):
+        record = ct_result(prefix)
+        assert [f["type"] for f in record["fields"]] == ["arr:"+str(size)+":int"]
+        assert record["layout"] == {"size_bits": size*32, "abi_align_bits": 32, "field_offsets_bits": [0]}
+        function = ct_function(prefix)
+        field = record["fields"][0]["name"]
+        elements = [n for n in function["body"] if n["op"] == "assign" and n["target"].get("kind") == "index"]
+        assert len(elements) == size
+        for i, node in enumerate(elements):
+            assert gc_identity(function, node["value"]) == i+1
+            assert np_place(function, node["target"]) == ("element", ("field", ("parameter", function["params"][0]["name"]), field), i)
+    assert ct_result("Fixed<int,2> makeTwo(")["id"] != ct_result("Fixed<int,3> makeThree(")["id"]
+    three = ct_scalar("Value<3> makeValue(", "int", 3)
+    assert ct_result("Value<1+2> sameValue(")["id"] == three["id"]
+    assert ct_scalar("Value<4> differentValue(", "int", 4)["id"] != three["id"]
+    signed = ct_scalar("Automatic<1> signedValue(", "int", 1)
+    unsigned = ct_scalar("Automatic<1u> unsignedValue(", "uint", 1)
+    enumerated = ct_scalar("Automatic<Mode::right> enumValue(", "uint", 7)
+    assert len({signed["id"], unsigned["id"], enumerated["id"]}) == 3
+    assert [f["type"] for f in ct_result("Pair<int> defaultPair(")["fields"]] == ["int", "int"]
+    special = ct_result("Specialized<int> specialized(")
+    assert [f["type"] for f in special["fields"]] == ["int", "bool"]
+    assert special["layout"] == {"size_bits": 64, "abi_align_bits": 32, "field_offsets_bits": [0,32]}
+    for prefix, result, parameters in (("int readValue(", "int", ["ptr:"+int_box["id"]]),
+                                       ("int&referenceValue(", "ptr:int", ["ptr:"+int_box["id"]]),
+                                       ("void mutate(", "void", ["ptr:"+int_box["id"], "int"])):
+        function = ct_function(prefix)
+        assert function["result"] == result and [p["type"] for p in function["params"]] == parameters
+    reference = ct_function("int&referenceValue(")
+    returned = [n["value"] for n in reference["body"] if n["op"] == "return"]
+    assert len(returned) == 1
+    assert np_pointer(reference, returned[0]) == ("field", ("parameter", reference["params"][0]["name"]), int_box["fields"][0]["name"])
+    node = ct_result("Node<int> makeNode(")
+    assert [f["type"] for f in node["fields"]] == ["int", "ptr:"+node["id"]]
+    assert ct_scalar("SelfAlias<int> selfInstance(", "int", 4)["id"] == ct_result("SelfAlias<int>::type selfAlias(")["id"]
+    guard = next(r for r in class_templates["records"] if r["loc"]["line"] == ct_line("struct Guard{"))
+    for prefix, value in (("int cleanup(", 4), ("int temporaryCleanup(", 3)):
+        function = ct_function(prefix)
+        calls = gc_calls(function)
+        assert len(calls) == 2 and gc_identity(function, calls[0]["args"][1]) == value
+        owner_type = calls[1]["args"][0]["type"]
+        assert owner_type.startswith("ptr:")
+        owner = ct_records[owner_type[4:]]
+        assert [f["type"] for f in owner["fields"]] == [guard["id"]]
+        assert calls[1]["callee"] == owner["id"]+"_destroy"
+        assert np_pointer(function, calls[0]["args"][0]) == ("field", np_pointer(function, calls[1]["args"][0]), owner["fields"][0]["name"])
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and returned[0]["kind"] == "var"
+        capture = [i for i, n in enumerate(function["body"]) if n["op"] == "assign" and n["target"].get("kind") == "var" and n["target"]["name"] == returned[0]["name"]]
+        assert len(capture) == 1 and capture[0] < function["body"].index(calls[1])
+        destructor = ct_functions[calls[1]["callee"]]
+        destroys = gc_calls(destructor)
+        assert len(destroys) == 1 and destroys[0]["callee"] == guard["id"]+"_destroy"
+        assert np_pointer(destructor, destroys[0]["args"][0]) == ("field", ("parameter", destructor["params"][0]["name"]), owner["fields"][0]["name"])
+    array_function = ct_function("void arrayCleanup(")
+    array_calls = gc_calls(array_function)
+    assert len(array_calls) == 3
+    array_owner = ct_records[array_calls[2]["args"][0]["type"][4:]]
+    assert [f["type"] for f in array_owner["fields"]] == ["arr:2:"+guard["id"]]
+    assert array_calls[2]["callee"] == array_owner["id"]+"_destroy"
+    array_destructor = ct_functions[array_calls[2]["callee"]]
+    destroys = gc_calls(array_destructor)
+    assert len(destroys) == 2 and all(c["callee"] == guard["id"]+"_destroy" for c in destroys)
+    base = ("field", ("parameter", array_destructor["params"][0]["name"]), array_owner["fields"][0]["name"])
+    assert [np_pointer(array_destructor, c["args"][0]) for c in destroys] == [("element", base, 1), ("element", base, 0)]
+    for function in class_templates["functions"]:
+        for call in gc_calls(function):
+            assert call["callee"] in ct_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in ct_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-class-templates-relocated-") as temp:
+        relocated = check("v2-class-templates-relocated", class_templates_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == class_templates
+    class_templates_positive = {
+        'unused': 'template<class T>struct R{T n;};',
+        'integer': 'template<class T>struct R{T n;};int main(){R<int>r{3};return r.n-3;}',
+        'boolean': 'template<class T>struct R{T n;};int main(){R<bool>r{true};return !r.n;}',
+        'enum-type': 'enum class E:unsigned int{x=3};template<class T>struct R{T n;};int main(){R<E>r{E::x};return r.n!=E::x;}',
+        'pointer-field': 'template<class T>struct R{T n;};int main(){int n=3;R<int*>r{&n};*r.n=4;return n-4;}',
+        'record-field': 'struct V{int n;};template<class T>struct R{T n;};int main(){R<V>r{{3}};return r.n.n-3;}',
+        'array-type': 'template<class T>struct R{T n;};int main(){R<int[2]>r{{1,2}};return r.n[0]+r.n[1]-3;}',
+        'nested-value': 'template<class T>struct R{T n;};int main(){R<R<int>>r{{3}};return r.n.n-3;}',
+        'fixed-extent': 'template<class T,int N>struct R{T n[N];};int main(){R<int,2>r{{1,2}};return r.n[0]+r.n[1]-3;}',
+        'selected-default': 'template<int N>struct R{int n=N;};int main(){R<3>r;return r.n;}',
+        'signed-value': 'template<int N>struct R{int n=N;};int main(){R<-3>r{};return r.n+3;}',
+        'wide-value': 'template<unsigned long long N>struct R{unsigned long long n=N;};int main(){R<0xffffffffffffffffULL>r{};return r.n!=0xffffffffffffffffULL;}',
+        'auto-value': 'template<auto N>struct R{decltype(N) n=N;};int main(){R<true>r{};return !r.n;}',
+        'dependent-value': 'template<class T,T N>struct R{T n=N;};int main(){R<int,3>r{};return r.n-3;}',
+        'enum-value': 'enum class E:unsigned int{x=3};template<E N>struct R{E n=N;};int main(){R<E::x>r{};return r.n!=E::x;}',
+        'alias': 'template<class T>struct R{using type=T;T n;};int main(){R<int>::type n=3;R<int>r{n};return r.n-3;}',
+        'enum-and-assert': 'template<int N>struct R{enum{count=N};static_assert(N>0);int n[N];};int main(){R<2>r{};return R<2>::count-2+r.n[0];}',
+        'empty': 'template<class T>struct R{};int main(){R<int>r{};return sizeof(r)!=1;}',
+        'public-class': 'template<class T>class R{public:T n;};int main(){R<int>r{3};return r.n-3;}',
+        'type-default': 'template<class T=int>struct R{T n;};int main(){R<>r{3};return r.n-3;}',
+        'dependent-type-default': 'template<class T,class U=T>struct R{T a;U b;};int main(){R<int>r{1,2};return r.a+r.b-3;}',
+        'inherited-default': 'template<class T=int>struct R;template<class T>struct R{T n;};int main(){R<>r{3};return r.n-3;}',
+        'forward-primary': 'template<class T>struct R;template<class T>struct R{T n;};int main(){R<int>r{3};return r.n-3;}',
+        'explicit-instantiation': 'template<class T>struct R{T n;};template struct R<int>;int main(){R<int>r{3};return r.n-3;}',
+        'explicit-specialization': 'template<class T>struct R{T n;};template<>struct R<int>{int n[2];};int main(){R<int>r{{1,2}};return r.n[0]+r.n[1]-3;}',
+        'forward-specialization': 'template<class T>struct R{T n;};template<>struct R<int>;template<>struct R<int>{int n;};int main(){R<int>r{3};return r.n-3;}',
+        'namespace-import': 'namespace N{template<class T>struct R{T n;};}using N::R;int main(){R<int>r{3};return r.n-3;}',
+        'inline-namespace': 'namespace N{inline namespace V{template<class T>struct R{T n;};}}int main(){N::R<int>r{3};return r.n-3;}',
+        'import-declaration': 'namespace N{template<class T>struct R{T n;};}using N::R;',
+        'inline-declaration': 'namespace N{inline namespace V{template<class T>struct R{T n;};}}',
+        'function-deduction': 'template<class T>struct R{T n;};template<class T>T get(R<T>r){return r.n;}int main(){R<int>r{3};return get(r)-3;}',
+        'lazy-field-default': 'template<class T>struct R{int n=T::missing;};int main(){R<int>r{3};return r.n-3;}',
+        'written-type': 'template<decltype(1) N>struct R{int n=N;};int main(){R<3>r{};return r.n-3;}',
+        'written-sizeof': 'template<int N>struct R{int n[N];};int main(){R<sizeof(int)>r{};return sizeof(r)!=sizeof(int)*sizeof(int);}',
+        'written-default': 'template<class T=decltype(1)>struct R{T n;};int main(){R<>r{3};return r.n-3;}',
+        'mixed-64': 'template<class T0,int N1,class T2,int N3,class T4,int N5,class T6,int N7,class T8,int N9,class T10,int N11,class T12,int N13,class T14,int N15,class T16,int N17,class T18,int N19,class T20,int N21,class T22,int N23,class T24,int N25,class T26,int N27,class T28,int N29,class T30,int N31,class T32,int N33,class T34,int N35,class T36,int N37,class T38,int N39,class T40,int N41,class T42,int N43,class T44,int N45,class T46,int N47,class T48,int N49,class T50,int N51,class T52,int N53,class T54,int N55,class T56,int N57,class T58,int N59,class T60,int N61,class T62,int N63>struct R{int n=N1;};int main(){R<int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1>r{};return r.n-1;}',
+        'self-pointer': 'template<class T>struct R{T n;R*next;};int main(){R<int>a{1,nullptr};R<int>b{2,&a};b.next->n=3;return a.n-3;}',
+        'injected-alias': 'template<class T>struct R{using type=R;T n;};int main(){R<int>::type r{3};return r.n-3;}',
+    }
+    for name, source in class_templates_positive.items():
+        check("v2-class-templates-positive-" + name, source, profile="cpp-core-v2")
+    class_templates_reject = {
+        'floating-field': 'template<class T>struct R{T n;};int main(){R<double>r{1.0};return 0;}',
+        'floating-default': 'template<class T>struct R{int n=static_cast<int>(1.0);};int main(){R<int>r{};return r.n;}',
+        'default-value': 'template<int N=3>struct R{int n;};',
+        'default-value-inherited': 'template<int N=3>struct R;template<int N>struct R{int n;};',
+        'pointer-value': 'int n;template<int*P>struct R{int n;};',
+        'auto-pointer': 'int n;template<auto P>struct R{int n;};int main(){R<&n>r{};return r.n;}',
+        'auto-null': 'template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}',
+        'value-pack': 'template<int...N>struct R{int n;};',
+        'type-pack': 'template<class...T>struct R{int n;};',
+        'template-template': 'template<template<class>class T>struct R{int n;};',
+        'member-function': 'template<class T>struct R{T n;T get(){return n;}};',
+        'constructor': 'template<class T>struct R{T n;R(T v):n(v){}};',
+        'destructor': 'template<class T>struct R{T n;~R(){}};',
+        'friend': 'template<class T>struct R{T n;friend int get(R r){return r.n;}};',
+        'static-member': 'template<class T>struct R{inline static T n=1;};',
+        'nested-record': 'template<class T>struct R{struct I{T n;};};',
+        'nested-template': 'struct R{template<class T>struct I{T n;};};',
+        'member-template': 'template<class T>struct R{template<class U>U f(U n){return n;}};',
+        'alias-template': 'template<class T>using R=T;',
+        'partial': 'template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};',
+        'selected-partial': 'template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};int main(){int n=3;R<int*>r{&n};return *r.n;}',
+        'union': 'template<class T>union R{T n;int m;};',
+        'base': 'struct B{int n;};template<class T>struct R:B{T m;};',
+        'private-field': 'template<class T>class R{T n;};int main(){R<int>r;return sizeof(r);}',
+        'bitfield': 'template<class T>struct R{unsigned int n:3;};int main(){R<int>r{};return r.n;}',
+        'mutable-field': 'template<class T>struct R{mutable T n;};int main(){R<int>r{3};return r.n;}',
+        'const-field': 'template<class T>struct R{const T n;};int main(){R<int>r{3};return r.n;}',
+        'reference-field': 'template<class T>struct R{T&n;};int main(){int n=3;R<int>r{n};return r.n;}',
+        'zero-array': 'template<int N>struct R{int n[N];};int main(){R<0>r;return 0;}',
+        'oversized-array': 'template<int N>struct R{int n[N];};int main(){R<65537>r{};return r.n[0];}',
+        'floating-argument': 'template<int N>struct R{int n;};int main(){R<static_cast<int>(1.0)>r{};return r.n;}',
+        'floating-instantiation': 'template<int N>struct R{int n;};template struct R<static_cast<int>(1.0)>;',
+        'floating-specialization': 'template<int N>struct R{int n;};template<>struct R<static_cast<int>(1.0)>{int n;};',
+        'floating-parameter-type': 'template<decltype(static_cast<int>(1.0)) N>struct R{int n;};',
+        'floating-default-type': 'template<class T=decltype(static_cast<int>(1.0))>struct R{T n;};int main(){R<>r{1};return r.n;}',
+        'explicit-specialization-member': 'template<class T>struct R{T n;};template<>struct R<int>{int n;int f(){return n;}};',
+        'mixed-65': 'template<class T0,int N1,class T2,int N3,class T4,int N5,class T6,int N7,class T8,int N9,class T10,int N11,class T12,int N13,class T14,int N15,class T16,int N17,class T18,int N19,class T20,int N21,class T22,int N23,class T24,int N25,class T26,int N27,class T28,int N29,class T30,int N31,class T32,int N33,class T34,int N35,class T36,int N37,class T38,int N39,class T40,int N41,class T42,int N43,class T44,int N45,class T46,int N47,class T48,int N49,class T50,int N51,class T52,int N53,class T54,int N55,class T56,int N57,class T58,int N59,class T60,int N61,class T62,int N63,class T64>struct R{int n=N1;};int main(){R<int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int>r{};return r.n-1;}',
+    }
+    for name, source in class_templates_reject.items():
+        check("v2-class-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    class_templates_invalid = {
+        'missing-argument': 'template<class T>struct R{T n;};int main(){R<>r{};return 0;}',
+        'wrong-argument-kind': 'template<class T>struct R{T n;};int main(){R<3>r{};return 0;}',
+        'nonconstant': 'template<int N>struct R{int n;};int main(){int n=3;R<n>r{};return r.n;}',
+        'narrowing': 'template<unsigned char N>struct R{int n;};int main(){R<256>r{};return r.n;}',
+        'invalid-dependent-type': 'template<class T>struct R{typename T::type n;};int main(){R<int>r{};return 0;}',
+        'selected-invalid-default': 'template<class T>struct R{int n=T::missing;};int main(){R<int>r{};return r.n;}',
+        'failed-assertion': 'template<int N>struct R{static_assert(N>0);int n;};int main(){R<0>r{};return r.n;}',
+        'aggregate-arity': 'template<class T>struct R{T n;};int main(){R<int>r{1,2};return r.n;}',
+        'void-field': 'template<class T>struct R{T n;};int main(){R<void>r{};return 0;}',
+        'negative-array': 'template<int N>struct R{int n[N];};int main(){R<-1>r{};return 0;}',
+    }
+    for name, source in class_templates_invalid.items():
+        check("v2-class-templates-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    check("v1-class-type-template", "template<class T>struct R{T n;};int main(){R<int>r{3};return r.n;}", "TR0201")
+    check("v1-class-value-template", "template<int N>struct R{int n=N;};int main(){R<3>r{};return r.n;}", "TR0201")
+
     non_type_templates_source = """enum class Mode:unsigned int{right=7};
 template<int N>int value(){return N;}
 template<auto N>auto automatic(){return N;}
@@ -6301,7 +6554,6 @@ Plain chosenRecord(){return choose<false>();}
         'parameter-decltype-sizeof-float': 'template<decltype(sizeof(double)) N>int f(){return N;}int main(){return f<1>();}',
         'argument-sizeof-float': 'template<int N>int f(){return N;}int main(){return f<sizeof(double)>();}',
         'oversized-array': 'template<int N>int f(){int a[N]={};return a[0];}int main(){return f<65537>();}',
-        'class-template': 'template<int N>struct R{int n=N;};int main(){R<3>r;return r.n;}',
         'member-template': 'struct R{template<int N>int f(){return N;}};int main(){R r;return r.f<3>();}',
         'mixed-65': 'template<class T0,int N1,class T2,int N3,class T4,int N5,class T6,int N7,class T8,int N9,class T10,int N11,class T12,int N13,class T14,int N15,class T16,int N17,class T18,int N19,class T20,int N21,class T22,int N23,class T24,int N25,class T26,int N27,class T28,int N29,class T30,int N31,class T32,int N33,class T34,int N35,class T36,int N37,class T38,int N39,class T40,int N41,class T42,int N43,class T44,int N45,class T46,int N47,class T48,int N49,class T50,int N51,class T52,int N53,class T54,int N55,class T56,int N57,class T58,int N59,class T60,int N61,class T62,int N63,class T64>int f(){return N1;}int main(){return f<int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int>()-1;}',
     }
@@ -6373,7 +6625,6 @@ Plain chosenRecord(){return choose<false>();}
     for name, source in function_templates_positive.items():
         check("v2-function-templates-positive-" + name, source, profile="cpp-core-v2")
     function_templates_reject = {
-        'class': 'template<class T>struct R{T n;};',
         'member': 'struct R{template<class T>T f(T v){return v;}};',
         'friend': 'struct R{template<class T>friend T f(T v){return v;}};',
         'operator': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}',
