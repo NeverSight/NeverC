@@ -1835,7 +1835,6 @@ TEST_F(TranslateTest, CoreV2OperatorsAcceptOrdinaryAssignmentSignatures) {
 
 TEST_F(TranslateTest, CoreV2OperatorsRetainSourceAndLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"conversion", "struct R{int n;operator int()const{return n;}};", "TR0201"},
       {"deleted", "struct R{int n;int operator+(int)const=delete;};", "TR0201"},
       {"volatile-receiver", "struct R{int n;int operator()()volatile{return n;}};", "TR0201"},
       {"volatile-argument", "struct R{int n;int operator+(volatile R&r)const{return r.n;}};", "TR0201"},
@@ -1874,6 +1873,204 @@ TEST_F(TranslateTest, CoreV2OperatorsRetainSourceAndLifetimeBoundaries) {
   for (const std::string &Code : {
       "struct R{int n;int operator()()const{return n;}};",
       "struct R{int n;};int operator+(R r,int n){return r.n+n;}int f(){R r{1};return r+2;}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConversionsPreserveCallsAliasesAndLifetimes) {
+  const auto Source = tmpFile("conversions.cpp");
+  const auto Output = tmpFile("conversions.nc");
+  writeFile(Source, R"cpp(
+struct Counts { int converted; int made; int copied; int moved; int destroyed; };
+struct Source {
+  int n; Counts *counts;
+  operator int() & { ++counts->converted; return n; }
+  operator int() const & { ++counts->converted; return n+1; }
+  operator int() && { ++counts->converted; return n+2; }
+  explicit operator bool() const noexcept { ++counts->converted; return n!=0; }
+};
+struct Explicit { int n; explicit operator int() const; };
+Explicit::operator int() const { return n; }
+struct Ordered {
+  int n; int *order;
+  operator int() { *order=*order*10+2; return n; }
+};
+Ordered &receiver(Ordered &r) { *r.order=*r.order*10+1; return r; }
+int consume(int n,int &order) { order=order*10+3; return n; }
+struct Pointer { int *p; int calls; operator int*() { ++calls; return p; } };
+struct Reference {
+  int n; int *p; int calls;
+  operator int&() { ++calls; return n; }
+  operator int*&() { ++calls; return p; }
+};
+struct ConstReference { int n; operator const int&() const { return n; } };
+struct XReference { int n; operator int&&() { return static_cast<int&&>(n); } };
+enum class Code : unsigned short { ok=65000 };
+struct EnumSource { operator Code() const { return Code::ok; } };
+struct Target {
+  int n; Counts *counts; Target *self=this;
+  Target(int value,Counts &c):n(value),counts(&c) { ++counts->made; }
+  Target(const Target &r):n(r.n),counts(r.counts) { ++counts->copied; }
+  Target(Target &&r):n(r.n),counts(r.counts) { ++counts->moved; r.n=-1; }
+  ~Target() { ++counts->destroyed; }
+};
+struct RecordSource {
+  int n; Counts *counts;
+  operator Target() const noexcept { ++counts->converted; return Target(n,*counts); }
+};
+struct RecordReference { Target *p; operator Target&() { return *p; } };
+struct RecordXReference { Target *p; operator Target&&() { return static_cast<Target&&>(*p); } };
+struct Wrapper { Target field; };
+Target returned(RecordSource &source) { return source; }
+int take(Target value) { return value.self==&value ? value.n : -99; }
+struct Pure { int n; constexpr operator int() const noexcept { return n; } };
+constexpr Pure pure{23};
+constexpr int converted=pure;
+static_assert(converted==23,"conversion constant");
+static_assert(noexcept(pure.operator int()),"conversion specification");
+struct Risky { int n; operator int() const noexcept(false) { return n; } };
+int main() {
+  Counts counts{0,0,0,0,0}; Source source{4,&counts};
+  int n=source;
+  if(n!=4||counts.converted!=1)return 1;
+  long long wide=source;
+  if(wide!=4||counts.converted!=2)return 2;
+  const Source fixed{4,&counts}; n=fixed;
+  if(n!=5||counts.converted!=3)return 3;
+  n=static_cast<Source&&>(source);
+  if(n!=6||source.n!=4||counts.converted!=4)return 4;
+  counts.converted=0;
+  if(source){}else return 5;
+  if(counts.converted!=1)return 6;
+  Source zero{0,&counts}; counts.converted=0;
+  bool both=zero&&source;
+  if(both||counts.converted!=1)return 7;
+  counts.converted=0; bool either=source||zero;
+  if(!either||counts.converted!=1)return 8;
+  counts.converted=0; bool needed=source&&source;
+  if(!needed||counts.converted!=2)return 9;
+  counts.converted=0; int rounds=0;
+  while(source){++rounds;source.n=0;}
+  if(rounds!=1||counts.converted!=2)return 10;
+  if(!noexcept(static_cast<bool>(source))||counts.converted!=2)return 11;
+  Explicit explicitValue{9}; int direct(explicitValue);
+  if(direct!=9||static_cast<int>(explicitValue)!=9||int(explicitValue)!=9)return 12;
+  int order=0; Ordered ordered{7,&order};
+  if(consume(receiver(ordered),order)!=7||order!=123)return 13;
+  int first=2,second=8; Pointer pointer{&first,0}; int *p=pointer;
+  if(p!=&first||pointer.calls!=1)return 14;
+  if(pointer){}else return 15;
+  if(pointer.calls!=2)return 16;
+  pointer.p=nullptr;
+  if(pointer!=nullptr||pointer.calls!=3)return 17;
+  Reference references{3,&first,0}; int &alias=references; alias=11;
+  const int &constAlias=references;
+  if(references.n!=11||constAlias!=11||references.calls!=2)return 18;
+  int *&pointerAlias=references; pointerAlias=&second;
+  if(references.p!=&second||references.calls!=3)return 19;
+  const ConstReference constReference{13}; const int &readonly=constReference;
+  if(&readonly!=&constReference.n)return 20;
+  XReference xreference{5}; int &&xalias=xreference; xalias=17;
+  if(xreference.n!=17||&xalias!=&xreference.n)return 21;
+  EnumSource enumSource{}; Code code=enumSource;
+  if(code!=Code::ok)return 22;
+  if(converted!=23||static_cast<int>(pure)!=23)return 23;
+  Risky risky{6};
+  if(noexcept(static_cast<int>(risky))||static_cast<int>(risky)!=6)return 24;
+  Counts objects{0,0,0,0,0};
+  {
+    RecordSource factory{19,&objects}; Target a=factory;
+    if(a.n!=19||a.self!=&a||objects.made!=1||objects.copied||objects.moved)return 25;
+    Target array[2]={factory,factory}; Wrapper wrapper{factory}; Target result=returned(factory);
+    if(array[0].self!=&array[0]||array[1].self!=&array[1]||wrapper.field.self!=&wrapper.field||result.self!=&result)return 26;
+    if(objects.made!=5||objects.converted!=5||objects.destroyed)return 27;
+    if(take(factory)!=19||objects.made!=6||objects.destroyed!=1)return 28;
+    static_cast<Target>(factory);
+    if(objects.made!=7||objects.converted!=7||objects.destroyed!=2||objects.copied||objects.moved)return 29;
+    if(!noexcept(static_cast<Target>(factory))||objects.converted!=7)return 30;
+    RecordReference reference{&a}; Target &recordAlias=reference; recordAlias.n=29;
+    Target copied=reference;
+    if(a.n!=29||copied.n!=29||copied.self!=&copied||objects.copied!=1)return 31;
+    RecordXReference xref{&a}; Target moved=xref;
+    if(a.n!=-1||moved.n!=29||moved.self!=&moved||objects.moved!=1)return 32;
+    if(objects.made!=7||objects.destroyed!=2)return 33;
+  }
+  if(objects.destroyed!=9)return 34;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("conversions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConversionsAcceptOrdinaryDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"conversion", "struct R{int n;operator int()const{return n;}};"},
+      {"method-conversion", "struct R{int n;operator int()const{return n;}};"},
+      {"constructor-conversion-function", "struct R{int n;R():n(1){} operator int()const{return n;}};int f(){R r;return r;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("conversions-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("conversions-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"float", "struct R{operator double()const{return 1.0;}};", "TR0201"},
+      {"string", "struct R{operator const char*()const{return \"x\";}};", "TR0201"},
+      {"volatile", "struct R{operator int()volatile{return 1;}};", "TR0201"},
+      {"restrict", "struct R{operator int()__restrict{return 1;}};", "TR0201"},
+      {"template", "struct R{template<class T>operator T()const{return T{};}};", "TR0201"},
+      {"member-address", "struct R{operator int()const{return 1;}};auto f(){return &R::operator int;}", "TR0201"},
+      {"function-pointer", "using F=int(*)();int g(){return 1;}struct R{operator F()const{return g;}};", "TR0201"},
+      {"fresh-receiver", "struct R{int n;operator int()const{return n;}};int f(){return R{1};}", "TR0201"},
+      {"fresh-reference", "struct R{int n;operator int()const{return n;}};int f(){R r{1};const int&n=r;return n;}", "TR0201"},
+      {"fresh-record-reference", "struct T{int n;};struct R{operator T()const{return {1};}};int f(){R r;const T&t=r;return t.n;}", "TR0201"},
+      {"unused-throw", "struct R{operator int()const{throw 1;}};", "TR0201"},
+      {"query-throw", "struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}", "TR0201"},
+      {"folded-float", "struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,\"value\");", "TR0201"},
+      {"query-fresh-receiver", "struct R{operator int()const noexcept{return 1;}};bool f(){return noexcept(static_cast<int>(R{}));}", "TR0201"},
+      {"default-argument", "int g(int n=1){return n;}struct R{operator int()const{return g();}};", "TR0201"},
+      {"virtual", "struct R{virtual operator int()const{return 1;}};", "TR0201"},
+      {"explicit-copy", "struct R{explicit operator int()const{return 1;}};int f(){R r;int n=r;return n;}", "TR0202"},
+      {"parameters", "struct R{operator int(int n){return n;}};", "TR0202"},
+      {"written-result", "struct R{int operator int(){return 1;}};", "TR0202"},
+      {"ambiguous", "struct R{operator long(){return 1;}operator unsigned long(){return 1;}};int f(){R r;return r;}", "TR0202"},
+      {"deleted-use", "struct R{operator int()const=delete;};int f(){R r;return r;}", "TR0202"},
+      {"ref-qualifier", "struct R{operator int()&&{return 1;}};int f(){R r;return r;}", "TR0202"},
+      {"implicit", "struct R{operator int()const;};int f(R&r){return r;}", "TR0203"},
+      {"explicit", "struct R{explicit operator bool()const;};bool f(R&r){return static_cast<bool>(r);}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("conversions-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("conversions-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("conversions-v1.cpp");
+  const auto Output = tmpFile("conversions-v1.nc");
+  for (const std::string &Code : {
+      "struct R{int n;operator int()const{return n;}};",
+      "struct R{explicit operator bool()const{return true;}};bool f(R&r){return static_cast<bool>(r);}"}) {
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
     expectCode(Result, "TR0201");
@@ -4011,7 +4208,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"temporary-array-receiver", "struct I{int n;int get()const{return n;}};struct R{I i[1];R():i{{1}}{}};int f(){return (R().i+0)->get();}"},
       {"folded-unsupported-initializer", "struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;"},
       {"folded-throw-body", "struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);"},
-      {"conversion-function", "struct R{int n;R():n(1){} operator int()const{return n;}};int f(){R r;return r;}"},
       {"dynamic-global", "struct R{int n;R():n(1){}};R global;"},
       {"global-array", "struct R{int n;constexpr R(int v):n(v){}};constexpr R global[1]={{1}};"},
       {"global-pointer", "struct R{int n;constexpr R(int v):n(v){}};constexpr R global(1);constexpr const R *pointer=&global;"},
@@ -4153,7 +4349,6 @@ TEST_F(TranslateTest, CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries) {
       {"static-function-pointer", "struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}"},
       {"virtual-method", "struct R{int n;virtual int get(){return n;}};"},
       {"base-class", "struct B{int n;};struct R:B{int get(){return n;}};"},
-      {"conversion", "struct R{int n;operator int()const{return n;}};"},
       {"volatile-method", "struct R{int n;int get()volatile{return n;}};"},
       {"mutable-field", "struct R{mutable int n;int get()const{return n;}};"},
       {"reference-field", "struct R{int&n;int get()const{return n;}};"},

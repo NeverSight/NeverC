@@ -150,6 +150,24 @@ wire flag or signature and covers early returns and record results. By-value
 argument objects, discarded record results and reference aliases keep their
 normal ownership rules. See the [source contract](cpp-core-v2.md#ordinary-overloaded-operators).
 
+## Core v2 conversion-function calls
+
+A checked user-defined conversion emits the selected ordinary member `call`,
+with its receiver and no explicit source parameters. A record prvalue result
+adds the actual hidden destination before the receiver. Returned references use
+the existing ptr/cptr carrier and alias their referenced storage; they introduce
+no owning object. Converting that reference to a record value keeps the selected
+copy/move call. Direct prvalue destinations and discarded-result cleanup retain
+the existing object lifetime rules.
+
+The AST wrapper's result type and value category must match its direct selected
+call. Standard conversions after that call remain distinct typed operations.
+Builtin logical conditions keep conversion calls in their appropriate CFG
+branches. No conversion body runs for noexcept queries. Conversion identities
+remain distinct even when const/ref overloads normalize to identical signatures.
+No new wire expression or opcode is needed. See the
+[source contract](cpp-core-v2.md#user-defined-conversion-functions).
+
 ## Core v2 noexcept queries
 
 Resolved `noexcept(expression)` uses the existing pure `literal` representation

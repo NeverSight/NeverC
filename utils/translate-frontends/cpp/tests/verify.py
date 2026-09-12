@@ -396,6 +396,11 @@ def main():
         'operator-user_move_rejected-arbitrary-operator': 'struct R{int n;R operator+(R&&r){return {n+r.n};}};',
         'operator-method-call': 'struct R{int n;int operator()()const{return n;}};',
     })
+    core_v2.update({
+        'conversion-conversion': 'struct R{int n;operator int()const{return n;}};',
+        'conversion-method-conversion': 'struct R{int n;operator int()const{return n;}};',
+        'conversion-constructor-conversion-function': 'struct R{int n;R():n(1){} operator int()const{return n;}};int f(){R r;return r;}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -1837,7 +1842,6 @@ P explicitValue(P&a,P&b){return operator-=(a,b);}
         assert relocated == operators, "operator identities depend on the absolute root"
 
     operator_rejected = {
-        'conversion': 'struct R{int n;operator int()const{return n;}};',
         'deleted': 'struct R{int n;int operator+(int)const=delete;};',
         'volatile-receiver': 'struct R{int n;int operator()()volatile{return n;}};',
         'volatile-argument': 'struct R{int n;int operator+(volatile R&r)const{return r.n;}};',
@@ -1874,6 +1878,202 @@ P explicitValue(P&a,P&b){return operator-=(a,b);}
         check("v2-" + 'operator_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
     check("v1-member-operator", "struct R{int n;int operator()()const{return n;}};", "TR0201")
     check("v1-free-operator", "struct R{int n;};int operator+(R r,int n){return r.n+n;}int f(){R r{1};return r+2;}", "TR0201")
+    conversion_source = """struct S {
+ int n;
+ operator int() & {return n;}
+ operator int() const & {return n+1;}
+ operator int() && {return n+2;}
+ explicit operator bool() const noexcept {return n!=0;}
+};
+struct Ref {
+ int n;
+ operator int&(){return n;}
+};
+struct R {
+ int n;
+ R(int value):n(value){}
+ R(const R&r):n(r.n){}
+ R(R&&r):n(r.n){r.n=-1;}
+ ~R(){}
+};
+struct Factory {
+ int n;
+ operator R()const noexcept{return R(n);}
+};
+struct RefFactory {
+ R*p;
+ operator R&(){return *p;}
+};
+struct MoveFactory {
+ R*p;
+ operator R&&(){return static_cast<R&&>(*p);}
+};
+int implicit(S&r){return r;}
+int constant(const S&r){return r;}
+int rvalue(S&r){return static_cast<S&&>(r);}
+long long promotion(S&r){return r;}
+int explicitName(S&r){return r.operator int();}
+bool logicalAnd(S&a,S&b){return a&&b;}
+bool logicalOr(S&a,S&b){return a||b;}
+int&alias(Ref&r){return r;}
+R result(Factory&r){return r;}
+R explicitResult(Factory&r){return r.operator R();}
+int local(Factory&r){R value=r;return value.n;}
+void discard(Factory&r){static_cast<R>(r);}
+R copied(RefFactory&r){return r;}
+R moved(MoveFactory&r){return r;}
+R&recordAlias(RefFactory&r){return r;}
+bool query(const S&r){return noexcept(static_cast<bool>(r));}
+bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
+"""
+    conversions = check("v2-conversion-functions-protocol", conversion_source, profile="cpp-core-v2")
+    uc_functions = {f["name"]: f for f in conversions["functions"]}
+
+    def uc_line(prefix):
+        lines = [i for i, line in enumerate(conversion_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def uc_function(prefix):
+        matches = [f for f in conversions["functions"] if f["loc"]["line"] == uc_line(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    uc_records = {r["loc"]["line"]: r["id"] for r in conversions["records"]}
+    sid = uc_records[uc_line("struct S {")]
+    rid = uc_records[uc_line("struct R {")]
+    fid = uc_records[uc_line("struct Factory {")]
+    selected_int = [uc_function(p) for p in (" operator int() & {", " operator int() const & {", " operator int() && {")]
+    assert len({f["name"] for f in selected_int}) == 3
+    assert [f["result"] for f in selected_int] == ["int"] * 3
+    assert [[p["type"] for p in f["params"]] for f in selected_int] == [["ptr:"+sid], ["cptr:"+sid], ["ptr:"+sid]]
+    for caller, selected in (("int implicit(", 0), ("int constant(", 1), ("int rvalue(", 2),
+                             ("long long promotion(", 0), ("int explicitName(", 0)):
+        function = uc_function(caller)
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == selected_int[selected]["name"], function
+        assert storage_pointer_object(function, calls[0]["args"][0]) == ("parameter", function["params"][0]["name"])
+        assert not any(v["type"] in uc_records.values() for v in function["locals"]), function
+    assert uc_function("long long promotion(")["result"] == "i64"
+    bool_name = uc_function(" explicit operator bool(")["name"]
+    for prefix in ("bool logicalAnd(", "bool logicalOr("):
+        function = uc_function(prefix)
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [bool_name, bool_name], function
+        assert [storage_pointer_object(function, c["args"][0]) for c in calls] == [
+            ("parameter", p["name"]) for p in function["params"]]
+        positions = [i for i, node in enumerate(function["body"]) if node["op"] == "call"]
+        between = function["body"][positions[0]+1:positions[1]]
+        branches = [n for n in between if n["op"] == "branch"]
+        labels = [n["label"] for n in between if n["op"] == "label"]
+        assert len(branches) == 1 and labels, function
+        assert labels[-1] == branches[0]["true" if prefix == "bool logicalAnd(" else "false"], function
+
+    def uc_reference_origin(function, expr):
+        if expr["kind"] in ("cast", "address", "dereference"):
+            return uc_reference_origin(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        calls = [c for c in gc_calls(function) if c.get("target", {}).get("name") == expr["name"]]
+        if calls:
+            assert len(calls) == 1
+            return calls[0]["callee"]
+        values = [n["value"] for n in function["body"] if n["op"] == "assign"
+                  and n["target"].get("kind") == "var" and n["target"]["name"] == expr["name"]]
+        assert len(values) == 1, (expr, values)
+        return uc_reference_origin(function, values[0])
+
+    for prefix, conversion, result_type in (("int&alias(", " operator int&(", "ptr:int"),
+                                             ("R&recordAlias(", " operator R&(", "ptr:"+rid)):
+        function = uc_function(prefix)
+        calls = gc_calls(function)
+        name = uc_function(conversion)["name"]
+        assert len(calls) == 1 and calls[0]["callee"] == name and function["result"] == result_type, function
+        assert not any(v["type"] in uc_records.values() for v in function["locals"]), function
+        returns = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returns) == 1 and uc_reference_origin(function, returns[0]) == name
+    record_conversion = uc_function(" operator R()const")
+    assert record_conversion["result"] == "void"
+    assert [p["type"] for p in record_conversion["params"]] == ["ptr:"+rid, "cptr:"+fid]
+    constructor = uc_function(" R(int value)")
+    calls = gc_calls(record_conversion)
+    assert len(calls) == 1 and calls[0]["callee"] == constructor["name"]
+    assert storage_pointer_object(record_conversion, calls[0]["args"][0]) == ("parameter", record_conversion["params"][0]["name"])
+    for prefix in ("R result(", "R explicitResult("):
+        function = uc_function(prefix)
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == record_conversion["name"], function
+        assert [storage_pointer_object(function, arg) for arg in calls[0]["args"]] == [
+            ("parameter", p["name"]) for p in function["params"]]
+        assert not any(v["type"] == rid for v in function["locals"]), function
+    for prefix in ("int local(", "void discard("):
+        function = uc_function(prefix)
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [record_conversion["name"], rid+"_destroy"], function
+        objects = [v for v in function["locals"] if v["type"] == rid]
+        assert len(objects) == 1, function
+        assert [storage_pointer_object(function, c["args"][0]) for c in calls] == [("object", objects[0]["name"])] * 2
+    for prefix, conversion, constructor_prefix in (("R copied(", " operator R&(", " R(const R&r)"),
+                                                    ("R moved(", " operator R&&(", " R(R&&r)")):
+        function = uc_function(prefix)
+        calls = gc_calls(function)
+        conversion_name = uc_function(conversion)["name"]
+        assert [c["callee"] for c in calls] == [conversion_name, uc_function(constructor_prefix)["name"]], function
+        assert storage_pointer_object(function, calls[1]["args"][0]) == ("parameter", function["params"][0]["name"])
+        assert uc_reference_origin(function, calls[1]["args"][1]) == conversion_name
+        assert not any(v["type"] == rid for v in function["locals"]), function
+    for prefix in ("bool query(", "bool recordQuery("):
+        function = uc_function(prefix)
+        assert not gc_calls(function) and not any(v["type"] in uc_records.values() for v in function["locals"]), function
+        returns = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returns) == 1 and nq_constant(function, returns[0]) is True
+    for function in conversions["functions"]:
+        for call in gc_calls(function):
+            callee = uc_functions[call["callee"]]
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in callee["params"]], call
+        assert not any(n["op"] == "assign" and n["value"]["type"] == rid for n in function["body"]), function
+    with tempfile.TemporaryDirectory(prefix="neverc-user-conversions-relocated-") as temp:
+        relocated = check("conversion-functions-relocated", conversion_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == conversions, "conversion identities depend on the absolute root"
+
+    conversion_rejected = {
+        'float': 'struct R{operator double()const{return 1.0;}};',
+        'string': 'struct R{operator const char*()const{return "x";}};',
+        'volatile': 'struct R{operator int()volatile{return 1;}};',
+        'restrict': 'struct R{operator int()__restrict{return 1;}};',
+        'template': 'struct R{template<class T>operator T()const{return T{};}};',
+        'member-address': 'struct R{operator int()const{return 1;}};auto f(){return &R::operator int;}',
+        'function-pointer': 'using F=int(*)();int g(){return 1;}struct R{operator F()const{return g;}};',
+        'fresh-receiver': 'struct R{int n;operator int()const{return n;}};int f(){return R{1};}',
+        'fresh-reference': 'struct R{int n;operator int()const{return n;}};int f(){R r{1};const int&n=r;return n;}',
+        'fresh-record-reference': 'struct T{int n;};struct R{operator T()const{return {1};}};int f(){R r;const T&t=r;return t.n;}',
+        'unused-throw': 'struct R{operator int()const{throw 1;}};',
+        'query-throw': 'struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}',
+        'folded-float': 'struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,"value");',
+        'query-fresh-receiver': 'struct R{operator int()const noexcept{return 1;}};bool f(){return noexcept(static_cast<int>(R{}));}',
+        'default-argument': 'int g(int n=1){return n;}struct R{operator int()const{return g();}};',
+        'virtual': 'struct R{virtual operator int()const{return 1;}};',
+    }
+    for name, source in conversion_rejected.items():
+        check("v2-" + 'conversion_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
+    conversion_invalid = {
+        'explicit-copy': 'struct R{explicit operator int()const{return 1;}};int f(){R r;int n=r;return n;}',
+        'parameters': 'struct R{operator int(int n){return n;}};',
+        'written-result': 'struct R{int operator int(){return 1;}};',
+        'ambiguous': 'struct R{operator long(){return 1;}operator unsigned long(){return 1;}};int f(){R r;return r;}',
+        'deleted-use': 'struct R{operator int()const=delete;};int f(){R r;return r;}',
+        'ref-qualifier': 'struct R{operator int()&&{return 1;}};int f(){R r;return r;}',
+    }
+    for name, source in conversion_invalid.items():
+        check("v2-" + 'conversion_invalid' + "-" + name, source, "TR0202", profile="cpp-core-v2")
+    conversion_missing = {
+        'implicit': 'struct R{operator int()const;};int f(R&r){return r;}',
+        'explicit': 'struct R{explicit operator bool()const;};bool f(R&r){return static_cast<bool>(r);}',
+    }
+    for name, source in conversion_missing.items():
+        check("v2-" + 'conversion_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
+    check("v1-conversion-function", "struct R{int n;operator int()const{return n;}};", "TR0201")
+    check("v1-explicit-conversion", "struct R{explicit operator bool()const{return true;}};bool f(R&r){return static_cast<bool>(r);}", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -2313,7 +2513,6 @@ int main() {
         'method-static-function-pointer': 'struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}',
         'method-virtual-method': 'struct R{int n;virtual int get(){return n;}};',
         'method-base-class': 'struct B{int n;};struct R:B{int get(){return n;}};',
-        'method-conversion': 'struct R{int n;operator int()const{return n;}};',
         'method-volatile-method': 'struct R{int n;int get()volatile{return n;}};',
         'method-mutable-field': 'struct R{mutable int n;int get()const{return n;}};',
         'method-reference-field': 'struct R{int&n;int get()const{return n;}};',
@@ -2351,7 +2550,6 @@ int main() {
         'constructor-temporary-array-receiver': 'struct I{int n;int get()const{return n;}};struct R{I i[1];R():i{{1}}{}};int f(){return (R().i+0)->get();}',
         'constructor-folded-unsupported-initializer': 'struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;',
         'constructor-folded-throw-body': 'struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);',
-        'constructor-conversion-function': 'struct R{int n;R():n(1){} operator int()const{return n;}};int f(){R r;return r;}',
         'constructor-dynamic-global': 'struct R{int n;R():n(1){}};R global;',
         'constructor-global-array': 'struct R{int n;constexpr R(int v):n(v){}};constexpr R global[1]={{1}};',
         'constructor-global-pointer': 'struct R{int n;constexpr R(int v):n(v){}};constexpr R global(1);constexpr const R *pointer=&global;',

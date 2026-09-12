@@ -89,6 +89,17 @@ bool ordinaryOperator(const FunctionDecl *F) {
   return standardExceptionSpecification(F->getType()->getAs<FunctionProtoType>());
 }
 
+bool ordinaryConversion(const CXXConversionDecl *C) {
+  if (!C || C->isImplicit() || !C->isUserProvided() || C->isVirtual() ||
+      C->isStatic() || C->isExplicitObjectMemberFunction() || C->isVariadic() ||
+      C->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      C->isDeletedAsWritten() || C->isDefaulted() || C->isConsteval() ||
+      C->getNumParams() || C->getMethodQualifiers().hasVolatile() ||
+      C->getMethodQualifiers().hasRestrict())
+    return false;
+  return standardExceptionSpecification(C->getType()->getAs<FunctionProtoType>());
+}
+
 bool ordinaryConstructor(const CXXConstructorDecl *C) {
   if (!C || C->isImplicit() || !C->isUserProvided() || C->isVariadic() ||
       C->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
@@ -157,7 +168,8 @@ bool supportedAssignment(const CXXMethodDecl *M) {
 }
 
 bool callableMethod(const CXXMethodDecl *M) {
-  return ordinaryMethod(M) || ordinaryOperator(M) || supportedAssignment(M);
+  return ordinaryMethod(M) || ordinaryOperator(M) ||
+         ordinaryConversion(dyn_cast_or_null<CXXConversionDecl>(M)) || supportedAssignment(M);
 }
 
 static bool defaultedFunction(const CXXMethodDecl *M) {
@@ -356,6 +368,28 @@ const CXXConstructExpr *constructorConversion(const CastExpr *Cast,
       !Context.hasSameUnqualifiedType(Cast->getType(), Construction->getType()))
     return nullptr;
   return Construction;
+}
+
+const CallExpr *userConversionCall(const CastExpr *Cast, ASTContext &Context) {
+  if (!Cast || Cast->getCastKind() != CK_UserDefinedConversion || !Cast->getSubExpr())
+    return nullptr;
+  const Expr *Inner = Cast->getSubExpr()->IgnoreParens();
+  while (const auto *Binding = dyn_cast<CXXBindTemporaryExpr>(Inner)) {
+    const auto *Sub = Binding->getSubExpr();
+    if (!Sub || !Context.hasSameType(Binding->getType(), Sub->getType()) ||
+        Binding->getValueKind() != Sub->getValueKind())
+      return nullptr;
+    Inner = Sub->IgnoreParens();
+  }
+  const auto *Call = dyn_cast<CXXMemberCallExpr>(Inner);
+  if (!Call || !ordinaryConversion(dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee())) ||
+      !directMethodReference(Call) ||
+      !Context.hasSameType(Cast->getType(), Call->getType()) ||
+      Cast->getValueKind() != Call->getValueKind())
+    return nullptr;
+  // Sema wraps the selected call with its own result type and value category.
+  // Subsequent standard conversions remain separate inspected AST nodes.
+  return Call;
 }
 
 bool ordinaryDestructor(const CXXDestructorDecl *D) {
@@ -1301,6 +1335,10 @@ public:
           case CK_NullToPointer:
           case CK_PointerToBoolean:
           case CK_ArrayToPointerDecay:
+            break;
+          case CK_UserDefinedConversion:
+            if (!userConversionCall(C, A.Context))
+              A.reject(L, "user conversion", "A checked direct conversion-function call is required.");
             break;
           case CK_ConstructorConversion: {
             if (constructorConversion(C, A.Context))

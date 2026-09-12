@@ -262,6 +262,13 @@ class FunctionLowering {
                type(A.Context.getPointerType(E->getType()), L), L), L);
     }
     if (A.S.coreV2()) {
+      if (const auto *C = dyn_cast<CastExpr>(E);
+          C && C->getCastKind() == CK_UserDefinedConversion && C->isGLValue()) {
+        const auto *Selected = userConversionCall(C, A.Context);
+        if (!Selected)
+          reject(L, "user conversion", "Unsupported reference conversion wrapper.");
+        return call(Selected);
+      }
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E);
           M && M->getType()->isRecordType()) {
         return materialize(M->getSubExpr(), L);
@@ -580,6 +587,13 @@ class FunctionLowering {
       case CK_IntegralCast:
       case CK_IntegralToBoolean:
         return cast(expression(C->getSubExpr()), T, L);
+      case CK_UserDefinedConversion: {
+        const auto *Selected = A.S.coreV2() ? userConversionCall(C, A.Context) : nullptr;
+        if (!Selected)
+          reject(L, "user conversion", "Unsupported conversion-function wrapper.");
+        return C->isPRValue() && recordValue(C->getType())
+                   ? materialize(C, L) : call(Selected);
+      }
       case CK_ConstructorConversion:
         if (A.S.coreV2())
           return materialize(C, L);
@@ -1131,6 +1145,17 @@ class FunctionLowering {
       }
       if (const auto *C = dyn_cast<CXXConstructExpr>(Init)) {
         construct(std::move(Place), Init->getType(), C, L);
+        return;
+      }
+      if (const auto *C = dyn_cast<CastExpr>(Init);
+          C && C->getCastKind() == CK_UserDefinedConversion &&
+          C->isPRValue() && recordValue(C->getType())) {
+        const auto *Selected = userConversionCall(C, A.Context);
+        if (!Selected)
+          reject(L, "user conversion", "Unsupported object conversion wrapper.");
+        // A prvalue initializes this destination. A reference conversion takes
+        // the separate selected copy/move path and never creates another owner.
+        initialize(std::move(Place), Selected, L);
         return;
       }
       if (const auto *C = dyn_cast<CastExpr>(Init);

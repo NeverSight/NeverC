@@ -227,7 +227,7 @@ rejected, including in dead/folded code. A pointer field of a temporary containe
 may still point to a separate live object. Explicit reference arguments retain
 the existing temporary-binding restrictions for both static and instance calls.
 
-User-defined conversions, virtual methods, inheritance,
+Virtual methods, inheritance,
 volatile/restrict methods, default arguments, templates and static data remain unsupported. Ordinary
 constructors and destructors follow the separate rules below. The existing
 implicit trivial copy paths are unchanged.
@@ -512,7 +512,7 @@ A containing aggregate may be initialized with a member having user-defined
 copy operations without selecting a copy of the containing object. Generated
 copy construction and assignment follow the next sections. Deleted special
 members, templates, variadic/default
-arguments, conversion functions,
+arguments,
 allocation and exception unwinding are not added. Existing temporary source-reference and
 nonstatic temporary-receiver restrictions still apply. Missing definitions and
 invalid source const/access operations remain diagnostics. V1 admission and
@@ -582,7 +582,7 @@ The callee still destroys by-value parameters. Assignment adds neither an implic
 destruction nor a replacement construction.
 
 Deleted functions, volatile/restrict sources
-or receivers, default/variadic parameters, conversion functions, inheritance,
+or receivers, default/variadic parameters, inheritance,
 templates and STL remain outside this increment. Fresh temporary source-reference
 binding and temporary receivers remain rejected, including in dead code. Invalid
 C++ overload, cv/ref or deleted-copy uses retain source diagnostics; missing user
@@ -660,8 +660,8 @@ parameters still own separate caller-prepared storage and are destroyed by the
 callee; selected return moves initialize the caller's result. Direct prvalue
 forwarding adds no extra operation and no NRVO heuristic aliases named objects.
 Array extents, storage and expanded-node budgets remain enforced. Unsupported
-layouts, deleted operations, broader temporary lifetimes, exceptions, conversion
-functions, templates and STL still require further work; v1 profiles are unchanged.
+layouts, deleted operations, broader temporary lifetimes, exceptions,
+templates and STL still require further work; v1 profiles are unchanged.
 
 O0/O2 no-inline fixtures cover selected copy fallback, member/array order, self
 and chained assignment, operand effects, pointer values, defaults, by-value and
@@ -882,8 +882,8 @@ only their explicit parameters; member operators also receive the actual object
 pointer. Record results use the existing hidden destination before receiver and
 parameters. Reference results preserve their aliases, including subscript and
 increment results. Taking an overloaded operator's function/member address still
-requires later function-pointer support. This stage does not admit conversion
-functions such as `operator bool` or `operator int`, templates, friend declarations,
+requires later function-pointer support. Conversion functions follow their separate
+contract below. This stage does not admit templates, friend declarations,
 virtual dispatch, allocation/deallocation operators or new temporary lifetimes.
 
 Operator notation preserves the required C++17 operand sequencing. Assignment and
@@ -937,6 +937,61 @@ result storage, cleanup and deterministic relocation. Unsupported code is still
 inspected inside unused functions and noexcept queries. V1 admission is unchanged;
 templates, library headers and complete STL remain in development. Native evidence
 must come from the implementing revision's CI.
+
+## User-defined conversion functions
+
+Core v2 admits ordinary source-owned conversion functions on live objects,
+including implicit and explicit integral, enum and pointer conversions,
+contextual explicit `operator bool`, and supported reference or record results.
+Const, unqualified, `&` and `&&` receivers retain C++17 overload selection.
+Explicit calls such as `value.operator int()` use the same selected method.
+Constexpr, out-of-line definitions and resolved noexcept specifications follow
+the existing declaration and constant-expression rules. Clang enforces access,
+explicit selection and valid conversion signatures before emission.
+
+The checked AST conversion wrapper must contain the selected direct conversion
+call with its exact result type and value category. It becomes an ordinary typed
+call, executed once, with the live receiver captured once. Following standard
+promotions, enum conversions and pointer-to-bool conversions remain separate
+typed operations. Contextual bool conversions retain builtin short circuiting;
+an unevaluated noexcept query inspects the conversion but does not execute it.
+
+Reference results retain the actual aliased storage and constness without
+creating an owning object. This includes scalar/pointer references and live
+rvalue references. Initializing a record value from a record-reference conversion
+retains the subsequent copy or move selected by Clang. A record prvalue result
+instead initializes its actual destination directly: a local, field, array
+element, returned object or by-value argument. Its hidden result destination
+precedes the receiver. Self-addresses and normal destruction follow that
+destination. Discarded object results are destroyed once at the full-expression
+boundary; references never acquire a result-object destructor.
+
+```cpp
+struct Value {
+  int n;
+  operator int() const { return n; }
+  explicit operator bool() const noexcept { return n != 0; }
+};
+int main() {
+  Value value{7};
+  int number = value;
+  return value && number == 7 ? 0 : 1;
+}
+```
+
+Conversion functions have no explicit parameters. Virtual/template conversions,
+volatile/restrict receivers, unsupported result types and function/member
+pointers remain excluded. Calling a conversion on a fresh temporary receiver,
+binding a reference to a freshly converted value, lifetime extension, allocation,
+exception execution, templates and complete STL still require further work.
+Unsupported bodies and operands remain checked even in unused declarations,
+constexpr initializers, static assertions and noexcept queries. V1 is unchanged.
+
+O0/O2 no-inline fixtures check overload selection, receiver effects, bool short
+circuiting, pointer/reference aliases, actual record destinations and exact
+copy/move/destructor counts. Protocol fixtures check selected identities and full
+signatures, result/receiver ordering, reference returns, selected copying, cleanup,
+unevaluated queries and relocation. Native results require the implementing CI.
 
 ## Noexcept declarations and queries
 

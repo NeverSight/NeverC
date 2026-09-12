@@ -57,7 +57,9 @@ Core v2 also supports implicit and explicitly defaulted move construction and as
 
 Core v2 supports resolved standard `noexcept`, `noexcept(true/false)` and C++17 `throw()` declarations, plus constant `noexcept(expression)` queries. Queries preserve the selected function and destructor specifications without executing their operands. Source inspection still checks every operand and written specification, including unused code. Throwing, catching, stack unwinding, templates and full STL remain in development.
 
-Core v2 supports ordinary member and free overloaded operators, including arithmetic, comparisons, subscript, dereference, increments, functors and general assignment signatures. Calls preserve selected functions, reference aliases and object results. Operator notation retains C++17 sequencing; overloaded logical operators evaluate both operands. Free assignment operators consistently initialize parameters right to left and destroy them in reverse order. Conversion functions, templates, allocation and full STL remain in development.
+Core v2 supports ordinary member and free overloaded operators, including arithmetic, comparisons, subscript, dereference, increments, functors and general assignment signatures. Calls preserve selected functions, reference aliases and object results. Operator notation retains C++17 sequencing; overloaded logical operators evaluate both operands. Free assignment operators consistently initialize parameters right to left and destroy them in reverse order. Templates, allocation and full STL remain in development.
+
+Core v2 also supports ordinary conversion functions on live objects: implicit and explicit integral, enum and pointer conversions, contextual explicit `bool`, and reference or object results. Each conversion executes the selected member function once. References preserve aliases; object prvalues initialize their actual destination, while reference-to-value conversions retain the selected copy or move. Const/ref qualifiers, constexpr and noexcept follow C++17 selection. Temporary reference lifetimes, templates and complete STL remain in development.
 
 ## Multi-file projects
 

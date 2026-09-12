@@ -71,6 +71,9 @@ bool validExportName(llvm::StringRef Name);
 bool isolateProjectEnvironment();
 bool ordinaryMethod(const clang::CXXMethodDecl *Method);
 bool ordinaryOperator(const clang::FunctionDecl *Function);
+bool ordinaryConversion(const clang::CXXConversionDecl *Conversion);
+const clang::CallExpr *userConversionCall(const clang::CastExpr *Cast,
+                                        clang::ASTContext &Context);
 bool ordinaryCopyAssignment(const clang::CXXMethodDecl *Method);
 bool defaultedCopyAssignment(const clang::CXXMethodDecl *Method);
 bool defaultedMoveAssignment(const clang::CXXMethodDecl *Method);
@@ -88,7 +91,7 @@ std::optional<GeneratedArrayAssignment> generatedArrayAssignment(
 bool callableMethod(const clang::CXXMethodDecl *Method);
 bool ordinaryConstructor(const clang::CXXConstructorDecl *Constructor);
 const clang::CXXConstructExpr *constructorConversion(const clang::CastExpr *Cast,
-                                                     clang::ASTContext &Context);
+                                                   clang::ASTContext &Context);
 bool ordinaryDestructor(const clang::CXXDestructorDecl *Destructor);
 bool defaultedLifecycle(const clang::CXXMethodDecl *Method);
 bool defaultedCopyConstructor(const clang::CXXConstructorDecl *Constructor);
