@@ -1822,7 +1822,6 @@ TEST_F(TranslateTest, CoreV2OperatorsRetainSourceAndLifetimeBoundaries) {
       {"volatile-receiver", "struct R{int n;int operator()()volatile{return n;}};", "TR0201"},
       {"volatile-argument", "struct R{int n;int operator+(volatile R&r)const{return r.n;}};", "TR0201"},
       {"template", "struct R{int n;template<class T>int operator()(T v){return n;}};", "TR0201"},
-      {"friend", "struct R{int n;friend int operator+(const R&r,int v){return r.n+v;}};", "TR0201"},
       {"member-pointer", "struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}", "TR0201"},
       {"free-pointer", "struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}", "TR0201"},
       {"new-member", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}};", "TR0201"},
@@ -2614,7 +2613,6 @@ TEST_F(TranslateTest, CoreV2NonpublicFieldsAcceptOwnedClassAccess) {
 TEST_F(TranslateTest, CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"mixed-access", "struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};", "TR0201"},
-      {"friend", "class R{int n=1;friend int get(const R&r){return r.n;}};", "TR0201"},
       {"inheritance", "class R{protected:int n=1;};class D:public R{public:int get(){return n;}};", "TR0201"},
       {"nested-record", "class R{struct V{int n;};V v;};", "TR0201"},
       {"const-field", "class R{const int n=1;public:int get()const{return n;}};", "TR0201"},
@@ -2650,6 +2648,200 @@ TEST_F(TranslateTest, CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries) {
                                   "class R{int n;public:R():n(1){}};int main(){R r;return 0;}"}) {
     const auto Source = tmpFile("nonpublic-fields-v1.cpp");
     const auto Output = tmpFile("nonpublic-fields-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FriendsPreserveCallsAndAccess) {
+  const auto Source = tmpFile("friends.cpp");
+  const auto Output = tmpFile("friends.nc");
+  writeFile(Source, R"cpp(
+int begins=0,ends=0,rangeDead=0,live=0,dead=0,privateCopies=0;
+class Hidden {
+ int n;
+public:
+ Hidden(int v):n(v){}
+ friend int read(const Hidden&r){return r.n;}
+ friend int&ref(Hidden&r){return r.n;}
+ friend const int*data(const Hidden&r){return &r.n;}
+ friend int scale(const Hidden&r,int amount=2){return r.n*amount;}
+ friend Hidden operator+(const Hidden&r,int v){return Hidden(r.n+v);}
+ friend Hidden operator+(int v,const Hidden&r){return Hidden(r.n+v);}
+ friend bool operator==(const Hidden&a,const Hidden&b){return a.n==b.n;}
+};
+class Range {
+ int a[2];
+public:
+ Range(int n):a{n,n+1}{}
+ ~Range(){++rangeDead;}
+ friend int*begin(Range&r){++begins;return r.a;}
+ friend int*end(Range&r){++ends;return r.a+2;}
+};
+class Forward {
+ int n;
+ friend int readForward(const Forward&);
+public:Forward(int v):n(v){}
+};
+int readForward(const Forward&r){return r.n;}
+class Right;
+class Left {
+ int n;
+ friend int total(const Left&,const Right&);
+public:Left(int v):n(v){}
+};
+class Right {
+ int n;
+ friend int total(const Left&,const Right&);
+public:Right(int v):n(v){}
+};
+int total(const Left&a,const Right&b){return a.n+b.n;}
+class Secret {
+ int n;
+ friend class Inspector;
+public:Secret(int v):n(v){}
+};
+class Inspector {
+public:static int read(const Secret&r){return r.n;}
+};
+class Part;
+class Access {
+public:static int read(const Part&);
+};
+class Part {
+ int n;
+ friend int Access::read(const Part&);
+public:Part(int v):n(v){}
+};
+int Access::read(const Part&r){return r.n;}
+class Made {
+ int n;
+ Made(int v):n(v){}
+ Made(const Made&r):n(r.n){++privateCopies;}
+ friend Made make(int);
+ friend Made clone(const Made&);
+public:int get()const{return n;}
+};
+Made make(int n){return Made(n);}
+Made clone(const Made&r){return Made(r);}
+int inspect(int);
+class Scoped {
+ int n;
+ Scoped(int v):n(v){++live;}
+ ~Scoped(){--live;++dead;}
+ friend int inspect(int v){Scoped object(v);return object.n;}
+};
+class AliasInspector;
+using Inspection=AliasInspector;
+class AliasSecret {
+ int n;
+ friend Inspection;
+public:AliasSecret(int v):n(v){}
+};
+class AliasInspector {
+public:static int read(const AliasSecret&r){return r.n;}
+};
+int main(){
+ Hidden h(3);if(read(h)!=3)return 1;
+ ref(h)=4;if(read(h)!=4||data(h)!=&ref(h))return 2;
+ if(scale(h)!=8||scale(h,3)!=12)return 3;
+ if(read(h+2)!=6||read(3+h)!=7)return 4;
+ if(!(h==Hidden(4))||h==Hidden(5))return 5;
+ int sum=0;for(int&v:Range(2)){++v;sum+=v;}
+ if(sum!=7||begins!=1||ends!=1||rangeDead!=1)return 6;
+ Forward forward(7);if(readForward(forward)!=7)return 7;
+ Left left(8);Right right(9);if(total(left,right)!=17)return 8;
+ Secret secret(10);if(Inspector::read(secret)!=10)return 9;
+ Part part(11);if(Access::read(part)!=11)return 10;
+ Made made=make(12);if(made.get()!=12||privateCopies)return 11;
+ Made copied=clone(made);if(copied.get()!=12||made.get()!=12||privateCopies!=1)return 12;
+ if(inspect(13)!=13||live||dead!=1)return 13;
+ AliasSecret alias(14);if(AliasInspector::read(alias)!=14)return 14;
+ const Hidden&constant=h;if(data(constant)!=&ref(h)||read(constant)!=4)return 15;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("friends" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FriendsAcceptResolvedDeclarations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"hidden-getter", "class R{int n=1;friend int get(const R&r){return r.n;}};int main(){R r;return get(r)-1;}"},
+      {"hidden-reference", "class R{int n=1;friend int&ref(R&r){return r.n;}};int main(){R r;ref(r)=3;return ref(r)-3;}"},
+      {"hidden-pointer", "class R{int n=1;friend const int*data(const R&r){return &r.n;}};int main(){R r;return *data(r)-1;}"},
+      {"hidden-operator", "class R{int n=1;friend int operator+(const R&r,int n){return r.n+n;}};int main(){R r;return (r+2)-3;}"},
+      {"hidden-default", "class R{int n=1;friend int get(const R&r,int v=2){return r.n+v;}};int main(){R r;return get(r)-3;}"},
+      {"friend-class", "class R{int n=1;friend class A;};class A{public:static int get(const R&r){return r.n;}};int main(){R r;return A::get(r)-1;}"},
+      {"friend-alias", "class A;using B=A;class R{int n=1;friend B;};class A{public:static int get(const R&r){return r.n;}};int main(){R r;return A::get(r)-1;}"},
+      {"friend-ignored-int", "class R{friend int;int n=1;};int main(){R r;return 0;}"},
+      {"friend-ignored-pointer-alias", "using P=int*;class R{friend P;int n=1;};int main(){R r;return 0;}"},
+      {"friend-member", "class R;class A{public:static int get(const R&);};class R{int n=1;friend int A::get(const R&);};int A::get(const R&r){return r.n;}int main(){R r;return A::get(r)-1;}"},
+      {"friend-declaration-definition", "class R{int n=1;friend int get(const R&);};int get(const R&r){return r.n;}int main(){R r;return get(r)-1;}"},
+      {"friend-qualified-free", "class R;int get(const R&);class R{int n=1;friend int ::get(const R&);};int get(const R&r){return r.n;}int main(){R r;return get(r)-1;}"},
+      {"friend-private-constructor", "class R{int n;R(int v):n(v){}friend R make(int);public:int get()const{return n;}};R make(int v){return R(v);}int main(){return make(3).get()-3;}"},
+      {"friend-private-destruction", "int use();class R{int n=1;~R(){}friend int use(){R r;return r.n;}};int main(){return use()-1;}"},
+      {"friend-adl-range", "class R{int a[2]={1,2};friend int*begin(R&r){return r.a;}friend int*end(R&r){return r.a+2;}};int main(){int n=0;for(int v:R{})n+=v;return n-3;}"},
+      {"friend-redeclarations", "class B;class A{int n=1;friend int sum(const A&,const B&);};class B{int n=2;friend int sum(const A&,const B&);};int sum(const A&a,const B&b){return a.n+b.n;}int main(){A a;B b;return sum(a,b)-3;}"},
+      {"promoted-1", "struct R{int n;friend int operator+(const R&r,int v){return r.n+v;}};"},
+      {"promoted-2", "class R{int n=1;friend int get(const R&r){return r.n;}};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("friends-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("friends-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FriendsRetainAccessAndSourceBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"function-template", "class R{int n=1;template<class T>friend int get(const R&r,T v){return r.n+v;}};", "TR0201"},
+      {"class-template", "template<class T>class A{};class R{int n=1;template<class T>friend class A;};", "TR0201"},
+      {"dependent-friend", "template<class T>class R{int n=1;friend T;};", "TR0201"},
+      {"unsupported-friend-form", "template<class T>class A{public:struct B{};};class R{int n=1;template<class T>friend class A<T>::B;};", "TR0201"},
+      {"floating-body", "class R{int n=1;friend int get(const R&r){double ignored=1.0;return r.n;}};", "TR0201"},
+      {"floating-default", "class R{int n=1;friend int get(const R&r,double v=1.0){return r.n;}};", "TR0201"},
+      {"floating-friend-type", "class R{int n=1;friend double;};", "TR0201"},
+      {"dead-floating-body", "class R{int n=1;friend int get(const R&r){if(false){double ignored=1.0;}return r.n;}};", "TR0201"},
+      {"nested-record", "class R{struct V{int n;};friend int get(const R&){return 1;}};", "TR0201"},
+      {"inheritance", "struct B{int n;};class R:public B{friend int get(const R&r){return r.n;}};", "TR0201"},
+      {"nonfriend-private", "class R{int n=1;friend int get(const R&r){return r.n;}};int other(const R&r){return r.n;}", "TR0202"},
+      {"not-reciprocal", "class B;class A{int n=1;friend class B;public:int get(const B&);};class B{int n=2;};int A::get(const B&b){return b.n;}", "TR0202"},
+      {"not-transitive", "class R{int n=1;friend class A;};class A{friend class B;};class B{public:int get(const R&r){return r.n;}};", "TR0202"},
+      {"other-overload", "class R{int n=1;friend int get(const R&);};int get(const R&r){return r.n;}int get(R&r){return r.n;}", "TR0202"},
+      {"other-member", "class R;class A{public:int allowed(const R&);int denied(const R&);};class R{int n=1;friend int A::allowed(const R&);};int A::allowed(const R&r){return r.n;}int A::denied(const R&r){return r.n;}", "TR0202"},
+      {"hidden-qualified-lookup", "class R{int n=1;friend int get(const R&r){return r.n;}};int f(){R r;return ::get(r);}", "TR0202"},
+      {"hidden-scalar-lookup", "class R{int n=1;friend int get(int v){return v;}};int f(){return get(1);}", "TR0202"},
+      {"without-object", "class R{int n=1;friend int get(const R&){return n;}};", "TR0202"},
+      {"friend-function", "class R{int n=1;friend int get(const R&);};", "TR0203"},
+      {"friend-member", "class R;class A{public:int get(const R&);};class R{int n=1;friend int A::get(const R&);};", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("friends-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("friends-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"struct R{int n;friend int get(const R&r){return r.n;}};int main(){R r{1};return get(r)-1;}",
+                                  "struct A{int n;};struct R{int n;friend struct A;};int main(){return 0;}"}) {
+    const auto Source = tmpFile("friends-v1.cpp");
+    const auto Output = tmpFile("friends-v1.nc");
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
     expectCode(Result, "TR0201");

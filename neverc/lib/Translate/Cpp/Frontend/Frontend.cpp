@@ -2,6 +2,7 @@
 #include "FrontendEntry.h"
 #include "BuildID.h"
 #include "clang/AST/Attr.h"
+#include "clang/AST/DeclFriend.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/StmtCXX.h"
@@ -1370,7 +1371,7 @@ public:
                "Source declaration attributes are unsupported.");
     const bool ExtendedDeclaration =
         A.S.coreV2() &&
-        (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl>(D) ||
+        (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl, FriendDecl>(D) ||
          (isa<AccessSpecDecl>(D) && D->getDeclContext()->isRecord()));
     if (!ExtendedDeclaration &&
         !isa<NamespaceDecl, LinkageSpecDecl, FunctionDecl, VarDecl,
@@ -1385,6 +1386,33 @@ public:
         A.reject(D->getLocation(), "owned std namespace",
                  "Owned declarations cannot extend or impersonate an approved "
                  "standard-library namespace.");
+    return true;
+  }
+  bool VisitFriendDecl(FriendDecl *D) {
+    if (!owned(D) || !A.S.coreV2())
+      return true;
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    if (D->isInvalidDecl() || !Parent || !owned(Parent) ||
+        Parent->isDependentContext() || D->isUnsupportedFriend() ||
+        D->isPackExpansion() || D->getFriendTypeNumTemplateParameterLists()) {
+      A.reject(D->getFriendLoc(), "friend declaration",
+               "A resolved non-template friend in a supported owned class is required.");
+      return true;
+    }
+    if (const auto *Type = D->getFriendType()) {
+      if (Type->getType().isNull() || Type->getType()->isDependentType())
+        A.reject(D->getFriendLoc(), "friend type", "A resolved supported friend type is required.");
+      else
+        A.type(Type->getType(), D->getFriendLoc(), true);
+    } else {
+      const auto *Function = dyn_cast_or_null<FunctionDecl>(D->getFriendDecl());
+      if (!Function || !owned(Function) ||
+          Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate)
+        A.reject(D->getFriendLoc(), "friend function",
+                 "An ordinary source-owned function declaration is required.");
+    }
+    // RAV still traverses the written type/owned tag or complete inner
+    // declaration. Friendship never exempts defaults or bodies from checking.
     return true;
   }
   bool VisitTypedefNameDecl(TypedefNameDecl *D) {

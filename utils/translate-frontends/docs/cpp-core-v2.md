@@ -435,6 +435,41 @@ Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
 
+## Non-template friends
+
+Core v2 admits resolved non-template friend functions and friend type declarations
+in supported source-owned classes. This includes inline hidden friends found by
+ADL, friend operators and defaults, friend declarations with a definition in the
+same source unit, repeated declarations, friend classes/type aliases, and
+specified existing member functions. A supported nonclass friend type has its
+C++17 no-grant meaning and is still checked before erasure.
+
+Embedded Clang resolves names, overloads and access. Friendship is neither
+reciprocal nor transitive, and granting one overload or member does not grant
+the others. A hidden-only friend cannot be found by qualified lookup; ADL still
+requires an associated class argument. Invalid access or lookup produces a C++
+diagnostic. Source-defined friend functions retain the ordinary requirement for
+a definition in this unit, including unused declarations.
+
+Friend declarations introduce no runtime operation or IR access flag. Free
+friends have their source parameters, without an extra receiver; existing
+member friends keep their usual receiver. Field access, references, default
+arguments, factory results and private construction/destruction use the same
+typed storage and selected calls as other authorized operations. Repeated
+declarations retain one canonical function identity.
+
+The allowlist still traverses each written friend type, owned forward tag,
+function signature, default and body. Unused, dead and folded operations are
+not exempt. Template/dependent/pack friend forms and any friend marked unsupported
+by the embedded frontend are rejected. Existing class, field, storage and type
+restrictions remain, as do older profiles' friend rejection. Templates and full
+STL support require further work.
+
+Native O0/O2 fixtures cover lookup, overloads, repeated declarations, private
+access, aliases, factories, defaults, ADL ranges and cleanup. Protocol checks
+cover signatures, canonical identities, actual field/result storage and
+relocation. Native results require CI from the implementing revision.
+
 ## Nonpublic data members
 
 Private and protected non-static data members are admitted in otherwise
@@ -458,7 +493,7 @@ all supported fields with their existing canonical identities, types and target
 layout, and authorized operations use those same fields. No access flag, new IR
 instruction or runtime wrapper is needed. Generated source remains reviewable.
 
-Mixed-access non-standard-layout classes, friend declarations, inheritance,
+Mixed-access non-standard-layout classes, friend templates, inheritance,
 nested records and templates remain outside this increment. Bitfields and
 mutable, const, reference or unsupported numeric fields retain their existing
 restrictions. A getter returning a field's ordinary `T*` address does not admit

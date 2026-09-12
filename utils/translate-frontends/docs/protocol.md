@@ -114,6 +114,14 @@ inspection and layout verification; unevaluated operands produce no effects.
 The [core v2 contract](cpp-core-v2.md#integer-widths-characters-and-size-queries)
 defines the full admitted boundary. V1 profiles retain their scalar contracts.
 
+Resolved core-v2 non-template friend declarations are source-level grants,
+checked by embedded Clang and the producer's complete declaration/body traversal.
+They introduce no IR access flag or runtime operation. Hidden free friends retain
+only source parameters; member friends retain their ordinary receiver. Canonical
+function identities, typed field accesses and result destinations use the
+existing representation. See [non-template friends](cpp-core-v2.md#non-template-friends)
+for lookup, source closure and template restrictions.
+
 Core-v2 private/protected fields use the same typed record fields and checked
 target layout as public fields. Source access is enforced by embedded Clang
 before protocol production; no access flag or runtime privacy mechanism is

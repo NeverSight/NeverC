@@ -2013,7 +2013,6 @@ P explicitValue(P&a,P&b){return operator-=(a,b);}
         'volatile-receiver': 'struct R{int n;int operator()()volatile{return n;}};',
         'volatile-argument': 'struct R{int n;int operator+(volatile R&r)const{return r.n;}};',
         'template': 'struct R{int n;template<class T>int operator()(T v){return n;}};',
-        'friend': 'struct R{int n;friend int operator+(const R&r,int v){return r.n+v;}};',
         'member-pointer': 'struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}',
         'free-pointer': 'struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}',
         'new-member': 'using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}};',
@@ -3782,7 +3781,6 @@ void boxes(){Box a;Box b=a;}
         check("v2-nonpublic-fields-positive-" + name, source, profile="cpp-core-v2")
     nonpublic_reject = {
         'mixed-access': 'struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};',
-        'friend': 'class R{int n=1;friend int get(const R&r){return r.n;}};',
         'inheritance': 'class R{protected:int n=1;};class D:public R{public:int get(){return n;}};',
         'nested-record': 'class R{struct V{int n;};V v;};',
         'const-field': 'class R{const int n=1;public:int get()const{return n;}};',
@@ -3817,6 +3815,215 @@ void boxes(){Box a;Box b=a;}
         check("v2-nonpublic-fields-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     check("v1-nonpublic-fields-array", "class R{int n=1;};int main(){return 0;}", "TR0201")
     check("v1-nonpublic-fields-record", "class R{int n;public:R():n(1){}};int main(){R r;return 0;}", "TR0201")
+
+    friends_source = """int tick(int n){return n;}
+class R;
+class Other;
+class Reader {
+public:int view(const R&)const;
+};
+class R {
+ int n;
+ friend class Inspector;
+ friend int Reader::view(const R&)const;
+ friend int together(const R&,const Other&);
+public:
+ R(int v):n(v){}
+ friend int get(const R&r){return r.n;}
+ friend int&ref(R&r){return r.n;}
+ friend const int*data(const R&r){return &r.n;}
+ friend int extra(const R&r,int v=4){return r.n+v;}
+ friend int operator+(const R&r,int v){return r.n+v;}
+ friend int operator+(int v,const R&r){return r.n+v;}
+};
+class Other {
+ int n;
+ friend int together(const R&,const Other&);
+public:Other(int v):n(v){}
+};
+int together(const R&a,const Other&b){return a.n+b.n;}
+class Inspector {
+public:int inspect(const R&r)const{return r.n;}
+};
+int Reader::view(const R&r)const{return r.n;}
+class Range {
+ int a[2];
+ friend int*begin(Range&r){return r.a;}
+ friend int*end(Range&r){return r.a+2;}
+public:Range():a{1,2}{}
+};
+class Factory {
+ int n;
+ Factory(int v):n(v){}
+ Factory(const Factory&r):n(r.n){}
+ friend Factory make(int);
+ friend Factory clone(const Factory&);
+public:int value()const{return n;}
+};
+Factory make(int v){return Factory(v);}
+Factory clone(const Factory&r){return Factory(r);}
+int inspectScoped(int);
+class Scoped {
+ int n;
+ Scoped(int v):n(v){}
+ ~Scoped(){tick(n);}
+ friend int inspectScoped(int n){Scoped value(n);return value.n;}
+};
+void use(){R r(3);tick(get(r));ref(r)=5;tick(extra(r));tick(r+1);tick(2+r);}
+void ranged(){for(int v:Range{})tick(v);}
+void factories(){Factory a=make(3);Factory b=clone(a);tick(b.value());}
+void members(){R r(3);Other other(4);Reader reader;Inspector inspector;tick(reader.view(r));tick(inspector.inspect(r));tick(together(r,other));}
+"""
+    friends = check("v2-friends-protocol", friends_source, profile="cpp-core-v2")
+    fr_functions = {f["name"]: f for f in friends["functions"]}
+    assert len(fr_functions) == len(friends["functions"]), "friend redeclarations duplicated definitions"
+
+    def fr_line(prefix):
+        found = [i for i, line in enumerate(friends_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def fr_record(prefix):
+        found = [r for r in friends["records"] if r["loc"]["line"] == fr_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def fr_function(prefix, result, parameters):
+        found = [f for f in friends["functions"] if f["loc"]["line"] == fr_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    record = fr_record("class R {")
+    other = fr_record("class Other {")
+    reader = fr_record("class Reader {")
+    inspector = fr_record("class Inspector {")
+    range_record = fr_record("class Range {")
+    factory = fr_record("class Factory {")
+    scoped = fr_record("class Scoped {")
+    rid, field = record["id"], record["fields"][0]["name"]
+    getter = fr_function(" friend int get(", "int", ["cptr:"+rid])
+    reference = fr_function(" friend int&ref(", "ptr:int", ["ptr:"+rid])
+    pointer = fr_function(" friend const int*data(", "cptr:int", ["cptr:"+rid])
+    extra = fr_function(" friend int extra(", "int", ["cptr:"+rid, "int"])
+    left_operator = fr_function(" friend int operator+(const", "int", ["cptr:"+rid, "int"])
+    right_operator = fr_function(" friend int operator+(int", "int", ["int", "cptr:"+rid])
+    assert left_operator["name"] != right_operator["name"]
+    for function in (getter, reference, pointer):
+        assert not gc_calls(function)
+        accesses = [n for n in walk(function["body"]) if n.get("kind") == "member"]
+        expected = ("field", ("parameter", function["params"][0]["name"]), field)
+        assert accesses and all(np_place(function, n) == expected for n in accesses)
+        if function["result"] in ("ptr:int", "cptr:int"):
+            returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+            assert len(returned) == 1 and np_pointer(function, returned[0]) == expected
+        assert not any(v["type"] == rid for v in function["locals"])
+    view = fr_function("int Reader::view(", "int", ["cptr:"+reader["id"], "cptr:"+rid])
+    inspect = fr_function("public:int inspect(", "int", ["cptr:"+inspector["id"], "cptr:"+rid])
+    for function in (view, inspect):
+        expected = ("field", ("parameter", function["params"][1]["name"]), field)
+        accesses = [n for n in walk(function["body"]) if n.get("kind") == "member"]
+        assert accesses and all(np_place(function, n) == expected for n in accesses)
+    together = fr_function("int together(", "int", ["cptr:"+rid, "cptr:"+other["id"]])
+    assert len([f for f in friends["functions"] if f["name"] == together["name"]]) == 1
+    tick = fr_function("int tick(", "int", ["int"])["name"]
+    ctor = fr_function(" R(int", "void", ["ptr:"+rid, "int"])["name"]
+    use = fr_function("void use(", "void", [])
+    calls = gc_calls(use)
+    assert [c["callee"] for c in calls] == [ctor, getter["name"], tick, reference["name"],
+        extra["name"], tick, left_operator["name"], tick, right_operator["name"], tick]
+    destination = np_pointer(use, calls[0]["args"][0])
+    for call_index, arg_index in ((1, 0), (3, 0), (4, 0), (6, 0), (8, 1)):
+        assert np_pointer(use, calls[call_index]["args"][arg_index]) == destination
+    assert gc_identity(use, calls[4]["args"][1]) == 4
+    begin = fr_function(" friend int*begin(", "ptr:int", ["ptr:"+range_record["id"]])["name"]
+    end = fr_function(" friend int*end(", "ptr:int", ["ptr:"+range_record["id"]])["name"]
+    range_ctor = fr_function("public:Range():", "void", ["ptr:"+range_record["id"]])["name"]
+    ranged = fr_function("void ranged(", "void", [])
+    calls = gc_calls(ranged)
+    assert [c["callee"] for c in calls] == [range_ctor, begin, end, tick]
+    assert len({np_pointer(ranged, c["args"][0]) for c in calls[:3]}) == 1
+    fid = factory["id"]
+    factory_ctor = fr_function(" Factory(int", "void", ["ptr:"+fid, "int"])["name"]
+    factory_copy = fr_function(" Factory(const", "void", ["ptr:"+fid, "cptr:"+fid])["name"]
+    for prefix, parameters, selected in (("Factory make(", ["ptr:"+fid, "int"], factory_ctor),
+                                         ("Factory clone(", ["ptr:"+fid, "cptr:"+fid], factory_copy)):
+        function = fr_function(prefix, "void", parameters)
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [selected]
+        assert np_pointer(function, calls[0]["args"][0]) == ("parameter", function["params"][0]["name"])
+        assert not any(v["type"] == fid for v in function["locals"])
+    sid = scoped["id"]
+    scoped_ctor = fr_function(" Scoped(int", "void", ["ptr:"+sid, "int"])["name"]
+    scope_function = fr_function(" friend int inspectScoped(", "int", ["int"])
+    calls = gc_calls(scope_function)
+    assert [c["callee"] for c in calls] == [scoped_ctor, sid+"_destroy"]
+    assert np_pointer(scope_function, calls[0]["args"][0]) == np_pointer(scope_function, calls[1]["args"][0])
+    assert sum(v["type"] == sid for v in scope_function["locals"]) == 1
+    for function in friends["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in fr_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-friends-relocated-") as temp:
+        relocated = check("v2-friends-relocated", friends_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == friends, "friend identities depend on the absolute root"
+
+    friends_positive = {
+        'hidden-getter': 'class R{int n=1;friend int get(const R&r){return r.n;}};int main(){R r;return get(r)-1;}',
+        'hidden-reference': 'class R{int n=1;friend int&ref(R&r){return r.n;}};int main(){R r;ref(r)=3;return ref(r)-3;}',
+        'hidden-pointer': 'class R{int n=1;friend const int*data(const R&r){return &r.n;}};int main(){R r;return *data(r)-1;}',
+        'hidden-operator': 'class R{int n=1;friend int operator+(const R&r,int n){return r.n+n;}};int main(){R r;return (r+2)-3;}',
+        'hidden-default': 'class R{int n=1;friend int get(const R&r,int v=2){return r.n+v;}};int main(){R r;return get(r)-3;}',
+        'friend-class': 'class R{int n=1;friend class A;};class A{public:static int get(const R&r){return r.n;}};int main(){R r;return A::get(r)-1;}',
+        'friend-alias': 'class A;using B=A;class R{int n=1;friend B;};class A{public:static int get(const R&r){return r.n;}};int main(){R r;return A::get(r)-1;}',
+        'friend-ignored-int': 'class R{friend int;int n=1;};int main(){R r;return 0;}',
+        'friend-ignored-pointer-alias': 'using P=int*;class R{friend P;int n=1;};int main(){R r;return 0;}',
+        'friend-member': 'class R;class A{public:static int get(const R&);};class R{int n=1;friend int A::get(const R&);};int A::get(const R&r){return r.n;}int main(){R r;return A::get(r)-1;}',
+        'friend-declaration-definition': 'class R{int n=1;friend int get(const R&);};int get(const R&r){return r.n;}int main(){R r;return get(r)-1;}',
+        'friend-qualified-free': 'class R;int get(const R&);class R{int n=1;friend int ::get(const R&);};int get(const R&r){return r.n;}int main(){R r;return get(r)-1;}',
+        'friend-private-constructor': 'class R{int n;R(int v):n(v){}friend R make(int);public:int get()const{return n;}};R make(int v){return R(v);}int main(){return make(3).get()-3;}',
+        'friend-private-destruction': 'int use();class R{int n=1;~R(){}friend int use(){R r;return r.n;}};int main(){return use()-1;}',
+        'friend-adl-range': 'class R{int a[2]={1,2};friend int*begin(R&r){return r.a;}friend int*end(R&r){return r.a+2;}};int main(){int n=0;for(int v:R{})n+=v;return n-3;}',
+        'friend-redeclarations': 'class B;class A{int n=1;friend int sum(const A&,const B&);};class B{int n=2;friend int sum(const A&,const B&);};int sum(const A&a,const B&b){return a.n+b.n;}int main(){A a;B b;return sum(a,b)-3;}',
+        'promoted-1': 'struct R{int n;friend int operator+(const R&r,int v){return r.n+v;}};',
+        'promoted-2': 'class R{int n=1;friend int get(const R&r){return r.n;}};',
+    }
+    for name, source in friends_positive.items():
+        check("v2-friends-positive-" + name, source, profile="cpp-core-v2")
+    friends_reject = {
+        'function-template': 'class R{int n=1;template<class T>friend int get(const R&r,T v){return r.n+v;}};',
+        'class-template': 'template<class T>class A{};class R{int n=1;template<class T>friend class A;};',
+        'dependent-friend': 'template<class T>class R{int n=1;friend T;};',
+        'unsupported-friend-form': 'template<class T>class A{public:struct B{};};class R{int n=1;template<class T>friend class A<T>::B;};',
+        'floating-body': 'class R{int n=1;friend int get(const R&r){double ignored=1.0;return r.n;}};',
+        'floating-default': 'class R{int n=1;friend int get(const R&r,double v=1.0){return r.n;}};',
+        'floating-friend-type': 'class R{int n=1;friend double;};',
+        'dead-floating-body': 'class R{int n=1;friend int get(const R&r){if(false){double ignored=1.0;}return r.n;}};',
+        'nested-record': 'class R{struct V{int n;};friend int get(const R&){return 1;}};',
+        'inheritance': 'struct B{int n;};class R:public B{friend int get(const R&r){return r.n;}};',
+    }
+    for name, source in friends_reject.items():
+        check("v2-friends-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    friends_invalid = {
+        'nonfriend-private': 'class R{int n=1;friend int get(const R&r){return r.n;}};int other(const R&r){return r.n;}',
+        'not-reciprocal': 'class B;class A{int n=1;friend class B;public:int get(const B&);};class B{int n=2;};int A::get(const B&b){return b.n;}',
+        'not-transitive': 'class R{int n=1;friend class A;};class A{friend class B;};class B{public:int get(const R&r){return r.n;}};',
+        'other-overload': 'class R{int n=1;friend int get(const R&);};int get(const R&r){return r.n;}int get(R&r){return r.n;}',
+        'other-member': 'class R;class A{public:int allowed(const R&);int denied(const R&);};class R{int n=1;friend int A::allowed(const R&);};int A::allowed(const R&r){return r.n;}int A::denied(const R&r){return r.n;}',
+        'hidden-qualified-lookup': 'class R{int n=1;friend int get(const R&r){return r.n;}};int f(){R r;return ::get(r);}',
+        'hidden-scalar-lookup': 'class R{int n=1;friend int get(int v){return v;}};int f(){return get(1);}',
+        'without-object': 'class R{int n=1;friend int get(const R&){return n;}};',
+    }
+    for name, source in friends_invalid.items():
+        check("v2-friends-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    friends_missing = {
+        'friend-function': 'class R{int n=1;friend int get(const R&);};',
+        'friend-member': 'class R;class A{public:int get(const R&);};class R{int n=1;friend int A::get(const R&);};',
+    }
+    for name, source in friends_missing.items():
+        check("v2-friends-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-friends-array", "struct R{int n;friend int get(const R&r){return r.n;}};int main(){R r{1};return get(r)-1;}", "TR0201")
+    check("v1-friends-record", "struct A{int n;};struct R{int n;friend struct A;};int main(){return 0;}", "TR0201")
 
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}
