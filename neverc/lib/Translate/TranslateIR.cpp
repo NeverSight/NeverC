@@ -462,6 +462,12 @@ public:
                }) ||
         !array(O, "globals", M.Globals,
                [&](const auto &V, Global &G) {
+                 if (V.get("mutable")) {
+                   if (M.Profile != "cpp-core-v2")
+                     return error("Global mutability evidence requires core v2.");
+                   if (!boolean(V, "mutable", G.Mutable))
+                     return false;
+                 }
                  if (!string(V, "name", G.Name) ||
                      !type(V, "type", G.ValueType) || !location(V, G.Loc))
                    return false;
@@ -578,6 +584,7 @@ class Verifier {
   std::map<std::string, std::size_t> RecordStorageUnits;
   std::map<std::string, bool> RecordHasArray;
   std::map<std::string, Type> Globals;
+  std::set<std::string> MutableGlobals;
   std::map<std::string, const Function *> Functions;
   std::set<std::string> Symbols;
   std::set<std::string> Paths;
@@ -905,7 +912,8 @@ class Verifier {
   bool lvalue(const Expr &E, const std::map<std::string, Type> &Storage,
               bool Write = true) {
     if (E.Kind == ExprKind::Var)
-      return Storage.count(E.Name) || (!Write && Globals.count(E.Name)) ||
+      return Storage.count(E.Name) ||
+             (Globals.count(E.Name) && (!Write || MutableGlobals.count(E.Name))) ||
              error(E.Loc, "Global constants are not writable.");
     if (E.Kind == ExprKind::Member && E.Args.size() == 1)
       return lvalue(E.Args[0], Storage, Write);
@@ -916,7 +924,7 @@ class Verifier {
              error(E.Loc, "Const pointee storage is not writable.");
     return error(
         E.Loc,
-        "Assignment target must be rooted in mutable local/parameter storage.");
+        "Assignment target must be rooted in admitted mutable storage.");
   }
   bool function(const Function &F, bool Definition = true) {
     std::map<std::string, Type> Storage;
@@ -1268,12 +1276,17 @@ public:
       RecordHasArray.emplace(R.ID, HasArray);
     }
     for (const auto &G : M.Globals) {
+      if (G.Mutable && (M.Profile != "cpp-core-v2" ||
+                        (!G.ValueType.isInteger() && G.ValueType.Kind != TypeKind::Bool)))
+        return error(G.Loc, "Mutable globals require core v2 integer or boolean storage.");
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
           !type(G.ValueType, G.Loc) || G.ValueType.Kind == TypeKind::Pointer ||
           containsArray(G.ValueType) ||
           !Symbols.insert(G.Name).second)
         return error(G.Loc, "Invalid or duplicate global identifier/type.");
       Globals.emplace(G.Name, G.ValueType);
+      if (G.Mutable)
+        MutableGlobals.insert(G.Name);
     }
     for (const auto &G : GlobalDeclarations) {
       if (Globals.count(G.Name))

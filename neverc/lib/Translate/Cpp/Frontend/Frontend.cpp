@@ -849,6 +849,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const Expr *> CheckedSemanticInitializers;
   std::set<const InitListExpr *> EmptyVoidLists;
   std::set<const CXXConstructExpr *> CheckedConstructions;
+  std::set<const VarDecl *> CheckedScalarGlobals;
   std::set<const Decl *> QueuedGeneratedMethods;
   std::vector<const CXXMethodDecl *> GeneratedMethods;
   bool owned(const Decl *D) {
@@ -1402,6 +1403,39 @@ public:
                "Static/thread-local locals and local extern declarations are "
                "unsupported.");
     if (!D->isLocalVarDeclOrParm()) {
+      if (A.S.coreV2() && !D->getType().isConstQualified() &&
+          D->getType()->isIntegralOrEnumerationType()) {
+        auto *Definition = D->getDefinition();
+        if (!Definition || !owned(Definition) || Definition->getKind() != Decl::Var ||
+            Definition->isStaticDataMember() ||
+            !Definition->getDeclContext()->getRedeclContext()->isFileContext() ||
+            Definition->getCanonicalDecl() != D->getCanonicalDecl() ||
+            !A.Context.hasSameType(Definition->getType(), D->getType())) {
+          A.reject(D->getLocation(), "global definition",
+                   "A scalar global requires one source-owned definition in this unit.",
+                   "TR0203");
+          return true;
+        }
+        if (Definition->getTLSKind() != VarDecl::TLS_None ||
+            Definition->getType().isVolatileQualified()) {
+          A.reject(D->getLocation(), "global storage",
+                   "Thread-local and volatile globals require separate storage semantics.");
+          return true;
+        }
+        if (const auto *Init = Definition->getInit()) {
+          APValue Value;
+          if (!Init->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt()) {
+            A.reject(Definition->getLocation(), "global initializer",
+                     "A scalar global requires zero or fully defined constant initialization.");
+            return true;
+          }
+        }
+        if (CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
+          A.Globals.push_back(Definition);
+        // RAV still visits each source declaration's initializer. Constant
+        // folding does not exempt its selected operations from the allowlist.
+        return true;
+      }
       if (A.S.project()) {
         auto &Declaration = A.GlobalDeclarations[D->getCanonicalDecl()];
         if (!Declaration || D->getInit())
@@ -1860,14 +1894,25 @@ void Adapter::run() {
     RecordData.push_back(std::move(Record));
   }
   for (const auto *G : Globals) {
-    APValue Value;
-    if (!G->getInit()->isCXX11ConstantExpr(Context, &Value))
-      throw Failure{};
-    GlobalData.push_back(
-        json::Object{{"name", name(G)},
-                     {"type", type(G->getType(), G->getLocation())},
-                     {"value", constant(Value, G->getType(), G->getLocation())},
-                     {"loc", loc(G->getLocation())}});
+    const bool Mutable = S.coreV2() && !G->getType().isConstQualified();
+    json::Object Initializer;
+    if (const auto *Init = G->getInit()) {
+      APValue Value;
+      if (!Init->isCXX11ConstantExpr(Context, &Value) || (Mutable && !Value.isInt()))
+        throw Failure{};
+      Initializer = constant(Value, G->getType(), G->getLocation());
+    } else {
+      if (!Mutable || !G->getType()->isIntegralOrEnumerationType())
+        throw Failure{};
+      Initializer = zero(G->getType(), G->getLocation());
+    }
+    json::Object Global{{"name", name(G)},
+                        {"type", type(G->getType(), G->getLocation())},
+                        {"value", std::move(Initializer)},
+                        {"loc", loc(G->getLocation())}};
+    if (Mutable)
+      Global["mutable"] = true;
+    GlobalData.push_back(std::move(Global));
   }
   for (auto *F : Functions)
     FunctionData.push_back(lower(F));

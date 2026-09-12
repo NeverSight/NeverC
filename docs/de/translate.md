@@ -8,6 +8,8 @@ Das experimentelle `neverc translate` erzeugt prüfbaren `.nc`-Quelltext mit `cp
 
 **Derzeit ist nur die Übersetzung von C++-Quelltext implementiert.** Unterstützung für E Language (易语言, `.e`), Python, Go, Rust, TypeScript und JavaScript ist geplant; entsprechende Übersetzer sind noch nicht verfügbar.
 
+Core v2 unterstützt veränderliche globale Ganzzahl-, boolesche und Enum-Variablen auf Namensraumebene mit Nullinitialisierung oder vollständig geprüfter konstanter Initialisierung. Speicher und Adresse bleiben über Aufrufe hinweg erhalten; Referenzen, Zeiger und Standardargumente greifen auf dieselbe Variable zu. Eine `extern`-Deklaration benötigt eine Definition in derselben Quelldatei. Const-Globale bleiben schreibgeschützt. Für dynamische Initialisierung, globale Records/Arrays/Zeiger/Referenzen, threadlokalen Speicher und statische lokale Variablen gelten weiterhin die jeweiligen Einschränkungen.
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

@@ -829,6 +829,114 @@ TEST(TranslateIR, CoreV2VerifiesPointerAddressesAndConstWrites) {
   invalid(M, "Assignment target");
 }
 
+TEST(TranslateIR, CoreV2MutableScalarGlobalsPreserveWritesAndAddressIdentity) {
+  for (const auto &T : {intType(), uintType(), boolType(), integerType(8), integerType(64, true)}) {
+    auto M = module(true);
+    auto Initial = literal("0", T);
+    auto Value = literal("1", T);
+    if (T.Kind == TypeKind::Bool) {
+      Initial.Integer.clear();
+      Value.Integer.clear();
+      Value.Boolean = true;
+    }
+    M.Globals.push_back({"nct_mutable", T, Initial, InputLoc, true});
+    M.Globals.push_back({"nct_readonly", intType(), literal("7"), InputLoc});
+    auto &F = M.Functions[0];
+    F.Result = T;
+    Instruction Assign;
+    Assign.Op = InstructionKind::Assign;
+    Assign.Loc = InputLoc;
+    Assign.Target = variable("nct_mutable", T);
+    Assign.Value = Value;
+    F.Body = {label(), Assign, ret(variable("nct_mutable", T))};
+    Diagnostics D;
+    ASSERT_TRUE(verifyModule(M, context(M), D));
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    auto At = Output.Text.find(" nct_mutable = ");
+    ASSERT_NE(At, std::string::npos);
+    auto Start = Output.Text.rfind('\n', At);
+    auto Declaration = Output.Text.substr(Start == std::string::npos ? 0 : Start+1,
+                                          At - (Start == std::string::npos ? 0 : Start+1));
+    EXPECT_EQ(Declaration.find("static "), 0u);
+    EXPECT_NE(Declaration.find("static const "), 0u);
+    EXPECT_NE(Output.Text.find("static const int nct_readonly = (7);"), std::string::npos);
+    auto P = pointerType(T);
+    F.Result = P;
+    F.Body.back() = ret(pointerExpr(ExprKind::Address, P, {variable("nct_mutable", T)}));
+    D.clear();
+    ASSERT_TRUE(verifyModule(M, context(M), D));
+    F.Body = {label(), F.Body.back()};
+    M.Globals[0].Mutable = false;
+    invalid(M, "Global constants");
+  }
+}
+
+TEST(TranslateIR, MutableGlobalsRetainProfileTypeAndInitializerBoundaries) {
+  auto Old = module();
+  Old.Globals.push_back({"nct_mutable", intType(), literal("0"), InputLoc, true});
+  invalid(Old, "Mutable globals require core v2");
+  for (const auto &T : {Type{TypeKind::Record, "nct_record"}, pointerType(intType()),
+                        arrayType(intType(), 2), Type{TypeKind::Double, {}}, Type{TypeKind::Void, {}}}) {
+    auto M = module(true);
+    M.Globals.push_back({"nct_mutable", T, literal("0", T), InputLoc, true});
+    invalid(M, "Mutable globals require core v2 integer or boolean storage");
+  }
+  auto M = module(true);
+  M.Globals.push_back({"nct_mutable", integerType(8, true), literal("256", integerType(8, true)), InputLoc, true});
+  invalid(M, "literal");
+  M.Globals[0] = {"nct_mutable", intType(), binary(BinaryOperator::Add, literal("1"), literal("2")), InputLoc, true};
+  invalid(M, "folded");
+  M.Globals[0].Value = literal("0");
+  M.Globals.push_back(M.Globals[0]);
+  invalid(M, "duplicate");
+}
+
+TEST(TranslateIR, GlobalMutabilityWireDefaultsToConstAndRequiresCoreV2Boolean) {
+  const std::string Global = R"json({"name":"nct_global","type":"int",
+    "value":{"kind":"literal","type":"int","value":"0",
+      "loc":{"file":"input.cpp","line":1,"column":1}},
+    "loc":{"file":"input.cpp","line":1,"column":1}})json";
+  for (const std::string &Marker : {"", ",\"mutable\":false", ",\"mutable\":true"}) {
+    auto G = Global;
+    G.insert(G.size()-1, Marker);
+    auto Wire = wireModule(true);
+    replaceOnce(Wire, "\"globals\": []", "\"globals\": [" + G + "]");
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(Wire, M, D));
+    ASSERT_EQ(M.Globals.size(), 1u);
+    EXPECT_EQ(M.Globals[0].Mutable, Marker == ",\"mutable\":true");
+    EXPECT_TRUE(verifyModule(M, context(M), D));
+  }
+  for (const std::string &Value : {"null", "0", "1", "\"true\"", "[]", "{}"}) {
+    auto G = Global;
+    G.insert(G.size()-1, ",\"mutable\":" + Value);
+    auto Wire = wireModule(true);
+    replaceOnce(Wire, "\"globals\": []", "\"globals\": [" + G + "]");
+    Module M;
+    Diagnostics D;
+    EXPECT_FALSE(parseModule(Wire, M, D));
+  }
+  for (const std::string &Profile : {"cpp-core-v1", "cpp-project-v1", "cpp-math-v1"}) {
+    auto G = Global;
+    G.insert(G.size()-1, ",\"mutable\":false");
+    auto Wire = wireModule();
+    replaceOnce(Wire, "cpp-core-v1", Profile);
+    if (Profile == "cpp-math-v1")
+      Wire.insert(1, "\"fp_contract\":\"fixture\",\"sdk_distribution_id\":\"fixture\","
+                     "\"sdk_catalog_sha256\":\"fixture\",\"sdk_dependencies\":[],");
+    replaceOnce(Wire, "\"globals\": []", "\"globals\": [" + G + "]");
+    Module M;
+    Diagnostics D;
+    EXPECT_FALSE(parseModule(Wire, M, D));
+    ASSERT_FALSE(D.empty());
+    EXPECT_TRUE(std::any_of(D.begin(), D.end(), [](const Diagnostic &E) {
+      return E.Reason.find("Global mutability evidence requires core v2") != std::string::npos;
+    }));
+  }
+}
+
 TEST(TranslateIR, CoreV2ConstRecordDoesNotMakeItsPointerPointeeConst) {
   auto M = module(true);
   Type RecordType{TypeKind::Record, "nct_box"};

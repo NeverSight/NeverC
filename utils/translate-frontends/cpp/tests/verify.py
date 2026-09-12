@@ -3165,6 +3165,170 @@ static_assert((static_cast<void>(0),true));
         check("v2-" + 'void_expression_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
     check("v1-void-expression-reference", "void f(){static_cast<void>(1);}", "TR0201")
     check("v1-void-expression-decay", "void f(){void();}", "TR0201")
+    mutable_global_source = """int count;
+extern int shared;
+int shared=7;
+extern int shared;
+const int fixed=5;
+bool enabled;
+enum class E:unsigned char{one=1};
+E state;
+unsigned long long large=18446744073709551615ULL;
+namespace Left{int value=2;}
+namespace Right{int value=3;}
+int*address(){return &count;}
+int&alias(){return count;}
+const int&view(){return count;}
+int increment(){return ++count;}
+int read(){return count;}
+int share(){++shared;return shared;}
+void set(){enabled=true;state=E::one;Left::value=4;Right::value=6;}
+int useDefault(int&value=count){return ++value;}
+int defaulted(){return useDefault();}
+const int*fixedAddress(){return &fixed;}
+int main(){return read();}
+"""
+    globals_module = check("v2-mutable-scalar-globals-protocol", mutable_global_source,
+                           profile="cpp-core-v2")
+    mg_globals = {g["name"]: g for g in globals_module["globals"]}
+
+    def mg_line(prefix):
+        lines = [i for i, line in enumerate(mutable_global_source.splitlines(), 1)
+                 if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def mg_global(prefix, typ, value, mutable=True):
+        matches = [g for g in globals_module["globals"] if g["loc"]["line"] == mg_line(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        g = matches[0]
+        assert g["type"] == typ and g.get("mutable", False) is mutable, g
+        assert g["value"]["kind"] == "literal" and g["value"]["type"] == typ, g
+        assert g["value"]["value"] == value, g
+        return g["name"]
+
+    mg_count = mg_global("int count;", "int", "0")
+    mg_shared = mg_global("int shared=", "int", "7")
+    mg_fixed = mg_global("const int fixed=", "int", "5", False)
+    mg_enabled = mg_global("bool enabled;", "bool", False)
+    mg_state = mg_global("E state;", "u8", "0")
+    mg_global("unsigned long long large=", "u64", "18446744073709551615")
+    mg_left = mg_global("namespace Left{", "int", "2")
+    mg_right = mg_global("namespace Right{", "int", "3")
+    assert len(mg_globals) == 8 and mg_left != mg_right
+    assert all(g["value"]["kind"] == "literal" for g in mg_globals.values())
+    assert not globals_module["records"]
+
+    def mg_function(prefix, result, params=()):
+        matches = [f for f in globals_module["functions"]
+                   if f["loc"]["line"] == mg_line(prefix) and f["result"] == result
+                   and tuple(p["type"] for p in f["params"]) == params]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def mg_root(function, expr):
+        if expr["kind"] in ("cast", "address", "dereference"):
+            return mg_root(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        if expr["name"] in mg_globals:
+            return expr["name"]
+        assignments = [i["value"] for i in function["body"] if i["op"] == "assign"
+                       and i["target"].get("kind") == "var"
+                       and i["target"]["name"] == expr["name"]]
+        assert len(assignments) == 1, (expr, assignments)
+        return mg_root(function, assignments[0])
+
+    for prefix, result, name in (("int*address(", "ptr:int", mg_count),
+                                 ("int&alias(", "ptr:int", mg_count),
+                                 ("const int&view(", "cptr:int", mg_count),
+                                 ("int read(", "int", mg_count),
+                                 ("const int*fixedAddress(", "cptr:int", mg_fixed)):
+        f = mg_function(prefix, result)
+        returns = [i["value"] for i in f["body"] if i["op"] == "return"]
+        assert len(returns) == 1 and mg_root(f, returns[0]) == name, f
+        assert not gc_calls(f), f
+    for prefix, name in (("int increment(", mg_count), ("int share(", mg_shared)):
+        f = mg_function(prefix, "int")
+        writes = [i for i in f["body"] if i["op"] == "assign"
+                  and i["target"].get("name") == name]
+        assert len(writes) == 1 and writes[0]["value"]["type"] == "int", f
+    f = mg_function("void set(", "void")
+    writes = [i["target"]["name"] for i in f["body"] if i["op"] == "assign"
+              and i["target"].get("name") in mg_globals]
+    assert writes == [mg_enabled, mg_state, mg_left, mg_right], f
+    default = mg_function("int useDefault(", "int", ("ptr:int",))
+    f = mg_function("int defaulted(", "int")
+    calls = gc_calls(f)
+    assert len(calls) == 1 and calls[0]["callee"] == default["name"], f
+    assert len(calls[0]["args"]) == 1 and mg_root(f, calls[0]["args"][0]) == mg_count, f
+    assert not gc_calls(default), default
+    signatures = {f["name"]: f for f in globals_module["functions"]}
+    assert len(signatures) == 11
+    for f in globals_module["functions"]:
+        for call in gc_calls(f):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in signatures[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-mutable-globals-relocated-") as temp:
+        relocated = check("mutable-globals-relocated", mutable_global_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == globals_module, "global storage identities depend on the absolute root"
+
+    mutable_global_positive = {
+        'zero': 'int value;int main(){return value;}',
+        'explicit': 'int value=1;int main(){return ++value-2;}',
+        'bool': 'bool value;int main(){value=true;return value?0:1;}',
+        'enum': 'enum class E:unsigned char{v=7};E value;int main(){value=E::v;return static_cast<int>(value)-7;}',
+        'extern-before': 'extern int value;int value=3;int main(){return ++value-4;}',
+        'extern-after': 'int value;extern int value;int main(){return value;}',
+        'static': 'static int value;int f(){return ++value;}',
+        'inline': 'inline int value=4;int f(){return ++value;}',
+        'namespaces': 'namespace A{int n;}namespace B{int n=2;}int f(){A::n=3;return A::n+B::n;}',
+        'constexpr': 'constexpr int f(){return 3;}int value=f();int main(){return ++value-4;}',
+        'alias': 'int value;int&f(){return value;}int main(){f()=4;return value-4;}',
+        'pointer': 'int value;int*f(){return &value;}int main(){*f()=5;return value-5;}',
+        'default-reference': 'int value;int f(int&v=value){return ++v;}int main(){return f()-1;}',
+        'empty-destructor': 'int count;struct E{~E(){++count;}};int main(){{E e;}return count-1;}',
+        'wide': 'unsigned long long value=18446744073709551615ULL;int main(){++value;return value!=0;}',
+        'character': "char value='a';int main(){value='b';return value!='b';}",
+    }
+    for name, source in mutable_global_positive.items():
+        check("v2-mutable-global-positive-" + name, source, profile="cpp-core-v2")
+    mutable_global_reject = {
+        'dynamic-call': 'int f(){return 1;}int value=f();',
+        'dynamic-read': 'int a=1;int b=a;',
+        'dynamic-effect': 'int a=1;int b=++a;',
+        'pointer': 'int*value=nullptr;',
+        'reference': 'int n;int&value=n;',
+        'record': 'struct R{int n;};R value{1};',
+        'array': 'int value[2]={1,2};',
+        'float': 'double value=1.0;',
+        'volatile': 'volatile int value;',
+        'atomic': '_Atomic(int) value;',
+        'tls': 'thread_local int value;',
+        'static-local': 'int f(){static int value;return ++value;}',
+        'static-member': 'struct R{static int value;};int R::value=1;',
+        'folded-unsupported': 'int value=static_cast<int>(1.0);',
+        'unused-folded-unsupported': 'constexpr int f(){return static_cast<int>(1.0);}int value=f();',
+        'variable-template': 'template<class T> int value=1;',
+    }
+    for name, source in mutable_global_reject.items():
+        check("v2-mutable-global-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    mutable_global_invalid = {
+        'duplicate': 'int value=1;int value=2;',
+        'conflicting': 'extern int value;bool value;',
+        'const-write': 'const int value=1;int main(){value=2;}',
+        'narrow-list': 'unsigned char value{300};',
+    }
+    for name, source in mutable_global_invalid.items():
+        check("v2-mutable-global-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    mutable_global_missing = {
+        'external': 'extern int value;int main(){return value;}',
+        'unused-external': 'extern int value;int main(){}',
+    }
+    for name, source in mutable_global_missing.items():
+        check("v2-mutable-global-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-mutable-global-zero", "int value;int main(){return value;}", "TR0201")
+    check("v1-mutable-global-write", "int value=1;int main(){return ++value;}", "TR0201")
+
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}
 int next(){mark(1);return number;}

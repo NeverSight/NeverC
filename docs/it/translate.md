@@ -8,6 +8,8 @@ Il comando sperimentale `neverc translate` genera sorgenti `.nc` verificabili co
 
 **Attualmente è implementata solo la traduzione di codice C++.** Il supporto per E Language (易语言, `.e`), Python, Go, Rust, TypeScript e JavaScript è previsto per il futuro; i relativi traduttori non sono ancora disponibili.
 
+Core v2 supporta variabili globali modificabili di tipo intero, booleano ed enumerazione nell’ambito di un namespace, con inizializzazione a zero o mediante una costante completamente verificata. Memoria e indirizzo persistono tra le chiamate; riferimenti, puntatori e argomenti predefiniti accedono alla stessa variabile. Una dichiarazione `extern` richiede una definizione nella stessa unità sorgente. Le globali const restano di sola lettura. Restano le restrizioni specifiche per inizializzazione dinamica, record/array/puntatori/riferimenti globali, memoria locale al thread e variabili locali statiche.
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

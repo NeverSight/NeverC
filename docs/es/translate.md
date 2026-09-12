@@ -8,6 +8,8 @@ El comando experimental `neverc translate` genera código `.nc` revisable con `c
 
 **Actualmente solo está implementada la traducción de código C++.** Está previsto añadir E Language (易语言, `.e`), Python, Go, Rust, TypeScript y JavaScript; sus traductores aún no están disponibles.
 
+Core v2 admite variables globales modificables de tipo entero, booleano y enumeración en el ámbito de un espacio de nombres, con inicialización a cero o mediante una constante totalmente comprobada. Su almacenamiento y dirección se conservan entre llamadas; las referencias, los punteros y los argumentos predeterminados acceden a la misma variable. Una declaración `extern` debe tener una definición en la misma unidad fuente. Las globales const siguen siendo de solo lectura. Se mantienen las restricciones específicas para la inicialización dinámica, los registros/arreglos/punteros/referencias globales, el almacenamiento local de hilos y las variables locales estáticas.
+
 ## Instalación y traducción escalar
 
 Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).

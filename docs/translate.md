@@ -8,6 +8,8 @@ Experimental `neverc translate` emits reviewable `.nc` source through `cpp-core-
 
 **Only C++ input translation is currently implemented.** Support for E Language (易语言, `.e`), Python, Go, Rust, TypeScript and JavaScript is planned; their translators are not yet available.
 
+Core v2 supports mutable namespace-scope integer, boolean and enum globals with zero initialization or a fully checked constant initializer. Their storage and addresses persist across calls; references, pointers and parameter defaults access the same variable. An `extern` declaration must resolve to a definition in this source unit. Const globals remain read-only. Dynamic initialization, global records/arrays/pointers/references, thread-local storage and static locals retain their separate restrictions.
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

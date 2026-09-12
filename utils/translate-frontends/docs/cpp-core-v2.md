@@ -435,6 +435,40 @@ Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
 
+## Mutable scalar globals
+
+Core v2 admits mutable namespace/file-scope globals of the supported integer,
+boolean and enum types. Definitions without an initializer receive C++ static
+zero initialization. Explicit initializers must be fully defined constant
+expressions; an admitted constexpr function or conversion may supply that value.
+All source initializer operations are still inspected, including unused and
+folded code. This does not initialize uninitialized automatic local variables.
+
+Each global has one stable storage object. Reads observe intervening writes;
+references, pointers, default arguments and source-defined constructors or
+destructors access that same object. Ordinary `extern` redeclarations must
+resolve to a source-owned definition of the same canonical variable in this
+single translation unit; it is emitted once. Namespace, internal-linkage and
+C++17 inline definitions retain their source identity. Globals are emitted with
+internal generated names, without adding a public C data-export ABI.
+
+Const globals retain their existing read-only representation. Mutable record,
+array, pointer and reference globals, floating-point/volatile/atomic globals,
+dynamic initialization, thread-local storage, static locals and static data
+members remain outside this increment. Nontrivial global object destruction
+still requires separate lifetime support. Other profiles retain their prior
+constant-global contract.
+
+The optional global IR field `mutable` defaults to `false`. Only core v2 accepts
+this field, and only supported integer/boolean carriers can set it to `true`.
+The consumer checks the folded scalar initializer and grants writes or mutable
+addresses only to that exact global. Emission uses `static` for mutable storage
+and `static const` for constant storage. No startup function or new instruction
+is needed. Fixtures cover state across calls, zero/constant initialization,
+redeclared aliases, address identity, narrow/wide values, default arguments,
+cleanup effects, malformed IR and relocation. Native validation requires CI
+from the implementing revision.
+
 ## Default construction and defaulted destruction
 
 Core v2 admits generated/defaulted default constructors for the same checked

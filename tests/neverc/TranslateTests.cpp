@@ -2069,6 +2069,165 @@ TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MutableScalarGlobalsPreserveStateAndIdentity) {
+  const auto Source = tmpFile("mutable-scalar-globals.cpp");
+  const auto Output = tmpFile("mutable-scalar-globals.nc");
+  writeFile(Source, R"cpp(
+int counter;
+unsigned int wide=4294967295u;
+signed char low=-128;
+unsigned char high=255;
+short signedShort=-32768;
+unsigned short unsignedShort=65535;
+long long signedWide=-9223372036854775807LL-1;
+unsigned long long unsignedWide=18446744073709551615ULL;
+bool flag;
+enum class Mode:unsigned short{on=9};
+Mode mode;
+constexpr int folded(int n){return n*3;}
+int initial=folded(4);
+const int readonly=7;
+extern int shared;
+int shared=5;
+extern int shared;
+static int hidden=9;
+inline int inlineValue=11;
+namespace Left{int value=2;}
+namespace Right{int value=3;}
+namespace {int privateValue=13;}
+int live=0,made=0,dead=0,trace=0;
+int next(){return ++counter;}
+int*address(){return &counter;}
+int&reference(int&r=counter){return r;}
+const int&constantReference(){return counter;}
+int recurse(int n){if(n){++counter;return recurse(n-1);}return counter;}
+int selected(int){return ++counter;}
+int selected(bool){counter+=2;return counter;}
+void quiet(int n=++counter)noexcept{}
+struct Stamp{
+ int n;
+ Stamp(int value=next()):n(value){++live;++made;trace=trace*10+n;}
+ ~Stamp(){--live;++dead;trace=trace*10+n;}
+};
+struct Empty{Empty(){++live;++made;}~Empty(){--live;++dead;}};
+int main(){
+ if(counter||flag||static_cast<unsigned short>(mode)!=0)return 1;
+ if(wide!=4294967295u||low!=-128||high!=255||signedShort!=-32768||unsignedShort!=65535)return 2;
+ if(signedWide!=-9223372036854775807LL-1||unsignedWide!=18446744073709551615ULL)return 3;
+ if(initial!=12||readonly!=7||shared!=5||hidden!=9||inlineValue!=11||privateValue!=13)return 4;
+ int*p=address();int&r=reference();const int&c=constantReference();
+ if(p!=&counter||&r!=p||&c!=p||address()!=p)return 5;
+ *p=3;r+=2;if(counter!=5||c!=5)return 6;
+ if(next()!=6||recurse(3)!=9||counter!=9)return 7;
+ if(selected(0)!=10||selected(false)!=12||counter!=12)return 8;
+ shared+=2;hidden-=1;inlineValue+=3;privateValue+=4;
+ if(shared!=7||hidden!=8||inlineValue!=14||privateValue!=17)return 9;
+ Left::value+=4;Right::value+=5;
+ if(Left::value!=6||Right::value!=8||&Left::value==&Right::value)return 10;
+ {int counter=20;counter+=2;if(counter!=22||::counter!=12)return 11;}
+ if(counter!=12)return 12;
+ wide+=1;high+=1;low+=1;signedShort+=1;unsignedShort-=1;
+ if(wide!=0||high!=0||low!=-127||signedShort!=-32767||unsignedShort!=65534)return 13;
+ signedWide+=1;unsignedWide-=1;
+ if(signedWide!=-9223372036854775807LL||unsignedWide!=18446744073709551614ULL)return 14;
+ flag=true;mode=Mode::on;if(!flag||mode!=Mode::on)return 15;
+ if(!noexcept(quiet())||counter!=12)return 16;
+ quiet();if(counter!=13)return 17;
+ counter=0;{Stamp first;Stamp second;
+  if(first.n!=1||second.n!=2||counter!=2||live!=2||made!=2||dead||trace!=12)return 18;}
+ if(live||made!=2||dead!=2||trace!=1221)return 19;
+ {Empty object;if(live!=1||made!=3||dead!=2)return 20;}
+ if(live||made!=3||dead!=3)return 21;
+ initial+=readonly;if(initial!=19||readonly!=7)return 22;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("mutable-scalar-globals" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MutableScalarGlobalsAcceptOwnedStaticInitialization) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"zero", "int value;int main(){return value;}"},
+      {"explicit", "int value=1;int main(){return ++value-2;}"},
+      {"bool", "bool value;int main(){value=true;return value?0:1;}"},
+      {"enum", "enum class E:unsigned char{v=7};E value;int main(){value=E::v;return static_cast<int>(value)-7;}"},
+      {"extern-before", "extern int value;int value=3;int main(){return ++value-4;}"},
+      {"extern-after", "int value;extern int value;int main(){return value;}"},
+      {"static", "static int value;int f(){return ++value;}"},
+      {"inline", "inline int value=4;int f(){return ++value;}"},
+      {"namespaces", "namespace A{int n;}namespace B{int n=2;}int f(){A::n=3;return A::n+B::n;}"},
+      {"constexpr", "constexpr int f(){return 3;}int value=f();int main(){return ++value-4;}"},
+      {"alias", "int value;int&f(){return value;}int main(){f()=4;return value-4;}"},
+      {"pointer", "int value;int*f(){return &value;}int main(){*f()=5;return value-5;}"},
+      {"default-reference", "int value;int f(int&v=value){return ++v;}int main(){return f()-1;}"},
+      {"empty-destructor", "int count;struct E{~E(){++count;}};int main(){{E e;}return count-1;}"},
+      {"wide", "unsigned long long value=18446744073709551615ULL;int main(){++value;return value!=0;}"},
+      {"character", "char value='a';int main(){value='b';return value!='b';}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("mutable-globals-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("mutable-globals-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MutableScalarGlobalsRetainTypeAndInitializationBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"dynamic-call", "int f(){return 1;}int value=f();", "TR0201"},
+      {"dynamic-read", "int a=1;int b=a;", "TR0201"},
+      {"dynamic-effect", "int a=1;int b=++a;", "TR0201"},
+      {"pointer", "int*value=nullptr;", "TR0201"},
+      {"reference", "int n;int&value=n;", "TR0201"},
+      {"record", "struct R{int n;};R value{1};", "TR0201"},
+      {"array", "int value[2]={1,2};", "TR0201"},
+      {"float", "double value=1.0;", "TR0201"},
+      {"volatile", "volatile int value;", "TR0201"},
+      {"atomic", "_Atomic(int) value;", "TR0201"},
+      {"tls", "thread_local int value;", "TR0201"},
+      {"static-local", "int f(){static int value;return ++value;}", "TR0201"},
+      {"static-member", "struct R{static int value;};int R::value=1;", "TR0201"},
+      {"folded-unsupported", "int value=static_cast<int>(1.0);", "TR0201"},
+      {"unused-folded-unsupported", "constexpr int f(){return static_cast<int>(1.0);}int value=f();", "TR0201"},
+      {"variable-template", "template<class T> int value=1;", "TR0201"},
+      {"duplicate", "int value=1;int value=2;", "TR0202"},
+      {"conflicting", "extern int value;bool value;", "TR0202"},
+      {"const-write", "const int value=1;int main(){value=2;}", "TR0202"},
+      {"narrow-list", "unsigned char value{300};", "TR0202"},
+      {"external", "extern int value;int main(){return value;}", "TR0203"},
+      {"unused-external", "extern int value;int main(){}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("mutable-globals-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("mutable-globals-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"int value;int main(){return value;}",
+                                  "int value=1;int main(){return ++value;}"}) {
+    const auto Source = tmpFile("mutable-globals-v1.cpp");
+    const auto Output = tmpFile("mutable-globals-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DefaultArgumentsPreserveEffectsAndCleanup) {
   const auto Source = tmpFile("default-arguments.cpp");
   const auto Output = tmpFile("default-arguments.nc");

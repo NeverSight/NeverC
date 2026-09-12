@@ -147,6 +147,7 @@ struct Global {
   Type ValueType;
   Expr Value;
   SourceLocation Loc;
+  bool Mutable = false;
 };
 struct Function {
   std::string Name;

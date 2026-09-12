@@ -510,7 +510,8 @@ public:
       record(R);
     pointerHelpers();
     for (const auto &G : M.Globals)
-      line("static const " + cType(G.ValueType) + " " + G.Name + " = " +
+      line(std::string(G.Mutable ? "static " : "static const ") +
+               cType(G.ValueType) + " " + G.Name + " = " +
                expression(G.Value, true) + ";",
            &G.Loc);
     if (!M.Globals.empty())
