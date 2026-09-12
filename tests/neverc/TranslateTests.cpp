@@ -3890,7 +3890,6 @@ TEST_F(TranslateTest, CoreV2NameImportsRetainSourceClosureAndLanguageBoundaries)
       {"pack", "template<class...T>struct R:T...{using T::n...;};", "TR0201"},
       {"import-template", "namespace N{template<class T>T f(T n){return n;}}using N::f;", "TR0201"},
       {"import-template-type", "namespace N{template<class T>struct R{T n;};}using N::R;", "TR0201"},
-      {"inline-namespace", "namespace N{inline namespace V{int n=3;}}using N::n;", "TR0201"},
       {"unsupported-type", "namespace N{using T=double;}using N::T;", "TR0201"},
       {"unused-body", "namespace N{int f(){double n=3;return static_cast<int>(n);}}using N::f;", "TR0201"},
       {"unused-initializer", "namespace N{int n=static_cast<int>(3.0);}using N::n;", "TR0201"},
@@ -3965,6 +3964,173 @@ TEST_F(TranslateTest, CoreV2NameImportsBoundNamespaceAliasChains) {
         expectNoArtifacts(Output);
       }
     }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InlineNamespacesPreserveLookupStorageAndCleanup) {
+  const auto Source = tmpFile("inline_namespaces.cpp");
+  const auto Output = tmpFile("inline_namespaces.nc");
+  writeFile(Source, R"cpp(
+namespace API {
+struct Outer { int n; };
+inline namespace V1 {
+int state=3;
+const int constant=7;
+struct R { int n; };
+struct Inner { int n; };
+int choose(bool){return 20;}
+int read(const Outer&r){return r.n+1;}
+int outside();
+inline namespace Deep { int depth=5; }
+}
+int choose(int){return 10;}
+int read(const Inner&r){return r.n+2;}
+namespace V2 { int state=19;struct R { bool flag;int n; }; }
+}
+namespace API { namespace V1 { int bump(){return ++state;} } }
+namespace API::V1 { int extension(){return 13;} }
+namespace API::V1::Deep { int deep(){return depth;} }
+int API::V1::outside(){return 17;}
+namespace Alias=API::V1;
+namespace Parent=API;
+namespace Imports { using API::state,API::R;using Alias::bump; }
+namespace Directed { using namespace Alias;int get(){return state;} }
+namespace Hidden { inline namespace { int state=11;int get(){return state;} } }
+namespace FriendSpace {
+inline namespace V { struct R { int n;friend int find(const R&r){return r.n;} }; }
+}
+namespace Lifetime {
+inline namespace V { struct R{int*trace;R(int*p):trace(p){*trace=*trace*10+1;}~R(){*trace=*trace*10+2;}}; }
+}
+#define INLINE inline
+#define SCOPE ::
+namespace Macro { INLINE namespace V {int value=23;} }
+namespace Macro SCOPE V {int get(){return value;}}
+int*defaultAddress(){return &API::state;}
+int*explicitAddress(){return &API::V1::state;}
+int*aliasAddress(){namespace Local=Alias;return &Local::state;}
+int*importAddress(){using Imports::state;return &state;}
+int cleanup(){int trace=0;{Lifetime::R r(&trace);trace=trace*10+4;}return trace;}
+int main(){
+  if(API::choose(true)!=20||API::choose(1)!=10)return 1;
+  if(API::V1::choose(true)!=20)return 2;
+  if(defaultAddress()!=explicitAddress()||aliasAddress()!=defaultAddress()||importAddress()!=defaultAddress())return 3;
+  if(Imports::bump()!=4||API::state!=4||Directed::get()!=4)return 4;
+  if(&API::constant!=&Alias::constant||API::constant!=7)return 5;
+  if(&API::V2::state==defaultAddress()||API::V2::state!=19)return 6;
+  Imports::R object{9};API::V1::R&same=object;
+  if(&same!=&object||same.n!=9||sizeof(API::R)!=sizeof(API::V1::R))return 7;
+  API::V2::R other{true,12};
+  if(!other.flag||other.n!=12||sizeof(other)<=sizeof(object))return 8;
+  API::Outer outer{5};API::Inner inner{7};
+  if(read(outer)!=6)return 9;
+  if(read(inner)!=9)return 10;
+  if(API::depth!=5||API::V1::depth!=5||API::V1::Deep::depth!=5)return 11;
+  if(&API::depth!=&API::V1::Deep::depth)return 12;
+  if(API::deep()!=5||API::extension()!=13)return 13;
+  if(API::outside()!=17||API::V1::outside()!=17)return 14;
+  if(Hidden::get()!=11||Hidden::state!=11||&Hidden::state==defaultAddress())return 15;
+  FriendSpace::R r{29};
+  if(find(r)!=29)return 16;
+  if(cleanup()!=142)return 17;
+  if(Macro::get()!=23||Macro::V::get()!=23||&Macro::value!=&Macro::V::value)return 18;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("inline_namespaces" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InlineNamespacesAcceptResolvedNamespaceAndBlockDeclarations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"named", "namespace N{inline namespace V{int n=3;}}int main(){return N::n-3;}"},
+      {"anonymous", "namespace N{inline namespace{int n=3;}}int main(){return N::n-3;}"},
+      {"transitive", "namespace N{inline namespace V{inline namespace Deep{int n=3;}}}int main(){return &N::n!=&N::V::Deep::n;}"},
+      {"reopen", "namespace N{inline namespace V{int f();}namespace V{int f(){return 3;}}}int main(){return N::f()-3;}"},
+      {"nested-reopen", "namespace N{inline namespace V{int f();}}namespace N::V{int f(){return 3;}}int main(){return N::f()-3;}"},
+      {"transitive-nested-reopen", "namespace N{inline namespace V{inline namespace Deep{int f();}}}namespace N::V::Deep{int f(){return 3;}}int main(){return N::f()-3;}"},
+      {"outside-definition", "namespace N{inline namespace V{int f();}}int N::V::f(){return 3;}int main(){return N::f()-3;}"},
+      {"alias", "namespace N{inline namespace V{int n=3;}}namespace A=N::V;int main(){return &A::n!=&N::n;}"},
+      {"directive", "namespace N{inline namespace V{int n=3;}}using namespace N::V;int main(){return &n!=&N::n;}"},
+      {"parent-directive", "namespace N{inline namespace V{int n=3;}}using namespace N;int main(){return n-3;}"},
+      {"using", "namespace N{inline namespace V{int n=3;}}using N::n;int f(){using N::V::n;return n;}"},
+      {"import-promoted", "namespace N{inline namespace V{int n=3;}}using N::n;"},
+      {"versions", "namespace N{inline namespace V1{int n=3;}namespace V2{int n=4;}}int main(){return &N::n==&N::V2::n;}"},
+      {"record", "namespace N{inline namespace V{struct R{int n;};}}int main(){N::R r{3};N::V::R&s=r;return &r!=&s;}"},
+      {"qualified-overloads", "namespace N{int f(int){return 1;}inline namespace V{int f(bool){return 2;}}}int main(){return N::f(true)-2;}"},
+      {"adl-parent-type", "namespace N{struct R{int n;};inline namespace V{int f(const R&r){return r.n;}}}int main(){N::R r{3};return f(r)-3;}"},
+      {"adl-inline-type", "namespace N{inline namespace V{struct R{int n;};}int f(const R&r){return r.n;}}int main(){N::R r{3};return f(r)-3;}"},
+      {"hidden-friend", "namespace N{inline namespace V{struct R{int n;friend int f(const R&r){return r.n;}};}}int main(){N::R r{3};return f(r)-3;}"},
+      {"lifetime", "namespace N{inline namespace V{struct R{int*p;R(int*q):p(q){++*p;}~R(){++*p;}};}}int main(){int n=0;{N::R r(&n);}return n-2;}"},
+      {"macro-inline", "#define INLINE inline\nnamespace N{INLINE namespace V{int n=3;}}int main(){return N::n-3;}"},
+      {"macro-separator", "#define SCOPE ::\nnamespace N{inline namespace V{int f();}}namespace N SCOPE V{int f(){return 3;}}int main(){return N::f()-3;}"},
+      {"macro-argument-separator", "#define ID(x) x\nnamespace N{inline namespace V{int f();}}namespace N ID(::) V{int f(){return 3;}}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("inline_namespaces-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("inline_namespaces-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InlineNamespacesRetainSourceClosureAndLanguageBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"nested-inline", "namespace N::inline V{int n=3;}", "TR0201"},
+      {"nested-inline-inner", "namespace N::inline V::Inner{int n=3;}", "TR0201"},
+      {"nested-inline-reopen", "namespace N{inline namespace V{int n=3;}}namespace N::inline V{int f(){return n;}}", "TR0201"},
+      {"macro-nested-inline", "#define INLINE inline\nnamespace N::INLINE V{int n=3;}", "TR0201"},
+      {"macro-argument-inline", "#define ID(x) x\nnamespace N::ID(inline) V{int n=3;}", "TR0201"},
+      {"attribute", "namespace N{inline namespace [[deprecated]] V{int n=3;}}", "TR0201"},
+      {"template", "namespace N{inline namespace V{template<class T>struct R{T n;};}}", "TR0201"},
+      {"unused-type", "namespace N{inline namespace V{using T=double;}}", "TR0201"},
+      {"unused-body", "namespace N{inline namespace V{int f(){double n=3;return static_cast<int>(n);}}}", "TR0201"},
+      {"skipped-body", "namespace N{inline namespace V{int f(){if(false){double n=3;}return 0;}}}", "TR0201"},
+      {"folded-initializer", "namespace N{inline namespace V{int n=static_cast<int>(3.0);}}", "TR0201"},
+      {"active-include", "#include <vector>\nnamespace N{inline namespace V{int n=3;}}", "TR0201"},
+      {"inactive-include", "#if 0\n#include \"missing.h\"\n#endif\nnamespace N{inline namespace V{int n=3;}}", "TR0201"},
+      {"inline-mismatch", "namespace N{}inline namespace N{}", "TR0202"},
+      {"block", "void f(){inline namespace N{}}", "TR0202"},
+      {"class", "struct R{inline namespace N{}};", "TR0202"},
+      {"alias-reopen", "namespace N{}namespace A=N;inline namespace A{}", "TR0202"},
+      {"duplicate", "namespace N{inline namespace V{int n=3;}namespace V{int n=4;}}", "TR0202"},
+      {"ambiguous", "namespace N{int n=3;inline namespace V{int n=4;}}int f(){return N::n;}", "TR0202"},
+      {"ambiguous-versions", "namespace N{inline namespace V1{int n=3;}inline namespace V2{int n=4;}}int f(){return N::n;}", "TR0202"},
+      {"inline-alias", "namespace N{}inline namespace A=N;", "TR0202"},
+      {"leading-inline-nested", "inline namespace N::V{int n=3;}", "TR0202"},
+      {"const-write", "namespace N{inline namespace V{const int n=3;}}void f(){N::n=4;}", "TR0202"},
+      {"function", "namespace N{inline namespace V{int f();}}int main(){return N::f();}", "TR0203"},
+      {"unused-function", "namespace N{inline namespace V{int f();}}", "TR0203"},
+      {"global", "namespace N{inline namespace V{extern int n;}}int f(){return N::n;}", "TR0203"},
+      {"unused-global", "namespace N{inline namespace V{extern int n;}}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("inline_namespaces-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("inline_namespaces-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const std::string &Code : {"inline namespace N{int n=3;}",
+                                  "namespace N{inline namespace V{int n=3;}}"}) {
+    const auto Source = tmpFile("inline_namespaces-v1.cpp");
+    const auto Output = tmpFile("inline_namespaces-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
   }
 }
 

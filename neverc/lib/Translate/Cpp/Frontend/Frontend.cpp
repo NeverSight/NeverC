@@ -958,7 +958,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!Seen.insert(Target).second)
         break;
       if (const auto *N = dyn_cast<NamespaceDecl>(Target))
-        return !N->isDependentContext() && !N->isInline();
+        return !N->isDependentContext();
       const auto *Alias = dyn_cast<NamespaceAliasDecl>(Target);
       if (!Alias || ++Aliases > 64 ||
           !importContext(Alias->getDeclContext()) ||
@@ -1560,7 +1560,7 @@ public:
              CXXRecordDecl, FieldDecl>(D))
       A.reject(D->getLocation(), D->getDeclKindName(),
                "Declaration is outside the selected profile.");
-    if (const auto *N = dyn_cast<NamespaceDecl>(D); N && N->isInline())
+    if (const auto *N = dyn_cast<NamespaceDecl>(D); N && N->isInline() && !A.S.coreV2())
       A.reject(D->getLocation(), "inline namespace",
                "Inline namespaces are not in the core profile.");
     if (A.S.math())
@@ -1570,12 +1570,28 @@ public:
                  "standard-library namespace.");
     return true;
   }
+  bool VisitNamespaceDecl(NamespaceDecl *D) {
+    if (!owned(D) || !A.S.coreV2() || !D->isNested() || !D->isInline())
+      return true;
+    // Sema inherits inline status when reopening a namespace. In the C++17
+    // nested spelling its start token remains ::; an explicit inline token
+    // at that position is the C++20 extension, even when macro-expanded.
+    A.chargeExpansion(1, D->getBeginLoc());
+    Token Start;
+    auto L = A.Sources.getSpellingLoc(D->getBeginLoc());
+    if (L.isInvalid() ||
+        Lexer::getRawToken(L, Start, A.Sources, A.Context.getLangOpts()) ||
+        !Start.is(tok::coloncolon))
+      A.reject(D->getBeginLoc(), "nested inline namespace",
+               "An inline keyword inside a nested namespace definition requires C++20.");
+    return true;
+  }
   bool VisitNamespaceAliasDecl(NamespaceAliasDecl *D) {
     if (owned(D) && A.S.coreV2() &&
         (D->isInvalidDecl() || !importContext(D->getDeclContext()) ||
          !namespaceTarget(D, D->getLocation())))
       A.reject(D->getLocation(), "namespace alias",
-               "Expected a bounded alias chain to an owned non-inline namespace.");
+               "Expected a bounded alias chain to an owned namespace.");
     return true;
   }
   bool VisitUsingDirectiveDecl(UsingDirectiveDecl *D) {
@@ -1584,7 +1600,7 @@ public:
          (D->getQualifier() && D->getQualifier()->isDependent()) ||
          !namespaceTarget(D->getNominatedNamespaceAsWritten(), D->getUsingLoc())))
       A.reject(D->getUsingLoc(), "using directive",
-               "Expected a resolved directive to an owned non-inline namespace.");
+               "Expected a resolved directive to an owned namespace.");
     return true;
   }
   bool VisitUsingDecl(UsingDecl *D) {

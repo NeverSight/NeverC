@@ -5303,7 +5303,6 @@ int main(){return early()-10;}
         'pack': 'template<class...T>struct R:T...{using T::n...;};',
         'import-template': 'namespace N{template<class T>T f(T n){return n;}}using N::f;',
         'import-template-type': 'namespace N{template<class T>struct R{T n;};}using N::R;',
-        'inline-namespace': 'namespace N{inline namespace V{int n=3;}}using N::n;',
         'unsupported-type': 'namespace N{using T=double;}using N::T;',
         'unused-body': 'namespace N{int f(){double n=3;return static_cast<int>(n);}}using N::f;',
         'unused-initializer': 'namespace N{int n=static_cast<int>(3.0);}using N::n;',
@@ -5357,6 +5356,249 @@ int main(){return early()-10;}
                        else f"int f(){{return {last}::n;}}")
             check(f"v2-name-imports-boundary-{alias_count}-{directive}", source,
                   None if alias_count == 64 else "TR0201", profile="cpp-core-v2")
+
+    inline_source = """namespace API {
+struct Outer { int n; };
+inline namespace V1 {
+int state=3;
+const int constant=7;
+struct R { int n; };
+struct Inner { int n; };
+int choose(bool){return 20;}
+int read(const Outer&r){return r.n+1;}
+int outside();
+inline namespace Deep {
+int depth=5;
+}
+}
+int choose(int){return 10;}
+int read(const Inner&r){return r.n+2;}
+namespace V2 {
+int state=19;
+struct R { bool flag;int n; };
+}
+}
+namespace API::V1 {
+int bump(){return ++state;}
+}
+namespace API::V1::Deep {
+int deep(){return depth;}
+}
+int API::V1::outside(){return 17;}
+namespace Alias=API::V1;
+namespace Imported {
+using API::state,API::R,Alias::bump;
+}
+namespace Directed {
+using namespace Alias;
+int*address(){return &state;}
+}
+namespace Lifetime {
+inline namespace V {
+struct Guard {
+ int*trace;
+ Guard(int*p):trace(p){*trace=*trace*10+1;}
+ ~Guard(){*trace=*trace*10+2;}
+};
+}
+}
+int boolChoice(){return API::choose(true);}
+int intChoice(){return API::choose(1);}
+int explicitChoice(){return API::V1::choose(true);}
+int outerRead(const API::Outer&r){return read(r);}
+int innerRead(const API::Inner&r){return read(r);}
+int parentOutside(){return API::outside();}
+int versionOutside(){return API::V1::outside();}
+int importedBump(){return Imported::bump();}
+int parentDeep(){return API::deep();}
+int*defaultAddress(){return &API::state;}
+int*explicitAddress(){return &API::V1::state;}
+int*aliasAddress(){return &Alias::state;}
+int*importAddress(){using Imported::state;return &state;}
+int*otherAddress(){return &API::V2::state;}
+int*deepAddress(){return &API::depth;}
+int*explicitDeepAddress(){return &API::V1::Deep::depth;}
+const int*constantAddress(){return &API::constant;}
+void write(int value){API::state=value;}
+API::V1::R&same(Imported::R&r){return r;}
+void cleanup(int&trace){Lifetime::Guard g(&trace);trace=trace*10+4;}
+int main(){return boolChoice()-20;}
+"""
+    inline_namespaces = check("v2-inline-namespaces-protocol", inline_source, profile="cpp-core-v2")
+    in_functions = {f["name"]: f for f in inline_namespaces["functions"]}
+    assert len(in_functions) == len(inline_namespaces["functions"])
+
+    def in_line(prefix):
+        lines = [i for i, line in enumerate(inline_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def in_function(prefix, result, parameters):
+        found = [f for f in inline_namespaces["functions"] if f["loc"]["line"] == in_line(prefix)
+                 and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(found) == 1, (prefix, result, parameters, found)
+        return found[0]
+
+    def in_record(prefix):
+        found = [r for r in inline_namespaces["records"] if r["loc"]["line"] == in_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def in_global(prefix, value, mutable=True):
+        found = [g for g in inline_namespaces["globals"] if g["loc"]["line"] == in_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        result = found[0]
+        assert result["type"] == "int" and result["value"]["kind"] == "literal"
+        assert result["value"]["type"] == "int" and result["value"]["value"] == str(value)
+        assert result.get("mutable", False) == mutable
+        if not mutable:
+            assert "mutable" not in result
+        return result
+
+    assert len(inline_namespaces["globals"]) == 4
+    state = in_global("int state=3;", 3)
+    other = in_global("int state=19;", 19)
+    depth = in_global("int depth=5;", 5)
+    constant = in_global("const int constant=7;", 7, False)
+    assert len({g["name"] for g in inline_namespaces["globals"]}) == 4
+    assert len(inline_namespaces["records"]) == 5
+    record = in_record("struct R { int n;")
+    other_record = in_record("struct R { bool flag;")
+    outer = in_record("struct Outer {")
+    inner = in_record("struct Inner {")
+    guard = in_record("struct Guard {")
+    assert record["id"] != other_record["id"]
+    assert [f["type"] for f in record["fields"]] == ["int"]
+    assert [f["type"] for f in other_record["fields"]] == ["bool", "int"]
+    assert record["layout"] == {"size_bits": 32, "abi_align_bits": 32, "field_offsets_bits": [0]}
+    assert other_record["layout"] == {"size_bits": 64, "abi_align_bits": 32, "field_offsets_bits": [0, 32]}
+    choose_bool = in_function("int choose(bool)", "int", ["bool"])
+    choose_int = in_function("int choose(int)", "int", ["int"])
+    outside = in_function("int API::V1::outside()", "int", [])
+    bump = in_function("int bump()", "int", [])
+    deep = in_function("int deep()", "int", [])
+    for prefix, callee in (("int boolChoice()", choose_bool), ("int intChoice()", choose_int),
+                           ("int explicitChoice()", choose_bool), ("int parentOutside()", outside),
+                           ("int versionOutside()", outside), ("int importedBump()", bump),
+                           ("int parentDeep()", deep)):
+        function = in_function(prefix, "int", [])
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == callee["name"]
+        assert [a["type"] for a in calls[0]["args"]] == [p["type"] for p in callee["params"]]
+    for prefix, callee_prefix, parameter_record in (("int outerRead(", "int read(const Outer&", outer),
+                                                    ("int innerRead(", "int read(const Inner&", inner)):
+        parameter_type = "cptr:"+parameter_record["id"]
+        function = in_function(prefix, "int", [parameter_type])
+        callee = in_function(callee_prefix, "int", [parameter_type])
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == callee["name"]
+        assert np_pointer(function, calls[0]["args"][0]) == ("parameter", function["params"][0]["name"])
+    for prefix, global_value, result in (("int*defaultAddress()", state, "ptr:int"),
+                                         ("int*explicitAddress()", state, "ptr:int"),
+                                         ("int*aliasAddress()", state, "ptr:int"),
+                                         ("int*importAddress()", state, "ptr:int"),
+                                         ("int*address()", state, "ptr:int"),
+                                         ("int*otherAddress()", other, "ptr:int"),
+                                         ("int*deepAddress()", depth, "ptr:int"),
+                                         ("int*explicitDeepAddress()", depth, "ptr:int"),
+                                         ("const int*constantAddress()", constant, "cptr:int")):
+        function = in_function(prefix, result, [])
+        assert not gc_calls(function)
+        assert [np_pointer(function, n["value"]) for n in function["body"] if n["op"] == "return"] == [("object", global_value["name"])]
+    write = in_function("void write(", "void", ["int"])
+    writes = [n for n in write["body"] if n["op"] == "assign" and n["target"].get("name") == state["name"]]
+    assert len(writes) == 1
+    assert gc_identity(write, writes[0]["value"]) == ("parameter", write["params"][0]["name"])
+    bump_writes = [n for n in bump["body"] if n["op"] == "assign" and n["target"].get("name") == state["name"]]
+    assert len(bump_writes) == 1 and bump_writes[0]["value"]["kind"] == "binary"
+    assert bump_writes[0]["value"]["operator"] == "+"
+    same = in_function("API::V1::R&same(", "ptr:"+record["id"], ["ptr:"+record["id"]])
+    assert [np_pointer(same, n["value"]) for n in same["body"] if n["op"] == "return"] == [("parameter", same["params"][0]["name"])]
+    cleanup = in_function("void cleanup(", "void", ["ptr:int"])
+    constructor = in_function(" Guard(int*", "void", ["ptr:"+guard["id"], "ptr:int"])
+    calls = gc_calls(cleanup)
+    assert [call["callee"] for call in calls] == [constructor["name"], guard["id"]+"_destroy"]
+    assert np_pointer(cleanup, calls[0]["args"][0]) == np_pointer(cleanup, calls[1]["args"][0])
+    declaration_lines = {i for i, line in enumerate(inline_source.splitlines(), 1)
+                         if line.lstrip().startswith(("namespace ", "inline namespace ", "using "))}
+    for collection in (inline_namespaces["globals"], inline_namespaces["records"], inline_namespaces["functions"]):
+        assert not any(item["loc"]["line"] in declaration_lines for item in collection), "namespace visibility duplicated an entity"
+    for function in inline_namespaces["functions"]:
+        assert not any(n["loc"]["line"] in declaration_lines for n in function["body"]), "namespace declaration emitted runtime work"
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in in_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-inline-namespaces-relocated-") as temp:
+        relocated = check("v2-inline-namespaces-relocated", inline_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == inline_namespaces, "inline namespace identities depend on the absolute root"
+
+    inline_namespaces_positive = {
+        'named': 'namespace N{inline namespace V{int n=3;}}int main(){return N::n-3;}',
+        'anonymous': 'namespace N{inline namespace{int n=3;}}int main(){return N::n-3;}',
+        'transitive': 'namespace N{inline namespace V{inline namespace Deep{int n=3;}}}int main(){return &N::n!=&N::V::Deep::n;}',
+        'reopen': 'namespace N{inline namespace V{int f();}namespace V{int f(){return 3;}}}int main(){return N::f()-3;}',
+        'nested-reopen': 'namespace N{inline namespace V{int f();}}namespace N::V{int f(){return 3;}}int main(){return N::f()-3;}',
+        'transitive-nested-reopen': 'namespace N{inline namespace V{inline namespace Deep{int f();}}}namespace N::V::Deep{int f(){return 3;}}int main(){return N::f()-3;}',
+        'outside-definition': 'namespace N{inline namespace V{int f();}}int N::V::f(){return 3;}int main(){return N::f()-3;}',
+        'alias': 'namespace N{inline namespace V{int n=3;}}namespace A=N::V;int main(){return &A::n!=&N::n;}',
+        'directive': 'namespace N{inline namespace V{int n=3;}}using namespace N::V;int main(){return &n!=&N::n;}',
+        'parent-directive': 'namespace N{inline namespace V{int n=3;}}using namespace N;int main(){return n-3;}',
+        'using': 'namespace N{inline namespace V{int n=3;}}using N::n;int f(){using N::V::n;return n;}',
+        'import-promoted': 'namespace N{inline namespace V{int n=3;}}using N::n;',
+        'versions': 'namespace N{inline namespace V1{int n=3;}namespace V2{int n=4;}}int main(){return &N::n==&N::V2::n;}',
+        'record': 'namespace N{inline namespace V{struct R{int n;};}}int main(){N::R r{3};N::V::R&s=r;return &r!=&s;}',
+        'qualified-overloads': 'namespace N{int f(int){return 1;}inline namespace V{int f(bool){return 2;}}}int main(){return N::f(true)-2;}',
+        'adl-parent-type': 'namespace N{struct R{int n;};inline namespace V{int f(const R&r){return r.n;}}}int main(){N::R r{3};return f(r)-3;}',
+        'adl-inline-type': 'namespace N{inline namespace V{struct R{int n;};}int f(const R&r){return r.n;}}int main(){N::R r{3};return f(r)-3;}',
+        'hidden-friend': 'namespace N{inline namespace V{struct R{int n;friend int f(const R&r){return r.n;}};}}int main(){N::R r{3};return f(r)-3;}',
+        'lifetime': 'namespace N{inline namespace V{struct R{int*p;R(int*q):p(q){++*p;}~R(){++*p;}};}}int main(){int n=0;{N::R r(&n);}return n-2;}',
+        'macro-inline': '#define INLINE inline\nnamespace N{INLINE namespace V{int n=3;}}int main(){return N::n-3;}',
+        'macro-separator': '#define SCOPE ::\nnamespace N{inline namespace V{int f();}}namespace N SCOPE V{int f(){return 3;}}int main(){return N::f()-3;}',
+        'macro-argument-separator': '#define ID(x) x\nnamespace N{inline namespace V{int f();}}namespace N ID(::) V{int f(){return 3;}}',
+    }
+    for name, source in inline_namespaces_positive.items():
+        check("v2-inline-namespaces-positive-" + name, source, profile="cpp-core-v2")
+    inline_namespaces_reject = {
+        'nested-inline': 'namespace N::inline V{int n=3;}',
+        'nested-inline-inner': 'namespace N::inline V::Inner{int n=3;}',
+        'nested-inline-reopen': 'namespace N{inline namespace V{int n=3;}}namespace N::inline V{int f(){return n;}}',
+        'macro-nested-inline': '#define INLINE inline\nnamespace N::INLINE V{int n=3;}',
+        'macro-argument-inline': '#define ID(x) x\nnamespace N::ID(inline) V{int n=3;}',
+        'attribute': 'namespace N{inline namespace [[deprecated]] V{int n=3;}}',
+        'template': 'namespace N{inline namespace V{template<class T>struct R{T n;};}}',
+        'unused-type': 'namespace N{inline namespace V{using T=double;}}',
+        'unused-body': 'namespace N{inline namespace V{int f(){double n=3;return static_cast<int>(n);}}}',
+        'skipped-body': 'namespace N{inline namespace V{int f(){if(false){double n=3;}return 0;}}}',
+        'folded-initializer': 'namespace N{inline namespace V{int n=static_cast<int>(3.0);}}',
+        'active-include': '#include <vector>\nnamespace N{inline namespace V{int n=3;}}',
+        'inactive-include': '#if 0\n#include "missing.h"\n#endif\nnamespace N{inline namespace V{int n=3;}}',
+    }
+    for name, source in inline_namespaces_reject.items():
+        check("v2-inline-namespaces-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    inline_namespaces_invalid = {
+        'inline-mismatch': 'namespace N{}inline namespace N{}',
+        'block': 'void f(){inline namespace N{}}',
+        'class': 'struct R{inline namespace N{}};',
+        'alias-reopen': 'namespace N{}namespace A=N;inline namespace A{}',
+        'duplicate': 'namespace N{inline namespace V{int n=3;}namespace V{int n=4;}}',
+        'ambiguous': 'namespace N{int n=3;inline namespace V{int n=4;}}int f(){return N::n;}',
+        'ambiguous-versions': 'namespace N{inline namespace V1{int n=3;}inline namespace V2{int n=4;}}int f(){return N::n;}',
+        'inline-alias': 'namespace N{}inline namespace A=N;',
+        'leading-inline-nested': 'inline namespace N::V{int n=3;}',
+        'const-write': 'namespace N{inline namespace V{const int n=3;}}void f(){N::n=4;}',
+    }
+    for name, source in inline_namespaces_invalid.items():
+        check("v2-inline-namespaces-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    inline_namespaces_missing = {
+        'function': 'namespace N{inline namespace V{int f();}}int main(){return N::f();}',
+        'unused-function': 'namespace N{inline namespace V{int f();}}',
+        'global': 'namespace N{inline namespace V{extern int n;}}int f(){return N::n;}',
+        'unused-global': 'namespace N{inline namespace V{extern int n;}}',
+    }
+    for name, source in inline_namespaces_missing.items():
+        check("v2-inline-namespaces-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-inline-namespaces-top", "inline namespace N{int n=3;}", "TR0201")
+    check("v1-inline-namespaces-inner", "namespace N{inline namespace V{int n=3;}}", "TR0201")
 
     default_argument_source = """int number=1;
 void mark(int n){number+=n;}

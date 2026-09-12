@@ -684,11 +684,47 @@ cleanup timing, actual storage identity and deterministic relocation. Native
 O0/O2 results require CI from the implementing revision. Full C++/STL support
 remains unfinished.
 
+## Inline namespaces
+
+Core v2 admits source-owned C++17 named and anonymous inline namespaces,
+including transitive nesting, reopening with or without the inline keyword,
+and out-of-namespace member definitions. Parent-qualified lookup includes the
+inline namespace's declarations even when the parent has same-named overloads.
+Argument-dependent lookup includes both the inline namespace and its parent.
+Embedded Clang resolves these rules before translation.
+
+Implicit visibility, explicit qualification, namespace aliases and using imports
+refer to the original canonical declaration. They share global storage and const
+permissions, record types/layouts, and selected function definitions. Distinct
+version namespaces retain separate symbols and types. Namespace declarations
+create no runtime objects, wrappers, initialization or cleanup; ordinary class
+lifetimes and source closure remain unchanged.
+
+The C++17 spelling `namespace A::V {}` can reopen an existing inline `V`.
+The C++20 spelling `namespace A::inline V {}` remains rejected, including when
+the inline token comes from a macro. The pinned AST marks both declarations as
+inline; the producer distinguishes the written start token from inherited inline
+status. Macro-spelled C++17 inline declarations and namespace separators remain
+admitted. A namespace first declared non-inline cannot later become inline;
+Clang's source diagnostic is preserved.
+
+Namespace attributes, templates, unsupported types/bodies, foreign includes and
+missing required definitions retain their restrictions, including unused and
+statically skipped code. Old profiles retain their existing inline namespace
+boundary. No header, SDK or standard-library support is implied by namespace
+admission.
+
+Native O0/O2 fixtures cover qualified overloads, bidirectional ADL, versioned
+object/type identity, transitive visibility, reopening, macros and cleanup.
+Protocol checks verify canonical objects, exact signatures/layouts, declaration
+erasure and deterministic relocation. Native validation requires the implementing
+revision's CI; full C++/STL remains unfinished.
+
 ## Resolved namespace imports
 
 Core v2 admits namespace aliases, using-directives and ordinary resolved
 using-declarations in namespace and block scopes. Aliases and directives may
-refer to source-owned nested, anonymous or reopened namespaces, including
+refer to source-owned nested, inline, anonymous or reopened namespaces, including
 chains of namespace aliases. Imported functions, variables, typedefs, record
 and enum types, and unscoped enumerators keep their original canonical source
 declarations. This includes unscoped enumerators local to an ordinary function
@@ -716,7 +752,7 @@ body or definition from full source validation, even when unused or statically
 skipped. Source errors retain TR0202 and missing required definitions TR0203.
 
 Class-member imports, inherited constructors, templates/dependent/pack forms,
-inline namespaces, foreign targets and unsupported source types or bodies remain
+foreign targets and unsupported source types or bodies remain
 excluded. C++20 using-enum and scoped-enumerator imports remain rejected under
 the C++17 contract even when the embedded library only issues an extension
 warning. Old profiles and header/library restrictions are unchanged.

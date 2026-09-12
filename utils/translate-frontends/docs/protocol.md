@@ -129,6 +129,12 @@ Receiver effects and cleanup stay explicit; discarded and unevaluated values
 emit no scalar storage. Source address/reference uses still require a real
 definition. See [declaration-only static constants](cpp-core-v2.md#declaration-only-static-constant-values).
 
+Core-v2 inline namespaces retain their canonical namespace-qualified source
+identities. Parent and explicitly qualified uses share original symbols; distinct
+version namespaces do not merge. Inline visibility and bidirectional ADL require
+no IR fields or runtime wrappers. See [inline namespaces](cpp-core-v2.md#inline-namespaces)
+for C++17 reopening and C++20 nested-spelling boundaries.
+
 Core-v2 namespace aliases and resolved using imports are lookup-only source
 declarations. They produce no IR entity, wrapper, storage, initializer or
 cleanup; uses retain original canonical type/object/function IDs and the exact
