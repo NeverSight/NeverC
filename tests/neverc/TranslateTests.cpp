@@ -4414,6 +4414,7 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2NestedFriendDeclarationsAcceptFunctionPrivileges) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"nonfunction-type-friend", "class R{class Hidden{};public:struct I{friend class R::Hidden;};};"},
       {"own-return-alias", "class R{public:class I{using Value=int;public:friend Value get(I,int n){return n;}};};int main(){return get(R::I{},3)-3;}"},
       {"own-parameter-alias", "class R{public:class I{using Value=int;public:friend int get(I,Value n){return n;}};};int main(){return get(R::I{},3)-3;}"},
       {"inner-alias-to-outer", "class R{using Hidden=int;public:class I{using Value=Hidden;public:friend Value get(I,Value n){return n;}};};int main(){return get(R::I{},3)-3;}"},
@@ -4468,7 +4469,6 @@ TEST_F(TranslateTest, CoreV2NestedFriendDeclarationsRejectImplicitEnclosingPrivi
 
 TEST_F(TranslateTest, CoreV2NestedFriendDeclarationsRetainNonFunctionBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"nonfunction-type-friend", "class R{class Hidden{};public:struct I{friend class R::Hidden;};};"},
       {"nonfunction-template-friend", "class R{template<class T>struct Hidden{};public:struct I{template<class T>friend struct R::Hidden;};};"},
   };
   for (const auto &[Name, Code] : Cases) {

@@ -2222,7 +2222,7 @@ class does not implicitly grant access to private or protected names of an outer
 class. Explicit grants and accessible inner aliases remain valid. Nominated names
 are also checked in the befriending class before redeclaration merging. Ordinary
 nested member access and non-function friend declaration checks retain their
-existing behavior; type-friend translation remains outside the current profile.
+existing behavior, including supported concrete friend types.
 The embedded parser preserves lexical lookup while checking late default arguments
 in the function context. Omitted defaults keep their call-site evaluation and
 cleanup behavior.
