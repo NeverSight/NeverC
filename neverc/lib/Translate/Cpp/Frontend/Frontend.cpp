@@ -91,19 +91,11 @@ bool callableMethod(const CXXMethodDecl *M) {
   return ordinaryMethod(M) || ordinaryCopyAssignment(M);
 }
 
-bool defaultedLifecycle(const CXXMethodDecl *M) {
+static bool defaultedFunction(const CXXMethodDecl *M) {
   if (!M || M->isInvalidDecl() || M->isDeleted() || M->isVirtual() ||
       M->isVariadic() || M->isExplicitObjectMemberFunction() ||
-      M->getTemplatedKind() != FunctionDecl::TK_NonTemplate || M->isConsteval() ||
-      M->getNumParams())
+      M->getTemplatedKind() != FunctionDecl::TK_NonTemplate || M->isConsteval())
     return false;
-  if (const auto *C = dyn_cast<CXXConstructorDecl>(M)) {
-    if (!C->isDefaultConstructor() || C->isDelegatingConstructor() ||
-        C->isInheritingConstructor())
-      return false;
-  } else if (!isa<CXXDestructorDecl>(M)) {
-    return false;
-  }
   bool Defaulted = false;
   for (const auto *D : M->redecls()) {
     if (D->isInvalidDecl() || D->isDeleted())
@@ -122,8 +114,32 @@ bool defaultedLifecycle(const CXXMethodDecl *M) {
   return Defaulted;
 }
 
+bool defaultedLifecycle(const CXXMethodDecl *M) {
+  if (!defaultedFunction(M) || M->getNumParams())
+    return false;
+  if (const auto *C = dyn_cast<CXXConstructorDecl>(M))
+    return C->isDefaultConstructor() && !C->isDelegatingConstructor() &&
+           !C->isInheritingConstructor();
+  return isa<CXXDestructorDecl>(M);
+}
+
+bool defaultedCopyConstructor(const CXXConstructorDecl *C) {
+  if (!defaultedFunction(C) || !C->isCopyConstructor() ||
+      C->isMoveConstructor() || C->isDelegatingConstructor() ||
+      C->isInheritingConstructor() || C->getNumParams() != 1)
+    return false;
+  auto Source = C->getParamDecl(0)->getType();
+  if (!Source->isLValueReferenceType())
+    return false;
+  auto Pointee = Source->getPointeeType();
+  const auto *Record = Pointee->getAsCXXRecordDecl();
+  return !Pointee.isVolatileQualified() && !Pointee.isRestrictQualified() &&
+         Record && Record->getCanonicalDecl() == C->getParent()->getCanonicalDecl();
+}
+
 bool supportedConstructor(const CXXConstructorDecl *C) {
-  return ordinaryConstructor(C) || defaultedLifecycle(C);
+  return ordinaryConstructor(C) || defaultedLifecycle(C) ||
+         defaultedCopyConstructor(C);
 }
 
 const CXXConstructExpr *constructorConversion(const CastExpr *Cast,
@@ -491,12 +507,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::map<const CXXRecordDecl *, bool> HasArray;
   std::set<const Expr *> DirectMethodCallees;
+  std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
+  unsigned ArrayIndexDepth = 0;
   const CXXMethodDecl *CurrentMethod = nullptr;
   SourceLocation ImplicitInitializerOwner;
   std::set<const Expr *> CheckedSemanticInitializers;
   std::set<const CXXConstructExpr *> CheckedConstructions;
-  std::set<const Decl *> QueuedDefaultConstructors;
-  std::vector<const CXXConstructorDecl *> DefaultConstructors;
+  std::set<const Decl *> QueuedGeneratedConstructors;
+  std::vector<const CXXConstructorDecl *> GeneratedConstructors;
   bool owned(const Decl *D) {
     return !D->isImplicit() && A.S.owns(A.Sources, D->getLocation());
   }
@@ -533,6 +551,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   bool temporaryBinding(const Expr *E) {
     E = E->IgnoreParens();
+    if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E)) {
+      auto Found = ArraySources.find(Opaque);
+      return Found == ArraySources.end() || temporaryBinding(Found->second);
+    }
     if (isa<MaterializeTemporaryExpr, CXXBindTemporaryExpr>(E))
       return true;
     if (const auto *C = dyn_cast<CastExpr>(E))
@@ -590,16 +612,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (A.S.coreV2() && supportedConstructor(Constructor)) {
       if (!A.S.owns(A.Sources, Constructor->getLocation())) {
         A.reject(L, "construction", "The selected constructor must be source-owned.", "TR0203");
-      } else if (defaultedLifecycle(Constructor)) {
-        // Trivial default constructors need no function, even when explicitly
+      } else if (defaultedLifecycle(Constructor) || defaultedCopyConstructor(Constructor)) {
+        // Trivial generated constructors need no function, even when explicitly
         // defaulted. Nontrivial definitions are also lazy in unevaluated uses.
         const FunctionDecl *Definition = nullptr;
         if (!Constructor->isTrivial() && Constructor->hasBody(Definition)) {
           if (!A.S.owns(A.Sources, Definition->getLocation()))
             A.reject(L, "construction", "The generated definition must be source-owned.", "TR0203");
-          else if (QueuedDefaultConstructors.insert(Constructor->getCanonicalDecl()).second) {
+          else if (QueuedGeneratedConstructors.insert(Constructor->getCanonicalDecl()).second) {
             A.chargeExpansion(1, L);
-            DefaultConstructors.push_back(cast<CXXConstructorDecl>(Definition));
+            GeneratedConstructors.push_back(cast<CXXConstructorDecl>(Definition));
           }
         }
       } else if (!Constructor->hasBody()) {
@@ -655,7 +677,8 @@ public:
     bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecl(D);
     if (const auto *C = dyn_cast_or_null<CXXConstructorDecl>(D);
         Result && A.S.coreV2() && C && owned(C) &&
-        !defaultedLifecycle(C) && C->doesThisDeclarationHaveABody()) {
+        !defaultedLifecycle(C) && !defaultedCopyConstructor(C) &&
+        C->doesThisDeclarationHaveABody()) {
       // RAV skips non-written initializers in both TraverseFunctionHelper and
       // TraverseConstructorInitializer. Inspect these semantic expressions
       // explicitly; written expressions were already visited by RAV.
@@ -685,10 +708,11 @@ public:
   void finishGeneratedConstructors() {
     // Drain selected definitions only. Enabling all implicit RAV declarations
     // would also visit unselected copy/move methods and change their boundary.
-    for (std::size_t Index = 0; Index < DefaultConstructors.size(); ++Index) {
-      const auto *C = DefaultConstructors[Index];
+    for (std::size_t Index = 0; Index < GeneratedConstructors.size(); ++Index) {
+      const auto *C = GeneratedConstructors[Index];
       const auto *Body = dyn_cast_or_null<CompoundStmt>(C->getBody());
-      if (!defaultedLifecycle(C) || !Body || !Body->body_empty()) {
+      if ((!defaultedLifecycle(C) && !defaultedCopyConstructor(C)) ||
+          !Body || !Body->body_empty()) {
         A.reject(C->getLocation(), "generated constructor",
                  "Expected a defaulted constructor with semantic field initializers and an empty body.");
         continue;
@@ -703,6 +727,8 @@ public:
       });
       A.type(C->getReturnType(), C->getLocation(), true);
       A.type(C->getThisType(), C->getLocation());
+      for (const auto *Parameter : C->parameters())
+        A.type(Parameter->getType(), C->getLocation());
       std::set<const Decl *> Initialized;
       for (const auto *I : C->inits()) {
         if (!I->isMemberInitializer() || I->isPackExpansion() ||
@@ -717,6 +743,42 @@ public:
       TraverseStmt(const_cast<CompoundStmt *>(Body));
       A.Functions.push_back(const_cast<CXXConstructorDecl *>(C));
     }
+  }
+  bool TraverseArrayInitLoopExpr(ArrayInitLoopExpr *Loop) {
+    // Use synchronous traversal: RAV's queued traversal would inspect children
+    // after the binding scope had ended. Still run generic expression checks.
+    if (!WalkUpFromArrayInitLoopExpr(Loop))
+      return false;
+    auto L = ImplicitInitializerOwner;
+    const auto *Array = A.Context.getAsConstantArrayType(Loop->getType());
+    const auto *Common = Loop->getCommonExpr();
+    const auto *Source = Common ? Common->getSourceExpr() : nullptr;
+    if (!A.S.coreV2() || !L.isValid() ||
+        !defaultedCopyConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) ||
+        !Array || !Source || !Source->isLValue() || !Common->isLValue() ||
+        !A.Context.hasSameUnqualifiedType(Source->getType(), Loop->getType()) ||
+        !A.Context.hasSameType(Source->getType(), Common->getType()) ||
+        !Loop->getSubExpr() ||
+        !A.Context.hasSameUnqualifiedType(Array->getElementType(), Loop->getSubExpr()->getType()) ||
+        Array->getSize() != Loop->getArraySize() ||
+        !Array->getSize().getLimitedValue(65537) ||
+        Array->getSize().getLimitedValue(65537) > 65536 ||
+        A.storageUnits(Loop->getType()) > 200000 || ArraySources.count(Common)) {
+      A.reject(L, "generated array copy", "Expected a bounded semantic member-array copy.");
+      return true;
+    }
+    A.chargeExpansion(1, L);
+    // A nested common source references the containing loop's index. Bind the
+    // inner index only after that source has been checked in the outer scope.
+    if (!TraverseStmt(const_cast<Expr *>(Source)))
+      return false;
+    ArraySources.emplace(Common, Source);
+    auto RestoreSource = llvm::make_scope_exit([&] { ArraySources.erase(Common); });
+    if (!TraverseStmt(const_cast<OpaqueValueExpr *>(Common)))
+      return false;
+    ++ArrayIndexDepth;
+    auto RestoreIndex = llvm::make_scope_exit([&] { --ArrayIndexDepth; });
+    return TraverseStmt(Loop->getSubExpr());
   }
   bool VisitDecl(Decl *D) {
     if (!owned(D))
@@ -768,7 +830,9 @@ public:
       return true;
     A.type(D->getReturnType(), D->getLocation(), true);
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
-    const bool Defaulted = A.S.coreV2() && defaultedLifecycle(Method);
+    const bool Defaulted = A.S.coreV2() &&
+        (defaultedLifecycle(Method) ||
+         defaultedCopyConstructor(dyn_cast_or_null<CXXConstructorDecl>(Method)));
     if ((Method && (!A.S.coreV2() ||
                     (!callableMethod(Method) &&
                      !supportedConstructor(dyn_cast<CXXConstructorDecl>(Method)) &&
@@ -986,7 +1050,13 @@ public:
             isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())))
         A.type(E->getType(), E->getExprLoc(), true);
     }
-    if (!(A.S.math() && isa<FloatingLiteral>(S)) &&
+    const auto *Opaque = dyn_cast<OpaqueValueExpr>(S);
+    const bool GeneratedArrayNode = A.S.coreV2() &&
+        ImplicitInitializerOwner.isValid() &&
+        defaultedCopyConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) &&
+        (isa<ArrayInitLoopExpr>(S) || (Opaque && ArraySources.count(Opaque)) ||
+         (isa<ArrayInitIndexExpr>(S) && ArrayIndexDepth));
+    if (!GeneratedArrayNode && !(A.S.math() && isa<FloatingLiteral>(S)) &&
         !(A.S.coreV2() &&
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,

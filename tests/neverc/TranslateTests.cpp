@@ -1605,7 +1605,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMembers) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"defaulted-constructor", "struct R{int n;R(const R&)=default;};"},
       {"deleted-constructor", "struct R{int n;R(const R&)=delete;};"},
       {"defaulted-assignment", "struct R{int n;R&operator=(const R&)=default;};"},
       {"deleted-assignment", "struct R{int n;R&operator=(const R&)=delete;};"},
@@ -1655,6 +1654,201 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
   writeFile(Source, "struct R{int n;R(const R&r):n(r.n){}};");
   Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
   expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
+TEST_F(TranslateTest, CoreV2GeneratedCopyPreservesMembersAndObjectIdentity) {
+  const auto Source = tmpFile("generated-copy.cpp");
+  const auto Output = tmpFile("generated-copy.nc");
+  writeFile(Source, R"cpp(
+struct Stats { int copies,destroyed,trace[64],used; };
+struct Leaf {
+  int value;
+  Stats *stats;
+  Leaf *self;
+  Leaf(int n,Stats &s):value(n),stats(&s),self(this){}
+  Leaf(const Leaf &source):value(source.value+1),stats(source.stats),self(this){
+    ++stats->copies;stats->trace[stats->used++]=source.value;
+  }
+  ~Leaf(){++stats->destroyed;}
+};
+struct Mixed {
+  int before;
+  Leaf first;
+  int numbers[3];
+  Leaf grid[2][2];
+  int after;
+  ~Mixed()=default;
+};
+struct Defaulted {
+  int plain;
+  Leaf first,items[2];
+  Defaulted(const Defaulted&)=default;
+  ~Defaulted()=default;
+};
+struct Outside {
+  Leaf leaf;
+  Outside(int n,Stats &s):leaf(n,s){}
+  Outside(const Outside&);
+  ~Outside()=default;
+};
+Outside::Outside(const Outside&)=default;
+struct ExplicitCopy {
+  Leaf leaf;
+  ExplicitCopy(int n,Stats &s):leaf(n,s){}
+  explicit ExplicitCopy(const ExplicitCopy&)=default;
+  ~ExplicitCopy()=default;
+};
+struct Trivial {
+  int values[2];Trivial *self;
+  Trivial(const Trivial&)=default;
+};
+struct ArrayTrivial { Trivial items[2];Leaf leaf;~ArrayTrivial()=default; };
+struct MutableLeaf {
+  int value;Stats *stats;MutableLeaf *self;
+  MutableLeaf(int n,Stats &s):value(n),stats(&s),self(this){}
+  MutableLeaf(MutableLeaf &source):value(++source.value),stats(source.stats),self(this){++stats->copies;}
+  ~MutableLeaf(){++stats->destroyed;}
+};
+struct MutableBox { MutableLeaf items[2];~MutableBox()=default; };
+struct Unused { int n;Unused(const Unused&)=default; };
+struct OnlySize { Leaf leaf;OnlySize(const OnlySize&)=default; };
+int query(const OnlySize &source){return sizeof(OnlySize(source));}
+bool own(const Mixed &value){
+  if(value.first.self!=&value.first)return false;
+  for(int i=0;i<2;++i)for(int j=0;j<2;++j)
+    if(value.grid[i][j].self!=&value.grid[i][j])return false;
+  return true;
+}
+Mixed make(Stats &stats){
+  return {1,Leaf(2,stats),{3,4,5},{{Leaf(6,stats),Leaf(7,stats)},
+         {Leaf(8,stats),Leaf(9,stats)}},10};
+}
+Mixed forward(Stats &stats){return make(stats);}
+Mixed fromSource(const Mixed &source){return source;}
+Mixed named(Stats &stats){Mixed value=make(stats);return value;}
+Mixed identity(Mixed value){return value;}
+int byValue(Mixed value,const Mixed &source){return own(value) && &value!=&source && value.first.value==source.first.value+1;}
+int main(){
+  Stats stats{0,0,{},0};
+  {
+    Mixed source=make(stats);
+    if(!own(source) || stats.copies)return 1;
+    Mixed copied=source;
+    if(!own(copied) || copied.before!=1 || copied.after!=10 || copied.first.value!=3 ||
+       copied.numbers[0]!=3 || copied.numbers[1]!=4 || copied.numbers[2]!=5)return 2;
+    const int expected[5]={2,6,7,8,9};
+    if(stats.copies!=5 || stats.used!=5)return 3;
+    for(int i=0;i<5;++i)if(stats.trace[i]!=expected[i])return 4;
+    if(copied.grid[0][0].value!=7 || copied.grid[0][1].value!=8 ||
+       copied.grid[1][0].value!=9 || copied.grid[1][1].value!=10 ||
+       source.first.value!=2 || source.grid[1][1].value!=9)return 5;
+    stats.used=0;
+    Mixed second=copied;
+    if(!own(second) || second.first.value!=4 || second.grid[1][1].value!=11 || stats.copies!=10)return 6;
+    for(int i=0;i<5;++i)if(stats.trace[i]!=expected[i]+1)return 7;
+    stats.used=0;
+    if(!byValue(source,source) || stats.copies!=15 || stats.destroyed!=5)return 8;
+    Mixed result=forward(stats);
+    if(!own(result) || result.first.value!=2 || stats.copies!=15)return 9;
+    stats.used=0;
+    Mixed returned=fromSource(source);
+    if(!own(returned) || returned.first.value!=3 || stats.copies!=20)return 10;
+    stats.used=0;
+    Mixed named_result=named(stats);
+    if(!own(named_result) || named_result.first.value!=3 || stats.copies!=25 || stats.destroyed!=10)return 11;
+    stats.used=0;
+    Mixed parameter_result=identity(source);
+    if(!own(parameter_result) || parameter_result.first.value!=4 ||
+       stats.copies!=35 || stats.destroyed!=15)return 12;
+  }
+  if(stats.destroyed!=50)return 13;
+  {
+    stats.used=0;
+    Defaulted source{11,Leaf(12,stats),{Leaf(13,stats),Leaf(14,stats)}};
+    Defaulted copied(source);
+    if(copied.plain!=11 || copied.first.value!=13 || copied.items[0].value!=14 ||
+       copied.items[1].value!=15 || copied.first.self!=&copied.first ||
+       copied.items[1].self!=&copied.items[1] || stats.copies!=38)return 14;
+    if(stats.used!=3 || stats.trace[0]!=12 || stats.trace[1]!=13 || stats.trace[2]!=14)return 15;
+    Outside outside(3,stats);Outside outside_copy=outside;
+    if(outside_copy.leaf.value!=4 || outside_copy.leaf.self!=&outside_copy.leaf || stats.copies!=39)return 16;
+    ExplicitCopy explicit_source(5,stats);ExplicitCopy explicit_copy(explicit_source);
+    if(explicit_copy.leaf.value!=6 || explicit_copy.leaf.self!=&explicit_copy.leaf || stats.copies!=40)return 17;
+    Trivial trivial{{1,2},nullptr};trivial.self=&trivial;
+    Trivial trivial_copy(trivial);
+    if(trivial_copy.values[0]!=1 || trivial_copy.values[1]!=2 || trivial_copy.self!=&trivial)return 18;
+    ArrayTrivial array{{{{1,2},nullptr},{{3,4},nullptr}},Leaf(9,stats)};
+    for(int i=0;i<2;++i)array.items[i].self=&array.items[i];
+    ArrayTrivial array_copy=array;
+    if(array_copy.items[0].self!=&array.items[0] || array_copy.items[1].self!=&array.items[1] ||
+       array_copy.items[1].values[1]!=4 || array_copy.leaf.value!=10 ||
+       array_copy.leaf.self!=&array_copy.leaf || stats.copies!=41)return 19;
+    MutableBox mutable_source{{MutableLeaf(1,stats),MutableLeaf(2,stats)}};
+    MutableBox mutable_copy=mutable_source;
+    if(mutable_source.items[0].value!=2 || mutable_source.items[1].value!=3 ||
+       mutable_copy.items[0].value!=2 || mutable_copy.items[1].value!=3 ||
+       mutable_copy.items[0].self!=&mutable_copy.items[0] || stats.copies!=43)return 20;
+  }
+  if(stats.destroyed!=66)return 21;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("generated-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"deleted-copy", "struct R{int n;R(const R&)=delete;};"},
+      {"defaulted-deleted-copy", "struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};"},
+      {"copy-noexcept", "struct R{int n;R(const R&)noexcept=default;};"},
+      {"copy-noexcept-false", "struct R{int n;R(const R&)noexcept(false)=default;};"},
+      {"copy-throw", "struct R{int n;R(const R&)throw()=default;};"},
+      {"out-of-line-noexcept", "struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;"},
+      {"volatile-copy", "struct R{int n;R(const volatile R&)=default;};"},
+      {"move-default", "struct R{int n;R(R&&)=default;};"},
+      {"move-assignment-default", "struct R{int n;R&operator=(R&&)=default;};"},
+      {"copy-assignment-default", "struct R{int n;R&operator=(const R&)=default;};"},
+      {"implicit-assignment", "struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{I i;};void f(R&a,const R&b){a=b;}"},
+      {"dead-implicit-assignment", "struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{I i;};void f(R&a,const R&b){if(false)a=b;}"},
+      {"default-member", "struct R{int n=1;R(const R&)=default;};"},
+      {"unevaluated-default-member", "struct R{int n=1;R(const R&)=default;};int f(const R&r){return sizeof(R(r));}"},
+      {"reference-field", "struct R{int &n;R(const R&)=default;};"},
+      {"const-field", "struct R{const int n;R(const R&)=default;};"},
+      {"nonpublic-field", "class R{int n;public:R(const R&)=default;};"},
+      {"base-copy", "struct B{int n;};struct R:B{int m;R(const R&)=default;};"},
+      {"temporary-reference", "struct I{int n;I(const I&s):n(s.n){}};struct R{I i;R(const R&)=default;};void f(const R&s){const R&r=R(s);}"},
+      {"lambda-array-copy", "int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}"},
+      {"decomposed-array-copy", "int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}"},
+      {"copy-expansion", "struct I{int n;I(const I&s):n(s.n){}};struct R{I items[65536];~R()=default;};R f(const R&s){return s;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("generated-copy-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("generated-copy-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("generated-copy-boundary.cpp");
+  const auto Output = tmpFile("generated-copy-boundary.nc");
+  writeFile(Source, "struct I{int n;I(const I&);};struct R{I i;R(const R&)=default;};R f(const R&s){return s;}");
+  auto Missing = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  expectCode(Missing, "TR0203");
+  expectNoArtifacts(Output);
+  writeFile(Source, "struct R{int n;R(const R&)=default;};");
+  auto Old = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Old, "TR0201");
   expectNoArtifacts(Output);
 }
 
@@ -1771,7 +1965,6 @@ TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
       {"unevaluated-default-member", "struct R{int n=1;explicit R()=default;};int f(){return sizeof(R{});}"},
       {"nonpublic-field", "class R{int n;public:R()=default;};"},
       {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
-      {"copy-default", "struct R{int n;R(const R&)=default;};"},
       {"move-default", "struct R{int n;R(R&&)=default;};"},
       {"copy-assignment-default", "struct R{int n;R&operator=(const R&)=default;};"},
       {"explicit-destruction", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},

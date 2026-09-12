@@ -77,6 +77,7 @@ const clang::CXXConstructExpr *constructorConversion(const clang::CastExpr *Cast
                                                      clang::ASTContext &Context);
 bool ordinaryDestructor(const clang::CXXDestructorDecl *Destructor);
 bool defaultedLifecycle(const clang::CXXMethodDecl *Method);
+bool defaultedCopyConstructor(const clang::CXXConstructorDecl *Constructor);
 bool supportedConstructor(const clang::CXXConstructorDecl *Constructor);
 bool needsDestruction(clang::QualType Type);
 const clang::Expr *directMethodReference(const clang::CallExpr *Call);

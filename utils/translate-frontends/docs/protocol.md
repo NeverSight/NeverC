@@ -167,9 +167,9 @@ Record-result calls omit `target` and pass the actual destination address;
 record returns initialize that destination and emit a value-less `return`.
 Nested direct returns forward the same place. Intentional lvalue argument copies
 and named-object return copies use ordinary checked record assignments for trivial
-copying, or selected user copy calls described below; source and destination remain distinct. Signatures, arity, pointee identities and
+copying, or selected user/generated copy calls described below; source and destination remain distinct. Signatures, arity, pointee identities and
 record layouts are validated by the existing consumer. This convention applies
-to core v2 only and does not admit a foreign ABI, implicit nontrivial copying, moves
+to core v2 only and does not admit a foreign ABI, implicit nontrivial copy assignment, moves
 or exception unwinding. Normal cleanup follows the explicit destruction convention below. See the [source contract](cpp-core-v2.md#record-arguments-and-results).
 
 ## Core v2 user copy calls
@@ -188,8 +188,29 @@ argument order remains receiver then source after those effects are captured.
 No new copy opcode or foreign ABI bypass is introduced. Existing signature,
 arity, const qualification, storage and layout checks apply, with the normal
 parameter/result lifetime convention preserved. Implicit trivial copies retain
-ordinary value assignments; implicit nontrivial copying, defaulted copy operations and
+ordinary value assignments; implicit nontrivial copy assignment, defaulted copy assignment and
 moves remain rejected. See the [source copy contract](cpp-core-v2.md#user-defined-copy-operations).
+
+## Core v2 generated copy calls
+
+Implicit and defaulted nontrivial copy constructors use the existing checked
+`void` constructor convention: a mutable record destination pointer followed by
+one mutable or const record source pointer. Canonical generated definitions are
+emitted once. Semantic field initialization calls each selected member copy at
+its actual destination; nested records and arrays preserve source declaration
+and element order. Trivial copies use existing value assignments, preserving
+stored pointer values without repair.
+
+Clang's semantic array loops are expanded into ordinary address captures,
+dereferences, array decay, indices, assignments and calls. The common source
+array address is evaluated once. Each element index uses the source size type;
+a nested common expression sees its enclosing element index before the inner
+index is introduced. Opaque source bindings and implicit index expressions are
+accepted only in a checked generated copy initializer; they introduce no wire
+node, opcode or fallback source blob. Existing extent/storage/expansion limits
+bound the expansion. Full-expression cleanup and complete-object ownership are
+unchanged. Unused or unevaluated copies emit no invented function body or runtime
+call. See the [generated copy contract](cpp-core-v2.md#generated-copy-construction).
 
 ## Core v2 defaulted lifecycle
 

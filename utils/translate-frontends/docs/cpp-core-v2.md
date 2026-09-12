@@ -190,7 +190,7 @@ Core v2 admits ordinary user-provided default, converting and multi-argument
 constructors, including `explicit`, `constexpr` and out-of-line definitions.
 Records must be nonempty, unnested and standard-layout, with no bases. Each
 selected construction, copy or assignment must follow its admitted operation
-contract; implicit nontrivial copying and move operations remain unsupported.
+contract; implicit nontrivial copy assignment and move operations remain unsupported.
 Destruction follows the separate lifetime contract below. Fields remain public, non-mutable, non-const,
 non-reference and non-bitfield, without default member initializers. Ordinary
 methods may use these records. Allowing a constructor does not admit arbitrary
@@ -244,7 +244,7 @@ local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
 Deleted, delegating, inherited, move, template and variadic constructors,
-explicitly defaulted copy constructors, default arguments and written exception
+default arguments and written exception
 specifications remain rejected. Implicit nontrivial copying, exception unwinding, allocation, static
 guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
@@ -298,7 +298,7 @@ int main() {
 Defaulted nonvirtual destructors, both in-class and out-of-line, use the normal
 reverse member/array cleanup without a user body. Trivial defaulted destructors
 need no call. Deleted/defaulted-deleted functions and written exception
-specifications remain rejected. Implicit nontrivial copying, defaulted copy/move
+specifications remain rejected. Implicit nontrivial copy assignment, defaulted assignment and move
 operations, default member initializers, exception unwinding and STL remain later
 milestones. Actual execution evidence must come from the implementing revision's CI.
 
@@ -348,7 +348,7 @@ user-defined copying instead executes its selected source body.
 Named-local or named-parameter returns keep Clang's selected copy/move operation;
 NeverC does not infer NRVO by aliasing the source to the destination. Normal
 destruction and parameter cleanup follow the contract below. User-defined copy
-operations follow the next section; implicit nontrivial copying, moves and
+operations follow the next section; implicit nontrivial copy assignment, moves and
 exception unwinding still require further support before broader C++/STL admission.
 
 ## User-defined copy operations
@@ -407,12 +407,12 @@ temporary and local destruction order; no NRVO heuristic aliases the local to
 its result. Reference source parameters do not own or destroy their referents.
 
 A containing aggregate may be initialized with a member having user-defined
-copy operations without selecting a copy of the containing object. Selected
-implicit nontrivial copy constructors and assignment operators remain rejected,
-including in dead source. Explicitly defaulted/deleted copy operations, move
-operations, templates, variadic/default arguments, written exception
-specifications, general overloaded operators/conversions, allocation and
-exception unwinding are not added. Existing temporary source-reference and
+copy operations without selecting a copy of the containing object. Generated
+copy construction follows the next section. Selected implicit nontrivial copy
+assignment remains rejected, including in dead source. Explicitly defaulted
+assignment, deleted special members, move operations, templates, variadic/default
+arguments, written exception specifications, general overloaded operators/conversions,
+allocation and exception unwinding are not added. Existing temporary source-reference and
 nonstatic temporary-receiver restrictions still apply. Missing definitions and
 invalid source const/access operations remain diagnostics. V1 admission and
 trivial value-copy representation are unchanged.
@@ -422,6 +422,60 @@ source overloads, selected calls, field/array initialization, partially initiali
 objects, parameter and result lifetimes, return copies, operand ordering and
 relocation. Runtime validation uses the implementing revision's O0/O2 no-inline
 and full native CI results.
+
+## Generated copy construction
+
+Core v2 supports implicit and explicitly defaulted copy constructors for the same
+admitted record layouts, including nested record members and multidimensional
+arrays. A source parameter must be exactly one `R&` or `const R&`; mutable-only
+member copying therefore retains its mutable source. In-class, out-of-line and
+`explicit` defaulted copies are supported. Each selected nontrivial definition is
+discovered once, including transitive member copies, and translated to a checked
+`void(ptr:Record, ptr:Record)` or `void(ptr:Record, cptr:Record)` function.
+
+Copy construction initializes the actual destination in member declaration order.
+The source array address is captured once before copying elements in increasing
+index order. Nested arrays use the enclosing element index when identifying their
+source row. Each nontrivial member invokes its selected copy constructor; the
+containing object is never replaced by a raw value assignment. Trivial copied
+members keep ordinary value copying, including stored self pointers: their values
+continue to refer to the source object when that is what the source stored.
+
+```cpp
+struct Leaf {
+  int value;
+  Leaf *self;
+  Leaf(int n) : value(n), self(this) {}
+  Leaf(const Leaf &source) : value(source.value + 1), self(this) {}
+};
+struct Box {
+  Leaf values[2];
+  Box(const Box &) = default;
+};
+int main() {
+  Box source{{Leaf(3), Leaf(5)}};
+  Box copied = source;
+  return copied.values[0].value == 4 && copied.values[1].value == 6
+      && copied.values[1].self == &copied.values[1] ? 0 : 1;
+}
+```
+
+By-value parameters use distinct caller-prepared storage, source returns retain
+selected member copies, and direct prvalue forwarding introduces no additional
+copy. The existing normal cleanup convention still owns complete objects;
+copying a field or array element introduces no separate cleanup owner. Unused
+or purely unevaluated defaulted copies do not need a materialized Clang body.
+An admitted trivial copy also needs no function body. Runtime nontrivial copies
+must have a checked materialized definition.
+
+Defaulted or implicit nontrivial copy assignment, moves, default member initializers,
+unsupported layouts, temporary source-reference lifetime extension, exceptions,
+templates and STL headers remain outside this increment. Array extent, object
+storage and expanded-node limits still apply. Regression fixtures cover selected
+calls, nested source/destination indices, one source-array capture, mutable source
+overloads, pointer identity, side effects, value parameters, return copies,
+destruction counts, lazy definitions, negative source and deterministic relocation.
+Native validation requires the implementing revision's CI.
 
 ## Record destruction and normal lifetimes
 
@@ -639,7 +693,7 @@ a separate generated header belongs to project mode.
 ## Remaining scope and wire representation
 
 128-bit and extended integers, floating-point types,
-implicit nontrivial copying, move operations, exception unwinding, templates,
+implicit nontrivial copy assignment, move operations, exception unwinding, templates,
 exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2

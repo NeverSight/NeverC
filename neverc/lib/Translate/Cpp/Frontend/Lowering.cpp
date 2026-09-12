@@ -1,5 +1,6 @@
 #include "Frontend.h"
 #include "clang/AST/ExprCXX.h"
+#include "llvm/ADT/ScopeExit.h"
 #include <algorithm>
 #include <optional>
 #include <set>
@@ -26,6 +27,12 @@ class FunctionLowering {
   std::string DestructionEnd;
   std::optional<Expression> ThisPointer, ResultPlace;
   std::map<const Decl *, Expression> Storage;
+  std::map<const OpaqueValueExpr *, Expression> ArraySources;
+  struct ArrayIndex {
+    uint64_t Value;
+    SourceLocation Location;
+  };
+  std::vector<ArrayIndex> ArrayIndices;
   std::map<std::string, std::vector<std::string>> Edges;
   // Every breakable construct has an exit; only loops have a continue target.
   struct ControlTarget {
@@ -221,6 +228,12 @@ class FunctionLowering {
   Expression lvalue(const Expr *E) {
     E = E->IgnoreParens();
     auto L = E->getExprLoc();
+    if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E)) {
+      auto Found = ArraySources.find(Opaque);
+      if (Found == ArraySources.end())
+        reject(L, "array copy source", "No bound semantic array source is active.");
+      return Found->second;
+    }
     if (const auto *R = dyn_cast<DeclRefExpr>(E))
       return storage(R->getDecl(), E->getExprLoc());
     if (const auto *M = dyn_cast<MemberExpr>(E)) {
@@ -430,6 +443,15 @@ class FunctionLowering {
   Expression expression(const Expr *E) {
     auto L = E->getExprLoc();
     auto T = type(E->getType(), L, true);
+    if (isa<ArrayInitIndexExpr>(E)) {
+      if (!A.S.coreV2() || ArrayIndices.empty())
+        reject(L, "array copy index", "No semantic element-copy index is active.");
+      const auto &Index = ArrayIndices.back();
+      return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), Index.Value),
+                                   unsignedInteger(T)), T, Index.Location);
+    }
+    if (isa<OpaqueValueExpr>(E))
+      return lvalue(E);
     if (isa<CXXThisExpr>(E)) {
       if (!A.S.coreV2() || !ThisPointer)
         reject(L, "this", "No supported instance-method receiver is active.");
@@ -936,6 +958,13 @@ class FunctionLowering {
         return;
       }
     }
+    if (Constructor->isTrivial() && defaultedCopyConstructor(Constructor) &&
+        C->getNumArgs() == 1) {
+      // A trivial copy preserves stored fields, including pointers into the
+      // source. Only selected nontrivial copies invoke member constructors.
+      assign(std::move(Place), expression(C->getArg(0)), L);
+      return;
+    }
     if (Constructor->isTrivial() && defaultedLifecycle(Constructor) &&
         Constructor->isDefaultConstructor() && !C->getNumArgs()) {
       // Clang can omit the body of an explicitly defaulted trivial constructor.
@@ -1055,6 +1084,31 @@ class FunctionLowering {
         label(End, L);
         return;
       }
+    }
+    if (const auto *Loop = dyn_cast<ArrayInitLoopExpr>(Init); Loop && A.S.coreV2()) {
+      const auto *Array = A.Context.getAsConstantArrayType(Loop->getType());
+      const auto *Common = Loop->getCommonExpr();
+      const auto *Source = Common ? Common->getSourceExpr() : nullptr;
+      if (!defaultedCopyConstructor(dyn_cast<CXXConstructorDecl>(Function)) ||
+          !Array || !Source || !Source->isLValue() || ArraySources.count(Common) ||
+          Place.getString("type") != type(Loop->getType(), L))
+        reject(L, "array copy", "Expected an admitted semantic member-array copy.");
+      auto Count = Array->getSize().getLimitedValue(65537);
+      if (!Count || Count > 65536 || A.storageUnits(Loop->getType()) > 200000)
+        reject(L, "array copy", "Array copying exceeds the storage limit.");
+      // Capture the source address once before introducing the inner index.
+      // This retains the outer index for a nested array's common expression.
+      auto Pointer = snapshot(address(lvalue(Source), Source->getType(), L), L);
+      ArraySources.emplace(Common, dereference(std::move(Pointer), L));
+      auto RestoreSource = llvm::make_scope_exit([&] { ArraySources.erase(Common); });
+      for (uint64_t N = 0; N < Count; ++N) {
+        A.chargeExpansion(1, L);
+        ArrayIndices.push_back({N, L});
+        auto RestoreIndex = llvm::make_scope_exit([&] { ArrayIndices.pop_back(); });
+        initialize(initialElement(Place, Array->getElementType(), unsigned(N), L),
+                   Loop->getSubExpr(), L);
+      }
+      return;
     }
     if (A.S.coreV2())
       if (const auto *Array = A.Context.getAsConstantArrayType(Init->getType())) {

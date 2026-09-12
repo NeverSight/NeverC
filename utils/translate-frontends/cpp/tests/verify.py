@@ -261,6 +261,18 @@ def main():
         'lifecycle-out-of-line-destructor': 'struct I{int n;~I(){}};struct R{I i;~R();};R::~R()=default;void f(){R r{{1}};}',
         'lifecycle-defaulted-trivial-destructor': 'struct R{int n;~R()=default;};int f(){R r{7};return r.n;}',
     })
+    core_v2.update({
+        'generated-copy-implicit-members': 'struct I{int n;I(const I&s):n(s.n+1){}};struct R{I i;~R()=default;};R f(const R&s){return s;}',
+        'generated-copy-array-copy': 'struct I{int n;I(const I&s):n(s.n+1){}};struct R{I i[2];~R()=default;};R f(const R&s){return s;}',
+        'generated-copy-nested-array-copy': 'struct I{int n;I(const I&s):n(s.n+1){}};struct R{I i[2][3];~R()=default;};R f(const R&s){return s;}',
+        'generated-copy-defaulted-copy': 'struct I{int n;I(const I&s):n(s.n+1){}};struct R{I i;R(const R&)=default;};R f(const R&s){return s;}',
+        'generated-copy-explicit-copy': 'struct I{int n;I(const I&s):n(s.n+1){}};struct R{I i;explicit R(const R&)=default;};void f(const R&s){R r(s);}',
+        'generated-copy-out-of-line-copy': 'struct I{int n;I(const I&s):n(s.n+1){}};struct R{I i;R(const R&);};R::R(const R&)=default;R f(const R&s){return s;}',
+        'generated-copy-trivial-bodyless-copy': 'struct R{int n;R(const R&)=default;};R f(const R&s){return s;}',
+        'generated-copy-unused-defaulted-copy': 'struct R{int n;R(const R&)=default;};',
+        'generated-copy-unevaluated-lazy-copy': 'struct I{int n;I(const I&s){n=s.n+1;}};struct R{I i;R(const R&)=default;};int f(const R&s){return sizeof(R(s));}',
+        'generated-copy-mutable-source': 'struct I{int n;I(I&s):n(++s.n){}};struct R{I i[2];~R()=default;};R f(R&s){return s;}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -472,7 +484,6 @@ int main(){
         assert relocated == user_copy, "user copy identities depend on the absolute root"
 
     user_copy_rejected = {
-        'defaulted-constructor': 'struct R{int n;R(const R&)=default;};',
         'deleted-constructor': 'struct R{int n;R(const R&)=delete;};',
         'defaulted-assignment': 'struct R{int n;R&operator=(const R&)=default;};',
         'deleted-assignment': 'struct R{int n;R&operator=(const R&)=delete;};',
@@ -560,6 +571,152 @@ void f(int *p){
         relocated = check("conversion-cleanup-relocated", conversion_cleanup_source,
                           root=Path(temp) / "project", profile="cpp-core-v2")
         assert relocated == converted, "conversion cleanup identities depend on the absolute root"
+    generated_copy_source = """struct Leaf { int n;Leaf*self;
+ Leaf(int v):n(v),self(this){}
+ Leaf(const Leaf&s):n(s.n+1),self(this){}
+ ~Leaf(){}
+};
+struct Inner { Leaf items[2];~Inner()=default; };
+struct Box { int scalar[2];Inner inner;Leaf grid[2][2];Box(const Box&)=default;~Box()=default; };
+struct Outside { Leaf leaf;Outside(const Outside&);~Outside()=default; };
+Outside::Outside(const Outside&)=default;
+struct Trivial { int n;Trivial*self;Trivial(const Trivial&)=default; };
+struct ArrayTrivial { Trivial items[2];Leaf leaf;~ArrayTrivial()=default; };
+struct MutableLeaf { int n;MutableLeaf(MutableLeaf&s):n(++s.n){}~MutableLeaf(){} };
+struct MutableBox { MutableLeaf items[2];~MutableBox()=default; };
+struct Lazy { Leaf leaf;Lazy(const Lazy&)=default; };
+Box copied(const Box&s){return s;}
+void twice(const Box&s){Box a=s;Box b=s;}
+Outside outside(const Outside&s){return s;}
+Trivial trivial(const Trivial&s){return s;}
+ArrayTrivial array(const ArrayTrivial&s){return s;}
+MutableBox mutableCopy(MutableBox&s){return s;}
+int query(const Lazy&s){return sizeof(Lazy(s));}
+"""
+    generated_copy = check("v2-generated-copy-protocol", generated_copy_source, profile="cpp-core-v2")
+    gc_records = {r["loc"]["line"]: r for r in generated_copy["records"]}
+    gc_functions = {f["name"]: f for f in generated_copy["functions"]}
+    gc_by_line = {f["loc"]["line"]: f for f in generated_copy["functions"]}
+    gc_constructors = {}
+    for line in (1, 6, 7, 8, 10, 11, 12, 13, 14):
+        rid = gc_records[line]["id"]
+        source_kind = "ptr:" if line in (12, 13) else "cptr:"
+        selected = [f for f in generated_copy["functions"] if f["result"] == "void"
+                    and [p["type"] for p in f["params"]] == ["ptr:" + rid, source_kind + rid]]
+        assert len(selected) == (0 if line in (10, 14) else 1), (line, selected)
+        if selected:
+            gc_constructors[line] = selected[0]
+
+    def gc_calls(function):
+        return [n for n in function["body"] if n["op"] == "call"]
+
+    def gc_identity(function, expr):
+        kind = expr["kind"]
+        if kind in ("cast", "address", "dereference", "array_decay"):
+            return gc_identity(function, expr["args"][0])
+        if kind == "literal":
+            return expr["value"]
+        if kind == "member":
+            return ("member", gc_identity(function, expr["args"][0]), expr["name"])
+        if kind == "index":
+            return ("index", gc_identity(function, expr["args"][0]),
+                    gc_identity(function, expr["args"][1]))
+        assert kind == "var", expr
+        if any(p["name"] == expr["name"] for p in function["params"]):
+            return ("parameter", expr["name"])
+        values = [n["value"] for n in function["body"] if n["op"] == "assign"
+                  and n["target"].get("kind") == "var" and n["target"]["name"] == expr["name"]]
+        assert len(values) == 1, (expr, values)
+        return gc_identity(function, values[0])
+
+    for line, callees in {6: [1, 1], 7: [6, 1, 1, 1, 1], 8: [1],
+                          11: [1], 13: [12, 12]}.items():
+        function = gc_constructors[line]
+        assert [n["callee"] for n in gc_calls(function)] == [gc_constructors[c]["name"] for c in callees]
+        assert not any(n["op"] == "assign" and n["target"]["type"] == gc_records[line]["id"]
+                       for n in function["body"]), "generated nontrivial copy became a whole-record store"
+    for line in (6, 13):
+        function = gc_constructors[line]
+        field = gc_records[line]["fields"][0]["name"]
+        for index_value, call in enumerate(gc_calls(function)):
+            for arg, parameter in zip(call["args"], function["params"]):
+                assert gc_identity(function, arg) == (
+                    "index", ("member", ("parameter", parameter["name"]), field), index_value)
+    box_copy = gc_constructors[7]
+    box_fields = gc_records[7]["fields"]
+    for call, (row, col) in zip(gc_calls(box_copy)[1:], ((0, 0), (0, 1), (1, 0), (1, 1))):
+        for arg, parameter in zip(call["args"], box_copy["params"]):
+            assert gc_identity(box_copy, arg) == (
+                "index", ("index", ("member", ("parameter", parameter["name"]),
+                                    box_fields[2]["name"]), row), col)
+    scalar_stores = [n for n in box_copy["body"] if n["op"] == "assign"
+                     and n["target"]["kind"] == "index" and n["target"]["type"] == "int"]
+    assert len(scalar_stores) == 2, scalar_stores
+    for index_value, node in enumerate(scalar_stores):
+        for expr, parameter in zip((node["target"], node["value"]), box_copy["params"]):
+            assert gc_identity(box_copy, expr) == (
+                "index", ("member", ("parameter", parameter["name"]), box_fields[0]["name"]), index_value)
+    # Each semantic common array source gets exactly one pointer capture: the
+    # scalar array, outer grid, and each of its two inner rows.
+    source_arrays = [n for n in box_copy["body"] if n["op"] == "assign"
+                     and n["value"]["kind"] == "address"
+                     and n["value"]["args"][0]["type"].startswith("arr:")]
+    assert len(source_arrays) == 4, source_arrays
+    trivial_id = gc_records[10]["id"]
+    array_copy = gc_constructors[11]
+    trivial_stores = [n for n in array_copy["body"] if n["op"] == "assign"
+                      and n["target"]["type"] == trivial_id]
+    assert len(trivial_stores) == 2, trivial_stores
+    for index_value, node in enumerate(trivial_stores):
+        for expr, parameter in zip((node["target"], node["value"]), array_copy["params"]):
+            assert gc_identity(array_copy, expr) == (
+                "index", ("member", ("parameter", parameter["name"]),
+                          gc_records[11]["fields"][0]["name"]), index_value)
+    for line, constructor_line in ((15, 7), (17, 8), (19, 11), (20, 13)):
+        function = gc_by_line[line]
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == gc_constructors[constructor_line]["name"]
+        for arg, parameter in zip(calls[0]["args"], function["params"]):
+            assert gc_identity(function, arg) == ("parameter", parameter["name"])
+    assert sum(c["callee"] == gc_constructors[7]["name"] for c in gc_calls(gc_by_line[16])) == 2
+    assert not gc_calls(gc_by_line[18]) and not gc_calls(gc_by_line[21])
+    for function in generated_copy["functions"]:
+        for node in gc_calls(function):
+            callee = gc_functions[node["callee"]]
+            assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]], node
+    with tempfile.TemporaryDirectory(prefix="neverc-generated-copy-relocated-") as temp:
+        relocated = check("generated-copy-relocated", generated_copy_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == generated_copy, "generated copying depends on the absolute root"
+    generated_copy_rejected = {
+        'deleted-copy': 'struct R{int n;R(const R&)=delete;};',
+        'defaulted-deleted-copy': 'struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};',
+        'copy-noexcept': 'struct R{int n;R(const R&)noexcept=default;};',
+        'copy-noexcept-false': 'struct R{int n;R(const R&)noexcept(false)=default;};',
+        'copy-throw': 'struct R{int n;R(const R&)throw()=default;};',
+        'out-of-line-noexcept': 'struct R{int n;R(const R&)noexcept;};R::R(const R&)noexcept=default;',
+        'volatile-copy': 'struct R{int n;R(const volatile R&)=default;};',
+        'move-default': 'struct R{int n;R(R&&)=default;};',
+        'move-assignment-default': 'struct R{int n;R&operator=(R&&)=default;};',
+        'copy-assignment-default': 'struct R{int n;R&operator=(const R&)=default;};',
+        'implicit-assignment': 'struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{I i;};void f(R&a,const R&b){a=b;}',
+        'dead-implicit-assignment': 'struct I{int n;I&operator=(const I&s){n=s.n;return *this;}};struct R{I i;};void f(R&a,const R&b){if(false)a=b;}',
+        'default-member': 'struct R{int n=1;R(const R&)=default;};',
+        'unevaluated-default-member': 'struct R{int n=1;R(const R&)=default;};int f(const R&r){return sizeof(R(r));}',
+        'reference-field': 'struct R{int &n;R(const R&)=default;};',
+        'const-field': 'struct R{const int n;R(const R&)=default;};',
+        'nonpublic-field': 'class R{int n;public:R(const R&)=default;};',
+        'base-copy': 'struct B{int n;};struct R:B{int m;R(const R&)=default;};',
+        'temporary-reference': 'struct I{int n;I(const I&s):n(s.n){}};struct R{I i;R(const R&)=default;};void f(const R&s){const R&r=R(s);}',
+        'lambda-array-copy': 'int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}',
+        'decomposed-array-copy': 'int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}',
+        'copy-expansion': 'struct I{int n;I(const I&s):n(s.n){}};struct R{I items[65536];~R()=default;};R f(const R&s){return s;}',
+    }
+    for name, source in generated_copy_rejected.items():
+        check("v2-generated-copy-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+    check("v2-generated-copy-missing", "struct I{int n;I(const I&);};struct R{I i;R(const R&)=default;};R f(const R&s){return s;}",
+          "TR0203", profile="cpp-core-v2")
+    check("v1-defaulted-copy", "struct R{int n;R(const R&)=default;};", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -643,7 +800,6 @@ int query(){return sizeof(Lazy{});}
         'unevaluated-default-member': 'struct R{int n=1;explicit R()=default;};int f(){return sizeof(R{});}',
         'nonpublic-field': 'class R{int n;public:R()=default;};',
         'virtual-destructor': 'struct R{int n;virtual ~R()=default;};',
-        'copy-default': 'struct R{int n;R(const R&)=default;};',
         'move-default': 'struct R{int n;R(R&&)=default;};',
         'copy-assignment-default': 'struct R{int n;R&operator=(const R&)=default;};',
         'explicit-destruction': 'struct R{int n;~R()=default;};void f(){R r{1};r.~R();}',
