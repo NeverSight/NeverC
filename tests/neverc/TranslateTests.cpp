@@ -1509,13 +1509,29 @@ TEST_F(TranslateTest, CoreV2DeclarationsDoNotBroadenCoreV1) {
   for (const auto *Declaration : {"using Value = int;",
                                  "typedef int Value;",
                                  "enum class E : int { value = 1 };",
-                                 "static_assert(true, \"message\");"}) {
+                                 "static_assert(true, \"message\");",
+                                 "static_assert(true, \"joined \" \"message\");",
+                                 "static_assert(true);",
+                                 "namespace N { static_assert(true, \"message\"); }",
+                                 "void f() { static_assert(true, \"message\"); }"}) {
     SCOPED_TRACE(Declaration);
     const auto Name = "old-contract-" + std::to_string(++Index);
     const auto Source = tmpFile(Name + ".cpp");
     const auto Output = tmpFile(Name + ".nc");
     writeFile(Source, std::string(Declaration) + "\nint main() { return 0; }\n");
     expectCode(translate(Source, {"-o", Output.string()}), "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, UntypedAssemblyStringsAreDiagnosedWithoutFrontendCrashes) {
+  const auto Source = tmpFile("untyped-assembly.cpp");
+  writeFile(Source, "asm(\"\");\nint main() { return 0; }\n");
+  for (const std::string &Profile : {"cpp-core-v1", "cpp-core-v2"}) {
+    SCOPED_TRACE(Profile);
+    const auto Output = tmpFile("untyped-assembly-" + Profile + ".nc");
+    expectCode(translate(Source, {"--profile", Profile, "-o", Output.string()}),
+               "TR0201");
     expectNoArtifacts(Output);
   }
 }

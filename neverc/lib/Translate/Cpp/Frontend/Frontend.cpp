@@ -547,6 +547,14 @@ public:
     if (!S || !A.S.owns(A.Sources, S->getBeginLoc()))
       return true;
     if (const auto *E = dyn_cast<Expr>(S)) {
+      // Clang's unevaluated diagnostic strings have no QualType. They can
+      // appear below an already rejected declaration (for example a v1
+      // static_assert), so diagnose them before inspecting expression types.
+      if (E->getType().isNull()) {
+        A.reject(E->getExprLoc(), "untyped expression",
+                 "Diagnostic-only source text is not a translatable value.");
+        return true;
+      }
       if (const auto *WrittenCast = dyn_cast<ExplicitCastExpr>(E))
         A.type(WrittenCast->getTypeAsWritten(), E->getExprLoc(), true);
       if (A.S.coreV2())

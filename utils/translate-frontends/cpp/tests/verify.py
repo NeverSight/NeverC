@@ -147,9 +147,14 @@ def main():
         "alias": "using I=int; int main(){}",
         "typedef": "typedef int I; int main(){}",
         "assertion": "static_assert(true,\"message\"); int main(){}",
+        "assertion-joined-message": "static_assert(true,\"joined \" \"message\"); int main(){}",
+        "assertion-no-message": "static_assert(true); int main(){}",
+        "assertion-namespace": "namespace N{static_assert(true,\"message\");} int main(){}",
+        "assertion-local": "int main(){static_assert(true,\"message\");}",
     }.items():
         check("v1-still-rejects-" + name, source, "TR0201")
     v2_rejections = {
+        "untyped-assembly-string": 'asm(""); int main(){}',
         "unsupported-pointer-alias": "using Hidden=char*; int main(){}",
         "unused-volatile-alias": "using Hidden=volatile int; int main(){}",
         "unused-function-alias": "using Hidden=void(); int main(){}",
@@ -233,6 +238,7 @@ def main():
         assert relocated == member, "semantic IDs or locations depend on absolute root"
 
     cases = {
+        "untyped-assembly-string": 'asm(""); int main(){}',
         "include": '#include "missing.hpp"\nint main(){}',
         "inactive-include": '#if 0\n#include "missing.hpp"\n#endif\nint main(){}',
         "inactive-empty-directive": '#if 0\n#\n#include "missing.hpp"\n#endif\nint main(){}',
