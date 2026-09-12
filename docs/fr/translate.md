@@ -21,7 +21,7 @@ Le profil `cpp-core-v1` accepte un unique fichier C++17 autonome sans include. I
 
 Sélectionnez `--profile cpp-core-v2` pour ajouter les alias `typedef`/`using` vérifiés, les énumérations de type sous-jacent entier pris en charge, `static_assert`, ainsi que des pointeurs d’objet et références de lvalue dans un périmètre limité. Les paramètres et résultats par référence conservent les alias ; les pointeurs nuls et les qualifications `const` imbriquées sont pris en charge. Les restrictions à un seul fichier source sans include restent applicables. Voir le [contrat core v2](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
-Core v2 ajoute les tableaux locaux de taille fixe et les champs tableau, l’indexation multidimensionnelle et les pointeurs ou références vers des tableaux. L’initialisation partielle met à zéro les éléments restants et conserve l’ordre ainsi que les alias. La taille et l’expansion de l’initialisation sont limitées. Les tableaux globaux, de taille variable et les éléments à durée de vie non triviale restent exclus.
+Core v2 ajoute les tableaux locaux de taille fixe et les champs tableau, l’indexation multidimensionnelle et les pointeurs ou références vers des tableaux. L’initialisation partielle met à zéro les éléments scalaires omis ; les enregistrements suivent l’initialisation sélectionnée et conserve l’ordre ainsi que les alias. La taille et l’expansion de l’initialisation sont limitées. Les tableaux globaux, de taille variable et les éléments à destruction non triviale restent exclus.
 
 Core v2 prend en charge `switch`/`case`/`default`, les instructions d’initialisation C++17, le passage au cas suivant et les annotations `[[fallthrough]]` validées. Le sélecteur est évalué une seule fois ; les switch et boucles imbriqués conservent les cibles de `break`/`continue`. Les plages case GNU et les autres attributs d’instruction restent exclus.
 
@@ -31,7 +31,9 @@ Core v2 prend aussi en charge les décalages et différences de pointeurs sur ob
 
 Core v2 compare les tailles et alignements ABI des types source au modèle cible propre à NeverC, y compris la taille des structures et les décalages des champs. Des assertions statiques vérifient à nouveau cette disposition à la compilation, et le manifeste en conserve les données.
 
-Core v2 prend en charge les fonctions membres nommées non virtuelles des agrégats triviaux admis, dont les surcharges const, les méthodes qualifiées lvalue, les méthodes statiques et `this`. Les appels conservent l’identité de l’objet et évaluent le récepteur avant les arguments. Les appels non statiques sur des objets temporaires, les fonctions membres spéciales, l’héritage, les templates et la STL générale restent non pris en charge.
+Core v2 prend en charge les fonctions membres nommées non virtuelles des types enregistrement admis, dont les surcharges const, les méthodes qualifiées lvalue, les méthodes statiques et `this`. Les appels conservent l’identité de l’objet et évaluent le récepteur avant les arguments. Les appels non statiques sur des objets temporaires, l’héritage, les templates et la STL générale restent non pris en charge.
+
+Core v2 prend aussi en charge les constructeurs ordinaires définis par l’utilisateur pour les enregistrements à disposition standard, avec copie et destruction triviales. Objets locaux, champs et éléments de tableau sont construits directement dans leur stockage final, avec initialisation des champs dans l’ordre de déclaration. Les constructeurs explicitement default, délégués ou de copie/déplacement définis par l’utilisateur, les destructeurs, le nettoyage et les exceptions restent exclus.
 
 ## Projets à plusieurs fichiers
 

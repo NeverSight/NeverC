@@ -43,6 +43,17 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
   return Prototype && !Prototype->hasExceptionSpec();
 }
 
+bool ordinaryConstructor(const CXXConstructorDecl *C) {
+  if (!C || C->isImplicit() || !C->isUserProvided() || C->isVariadic() ||
+      C->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      C->isDeletedAsWritten() || C->isExplicitlyDefaulted() || C->isConsteval() ||
+      C->isCopyOrMoveConstructor() || C->isDelegatingConstructor() ||
+      C->isInheritingConstructor())
+    return false;
+  const auto *Prototype = C->getType()->getAs<FunctionProtoType>();
+  return Prototype && !Prototype->hasExceptionSpec();
+}
+
 const Expr *directMethodReference(const CallExpr *Call) {
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
   if (!ordinaryMethod(M))
@@ -365,6 +376,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const CXXRecordDecl *, bool> HasArray;
   std::set<const Expr *> DirectMethodCallees;
   const CXXMethodDecl *CurrentMethod = nullptr;
+  SourceLocation ImplicitInitializerOwner;
+  std::set<const Expr *> CheckedSemanticInitializers;
+  std::set<const CXXConstructExpr *> CheckedConstructions;
   bool owned(const Decl *D) {
     return !D->isImplicit() && A.S.owns(A.Sources, D->getLocation());
   }
@@ -451,6 +465,55 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                "Binding references to temporaries requires lifetime lowering.");
   }
 
+  void checkConstruction(const CXXConstructExpr *C, SourceLocation L) {
+    if (!CheckedConstructions.insert(C).second)
+      return;
+    const auto *Constructor = C->getConstructor();
+    if (A.S.coreV2() && ordinaryConstructor(Constructor)) {
+      if (!Constructor->hasBody() ||
+          !A.S.owns(A.Sources, Constructor->getLocation()))
+        A.reject(L, "construction",
+                 "The selected constructor requires a source-owned definition.",
+                 "TR0203");
+      for (unsigned I = 0; I < C->getNumArgs() &&
+                           I < Constructor->getNumParams(); ++I)
+        if (Constructor->getParamDecl(I)->getType()->isReferenceType())
+          checkBinding(C->getArg(I));
+    } else if (!Constructor->isImplicit() || !Constructor->isTrivial()) {
+      A.reject(L, "construction",
+               "Only admitted user constructors and implicit trivial "
+               "default/copy construction are supported.");
+    }
+  }
+  void checkSemanticInitializers(const InitListExpr *List, SourceLocation Owner) {
+    // RAV visits only the written form of a braced initializer by default.
+    // Follow its semantic elements and shared array filler once for admission;
+    // lowering still evaluates a filler separately for every destination.
+    std::vector<const Expr *> Work{List};
+    while (!Work.empty()) {
+      const auto *E = Work.back();
+      Work.pop_back();
+      if (const auto *I = dyn_cast<InitListExpr>(E)) {
+        if (I->isSyntacticForm() && I->getSemanticForm())
+          I = I->getSemanticForm();
+        if (!CheckedSemanticInitializers.insert(I).second)
+          continue;
+        for (const auto *Init : I->inits())
+          if (Init) Work.push_back(Init);
+        if (const auto *Filler = I->getArrayFiller())
+          Work.push_back(Filler);
+        continue;
+      }
+      if (!CheckedSemanticInitializers.insert(E).second)
+        continue;
+      if (const auto *C = dyn_cast<CXXConstructExpr>(E))
+        checkConstruction(C, C->getExprLoc().isValid() ? C->getExprLoc() : Owner);
+      for (const auto *Child : E->children())
+        if (const auto *Expression = dyn_cast_or_null<Expr>(Child))
+          Work.push_back(Expression);
+    }
+  }
+
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
   bool TraverseDecl(Decl *D) {
@@ -458,6 +521,32 @@ public:
     if (D && isa<FunctionDecl>(D))
       CurrentMethod = dyn_cast<CXXMethodDecl>(D);
     bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecl(D);
+    if (const auto *C = dyn_cast_or_null<CXXConstructorDecl>(D);
+        Result && A.S.coreV2() && C && owned(C) &&
+        C->doesThisDeclarationHaveABody()) {
+      // RAV skips non-written initializers in both TraverseFunctionHelper and
+      // TraverseConstructorInitializer. Inspect these semantic expressions
+      // explicitly; written expressions were already visited by RAV.
+      std::set<const Decl *> Initialized;
+      for (const auto *I : C->inits()) {
+        if (!I->isMemberInitializer() || I->isPackExpansion() ||
+            I->getMember()->getParent() != C->getParent() ||
+            !Initialized.insert(I->getMember()->getCanonicalDecl()).second ||
+            !I->getInit()) {
+          A.reject(C->getLocation(), "constructor initializer",
+                   "Only unique direct field initializers are supported.");
+          continue;
+        }
+        if (!I->isWritten()) {
+          auto PreviousOwner = ImplicitInitializerOwner;
+          ImplicitInitializerOwner = C->getLocation();
+          Result = TraverseStmt(I->getInit());
+          ImplicitInitializerOwner = PreviousOwner;
+          if (!Result)
+            break;
+        }
+      }
+    }
     CurrentMethod = Saved;
     return Result;
   }
@@ -511,7 +600,9 @@ public:
       return true;
     A.type(D->getReturnType(), D->getLocation(), true);
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
-    if ((Method && (!A.S.coreV2() || !ordinaryMethod(Method))) ||
+    if ((Method && (!A.S.coreV2() ||
+                    (!ordinaryMethod(Method) &&
+                     !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method))))) ||
         D->isVariadic() ||
         D->getDescribedFunctionTemplate() ||
         D->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
@@ -614,12 +705,18 @@ public:
                  "Incomplete records are unsupported.");
       return true;
     }
-    if (D->isUnion() || !D->isAggregate() || D->field_empty() ||
+    const bool ConstructedRecord = A.S.coreV2() && D->isStandardLayout() &&
+                                   D->isTriviallyCopyable() &&
+                                   D->hasTrivialDestructor();
+    if (D->isUnion() || (!D->isAggregate() && !ConstructedRecord) ||
+        (A.S.coreV2() && (!D->isStandardLayout() || !D->isTriviallyCopyable() ||
+                         !D->hasTrivialDestructor())) || D->field_empty() ||
         D->getNumBases() || D->getDescribedClassTemplate() ||
         D->getDeclContext()->isRecord())
       A.reject(D->getLocation(), "record",
-               "Only nonempty, unnested trivial aggregates without bases are "
-               "supported.");
+               "Only nonempty, unnested standard-layout records with trivial "
+               "copying and destruction, supported constructors and no bases "
+               "are admitted.");
     A.Records.push_back(D);
     return true;
   }
@@ -628,15 +725,19 @@ public:
       return true;
     A.type(D->getType(), D->getLocation());
     if (D->isBitField() || D->hasInClassInitializer() || D->isMutable() ||
+        (A.S.coreV2() && D->getAccess() != AS_public) ||
         D->getType().isConstQualified() || D->getType()->isReferenceType())
       A.reject(D->getLocation(), "field",
-               "Bitfields, mutable/const/reference fields and default field "
-               "initializers are unsupported.");
+               "Nonpublic, bitfield, mutable/const/reference fields and default "
+               "field initializers are unsupported.");
     return true;
   }
   bool VisitStmt(Stmt *S) {
-    if (!S || !A.S.owns(A.Sources, S->getBeginLoc()))
+    if (!S || (!ImplicitInitializerOwner.isValid() &&
+               !A.S.owns(A.Sources, S->getBeginLoc())))
       return true;
+    auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
+                                        : ImplicitInitializerOwner;
     // The visitor is preorder. Mark only the direct callee path before its
     // children are inspected, including Clang's BoundMemberTy expressions.
     if (A.S.coreV2())
@@ -678,6 +779,18 @@ public:
           case CK_PointerToBoolean:
           case CK_ArrayToPointerDecay:
             break;
+          case CK_ConstructorConversion: {
+            const auto *Construction =
+                dyn_cast<CXXConstructExpr>(C->getSubExpr()->IgnoreParens());
+            if (C->getType()->isRecordType() && Construction &&
+                ordinaryConstructor(Construction->getConstructor()) &&
+                A.Context.hasSameUnqualifiedType(C->getType(),
+                                                 Construction->getType()))
+              break;
+            A.reject(L, "constructor conversion",
+                     "Only direct admitted constructor conversions are supported.");
+            break;
+          }
           case CK_BitCast:
             if (C->getType()->isPointerType() &&
                 C->getSubExpr()->getType()->isPointerType() &&
@@ -789,11 +902,10 @@ public:
                    "translation unit.",
                    "TR0203");
     if (const auto *C = dyn_cast<CXXConstructExpr>(S))
-      if (!C->getConstructor()->isImplicit() ||
-          !C->getConstructor()->isTrivial())
-        A.reject(
-            S->getBeginLoc(), "construction",
-            "Only implicit trivial aggregate construction/copy is supported.");
+      checkConstruction(C, L);
+    if (A.S.coreV2())
+      if (const auto *I = dyn_cast<InitListExpr>(S))
+        checkSemanticInitializers(I, L);
     if (const auto *U = dyn_cast<UnaryOperator>(S)) {
       if ((!A.S.coreV2() &&
            (U->getOpcode() == UO_AddrOf || U->getOpcode() == UO_Deref)) ||
@@ -813,10 +925,11 @@ public:
       }
     }
     if (const auto *This = dyn_cast<CXXThisExpr>(S))
-      if (!A.S.coreV2() || !ordinaryMethod(CurrentMethod) ||
-          CurrentMethod->isStatic())
-        A.reject(This->getExprLoc(), "this",
-                 "This is supported only within an ordinary instance method.");
+      if (!A.S.coreV2() || !CurrentMethod || CurrentMethod->isStatic() ||
+          (!ordinaryMethod(CurrentMethod) &&
+           !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(CurrentMethod))))
+        A.reject(L, "this",
+                 "This requires an admitted instance method or constructor.");
     if (const auto *Reference = dyn_cast<DeclRefExpr>(S))
       if (const auto *Method = dyn_cast<CXXMethodDecl>(Reference->getDecl());
           Method && !Method->isImplicit() && !DirectMethodCallees.count(Reference))

@@ -21,7 +21,7 @@ The `cpp-core-v1` profile accepts one self-contained C++17 source without includ
 
 Select `--profile cpp-core-v2` to add checked `typedef`/`using` aliases, enums with supported integral underlying types, `static_assert`, bounded object pointers and lvalue references. References preserve aliases, including parameters and returned references; nested pointee `const` and null pointers are supported. The single-source and no-include restrictions still apply. See the [core v2 contract](../utils/translate-frontends/docs/cpp-core-v2.md).
 
-Core v2 also adds fixed-size local arrays and array fields, multidimensional indexing, and pointers/references to arrays. Partial initialization fills remaining elements with zero; element initialization preserves source order and aliasing. Extents and initializer expansion are bounded. Global arrays, variable-length arrays and nontrivial element lifetimes remain unsupported.
+Core v2 also adds fixed-size local arrays and array fields, multidimensional indexing, and pointers/references to arrays. Partial initialization zero-initializes omitted scalar elements; record elements follow their selected initialization; element initialization preserves source order and aliasing. Extents and initializer expansion are bounded. Global arrays, variable-length arrays and nontrivial element destruction remain unsupported.
 
 Core v2 supports `switch`/`case`/`default`, including C++17 init-statements, fallthrough and validated `[[fallthrough]]` annotations. Selector evaluation occurs once; nested switches and loops retain their own `break` and `continue` targets. GNU case ranges and other statement attributes remain rejected.
 
@@ -31,7 +31,9 @@ Core v2 also supports object-pointer offsets, differences, increment/decrement a
 
 Core v2 verifies source sizes and ABI alignments against NeverC’s own target model, including aggregate sizes and field offsets. Generated assertions check the recorded layout again during compilation, and the manifest records this evidence.
 
-Core v2 supports named nonvirtual member functions of the admitted trivial aggregates, including const overloads, lvalue-qualified methods, static methods and `this`. Calls preserve the original object and evaluate the receiver before arguments. Nonstatic calls on temporary objects, special members, inheritance, templates and general STL remain unsupported.
+Core v2 supports named nonvirtual member functions of the admitted records, including const overloads, lvalue-qualified methods, static methods and `this`. Calls preserve the original object and evaluate the receiver before arguments. Nonstatic calls on temporary objects, inheritance, templates and general STL remain unsupported.
+
+Core v2 also supports ordinary user-provided constructors for standard-layout records with trivial copying and destruction. Locals, record fields and array elements are constructed directly in their final storage; fields initialize in declaration order. Explicitly defaulted/delegating constructors, user-defined copy/move constructors, destructors, cleanup and exceptions remain unsupported.
 
 ## Multi-file projects
 

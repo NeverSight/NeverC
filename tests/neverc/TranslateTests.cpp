@@ -1463,6 +1463,222 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RecordConstructorsPreserveDestinationsAndInitializationOrder) {
+  const auto Source = tmpFile("record-constructors.cpp");
+  const auto Output = tmpFile("record-constructors.nc");
+  writeFile(Source, R"cpp(
+struct Self {
+  int value;
+  Self *self;
+  Self():value(7),self(this){}
+  explicit Self(int n):value(n),self(this){}
+  int get()const{return value;}
+};
+struct Inner {
+  int value;
+  explicit Inner(int n):value(n){}
+};
+int mark(int &trace,int digit,int value) {
+  trace=trace*10+digit;
+  return value;
+}
+struct Ordered {
+  int first;
+  int second;
+  Inner member;
+  int values[2];
+  explicit Ordered(int &trace);
+  int getFirst()const{return first;}
+};
+Ordered::Ordered(int &trace)
+  :second(mark(trace,2,getFirst()+4)),first(mark(trace,1,3)),
+   member(mark(trace,3,second+5)),values{member.value,member.value+1} {
+  trace=trace*10+4;
+}
+struct Partial {
+  int initialized;
+  int untouched;
+  explicit Partial(int n):initialized(n){}
+  int get()const{return initialized;}
+};
+struct Counted {
+  int value;
+  Counted(int &count,int n):value(n){++count;}
+};
+struct Convertible {
+  int value;
+  Convertible(int n):value(n){}
+};
+struct Early {
+  int value;
+  explicit Early(bool stop):value(3){if(stop)return;value=5;}
+};
+struct Wrap { Self value; };
+struct ImplicitMember { Self value; ImplicitMember() {} };
+struct View {
+  int values[2];
+  explicit View(View *&out):values{3,5}{out=this;}
+};
+struct Pick {
+  int value;
+  explicit Pick(signed char):value(3){}
+  explicit Pick(short):value(5){}
+  explicit Pick(long):value(7){}
+  explicit Pick(long long):value(11){}
+};
+struct ConstexprValue {
+  int value;
+  constexpr explicit ConstexprValue(int n):value(n){}
+  constexpr int get()const{return value;}
+};
+constexpr ConstexprValue constant{31};
+static_assert(constant.get()==31);
+Self make(int &count) { ++count; return Self(17); }
+int consume(Self value) { return value.get(); }
+int main() {
+  Self a;
+  Self b(11);
+  Self c{13};
+  Self d=Self(17);
+  if(a.get()!=7 || b.get()!=11 || c.get()!=13 || d.get()!=17) return 1;
+  if(a.self!=&a || b.self!=&b || c.self!=&c || d.self!=&d) return 2;
+  const Self readonly(19);
+  if(readonly.get()!=19 || readonly.self!=&readonly) return 3;
+  int trace=0;
+  Ordered ordered(trace);
+  if(trace!=1234 || ordered.first!=3 || ordered.second!=7 ||
+     ordered.member.value!=12 || ordered.values[0]!=12 || ordered.values[1]!=13)
+    return 4;
+  Partial partial(23);
+  if(partial.get()!=23) return 5;
+  Self array[3]={Self(2)};
+  if(array[0].value!=2 || array[1].value!=7 || array[2].value!=7) return 6;
+  for(int i=0;i!=3;++i) if(array[i].self!=&array[i]) return 7;
+  Self matrix[2][2]{};
+  for(int i=0;i!=2;++i) for(int j=0;j!=2;++j)
+    if(matrix[i][j].self!=&matrix[i][j] || matrix[i][j].value!=7) return 8;
+  Wrap wrapped{Self(29)};
+  if(wrapped.value.self!=&wrapped.value || wrapped.value.value!=29) return 9;
+  int effects=0;
+  Counted counted[3]={Counted(effects,2),Counted(effects,3),Counted(effects,5)};
+  if(effects!=3 || counted[0].value+counted[1].value+counted[2].value!=10) return 10;
+  Self conditional=(effects==3)?Self(37):Self(41);
+  Self comma=(++effects,Self(43));
+  if(conditional.self!=&conditional || conditional.value!=37 ||
+     comma.self!=&comma || comma.value!=43 || effects!=4) return 11;
+  Self copied=b;
+  c=b;
+  if(copied.self!=&b || c.self!=&b || copied.value!=11 || c.value!=11) return 12;
+  Convertible implicit=47;
+  Early early(true);
+  Early late(false);
+  if(implicit.value!=47 || early.value!=3 || late.value!=5) return 13;
+  effects=0;
+  if(make(effects).value!=17 || consume(make(effects))!=17 || effects!=2) return 14;
+  if(constant.get()!=31) return 15;
+  View *witness=nullptr;
+  int *view=nullptr;
+  bool same_view=(view=View(witness).values,view==witness->values);
+  if(!same_view) return 16;
+  Self default_array[2];
+  if(default_array[0].value!=7 || default_array[1].value!=7 ||
+     default_array[0].self!=&default_array[0] ||
+     default_array[1].self!=&default_array[1]) return 17;
+  ImplicitMember implicit_member;
+  if(implicit_member.value.value!=7 ||
+     implicit_member.value.self!=&implicit_member.value) return 18;
+  View *other_witness=nullptr;
+  bool another_view=(view=View(other_witness).values,view==other_witness->values);
+  if(!another_view) return 19;
+  Pick byte_pick(static_cast<signed char>(1));
+  Pick short_pick(static_cast<short>(1));
+  Pick long_pick(1L);
+  Pick wide_pick(1LL);
+  if(byte_pick.value!=3 || short_pick.value!=5 ||
+     long_pick.value!=7 || wide_pick.value!=11) return 20;
+  Self alternate=(effects==0)?Self(41):Self(43);
+  if(alternate.self!=&alternate || alternate.value!=43) return 21;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("record-constructors" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"delegating", "struct R{int n;R():R(1){} R(int v):n(v){}};"},
+      {"base-initializer", "struct B{int n;B(int v):n(v){}};struct R:B{R():B(1){}};"},
+      {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};"},
+      {"copy-constructor", "struct R{int n;R(int v):n(v){} R(const R&v):n(v.n){}};"},
+      {"move-constructor", "struct R{int n;R(int v):n(v){} R(R&&v):n(v.n){}};"},
+      {"destructor", "struct R{int n;R():n(1){} ~R(){}};"},
+      {"virtual-method", "struct R{int n;R():n(1){} virtual int get(){return n;}};"},
+      {"implicit-nontrivial-default", "struct I{int n;I():n(1){}};struct R{I i;};int f(){R r;return r.i.n;}"},
+      {"implicit-nontrivial-array-default", "struct I{int n;I():n(1){}};struct R{I i[2];};int f(){R r;return r.i[0].n;}"},
+      {"template-constructor", "struct R{int n;template<class T> R(T v):n(v){}};"},
+      {"variadic-constructor", "struct R{int n;R(int v,...):n(v){}};"},
+      {"deleted-constructor", "struct R{int n;R()=delete;};"},
+      {"defaulted-constructor", "struct R{int n;R()=default;};"},
+      {"default-argument", "struct R{int n;R(int v=1):n(v){}};"},
+      {"noexcept-constructor", "struct R{int n;R() noexcept:n(1){}};"},
+      {"private-field", "class R{int n;public:R():n(1){}};"},
+      {"protected-field", "struct R{protected:int n;public:R():n(1){}};"},
+      {"const-field", "struct R{const int n;R():n(1){}};"},
+      {"reference-field", "struct R{int &n;R(int &v):n(v){}};"},
+      {"mutable-field", "struct R{mutable int n;R():n(1){}};"},
+      {"default-member-initializer", "struct R{int n=1;R(){}};"},
+      {"nested-record", "struct R{struct I{int n;};I i;R():i{1}{}};"},
+      {"union", "union R{int n;unsigned u;R():n(1){}};"},
+      {"bitfield", "struct R{unsigned n:3;R():n(1){}};"},
+      {"static-data", "struct R{int n;static int value;R():n(1){}};int R::value=1;"},
+      {"temporary-reference-argument", "struct R{int n;R(const int &v):n(v){}};int f(){R r(1);return r.n;}"},
+      {"dead-temporary-reference-argument", "struct R{int n;R(const int &v):n(v){}};int f(){if(false){R r(1);return r.n;}return 0;}"},
+      {"temporary-method-receiver", "struct R{int n;R(int v):n(v){} int get()const{return n;}};int f(){return R(1).get();}"},
+      {"temporary-subobject-receiver", "struct I{int n;int get()const{return n;}};struct R{I i;R():i{1}{}};int f(){return R().i.get();}"},
+      {"temporary-array-receiver", "struct I{int n;int get()const{return n;}};struct R{I i[1];R():i{{1}}{}};int f(){return (R().i+0)->get();}"},
+      {"folded-unsupported-initializer", "struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;"},
+      {"folded-throw-body", "struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);"},
+      {"conversion-function", "struct R{int n;R():n(1){} operator int()const{return n;}};int f(){R r;return r;}"},
+      {"dynamic-global", "struct R{int n;R():n(1){}};R global;"},
+      {"global-array", "struct R{int n;constexpr R(int v):n(v){}};constexpr R global[1]={{1}};"},
+      {"global-pointer", "struct R{int n;constexpr R(int v):n(v){}};constexpr R global(1);constexpr const R *pointer=&global;"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("constructor-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("constructor-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RecordConstructorsRequireDefinitionsAndDoNotBroadenV1) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"cpp-core-v1", "struct R{int n;R(int v):n(v){}};int main(){R r(1);return r.n-1;}"},
+      {"cpp-core-v2", "struct R{int n;R(int);};int f(){R r(1);return r.n;}"},
+  };
+  for (const auto &[Profile, Code] : Cases) {
+    SCOPED_TRACE(Profile);
+    const auto Source = tmpFile("constructor-profile-" + Profile + ".cpp");
+    const auto Output = tmpFile("constructor-profile-" + Profile + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", Profile, "-o", Output.string()});
+    expectCode(Result, Profile == "cpp-core-v1" ? "TR0201" : "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RecordMethodsPreserveReceiverIdentityAndSequencing) {
   const auto Source = tmpFile("record-methods.cpp");
   const auto Output = tmpFile("record-methods.nc");
@@ -1573,7 +1789,6 @@ TEST_F(TranslateTest, CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries) {
       {"static-function-pointer", "struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}"},
       {"virtual-method", "struct R{int n;virtual int get(){return n;}};"},
       {"base-class", "struct B{int n;};struct R:B{int get(){return n;}};"},
-      {"constructor", "struct R{int n;R(int v):n(v){}};"},
       {"destructor", "struct R{int n;~R(){}};"},
       {"conversion", "struct R{int n;operator int()const{return n;}};"},
       {"operator", "struct R{int n;int operator()()const{return n;}};"},

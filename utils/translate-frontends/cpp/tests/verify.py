@@ -191,8 +191,105 @@ def main():
         'method-const-folded-live-call': 'struct R{int n;constexpr int get()const{return n;}};constexpr R r{7};static_assert(r.get()==7);',
         'method-discarded-partial-static': 'struct R{int n;static int get(){return 7;}};int f(){R r;return r.get();}',
     })
+    core_v2.update({
+        'constructor-default': 'struct R{int n;R():n(7){}};int f(){R r;return r.n;}',
+        'constructor-converting': 'struct R{int n;R(int v):n(v){}};int f(){R r=7;return r.n;}',
+        'constructor-explicit': 'struct R{int n;explicit R(int v):n(v){}};int f(){R r=R(7);return r.n;}',
+        'constructor-out-of-line': 'struct R{int n;R(int);};R::R(int v):n(v){} int f(){R r(7);return r.n;}',
+        'constructor-multiarg': 'struct R{int n;R(int a,int b):n(a+b){}};int f(){R r(3,4);return r.n;}',
+        'constructor-const': 'struct R{int n;R(int v):n(v){}int get()const{return n;}};int f(){const R r(7);return r.get();}',
+        'constructor-partial': 'struct R{int n,spare;R(int v):n(v){}int get()const{return n;}};int f(){R r(7);return r.get();}',
+        'constructor-implicit-member': 'struct I{int n;I():n(7){}};struct R{I value;R(){}};int f(){R r;return r.value.n;}',
+        'constructor-array-default': 'struct R{int n;R():n(7){}};int f(){R r[2];return r[1].n;}',
+        'constructor-array-filler': 'struct R{int n;R():n(7){}R(int v):n(v){}};int f(){R r[2]={R(3)};return r[1].n;}',
+        'constructor-matrix-default': 'struct R{int n;R():n(7){}};int f(){R r[2][2];return r[1][1].n;}',
+        'constructor-field-array': 'struct I{int n;I():n(7){}};struct R{I value[2];R(){}};int f(){R r;return r.value[1].n;}',
+        'constructor-early-return': 'struct R{int n;R(bool stop):n(7){if(stop)return;n=9;}};int f(){R r(true);return r.n;}',
+        'constructor-folded-global': 'struct R{int n;constexpr R(int v):n(v){}};constexpr R r(7);static_assert(r.n==7);',
+        'constructor-trivial-copy': 'struct R{int n;R(int v):n(v){}};int f(){R a(7);R b=a;b=a;return b.n;}',
+        'constructor-record-result': 'struct R{int n;R(int v):n(v){}};R make(){return R(7);}int f(){return make().n;}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
+    constructor_source = """struct R {
+  int first, second;
+  R *self;
+  R():second(first+2),first(3),self(this){}
+  explicit R(int n):first(n),second(first+2),self(this){}
+};
+struct O { R value; O(){} };
+int main(){
+  R local(5);
+  const R constant(7);
+  R array[3]={R(11)};
+  R plain[2];
+  R conditional=local.first?R(13):R(17);
+  R comma=(local.first=19,R(23));
+  O outer;
+  return 0;
+}
+"""
+    constructors = check("v2-constructor-destinations", constructor_source, profile="cpp-core-v2")
+    records_by_line = {r["loc"]["line"]: r for r in constructors["records"]}
+    inner_record, outer_record = records_by_line[1], records_by_line[7]
+    inner_id, outer_id = inner_record["id"], outer_record["id"]
+    constructors_by_line = {f["loc"]["line"]: f for f in constructors["functions"]}
+    constructor_signatures = {4: ["ptr:" + inner_id],
+                              5: ["ptr:" + inner_id, "int"],
+                              7: ["ptr:" + outer_id]}
+    for line, parameter_types in constructor_signatures.items():
+        function = constructors_by_line[line]
+        assert function["result"] == "void" and not function["c_export"], function
+        assert [p["type"] for p in function["params"]] == parameter_types, function
+    for line in (4, 5):
+        writes = [n["target"]["name"] for n in constructors_by_line[line]["body"]
+                  if n.get("op") == "assign" and n["target"].get("kind") == "member"]
+        assert writes == [f["name"] for f in inner_record["fields"]], writes
+    default_constructor = constructors_by_line[4]["name"]
+    explicit_constructor = constructors_by_line[5]["name"]
+    outer_constructor = constructors_by_line[7]["name"]
+    outer_calls = [n for n in constructors_by_line[7]["body"] if n.get("op") == "call"]
+    assert len(outer_calls) == 1 and outer_calls[0]["callee"] == default_constructor, outer_calls
+    main_function = next(f for f in constructors["functions"] if f["name"] == "main")
+    main_calls = [n for n in main_function["body"] if n.get("op") == "call"]
+    assert sum(n["callee"] == default_constructor for n in main_calls) == 4, main_calls
+    assert sum(n["callee"] == explicit_constructor for n in main_calls) == 6, main_calls
+    assert sum(n["callee"] == outer_constructor for n in main_calls) == 1, main_calls
+    local_types = [v["type"] for v in main_function["locals"]]
+    assert local_types.count(inner_id) == 4 and local_types.count(outer_id) == 1, local_types
+    assert local_types.count("arr:3:" + inner_id) == 1, local_types
+    assert local_types.count("arr:2:" + inner_id) == 1, local_types
+    constructor_functions = {f["name"]: f for f in constructors["functions"]}
+    for node in walk(constructors["functions"]):
+        if node.get("op") == "call":
+            callee = constructor_functions[node["callee"]]
+            assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]], node
+        if node.get("op") == "assign":
+            assert node["value"]["type"] not in (inner_id, outer_id), "direct construction inserted a record copy"
+    with tempfile.TemporaryDirectory(prefix="neverc-constructors-relocated-") as temp:
+        relocated = check("constructors-relocated", constructor_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == constructors, "constructor identities depend on the absolute root"
+    materialized = check("v2-constructor-materialization", """struct R {
+  int a[2];
+  explicit R(R*& out):a{3,5}{out=this;}
+};
+int main(){
+  R *p=nullptr; int *q=nullptr;
+  bool first=(q=R(p).a,q==p->a);
+  bool second=(q=R(p).a,q==p->a);
+  return first&&second?0:1;
+}
+""", profile="cpp-core-v2")
+    materialized_id = materialized["records"][0]["id"]
+    materialized_main = next(f for f in materialized["functions"] if f["name"] == "main")
+    materialized_objects = [v["name"] for v in materialized_main["locals"] if v["type"] == materialized_id]
+    assert len(set(materialized_objects)) == 2, materialized_objects
+    for node in walk(materialized_main):
+        if node.get("op") == "assign":
+            assert node["value"]["type"] != materialized_id, "materialization inserted a second record copy"
+    check("v2-constructor-definition", "struct R{int n;R(int);};int f(){R r(1);return r.n;}",
+          "TR0203", profile="cpp-core-v2")
     method_source = """struct R {
   int value, spare;
   int get() const { return value; }
@@ -342,7 +439,6 @@ int main() {
         'method-static-function-pointer': 'struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}',
         'method-virtual-method': 'struct R{int n;virtual int get(){return n;}};',
         'method-base-class': 'struct B{int n;};struct R:B{int get(){return n;}};',
-        'method-constructor': 'struct R{int n;R(int v):n(v){}};',
         'method-destructor': 'struct R{int n;~R(){}};',
         'method-conversion': 'struct R{int n;operator int()const{return n;}};',
         'method-operator': 'struct R{int n;int operator()()const{return n;}};',
@@ -359,6 +455,44 @@ int main() {
         'method-static-temporary-reference-argument': 'struct R{int n;static int get(const int&v){return v;}};int f(){return R::get(2);}',
         'method-method-comma-callee': 'struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}',
         'method-temporary-reverse-arrow-offset': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return (0+H{{{1}}}.a)->get();}',
+    })
+    v2_rejections.update({
+        'constructor-delegating': 'struct R{int n;R():R(1){} R(int v):n(v){}};',
+        'constructor-base-initializer': 'struct B{int n;B(int v):n(v){}};struct R:B{R():B(1){}};',
+        'constructor-inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};',
+        'constructor-copy-constructor': 'struct R{int n;R(int v):n(v){} R(const R&v):n(v.n){}};',
+        'constructor-move-constructor': 'struct R{int n;R(int v):n(v){} R(R&&v):n(v.n){}};',
+        'constructor-destructor': 'struct R{int n;R():n(1){} ~R(){}};',
+        'constructor-virtual-method': 'struct R{int n;R():n(1){} virtual int get(){return n;}};',
+        'constructor-implicit-nontrivial-default': 'struct I{int n;I():n(1){}};struct R{I i;};int f(){R r;return r.i.n;}',
+        'constructor-implicit-nontrivial-array-default': 'struct I{int n;I():n(1){}};struct R{I i[2];};int f(){R r;return r.i[0].n;}',
+        'constructor-template-constructor': 'struct R{int n;template<class T> R(T v):n(v){}};',
+        'constructor-variadic-constructor': 'struct R{int n;R(int v,...):n(v){}};',
+        'constructor-deleted-constructor': 'struct R{int n;R()=delete;};',
+        'constructor-defaulted-constructor': 'struct R{int n;R()=default;};',
+        'constructor-default-argument': 'struct R{int n;R(int v=1):n(v){}};',
+        'constructor-noexcept-constructor': 'struct R{int n;R() noexcept:n(1){}};',
+        'constructor-private-field': 'class R{int n;public:R():n(1){}};',
+        'constructor-protected-field': 'struct R{protected:int n;public:R():n(1){}};',
+        'constructor-const-field': 'struct R{const int n;R():n(1){}};',
+        'constructor-reference-field': 'struct R{int &n;R(int &v):n(v){}};',
+        'constructor-mutable-field': 'struct R{mutable int n;R():n(1){}};',
+        'constructor-default-member-initializer': 'struct R{int n=1;R(){}};',
+        'constructor-nested-record': 'struct R{struct I{int n;};I i;R():i{1}{}};',
+        'constructor-union': 'union R{int n;unsigned u;R():n(1){}};',
+        'constructor-bitfield': 'struct R{unsigned n:3;R():n(1){}};',
+        'constructor-static-data': 'struct R{int n;static int value;R():n(1){}};int R::value=1;',
+        'constructor-temporary-reference-argument': 'struct R{int n;R(const int &v):n(v){}};int f(){R r(1);return r.n;}',
+        'constructor-dead-temporary-reference-argument': 'struct R{int n;R(const int &v):n(v){}};int f(){if(false){R r(1);return r.n;}return 0;}',
+        'constructor-temporary-method-receiver': 'struct R{int n;R(int v):n(v){} int get()const{return n;}};int f(){return R(1).get();}',
+        'constructor-temporary-subobject-receiver': 'struct I{int n;int get()const{return n;}};struct R{I i;R():i{1}{}};int f(){return R().i.get();}',
+        'constructor-temporary-array-receiver': 'struct I{int n;int get()const{return n;}};struct R{I i[1];R():i{{1}}{}};int f(){return (R().i+0)->get();}',
+        'constructor-folded-unsupported-initializer': 'struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;',
+        'constructor-folded-throw-body': 'struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);',
+        'constructor-conversion-function': 'struct R{int n;R():n(1){} operator int()const{return n;}};int f(){R r;return r;}',
+        'constructor-dynamic-global': 'struct R{int n;R():n(1){}};R global;',
+        'constructor-global-array': 'struct R{int n;constexpr R(int v):n(v){}};constexpr R global[1]={{1}};',
+        'constructor-global-pointer': 'struct R{int n;constexpr R(int v):n(v){}};constexpr R global(1);constexpr const R *pointer=&global;',
     })
     for name, source in v2_rejections.items():
         check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")

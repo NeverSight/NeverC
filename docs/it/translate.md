@@ -21,7 +21,7 @@ Il profilo `cpp-core-v1` accetta un singolo file C++17 autonomo senza include. S
 
 Selezionare `--profile cpp-core-v2` per aggiungere alias `typedef`/`using` verificati, enumerazioni con tipi interi sottostanti supportati, `static_assert`, puntatori a oggetti e riferimenti lvalue entro un ambito limitato. Parametri e risultati per riferimento mantengono gli alias; sono supportati puntatori nulli e qualificazioni `const` annidate. Restano i vincoli di un solo file sorgente e nessun include. Vedere il [contratto core v2](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
-Core v2 aggiunge array locali di dimensione fissa e campi array, indicizzazione multidimensionale e puntatori o riferimenti ad array. L’inizializzazione parziale azzera gli elementi restanti e mantiene l’ordine e gli alias. Dimensioni ed espansione dell’inizializzazione sono limitate. Restano esclusi gli array globali, quelli di lunghezza variabile e gli elementi con gestione della durata non banale.
+Core v2 aggiunge array locali di dimensione fissa e campi array, indicizzazione multidimensionale e puntatori o riferimenti ad array. L’inizializzazione parziale azzera gli elementi scalari omessi; i record seguono l’inizializzazione selezionata e mantiene l’ordine e gli alias. Dimensioni ed espansione dell’inizializzazione sono limitate. Restano esclusi gli array globali, quelli di lunghezza variabile e gli elementi con distruzione non banale.
 
 Core v2 supporta `switch`/`case`/`default`, con istruzioni di inizializzazione C++17, passaggio al caso successivo e annotazioni `[[fallthrough]]` convalidate. Il selettore viene valutato una sola volta; switch e cicli annidati mantengono le destinazioni di `break`/`continue`. Restano esclusi gli intervalli case GNU e altri attributi di istruzione.
 
@@ -31,7 +31,9 @@ Core v2 supporta anche spostamenti e differenze tra puntatori a oggetti, increme
 
 Core v2 confronta dimensioni e allineamenti ABI dei tipi sorgente con il modello di destinazione di NeverC, comprese le dimensioni delle strutture e gli offset dei campi. Le asserzioni statiche nel codice generato verificano nuovamente la disposizione in compilazione; il manifest ne registra i dati.
 
-Core v2 supporta le funzioni membro nominate non virtuali degli aggregati triviali ammessi, inclusi overload const, metodi qualificati lvalue, metodi statici e `this`. Le chiamate preservano l’identità dell’oggetto originale e valutano il ricevente prima degli argomenti. Restano esclusi le chiamate non statiche su oggetti temporanei, le funzioni membro speciali, l’ereditarietà, i template e la STL generale.
+Core v2 supporta le funzioni membro nominate non virtuali degli tipi record ammessi, inclusi overload const, metodi qualificati lvalue, metodi statici e `this`. Le chiamate preservano l’identità dell’oggetto originale e valutano il ricevente prima degli argomenti. Restano esclusi le chiamate non statiche su oggetti temporanei, l’ereditarietà, i template e la STL generale.
+
+Core v2 supporta anche costruttori ordinari definiti dall’utente per record con layout standard, copia e distruzione triviali. Oggetti locali, campi ed elementi di array vengono costruiti direttamente nella memoria finale; i campi sono inizializzati nell’ordine di dichiarazione. Restano esclusi costruttori esplicitamente default, deleganti e di copia/spostamento definiti dall’utente, distruttori, operazioni di pulizia ed eccezioni.
 
 ## Progetti con più file
 

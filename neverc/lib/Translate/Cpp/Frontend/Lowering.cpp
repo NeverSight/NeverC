@@ -230,10 +230,7 @@ class FunctionLowering {
     if (A.S.coreV2()) {
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E);
           M && M->getType()->isRecordType()) {
-        // Give a trivial record temporary addressable storage for array decay
-        // and subobject reads in its full expression. Reference lifetime
-        // extension remains guarded by the source allowlist.
-        return snapshot(expression(M->getSubExpr()), L);
+        return materialize(M->getSubExpr(), L);
       }
       if (const auto *Index = dyn_cast<ArraySubscriptExpr>(E)) {
         // C++17 sequences the syntactic left operand first, even for i[p].
@@ -368,6 +365,10 @@ class FunctionLowering {
       case CK_IntegralCast:
       case CK_IntegralToBoolean:
         return cast(expression(C->getSubExpr()), T, L);
+      case CK_ConstructorConversion:
+        if (A.S.coreV2())
+          return materialize(C, L);
+        [[fallthrough]];
       case CK_NullToPointer:
         if (A.S.coreV2())
           return Expression{{"kind", "null"}, {"type", T}, {"loc", A.loc(L)}};
@@ -403,6 +404,8 @@ class FunctionLowering {
     if (isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(E))
       return A.zero(E->getType(), L);
     if (const auto *I = dyn_cast<InitListExpr>(E)) {
+      if (A.S.coreV2() && E->getType()->isRecordType())
+        return materialize(I, L);
       if (I->isSyntacticForm() && I->getSemanticForm())
         I = I->getSemanticForm();
       if (const auto *Array = A.Context.getAsConstantArrayType(E->getType());
@@ -444,12 +447,16 @@ class FunctionLowering {
                         {"loc", A.loc(L)}};
     }
     if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E))
-      return expression(M->getSubExpr());
+      return A.S.coreV2() && M->getType()->isRecordType()
+                 ? materialize(M->getSubExpr(), L)
+                 : expression(M->getSubExpr());
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
       return expression(W->getSubExpr());
     if (const auto *B = dyn_cast<CXXBindTemporaryExpr>(E))
       return expression(B->getSubExpr());
     if (const auto *C = dyn_cast<CXXConstructExpr>(E)) {
+      if (A.S.coreV2())
+        return materialize(C, L);
       if (C->getConstructor()->isCopyOrMoveConstructor() &&
           C->getNumArgs() == 1)
         return snapshot(expression(C->getArg(0)), L);
@@ -693,11 +700,122 @@ class FunctionLowering {
     }
     assign(std::move(Place), A.zero(T, L), L);
   }
+  Expression materialize(const Expr *Init, SourceLocation L) {
+    // One addressable destination per evaluation. Reusing an AST node (for
+    // example an array filler) must not reuse a previously constructed object.
+    auto Place = temporary(type(Init->getType(), L), L);
+    initialize(Place, Init, L);
+    return Place;
+  }
+  void construct(Expression Place, QualType T, const CXXConstructExpr *C,
+                 SourceLocation L) {
+    if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
+      auto Element = Array->getElementType();
+      auto Count = Array->getSize().getLimitedValue(65537);
+      if (!Count || Count > 65536 || A.storageUnits(T) > 200000)
+        reject(L, "array construction", "Array construction exceeds the storage limit.");
+      for (unsigned N = 0; N < Count; ++N) {
+        A.chargeExpansion(1, L);
+        construct(initialElement(Place, Element, N, L), Element, C, L);
+      }
+      return;
+    }
+    const auto *Constructor = C->getConstructor();
+    if (!T->isRecordType() ||
+        T->getAsCXXRecordDecl()->getCanonicalDecl() !=
+            Constructor->getParent()->getCanonicalDecl() ||
+        Place.getString("type") != type(T, L))
+      reject(L, "construction", "Constructor and destination types differ.");
+    if (Constructor->isImplicit() && Constructor->isTrivial()) {
+      if (Constructor->isCopyOrMoveConstructor() && C->getNumArgs() == 1) {
+        assign(std::move(Place), expression(C->getArg(0)), L);
+        return;
+      }
+      if (Constructor->isDefaultConstructor() && !C->getNumArgs()) {
+        if (C->requiresZeroInitialization())
+          initializeZero(std::move(Place), T, L);
+        return;
+      }
+    }
+    if (!ordinaryConstructor(Constructor) || !Constructor->hasBody() ||
+        C->getNumArgs() != Constructor->getNumParams())
+      reject(L, "construction", "Unsupported selected constructor or argument list.");
+    if (C->requiresZeroInitialization())
+      initializeZero(Place, T, L);
+    json::Array Args;
+    Args.push_back(snapshot(address(std::move(Place), T.getUnqualifiedType(), L), L));
+    for (unsigned I = 0; I < C->getNumArgs(); ++I) {
+      const auto *Arg = C->getArg(I);
+      auto Parameter = Constructor->getParamDecl(I)->getType();
+      Args.push_back(Parameter->isLValueReferenceType()
+                         ? snapshot(bind(Arg, Parameter), L)
+                         : expression(Arg));
+    }
+    std::size_t Nodes = 1;
+    for (const auto &Arg : Args)
+      Nodes += generatedNodes(*Arg.getAsObject());
+    A.chargeExpansion(Nodes, L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(Constructor)},
+                                {"args", std::move(Args)},
+                                {"loc", A.loc(L)}});
+  }
+  void constructorInitializers(const CXXConstructorDecl *C) {
+    std::map<const Decl *, const Expr *> Initializers;
+    auto L = C->getLocation();
+    for (const auto *I : C->inits()) {
+      if (!I->isMemberInitializer() || I->isPackExpansion() ||
+          I->getMember()->getParent() != C->getParent() || !I->getInit() ||
+          !Initializers.emplace(I->getMember()->getCanonicalDecl(), I->getInit()).second)
+        reject(L, "constructor initializer", "Unsupported or duplicate field initializer.");
+    }
+    for (const auto *Field : C->getParent()->fields()) {
+      auto Found = Initializers.find(Field->getCanonicalDecl());
+      if (Found == Initializers.end()) {
+        auto Element = Field->getType();
+        while (const auto *Array = A.Context.getAsConstantArrayType(Element))
+          Element = Array->getElementType();
+        if (Element->isRecordType())
+          reject(L, "constructor initializer", "Missing semantic class-member initialization.");
+        continue;
+      }
+      Expression Member{{"kind", "member"},
+                        {"type", type(Field->getType(), L)},
+                        {"name", A.name(Field)},
+                        {"args", json::Array{dereference(*ThisPointer, L)}},
+                        {"loc", A.loc(L)}};
+      initialize(std::move(Member), Found->second, L);
+    }
+  }
   void initialize(Expression Place, const Expr *Init, SourceLocation L) {
     Init = Init->IgnoreParens();
     if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
       initialize(std::move(Place), W->getSubExpr(), L);
       return;
+    }
+    if (A.S.coreV2()) {
+      if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(Init)) {
+        initialize(std::move(Place), M->getSubExpr(), L);
+        return;
+      }
+      if (const auto *B = dyn_cast<CXXBindTemporaryExpr>(Init)) {
+        initialize(std::move(Place), B->getSubExpr(), L);
+        return;
+      }
+      if (const auto *C = dyn_cast<CXXConstructExpr>(Init)) {
+        construct(std::move(Place), Init->getType(), C, L);
+        return;
+      }
+      if (const auto *C = dyn_cast<CastExpr>(Init);
+          C && C->getCastKind() == CK_ConstructorConversion) {
+        const auto *Construction =
+            dyn_cast<CXXConstructExpr>(C->getSubExpr()->IgnoreParens());
+        if (!Construction || !ordinaryConstructor(Construction->getConstructor()) ||
+            !A.Context.hasSameUnqualifiedType(C->getType(), Construction->getType()))
+          reject(L, "constructor conversion", "Unsupported constructor conversion wrapper.");
+        initialize(std::move(Place), Construction, L);
+        return;
+      }
     }
     if (const auto *C = dyn_cast<ConstantExpr>(Init); C && A.S.coreV2()) {
       initialize(std::move(Place), C->getSubExpr(), L);
@@ -1055,8 +1173,10 @@ public:
     auto ResultType = type(Function->getReturnType(), L, true);
     if (const auto *Method = dyn_cast<CXXMethodDecl>(Function);
         Method && !Method->isStatic()) {
-      if (!A.S.coreV2() || !ordinaryMethod(Method))
-        reject(L, "method", "Unsupported instance-method definition.");
+      if (!A.S.coreV2() ||
+          (!ordinaryMethod(Method) &&
+           !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method))))
+        reject(L, "method", "Unsupported instance-method or constructor definition.");
       auto Name = Prefix + "p" + std::to_string(++Serial);
       auto T = type(Method->getThisType(), L);
       Parameters.push_back(json::Object{
@@ -1076,6 +1196,8 @@ public:
     }
     Entry = labelName();
     label(Entry, L);
+    if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Function))
+      constructorInitializers(Constructor);
     statement(Function->getBody());
     if (Open && reachable().count(Current)) {
       if (Function->isMain()) {

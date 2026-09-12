@@ -21,7 +21,7 @@ Das Profil `cpp-core-v1` akzeptiert eine eigenständige C++17-Datei ohne Include
 
 Mit `--profile cpp-core-v2` werden geprüfte `typedef`-/`using`-Typaliase, Aufzählungen mit unterstützten ganzzahligen Basistypen, `static_assert` sowie Objektzeiger und Lvalue-Referenzen in begrenztem Umfang unterstützt. Referenzparameter und zurückgegebene Referenzen erhalten die Aliasbeziehungen; Nullzeiger und verschachtelte `const`-Qualifikationen werden unterstützt. Die Beschränkung auf eine Quelldatei ohne Includes bleibt bestehen. Siehe den [core-v2-Vertrag](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
-Core v2 ergänzt lokale Arrays fester Länge und Array-Felder, mehrdimensionale Indizierung sowie Zeiger und Referenzen auf Arrays. Bei Teilinitialisierung werden übrige Elemente mit null initialisiert; Reihenfolge und Aliasbeziehungen bleiben erhalten. Array-Länge und Initialisierungsexpansion sind begrenzt. Globale Arrays, Arrays variabler Länge und nichttriviale Elementlebenszeiten bleiben ausgeschlossen.
+Core v2 ergänzt lokale Arrays fester Länge und Array-Felder, mehrdimensionale Indizierung sowie Zeiger und Referenzen auf Arrays. Bei Teilinitialisierung werden ausgelassene skalare Elemente mit null initialisiert; Record-Elemente folgen ihrer ausgewählten Initialisierung; Reihenfolge und Aliasbeziehungen bleiben erhalten. Array-Länge und Initialisierungsexpansion sind begrenzt. Globale Arrays, Arrays variabler Länge und nichttriviale Elementdestruktoren bleiben ausgeschlossen.
 
 Core v2 unterstützt `switch`/`case`/`default` mit C++17-Initialisierungsanweisungen, Fallthrough und geprüften `[[fallthrough]]`-Annotationen. Der Selektor wird einmal ausgewertet; verschachtelte Switches und Schleifen behalten ihre `break`-/`continue`-Ziele. GNU-Case-Bereiche und andere Anweisungsattribute bleiben ausgeschlossen.
 
@@ -31,7 +31,9 @@ Core v2 unterstützt außerdem Objektzeiger-Offsets, Zeigerdifferenzen, Inkremen
 
 Core v2 vergleicht Quelltypgrößen und ABI-Ausrichtungen mit dem eigenen Zielmodell von NeverC, einschließlich Strukturgrößen und Feldoffsets. Statische Zusicherungen im erzeugten Code prüfen das Layout bei der Kompilierung erneut; das Manifest hält diese Angaben fest.
 
-Core v2 unterstützt benannte nichtvirtuelle Memberfunktionen der zugelassenen trivialen Aggregate, einschließlich const-Überladungen, lvalue-qualifizierter Methoden, statischer Methoden und `this`. Aufrufe erhalten die Identität des ursprünglichen Objekts und werten das Empfängerobjekt vor den Argumenten aus. Nichtstatische Aufrufe auf temporären Objekten, spezielle Memberfunktionen, Vererbung, Templates und allgemeine STL-Unterstützung fehlen noch.
+Core v2 unterstützt benannte nichtvirtuelle Memberfunktionen der zugelassenen Record-Typen, einschließlich const-Überladungen, lvalue-qualifizierter Methoden, statischer Methoden und `this`. Aufrufe erhalten die Identität des ursprünglichen Objekts und werten das Empfängerobjekt vor den Argumenten aus. Nichtstatische Aufrufe auf temporären Objekten, Vererbung, Templates und allgemeine STL-Unterstützung fehlen noch.
+
+Core v2 unterstützt außerdem gewöhnliche benutzerdefinierte Konstruktoren für Record-Typen mit Standardlayout sowie trivialem Kopieren und Zerstören. Lokale Objekte, Felder und Array-Elemente werden direkt an ihrem endgültigen Speicherort konstruiert; Felder werden in Deklarationsreihenfolge initialisiert. Explizit als default markierte oder delegierende Konstruktoren, benutzerdefinierte Kopier-/Move-Konstruktoren und Destruktoren, Aufräumlogik und Ausnahmen fehlen noch.
 
 ## Projekte mit mehreren Dateien
 

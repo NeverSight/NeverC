@@ -68,6 +68,7 @@ std::string digest(llvm::StringRef Text);
 bool validExportName(llvm::StringRef Name);
 bool isolateProjectEnvironment();
 bool ordinaryMethod(const clang::CXXMethodDecl *Method);
+bool ordinaryConstructor(const clang::CXXConstructorDecl *Constructor);
 const clang::Expr *directMethodReference(const clang::CallExpr *Call);
 
 // Canonical integral carrier spellings after Clang resolves source types.

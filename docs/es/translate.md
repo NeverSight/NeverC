@@ -21,7 +21,7 @@ El perfil `cpp-core-v1` acepta un único archivo C++17 autónomo sin includes. A
 
 Seleccione `--profile cpp-core-v2` para añadir alias `typedef`/`using` comprobados, enumeraciones con tipos subyacentes enteros admitidos, `static_assert`, punteros a objetos y referencias a lvalues dentro de un alcance limitado. Los parámetros y resultados por referencia conservan los alias; se admiten punteros nulos y calificaciones `const` anidadas. Se mantienen las restricciones de un solo archivo fuente y sin includes. Consulte el [contrato de core v2](../../utils/translate-frontends/docs/cpp-core-v2.md).
 
-Core v2 añade arrays locales de tamaño fijo y campos de array, indexación multidimensional y punteros o referencias a arrays. La inicialización parcial rellena con cero los elementos restantes y conserva el orden y los alias. El tamaño y la expansión de la inicialización tienen límites. Los arrays globales, los de longitud variable y los elementos con gestión de vida no trivial siguen sin admitirse.
+Core v2 añade arrays locales de tamaño fijo y campos de array, indexación multidimensional y punteros o referencias a arrays. La inicialización parcial inicializa a cero los elementos escalares omitidos; los registros siguen su inicialización seleccionada y conserva el orden y los alias. El tamaño y la expansión de la inicialización tienen límites. Los arrays globales, los de longitud variable y los elementos con destrucción no trivial siguen sin admitirse.
 
 Core v2 admite `switch`/`case`/`default`, con sentencias de inicialización de C++17, continuación entre casos y anotaciones `[[fallthrough]]` validadas. El selector se evalúa una vez y los switches y bucles anidados conservan los destinos de `break`/`continue`. Se rechazan los rangos case de GNU y otros atributos de sentencia.
 
@@ -31,7 +31,9 @@ Core v2 también admite desplazamientos y diferencias de punteros a objetos, inc
 
 Core v2 contrasta los tamaños y las alineaciones ABI de los tipos de origen con el modelo de destino de NeverC, incluidos los tamaños de estructuras y los desplazamientos de campos. Las aserciones estáticas del código generado vuelven a comprobar la disposición al compilar, y el manifiesto registra estos datos.
 
-Core v2 admite funciones miembro con nombre no virtuales de los agregados triviales aceptados, incluidas las sobrecargas const, los métodos cualificados para lvalue, los métodos estáticos y `this`. Las llamadas conservan la identidad del objeto original y evalúan el receptor antes que los argumentos. Aún no se admiten llamadas no estáticas sobre objetos temporales, funciones miembro especiales, herencia, plantillas ni la STL general.
+Core v2 admite funciones miembro con nombre no virtuales de los tipos de registro aceptados, incluidas las sobrecargas const, los métodos cualificados para lvalue, los métodos estáticos y `this`. Las llamadas conservan la identidad del objeto original y evalúan el receptor antes que los argumentos. Aún no se admiten llamadas no estáticas sobre objetos temporales, herencia, plantillas ni la STL general.
+
+Core v2 también admite constructores ordinarios definidos por el usuario para registros con disposición estándar, copia trivial y destrucción trivial. Los objetos locales, campos y elementos de array se construyen directamente en su almacenamiento final; los campos se inicializan en orden de declaración. Siguen excluidos los constructores explícitamente default, delegados y de copia/movimiento definidos por el usuario, los destructores, la limpieza y las excepciones.
 
 ## Proyectos de varios archivos
 

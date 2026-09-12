@@ -139,6 +139,20 @@ unchecked class ABI is introduced. Method names preserve canonical declaration
 identity before source type normalization; methods are never C exports.
 See the [source admission and lifetime rules](cpp-core-v2.md#ordinary-record-methods).
 
+## Core v2 constructor calls
+
+Admitted constructors also reuse ordinary functions and `call`: result `void`,
+first parameter `ptr:<record>`, followed by the explicit source parameters.
+They have no C export ABI. Call signatures and destination addressability pass
+through the existing verifier; no implicit construction node bypasses checking.
+The frontend places field initialization in declaration order before the body.
+Local, field and array-element construction passes the actual destination address;
+array fillers produce one call per element. Direct initialization and temporary
+materialization do not insert an intermediate record copy. Intentional source
+copies and permitted trivial class function argument/result copies retain their
+existing value representation. No destruction or cleanup protocol is implied.
+See the [constructor and lifetime contract](cpp-core-v2.md#ordinary-record-constructors).
+
 ## Core v2 layout evidence
 
 `cpp-core-v2` requires `target.carrier_layout` and per-record `layout` evidence.

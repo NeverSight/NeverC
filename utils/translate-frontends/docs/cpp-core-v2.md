@@ -3,7 +3,7 @@
 `cpp-core-v2` is an experimental, explicitly selected extension of the
 single-source `cpp-core-v1` contract. It adds the declarations, bounded pointer
 and reference operations, fixed arrays, integer widths, size queries and ordinary
-record methods below. It is a step toward broader C++17 translation; it does not
+record methods and constructors below. It is a step toward broader C++17 translation; it does not
 claim complete C++17 or STL support. The existing core, project and math v1
 profiles retain their accepted-input contracts.
 
@@ -92,7 +92,7 @@ expression-form alignment and parameter packs are rejected.
 
 - Local variables and supported function parameters/results may use object pointers
   and lvalue references. Supported pointees are the admitted integer and character types, `bool`,
-  the admitted enums, complete trivial records and admitted fixed arrays; `void *` is supported without
+  the admitted enums, complete admitted records and admitted fixed arrays; `void *` is supported without
   dereferencing `void`. Function and member pointers remain unsupported.
 - Address, dereference, `->`, pointer equality/inequality, conversion to `bool`,
   null initialization (`nullptr`, zero and value initialization), qualification
@@ -132,12 +132,11 @@ pointer aliasing behavior, not an arbitrary C compiler's alias rules.
 
 ## Ordinary record methods
 
-Core v2 admits named nonvirtual member functions of the supported trivial
-aggregates: nonstatic methods with no cv qualifier or with `const`, optional
+Core v2 admits named nonvirtual member functions of the supported records: nonstatic methods with no cv qualifier or with `const`, optional
 lvalue ref qualification (`&`), and static methods. Clang resolves access,
 overloads and out-of-line definitions before normalization. Explicit access
 specifiers are compile-time syntax only; data fields must still satisfy the
-aggregate restrictions. Private helper methods do not change object layout.
+field and layout restrictions. Private helper methods do not change object layout.
 
 A nonstatic method becomes an ordinary generated function whose first parameter
 is a pointer to the original object (`const` for a const method). `this`, implicit
@@ -151,7 +150,7 @@ The receiver expression is evaluated and its pointer captured before explicit
 arguments, including when an argument reseats a pointer used as the receiver.
 Static calls through an object evaluate/discard that object expression before
 arguments and have no hidden pointer parameter; `make_record().static_method()`
-is allowed for an otherwise admitted trivial result. A class-qualified static
+is allowed for an otherwise admitted record result. A class-qualified static
 call has no object expression. Methods are direct named call targets only;
 function values and member pointers remain rejected even in folded source.
 
@@ -175,12 +174,79 @@ rejected, including in dead/folded code. A pointer field of a temporary containe
 may still point to a separate live object. Explicit reference arguments retain
 the existing temporary-binding restrictions for both static and instance calls.
 
-Constructors/destructors, user-defined operators/conversions, virtual methods,
+User-defined destructors, operators/conversions, virtual methods,
 inheritance, volatile/restrict and rvalue-qualified methods, default arguments,
-exception specifications, templates, static data and nontrivial lifetime behavior
-remain unsupported. The existing implicit trivial copy paths are unchanged.
+exception specifications, templates, static data and nontrivial destruction
+remain unsupported. Ordinary constructors follow the separate rules below. The existing implicit trivial copy paths are unchanged.
 These methods do not establish STL container or iterator support. V1 profiles
 retain their rejected-method boundary.
+
+## Ordinary record constructors
+
+Core v2 admits ordinary user-provided default, converting and multi-argument
+constructors, including `explicit`, `constexpr` and out-of-line definitions.
+Records must be nonempty, unnested, standard-layout and trivially copyable, with
+trivial destruction and no bases. Fields remain public, non-mutable, non-const,
+non-reference and non-bitfield, without default member initializers. Ordinary
+methods may use these records. Allowing a constructor does not admit arbitrary
+class layouts or foreign C++ ABI interchange.
+
+A constructor becomes a void function with a first mutable pointer to its actual
+destination. Field initialization runs in declaration order, regardless of the
+written mem-initializer order, followed by the constructor body. `this`, field
+access and ordinary method calls observe that same destination. Early `return;`
+returns from the constructor body after field initialization. Written and implicit
+member initializers, including selected array filler constructors, are checked
+before lowering; unsupported source cannot disappear behind constant folding.
+
+Locals, record fields and array elements construct directly in their final
+storage through parentheses, braces, converting initialization and supported
+prvalue conditional/comma expressions. Arrays default-construct each element;
+braced-list fillers run separately for every omitted element, including nested
+arrays. Existing extent and expansion limits apply. Constructors that store
+`this` therefore retain the destination's address. A source-requested trivial
+copy still copies the stored pointer value; it does not repair self pointers.
+
+```cpp
+struct Item {
+  int value;
+  Item *self;
+  Item() : value(7), self(this) {}
+  explicit Item(int n) : value(n), self(this) {}
+};
+int main() {
+  Item items[2] = {Item(3)};
+  return items[0].self == &items[0] && items[1].self == &items[1]
+      && items[1].value == 7 ? 0 : 1;
+}
+```
+
+Zero-initialization follows the selected C++ initialization. User-provided default
+constructors receive no invented zero pass; an omitted scalar member remains
+uninitialized. Supported implicit trivial value initialization still zeroes
+storage when required. Missing record members use Clang's semantic initializer;
+implicit nontrivial default constructors are not synthesized by the translator.
+For example, a user-provided `Outer()` can initialize its `Inner` member with an
+admitted constructor, while an implicit nontrivial `Outer()` remains outside this
+increment. Aggregate initialization remains available where C++ selects it.
+
+A materialized record temporary and its field/array views share one destination
+for that evaluation. No extra record copy is inserted during materialization.
+Temporary field reads and by-value function arguments/results are supported for
+the admitted records. C++17 permits implementation copies of eligible trivial
+class function arguments/results; their addresses are not promised to equal a
+caller's final object address. Reference binding to temporaries and nonstatic
+calls on temporary receivers retain their existing rejection boundary. Const
+local destinations are constructed once; subsequent accesses keep source const
+qualifications.
+
+Explicitly defaulted/deleted, delegating, inherited, user-defined copy/move,
+template and variadic constructors, default arguments and exception specifications
+remain rejected. User destructors, nontrivial copying, cleanup/unwinding, allocation,
+static guards, inheritance, virtual dispatch and STL are still outside this
+increment. Compile-time const scalar/record globals may use an admitted constexpr
+constructor after source inspection; dynamic, pointer and array global restrictions
+remain unchanged. V1 profiles continue to reject user constructors.
 
 ## Pointer offsets and differences
 
@@ -229,14 +295,15 @@ implementations remain outside this increment. Pointer `==`/`!=` remain supporte
   arrays, adjusted array parameters, and pointers/lvalue references to arrays
   as parameters and results. The syntactic left operand is evaluated before
   the right operand, as required by C++17; aliases keep the original storage.
-- List/value initialization stores each element in source order and zero-fills
-  omitted elements, including nested record fields. Default initialization does
+- List/value initialization stores each element in source order. Omitted scalar
+  elements are zero-initialized; record elements follow their selected aggregate
+  or constructor initialization. Default initialization does
   not initialize scalar elements. Accessing one initialized element never copies
   unrelated uninitialized elements or record fields. Trivial record copies
   include their array fields; direct array assignment is not permitted.
 - Array element qualification is preserved through decay and pointers/references
   to arrays. A const record's array cannot be used to obtain a mutable element
-  pointer. Reads such as `make_record().values[0]` materialize a trivial temporary
+  pointer. Reads such as `make_record().values[0]` materialize an admitted record temporary
   for the full expression; reference binding to temporary subobjects remains
   rejected by the existing lifetime boundary.
 
@@ -251,7 +318,7 @@ int main() {
 ```
 
 Global arrays and global records containing arrays, zero-length and variable-length
-arrays, unsupported element types and nontrivial element construction/destruction
+arrays, unsupported element types and nontrivial element destruction
 remain rejected, including in unused or dead code. Indexing requires the same
 valid storage and in-bounds accesses as the source program; the translator does
 not add a runtime bounds-check guarantee. Constant `sizeof` and type-form
@@ -305,7 +372,7 @@ must agree, with supported byte sizes and power-of-two alignment.
 
 Each response record also requires `layout` containing `size_bits`,
 `abi_align_bits` and `field_offsets_bits` in declaration order. The verifier
-reconstructs the natural layout of the currently supported plain aggregates
+reconstructs the natural layout of the currently supported standard-layout records
 from matched carriers, arrays and earlier records. Arithmetic is bounded;
 layout size is at most 25,600,000 bits and field offsets must agree exactly.
 This does not admit packing, custom alignment, bases or bitfields.
@@ -321,7 +388,7 @@ a separate generated header belongs to project mode.
 ## Remaining scope and wire representation
 
 128-bit and extended integers, floating-point types,
-classes with nontrivial lifetime behavior, templates, exceptions, STL headers
+classes requiring nontrivial copying/destruction or cleanup, templates, exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2
 does not implicitly combine their capabilities.
@@ -343,7 +410,9 @@ The regression cases cover generated execution at O0/O2, narrow/wide integer
 promotions and conversions, character literals, size queries, scoped and unscoped
 enums, signed/unsigned boundary values, overloads, global/aggregate values,
 local declarations, ordinary methods/this and receiver sequencing, static calls,
-const overloads, reference results, pointer/reference aliasing with inlining disabled, nested
+const overloads, reference results, direct constructor destinations and field order,
+array filler calls, single-place materialization, pointer/reference aliasing with
+inlining disabled, nested
 const, nulls, reference-return assignment, array initialization and indexing order,
 multidimensional arrays, temporary array reads, switch dispatch/fallthrough,
 nested case entry and loop control, constant selectors, resource limits, unsupported
