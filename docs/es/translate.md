@@ -57,6 +57,8 @@ Core v2 también admite construcción y asignación de movimiento implícitas o 
 
 Core v2 admite declaraciones estándar resueltas `noexcept`, `noexcept(true/false)` y `throw()` de C++17, además de consultas constantes `noexcept(expression)`. Las consultas respetan las especificaciones de las funciones y destructores seleccionados sin ejecutar sus operandos. Todos los operandos y especificaciones escritas se inspeccionan, incluso en código no usado. Lanzamiento y captura de excepciones, desenrollado de pila, plantillas y STL completo siguen en desarrollo.
 
+Core v2 admite operadores ordinarios sobrecargados, miembros o libres: aritmética, comparaciones, subíndices, desreferencia, incrementos, objetos función y firmas generales de asignación. Conserva funciones seleccionadas, alias de referencias y objetos resultado. La notación de operador respeta el orden de C++17; los operadores lógicos sobrecargados evalúan ambos operandos. Los operadores libres de asignación inicializan los parámetros de derecha a izquierda y los destruyen en orden inverso. Funciones de conversión, plantillas, asignación de memoria y STL completo siguen en desarrollo.
+
 ## Proyectos de varios archivos
 
 Seleccione explícitamente las unidades de traducción en una base de datos de compilación y especifique el directorio raíz del proyecto. El frontend integrado analiza cada unidad por separado; la fusión verifica definiciones, enlace, tipos compartidos y el cumplimiento de la regla de una sola definición (ODR) mediante comprobaciones conservadoras.

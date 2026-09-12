@@ -1609,13 +1609,7 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
       {"deleted-assignment", "struct R{int n;R&operator=(const R&)=delete;};"},
       {"volatile-constructor", "struct R{int n;R(const volatile R&r):n(r.n){}};"},
       {"volatile-assignment", "struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};"},
-      {"const-assignment", "struct R{int n;R&operator=(const R&r)const{return const_cast<R&>(*this);}};"},
-      {"rvalue-assignment", "struct R{int n;R&operator=(const R&r)&&{n=r.n;return *this;}};"},
-      {"by-value-assignment", "struct R{int n;R&operator=(R r){n=r.n;return *this;}};"},
-      {"void-assignment", "struct R{int n;void operator=(const R&r){n=r.n;}};"},
-      {"other-assignment-result", "struct R{int n;int&operator=(const R&r){n=r.n;return n;}};"},
       {"default-argument", "struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};"},
-      {"arbitrary-operator", "struct R{int n;R operator+(const R&r){return {n+r.n};}};"},
       {"temporary-assignment-source", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}"},
       {"temporary-assignment-receiver", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}"},
   };
@@ -1646,6 +1640,245 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
   Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
   expectCode(Result, "TR0201");
   expectNoArtifacts(Output);
+}
+
+TEST_F(TranslateTest, CoreV2OperatorsPreserveSequencingAliasesAndLifetimes) {
+  const auto Source = tmpFile("operators.cpp");
+  const auto Output = tmpFile("operators.nc");
+  writeFile(Source, R"cpp(
+struct Item {
+  int n;int*alive;Item*self=this;
+  Item(int v,int&count)noexcept:n(v),alive(&count){++*alive;}
+  Item(const Item&s)noexcept:n(s.n),alive(s.alive){++*alive;}
+  Item(Item&&s)noexcept:n(s.n),alive(s.alive){++*alive;s.n=-1;}
+  ~Item()noexcept{--*alive;}
+};
+struct Target{int n;};
+struct R {
+  int n;Target*target;R*alias=this;
+  R(int v,Target&t):n(v),target(&t){}
+  int operator+(int v)const noexcept{return n+v;}
+  int operator-(int v)const{return n-v;}
+  int operator*(int v)const{return n*v;}
+  int operator/(int v)const{return n/v;}
+  int operator%(int v)const{return n%v;}
+  int operator^(int v)const{return n^v;}
+  int operator|(int v)const{return n|v;}
+  int operator&(int v)const{return n&v;}
+  int operator<<(int v)const{return n<<v;}
+  int operator>>(int v)const{return n>>v;}
+  int operator+()const{return n;}
+  int operator-()const{return -n;}
+  int operator~()const{return ~n;}
+  bool operator!()const{return !n;}
+  int&operator*(){return n;}
+  int*operator&(){return &n;}
+  Target*operator->(){return target;}
+  int operator->*(int v)const{return target->n+v;}
+  int&operator[](int){return n;}
+  int&operator()(){return n;}
+  R&operator++(){++n;return *this;}
+  R operator++(int){R old=*this;++n;return old;}
+  R&operator--(){--n;return *this;}
+  R operator--(int){R old=*this;--n;return old;}
+  R&operator+=(const R&r){n=r.n;return *alias;}
+  R&operator-=(int v){n-=v;return *this;}
+  R&operator*=(int v){n*=v;return *this;}
+  R&operator/=(int v){n/=v;return *this;}
+  R&operator%=(int v){n%=v;return *this;}
+  R&operator^=(int v){n^=v;return *this;}
+  R&operator|=(int v){n|=v;return *this;}
+  R&operator&=(int v){n&=v;return *this;}
+  R&operator<<=(int v){n<<=v;return *this;}
+  R&operator>>=(int v){n>>=v;return *this;}
+  R&operator,(R&r){return r;}
+  bool operator&&(const R&r)const{return n&&r.n;}
+  bool operator||(const R&r)const{return n||r.n;}
+};
+int operator+(int v,const R&r){return v+r.n;}
+bool operator==(const R&a,const R&b){return a.n==b.n;}
+bool operator!=(const R&a,const R&b){return a.n!=b.n;}
+bool operator<(const R&a,const R&b){return a.n<b.n;}
+bool operator>(const R&a,const R&b){return a.n>b.n;}
+bool operator<=(const R&a,const R&b){return a.n<=b.n;}
+bool operator>=(const R&a,const R&b){return a.n>=b.n;}
+R&left(R&r,int&t){t=t*10+1;return r;}
+R&right(R&r,int&t){t=t*10+2;return r;}
+int index(int&t){t=t*10+3;return 0;}
+R&reseat(R*&p,R&r){p=r.alias;r.n=17;return r;}
+struct Free{int n;};
+Free&operator+=(Free&a,const Free&b){a.n=b.n;return a;}
+Free&freeLeft(Free&r,int&t){t=t*10+1;return r;}
+Free&freeRight(Free&r,int&t){t=t*10+2;return r;}
+struct Factory{int*alive;Item operator()(int v)const noexcept{return Item(v,*alive);}};
+Item operator+(Item value,const Factory&f){return Item(value.n+1,*f.alive);}
+struct Assign {
+  int n;
+  int&operator=(int v){n=v;return n;}
+  void operator=(const Assign&r){n=r.n;}
+  const Assign&operator=(Assign&&r){n=r.n;r.n=-1;return *this;}
+};
+struct ValueAssign{int n;ValueAssign operator=(ValueAssign v){n=v.n;return {n+1};}};
+struct Qualified {
+  int n;
+  int operator()() & {return n;}
+  int operator()()const & {return n+1;}
+  int operator()() && {return n+2;}
+  const Qualified&operator=(int)const{return *this;}
+};
+struct Ordered {
+  int id;int*events;
+  Ordered(int n,int&t):id(n),events(&t){*events=*events*10+id;}
+  Ordered(const Ordered&s):id(s.id),events(s.events){*events=*events*10+id;}
+  ~Ordered(){*events=*events*10+id+2;}
+};
+struct Result {
+  int n;int*events;Result*self=this;
+  Result(int v,int&t):n(v),events(&t){*events=*events*10+6;}
+  ~Result(){*events=*events*10+7;}
+};
+void operator+=(Ordered lhs,Ordered rhs){*lhs.events=*lhs.events*10+5;if(lhs.id==1)return;*rhs.events=0;}
+Result operator-=(Ordered lhs,Ordered rhs){*lhs.events=*lhs.events*10+5;return Result(lhs.id+rhs.id,*lhs.events);}
+struct VoidMembers{Assign items[2];};
+struct ReturnAssign{int n;int*alive;Item operator=(const ReturnAssign&r){n=r.n;return Item(n,*alive);}};
+struct ResultMembers{ReturnAssign items[2];};
+int main(){
+  Target target{21};R a(6,target),b(3,target);int trace=0;
+  if(a+2!=8 || a-2!=4 || a*2!=12 || a/2!=3 || a%4!=2 || 2+a!=8)return 1;
+  if((a^3)!=5 || (a|1)!=7 || (a&3)!=2 || (a<<1)!=12 || (a>>1)!=3)return 2;
+  if(+a!=6 || -a!=-6 || ~a!=~6 || !a || !noexcept(a+1))return 3;
+  if(a==b || !(a!=b) || a<b || !(a>b) || a<=b || !(a>=b))return 4;
+  *a=7;a[0]=8;a()=9;*(&a)=10;
+  if(a.n!=10 || a->n!=21 || (a->*2)!=23)return 5;
+  R old=a++;if(old.n!=10 || a.n!=11 || (++a).n!=12)return 6;
+  R previous=a--;if(previous.n!=12 || a.n!=11 || (--a).n!=10)return 7;
+  a-=2;a*=3;a/=2;a%=7;a^=3;a|=8;a&=14;a<<=1;a>>=2;
+  if(a.n!=7)return 8;
+  left(a,trace)+=right(b,trace);if(trace!=21 || a.n!=3)return 9;
+  trace=0;left(a,trace).operator+=(right(b,trace));if(trace!=12)return 10;
+  trace=0;left(a,trace)[index(trace)]=4;if(trace!=13 || a.n!=4)return 11;
+  trace=0;(left(a,trace),right(b,trace)).n=5;if(trace!=12 || b.n!=5)return 12;
+  a.n=0;trace=0;bool both=left(a,trace)&&right(b,trace);if(both || trace!=12)return 13;
+  a.n=1;trace=0;bool either=left(a,trace)||right(b,trace);if(!either || trace!=12)return 14;
+  trace=0;bool builtin=false&&index(trace);if(builtin || trace)return 15;
+  trace=0;int shifted=left(b,trace)<<index(trace);if(trace!=13 || shifted!=5)return 16;
+  Free x{1},y{2};trace=0;freeLeft(x,trace)+=freeRight(y,trace);if(trace!=21 || x.n!=2)return 17;
+  trace=0;operator+=(freeLeft(x,trace),freeRight(y,trace));if((trace!=12 && trace!=21) || x.n!=2)return 18;
+  R c(12,target),d(13,target);R*p=c.alias;
+  reseat(p,d)+=*p;if(p!=d.alias || d.n!=12)return 19;
+  int alive=0;Factory factory{&alive};
+  {Item first=factory(30);if(alive!=1 || first.self!=&first || first.n!=30)return 20;
+   Item second=first+factory;if(alive!=2 || second.self!=&second || second.n!=31)return 21;
+   factory(40);if(alive!=2)return 22;
+   if(!noexcept(factory(1)) || alive!=2)return 23;}
+  if(alive)return 24;
+  Assign to{1},from{8};int&alias=(to=3);alias=4;if(to.n!=4)return 25;
+  to=from;if(to.n!=8)return 26;
+  const Assign&returned=(to=static_cast<Assign&&>(from));if(&returned!=&to || from.n!=-1)return 27;
+  ValueAssign va{1},vb{9};ValueAssign value=(va=vb);if(va.n!=9 || vb.n!=9 || value.n!=10)return 28;
+  Qualified q{5};const Qualified cq{7};
+  if(q()!=5 || cq()!=8 || static_cast<Qualified&&>(q)()!=7 || &(cq=1)!=&cq)return 29;
+  if(a.operator+(3)!=4 || operator+(3,a)!=4)return 30;
+  int events=0;
+  {Ordered lhs(1,events),rhs(2,events);events=0;
+   lhs+=rhs;if(events!=21534)return 31;
+   events=0;operator+=(lhs,rhs);if(events!=21534)return 32;
+   events=0;{Result result=(lhs-=rhs);if(events!=215634 || result.n!=3 || result.self!=&result)return 33;}
+   if(events!=2156347)return 34;
+   events=0;{Result result=operator-=(lhs,rhs);if(events!=215634 || result.n!=3 || result.self!=&result)return 35;}
+   if(events!=2156347)return 36;events=0;}
+  if(events!=43)return 37;
+  VoidMembers vm1{{{1},{2}}},vm2{{{3},{4}}};vm1=vm2;
+  if(vm1.items[0].n!=3 || vm1.items[1].n!=4 || vm2.items[1].n!=4)return 38;
+  ResultMembers rm1{{{1,&alive},{2,&alive}}},rm2{{{3,&alive},{4,&alive}}};rm1=rm2;
+  if(rm1.items[0].n!=3 || rm1.items[1].n!=4 || alive)return 39;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("operators" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OperatorsAcceptOrdinaryAssignmentSignatures) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"user_copy_rejected-const-assignment", "struct R{int n;R&operator=(const R&r)const{return const_cast<R&>(*this);}};"},
+      {"user_copy_rejected-rvalue-assignment", "struct R{int n;R&operator=(const R&r)&&{n=r.n;return *this;}};"},
+      {"user_copy_rejected-by-value-assignment", "struct R{int n;R&operator=(R r){n=r.n;return *this;}};"},
+      {"user_copy_rejected-void-assignment", "struct R{int n;void operator=(const R&r){n=r.n;}};"},
+      {"user_copy_rejected-other-assignment-result", "struct R{int n;int&operator=(const R&r){n=r.n;return n;}};"},
+      {"user_copy_rejected-arbitrary-operator", "struct R{int n;R operator+(const R&r){return {n+r.n};}};"},
+      {"user_move_rejected-const-assignment-receiver", "struct R{int n;R&operator=(R&&)const{return const_cast<R&>(*this);}};"},
+      {"user_move_rejected-assignment-void-result", "struct R{int n;void operator=(R&&r){n=r.n;}};"},
+      {"user_move_rejected-assignment-const-result", "struct R{int n;const R&operator=(R&&r){n=r.n;return *this;}};"},
+      {"user_move_rejected-assignment-other-result", "struct R{int n;int&operator=(R&&r){n=r.n;return n;}};"},
+      {"user_move_rejected-assignment-value-source", "struct R{int n;R&operator=(R r){n=r.n;return *this;}};"},
+      {"user_move_rejected-arbitrary-operator", "struct R{int n;R operator+(R&&r){return {n+r.n};}};"},
+      {"method-call", "struct R{int n;int operator()()const{return n;}};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("operators-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("operators-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OperatorsRetainSourceAndLifetimeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"conversion", "struct R{int n;operator int()const{return n;}};", "TR0201"},
+      {"deleted", "struct R{int n;int operator+(int)const=delete;};", "TR0201"},
+      {"volatile-receiver", "struct R{int n;int operator()()volatile{return n;}};", "TR0201"},
+      {"volatile-argument", "struct R{int n;int operator+(volatile R&r)const{return r.n;}};", "TR0201"},
+      {"template", "struct R{int n;template<class T>int operator()(T v){return n;}};", "TR0201"},
+      {"default-argument", "struct R{int n;int operator()(int v=1){return n+v;}};", "TR0201"},
+      {"friend", "struct R{int n;friend int operator+(const R&r,int v){return r.n+v;}};", "TR0201"},
+      {"member-pointer", "struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}", "TR0201"},
+      {"free-pointer", "struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}", "TR0201"},
+      {"temporary-receiver", "struct R{int n;int operator()()const{return n;}};int f(){return R{1}();}", "TR0201"},
+      {"temporary-reference", "struct R{int n;};int operator+(const R&a,const R&b){return a.n+b.n;}int f(R&r){return r+R{1};}", "TR0201"},
+      {"unevaluated-temporary", "struct R{int n;int operator()()const noexcept{return n;}};bool f(){return noexcept(R{1}());}", "TR0201"},
+      {"new-member", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}};", "TR0201"},
+      {"delete-member", "struct R{int n;static void operator delete(void*){}};", "TR0201"},
+      {"new-free", "using Size=decltype(sizeof(0));void*operator new(Size){return nullptr;}", "TR0201"},
+      {"attribute", "struct R{int n;[[deprecated]] int operator()()const{return n;}};", "TR0201"},
+      {"virtual", "struct R{int n;virtual int operator()()const{return n;}};", "TR0201"},
+      {"binary-arity", "struct R{int n;int operator+(int,int){return n;}};", "TR0202"},
+      {"prefix-postfix-type", "struct R{int n;R&operator++(long){return *this;}};", "TR0202"},
+      {"free-assignment", "struct R{int n;};R&operator=(R&a,const R&b){return a;}", "TR0202"},
+      {"static-member", "struct R{int n;static int operator+(int){return 1;}};", "TR0202"},
+      {"free-call", "struct R{int n;};int operator()(R r){return r.n;}", "TR0202"},
+      {"member", "struct R{int n;int operator()()const;};int f(R&r){return r();}", "TR0203"},
+      {"free", "struct R{int n;};int operator+(R r,int v);int f(R&r){return r+1;}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("operators-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("operators-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("operators-v1.cpp");
+  const auto Output = tmpFile("operators-v1.nc");
+  for (const std::string &Code : {
+      "struct R{int n;int operator()()const{return n;}};",
+      "struct R{int n;};int operator+(R r,int n){return r.n+n;}int f(){R r{1};return r+2;}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
 }
 
 TEST_F(TranslateTest, CoreV2NoexceptPreservesQueriesAndNormalExecution) {
@@ -2232,13 +2465,7 @@ TEST_F(TranslateTest, CoreV2UserMovesRetainSourceLifetimeAndGeneratedBoundaries)
       {"constructor-default-argument", "struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};", "TR0201"},
       {"deleted-assignment", "struct R{int n;R&operator=(R&&)=delete;};", "TR0201"},
       {"volatile-assignment-source", "struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};", "TR0201"},
-      {"const-assignment-receiver", "struct R{int n;R&operator=(R&&)const{return const_cast<R&>(*this);}};", "TR0201"},
       {"volatile-assignment-receiver", "struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};", "TR0201"},
-      {"assignment-void-result", "struct R{int n;void operator=(R&&r){n=r.n;}};", "TR0201"},
-      {"assignment-const-result", "struct R{int n;const R&operator=(R&&r){n=r.n;return *this;}};", "TR0201"},
-      {"assignment-other-result", "struct R{int n;int&operator=(R&&r){n=r.n;return n;}};", "TR0201"},
-      {"assignment-value-source", "struct R{int n;R&operator=(R r){n=r.n;return *this;}};", "TR0201"},
-      {"arbitrary-operator", "struct R{int n;R operator+(R&&r){return {n+r.n};}};", "TR0201"},
       {"attribute", "struct R{int n;[[deprecated]] R(R&&r):n(r.n){}};", "TR0201"},
       {"temporary-constructor-source", "struct R{int n;R(int v):n(v){}R(R&&r):n(r.n){}};void f(){R r(static_cast<R&&>(R(1)));}", "TR0201"},
       {"temporary-assignment-source", "struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};void f(R&r){r=R{1};}", "TR0201"},
@@ -3927,7 +4154,6 @@ TEST_F(TranslateTest, CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries) {
       {"virtual-method", "struct R{int n;virtual int get(){return n;}};"},
       {"base-class", "struct B{int n;};struct R:B{int get(){return n;}};"},
       {"conversion", "struct R{int n;operator int()const{return n;}};"},
-      {"operator", "struct R{int n;int operator()()const{return n;}};"},
       {"volatile-method", "struct R{int n;int get()volatile{return n;}};"},
       {"mutable-field", "struct R{mutable int n;int get()const{return n;}};"},
       {"reference-field", "struct R{int&n;int get()const{return n;}};"},

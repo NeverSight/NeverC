@@ -381,6 +381,21 @@ def main():
         'noexcept-1958-method-noexcept-method': 'struct R{int n;int get()const noexcept{return n;}};',
         'noexcept-1985-constructor-noexcept-constructor': 'struct R{int n;R() noexcept:n(1){}};',
     })
+    core_v2.update({
+        'operator-user_copy_rejected-const-assignment': 'struct R{int n;R&operator=(const R&r)const{return const_cast<R&>(*this);}};',
+        'operator-user_copy_rejected-rvalue-assignment': 'struct R{int n;R&operator=(const R&r)&&{n=r.n;return *this;}};',
+        'operator-user_copy_rejected-by-value-assignment': 'struct R{int n;R&operator=(R r){n=r.n;return *this;}};',
+        'operator-user_copy_rejected-void-assignment': 'struct R{int n;void operator=(const R&r){n=r.n;}};',
+        'operator-user_copy_rejected-other-assignment-result': 'struct R{int n;int&operator=(const R&r){n=r.n;return n;}};',
+        'operator-user_copy_rejected-arbitrary-operator': 'struct R{int n;R operator+(const R&r){return {n+r.n};}};',
+        'operator-user_move_rejected-const-assignment-receiver': 'struct R{int n;R&operator=(R&&)const{return const_cast<R&>(*this);}};',
+        'operator-user_move_rejected-assignment-void-result': 'struct R{int n;void operator=(R&&r){n=r.n;}};',
+        'operator-user_move_rejected-assignment-const-result': 'struct R{int n;const R&operator=(R&&r){n=r.n;return *this;}};',
+        'operator-user_move_rejected-assignment-other-result': 'struct R{int n;int&operator=(R&&r){n=r.n;return n;}};',
+        'operator-user_move_rejected-assignment-value-source': 'struct R{int n;R&operator=(R r){n=r.n;return *this;}};',
+        'operator-user_move_rejected-arbitrary-operator': 'struct R{int n;R operator+(R&&r){return {n+r.n};}};',
+        'operator-method-call': 'struct R{int n;int operator()()const{return n;}};',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -596,13 +611,7 @@ int main(){
         'deleted-assignment': 'struct R{int n;R&operator=(const R&)=delete;};',
         'volatile-constructor': 'struct R{int n;R(const volatile R&r):n(r.n){}};',
         'volatile-assignment': 'struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};',
-        'const-assignment': 'struct R{int n;R&operator=(const R&r)const{return const_cast<R&>(*this);}};',
-        'rvalue-assignment': 'struct R{int n;R&operator=(const R&r)&&{n=r.n;return *this;}};',
-        'by-value-assignment': 'struct R{int n;R&operator=(R r){n=r.n;return *this;}};',
-        'void-assignment': 'struct R{int n;void operator=(const R&r){n=r.n;}};',
-        'other-assignment-result': 'struct R{int n;int&operator=(const R&r){n=r.n;return n;}};',
         'default-argument': 'struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};',
-        'arbitrary-operator': 'struct R{int n;R operator+(const R&r){return {n+r.n};}};',
         'temporary-assignment-source': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}',
         'temporary-assignment-receiver': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}',
     }
@@ -1322,13 +1331,7 @@ R parameterResult(R source){return source;}
         'constructor-default-argument': 'struct R{int n;R(R&&r,int extra=0):n(r.n+extra){}};',
         'deleted-assignment': 'struct R{int n;R&operator=(R&&)=delete;};',
         'volatile-assignment-source': 'struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};',
-        'const-assignment-receiver': 'struct R{int n;R&operator=(R&&)const{return const_cast<R&>(*this);}};',
         'volatile-assignment-receiver': 'struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};',
-        'assignment-void-result': 'struct R{int n;void operator=(R&&r){n=r.n;}};',
-        'assignment-const-result': 'struct R{int n;const R&operator=(R&&r){n=r.n;return *this;}};',
-        'assignment-other-result': 'struct R{int n;int&operator=(R&&r){n=r.n;return n;}};',
-        'assignment-value-source': 'struct R{int n;R&operator=(R r){n=r.n;return *this;}};',
-        'arbitrary-operator': 'struct R{int n;R operator+(R&&r){return {n+r.n};}};',
         'attribute': 'struct R{int n;[[deprecated]] R(R&&r):n(r.n){}};',
         'temporary-constructor-source': 'struct R{int n;R(int v):n(v){}R(R&&r):n(r.n){}};void f(){R r(static_cast<R&&>(R(1)));}',
         'temporary-assignment-source': 'struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};void f(R&r){r=R{1};}',
@@ -1688,6 +1691,189 @@ Leaf&selectedAssignment(Leaf&a,Leaf&b){return a=static_cast<Leaf&&>(b);}
         check("v2-" + 'noexcept_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
     check("v1-noexcept-spec", "int f()noexcept{return 1;}", "TR0201")
     check("v1-noexcept-query", "bool f(){return noexcept(1+2);}", "TR0201")
+    operator_source = """struct R {
+ int n;
+ R&operator+=(const R&r){n=r.n;return *this;}
+ int operator<<(int v)const{return n<<v;}
+ int&operator[](int){return n;}
+ bool operator&&(const R&r)const{return n&&r.n;}
+ bool operator||(const R&r)const{return n||r.n;}
+ R&operator,(R&r){return r;}
+ R&operator++(){++n;return *this;}
+ R operator++(int){return {n++};}
+ int&operator*(){return n;}
+ int*operator&(){return &n;}
+ int operator()()const noexcept{return n;}
+ R operator()(int v)const{return {n+v};}
+ ~R(){}
+};
+R operator+(R value,int n){return {value.n+n};}
+bool operator==(const R&a,const R&b){return a.n==b.n;}
+R&left(R&r){return r;}
+R&right(R&r){return r;}
+int index(){return 1;}
+void ordered(R&a,R&b){left(a)+=right(b);}
+void memberOrdered(R&a,R&b){left(a).operator+=(right(b));}
+int shift(R&a){return left(a)<<index();}
+int&subscript(R&a){return left(a)[index()];}
+bool logicalAnd(R&a,R&b){return left(a)&&right(b);}
+bool logicalOr(R&a,R&b){return left(a)||right(b);}
+R&comma(R&a,R&b){return (left(a),right(b));}
+void postfix(R&r){r++;}
+R&prefix(R&r){return ++r;}
+int&dereference(R&r){return *r;}
+int*address(R&r){return &r;}
+int functor(R&r){return r();}
+R result(R&r){return r(7);}
+R freeResult(R&r){return r+1;}
+bool equality(R&a,R&b){return a==b;}
+bool query(R&r){return noexcept(r());}
+struct P {
+ int n;
+ P(const P&s):n(s.n){}
+ ~P(){}
+};
+void operator+=(P lhs,P rhs){if(lhs.n)return;rhs.n=0;}
+P operator-=(P lhs,P rhs){return lhs;}
+void freeOrdered(P&a,P&b){a+=b;}
+void freeExplicit(P&a,P&b){operator+=(a,b);}
+P freeValue(P&a,P&b){return a-=b;}
+P explicitValue(P&a,P&b){return operator-=(a,b);}
+"""
+    operators = check("v2-overloaded-operators-protocol", operator_source, profile="cpp-core-v2")
+    op_functions = {f["name"]: f for f in operators["functions"]}
+
+    def op_line(prefix):
+        lines = [i for i, text in enumerate(operator_source.splitlines(), 1) if text.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def op_function(prefix):
+        functions = [f for f in operators["functions"] if f["loc"]["line"] == op_line(prefix)]
+        assert len(functions) == 1, (prefix, functions)
+        return functions[0]
+
+    def op_names(prefix):
+        return [c["callee"] for c in gc_calls(op_function(prefix))]
+
+    op_records = {r["loc"]["line"]: r for r in operators["records"]}
+    rid = op_records[op_line("struct R {")]["id"]
+    pid = op_records[op_line("struct P {")]["id"]
+    left_name = op_function("R&left(")["name"]
+    right_name = op_function("R&right(")["name"]
+    index_name = op_function("int index(")["name"]
+    assignment_name = op_function(" R&operator+=(")["name"]
+    assert op_names("void ordered(") == [right_name, left_name, assignment_name]
+    assert op_names("void memberOrdered(") == [left_name, right_name, assignment_name]
+    for caller, callee in (("int shift(", " int operator<<("),
+                           ("int&subscript(", " int&operator[](")):
+        assert op_names(caller) == [left_name, index_name, op_function(callee)["name"]]
+    for caller, callee in (("bool logicalAnd(", " bool operator&&("),
+                           ("bool logicalOr(", " bool operator||("),
+                           ("R&comma(", " R&operator,(")):
+        function = op_function(caller)
+        assert op_names(caller) == [left_name, right_name, op_function(callee)["name"]]
+        assert not any(n["op"] == "branch" for n in function["body"]), function
+    for caller, callee in (("R&prefix(", " R&operator++("),
+                           ("int&dereference(", " int&operator*("),
+                           ("int*address(", " int*operator&("),
+                           ("int functor(", " int operator()("),
+                           ("bool equality(", "bool operator==(")):
+        function = op_function(caller)
+        assert op_names(caller) == [op_function(callee)["name"]]
+        assert not any(v["type"] in (rid, pid) for v in function["locals"]), function
+    postfix = op_function("void postfix(")
+    postfix_operator = op_function(" R operator++(")
+    calls = gc_calls(postfix)
+    assert [c["callee"] for c in calls] == [postfix_operator["name"], rid + "_destroy"]
+    assert [p["type"] for p in postfix_operator["params"]] == ["ptr:" + rid, "ptr:" + rid, "int"]
+    assert gc_identity(postfix, calls[0]["args"][2]) == 0
+    assert storage_pointer_object(postfix, calls[0]["args"][0]) == storage_pointer_object(postfix, calls[1]["args"][0])
+    for caller, callee in (("R result(", " R operator()("), ("R freeResult(", "R operator+(")):
+        function = op_function(caller)
+        calls = gc_calls(function)
+        assert len(calls) == 1 and calls[0]["callee"] == op_function(callee)["name"], calls
+        assert gc_identity(function, calls[0]["args"][0]) == ("parameter", function["params"][0]["name"])
+    assert [p["type"] for p in op_function("bool operator==(")["params"]] == ["cptr:" + rid] * 2
+    assert [p["type"] for p in op_function("R operator+(")["params"]] == ["ptr:" + rid, "ptr:" + rid, "int"]
+    assert op_names("R operator+(") == [rid + "_destroy"]
+    query = op_function("bool query(")
+    assert not gc_calls(query) and not any(v["type"] == rid for v in query["locals"])
+    returned = next(n["value"] for n in query["body"] if n["op"] == "return")
+    assert nq_constant(query, returned) is True
+    p_copy = op_function(" P(const P&")
+    for caller, callee, result_offset in (("void freeOrdered(", "void operator+=(", 0),
+                                          ("void freeExplicit(", "void operator+=(", 0),
+                                          ("P freeValue(", "P operator-=(", 1),
+                                          ("P explicitValue(", "P operator-=(", 1)):
+        function = op_function(caller)
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [p_copy["name"], p_copy["name"], op_function(callee)["name"]]
+        assert [gc_identity(function, c["args"][1]) for c in calls[:2]] == [
+            ("parameter", function["params"][result_offset + i]["name"]) for i in (1, 0)]
+        assert [storage_pointer_object(function, a) for a in calls[-1]["args"][result_offset:]] == [
+            storage_pointer_object(function, calls[i]["args"][0]) for i in (1, 0)]
+        if result_offset:
+            assert gc_identity(function, calls[-1]["args"][0]) == ("parameter", function["params"][0]["name"])
+        assert sum(v["type"] == pid for v in function["locals"]) == 2, function
+    for callee, offset, cleanup_count in (("void operator+=(", 0, 4), ("P operator-=(", 1, 2)):
+        function = op_function(callee)
+        cleanup = [c for c in gc_calls(function) if c["callee"] == pid + "_destroy"]
+        assert len(cleanup) == cleanup_count, cleanup
+        assert [gc_identity(function, c["args"][0]) for c in cleanup] == [
+            ("parameter", function["params"][offset + i]["name"])
+            for i in ([0, 1] * (cleanup_count // 2))]
+    returned_value = op_function("P operator-=(")
+    assert op_names("P operator-=(") == [p_copy["name"], pid + "_destroy", pid + "_destroy"]
+    assert gc_identity(returned_value, gc_calls(returned_value)[0]["args"][0]) == (
+        "parameter", returned_value["params"][0]["name"])
+    for function in operators["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [
+                p["type"] for p in op_functions[call["callee"]]["params"]], call
+    with tempfile.TemporaryDirectory(prefix="neverc-operators-relocated-") as temp:
+        relocated = check("operators-relocated", operator_source, root=Path(temp) / "project",
+                          profile="cpp-core-v2")
+        assert relocated == operators, "operator identities depend on the absolute root"
+
+    operator_rejected = {
+        'conversion': 'struct R{int n;operator int()const{return n;}};',
+        'deleted': 'struct R{int n;int operator+(int)const=delete;};',
+        'volatile-receiver': 'struct R{int n;int operator()()volatile{return n;}};',
+        'volatile-argument': 'struct R{int n;int operator+(volatile R&r)const{return r.n;}};',
+        'template': 'struct R{int n;template<class T>int operator()(T v){return n;}};',
+        'default-argument': 'struct R{int n;int operator()(int v=1){return n+v;}};',
+        'friend': 'struct R{int n;friend int operator+(const R&r,int v){return r.n+v;}};',
+        'member-pointer': 'struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}',
+        'free-pointer': 'struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}',
+        'temporary-receiver': 'struct R{int n;int operator()()const{return n;}};int f(){return R{1}();}',
+        'temporary-reference': 'struct R{int n;};int operator+(const R&a,const R&b){return a.n+b.n;}int f(R&r){return r+R{1};}',
+        'unevaluated-temporary': 'struct R{int n;int operator()()const noexcept{return n;}};bool f(){return noexcept(R{1}());}',
+        'new-member': 'using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}};',
+        'delete-member': 'struct R{int n;static void operator delete(void*){}};',
+        'new-free': 'using Size=decltype(sizeof(0));void*operator new(Size){return nullptr;}',
+        'attribute': 'struct R{int n;[[deprecated]] int operator()()const{return n;}};',
+        'virtual': 'struct R{int n;virtual int operator()()const{return n;}};',
+    }
+    for name, source in operator_rejected.items():
+        check("v2-" + 'operator_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
+    operator_invalid = {
+        'binary-arity': 'struct R{int n;int operator+(int,int){return n;}};',
+        'prefix-postfix-type': 'struct R{int n;R&operator++(long){return *this;}};',
+        'free-assignment': 'struct R{int n;};R&operator=(R&a,const R&b){return a;}',
+        'static-member': 'struct R{int n;static int operator+(int){return 1;}};',
+        'free-call': 'struct R{int n;};int operator()(R r){return r.n;}',
+    }
+    for name, source in operator_invalid.items():
+        check("v2-" + 'operator_invalid' + "-" + name, source, "TR0202", profile="cpp-core-v2")
+    operator_missing = {
+        'member': 'struct R{int n;int operator()()const;};int f(R&r){return r();}',
+        'free': 'struct R{int n;};int operator+(R r,int v);int f(R&r){return r+1;}',
+    }
+    for name, source in operator_missing.items():
+        check("v2-" + 'operator_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
+    check("v1-member-operator", "struct R{int n;int operator()()const{return n;}};", "TR0201")
+    check("v1-free-operator", "struct R{int n;};int operator+(R r,int n){return r.n+n;}int f(){R r{1};return r+2;}", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -2128,7 +2314,6 @@ int main() {
         'method-virtual-method': 'struct R{int n;virtual int get(){return n;}};',
         'method-base-class': 'struct B{int n;};struct R:B{int get(){return n;}};',
         'method-conversion': 'struct R{int n;operator int()const{return n;}};',
-        'method-operator': 'struct R{int n;int operator()()const{return n;}};',
         'method-volatile-method': 'struct R{int n;int get()volatile{return n;}};',
         'method-mutable-field': 'struct R{mutable int n;int get()const{return n;}};',
         'method-reference-field': 'struct R{int&n;int get()const{return n;}};',

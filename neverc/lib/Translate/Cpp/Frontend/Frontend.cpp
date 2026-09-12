@@ -60,6 +60,35 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
   return standardExceptionSpecification(Prototype);
 }
 
+bool ordinaryOperator(const FunctionDecl *F) {
+  if (!F || !F->isOverloadedOperator() || F->isImplicit() || F->isVariadic() ||
+      F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      F->isDeletedAsWritten() || F->isDefaulted() || F->isConsteval())
+    return false;
+  switch (F->getOverloadedOperator()) {
+  case OO_Plus: case OO_Minus: case OO_Star: case OO_Slash: case OO_Percent:
+  case OO_Caret: case OO_Amp: case OO_Pipe: case OO_Tilde: case OO_Exclaim:
+  case OO_Equal: case OO_Less: case OO_Greater:
+  case OO_PlusEqual: case OO_MinusEqual: case OO_StarEqual: case OO_SlashEqual:
+  case OO_PercentEqual: case OO_CaretEqual: case OO_AmpEqual: case OO_PipeEqual:
+  case OO_LessLess: case OO_GreaterGreater:
+  case OO_LessLessEqual: case OO_GreaterGreaterEqual:
+  case OO_EqualEqual: case OO_ExclaimEqual: case OO_LessEqual: case OO_GreaterEqual:
+  case OO_AmpAmp: case OO_PipePipe: case OO_PlusPlus: case OO_MinusMinus:
+  case OO_Comma: case OO_ArrowStar: case OO_Arrow: case OO_Call: case OO_Subscript:
+    break;
+  default:
+    return false;
+  }
+  if (const auto *M = dyn_cast<CXXMethodDecl>(F))
+    if (!M->isUserProvided() || M->isVirtual() || M->isStatic() ||
+        M->isExplicitObjectMemberFunction() ||
+        M->getMethodQualifiers().hasVolatile() ||
+        M->getMethodQualifiers().hasRestrict())
+      return false;
+  return standardExceptionSpecification(F->getType()->getAs<FunctionProtoType>());
+}
+
 bool ordinaryConstructor(const CXXConstructorDecl *C) {
   if (!C || C->isImplicit() || !C->isUserProvided() || C->isVariadic() ||
       C->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
@@ -128,7 +157,7 @@ bool supportedAssignment(const CXXMethodDecl *M) {
 }
 
 bool callableMethod(const CXXMethodDecl *M) {
-  return ordinaryMethod(M) || supportedAssignment(M);
+  return ordinaryMethod(M) || ordinaryOperator(M) || supportedAssignment(M);
 }
 
 static bool defaultedFunction(const CXXMethodDecl *M) {
@@ -377,7 +406,8 @@ const Expr *directMethodReference(const CallExpr *Call) {
     D = Member->getMemberDecl();
   else if (const auto *Reference = dyn_cast<DeclRefExpr>(E);
            Reference && (M->isStatic() ||
-                         (isa<CXXOperatorCallExpr>(Call) && supportedAssignment(M))))
+                         (isa<CXXOperatorCallExpr>(Call) &&
+                          (ordinaryOperator(M) || supportedAssignment(M)))))
     D = Reference->getDecl();
   return D && D->getCanonicalDecl() == M->getCanonicalDecl() ? E : nullptr;
 }
@@ -1072,6 +1102,10 @@ public:
       A.reject(D->getLocation(), "function",
                "This member, template, variadic or special function form is "
                "outside the selected profile.");
+    if (A.S.coreV2() && D->isOverloadedOperator() &&
+        !ordinaryOperator(D) && !supportedAssignment(Method))
+      A.reject(D->getLocation(), "operator declaration",
+               "This operator function is outside the selected profile.");
     const auto *Prototype = D->getType()->getAs<FunctionProtoType>();
     if (Prototype && Prototype->hasExceptionSpec() && !Defaulted &&
         !(A.S.coreV2() && (standardExceptionSpecification(Prototype) ||
@@ -1370,11 +1404,14 @@ public:
         bool TrivialAssignment = Operator->getOperator() == OO_Equal && Method &&
                                  Method->isImplicit() && Method->isTrivial() &&
                                  Operator->getNumArgs() == 2;
-        if (!TrivialAssignment &&
+        const bool Ordinary = ordinaryOperator(F) &&
+            F->getOverloadedOperator() == Operator->getOperator();
+        if (!TrivialAssignment && !Ordinary &&
             !(supportedAssignment(Method) && Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
-          A.reject(L, "overloaded operator",
-                   "Only admitted copy/move assignment and implicit trivial assignment are supported.");
+          A.reject(L, "overloaded operator", "Unsupported selected operator function.");
+        if (F && Operator->getNumArgs() != F->getNumParams() + ArgumentOffset)
+          A.reject(L, "operator arguments", "Operator and selected parameter counts differ.");
       }
       if (A.S.coreV2() && Method && callableMethod(Method)) {
         const auto *Reference = directMethodReference(C);

@@ -70,6 +70,7 @@ std::string digest(llvm::StringRef Text);
 bool validExportName(llvm::StringRef Name);
 bool isolateProjectEnvironment();
 bool ordinaryMethod(const clang::CXXMethodDecl *Method);
+bool ordinaryOperator(const clang::FunctionDecl *Function);
 bool ordinaryCopyAssignment(const clang::CXXMethodDecl *Method);
 bool defaultedCopyAssignment(const clang::CXXMethodDecl *Method);
 bool defaultedMoveAssignment(const clang::CXXMethodDecl *Method);

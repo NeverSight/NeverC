@@ -227,8 +227,7 @@ rejected, including in dead/folded code. A pointer field of a temporary containe
 may still point to a separate live object. Explicit reference arguments retain
 the existing temporary-binding restrictions for both static and instance calls.
 
-User-defined operators other than admitted copy assignment, conversions,
-virtual methods, inheritance,
+User-defined conversions, virtual methods, inheritance,
 volatile/restrict methods, default arguments, templates and static data remain unsupported. Ordinary
 constructors and destructors follow the separate rules below. The existing
 implicit trivial copy paths are unchanged.
@@ -465,14 +464,14 @@ whole object; a copy body can read only its initialized fields. Source overload
 resolution distinguishes mutable and const source-reference overloads before
 normalization to the protocol's pointer carriers.
 
-The admitted user copy assignment form has one `R&` or `const R&` source
+The conventional user copy assignment form has one `R&` or `const R&` source
 parameter, a mutable receiver with no ref qualifier or `&`, and result `R&`.
 It executes on the actual receiver and preserves the returned alias, even when
 the source body returns a different live object. Assignment does not implicitly
 destroy and reconstruct the target. Self-assignment follows the user body.
-By-value assignment parameters, other result types, const/volatile/restrict or
-rvalue-qualified receivers and volatile/restrict source references remain
-outside this increment.
+General ordinary assignment signatures, including by-value parameters, other
+results and const/rvalue-qualified receivers, follow the overloaded-operator
+contract below. Volatile/restrict receivers and sources remain unsupported.
 
 Operator notation `left() = right()` evaluates and captures the source reference
 before evaluating the receiver. Explicit member notation
@@ -513,7 +512,7 @@ A containing aggregate may be initialized with a member having user-defined
 copy operations without selecting a copy of the containing object. Generated
 copy construction and assignment follow the next sections. Deleted special
 members, templates, variadic/default
-arguments, general overloaded operators/conversions,
+arguments, conversion functions,
 allocation and exception unwinding are not added. Existing temporary source-reference and
 nonstatic temporary-receiver restrictions still apply. Missing definitions and
 invalid source const/access operations remain diagnostics. V1 admission and
@@ -529,7 +528,7 @@ and full native CI results.
 
 Core v2 supports ordinary user-provided move constructors with exactly one
 `R&&` or `const R&&` source parameter of the same canonical record. `explicit`,
-`constexpr` and out-of-line definitions retain their C++ rules. An admitted move
+`constexpr` and out-of-line definitions retain their C++ rules. A conventional move
 assignment takes the same source reference and returns mutable `R&`; its mutable
 receiver may be unqualified, `&`-qualified or `&&`-qualified. Source references
 must designate existing live objects under the reference-provenance contract.
@@ -583,8 +582,7 @@ The callee still destroys by-value parameters. Assignment adds neither an implic
 destruction nor a replacement construction.
 
 Deleted functions, volatile/restrict sources
-or receivers, const receivers, other assignment result types, default/variadic
-parameters, arbitrary operators, inheritance,
+or receivers, default/variadic parameters, conversion functions, inheritance,
 templates and STL remain outside this increment. Fresh temporary source-reference
 binding and temporary receivers remain rejected, including in dead code. Invalid
 C++ overload, cv/ref or deleted-copy uses retain source diagnostics; missing user
@@ -662,8 +660,8 @@ parameters still own separate caller-prepared storage and are destroyed by the
 callee; selected return moves initialize the caller's result. Direct prvalue
 forwarding adds no extra operation and no NRVO heuristic aliases named objects.
 Array extents, storage and expanded-node budgets remain enforced. Unsupported
-layouts, deleted operations, broader temporary lifetimes, exceptions, general
-operators, templates and STL still require further work; v1 profiles are unchanged.
+layouts, deleted operations, broader temporary lifetimes, exceptions, conversion
+functions, templates and STL still require further work; v1 profiles are unchanged.
 
 O0/O2 no-inline fixtures cover selected copy fallback, member/array order, self
 and chained assignment, operand effects, pointer values, defaults, by-value and
@@ -867,6 +865,78 @@ cleanup instructions and recursive array destruction. V1 profiles retain their
 original trivial-lifetime boundary. Regression fixtures cover O0/O2 execution,
 protocol ownership and signatures, return capture, member/array order and
 relocation; native success must be established for the implementing revision.
+
+## Ordinary overloaded operators
+
+Core v2 admits source-owned ordinary member and non-member operator functions
+with supported parameter/result types and checked bodies. Supported kinds are
+arithmetic, bitwise and comparison operators, logical `!`/`&&`/`||`, comma,
+prefix/postfix `++`/`--`, dereference/address, subscript, function call, arrow,
+arrow-star, assignment and every compound assignment. Clang selects the overload
+and enforces C++17 arity and declaration rules before emission. Member operators
+may be const, unqualified, `&`-qualified or `&&`-qualified where legal. Standard
+resolved exception specifications and queries follow the next section.
+
+Each selected overload becomes an ordinary typed call. Non-member operators have
+only their explicit parameters; member operators also receive the actual object
+pointer. Record results use the existing hidden destination before receiver and
+parameters. Reference results preserve their aliases, including subscript and
+increment results. Taking an overloaded operator's function/member address still
+requires later function-pointer support. This stage does not admit conversion
+functions such as `operator bool` or `operator int`, templates, friend declarations,
+virtual dispatch, allocation/deallocation operators or new temporary lifetimes.
+
+Operator notation preserves the required C++17 operand sequencing. Assignment and
+compound assignment capture the RHS before the LHS, including any source
+reference before receiver-side alias changes. Shift, subscript, comma and
+logical overloads evaluate the left operand first. Overloaded `&&` and `||`
+evaluate both operands and call the selected function; they do not inherit
+builtin short-circuit behavior. Other unspecified choices use a permitted
+order. Explicit `.operatorX(...)` calls capture the receiver first and then their
+arguments. Prefix/postfix selection retains the actual chosen function and the
+postfix signature's int dummy parameter.
+
+Non-member assignment operators can have two destructible by-value parameters.
+NeverC consistently initializes these RHS-first, for both operator notation and
+an explicit `operatorX(a, b)` call. That is a permitted ordinary function-call
+choice and gives every call to that function the same parameter initialization
+order. The callee destroys those parameters in reverse order, LHS before RHS,
+including early returns. A directly constructed record result remains owned by
+the caller and is destroyed after parameter cleanup. Other ordinary parameters
+retain their existing initialization and reverse-destruction convention.
+
+General user-provided `operator=` signatures can take value parameters and return
+void, scalar, record or supported reference types; const and ref-qualified
+receivers keep their source restrictions. These ordinary functions follow their
+bodies rather than the stricter rules for generated/defaulted special members.
+Assignment itself does not implicitly destroy or reconstruct the receiver;
+by-value parameters and record results do have their own normal lifetimes.
+Containing generated assignments preserve selected member calls and clean up any
+discarded member-assignment record results, including within arrays.
+
+```cpp
+struct Cursor {
+  int *value;
+  int &operator*() const { return *value; }
+  Cursor &operator++() { ++value; return *this; }
+};
+int main() {
+  int values[2] = {3, 4};
+  Cursor cursor{values};
+  ++cursor;
+  *cursor = 7;
+  return values[1] == 7 ? 0 : 1;
+}
+```
+
+O0/O2 no-inline fixtures cover operator categories, sequencing and alias changes,
+logical operand effects, custom assignment signatures, record results and exact
+lifetime counts. Protocol fixtures check selected identities and full signatures,
+free/member argument offsets, parameter capture versus destruction order, direct
+result storage, cleanup and deterministic relocation. Unsupported code is still
+inspected inside unused functions and noexcept queries. V1 admission is unchanged;
+templates, library headers and complete STL remain in development. Native evidence
+must come from the implementing revision's CI.
 
 ## Noexcept declarations and queries
 

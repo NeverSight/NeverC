@@ -129,6 +129,27 @@ Bindings to fresh temporaries remain rejected by the source provenance checks;
 reference uses add no cleanup owner. Protocol major 1 remains unchanged. See the
 [live-object rvalue reference contract](cpp-core-v2.md#live-object-rvalue-references).
 
+## Core v2 overloaded operator calls
+
+Ordinary selected operators use `call`, with the same scalar/reference/record
+parameter and result conventions as other functions. A member operator receives
+its object pointer before explicit parameters; a non-member operator has no
+receiver. A record result adds its hidden destination before either form.
+Distinct C++ overloads retain distinct source identities even when signatures
+normalize to the same pointer types. Selected logical overloads are calls,
+not builtin short-circuit branches.
+
+Operand evaluation order is represented by preceding captures, independently
+of argument positions in the final call. Operator-notation assignments capture
+RHS first; other admitted operators preserve required left-to-right sequencing.
+Explicit member calls capture the receiver first. Non-member assignments choose
+RHS-first even in explicit function-call syntax, so their callee registers value
+parameters in that order and destroys them in reverse. All other ordinary
+parameters use the existing order. This function-wide convention needs no new
+wire flag or signature and covers early returns and record results. By-value
+argument objects, discarded record results and reference aliases keep their
+normal ownership rules. See the [source contract](cpp-core-v2.md#ordinary-overloaded-operators).
+
 ## Core v2 noexcept queries
 
 Resolved `noexcept(expression)` uses the existing pure `literal` representation

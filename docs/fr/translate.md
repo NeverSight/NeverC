@@ -57,6 +57,8 @@ Core v2 prend aussi en charge la construction et l’affectation de déplacement
 
 Core v2 accepte les déclarations standard résolues `noexcept`, `noexcept(true/false)` et `throw()` de C++17, ainsi que les requêtes constantes `noexcept(expression)`. Ces requêtes respectent les spécifications des fonctions et destructeurs sélectionnés sans exécuter leurs opérandes. Tous les opérandes et spécifications écrites sont inspectés, même dans le code inutilisé. Levée et capture d’exceptions, déroulement de pile, modèles et STL complète restent en développement.
 
+Core v2 accepte les opérateurs ordinaires surchargés, membres ou libres : arithmétique, comparaisons, indexation, déréférencement, incréments, foncteurs et signatures générales d’affectation. Fonctions sélectionnées, alias de références et objets résultats sont conservés. La notation opérateur respecte l’ordre C++17 ; les opérateurs logiques surchargés évaluent les deux opérandes. Les opérateurs libres d’affectation initialisent les paramètres de droite à gauche puis les détruisent dans l’ordre inverse. Fonctions de conversion, modèles, allocation et STL complète restent en développement.
+
 ## Projets à plusieurs fichiers
 
 Sélectionnez explicitement les unités de traduction dans une base de données de compilation et indiquez le répertoire racine du projet. Le frontend intégré analyse chaque unité séparément ; la fusion vérifie les définitions, la liaison, les types partagés et le respect de la règle de définition unique (ODR) de façon conservatrice.

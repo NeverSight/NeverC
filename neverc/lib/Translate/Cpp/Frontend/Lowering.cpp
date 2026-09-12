@@ -377,6 +377,13 @@ class FunctionLowering {
         assign(std::move(Destination), std::move(Source), L);
     }
   }
+  static bool reverseOperatorParameters(const FunctionDecl *F) {
+    // Explicit calls to a free assignment operator choose the same permitted
+    // order as operator notation. Its callee can then reverse that one order
+    // when destroying by-value parameters, including on early returns.
+    return F && !isa<CXXMethodDecl>(F) && F->isOverloadedOperator() &&
+           CXXOperatorCallExpr::isAssignmentOp(F->getOverloadedOperator());
+  }
   Expression call(const CallExpr *Call,
                   std::optional<Expression> Destination = std::nullopt) {
     auto L = Call->getExprLoc();
@@ -415,10 +422,11 @@ class FunctionLowering {
       reject(L, "call",
              "Call target is not a supported defined function.");
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-    if (Operator && (!A.S.coreV2() || !supportedAssignment(Method) ||
-                     Operator->getOperator() != OO_Equal))
+    if (Operator && (!A.S.coreV2() ||
+        !((ordinaryOperator(Callee) && Callee->getOverloadedOperator() == Operator->getOperator()) ||
+          (supportedAssignment(Method) && Operator->getOperator() == OO_Equal))))
       reject(L, "operator call", "Unsupported selected operator function.");
-    unsigned ArgumentOffset = Operator ? 1 : 0;
+    unsigned ArgumentOffset = Operator && Method && !Method->isStatic() ? 1 : 0;
     if (Call->getNumArgs() != Callee->getNumParams() + ArgumentOffset)
       reject(L, "call", "Call and source parameter counts differ.");
     json::Array Args;
@@ -435,15 +443,23 @@ class FunctionLowering {
       reject(L, "call result", "Only record results accept a destination.");
     }
     if (Operator) {
-      // Operator notation follows C++17 assignment sequencing: RHS before
-      // LHS. Capture the reference before evaluating a receiver that can alias
-      // it. Explicit .operator=(...) below follows ordinary call sequencing.
-      auto Source = argument(Call->getArg(1), Callee->getParamDecl(0)->getType());
-      const auto *Base = Call->getArg(0);
-      auto Receiver = address(lvalue(Base), Base->getType(), L);
-      Args.push_back(snapshot(
-          cast(std::move(Receiver), type(Method->getThisType(), L), L), L));
-      Args.push_back(std::move(Source));
+      // Capture in C++17 source order, then assemble in parameter order.
+      // Overloaded logical/comma/shift/subscript operators evaluate both
+      // operands left-to-right; assignment operators evaluate RHS first.
+      std::vector<Expression> Captured(Call->getNumArgs());
+      for (unsigned N = 0; N < Call->getNumArgs(); ++N) {
+        unsigned I = Operator->isAssignmentOp() ? Call->getNumArgs() - 1 - N : N;
+        const auto *Source = Call->getArg(I);
+        if (ArgumentOffset && I == 0) {
+          auto Receiver = address(lvalue(Source), Source->getType(), L);
+          Captured[I] = snapshot(
+              cast(std::move(Receiver), type(Method->getThisType(), L), L), L);
+        } else {
+          Captured[I] = argument(Source, Callee->getParamDecl(I - ArgumentOffset)->getType());
+        }
+      }
+      for (auto &Arg : Captured)
+        Args.push_back(std::move(Arg));
     } else {
       if (Method) {
         const auto *Reference = directMethodReference(Call);
@@ -464,9 +480,14 @@ class FunctionLowering {
           }
         }
       }
-      for (unsigned I = 0; I < Call->getNumArgs(); ++I)
-        Args.push_back(argument(Call->getArg(I),
-                                Callee->getParamDecl(I)->getType()));
+      std::vector<Expression> Captured(Call->getNumArgs());
+      for (unsigned N = 0; N < Call->getNumArgs(); ++N) {
+        unsigned I = A.S.coreV2() && reverseOperatorParameters(Callee)
+                         ? Call->getNumArgs() - 1 - N : N;
+        Captured[I] = argument(Call->getArg(I), Callee->getParamDecl(I)->getType());
+      }
+      for (auto &Arg : Captured)
+        Args.push_back(std::move(Arg));
     }
     if (TrivialAssignment) {
       // Both reference addresses are now captured in source sequencing order.
@@ -672,10 +693,11 @@ class FunctionLowering {
         assign(Left, std::move(Right), L);
         return Left;
       }
-      if (A.S.coreV2() && supportedAssignment(Method))
-        return call(Call);
-      reject(L, "overloaded operator",
-             "Only admitted copy/move assignment and implicit trivial assignment are supported.");
+      if (A.S.coreV2() &&
+          (ordinaryOperator(Call->getDirectCallee()) || supportedAssignment(Method)))
+        return Call->isPRValue() && recordValue(Call->getType())
+                   ? materialize(Call, L) : call(Call);
+      reject(L, "overloaded operator", "Unsupported selected operator function.");
     }
     if (const auto *Call = dyn_cast<CallExpr>(E))
       return Call->isPRValue() && recordValue(Call->getType())
@@ -1596,9 +1618,13 @@ public:
     label(Entry, L);
     Scopes.emplace_back(); // By-value parameters end after body locals.
     if (Function && !DestroyedRecord)
-      for (const auto *P : Function->parameters())
+      for (unsigned N = 0; N < Function->getNumParams(); ++N) {
+        unsigned I = A.S.coreV2() && reverseOperatorParameters(Function)
+                         ? Function->getNumParams() - 1 - N : N;
+        const auto *P = Function->getParamDecl(I);
         if (recordValue(P->getType()) && needsDestruction(P->getType()))
           own(storage(P, P->getLocation()), P->getType(), P->getLocation(), Scopes.back());
+      }
     if (const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function))
       constructorInitializers(Constructor);
     if (Function)

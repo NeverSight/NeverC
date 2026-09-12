@@ -57,6 +57,8 @@ Core v2 also supports implicit and explicitly defaulted move construction and as
 
 Core v2 supports resolved standard `noexcept`, `noexcept(true/false)` and C++17 `throw()` declarations, plus constant `noexcept(expression)` queries. Queries preserve the selected function and destructor specifications without executing their operands. Source inspection still checks every operand and written specification, including unused code. Throwing, catching, stack unwinding, templates and full STL remain in development.
 
+Core v2 supports ordinary member and free overloaded operators, including arithmetic, comparisons, subscript, dereference, increments, functors and general assignment signatures. Calls preserve selected functions, reference aliases and object results. Operator notation retains C++17 sequencing; overloaded logical operators evaluate both operands. Free assignment operators consistently initialize parameters right to left and destroy them in reverse order. Conversion functions, templates, allocation and full STL remain in development.
+
 ## Multi-file projects
 
 Select the translation units explicitly from a compilation database and set the project root directory. The built-in frontend analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).

@@ -57,6 +57,8 @@ Core v2 unterstützt auch implizite und explizit mit default definierte Move-Kon
 
 Core v2 unterstützt aufgelöste Standarddeklarationen mit `noexcept`, `noexcept(true/false)` und C++17-`throw()` sowie konstante `noexcept(expression)`-Abfragen. Abfragen berücksichtigen die Spezifikationen der gewählten Funktionen und Destruktoren, ohne ihre Operanden auszuführen. Alle Operanden und geschriebenen Spezifikationen werden auch in ungenutztem Code geprüft. Werfen und Fangen von Ausnahmen, Stack-Unwinding, Templates und die vollständige STL bleiben in Entwicklung.
 
+Core v2 unterstützt gewöhnliche überladene Member- und freie Operatoren für Arithmetik, Vergleiche, Indexierung, Dereferenzierung, Inkremente, Funktoren und allgemeine Zuweisungssignaturen. Gewählte Funktionen, Referenzaliasse und Objektergebnisse bleiben erhalten. Die Operatornotation wahrt die C++17-Reihenfolge; überladene logische Operatoren werten beide Operanden aus. Freie Zuweisungsoperatoren initialisieren Parameter von rechts nach links und zerstören sie umgekehrt. Konvertierungsfunktionen, Templates, Speicherallokation und vollständige STL bleiben in Entwicklung.
+
 ## Projekte mit mehreren Dateien
 
 Wählen Sie Übersetzungseinheiten ausdrücklich aus einer Kompilierungsdatenbank aus und geben Sie das Projektstammverzeichnis an. Das integrierte Frontend analysiert jede Einheit einzeln; die Zusammenführung prüft Definitionen, Bindung, gemeinsame Typen und die Einhaltung der Ein-Definitions-Regel (ODR) anhand konservativer Prüfungen.
