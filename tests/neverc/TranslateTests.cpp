@@ -1463,6 +1463,201 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2UserCopyingPreservesSelectedOperationsAndOperandOrder) {
+  const auto Source = tmpFile("record-user-copy.cpp");
+  const auto Output = tmpFile("record-user-copy.nc");
+  writeFile(Source, R"cpp(
+// Source fixture prepared before user-copy admission; native execution is CI-only.
+struct Stats { int copies,assignments,destructions,trace; };
+struct Item {
+  int value;
+  Stats *stats;
+  Item *self;
+  Item(int n,Stats &s):value(n),stats(&s),self(this){}
+  Item(const Item &source):value(source.value+1),stats(source.stats),self(this){++stats->copies;}
+  Item &operator=(const Item &source){++stats->assignments;value=source.value+2;return *this;}
+  ~Item(){++stats->destructions;}
+};
+struct Choice {
+  int value;
+  Choice(int n):value(n){}
+  Choice(Choice &source):value(source.value+10){}
+  Choice(const Choice &source):value(source.value+20){}
+  Choice &operator=(Choice &source){value=source.value+30;return *this;}
+  Choice &operator=(const Choice &source){value=source.value+40;return *this;}
+};
+struct ExplicitCopy {
+  int value;
+  ExplicitCopy(int n):value(n){}
+  explicit ExplicitCopy(const ExplicitCopy &other):value(other.value+1){}
+};
+struct OutOfLine {
+  int value;
+  OutOfLine(int n):value(n){}
+  OutOfLine(const OutOfLine &);
+  OutOfLine &operator=(const OutOfLine &);
+};
+OutOfLine::OutOfLine(const OutOfLine &other):value(other.value+1){}
+OutOfLine &OutOfLine::operator=(const OutOfLine &other){value=other.value+2;return *this;}
+struct Partial {
+  int initialized,spare;
+  Partial(int n):initialized(n){}
+  Partial(const Partial &other):initialized(other.initialized+1){}
+  Partial &operator=(const Partial &other){initialized=other.initialized+2;return *this;}
+};
+struct Redirect {
+  int value;
+  Redirect *result;
+  Redirect &operator=(const Redirect &other){value=other.value;return *result;}
+};
+struct Box { Item value; explicit Box(const Item &item):value(item){} };
+struct Aggregate { Item value; };
+Item make(int n,Stats &stats){return Item(n,stats);}
+Item forward(int n,Stats &stats){return make(n,stats);}
+int byValue(Item value,const Item &source){return value.value==source.value+1 && value.self==&value && &value!=&source;}
+int prvalue(Item value){return value.self==&value?value.value:-1;}
+Item returnSource(const Item &source){return source;}
+Item named(Stats &stats){Item local(20,stats);return local;}
+Item identity(Item value){return value;}
+Item &left(Item &item,Stats &stats){stats.trace=stats.trace*10+1;return item;}
+Item &right(Item &item,Stats &stats){stats.trace=stats.trace*10+2;return item;}
+Item &reseat(Item *&target,Item &replacement,Item &source){target=&replacement;return source;}
+int main(){
+  Stats stats{0,0,0,0};
+  {
+    Item source(3,stats);
+    Item copied=source;
+    Item direct(source);
+    Item braced{source};
+    if(stats.copies!=3 || copied.value!=4 || direct.value!=4 || braced.value!=4 ||
+       copied.self!=&copied || direct.self!=&direct || braced.self!=&braced)return 1;
+    copied=source;
+    if(copied.value!=5 || copied.self!=&copied || stats.assignments!=1)return 2;
+    copied=copied;
+    if(copied.value!=7 || stats.assignments!=2)return 3;
+    direct=braced=source;
+    if(braced.value!=5 || direct.value!=7 || stats.assignments!=4)return 4;
+    if(!byValue(source,source) || stats.copies!=4 || source.value!=3 || stats.destructions!=1)return 5;
+    if(prvalue(Item(11,stats))!=11 || stats.copies!=4 || stats.destructions!=2)return 6;
+    Item result=forward(13,stats);
+    if(result.value!=13 || result.self!=&result || stats.copies!=4)return 7;
+    Item returned=returnSource(source);
+    if(returned.value!=4 || returned.self!=&returned || stats.copies!=5)return 8;
+    Box box(source);
+    Item elements[2]={source,source};
+    Aggregate aggregate{source};
+    if(box.value.value!=4 || box.value.self!=&box.value || elements[0].value!=4 ||
+       elements[1].self!=&elements[1] || aggregate.value.self!=&aggregate.value || stats.copies!=9)return 9;
+    stats.trace=0;
+    left(direct,stats)=right(source,stats);
+    if(stats.trace!=21 || direct.value!=5)return 10;
+    stats.trace=0;
+    left(direct,stats).operator=(right(source,stats));
+    if(stats.trace!=12 || direct.value!=5)return 11;
+    Item *target=&direct;
+    direct.value=7;braced.value=9;
+    *target=reseat(target,braced,source);
+    if(target!=&braced || braced.value!=5 || direct.value!=7)return 12;
+    target=&direct;direct.value=7;braced.value=9;
+    target->operator=(reseat(target,braced,source));
+    if(target!=&braced || braced.value!=9 || direct.value!=5)return 13;
+  }
+  if(stats.destructions!=12)return 14;
+  Choice source(1);const Choice constant(2);
+  Choice mutable_copy(source),const_copy(constant);
+  if(mutable_copy.value!=11 || const_copy.value!=22)return 15;
+  mutable_copy=source;const_copy=constant;
+  if(mutable_copy.value!=31 || const_copy.value!=42)return 16;
+  ExplicitCopy explicit_source(3);ExplicitCopy explicit_copy(explicit_source);
+  if(explicit_copy.value!=4)return 17;
+  OutOfLine out_source(3);OutOfLine out_copy=out_source;out_source=out_copy;
+  if(out_copy.value!=4 || out_source.value!=6)return 18;
+  Partial partial_source(3);Partial partial_copy=partial_source;partial_source=partial_copy;
+  if(partial_copy.initialized!=4 || partial_source.initialized!=6)return 19;
+  Redirect third{7,nullptr},first{1,&third},second{2,&third},result{0,&third};
+  if(&(first=second)!=&third || first.value!=2)return 20;
+  result=(first=second);
+  if(result.value!=7)return 21;
+  Stats named_stats{0,0,0,0};
+  {Item named_result=named(named_stats);
+   if(named_result.value!=21 || named_result.self!=&named_result ||
+      named_stats.copies!=1 || named_stats.destructions!=1)return 22;}
+  if(named_stats.destructions!=2)return 23;
+  Stats parameter_stats{0,0,0,0};
+  {Item source(3,parameter_stats);{Item result=identity(source);
+    if(result.value!=5 || result.self!=&result || parameter_stats.copies!=2 ||
+       parameter_stats.destructions!=1)return 24;}}
+  if(parameter_stats.destructions!=3)return 25;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("record-user-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMembers) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"defaulted-constructor", "struct R{int n;R(const R&)=default;};"},
+      {"deleted-constructor", "struct R{int n;R(const R&)=delete;};"},
+      {"defaulted-assignment", "struct R{int n;R&operator=(const R&)=default;};"},
+      {"deleted-assignment", "struct R{int n;R&operator=(const R&)=delete;};"},
+      {"volatile-constructor", "struct R{int n;R(const volatile R&r):n(r.n){}};"},
+      {"volatile-assignment", "struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};"},
+      {"const-assignment", "struct R{int n;R&operator=(const R&r)const{return const_cast<R&>(*this);}};"},
+      {"rvalue-assignment", "struct R{int n;R&operator=(const R&r)&&{n=r.n;return *this;}};"},
+      {"by-value-assignment", "struct R{int n;R&operator=(R r){n=r.n;return *this;}};"},
+      {"void-assignment", "struct R{int n;void operator=(const R&r){n=r.n;}};"},
+      {"other-assignment-result", "struct R{int n;int&operator=(const R&r){n=r.n;return n;}};"},
+      {"noexcept-constructor", "struct R{int n;R(const R&r)noexcept:n(r.n){}};"},
+      {"noexcept-assignment", "struct R{int n;R&operator=(const R&r)noexcept{n=r.n;return *this;}};"},
+      {"default-argument", "struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};"},
+      {"move-constructor", "struct R{int n;R(R&&r):n(r.n){}};"},
+      {"move-assignment", "struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};"},
+      {"arbitrary-operator", "struct R{int n;R operator+(const R&r){return {n+r.n};}};"},
+      {"implicit-containing-copy", "struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};Box b=a;}"},
+      {"implicit-containing-copy-dead", "struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};if(false){Box b=a;}}"},
+      {"implicit-containing-assignment", "struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};a=b;}"},
+      {"implicit-containing-assignment-dead", "struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};if(false)a=b;}"},
+      {"temporary-assignment-source", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}"},
+      {"temporary-assignment-receiver", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("user-copy-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("user-copy-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("user-copy-definition.cpp");
+  const auto Output = tmpFile("user-copy-definition.nc");
+  for (const std::string &Code : {
+      "struct R{int n;R(const R&);};",
+      "struct R{int n;R&operator=(const R&);};"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+  writeFile(Source, "struct R{int n;R&operator=(const R&r){n=r.n;return *this;}};void f(){const R r{1};R s{2};r=s;}");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  expectCode(Result, "TR0202");
+  expectNoArtifacts(Output);
+  writeFile(Source, "struct R{int n;R(const R&r):n(r.n){}};");
+  Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2ConstructorConversionsKeepOneDestinationAndCleanup) {
   const auto Source = tmpFile("constructor-conversion-cleanup.cpp");
   const auto Output = tmpFile("constructor-conversion-cleanup.nc");
@@ -1765,9 +1960,7 @@ TEST_F(TranslateTest, CoreV2RecordDestructionRetainsUnsupportedLifetimeDiagnosti
       {"explicit-call", "struct R{int n;~R(){}};void f(R&r){r.~R();}"},
       {"explicit-dead-call", "struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}"},
       {"explicit-alias-call", "struct R{int n;~R(){}};using T=R;void f(R&r){r.~T();}"},
-      {"copy-constructor", "struct R{int n;R(const R&r):n(r.n){}~R(){}};"},
       {"move-constructor", "struct R{int n;R(R&&r):n(r.n){}~R(){}};"},
-      {"copy-assignment", "struct R{int n;R&operator=(const R&r){n=r.n;return *this;}~R(){}};"},
       {"global", "struct R{int n;~R(){}};const R r{1};"},
       {"global-containing", "struct R{int n;~R(){}};struct Box{R r;};const Box box{{1}};"},
       {"static-local", "struct R{int n;~R(){}};int f(){static R r{1};return r.n;}"},
@@ -1917,7 +2110,6 @@ TEST_F(TranslateTest, CoreV2RecordCallsRetainLifetimeAndSourceTypeBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"record-parameter-expansion", "struct R{int n[65536];};int ignore(R a,R b,R c,R d){return 0;}int f(){R r;for(int i=0;i<65536;++i)r.n[i]=0;return ignore(r,r,r,r);}"},
       {"record-result-fallthrough", "struct R{int n;};R f(bool b){if(b)return {1};}"},
-      {"record-copy-constructor", "struct R{int n;R(int v):n(v){}R(const R&x):n(x.n){}};int f(R x){return x.n;}"},
       {"record-move-constructor", "struct R{int n;R(int v):n(v){}R(R&&x):n(x.n){}};R f(){return R(1);}"},
       {"record-result-reference-binding", "struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}"},
       {"record-result-method-receiver", "struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}"},
@@ -2096,7 +2288,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"delegating", "struct R{int n;R():R(1){} R(int v):n(v){}};"},
       {"base-initializer", "struct B{int n;B(int v):n(v){}};struct R:B{R():B(1){}};"},
       {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};"},
-      {"copy-constructor", "struct R{int n;R(int v):n(v){} R(const R&v):n(v.n){}};"},
       {"move-constructor", "struct R{int n;R(int v):n(v){} R(R&&v):n(v.n){}};"},
       {"virtual-method", "struct R{int n;R():n(1){} virtual int get(){return n;}};"},
       {"implicit-nontrivial-default", "struct I{int n;I():n(1){}};struct R{I i;};int f(){R r;return r.i.n;}"},

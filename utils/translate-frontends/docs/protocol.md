@@ -150,7 +150,7 @@ The frontend places field initialization in declaration order before the body.
 Local, field and array-element construction passes the actual destination address;
 array fillers produce one call per element. Direct initialization and temporary
 materialization do not insert an intermediate record copy. Intentional source
-copies retain their existing value representation. Record parameters/results
+copies use the selected trivial-value or user-copy call path. Record parameters/results
 use the explicit call-storage and destruction conventions below.
 See the [constructor and lifetime contract](cpp-core-v2.md#ordinary-record-constructors).
 
@@ -166,11 +166,30 @@ constness remains checked before lowering. No new IR node is introduced.
 Record-result calls omit `target` and pass the actual destination address;
 record returns initialize that destination and emit a value-less `return`.
 Nested direct returns forward the same place. Intentional lvalue argument copies
-and named-object return copies use ordinary checked record assignments; their
-source and destination remain distinct. Signatures, arity, pointee identities and
+and named-object return copies use ordinary checked record assignments for trivial
+copying, or selected user copy calls described below; source and destination remain distinct. Signatures, arity, pointee identities and
 record layouts are validated by the existing consumer. This convention applies
-to core v2 only and does not admit a foreign ABI, nontrivial copying or exception
-unwinding. Normal cleanup follows the explicit destruction convention below. See the [source contract](cpp-core-v2.md#record-arguments-and-results).
+to core v2 only and does not admit a foreign ABI, implicit nontrivial copying, moves
+or exception unwinding. Normal cleanup follows the explicit destruction convention below. See the [source contract](cpp-core-v2.md#record-arguments-and-results).
+
+## Core v2 user copy calls
+
+An admitted copy constructor is an ordinary `void` function with mutable
+`ptr:<record>` destination followed by the checked `ptr:<record>` or
+`cptr:<record>` source reference. An admitted copy assignment function returns
+`ptr:<record>` and takes the mutable receiver followed by that source reference.
+User copying is emitted as a call to the source-selected declaration, not as a
+record assignment. The returned pointer is dereferenced as a source reference;
+it need not point at the receiver if the source body returns another live object.
+
+Source operator notation evaluates the RHS argument before the LHS receiver;
+explicit member call notation evaluates the receiver before arguments. The wire
+argument order remains receiver then source after those effects are captured.
+No new copy opcode or foreign ABI bypass is introduced. Existing signature,
+arity, const qualification, storage and layout checks apply, with the normal
+parameter/result lifetime convention preserved. Implicit trivial copies retain
+ordinary value assignments; implicit nontrivial/defaulted special members and
+moves remain rejected. See the [source copy contract](cpp-core-v2.md#user-defined-copy-operations).
 
 ## Core v2 destruction
 

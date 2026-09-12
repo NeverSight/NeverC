@@ -175,7 +175,8 @@ rejected, including in dead/folded code. A pointer field of a temporary containe
 may still point to a separate live object. Explicit reference arguments retain
 the existing temporary-binding restrictions for both static and instance calls.
 
-User-defined operators/conversions, virtual methods, inheritance,
+User-defined operators other than admitted copy assignment, conversions,
+virtual methods, inheritance,
 volatile/restrict and rvalue-qualified methods, default arguments, exception
 specifications, templates and static data remain unsupported. Ordinary
 constructors and destructors follow the separate rules below. The existing
@@ -187,9 +188,10 @@ retain their rejected-method boundary.
 
 Core v2 admits ordinary user-provided default, converting and multi-argument
 constructors, including `explicit`, `constexpr` and out-of-line definitions.
-Records must be nonempty, unnested and standard-layout, with trivial copy
-construction/assignment, no nontrivial move operations and no bases. Destruction
-follows the separate lifetime contract below. Fields remain public, non-mutable, non-const,
+Records must be nonempty, unnested and standard-layout, with no bases. Each
+selected construction, copy or assignment must follow its admitted operation
+contract; implicit nontrivial copying and move operations remain unsupported.
+Destruction follows the separate lifetime contract below. Fields remain public, non-mutable, non-const,
 non-reference and non-bitfield, without default member initializers. Ordinary
 methods may use these records. Allowing a constructor does not admit arbitrary
 class layouts or foreign C++ ABI interchange.
@@ -243,9 +245,9 @@ calls on temporary receivers retain their existing rejection boundary. Const
 local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
-Explicitly defaulted/deleted, delegating, inherited, user-defined copy/move,
+Explicitly defaulted/deleted, delegating, inherited and move constructors,
 template and variadic constructors, default arguments and exception specifications
-remain rejected. Nontrivial copying, exception unwinding, allocation, static
+remain rejected. Implicit nontrivial copying, exception unwinding, allocation, static
 guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
@@ -292,19 +294,92 @@ int main() {
 The self-address check selects NeverC's direct-storage behavior for the admitted
 trivial records. C++17 permits other implementations to introduce eligible
 trivial function argument/result copies; this is not a universal language address
-guarantee. An intentional copy retains stored pointers and does not repair them.
+guarantee. A trivial copy retains stored pointers and does not repair them;
+user-defined copying instead executes its selected source body.
 Named-local or named-parameter returns keep Clang's selected copy/move operation;
 NeverC does not infer NRVO by aliasing the source to the destination. Normal
-destruction and parameter cleanup follow the contract below. Nontrivial copy/move
-and exception unwinding still require further support before broader C++/STL
-admission.
+destruction and parameter cleanup follow the contract below. User-defined copy
+operations follow the next section; implicit nontrivial copying, moves and
+exception unwinding still require further support before broader C++/STL admission.
+
+## User-defined copy operations
+
+Core v2 supports ordinary user-provided copy constructors with exactly one
+source parameter, `R&` or `const R&` for the same canonical record. They may be
+`explicit`, `constexpr` or defined out of line. Field initialization follows the
+constructor rules, and the selected source function runs directly on the actual
+destination. Passing the source reference does not first read or snapshot the
+whole object; a copy body can read only its initialized fields. Source overload
+resolution distinguishes mutable and const source-reference overloads before
+normalization to the protocol's pointer carriers.
+
+The admitted user copy assignment form has one `R&` or `const R&` source
+parameter, a mutable receiver with no ref qualifier or `&`, and result `R&`.
+It executes on the actual receiver and preserves the returned alias, even when
+the source body returns a different live object. Assignment does not implicitly
+destroy and reconstruct the target. Self-assignment follows the user body.
+By-value assignment parameters, other result types, const/volatile/restrict or
+rvalue-qualified receivers and volatile/restrict source references remain
+outside this increment.
+
+Operator notation `left() = right()` evaluates and captures the source reference
+before evaluating the receiver. Explicit member notation
+`left().operator=(right())` captures the receiver first, then evaluates the
+source argument. Both use one checked ordinary call with the receiver first in
+the wire signature, followed by the source pointer. This preserves C++17's
+syntax-dependent sequencing when either expression reseats an aliased pointer.
+
+```cpp
+struct Item {
+  int value;
+  Item *self;
+  Item(int n) : value(n), self(this) {}
+  Item(const Item &other) : value(other.value + 1), self(this) {}
+  Item &operator=(const Item &other) {
+    value = other.value + 2;
+    return *this;
+  }
+};
+int main() {
+  Item source(3);
+  Item copied = source;
+  if (copied.value != 4 || copied.self != &copied) return 1;
+  copied = source;
+  return copied.value == 5 && copied.self == &copied ? 0 : 2;
+}
+```
+
+A source-required user copy is a constructor/assignment call, never a raw record
+assignment. Lvalue arguments initialize separate by-value parameter objects and
+retain their existing callee-owned cleanup. Direct prvalue arguments and results
+continue to construct in their actual destinations without extra copies. A
+named/lvalue return keeps the selected admitted copy and the normal result,
+temporary and local destruction order; no NRVO heuristic aliases the local to
+its result. Reference source parameters do not own or destroy their referents.
+
+A containing aggregate may be initialized with a member having user-defined
+copy operations without selecting a copy of the containing object. Selected
+implicit nontrivial copy constructors and assignment operators remain rejected,
+including in dead source. Explicitly defaulted/deleted special members, move
+operations, templates, variadic/default arguments, written exception
+specifications, general overloaded operators/conversions, allocation and
+exception unwinding are not added. Existing temporary source-reference and
+nonstatic temporary-receiver restrictions still apply. Missing definitions and
+invalid source const/access operations remain diagnostics. V1 admission and
+trivial value-copy representation are unchanged.
+
+Regression fixtures cover side effects, self-addresses, reference aliases,
+source overloads, selected calls, field/array initialization, partially initialized
+objects, parameter and result lifetimes, return copies, operand ordering and
+relocation. Runtime validation uses the implementing revision's O0/O2 no-inline
+and full native CI results.
 
 ## Record destruction and normal lifetimes
 
 Core v2 admits ordinary user-provided destructors of the records described
 above, including out-of-line definitions and implicit destruction of containing
-records. Copy construction and assignment must remain trivial; a user destructor
-does not by itself require nontrivial copying. The source still has no bases,
+records. Copy construction and assignment must be admitted independently; a user
+destructor does not by itself require nontrivial copying. The source still has no bases,
 virtual dispatch, unions, reference members or unsupported field layouts.
 Explicitly defaulted/deleted destructors, written `noexcept`/`throw(...)`
 specifications and explicit destructor calls remain rejected, including in dead
@@ -345,7 +420,8 @@ full-expression destruction for parameters; this profile consistently selects
 callee-exit destruction. Caller argument temporaries other than the parameter
 objects keep their enclosing full-expression lifetime. The caller owns a record
 result and destroys it according to its destination's lifetime. An intentional
-source copy has its own lifetime; stored pointer values are not repaired.
+source copy has its own lifetime. Trivial copies retain stored pointer values;
+user copies execute their selected bodies.
 
 ```cpp
 struct AddOnExit {
@@ -513,7 +589,8 @@ a separate generated header belongs to project mode.
 ## Remaining scope and wire representation
 
 128-bit and extended integers, floating-point types,
-classes requiring nontrivial copying or exception unwinding, templates, exceptions, STL headers
+implicit nontrivial copying, move operations, exception unwinding, templates,
+exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
 and the bounded math profile remain separate v1 profiles; selecting core v2
 does not implicitly combine their capabilities.

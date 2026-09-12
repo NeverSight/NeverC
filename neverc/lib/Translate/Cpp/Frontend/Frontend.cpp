@@ -48,11 +48,47 @@ bool ordinaryConstructor(const CXXConstructorDecl *C) {
   if (!C || C->isImplicit() || !C->isUserProvided() || C->isVariadic() ||
       C->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       C->isDeletedAsWritten() || C->isExplicitlyDefaulted() || C->isConsteval() ||
-      C->isCopyOrMoveConstructor() || C->isDelegatingConstructor() ||
+      C->isMoveConstructor() || C->isDelegatingConstructor() ||
       C->isInheritingConstructor())
     return false;
+  if (C->isCopyConstructor()) {
+    if (C->getNumParams() != 1)
+      return false;
+    auto Source = C->getParamDecl(0)->getType();
+    if (!Source->isLValueReferenceType() ||
+        Source->getPointeeType().isVolatileQualified() ||
+        Source->getPointeeType().isRestrictQualified())
+      return false;
+  }
   const auto *Prototype = C->getType()->getAs<FunctionProtoType>();
   return Prototype && !Prototype->hasExceptionSpec();
+}
+
+bool ordinaryCopyAssignment(const CXXMethodDecl *M) {
+  if (!M || M->isImplicit() || !M->isUserProvided() ||
+      !M->isCopyAssignmentOperator() || M->isVirtual() ||
+      M->isExplicitObjectMemberFunction() || M->isVariadic() ||
+      M->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      M->isDeletedAsWritten() || M->isExplicitlyDefaulted() || M->isConsteval() ||
+      M->getNumParams() != 1 || M->getMethodQualifiers().getCVRQualifiers() ||
+      M->getRefQualifier() == RQ_RValue)
+    return false;
+  auto Source = M->getParamDecl(0)->getType();
+  auto Result = M->getReturnType();
+  if (!Source->isLValueReferenceType() ||
+      Source->getPointeeType().isVolatileQualified() ||
+      Source->getPointeeType().isRestrictQualified() ||
+      !Result->isLValueReferenceType() ||
+      Result->getPointeeType().getQualifiers().getCVRQualifiers())
+    return false;
+  const auto *ResultRecord = Result->getPointeeType()->getAsCXXRecordDecl();
+  const auto *Prototype = M->getType()->getAs<FunctionProtoType>();
+  return ResultRecord && ResultRecord->getCanonicalDecl() == M->getParent()->getCanonicalDecl() &&
+         Prototype && !Prototype->hasExceptionSpec();
+}
+
+bool callableMethod(const CXXMethodDecl *M) {
+  return ordinaryMethod(M) || ordinaryCopyAssignment(M);
 }
 
 const CXXConstructExpr *constructorConversion(const CastExpr *Cast,
@@ -100,7 +136,7 @@ std::string Adapter::destructionName(const CXXRecordDecl *Record) {
 
 const Expr *directMethodReference(const CallExpr *Call) {
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
-  if (!ordinaryMethod(M))
+  if (!callableMethod(M))
     return nullptr;
   const Expr *E = Call->getCallee();
   while (true) {
@@ -119,7 +155,8 @@ const Expr *directMethodReference(const CallExpr *Call) {
   if (const auto *Member = dyn_cast<MemberExpr>(E))
     D = Member->getMemberDecl();
   else if (const auto *Reference = dyn_cast<DeclRefExpr>(E);
-           M->isStatic() && Reference)
+           Reference && (M->isStatic() ||
+                         (isa<CXXOperatorCallExpr>(Call) && ordinaryCopyAssignment(M))))
     D = Reference->getDecl();
   return D && D->getCanonicalDecl() == M->getCanonicalDecl() ? E : nullptr;
 }
@@ -645,7 +682,7 @@ public:
     A.type(D->getReturnType(), D->getLocation(), true);
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
     if ((Method && (!A.S.coreV2() ||
-                    (!ordinaryMethod(Method) &&
+                    (!callableMethod(Method) &&
                      !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method)) &&
                      !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(Method))))) ||
         D->isVariadic() ||
@@ -760,23 +797,17 @@ public:
                  "Incomplete records are unsupported.");
       return true;
     }
-    // Nontrivial destruction does not imply nontrivial copying. Keep copying
-    // independently bounded while admitting owned destruction of these records.
-    const bool SupportedCopies = D->hasTrivialCopyConstructor() &&
-                                 D->hasTrivialCopyAssignment() &&
-                                 !D->hasNonTrivialMoveConstructor() &&
-                                 !D->hasNonTrivialMoveAssignment();
-    const bool ConstructedRecord = A.S.coreV2() && D->isStandardLayout() &&
-                                   SupportedCopies;
+    // Special-member behavior is checked at each selected operation. A record
+    // containing a user-copyable field can be aggregate-initialized without
+    // selecting its unsupported implicit nontrivial copy constructor.
+    const bool ConstructedRecord = A.S.coreV2() && D->isStandardLayout();
     if (D->isUnion() || (!D->isAggregate() && !ConstructedRecord) ||
-        (A.S.coreV2() && (!D->isStandardLayout() || !SupportedCopies)) ||
-        D->field_empty() ||
+        (A.S.coreV2() && !D->isStandardLayout()) || D->field_empty() ||
         D->getNumBases() || D->getDescribedClassTemplate() ||
         D->getDeclContext()->isRecord())
       A.reject(D->getLocation(), "record",
-               "Only nonempty, unnested standard-layout records with trivial "
-               "copying, supported construction/destruction and no bases "
-               "are admitted.");
+               "Only nonempty, unnested standard-layout records with supported "
+               "selected special members and no bases are admitted.");
     A.Records.push_back(D);
     return true;
   }
@@ -914,24 +945,41 @@ public:
       if (A.S.coreV2() && isa_and_nonnull<CXXDestructorDecl>(F))
         A.reject(S->getBeginLoc(), "explicit destructor call",
                  "Explicit destruction requires separate lifetime restart rules.");
-      if (A.S.coreV2() && Method && ordinaryMethod(Method)) {
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(C);
+      unsigned ArgumentOffset = Operator && Method && !Method->isStatic() ? 1 : 0;
+      if (A.S.coreV2() && Operator) {
+        bool TrivialAssignment = Operator->getOperator() == OO_Equal && Method &&
+                                 Method->isImplicit() && Method->isTrivial() &&
+                                 Operator->getNumArgs() == 2;
+        if (!TrivialAssignment &&
+            !(ordinaryCopyAssignment(Method) && Operator->getOperator() == OO_Equal &&
+              Operator->getNumArgs() == 2))
+          A.reject(L, "overloaded operator",
+                   "Only admitted user copy assignment and implicit trivial assignment are supported.");
+      }
+      if (A.S.coreV2() && Method && callableMethod(Method)) {
         const auto *Reference = directMethodReference(C);
         if (!Reference)
           A.reject(S->getBeginLoc(), "method call",
-                   "Methods require a direct named callee.");
+                   "Methods require a checked direct callee.");
         else if (!Method->isStatic()) {
-          const auto *Member = cast<MemberExpr>(Reference);
-          const auto *Base = Member->getBase();
-          if (Member->isArrow() ? temporaryArrayBase(Base)
-                                : temporaryBinding(Base))
-            A.reject(Base->getExprLoc(), "method receiver",
-                     "Temporary object receivers require lifetime lowering.");
+          const Expr *Base = nullptr;
+          bool Arrow = false;
+          if (Operator && C->getNumArgs()) {
+            Base = C->getArg(0);
+          } else if (const auto *Member = dyn_cast<MemberExpr>(Reference)) {
+            Base = Member->getBase();
+            Arrow = Member->isArrow();
+          }
+          if (!Base || (Arrow ? temporaryArrayBase(Base) : temporaryBinding(Base)))
+            A.reject(L, "method receiver",
+                     "A supported live lvalue receiver is required.");
         }
       }
-      if (A.S.coreV2() && F && (!Method || ordinaryMethod(Method)))
-        for (unsigned I = 0; I < C->getNumArgs() && I < F->getNumParams(); ++I)
+      if (A.S.coreV2() && F && (!Method || callableMethod(Method)))
+        for (unsigned I = 0; I < F->getNumParams() && I + ArgumentOffset < C->getNumArgs(); ++I)
           if (F->getParamDecl(I)->getType()->isReferenceType())
-            checkBinding(C->getArg(I));
+            checkBinding(C->getArg(I + ArgumentOffset));
       if (A.S.math() && F &&
           (F->getBuiltinID() || !A.S.owns(A.Sources, F->getLocation()))) {
         if (A.mapping(C).empty())
@@ -984,7 +1032,7 @@ public:
     }
     if (const auto *This = dyn_cast<CXXThisExpr>(S))
       if (!A.S.coreV2() || !CurrentMethod || CurrentMethod->isStatic() ||
-          (!ordinaryMethod(CurrentMethod) &&
+          (!callableMethod(CurrentMethod) &&
            !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(CurrentMethod)) &&
            !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(CurrentMethod))))
         A.reject(L, "this",

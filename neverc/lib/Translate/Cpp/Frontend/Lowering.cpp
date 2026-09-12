@@ -355,10 +355,15 @@ class FunctionLowering {
         (!Callee->hasBody() &&
          (!A.S.project() ||
           Callee->getFormalLinkage() == Linkage::Internal)) ||
-        (Method && (!A.S.coreV2() || !ordinaryMethod(Method))))
+        (Method && (!A.S.coreV2() || !callableMethod(Method))))
       reject(L, "call",
              "Call target is not a supported defined function.");
-    if (Call->getNumArgs() != Callee->getNumParams())
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    if (Operator && (!A.S.coreV2() || !ordinaryCopyAssignment(Method) ||
+                     Operator->getOperator() != OO_Equal))
+      reject(L, "operator call", "Unsupported selected operator function.");
+    unsigned ArgumentOffset = Operator ? 1 : 0;
+    if (Call->getNumArgs() != Callee->getNumParams() + ArgumentOffset)
       reject(L, "call", "Call and source parameter counts differ.");
     json::Array Args;
     Expression Result;
@@ -373,29 +378,40 @@ class FunctionLowering {
     } else if (Destination) {
       reject(L, "call result", "Only record results accept a destination.");
     }
-    if (Method) {
-      const auto *Reference = directMethodReference(Call);
-      if (!Reference)
-        reject(L, "method call", "Methods require a direct named callee.");
-      if (const auto *Member = dyn_cast<MemberExpr>(Reference)) {
-        const auto *Base = Member->getBase();
-        if (Method->isStatic()) {
-          discard(Base);
-        } else {
-          // C++17 evaluates the receiver before explicit arguments. Capture
-          // its pointer now: an argument may reseat a source pointer alias.
-          // Taking the address also avoids reading unrelated record fields.
-          auto Receiver = Member->isArrow()
-                              ? expression(Base)
-                              : address(lvalue(Base), Base->getType(), L);
-          Args.push_back(snapshot(
-              cast(std::move(Receiver), type(Method->getThisType(), L), L), L));
+    if (Operator) {
+      // Operator notation follows C++17 assignment sequencing: RHS before
+      // LHS. Capture the reference before evaluating a receiver that can alias
+      // it. Explicit .operator=(...) below follows ordinary call sequencing.
+      auto Source = argument(Call->getArg(1), Callee->getParamDecl(0)->getType());
+      const auto *Base = Call->getArg(0);
+      auto Receiver = address(lvalue(Base), Base->getType(), L);
+      Args.push_back(snapshot(
+          cast(std::move(Receiver), type(Method->getThisType(), L), L), L));
+      Args.push_back(std::move(Source));
+    } else {
+      if (Method) {
+        const auto *Reference = directMethodReference(Call);
+        if (!Reference)
+          reject(L, "method call", "Methods require a checked direct callee.");
+        if (const auto *Member = dyn_cast<MemberExpr>(Reference)) {
+          const auto *Base = Member->getBase();
+          if (Method->isStatic()) {
+            discard(Base);
+          } else {
+            // Capture the receiver before explicit arguments can reseat a
+            // source pointer alias, without reading unrelated record fields.
+            auto Receiver = Member->isArrow()
+                                ? expression(Base)
+                                : address(lvalue(Base), Base->getType(), L);
+            Args.push_back(snapshot(
+                cast(std::move(Receiver), type(Method->getThisType(), L), L), L));
+          }
         }
       }
+      for (unsigned I = 0; I < Call->getNumArgs(); ++I)
+        Args.push_back(argument(Call->getArg(I),
+                                Callee->getParamDecl(I)->getType()));
     }
-    for (unsigned I = 0; I < Call->getNumArgs(); ++I)
-      Args.push_back(argument(Call->getArg(I),
-                              Callee->getParamDecl(I)->getType()));
     chargeCall(Args, L);
     json::Object Instruction{{"op", "call"},
                              {"callee", A.name(Callee)},
@@ -574,8 +590,10 @@ class FunctionLowering {
         assign(Left, std::move(Right), L);
         return Left;
       }
+      if (A.S.coreV2() && ordinaryCopyAssignment(Method))
+        return call(Call);
       reject(L, "overloaded operator",
-             "Only implicit trivial aggregate copy assignment is supported.");
+             "Only admitted user copy assignment and implicit trivial assignment are supported.");
     }
     if (const auto *Call = dyn_cast<CallExpr>(E))
       return Call->isPRValue() && recordValue(Call->getType())
@@ -1412,7 +1430,7 @@ public:
       if (const auto *Method = dyn_cast<CXXMethodDecl>(Function);
           Method && !Method->isStatic()) {
         if (!A.S.coreV2() ||
-            (!ordinaryMethod(Method) &&
+            (!callableMethod(Method) &&
              !ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method))))
           reject(L, "method", "Unsupported instance-method or constructor definition.");
         ThisPointer = parameter(Method->getThisType(), L);

@@ -234,6 +234,19 @@ def main():
         'destruction-result': 'struct R{int n;~R(){}};R f(){return {1};}int main(){R r=f();return r.n-1;}',
         'destruction-named-copy': 'struct R{int n;~R(){}};R f(R r){R copy=r;copy=r;return copy;}',
     })
+    core_v2.update({
+        'user-copy-constructor': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};int main(){R a(1);R b=a;return b.n-2;}',
+        'user-copy-assignment': 'struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};int main(){R a{1},b{2};a=b;return a.n-3;}',
+        'user-copy-explicit-assignment': 'struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};int main(){R a{1},b{2};a.operator=(b);return a.n-3;}',
+        'user-copy-qualified-assignment': 'struct R{int n;R&operator=(const R&r)&{n=r.n+1;return *this;}};int main(){R a{1},b{2};a=b;return a.n-3;}',
+        'user-copy-explicit-constructor': 'struct R{int n;R(int v):n(v){}explicit R(const R&r):n(r.n+1){}};int main(){R a(1);R b(a);return b.n-2;}',
+        'user-copy-array': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};int main(){R a(1);R b[2]={a,a};return b[1].n-2;}',
+        'user-copy-return': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};R f(const R&r){return r;}int main(){R a(1);return f(a).n-2;}',
+        'user-copy-named-return': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};R f(){R r(1);return r;}int main(){return f().n-2;}',
+        'user-copy-parameter': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};int f(R r){return r.n;}int main(){R a(1);return f(a)-2;}',
+        'user-copy-containing-aggregate': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}~R(){}};struct Box{R r;};int main(){R a(1);Box b{a};return b.r.n-2;}',
+        'user-copy-constexpr': 'struct R{int n;constexpr R(int v):n(v){}constexpr R(const R&r):n(r.n+1){}};constexpr R a(1);constexpr R b=a;static_assert(b.n==2);',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -366,6 +379,115 @@ int main() {
     assert old_identity["result"] == old_record_id, old_identity
     assert [p["type"] for p in old_identity["params"]] == [old_record_id], old_identity
     check("v2-record-parameter-const-write", "struct R{int n;};int f(const R r){r.n=1;return r.n;}",
+          "TR0202", profile="cpp-core-v2")
+    user_copy_source = """struct R {
+  int value; R *self;
+  R(int n):value(n),self(this){}
+  R(const R&other):value(other.value+1),self(this){}
+  R&operator=(const R&other){value=other.value+2;return *this;}
+};
+R make(int n){return R(n);}
+R forward(int n){return make(n);}
+int take(R value){return value.value;}
+R&left(R&r,int&trace){trace=trace*10+1;return r;}
+R&right(R&r,int&trace){trace=trace*10+2;return r;}
+R fromSource(const R&r){return r;}
+int main(){
+  R source(1);
+  R copy=source;
+  copy=source;
+  copy.operator=(source);
+  int trace=0;
+  left(copy,trace)=right(source,trace);
+  left(copy,trace).operator=(right(source,trace));
+  int value=take(source);
+  R result=forward(7);
+  R returned=fromSource(source);
+  return value+result.value+returned.value;
+}
+"""
+    user_copy = check("v2-user-copy-protocol", user_copy_source, profile="cpp-core-v2")
+    rid = user_copy["records"][0]["id"]
+    copy_functions = {f["loc"]["line"]: f for f in user_copy["functions"]}
+    copy_by_name = {f["name"]: f for f in user_copy["functions"]}
+    for line, result, params in ((4, "void", ["ptr:" + rid, "cptr:" + rid]),
+                                 (5, "ptr:" + rid, ["ptr:" + rid, "cptr:" + rid]),
+                                 (12, "void", ["ptr:" + rid, "cptr:" + rid])):
+        function = copy_functions[line]
+        assert function["result"] == result and [p["type"] for p in function["params"]] == params, function
+    for function in user_copy["functions"]:
+        for instruction in function["body"]:
+            if instruction["op"] == "call":
+                callee = copy_by_name[instruction["callee"]]
+                assert [a["type"] for a in instruction["args"]] == [p["type"] for p in callee["params"]], instruction
+    main_copy = copy_functions[13]
+    calls = [n for n in main_copy["body"] if n["op"] == "call"]
+    copy_name, assignment_name = copy_functions[4]["name"], copy_functions[5]["name"]
+    assert sum(c["callee"] == copy_name for c in calls) == 2, calls
+    assert sum(c["callee"] == assignment_name for c in calls) == 4, calls
+    # Lvalue construction and by-value argument preparation call user copying,
+    # while direct prvalue result forwarding introduces no copy call.
+    assert all(n["target"]["type"] != rid for n in main_copy["body"] if n["op"] == "assign"), main_copy
+    for line in (7, 8):
+        assert all(n.get("callee") != copy_name for n in copy_functions[line]["body"]), copy_functions[line]
+    returned_copy = [n for n in copy_functions[12]["body"] if n.get("callee") == copy_name]
+    assert len(returned_copy) == 1, returned_copy
+    assert storage_pointer_object(copy_functions[12], returned_copy[0]["args"][0]) == (
+        "parameter", copy_functions[12]["params"][0]["name"])
+    assert storage_pointer_object(copy_functions[12], returned_copy[0]["args"][1]) == (
+        "parameter", copy_functions[12]["params"][1]["name"])
+    objects = {v["loc"]["line"]: v for v in main_copy["locals"] if v["type"] == rid}
+    for line in (15, 16, 17):
+        invocation = next(c for c in calls if c["loc"]["line"] == line)
+        assert storage_pointer_object(main_copy, invocation["args"][0]) == ("object", objects[15]["name"])
+        assert storage_pointer_object(main_copy, invocation["args"][1]) == ("object", objects[14]["name"])
+    argument_copy = next(c for c in calls if c["callee"] == copy_name and c["loc"]["line"] == 21)
+    parameter_call = next(c for c in calls if c["callee"] == copy_functions[9]["name"])
+    assert storage_pointer_object(main_copy, argument_copy["args"][0]) == storage_pointer_object(
+        main_copy, parameter_call["args"][0])
+    assert storage_pointer_object(main_copy, argument_copy["args"][0]) != ("object", objects[14]["name"])
+    assert [c["callee"] for c in calls if c["loc"]["line"] == 19] == [
+        copy_functions[11]["name"], copy_functions[10]["name"], assignment_name]
+    assert [c["callee"] for c in calls if c["loc"]["line"] == 20] == [
+        copy_functions[10]["name"], copy_functions[11]["name"], assignment_name]
+    assignment_return = next(n["value"] for n in copy_functions[5]["body"] if n["op"] == "return")
+    assert assignment_return["type"] == "ptr:" + rid and assignment_return["kind"] == "var", assignment_return
+    with tempfile.TemporaryDirectory(prefix="neverc-user-copy-relocated-") as temp:
+        relocated = check("user-copy-relocated", user_copy_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == user_copy, "user copy identities depend on the absolute root"
+
+    user_copy_rejected = {
+        'defaulted-constructor': 'struct R{int n;R(const R&)=default;};',
+        'deleted-constructor': 'struct R{int n;R(const R&)=delete;};',
+        'defaulted-assignment': 'struct R{int n;R&operator=(const R&)=default;};',
+        'deleted-assignment': 'struct R{int n;R&operator=(const R&)=delete;};',
+        'volatile-constructor': 'struct R{int n;R(const volatile R&r):n(r.n){}};',
+        'volatile-assignment': 'struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};',
+        'const-assignment': 'struct R{int n;R&operator=(const R&r)const{return const_cast<R&>(*this);}};',
+        'rvalue-assignment': 'struct R{int n;R&operator=(const R&r)&&{n=r.n;return *this;}};',
+        'by-value-assignment': 'struct R{int n;R&operator=(R r){n=r.n;return *this;}};',
+        'void-assignment': 'struct R{int n;void operator=(const R&r){n=r.n;}};',
+        'other-assignment-result': 'struct R{int n;int&operator=(const R&r){n=r.n;return n;}};',
+        'noexcept-constructor': 'struct R{int n;R(const R&r)noexcept:n(r.n){}};',
+        'noexcept-assignment': 'struct R{int n;R&operator=(const R&r)noexcept{n=r.n;return *this;}};',
+        'default-argument': 'struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};',
+        'move-constructor': 'struct R{int n;R(R&&r):n(r.n){}};',
+        'move-assignment': 'struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};',
+        'arbitrary-operator': 'struct R{int n;R operator+(const R&r){return {n+r.n};}};',
+        'implicit-containing-copy': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};Box b=a;}',
+        'implicit-containing-copy-dead': 'struct R{int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};struct Box{R r;};void f(){Box a{R(1)};if(false){Box b=a;}}',
+        'implicit-containing-assignment': 'struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};a=b;}',
+        'implicit-containing-assignment-dead': 'struct R{int n;R&operator=(const R&r){n=r.n+1;return *this;}};struct Box{R r;};void f(){Box a{{1}},b{{2}};if(false)a=b;}',
+        'temporary-assignment-source': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}',
+        'temporary-assignment-receiver': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}',
+    }
+    for name, source in user_copy_rejected.items():
+        check("v2-user-copy-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+    check("v2-copy-definition", "struct R{int n;R(const R&);};", "TR0203", profile="cpp-core-v2")
+    check("v2-assignment-definition", "struct R{int n;R&operator=(const R&);};", "TR0203", profile="cpp-core-v2")
+    check("v1-user-copy-still-rejected", "struct R{int n;R(const R&r):n(r.n){}};", "TR0201")
+    check("v2-user-copy-const-write", "struct R{int n;R&operator=(const R&r){n=r.n;return *this;}};void f(){const R r{1};R s{2};r=s;}",
           "TR0202", profile="cpp-core-v2")
     conversion_cleanup_source = """struct R {
   int *value; R *self;
@@ -526,9 +648,7 @@ int main(){int value=0;R result=make(&value);return consume(R(&value,6));}
         'explicit-call': 'struct R{int n;~R(){}};void f(R&r){r.~R();}',
         'explicit-dead-call': 'struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}',
         'explicit-alias-call': 'struct R{int n;~R(){}};using T=R;void f(R&r){r.~T();}',
-        'copy-constructor': 'struct R{int n;R(const R&r):n(r.n){}~R(){}};',
         'move-constructor': 'struct R{int n;R(R&&r):n(r.n){}~R(){}};',
-        'copy-assignment': 'struct R{int n;R&operator=(const R&r){n=r.n;return *this;}~R(){}};',
         'global': 'struct R{int n;~R(){}};const R r{1};',
         'global-containing': 'struct R{int n;~R(){}};struct Box{R r;};const Box box{{1}};',
         'static-local': 'struct R{int n;~R(){}};int f(){static R r{1};return r.n;}',
@@ -694,7 +814,6 @@ int main() {
     v2_rejections = {
         'record-parameter-expansion': 'struct R{int n[65536];};int ignore(R a,R b,R c,R d){return 0;}int f(){R r;for(int i=0;i<65536;++i)r.n[i]=0;return ignore(r,r,r,r);}',
         'record-result-fallthrough': 'struct R{int n;};R f(bool b){if(b)return {1};}',
-        'record-copy-constructor': 'struct R{int n;R(int v):n(v){}R(const R&x):n(x.n){}};int f(R x){return x.n;}',
         'record-move-constructor': 'struct R{int n;R(int v):n(v){}R(R&&x):n(x.n){}};R f(){return R(1);}',
         'record-result-reference-binding': 'struct R{int n;};R f(){return {1};}int main(){const R&r=f();return r.n;}',
         'record-result-method-receiver': 'struct R{int n;int get(){return n;}};R f(){return {1};}int main(){return f().get();}',
@@ -803,7 +922,6 @@ int main() {
         'constructor-delegating': 'struct R{int n;R():R(1){} R(int v):n(v){}};',
         'constructor-base-initializer': 'struct B{int n;B(int v):n(v){}};struct R:B{R():B(1){}};',
         'constructor-inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};',
-        'constructor-copy-constructor': 'struct R{int n;R(int v):n(v){} R(const R&v):n(v.n){}};',
         'constructor-move-constructor': 'struct R{int n;R(int v):n(v){} R(R&&v):n(v.n){}};',
         'constructor-virtual-method': 'struct R{int n;R():n(1){} virtual int get(){return n;}};',
         'constructor-implicit-nontrivial-default': 'struct I{int n;I():n(1){}};struct R{I i;};int f(){R r;return r.i.n;}',
