@@ -392,6 +392,12 @@ const CallExpr *userConversionCall(const CastExpr *Cast, ASTContext &Context) {
   return Call;
 }
 
+bool fullExpressionTemporary(const MaterializeTemporaryExpr *M, ASTContext &Context) {
+  return M && M->getStorageDuration() == SD_FullExpression && !M->getExtendingDecl() &&
+         !M->getType()->isArrayType() && M->getSubExpr() && M->getSubExpr()->isPRValue() &&
+         Context.hasSameUnqualifiedType(M->getType(), M->getSubExpr()->getType());
+}
+
 bool ordinaryDestructor(const CXXDestructorDecl *D) {
   if (!D || D->isImplicit() || !D->isUserProvided() || D->isVirtual() ||
       D->isDeletedAsWritten() || D->isExplicitlyDefaulted() ||
@@ -756,66 +762,68 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   // Follow the identity of an lvalue, not arbitrary call arguments. A by-value
   // temporary passed to a function returning some other live object is safe.
-  bool temporaryArrayBase(const Expr *E) {
+  bool temporaryArrayBase(const Expr *E, bool AllowFullExpression = false) {
     E = E->IgnoreParens();
     if (E->getType()->isArrayType())
-      return temporaryBinding(E);
+      return temporaryBinding(E, AllowFullExpression);
     if (const auto *C = dyn_cast<CastExpr>(E)) {
       if (C->getCastKind() == CK_ArrayToPointerDecay)
-        return temporaryBinding(C->getSubExpr());
+        return temporaryBinding(C->getSubExpr(), AllowFullExpression);
       if (C->getCastKind() == CK_NoOp || C->getCastKind() == CK_BitCast)
-        return temporaryArrayBase(C->getSubExpr());
+        return temporaryArrayBase(C->getSubExpr(), AllowFullExpression);
     }
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
-      return temporaryArrayBase(W->getSubExpr());
+      return temporaryArrayBase(W->getSubExpr(), AllowFullExpression);
     if (const auto *C = dyn_cast<ConditionalOperator>(E))
-      return temporaryArrayBase(C->getTrueExpr()) ||
-             temporaryArrayBase(C->getFalseExpr());
+      return temporaryArrayBase(C->getTrueExpr(), AllowFullExpression) ||
+             temporaryArrayBase(C->getFalseExpr(), AllowFullExpression);
     if (const auto *B = dyn_cast<BinaryOperator>(E)) {
       if (B->getOpcode() == BO_Comma)
-        return temporaryArrayBase(B->getRHS());
+        return temporaryArrayBase(B->getRHS(), AllowFullExpression);
       if (B->getType()->isPointerType() &&
           (B->getOpcode() == BO_Add || B->getOpcode() == BO_Sub))
         return temporaryArrayBase(B->getLHS()->getType()->isPointerType()
                                       ? B->getLHS()
-                                      : B->getRHS());
+                                      : B->getRHS(), AllowFullExpression);
     }
     if (const auto *U = dyn_cast<UnaryOperator>(E); U && U->getOpcode() == UO_AddrOf)
-      return temporaryBinding(U->getSubExpr());
+      return temporaryBinding(U->getSubExpr(), AllowFullExpression);
     // A pointer prvalue (including a call result) is not a temporary pointee.
     return false;
   }
-  bool temporaryBinding(const Expr *E) {
+  bool temporaryBinding(const Expr *E, bool AllowFullExpression = false) {
     E = E->IgnoreParens();
     if (const auto *Opaque = dyn_cast<OpaqueValueExpr>(E)) {
       auto Found = ArraySources.find(Opaque);
-      return Found == ArraySources.end() || temporaryBinding(Found->second);
+      return Found == ArraySources.end() || temporaryBinding(Found->second, AllowFullExpression);
     }
-    if (isa<MaterializeTemporaryExpr, CXXBindTemporaryExpr>(E))
+    if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E))
+      return !AllowFullExpression || !fullExpressionTemporary(M, A.Context);
+    if (isa<CXXBindTemporaryExpr>(E))
       return true;
     if (const auto *C = dyn_cast<CastExpr>(E))
-      return temporaryBinding(C->getSubExpr());
+      return temporaryBinding(C->getSubExpr(), AllowFullExpression);
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
-      return temporaryBinding(W->getSubExpr());
+      return temporaryBinding(W->getSubExpr(), AllowFullExpression);
     if (const auto *M = dyn_cast<MemberExpr>(E))
-      return M->isArrow() ? temporaryArrayBase(M->getBase())
-                          : temporaryBinding(M->getBase());
+      return M->isArrow() ? temporaryArrayBase(M->getBase(), AllowFullExpression)
+                          : temporaryBinding(M->getBase(), AllowFullExpression);
     if (const auto *Index = dyn_cast<ArraySubscriptExpr>(E))
-      return temporaryArrayBase(Index->getBase());
+      return temporaryArrayBase(Index->getBase(), AllowFullExpression);
     if (const auto *C = dyn_cast<ConditionalOperator>(E))
-      return temporaryBinding(C->getTrueExpr()) ||
-             temporaryBinding(C->getFalseExpr());
+      return temporaryBinding(C->getTrueExpr(), AllowFullExpression) ||
+             temporaryBinding(C->getFalseExpr(), AllowFullExpression);
     if (const auto *B = dyn_cast<BinaryOperator>(E)) {
       if (B->getOpcode() == BO_Comma)
-        return temporaryBinding(B->getRHS());
+        return temporaryBinding(B->getRHS(), AllowFullExpression);
       if (B->isAssignmentOp())
-        return temporaryBinding(B->getLHS());
+        return temporaryBinding(B->getLHS(), AllowFullExpression);
     }
     if (const auto *U = dyn_cast<UnaryOperator>(E)) {
       if (U->getOpcode() == UO_Deref)
-        return temporaryArrayBase(U->getSubExpr());
+        return temporaryArrayBase(U->getSubExpr(), AllowFullExpression);
       if (U->isIncrementDecrementOp())
-        return temporaryBinding(U->getSubExpr());
+        return temporaryBinding(U->getSubExpr(), AllowFullExpression);
     }
     // An xvalue can still designate a live object. Temporary wrappers above
     // retain their own rejection; changing category alone creates no owner.
@@ -837,8 +845,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return false;
   }
-  void checkBinding(const Expr *E) {
-    if (E && temporaryBinding(E))
+  void checkBinding(const Expr *E, bool AllowFullExpression = false) {
+    if (E && temporaryBinding(E, AllowFullExpression))
       A.reject(E->getExprLoc(), "reference binding",
                "Binding references to temporaries requires lifetime lowering.");
   }
@@ -878,7 +886,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       for (unsigned I = 0; I < C->getNumArgs() &&
                            I < Constructor->getNumParams(); ++I)
         if (!InlineMove && Constructor->getParamDecl(I)->getType()->isReferenceType())
-          checkBinding(C->getArg(I));
+          checkBinding(C->getArg(I), true);
     } else if (!Constructor->isImplicit() || !Constructor->isTrivial()) {
       A.reject(L, "construction",
                "Only admitted constructors and implicit trivial "
@@ -1391,6 +1399,10 @@ public:
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
+      if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(S);
+          M && !fullExpressionTemporary(M, A.Context))
+        A.reject(L, "temporary lifetime",
+                 "Only non-array temporaries ending at this full-expression are supported.");
       if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S)) {
         if (!Query->getOperand() || Query->isTypeDependent() ||
             Query->isValueDependent() || Query->isInstantiationDependent())
@@ -1465,15 +1477,15 @@ public:
             Base = Member->getBase();
             Arrow = Member->isArrow();
           }
-          if (!Base || (Arrow ? temporaryArrayBase(Base) : temporaryBinding(Base)))
+          if (!Base || (Arrow ? temporaryArrayBase(Base, true) : temporaryBinding(Base, true)))
             A.reject(L, "method receiver",
-                     "A supported live object receiver is required.");
+                     "A supported live or full-expression temporary receiver is required.");
         }
       }
       if (A.S.coreV2() && F && !InlineMove && (!Method || callableMethod(Method)))
         for (unsigned I = 0; I < F->getNumParams() && I + ArgumentOffset < C->getNumArgs(); ++I)
           if (F->getParamDecl(I)->getType()->isReferenceType())
-            checkBinding(C->getArg(I + ArgumentOffset));
+            checkBinding(C->getArg(I + ArgumentOffset), true);
       if (A.S.math() && F &&
           (F->getBuiltinID() || !A.S.owns(A.Sources, F->getLocation()))) {
         if (A.mapping(C).empty())

@@ -120,8 +120,8 @@ int main() {
 }
 ```
 
-Temporary reference bindings (including conversion-created
-temporaries and temporary subobjects), reference fields and pointer/reference
+Reference lifetime extension for temporaries (including conversion-created
+values and subobjects), reference fields and pointer/reference
 globals (including pointer-valued global aggregate fields) are rejected.
 Unused/dead bindings are checked too. Standalone
 `nullptr_t` variables are not supported. The contract covers accesses to live
@@ -167,10 +167,10 @@ assignment declarations retain their own receiver restrictions; an unqualified
 admitted assignment can operate on a live xvalue receiver.
 
 The provenance check still follows materialization and binding wrappers, nested
-member/array access, casts, conditionals and comma expressions. Binding a fresh
-scalar or record temporary, including a conversion-created temporary or its
-subobject, remains rejected even in dead code. Nonstatic calls on temporary
-objects remain rejected. Reference fields, reference globals, function references,
+member/array access, casts, conditionals and comma expressions. Call-site
+bindings and receivers may use full-expression temporaries under the contract
+below. Direct local-reference lifetime extension and fresh-reference returns
+remain rejected, including converted values and subobjects in dead code. Reference fields, reference globals, function references,
 volatile types, lifetime extension and arbitrary dangling-reference analysis are
 not enabled. Invalid C++ category/qualification uses retain source diagnostics.
 V1 profiles continue to reject rvalue references and methods.
@@ -220,12 +220,12 @@ int main() {
 }
 ```
 
-Nonstatic dot calls initially require a non-temporary lvalue receiver. Arrow
-calls may use pointer prvalues to live storage, but temporary-subobject identity
-through array decay, pointer offsets, comma and conditional expressions is
-rejected, including in dead/folded code. A pointer field of a temporary container
-may still point to a separate live object. Explicit reference arguments retain
-the existing temporary-binding restrictions for both static and instance calls.
+Nonstatic dot calls support live receivers and full-expression temporary
+receivers. Arrow calls follow object identity through array decay, pointer
+offsets, comma and conditional expressions, including subobjects of temporary
+records. A pointer field of a temporary container may also point to a separate
+live object. Static/instance reference arguments share the full-expression
+temporary-call contract below; they introduce no reference lifetime extension.
 
 Virtual methods, inheritance,
 volatile/restrict methods, default arguments, templates and static data remain unsupported. Ordinary
@@ -288,8 +288,8 @@ for that evaluation. No extra record copy is inserted during materialization.
 Temporary field reads and by-value function arguments/results are supported for
 the admitted records, using the explicit call storage described below. C++17
 permits implementation copies of eligible trivial class function arguments/results;
-NeverC selects direct destinations for prvalues and retains source-required copies. Reference binding to temporaries and nonstatic
-calls on temporary receivers retain their existing rejection boundary. Const
+NeverC selects direct destinations for prvalues and retains source-required copies. Temporary reference arguments and receivers use the full-expression call
+contract below; local/returned reference lifetime extension remains excluded. Const
 local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
@@ -393,7 +393,7 @@ Default initialization adds no independent lifetime boundary. Each constructor
 member initializer retains its full-expression cleanup; temporary objects from
 aggregate clauses survive through the complete aggregate initialization. The
 existing complete-object cleanup owner remains responsible for normal destruction.
-Reference lifetime extension, temporary method receivers, static initialization
+Reference lifetime extension, static initialization
 outside the current contract, exceptions, templates and STL are not enabled
 by admitting field defaults. Unevaluated construction introduces no runtime default
 calls or invented generated body. V1 profiles continue to reject field defaults.
@@ -513,8 +513,8 @@ copy operations without selecting a copy of the containing object. Generated
 copy construction and assignment follow the next sections. Deleted special
 members, templates, variadic/default
 arguments,
-allocation and exception unwinding are not added. Existing temporary source-reference and
-nonstatic temporary-receiver restrictions still apply. Missing definitions and
+allocation and exception unwinding are not added. Temporary source-reference
+arguments and receivers follow the full-expression call contract below. Missing definitions and
 invalid source const/access operations remain diagnostics. V1 admission and
 trivial value-copy representation are unchanged.
 
@@ -531,7 +531,8 @@ Core v2 supports ordinary user-provided move constructors with exactly one
 `constexpr` and out-of-line definitions retain their C++ rules. A conventional move
 assignment takes the same source reference and returns mutable `R&`; its mutable
 receiver may be unqualified, `&`-qualified or `&&`-qualified. Source references
-must designate existing live objects under the reference-provenance contract.
+must designate live objects or admitted full-expression temporaries under the
+reference-provenance contract.
 
 Clang selects the operation before lowering. A named rvalue-reference expression
 remains an lvalue and can therefore select copying. A cast to `R&&` does not
@@ -583,8 +584,8 @@ destruction nor a replacement construction.
 
 Deleted functions, volatile/restrict sources
 or receivers, default/variadic parameters, inheritance,
-templates and STL remain outside this increment. Fresh temporary source-reference
-binding and temporary receivers remain rejected, including in dead code. Invalid
+templates and STL remain outside this increment. Temporary source-reference
+arguments and receivers follow the full-expression call contract below. Invalid
 C++ overload, cv/ref or deleted-copy uses retain source diagnostics; missing user
 definitions retain the missing-definition diagnostic. V1 profiles reject user moves.
 
@@ -649,10 +650,10 @@ after operand effects. The old inline implicit trivial move operation also uses
 this sequencing. Its previously admitted temporary sources and operator receivers
 remain supported through ordinary full-expression materialization and inline
 stores, without a helper call or lifetime extension. The analogous implicit
-trivial move-construction path is preserved. This narrow compatibility behavior
-does not admit temporary bindings for ordinary reference declarations, parameters
-or results, explicitly defaulted/user move calls, or explicit member calls on
-temporary receivers.
+trivial move-construction path is preserved. Ordinary/defaulted/user move calls
+and explicit member calls also admit full-expression temporary sources and
+receivers under the contract below. This does not extend local/returned
+reference lifetimes.
 
 Move construction and assignment leave complete-object cleanup ownership intact.
 Both moved-from sources and destinations are destroyed normally. By-value
@@ -859,8 +860,8 @@ int main() {
 
 This increment covers normal completion only. Throw/catch, stack unwinding,
 partial construction rollback, allocation/deallocation, static/global object
-destruction, reference lifetime extension and nonstatic calls on temporary
-receivers remain rejected. Existing expansion/storage limits also bound emitted
+destruction and reference lifetime extension remain rejected. Temporary calls
+follow the separate full-expression contract below. Existing expansion/storage limits also bound emitted
 cleanup instructions and recursive array destruction. V1 profiles retain their
 original trivial-lifetime boundary. Regression fixtures cover O0/O2 execution,
 protocol ownership and signatures, return capture, member/array order and
@@ -884,7 +885,8 @@ parameters. Reference results preserve their aliases, including subscript and
 increment results. Taking an overloaded operator's function/member address still
 requires later function-pointer support. Conversion functions follow their separate
 contract below. This stage does not admit templates, friend declarations,
-virtual dispatch, allocation/deallocation operators or new temporary lifetimes.
+virtual dispatch or allocation/deallocation operators. Temporary call operands
+follow the separate full-expression contract below.
 
 Operator notation preserves the required C++17 operand sequencing. Assignment and
 compound assignment capture the RHS before the LHS, including any source
@@ -940,7 +942,8 @@ must come from the implementing revision's CI.
 
 ## User-defined conversion functions
 
-Core v2 admits ordinary source-owned conversion functions on live objects,
+Core v2 admits ordinary source-owned conversion functions on live objects and
+admitted full-expression temporary receivers,
 including implicit and explicit integral, enum and pointer conversions,
 contextual explicit `operator bool`, and supported reference or record results.
 Const, unqualified, `&` and `&&` receivers retain C++17 overload selection.
@@ -951,7 +954,7 @@ explicit selection and valid conversion signatures before emission.
 
 The checked AST conversion wrapper must contain the selected direct conversion
 call with its exact result type and value category. It becomes an ordinary typed
-call, executed once, with the live receiver captured once. Following standard
+call, executed once, with the receiver captured once. Following standard
 promotions, enum conversions and pointer-to-bool conversions remain separate
 typed operations. Contextual bool conversions retain builtin short circuiting;
 an unevaluated noexcept query inspects the conversion but does not execute it.
@@ -981,8 +984,8 @@ int main() {
 
 Conversion functions have no explicit parameters. Virtual/template conversions,
 volatile/restrict receivers, unsupported result types and function/member
-pointers remain excluded. Calling a conversion on a fresh temporary receiver,
-binding a reference to a freshly converted value, lifetime extension, allocation,
+pointers remain excluded. Full-expression temporary receivers and converted
+reference arguments follow the next section. Reference lifetime extension, allocation,
 exception execution, templates and complete STL still require further work.
 Unsupported bodies and operands remain checked even in unused declarations,
 constexpr initializers, static assertions and noexcept queries. V1 is unchanged.
@@ -992,6 +995,61 @@ circuiting, pointer/reference aliases, actual record destinations and exact
 copy/move/destructor counts. Protocol fixtures check selected identities and full
 signatures, result/receiver ordering, reference returns, selected copying, cleanup,
 unevaluated queries and relocation. Native results require the implementing CI.
+
+## Full-expression temporary calls
+
+Core v2 admits temporary receivers and temporary reference arguments for ordinary
+functions, constructors, methods, operators and conversion functions. Materialized
+scalar, enum, pointer and record values must have Clang's `SD_FullExpression`
+duration, no extending declaration, and a matching prvalue initializer. Every
+materialization is checked during recursive source inspection, including erased
+noexcept/sizeof/static-assert paths, and again during lowering. Local/returned
+reference bindings retain their stricter lifetime boundary.
+
+Each evaluation initializes real addressable storage once. A scalar reference
+argument receives that storage's address; const/reference qualifiers retain their
+typed carriers. Temporary objects keep their actual receiver identity and may
+use selected const/ref-qualified methods. Subobjects, array decay, offsets,
+arrow access and returned reference aliases remain views of the same owner.
+Standalone array temporaries are excluded in this stage; array subobjects of
+an admitted record temporary share that record's storage and cleanup.
+
+Temporary arguments and receivers remain alive throughout argument evaluation,
+the selected call, result construction and callee parameter destruction. They
+are then destroyed at the enclosing full-expression boundary in reverse order
+of completed construction. A constructor member initializer has its own boundary;
+aggregate clauses retain their enclosing aggregate boundary. By-value parameter
+objects still belong to the callee. Returned object prvalues use their actual
+caller destination, while reference results add no owner. Conditions and return
+values are captured before cleanup. Conditional paths destroy only constructed
+objects, and each loop evaluation constructs and destroys its temporaries again.
+
+```cpp
+int read(const int &value) { return value; }
+struct Value {
+  int n;
+  int add(const int &value) const { return n + value; }
+};
+int main() {
+  int result = Value{4}.add(2) + read(3);
+  return result == 9 ? 0 : 1;
+}
+```
+
+Reference parameters do not extend a temporary's lifetime. A reference returned
+through a call may be used while its temporary remains alive within that same
+full-expression; saving the alias does not create a new owner or lifetime
+extension. The defined-execution source contract does not promise general
+interprocedural dangling-reference diagnosis. Direct automatic/static lifetime
+extension, fresh reference returns, standalone array temporaries, unsupported
+types, exception execution, templates and complete STL still require further
+work. This stage adds no wire opcode or external runtime and leaves v1 unchanged.
+
+O0/O2 no-inline fixtures check real storage, scalar/reference conversion, temporary
+receivers and subobjects, user/generated moves, call sequencing, parameter versus
+caller destruction, result destinations, default/member initializers, conditions
+and loops. Protocol fixtures check full signatures, addresses, cleanup guards,
+reverse destruction and relocation. Native evidence requires the implementing CI.
 
 ## Noexcept declarations and queries
 
@@ -1027,7 +1085,7 @@ int main() {
 Every written specification and query operand is still inspected, including
 unused, nested and short-circuited expressions. Unsupported types and operations
 remain rejected; unevaluated source does not admit templates, function pointers,
-new temporary-reference bindings or explicit destruction. Missing ordinary owned
+reference lifetime extension or explicit destruction. Missing ordinary owned
 definitions remain diagnostics. Dependent/unresolved written specifications,
 vendor forms and C++17-invalid typed dynamic specifications are not accepted.
 V1 profiles retain their original specification/query boundaries.
@@ -1101,8 +1159,8 @@ implementations remain outside this increment. Pointer `==`/`!=` remain supporte
 - Array element qualification is preserved through decay and pointers/references
   to arrays. A const record's array cannot be used to obtain a mutable element
   pointer. Reads such as `make_record().values[0]` materialize an admitted record temporary
-  for the full expression; reference binding to temporary subobjects remains
-  rejected by the existing lifetime boundary.
+  for the full expression. Call-site references to temporary record subobjects
+  share that lifetime; direct local-reference extension remains rejected.
 
 ```cpp
 using Row = int[3];

@@ -401,6 +401,50 @@ def main():
         'conversion-method-conversion': 'struct R{int n;operator int()const{return n;}};',
         'conversion-constructor-conversion-function': 'struct R{int n;R():n(1){} operator int()const{return n;}};int f(){R r;return r;}',
     })
+    core_v2.update({
+        'temporary-call-940-temporary-source': 'struct R{int n;R&operator=(const R&)=default;};void f(R&r){r=R{1};}',
+        'temporary-call-941-temporary-receiver': 'struct R{int n;R&operator=(const R&)=default;};void f(const R&s){R{1}=s;}',
+        'temporary-call-1088-temporary-reference': 'int take(const int&n){return n;}struct R{int n=take(1);};',
+        'temporary-call-1089-temporary-receiver': 'struct A{int n;int get(){return n;}};struct R{int n=A{1}.get();};',
+        'temporary-call-1206-temporary-method': 'struct R{int n;int get()&&{return n;}};int f(){return R{1}.get();}',
+        'temporary-call-1207-temporary-cast-method': 'struct R{int n;int get()&&{return n;}};int f(){return static_cast<R&&>(R{1}).get();}',
+        'temporary-call-1208-temporary-callee-argument': 'struct R{int n;};R&&id(R&&r){return static_cast<R&&>(r);}void f(){R&&r=id(R{1});}',
+        'temporary-call-1341-temporary-constructor-source': 'struct R{int n;R(int v):n(v){}R(R&&r):n(r.n){}};void f(){R r(static_cast<R&&>(R(1)));}',
+        'temporary-call-1342-temporary-assignment-source': 'struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};void f(R&r){r=R{1};}',
+        'temporary-call-1343-temporary-assignment-receiver': 'struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};void f(R&r){R{1}=static_cast<R&&>(r);}',
+        'temporary-call-1524-temporary-defaulted-constructor': 'struct R{int n;R(R&&)=default;};void f(){R r(static_cast<R&&>(R{1}));}',
+        'temporary-call-1525-temporary-defaulted-assignment-source': 'struct R{int n;R&operator=(R&&)=default;};void f(R&r){r=R{1};}',
+        'temporary-call-1526-temporary-defaulted-assignment-receiver': 'struct R{int n;R&operator=(R&&)=default;};void f(R&r){R{1}=static_cast<R&&>(r);}',
+        'temporary-call-1527-temporary-implicit-member-source': 'struct R{int n;};void f(R&r){r.operator=(R{1});}',
+        'temporary-call-1528-temporary-implicit-member-receiver': 'struct R{int n;};void f(R&r){R{1}.operator=(static_cast<R&&>(r));}',
+        'temporary-call-1530-temporary-nontrivial-implicit-constructor': 'struct I{int n;I(int v):n(v){}I(I&&r):n(r.n){}};struct R{I i;};void f(){R r(static_cast<R&&>(R{I(1)}));}',
+        'temporary-call-1531-temporary-nontrivial-implicit-assignment': 'struct I{int n;I&operator=(I&&r){n=r.n;return *this;}};struct R{I i;};void f(R&r){r=R{{1}};}',
+        'temporary-call-1677-temporary-receiver': 'struct R{int n;int get()noexcept{return n;}};bool f(){return noexcept(R{1}.get());}',
+        'temporary-call-1678-temporary-reference': 'int take(const int&n)noexcept{return n;}bool f(){return noexcept(take(1));}',
+        'temporary-call-1853-temporary-receiver': 'struct R{int n;int operator()()const{return n;}};int f(){return R{1}();}',
+        'temporary-call-1854-temporary-reference': 'struct R{int n;};int operator+(const R&a,const R&b){return a.n+b.n;}int f(R&r){return r+R{1};}',
+        'temporary-call-1855-unevaluated-temporary': 'struct R{int n;int operator()()const noexcept{return n;}};bool f(){return noexcept(R{1}());}',
+        'temporary-call-2047-fresh-receiver': 'struct R{int n;operator int()const{return n;}};int f(){return R{1};}',
+        'temporary-call-2053-query-fresh-receiver': 'struct R{operator int()const noexcept{return 1;}};bool f(){return noexcept(static_cast<int>(R{}));}',
+        'temporary-call-2270-temporary-receiver': 'struct R{int n;~R(){}int get(){return n;}};int f(){return R{1}.get();}',
+        'temporary-call-2449-temporary-reference-argument': 'int f(const int&r){return r;} int main(){return f(1);}',
+        'temporary-call-2505-method-temporary-dot': 'struct R{int n;int get()const{return n;}};int f(){return R{1}.get();}',
+        'temporary-call-2506-method-temporary-arrow': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return H{{{1}}}.a->get();}',
+        'temporary-call-2507-method-temporary-arrow-offset': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return (H{{{1}}}.a+0)->get();}',
+        'temporary-call-2508-method-dead-temporary-receiver': 'struct R{int n;int get()const{return n;}};int f(){if(false)return R{1}.get();return 0;}',
+        'temporary-call-2509-method-folded-temporary-receiver': 'struct R{int n;constexpr int get()const{return n;}};static_assert(R{1}.get()==1);',
+        'temporary-call-2523-method-method-temporary-reference-argument': 'struct R{int n;int get(const int&v){return n+v;}};int f(){R r{1};return r.get(2);}',
+        'temporary-call-2524-method-static-temporary-reference-argument': 'struct R{int n;static int get(const int&v){return v;}};int f(){return R::get(2);}',
+        'temporary-call-2526-method-temporary-reverse-arrow-offset': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return (0+H{{{1}}}.a)->get();}',
+        'temporary-call-2546-constructor-temporary-reference-argument': 'struct R{int n;R(const int &v):n(v){}};int f(){R r(1);return r.n;}',
+        'temporary-call-2547-constructor-dead-temporary-reference-argument': 'struct R{int n;R(const int &v):n(v){}};int f(){if(false){R r(1);return r.n;}return 0;}',
+        'temporary-call-2548-constructor-temporary-method-receiver': 'struct R{int n;R(int v):n(v){} int get()const{return n;}};int f(){return R(1).get();}',
+        'temporary-call-2549-constructor-temporary-subobject-receiver': 'struct I{int n;int get()const{return n;}};struct R{I i;R():i{1}{}};int f(){return R().i.get();}',
+        'temporary-call-2550-constructor-temporary-array-receiver': 'struct I{int n;int get()const{return n;}};struct R{I i[1];R():i{{1}}{}};int f(){return (R().i+0)->get();}',
+        'temporary-call-620-temporary-assignment-source': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}',
+        'temporary-call-1198-reference-argument': 'int f(int&&n){return n;}int main(){return f(1);}',
+        'temporary-call-cpp-scalar-reference-argument': 'int f(const int &x){return x;} int main(){return f(42);}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -617,7 +661,6 @@ int main(){
         'volatile-constructor': 'struct R{int n;R(const volatile R&r):n(r.n){}};',
         'volatile-assignment': 'struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};',
         'default-argument': 'struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};',
-        'temporary-assignment-source': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}',
         'temporary-assignment-receiver': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}',
     }
     for name, source in user_copy_rejected.items():
@@ -937,8 +980,6 @@ void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
         'reference-field': 'struct R{int&n;R&operator=(const R&)=default;};',
         'private-field': 'class R{int n;public:R&operator=(const R&)=default;};',
         'base-field': 'struct B{int n;};struct R:B{int m;R&operator=(const R&)=default;};',
-        'temporary-source': 'struct R{int n;R&operator=(const R&)=default;};void f(R&r){r=R{1};}',
-        'temporary-receiver': 'struct R{int n;R&operator=(const R&)=default;};void f(const R&s){R{1}=s;}',
         'raw-builtin': 'void f(int*a,int*b){__builtin_memcpy(a,b,4);}',
         'dead-builtin': 'void f(int*a,int*b){if(false)__builtin_memcpy(a,b,4);}',
         'user-member-builtin': 'struct R{int n[2];R&operator=(const R&s){__builtin_memcpy(n,s.n,sizeof(n));return *this;}};',
@@ -1085,8 +1126,6 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
         'throw-overridden': 'struct R{int n=(throw 1,2);R():n(7){}};',
         'new-default': 'struct R{int*p=new int(1);};',
         'reinterpret-default': 'struct R{int*p=reinterpret_cast<int*>(1);};',
-        'temporary-reference': 'int take(const int&n){return n;}struct R{int n=take(1);};',
-        'temporary-receiver': 'struct A{int n;int get(){return n;}};struct R{int n=A{1}.get();};',
         'template-default': 'template<class T>struct R{T n=1;};',
         'excessive-array': 'struct R{int n[65537]={1};};',
         'address-of-member': 'struct R{int n=1;int R::*p=&R::n;};',
@@ -1195,7 +1234,6 @@ int ordered(R&r,int&trace){return receiver(r,trace).set(argument(trace));}
         'scalar-temporary': 'void f(){int&&r=1;}',
         'scalar-cast-temporary': 'void f(){int&&r=static_cast<int&&>(1);}',
         'const-scalar-temporary': 'void f(){const int&&r=1;}',
-        'reference-argument': 'int f(int&&n){return n;}int main(){return f(1);}',
         'reference-return': 'int&&f(){return 1;}',
         'record-temporary': 'struct R{int n;};void f(){R&&r=R{1};}',
         'cast-record-temporary': 'struct R{int n;};void f(){R&&r=static_cast<R&&>(R{1});}',
@@ -1203,9 +1241,6 @@ int ordered(R&r,int&trace){return receiver(r,trace).set(argument(trace));}
         'temporary-array-element': 'struct R{int a[2];};void f(){int&&r=R{{1,2}}.a[0];}',
         'temporary-conditional': 'struct R{int n;};void f(bool b,R&live){R&&r=b?static_cast<R&&>(live):R{1};}',
         'temporary-comma': 'struct R{int n;};void f(){int n=0;R&&r=(++n,R{1});}',
-        'temporary-method': 'struct R{int n;int get()&&{return n;}};int f(){return R{1}.get();}',
-        'temporary-cast-method': 'struct R{int n;int get()&&{return n;}};int f(){return static_cast<R&&>(R{1}).get();}',
-        'temporary-callee-argument': 'struct R{int n;};R&&id(R&&r){return static_cast<R&&>(r);}void f(){R&&r=id(R{1});}',
         'volatile-reference': 'int f(volatile int&&n){return n;}',
         'reference-field': 'struct R{int&&n;};',
         'global-reference': 'int n;int&&r=static_cast<int&&>(n);',
@@ -1338,9 +1373,6 @@ R parameterResult(R source){return source;}
         'volatile-assignment-source': 'struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};',
         'volatile-assignment-receiver': 'struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};',
         'attribute': 'struct R{int n;[[deprecated]] R(R&&r):n(r.n){}};',
-        'temporary-constructor-source': 'struct R{int n;R(int v):n(v){}R(R&&r):n(r.n){}};void f(){R r(static_cast<R&&>(R(1)));}',
-        'temporary-assignment-source': 'struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};void f(R&r){r=R{1};}',
-        'temporary-assignment-receiver': 'struct R{int n;R&operator=(R&&r){n=r.n;return *this;}};void f(R&r){R{1}=static_cast<R&&>(r);}',
         'base': 'struct B{int n;};struct R:B{int value;R(R&&r):value(r.value){}};',
     }
     for name, source in user_move_rejected.items():
@@ -1521,14 +1553,7 @@ void consume(Box&source){take(static_cast<Box&&>(source));}
         'const-field': 'struct R{const int n;R(R&&)=default;};',
         'private-field': 'class R{int n;public:R(R&&)=default;};',
         'base': 'struct B{int n;};struct R:B{int value;R(R&&)=default;};',
-        'temporary-defaulted-constructor': 'struct R{int n;R(R&&)=default;};void f(){R r(static_cast<R&&>(R{1}));}',
-        'temporary-defaulted-assignment-source': 'struct R{int n;R&operator=(R&&)=default;};void f(R&r){r=R{1};}',
-        'temporary-defaulted-assignment-receiver': 'struct R{int n;R&operator=(R&&)=default;};void f(R&r){R{1}=static_cast<R&&>(r);}',
-        'temporary-implicit-member-source': 'struct R{int n;};void f(R&r){r.operator=(R{1});}',
-        'temporary-implicit-member-receiver': 'struct R{int n;};void f(R&r){R{1}.operator=(static_cast<R&&>(r));}',
         'temporary-ordinary-reference': 'struct R{int n;};void f(){R&&r=R{1};}',
-        'temporary-nontrivial-implicit-constructor': 'struct I{int n;I(int v):n(v){}I(I&&r):n(r.n){}};struct R{I i;};void f(){R r(static_cast<R&&>(R{I(1)}));}',
-        'temporary-nontrivial-implicit-assignment': 'struct I{int n;I&operator=(I&&r){n=r.n;return *this;}};struct R{I i;};void f(R&r){r=R{{1}};}',
         'source-builtin': 'struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}',
         'lambda-array': 'int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}',
         'expansion': 'struct I{int n;I(I&&s):n(s.n){}};struct R{I items[65536];R(R&&)=default;};R f(R&&s){return static_cast<R&&>(s);}',
@@ -1674,8 +1699,6 @@ Leaf&selectedAssignment(Leaf&a,Leaf&b){return a=static_cast<Leaf&&>(b);}
         'catch-body': 'int f()noexcept(false){try{return 1;}catch(...){return 2;}}',
         'vendor-nothrow': '__attribute__((nothrow)) int f(){return 1;}',
         'dependent-spec': 'template<class T>int f(T&t)noexcept(noexcept(t.get())){return 1;}',
-        'temporary-receiver': 'struct R{int n;int get()noexcept{return n;}};bool f(){return noexcept(R{1}.get());}',
-        'temporary-reference': 'int take(const int&n)noexcept{return n;}bool f(){return noexcept(take(1));}',
         'explicit-destruction-query': 'struct R{int n;~R()noexcept{}};bool f(R&r){return noexcept(r.~R());}',
     }
     for name, source in noexcept_rejected.items():
@@ -1850,9 +1873,6 @@ P explicitValue(P&a,P&b){return operator-=(a,b);}
         'friend': 'struct R{int n;friend int operator+(const R&r,int v){return r.n+v;}};',
         'member-pointer': 'struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}',
         'free-pointer': 'struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}',
-        'temporary-receiver': 'struct R{int n;int operator()()const{return n;}};int f(){return R{1}();}',
-        'temporary-reference': 'struct R{int n;};int operator+(const R&a,const R&b){return a.n+b.n;}int f(R&r){return r+R{1};}',
-        'unevaluated-temporary': 'struct R{int n;int operator()()const noexcept{return n;}};bool f(){return noexcept(R{1}());}',
         'new-member': 'using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}};',
         'delete-member': 'struct R{int n;static void operator delete(void*){}};',
         'new-free': 'using Size=decltype(sizeof(0));void*operator new(Size){return nullptr;}',
@@ -2044,13 +2064,11 @@ bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
         'template': 'struct R{template<class T>operator T()const{return T{};}};',
         'member-address': 'struct R{operator int()const{return 1;}};auto f(){return &R::operator int;}',
         'function-pointer': 'using F=int(*)();int g(){return 1;}struct R{operator F()const{return g;}};',
-        'fresh-receiver': 'struct R{int n;operator int()const{return n;}};int f(){return R{1};}',
         'fresh-reference': 'struct R{int n;operator int()const{return n;}};int f(){R r{1};const int&n=r;return n;}',
         'fresh-record-reference': 'struct T{int n;};struct R{operator T()const{return {1};}};int f(){R r;const T&t=r;return t.n;}',
         'unused-throw': 'struct R{operator int()const{throw 1;}};',
         'query-throw': 'struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}',
         'folded-float': 'struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,"value");',
-        'query-fresh-receiver': 'struct R{operator int()const noexcept{return 1;}};bool f(){return noexcept(static_cast<int>(R{}));}',
         'default-argument': 'int g(int n=1){return n;}struct R{operator int()const{return g();}};',
         'virtual': 'struct R{virtual operator int()const{return 1;}};',
     }
@@ -2074,6 +2092,162 @@ bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
         check("v2-" + 'conversion_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
     check("v1-conversion-function", "struct R{int n;operator int()const{return n;}};", "TR0201")
     check("v1-explicit-conversion", "struct R{explicit operator bool()const{return true;}};bool f(R&r){return static_cast<bool>(r);}", "TR0201")
+    temporary_call_source = """struct R {
+ int n;
+ R(int value):n(value){}
+ ~R(){}
+ int get(const int&v)const{return n+v;}
+ int&ref()&&{return n;}
+ R make()&&{return R(n+1);}
+ explicit operator bool()const noexcept{return n!=0;}
+ R&operator+=(const R&r){n+=r.n;return *this;}
+};
+int number(const int&n){return n;}
+int take(const R&r){return r.n;}
+int scalar(){return number(7);}
+int receiver(){return R(1).get(2);}
+int argument(){return take(R(3));}
+int alias(){return number(R(4).ref());}
+R result(){return R(5).make();}
+void assignment(){R(1)+=R(2);}
+bool logical(){return R(0)&&R(1);}
+void loop(int count){for(int i=0;i<count;++i)R(i).get(1);}
+struct H{R array[2];};
+int subobject(){return (H{{R(6),R(7)}}.array+1)->get(2);}
+bool query(){return noexcept(R(1).get(2));}
+"""
+    temporary_calls = check("v2-full-expression-temporary-calls-protocol", temporary_call_source, profile="cpp-core-v2")
+    tc_functions = {f["name"]: f for f in temporary_calls["functions"]}
+
+    def tc_line(prefix):
+        matches = [i for i, line in enumerate(temporary_call_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def tc_function(prefix):
+        matches = [f for f in temporary_calls["functions"] if f["loc"]["line"] == tc_line(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    tc_records = {r["loc"]["line"]: r["id"] for r in temporary_calls["records"]}
+    rid = tc_records[tc_line("struct R {")]
+    hid = tc_records[tc_line("struct H{")]
+    constructor = tc_function(" R(int value)")["name"]
+    get_name = tc_function(" int get(")["name"]
+    number_name = tc_function("int number(")["name"]
+    ref_name = tc_function(" int&ref(")["name"]
+    make_name = tc_function(" R make(")["name"]
+    scalar = tc_function("int scalar(")
+    calls = gc_calls(scalar)
+    assert len(calls) == 1 and calls[0]["callee"] == number_name
+    scalar_object = storage_pointer_object(scalar, calls[0]["args"][0])
+    assert scalar_object[0] == "object" and any(v["name"] == scalar_object[1] and v["type"] == "int" for v in scalar["locals"])
+    values = [n["value"] for n in scalar["body"] if n["op"] == "assign"
+              and n["target"].get("name") == scalar_object[1]]
+    assert len(values) == 1 and gc_identity(scalar, values[0]) == 7
+    for prefix, callee in (("int receiver(", get_name), ("int argument(", tc_function("int take(")["name"])):
+        function = tc_function(prefix)
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == [constructor, callee, rid+"_destroy"], function
+        objects = [v for v in function["locals"] if v["type"] == rid]
+        assert len(objects) == 1
+        assert [storage_pointer_object(function, c["args"][0]) for c in calls] == [("object", objects[0]["name"])] * 3
+    function = tc_function("int alias(")
+    calls = gc_calls(function)
+    assert [c["callee"] for c in calls] == [constructor, ref_name, number_name, rid+"_destroy"], function
+    assert uc_reference_origin(function, calls[2]["args"][0]) == ref_name
+    assert storage_pointer_object(function, calls[0]["args"][0]) == storage_pointer_object(function, calls[3]["args"][0])
+    result = tc_function("R result(")
+    calls = gc_calls(result)
+    assert [c["callee"] for c in calls] == [constructor, make_name, rid+"_destroy"], result
+    assert storage_pointer_object(result, calls[1]["args"][0]) == ("parameter", result["params"][0]["name"])
+    receiver_object = storage_pointer_object(result, calls[0]["args"][0])
+    assert receiver_object[0] == "object"
+    assert storage_pointer_object(result, calls[1]["args"][1]) == receiver_object
+    assert storage_pointer_object(result, calls[2]["args"][0]) == receiver_object
+    function = tc_function("void assignment(")
+    calls = gc_calls(function)
+    assert [c["callee"] for c in calls] == [constructor, constructor, tc_function(" R&operator+=(")["name"], rid+"_destroy", rid+"_destroy"], function
+    assert [gc_identity(function, c["args"][1]) for c in calls[:2]] == [2, 1]
+    rhs, lhs = [storage_pointer_object(function, c["args"][0]) for c in calls[:2]]
+    assert rhs != lhs
+    assert [storage_pointer_object(function, arg) for arg in calls[2]["args"]] == [lhs, rhs]
+    assert [storage_pointer_object(function, c["args"][0]) for c in calls[3:]] == [lhs, rhs]
+    function = tc_function("bool logical(")
+    calls = gc_calls(function)
+    bool_name = tc_function(" explicit operator bool(")["name"]
+    assert [c["callee"] for c in calls] == [constructor, bool_name, constructor, bool_name, rid+"_destroy", rid+"_destroy"], function
+    assert [storage_pointer_object(function, c["args"][0]) for c in calls[-2:]] == [
+        storage_pointer_object(function, calls[i]["args"][0]) for i in (2, 0)]
+    positions = [i for i, n in enumerate(function["body"]) if n["op"] == "call"]
+    assert any(n["op"] == "branch" for n in function["body"][positions[1]+1:positions[2]]), function
+    # Each conditional owner starts false, becomes live after construction and
+    # is cleared in its guarded cleanup. A skipped RHS keeps its flag false.
+    for index in positions[-2:]:
+        labels = [n["label"] for n in function["body"][:index] if n["op"] == "label"]
+        guards = [n for n in function["body"][:index] if n["op"] == "branch" and n["true"] == labels[-1]]
+        assert len(guards) == 1 and guards[0]["condition"]["kind"] == "var", function
+        flag = guards[0]["condition"]["name"]
+        values = [n["value"] for n in function["body"] if n["op"] == "assign" and n["target"].get("name") == flag]
+        assert [v["value"] for v in values] == [False, True, False], values
+    loop = tc_function("void loop(")
+    assert [c["callee"] for c in gc_calls(loop)] == [constructor, get_name, rid+"_destroy"], loop
+    assert len([v for v in loop["locals"] if v["type"] == rid]) == 1
+    subobject = tc_function("int subobject(")
+    calls = gc_calls(subobject)
+    assert [c["callee"] for c in calls] == [constructor, constructor, get_name, hid+"_destroy"], subobject
+    assert len([v for v in subobject["locals"] if v["type"] == hid]) == 1
+    assert not any(v["type"] == rid for v in subobject["locals"]), subobject
+    assert [c["callee"] for c in gc_calls(tc_functions[hid+"_destroy"])] == [rid+"_destroy", rid+"_destroy"]
+    query = tc_function("bool query(")
+    assert not gc_calls(query) and not any(v["type"] in tc_records.values() for v in query["locals"]), query
+    values = [n["value"] for n in query["body"] if n["op"] == "return"]
+    assert len(values) == 1 and nq_constant(query, values[0]) is False
+    for function in temporary_calls["functions"]:
+        for call in gc_calls(function):
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in tc_functions[call["callee"]]["params"]], call
+    with tempfile.TemporaryDirectory(prefix="neverc-temporary-calls-relocated-") as temp:
+        relocated = check("temporary-calls-relocated", temporary_call_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == temporary_calls, "temporary-call identities depend on the absolute root"
+
+    temporary_call_rejected = {
+        'scalar-extension': 'int f(){const int&r=1;return r;}',
+        'scalar-rvalue-extension': 'int f(){int&&r=1;return r;}',
+        'record-extension': 'struct R{int n;};int f(){const R&r=R{1};return r.n;}',
+        'record-rvalue-extension': 'struct R{int n;};int f(){R&&r=R{1};return r.n;}',
+        'member-extension': 'struct R{int n;};int f(){const int&r=R{1}.n;return r;}',
+        'array-member-extension': 'struct R{int a[2];};int f(){const int&r=R{{1,2}}.a[0];return r;}',
+        'converted-extension': 'struct R{operator int()const{return 1;}};int f(){R r;const int&n=r;return n;}',
+        'fresh-return': 'const int&f(){return 1;}',
+        'fresh-record-return': 'struct R{int n;};const R&f(){return R{1};}',
+        'static-extension': 'int f(){static const int&r=1;return r;}',
+        'global-extension': 'const int&r=1;',
+        'array-argument': 'using A=int[2];void take(const int(&)[2]){}void f(){take(A{1,2});}',
+        'dead-array-argument': 'using A=int[2];void take(const int(&)[2]){}void f(){if(false)take(A{1,2});}',
+        'query-array-argument': 'using A=int[2];void take(const int(&)[2])noexcept{}bool f(){return noexcept(take(A{1,2}));}',
+        'query-array-expression': 'using A=int[2];bool f(){return noexcept(A{1,2}[0]);}',
+        'unused-throw': 'struct R{int get()const{throw 1;}};int f(){return R{}.get();}',
+        'query-float': 'struct R{double get()const noexcept{return 1.0;}};bool f(){return noexcept(R{}.get());}',
+    }
+    for name, source in temporary_call_rejected.items():
+        check("v2-" + 'temporary_call_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
+    temporary_call_invalid = {
+        'mutable-reference': 'void take(int&){}void f(){take(1);}',
+        'mutable-record-reference': 'struct R{int n;};void take(R&){}void f(){take(R{1});}',
+        'lvalue-qualified': 'struct R{int get()&{return 1;}};int f(){return R{}.get();}',
+        'deleted-move': 'struct R{R(){}R(R&&)=delete;};void f(){R r(static_cast<R&&>(R{}));}',
+    }
+    for name, source in temporary_call_invalid.items():
+        check("v2-" + 'temporary_call_invalid' + "-" + name, source, "TR0202", profile="cpp-core-v2")
+    temporary_call_missing = {
+        'temporary-receiver': 'struct R{int get()const;};int f(){return R{}.get();}',
+        'temporary-argument': 'int take(const int&);int f(){return take(1);}',
+    }
+    for name, source in temporary_call_missing.items():
+        check("v2-" + 'temporary_call_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
+    check("v1-temporary-scalar-call", "int take(const int&n){return n;}int f(){return take(1);}", "TR0201")
+    check("v1-temporary-method-call", "struct R{int get()const{return 1;}};int f(){return R{}.get();}", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -2267,7 +2441,6 @@ int main(){int value=0;R result=make(&value);return consume(R(&value,6));}
         'static-local': 'struct R{int n;~R(){}};int f(){static R r{1};return r.n;}',
         'thread-local': 'struct R{int n;~R(){}};int f(){thread_local R r{1};return r.n;}',
         'reference-extension': 'struct R{int n;~R(){}};int f(){const R&r=R{1};return r.n;}',
-        'temporary-receiver': 'struct R{int n;~R(){}int get(){return n;}};int f(){return R{1}.get();}',
         'allocation': 'struct R{int n;~R(){}};R*f(){return new R{1};}',
         'delete': 'struct R{int n;~R(){}};void f(R*p){delete p;}',
         'unwinding': 'struct R{int n;~R(){}};void f(){R r{1};throw 7;}',
@@ -2446,7 +2619,6 @@ int main() {
         "dead-temporary-reference": "int f(){if(false){const int&r=1;} return 0;}",
         "conversion-temporary": "int f(){int x=1; const unsigned int&r=x; return r;}",
         "temporary-subobject": "struct R{int x;}; int f(){const int&r=R{1}.x; return r;}",
-        "temporary-reference-argument": "int f(const int&r){return r;} int main(){return f(1);}",
         "reference-field": "struct R{int&r;};",
         "pointer-global": "int*const p=nullptr;",
         "reference-global": "const int x=1; const int&r=x;",
@@ -2502,11 +2674,6 @@ int main() {
         "dead-temporary-offset-reference": "struct R{int a[2];};int f(){if(false){const int&r=*(R{{1,2}}.a+0);}return 0;}",
     })
     v2_rejections.update({
-        'method-temporary-dot': 'struct R{int n;int get()const{return n;}};int f(){return R{1}.get();}',
-        'method-temporary-arrow': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return H{{{1}}}.a->get();}',
-        'method-temporary-arrow-offset': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return (H{{{1}}}.a+0)->get();}',
-        'method-dead-temporary-receiver': 'struct R{int n;int get()const{return n;}};int f(){if(false)return R{1}.get();return 0;}',
-        'method-folded-temporary-receiver': 'struct R{int n;constexpr int get()const{return n;}};static_assert(R{1}.get()==1);',
         'method-folded-static-function-value': 'struct R{int n;static int get(){return 1;}};static_assert((R::get,true));',
         'method-folded-parenthesized-static-value': 'struct R{int n;static int get(){return 1;}};static_assert(((R::get),true));',
         'method-method-pointer': 'struct R{int n;int get(){return n;}};auto f(){return &R::get;}',
@@ -2520,10 +2687,7 @@ int main() {
         'method-static-data': 'struct R{int n;static int value;int get(){return value;}};int R::value=1;',
         'method-default-argument': 'struct R{int n;int get(int v=1){return n+v;}};int f(){R r{1};return r.get();}',
         'method-constant-static-data': 'struct R{int n;static const int value=1;int get(){return value;}};',
-        'method-method-temporary-reference-argument': 'struct R{int n;int get(const int&v){return n+v;}};int f(){R r{1};return r.get(2);}',
-        'method-static-temporary-reference-argument': 'struct R{int n;static int get(const int&v){return v;}};int f(){return R::get(2);}',
         'method-method-comma-callee': 'struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}',
-        'method-temporary-reverse-arrow-offset': 'struct E{int n;int get()const{return n;}};struct H{E a[1];};int f(){return (0+H{{{1}}}.a)->get();}',
     })
     v2_rejections.update({
         'constructor-delegating': 'struct R{int n;R():R(1){} R(int v):n(v){}};',
@@ -2543,11 +2707,6 @@ int main() {
         'constructor-union': 'union R{int n;unsigned u;R():n(1){}};',
         'constructor-bitfield': 'struct R{unsigned n:3;R():n(1){}};',
         'constructor-static-data': 'struct R{int n;static int value;R():n(1){}};int R::value=1;',
-        'constructor-temporary-reference-argument': 'struct R{int n;R(const int &v):n(v){}};int f(){R r(1);return r.n;}',
-        'constructor-dead-temporary-reference-argument': 'struct R{int n;R(const int &v):n(v){}};int f(){if(false){R r(1);return r.n;}return 0;}',
-        'constructor-temporary-method-receiver': 'struct R{int n;R(int v):n(v){} int get()const{return n;}};int f(){return R(1).get();}',
-        'constructor-temporary-subobject-receiver': 'struct I{int n;int get()const{return n;}};struct R{I i;R():i{1}{}};int f(){return R().i.get();}',
-        'constructor-temporary-array-receiver': 'struct I{int n;int get()const{return n;}};struct R{I i[1];R():i{{1}}{}};int f(){return (R().i+0)->get();}',
         'constructor-folded-unsupported-initializer': 'struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;',
         'constructor-folded-throw-body': 'struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);',
         'constructor-dynamic-global': 'struct R{int n;R():n(1){}};R global;',

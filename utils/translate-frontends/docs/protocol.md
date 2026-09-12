@@ -125,7 +125,7 @@ source expression is an xvalue. Conditional glvalues join pointers and no record
 copy is introduced merely to change value category.
 
 Ordinary rvalue-qualified methods retain the receiver-before-arguments convention.
-Bindings to fresh temporaries remain rejected by the source provenance checks;
+Full-expression temporary arguments/receivers follow the separate contract below;
 reference uses add no cleanup owner. Protocol major 1 remains unchanged. See the
 [live-object rvalue reference contract](cpp-core-v2.md#live-object-rvalue-references).
 
@@ -167,6 +167,23 @@ branches. No conversion body runs for noexcept queries. Conversion identities
 remain distinct even when const/ref overloads normalize to identical signatures.
 No new wire expression or opcode is needed. See the
 [source contract](cpp-core-v2.md#user-defined-conversion-functions).
+
+## Core v2 temporary call storage
+
+Materialized full-expression scalar/record temporaries use actual locals and
+initialization instructions. Reference arguments receive their ptr/cptr addresses;
+temporary receivers use the same object pointer as their constructor and cleanup.
+Subobjects and reference results keep aliases without another owning object.
+Object results retain the caller's hidden destination before the receiver.
+
+The frontend verifies materialization duration and shape before erasing or
+lowering an operand. Each evaluation initializes its own storage, including
+repeated semantic array fillers. Existing live flags guard cleanup on conditional
+paths and reset across loop iterations. Caller-owned temporaries are destroyed
+in reverse completion order after the selected call and callee-owned parameters;
+no call argument transfers a temporary's ownership merely by being a reference.
+No wire opcode or additional lifetime flag is needed. See the
+[source contract](cpp-core-v2.md#full-expression-temporary-calls).
 
 ## Core v2 noexcept queries
 
@@ -273,7 +290,7 @@ by-value parameter/result storage conventions apply. No move opcode, foreign ABI
 record snapshot or implicit ownership transfer is introduced. A source object
 remains alive after moving, and the existing complete-object owners retain normal
 cleanup. Protocol major 1 is unchanged. Generated/defaulted moves follow the
-contract below; general fresh temporary reference binding remains excluded. See the
+contract below; general reference lifetime extension remains excluded. See the
 [user move contract](cpp-core-v2.md#user-defined-move-operations).
 
 ## Core v2 generated move calls

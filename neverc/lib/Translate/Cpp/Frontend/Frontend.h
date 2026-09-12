@@ -17,6 +17,7 @@ namespace clang {
 class CallExpr;
 class CastExpr;
 class CXXConstructExpr;
+class MaterializeTemporaryExpr;
 class Expr;
 }
 
@@ -89,6 +90,8 @@ std::optional<GeneratedArrayAssignment> generatedArrayAssignment(
     const clang::CallExpr *Call, const clang::CXXMethodDecl *Owner,
     clang::ASTContext &Context);
 bool callableMethod(const clang::CXXMethodDecl *Method);
+bool fullExpressionTemporary(const clang::MaterializeTemporaryExpr *Temporary,
+                             clang::ASTContext &Context);
 bool ordinaryConstructor(const clang::CXXConstructorDecl *Constructor);
 const clang::CXXConstructExpr *constructorConversion(const clang::CastExpr *Cast,
                                                    clang::ASTContext &Context);

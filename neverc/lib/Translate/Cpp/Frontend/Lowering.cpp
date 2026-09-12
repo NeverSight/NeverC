@@ -269,10 +269,8 @@ class FunctionLowering {
           reject(L, "user conversion", "Unsupported reference conversion wrapper.");
         return call(Selected);
       }
-      if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E);
-          M && M->getType()->isRecordType()) {
-        return materialize(M->getSubExpr(), L);
-      }
+      if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E))
+        return materializeTemporary(M, L);
       if (const auto *Index = dyn_cast<ArraySubscriptExpr>(E)) {
         // C++17 sequences the syntactic left operand first, even for i[p].
         auto Left = expression(Index->getLHS());
@@ -676,9 +674,8 @@ class FunctionLowering {
                         {"loc", A.loc(L)}};
     }
     if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(E))
-      return A.S.coreV2() && M->getType()->isRecordType()
-                 ? materialize(M->getSubExpr(), L)
-                 : expression(M->getSubExpr());
+      return A.S.coreV2() ? materializeTemporary(M, L)
+                          : expression(M->getSubExpr());
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
       return expression(W->getSubExpr());
     if (const auto *B = dyn_cast<CXXBindTemporaryExpr>(E))
@@ -1010,6 +1007,14 @@ class FunctionLowering {
       Nodes += generatedNodes(*Arg.getAsObject());
     A.chargeExpansion(Nodes, L);
   }
+  void checkTemporary(const MaterializeTemporaryExpr *M, SourceLocation L) {
+    if (!fullExpressionTemporary(M, A.Context) || FullExpressions.empty())
+      reject(L, "temporary lifetime", "A checked enclosing full-expression is required.");
+  }
+  Expression materializeTemporary(const MaterializeTemporaryExpr *M, SourceLocation L) {
+    checkTemporary(M, L);
+    return materialize(M->getSubExpr(), L);
+  }
   Expression materialize(const Expr *Init, SourceLocation L) {
     // One addressable destination per evaluation. Reusing an AST node (for
     // example an array filler) must not reuse a previously constructed object.
@@ -1136,6 +1141,7 @@ class FunctionLowering {
         return;
       }
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(Init)) {
+        checkTemporary(M, L);
         initialize(std::move(Place), M->getSubExpr(), L);
         return;
       }
