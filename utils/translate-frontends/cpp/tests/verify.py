@@ -443,6 +443,7 @@ def main():
         'temporary-call-2550-constructor-temporary-array-receiver': 'struct I{int n;int get()const{return n;}};struct R{I i[1];R():i{{1}}{}};int f(){return (R().i+0)->get();}',
         'temporary-call-620-temporary-assignment-source': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);r=R(2);}',
         'temporary-call-1198-reference-argument': 'int f(int&&n){return n;}int main(){return f(1);}',
+        'temporary-call-user-copy-receiver': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}',
         'temporary-call-cpp-scalar-reference-argument': 'int f(const int &x){return x;} int main(){return f(42);}',
     })
     for name, source in core_v2.items():
@@ -661,7 +662,6 @@ int main(){
         'volatile-constructor': 'struct R{int n;R(const volatile R&r):n(r.n){}};',
         'volatile-assignment': 'struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};',
         'default-argument': 'struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};',
-        'temporary-assignment-receiver': 'struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}',
     }
     for name, source in user_copy_rejected.items():
         check("v2-user-copy-reject-" + name, source, "TR0201", profile="cpp-core-v2")

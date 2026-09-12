@@ -1608,7 +1608,6 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
       {"volatile-constructor", "struct R{int n;R(const volatile R&r):n(r.n){}};"},
       {"volatile-assignment", "struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};"},
       {"default-argument", "struct R{int n;R(const R&r,int extra=0):n(r.n+extra){}};"},
-      {"temporary-assignment-receiver", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -2220,6 +2219,7 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2TemporaryCallsAcceptFullExpressionBindings) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"user-copy-temporary-receiver", "struct R{int n;R(int v):n(v){}R&operator=(const R&r){n=r.n;return *this;}};void f(){R r(1);R(2)=r;}"},
       {"940-temporary-source", "struct R{int n;R&operator=(const R&)=default;};void f(R&r){r=R{1};}"},
       {"941-temporary-receiver", "struct R{int n;R&operator=(const R&)=default;};void f(const R&s){R{1}=s;}"},
       {"1088-temporary-reference", "int take(const int&n){return n;}struct R{int n=take(1);};"},
