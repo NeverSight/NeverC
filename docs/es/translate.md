@@ -49,6 +49,8 @@ Core v2 también admite la asignación por copia implícita o explícitamente de
 
 Core v2 admite inicializadores predeterminados para los campos permitidos, con acceso a miembros anteriores, llamadas ordinarias, registros anidados y arrays. El valor seleccionado usa su objeto real como `this`; las cláusulas explícitas de agregado conservan el `this` del llamador. La inicialización explícita sustituye el valor predeterminado del miembro. La copia y asignación implícitas/default no lo repiten; un constructor de copia del usuario puede seleccionarlo para miembros omitidos. La inicialización de miembros del constructor y la de agregados conservan sus respectivos límites de destrucción de temporales. Movimientos, plantillas y STL completo siguen en desarrollo.
 
+Core v2 admite referencias rvalue a objetos ya vivos: alias de escalares, punteros, registros y arrays, parámetros y retornos por referencia, xvalues condicionales y métodos ordinarios cualificados `&&`. `static_cast<R&&>(live)` conserva el mismo objeto; una variable de referencia rvalue con nombre sigue siendo lvalue. Sobrecargas y copias existentes siguen la selección de Clang. Las referencias no crean responsables adicionales de destrucción. La vinculación de nuevos temporales, la extensión de su vida y los movimientos aún no implementados quedan fuera de esta etapa.
+
 ## Proyectos de varios archivos
 
 Seleccione explícitamente las unidades de traducción en una base de datos de compilación y especifique el directorio raíz del proyecto. El frontend integrado analiza cada unidad por separado; la fusión verifica definiciones, enlace, tipos compartidos y el cumplimiento de la regla de una sola definición (ODR) mediante comprobaciones conservadoras.

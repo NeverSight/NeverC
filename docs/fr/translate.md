@@ -49,6 +49,8 @@ Core v2 prend aussi en charge l’affectation par copie implicite ou expliciteme
 
 Core v2 prend en charge les initialiseurs par défaut des champs admis, avec accès aux membres précédents, appels ordinaires, records imbriqués et tableaux. Le défaut sélectionné utilise son objet réel comme `this` ; les clauses explicites d’agrégat conservent le `this` de l’appelant. Une initialisation explicite remplace le défaut du membre. Copie et affectation implicites/default ne relancent pas les défauts ; un constructeur de copie utilisateur peut les sélectionner pour les membres omis. Initialisation des membres du constructeur et initialisation d’agrégat conservent leurs limites respectives de destruction des temporaires. Déplacements, modèles et STL complète restent en développement.
 
+Core v2 accepte les références rvalue vers des objets déjà vivants : alias de scalaires, pointeurs, records et tableaux, paramètres et retours par référence, xvalues conditionnelles et méthodes ordinaires qualifiées `&&`. `static_cast<R&&>(live)` conserve le même objet ; une variable de référence rvalue nommée reste une lvalue. La surcharge et les copies existantes suivent le choix de Clang. Les références ne créent aucune responsabilité de destruction supplémentaire. Liaison de nouveaux temporaires, prolongation de durée de vie et déplacements non implémentés restent hors de cette étape.
+
 ## Projets à plusieurs fichiers
 
 Sélectionnez explicitement les unités de traduction dans une base de données de compilation et indiquez le répertoire racine du projet. Le frontend intégré analyse chaque unité séparément ; la fusion vérifie les définitions, la liaison, les types partagés et le respect de la règle de définition unique (ODR) de façon conservatrice.

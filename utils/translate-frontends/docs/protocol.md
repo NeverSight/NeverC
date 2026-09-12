@@ -114,6 +114,21 @@ inspection and layout verification; unevaluated operands produce no effects.
 The [core v2 contract](cpp-core-v2.md#integer-widths-characters-and-size-queries)
 defines the full admitted boundary. V1 profiles retain their scalar contracts.
 
+## Core v2 live rvalue references
+
+Supported live-object rvalue references use the same `ptr:`/`cptr:` carriers as
+lvalue references. Source categories and cv/ref overload selection remain in the
+canonical function identity before normalization. No additional wire type,
+reference opcode or ownership flag is introduced. Reference parameters/results
+retain addresses; the result of a reference-returning call is a place even if its
+source expression is an xvalue. Conditional glvalues join pointers and no record
+copy is introduced merely to change value category.
+
+Ordinary rvalue-qualified methods retain the receiver-before-arguments convention.
+Bindings to fresh temporaries remain rejected by the source provenance checks;
+reference uses add no cleanup owner. Protocol major 1 remains unchanged. See the
+[live-object rvalue reference contract](cpp-core-v2.md#live-object-rvalue-references).
+
 ## Core v2 pointer arithmetic
 
 Typed `binary` `+`/`-` nodes admit complete-object pointers and explicitly

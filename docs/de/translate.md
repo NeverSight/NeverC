@@ -49,6 +49,8 @@ Core v2 unterstützt auch implizite und explizit mit default definierte Kopierzu
 
 Core v2 unterstützt Standard-Member-Initialisierer zugelassener Felder, einschließlich Zugriff auf frühere Member, gewöhnlicher Aufrufe, verschachtelter Records und Arrays. Das ausgewählte Default verwendet das tatsächliche Objekt als `this`; explizite Aggregatklammern behalten das `this` des Aufrufers. Explizite Initialisierung ersetzt das jeweilige Default. Implizites/defaulted Kopieren und Zuweisen wiederholt keine Defaults; ein benutzerdefinierter Kopierkonstruktor kann sie für ausgelassene Member auswählen. Konstruktor-Member und Aggregate behalten ihre jeweiligen Grenzen für die Zerstörung temporärer Objekte. Move-Operationen, Templates und die vollständige STL bleiben in Entwicklung.
 
+Core v2 unterstützt Rvalue-Referenzen auf bereits lebende Objekte: Skalar-, Zeiger-, Record- und Array-Aliase, Referenzparameter und -rückgaben, bedingte Xvalues sowie gewöhnliche `&&`-qualifizierte Methoden. `static_cast<R&&>(live)` erhält dasselbe Objekt; benannte Rvalue-Referenzvariablen bleiben Lvalues. Überladungen und bestehendes Kopierverhalten folgen Clangs Auswahl. Referenzen erzeugen keine zusätzliche Zerstörungsverantwortung. Bindung neuer temporärer Objekte, Lebensdauerverlängerung und noch nicht implementierte Move-Operationen bleiben außerhalb dieses Schritts.
+
 ## Projekte mit mehreren Dateien
 
 Wählen Sie Übersetzungseinheiten ausdrücklich aus einer Kompilierungsdatenbank aus und geben Sie das Projektstammverzeichnis an. Das integrierte Frontend analysiert jede Einheit einzeln; die Zusammenführung prüft Definitionen, Bindung, gemeinsame Typen und die Einhaltung der Ein-Definitions-Regel (ODR) anhand konservativer Prüfungen.

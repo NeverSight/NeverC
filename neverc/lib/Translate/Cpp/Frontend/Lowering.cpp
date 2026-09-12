@@ -283,10 +283,12 @@ class FunctionLowering {
         if (U->isIncrementDecrementOp() && !U->isPostfix())
           return expression(U);
       }
-      if (const auto *C = dyn_cast<ConditionalOperator>(E); C && C->isLValue()) {
+      if (const auto *C = dyn_cast<ConditionalOperator>(E); C && C->isGLValue()) {
         auto Condition = expression(C->getCond());
         auto Yes = labelName(), No = labelName(), End = labelName();
-        auto Reference = A.Context.getLValueReferenceType(E->getType());
+        auto Reference = C->isXValue()
+                             ? A.Context.getRValueReferenceType(E->getType())
+                             : A.Context.getLValueReferenceType(E->getType());
         auto Result = temporary(type(Reference, L), L);
         branch(std::move(Condition), Yes, No, L, C->getCond());
         label(Yes, L);
@@ -306,12 +308,11 @@ class FunctionLowering {
         if (B->isAssignmentOp())
           return expression(B);
       }
-      if (const auto *Call = dyn_cast<CallExpr>(E); Call && Call->isLValue())
+      if (const auto *Call = dyn_cast<CallExpr>(E); Call && Call->isGLValue())
         return expression(Call);
     }
-    reject(E->getExprLoc(), "lvalue",
-           "Only direct scalar/aggregate storage and field lvalues are "
-           "supported.");
+    reject(E->getExprLoc(), "object storage",
+           "Only admitted scalar/aggregate objects and subobject glvalues are supported.");
   }
   Expression project(const Expr *Base, std::vector<const FieldDecl *> Fields,
                      llvm::StringRef ResultType, SourceLocation L) {
@@ -486,7 +487,7 @@ class FunctionLowering {
       Instruction["target"] = json::Object(Result);
     }
     Body.push_back(std::move(Instruction));
-    if (Callee->getReturnType()->isLValueReferenceType())
+    if (Callee->getReturnType()->isReferenceType())
       return dereference(std::move(Result), L);
     return Result;
   }
@@ -544,7 +545,7 @@ class FunctionLowering {
       case CK_NoOp:
         if (C->isPRValue() && recordValue(C->getType()))
           return materialize(C, L);
-        if (A.S.coreV2() && C->isLValue())
+        if (A.S.coreV2() && C->isGLValue())
           return lvalue(C);
         return cast(expression(C->getSubExpr()), T, L);
       case CK_IntegralCast:
@@ -579,7 +580,7 @@ class FunctionLowering {
       }
     }
     if (const auto *M = dyn_cast<MemberExpr>(E)) {
-      if (A.S.coreV2() && M->isLValue())
+      if (A.S.coreV2() && M->isGLValue())
         return lvalue(M);
       return project(M->getBase(), {llvm::cast<FieldDecl>(M->getMemberDecl())},
                      T, L);
@@ -744,7 +745,7 @@ class FunctionLowering {
     if (const auto *C = dyn_cast<ConditionalOperator>(E)) {
       if (C->isPRValue() && recordValue(C->getType()))
         return materialize(C, L);
-      if (A.S.coreV2() && C->isLValue())
+      if (A.S.coreV2() && C->isGLValue())
         return lvalue(C);
       auto Condition = expression(C->getCond());
       auto Yes = labelName(), No = labelName(), End = labelName();
@@ -946,7 +947,7 @@ class FunctionLowering {
   }
   Expression argument(const Expr *Arg, QualType ParameterType) {
     auto L = Arg->getExprLoc();
-    if (ParameterType->isLValueReferenceType())
+    if (ParameterType->isReferenceType())
       return snapshot(bind(Arg, ParameterType), L);
     if (recordValue(ParameterType)) {
       // A by-value parameter is a separate object even when the same lvalue
@@ -1237,14 +1238,14 @@ class FunctionLowering {
     auto Found = Storage.find(V->getCanonicalDecl());
     if (Found != Storage.end()) {
       // Reference identity is represented by dereferencing its hidden pointer.
-      if (V->getType()->isLValueReferenceType())
+      if (V->getType()->isReferenceType())
         return *(*Found->second.getArray("args"))[0].getAsObject();
       return Found->second;
     }
     auto L = V->getLocation();
     auto Place = temporary(type(V->getType(), L), L);
     Storage.emplace(V->getCanonicalDecl(),
-                    V->getType()->isLValueReferenceType()
+                    V->getType()->isReferenceType()
                         ? dereference(Place, L) : Place);
     return Place;
   }
@@ -1252,7 +1253,7 @@ class FunctionLowering {
     auto L = V->getLocation();
     auto Place = localStorage(V);
     beginFullExpression();
-    if (V->getType()->isLValueReferenceType()) {
+    if (V->getType()->isReferenceType()) {
       assign(Place, bind(V->getInit(), V->getType()), L);
     } else {
       bool DefaultOnly = false;
@@ -1414,7 +1415,7 @@ class FunctionLowering {
       if (R->getRetValue() && ResultPlace) {
         initialize(*ResultPlace, R->getRetValue(), L);
       } else if (R->getRetValue()) {
-        auto Value = Function->getReturnType()->isLValueReferenceType()
+        auto Value = Function->getReturnType()->isReferenceType()
                          ? bind(R->getRetValue(), Function->getReturnType())
                          : expression(R->getRetValue());
         if (!Value.empty())
@@ -1574,7 +1575,7 @@ public:
       for (const auto *P : Function->parameters()) {
         auto Place = parameter(parameterType(P->getType()), P->getLocation());
         Storage.emplace(P->getCanonicalDecl(),
-                        (P->getType()->isLValueReferenceType() ||
+                        (P->getType()->isReferenceType() ||
                          recordValue(P->getType()))
                             ? dereference(std::move(Place), P->getLocation())
                             : std::move(Place));

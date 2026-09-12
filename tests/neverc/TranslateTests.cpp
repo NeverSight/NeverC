@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 #ifndef _WIN32
@@ -1432,7 +1433,6 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"rvalue-reference", "int f(int &&value) {return value;}", "TR0201"},
       {"temporary-reference",
        "int f(){const int &value=42; return value;}", "TR0201"},
       {"dead-temporary-reference",
@@ -1649,6 +1649,161 @@ TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMember
   writeFile(Source, "struct R{int n;R(const R&r):n(r.n){}};");
   Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
   expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
+TEST_F(TranslateTest, CoreV2LiveRvalueReferencesPreserveAliasesAndSelectedCalls) {
+  const auto Source = tmpFile("live-rvalue.cpp");
+  const auto Output = tmpFile("live-rvalue.nc");
+  writeFile(Source, R"cpp(
+struct Counts { int copies,destroyed; };
+struct Record {
+  int n;Counts*counts;Record*self;
+  Record(int v,Counts&c):n(v),counts(&c),self(this){}
+  Record(const Record&s):n(s.n+1),counts(s.counts),self(this){++counts->copies;}
+  ~Record(){++counts->destroyed;}
+  int category() & {return 1;}
+  int category() const & {return 2;}
+  int category() && {return 3;}
+  int category() const && {return 4;}
+  Record&&again() && {return static_cast<Record&&>(*this);}
+  int update(int value)&& {n=value;return n;}
+};
+int kind(int&){return 1;}
+int kind(const int&){return 2;}
+int kind(int&&){return 3;}
+int kind(const int&&){return 4;}
+int&&scalar(int&&n){return static_cast<int&&>(n);}
+Record&&identity(Record&&r){return static_cast<Record&&>(r);}
+Record&&chosen(bool yes,Record&a,Record&b){return yes?static_cast<Record&&>(a):static_cast<Record&&>(b);}
+Record&&source(Record&r,int&trace){trace=trace*10+1;return static_cast<Record&&>(r);}
+int argument(int&trace){trace=trace*10+2;return 19;}
+int take(Record r){return r.n;}
+Record copied(Record&&r){return static_cast<Record&&>(r);}
+struct Plain { int n;Plain*self; };
+struct Holder { Plain p;int values[2]; };
+using Row=int[2];
+Row&&rowIdentity(Row&&r){return static_cast<Row&&>(r);}
+int*&&pointerIdentity(int*&&p){return static_cast<int*&&>(p);}
+struct Defaults { int n=4;int read()&& {return n+1;}int next=static_cast<Defaults&&>(*this).read(); };
+using RRef=int&&;
+using CollapsedL=RRef&;
+using CollapsedR=RRef&&;
+int main(){
+  int n=3;const int constant=4;
+  int&&ref=static_cast<int&&>(n);ref=7;
+  if(&ref!=&n || n!=7 || kind(ref)!=1 || kind(static_cast<int&&>(ref))!=3)return 1;
+  const int&&cref=static_cast<const int&&>(constant);
+  if(&cref!=&constant || kind(cref)!=2 || kind(static_cast<const int&&>(cref))!=4)return 2;
+  int&&returned=scalar(static_cast<int&&>(n));returned=9;
+  if(&returned!=&n || n!=9)return 3;
+  CollapsedL l=n;CollapsedR r=static_cast<RRef>(n);l=11;
+  if(&l!=&n || &r!=&n || r!=11)return 4;
+  int other=2;int*p=&n;
+  int*&&pr=pointerIdentity(static_cast<int*&&>(p));pr=&other;
+  if(&pr!=&p || p!=&other)return 5;
+  Counts counts{0,0};
+  {
+    Record a(3,counts),b(7,counts);const Record c(11,counts);
+    Record&&ar=static_cast<Record&&>(a);
+    if(&ar!=&a || ar.category()!=1 || static_cast<Record&&>(ar).category()!=3)return 6;
+    if(c.category()!=2 || static_cast<const Record&&>(c).category()!=4)return 7;
+    Record&&chain=identity(static_cast<Record&&>(a)).again();
+    if(&chain!=&a || chain.self!=&a || counts.copies || counts.destroyed)return 8;
+    Record&&yes=chosen(true,a,b);Record&&no=chosen(false,a,b);yes.n=13;no.n=17;
+    if(&yes!=&a || &no!=&b || a.n!=13 || b.n!=17)return 9;
+    int trace=0;
+    if(source(a,trace).update(argument(trace))!=19 || trace!=12 || a.n!=19)return 10;
+    trace=0;
+    Record&&comma=(++trace,static_cast<Record&&>(b));
+    if(&comma!=&b || trace!=1)return 11;
+    int&&field=static_cast<Record&&>(a).n;field=21;
+    if(&field!=&a.n || a.n!=21)return 12;
+    Record copy=static_cast<Record&&>(a);
+    if(copy.n!=22 || copy.self!=&copy || counts.copies!=1 || counts.destroyed)return 13;
+    if(take(static_cast<Record&&>(a))!=22 || counts.copies!=2 || counts.destroyed!=1)return 14;
+    Record result=copied(static_cast<Record&&>(a));
+    if(result.n!=22 || result.self!=&result || counts.copies!=3 || counts.destroyed!=1)return 15;
+    if(a.n!=21 || a.self!=&a || b.self!=&b)return 16;
+  }
+  if(counts.copies!=3 || counts.destroyed!=6)return 17;
+  Holder holder{{3,nullptr},{5,7}};holder.p.self=&holder.p;
+  Plain&&part=static_cast<Holder&&>(holder).p;part.n=11;
+  if(&part!=&holder.p || part.self!=&holder.p || holder.p.n!=11)return 18;
+  Plain copy=static_cast<Plain&&>(holder.p);
+  if(copy.n!=11 || copy.self!=&holder.p)return 19;
+  Row&&array=rowIdentity(static_cast<Row&&>(holder.values));array[1]=13;
+  if(&array!=&holder.values || holder.values[1]!=13)return 20;
+  int&&element=static_cast<Row&&>(holder.values)[0];element=17;
+  if(&element!=&holder.values[0] || holder.values[0]!=17)return 21;
+  Row grid[2]={{1,2},{3,4}};
+  Row&&chosenRow=(n>0?static_cast<Row&&>(grid[0]):static_cast<Row&&>(grid[1]));chosenRow[1]=19;
+  if(&chosenRow!=&grid[0] || grid[0][1]!=19 || grid[1][1]!=4)return 22;
+  const int&&readOnly=static_cast<const Row&&>(holder.values)[1];
+  if(&readOnly!=&holder.values[1] || readOnly!=13)return 23;
+  Defaults defaults{};
+  if(defaults.n!=4 || defaults.next!=5)return 24;
+  Plain receiver{2,nullptr};
+  if(&(static_cast<Plain&&>(receiver)=holder.p)!=&receiver || receiver.n!=11 || receiver.self!=&holder.p)return 25;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("live-rvalue" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2LiveRvalueReferencesRetainTemporaryAndMoveBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"scalar-temporary", "void f(){int&&r=1;}", "TR0201"},
+      {"scalar-cast-temporary", "void f(){int&&r=static_cast<int&&>(1);}", "TR0201"},
+      {"const-scalar-temporary", "void f(){const int&&r=1;}", "TR0201"},
+      {"reference-argument", "int f(int&&n){return n;}int main(){return f(1);}", "TR0201"},
+      {"reference-return", "int&&f(){return 1;}", "TR0201"},
+      {"record-temporary", "struct R{int n;};void f(){R&&r=R{1};}", "TR0201"},
+      {"cast-record-temporary", "struct R{int n;};void f(){R&&r=static_cast<R&&>(R{1});}", "TR0201"},
+      {"temporary-field", "struct R{int n;};void f(){int&&r=R{1}.n;}", "TR0201"},
+      {"temporary-array-element", "struct R{int a[2];};void f(){int&&r=R{{1,2}}.a[0];}", "TR0201"},
+      {"temporary-conditional", "struct R{int n;};void f(bool b,R&live){R&&r=b?static_cast<R&&>(live):R{1};}", "TR0201"},
+      {"temporary-comma", "struct R{int n;};void f(){int n=0;R&&r=(++n,R{1});}", "TR0201"},
+      {"temporary-method", "struct R{int n;int get()&&{return n;}};int f(){return R{1}.get();}", "TR0201"},
+      {"temporary-cast-method", "struct R{int n;int get()&&{return n;}};int f(){return static_cast<R&&>(R{1}).get();}", "TR0201"},
+      {"temporary-callee-argument", "struct R{int n;};R&&id(R&&r){return static_cast<R&&>(r);}void f(){R&&r=id(R{1});}", "TR0201"},
+      {"volatile-reference", "int f(volatile int&&n){return n;}", "TR0201"},
+      {"reference-field", "struct R{int&&n;};", "TR0201"},
+      {"global-reference", "int n;int&&r=static_cast<int&&>(n);", "TR0201"},
+      {"function-reference", "int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}", "TR0201"},
+      {"method-noexcept", "struct R{int n;int get()&&noexcept{return n;}};", "TR0201"},
+      {"move-constructor", "struct R{int n;R(R&&s):n(s.n){}};", "TR0201"},
+      {"defaulted-move", "struct R{int n;R(R&&)=default;};", "TR0201"},
+      {"move-assignment", "struct R{int n;R&operator=(R&&s){n=s.n;return *this;}};", "TR0201"},
+      {"defaulted-move-assignment", "struct R{int n;R&operator=(R&&)=default;};", "TR0201"},
+      {"direct-lvalue-binding", "void f(){int n=1;int&&r=n;}", "TR0202"},
+      {"lvalue-method-on-xvalue", "struct R{int n;int get()&{return n;}};int f(R&r){return static_cast<R&&>(r).get();}", "TR0202"},
+      {"rvalue-method-on-lvalue", "struct R{int n;int get()&&{return n;}};int f(R&r){return r.get();}", "TR0202"},
+      {"const-mutation", "void f(const int&&n){n=1;}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("rvalue-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("rvalue-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("rvalue-v1.cpp");
+  const auto Output = tmpFile("rvalue-v1.nc");
+  writeFile(Source, "int f(int&&r){return r;}");
+  auto Old = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Old, "TR0201");
   expectNoArtifacts(Output);
 }
 
@@ -3182,7 +3337,6 @@ TEST_F(TranslateTest, CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries) {
       {"conversion", "struct R{int n;operator int()const{return n;}};"},
       {"operator", "struct R{int n;int operator()()const{return n;}};"},
       {"volatile-method", "struct R{int n;int get()volatile{return n;}};"},
-      {"rvalue-method", "struct R{int n;int get()&&{return n;}};"},
       {"noexcept-method", "struct R{int n;int get()const noexcept{return n;}};"},
       {"mutable-field", "struct R{mutable int n;int get()const{return n;}};"},
       {"reference-field", "struct R{int&n;int get()const{return n;}};"},

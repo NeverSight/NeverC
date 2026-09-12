@@ -306,6 +306,17 @@ def main():
         'default-member-old-default-query': 'struct R{int n=1;explicit R()=default;};int f(){return sizeof(R{});}',
         'default-member-old-user-constructor': 'struct R{int n=1;R(){}};',
     })
+    core_v2.update({
+        'live-rvalue-old-reference': 'int f(int&&r){return r;}',
+        'live-rvalue-old-method': 'struct R{int n;int get()&&{return n;}};',
+        'live-rvalue-scalar-chain': 'int&&f(int&&r){return static_cast<int&&>(r);}int main(){int n=1;int&&r=f(static_cast<int&&>(n));r=2;return n-2;}',
+        'live-rvalue-const-chain': 'const int&&f(const int&&r){return static_cast<const int&&>(r);}int main(){const int n=1;const int&&r=f(static_cast<const int&&>(n));return &r!=&n;}',
+        'live-rvalue-array-reference': 'using Row=int[2];Row&&f(Row&&r){return static_cast<Row&&>(r);}int main(){Row a{};Row&&r=f(static_cast<Row&&>(a));r[0]=1;return a[0]-1;}',
+        'live-rvalue-collapsed-reference': 'using R=int&&;using L=R&;int main(){int n=1;L l=n;R r=static_cast<R>(n);l=2;return r-2;}',
+        'live-rvalue-const-rvalue-method': 'struct R{int n;int get()const&&{return n;}};int f(const R&r){return static_cast<const R&&>(r).get();}',
+        'live-rvalue-live-assignment': 'struct R{int n;};R&f(R&a,const R&b){return static_cast<R&&>(a)=b;}',
+        'live-rvalue-default-this': 'struct R{int n=3;int get()&&{return n;}int next=static_cast<R&&>(*this).get();};int main(){R r{};return r.next-3;}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -1012,6 +1023,137 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
     check("v2-default-member-missing", "int missing();struct R{int n=missing();};void f(){R r{7};}",
           "TR0203", profile="cpp-core-v2")
     check("v1-default-member", "struct R{int n=1;};", "TR0201")
+    rvalue_source = """struct R { int n;R*self;int set(int value)&&{n=value;return n;}
+ int tag()&{return 1;}
+ int tag()&&{return 2;}
+ R&&again()&&{return static_cast<R&&>(*this);}
+};
+int pick(int&){return 1;}
+int pick(int&&){return 2;}
+R&&identity(R&&r){return static_cast<R&&>(r);}
+int&&field(R&&r){return static_cast<R&&>(r).n;}
+using Row=int[2];
+Row&&row(Row&&r){return static_cast<Row&&>(r);}
+int*&&pointer(int*&&p){return static_cast<int*&&>(p);}
+R&&choose(bool b,R&a,R&c){return b?static_cast<R&&>(a):static_cast<R&&>(c);}
+int select(int&n){return pick(n)+pick(static_cast<int&&>(n));}
+int method(R&r){return r.tag()+static_cast<R&&>(r).tag();}
+R&&forward(R&&r){return identity(static_cast<R&&>(r));}
+R&&receiver(R&r,int&trace){trace=trace*10+1;return static_cast<R&&>(r);}
+int argument(int&trace){trace=trace*10+2;return trace;}
+int consume(R&&r,int n){return r.n+n;}
+int ordered(R&r,int&trace){return receiver(r,trace).set(argument(trace));}
+"""
+    rvalues = check("v2-live-rvalue-identities", rvalue_source, profile="cpp-core-v2")
+    rv_record = rvalues["records"][0]
+    rv_id = rv_record["id"]
+    rv_functions = {f["name"]: f for f in rvalues["functions"]}
+    rv_lines = {f["loc"]["line"]: f for f in rvalues["functions"]}
+    signatures = {
+        2: ("int", ["ptr:" + rv_id]), 3: ("int", ["ptr:" + rv_id]),
+        4: ("ptr:" + rv_id, ["ptr:" + rv_id]),
+        6: ("int", ["ptr:int"]), 7: ("int", ["ptr:int"]),
+        8: ("ptr:" + rv_id, ["ptr:" + rv_id]),
+        9: ("ptr:int", ["ptr:" + rv_id]),
+        11: ("ptr:arr:2:int", ["ptr:arr:2:int"]),
+        12: ("ptr:ptr:int", ["ptr:ptr:int"]),
+        13: ("ptr:" + rv_id, ["bool", "ptr:" + rv_id, "ptr:" + rv_id]),
+        16: ("ptr:" + rv_id, ["ptr:" + rv_id]),
+    }
+    for line, (result, params) in signatures.items():
+        function = rv_lines[line]
+        assert function["result"] == result and [p["type"] for p in function["params"]] == params, function
+    assert rv_lines[2]["name"] != rv_lines[3]["name"] and rv_lines[6]["name"] != rv_lines[7]["name"]
+    for line in (4, 8, 9, 11, 12):
+        function = rv_lines[line]
+        returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+        expected = ("parameter", function["params"][0]["name"])
+        if line == 9:
+            expected = ("member", expected, rv_record["fields"][0]["name"])
+        assert gc_identity(function, returned) == expected, (line, function)
+        assert not gc_calls(function), function
+    for line, selected in ((14, (6, 7)), (15, (2, 3))):
+        function = rv_lines[line]
+        calls = gc_calls(function)
+        assert [n["callee"] for n in calls] == [rv_lines[i]["name"] for i in selected], calls
+        assert all(gc_identity(function, n["args"][0]) == ("parameter", function["params"][0]["name"])
+                   for n in calls), calls
+    function = rv_lines[13]
+    assert sum(n["op"] == "branch" for n in function["body"]) == 1, function
+    pointer_stores = [n for n in function["body"] if n["op"] == "assign"
+                      and n["target"]["type"] == "ptr:" + rv_id]
+    # Both arms store addresses into one join slot. The return may copy that
+    # pointer, but neither arm may copy the record itself.
+    arms = [n for n in pointer_stores if sum(other["target"].get("name") == n["target"].get("name")
+                                           for other in pointer_stores) == 2]
+    assert len(arms) == 2 and arms[0]["target"]["name"] == arms[1]["target"]["name"], arms
+    assert [gc_identity(function, n["value"]) for n in arms] == [
+        ("parameter", function["params"][i]["name"]) for i in (1, 2)]
+    assert [n["callee"] for n in gc_calls(rv_lines[20])] == [
+        rv_lines[17]["name"], rv_lines[18]["name"], rv_lines[1]["name"]]
+    function = rv_lines[16]
+    calls = gc_calls(function)
+    assert len(calls) == 1 and calls[0]["callee"] == rv_lines[8]["name"], calls
+    assert gc_identity(function, calls[0]["args"][0]) == ("parameter", function["params"][0]["name"])
+    returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+    # Resolve return pointer snapshots only to the call-result storage, whose
+    # identity is the actual returned reference rather than a new record owner.
+    while returned["kind"] in ("cast", "address", "dereference"):
+        returned = returned["args"][0]
+    return_values = {n["target"]["name"]: n["value"] for n in function["body"]
+                     if n["op"] == "assign" and n["target"]["kind"] == "var"}
+    while returned["kind"] == "var" and returned["name"] in return_values:
+        returned = return_values[returned["name"]]
+        while returned["kind"] in ("cast", "address", "dereference"):
+            returned = returned["args"][0]
+    assert returned["kind"] == "var" and returned["name"] == calls[0]["target"]["name"]
+    for function in rvalues["functions"]:
+        assert not any(v["type"] == rv_id or v["type"].startswith("arr:") for v in function["locals"]), function
+        for node in gc_calls(function):
+            callee = rv_functions[node["callee"]]
+            assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]], node
+            assert not node["callee"].endswith("_destroy"), "a reference became a cleanup owner"
+    with tempfile.TemporaryDirectory(prefix="neverc-live-rvalue-relocated-") as temp:
+        relocated = check("live-rvalue-relocated", rvalue_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == rvalues, "rvalue reference identities depend on the absolute root"
+
+    rvalue_rejected = {
+        'scalar-temporary': 'void f(){int&&r=1;}',
+        'scalar-cast-temporary': 'void f(){int&&r=static_cast<int&&>(1);}',
+        'const-scalar-temporary': 'void f(){const int&&r=1;}',
+        'reference-argument': 'int f(int&&n){return n;}int main(){return f(1);}',
+        'reference-return': 'int&&f(){return 1;}',
+        'record-temporary': 'struct R{int n;};void f(){R&&r=R{1};}',
+        'cast-record-temporary': 'struct R{int n;};void f(){R&&r=static_cast<R&&>(R{1});}',
+        'temporary-field': 'struct R{int n;};void f(){int&&r=R{1}.n;}',
+        'temporary-array-element': 'struct R{int a[2];};void f(){int&&r=R{{1,2}}.a[0];}',
+        'temporary-conditional': 'struct R{int n;};void f(bool b,R&live){R&&r=b?static_cast<R&&>(live):R{1};}',
+        'temporary-comma': 'struct R{int n;};void f(){int n=0;R&&r=(++n,R{1});}',
+        'temporary-method': 'struct R{int n;int get()&&{return n;}};int f(){return R{1}.get();}',
+        'temporary-cast-method': 'struct R{int n;int get()&&{return n;}};int f(){return static_cast<R&&>(R{1}).get();}',
+        'temporary-callee-argument': 'struct R{int n;};R&&id(R&&r){return static_cast<R&&>(r);}void f(){R&&r=id(R{1});}',
+        'volatile-reference': 'int f(volatile int&&n){return n;}',
+        'reference-field': 'struct R{int&&n;};',
+        'global-reference': 'int n;int&&r=static_cast<int&&>(n);',
+        'function-reference': 'int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}',
+        'method-noexcept': 'struct R{int n;int get()&&noexcept{return n;}};',
+        'move-constructor': 'struct R{int n;R(R&&s):n(s.n){}};',
+        'defaulted-move': 'struct R{int n;R(R&&)=default;};',
+        'move-assignment': 'struct R{int n;R&operator=(R&&s){n=s.n;return *this;}};',
+        'defaulted-move-assignment': 'struct R{int n;R&operator=(R&&)=default;};',
+    }
+    for name, source in rvalue_rejected.items():
+        check("v2-rvalue_rejected-" + name, source, "TR0201", profile="cpp-core-v2")
+    rvalue_invalid = {
+        'direct-lvalue-binding': 'void f(){int n=1;int&&r=n;}',
+        'lvalue-method-on-xvalue': 'struct R{int n;int get()&{return n;}};int f(R&r){return static_cast<R&&>(r).get();}',
+        'rvalue-method-on-lvalue': 'struct R{int n;int get()&&{return n;}};int f(R&r){return r.get();}',
+        'const-mutation': 'void f(const int&&n){n=1;}',
+    }
+    for name, source in rvalue_invalid.items():
+        check("v2-rvalue_invalid-" + name, source, "TR0202", profile="cpp-core-v2")
+    check("v1-rvalue-reference", "int f(int&&r){return r;}", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -1395,7 +1537,6 @@ int main() {
         "conversion-temporary": "int f(){int x=1; const unsigned int&r=x; return r;}",
         "temporary-subobject": "struct R{int x;}; int f(){const int&r=R{1}.x; return r;}",
         "temporary-reference-argument": "int f(const int&r){return r;} int main(){return f(1);}",
-        "rvalue-reference": "int f(int&&r){return r;}",
         "reference-field": "struct R{int&r;};",
         "pointer-global": "int*const p=nullptr;",
         "reference-global": "const int x=1; const int&r=x;",
@@ -1465,7 +1606,6 @@ int main() {
         'method-conversion': 'struct R{int n;operator int()const{return n;}};',
         'method-operator': 'struct R{int n;int operator()()const{return n;}};',
         'method-volatile-method': 'struct R{int n;int get()volatile{return n;}};',
-        'method-rvalue-method': 'struct R{int n;int get()&&{return n;}};',
         'method-noexcept-method': 'struct R{int n;int get()const noexcept{return n;}};',
         'method-mutable-field': 'struct R{mutable int n;int get()const{return n;}};',
         'method-reference-field': 'struct R{int&n;int get()const{return n;}};',

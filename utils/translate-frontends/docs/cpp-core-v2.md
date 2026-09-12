@@ -98,7 +98,7 @@ expression-form alignment and parameter packs are rejected.
   null initialization (`nullptr`, zero and value initialization), qualification
   conversions and pointer/`void *` round trips preserve the admitted source
   behavior. `const_cast` may adjust qualifications on supported pointer and
-  lvalue-reference types. Pointer ordering, unary pointer plus and pointer/integer
+  reference types. Pointer ordering, unary pointer plus and pointer/integer
   reinterpretation remain rejected. Offsets and differences follow the rules below.
 - A reference binds to the original storage. Returning a reference, assigning
   through that result, references to pointer variables (`int *&`) and conditional,
@@ -120,7 +120,7 @@ int main() {
 }
 ```
 
-Rvalue references, temporary reference bindings (including conversion-created
+Temporary reference bindings (including conversion-created
 temporaries and temporary subobjects), reference fields and pointer/reference
 globals (including pointer-valued global aggregate fields) are rejected.
 Unused/dead bindings are checked too. Standalone
@@ -130,10 +130,63 @@ undefined behavior. In particular, casting away `const` does not make an
 originally const object writable. Generated `.nc` source targets NeverC's
 pointer aliasing behavior, not an arbitrary C compiler's alias rules.
 
+## Live-object rvalue references
+
+Core v2 admits `T&&` local aliases, parameters and results for the supported
+scalar, pointer, record and fixed-array types when the reference designates an
+already live object. Nested pointee `const`, type aliases and reference collapsing
+retain their source meaning. The same checked pointer representation carries
+both reference categories; Clang resolves overloads before normalization, so
+functions that differ by `T&`/`T&&` still have distinct canonical identities.
+
+`static_cast<T&&>(live)` changes value category while retaining the object's
+address. A named rvalue-reference variable remains an lvalue. An xvalue member,
+array element, comma expression, selected conditional arm or reference-result
+call likewise retains its actual storage. Conditional glvalues join addresses,
+not record copies, and evaluate only the chosen arm. Ordinary `&&` and `const &&`
+methods can use live xvalue receivers; their receiver is captured before explicit
+arguments, using the same hidden `this` signature and no receiver copy.
+
+```cpp
+int &&asRvalue(int &value) {
+  return static_cast<int&&>(value);
+}
+int main() {
+  int value = 7;
+  int &&alias = asRvalue(value);
+  alias = 9; // The named reference expression is an lvalue.
+  return value - 9;
+}
+```
+
+Reference declarations, arguments and results add no complete-object cleanup
+owner. Passing a live xvalue by value or returning it as a value follows Clang's
+selected admitted copy or existing implicit trivial operation; this stage does
+not force copying when a different operation was selected. Ordinary/defaulted
+move constructors and move assignment remain a following increment. Copy
+assignment declarations retain their own receiver restrictions; an unqualified
+admitted assignment can operate on a live xvalue receiver.
+
+The provenance check still follows materialization and binding wrappers, nested
+member/array access, casts, conditionals and comma expressions. Binding a fresh
+scalar or record temporary, including a conversion-created temporary or its
+subobject, remains rejected even in dead code. Nonstatic calls on temporary
+objects remain rejected. Reference fields, reference globals, function references,
+volatile types, lifetime extension and arbitrary dangling-reference analysis are
+not enabled. Invalid C++ category/qualification uses retain source diagnostics.
+V1 profiles continue to reject rvalue references and methods.
+
+Fixtures exercise alias mutation, selected overloads, named-reference categories,
+reference results, conditional addresses, arrays, source-required copies, normal
+cleanup counts and receiver/argument effects at O0/O2 with inlining disabled.
+Protocol checks assert complete pointer signatures, original object/subobject
+identity, absence of extra record owners and deterministic relocation. Native
+evidence must come from the implementing revision's CI.
+
 ## Ordinary record methods
 
 Core v2 admits named nonvirtual member functions of the supported records: nonstatic methods with no cv qualifier or with `const`, optional
-lvalue ref qualification (`&`), and static methods. Clang resolves access,
+lvalue or rvalue ref qualification (`&`/`&&`), and static methods. Clang resolves access,
 overloads and out-of-line definitions before normalization. Explicit access
 specifiers are compile-time syntax only; data fields must still satisfy the
 field and layout restrictions. Private helper methods do not change object layout.
@@ -142,7 +195,7 @@ A nonstatic method becomes an ordinary generated function with a pointer to the
 original object (`const` for a const method), after a hidden record-result pointer
 when present and before explicit source parameters. `this`, implicit
 field access, nested calls, recursion, returning `this`, and returning `*this`
-or a field by lvalue reference preserve storage identity. Calling a method does
+or a field by a supported reference preserve storage identity. Calling a method does
 not copy the receiver or read unrelated uninitialized fields. Methods have no
 C export ABI; canonical identities distinguish declaring types, overloads and
 cv/ref qualifications.
@@ -177,7 +230,7 @@ the existing temporary-binding restrictions for both static and instance calls.
 
 User-defined operators other than admitted copy assignment, conversions,
 virtual methods, inheritance,
-volatile/restrict and rvalue-qualified methods, default arguments, exception
+volatile/restrict methods, default arguments, exception
 specifications, templates and static data remain unsupported. Ordinary
 constructors and destructors follow the separate rules below. The existing
 implicit trivial copy paths are unchanged.
@@ -715,7 +768,7 @@ implementations remain outside this increment. Pointer `==`/`!=` remain supporte
   Nested arrays and records count toward these limits. Initializing a large
   array can exceed the work budget even when its extent alone is permitted.
 - Support includes array-to-pointer decay, `a[i]` and `i[a]`, multidimensional
-  arrays, adjusted array parameters, and pointers/lvalue references to arrays
+  arrays, adjusted array parameters, and pointers/references to arrays
   as parameters and results. The syntactic left operand is evaluated before
   the right operand, as required by C++17; aliases keep the original storage.
 - List/value initialization stores each element in source order. Omitted scalar

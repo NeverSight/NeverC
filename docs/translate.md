@@ -49,6 +49,8 @@ Core v2 also supports implicit and explicitly defaulted copy assignment. Members
 
 Core v2 supports default member initializers for admitted fields, including earlier-member access, ordinary calls, nested records and arrays. A selected default uses its actual owning object as `this`; explicit aggregate clauses retain the caller’s `this`. Explicit initialization overrides that member’s default. Implicit/defaulted copying and assignment do not rerun defaults; a user copy constructor can select defaults for omitted members. Constructor member initializers and aggregate initialization retain their respective temporary cleanup boundaries. Moves, templates and full STL remain in development.
 
+Core v2 supports rvalue references to existing live objects, including scalar, pointer, record and array aliases, reference parameters/results, conditional xvalues and ordinary `&&`-qualified methods. A cast such as `static_cast<R&&>(live)` preserves the same object; named rvalue-reference variables remain lvalues. Clang’s selected overload and existing copy behavior remain authoritative. References introduce no extra cleanup owner. Binding fresh temporaries, lifetime extension and unsupported move operations remain outside this increment.
+
 ## Multi-file projects
 
 Select the translation units explicitly from a compilation database and set the project root directory. The built-in frontend analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).

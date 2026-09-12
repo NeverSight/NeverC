@@ -39,7 +39,7 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
       M->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       M->isDeletedAsWritten() || M->isExplicitlyDefaulted() || M->isConsteval() ||
       M->getMethodQualifiers().hasVolatile() ||
-      M->getMethodQualifiers().hasRestrict() || M->getRefQualifier() == RQ_RValue)
+      M->getMethodQualifiers().hasRestrict())
     return false;
   const auto *Prototype = M->getType()->getAs<FunctionProtoType>();
   return Prototype && !Prototype->hasExceptionSpec();
@@ -435,7 +435,7 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
         return {};
       return "arr:" + std::to_string(Count) + ":" + Element;
     }
-  if (S.coreV2() && (C->isPointerType() || C->isLValueReferenceType())) {
+  if (S.coreV2() && (C->isPointerType() || C->isReferenceType())) {
     QualType Pointee = C->getPointeeType();
     auto Element = type(Pointee, L, C->isPointerType(), Depth + 1);
     if (Element.empty())
@@ -659,7 +659,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (U->isIncrementDecrementOp())
         return temporaryBinding(U->getSubExpr());
     }
-    return !E->isLValue();
+    // An xvalue can still designate a live object. Temporary wrappers above
+    // retain their own rejection; changing category alone creates no owner.
+    return !E->isGLValue();
   }
   bool containsArray(QualType T, unsigned Depth = 0) {
     if (Depth > 64 || T->isArrayType())
@@ -1275,7 +1277,7 @@ public:
           }
           if (!Base || (Arrow ? temporaryArrayBase(Base) : temporaryBinding(Base)))
             A.reject(L, "method receiver",
-                     "A supported live lvalue receiver is required.");
+                     "A supported live object receiver is required.");
         }
       }
       if (A.S.coreV2() && F && (!Method || callableMethod(Method)))
