@@ -55,6 +55,24 @@ bool ordinaryConstructor(const CXXConstructorDecl *C) {
   return Prototype && !Prototype->hasExceptionSpec();
 }
 
+const CXXConstructExpr *constructorConversion(const CastExpr *Cast,
+                                              ASTContext &Context) {
+  if (!Cast || Cast->getCastKind() != CK_ConstructorConversion ||
+      !Cast->getType()->isRecordType())
+    return nullptr;
+  const Expr *Inner = Cast->getSubExpr()->IgnoreParens();
+  // Clang binds a constructed temporary before wrapping it in an explicit
+  // constructor conversion. Its lifetime still belongs to our destination;
+  // inspecting this wrapper must not create another owned object.
+  while (const auto *Binding = dyn_cast<CXXBindTemporaryExpr>(Inner))
+    Inner = Binding->getSubExpr()->IgnoreParens();
+  const auto *Construction = dyn_cast<CXXConstructExpr>(Inner);
+  if (!Construction || !ordinaryConstructor(Construction->getConstructor()) ||
+      !Context.hasSameUnqualifiedType(Cast->getType(), Construction->getType()))
+    return nullptr;
+  return Construction;
+}
+
 bool ordinaryDestructor(const CXXDestructorDecl *D) {
   if (!D || D->isImplicit() || !D->isUserProvided() || D->isVirtual() ||
       D->isDeletedAsWritten() || D->isExplicitlyDefaulted() ||
@@ -822,12 +840,7 @@ public:
           case CK_ArrayToPointerDecay:
             break;
           case CK_ConstructorConversion: {
-            const auto *Construction =
-                dyn_cast<CXXConstructExpr>(C->getSubExpr()->IgnoreParens());
-            if (C->getType()->isRecordType() && Construction &&
-                ordinaryConstructor(Construction->getConstructor()) &&
-                A.Context.hasSameUnqualifiedType(C->getType(),
-                                                 Construction->getType()))
+            if (constructorConversion(C, A.Context))
               break;
             A.reject(L, "constructor conversion",
                      "Only direct admitted constructor conversions are supported.");

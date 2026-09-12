@@ -15,6 +15,8 @@
 
 namespace clang {
 class CallExpr;
+class CastExpr;
+class CXXConstructExpr;
 class Expr;
 }
 
@@ -69,6 +71,8 @@ bool validExportName(llvm::StringRef Name);
 bool isolateProjectEnvironment();
 bool ordinaryMethod(const clang::CXXMethodDecl *Method);
 bool ordinaryConstructor(const clang::CXXConstructorDecl *Constructor);
+const clang::CXXConstructExpr *constructorConversion(const clang::CastExpr *Cast,
+                                                     clang::ASTContext &Context);
 bool ordinaryDestructor(const clang::CXXDestructorDecl *Destructor);
 bool needsDestruction(clang::QualType Type);
 const clang::Expr *directMethodReference(const clang::CallExpr *Call);

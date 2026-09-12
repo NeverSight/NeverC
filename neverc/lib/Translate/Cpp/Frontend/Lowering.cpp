@@ -984,10 +984,8 @@ class FunctionLowering {
       }
       if (const auto *C = dyn_cast<CastExpr>(Init);
           C && C->getCastKind() == CK_ConstructorConversion) {
-        const auto *Construction =
-            dyn_cast<CXXConstructExpr>(C->getSubExpr()->IgnoreParens());
-        if (!Construction || !ordinaryConstructor(Construction->getConstructor()) ||
-            !A.Context.hasSameUnqualifiedType(C->getType(), Construction->getType()))
+        const auto *Construction = constructorConversion(C, A.Context);
+        if (!Construction)
           reject(L, "constructor conversion", "Unsupported constructor conversion wrapper.");
         initialize(std::move(Place), Construction, L);
         return;

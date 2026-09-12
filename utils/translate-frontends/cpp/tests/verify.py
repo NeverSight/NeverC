@@ -367,6 +367,63 @@ int main() {
     assert [p["type"] for p in old_identity["params"]] == [old_record_id], old_identity
     check("v2-record-parameter-const-write", "struct R{int n;};int f(const R r){r.n=1;return r.n;}",
           "TR0202", profile="cpp-core-v2")
+    conversion_cleanup_source = """struct R {
+  int *value; R *self;
+  explicit R(int *p):value(p),self(this){++*value;}
+  ~R(){--*value;}
+};
+R make(int *p){return static_cast<R>(p);}
+void consume(R value){}
+void f(int *p){
+  R direct=static_cast<R>(p);
+  R cstyle=(R)p;
+  static_cast<R>(p);
+  (R)p;
+  consume(static_cast<R>(p));
+  R result=make(p);
+}
+"""
+    converted = check("v2-constructor-conversion-cleanup", conversion_cleanup_source,
+                      profile="cpp-core-v2")
+    converted_record = converted["records"][0]["id"]
+    converted_functions = {f["name"]: f for f in converted["functions"]}
+    converted_by_line = {f["loc"]["line"]: f for f in converted["functions"]}
+    converted_ctor = converted_by_line[3]
+    converted_dtor = converted_functions[converted_record + "_destroy"]
+    assert converted_ctor["result"] == converted_dtor["result"] == "void"
+    assert [p["type"] for p in converted_ctor["params"]] == ["ptr:" + converted_record, "ptr:int"]
+    assert [p["type"] for p in converted_dtor["params"]] == ["ptr:" + converted_record]
+    converted_body = converted_by_line[8]
+    converted_calls = [n for n in converted_body["body"] if n["op"] == "call"]
+    constructions = [n for n in converted_calls if n["callee"] == converted_ctor["name"]]
+    cleanups = [n for n in converted_calls if n["callee"] == converted_dtor["name"]]
+    assert len(constructions) == 5 and len(cleanups) == 5, converted_calls
+    converted_locals = [v for v in converted_body["locals"] if v["type"] == converted_record]
+    assert len(converted_locals) == 6, converted_locals
+    for line in (9, 10):
+        local = next(v for v in converted_locals if v["loc"]["line"] == line)
+        construction = next(n for n in constructions if n["loc"]["line"] == line)
+        assert storage_pointer_object(converted_body, construction["args"][0]) == ("object", local["name"])
+    parameter_call = next(n for n in converted_calls if n["callee"] == converted_by_line[7]["name"])
+    parameter_object = storage_pointer_object(converted_body, parameter_call["args"][0])
+    cleanup_objects = [storage_pointer_object(converted_body, n["args"][0]) for n in cleanups]
+    assert len(set(cleanup_objects)) == 5 and parameter_object not in cleanup_objects, cleanups
+    assert set(cleanup_objects) | {parameter_object} == {("object", v["name"]) for v in converted_locals}
+    made_calls = [n for n in converted_by_line[6]["body"] if n["op"] == "call"]
+    assert len(made_calls) == 1 and made_calls[0]["callee"] == converted_ctor["name"], made_calls
+    assert storage_pointer_object(converted_by_line[6], made_calls[0]["args"][0]) == (
+        "parameter", converted_by_line[6]["params"][0]["name"])
+    for function in converted["functions"]:
+        for node in function["body"]:
+            if node["op"] == "call":
+                callee = converted_functions[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]], node
+            if node["op"] == "assign":
+                assert node["value"]["type"] != converted_record, "conversion wrapper inserted a record copy"
+    with tempfile.TemporaryDirectory(prefix="neverc-conversion-cleanup-relocated-") as temp:
+        relocated = check("conversion-cleanup-relocated", conversion_cleanup_source,
+                          root=Path(temp) / "project", profile="cpp-core-v2")
+        assert relocated == converted, "conversion cleanup identities depend on the absolute root"
     destruction_source = """struct R {
   int *value; int tag;
   R(int *v,int n):value(v),tag(n){}

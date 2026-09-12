@@ -1463,6 +1463,68 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ConstructorConversionsKeepOneDestinationAndCleanup) {
+  const auto Source = tmpFile("constructor-conversion-cleanup.cpp");
+  const auto Output = tmpFile("constructor-conversion-cleanup.nc");
+  writeFile(Source, R"cpp(
+struct State { int made, destroyed, bad; };
+struct R {
+  State *state;
+  R *self;
+  int id;
+  explicit R(State *s):state(s),self(this),id(++s->made){}
+  ~R(){if(self!=this)++state->bad;++state->destroyed;}
+};
+struct Holder { R value; };
+R make(State *s){return static_cast<R>(s);}
+int take(R value){return value.self==&value?value.id:-1;}
+int main(){
+  State state{0,0,0};
+  {R value=static_cast<R>(&state);
+   if(value.self!=&value || state.made!=1 || state.destroyed!=0)return 1;}
+  if(state.destroyed!=1 || state.bad)return 2;
+  {R value=(R)&state;
+   if(value.self!=&value || state.made!=2 || state.destroyed!=1)return 3;}
+  if(state.destroyed!=2 || state.bad)return 4;
+  static_cast<R>(&state);
+  if(state.made!=3 || state.destroyed!=3 || state.bad)return 5;
+  (R)&state;
+  if(state.made!=4 || state.destroyed!=4 || state.bad)return 6;
+  if(take(static_cast<R>(&state))!=5 || state.destroyed!=5 || state.bad)return 7;
+  if(take((R)&state)!=6 || state.destroyed!=6 || state.bad)return 8;
+  {R value=make(&state);
+   if(value.self!=&value || state.made!=7 || state.destroyed!=6)return 9;}
+  if(state.destroyed!=7 || state.bad)return 10;
+  {R values[2]={static_cast<R>(&state),(R)&state};
+   if(values[0].self!=&values[0] || values[1].self!=&values[1] ||
+      state.made!=9 || state.destroyed!=7)return 11;}
+  if(state.destroyed!=9 || state.bad)return 12;
+  {Holder holder{static_cast<R>(&state)};
+   if(holder.value.self!=&holder.value || state.made!=10 || state.destroyed!=9)return 13;}
+  if(state.destroyed!=10 || state.bad)return 14;
+  {R value=state.made==10?static_cast<R>(&state):(R)&state;
+   if(value.self!=&value || state.made!=11 || state.destroyed!=10)return 15;}
+  if(state.destroyed!=11 || state.bad)return 16;
+  {R value=(static_cast<R>(&state),(R)&state);
+   if(value.self!=&value || state.made!=13 || state.destroyed!=12)return 17;}
+  if(state.destroyed!=13 || state.bad)return 18;
+  int id=static_cast<R>(&state).id;
+  if(id!=14 || state.made!=14 || state.destroyed!=14 || state.bad)return 19;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("constructor-conversion-cleanup" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RecordDestructionPreservesLifetimeAndExitOrder) {
   const auto Source = tmpFile("record-destruction.cpp");
   const auto Output = tmpFile("record-destruction.nc");
