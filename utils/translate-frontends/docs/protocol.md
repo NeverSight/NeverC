@@ -152,6 +152,14 @@ identities are preserved. Selected constructors need materialized definitions;
 unused bodies/defaults remain lazy. See [class-template constructors](cpp-core-v2.md#class-template-constructors)
 for declaration, default-argument and lifetime boundaries.
 
+User-provided class-template destructors use internal void functions with one
+concrete-record pointer. Bodies run before reverse member/array cleanup. Required
+definitions are checked even for direct object returns; unused type queries keep
+bodies lazy while selected exception specifications remain checked. Helpers for
+actual cleanup and materialized user bodies form a bounded deduplicated work list.
+See [class-template destructors](cpp-core-v2.md#class-template-destructors) for
+definition, lifetime and source boundaries.
+
 Concrete core-v2 free function-template instances use ordinary function, record,
 scalar-global and call IR. Primary-template ordinals and source identities
 separate otherwise colliding specializations, including their local records and

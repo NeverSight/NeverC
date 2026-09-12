@@ -6441,6 +6441,244 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
 
+    class_destructors_source = 'int trace=0;\nvoid mark(int n){trace=trace*10+n;}\ntemplate<class T,int N>struct Leaf{T n;Leaf(T v):n(v){}~Leaf(){mark(N);}};\ntemplate<class T>struct Box{Leaf<T,1>first;Leaf<T,2>items[2];Box():first(7),items{8,9}{}~Box(){mark(3);}};\nstruct Wrapper{Box<int>box;};\nstruct OnlyBody{Leaf<int,1>leaf;~OnlyBody(){mark(4);}};\nstruct UnusedDefaulted{Leaf<int,1>leaf;~UnusedDefaulted()=default;};\ntemplate<class T>struct Forced{T n;~Forced(){mark(5);}};\ntemplate struct Forced<int>;\ntemplate<class T>struct Value{T n;~Value(){mark(n);n=99;}};\ntemplate<auto N>struct State{~State(){static int count=N;mark(++count);}};\ntemplate<class T>struct Local{\n T n;\n ~Local(){struct Inside{T n;~Inside(){mark(n);}};Inside v{n};}\n};\nusing Alias=Leaf<int,1>;\nvoid leafInt(){Leaf<int,1>v(4);}\nvoid leafSame(){Alias v(5);}\nvoid leafUnsigned(){Leaf<unsigned int,1>v(6u);}\nvoid leafOther(){Leaf<int,2>v(7);}\nvoid box(){Box<int>b;}\nvoid wrapped(){Wrapper w;}\nint captured(){Value<int>v{7};return v.n;}\nint observe(const Value<int>&v){return v.n;}\nint full(){return observe(Value<int>{3});}\nint consume(Value<int>v){return v.n;}\nValue<int>makeResult(){return Value<int>{4};}\nvoid result(){Value<int>v=makeResult();}\nvoid array(){Value<int>v[2]={{1},{2}};}\nvoid stateInt(){State<3>s;}\nvoid stateSame(){State<1+2>s;}\nvoid stateUnsigned(){State<3u>s;}\nvoid localInt(){Local<int>v{2};}\nvoid localUnsigned(){Local<unsigned int>v{3u};}\n'
+    class_destructors = check("v2-class-destructors-protocol", class_destructors_source, profile="cpp-core-v2")
+    cd_functions = {f["name"]: f for f in class_destructors["functions"]}
+    cd_records = {r["id"]: r for r in class_destructors["records"]}
+    cd_globals = {g["name"] for g in class_destructors["globals"]}
+    assert len(cd_functions) == len(class_destructors["functions"])
+    assert len(cd_records) == len(class_destructors["records"])
+
+    def cd_line(prefix):
+        found = [i for i, line in enumerate(class_destructors_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def cd_function(prefix):
+        found = [f for f in class_destructors["functions"] if f["loc"]["line"] == cd_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def cd_record(prefix):
+        found = [r for r in class_destructors["records"] if r["loc"]["line"] == cd_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def cd_destroyed(prefix):
+        calls = [c for c in gc_calls(cd_function(prefix)) if c["callee"].endswith("_destroy")]
+        assert len(calls) == 1, (prefix, calls)
+        return calls[0]["callee"][:-len("_destroy")]
+
+    cd_mark = cd_function("void mark(")["name"]
+    leaf_ids = []
+    for prefix, scalar, value, tag in (("void leafInt(", "int", 4, 1),
+                                       ("void leafUnsigned(", "uint", 6, 1),
+                                       ("void leafOther(", "int", 7, 2)):
+        function = cd_function(prefix)
+        rid = cd_destroyed(prefix)
+        leaf_ids.append(rid)
+        calls = gc_calls(function)
+        assert len(calls) == 2 and calls[1]["callee"] == rid+"_destroy"
+        constructor = cd_functions[calls[0]["callee"]]
+        assert constructor["result"] == "void"
+        assert [p["type"] for p in constructor["params"]] == ["ptr:"+rid, scalar]
+        assert gc_identity(function, calls[0]["args"][1]) == value
+        assert np_pointer(function, calls[0]["args"][0]) == np_pointer(function, calls[1]["args"][0])
+        body = cd_functions[rid+"_destroy"]
+        assert [c["callee"] for c in gc_calls(body)] == [cd_mark]
+        assert gc_identity(body, gc_calls(body)[0]["args"][0]) == tag
+    assert len(set(leaf_ids)) == 3
+    assert cd_destroyed("void leafSame(") == leaf_ids[0]
+    assert gc_calls(cd_function("void leafSame("))[0]["callee"] == gc_calls(cd_function("void leafInt("))[0]["callee"]
+
+    bid = cd_destroyed("void box(")
+    box = cd_records[bid]
+    assert [f["type"] for f in box["fields"]] == [leaf_ids[0], "arr:2:"+leaf_ids[2]]
+    body = cd_functions[bid+"_destroy"]
+    calls = gc_calls(body)
+    assert [c["callee"] for c in calls] == [cd_mark, leaf_ids[2]+"_destroy", leaf_ids[2]+"_destroy", leaf_ids[0]+"_destroy"]
+    assert gc_identity(body, calls[0]["args"][0]) == 3
+    root = ("parameter", body["params"][0]["name"])
+    member = ("field", root, box["fields"][0]["name"])
+    items = ("field", root, box["fields"][1]["name"])
+    assert [np_pointer(body, c["args"][0]) for c in calls[1:]] == [("element", items, 1), ("element", items, 0), member]
+    wid = cd_destroyed("void wrapped(")
+    wrapper = cd_functions[wid+"_destroy"]
+    assert [c["callee"] for c in gc_calls(wrapper)] == [bid+"_destroy"]
+    expected = ("field", ("parameter", wrapper["params"][0]["name"]), cd_records[wid]["fields"][0]["name"])
+    assert np_pointer(wrapper, gc_calls(wrapper)[0]["args"][0]) == expected
+    forced = cd_record("template<class T>struct Forced{")
+    assert [c["callee"] for c in gc_calls(cd_functions[forced["id"]+"_destroy"])] == [cd_mark]
+    uncalled = cd_record("struct OnlyBody{")
+    assert [c["callee"] for c in gc_calls(cd_functions[uncalled["id"]+"_destroy"])] == [cd_mark, leaf_ids[0]+"_destroy"]
+    assert cd_record("struct UnusedDefaulted{")["id"]+"_destroy" not in cd_functions
+
+    value = cd_record("template<class T>struct Value{")
+    vid = value["id"]
+    captured = cd_function("int captured(")
+    assert [c["callee"] for c in gc_calls(captured)] == [vid+"_destroy"]
+    returned = next(n["value"] for n in captured["body"] if n["op"] == "return")
+    captures = [i for i, n in enumerate(captured["body"]) if n["op"] == "assign" and n["target"].get("name") == returned.get("name")]
+    cleanups = [i for i, n in enumerate(captured["body"]) if n["op"] == "call"]
+    assert len(captures) == 1 and captures[0] < min(cleanups)
+    full = cd_function("int full(")
+    calls = gc_calls(full)
+    assert [c["callee"] for c in calls] == [cd_function("int observe(")["name"], vid+"_destroy"]
+    assert np_pointer(full, calls[0]["args"][0]) == np_pointer(full, calls[1]["args"][0])
+    consume = cd_function("int consume(")
+    assert [p["type"] for p in consume["params"]] == ["ptr:"+vid]
+    assert [c["callee"] for c in gc_calls(consume)] == [vid+"_destroy"]
+    assert np_pointer(consume, gc_calls(consume)[0]["args"][0]) == ("parameter", consume["params"][0]["name"])
+    make = cd_function("Value<int>makeResult(")
+    assert make["result"] == "void" and [p["type"] for p in make["params"]] == ["ptr:"+vid]
+    assert not gc_calls(make), "returned storage must be cleaned by its eventual owner"
+    result = cd_function("void result(")
+    calls = gc_calls(result)
+    assert [c["callee"] for c in calls] == [make["name"], vid+"_destroy"]
+    assert np_pointer(result, calls[0]["args"][0]) == np_pointer(result, calls[1]["args"][0])
+    array = cd_function("void array(")
+    calls = gc_calls(array)
+    assert [c["callee"] for c in calls] == [vid+"_destroy"]*2
+    places = [np_pointer(array, c["args"][0]) for c in calls]
+    assert places[0][0] == places[1][0] == "element" and places[0][1] == places[1][1]
+    assert [p[2] for p in places] == [1, 0]
+
+    sid = cd_destroyed("void stateInt(")
+    uid = cd_destroyed("void stateUnsigned(")
+    assert sid == cd_destroyed("void stateSame(") and sid != uid
+    state_globals = []
+    for rid in (sid, uid):
+        names = {n["name"] for n in walk(cd_functions[rid+"_destroy"]) if n.get("kind") == "var" and n.get("name") in cd_globals}
+        assert len(names) == 1, names
+        state_globals.append(names)
+    assert not state_globals[0] & state_globals[1]
+    local_ids = [cd_destroyed(p) for p in ("void localInt(", "void localUnsigned(")]
+    assert len(set(local_ids)) == 2
+    inside_ids = []
+    for rid, scalar in zip(local_ids, ("int", "uint")):
+        calls = gc_calls(cd_functions[rid+"_destroy"])
+        assert len(calls) == 1 and calls[0]["callee"].endswith("_destroy")
+        inside = calls[0]["callee"][:-len("_destroy")]
+        assert [f["type"] for f in cd_records[inside]["fields"]] == [scalar]
+        inside_ids.append(inside)
+    assert len(set(inside_ids)) == 2
+    for function in class_destructors["functions"]:
+        if function["name"].endswith("_destroy"):
+            rid = function["name"][:-len("_destroy")]
+            assert rid in cd_records and function["result"] == "void" and function["internal"]
+            assert [p["type"] for p in function["params"]] == ["ptr:"+rid]
+        for call in gc_calls(function):
+            assert call["callee"] in cd_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in cd_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-class-destructors-relocated-") as temp:
+        relocated = check("v2-class-destructors-relocated", class_destructors_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == class_destructors, "destructor identities depend on absolute paths"
+    lazy_destructors_source = """template<class T>struct Lazy{T n;~Lazy()noexcept(sizeof(this->n)>0){T::missing();}};
+struct Wrapper{Lazy<int>member;};
+template<class T>struct Missing{T n;~Missing();};
+static_assert(sizeof(Wrapper)==sizeof(int));
+static_assert(sizeof(Missing<int>)==sizeof(int));
+bool query(){return noexcept(Lazy<int>{1});}
+"""
+    lazy_destructors = check("v2-class-destructors-lazy", lazy_destructors_source, profile="cpp-core-v2")
+    assert len(lazy_destructors["records"]) == 3
+    assert len(lazy_destructors["functions"]) == 1
+    query = lazy_destructors["functions"][0]
+    assert query["result"] == "bool" and not query["params"] and not gc_calls(query)
+    assert not any(f["name"].endswith("_destroy") for f in lazy_destructors["functions"])
+
+    class_destructors_positive = {
+        'promoted-aggregate-method': 'template<class T>struct R{T n;~R(){}};',
+        'promoted-constructor': 'template<class T>struct R{T n;R(T v):n(v){}~R(){}};',
+        'inline': 'int n=0;template<class T>struct R{T v;~R(){n=v;}};int main(){{R<int>r{3};}return n-3;}',
+        'out-of-line': 'int n=0;template<class T>struct R{T v;~R();};template<class T>R<T>::~R(){n=v;}int main(){{R<int>r{3};}return n-3;}',
+        'constructor': 'int n=0;template<class T>struct R{T v;R(T x):v(x){}~R(){n=v;}};int main(){{R<int>r(3);}return n-3;}',
+        'scalar-argument': 'int n=0;template<int N>struct R{~R(){n=N;}};int main(){{R<3>r;}return n-3;}',
+        'auto-argument': 'int n=0;template<auto N>struct R{~R(){n=static_cast<int>(N);}};int main(){{R<3u>r;}return n-3;}',
+        'boolean-branch': 'int n=0;template<class T,bool B>struct R{~R(){if constexpr(B)n=3;else n=T::missing;}};int main(){{R<int,true>r;}return n-3;}',
+        'dependent-noexcept': 'template<class T>struct R{~R()noexcept(sizeof(T)==sizeof(int)) {}};void f(){R<int>r;}static_assert(noexcept(R<int>{}));',
+        'throw-empty': 'template<class T>struct R{~R()throw(){}};void f(){R<int>r;}',
+        'noexcept-false': 'template<class T>struct R{~R()noexcept(false){}};void f(){R<int>r;}static_assert(!noexcept(R<int>{}));',
+        'type-only-missing': 'template<class T>struct R{T n;~R();};static_assert(sizeof(R<int>)==sizeof(int));',
+        'query-missing-body': 'template<class T>struct R{T n;~R()noexcept(sizeof(T)==sizeof(int));};static_assert(noexcept(R<int>{1}));static_assert(sizeof(R<int>{1})==sizeof(int));',
+        'query-this-specification': 'template<class T>struct R{T n;~R()noexcept(sizeof(this->n)>0);};bool query(){return noexcept(R<int>{1});}struct S{int n;int get(){return this->n;}};int f(){S s{3};return s.get();}',
+        'query-uninstantiated-body': 'template<class T>struct R{T n;~R()noexcept(sizeof(T)==sizeof(int)){T::missing();}};static_assert(noexcept(R<int>{1}));',
+        'direct-result-definition': 'template<class T>struct R{T n;~R(){n=3;}};R<int>make(){return R<int>{1};}',
+        'type-only-unsupported': 'template<class T>struct R{T n;~R(){double v=1.0;}};static_assert(sizeof(R<int>)==sizeof(int));',
+        'type-only-dependent': 'template<class T>struct R{T n;~R(){T::missing();}};static_assert(sizeof(R<int>)==sizeof(int));',
+        'unused-ordinary-wrapper': 'template<class T>struct R{T n;~R(){T::missing();}};struct W{R<int>r;};static_assert(sizeof(W)==sizeof(int));',
+        'unused-template-wrapper': 'template<class T>struct R{T n;~R(){T::missing();}};template<class T>struct W{R<T>r;};static_assert(sizeof(W<int>)==sizeof(int));',
+        'class-instantiation': 'template<class T>struct R{T n;~R(){n=3;}};template struct R<int>;',
+        'member-instantiation': 'template<class T>struct R{T n;~R(){n=3;}};template R<int>::~R();',
+        'class-declaration-only-member': 'template<class T>struct R{T n;~R();};template struct R<int>;int f(){return sizeof(R<int>);}',
+        'member-specialization': 'int n=0;template<class T>struct R{T v;~R(){n=1;}};template<>R<int>::~R(){n=3;}int main(){{R<int>r{};}return n-3;}',
+        'class-specialization': 'int n=0;template<class T>struct R{T v;~R(){n=1;}};template<>struct R<int>{int v;~R(){n=3;}};int main(){{R<int>r{};}return n-3;}',
+        'alias': 'int n=0;template<class T>struct R{~R(){++n;}};using A=R<int>;int main(){{A a;R<int>b;}return n-2;}',
+        'local-record': 'int n=0;template<class T>struct R{T v;~R(){struct I{T v;~I(){n=v;}};I i{v};}};int main(){{R<int>r{3};}return n-3;}',
+        'static-local': 'int n=0;template<auto N>struct R{~R(){static int count=N;n=++count;}};int main(){{R<3>r;}return n-4;}',
+        'implicit-wrapper': 'int n=0;template<class T>struct R{T v;~R(){n=n*10+v;}};struct W{R<int>r[2];};int main(){{W w{{{1},{2}}};}return n-21;}',
+        'ordinary-user-wrapper': 'int n=0;template<class T>struct R{T v;~R(){n=n*10+v;}};struct W{R<int>r;~W(){n=2;}};int main(){{W w{{1}};}return n-21;}',
+        'ordinary-defaulted-wrapper': 'int n=0;template<class T>struct R{T v;~R(){n=v;}};struct W{R<int>r;~W()=default;};int main(){{W w{{3}};}return n-3;}',
+        'template-implicit-wrapper': 'int n=0;template<class T>struct R{T v;~R(){n=v;}};template<class T>struct W{R<T>r;};int main(){{W<int>w{{3}};}return n-3;}',
+        'ordinary-unused-body': 'int n=0;template<class T>struct R{T v;~R(){n=v;}};struct W{R<int>r;~W(){n=2;}};',
+        'private-static-factory': 'int n=0;template<class T>class R{T v;~R(){n=v;}public:R(T x):v(x){}static void run(){R r(3);}};int main(){R<int>::run();return n-3;}',
+        'default-argument-temporary': 'int n=0;template<class T>struct R{T v;~R(){n=v;}};int read(const R<int>&r=R<int>{3}){return r.v;}int main(){int v=read();return v-3+n-3;}',
+        'array-range': 'int n=0;template<class T>struct R{T v;~R(){n+=v;}};int main(){{R<int>a[2]={{1},{2}};for(auto&r:a)++r.v;}return n-5;}',
+    }
+    for name, source in class_destructors_positive.items():
+        check("v2-class-destructors-positive-" + name, source, profile="cpp-core-v2")
+    class_destructors_reject = {
+        'selected-floating': 'template<class T>struct R{~R(){double n=1.0;}};void f(){R<int>r;}',
+        'dead-floating': 'template<class T>struct R{~R(){if(false){double n=1.0;}}};void f(){R<int>r;}',
+        'folded-floating': 'template<class T>struct R{~R(){int n=static_cast<int>(1.0);}};void f(){R<int>r;}',
+        'forced-floating': 'template<class T>struct R{~R(){double n=1.0;}};template struct R<int>;',
+        'forced-member-floating': 'template<class T>struct R{~R(){double n=1.0;}};template R<int>::~R();',
+        'selected-noexcept': 'template<class T>struct R{~R()noexcept(1.0>0.0){}};void f(){R<int>r;}',
+        'queried-noexcept-floating': 'template<class T>struct R{T n;~R()noexcept(1.0>0.0);};bool query(){return noexcept(R<int>{1});}',
+        'queried-noexcept-type': 'template<class T>struct R{T n;~R()noexcept(sizeof(double)>0);};bool query(){return noexcept(R<int>{1});}',
+        'queried-dependent-noexcept-type': 'template<class T>struct R{T n;~R()noexcept(sizeof(T)==sizeof(double));};bool query(){return noexcept(R<int>{1});}',
+        'outer-parameter-type': 'template<int N>struct R{~R();};template<decltype(static_cast<int>(1.0)) N>R<N>::~R(){}',
+        'attribute': 'template<class T>struct R{[[deprecated]]~R(){}};',
+        'defaulted': 'template<class T>struct R{~R()=default;};',
+        'deleted-shape': 'template<class T>struct R{~R()=delete;};',
+        'virtual': 'template<class T>struct R{virtual ~R(){}};',
+        'explicit-call': 'template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}',
+        'dead-explicit-call': 'template<class T>struct R{~R(){}};void f(R<int>&r){if(false)r.~R();}',
+        'global-lifetime': 'template<class T>struct R{~R(){}};R<int>r;',
+        'static-lifetime': 'template<class T>struct R{~R(){}};void f(){static R<int>r;}',
+        'ordinary-unused-unsupported-member': 'template<class T>struct R{~R(){double n=1.0;}};struct W{R<int>r;~W(){}};',
+    }
+    for name, source in class_destructors_reject.items():
+        check("v2-class-destructors-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    class_destructors_invalid = {
+        'selected-dependent': 'template<class T>struct R{~R(){T::missing();}};void f(){R<int>r;}',
+        'forced-dependent': 'template<class T>struct R{~R(){T::missing();}};template struct R<int>;',
+        'private': 'template<class T>class R{~R(){}};void f(){R<int>r;}',
+        'deleted-used': 'template<class T>struct R{~R()=delete;};void f(){R<int>r;}',
+        'missing-explicit-instantiation': 'template<class T>struct R{~R();};template R<int>::~R();',
+        'late-specialization': 'template<class T>struct R{~R(){}};void f(){R<int>r;}template<>R<int>::~R(){}',
+        'duplicate': 'template<class T>struct R{~R(){}~R(){}};',
+        'selected-noexcept-dependent': 'template<class T>struct R{~R()noexcept(T::missing){}};void f(){R<int>r;}',
+    }
+    for name, source in class_destructors_invalid.items():
+        check("v2-class-destructors-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    class_destructors_missing = {
+        'local': 'template<class T>struct R{~R();};void f(){R<int>r;}',
+        'temporary': 'template<class T>struct R{~R();};void f(){R<int>{};}',
+        'reference-temporary': 'template<class T>struct R{~R();};void f(){const R<int>&r=R<int>{};}',
+        'array': 'template<class T>struct R{~R();};void f(){R<int>r[2];}',
+        'member': 'template<class T>struct R{~R();};struct W{R<int>r;};void f(){W w;}',
+        'by-value': 'template<class T>struct R{~R();};void f(R<int>r){}',
+        'direct-result': 'template<class T>struct R{T n;~R();};R<int>make(){return R<int>{1};}',
+        'specialization-declaration': 'template<class T>struct R{~R(){}};template<>R<int>::~R();',
+        'ordinary': 'struct R{~R();};',
+        'extern-member': 'template<class T>struct R{~R(){}};extern template R<int>::~R();',
+    }
+    for name, source in class_destructors_missing.items():
+        check("v2-class-destructors-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-class-destructor", "template<class T>struct R{~R(){}};void f(){R<int>r;}", "TR0201")
+
     class_constructors_source = """struct Guard{int n;Guard(int v):n(v){}~Guard(){n=99;}};
 template<class T,int N>struct Box{
  T n;
@@ -6683,7 +6921,6 @@ int privateRead(const Private<int>&v){return v.get();}
         'parameter-attribute': 'template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};',
         'delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};',
         'defaulted': 'template<class T>struct R{T n;R()=default;};',
-        'destructor': 'template<class T>struct R{T n;R(T v):n(v){}~R(){}};',
         'own-template': 'template<class T>struct R{T n;template<class U>R(U v):n(v){}};',
         'operator': 'template<class T>struct R{T n;R(T v):n(v){}T operator()(){return n;}};',
         'conversion-function': 'template<class T>struct R{T n;R(T v):n(v){}operator T(){return n;}};',
@@ -6958,7 +7195,6 @@ int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;r
         'volatile': 'template<class T>struct R{int f()volatile{return 1;}};',
         'deleted': 'template<class T>struct R{int f()=delete;};',
         'member-template': 'template<class T>struct R{template<class U>U f(U v){return v;}};',
-        'destructor': 'template<class T>struct R{T n;~R(){}};',
         'operator': 'template<class T>struct R{T n;T operator()(){return n;}};',
         'conversion': 'template<class T>struct R{T n;operator int(){return 1;}};',
         'static-data': 'template<class T>struct R{static int n;int f(){return n;}};',
@@ -7206,7 +7442,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'value-pack': 'template<int...N>struct R{int n;};',
         'type-pack': 'template<class...T>struct R{int n;};',
         'template-template': 'template<template<class>class T>struct R{int n;};',
-        'destructor': 'template<class T>struct R{T n;~R(){}};',
         'friend': 'template<class T>struct R{T n;friend int get(R r){return r.n;}};',
         'static-member': 'template<class T>struct R{inline static T n=1;};',
         'nested-record': 'template<class T>struct R{struct I{T n;};};',

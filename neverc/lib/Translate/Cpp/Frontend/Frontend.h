@@ -148,6 +148,8 @@ public:
   std::map<const clang::FunctionTemplateDecl *, std::size_t> TemplateOrdinals;
   std::vector<clang::FunctionDecl *> Functions;
   std::vector<clang::CXXRecordDecl *> Records;
+  std::vector<const clang::CXXRecordDecl *> Destructions;
+  std::set<const clang::CXXRecordDecl *> RequiredDestructions;
   std::vector<clang::VarDecl *> Globals;
   std::set<const clang::VarDecl *> StaticLocals;
   std::map<const clang::VarDecl *, llvm::APSInt> StaticMemberValues;
@@ -184,6 +186,8 @@ public:
   const clang::VarDecl *temporaryOwner(const clang::MaterializeTemporaryExpr *Temporary);
   json::Object lower(clang::FunctionDecl *Function);
   std::string destructionName(const clang::CXXRecordDecl *Record);
+  void requireDestruction(const clang::CXXRecordDecl *Record,
+                          clang::SourceLocation Location);
   json::Object lowerDestruction(const clang::CXXRecordDecl *Record);
   void run();
 };

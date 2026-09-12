@@ -56,7 +56,7 @@ static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
 // Identity only: unused member instances can have an undeduced auto return.
 static const ClassTemplateDecl *classFunctionPrimary(const FunctionDecl *F) {
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
-  if (!M || (!isa<CXXConstructorDecl>(M) &&
+  if (!M || (!isa<CXXConstructorDecl, CXXDestructorDecl>(M) &&
              (M->getKind() != Decl::CXXMethod || !M->getIdentifier())) ||
       M->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
       !M->getMemberSpecializationInfo() || M->getDescribedFunctionTemplate())
@@ -663,7 +663,8 @@ const Expr *selectedDefaultArgument(const CXXDefaultArgExpr *Default,
 bool ordinaryDestructor(const CXXDestructorDecl *D) {
   if (!D || D->isImplicit() || !D->isUserProvided() || D->isVirtual() ||
       D->isDeletedAsWritten() || D->isExplicitlyDefaulted() ||
-      D->getTemplatedKind() != FunctionDecl::TK_NonTemplate)
+      (D->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       !concreteClassFunction(D)))
     return false;
   // A spelled destructor without noexcept still has an implicit exception
   // specification. Keep that lazy state; written forms use the standard gate.
@@ -684,6 +685,18 @@ bool needsDestruction(QualType T) {
 
 std::string Adapter::destructionName(const CXXRecordDecl *Record) {
   return name(Record) + "_destroy";
+}
+
+void Adapter::requireDestruction(const CXXRecordDecl *Record, SourceLocation L) {
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  if (!Definition) {
+    reject(L, "destruction", "A complete admitted record is required.");
+    throw Failure{};
+  }
+  if (RequiredDestructions.insert(Definition).second) {
+    chargeExpansion(1, L);
+    Destructions.push_back(Definition);
+  }
 }
 
 const Expr *directMethodReference(const CallExpr *Call) {
@@ -1070,6 +1083,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!Constructor->isUserProvided() || Constructor->isDelegatingConstructor() ||
           Constructor->isInheritingConstructor() || Constructor->isStatic() ||
           Constructor->getMethodQualifiers().getCVRQualifiers())
+        return false;
+    } else if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(M)) {
+      if (!Destructor->isUserProvided() || Destructor->isStatic() ||
+          Destructor->getNumParams() ||
+          Destructor->getMethodQualifiers().getCVRQualifiers())
         return false;
     } else if (M->getKind() != Decl::CXXMethod || !M->getIdentifier()) {
       return false;
@@ -1631,7 +1649,7 @@ public:
       return false;
     if (!classTemplateShape(D)) {
       A.reject(D->getLocation(), "class template",
-               "Only owned namespace class templates with supported parameters and field/type/named-method/constructor declarations are admitted.");
+               "Only owned namespace class templates with supported parameters and field/type/named-method/constructor/destructor declarations are admitted.");
       return true;
     }
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
@@ -1749,7 +1767,7 @@ public:
           if (!classTemplateShape(Primary) || !classTemplateFunctionShape(Method) ||
               Method->getNumTemplateParameterLists() > 1) {
             A.reject(Method->getLocation(), "class template function pattern",
-                     "An ordinary named method or constructor of an admitted namespace class template is required.");
+                     "An ordinary named method, constructor or destructor of an admitted namespace class template is required.");
             return true;
           }
           for (unsigned I = 0; I < Method->getNumTemplateParameterLists(); ++I) {
@@ -1768,13 +1786,42 @@ public:
         if (const auto *Primary = classFunctionPrimary(Method)) {
           if (!classTemplateShape(Primary) || !classTemplateFunctionShape(Method)) {
             A.reject(Method->getLocation(), "class template function",
-                     "A named method or constructor instance of an admitted owned primary is required.");
+                     "A named method, constructor or destructor instance of an admitted owned primary is required.");
             return true;
           }
           auto Kind = Method->getTemplateSpecializationKind();
           if (!Method->hasBody() &&
-              (Kind == TSK_Undeclared || Kind == TSK_ImplicitInstantiation))
+              (Kind == TSK_Undeclared || Kind == TSK_ImplicitInstantiation)) {
+            if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method)) {
+              // Returning directly into caller storage may need a definition
+              // without emitting a cleanup call in the current function.
+              if (Destructor->isUsed(/*CheckUsedAttr=*/false)) {
+                A.reject(Destructor->getLocation(), "destructor definition",
+                         "A required destructor needs a definition in this source unit.",
+                         "TR0203");
+                return true;
+              }
+              if (Destructor->isReferenced()) {
+                // Unevaluated references resolve noexcept without requiring a
+                // body. Check its written/resolved source with method context.
+                if (!ordinaryDestructor(Destructor)) {
+                  A.reject(Destructor->getLocation(), "destructor specification",
+                           "An admitted resolved destructor specification is required.");
+                  return true;
+                }
+                auto *SavedFunction = CurrentFunction;
+                auto *SavedMethod = CurrentMethod;
+                CurrentFunction = Method;
+                CurrentMethod = Method;
+                auto Restore = llvm::make_scope_exit([&] {
+                  CurrentFunction = SavedFunction;
+                  CurrentMethod = SavedMethod;
+                });
+                return TraverseTypeLoc(Destructor->getTypeSourceInfo()->getTypeLoc());
+              }
+            }
             return true; // Includes still-undeduced auto results of unused methods.
+          }
           if (!concreteClassFunction(Method)) {
             A.reject(Method->getLocation(), "class template function type",
                      "A materialized member function requires a resolved type.");
@@ -2221,11 +2268,15 @@ public:
       if (!Declaration || D->doesThisDeclarationHaveABody())
         Declaration = D;
     }
-    // Destructors are emitted once per record, including the implicit member
-    // destruction epilogue, rather than as an ordinary body-only function.
-    if (D->doesThisDeclarationHaveABody() && !D->isImplicit() && !Defaulted &&
-        !(A.S.coreV2() && isa<CXXDestructorDecl>(D)))
-      A.Functions.push_back(D);
+    // Materialized user destructor bodies retain source-unit checks even if
+    // uncalled. Their helpers include the member destruction epilogue.
+    if (D->doesThisDeclarationHaveABody() && !D->isImplicit() && !Defaulted) {
+      if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(D);
+          A.S.coreV2() && Destructor)
+        A.requireDestruction(Destructor->getParent(), Destructor->getLocation());
+      else
+        A.Functions.push_back(D);
+    }
     return true;
   }
   bool VisitVarDecl(VarDecl *D) {
@@ -2993,9 +3044,10 @@ void Adapter::run() {
   for (auto *F : Functions)
     FunctionData.push_back(lower(F));
   if (S.coreV2())
-    for (const auto *R : Records)
-      if (needsDestruction(Context.getRecordType(R)))
-        FunctionData.push_back(lowerDestruction(R));
+    // Lowering a helper can request additional member/array destruction.
+    // Unused implicit helpers must not force lazy template destructor bodies.
+    for (std::size_t I = 0; I < Destructions.size(); ++I)
+      FunctionData.push_back(lowerDestruction(Destructions[I]));
   if (S.project())
     addProjectMetadata();
   if (S.math()) {

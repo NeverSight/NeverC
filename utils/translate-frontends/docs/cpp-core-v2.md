@@ -699,10 +699,10 @@ including forward declarations followed by definitions, are supported.
 
 Patterns and explicit specializations may declare fields, ordinary type aliases,
 enums, static assertions, access labels, ordinary named methods and user-provided
-constructors as described below. Aggregates and constructed instances must be
+constructors and destructors as described below. Aggregates and constructed instances must be
 complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
-remain checked when selected. Explicit defaulted members, destructors,
+remain checked when selected. Explicit defaulted members,
 operators/conversions, member function templates, static data, friends, nested
 records/templates, bases and partial specializations
 remain outside this class-template increment. Non-type defaults, packs,
@@ -757,7 +757,7 @@ the same source checks as the primary parameter list before metadata is erased.
 Selected default/noexcept expressions and materialized signatures/bodies must pass
 the ordinary profile checks. Attributes, virtual/variadic/deleted methods,
 volatile/restrict qualifiers and member function templates are excluded. The class
-must remain an admitted standard-layout record; explicit defaulted members, destructors,
+must remain an admitted standard-layout record; explicit defaulted members,
 operator/conversion, static data, friend, nested/partial-template and base support
 is not expanded here.
 
@@ -803,13 +803,53 @@ operations. Constructor-local records and scalar static locals retain concrete
 class-instance identities. No template argument becomes a runtime parameter.
 
 Delegating/inherited constructors, explicit defaulted class-template members,
-explicit template destructors, operators/conversions and own member templates are
-not included. Implicit special-member support is unchanged. In particular,
-ordinary nontrivial fields may use their existing destruction, but this increment
-does not change generation of destruction helpers for template-defined destructors.
+operators/conversions and own member templates are not included. Implicit
+special-member support is unchanged. User-provided template destructors and
+member/array cleanup follow the destructor rules below.
 Native O0/O2 and protocol fixtures cover calls, defaults, copy/move storage,
 initialization order, member/array lifetimes, identities and relocation. Native
 results require the implementing revision's CI; complete C++/STL remains unfinished.
+
+## Class-template destructors
+
+Admitted concrete standard-layout class templates support user-provided nonvirtual
+destructors, including out-of-line definitions, explicit instantiation and explicit
+member/full-class specialization. The existing standard exception-specification,
+source-ownership, field, layout and expansion limits apply. Every materialized
+owned body is checked, even without a call, and dependent bodies stay lazy until
+the embedded frontend instantiates them.
+
+Definition demand is independent of emitted cleanup. A destructor marked used by
+Clang must have an in-unit definition (`TR0203` if missing), including a function
+that returns an object directly into caller storage. A type-only query does not
+force the body. An unevaluated sizeof/noexcept reference checks a resolved written
+exception specification, including dependent substitutions and this/member uses,
+without requiring an unused body. Unsupported expressions cannot disappear behind
+a folded exception value. Explicit member instantiation/specialization declarations
+retain the existing definition rule; explicit class instantiation only instantiates
+visible definitions.
+
+Each destruction helper is an internal void function with one pointer to the
+concrete record. The user body runs before reverse member and array-element
+cleanup, including on early return. Existing lexical/full-expression cleanups,
+reference lifetime extension, by-value parameters and returned-object ownership
+are preserved. Return values are captured before cleanup can change their source.
+Template arguments affect identity, not the runtime parameter list; aliases share
+helpers and differing instances retain distinct local records and static storage.
+
+The producer queues helpers for materialized user destructor bodies and actual
+lowered cleanup. Member cleanup adds dependencies to the same bounded deduplicated
+queue. Unused implicit/defaulted wrappers do not force an unused template member's
+destructor body. Ordinary materialized user bodies remain checked and emitted.
+There is no opaque source or binary fallback and no external Clang process.
+
+Explicit destructor calls and lifetime restart, virtual dispatch/bases, explicit
+defaulted template members, static-duration destruction and the other unsupported
+template forms remain unfinished. Native O0/O2 fixtures check body/member/array
+order, control-flow exits, temporary/reference/parameter/result storage, copy/move,
+specializations and local identities. Protocol checks cover exact signatures,
+callee closure, pointer identity, unused bodies and relocation. Native results
+require CI of the implementing revision; complete C++17/STL is still unfinished.
 
 ## Concrete free function templates
 

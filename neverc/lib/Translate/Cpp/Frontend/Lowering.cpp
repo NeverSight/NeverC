@@ -959,6 +959,7 @@ class FunctionLowering {
     const auto *Record = T->getAsCXXRecordDecl();
     if (!Record || !Record->getDefinition())
       reject(L, "destruction", "A complete admitted record is required.");
+    A.requireDestruction(Record, L);
     json::Array Args;
     Args.push_back(snapshot(address(std::move(Place), T.getUnqualifiedType(), L), L));
     chargeCall(Args, L);
@@ -1814,8 +1815,14 @@ public:
       : A(A), Function(nullptr), DestroyedRecord(R->getDefinition()) {
     if (const auto *D = DestroyedRecord->getDestructor();
         D && !D->isImplicit() && !defaultedLifecycle(D)) {
-      if (!ordinaryDestructor(D) || !D->hasBody())
+      if (!ordinaryDestructor(D))
         reject(D->getLocation(), "destructor", "An admitted owned destructor definition is required.");
+      if (!D->hasBody()) {
+        A.reject(D->getLocation(), "destructor definition",
+                 "A required destructor needs a definition in this source unit.",
+                 "TR0203");
+        throw Failure{};
+      }
       Function = D->getDefinition();
     }
     Prefix = "nct_f" + digest(A.destructionName(R)).substr(0, 12) + "_";
