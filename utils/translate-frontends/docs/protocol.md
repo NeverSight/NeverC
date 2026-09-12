@@ -201,6 +201,21 @@ and early exits use the existing control-flow cleanup. Protocol major 1 and its
 opcodes remain unchanged. See the
 [source lifetime contract](cpp-core-v2.md#automatic-local-reference-lifetime-extension).
 
+## Core v2 void expression effects
+
+Void casts and value initialization have no semantic value carrier. Source effects
+use existing calls, stores and branches; a void return has no `value`, and a void
+call has no `target`. No local, parameter, literal, aggregate, cast result or other
+expression operand can acquire a void type. Function result metadata can still be
+`void`. The checked empty list from source `void{}` never enters the protocol.
+
+Discarded nonvolatile glvalues retain address/index/receiver effects without a
+value load. Record and array prvalues retain real construction destinations and
+existing full-expression cleanup guards, including selected conditional branches.
+Casting a record lvalue to void introduces no copy, unrelated user conversion or
+extra owner. There is no new opcode, schema field or version. See the
+[void source contract](cpp-core-v2.md#void-and-discarded-value-expressions).
+
 ## Core v2 empty record layout
 
 A core-v2 empty record keeps `fields: []` and layout evidence

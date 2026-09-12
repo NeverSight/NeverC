@@ -69,6 +69,8 @@ Core v2 also supports standalone fixed-array temporaries in calls, decay/indexin
 
 Core v2 supports empty standard-layout classes and stateless callable/conversion objects. Empty objects keep their C++ size and alignment of one byte, distinct storage where required, selected constructors/operators and normal cleanup. Trivial copies still evaluate their operands; arrays and containing records count empty elements against storage limits. The generated NC uses an internal storage byte, while source fields remain empty. Inheritance, templates and complete STL remain in development.
 
+Core v2 supports casts to void, `void()` and `void{}`, including supported void aliases, calls, returns, comma expressions and conditional branches. Discarding a nonvolatile lvalue preserves receiver/index effects without reading its stored value; discarding a temporary still constructs and destroys it at the existing full-expression boundary. No void variable or value carrier is emitted. Constant and noexcept operands remain fully checked. Volatile objects, unsupported operand types, templates and complete STL remain outside this increment.
+
 ## Multi-file projects
 
 Select the translation units explicitly from a compilation database and set the project root directory. The built-in frontend analyzes each unit separately; the merger checks definitions, linkage and shared types, and conservatively verifies the one-definition rule (ODR).

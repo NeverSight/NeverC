@@ -69,6 +69,8 @@ Core v2 supporta anche array temporanei autonomi a dimensione fissa nelle chiama
 
 Core v2 supporta classi vuote a layout standard e oggetti funzione o conversione senza stato. Gli oggetti vuoti mantengono dimensione e allineamento C++ di un byte, memoria distinta quando richiesta, costruttori e operatori selezionati e distruzione normale. Le copie banali valutano comunque gli operandi; gli elementi vuoti di array e record contenitori rientrano nei limiti di memoria. Il codice NC generato usa un byte interno e la lista dei campi sorgente resta vuota. Ereditarietà, template e STL completa sono ancora in sviluppo.
 
+Core v2 supporta conversioni a void, `void()` e `void{}`, insieme ad alias void compatibili, chiamate, ritorni, espressioni virgola e rami condizionali. Scartare un lvalue non volatile conserva gli effetti del ricevitore e dell’indice senza leggerne il valore memorizzato. Gli oggetti temporanei vengono comunque costruiti e distrutti alla fine dell’espressione completa originale. Non vengono generate variabili o valori void. Gli operandi costanti e noexcept restano verificati. Oggetti volatile, tipi non supportati, template e STL completa restano fuori da questa fase.
+
 ## Progetti con più file
 
 Selezionare esplicitamente le unità di traduzione da un database di compilazione e specificare la directory radice del progetto. Il frontend integrato analizza ogni unità separatamente; la fusione verifica definizioni, collegamento, tipi condivisi e il rispetto della regola di definizione unica (ODR) mediante verifiche conservative.

@@ -535,6 +535,35 @@ def main():
         'empty-record-constructor-receiver': 'int bad=0;struct E{E(E*p){if(this!=p)++bad;}};int f(){E e(&e);return bad;}',
         'empty-record-query': 'struct E{E()noexcept{}~E()noexcept{}};static_assert(noexcept(E()));static_assert(sizeof(E{})==1);',
     })
+    core_v2.update({
+        'void-expression-cast-forms': 'int n=0;int g(){return ++n;}void f(){(void)g();static_cast<void>(g());(void(g()));}',
+        'void-expression-no-value': 'void f(){void();void{};}',
+        'void-expression-alias': 'using V=void;void f(){V();V{};(V(1));}',
+        'void-expression-const-void': 'using V=const void;void f(){V();V{};static_cast<V>(1);}',
+        'void-expression-null-literal': 'void f(){static_cast<void>(nullptr);(void(nullptr));nullptr;}',
+        'void-expression-uninitialized': 'struct R{int n;};void f(){int n;R r;int a[2];static_cast<void>(n);static_cast<void>(r);static_cast<void>(r.n);static_cast<void>(a);}',
+        'void-expression-dereference': 'void f(int*p){static_cast<void>(*p++);}',
+        'void-expression-array-index': 'int n=0;int index(){return ++n;}void f(){int a[2];static_cast<void>(a[index()]);}',
+        'void-expression-function-designator': 'int g(){return 1;}void f(){static_cast<void>(g);}',
+        'void-expression-void-return': 'void g(){}void f(){return static_cast<void>(g());}',
+        'void-expression-void-initialized-return': 'using V=void;void f(){return V{};}',
+        'void-expression-conditional': 'void g(){}void f(bool b){return b?static_cast<void>(g()):void{};}',
+        'void-expression-comma': 'int g(){return 1;}int f(){return(static_cast<void>(g()),2);}',
+        'void-expression-record': 'int n=0;struct R{int x;~R(){++n;}};void f(){static_cast<void>(R{1});}',
+        'void-expression-record-lvalue': 'struct R{int n;operator int(){return ++n;}};void f(R&r){static_cast<void>(r);}',
+        'void-expression-conversion': 'struct R{int n;operator int(){return ++n;}};void f(R&r){static_cast<void>(static_cast<int>(r));}',
+        'void-expression-array': 'struct R{int n;~R(){}};using A=R[2];void f(){static_cast<void>(A{{1},{2}});}',
+        'void-expression-empty': 'struct E{E(){}~E(){}};void f(){static_cast<void>(E{});}',
+        'void-expression-extended-reference': 'struct R{int n;~R(){}};void f(){const R&r=R{1};static_cast<void>(r);}',
+        'void-expression-dmi': 'struct R{int n=(static_cast<void>(1),2);};int f(){R r{};return r.n;}',
+        'void-expression-constexpr': 'constexpr int f(){void();void{};return(static_cast<void>(1),2);}static_assert(f()==2);',
+        'void-expression-constexpr-void': 'constexpr void f(){void{};}static_assert((f(),true));',
+        'void-expression-noexcept': 'static_assert(noexcept(void()));static_assert(noexcept(void{}));static_assert(noexcept(static_cast<void>(nullptr)));',
+        'void-expression-folded-promotion-1': 'enum E : int { value = (static_cast<void>(0), 1) };',
+        'void-expression-folded-promotion-2': 'static_assert((static_cast<void>(0), true), "checked condition");',
+        'void-expression-folded-promotion-3': 'enum E:int{v=(static_cast<void>(0),1)}; int main(){}',
+        'void-expression-folded-promotion-4': 'static_assert((static_cast<void>(0),true),"condition"); int main(){}',
+    })
     for name, source in core_v2.items():
         check("v2-" + name, source, profile="cpp-core-v2")
     # The generated C++17 record calling convention owns parameter/result
@@ -2894,6 +2923,190 @@ bool query(){return noexcept(C());}
         check("v2-" + 'empty_record_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
     check("v1-empty-record-reference", "struct E{};void f(){E e;}", "TR0201")
     check("v1-empty-record-decay", "struct F{int operator()()const{return 1;}};int f(){F f;return f();}", "TR0201")
+    void_expression_source = """int count=0;
+void mark(int n){count+=n;}
+int source(){return ++count;}
+struct R {
+ int n;
+ R(int value):n(value){mark(1);}
+ ~R(){mark(n);}
+ operator int()const{return n;}
+};
+R&receiver(R&r){mark(1);return r;}
+void noop(){int n;int a[2];(void)n;(void)a;(void)nullptr;void();void{};}
+void named(){static_cast<void>(source);}
+void effects(){(void)source();static_cast<void>(source());(void(source()));}
+void places(int&x,int*p){(void)x;static_cast<void>(*p);(void)p[0];}
+void member(R&r){(void)r;(void)receiver(r);(void)r.n;}
+void converted(R&r){(void)static_cast<int>(r);}
+void temporary(){(void)R(1);mark(9);}
+void comma(){(void)R(1),static_cast<void>(R(2));mark(9);}
+void observed(){(void)R(1),mark(9);}
+void array(){using A=R[2];static_cast<void>(A{R(1),R(2)});mark(9);}
+void returnValue(){R local(9);return static_cast<void>(R(1));}
+void returnedCall(){return static_cast<void>(mark(1));}
+void returnedEmpty(){return void{};}
+void conditional(bool b){return b?(void)R(1):void(R(2));}
+void conditionalEmpty(bool b){return b?void{}:void();}
+bool query(){return noexcept(static_cast<void>(R(1)));}
+bool pureQuery(){return noexcept(void{});}
+int sizeQuery(){return sizeof((static_cast<void>(source()),1));}
+constexpr int constant(){void();void{};return (static_cast<void>(1),2);}
+constexpr int folded=constant();
+static_assert((static_cast<void>(0),true));
+"""
+    void_expressions = check("v2-void-expressions-protocol", void_expression_source, profile="cpp-core-v2")
+    ve_functions = {f["name"]: f for f in void_expressions["functions"]}
+
+    def ve_line(prefix):
+        matches = [i for i, line in enumerate(void_expression_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def ve_function(prefix, result, parameters):
+        matches = [f for f in void_expressions["functions"] if f["loc"]["line"] == ve_line(prefix)
+                   and f["result"] == result and [p["type"] for p in f["params"]] == parameters]
+        assert len(matches) == 1, (prefix, result, parameters, matches)
+        return matches[0]
+
+    def ve_pointer(function, expr):
+        if expr["kind"] == "cast":
+            return ve_pointer(function, expr["args"][0])
+        if expr["kind"] in ("address", "array_decay"):
+            return ve_place(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        values = [n["value"] for n in function["body"] if n["op"] == "assign" and n["target"].get("name") == expr["name"]]
+        if values:
+            assert len(values) == 1, values
+            return ve_pointer(function, values[0])
+        assert any(p["name"] == expr["name"] for p in function["params"]), expr
+        return ("parameter", expr["name"])
+
+    def ve_place(function, expr):
+        if expr["kind"] == "var":
+            return ("object", expr["name"])
+        if expr["kind"] == "dereference":
+            return ve_pointer(function, expr["args"][0])
+        assert expr["kind"] == "index", expr
+        return ("element", ve_pointer(function, expr["args"][0]), gc_identity(function, expr["args"][1]))
+
+    rid = next(r["id"] for r in void_expressions["records"] if r["loc"]["line"] == ve_line("struct R {"))
+    mark = ve_function("void mark(", "void", ["int"])["name"]
+    source = ve_function("int source(", "int", [])["name"]
+    constructor = ve_function(" R(int value)", "void", ["ptr:"+rid, "int"])["name"]
+    destructor = rid+"_destroy"
+    conversion = ve_function(" operator int(", "int", ["cptr:"+rid])["name"]
+    for prefix in ("void noop(", "void named(", "void returnedEmpty("):
+        function = ve_function(prefix, "void", [])
+        assert [n["op"] for n in function["body"]] == ["label", "return"], function
+        assert "value" not in function["body"][-1]
+    effects = ve_function("void effects(", "void", [])
+    assert [c["callee"] for c in gc_calls(effects)] == [source]*3, effects
+    places = ve_function("void places(", "void", ["ptr:int", "ptr:int"])
+    assert not gc_calls(places)
+    assert not any(n["op"] == "assign" and any(v.get("type") == "int" and v.get("kind") in ("dereference", "index", "member")
+                   for v in walk(n["value"])) for n in places["body"]), places
+    member = ve_function("void member(", "void", ["ptr:"+rid])
+    receiver = ve_function("R&receiver(", "ptr:"+rid, ["ptr:"+rid])["name"]
+    assert [c["callee"] for c in gc_calls(member)] == [receiver], member
+    assert not any(n["op"] == "assign" and n["value"]["type"] in (rid, "int") for n in member["body"]), member
+    converted = ve_function("void converted(", "void", ["ptr:"+rid])
+    assert [c["callee"] for c in gc_calls(converted)] == [conversion], converted
+    for prefix, expected, count in (("void temporary(", [constructor, destructor, mark], 1),
+                                    ("void comma(", [constructor, constructor, destructor, destructor, mark], 2),
+                                    ("void observed(", [constructor, mark, destructor], 1),
+                                    ("void returnValue(", [constructor, constructor, destructor, destructor], 2)):
+        function = ve_function(prefix, "void", [])
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == expected, function
+        constructed = [ve_pointer(function, c["args"][0]) for c in calls if c["callee"] == constructor]
+        destroyed = [ve_pointer(function, c["args"][0]) for c in calls if c["callee"] == destructor]
+        assert len(set(constructed)) == count and destroyed == constructed[::-1], function
+        assert len([v for v in function["locals"] if v["type"] == rid]) == count
+    array = ve_function("void array(", "void", [])
+    calls = gc_calls(array)
+    assert [c["callee"] for c in calls] == [constructor, constructor, destructor, destructor, mark], array
+    arrays = [v for v in array["locals"] if v["type"] == "arr:2:"+rid]
+    assert len(arrays) == 1 and not any(v["type"] == rid for v in array["locals"])
+    root = ("object", arrays[0]["name"])
+    assert [ve_pointer(array, c["args"][0]) for c in calls[:2]] == [("element", root, i) for i in (0, 1)]
+    assert [ve_pointer(array, c["args"][0]) for c in calls[2:4]] == [("element", root, i) for i in (1, 0)]
+    returned = ve_function("void returnedCall(", "void", [])
+    assert [c["callee"] for c in gc_calls(returned)] == [mark]
+    conditional = ve_function("void conditional(", "void", ["bool"])
+    calls = gc_calls(conditional)
+    assert [c["callee"] for c in calls] == [constructor, constructor, destructor, destructor]
+    constructed = [ve_pointer(conditional, c["args"][0]) for c in calls[:2]]
+    assert len(set(constructed)) == 2
+    assert [ve_pointer(conditional, c["args"][0]) for c in calls[2:]] == constructed[::-1]
+    flags = [n["target"]["name"] for n in conditional["body"] if n["op"] == "assign" and n["value"].get("value") is True]
+    assert len(set(flags)) == 2
+    for flag in flags:
+        values = [n["value"]["value"] for n in conditional["body"] if n["op"] == "assign" and n["target"].get("name") == flag]
+        assert values == [False, True, False], conditional
+        assert any(n["op"] == "branch" and n["condition"].get("name") == flag for n in conditional["body"])
+    empty = ve_function("void conditionalEmpty(", "void", ["bool"])
+    assert not gc_calls(empty)
+    for prefix, expected in (("bool query(", False), ("bool pureQuery(", True)):
+        function = ve_function(prefix, "bool", [])
+        assert not gc_calls(function) and not any(v["type"] == rid for v in function["locals"])
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and nq_constant(function, returned[0]) is expected
+    assert not gc_calls(ve_function("int sizeQuery(", "int", []))
+    for function in void_expressions["functions"]:
+        assert all(v["type"] != "void" for v in function["locals"]+function["params"]), function
+        for call in gc_calls(function):
+            callee = ve_functions[call["callee"]]
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in callee["params"]]
+            if callee["result"] == "void":
+                assert "target" not in call
+        if function["result"] == "void":
+            assert all("value" not in n for n in function["body"] if n["op"] == "return"), function
+    for node in walk(void_expressions):
+        if "kind" in node:
+            assert node.get("type") != "void", node
+    with tempfile.TemporaryDirectory(prefix="neverc-void-expressions-relocated-") as temp:
+        relocated = check("void-expressions-relocated", void_expression_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == void_expressions, "void expression identities depend on the absolute root"
+
+    void_expression_rejected = {
+        'floating': 'void f(){static_cast<void>(1.0);}',
+        'volatile': 'void f(){volatile int n=1;static_cast<void>(n);}',
+        'volatile-void-alias': 'using V=volatile void;void f(){V();}',
+        'string': 'void f(){static_cast<void>("text");}',
+        'function-pointer': 'void g(){}void f(){static_cast<void>(&g);}',
+        'allocation': 'void f(){static_cast<void>(new int(1));}',
+        'lambda': 'void f(){static_cast<void>([]{});}',
+        'dead-operand': 'void f(){if(false){static_cast<void>(1.0);}}',
+        'constexpr-operand': 'constexpr int f(){static_cast<void>(1.0);return 1;}static_assert(f()==1);',
+        'assertion-operand': 'static_assert((static_cast<void>(1.0),true));',
+        'enum-operand': 'enum E:int{one=(static_cast<void>(1.0),1)};',
+        'noexcept-operand': 'bool f(){return noexcept(static_cast<void>(1.0));}',
+        'untyped-assembly': 'asm("");void f(){void{};}',
+    }
+    for name, source in void_expression_rejected.items():
+        check("v2-" + 'void_expression_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
+    void_expression_invalid = {
+        'nonempty-list': 'void f(){void{1};}',
+        'extra-arguments': 'void f(){(void(1,2));}',
+        'value-from-void': 'int f(){return static_cast<int>(void());}',
+        'nonvoid-return': 'int f(){return void();}',
+        'void-variable': 'void f(){void value;}',
+        'void-reference': 'void f(){void&r=void();}',
+        'overloaded-designator': 'void g(int){}void g(bool){}void f(){static_cast<void>(g);}',
+        'member-designator': 'struct R{int n;void g(){}};void f(R&r){static_cast<void>(r.g);}',
+    }
+    for name, source in void_expression_invalid.items():
+        check("v2-" + 'void_expression_invalid' + "-" + name, source, "TR0202", profile="cpp-core-v2")
+    void_expression_missing = {
+        'direct-call': 'void g();void f(){return static_cast<void>(g());}',
+        'record-call': 'struct R{int n;~R();};void f(){static_cast<void>(R{1});}',
+    }
+    for name, source in void_expression_missing.items():
+        check("v2-" + 'void_expression_missing' + "-" + name, source, "TR0203", profile="cpp-core-v2")
+    check("v1-void-expression-reference", "void f(){static_cast<void>(1);}", "TR0201")
+    check("v1-void-expression-decay", "void f(){void();}", "TR0201")
     defaulted_source = """struct Leaf {
   int value; Leaf *self;
   Leaf():value(7),self(this){}
@@ -3253,8 +3466,6 @@ int main() {
         "unused-volatile-alias": "using Hidden=volatile int; int main(){}",
         "unused-function-alias": "using Hidden=void(); int main(){}",
         "alias-template": "template<class T> using Hidden=T; int main(){}",
-        "folded-enum-cast": "enum E:int{v=(static_cast<void>(0),1)}; int main(){}",
-        "folded-assert-cast": "static_assert((static_cast<void>(0),true),\"condition\"); int main(){}",
         "folded-assert-type": "static_assert(1.0==1.0,\"condition\"); int main(){}",
         "runtime-string": "static_assert(true,\"message\"); const char *s=\"runtime\"; int main(){}",
     }

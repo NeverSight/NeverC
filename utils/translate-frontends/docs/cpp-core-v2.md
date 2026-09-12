@@ -47,9 +47,10 @@ binary ABI or foreign-object identity.
 ## Boundaries and artifact versions
 
 Unsupported operations remain errors even inside constant-evaluated assertions
-and enumerator initializers. For example, a cast to `void` is not yet admitted
-by this profile. A successful `static_assert(true, "message")` does not admit
-runtime string literals or `std::string`.
+and enumerator initializers. A cast to `void` cannot hide an unsupported operand
+such as a floating literal or runtime string. A successful
+`static_assert(true, "message")` does not admit runtime string literals or
+`std::string`.
 
 ## Integer widths, characters and size queries
 
@@ -234,6 +235,44 @@ constructors and destructors follow the separate rules below. The existing
 implicit trivial copy paths are unchanged.
 These methods do not establish STL container or iterator support. V1 profiles
 retain their rejected-method boundary.
+
+## Void and discarded-value expressions
+
+Core v2 admits C-style, static and functional casts to void, `void()`, `void{}`
+and supported non-template void aliases. They compose with calls, returns, comma
+expressions and void conditional branches. A cast evaluates its operand for its
+discarded effects; it does not invoke unrelated user conversions merely because
+the source record offers them. An explicit inner conversion still executes.
+
+Direct discarded nonvolatile lvalues do not load their stored values. Thus
+`(void)uninitialized_int` does not invent a value read, while receiver, pointer
+and index expressions retain their effects. Existing array and unambiguous free
+function designators can be discarded without a decay or call; this does not
+admit function pointers, method values or unresolved overload sets. Discarded
+`nullptr` needs no general nullptr_t value carrier. Unsupported declared types
+and volatile objects remain rejected, including behind a void cast.
+
+Record and array prvalues still use actual storage and selected constructors,
+copies or moves. Destruction stays at the existing complete full-expression
+boundary. For example, `(void)R(1), (void)R(2);` destroys both temporaries after
+the comma expression, in reverse construction order. A void conditional executes
+only its selected branch. A void return evaluates its expression, destroys its
+full-expression temporaries, cleans locals and by-value parameters, then returns
+without a value. No cast introduces an extra cleanup boundary or owner for an alias.
+
+`void()` performs no initialization. Clang's typeless empty list under `void{}` is
+accepted only through its checked functional-cast parent; arbitrary untyped
+expressions and nonempty/alternate lists are not accepted. No void local, literal,
+aggregate or value operand is emitted. Existing call/branch/return instructions
+represent the observable effects without a new protocol opcode or version.
+
+Constant expressions, enum initializers, static assertions and noexcept operands
+remain fully inspected. Noexcept/sizeof queries do not execute operand effects.
+Invalid C++ remains a Clang diagnostic; unsupported types or source constructs
+remain profile errors in dead or discarded code. Other profiles keep their prior
+boundaries. Fixtures check source effects, absence of lvalue reads, actual temporary
+storage, cleanup order, typed protocol results and relocation. Native evidence
+requires the implementing revision's CI; full C++/STL remains unfinished.
 
 ## Empty record storage and operations
 

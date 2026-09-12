@@ -586,6 +586,19 @@ class FunctionLowering {
     }
     if (const auto *C = dyn_cast<CastExpr>(E)) {
       switch (C->getCastKind()) {
+      case CK_ToVoid:
+        if (!A.S.coreV2() || !C->isPRValue() || !C->getType()->isVoidType() ||
+            C->isTypeDependent() || C->isValueDependent() ||
+            C->isInstantiationDependent() || !C->getSubExpr())
+          reject(L, "void expression",
+                 "A resolved core-v2 void cast is required.");
+        if (!emptyVoidInitializer(C)) {
+          if (C->getSubExpr()->getType().isNull())
+            reject(L, "void expression",
+                   "An untyped operand is not a checked empty void initializer.");
+          discard(C->getSubExpr());
+        }
+        return {};
       case CK_LValueToRValue:
         return snapshot(cast(expression(C->getSubExpr()), T, L), L);
       case CK_NoOp:
@@ -640,6 +653,9 @@ class FunctionLowering {
     }
     if (A.S.coreV2() && isa<ArraySubscriptExpr>(E))
       return lvalue(E);
+    if (A.S.coreV2() && isa<CXXScalarValueInitExpr>(E) &&
+        E->getType()->isVoidType())
+      return {};
     if (isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(E))
       return A.zero(E->getType(), L);
     if (const auto *I = dyn_cast<InitListExpr>(E)) {
@@ -808,6 +824,15 @@ class FunctionLowering {
            "Expression has no supported core lowering.");
   }
   void discard(const Expr *E) {
+    if (A.S.coreV2()) {
+      if (const auto *C = dyn_cast<ConstantExpr>(E)) {
+        discard(C->getSubExpr());
+        return;
+      }
+      // A discarded nullptr has no effects and needs no nullptr_t IR carrier.
+      if (isa<CXXNullPtrLiteralExpr>(E))
+        return;
+    }
     if (const auto *P = dyn_cast<ParenExpr>(E)) {
       discard(P->getSubExpr());
       return;

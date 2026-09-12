@@ -69,6 +69,8 @@ Core v2 también admite arrays temporales independientes de tamaño fijo en llam
 
 Core v2 admite clases vacías de disposición estándar y objetos de función o conversión sin estado. Los objetos vacíos conservan el tamaño y la alineación de un byte de C++, almacenamiento separado cuando corresponde, constructores y operadores seleccionados y destrucción normal. Las copias triviales siguen evaluando sus operandos; los elementos vacíos de arrays y registros contenedores cuentan para el límite de almacenamiento. El NC generado usa un byte interno y la lista de campos fuente permanece vacía. La herencia, las plantillas y la STL completa siguen en desarrollo.
 
+Core v2 admite conversiones a void, `void()` y `void{}`, con alias void compatibles, llamadas, retornos, expresiones coma y ramas condicionales. Descartar un lvalue no volatile conserva los efectos del receptor y del índice sin leer su valor almacenado. Los temporales siguen construyéndose y destruyéndose al final de la expresión completa original. No se generan variables ni valores void. Los operandos constantes y noexcept siguen verificándose. Los objetos volatile, tipos no admitidos, plantillas y STL completa quedan fuera de esta etapa.
+
 ## Proyectos de varios archivos
 
 Seleccione explícitamente las unidades de traducción en una base de datos de compilación y especifique el directorio raíz del proyecto. El frontend integrado analiza cada unidad por separado; la fusión verifica definiciones, enlace, tipos compartidos y el cumplimiento de la regla de una sola definición (ODR) mediante comprobaciones conservadoras.

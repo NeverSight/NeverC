@@ -69,6 +69,8 @@ Core v2 unterstützt auch eigenständige temporäre Arrays fester Größe in Auf
 
 Core v2 unterstützt leere Standard-Layout-Klassen sowie zustandslose Funktions- und Konvertierungsobjekte. Leere Objekte behalten C++-Größe und Ausrichtung von je einem Byte, erforderlichen getrennten Speicher, ausgewählte Konstruktoren und Operatoren sowie normale Destruktion. Triviale Kopien werten ihre Operanden weiterhin aus; leere Elemente in Arrays und umschließenden Records zählen zum Speicherlimit. Der erzeugte NC-Code nutzt ein internes Speicherbyte, die Quellfeldliste bleibt leer. Vererbung, Templates und die vollständige STL sind weiter in Entwicklung.
 
+Core v2 unterstützt Konvertierungen zu void, `void()` und `void{}` sowie unterstützte void-Aliase, Aufrufe, Rückgaben, Kommaausdrücke und bedingte Zweige. Beim Verwerfen eines nicht volatilen Lvalues bleiben Empfänger- und Indexeffekte erhalten, ohne dessen gespeicherten Wert zu lesen. Temporäre Objekte werden weiterhin konstruiert und am bisherigen Ende des vollständigen Ausdrucks zerstört. Es entstehen keine void-Variablen oder Wertträger. Konstanten- und noexcept-Operanden werden weiterhin geprüft. Volatile Objekte, nicht unterstützte Typen, Templates und die vollständige STL bleiben außerhalb dieses Schritts.
+
 ## Projekte mit mehreren Dateien
 
 Wählen Sie Übersetzungseinheiten ausdrücklich aus einer Kompilierungsdatenbank aus und geben Sie das Projektstammverzeichnis an. Das integrierte Frontend analysiert jede Einheit einzeln; die Zusammenführung prüft Definitionen, Bindung, gemeinsame Typen und die Einhaltung der Ein-Definitions-Regel (ODR) anhand konservativer Prüfungen.

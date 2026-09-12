@@ -97,6 +97,7 @@ const clang::VarDecl *automaticTemporaryOwner(
     const clang::MaterializeTemporaryExpr *Temporary, clang::ASTContext &Context);
 const clang::Expr *referenceListInitializer(const clang::InitListExpr *List,
                                           clang::ASTContext &Context);
+const clang::InitListExpr *emptyVoidInitializer(const clang::Expr *Expression);
 bool ordinaryConstructor(const clang::CXXConstructorDecl *Constructor);
 const clang::CXXConstructExpr *constructorConversion(const clang::CastExpr *Cast,
                                                    clang::ASTContext &Context);

@@ -69,6 +69,8 @@ Core v2 accepte aussi les tableaux temporaires autonomes de taille fixe dans les
 
 Core v2 prend en charge les classes vides à disposition standard et les objets fonctionnels ou de conversion sans état. Les objets vides conservent une taille et un alignement C++ d’un octet, un stockage distinct lorsque nécessaire, les constructeurs et opérateurs sélectionnés et la destruction normale. Les copies triviales évaluent toujours leurs opérandes ; les éléments vides des tableaux et des enregistrements comptent dans les limites de stockage. Le NC généré utilise un octet interne et la liste des champs source reste vide. L’héritage, les templates et la STL complète restent en développement.
 
+Core v2 prend en charge les conversions vers void, `void()` et `void{}`, avec les alias void compatibles, appels, retours, expressions virgule et branches conditionnelles. Ignorer une lvalue non volatile conserve les effets du récepteur et de l’index sans lire sa valeur stockée. Les temporaires sont toujours construits et détruits à la fin de l’expression complète d’origine. Aucune variable ni valeur void n’est générée. Les opérandes constants et noexcept restent vérifiés. Les objets volatile, types non pris en charge, templates et STL complète restent hors de cette étape.
+
 ## Projets à plusieurs fichiers
 
 Sélectionnez explicitement les unités de traduction dans une base de données de compilation et indiquez le répertoire racine du projet. Le frontend intégré analyse chaque unité séparément ; la fusion vérifie les définitions, la liaison, les types partagés et le respect de la règle de définition unique (ODR) de façon conservatrice.

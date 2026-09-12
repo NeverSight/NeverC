@@ -2055,6 +2055,209 @@ TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VoidExpressionsPreserveEffectsAndCleanup) {
+  const auto Source = tmpFile("void-expressions.cpp");
+  const auto Output = tmpFile("void-expressions.nc");
+  writeFile(Source, R"cpp(
+int live=0,made=0,dead=0,copied=0,moved=0,bad=0,converted=0,log=0,effects=0;
+void reset(){live=made=dead=copied=moved=bad=converted=log=effects=0;}
+struct R {
+ int n;R*self;
+ R(int value):n(value),self(this){++live;++made;}
+ R(const R&r):n(r.n),self(this){++live;++made;++copied;}
+ R(R&&r):n(r.n),self(this){++live;++made;++moved;}
+ ~R(){if(self!=this)++bad;--live;++dead;log=log*10+n;}
+ operator int()const{++converted;return n;}
+};
+struct Empty{Empty(){++live;++made;}~Empty(){--live;++dead;}};
+struct Plain{int n;int array[2];};
+using Pair=R[2];using Nothing=void;
+int touch(){++effects;return effects;}
+void action(){++effects;}
+R&receiver(R&r){++effects;return r;}
+Plain&plainReceiver(Plain&r){++effects;return r;}
+int index(){++effects;return 1;}
+int observe(){effects=live;return live;}
+void returns(){R local(9);return static_cast<void>(R(1));}
+void extendedReturn(){const R&local=R(9);return (void(R(1)),Nothing{});}
+void parameterReturn(R parameter){return static_cast<void>(R(1));}
+void branch(bool b){R local(9);return b?(void)R(1):void(R(2));}
+void recursive(int n){if(n){return static_cast<void>(recursive(n-1));}return action();}
+constexpr int foldedFunction(){void();void{};return (static_cast<void>(1),7);}
+constexpr int folded=foldedFunction();
+enum E:int{one=(static_cast<void>(0),1)};
+static_assert((static_cast<void>(0),true));
+static_assert(folded==7&&one==1&&noexcept(void{})&&noexcept(void()));
+int main(){
+ int uninitialized;Plain plain;int array[2];
+ (void)uninitialized;static_cast<void>(plain);(void(array));
+ static_cast<void>(plain.n);(Nothing(plain.array));static_cast<void>(touch);
+ void();void{};Nothing();Nothing{};static_cast<void>(nullptr);(void(nullptr));nullptr;
+ if(effects||live||made||dead||folded!=7)return 1;
+ (void)touch();static_cast<void>(touch());(Nothing(touch()));
+ if(effects!=3)return 2;
+ (void)(static_cast<void>(action()));
+ if(effects!=4)return 3;
+ effects=0;static_cast<void>(plainReceiver(plain).n);static_cast<void>(array[index()]);
+ if(effects!=2)return 4;
+ int values[2]={5,6};int*p=values;static_cast<void>(*p++);static_cast<void>(*p);
+ if(p!=values+1)return 5;
+ effects=0;bool condition=true;condition?void(touch()):void{};condition=false;condition?void{}:static_cast<void>(touch());
+ if(effects!=2)return 6;
+ effects=0;recursive(2);
+ if(effects!=1)return 7;
+ reset();(void)R(1);
+ if(live||made!=1||dead!=1||copied||moved||converted||bad||log!=1)return 8;
+ reset();static_cast<void>(R(2));
+ if(live||made!=1||dead!=1||converted||bad||log!=2)return 9;
+ reset();(Nothing(R(3)));
+ if(live||made!=1||dead!=1||converted||bad||log!=3)return 10;
+ reset();static_cast<void>(static_cast<int>(R(4)));
+ if(live||made!=1||dead!=1||converted!=1||bad||log!=4)return 11;
+ reset();
+ {R object(5);static_cast<void>(object);static_cast<void>(receiver(object));static_cast<void>(static_cast<const R&>(object));
+  if(live!=1||made!=1||dead||copied||moved||converted||bad||effects!=1)return 12;}
+ if(live||dead!=1||log!=5)return 13;
+ reset();(void)R(1),static_cast<void>(R(2));
+ if(live||made!=2||dead!=2||bad||log!=21)return 14;
+ reset();int seen=(static_cast<void>(R(3)),observe());
+ if(seen!=1||effects!=1||live||made!=1||dead!=1||log!=3)return 15;
+ reset();static_cast<void>((R(1),R(2)));
+ if(live||made!=2||dead!=2||copied||moved||bad||log!=21)return 16;
+ reset();bool b=true;b?static_cast<void>(R(1)):static_cast<void>(R(2));
+ if(live||made!=1||dead!=1||log!=1)return 17;
+ reset();b=false;b?static_cast<void>(R(1)):static_cast<void>(R(2));
+ if(live||made!=1||dead!=1||log!=2)return 18;
+ reset();static_cast<void>(Pair{R(1),R(2)});
+ if(live||made!=2||dead!=2||copied||moved||bad||log!=21)return 19;
+ reset();(Nothing(Pair{R(3),R(4)}));
+ if(live||made!=2||dead!=2||bad||log!=43)return 20;
+ reset();(void)Empty{};
+ if(live||made!=1||dead!=1)return 21;
+ reset();returns();
+ if(live||made!=2||dead!=2||bad||log!=19)return 22;
+ reset();extendedReturn();
+ if(live||made!=2||dead!=2||bad||log!=19)return 23;
+ reset();parameterReturn(R(9));
+ if(live||made!=2||dead!=2||copied||moved||bad||log!=19)return 24;
+ reset();branch(true);
+ if(live||made!=2||dead!=2||bad||log!=19)return 25;
+ reset();branch(false);
+ if(live||made!=2||dead!=2||bad||log!=29)return 26;
+ reset();
+ for(int i=0;i<3;static_cast<void>(++i)){static_cast<void>(R(1));if(live||dead!=i+1)return 27;if(i==1)continue;}
+ if(live||made!=3||dead!=3||log!=111)return 28;
+ reset();
+ for(int i=0;i<3;void(++i)){static_cast<void>(Pair{R(1),R(2)});if(i==1)break;}
+ if(live||made!=4||dead!=4||bad||log!=2121)return 29;
+ reset();bool quiet=noexcept(static_cast<void>(R(1)));bool pure=noexcept(static_cast<void>(nullptr));
+ if(quiet||!pure||live||made||dead||effects)return 30;
+ reset();
+ {R object(7);unsigned long long size=sizeof((static_cast<void>(touch()),object));
+  if(size!=sizeof(R)||effects||live!=1||dead)return 31;}
+ if(live||dead!=1||log!=7)return 32;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("void-expressions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VoidExpressionsAcceptOrdinaryDiscardedValues) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"cast-forms", "int n=0;int g(){return ++n;}void f(){(void)g();static_cast<void>(g());(void(g()));}"},
+      {"no-value", "void f(){void();void{};}"},
+      {"alias", "using V=void;void f(){V();V{};(V(1));}"},
+      {"const-void", "using V=const void;void f(){V();V{};static_cast<V>(1);}"},
+      {"null-literal", "void f(){static_cast<void>(nullptr);(void(nullptr));nullptr;}"},
+      {"uninitialized", "struct R{int n;};void f(){int n;R r;int a[2];static_cast<void>(n);static_cast<void>(r);static_cast<void>(r.n);static_cast<void>(a);}"},
+      {"dereference", "void f(int*p){static_cast<void>(*p++);}"},
+      {"array-index", "int n=0;int index(){return ++n;}void f(){int a[2];static_cast<void>(a[index()]);}"},
+      {"function-designator", "int g(){return 1;}void f(){static_cast<void>(g);}"},
+      {"void-return", "void g(){}void f(){return static_cast<void>(g());}"},
+      {"void-initialized-return", "using V=void;void f(){return V{};}"},
+      {"conditional", "void g(){}void f(bool b){return b?static_cast<void>(g()):void{};}"},
+      {"comma", "int g(){return 1;}int f(){return(static_cast<void>(g()),2);}"},
+      {"record", "int n=0;struct R{int x;~R(){++n;}};void f(){static_cast<void>(R{1});}"},
+      {"record-lvalue", "struct R{int n;operator int(){return ++n;}};void f(R&r){static_cast<void>(r);}"},
+      {"conversion", "struct R{int n;operator int(){return ++n;}};void f(R&r){static_cast<void>(static_cast<int>(r));}"},
+      {"array", "struct R{int n;~R(){}};using A=R[2];void f(){static_cast<void>(A{{1},{2}});}"},
+      {"empty", "struct E{E(){}~E(){}};void f(){static_cast<void>(E{});}"},
+      {"extended-reference", "struct R{int n;~R(){}};void f(){const R&r=R{1};static_cast<void>(r);}"},
+      {"dmi", "struct R{int n=(static_cast<void>(1),2);};int f(){R r{};return r.n;}"},
+      {"constexpr", "constexpr int f(){void();void{};return(static_cast<void>(1),2);}static_assert(f()==2);"},
+      {"constexpr-void", "constexpr void f(){void{};}static_assert((f(),true));"},
+      {"noexcept", "static_assert(noexcept(void()));static_assert(noexcept(void{}));static_assert(noexcept(static_cast<void>(nullptr)));"},
+      {"folded-promotion-1", "enum E : int { value = (static_cast<void>(0), 1) };"},
+      {"folded-promotion-2", "static_assert((static_cast<void>(0), true), \"checked condition\");"},
+      {"folded-promotion-3", "enum E:int{v=(static_cast<void>(0),1)}; int main(){}"},
+      {"folded-promotion-4", "static_assert((static_cast<void>(0),true),\"condition\"); int main(){}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("void-expressions-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("void-expressions-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VoidExpressionsRetainSourceAndTypeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"floating", "void f(){static_cast<void>(1.0);}", "TR0201"},
+      {"volatile", "void f(){volatile int n=1;static_cast<void>(n);}", "TR0201"},
+      {"volatile-void-alias", "using V=volatile void;void f(){V();}", "TR0201"},
+      {"string", "void f(){static_cast<void>(\"text\");}", "TR0201"},
+      {"function-pointer", "void g(){}void f(){static_cast<void>(&g);}", "TR0201"},
+      {"allocation", "void f(){static_cast<void>(new int(1));}", "TR0201"},
+      {"lambda", "void f(){static_cast<void>([]{});}", "TR0201"},
+      {"dead-operand", "void f(){if(false){static_cast<void>(1.0);}}", "TR0201"},
+      {"constexpr-operand", "constexpr int f(){static_cast<void>(1.0);return 1;}static_assert(f()==1);", "TR0201"},
+      {"assertion-operand", "static_assert((static_cast<void>(1.0),true));", "TR0201"},
+      {"enum-operand", "enum E:int{one=(static_cast<void>(1.0),1)};", "TR0201"},
+      {"noexcept-operand", "bool f(){return noexcept(static_cast<void>(1.0));}", "TR0201"},
+      {"untyped-assembly", "asm(\"\");void f(){void{};}", "TR0201"},
+      {"nonempty-list", "void f(){void{1};}", "TR0202"},
+      {"extra-arguments", "void f(){(void(1,2));}", "TR0202"},
+      {"value-from-void", "int f(){return static_cast<int>(void());}", "TR0202"},
+      {"nonvoid-return", "int f(){return void();}", "TR0202"},
+      {"void-variable", "void f(){void value;}", "TR0202"},
+      {"void-reference", "void f(){void&r=void();}", "TR0202"},
+      {"overloaded-designator", "void g(int){}void g(bool){}void f(){static_cast<void>(g);}", "TR0202"},
+      {"member-designator", "struct R{int n;void g(){}};void f(R&r){static_cast<void>(r.g);}", "TR0202"},
+      {"direct-call", "void g();void f(){return static_cast<void>(g());}", "TR0203"},
+      {"record-call", "struct R{int n;~R();};void f(){static_cast<void>(R{1});}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("void-expressions-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("void-expressions-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("void-expressions-v1.cpp");
+  const auto Output = tmpFile("void-expressions-v1.nc");
+  for (const std::string &Code : {
+      "void f(){static_cast<void>(1);}",
+      "void f(){void();}"}) {
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2EmptyRecordsPreserveStorageAndCleanup) {
   const auto Source = tmpFile("empty-records.cpp");
   const auto Output = tmpFile("empty-records.nc");
@@ -5558,11 +5761,6 @@ TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
       {"volatile-alias", "using Hidden = volatile int;", "TR0201"},
       {"function-alias", "using Hidden = void();", "TR0201"},
       {"alias-template", "template<class T> using Hidden = T;", "TR0201"},
-      {"folded-enum",
-       "enum E : int { value = (static_cast<void>(0), 1) };", "TR0201"},
-      {"folded-assertion",
-       "static_assert((static_cast<void>(0), true), \"checked condition\");",
-       "TR0201"},
       {"floating-assertion", "static_assert(1.0 == 1.0, \"checked types\");",
        "TR0201"},
       {"runtime-string",

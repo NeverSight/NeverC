@@ -429,6 +429,26 @@ const Expr *referenceListInitializer(const InitListExpr *List, ASTContext &Conte
              ? Init : nullptr;
 }
 
+const InitListExpr *emptyVoidInitializer(const Expr *E) {
+  const auto *C = dyn_cast_or_null<CXXFunctionalCastExpr>(E);
+  if (!C || C->getCastKind() != CK_ToVoid || !C->isPRValue() ||
+      C->getType().isNull() || !C->getType()->isVoidType() ||
+      C->getTypeAsWritten().isNull() || !C->getTypeAsWritten()->isVoidType() ||
+      C->isTypeDependent() || C->isValueDependent() ||
+      C->isInstantiationDependent())
+    return nullptr;
+  const auto *List = dyn_cast_or_null<InitListExpr>(C->getSubExpr());
+  // Sema leaves void{}'s empty list untyped, with no alternate form. It is
+  // both syntactic and semantic; no generic typeless expression is admitted.
+  if (!List || !List->isPRValue() || List->getNumInits() ||
+      List->hasArrayFiller() || List->hasDesignatedInit() ||
+      List->getInitializedFieldInUnion() || List->getSemanticForm() ||
+      List->getSyntacticForm() ||
+      (!List->getType().isNull() && !List->getType()->isVoidType()))
+    return nullptr;
+  return List;
+}
+
 bool ordinaryDestructor(const CXXDestructorDecl *D) {
   if (!D || D->isImplicit() || !D->isUserProvided() || D->isVirtual() ||
       D->isDeletedAsWritten() || D->isExplicitlyDefaulted() ||
@@ -785,6 +805,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   const FieldDecl *CurrentDefaultField = nullptr;
   SourceLocation ImplicitInitializerOwner;
   std::set<const Expr *> CheckedSemanticInitializers;
+  std::set<const InitListExpr *> EmptyVoidLists;
   std::set<const CXXConstructExpr *> CheckedConstructions;
   std::set<const Decl *> QueuedGeneratedMethods;
   std::vector<const CXXMethodDecl *> GeneratedMethods;
@@ -1327,6 +1348,9 @@ public:
       return true;
     auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
                                         : ImplicitInitializerOwner;
+    if (A.S.coreV2())
+      if (const auto *List = emptyVoidInitializer(dyn_cast<Expr>(S)))
+        EmptyVoidLists.insert(List);
     if (A.S.coreV2() && ImplicitInitializerOwner.isValid())
       if (const auto *Call = dyn_cast<CallExpr>(S))
         if (auto Copy = generatedArrayAssignment(Call, CurrentMethod, A.Context)) {
@@ -1366,6 +1390,10 @@ public:
       // appear below an already rejected declaration (for example a v1
       // static_assert), so diagnose them before inspecting expression types.
       if (E->getType().isNull()) {
+        if (A.S.coreV2())
+          if (const auto *List = dyn_cast<InitListExpr>(E);
+              List && EmptyVoidLists.count(List))
+            return true;
         A.reject(E->getExprLoc(), "untyped expression",
                  "Diagnostic-only source text is not a translatable value.");
         return true;
@@ -1385,6 +1413,14 @@ public:
           case CK_NullToPointer:
           case CK_PointerToBoolean:
           case CK_ArrayToPointerDecay:
+            break;
+          case CK_ToVoid:
+            if (!C->isPRValue() || !C->getType()->isVoidType() ||
+                C->isTypeDependent() || C->isValueDependent() ||
+                C->isInstantiationDependent() || !C->getSubExpr() ||
+                (C->getSubExpr()->getType().isNull() && !emptyVoidInitializer(C)))
+              A.reject(L, "void expression",
+                       "A resolved void cast with a checked operand is required.");
             break;
           case CK_UserDefinedConversion:
             if (!userConversionCall(C, A.Context))
