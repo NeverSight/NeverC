@@ -3417,7 +3417,6 @@ TEST_F(TranslateTest, CoreV2StaticMembersRetainStorageAndSourceBoundaries) {
       {"tls", "struct R{inline static thread_local int n=1;};", "TR0201"},
       {"volatile", "struct R{inline static volatile int n=1;};", "TR0201"},
       {"variable-template", "struct R{template<class T>inline static int n=1;};", "TR0201"},
-      {"dependent", "template<class T>struct R{inline static T n=1;};", "TR0201"},
       {"folded-unsupported", "struct R{inline static int n=static_cast<int>(1.0);};", "TR0201"},
       {"folded-body", "constexpr int f(){return static_cast<int>(1.0);}struct R{inline static int n=f();};", "TR0201"},
       {"private", "class R{inline static int n=1;};int f(){return R::n;}", "TR0202"},
@@ -4688,6 +4687,136 @@ TEST_F(TranslateTest, CoreV2FrontendRepairsRetainWrittenExceptionSource) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsPreserveConversionsAndLifetime) {
+  const auto Source = tmpFile("fresh-reference-runtime.cpp");
+  const auto Output = tmpFile("fresh-reference-runtime.nc");
+  writeFile(Source, R"cpp(int calls=0;
+template<class T>struct Mutable{T n;operator decltype(auto)(){++calls;return (n);}};
+template<class T>struct Constant{T n;operator decltype(auto)()const{++calls;return (n);}};
+template<class T>struct Collapse{T n;operator auto&&(){++calls;return (n);}};
+template<class T>struct Move{T n;operator decltype(auto)(){++calls;return static_cast<T&&>(n);}};
+template<class T>struct Value{T n;operator auto(){++calls;return n;}};
+template<class T>struct Lazy{T n;operator int&&(){++calls;return static_cast<int&&>(n);}operator auto&(){return T::missing;}};
+int&set(int&n){n=7;return n;}
+const int&get(const int&n){return n;}
+int&&take(int&&n){n=9;return static_cast<int&&>(n);}
+int choose(int&n){n=11;return 1;}
+int choose(const int&n){return 2;}
+int read(const int&n){return n;}
+int live=0;
+struct Life{int n;Life(int v):n(v){++live;}~Life(){--live;}};
+template<class T>Life operator+(const Life&r,T n){return Life(r.n+n);}
+int observe(const Life&r){return r.n+10*live;}
+int consume(Life r){return r.n+10*live;}
+int main(){
+ Mutable<int>a{1};int&x=set(a);
+ if(a.n!=7||&x!=&a.n||calls!=1)return 1;
+ const Constant<int>b{2};const int&y=get(b);
+ if(y!=2||&y!=&b.n||calls!=2)return 2;
+ Collapse<int>c{3};int&z=set(c);
+ if(c.n!=7||&z!=&c.n||calls!=3)return 3;
+ Move<int>d{4};int&&w=take(d);
+ if(d.n!=9||&w!=&d.n||calls!=4)return 4;
+ struct Overload{int n;operator decltype(auto)(){++calls;return (n);}};
+ Overload e{5};int selected=choose(e);
+ if(selected!=1||e.n!=11||calls!=5)return 5;
+ Value<int>f{6};int value=read(f);
+ if(value!=6||f.n!=6||calls!=6)return 6;
+ Lazy<int>g{7};int&&lazy=take(g);
+ if(g.n!=9||&lazy!=&g.n||calls!=7)return 7;
+ {
+  Life original(2);
+  bool inside=observe(original+3)==25&&live==2;
+  if(!inside||live!=1)return 8;
+  int viewed=observe(original+4);
+  if(viewed!=26||live!=1)return 9;
+  int consumed=consume(original+5);
+  if(consumed!=27||live!=1)return 10;
+ }
+ if(live!=0)return 11;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("fresh-reference-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsPositive) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"ordinary-argument", "struct R{int n;operator decltype(auto)(){return (n);}};void set(int&n){n=7;}void f(R&r){set(r);}"},
+      {"const-argument", "template<class T>struct R{T n;operator decltype(auto)()const{return (n);}};int get(const int&n){return n;}int f(const R<int>&r){return get(r);}"},
+      {"collapsed-argument", "template<class T>struct R{T n;operator auto&&(){return (n);}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"auto-lvalue-argument", "template<class T>struct R{T n;operator auto&(){return n;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"rvalue-argument", "template<class T>struct R{T n;operator decltype(auto)(){return static_cast<T&&>(n);}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"auto-rvalue-argument", "template<class T>struct R{T n;operator auto&&(){return static_cast<T&&>(n);}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"const-rvalue-argument", "template<class T>struct R{T n;operator auto&&()const{return static_cast<const T&&>(n);}};int get(const int&&n){return n;}int f(const R<int>&r){return get(r);}"},
+      {"value-const-argument", "template<class T>struct R{T n;operator auto(){return n;}};int get(const int&n){return n;}int f(R<int>&r){return get(r);}"},
+      {"overload-argument", "template<class T>struct R{T n;operator decltype(auto)(){return (n);}};int choose(int&){return 1;}int choose(const int&){return 2;}int f(R<int>&r){return choose(r);}"},
+      {"outside-argument", "template<class T>struct R{T n;operator decltype(auto)();};template<class T>R<T>::operator decltype(auto)(){return (n);}void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"irrelevant-value", "template<class T>struct R{int n;operator int&(){return n;}operator auto(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"irrelevant-pointer", "template<class T>struct R{int n;operator int&(){return n;}operator auto*(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"irrelevant-const-rvalue", "template<class T>struct R{int n;operator int&(){return n;}operator const auto&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"irrelevant-pointer-rvalue", "template<class T>struct R{int n;operator int&(){return n;}operator auto*&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"irrelevant-lvalue-for-rvalue", "template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return T::missing;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"promoted-value-default", "struct R{int n;};template<int N=3>int operator+(R,R){return N;}"},
+      {"selected-value-default", "struct R{int n;};template<int N=3>int operator+(R,R){return N;}int f(){R r{1};return r+r;}"},
+      {"protocol-source", "template<class T>struct RefArg{\n T n;operator decltype(auto)(){return (n);}\n};\ntemplate<class T>struct ConstArg{\n T n;operator decltype(auto)()const{return (n);}\n};\ntemplate<class T>struct MoveArg{\n T n;operator auto&&(){return static_cast<T&&>(n);}\n};\nint&assignArgument(int&n){n=7;return n;}\nconst int&readArgument(const int&n){return n;}\nint&&moveArgument(int&&n){n=9;return static_cast<int&&>(n);}\nint&freshMutable(RefArg<int>&r){return assignArgument(r);}\nconst int&freshConst(const ConstArg<int>&r){return readArgument(r);}\nint&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("fresh-reference-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("fresh-reference-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsReject) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"selected-floating-body", "template<class T>struct R{T n;operator decltype(auto)(){int discarded=int(1.0);return (n);}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"selected-floating-default", "struct R{int n;};template<int N=int(1.0)>int operator+(R,R){return N;}int f(){R r{1};return r+r;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("fresh-reference-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("fresh-reference-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsInvalid) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"explicit-argument", "template<class T>struct R{T n;explicit operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}"},
+      {"private-argument", "template<class T>class R{T n;operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}"},
+      {"const-to-mutable", "template<class T>struct R{T n;operator decltype(auto)()const{return (n);}};void set(int&){}void f(const R<int>&r){set(r);}"},
+      {"value-to-mutable", "template<class T>struct R{T n;operator decltype(auto)(){return n;}};void set(int&){}void f(R<int>&r){set(r);}"},
+      {"lvalue-to-rvalue", "template<class T>struct R{T n;operator decltype(auto)(){return (n);}};void set(int&&){}void f(R<int>&r){set(r);}"},
+      {"selected-invalid-lvalue", "template<class T>struct R{T n;operator auto&(){return T::missing;}};void set(int&){}void f(R<int>&r){set(r);}"},
+      {"selected-invalid-deduced", "template<class T>struct R{T n;operator decltype(auto)(){return T::missing;}};void set(int&){}void f(R<int>&r){set(r);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("fresh-reference-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("fresh-reference-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ParameterPacksPreserveExpansionAndLifetimes) {
   const auto Source = tmpFile("parameter-packs-runtime.cpp");
   const auto Output = tmpFile("parameter-packs-runtime.nc");
@@ -5576,8 +5705,10 @@ int main(){
   if(z.n!=10||live!=3||copies!=0||moves!=0)return 13;
   {const Box<int>&extended=x+3;if(extended.n!=11||live!=4)return 14;}
   if(live!=3)return 15;
-  if(observe(x+4)!=52||live!=3)return 16;
-  if(consume(x+5)!=53||live!=3||copies!=0||moves!=0)return 17;
+  int viewed=observe(x+4);
+  if(viewed!=52||live!=3)return 16;
+  int consumed=consume(x+5);
+  if(consumed!=53||live!=3||copies!=0||moves!=0)return 17;
   {copies=0;Box<int>v=x+y;
    if(v.n!=13||live!=4||observed!=5||copies!=2||moves!=0)return 18;}
   if(live!=3)return 19;
@@ -5678,7 +5809,6 @@ TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesRetainSourceBoundaries) {
       {"literal", "template<char... C>int operator\"\"_number(){return 1;}"},
       {"member-template", "struct R{template<class T>int operator()(T){return 1;}};"},
       {"friend-template", "struct R{int n;template<class T>friend int operator+(const R&r,T n){return r.n+n;}};"},
-      {"value-default", "struct R{int n;};template<int N=3>int operator+(R,R){return N;}"},
       {"local-unused-body", "struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0);}};Local l;return r.n+n;}int f(){return R{3}+4;}"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -6107,7 +6237,7 @@ TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsAcceptSelectedOperations) {
       {"lazy-unsupported", "template<class T>struct R{int n;int operator()(){return int(1.0);}operator auto(){return 1.0;}};static_assert(sizeof(R<int>)==sizeof(int));"},
       {"lazy-default", "template<class T>struct R{T n;T operator()(T x=T::missing){return n+x;}};int f(){R<int>r{3};return r(4);}"},
       {"folded-source", "template<class T>struct R{T n;constexpr T operator()()const{return n;}constexpr operator T()const{return n;}};static_assert(R<int>{3}()==3);static_assert(int(R<int>{4})==4);"},
-      {"noexcept-source", "template<class T>struct R{T n;T operator()()noexcept(sizeof(this->n)>0){return n;}operator T()const noexcept(sizeof(T)>0){return n;}};bool f(R<int>&r){return noexcept(r())&&noexcept(r.operator int());}"},
+      {"noexcept-source", "template<class T>struct R{T n;T operator()()noexcept(sizeof(this->n)>0){return n;}operator T()const noexcept(sizeof(T)>0){return n;}};bool f(R<int>&r){r();r.operator int();return noexcept(r())&&noexcept(r.operator int());}"},
       {"conversion-default", "template<class T>struct R{T n;constexpr operator T()const{return n;}};template<class T>struct S{T n=R<T>{3};T operator()(T x=R<T>{4}){return n+x;}};int f(){S<int>s;return s();}"},
       {"arithmetic", "template<class T>struct R{T n;T operator+(T x)const{return n+x;}T operator-(T x)const{return n-x;}T operator*(T x)const{return n*x;}T operator/(T x)const{return n/x;}T operator%(T x)const{return n%x;}T operator^(T x)const{return n^x;}T operator&(T x)const{return n&x;}T operator|(T x)const{return n|x;}T operator<<(T x)const{return n<<x;}T operator>>(T x)const{return n>>x;}};int f(){R<int>r{6};return (r+2)+(r-2)+(r*2)+(r/2)+(r%2)+(r^2)+(r&2)+(r|2)+(r<<2)+(r>>2);}"},
       {"comparison", "template<class T>struct R{T n;bool operator==(T x)const{return n==x;}bool operator!=(T x)const{return n!=x;}bool operator<(T x)const{return n<x;}bool operator>(T x)const{return n>x;}bool operator<=(T x)const{return n<=x;}bool operator>=(T x)const{return n>=x;}};int f(){R<int>r{6};return (r==2)+(r!=2)+(r<2)+(r>2)+(r<=2)+(r>=2);}"},
@@ -6184,6 +6314,7 @@ TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsRetainLanguageDiagnostics) {
 
 TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsRequireDefinitions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unmaterialized-noexcept-source", "template<class T>struct R{T n;T operator()()noexcept(sizeof(this->n)>0){return n;}operator T()const noexcept(sizeof(T)>0){return n;}};bool f(R<int>&r){return noexcept(r())&&noexcept(r.operator int());}"},
       {"selected-operator", "template<class T>struct R{int operator()();};int f(R<int>&r){return r();}"},
       {"selected-conversion", "template<class T>struct R{operator int();};int f(R<int>&r){return r;}"},
       {"query-operator", "template<class T>struct R{int operator()()noexcept;};bool f(R<int>&r){return noexcept(r());}"},

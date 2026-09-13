@@ -257,6 +257,29 @@ def fix_deduced_reference_conversions(path):
         path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
 
+def fix_deduced_reference_arguments(path):
+    before = "    else\n      Conv = cast<CXXConversionDecl>(D);\n\n    if (AllowRvalues) {\n      // If we are initializing an rvalue reference, don't permit conversion\n      // functions that return lvalues."
+    after = "    else\n      Conv = cast<CXXConversionDecl>(D);\n\n    // NeverC reference-argument deduction precedes result-type filtering.\n    if (!ConvTemplate && S.getLangOpts().CPlusPlus14 &&\n        Conv->getConversionType()->isUndeducedType()) {\n      QualType NeverCArgumentResult = Conv->getConversionType();\n      const auto *NeverCAuto = NeverCArgumentResult->getAs<AutoType>();\n      const auto *NeverCRValue = NeverCArgumentResult->getAs<RValueReferenceType>();\n      const auto *NeverCLValue = NeverCArgumentResult->getAs<LValueReferenceType>();\n      bool NeverCCanBeLValue =\n          (NeverCAuto && NeverCAuto->isDecltypeAuto()) ||\n          (NeverCRValue && !NeverCRValue->getPointeeType().hasQualifiers() &&\n           NeverCRValue->getPointeeType()->getAs<AutoType>());\n      // Preserve the definite lvalue exclusion before touching a lazy body.\n      bool NeverCExcludedLValue = DeclType->isRValueReferenceType() &&\n          NeverCLValue && !NeverCLValue->getPointeeType()->isFunctionType();\n      bool NeverCNeedsResult = AllowRvalues ? !NeverCExcludedLValue\n                                          : NeverCCanBeLValue;\n      if (NeverCNeedsResult && S.DeduceReturnType(Conv, Init->getExprLoc()))\n        continue;\n    }\n\n    if (AllowRvalues) {\n      // If we are initializing an rvalue reference, don't permit conversion\n      // functions that return lvalues."
+    error_message = "Unexpected pinned Clang reference-argument source"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(error_message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if ("NeverC reference-argument deduction" in remainder or
+        re.search(r"\b(?:NeverCArgumentResult|NeverCAuto|NeverCRValue|NeverCLValue|NeverCCanBeLValue|NeverCExcludedLValue|NeverCNeedsResult)\b", remainder)):
+        raise SystemExit(error_message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def fix_imported_namespace_defaults(source_root):
     # Check both parts before writing either private Clang source file.
     header_before = "  NamedDecl *getTargetDecl() const { return Underlying; }"
@@ -608,6 +631,7 @@ fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
 fix_nested_friend_declaration_access(args.source)
 fix_imported_namespace_defaults(args.source)
 fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
+fix_deduced_reference_arguments(args.source / "clang/lib/Sema/SemaOverload.cpp")
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [

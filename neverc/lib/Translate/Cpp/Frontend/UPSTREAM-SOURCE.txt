@@ -30,6 +30,14 @@ The complete original or rewritten block must occur exactly once; missing,
 partial, duplicate and drifted states fail before this file is changed. Independent
 literal fixtures and paired semantic/runtime regressions cover the correction.
 
+A separate checked SemaOverload.cpp patch applies the same ordering to fresh
+reference arguments in FindConversionForRefInit. Result deduction precedes the
+compatibility filter, while a written non-function lvalue result remains excluded
+from rvalue-reference binding before its body is instantiated. All original
+category, explicitness, access and candidate-selection checks remain active.
+Independent literal source fixtures cover exact output, idempotence and drift;
+paired source/protocol and native O0/O2 cases cover fresh argument conversions.
+
 The isolated build renames namespace llvm and selected global C/C++ symbols.
 IsolateSymbols.py applies checked, idempotent changes to the extracted
 IntrinsicInst.cpp, Debugify.h, and LoopUtils.cpp to isolate otherwise global

@@ -349,6 +349,12 @@ signature before emission and introduces no wire opcode or runtime template
 parameter. Constructors and destructors still receive mutable storage even when
 a temporary is subsequently passed as a const reference. See the
 [deduced reference contract](cpp-core-v2.md#deduced-reference-conversions).
+Fresh argument fixtures require the conversion call to precede the receiving call,
+with its exact `ptr:int` or `cptr:int` result passed through to the reference
+parameter. They check the receiver's field address, final reference result,
+complete call signatures and relocated output. These structural checks supplement
+native O0/O2 mutation and full-expression lifetime checkpoints.
+
 
 A checked user-defined conversion emits the selected ordinary member `call`,
 with its receiver and no explicit source parameters. A record prvalue result

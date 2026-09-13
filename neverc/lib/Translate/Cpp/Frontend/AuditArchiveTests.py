@@ -673,6 +673,9 @@ public:
         reference_original = "// Before reference sentinel.\n      else\n        Conv = cast<CXXConversionDecl>(D);\n\n      // If the conversion function doesn't return a reference type,\n      // it can't be considered for this conversion unless we're allowed to\n      // consider rvalues.\n      // FIXME: Do we need to make sure that we only consider conversion\n      // candidates with reference-compatible results? That might be needed to\n      // break recursion.\n      if ((AllowRValues ||\n           Conv->getConversionType()->isLValueReferenceType())) {\n        if (ConvTemplate)\n// After reference sentinel.\n"
         reference_expected = "// Before reference sentinel.\n      else\n        Conv = cast<CXXConversionDecl>(D);\n\n      // NeverC deduced reference conversions: determine only return forms\n      // that can become lvalue references before the reference-only filter.\n      if (!AllowRValues && !ConvTemplate && S.getLangOpts().CPlusPlus14 &&\n          Conv->getConversionType()->isUndeducedType()) {\n        QualType NeverCReturn = Conv->getConversionType();\n        const auto *NeverCAuto = NeverCReturn->getAs<AutoType>();\n        const auto *NeverCRValue = NeverCReturn->getAs<RValueReferenceType>();\n        bool NeverCCanBeLValue =\n            (NeverCAuto && NeverCAuto->isDecltypeAuto()) ||\n            (NeverCRValue &&\n             !NeverCRValue->getPointeeType().hasQualifiers() &&\n             NeverCRValue->getPointeeType()->getAs<AutoType>());\n        if (NeverCCanBeLValue &&\n            S.DeduceReturnType(Conv, Initializer->getExprLoc()))\n          continue;\n      }\n\n      // If the conversion function doesn't return a reference type,\n      // it can't be considered for this conversion unless we're allowed to\n      // consider rvalues.\n      // FIXME: Do we need to make sure that we only consider conversion\n      // candidates with reference-compatible results? That might be needed to\n      // break recursion.\n      if ((AllowRValues ||\n           Conv->getConversionType()->isLValueReferenceType())) {\n        if (ConvTemplate)\n// After reference sentinel.\n"
         files["clang/lib/Sema/SemaInit.cpp"] = reference_original
+        argument_reference_original = "// Before reference argument.\n    else\n      Conv = cast<CXXConversionDecl>(D);\n\n    if (AllowRvalues) {\n      // If we are initializing an rvalue reference, don't permit conversion\n      // functions that return lvalues.\n// After reference argument.\n"
+        argument_reference_expected = "// Before reference argument.\n    else\n      Conv = cast<CXXConversionDecl>(D);\n\n    // NeverC reference-argument deduction precedes result-type filtering.\n    if (!ConvTemplate && S.getLangOpts().CPlusPlus14 &&\n        Conv->getConversionType()->isUndeducedType()) {\n      QualType NeverCArgumentResult = Conv->getConversionType();\n      const auto *NeverCAuto = NeverCArgumentResult->getAs<AutoType>();\n      const auto *NeverCRValue = NeverCArgumentResult->getAs<RValueReferenceType>();\n      const auto *NeverCLValue = NeverCArgumentResult->getAs<LValueReferenceType>();\n      bool NeverCCanBeLValue =\n          (NeverCAuto && NeverCAuto->isDecltypeAuto()) ||\n          (NeverCRValue && !NeverCRValue->getPointeeType().hasQualifiers() &&\n           NeverCRValue->getPointeeType()->getAs<AutoType>());\n      // Preserve the definite lvalue exclusion before touching a lazy body.\n      bool NeverCExcludedLValue = DeclType->isRValueReferenceType() &&\n          NeverCLValue && !NeverCLValue->getPointeeType()->isFunctionType();\n      bool NeverCNeedsResult = AllowRvalues ? !NeverCExcludedLValue\n                                          : NeverCCanBeLValue;\n      if (NeverCNeedsResult && S.DeduceReturnType(Conv, Init->getExprLoc()))\n        continue;\n    }\n\n    if (AllowRvalues) {\n      // If we are initializing an rvalue reference, don't permit conversion\n      // functions that return lvalues.\n// After reference argument.\n"
+        files["clang/lib/Sema/SemaOverload.cpp"] = argument_reference_original
         files.update(math_sources)
         for name in notice_names:
             files["llvm/lib/Support/" + name] = (
@@ -728,6 +731,8 @@ public:
             run_script(True)
             reference_path = source / "clang/lib/Sema/SemaInit.cpp"
             self.assertEqual(reference_path.read_text(encoding="utf-8"), reference_expected)
+            argument_reference_path = source / "clang/lib/Sema/SemaOverload.cpp"
+            self.assertEqual(argument_reference_path.read_text(encoding="utf-8"), argument_reference_expected)
             # All callback files must match the independently written contract.
             explicit_paths = [source / "clang/include/clang/AST/ASTConsumer.h",
                               source / "clang/lib/Sema/SemaTemplate.cpp",
@@ -785,7 +790,7 @@ public:
                 loop, output, notices, source / "llvm/lib/IR/IntrinsicInst.cpp",
                 source / "llvm/include/llvm/Transforms/Utils/Debugify.h",
                 setup_path, access_path, default_header, default_source, declaration_marker,
-                declaration_parser, reference_path, *math_paths.values())}
+                declaration_parser, reference_path, argument_reference_path, *math_paths.values())}
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))
@@ -813,6 +818,32 @@ public:
             run_script(False, "Unexpected pinned Clang deduced reference conversion source")
             self.assertEqual(snapshot_all_files(), untouched)
             reference_path.write_text(reference_expected, encoding="utf-8")
+
+            argument_reference_bad = {
+                "missing-anchor": "// Missing reference argument.\n",
+                "duplicate-original": argument_reference_original * 2,
+                "duplicate-rewritten": argument_reference_expected * 2,
+                "mixed": argument_reference_original + argument_reference_expected,
+                "drift-filter": argument_reference_original.replace("if (AllowRvalues)", "if (false)"),
+                "lost-deduction": argument_reference_expected.replace("S.DeduceReturnType(Conv, Init->getExprLoc())", "false"),
+                "lost-lvalue-exclusion": argument_reference_expected.replace("AllowRvalues ? !NeverCExcludedLValue", "AllowRvalues ? true"),
+                "lost-shape": argument_reference_expected.replace("NeverCAuto->isDecltypeAuto()", "true"),
+                "lost-qualifiers": argument_reference_expected.replace("!NeverCRValue->getPointeeType().hasQualifiers()", "true"),
+                "stray-marker": argument_reference_original + "// NeverC reference-argument deduction\n",
+                "stray-partial": argument_reference_original + "QualType NeverCArgumentResult;\n",
+                "stray-gate": argument_reference_original + "bool NeverCNeedsResult;\n",
+            }
+            for label, bad in argument_reference_bad.items():
+                with self.subTest(reference_argument_source=label):
+                    argument_reference_path.write_text(bad, encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang reference-argument source")
+                    self.assertEqual(snapshot_all_files(), untouched)
+            argument_reference_path.unlink()
+            untouched = snapshot_all_files()
+            run_script(False, "Unexpected pinned Clang reference-argument source")
+            self.assertEqual(snapshot_all_files(), untouched)
+            argument_reference_path.write_text(argument_reference_expected, encoding="utf-8")
 
             anchor = ("_COM_SMARTPTR_TYPEDEF(ISetupInstance2, "
                       "__uuidof(ISetupInstance2));\n")

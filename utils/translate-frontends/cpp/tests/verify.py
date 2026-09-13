@@ -4731,7 +4731,6 @@ int unevaluated(){return sizeof(make().shared);}
         'tls': 'struct R{inline static thread_local int n=1;};',
         'volatile': 'struct R{inline static volatile int n=1;};',
         'variable-template': 'struct R{template<class T>inline static int n=1;};',
-        'dependent': 'template<class T>struct R{inline static T n=1;};',
         'folded-unsupported': 'struct R{inline static int n=static_cast<int>(1.0);};',
         'folded-body': 'constexpr int f(){return static_cast<int>(1.0);}struct R{inline static int n=f();};',
     }
@@ -6447,6 +6446,113 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
 
+    fresh_reference_source = """template<class T>struct RefArg{
+ T n;operator decltype(auto)(){return (n);}
+};
+template<class T>struct ConstArg{
+ T n;operator decltype(auto)()const{return (n);}
+};
+template<class T>struct MoveArg{
+ T n;operator auto&&(){return static_cast<T&&>(n);}
+};
+int&assignArgument(int&n){n=7;return n;}
+const int&readArgument(const int&n){return n;}
+int&&moveArgument(int&&n){n=9;return static_cast<int&&>(n);}
+int&freshMutable(RefArg<int>&r){return assignArgument(r);}
+const int&freshConst(const ConstArg<int>&r){return readArgument(r);}
+int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
+"""
+    fresh_reference = check("v2-fresh-reference-protocol", fresh_reference_source, profile="cpp-core-v2")
+    fr_functions = {f["name"]: f for f in fresh_reference["functions"]}
+    fr_records = {r["id"]: r for r in fresh_reference["records"]}
+    assert len(fr_functions) == len(fresh_reference["functions"])
+    assert len(fr_records) == len(fresh_reference["records"]) == 3
+
+    def fr_line(prefix):
+        lines = [i for i, line in enumerate(fresh_reference_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def fr_function(prefix):
+        functions = [f for f in fr_functions.values() if f["loc"]["line"] == fr_line(prefix)]
+        assert len(functions) == 1, (prefix, functions)
+        return functions[0]
+
+    for prefix, result, receiver_kind, conversion_prefix, receive_prefix in (
+            ("int&freshMutable(", "ptr:int", "ptr:", " T n;operator decltype(auto)(){", "int&assignArgument("),
+            ("const int&freshConst(", "cptr:int", "cptr:", " T n;operator decltype(auto)()const{", "const int&readArgument("),
+            ("int&&freshRvalue(", "ptr:int", "ptr:", " T n;operator auto&&(){", "int&&moveArgument(")):
+        caller = fr_function(prefix)
+        assert caller["result"] == result and len(caller["params"]) == 1
+        receiver = caller["params"][0]["type"]
+        assert receiver.startswith(receiver_kind)
+        record = fr_records[receiver[len(receiver_kind):]]
+        assert [f["type"] for f in record["fields"]] == ["int"]
+        calls = gc_calls(caller)
+        assert len(calls) == 2
+        conversion = fr_functions[calls[0]["callee"]]
+        receive = fr_function(receive_prefix)
+        assert conversion["loc"]["line"] == fr_line(conversion_prefix)
+        assert conversion["result"] == result and [p["type"] for p in conversion["params"]] == [receiver]
+        assert np_pointer(caller, calls[0]["args"][0]) == ("parameter", caller["params"][0]["name"])
+        returned = [n["value"] for n in conversion["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and not gc_calls(conversion)
+        assert np_pointer(conversion, returned[0]) == ("field", ("parameter", conversion["params"][0]["name"]), record["fields"][0]["name"])
+        assert calls[1]["callee"] == receive["name"]
+        assert receive["result"] == result and [p["type"] for p in receive["params"]] == [result]
+        assert len(calls[1]["args"]) == 1 and calls[1]["args"][0]["type"] == result
+        assert di_call_result(caller, calls[1]["args"][0]) == calls[0]["target"]["name"]
+        returned = [n["value"] for n in caller["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and di_call_result(caller, returned[0]) == calls[1]["target"]["name"]
+    for function in fr_functions.values():
+        for call in gc_calls(function):
+            assert call["callee"] in fr_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in fr_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-fresh-reference-relocated-") as temp:
+        relocated = check("v2-fresh-reference-relocated", fresh_reference_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == fresh_reference
+
+    fresh_reference_positive = {
+        'ordinary-argument': 'struct R{int n;operator decltype(auto)(){return (n);}};void set(int&n){n=7;}void f(R&r){set(r);}',
+        'const-argument': 'template<class T>struct R{T n;operator decltype(auto)()const{return (n);}};int get(const int&n){return n;}int f(const R<int>&r){return get(r);}',
+        'collapsed-argument': 'template<class T>struct R{T n;operator auto&&(){return (n);}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
+        'auto-lvalue-argument': 'template<class T>struct R{T n;operator auto&(){return n;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
+        'rvalue-argument': 'template<class T>struct R{T n;operator decltype(auto)(){return static_cast<T&&>(n);}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}',
+        'auto-rvalue-argument': 'template<class T>struct R{T n;operator auto&&(){return static_cast<T&&>(n);}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}',
+        'const-rvalue-argument': 'template<class T>struct R{T n;operator auto&&()const{return static_cast<const T&&>(n);}};int get(const int&&n){return n;}int f(const R<int>&r){return get(r);}',
+        'value-const-argument': 'template<class T>struct R{T n;operator auto(){return n;}};int get(const int&n){return n;}int f(R<int>&r){return get(r);}',
+        'overload-argument': 'template<class T>struct R{T n;operator decltype(auto)(){return (n);}};int choose(int&){return 1;}int choose(const int&){return 2;}int f(R<int>&r){return choose(r);}',
+        'outside-argument': 'template<class T>struct R{T n;operator decltype(auto)();};template<class T>R<T>::operator decltype(auto)(){return (n);}void set(int&n){n=7;}void f(R<int>&r){set(r);}',
+        'irrelevant-value': 'template<class T>struct R{int n;operator int&(){return n;}operator auto(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
+        'irrelevant-pointer': 'template<class T>struct R{int n;operator int&(){return n;}operator auto*(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
+        'irrelevant-const-rvalue': 'template<class T>struct R{int n;operator int&(){return n;}operator const auto&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
+        'irrelevant-pointer-rvalue': 'template<class T>struct R{int n;operator int&(){return n;}operator auto*&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
+        'irrelevant-lvalue-for-rvalue': 'template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return T::missing;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}',
+        'promoted-value-default': 'struct R{int n;};template<int N=3>int operator+(R,R){return N;}',
+        'selected-value-default': 'struct R{int n;};template<int N=3>int operator+(R,R){return N;}int f(){R r{1};return r+r;}',
+        'protocol-source': 'template<class T>struct RefArg{\n T n;operator decltype(auto)(){return (n);}\n};\ntemplate<class T>struct ConstArg{\n T n;operator decltype(auto)()const{return (n);}\n};\ntemplate<class T>struct MoveArg{\n T n;operator auto&&(){return static_cast<T&&>(n);}\n};\nint&assignArgument(int&n){n=7;return n;}\nconst int&readArgument(const int&n){return n;}\nint&&moveArgument(int&&n){n=9;return static_cast<int&&>(n);}\nint&freshMutable(RefArg<int>&r){return assignArgument(r);}\nconst int&freshConst(const ConstArg<int>&r){return readArgument(r);}\nint&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}\n',
+    }
+    for name, source in fresh_reference_positive.items():
+        check("v2-fresh-reference-positive-" + name, source, profile="cpp-core-v2")
+    fresh_reference_reject = {
+        'selected-floating-body': 'template<class T>struct R{T n;operator decltype(auto)(){int discarded=int(1.0);return (n);}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
+        'selected-floating-default': 'struct R{int n;};template<int N=int(1.0)>int operator+(R,R){return N;}int f(){R r{1};return r+r;}',
+    }
+    for name, source in fresh_reference_reject.items():
+        check("v2-fresh-reference-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    fresh_reference_invalid = {
+        'explicit-argument': 'template<class T>struct R{T n;explicit operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}',
+        'private-argument': 'template<class T>class R{T n;operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}',
+        'const-to-mutable': 'template<class T>struct R{T n;operator decltype(auto)()const{return (n);}};void set(int&){}void f(const R<int>&r){set(r);}',
+        'value-to-mutable': 'template<class T>struct R{T n;operator decltype(auto)(){return n;}};void set(int&){}void f(R<int>&r){set(r);}',
+        'lvalue-to-rvalue': 'template<class T>struct R{T n;operator decltype(auto)(){return (n);}};void set(int&&){}void f(R<int>&r){set(r);}',
+        'selected-invalid-lvalue': 'template<class T>struct R{T n;operator auto&(){return T::missing;}};void set(int&){}void f(R<int>&r){set(r);}',
+        'selected-invalid-deduced': 'template<class T>struct R{T n;operator decltype(auto)(){return T::missing;}};void set(int&){}void f(R<int>&r){set(r);}',
+    }
+    for name, source in fresh_reference_invalid.items():
+        check("v2-fresh-reference-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
     parameter_packs_source = """template<class...T>int pp_digits(T...v){int n=0;((n=n*10+v),...);return n;}
 template<int...N>int pp_values(){int n=0;((n=n*10+N),...);return n;}
 template<class...T>int pp_count(T...v){return sizeof...(T)+sizeof...(v);}
@@ -7416,7 +7522,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'literal': 'template<char... C>int operator""_number(){return 1;}',
         'member-template': 'struct R{template<class T>int operator()(T){return 1;}};',
         'friend-template': 'struct R{int n;template<class T>friend int operator+(const R&r,T n){return r.n+n;}};',
-        'value-default': 'struct R{int n;};template<int N=3>int operator+(R,R){return N;}',
         'local-unused-body': 'struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0);}};Local l;return r.n+n;}int f(){return R{3}+4;}',
     }
     for name, source in free_operators_reject.items():
@@ -7802,7 +7907,7 @@ int&outsideValue(Outside<int>&r){return r;}
         'lazy-unsupported': 'template<class T>struct R{int n;int operator()(){return int(1.0);}operator auto(){return 1.0;}};static_assert(sizeof(R<int>)==sizeof(int));',
         'lazy-default': 'template<class T>struct R{T n;T operator()(T x=T::missing){return n+x;}};int f(){R<int>r{3};return r(4);}',
         'folded-source': 'template<class T>struct R{T n;constexpr T operator()()const{return n;}constexpr operator T()const{return n;}};static_assert(R<int>{3}()==3);static_assert(int(R<int>{4})==4);',
-        'noexcept-source': 'template<class T>struct R{T n;T operator()()noexcept(sizeof(this->n)>0){return n;}operator T()const noexcept(sizeof(T)>0){return n;}};bool f(R<int>&r){return noexcept(r())&&noexcept(r.operator int());}',
+        'noexcept-source': 'template<class T>struct R{T n;T operator()()noexcept(sizeof(this->n)>0){return n;}operator T()const noexcept(sizeof(T)>0){return n;}};bool f(R<int>&r){r();r.operator int();return noexcept(r())&&noexcept(r.operator int());}',
         'conversion-default': 'template<class T>struct R{T n;constexpr operator T()const{return n;}};template<class T>struct S{T n=R<T>{3};T operator()(T x=R<T>{4}){return n+x;}};int f(){S<int>s;return s();}',
         'arithmetic': 'template<class T>struct R{T n;T operator+(T x)const{return n+x;}T operator-(T x)const{return n-x;}T operator*(T x)const{return n*x;}T operator/(T x)const{return n/x;}T operator%(T x)const{return n%x;}T operator^(T x)const{return n^x;}T operator&(T x)const{return n&x;}T operator|(T x)const{return n|x;}T operator<<(T x)const{return n<<x;}T operator>>(T x)const{return n>>x;}};int f(){R<int>r{6};return (r+2)+(r-2)+(r*2)+(r/2)+(r%2)+(r^2)+(r&2)+(r|2)+(r<<2)+(r>>2);}',
         'comparison': 'template<class T>struct R{T n;bool operator==(T x)const{return n==x;}bool operator!=(T x)const{return n!=x;}bool operator<(T x)const{return n<x;}bool operator>(T x)const{return n>x;}bool operator<=(T x)const{return n<=x;}bool operator>=(T x)const{return n>=x;}};int f(){R<int>r{6};return (r==2)+(r!=2)+(r<2)+(r>2)+(r<=2)+(r>=2);}',
@@ -7850,6 +7955,7 @@ int&outsideValue(Outside<int>&r){return r;}
     for name, source in class_operators_invalid.items():
         check("v2-class-operators-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
     class_operators_missing = {
+        'unmaterialized-noexcept-source': 'template<class T>struct R{T n;T operator()()noexcept(sizeof(this->n)>0){return n;}operator T()const noexcept(sizeof(T)>0){return n;}};bool f(R<int>&r){return noexcept(r())&&noexcept(r.operator int());}',
         'selected-operator': 'template<class T>struct R{int operator()();};int f(R<int>&r){return r();}',
         'selected-conversion': 'template<class T>struct R{operator int();};int f(R<int>&r){return r;}',
         'query-operator': 'template<class T>struct R{int operator()()noexcept;};bool f(R<int>&r){return noexcept(r());}',

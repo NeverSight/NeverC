@@ -2143,6 +2143,23 @@ CI from this implementation; full C++17/STL remains unfinished. C++ is currently
 the only input language, with other frontends planned. Clang libraries are
 embedded, and no external Clang executable is needed at translation time.
 
+Fresh function arguments use the same reference rules without a preceding local
+binding or explicit conversion call to trigger deduction. The private frontend
+resolves necessary placeholder results before reference compatibility checks in
+both initialization and overload argument analysis. It still excludes a written
+non-function lvalue result from rvalue-reference binding before instantiating that
+body. Explicit conversions, access, constness, result category and overload
+ranking retain ordinary C++ diagnostics. Paired fixtures keep the conversion
+source fresh; O0/O2 cases verify the selected call, alias, mutation and constness.
+
+Temporary reference arguments remain alive through the enclosing full expression.
+A check within that expression observes the live object; a following statement
+observes cleanup. By-value parameter cleanup is checked after the full expression
+without assuming whether parameter destruction happens on function return or at
+the caller's expression boundary. Unevaluated template member calls still require
+a materialized definition under this profile's existing source-closure rule;
+separate fixtures cover evaluated calls and signature-only diagnostics.
+
 ## User-defined conversion functions
 
 Core v2 admits ordinary source-owned conversion functions on live objects and
