@@ -2374,24 +2374,35 @@ public:
     return true;
   }
   void checkFunctionTemplateUse(const FunctionDecl *Function, SourceLocation Location,
-                                 llvm::ArrayRef<TemplateArgumentLoc> Written) {
+                                 llvm::ArrayRef<TemplateArgumentLoc> Written,
+                                 SourceLocation QualifiedBegin = {}) {
     if (!concreteFreeFunctionTemplate(Function))
       return;
-    auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
-    if (Found == FunctionSources.end() || Found->second.empty()) {
-      A.reject(Location, "selected function template source", "The selected function needs its exact successful deduction source.");
-      return;
-    }
-    const auto &First = *Found->second.front();
-    for (const auto *Source : Found->second) {
-      if (!equivalentUse(First, *Source) ||
-          !sameArguments(Source->Canonical, Function->getTemplateSpecializationArgs())) {
-        A.reject(Location, "selected template source conflict", "Repeated selected deductions must preserve equivalent complete source evidence.");
-        return;
+    if (QualifiedBegin == Location)
+      QualifiedBegin = {};
+    const TemplateUseSource *First = nullptr;
+    // Overload-call deduction uses the unresolved expression's begin location,
+    // including a written namespace qualifier. Address selection and explicit
+    // directives use the name location. Both still identify this exact function.
+    for (auto UseLocation : {Location, QualifiedBegin}) {
+      if (UseLocation.isInvalid())
+        continue;
+      auto Found = FunctionSources.find({Function, UseLocation.getRawEncoding()});
+      if (Found == FunctionSources.end())
+        continue;
+      for (const auto *Source : Found->second) {
+        if ((First && !equivalentUse(*First, *Source)) ||
+            !sameArguments(Source->Canonical, Function->getTemplateSpecializationArgs())) {
+          A.reject(Location, "selected template source conflict", "Repeated selected deductions must preserve equivalent complete source evidence.");
+          return;
+        }
+        First = Source;
+        if (!checkTemplateUse(*Source, Written))
+          return;
       }
-      if (!checkTemplateUse(*Source, Written))
-        return;
     }
+    if (!First)
+      A.reject(Location, "selected function template source", "The selected function needs its exact successful deduction source.");
   }
   void indexTemplateSources(llvm::ArrayRef<TemplateUseSource> Sources,
                             llvm::ArrayRef<FunctionSpecializationSource> Specializations) {
@@ -2565,7 +2576,8 @@ public:
       return true;
     if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
         concreteFreeFunctionTemplate(Function))
-      checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments());
+      checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments(),
+          Reference->hasQualifier() ? Reference->getBeginLoc() : SourceLocation());
     return true;
   }
   bool TraverseFunctionTemplateDecl(FunctionTemplateDecl *D) {
@@ -2652,6 +2664,14 @@ public:
     return true;
   }
   bool TraverseTemplateArgumentLoc(const TemplateArgumentLoc &Argument) {
+    if (A.S.coreV2() && Argument.getArgument().getKind() == TemplateArgument::Type) {
+      auto Type = Argument.getArgument().getAsType();
+      // RAV visits a written builtin TypeLoc without admitting its type. This
+      // also covers nondependent defaults of otherwise unused templates.
+      if (!Type.isNull() && !Type->isDependentType() &&
+          !Type->isInstantiationDependentType())
+        A.type(Type, Argument.getLocation(), true);
+    }
     if (A.S.coreV2() && Argument.getArgument().getKind() == TemplateArgument::Integral)
       if (auto *Written = Argument.getSourceIntegralExpression())
         return TraverseStmt(Written);

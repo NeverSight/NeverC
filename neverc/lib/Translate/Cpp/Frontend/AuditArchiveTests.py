@@ -671,6 +671,9 @@ public:
         explicit_sema_expected = '// Independent template-source contract fixture.\n    SmallVector<TemplateArgument, 4> SugaredConverted, CanonicalConverted;\n\n    // Keep defaults attached to this deduction, including ignored type args.\n    SmallVector<NamedDecl *, 4> NeverCDefaultParameters;\n    SmallVector<TemplateArgumentLoc, 4> NeverCWrittenDefaults, NeverCConvertedDefaults;\n    bool NeverCDefaultsOverflow = false;\n\n    void retainNeverCDefault(NamedDecl *Parameter,\n                            const TemplateArgumentLoc &Written,\n                            const TemplateArgumentLoc &Converted) {\n      if (NeverCDefaultParameters.size() == 64) {\n        NeverCDefaultsOverflow = true;\n        return;\n      }\n      NeverCDefaultParameters.push_back(Parameter);\n      NeverCWrittenDefaults.push_back(Written);\n      NeverCConvertedDefaults.push_back(Converted);\n    }\n\n    SmallVector<NamedDecl *, 4> NeverCTypeParameters;\n    SmallVector<TypeSourceInfo *, 4> NeverCParameterTypes;\n    SmallVector<unsigned, 4> NeverCParameterPackIndices;\n\n    void retainNeverCParameterType(NamedDecl *Parameter, TypeSourceInfo *Source,\n                                  unsigned PackIndex) {\n      if (NeverCTypeParameters.size() == 4096) {\n        NeverCDefaultsOverflow = true;\n        return;\n      }\n      NeverCTypeParameters.push_back(Parameter);\n      NeverCParameterTypes.push_back(Source);\n      NeverCParameterPackIndices.push_back(PackIndex);\n    }\n\n// End source contract fixture.\n'
         explicit_deduction_info_original = '// Independent template-source contract fixture.\npublic:\n  TemplateDeductionInfo(SourceLocation Loc, unsigned DeducedDepth = 0)\n// End source contract fixture.\n'
         explicit_deduction_info_expected = '// Independent template-source contract fixture.\npublic:\n  // NeverC keeps preliminary explicit conversions on this exact candidate.\n  // reset/take retain it; a new explicit-substitution invocation clears it.\n  FunctionTemplateDecl *NeverCExplicitSourceTemplate = nullptr;\n  SmallVector<NamedDecl *, 4> NeverCExplicitTypeParameters;\n  SmallVector<TypeSourceInfo *, 4> NeverCExplicitParameterTypes;\n  SmallVector<unsigned, 4> NeverCExplicitPackIndices;\n  bool NeverCExplicitSourceOverflow = false;\n\n  void clearNeverCExplicitSource() {\n    NeverCExplicitSourceTemplate = nullptr;\n    NeverCExplicitTypeParameters.clear();\n    NeverCExplicitParameterTypes.clear();\n    NeverCExplicitPackIndices.clear();\n    NeverCExplicitSourceOverflow = false;\n  }\n\n  TemplateDeductionInfo(SourceLocation Loc, unsigned DeducedDepth = 0)\n// End source contract fixture.\n'
+        explicit_instantiate_original = '// Independent conversion-name source contract.\n    MultiLevelTemplateArgumentList TemplateArgs = getTemplateInstantiationArgs(\n        Function, DC, /*Final=*/false, Innermost, false, PatternDecl);\n\n    // Substitute into the qualifier; we can get a substitution failure here\n// End source contract fixture.\n'
+        explicit_instantiate_expected = "// Independent conversion-name source contract.\n    MultiLevelTemplateArgumentList TemplateArgs = getTemplateInstantiationArgs(\n        Function, DC, /*Final=*/false, Innermost, false, PatternDecl);\n\n    // The definition's name-location copy above retains its generic type.\n    // Preserve this definition's concrete conversion type and written syntax.\n    if (Consumer.wantsNeverCTemplateSource() && isa<CXXConversionDecl>(Function)) {\n      auto NeverCConversionName =\n          SubstDeclarationNameInfo(PatternDecl->getNameInfo(), TemplateArgs);\n      if (!NeverCConversionName.getName()) {\n        Function->setInvalidDecl();\n        return;\n      }\n      Function->setDeclarationNameLoc(NeverCConversionName.getInfo());\n    }\n\n    // Substitute into the qualifier; we can get a substitution failure here\n// End source contract fixture.\n"
+        files['clang/lib/Sema/SemaTemplateInstantiateDecl.cpp'] = explicit_instantiate_original
         files['clang/include/clang/AST/ASTConsumer.h'] = explicit_header_original
         files['clang/lib/Sema/SemaTemplate.cpp'] = explicit_source_original
         files['clang/lib/Sema/SemaTemplateDeduction.cpp'] = explicit_deduction_original
@@ -746,9 +749,10 @@ public:
                 source / 'clang/lib/Sema/SemaTemplateDeduction.cpp',
                 source / 'clang/include/clang/Sema/Sema.h',
                 source / 'clang/include/clang/Sema/TemplateDeduction.h',
+                source / 'clang/lib/Sema/SemaTemplateInstantiateDecl.cpp',
             ]
-            explicit_original = [explicit_header_original, explicit_source_original, explicit_deduction_original, explicit_sema_original, explicit_deduction_info_original]
-            explicit_expected = [explicit_header_expected, explicit_source_expected, explicit_deduction_expected, explicit_sema_expected, explicit_deduction_info_expected]
+            explicit_original = [explicit_header_original, explicit_source_original, explicit_deduction_original, explicit_sema_original, explicit_deduction_info_original, explicit_instantiate_original]
+            explicit_expected = [explicit_header_expected, explicit_source_expected, explicit_deduction_expected, explicit_sema_expected, explicit_deduction_info_expected, explicit_instantiate_expected]
             for path, expected in zip(explicit_paths, explicit_expected):
                 self.assertEqual(path.read_text(encoding="utf-8"), expected)
             access_path = source / "clang/lib/Sema/SemaAccess.cpp"
@@ -1041,6 +1045,7 @@ public:
                     explicit_paths[2].write_text(explicit_deduction_expected, encoding="utf-8")
                     explicit_paths[3].write_text(explicit_sema_expected, encoding="utf-8")
                     explicit_paths[4].write_text(explicit_deduction_info_expected, encoding="utf-8")
+                    explicit_paths[5].write_text(explicit_instantiate_expected, encoding="utf-8")
                     untouched = snapshot_all_files()
                     if state in ("original header only", "original source only"):
                         error = "Unexpected partial pinned Clang explicit-instantiation source"
@@ -1049,7 +1054,7 @@ public:
                         error = "Unexpected pinned Clang explicit-instantiation source in " + str(explicit_paths[index])
                     run_script(False, error)
                     self.assertEqual(snapshot_all_files(), untouched, state)
-            for mask in range(1, 31):
+            for mask in range(1, (1 << len(explicit_paths)) - 1):
                 with self.subTest(template_source_mixed_state=mask):
                     for index, path in enumerate(explicit_paths):
                         contents = (explicit_expected if mask & (1 << index) else explicit_original)[index]
@@ -1081,6 +1086,14 @@ public:
                     self.assertEqual(snapshot_all_files(), untouched, state)
             # Independent literal anchors cover every source hook and payload.
             template_use_states = [
+                (5, "conversion missing anchor", explicit_instantiate_original.replace('    MultiLevelTemplateArgumentList TemplateArgs = getTemplateInstantiationArgs(\n        Function, DC, /*Final=*/false, Innermost, false, PatternDecl);\n\n    // Substitute into the qualifier; we can get a substitution failure here', "// Missing conversion source anchor.", 1)),
+                (5, "conversion drifted substitution", explicit_instantiate_expected.replace("PatternDecl->getNameInfo(), TemplateArgs", "Function->getNameInfo(), TemplateArgs", 1)),
+                (5, "conversion lost request guard", explicit_instantiate_expected.replace("Consumer.wantsNeverCTemplateSource() && ", "", 1)),
+                (5, "conversion lost kind guard", explicit_instantiate_expected.replace(" && isa<CXXConversionDecl>(Function)", "", 1)),
+                (5, "conversion lost name assignment", explicit_instantiate_expected.replace("Function->setDeclarationNameLoc(NeverCConversionName.getInfo());", "", 1)),
+                (5, "conversion lost invalid handling", explicit_instantiate_expected.replace("Function->setInvalidDecl();", "", 1)),
+                (5, "conversion duplicate file", explicit_instantiate_expected * 2),
+                (5, "conversion orphan marker", explicit_instantiate_expected + "// NeverCConversionName\n"),
                 (0, "header missing anchor 0", explicit_header_original.replace('  class FunctionDecl;\n  class ImportDecl;', "// Missing source anchor.", 1)),
                 (0, "header drifted block 0", explicit_header_expected.replace('  class FunctionDecl;\n  class ImportDecl;\n  class TemplateArgumentListInfo;\n  class TypeSourceInfo;\n  struct DeclarationNameInfo;\n  class NestedNameSpecifierLoc;\n  class SourceLocation;\n  class TemplateDecl;\n  class NonTypeTemplateParmDecl;\n  class TemplateArgumentLoc;\n  class TemplateArgument;\n  class Type;\n  class NamedDecl;\n  class ClassTemplateSpecializationDecl;', '  class FunctionDecl;\n  class ImportDecl;\n  class TemplateArgumentListInfo;\n  class TypeSourceInfo;\n  struct DeclarationNameInfo;\n  class NestedNameSpecifierLoc;\n  class SourceLocation/* Unexpected source drift. */;\n  class TemplateDecl;\n  class NonTypeTemplateParmDecl;\n  class TemplateArgumentLoc;\n  class TemplateArgument;\n  class Type;\n  class NamedDecl;\n  class ClassTemplateSpecializationDecl;', 1)),
                 (0, "header missing anchor 1", explicit_header_original.replace('  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}', "// Missing source anchor.", 1)),

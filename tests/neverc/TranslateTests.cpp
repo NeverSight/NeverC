@@ -4704,7 +4704,7 @@ int&&take(int&&n){n=9;return static_cast<int&&>(n);}
 int choose(int&n){n=11;return 1;}
 int choose(const int&n){return 2;}
 int read(const int&n){return n;}
-long long widen(long long&&n){n=9;return n;}
+long long widen(const long long&n){return n+3;}
 int live=0;
 struct Life{int n;Life(int v):n(v){++live;}~Life(){--live;}};
 template<class T>Life operator+(const Life&r,T n){return Life(r.n+n);}
@@ -4770,7 +4770,7 @@ TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsPositive) {
       {"irrelevant-const-rvalue", "template<class T>struct R{int n;operator int&(){return n;}operator const auto&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
       {"irrelevant-pointer-rvalue", "template<class T>struct R{int n;operator int&(){return n;}operator auto*&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
       {"valid-competing-lvalue-for-rvalue", "template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return n;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}"},
-      {"indirect-lvalue-to-rvalue", "template<class T>struct R{T n;operator auto&(){return n;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}"},
+      {"indirect-lvalue-to-const-reference", "template<class T>struct R{T n;operator auto&(){return n;}};long long set(const long long&n){return n;}long long f(R<int>&r){return set(r);}"},
       {"promoted-value-default", "struct R{int n;};template<int N=3>int operator+(R,R){return N;}"},
       {"selected-value-default", "struct R{int n;};template<int N=3>int operator+(R,R){return N;}int f(){R r{1};return r+r;}"},
       {"protocol-source", "template<class T>struct RefArg{\n T n;operator decltype(auto)(){return (n);}\n};\ntemplate<class T>struct ConstArg{\n T n;operator decltype(auto)()const{return (n);}\n};\ntemplate<class T>struct MoveArg{\n T n;operator auto&&(){return static_cast<T&&>(n);}\n};\nint&assignArgument(int&n){n=7;return n;}\nconst int&readArgument(const int&n){return n;}\nint&&moveArgument(int&&n){n=9;return static_cast<int&&>(n);}\nint&freshMutable(RefArg<int>&r){return assignArgument(r);}\nconst int&freshConst(const ConstArg<int>&r){return readArgument(r);}\nint&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}\n"},
@@ -4803,6 +4803,7 @@ TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsReject) {
 
 TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsInvalid) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"indirect-lvalue-to-rvalue", "template<class T>struct R{T n;operator auto&(){return n;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}"},
       {"invalid-competing-lvalue-result", "template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return T::missing;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}"},
       {"invalid-indirect-lvalue-result", "template<class T>struct R{T n;operator auto&(){return T::missing;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}"},
       {"explicit-argument", "template<class T>struct R{T n;explicit operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}"},
@@ -4821,6 +4822,113 @@ TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsInvalid) {
     auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     expectCode(Result, "TR0202");
     expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConcreteTemplateSourceRepairsPositive) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"alias-int-default", "template<class T=int>using I=T;"},
+      {"alias-bool-default", "template<class T=bool>using I=T;"},
+      {"alias-enum-default", "enum E{one=1};template<class T=E>using I=T;"},
+      {"alias-void-default", "template<class T=void>using I=T;"},
+      {"alias-pointer-default", "template<class T=int*>using I=T;"},
+      {"function-type-default", "template<class T=int>int f(){return 3;}int g(){return f();}"},
+      {"class-type-default", "template<class T=int>struct R{T n;};int f(){R<>r{3};return r.n;}"},
+      {"lazy-dependent-type-default", "template<class T,class U=typename T::missing>using I=int;"},
+      {"qualified-nested", "namespace A{namespace B{template<class T>T f(T n){return n;}}}int g(){return A::B::f(3);}"},
+      {"qualified-global", "namespace A{template<class T>T f(T n){return n;}}int g(){return ::A::f(3);}"},
+      {"qualified-alias", "namespace A{template<class T>T f(T n){return n;}}namespace B=A;int g(){return B::f(3);}"},
+      {"qualified-import", "namespace A{template<class T>T f(T n){return n;}}using A::f;int g(){return f(3);}"},
+      {"qualified-explicit", "namespace A{template<class T,int N=3>T f(){return N;}}int g(){return A::f<int>();}"},
+      {"qualified-recursion", "namespace A{template<class T>T f(T n){return n?A::f<T>(n-1):3;}}int g(){return A::f(2);}"},
+      {"qualified-instances", "namespace A{template<class T>T f(T n){return n;}}int g(){return A::f(3)+int(A::f(4LL));}"},
+      {"conversion-class", "template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{return {n};}};int f(){R<int>r{3};Box<int>b=r;return b.n;}"},
+      {"conversion-class-outside", "template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator Box<T>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}"},
+      {"conversion-alias-outside", "template<class T>struct Box{T n;};template<class T>using I=T;template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator I<Box<T>>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}"},
+      {"conversion-reference-outside", "template<class T>using I=T;template<class T>struct R{T n;operator T&();};template<class T>R<T>::operator I<T>&(){return n;}int f(){R<int>r{3};int&n=r;n=4;return r.n;}"},
+      {"conversion-pointer-outside", "template<class T>using I=T;template<class T>struct R{T n;operator T*();};template<class T>R<T>::operator I<T>*(){return &n;}int f(){R<int>r{3};int*p=r;return *p;}"},
+      {"conversion-explicit-name", "template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{return {n};}};int f(){R<int>r{3};return r.operator Box<int>().n;}"},
+      {"conversion-unused-dependent", "template<class T>struct R{operator typename T::missing();};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("template-source-repair-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("template-source-repair-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConcreteTemplateSourceRepairsReject) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"class-floating-type-default", "template<class T=double>struct R{int n;};"},
+      {"class-ignored-floating-default", "template<class T>using I=int;template<class T=I<double>>struct R{int n;};"},
+      {"function-ignored-floating-default", "template<class T>using I=int;template<class T=I<double>>int f(){return 3;}"},
+      {"alias-ignored-floating-default", "template<class T>using I=int;template<class T=I<double>>using A=int;"},
+      {"selected-dependent-floating-default", "template<class T>using D=double;template<class T,class U=D<T>>using I=int;I<int>f(){return 3;}"},
+      {"qualified-fresh-hidden-argument", "template<class T>using I=int;namespace A{template<class T>int f(){return 3;}}int g(){return A::f<int>()+A::f<I<double>>();}"},
+      {"qualified-hidden-default", "template<class T>using I=int;namespace A{template<class T=I<double>>int f(){return 3;}}int g(){return A::f();}"},
+      {"conversion-hidden-definition", "template<class T>struct Box{T n;};template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator I<Box<T>>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}"},
+      {"conversion-hidden-body", "template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{int hidden=int(1.0);return {n};}};int f(){R<int>r{3};Box<int>b=r;return b.n;}"},
+      {"conversion-hidden-parameter", "template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator I<T>()const{return n;}};int f(){R<int>r{3};return r;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("template-source-repair-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("template-source-repair-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConcreteTemplateSourceRepairsMissing) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"conversion-missing-definition", "template<class T>struct Box{T n;};template<class T>struct R{operator Box<T>()const;};int f(R<int>&r){Box<int>b=r;return b.n;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("template-source-repair-missing-" + Name + ".cpp");
+    const auto Output = tmpFile("template-source-repair-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConcreteTemplateSourceRepairsPreserveRuntime) {
+  const auto Source = tmpFile("template-source-repair-runtime.cpp");
+  const auto Output = tmpFile("template-source-repair-runtime.nc");
+  writeFile(Source, R"cpp(int live=0,converted=0,refcalls=0;
+template<class T>struct Box{T n;Box(T v):n(v){++live;}~Box(){--live;}};
+template<class T>using Identity=T;
+template<class T>struct R{T n;operator Box<T>()const;};
+template<class T>R<T>::operator Identity<Box<T>>()const{++converted;return Box<T>(n);}
+namespace A{namespace B{template<class T,int N=3>T value(){return N;}}}
+namespace Alias=A::B;
+template<class T>struct Ref{T n;operator auto&(){++refcalls;return n;}};
+long long widen(const long long&n){return n+3;}
+int main(){
+ if(A::B::value<int>()!=3||::A::B::value<long long,4>()!=4||Alias::value<int>()!=3)return 1;
+ {R<int>r{7};Box<int>b=r;if(b.n!=7||converted!=1||live!=1)return 2;}
+ if(live!=0)return 3;
+ Ref<int>r{6};long long n=widen(r);
+ if(n!=9||r.n!=6||refcalls!=1)return 4;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("template-source-repair-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
 
@@ -4910,6 +5018,7 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2AliasTemplatesAcceptConcreteTypesAndSelectedDefaults) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unused-identity-alias", "template<class T>using Alias=T;"},
       {"promoted-pack", "template<class...T>using R=int;"},
       {"promoted-class-boundary", "template<class T>using R=T;"},
       {"promoted-core-boundary", "template<class T> using Hidden = T;\nint main() { return 0; }\n"},
@@ -4983,7 +5092,7 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesAcceptConcreteTypesAndSelectedDefaults
       {"class-extern-type-safe", "template<class T,class U=T>struct R{int n;};extern template struct R<int>;"},
       {"class-repeated-scalar-safe", "template<class T,int N=sizeof(T)>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;"},
       {"class-repeated-type-safe", "template<class T,class U=T>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;"},
-      {"function-specialization-scalar-safe", "template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();"},
+      {"function-specialization-scalar-safe", "template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>(){return 3;}"},
       {"function-specialization-type-safe", "template<class T,class U=T>int f(){return 3;}template<>int f<int>();"},
       {"function-repeated-scalar-safe", "template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
       {"function-repeated-type-safe", "template<class T,class U=T>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
@@ -5160,6 +5269,7 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesRetainLanguageDiagnostics) {
 
 TEST_F(TranslateTest, CoreV2AliasTemplatesRetainDefinitionClosure) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"function-specialization-scalar-declaration", "template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();"},
       {"missing-function", "template<class T>using I=T;template<class T>T f();int g(){return f<I<int>>();}"},
       {"missing-static", "template<class T>struct R{static T n;};template<class T>using I=R<T>;int f(){return I<int>::n;}"},
       {"missing-destructor", "template<class T>struct R{T n;~R();};template<class T>using I=R<T>;void f(){I<int>r{3};}"},
@@ -8003,7 +8113,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"friend", "struct R{template<class T>friend T f(T v){return v;}};", "TR0201"},
       {"template-template", "template<template<class>class T>int f(){return 1;}", "TR0201"},
       {"variable", "template<class T>int value=3;", "TR0201"},
-      {"alias", "template<class T>using Alias=T;", "TR0201"},
       {"float-argument", "template<class T>int f(){return 1;}int main(){return f<double>();}", "TR0201"},
       {"float-signature", "template<class T>double f(T n){return n;}int main(){return static_cast<int>(f(1));}", "TR0201"},
       {"float-body", "template<class T>int f(T n){double x=1.0;return n;}int main(){return f(1);}", "TR0201"},

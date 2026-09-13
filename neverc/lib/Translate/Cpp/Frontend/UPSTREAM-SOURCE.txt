@@ -10,7 +10,7 @@ can be selected with CMake's NEVERC_CPP_LLVM_SOURCE_ARCHIVE option; the same
 SHA256 is required. No upstream executable or shared library is installed.
 
 A checked private ASTConsumer.h/Sema.h/TemplateDeduction.h/SemaTemplate.cpp/
-SemaTemplateDeduction.cpp patch preserves each explicit function/static-member directive and successful
+SemaTemplateDeduction.cpp/SemaTemplateInstantiateDecl.cpp patch preserves each explicit function/static-member directive and successful
 template-use source event. A default-false consumer request opts only core v2
 into single-pass alias TypeSourceInfo substitution and retained substitution
 wrappers on type/scalar defaults and non-type parameter types. Exact deduction
@@ -25,10 +25,16 @@ carry their complete canonical/sugared arguments. Explicit class specialization,
 class instantiation and function specialization preserve each declaration's own
 source, including unused/repeated occurrences. Existing directive evidence still
 precedes no-effect returns. No deduction, overload, access or SFINAE rule changes.
-The five sources must all be pristine or fully rewritten; duplicate, partial,
+The six sources must all be pristine or fully rewritten; duplicate, partial,
 missing, mixed, drifted and orphan-marker states fail before any group write.
 Independent literal fixtures check all anchors, exact results and idempotence.
 NeverC bounds persistent evidence before copying and indexes it after Sema.
+For requesting consumers, conversion-function definition instantiation substitutes
+the actual definition's declaration-name type after constructing its existing
+Final=false argument list. This replaces the generic name TypeSourceInfo copied
+by upstream, retaining concrete in-class/out-of-line definition syntax. Empty
+substitution results retain their diagnostics and invalidate the definition.
+Ordinary functions and nonrequesting consumers keep their upstream behavior.
 Only reached concrete types, selected callees and explicit declarations consume
 their exact source evidence. Explicit arguments keep caller context; selected
 defaults and alias underlying source use checked parameter frames. Type sugar
@@ -47,8 +53,10 @@ A separate checked SemaOverload.cpp patch applies the same ordering to fresh
 reference arguments in FindConversionForRefInit. Result deduction precedes the
 compatibility filter. Its direct reference-candidate search excludes written
 non-function lvalue results from direct rvalue-reference binding. Later full
-initialization still deduces results needed for indirect standard conversions;
-an invalid competing auto& body retains its normal diagnostic. All original
+initialization still deduces results needed for indirect standard conversions.
+Overload analysis still rejects an lvalue-reference conversion result for an
+rvalue-reference argument; const-reference temporary widening remains admitted.
+An invalid competing auto& body retains its normal diagnostic. All original
 category, explicitness, access and candidate-selection checks remain active.
 Independent literal source fixtures cover exact output, idempotence and drift;
 paired source/protocol and native O0/O2 cases cover fresh argument conversions.

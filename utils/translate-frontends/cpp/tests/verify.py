@@ -6539,7 +6539,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'irrelevant-const-rvalue': 'template<class T>struct R{int n;operator int&(){return n;}operator const auto&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
         'irrelevant-pointer-rvalue': 'template<class T>struct R{int n;operator int&(){return n;}operator auto*&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
         'valid-competing-lvalue-for-rvalue': 'template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return n;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}',
-        'indirect-lvalue-to-rvalue': 'template<class T>struct R{T n;operator auto&(){return n;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}',
+        'indirect-lvalue-to-const-reference': 'template<class T>struct R{T n;operator auto&(){return n;}};long long set(const long long&n){return n;}long long f(R<int>&r){return set(r);}',
         'promoted-value-default': 'struct R{int n;};template<int N=3>int operator+(R,R){return N;}',
         'selected-value-default': 'struct R{int n;};template<int N=3>int operator+(R,R){return N;}int f(){R r{1};return r+r;}',
         'protocol-source': 'template<class T>struct RefArg{\n T n;operator decltype(auto)(){return (n);}\n};\ntemplate<class T>struct ConstArg{\n T n;operator decltype(auto)()const{return (n);}\n};\ntemplate<class T>struct MoveArg{\n T n;operator auto&&(){return static_cast<T&&>(n);}\n};\nint&assignArgument(int&n){n=7;return n;}\nconst int&readArgument(const int&n){return n;}\nint&&moveArgument(int&&n){n=9;return static_cast<int&&>(n);}\nint&freshMutable(RefArg<int>&r){return assignArgument(r);}\nconst int&freshConst(const ConstArg<int>&r){return readArgument(r);}\nint&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}\n',
@@ -6553,6 +6553,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     for name, source in fresh_reference_reject.items():
         check("v2-fresh-reference-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
     fresh_reference_invalid = {
+        'indirect-lvalue-to-rvalue': 'template<class T>struct R{T n;operator auto&(){return n;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}',
         'invalid-competing-lvalue-result': 'template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return T::missing;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}',
         'invalid-indirect-lvalue-result': 'template<class T>struct R{T n;operator auto&(){return T::missing;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}',
         'explicit-argument': 'template<class T>struct R{T n;explicit operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}',
@@ -6665,7 +6666,56 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == alias_templates
 
+    template_source_repairs_positive = {
+        'alias-int-default': 'template<class T=int>using I=T;',
+        'alias-bool-default': 'template<class T=bool>using I=T;',
+        'alias-enum-default': 'enum E{one=1};template<class T=E>using I=T;',
+        'alias-void-default': 'template<class T=void>using I=T;',
+        'alias-pointer-default': 'template<class T=int*>using I=T;',
+        'function-type-default': 'template<class T=int>int f(){return 3;}int g(){return f();}',
+        'class-type-default': 'template<class T=int>struct R{T n;};int f(){R<>r{3};return r.n;}',
+        'lazy-dependent-type-default': 'template<class T,class U=typename T::missing>using I=int;',
+        'qualified-nested': 'namespace A{namespace B{template<class T>T f(T n){return n;}}}int g(){return A::B::f(3);}',
+        'qualified-global': 'namespace A{template<class T>T f(T n){return n;}}int g(){return ::A::f(3);}',
+        'qualified-alias': 'namespace A{template<class T>T f(T n){return n;}}namespace B=A;int g(){return B::f(3);}',
+        'qualified-import': 'namespace A{template<class T>T f(T n){return n;}}using A::f;int g(){return f(3);}',
+        'qualified-explicit': 'namespace A{template<class T,int N=3>T f(){return N;}}int g(){return A::f<int>();}',
+        'qualified-recursion': 'namespace A{template<class T>T f(T n){return n?A::f<T>(n-1):3;}}int g(){return A::f(2);}',
+        'qualified-instances': 'namespace A{template<class T>T f(T n){return n;}}int g(){return A::f(3)+int(A::f(4LL));}',
+        'conversion-class': 'template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{return {n};}};int f(){R<int>r{3};Box<int>b=r;return b.n;}',
+        'conversion-class-outside': 'template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator Box<T>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}',
+        'conversion-alias-outside': 'template<class T>struct Box{T n;};template<class T>using I=T;template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator I<Box<T>>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}',
+        'conversion-reference-outside': 'template<class T>using I=T;template<class T>struct R{T n;operator T&();};template<class T>R<T>::operator I<T>&(){return n;}int f(){R<int>r{3};int&n=r;n=4;return r.n;}',
+        'conversion-pointer-outside': 'template<class T>using I=T;template<class T>struct R{T n;operator T*();};template<class T>R<T>::operator I<T>*(){return &n;}int f(){R<int>r{3};int*p=r;return *p;}',
+        'conversion-explicit-name': 'template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{return {n};}};int f(){R<int>r{3};return r.operator Box<int>().n;}',
+        'conversion-unused-dependent': 'template<class T>struct R{operator typename T::missing();};',
+    }
+    for name, source in template_source_repairs_positive.items():
+        check("v2-template-source-repair-positive-" + name, source, profile="cpp-core-v2")
+
+    template_source_repairs_reject = {
+        'class-floating-type-default': 'template<class T=double>struct R{int n;};',
+        'class-ignored-floating-default': 'template<class T>using I=int;template<class T=I<double>>struct R{int n;};',
+        'function-ignored-floating-default': 'template<class T>using I=int;template<class T=I<double>>int f(){return 3;}',
+        'alias-ignored-floating-default': 'template<class T>using I=int;template<class T=I<double>>using A=int;',
+        'selected-dependent-floating-default': 'template<class T>using D=double;template<class T,class U=D<T>>using I=int;I<int>f(){return 3;}',
+        'qualified-fresh-hidden-argument': 'template<class T>using I=int;namespace A{template<class T>int f(){return 3;}}int g(){return A::f<int>()+A::f<I<double>>();}',
+        'qualified-hidden-default': 'template<class T>using I=int;namespace A{template<class T=I<double>>int f(){return 3;}}int g(){return A::f();}',
+        'conversion-hidden-definition': 'template<class T>struct Box{T n;};template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator I<Box<T>>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}',
+        'conversion-hidden-body': 'template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{int hidden=int(1.0);return {n};}};int f(){R<int>r{3};Box<int>b=r;return b.n;}',
+        'conversion-hidden-parameter': 'template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator I<T>()const{return n;}};int f(){R<int>r{3};return r;}',
+    }
+    for name, source in template_source_repairs_reject.items():
+        check("v2-template-source-repair-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    template_source_repairs_missing = {
+        'conversion-missing-definition': 'template<class T>struct Box{T n;};template<class T>struct R{operator Box<T>()const;};int f(R<int>&r){Box<int>b=r;return b.n;}',
+    }
+    for name, source in template_source_repairs_missing.items():
+        check("v2-template-source-repair-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
     alias_templates_positive = {
+        'unused-identity-alias': 'template<class T>using Alias=T;',
         'promoted-pack': 'template<class...T>using R=int;',
         'promoted-class-boundary': 'template<class T>using R=T;',
         'promoted-core-boundary': 'template<class T> using Hidden = T;\nint main() { return 0; }\n',
@@ -6739,7 +6789,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'class-extern-type-safe': 'template<class T,class U=T>struct R{int n;};extern template struct R<int>;',
         'class-repeated-scalar-safe': 'template<class T,int N=sizeof(T)>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;',
         'class-repeated-type-safe': 'template<class T,class U=T>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;',
-        'function-specialization-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();',
+        'function-specialization-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>(){return 3;}',
         'function-specialization-type-safe': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>();',
         'function-repeated-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
         'function-repeated-type-safe': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
@@ -6890,6 +6940,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-alias-templates-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
 
     alias_templates_missing = {
+        'function-specialization-scalar-declaration': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();',
         'missing-function': 'template<class T>using I=T;template<class T>T f();int g(){return f<I<int>>();}',
         'missing-static': 'template<class T>struct R{static T n;};template<class T>using I=R<T>;int f(){return I<int>::n;}',
         'missing-destructor': 'template<class T>struct R{T n;~R();};template<class T>using I=R<T>;void f(){I<int>r{3};}',
@@ -9833,7 +9884,6 @@ Plain chosenRecord(){return choose<false>();}
         'friend': 'struct R{template<class T>friend T f(T v){return v;}};',
         'template-template': 'template<template<class>class T>int f(){return 1;}',
         'variable': 'template<class T>int value=3;',
-        'alias': 'template<class T>using Alias=T;',
         'float-argument': 'template<class T>int f(){return 1;}int main(){return f<double>();}',
         'float-signature': 'template<class T>double f(T n){return n;}int main(){return static_cast<int>(f(1));}',
         'float-body': 'template<class T>int f(T n){double x=1.0;return n;}int main(){return f(1);}',

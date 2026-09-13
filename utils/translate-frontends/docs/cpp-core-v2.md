@@ -1010,9 +1010,16 @@ A separate active-use stack enforces cycle/depth checks throughout argument
 traversal, including recursive calls to the same primary. All source collection
 shares the 200000-unit budget before copying; selected-use depth is bounded to 64.
 
-The built-in frontend opts into a private five-file source-preservation patch in
-ASTConsumer.h, Sema.h, TemplateDeduction.h, SemaTemplate.cpp and
-SemaTemplateDeduction.cpp. It substitutes
+Nondependent type defaults receive the same concrete type admission as selected
+type arguments, including in unused template declarations. Written type expressions
+remain checked after that admission. Dependent defaults retain their normal lazy
+instantiation. Qualified function-template calls match successful deduction source
+at the exact selected declaration and the written name or qualifier-begin location;
+equivalent template values alone do not replace source evidence.
+
+The built-in frontend opts into a private six-file source-preservation patch in
+ASTConsumer.h, Sema.h, TemplateDeduction.h, SemaTemplate.cpp,
+SemaTemplateDeduction.cpp and SemaTemplateInstantiateDecl.cpp. It substitutes
 an alias TypeSourceInfo once and retains substitution wrappers for alias/default
 and non-type parameter source. Other profiles and consumers keep their original substitution path and
 finality. No external Clang process is invoked. Independent literal archive
@@ -2235,7 +2242,9 @@ resolves necessary placeholder results before reference compatibility checks in
 both initialization and overload argument analysis. Direct reference-candidate
 search excludes a written non-function lvalue result from direct rvalue-reference
 binding. Later initialization can still require its result type to assess an
-indirect standard conversion, such as int& to a long long&& temporary. A competing
+indirect standard conversion, such as int& to a temporary bound to const long long&.
+For an rvalue-reference argument, overload analysis rejects a non-function
+lvalue-reference conversion result even on that indirect path. A competing
 auto& body whose result cannot be deduced retains its ordinary C++ diagnostic;
 it is not guaranteed to remain uninstantiated. Explicit conversions, access,
 constness, result category and overload
@@ -2249,6 +2258,13 @@ without assuming whether parameter destruction happens on function return or at
 the caller's expression boundary. Unevaluated template member calls still require
 a materialized definition under this profile's existing source-closure rule;
 separate fixtures cover evaluated calls and signature-only diagnostics.
+
+Concrete conversion-function definitions retain the substituted type source in
+their conversion name, including out-of-line definitions that spell the same type
+through an alias. The embedded frontend replaces the generic name metadata copied
+from the definition with that definition's concrete substitution. Its original
+type expressions still undergo source checks; unused dependent definitions remain
+lazy. Native CI covers conversion results and object lifetime at O0 and O2.
 
 ## User-defined conversion functions
 
