@@ -87,7 +87,8 @@ operand side effects are never lowered (`sizeof(++value)` leaves `value`
 unchanged). References use their referent's size/alignment. Record and array
 queries use the verified source/target layout evidence below. Queries on void,
 functions, unsupported or variable-length types, GNU preferred alignment,
-expression-form alignment and parameter packs are rejected.
+expression-form alignment are rejected. Resolved `sizeof...` follows the
+[parameter-pack contract](#concrete-parameter-packs).
 
 ## Object pointers and lvalue references
 
@@ -692,7 +693,7 @@ remains unfinished.
 ## Concrete aggregate class templates
 
 Core v2 admits concrete namespace-scope standard-layout class-template instances with
-one to 64 non-pack type or scalar integer/bool/enum parameters. Scalar `auto`
+one to 64 type or scalar integer/bool/enum parameters. Scalar `auto`
 and dependent scalar parameters follow the same argument rules as free function
 templates. Type defaults, explicit instantiation and explicit specialization,
 including forward declarations followed by definitions, are supported.
@@ -704,8 +705,7 @@ complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
 remain checked when selected. Member function templates, friends, nested
 records/templates, bases and partial specializations
-remain outside this class-template increment. Packs,
-template-template parameters and non-scalar value arguments remain excluded.
+remain outside this class-template increment. Template-template parameters and non-scalar value arguments remain excluded.
 
 The producer traverses materialized records without enabling unrestricted
 implicit AST traversal. Dependent field types and unused field defaults stay
@@ -979,7 +979,7 @@ shares the 200000-unit template source budget; it does not mutate semantic flags
 or add runtime parameters, global initialization or opaque representations.
 
 Final defaults must be supported scalar constants. Pointer/reference/record-valued
-arguments, packs, member/friend/variable templates, standard headers and remaining
+arguments, member/friend/variable templates, standard headers and remaining
 C++17/STL features are still unfinished. Invalid C++ retains TR0202; unsupported
 profile source uses TR0201, and selected definitions missing from this source unit
 use TR0203 where ordinary rules require them.
@@ -1107,7 +1107,7 @@ arrow-star forms that C++ permits as non-members. Embedded Clang enforces arity,
 operand types, access and overload resolution. Allocation/deallocation, literal
 operators, member/friend templates and later-standard operators remain excluded.
 
-The existing function-template limits apply: up to 64 non-pack type or supported
+The existing function-template limits apply: up to 64 type or supported
 scalar parameters, deduction, type defaults, scalar C++17 auto and dependent
 scalar parameter types. ADL, namespace imports, explicit calls, specialization,
 instantiation and recursion retain selected concrete identities. Unused primary
@@ -1141,15 +1141,66 @@ unfinished. C++ is the only implemented input frontend; other languages remain
 planned. Translation uses embedded Clang libraries without an external Clang
 executable.
 
+## Concrete parameter packs
+
+Admitted namespace function/operator templates and standard-layout class
+templates support resolved type and scalar value parameter packs. A primary has
+at most 64 parameters; each concrete pack has at most 64 elements, including zero.
+Every packed type or integer/bool/enum value is checked, even if the body uses only
+the count. Scalar auto packs may contain different admitted deduced scalar types.
+Pointer/reference/class-valued non-type arguments, template-template parameters,
+own member/friend/alias/variable templates, partial specializations and bases
+retain their existing exclusions. C ellipsis varargs are separate and unsupported.
+
+Embedded Clang performs deduction, reference collapsing, explicit prefix handling
+and parameter expansion. Each concrete function parameter uses separate ordinary
+storage even when expanded parameters share a source name and location. Fixed
+parameters, array references, outer class-template method/constructor expansions,
+out-of-line definitions and ordinary instantiation/specialization follow the
+existing type, signature, source and lifetime checks. Template argument values
+become typed constants; equivalent packs share canonical instances while different
+types, values or primaries retain their own types and static scalar objects.
+
+Resolved `sizeof...(Pack)` becomes a typed size count. The producer validates the
+exact original pack declaration and its admitted owned primary, including written
+outer lists on out-of-line members and packs in instantiated local-class methods.
+No dependent or partially substituted count can reach lowering. Only while
+checking a written non-type parameter's TypeLoc may a dependent count from that
+same template parameter list remain lazy metadata, as in
+`template<class... T, decltype(sizeof...(T)) N=0>`. This exception never obtains a
+pack length and does not extend to defaults, bodies or arbitrary dependent source.
+Selected defaults still supply concrete original and converted evidence.
+
+Concrete fold expressions become ordinary builtin or selected overloaded
+operations. Unary/binary, left/right folds retain sequencing, builtin logical
+short circuit, reference writes, record result storage and existing cleanup.
+Empty logical/comma identities and binary seeds follow C++17. Empty expansions
+do not instantiate their pattern: `(0 + ... + (sizeof(double), Ns))` is admitted
+for an empty pack, but a nonempty materialization is rejected for its floating
+source. Seeds and every materialized element are checked. Unresolved folds or
+pack-expansion AST nodes are not accepted as runtime representations.
+
+Malformed C++17 pack declarations, mismatched simultaneous expansion lengths and
+empty unary arithmetic folds retain TR0202. Unsupported elements/materialized
+source and resource overflow use TR0201; selected missing definitions retain
+TR0203. Pack indexing and expansion work share the existing source budget.
+Paired regressions and O0/O2 native fixtures cover parameter identity, ordering,
+references, counts, folds, static storage and lifetime. Protocol checks cover exact
+calls, parameter/receiver/result types, constants, cleanup and relocation. Native
+results require CI of the implementing revision. Complete C++17/STL remains
+unfinished. Only C++ input is implemented; E Language, Python and other frontends
+are planned. Translation uses embedded Clang libraries without launching an
+external Clang executable.
+
 ## Concrete free function templates
 
 Core v2 admits source-owned namespace/free function templates with one to 64
-non-pack, unconstrained parameters, mixing supported types with integer, boolean
+unconstrained parameters, mixing supported types with integer, boolean
 and enum values. Embedded Clang performs deduction, overload ordering,
 substitution and explicit specialization/instantiation. Type-parameter defaults,
 namespace imports, recursion and nested calls use ordinary typed functions.
 Member and friend templates, template-template parameters,
-parameter packs, abbreviated/constrained templates and standard headers remain
+abbreviated/constrained templates and standard headers remain
 outside this stage.
 
 Scalar non-type parameters include C++17 `template<auto N>` and dependent scalar

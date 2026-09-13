@@ -18,6 +18,27 @@ checks. Driver file inputs must be regular files; the bounded reader checks the
 opened file identity and limits every read, including files that grow during
 reading. FIFOs, directories and devices are rejected without waiting for input.
 
+## Concrete parameter-pack representation
+
+Core v2 serializes instantiated type/scalar packs as ordinary concrete parameters,
+records and constants. It adds no pack node, runtime template argument, opaque
+source or new opcode. Each expanded parameter gets a unique storage name;
+references remain typed pointers to the original storage. Record results keep the
+initial hidden destination and members keep their receiver. Resolved `sizeof...`
+uses the target size integer carrier; scalar pack substitutions reuse Clang's
+selected typed replacement, without treating its reverse pack index as a forward
+argument index. Concrete folds use existing expression, branch, call and cleanup
+operations, preserving builtin short circuit and selected operator lifetimes.
+
+The producer checks at most 64 primary parameters and 64 elements per concrete
+pack, charges expansion work and verifies every materialized element and exact
+pack origin. The narrow dependent count TypeLoc exception remains source metadata
+and cannot be emitted. Empty fold patterns stay uninstantiated, while seeds and
+generated elements retain source checks. Consumers continue checking complete
+signatures, unique storage, types and call closure. Equivalent packs reuse canonical
+identities and relocation stays deterministic. See the [source contract](cpp-core-v2.md#concrete-parameter-packs)
+for the supported boundaries; complete C++17/STL remains unfinished.
+
 ## Compiler execution environment
 
 Every manifest declares `compiler_environment_policy: "neverc.translate.execution-env.v1"`. This driver-owned policy applies to every translator child process, including the frontend child, compiler resource lookup, generated-source validation, and runtime link probe. The child environment starts empty and inherits only these variables when they are present in the parent environment: `PATH`, `HOME`, `USERPROFILE`, `SystemRoot`, `SystemDrive`, `COMSPEC`, `PATHEXT`, `TMPDIR`, `TMP`, and `TEMP`. Their names are spelled exactly as listed. The driver then supplies `LC_ALL=C` and `NEVERC_NO_DEFAULT_CONFIG=1` with fixed values. All other inherited variables are omitted, including compiler include paths, deployment-target overrides, and loader overrides.

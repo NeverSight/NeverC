@@ -696,12 +696,34 @@ static const TemplateDecl *scalarTemplateOwner(
   return nullptr;
 }
 
+static bool supportedPackDeclaration(const NamedDecl *Pack) {
+  if (!Pack || Pack->isInvalidDecl() || Pack->hasAttrs())
+    return false;
+  if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Pack))
+    return !Type->getDepth() && Type->isParameterPack() && !Type->hasTypeConstraint();
+  if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Pack))
+    return !Value->getDepth() && Value->isParameterPack();
+  if (const auto *Parameter = dyn_cast<ParmVarDecl>(Pack))
+    return Parameter->isParameterPack();
+  return false;
+}
+
+std::optional<unsigned> concretePackSize(const SizeOfPackExpr *E) {
+  if (!E || E->getType().isNull() || !E->isPRValue() ||
+      !E->getType()->isIntegralOrEnumerationType() || E->isTypeDependent() ||
+      E->isValueDependent() || E->isInstantiationDependent() ||
+      E->isPartiallySubstituted() || !supportedPackDeclaration(E->getPack()))
+    return std::nullopt;
+  unsigned Size = E->getPackLength();
+  return Size <= 64 ? std::optional<unsigned>(Size) : std::nullopt;
+}
+
 const Expr *scalarTemplateReplacement(const SubstNonTypeTemplateParmExpr *E,
                                       ASTContext &Context) {
   if (!E || E->getType().isNull() || !E->isPRValue() ||
       !E->getType()->isIntegralOrEnumerationType() || E->isTypeDependent() ||
       E->isValueDependent() || E->isInstantiationDependent() ||
-      E->getPackIndex() || E->isReferenceParameter())
+      E->isReferenceParameter())
     return nullptr;
   const auto *Primary = scalarTemplateOwner(E);
   if (!Primary || !Primary->getTemplateParameters() ||
@@ -710,8 +732,12 @@ const Expr *scalarTemplateReplacement(const SubstNonTypeTemplateParmExpr *E,
   // getParameter() performs an unchecked index and cast in pinned Clang.
   const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(
       Primary->getTemplateParameters()->getParam(E->getIndex()));
-  if (!Parameter || Parameter->getDepth() || Parameter->isParameterPack())
+  if (!Parameter || Parameter->getDepth() ||
+      Parameter->isParameterPack() != E->getPackIndex().has_value() ||
+      (E->getPackIndex() && *E->getPackIndex() >= 64))
     return nullptr;
+  // Pack indices count from the end in Clang. The replacement is already the
+  // selected scalar; never use this index to subscript a forward argument list.
   const auto *Replacement = E->getReplacement();
   if (!Replacement || Replacement->getType().isNull() ||
       !Replacement->isPRValue() || Replacement->isTypeDependent() ||
@@ -1137,6 +1163,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   const FunctionDecl *CurrentFunction = nullptr;
   const FieldDecl *CurrentDefaultField = nullptr;
   SourceLocation ImplicitInitializerOwner;
+  const TemplateParameterList *TemplateParameterTypeSource = nullptr;
+  std::map<const NamedDecl *, const TemplateDecl *> PackOwners;
   std::set<const Expr *> CheckedSemanticInitializers;
   std::set<const InitListExpr *> EmptyVoidLists;
   std::set<const CXXConstructExpr *> CheckedConstructions;
@@ -1163,12 +1191,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!owned(Parameter) || Parameter->isInvalidDecl() || Parameter->hasAttrs())
         return false;
       if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter)) {
-        if (Type->getDepth() || Type->isParameterPack() || Type->hasTypeConstraint())
+        if (Type->getDepth() || Type->hasTypeConstraint())
           return false;
         continue;
       }
       const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter);
-      if (!Value || Value->getDepth() || Value->isParameterPack() ||
+      if (!Value || Value->getDepth() ||
           Value->getType().isNull())
         return false;
       auto T = Value->getType();
@@ -1223,7 +1251,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     for (const auto *Parameter : M->parameters()) {
       A.chargeExpansion(1, Parameter->getLocation());
       if (!owned(Parameter) || Parameter->isInvalidDecl() ||
-          Parameter->hasAttrs() || Parameter->isParameterPack())
+          Parameter->hasAttrs())
         return false;
     }
     return true;
@@ -1287,19 +1315,24 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Pattern->isDefaulted() || Pattern->isConsteval() ||
         Pattern->getTrailingRequiresClause() || Pattern->hasAttrs())
       return false;
-    for (const auto *Parameter : Pattern->parameters())
-      if (!owned(Parameter) || Parameter->isInvalidDecl() ||
-          Parameter->hasAttrs() || Parameter->isParameterPack())
+    for (const auto *Parameter : Pattern->parameters()) {
+      A.chargeExpansion(1, Parameter->getLocation());
+      if (!owned(Parameter) || Parameter->isInvalidDecl() || Parameter->hasAttrs())
         return false;
+    }
     return true;
   }
   bool traverseTemplateParameterSource(const TemplateParameterList *Parameters,
                                       bool TypeDefaults) {
     for (const auto *Parameter : *Parameters) {
       if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter)) {
-        if (const auto *Info = Value->getTypeSourceInfo();
-            Info && !TraverseTypeLoc(Info->getTypeLoc()))
-          return false;
+        if (const auto *Info = Value->getTypeSourceInfo()) {
+          auto *Saved = TemplateParameterTypeSource;
+          TemplateParameterTypeSource = Parameters;
+          auto Restore = llvm::make_scope_exit([&] { TemplateParameterTypeSource = Saved; });
+          if (!TraverseTypeLoc(Info->getTypeLoc()))
+            return false;
+        }
         // Nondependent written defaults cannot hide unsupported source. A
         // dependent default stays lazy until Sema successfully converts a use.
         if (Value->hasDefaultArgument() &&
@@ -1322,24 +1355,150 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return;
     }
     for (unsigned Index = 0; Index < Arguments.size(); ++Index) {
+      const auto *Parameter = Parameters->getParam(Index);
       const auto &Argument = Arguments.get(Index);
       A.chargeExpansion(1, L);
-      if (isa<TemplateTypeParmDecl>(Parameters->getParam(Index))) {
-        if (Argument.getKind() != TemplateArgument::Type ||
-            Argument.getAsType().isNull() || Argument.getAsType()->isDependentType())
-          A.reject(L, "template argument", "A resolved supported type argument is required.");
-        else
-          A.type(Argument.getAsType(), L, true);
-      } else if (Argument.getKind() != TemplateArgument::Integral ||
-                 Argument.getIntegralType().isNull() ||
-                 Argument.getIntegralType()->isDependentType() ||
-                 !Argument.getIntegralType()->isIntegralOrEnumerationType()) {
-        A.reject(L, "template argument",
-                 "A resolved integer, boolean or enum value argument is required.");
+      auto CheckElement = [&](const TemplateArgument &Element) {
+        if (isa<TemplateTypeParmDecl>(Parameter)) {
+          if (Element.getKind() != TemplateArgument::Type ||
+              Element.getAsType().isNull() || Element.getAsType()->isDependentType())
+            A.reject(L, "template argument", "A resolved supported type argument is required.");
+          else
+            A.type(Element.getAsType(), L, true);
+        } else if (Element.getKind() != TemplateArgument::Integral ||
+                   Element.getIntegralType().isNull() ||
+                   Element.getIntegralType()->isDependentType() ||
+                   !Element.getIntegralType()->isIntegralOrEnumerationType()) {
+          A.reject(L, "template argument",
+                   "A resolved integer, boolean or enum value argument is required.");
+        } else {
+          A.type(Element.getIntegralType(), L);
+        }
+      };
+      if (supportedPackDeclaration(Parameter)) {
+        if (Argument.getKind() != TemplateArgument::Pack || Argument.pack_size() > 64) {
+          A.reject(L, "template argument pack", "A concrete pack of at most 64 supported elements is required.");
+          continue;
+        }
+        A.chargeExpansion(Argument.pack_size(), L);
+        for (const auto &Element : Argument.pack_elements())
+          CheckElement(Element);
       } else {
-        A.type(Argument.getIntegralType(), L);
+        CheckElement(Argument);
       }
     }
+  }
+  void recordPack(const NamedDecl *Pack, const TemplateDecl *Owner) {
+    if (!supportedPackDeclaration(Pack) || !owned(Pack) || !owned(Owner))
+      return;
+    const auto *Canonical = cast<TemplateDecl>(Owner->getCanonicalDecl());
+    auto Inserted = PackOwners.emplace(Pack, Canonical);
+    if (!Inserted.second && Inserted.first->second != Canonical) {
+      A.reject(Pack->getLocation(), "pack origin", "A source pack has conflicting template owners.");
+      throw Failure{};
+    }
+  }
+  void recordTemplatePacks(const TemplateParameterList *Parameters,
+                           const TemplateDecl *Owner) {
+    if (!owned(Owner) || !Parameters || Parameters->size() > 64)
+      return;
+    A.chargeExpansion(1 + Parameters->size(), Owner->getLocation());
+    for (const auto *Parameter : *Parameters)
+      recordPack(Parameter, Owner);
+  }
+  void recordOuterPacks(const DeclaratorDecl *D, const TemplateDecl *Owner) {
+    if (!owned(D) || !owned(Owner) || D->getNumTemplateParameterLists() > 1)
+      return;
+    for (unsigned I = 0; I < D->getNumTemplateParameterLists(); ++I)
+      recordTemplatePacks(D->getTemplateParameterList(I), Owner);
+  }
+  void recordFunctionPacks(const FunctionDecl *Function, const TemplateDecl *Owner) {
+    if (!owned(Function) || !owned(Owner))
+      return;
+    A.chargeExpansion(1 + Function->getNumParams(), Function->getLocation());
+    for (const auto *Parameter : Function->parameters())
+      recordPack(Parameter, Owner);
+    recordOuterPacks(Function, Owner);
+  }
+  void indexTemplatePackSources(const TemplateDecl *Template) {
+    if (!owned(Template))
+      return;
+    recordTemplatePacks(Template->getTemplateParameters(), Template);
+    if (const auto *Function = dyn_cast<FunctionTemplateDecl>(Template)) {
+      recordFunctionPacks(Function->getTemplatedDecl(), Template);
+    } else if (const auto *Class = dyn_cast<ClassTemplateDecl>(Template)) {
+      const auto *Definition = Class->getTemplatedDecl()->getDefinition();
+      if (!owned(Definition))
+        return;
+      for (const auto *Member : Definition->decls()) {
+        A.chargeExpansion(1, Member->getLocation());
+        if (const auto *Method = dyn_cast<CXXMethodDecl>(Member))
+          recordFunctionPacks(Method, Template);
+        else if (const auto *Variable = dyn_cast<VarDecl>(Member);
+                 Variable && Variable->isStaticDataMember())
+          recordOuterPacks(Variable, Template);
+      }
+    }
+  }
+  void indexLocalFunctionPacks(const CXXMethodDecl *Method) {
+    if (!owned(Method) || !concreteLocalClassFunction(Method))
+      return;
+    const TemplateDecl *Primary = nullptr;
+    const FunctionDecl *Function = Method;
+    for (unsigned Depth = 0; Depth < 64; ++Depth) {
+      A.chargeExpansion(1, Function->getLocation());
+      const auto *Member = dyn_cast<CXXMethodDecl>(Function);
+      const auto *Owner = Member ? Member->getParent()->isLocalClass() : nullptr;
+      if (!owned(Owner))
+        break;
+      if (concreteFreeFunctionTemplate(Owner)) {
+        Primary = Owner->getPrimaryTemplate();
+        break;
+      }
+      if ((Primary = classFunctionPrimary(Owner)))
+        break;
+      Function = Owner;
+    }
+    const auto *Pattern = Method->getInstantiatedFromMemberFunction();
+    if (!owned(Primary) || !owned(Pattern)) {
+      A.reject(Method->getLocation(), "local pack origin",
+               "A local method pack requires an owned instantiated-from method and outer primary.");
+      return;
+    }
+    unsigned Count = 0;
+    for (const auto *Declaration : Pattern->redecls()) {
+      if (++Count > 64) {
+        A.reject(Method->getLocation(), "local pack origin", "Local method redeclarations exceed the source limit.");
+        return;
+      }
+      recordFunctionPacks(Declaration, Primary);
+    }
+  }
+  bool validPackOwner(const NamedDecl *Pack) {
+    auto Found = PackOwners.find(Pack);
+    if (!owned(Pack) || !supportedPackDeclaration(Pack) || Found == PackOwners.end())
+      return false;
+    return functionTemplateShape(dyn_cast<FunctionTemplateDecl>(Found->second)) ||
+           classTemplateShape(dyn_cast<ClassTemplateDecl>(Found->second));
+  }
+  void checkPackSize(const SizeOfPackExpr *Query) {
+    A.chargeExpansion(1, Query->getExprLoc());
+    if (!validPackOwner(Query->getPack())) {
+      A.reject(Query->getExprLoc(), "pack size", "A count requires the exact pack of an admitted owned template.");
+      return;
+    }
+    if (TemplateParameterTypeSource && !Query->isTypeDependent() &&
+        Query->isValueDependent() && Query->isInstantiationDependent() &&
+        !Query->isPartiallySubstituted() && Query->isPRValue() &&
+        !Query->getType().isNull() && Query->getType()->isIntegralOrEnumerationType()) {
+      // This declaration-only context is limited to the same written template
+      // parameter list. It never obtains or emits an unresolved pack length.
+      for (const auto *Parameter : *TemplateParameterTypeSource)
+        if (Parameter == Query->getPack())
+          return;
+    }
+    if (!concretePackSize(Query))
+      A.reject(Query->getExprLoc(), "pack size", "A fully resolved pack of at most 64 elements is required.");
   }
   bool importContext(const DeclContext *Context) {
     if (!Context || Context->isDependentContext())
@@ -1868,7 +2027,7 @@ public:
     if (TraverseTemplateArgumentLoc(Source.Written) && Written != Converted)
       TraverseTemplateArgumentLoc(Source.Converted);
   }
-  void indexFunctionTemplates() {
+  void indexTemplates() {
     if (!A.S.coreV2())
       return;
     std::vector<Decl *> Work{A.Context.getTranslationUnitDecl()};
@@ -1880,6 +2039,19 @@ public:
         auto *Canonical = Template->getCanonicalDecl();
         if (!A.TemplateOrdinals.count(Canonical))
           A.TemplateOrdinals.emplace(Canonical, A.TemplateOrdinals.size());
+      }
+      if (const auto *Template = dyn_cast<TemplateDecl>(D);
+          Template && isa<FunctionTemplateDecl, ClassTemplateDecl>(Template))
+        indexTemplatePackSources(Template);
+      // Out-of-line member definitions are separate lexical namespace entries.
+      if (const auto *Method = dyn_cast<CXXMethodDecl>(D)) {
+        if (const auto *Primary = Method->getParent()->getDescribedClassTemplate())
+          recordFunctionPacks(Method, Primary);
+      } else if (const auto *Variable = dyn_cast<VarDecl>(D);
+                 Variable && Variable->isStaticDataMember()) {
+        const auto *Parent = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
+        if (const auto *Primary = Parent ? Parent->getDescribedClassTemplate() : nullptr)
+          recordOuterPacks(Variable, Primary);
       }
       const DeclContext *Context = nullptr;
       if (auto *Unit = dyn_cast<TranslationUnitDecl>(D))
@@ -1905,7 +2077,7 @@ public:
       return false;
     if (!functionTemplateShape(D)) {
       A.reject(D->getLocation(), "function template",
-               "Only ordinary owned namespace function templates with up to 64 non-pack type or scalar value parameters are supported.");
+               "Only ordinary owned namespace function templates with up to 64 type or scalar value parameters and bounded concrete packs are supported.");
       return true;
     }
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
@@ -2195,6 +2367,9 @@ public:
           concreteFreeFunctionTemplate(Function) &&
           !CheckedTemplateDeclarations.insert(Function).second)
         return true;
+    if (A.S.coreV2())
+      if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(D))
+        indexLocalFunctionPacks(Method);
     auto *SavedFunction = CurrentFunction;
     if (auto *Function = dyn_cast_or_null<FunctionDecl>(D))
       CurrentFunction = Function;
@@ -2902,6 +3077,8 @@ public:
                                         : ImplicitInitializerOwner;
     if (A.S.coreV2()) {
       checkStaticValueUse(S);
+      if (const auto *Query = dyn_cast<SizeOfPackExpr>(S))
+        checkPackSize(Query);
       if (const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(S)) {
         A.chargeExpansion(1, L);
         if (!scalarTemplateReplacement(Substitution, A.Context) ||
@@ -3032,7 +3209,7 @@ public:
               DefaultStmt, AttributedStmt, CharacterLiteral,
               UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
               CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt,
-              SubstNonTypeTemplateParmExpr>(S)) &&
+              SubstNonTypeTemplateParmExpr, SizeOfPackExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -3358,7 +3535,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                   llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives,
                   llvm::ArrayRef<ScalarTemplateDefaultSource> Defaults) {
   Allowlist Check(*this);
-  Check.indexFunctionTemplates();
+  Check.indexTemplates();
   for (const auto &Directive : Directives)
     Check.checkExplicitFunctionInstantiation(Directive);
   for (const auto &Directive : StaticDirectives)

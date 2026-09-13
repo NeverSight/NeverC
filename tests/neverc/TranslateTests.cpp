@@ -4688,6 +4688,232 @@ TEST_F(TranslateTest, CoreV2FrontendRepairsRetainWrittenExceptionSource) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ParameterPacksPreserveExpansionAndLifetimes) {
+  const auto Source = tmpFile("parameter-packs-runtime.cpp");
+  const auto Output = tmpFile("parameter-packs-runtime.nc");
+  writeFile(Source, R"cpp(int trace=0, calls=0, live=0, made=0, destroyed=0;
+template<class...T>int digits(T...v){int n=0;((n=n*10+v),...);return n;}
+template<int...N>int values(){int n=0;((n=n*10+N),...);return n;}
+template<class...T>int sum(int seed,T...v){return (seed+...+v);}
+template<class...T>void mutate(T&&...v){((v+=sizeof...(T)),...);}
+template<int...N>int arrays(int(&...a)[N]){return (0+...+(a[0]+N));}
+template<class...T>int nested(T...v){return digits((v+1)...);}
+template<int...N>int left(){return (...-N);}
+template<int...N>int right(){return (N-...);}
+template<int...N>int leftSeed(){return (20-...-N);}
+template<int...N>int rightSeed(){return (N-...-1);}
+bool test(int n){++calls;trace=trace*10+n;return n!=2;}
+template<int...N>bool all(){return (test(N)&&...);}
+template<int...N>bool any(){return (...||test(N));}
+template<class...T>void empty(T...v){(v,...);}
+template<auto...N>int&state(){static int n=sizeof...(N);return n;}
+template<class...T>struct Box{int n;Box(T...v):n((0+...+v)){}int get(T...v,int last){return n+(last+...+v);}inline static int count=sizeof...(T);};
+template<class...T>struct Outside{int get(T...v);};
+template<class...U>int Outside<U...>::get(U...v){return sizeof...(U)+sizeof...(v)+(0+...+v);}
+template<class...T,int N=sizeof...(T)>int count(T...v){return N;}
+template<class...T,decltype(sizeof...(T)) N=0>int typedCount(T...v){return N+sizeof...(v);}
+template<class...T>int local(){struct L{int get(T...v){return sizeof...(v)+(0+...+v);}};return L{}.get(T(1)...);}
+struct Token{int n;Token(int v):n(v){++live;++made;}~Token(){--live;++destroyed;}};
+Token operator+(const Token&t,int v){return Token(t.n+v);}
+template<class...T>Token recordFold(T...v){return (Token(0)+...+v);}
+enum class Mode:unsigned int{three=3};
+template<auto...N>int autoValues(){return (0+...+int(N));}
+int main(){
+ if(digits(1,2,3)!=123)return 1;
+ if(values<1,2,3>()!=123)return 2;
+ if(digits()!=0||sum(7)!=7)return 3;
+ if(sum(7,2,3)!=12||digits<int>(1,2,3)!=123)return 4;
+ int a=1,b=2;mutate(a,b);
+ if(a!=3||b!=4)return 5;
+ int x[2]={4},y[3]={5};
+ if(arrays(x,y)!=14)return 6;
+ if(nested(1,2,3)!=234)return 7;
+ if(left<9,3,2>()!=4||right<9,3,2>()!=8)return 8;
+ if(leftSeed<9,3,2>()!=6||rightSeed<9,3,2>()!=7)return 9;
+ if(all<1,2,3>()||calls!=2||trace!=12)return 10;
+ calls=0;trace=0;
+ if(!any<2,3,4>()||calls!=2||trace!=23)return 11;
+ calls=0;trace=0;empty();
+ if(!all<>()||any<>()||calls||trace)return 12;
+ state<1,2>()=7;
+ if(&state<1,2>()!=&state<1,1+1>()||state<1,1+1>()!=7)return 13;
+ if(&state<1,2>()==&state<1u,2>()||state<1u,2>()!=2)return 14;
+ if(state<>()!=0||state<1>()!=1)return 15;
+ Box<int,int> box(2,3);
+ if(box.n!=5||box.get(1,2,3)!=11||Box<int,int>::count!=2)return 16;
+ Box<int,int>::count=9;
+ if(Box<int,bool>::count!=2||Box<int,int>::count!=9)return 17;
+ Outside<int,int> outside{};
+ if(outside.get(2,3)!=9)return 18;
+ if(count(1,2)!=2||typedCount(1,2)!=2||count()!=0)return 19;
+ if(local<int,int>()!=4||local<>()!=0)return 20;
+ {Token result=recordFold(2,3);
+  if(result.n!=5||live!=1||made!=3||destroyed!=2)return 21;
+ }
+ if(live!=0||made!=3||destroyed!=3)return 22;
+ if(autoValues<1,2u,Mode::three,true>()!=7)return 23;
+ mutate(a,a);
+ if(a!=7)return 24;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("parameter-packs-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ParameterPacksAcceptConcreteExpansions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unused-function", "template<class...T>int f(T...v){return 1;}"},
+      {"unused-operator", "struct R{int n;};template<class... T>int operator+(R){return 1;}"},
+      {"unused-type-class", "template<class...T>struct R{int n;};"},
+      {"unused-value-class", "template<int...N>struct R{int n;};"},
+      {"value-count", "template<int... N>int f(){return sizeof...(N);}int main(){return f<1,2>();}"},
+      {"empty-types", "template<class...T>int f(){return sizeof...(T);}int main(){return f<>();}"},
+      {"mixed-types", "template<class...T>int f(T...v){return sizeof...(T)+sizeof...(v);}int main(){return f(1,true,2u)-6;}"},
+      {"same-type-storage", "template<class...T>int f(T...v){int n=0;((n=n*10+v),...);return n;}int main(){return f(1,2,3)-123;}"},
+      {"fixed-prefix", "template<class...T>int f(int seed,T...v){return (seed+...+v);}int main(){return f(7,2,3)-12;}"},
+      {"explicit-prefix", "template<class...T>int f(T...v){return (0+...+v);}int main(){return f<int>(1,2,3)-6;}"},
+      {"forwarding-references", "template<class...T>void f(T&&...v){((++v),...);}int main(){int a=1,b=2;f(a,b);return a+b-5;}"},
+      {"const-references", "template<class...T>int f(const T&...v){return (0+...+v);}int main(){int a=2,b=3;return f(a,b)-5;}"},
+      {"array-references", "template<int...N>int f(int(&...a)[N]){return (0+...+(a[0]+N));}int main(){int a[2]={4},b[3]={5};return f(a,b)-14;}"},
+      {"nested-expansion", "template<class...T>int add(T...v){return (0+...+v);}template<class...T>int f(T...v){return add((v+1)...);}int main(){return f(1,2,3)-9;}"},
+      {"scalar-order", "template<int...N>int f(){int n=0;((n=n*10+N),...);return n;}int main(){return f<1,2,3>()-123;}"},
+      {"bool-values", "template<bool...B>bool f(){return (B&&...);}int main(){return !f<true,true>()||f<true,false>();}"},
+      {"enum-values", "enum class E:unsigned int{a=2,b=3};template<E...N>int f(){return (0+...+int(N));}int main(){return f<E::a,E::b>()-5;}"},
+      {"mixed-auto-values", "enum class E:unsigned int{x=3};template<auto...N>int f(){return (0+...+int(N));}int main(){return f<1,2u,E::x,true>()-7;}"},
+      {"dependent-scalar-values", "template<class T,T...N>T f(){return (T(0)+...+N);}int main(){return f<int,2,3>()-5;}"},
+      {"count-parameter-type", "template<class...T,decltype(sizeof...(T)) N=0>int f(T...v){return N+sizeof...(v);}int main(){return f(1,2)-2;}"},
+      {"count-default", "template<class...T,int N=sizeof...(T)>int f(T...v){return N;}int main(){return f(1,2)-2;}"},
+      {"count-function-default", "template<class...T>int f(int n=sizeof...(T)){return n;}int main(){return f<int,bool>()-2;}"},
+      {"count-array", "template<class...T>int f(){int a[sizeof...(T)]={};return sizeof(a)/sizeof(int);}int main(){return f<int,bool>()-2;}"},
+      {"count-constexpr", "template<int...N>constexpr int f(){return sizeof...(N);}static_assert(f<1,2>()==2);int main(){return f<>();}"},
+      {"count-noexcept", "template<class...T>int f(T...v)noexcept(sizeof...(T)>0){return sizeof...(v);}int main(){return f(1)-noexcept(f(1));}"},
+      {"class-method", "template<class...T>struct R{int f(T...v){return (0+...+v);}};int main(){R<int,int>r{};return r.f(2,3)-5;}"},
+      {"class-constructor", "template<class...T>struct R{int n;R(T...v):n((0+...+v)){}};int main(){R<int,int>r(2,3);return r.n-5;}"},
+      {"class-fixed-suffix", "template<class...T>struct R{int f(T...v,int last){return (last+...+v);}};int main(){R<int,int>r{};return r.f(1,2,3)-6;}"},
+      {"class-out-of-line", "template<class...T>struct R{int f(T...v);};template<class...U>int R<U...>::f(U...v){return sizeof...(U)+sizeof...(v)+(0+...+v);}int main(){R<int,int>r{};return r.f(2,3)-9;}"},
+      {"class-static-count", "template<class...T>struct R{inline static int n=sizeof...(T);};int main(){return R<int,bool>::n-2;}"},
+      {"class-static-fold", "template<int...N>struct R{static int n;};template<int...M>int R<M...>::n=(0+...+M);int main(){return R<2,3>::n-5;}"},
+      {"class-array", "template<int...N>struct R{int a[sizeof...(N)];};int main(){R<2,3>r{{4,5}};return r.a[0]+r.a[1]-9;}"},
+      {"explicit-function", "template<class...T>int f(T...v){return (0+...+v);}extern template int f<int,int>(int,int);template int f<int,int>(int,int);int main(){return f(2,3)-5;}"},
+      {"specialized-function", "template<class...T>int f(T...v){return 1;}template<>int f<int,int>(int a,int b){return a+b;}int main(){return f(2,3)-5;}"},
+      {"explicit-class", "template<class...T>struct R{int f(T...v){return sizeof...(v);}};template struct R<int,int>;int main(){R<int,int>r{};return r.f(2,3)-2;}"},
+      {"specialized-class", "template<class...T>struct R{int n;};template<>struct R<int,bool>{int n[2];};int main(){R<int,bool>r{{2,3}};return r.n[0]+r.n[1]-5;}"},
+      {"operator-pack", "template<class...T>struct R{int n;};template<class...T>int operator+(R<T...>r,int n){return r.n+n+sizeof...(T);}int main(){return R<int,bool>{3}+4-9;}"},
+      {"local-class-count", "template<class...T>int f(){struct L{int g(){return sizeof...(T);}};return L{}.g();}int main(){return f<int,bool>()-2;}"},
+      {"local-method-pack", "template<class...T>int f(){struct L{int g(T...v){return sizeof...(v)+(0+...+v);}};return L{}.g(T(1)...);}int main(){return f<int,int>()-4;}"},
+      {"nested-local-method-pack", "template<class...T>int f(){struct L{int g(){struct M{int h(T...v){return sizeof...(v);}};return M{}.h(T{}...);}};return L{}.g();}int main(){return f<int,bool>()-2;}"},
+      {"class-local-method-pack", "template<class...T>struct R{int f(){struct L{int g(T...v){return sizeof...(v);}};return L{}.g(T{}...);}};int main(){R<int,bool>r{};return r.f()-2;}"},
+      {"unary-left", "template<int...N>int f(){return (...-N);}int main(){return f<9,3,2>()-4;}"},
+      {"unary-right", "template<int...N>int f(){return (N-...);}int main(){return f<9,3,2>()-8;}"},
+      {"binary-left", "template<int...N>int f(){return (20-...-N);}int main(){return f<9,3,2>()-6;}"},
+      {"binary-right", "template<int...N>int f(){return (N-...-1);}int main(){return f<9,3,2>()-7;}"},
+      {"empty-identities", "template<class...T>bool all(T...v){return (v&&...);}template<class...T>bool any(T...v){return (...||v);}template<class...T>void noop(T...v){(v,...);}int main(){noop();return !all()||any();}"},
+      {"empty-seed", "template<int...N>int f(){return (7+...+N);}int main(){return f<>()-7;}"},
+      {"empty-lazy-pattern", "template<int...Ns>int f(){return (0 + ... + (sizeof(double), Ns));}int main(){return f<>();}"},
+      {"lazy-unused-body", "template<class...T>int f(T...v){return (0+...+T::missing);}int main(){return 0;}"},
+      {"static-pack-identity", "template<auto...N>int&f(){static int n=sizeof...(N);return n;}int main(){f<1,2>()=7;return f<1,1+1>()-7+f<1u,2>()-2;}"},
+      {"type-pack-64", "template<class...T>int f(){return sizeof...(T);}int main(){return f<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>()-64;}"},
+      {"value-pack-64", "template<int...N>int f(){return (0+...+N);}int main(){return f<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>()-64;}"},
+      {"function-pack-64", "template<class...T>int f(T...v){return sizeof...(v);}int main(){return f(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1)-64;}"},
+      {"protocol-source", "template<class...T>int pp_digits(T...v){int n=0;((n=n*10+v),...);return n;}\ntemplate<int...N>int pp_values(){int n=0;((n=n*10+N),...);return n;}\ntemplate<class...T>int pp_count(T...v){return sizeof...(T)+sizeof...(v);}\ntemplate<class...T>void pp_mutate(T&...v){((++v),...);}\ntemplate<auto...N>int&pp_state(){static int n=sizeof...(N);return n;}\ntemplate<int...N>int pp_array(int(&...a)[N]){return (0+...+(a[0]+N));}\ntemplate<class...T>struct Box{\n int n;\n int get(T...v){return n+(0+...+v);}\n};\nstruct Token{int n;Token(int v):n(v){}~Token(){n=99;}};\nToken operator+(const Token&t,int v){return Token(t.n+v);}\ntemplate<class...T>Token pp_record(T...v){return (Token(0)+...+v);}\nint digits(){return pp_digits(1,2,3);}\nint emptyDigits(){return pp_digits();}\nint values(){return pp_values<1,2,3>();}\nint count(){return pp_count(1,2u,true);}\nint emptyCount(){return pp_count();}\nvoid mutate(int&a,int&b){pp_mutate(a,b);}\nint&firstState(){return pp_state<1,2>();}\nint&sameState(){return pp_state<1,1+1>();}\nint&typedState(){return pp_state<1u,2>();}\nint&emptyState(){return pp_state<>();}\nint arrays(int(&a)[2],int(&b)[3]){return pp_array(a,b);}\nint method(Box<int,int>&b){return b.get(4,5);}\nint otherMethod(Box<int,unsigned int>&b){return b.get(4,5u);}\nToken record(){return pp_record(2,3);}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("parameter-packs-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("parameter-packs-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ParameterPacksRetainSourceAndResourceChecks) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"type-pack-65", "template<class...T>int f(){return sizeof...(T);}int main(){return f<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>();}"},
+      {"value-pack-65", "template<int...N>int f(){return sizeof...(N);}int main(){return f<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>();}"},
+      {"function-pack-65", "template<class...T>int f(T...v){return sizeof...(v);}int main(){return f(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1);}"},
+      {"counted-floating-type", "template<class...T>int f(){return sizeof...(T);}int main(){return f<int,double>();}"},
+      {"class-counted-floating-type", "template<class...T>struct R{int n;};int main(){R<int,double>r{};return r.n;}"},
+      {"pointer-value-pack", "int n;template<int*...P>int f(){return sizeof...(P);}int main(){return f<&n>();}"},
+      {"auto-pointer-pack", "int n;template<auto...P>int f(){return sizeof...(P);}int main(){return f<1,&n>();}"},
+      {"auto-null-pack", "template<auto...P>int f(){return sizeof...(P);}int main(){return f<nullptr>();}"},
+      {"reference-value-pack", "int n;template<int&...P>int f(){return sizeof...(P);}int main(){return f<n>();}"},
+      {"nonempty-floating-pattern", "template<int...Ns>int f(){return (0 + ... + (sizeof(double), Ns));}int main(){return f<1>();}"},
+      {"empty-floating-seed", "template<int...N>int f(){return (int(1.0)+...+N);}int main(){return f<>();}"},
+      {"floating-written-argument", "template<int...N>int f(){return sizeof...(N);}int main(){return f<int(1.0)>();}"},
+      {"floating-count-type-source", "template<class...T,decltype((sizeof(double),sizeof...(T))) N=0>int f(T...v){return N;}int main(){return f(1);}"},
+      {"floating-selected-default", "template<class...T,int N=(sizeof(double)+sizeof...(T))>int f(T...v){return N;}int main(){return f(1);}"},
+      {"floating-explicit-instantiation", "template<int...N>int f(){return sizeof...(N);}template int f<int(1.0)>();"},
+      {"template-template-pack", "template<template<class>class...T>struct R{int n;};"},
+      {"member-template-pack", "struct R{template<class...T>int f(T...v){return sizeof...(v);}};"},
+      {"friend-template-pack", "struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};"},
+      {"alias-template-pack", "template<class...T>using R=int;"},
+      {"variable-template-pack", "template<class...T>int n=sizeof...(T);"},
+      {"partial-pack", "template<class...T>struct R{int n;};template<class...T>struct R<int,T...>{int n;};"},
+      {"c-varargs", "template<class...T>int f(T...v,...){return sizeof...(v);}int main(){return f(1);}"},
+      {"zero-array", "template<class...T>int f(){int a[sizeof...(T)];return 0;}int main(){return f<>();}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("parameter-packs-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("parameter-packs-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ParameterPacksRetainLanguageDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"empty-unary-plus", "template<int...N>int f(){return (...+N);}int main(){return f<>();}"},
+      {"mismatched-lengths", "template<class...T>struct R{int n;};template<class...T,class...U>int f(R<T...>,R<U...>){return (0+...+(sizeof(T)+sizeof(U)));}int main(){return f(R<int,int>{},R<int>{});}"},
+      {"class-pack-position", "template<class...T,int N>struct R{int n;};"},
+      {"type-pack-default", "template<class...T=int>struct R{int n;};"},
+      {"value-pack-default", "template<int...N=1>struct R{int n;};"},
+      {"function-pack-default", "template<class...T>int f(T...v=0){return 1;}"},
+      {"wrong-kind", "template<int...N>int f(){return sizeof...(N);}int main(){return f<int>();}"},
+      {"nonconstant-value", "template<int...N>int f(){return sizeof...(N);}int main(){int n=1;return f<n>();}"},
+      {"narrowing", "template<unsigned char...N>int f(){return sizeof...(N);}int main(){return f<256>();}"},
+      {"selected-invalid-body", "template<class...T>int f(){return (0+...+T::missing);}int main(){return f<int>();}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("parameter-packs-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("parameter-packs-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ParameterPacksRequireSelectedDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"function", "template<class...T>int f(T...v);int main(){return f(1,2);}"},
+      {"method", "template<class...T>struct R{int f(T...v);};int main(){R<int,int>r{};return r.f(1,2);}"},
+      {"static-member", "template<class...T>struct R{static int n;};int&f(){return R<int,int>::n;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("parameter-packs-missing-" + Name + ".cpp");
+    const auto Output = tmpFile("parameter-packs-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DeducedReferenceConversionsPreserveStorage) {
   const auto Source = tmpFile("deduced-reference-runtime.cpp");
   const auto Output = tmpFile("deduced-reference-runtime.nc");
@@ -5452,7 +5678,6 @@ TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesRetainSourceBoundaries) {
       {"literal", "template<char... C>int operator\"\"_number(){return 1;}"},
       {"member-template", "struct R{template<class T>int operator()(T){return 1;}};"},
       {"friend-template", "struct R{int n;template<class T>friend int operator+(const R&r,T n){return r.n+n;}};"},
-      {"pack", "struct R{int n;};template<class... T>int operator+(R){return 1;}"},
       {"value-default", "struct R{int n;};template<int N=3>int operator+(R,R){return N;}"},
       {"local-unused-body", "struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0);}};Local l;return r.n+n;}int f(){return R{3}+4;}"},
   };
@@ -6922,8 +7147,6 @@ TEST_F(TranslateTest, CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundari
       {"pointer-value", "int n;template<int*P>struct R{int n;};", "TR0201"},
       {"auto-pointer", "int n;template<auto P>struct R{int n;};int main(){R<&n>r{};return r.n;}", "TR0201"},
       {"auto-null", "template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}", "TR0201"},
-      {"value-pack", "template<int...N>struct R{int n;};", "TR0201"},
-      {"type-pack", "template<class...T>struct R{int n;};", "TR0201"},
       {"template-template", "template<template<class>class T>struct R{int n;};", "TR0201"},
       {"friend", "template<class T>struct R{T n;friend int get(R r){return r.n;}};", "TR0201"},
       {"nested-record", "template<class T>struct R{struct I{T n;};};", "TR0201"},
@@ -7092,7 +7315,6 @@ TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesAcceptResolvedScalarArgument
 
 TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesRetainSourceAndValueBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"value-pack", "template<int... N>int f(){return sizeof...(N);}int main(){return f<1,2>();}", "TR0201"},
       {"template-template", "template<template<class>class T,int N>int f(){return N;}", "TR0201"},
       {"pointer-parameter", "int n=3;template<int*P>int f(){return *P;}int main(){return f<&n>();}", "TR0201"},
       {"reference-parameter", "int n=3;template<int&N>int f(){return N;}int main(){return f<n>();}", "TR0201"},
@@ -7292,7 +7514,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"member", "struct R{template<class T>T f(T v){return v;}};", "TR0201"},
       {"friend", "struct R{template<class T>friend T f(T v){return v;}};", "TR0201"},
-      {"pack", "template<class...T>int f(T...v){return 1;}", "TR0201"},
       {"template-template", "template<template<class>class T>int f(){return 1;}", "TR0201"},
       {"variable", "template<class T>int value=3;", "TR0201"},
       {"alias", "template<class T>using Alias=T;", "TR0201"},

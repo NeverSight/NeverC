@@ -6447,6 +6447,251 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
 
+    parameter_packs_source = """template<class...T>int pp_digits(T...v){int n=0;((n=n*10+v),...);return n;}
+template<int...N>int pp_values(){int n=0;((n=n*10+N),...);return n;}
+template<class...T>int pp_count(T...v){return sizeof...(T)+sizeof...(v);}
+template<class...T>void pp_mutate(T&...v){((++v),...);}
+template<auto...N>int&pp_state(){static int n=sizeof...(N);return n;}
+template<int...N>int pp_array(int(&...a)[N]){return (0+...+(a[0]+N));}
+template<class...T>struct Box{
+ int n;
+ int get(T...v){return n+(0+...+v);}
+};
+struct Token{int n;Token(int v):n(v){}~Token(){n=99;}};
+Token operator+(const Token&t,int v){return Token(t.n+v);}
+template<class...T>Token pp_record(T...v){return (Token(0)+...+v);}
+int digits(){return pp_digits(1,2,3);}
+int emptyDigits(){return pp_digits();}
+int values(){return pp_values<1,2,3>();}
+int count(){return pp_count(1,2u,true);}
+int emptyCount(){return pp_count();}
+void mutate(int&a,int&b){pp_mutate(a,b);}
+int&firstState(){return pp_state<1,2>();}
+int&sameState(){return pp_state<1,1+1>();}
+int&typedState(){return pp_state<1u,2>();}
+int&emptyState(){return pp_state<>();}
+int arrays(int(&a)[2],int(&b)[3]){return pp_array(a,b);}
+int method(Box<int,int>&b){return b.get(4,5);}
+int otherMethod(Box<int,unsigned int>&b){return b.get(4,5u);}
+Token record(){return pp_record(2,3);}
+"""
+    parameter_packs = check("v2-parameter-packs-protocol", parameter_packs_source, profile="cpp-core-v2")
+    pp_functions = {f["name"]: f for f in parameter_packs["functions"]}
+    pp_records = {r["id"]: r for r in parameter_packs["records"]}
+    pp_globals = {g["name"]: g for g in parameter_packs["globals"]}
+    assert len(pp_functions) == len(parameter_packs["functions"])
+    assert len(pp_records) == len(parameter_packs["records"]) == 3
+    assert len(pp_globals) == len(parameter_packs["globals"]) == 3
+
+    def pp_line(prefix):
+        lines = [i for i, line in enumerate(parameter_packs_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def pp_function(prefix):
+        functions = [f for f in pp_functions.values() if f["loc"]["line"] == pp_line(prefix)]
+        assert len(functions) == 1, (prefix, functions)
+        return functions[0]
+
+    def pp_selected(prefix, origin, parameters, result="int"):
+        caller = pp_function(prefix)
+        calls = gc_calls(caller)
+        assert len(calls) == 1, (prefix, calls)
+        target = pp_functions[calls[0]["callee"]]
+        assert target["loc"]["line"] == pp_line(origin)
+        assert target["result"] == result
+        assert [p["type"] for p in target["params"]] == parameters
+        assert len({p["name"] for p in target["params"]}) == len(parameters)
+        return caller, calls[0], target
+
+    caller, call, digits = pp_selected("int digits(", "template<class...T>int pp_digits(", ["int"]*3)
+    assert [gc_identity(caller, a) for a in call["args"]] == [1, 2, 3]
+    used = {n["name"] for n in walk(digits["body"]) if n.get("kind") == "var"}
+    assert all(p["name"] in used for p in digits["params"])
+    _, _, empty_digits = pp_selected("int emptyDigits(", "template<class...T>int pp_digits(", [])
+    assert empty_digits["name"] != digits["name"] and not gc_calls(empty_digits)
+    _, _, values = pp_selected("int values(", "template<int...N>int pp_values(", [])
+    literals = [int(n["value"]) for n in walk(values["body"]) if n.get("kind") == "literal"]
+    assert [n for n in literals if n in (1, 2, 3)] == [1, 2, 3]
+    for prefix, types, size in (("int count(", ["int", "uint", "bool"], 3), ("int emptyCount(", [], 0)):
+        _, _, target = pp_selected(prefix, "template<class...T>int pp_count(", types)
+        sizes = [n for n in walk(target["body"]) if n.get("kind") == "literal"]
+        assert len(sizes) == 2 and all(int(n["value"]) == size for n in sizes)
+        assert all(n["type"] in ("uint", "u64") for n in sizes)
+    for prefix, origin, types, result in (
+            ("void mutate(", "template<class...T>void pp_mutate(", ["ptr:int", "ptr:int"], "void"),
+            ("int arrays(", "template<int...N>int pp_array(", ["ptr:arr:2:int", "ptr:arr:3:int"], "int")):
+        caller, call, target = pp_selected(prefix, origin, types, result)
+        assert [np_pointer(caller, arg) for arg in call["args"]] == [("parameter", p["name"]) for p in caller["params"]]
+        if result == "void":
+            writes = [n for n in target["body"] if n["op"] == "assign" and n["target"].get("kind") == "dereference"]
+            assert [np_place(target, n["target"]) for n in writes] == [("parameter", p["name"]) for p in target["params"]]
+    storage = []
+    states = []
+    for prefix, count in (("int&firstState(", 2), ("int&sameState(", 2), ("int&typedState(", 2), ("int&emptyState(", 0)):
+        _, _, target = pp_selected(prefix, "template<auto...N>int&pp_state(", [], "ptr:int")
+        states.append(target["name"])
+        names = {n["name"] for n in walk(target["body"]) if n.get("kind") == "var" and n.get("name") in pp_globals}
+        assert len(names) == 1
+        name = next(iter(names))
+        storage.append(name)
+        global_value = pp_globals[name]
+        assert global_value["type"] == "int" and global_value["mutable"]
+        assert global_value["value"]["kind"] == "literal" and int(global_value["value"]["value"]) == count
+    assert states[0] == states[1] and storage[0] == storage[1]
+    assert len(set(states)) == len(set(storage)) == 3
+    methods = []
+    for prefix, types, values in (("int method(", ["int", "int"], [4, 5]), ("int otherMethod(", ["int", "uint"], [4, 5])):
+        caller = pp_function(prefix)
+        receiver = caller["params"][0]["type"]
+        assert receiver.startswith("ptr:") and receiver[4:] in pp_records
+        assert [f["type"] for f in pp_records[receiver[4:]]["fields"]] == ["int"]
+        caller, call, target = pp_selected(prefix, " int get(", [receiver]+types)
+        methods.append(target["name"])
+        assert np_pointer(caller, call["args"][0]) == ("parameter", caller["params"][0]["name"])
+        assert [gc_identity(caller, a) for a in call["args"][1:]] == values
+    assert len(set(methods)) == 2
+    token = next(r for r in pp_records.values() if r["loc"]["line"] == pp_line("struct Token{"))
+    pointer = "ptr:"+token["id"]
+    caller, call, fold = pp_selected("Token record(", "template<class...T>Token pp_record(", [pointer, "int", "int"], "void")
+    assert [p["type"] for p in caller["params"]] == [pointer] and caller["result"] == "void"
+    assert np_pointer(caller, call["args"][0]) == ("parameter", caller["params"][0]["name"])
+    assert [gc_identity(caller, a) for a in call["args"][1:]] == [2, 3]
+    operation = pp_function("Token operator+(")
+    assert operation["result"] == "void"
+    assert [p["type"] for p in operation["params"]] == [pointer, "cptr:"+token["id"], "int"]
+    calls = gc_calls(fold)
+    operators = [n for n in calls if n["callee"] == operation["name"]]
+    cleanup = [n for n in calls if n["callee"] == token["id"]+"_destroy"]
+    assert len(calls) == 5 and len(operators) == len(cleanup) == 2
+    assert [gc_identity(fold, n["args"][2]) for n in operators] == [("parameter", p["name"]) for p in fold["params"][1:]]
+    assert np_pointer(fold, operators[-1]["args"][0]) == ("parameter", fold["params"][0]["name"])
+    sources = [np_pointer(fold, n["args"][1]) for n in operators]
+    assert len(set(sources)) == 2
+    assert [np_pointer(fold, n["args"][0]) for n in cleanup] == list(reversed(sources))
+    assert all(place != ("parameter", fold["params"][0]["name"]) for place in sources)
+    for function in pp_functions.values():
+        declarations = function["params"] + function["locals"]
+        assert len({p["name"] for p in declarations}) == len(declarations)
+        for call in gc_calls(function):
+            assert call["callee"] in pp_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in pp_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-parameter-packs-relocated-") as temp:
+        relocated = check("v2-parameter-packs-relocated", parameter_packs_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == parameter_packs
+
+
+    parameter_packs_positive = {
+        'unused-function': 'template<class...T>int f(T...v){return 1;}',
+        'unused-operator': 'struct R{int n;};template<class... T>int operator+(R){return 1;}',
+        'unused-type-class': 'template<class...T>struct R{int n;};',
+        'unused-value-class': 'template<int...N>struct R{int n;};',
+        'value-count': 'template<int... N>int f(){return sizeof...(N);}int main(){return f<1,2>();}',
+        'empty-types': 'template<class...T>int f(){return sizeof...(T);}int main(){return f<>();}',
+        'mixed-types': 'template<class...T>int f(T...v){return sizeof...(T)+sizeof...(v);}int main(){return f(1,true,2u)-6;}',
+        'same-type-storage': 'template<class...T>int f(T...v){int n=0;((n=n*10+v),...);return n;}int main(){return f(1,2,3)-123;}',
+        'fixed-prefix': 'template<class...T>int f(int seed,T...v){return (seed+...+v);}int main(){return f(7,2,3)-12;}',
+        'explicit-prefix': 'template<class...T>int f(T...v){return (0+...+v);}int main(){return f<int>(1,2,3)-6;}',
+        'forwarding-references': 'template<class...T>void f(T&&...v){((++v),...);}int main(){int a=1,b=2;f(a,b);return a+b-5;}',
+        'const-references': 'template<class...T>int f(const T&...v){return (0+...+v);}int main(){int a=2,b=3;return f(a,b)-5;}',
+        'array-references': 'template<int...N>int f(int(&...a)[N]){return (0+...+(a[0]+N));}int main(){int a[2]={4},b[3]={5};return f(a,b)-14;}',
+        'nested-expansion': 'template<class...T>int add(T...v){return (0+...+v);}template<class...T>int f(T...v){return add((v+1)...);}int main(){return f(1,2,3)-9;}',
+        'scalar-order': 'template<int...N>int f(){int n=0;((n=n*10+N),...);return n;}int main(){return f<1,2,3>()-123;}',
+        'bool-values': 'template<bool...B>bool f(){return (B&&...);}int main(){return !f<true,true>()||f<true,false>();}',
+        'enum-values': 'enum class E:unsigned int{a=2,b=3};template<E...N>int f(){return (0+...+int(N));}int main(){return f<E::a,E::b>()-5;}',
+        'mixed-auto-values': 'enum class E:unsigned int{x=3};template<auto...N>int f(){return (0+...+int(N));}int main(){return f<1,2u,E::x,true>()-7;}',
+        'dependent-scalar-values': 'template<class T,T...N>T f(){return (T(0)+...+N);}int main(){return f<int,2,3>()-5;}',
+        'count-parameter-type': 'template<class...T,decltype(sizeof...(T)) N=0>int f(T...v){return N+sizeof...(v);}int main(){return f(1,2)-2;}',
+        'count-default': 'template<class...T,int N=sizeof...(T)>int f(T...v){return N;}int main(){return f(1,2)-2;}',
+        'count-function-default': 'template<class...T>int f(int n=sizeof...(T)){return n;}int main(){return f<int,bool>()-2;}',
+        'count-array': 'template<class...T>int f(){int a[sizeof...(T)]={};return sizeof(a)/sizeof(int);}int main(){return f<int,bool>()-2;}',
+        'count-constexpr': 'template<int...N>constexpr int f(){return sizeof...(N);}static_assert(f<1,2>()==2);int main(){return f<>();}',
+        'count-noexcept': 'template<class...T>int f(T...v)noexcept(sizeof...(T)>0){return sizeof...(v);}int main(){return f(1)-noexcept(f(1));}',
+        'class-method': 'template<class...T>struct R{int f(T...v){return (0+...+v);}};int main(){R<int,int>r{};return r.f(2,3)-5;}',
+        'class-constructor': 'template<class...T>struct R{int n;R(T...v):n((0+...+v)){}};int main(){R<int,int>r(2,3);return r.n-5;}',
+        'class-fixed-suffix': 'template<class...T>struct R{int f(T...v,int last){return (last+...+v);}};int main(){R<int,int>r{};return r.f(1,2,3)-6;}',
+        'class-out-of-line': 'template<class...T>struct R{int f(T...v);};template<class...U>int R<U...>::f(U...v){return sizeof...(U)+sizeof...(v)+(0+...+v);}int main(){R<int,int>r{};return r.f(2,3)-9;}',
+        'class-static-count': 'template<class...T>struct R{inline static int n=sizeof...(T);};int main(){return R<int,bool>::n-2;}',
+        'class-static-fold': 'template<int...N>struct R{static int n;};template<int...M>int R<M...>::n=(0+...+M);int main(){return R<2,3>::n-5;}',
+        'class-array': 'template<int...N>struct R{int a[sizeof...(N)];};int main(){R<2,3>r{{4,5}};return r.a[0]+r.a[1]-9;}',
+        'explicit-function': 'template<class...T>int f(T...v){return (0+...+v);}extern template int f<int,int>(int,int);template int f<int,int>(int,int);int main(){return f(2,3)-5;}',
+        'specialized-function': 'template<class...T>int f(T...v){return 1;}template<>int f<int,int>(int a,int b){return a+b;}int main(){return f(2,3)-5;}',
+        'explicit-class': 'template<class...T>struct R{int f(T...v){return sizeof...(v);}};template struct R<int,int>;int main(){R<int,int>r{};return r.f(2,3)-2;}',
+        'specialized-class': 'template<class...T>struct R{int n;};template<>struct R<int,bool>{int n[2];};int main(){R<int,bool>r{{2,3}};return r.n[0]+r.n[1]-5;}',
+        'operator-pack': 'template<class...T>struct R{int n;};template<class...T>int operator+(R<T...>r,int n){return r.n+n+sizeof...(T);}int main(){return R<int,bool>{3}+4-9;}',
+        'local-class-count': 'template<class...T>int f(){struct L{int g(){return sizeof...(T);}};return L{}.g();}int main(){return f<int,bool>()-2;}',
+        'local-method-pack': 'template<class...T>int f(){struct L{int g(T...v){return sizeof...(v)+(0+...+v);}};return L{}.g(T(1)...);}int main(){return f<int,int>()-4;}',
+        'nested-local-method-pack': 'template<class...T>int f(){struct L{int g(){struct M{int h(T...v){return sizeof...(v);}};return M{}.h(T{}...);}};return L{}.g();}int main(){return f<int,bool>()-2;}',
+        'class-local-method-pack': 'template<class...T>struct R{int f(){struct L{int g(T...v){return sizeof...(v);}};return L{}.g(T{}...);}};int main(){R<int,bool>r{};return r.f()-2;}',
+        'unary-left': 'template<int...N>int f(){return (...-N);}int main(){return f<9,3,2>()-4;}',
+        'unary-right': 'template<int...N>int f(){return (N-...);}int main(){return f<9,3,2>()-8;}',
+        'binary-left': 'template<int...N>int f(){return (20-...-N);}int main(){return f<9,3,2>()-6;}',
+        'binary-right': 'template<int...N>int f(){return (N-...-1);}int main(){return f<9,3,2>()-7;}',
+        'empty-identities': 'template<class...T>bool all(T...v){return (v&&...);}template<class...T>bool any(T...v){return (...||v);}template<class...T>void noop(T...v){(v,...);}int main(){noop();return !all()||any();}',
+        'empty-seed': 'template<int...N>int f(){return (7+...+N);}int main(){return f<>()-7;}',
+        'empty-lazy-pattern': 'template<int...Ns>int f(){return (0 + ... + (sizeof(double), Ns));}int main(){return f<>();}',
+        'lazy-unused-body': 'template<class...T>int f(T...v){return (0+...+T::missing);}int main(){return 0;}',
+        'static-pack-identity': 'template<auto...N>int&f(){static int n=sizeof...(N);return n;}int main(){f<1,2>()=7;return f<1,1+1>()-7+f<1u,2>()-2;}',
+        'type-pack-64': 'template<class...T>int f(){return sizeof...(T);}int main(){return f<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>()-64;}',
+        'value-pack-64': 'template<int...N>int f(){return (0+...+N);}int main(){return f<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>()-64;}',
+        'function-pack-64': 'template<class...T>int f(T...v){return sizeof...(v);}int main(){return f(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1)-64;}',
+        'protocol-source': 'template<class...T>int pp_digits(T...v){int n=0;((n=n*10+v),...);return n;}\ntemplate<int...N>int pp_values(){int n=0;((n=n*10+N),...);return n;}\ntemplate<class...T>int pp_count(T...v){return sizeof...(T)+sizeof...(v);}\ntemplate<class...T>void pp_mutate(T&...v){((++v),...);}\ntemplate<auto...N>int&pp_state(){static int n=sizeof...(N);return n;}\ntemplate<int...N>int pp_array(int(&...a)[N]){return (0+...+(a[0]+N));}\ntemplate<class...T>struct Box{\n int n;\n int get(T...v){return n+(0+...+v);}\n};\nstruct Token{int n;Token(int v):n(v){}~Token(){n=99;}};\nToken operator+(const Token&t,int v){return Token(t.n+v);}\ntemplate<class...T>Token pp_record(T...v){return (Token(0)+...+v);}\nint digits(){return pp_digits(1,2,3);}\nint emptyDigits(){return pp_digits();}\nint values(){return pp_values<1,2,3>();}\nint count(){return pp_count(1,2u,true);}\nint emptyCount(){return pp_count();}\nvoid mutate(int&a,int&b){pp_mutate(a,b);}\nint&firstState(){return pp_state<1,2>();}\nint&sameState(){return pp_state<1,1+1>();}\nint&typedState(){return pp_state<1u,2>();}\nint&emptyState(){return pp_state<>();}\nint arrays(int(&a)[2],int(&b)[3]){return pp_array(a,b);}\nint method(Box<int,int>&b){return b.get(4,5);}\nint otherMethod(Box<int,unsigned int>&b){return b.get(4,5u);}\nToken record(){return pp_record(2,3);}\n',
+    }
+    for name, source in parameter_packs_positive.items():
+        check("v2-parameter-packs-positive-" + name, source, profile="cpp-core-v2")
+
+    parameter_packs_reject = {
+        'type-pack-65': 'template<class...T>int f(){return sizeof...(T);}int main(){return f<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>();}',
+        'value-pack-65': 'template<int...N>int f(){return sizeof...(N);}int main(){return f<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>();}',
+        'function-pack-65': 'template<class...T>int f(T...v){return sizeof...(v);}int main(){return f(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1);}',
+        'counted-floating-type': 'template<class...T>int f(){return sizeof...(T);}int main(){return f<int,double>();}',
+        'class-counted-floating-type': 'template<class...T>struct R{int n;};int main(){R<int,double>r{};return r.n;}',
+        'pointer-value-pack': 'int n;template<int*...P>int f(){return sizeof...(P);}int main(){return f<&n>();}',
+        'auto-pointer-pack': 'int n;template<auto...P>int f(){return sizeof...(P);}int main(){return f<1,&n>();}',
+        'auto-null-pack': 'template<auto...P>int f(){return sizeof...(P);}int main(){return f<nullptr>();}',
+        'reference-value-pack': 'int n;template<int&...P>int f(){return sizeof...(P);}int main(){return f<n>();}',
+        'nonempty-floating-pattern': 'template<int...Ns>int f(){return (0 + ... + (sizeof(double), Ns));}int main(){return f<1>();}',
+        'empty-floating-seed': 'template<int...N>int f(){return (int(1.0)+...+N);}int main(){return f<>();}',
+        'floating-written-argument': 'template<int...N>int f(){return sizeof...(N);}int main(){return f<int(1.0)>();}',
+        'floating-count-type-source': 'template<class...T,decltype((sizeof(double),sizeof...(T))) N=0>int f(T...v){return N;}int main(){return f(1);}',
+        'floating-selected-default': 'template<class...T,int N=(sizeof(double)+sizeof...(T))>int f(T...v){return N;}int main(){return f(1);}',
+        'floating-explicit-instantiation': 'template<int...N>int f(){return sizeof...(N);}template int f<int(1.0)>();',
+        'template-template-pack': 'template<template<class>class...T>struct R{int n;};',
+        'member-template-pack': 'struct R{template<class...T>int f(T...v){return sizeof...(v);}};',
+        'friend-template-pack': 'struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};',
+        'alias-template-pack': 'template<class...T>using R=int;',
+        'variable-template-pack': 'template<class...T>int n=sizeof...(T);',
+        'partial-pack': 'template<class...T>struct R{int n;};template<class...T>struct R<int,T...>{int n;};',
+        'c-varargs': 'template<class...T>int f(T...v,...){return sizeof...(v);}int main(){return f(1);}',
+        'zero-array': 'template<class...T>int f(){int a[sizeof...(T)];return 0;}int main(){return f<>();}',
+    }
+    for name, source in parameter_packs_reject.items():
+        check("v2-parameter-packs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+
+    parameter_packs_invalid = {
+        'empty-unary-plus': 'template<int...N>int f(){return (...+N);}int main(){return f<>();}',
+        'mismatched-lengths': 'template<class...T>struct R{int n;};template<class...T,class...U>int f(R<T...>,R<U...>){return (0+...+(sizeof(T)+sizeof(U)));}int main(){return f(R<int,int>{},R<int>{});}',
+        'class-pack-position': 'template<class...T,int N>struct R{int n;};',
+        'type-pack-default': 'template<class...T=int>struct R{int n;};',
+        'value-pack-default': 'template<int...N=1>struct R{int n;};',
+        'function-pack-default': 'template<class...T>int f(T...v=0){return 1;}',
+        'wrong-kind': 'template<int...N>int f(){return sizeof...(N);}int main(){return f<int>();}',
+        'nonconstant-value': 'template<int...N>int f(){return sizeof...(N);}int main(){int n=1;return f<n>();}',
+        'narrowing': 'template<unsigned char...N>int f(){return sizeof...(N);}int main(){return f<256>();}',
+        'selected-invalid-body': 'template<class...T>int f(){return (0+...+T::missing);}int main(){return f<int>();}',
+    }
+    for name, source in parameter_packs_invalid.items():
+        check("v2-parameter-packs-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
+
+    parameter_packs_missing = {
+        'function': 'template<class...T>int f(T...v);int main(){return f(1,2);}',
+        'method': 'template<class...T>struct R{int f(T...v);};int main(){R<int,int>r{};return r.f(1,2);}',
+        'static-member': 'template<class...T>struct R{static int n;};int&f(){return R<int,int>::n;}',
+    }
+    for name, source in parameter_packs_missing.items():
+        check("v2-parameter-packs-missing-" + name, source, "TR0203", profile="cpp-core-v2")
+
     deduced_reference_source = """template<class T>struct Box{
  T n;
  operator decltype(auto)()&{return (n);}
@@ -7171,7 +7416,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'literal': 'template<char... C>int operator""_number(){return 1;}',
         'member-template': 'struct R{template<class T>int operator()(T){return 1;}};',
         'friend-template': 'struct R{int n;template<class T>friend int operator+(const R&r,T n){return r.n+n;}};',
-        'pack': 'struct R{int n;};template<class... T>int operator+(R){return 1;}',
         'value-default': 'struct R{int n;};template<int N=3>int operator+(R,R){return N;}',
         'local-unused-body': 'struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0);}};Local l;return r.n+n;}int f(){return R{3}+4;}',
     }
@@ -8827,8 +9071,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'pointer-value': 'int n;template<int*P>struct R{int n;};',
         'auto-pointer': 'int n;template<auto P>struct R{int n;};int main(){R<&n>r{};return r.n;}',
         'auto-null': 'template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}',
-        'value-pack': 'template<int...N>struct R{int n;};',
-        'type-pack': 'template<class...T>struct R{int n;};',
         'template-template': 'template<template<class>class T>struct R{int n;};',
         'friend': 'template<class T>struct R{T n;friend int get(R r){return r.n;}};',
         'nested-record': 'template<class T>struct R{struct I{T n;};};',
@@ -9051,7 +9293,6 @@ Plain chosenRecord(){return choose<false>();}
         check("v2-non-type-templates-positive-" + name, source, profile="cpp-core-v2")
     non_type_templates_reject = {
         'zero-array': 'template<int N>int f(){int a[N];return 0;}int main(){return f<0>();}',
-        'value-pack': 'template<int... N>int f(){return sizeof...(N);}int main(){return f<1,2>();}',
         'template-template': 'template<template<class>class T,int N>int f(){return N;}',
         'pointer-parameter': 'int n=3;template<int*P>int f(){return *P;}int main(){return f<&n>();}',
         'reference-parameter': 'int n=3;template<int&N>int f(){return N;}int main(){return f<n>();}',
@@ -9142,7 +9383,6 @@ Plain chosenRecord(){return choose<false>();}
     function_templates_reject = {
         'member': 'struct R{template<class T>T f(T v){return v;}};',
         'friend': 'struct R{template<class T>friend T f(T v){return v;}};',
-        'pack': 'template<class...T>int f(T...v){return 1;}',
         'template-template': 'template<template<class>class T>int f(){return 1;}',
         'variable': 'template<class T>int value=3;',
         'alias': 'template<class T>using Alias=T;',

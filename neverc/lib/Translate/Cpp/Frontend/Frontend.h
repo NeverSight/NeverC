@@ -25,6 +25,7 @@ class CXXDefaultArgExpr;
 class CXXForRangeStmt;
 class MaterializeTemporaryExpr;
 class SubstNonTypeTemplateParmExpr;
+class SizeOfPackExpr;
 class InitListExpr;
 class Expr;
 struct ASTTemplateArgumentListInfo;
@@ -133,6 +134,7 @@ const clang::VarDecl *automaticTemporaryOwner(
 const clang::Expr *referenceListInitializer(const clang::InitListExpr *List,
                                           clang::ASTContext &Context);
 const clang::InitListExpr *emptyVoidInitializer(const clang::Expr *Expression);
+std::optional<unsigned> concretePackSize(const clang::SizeOfPackExpr *E);
 const clang::Expr *scalarTemplateReplacement(
     const clang::SubstNonTypeTemplateParmExpr *Substitution,
     clang::ASTContext &Context);

@@ -589,6 +589,13 @@ class FunctionLowering {
         reject(L, "template value replacement", "A checked scalar template replacement is required.");
       return expression(Replacement);
     }
+    if (const auto *Query = dyn_cast<SizeOfPackExpr>(E)) {
+      auto Size = concretePackSize(Query);
+      if (!A.S.coreV2() || !Size)
+        reject(L, "pack size", "A checked concrete pack count is required.");
+      return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), *Size),
+                                   unsignedInteger(T)), T, L);
+    }
     if (isa<ArrayInitIndexExpr>(E)) {
       if (!A.S.coreV2() || ArrayIndices.empty())
         reject(L, "array copy index", "No semantic element-copy index is active.");
