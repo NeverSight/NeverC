@@ -1,6 +1,6 @@
 ---
 name: llvm-obfuscation
-description: Expertise in LLVM-based code obfuscation techniques including OLLVM, control flow flattening, string encryption, virtualization, and anti-analysis methods. Use this skill when working on code protection, anti-reverse engineering, or implementing custom obfuscation passes.
+description: Analyze or implement LLVM code-protection transformations such as control-flow flattening, string protection, and virtualization. Use when the obfuscation pass or pipeline is the subject.
 ---
 
 # LLVM Code Obfuscation Skill

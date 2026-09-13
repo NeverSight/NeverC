@@ -1,6 +1,6 @@
 ---
 name: binary-lifting
-description: Expertise in binary lifting techniques - converting machine code to LLVM IR for analysis, decompilation, and recompilation. Use this skill when working on reverse engineering, binary analysis, deobfuscation, or converting binaries to higher-level representations.
+description: Design or debug machine-code lifting into LLVM IR for analysis and recompilation. Use when the lifting pipeline is the subject, not for general binary reverse engineering.
 ---
 
 # Binary Lifting Skill
