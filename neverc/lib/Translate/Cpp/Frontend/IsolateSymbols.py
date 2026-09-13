@@ -24,7 +24,7 @@ def replace_once(path, before, after):
 
 
 def preserve_explicit_function_instantiation_source(source_root):
-    # Pinned Sema reuses a FunctionDecl and discards each directive's spelling,
+    # Pinned Sema reuses declarations and discards each directive's spelling,
     # including no-effect directives. Collect metadata without changing Sema.
     groups = (
         ("clang/include/clang/AST/ASTConsumer.h", (
@@ -40,6 +40,12 @@ def preserve_explicit_function_instantiation_source(source_root):
              "      FunctionDecl *, const TemplateArgumentListInfo &, TypeSourceInfo *,\n"
              "      const DeclarationNameInfo &, const NestedNameSpecifierLoc &,\n"
              "      const SourceLocation &, bool) {}"),
+            ("  virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *D) {}",
+             "  virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *D) {}\n\n"
+             "  // NeverC private source evidence for each static member directive.\n"
+             "  virtual void HandleNeverCExplicitStaticDataInstantiation(\n"
+             "      VarDecl *, TypeSourceInfo *, const NestedNameSpecifierLoc &,\n"
+             "      const SourceLocation &, bool) {}"),
         )),
         ("clang/lib/Sema/SemaTemplate.cpp", (
             ("                                            Declarator &D) {\n"
@@ -48,6 +54,12 @@ def preserve_explicit_function_instantiation_source(source_root):
              "  // Retain attributes before declarator type processing can consume them.\n"
              "  const bool NeverCWrittenAttributes = D.hasAttributes();\n"
              "  // Explicit instantiations always require a name."),
+            ("    CheckExplicitInstantiation(*this, Prev, D.getIdentifierLoc(), true, TSK);",
+             "    // Preserve written static-member source before no-effect handling.\n"
+             "    Consumer.HandleNeverCExplicitStaticDataInstantiation(\n"
+             "        Prev, T, D.getCXXScopeSpec().getWithLocInContext(Context),\n"
+             "        D.getIdentifierLoc(), NeverCWrittenAttributes);\n\n"
+             "    CheckExplicitInstantiation(*this, Prev, D.getIdentifierLoc(), true, TSK);"),
             ("    Specialization = cast<FunctionDecl>(*Result);\n  }\n\n"
              "  // C++11 [except.spec]p4\n"
              "  // In an explicit instantiation an exception-specification may be specified,",
@@ -83,7 +95,7 @@ def preserve_explicit_function_instantiation_source(source_root):
         remainder = text
         for pair in replacements:
             remainder = remainder.replace(pair[state], "", 1)
-        if re.search(r"\b(?:HandleNeverCExplicitFunctionInstantiation|NeverCWrittenAttributes)\b", remainder):
+        if re.search(r"\b(?:HandleNeverCExplicitFunctionInstantiation|HandleNeverCExplicitStaticDataInstantiation|NeverCWrittenAttributes)\b", remainder):
             raise SystemExit(message)
         states.append(state)
         if state == 0:

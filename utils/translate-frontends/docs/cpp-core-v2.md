@@ -702,7 +702,7 @@ enums, static assertions, access labels, ordinary named methods and user-provide
 constructors, destructors, operators and conversions as described below. Aggregates and constructed instances must be
 complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
-remain checked when selected. Member function templates, static data, friends, nested
+remain checked when selected. Member function templates, friends, nested
 records/templates, bases and partial specializations
 remain outside this class-template increment. Non-type defaults, packs,
 template-template parameters and non-scalar value arguments remain excluded.
@@ -946,6 +946,64 @@ Only C++ input translation is implemented; E Language, Python and other frontend
 remain planned. The C++ frontend uses embedded Clang libraries and does not launch
 an external Clang executable.
 
+## Class-template scalar static data
+
+Admitted concrete class templates support integer, boolean and enum static data
+members with checked zero or constant initialization. C++17 inline/constexpr,
+out-of-line definitions, scalar auto/decltype(auto), private/protected access,
+explicit member instantiation/specialization and full class specialization retain
+ordinary C++ source semantics. A dependent static type must resolve to a supported
+scalar. Static pointers, references, arrays, records, volatile/thread-local data,
+member variable templates and dynamic initialization remain excluded.
+
+Each actual definition becomes one ordinary typed global. Equivalent class
+arguments, aliases and repeated instantiations share it; distinct values, types
+and primary templates have independent objects. Static members add no record
+fields or per-object storage. Explicit member specializations use their own
+initializer and source location; hidden out-of-line definitions retain their
+actual source evidence. Mutable objects allow shared updates even through const
+receivers. Receiver calls and temporary construction/destruction still execute;
+references to static data survive destruction of temporary receivers. Member
+default arguments and field initializers access the same static object.
+
+An unused implicit member with no materialized definition or initializer stays
+lazy. In particular, merely instantiating a class need not instantiate an unused
+inline initializer or require a missing static definition. Every materialized
+initializer is checked, including eagerly instantiated non-inline constants and
+hidden namespace definitions. Constant folding, discarded values and unevaluated
+queries cannot conceal unsupported source expressions.
+
+The existing declaration-only constant rules apply. A non-inline const member
+with a checked in-class constant initializer can supply a value without a global
+object. An unevaluated sizeof(&member) or noexcept query does not itself require
+storage. Potentially evaluated address/reference uses, including discarded or
+folded uses, require a real definition in this source unit (TR0203). Selected
+mutable members and explicit instantiation declarations retain the existing
+source-definition requirement. Inline/constexpr definitions provide real storage
+when materialized. The frontend neither fabricates a constant object nor emits
+startup initialization code.
+
+The private embedded Clang callback preserves each explicit static-member
+instantiation's selected variable, written type, qualifier, location and parsed
+attribute presence before no-effect handling. Extern declarations, repeated
+spellings and directives following implicit use or specialization are each
+checked. The written scalar type must agree with the selected member type;
+unsupported spelling, attributes or disagreement produce TR0201. Clang-diagnosed
+invalid C++ still produces TR0202. Written outer parameter types and expressions
+inside qualifiers or decltype cannot disappear behind semantic canonicalization.
+Static and function directives share the bounded source-evidence budget described
+above. No semantic flags, runtime template arguments or new wire types are added.
+
+Paired source fixtures cover definitions, lazy use, constant-only values,
+specialization and complete directive evidence. Native O0/O2 fixtures cover real
+storage, aliases, independent instances, zero/constant values and receiver cleanup.
+Protocol fixtures check canonical globals, mutability, values, definition locations,
+empty/static-free record layouts, full typed call closure and relocation. Native
+validation requires the implementing revision's CI. Complete C++17/STL is still
+unfinished. C++ is the only implemented input frontend; E Language, Python and
+others remain planned. Translation uses embedded Clang libraries without an
+external Clang executable.
+
 ## Instantiated local classes and written directives
 
 Local classes inside admitted concrete free-function or class-template member
@@ -974,8 +1032,9 @@ a later valid spelling erase an earlier one. Parsed attributes remain unsupporte
 even when a directive has no semantic effect. This metadata neither changes Clang
 specialization selection nor creates a runtime declaration or extra parameter.
 
-Evidence collection is bounded to 200000 directive-plus-argument units before
-copying; ordinary source expansion limits still apply during validation. All
+Function and static-member evidence share a limit of 200000 source units,
+charging one per directive plus each copied function template argument before
+retention; ordinary source expansion limits still apply during validation. All
 written type and expression checks run before emission through the same visitor.
 Dependent constructor patterns in the supported no-base class templates may only
 have written member initializers; a type/base initializer cannot hide delegation

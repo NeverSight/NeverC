@@ -142,6 +142,25 @@ static bool concreteMemberFunction(const FunctionDecl *F) {
   return concreteClassFunction(F) || concreteLocalClassFunction(F);
 }
 
+// Identity only: a static member definition/initializer can still be lazy.
+static const ClassTemplateDecl *classStaticDataPrimary(const VarDecl *V) {
+  if (!V || V->getKind() != Decl::Var || !V->isStaticDataMember() ||
+      V->getDescribedVarTemplate() || !V->getMemberSpecializationInfo())
+    return nullptr;
+  const auto *Record = dyn_cast<ClassTemplateSpecializationDecl>(V->getDeclContext());
+  const auto *Origin = V->getInstantiatedFromStaticDataMember();
+  if (!Record || Record->getKind() != Decl::ClassTemplateSpecialization ||
+      Record->isDependentContext() || !Origin || Origin->getKind() != Decl::Var ||
+      !Origin->isStaticDataMember() || Origin->getDescribedVarTemplate())
+    return nullptr;
+  const auto *Primary =
+      Record->getSpecializedTemplateOrPartial().dyn_cast<ClassTemplateDecl *>();
+  const auto *Parent = dyn_cast<CXXRecordDecl>(Origin->getDeclContext());
+  return Primary && Parent &&
+                 Parent->getCanonicalDecl() == Primary->getTemplatedDecl()->getCanonicalDecl()
+             ? Primary : nullptr;
+}
+
 // Classification evidence only. In particular, an out-of-line defaulted
 // pattern does not supply an uninstantiated concrete runtime body.
 static const FunctionDecl *defaultedDeclaration(const CXXMethodDecl *M) {
@@ -1124,6 +1143,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const VarDecl *> CheckedScalarGlobals;
   std::set<const UsingShadowDecl *> CheckedUsingShadows;
   std::set<const FunctionDecl *> CheckedTemplateDeclarations;
+  std::set<const VarDecl *> CheckedTemplateStaticDeclarations;
   std::set<const Expr *> CheckedDiscardedResults, DiscardedStaticValues;
   std::set<const Decl *> QueuedGeneratedMethods;
   std::set<const ClassTemplateSpecializationDecl *> CheckedClassTemplateDeclarations;
@@ -1208,6 +1228,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return true;
   }
+  bool classTemplateStaticDataShape(const VarDecl *V) {
+    if (!V || V->getKind() != Decl::Var || !owned(V) || !V->getIdentifier() ||
+        V->isInvalidDecl() || V->hasAttrs() || !V->isStaticDataMember() ||
+        V->getDescribedVarTemplate() || V->getTLSKind() != VarDecl::TLS_None ||
+        V->getType().isNull() || V->getType().isVolatileQualified() ||
+        V->getType().isRestrictQualified())
+      return false;
+    auto T = V->getType();
+    if (T->isPointerType() || T->isReferenceType() || T->isArrayType() || T->isRecordType())
+      return false;
+    return T->isDependentType() || T->isUndeducedAutoType() ||
+           T->isIntegralOrEnumerationType();
+  }
   bool classTemplateMembers(const CXXRecordDecl *D) {
     for (const auto *Member : D->decls()) {
       A.chargeExpansion(1, Member->getLocation());
@@ -1216,6 +1249,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!owned(Member) || Member->isInvalidDecl() || Member->hasAttrs() ||
           (!isa<FieldDecl, TypedefNameDecl, EnumDecl, EnumConstantDecl,
                 StaticAssertDecl, AccessSpecDecl>(Member) &&
+           !classTemplateStaticDataShape(dyn_cast<VarDecl>(Member)) &&
            !classTemplateFunctionShape(dyn_cast<CXXMethodDecl>(Member))))
         return false;
     }
@@ -1735,6 +1769,34 @@ public:
       return;
     TraverseTypeLoc(Source.Type->getTypeLoc());
   }
+  void checkExplicitStaticDataInstantiation(
+      const ExplicitStaticDataInstantiationSource &Source) {
+    if (!A.S.coreV2() || !A.S.owns(A.Sources, Source.Location))
+      return;
+    A.chargeExpansion(1, Source.Location);
+    if (!owned(Source.Variable) || !Source.Type || Source.HasAttributes ||
+        !classTemplateShape(classStaticDataPrimary(Source.Variable)) ||
+        !classTemplateStaticDataShape(Source.Variable) ||
+        !A.Context.hasSameType(Source.Type->getType(), Source.Variable->getType())) {
+      A.reject(Source.Location, "explicit static instantiation",
+               "An owned scalar member and matching attribute-free source type are required.");
+      return;
+    }
+    auto *SavedFunction = CurrentFunction;
+    auto *SavedMethod = CurrentMethod;
+    auto SavedOwner = ImplicitInitializerOwner;
+    CurrentFunction = nullptr;
+    CurrentMethod = nullptr;
+    ImplicitInitializerOwner = Source.Location;
+    auto Restore = llvm::make_scope_exit([&] {
+      CurrentFunction = SavedFunction;
+      CurrentMethod = SavedMethod;
+      ImplicitInitializerOwner = SavedOwner;
+    });
+    A.type(Source.Type->getType(), Source.Location);
+    if (TraverseNestedNameSpecifierLoc(Source.Qualifier))
+      TraverseTypeLoc(Source.Type->getTypeLoc());
+  }
   void indexFunctionTemplates() {
     if (!A.S.coreV2())
       return;
@@ -1913,6 +1975,47 @@ public:
   }
   bool TraverseDecl(Decl *D) {
     if (A.S.coreV2()) {
+      if (auto *Variable = dyn_cast_or_null<VarDecl>(D);
+          Variable && Variable->isStaticDataMember() && owned(Variable)) {
+        const auto *Parent = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
+        if (const auto *Primary = Parent ? Parent->getDescribedClassTemplate() : nullptr;
+            Primary && Parent->isDependentContext()) {
+          if (!classTemplateShape(Primary) || !classTemplateStaticDataShape(Variable) ||
+              Variable->getNumTemplateParameterLists() > 1) {
+            A.reject(Variable->getLocation(), "class static member pattern",
+                     "An admitted scalar static member of an owned class template is required.");
+            return true;
+          }
+          for (unsigned I = 0; I < Variable->getNumTemplateParameterLists(); ++I) {
+            const auto *Parameters = Variable->getTemplateParameterList(I);
+            A.chargeExpansion(1, Variable->getLocation());
+            if (!templateParametersShape(Parameters)) {
+              A.reject(Variable->getLocation(), "class static template parameters",
+                       "An admitted outer class parameter list is required.");
+              return true;
+            }
+            if (!traverseTemplateParameterTypes(Parameters, true))
+              return false;
+          }
+          return true; // The member type and initializer retain normal laziness.
+        }
+        if (const auto *Primary = classStaticDataPrimary(Variable)) {
+          if (!classTemplateShape(Primary) || !classTemplateStaticDataShape(Variable) ||
+              !owned(Variable->getInstantiatedFromStaticDataMember())) {
+            A.reject(Variable->getLocation(), "class static member instance",
+                     "An owned scalar static member with matching template origin is required.");
+            return true;
+          }
+          A.chargeExpansion(1, Variable->getLocation());
+          if (!CheckedTemplateStaticDeclarations.insert(Variable).second)
+            return true;
+          auto Kind = Variable->getTemplateSpecializationKind();
+          if ((Kind == TSK_Undeclared || Kind == TSK_ImplicitInstantiation) &&
+              !Variable->getDefinition() && !Variable->getAnyInitializer() &&
+              !Variable->isUsed(/*CheckUsedAttr=*/false) && !Variable->isReferenced())
+            return true; // Do not manufacture an unused definition or initializer.
+        }
+      }
       if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(D);
           Method && owned(Method)) {
         if (const auto *Primary = Method->getParent()->getDescribedClassTemplate();
@@ -2060,6 +2163,12 @@ public:
         }
       }
     }
+    // Out-of-line template definitions can be hidden namespace declarations.
+    // Source checking must follow the actual initializer owner, not only the use.
+    if (auto *Variable = dyn_cast_or_null<VarDecl>(D);
+        Result && A.S.coreV2() && classStaticDataPrimary(Variable))
+      if (auto *Definition = Variable->getDefinition(); Definition && Definition != Variable)
+        Result = TraverseDecl(Definition);
     CurrentMethod = Saved;
     return Result;
   }
@@ -3174,11 +3283,14 @@ static void orderCoreV2Records(Adapter &A) {
   A.Records = std::move(Ordered);
 }
 
-void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives) {
+void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives,
+                  llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives) {
   Allowlist Check(*this);
   Check.indexFunctionTemplates();
   for (const auto &Directive : Directives)
     Check.checkExplicitFunctionInstantiation(Directive);
+  for (const auto &Directive : StaticDirectives)
+    Check.checkExplicitStaticDataInstantiation(Directive);
   Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (!S.Diagnostics.empty())
     return;
@@ -3503,7 +3615,23 @@ public:
 class Consumer : public ASTConsumer {
   State &S;
   std::vector<ExplicitFunctionInstantiationSource> Directives;
+  std::vector<ExplicitStaticDataInstantiationSource> StaticDirectives;
   std::size_t DirectiveUnits = 0;
+
+  bool reserveSourceUnits(SourceManager &Sources, SourceLocation Location,
+                          std::size_t ArgumentCount) {
+    constexpr std::size_t Limit = 200000;
+    if (ArgumentCount >= Limit || 1 + ArgumentCount > Limit - DirectiveUnits) {
+      auto P = Sources.getPresumedLoc(Location);
+      S.diagnose("TR0201", "explicit instantiation source",
+                 "Explicit instantiation source exceeds the frontend budget.",
+                 "Reduce the number of source directives and template arguments.",
+                 P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
+      return false;
+    }
+    DirectiveUnits += 1 + ArgumentCount;
+    return true;
+  }
 
 public:
   explicit Consumer(State &S) : S(S) {}
@@ -3518,28 +3646,30 @@ public:
     auto &Sources = Context.getSourceManager();
     if (!S.owns(Sources, Location))
       return;
-    // Bound source evidence before copying any per-directive argument metadata.
-    constexpr std::size_t Limit = 200000;
-    auto Count = Arguments.size();
-    if (Count >= Limit || 1 + Count > Limit - DirectiveUnits) {
-      auto P = Sources.getPresumedLoc(Location);
-      S.diagnose("TR0201", "explicit instantiation source",
-                 "Explicit instantiation source exceeds the frontend budget.",
-                 "Reduce the number of source directives and template arguments.",
-                 P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
+    // Function and static directives share one source-evidence budget.
+    if (!reserveSourceUnits(Sources, Location, Arguments.size()))
       return;
-    }
-    DirectiveUnits += 1 + Count;
     Directives.push_back({Function,
         ASTTemplateArgumentListInfo::Create(Context, Arguments), Type, Name,
         Qualifier, Location, HasAttributes});
+  }
+  void HandleNeverCExplicitStaticDataInstantiation(
+      VarDecl *Variable, TypeSourceInfo *Type,
+      const NestedNameSpecifierLoc &Qualifier, const SourceLocation &Location,
+      bool HasAttributes) override {
+    if (!S.coreV2() || !Variable || !S.Diagnostics.empty())
+      return;
+    auto &Sources = Variable->getASTContext().getSourceManager();
+    if (!S.owns(Sources, Location) || !reserveSourceUnits(Sources, Location, 0))
+      return;
+    StaticDirectives.push_back({Variable, Type, Qualifier, Location, HasAttributes});
   }
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
     Adapter A(S, C);
     try {
-      A.run(Directives);
+      A.run(Directives, StaticDirectives);
     } catch (const Failure &) {
     }
   }

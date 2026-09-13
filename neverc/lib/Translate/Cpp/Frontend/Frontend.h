@@ -49,6 +49,14 @@ struct ExplicitFunctionInstantiationSource {
   bool HasAttributes;
 };
 
+struct ExplicitStaticDataInstantiationSource {
+  clang::VarDecl *Variable;
+  clang::TypeSourceInfo *Type;
+  clang::NestedNameSpecifierLoc Qualifier;
+  clang::SourceLocation Location;
+  bool HasAttributes;
+};
+
 struct State {
   std::string Root, Source, Relative, Target, SourceText;
   std::string Profile = "cpp-core-v1", ConfigurationID, WorkingDirectory;
@@ -200,7 +208,8 @@ public:
   void requireDestruction(const clang::CXXRecordDecl *Record,
                           clang::SourceLocation Location);
   json::Object lowerDestruction(const clang::CXXRecordDecl *Record);
-  void run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives = {});
+  void run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives = {},
+           llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives = {});
 };
 } // namespace nct
 #endif

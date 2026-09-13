@@ -10,11 +10,12 @@ can be selected with CMake's NEVERC_CPP_LLVM_SOURCE_ARCHIVE option; the same
 SHA256 is required. No upstream executable or shared library is installed.
 
 A checked private ASTConsumer.h/SemaTemplate.cpp patch preserves source evidence
-for each explicit function-instantiation directive. The default no-op consumer
-callback receives the chosen function plus parsed arguments, type, declaration
-name, qualifier, location and attribute presence before no-effect early returns.
-NeverC records bounded owned evidence and checks it after semantic analysis;
-it does not alter overload resolution, declarations or instantiation flags.
+for each explicit function or static-data-member instantiation directive. The
+default no-op callbacks receive the selected declaration and written type,
+qualifier, location and attribute presence before no-effect early returns.
+Function directives additionally preserve parsed arguments and declaration name.
+Both share a bounded source-evidence budget checked after semantic analysis;
+NeverC does not alter overload resolution, declarations or instantiation flags.
 The header/source group must be pristine or fully rewritten, with duplicate,
 partial, missing and drifted forms rejected before either file is changed.
 

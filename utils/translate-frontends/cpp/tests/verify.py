@@ -6440,6 +6440,216 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
 
+    class_static_source = 'template<class T,int N>struct Store{\n inline static T value=T(N);\n inline static T unused;\n static constexpr T limit=T(N+2);\n static const int tag=N+1;\n T instance;\n};\nint valueA(){return Store<int,3>::value;}\nint valueAlias(){using A=Store<int,1+2>;return A::value;}\nint valueB(){return Store<int,4>::value;}\nint&referenceA(){return Store<int,3>::value;}\nconst int*limitAddress(){return &Store<int,3>::limit;}\nint tagA(){return Store<int,3>::tag;}\nint tagB(){return Store<int,4>::tag;}\nint queryTag(){return sizeof(&Store<int,3>::tag);}\nStore<int,3>&touch(Store<int,3>&r){++r.instance;return r;}\nint receiver(Store<int,3>&r){return touch(r).value;}\nint mutate(const Store<int,3>&r){return ++r.value;}\ntemplate int Store<int,3>::value;\nextern template int Store<int,3>::value;\ntemplate<class T>struct Outside{static T value;};\ntemplate<class T>T Outside<T>::value=T(7);\ntemplate<>int Outside<int>::value=9;\nint externalInt(){return Outside<int>::value;}\nunsigned externalUnsigned(){return Outside<unsigned>::value;}\nextern template unsigned Outside<unsigned>::value;\ntemplate unsigned Outside<unsigned>::value;\nextern template unsigned Outside<unsigned>::value;\ntemplate<class T>struct Lazy{static int missing;inline static int unused=T::missing;};\nint queryLazy(){return sizeof(Lazy<int>);}\ntemplate<class T>struct Life{inline static T value=T(8);Life(){}~Life(){}};\nint&lasting(){return Life<int>{}.value;}\n'
+    class_static = check("v2-class-static-protocol", class_static_source, profile="cpp-core-v2")
+    cs_functions = {f["name"]: f for f in class_static["functions"]}
+    cs_records = {r["id"]: r for r in class_static["records"]}
+    cs_globals = {g["name"]: g for g in class_static["globals"]}
+    assert len(cs_functions) == len(class_static["functions"])
+    assert len(cs_records) == len(class_static["records"])
+    assert len(cs_globals) == len(class_static["globals"]) == 6
+
+    def cs_line(prefix):
+        lines = [i for i, line in enumerate(class_static_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def cs_function(prefix):
+        found = [f for f in cs_functions.values() if f["loc"]["line"] == cs_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def cs_nodes(value):
+        if isinstance(value, dict):
+            yield value
+            for child in value.values():
+                yield from cs_nodes(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from cs_nodes(child)
+
+    def cs_used_globals(function):
+        return {n["name"] for n in cs_nodes(function["body"])
+                if n.get("kind") == "var" and n.get("name") in cs_globals}
+
+    def cs_global(prefix):
+        names = cs_used_globals(cs_function(prefix))
+        assert len(names) == 1, (prefix, names)
+        return cs_globals[next(iter(names))]
+
+    first = cs_global("int valueA(")
+    second = cs_global("int valueB(")
+    limit = cs_global("const int*limitAddress(")
+    external_int = cs_global("int externalInt(")
+    external_unsigned = cs_global("unsigned externalUnsigned(")
+    lasting = cs_global("int&lasting(")
+    assert first == cs_global("int valueAlias(") == cs_global("int&referenceA(")
+    assert first == cs_global("int receiver(") == cs_global("int mutate(")
+    assert len({g["name"] for g in (first, second, limit, external_int, external_unsigned, lasting)}) == 6
+    for item, scalar, value, mutable in ((first, "int", "3", True), (second, "int", "4", True),
+                                        (limit, "int", "5", False), (external_int, "int", "9", True),
+                                        (external_unsigned, "uint", "7", True), (lasting, "int", "8", True)):
+        assert item["type"] == scalar and item["value"]["value"] == value, item
+        assert item.get("mutable", False) == mutable, item
+    assert first["loc"]["line"] == second["loc"]["line"] == cs_line(" inline static T value=")
+    assert limit["loc"]["line"] == cs_line(" static constexpr T limit=")
+    assert external_int["loc"]["line"] == cs_line("template<>int Outside<int>::value=")
+    assert external_unsigned["loc"]["line"] == cs_line("template<class T>T Outside<T>::value=")
+    for prefix, value in (("int tagA(", 4), ("int tagB(", 5), ("int queryLazy(", 1)):
+        function = cs_function(prefix)
+        assert not cs_used_globals(function) and not gc_calls(function)
+        returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+        assert gc_identity(function, returned) == value
+    assert not cs_used_globals(cs_function("int queryTag("))
+    store_records = [r for r in cs_records.values() if r["loc"]["line"] == cs_line("template<class T,int N>struct Store{")]
+    assert len(store_records) == 2
+    assert all([f["type"] for f in r["fields"]] == ["int"] for r in store_records)
+    assert len({r["fields"][0]["name"] for r in store_records}) == 2
+    outside_records = [r for r in cs_records.values() if r["loc"]["line"] == cs_line("template<class T>struct Outside{")]
+    lazy_records = [r for r in cs_records.values() if r["loc"]["line"] == cs_line("template<class T>struct Lazy{")]
+    assert len(outside_records) == 2 and len(lazy_records) == 1
+    assert all(not r["fields"] for r in outside_records+lazy_records)
+    receiver = cs_function("int receiver(")
+    calls = gc_calls(receiver)
+    assert len(calls) == 1 and calls[0]["callee"] == cs_function("Store<int,3>&touch(")["name"]
+    assert np_pointer(receiver, calls[0]["args"][0]) == ("parameter", receiver["params"][0]["name"])
+    assert not any(n.get("kind") == "member" for n in cs_nodes(receiver["body"]))
+    mutate = cs_function("int mutate(")
+    assert mutate["params"][0]["type"].startswith("cptr:")
+    assert not any(n.get("kind") == "member" for n in cs_nodes(mutate["body"]))
+    assert any(n["op"] == "assign" and n["target"].get("name") == first["name"] for n in mutate["body"])
+    escaped = cs_function("int&lasting(")
+    calls = gc_calls(escaped)
+    assert escaped["result"] == "ptr:int" and not escaped["params"] and len(calls) == 2
+    constructor, destructor = [cs_functions[c["callee"]] for c in calls]
+    lid = constructor["params"][0]["type"].removeprefix("ptr:")
+    assert not cs_records[lid]["fields"] and destructor["name"] == lid+"_destroy"
+    assert [p["type"] for p in constructor["params"]] == ["ptr:"+lid]
+    assert [p["type"] for p in destructor["params"]] == ["ptr:"+lid]
+    assert np_pointer(escaped, calls[0]["args"][0]) == np_pointer(escaped, calls[1]["args"][0])
+    returned = next(n["value"] for n in escaped["body"] if n["op"] == "return")
+    assert np_pointer(escaped, returned) == ("object", lasting["name"])
+    for function in cs_functions.values():
+        assert not any(n["op"] == "mapped_call" for n in function["body"])
+        for call_node in gc_calls(function):
+            callee = cs_functions[call_node["callee"]]
+            assert [a["type"] for a in call_node["args"]] == [p["type"] for p in callee["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-class-static-relocated-") as temp:
+        relocated = check("class-static-relocated", class_static_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == class_static, "class static identities depend on the absolute root"
+
+    class_static_positive = {
+        'promoted-inline': 'template<class T>struct R{inline static T n=1;};',
+        'promoted-method': 'template<class T>struct R{static int n;int f(){return n;}};',
+        'promoted-constructor': 'template<class T>struct R{T n;static int v;R(T x):n(x){}};',
+        'selected-inline': 'template<class T>struct R{inline static T n=3;};int f(){return ++R<int>::n;}',
+        'zero-inline': 'template<class T>struct R{inline static T n;};int f(){return R<int>::n++;}',
+        'out-of-line': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);int f(){return ++R<int>::n;}',
+        'zero-out-of-line': 'template<class T>struct R{static T n;};template<class T>T R<T>::n;int f(){return R<int>::n++;}',
+        'out-of-line-const': 'template<class T>struct R{static const T n;};template<class T>const T R<T>::n=T(3);const int&f(){return R<int>::n;}',
+        'class-const-definition': 'template<class T>struct R{static const int n=3;};template<class T>const int R<T>::n;const int&f(){return R<int>::n;}',
+        'class-const-value': 'template<class T>struct R{static const int n=3;};int f(){return R<int>::n;}',
+        'class-const-discard': 'template<class T>struct R{static const int n=3;};int f(){(void)R<int>::n;return 0;}',
+        'class-const-query': 'template<class T>struct R{static const int n=3;};int f(){return sizeof(R<int>::n)+noexcept(R<int>::n);}',
+        'query-address': 'template<class T>struct R{static const int n=3;};int f(){return sizeof(&R<int>::n);}',
+        'constexpr-address': 'template<class T>struct R{static constexpr T n=T(3);};const int*f(){return &R<int>::n;}',
+        'constexpr-redeclaration': 'template<class T>struct R{static constexpr T n=T(3);};template<class T>constexpr T R<T>::n;const int&f(){return R<int>::n;}',
+        'static-auto': 'template<class T>struct R{inline static auto n=T(3);};int f(){return ++R<int>::n;}',
+        'static-decltype': 'template<class T>struct R{inline static decltype(auto) n=T(3);};int f(){return ++R<int>::n;}',
+        'bool-enum': 'enum class E:unsigned int{v=3};template<class T,T N>struct R{inline static T n=N;};int f(){R<bool,true>::n=false;return int(R<E,E::v>::n)+R<bool,true>::n;}',
+        'integer-width': 'template<class T>struct R{inline static T n=T(3);};int f(){return ++R<unsigned char>::n+R<short>::n+int(R<long long>::n);}',
+        'value-arguments': 'template<int N>struct R{inline static int n=N;};int f(){return R<3>::n+R<4>::n;}',
+        'auto-arguments': 'template<auto N>struct R{inline static decltype(N) n=N;};int f(){return ++R<3>::n+int(++R<3u>::n);}',
+        'alias-instances': 'template<class T>struct R{inline static T n=3;};using A=R<int>;int f(){A::n=5;return R<int>::n+R<unsigned>::n;}',
+        'private-method': 'template<class T>class R{inline static T n=T(3);public:T get(){return ++n;}};int f(){R<int>r;return r.get();}',
+        'protected-method': 'template<class T>class R{protected:inline static T n=T(3);public:static T get(){return n;}};int f(){return R<int>::get();}',
+        'default-argument': 'template<class T>struct R{inline static T n=T(3);T get(T v=n){return v;}};int f(){R<int>r;return r.get();}',
+        'default-member': 'template<class T>struct R{inline static T n=T(3);T value=n;};int f(){R<int>r;return r.value;}',
+        'shared-receiver': 'template<class T>struct R{inline static T n=3;};int f(){R<int>a,b;a.n=4;b.n+=2;return R<int>::n;}',
+        'temporary-receiver': 'int live=0;template<class T>struct R{inline static T n=T(3);R(){++live;}~R(){--live;}};int&f(){return R<int>{}.n;}int g(){f()=4;return R<int>::n+live;}',
+        'pointer-receiver': 'template<class T>struct R{inline static T n=3;};int f(R<int>*r){return r->n;}',
+        'unused-primary-init': 'template<class T>struct R{inline static T n=T::missing;};',
+        'unused-concrete-inline': 'template<class T>struct R{inline static int n=T::missing;};static_assert(sizeof(R<int>)==1);',
+        'unused-concrete-missing': 'template<class T>struct R{static int n;};static_assert(sizeof(R<int>)==1);',
+        'unused-outside-init': 'template<class T>struct R{static int n;};template<class T>int R<T>::n=T::missing;static_assert(sizeof(R<int>)==1);',
+        'constexpr-function-init': 'template<class T>constexpr T value(){return T(3);}template<class T>struct R{inline static T n=value<T>();};int f(){return R<int>::n;}',
+        'class-explicit': 'template<class T>struct R{inline static T n=3;};template struct R<int>;',
+        'class-extern-definition': 'template<class T>struct R{inline static T n=3;};extern template struct R<int>;template struct R<int>;',
+        'member-explicit': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;',
+        'member-extern-definition': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);extern template int R<int>::n;template int R<int>::n;',
+        'member-repeat': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);extern template int R<int>::n;extern template int R<int>::n;template int R<int>::n;extern template int R<int>::n;',
+        'member-after-use': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);int f(){return R<int>::n;}template int R<int>::n;',
+        'member-specialization': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template<>int R<int>::n=7;int f(){return R<int>::n+R<unsigned>::n;}',
+        'member-after-specialization': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template<>int R<int>::n=7;template int R<int>::n;',
+        'full-specialization': 'template<class T>struct R{inline static T n=3;};template<>struct R<int>{inline static int n=9;};int f(){return R<int>::n+R<unsigned>::n;}',
+        'namespace-alias': 'namespace N{template<class T>struct R{inline static T n=T(3);};}namespace A=N;template int A::R<int>::n;int f(){return A::R<int>::n;}',
+        'explicit-const-type': 'template<class T>struct R{static const int n=3;};template<class T>const int R<T>::n;template const int R<int>::n;',
+        'protocol-source': 'template<class T,int N>struct Store{\n inline static T value=T(N);\n inline static T unused;\n static constexpr T limit=T(N+2);\n static const int tag=N+1;\n T instance;\n};\nint valueA(){return Store<int,3>::value;}\nint valueAlias(){using A=Store<int,1+2>;return A::value;}\nint valueB(){return Store<int,4>::value;}\nint&referenceA(){return Store<int,3>::value;}\nconst int*limitAddress(){return &Store<int,3>::limit;}\nint tagA(){return Store<int,3>::tag;}\nint tagB(){return Store<int,4>::tag;}\nint queryTag(){return sizeof(&Store<int,3>::tag);}\nStore<int,3>&touch(Store<int,3>&r){++r.instance;return r;}\nint receiver(Store<int,3>&r){return touch(r).value;}\nint mutate(const Store<int,3>&r){return ++r.value;}\ntemplate int Store<int,3>::value;\nextern template int Store<int,3>::value;\ntemplate<class T>struct Outside{static T value;};\ntemplate<class T>T Outside<T>::value=T(7);\ntemplate<>int Outside<int>::value=9;\nint externalInt(){return Outside<int>::value;}\nunsigned externalUnsigned(){return Outside<unsigned>::value;}\nextern template unsigned Outside<unsigned>::value;\ntemplate unsigned Outside<unsigned>::value;\nextern template unsigned Outside<unsigned>::value;\ntemplate<class T>struct Lazy{static int missing;inline static int unused=T::missing;};\nint queryLazy(){return sizeof(Lazy<int>);}\ntemplate<class T>struct Life{inline static T value=T(8);Life(){}~Life(){}};\nint&lasting(){return Life<int>{}.value;}\n',
+    }
+    for name, source in class_static_positive.items():
+        check("v2-class-static-positive-"+name, source, profile="cpp-core-v2")
+
+    class_static_reject = {
+        'dynamic-initializer': 'int value(){return 3;}template<class T>struct R{inline static int n=value();};int f(){return R<int>::n;}',
+        'side-effect-initializer': 'int count=0;template<class T>struct R{inline static int n=++count;};int f(){return R<int>::n;}',
+        'floating-initializer': 'template<class T>struct R{inline static int n=int(1.0);};int f(){return R<int>::n;}',
+        'eager-const-floating': 'template<class T>struct R{static const int n=int(1.0);};static_assert(sizeof(R<int>)==1);',
+        'value-only-floating': 'template<class T>struct R{static const int n=int(1.0);};int f(){return R<int>::n;}',
+        'query-floating': 'template<class T>struct R{static const int n=int(1.0);};int f(){return sizeof(R<int>::n);}',
+        'discard-floating': 'template<class T>struct R{static const int n=int(1.0);};int f(){(void)R<int>::n;return 0;}',
+        'hidden-definition-floating': 'template<class T>struct R{static int n;};template<class T>int R<T>::n=int(1.0);int f(){return R<int>::n;}',
+        'floating-type': 'template<class T>struct R{inline static double n=1.0;};',
+        'pointer-type': 'template<class T>struct R{inline static T*p=nullptr;};',
+        'reference-type': 'int n=3;template<class T>struct R{inline static int&r=n;};',
+        'array-type': 'template<class T>struct R{inline static T n[2]{};};',
+        'record-type': 'struct I{int n;};template<class T>struct R{inline static I n{3};};',
+        'selected-dependent-type': 'template<class T>struct R{static T n;};static_assert(sizeof(R<int*>)==1);',
+        'volatile': 'template<class T>struct R{inline static volatile T n=3;};',
+        'thread-local': 'template<class T>struct R{inline static thread_local T n=3;};',
+        'variable-template': 'template<class T>struct R{template<class U>inline static U n=3;};',
+        'outside-parameter-source': 'template<int N>struct R{static int n;};template<decltype(int(1.0)) N>int R<N>::n=N;',
+        'directive-qualifier': 'template<int N>struct R{inline static int n=N;};template int R<int(1.0)>::n;',
+        'directive-extern-qualifier': 'template<int N>struct R{inline static int n=N;};extern template int R<int(1.0)>::n;',
+        'directive-type': 'template<int N>struct R{inline static int n=N;};template decltype(int(1.0)) R<3>::n;',
+        'directive-mismatched-type': 'template<int N>struct R{inline static int n=N;};template bool R<3>::n;',
+        'directive-first-bad': 'template<int N>struct R{inline static int n=N;};extern template int R<int(1.0)>::n;extern template int R<1>::n;template int R<1>::n;',
+        'directive-last-bad': 'template<int N>struct R{inline static int n=N;};extern template int R<1>::n;extern template int R<int(1.0)>::n;template int R<1>::n;',
+        'directive-after-specialization': 'template<int N>struct R{inline static int n=N;};template<>int R<1>::n=7;template int R<int(1.0)>::n;',
+        'directive-attribute-specialization': 'template<int N>struct R{inline static int n=N;};template<>int R<3>::n=7;template __attribute__((used)) int R<3>::n;',
+        'directive-declarator-attribute': 'template<int N>struct R{inline static int n=N;};extern template int R<3>::n __attribute__((used));',
+        'class-explicit-floating': 'template<class T>struct R{inline static int n=int(1.0);};template struct R<int>;',
+        'member-explicit-floating': 'template<class T>struct R{inline static int n=int(1.0);};template int R<int>::n;',
+    }
+    for name, source in class_static_reject.items():
+        check("v2-class-static-reject-"+name, source, code="TR0201", profile="cpp-core-v2")
+
+    class_static_invalid = {
+        'private-access': 'template<class T>class R{inline static T n=3;};int f(){return R<int>::n;}',
+        'const-write': 'template<class T>struct R{static const int n=3;};int f(){R<int>::n=4;return 0;}',
+        'duplicate-definition': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template<>int R<int>::n=7;template<>int R<int>::n=8;',
+        'invalid-inline': 'template<class T>struct R{static T n=3;};int f(){return R<int>::n;}',
+        'selected-dependent-init': 'template<class T>struct R{inline static int n=T::missing;};int f(){return R<int>::n;}',
+        'duplicate-explicit': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;template int R<int>::n;',
+    }
+    for name, source in class_static_invalid.items():
+        check("v2-class-static-invalid-"+name, source, code="TR0202", profile="cpp-core-v2")
+
+    class_static_missing = {
+        'selected-mutable': 'template<class T>struct R{static int n;};int f(){return R<int>::n;}',
+        'address-const': 'template<class T>struct R{static const int n=3;};const int*f(){return &R<int>::n;}',
+        'reference-const': 'template<class T>struct R{static const int n=3;};const int&f(){return R<int>::n;}',
+        'discard-address': 'template<class T>struct R{static const int n=3;};int f(){(void)&R<int>::n;return 0;}',
+        'folded-address': 'template<class T>struct R{static const int n=3;};static_assert(&R<int>::n!=nullptr);',
+        'selected-mutable-query': 'template<class T>struct R{static int n;};int f(){return sizeof(R<int>::n);}',
+        'extern-member': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);extern template int R<int>::n;',
+        'extern-class': 'template<class T>struct R{inline static T n=3;};extern template struct R<int>;',
+        'specialized-declaration': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template<>int R<int>::n;int f(){return R<int>::n;}',
+    }
+    for name, source in class_static_missing.items():
+        check("v2-class-static-missing-"+name, source, code="TR0203", profile="cpp-core-v2")
+
+    check("class-static-legacy", 'template<class T>struct R{inline static T n=3;};int f(){return ++R<int>::n;}', code="TR0201")
+
     free_operators_source = 'template<class T,int N>struct Cursor{T*p;};\ntemplate<class T,int N>T&operator*(const Cursor<T,N>&r){return *r.p;}\ntemplate<class T,int N>Cursor<T,N>&operator++(Cursor<T,N>&r){++r.p;return r;}\ntemplate<class T,int N>Cursor<T,N>operator++(Cursor<T,N>&r,int){T*p=r.p;++r.p;return Cursor<T,N>{p};}\ntemplate<class T,int N>Cursor<T,N>operator+(const Cursor<T,N>&r,int n){return Cursor<T,N>{r.p+n};}\ntemplate<class T,int N>Cursor<T,N>&operator+=(Cursor<T,N>&r,int n){r.p+=n;return r;}\ntemplate<class T,int N>bool operator&&(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p&&b.p;}\ntemplate<class T,int N>bool operator||(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p||b.p;}\ntemplate<class T,int N>Cursor<T,N>&operator,(Cursor<T,N>&a,Cursor<T,N>&b){return b;}\ntemplate<class T,int N>int operator<<(const Cursor<T,N>&r,int n){return n;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)+=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return operator+=(left(r),right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nint shift(Cursor<int,3>&r){return left(r)<<right();}\ntemplate int&operator*<int,3>(const Cursor<int,3>&);\nextern template int&operator*<int,3>(const Cursor<int,3>&);\nstruct Count{int n;};\ntemplate<auto N>int operator+(Count r){\n struct Local{int n;int get()const{return n;}};\n Local l{N};static int count=0;return r.n+l.get()+(++count);\n}\nint countA(Count r){return operator+<3>(r);}\nint countAlias(Count r){return operator+<1+2>(r);}\nint countB(Count r){return operator+<3u>(r);}\nextern template int operator+<3>(Count);\ntemplate int operator+<1+2>(Count);\nextern template int operator+<3>(Count);\ntemplate<class T>int operator-(Cursor<T,3>&r){static int count=0;return ++count;}\ntemplate<class T>int operator-(const Cursor<T,3>&r){static int count=0;return ++count;}\nint mutableCount(Cursor<int,3>&r){return -r;}\nint constCount(const Cursor<int,3>&r){return -r;}\nstruct Build{int n;};\nstruct Life{int n;Life(int v):n(v){}~Life(){}};\ntemplate<class T>Life operator+(Build r,T n){return Life(r.n+n);}\nLife create(Build r,int n){return r+n;}\nint extended(Build r){const Life&v=r+3;return v.n;}\n'
     free_operators = check("v2-free-operators-protocol", free_operators_source, profile="cpp-core-v2")
     fo_functions = {f["name"]: f for f in free_operators["functions"]}
@@ -7779,7 +7989,6 @@ int privateRead(const Private<int>&v){return v.get();}
         'parameter-attribute': 'template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};',
         'delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};',
         'own-template': 'template<class T>struct R{T n;template<class U>R(U v):n(v){}};',
-        'static-data': 'template<class T>struct R{T n;static int v;R(T x):n(x){}};',
         'base': 'struct I{int n;};template<class T>struct R:I{R(){}};',
         'reference-field': 'template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}',
         'const-field': 'template<class T>struct R{const T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
@@ -8050,7 +8259,6 @@ int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;r
         'volatile': 'template<class T>struct R{int f()volatile{return 1;}};',
         'deleted': 'template<class T>struct R{int f()=delete;};',
         'member-template': 'template<class T>struct R{template<class U>U f(U v){return v;}};',
-        'static-data': 'template<class T>struct R{static int n;int f(){return n;}};',
         'friend': 'template<class T>struct R{friend int f(R r){return 1;}};',
         'nested-record': 'template<class T>struct R{struct I{int n;};int f(){return 1;}};',
         'partial': 'template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;int f(){return 1;}};',
@@ -8296,7 +8504,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'type-pack': 'template<class...T>struct R{int n;};',
         'template-template': 'template<template<class>class T>struct R{int n;};',
         'friend': 'template<class T>struct R{T n;friend int get(R r){return r.n;}};',
-        'static-member': 'template<class T>struct R{inline static T n=1;};',
         'nested-record': 'template<class T>struct R{struct I{T n;};};',
         'nested-template': 'struct R{template<class T>struct I{T n;};};',
         'member-template': 'template<class T>struct R{template<class U>U f(U n){return n;}};',

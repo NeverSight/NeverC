@@ -145,6 +145,15 @@ Equivalent instances share identities; differing values/types/primaries do not.
 No runtime template parameter is emitted. See [class-template methods](cpp-core-v2.md#ordinary-class-template-member-functions)
 for lazy bodies/defaults, source checks and definition requirements.
 
+Scalar static members of admitted class-template instances use ordinary typed
+globals for actual definitions, with canonical class/member identity and checked
+constant or zero values. They add no record fields. Declaration-only constant
+reads and unmaterialized unused members create no global. Receiver effects and
+temporary cleanup retain existing operations; evaluated address/reference uses
+require actual storage. Each explicit static directive supplies independent
+written type/qualifier/attribute evidence, sharing the function-directive source
+budget. See [class-template scalar static data](cpp-core-v2.md#class-template-scalar-static-data).
+
 User-provided class-template constructors use ordinary void functions with a
 destination pointer followed by runtime parameters. Copy/move source references,
 member declaration order, existing field/array cleanup and per-instance local
