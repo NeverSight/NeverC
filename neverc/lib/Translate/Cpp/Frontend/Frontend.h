@@ -32,6 +32,7 @@ struct ASTTemplateArgumentListInfo;
 class TemplateDecl;
 class TemplateArgumentList;
 class NonTypeTemplateParmDecl;
+class VarTemplateSpecializationDecl;
 }
 
 namespace nct {
@@ -74,7 +75,8 @@ struct NonTypeParameterSource {
   unsigned PackIndex; // Forward index, or ~0u for a deduced empty pack's type.
 };
 enum class TemplateSourceKind {
-  Type, Function, ClassDeclaration, PartialDeduction, PartialPattern
+  Type, Function, ClassDeclaration, PartialDeduction, PartialPattern,
+  VariableUse, VariableDeclaration, VariablePartialDeduction, VariablePartialPattern
 };
 struct TemplateUseSource {
   TemplateSourceKind Kind;
@@ -89,8 +91,19 @@ struct TemplateUseSource {
   clang::SourceLocation Location;
   bool DefaultsOverflow, Instantiation;
   // Identity of the successful deduction, transferred unchanged by Sema to
-  // the selected class instance. Argument values alone do not identify it.
+  // the selected instance: canonical for classes, sugared for variables.
+  // Argument values alone do not identify the successful candidate.
   const clang::TemplateArgumentList *Selection;
+  bool WrittenStorageClass;
+};
+// Retain each type substitution already performed by Sema. The final
+// VarDecl may keep its first declaration's TypeSourceInfo after completion.
+struct VariableTypeSource {
+  const clang::VarTemplateSpecializationDecl *Variable;
+  const clang::VarDecl *Pattern;
+  clang::TypeSourceInfo *Type;
+  clang::SourceLocation Location;
+  bool Completion;
 };
 struct FunctionSpecializationSource {
   const clang::FunctionDecl *Declaration, *Selected;
@@ -253,7 +266,8 @@ public:
   void run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives = {},
            llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives = {},
            llvm::ArrayRef<TemplateUseSource> TemplateUses = {},
-           llvm::ArrayRef<FunctionSpecializationSource> Specializations = {});
+           llvm::ArrayRef<FunctionSpecializationSource> Specializations = {},
+           llvm::ArrayRef<VariableTypeSource> VariableTypes = {});
 };
 } // namespace nct
 #endif

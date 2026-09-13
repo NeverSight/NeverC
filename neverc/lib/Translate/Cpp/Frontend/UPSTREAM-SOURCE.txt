@@ -64,8 +64,7 @@ paired source/protocol and native O0/O2 cases cover fresh argument conversions.
 The same private six-file source group preserves completed namespace class
 partial-specialization deductions in SemaTemplateDeduction.cpp. For requesting
 consumers only, the existing successful class-partial pattern substitution keeps
-source sugar (Final=false); variable partials and partial ordering keep their
-original path. After conversion, substituted-primary equality, trap and
+source sugar (Final=false); partial ordering keeps its original path. After conversion, substituted-primary equality, trap and
 constraint checks, two bounded callback records preserve deduced partial slots
 and the actual substituted pattern/primary slots. The exact canonical deduced
 argument-list object is retained as identity: upstream SemaTemplateInstantiate.cpp
@@ -75,6 +74,25 @@ selection, deduction or instantiation is performed. Other consumers retain the
 original AST and no-op callback behavior. Independent literal archive fixtures
 cover the extended group and failure-before-write states; paired native/protocol
 fixtures cover selected source, canonical storage and lifetime behavior.
+
+The same six-file group retains namespace variable-template source only for
+requesting consumers. Successful CheckVarTemplateId and explicit full declaration
+checks preserve actual variables, locations, written arguments, defaults and
+non-type parameter types. Each full declaration also retains its written
+storage-class flag, including no-use declarations, so nonstandard spellings
+cannot escape through an unevaluated-use path. Successful variable-partial
+conversion checks retain both deduced slots and substituted primary pattern;
+the exact Info.takeSugared() object transferred to the chosen variable identifies
+the pair, independently of class selection's takeCanonical() identity.
+SemaTemplateInstantiateDecl.cpp callbacks retain the TypeSourceInfo already
+produced by first declaration construction and later completion. The latter may
+replace VarDecl's type without replacing its first TypeSourceInfo. No extra
+substitution or initializer instantiation is introduced. Existing partial
+ordering, error traps, reference conversion and conversion-definition-name
+repairs remain intact. Source retention remains bounded and opt-in, with no-op
+callbacks and the original semantic paths for other consumers. Independent
+literal fixtures cover exact six-file output, mixed states and drift before any
+write. Native/protocol fixtures check source, scalar storage and lazy demand.
 
 The isolated build renames namespace llvm and selected global C/C++ symbols.
 IsolateSymbols.py applies checked, idempotent changes to the extracted

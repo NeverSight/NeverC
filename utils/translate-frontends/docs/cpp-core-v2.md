@@ -1046,6 +1046,72 @@ follow the contract below.
 Only C++ input is implemented; E Language, Python and other frontends remain
 planned.
 
+## Namespace scalar variable templates
+
+Owned namespace variable templates support non-volatile integer, boolean and enum
+results with zero or fully checked scalar constant initialization. This includes
+plain or constexpr variables, C++17 inline variables, deduced `auto` and
+`decltype(auto)`, primary templates, selected partial specializations, explicit
+full specializations, type/scalar defaults and concrete packs. Each parameter
+list and pack has at most 64 entries. Member variable templates, other result
+types, thread-local storage and dynamic initialization remain excluded.
+
+```cpp
+template<int N> int counter = N;
+template<class A, class B> inline constexpr bool same_v = false;
+template<class T> inline constexpr bool same_v<T, T> = true;
+template<class T> constexpr int depth_v = 0;
+template<class T> constexpr int depth_v<T*> = 1 + depth_v<T>;
+static_assert(same_v<int, int>);
+static_assert(depth_v<int**> == 2);
+int& first() { return counter<3>; }
+int& again() { return counter<1 + 2>; }
+```
+
+These are source-defined C++17 traits; standard-library headers are not implied.
+Trait values can supply `static_assert`, `if constexpr`, scalar defaults and
+arguments to admitted function, class and alias templates. Template selection,
+partial ordering, substitution failures and diagnostics follow embedded Clang.
+Equivalent primary/argument identities share one typed global object. Distinct
+templates or arguments retain separate storage, including mutable zero state,
+addresses and references. No runtime template parameters or new wire opcodes are
+introduced.
+
+Fixed-type queries such as `sizeof(v<int>)` inspect the actual variable type
+without forcing its unused initializer or creating a global definition. A
+resolved-auto type query can require the initializer for type deduction. Value,
+address and required explicit-definition uses must have a definition in this
+source unit. `extern template` alone does not provide one. A non-const namespace
+full specialization without an initializer is a zero-initialized definition;
+a second full definition is a language error. A full specialization cannot carry
+an explicit storage-class specifier such as `extern` or `static`.
+
+Every reached variable reference and explicit directive retains its actual
+written argument source, selected defaults and non-type parameter type source.
+Selected partials validate their own deduced slots and substituted primary
+pattern. Their exact successful sugared deduction list identifies the chosen
+candidate; class partials use a different canonical list. Argument-value equality
+alone never identifies either selection. Failed or unselected candidates retain
+ordinary template laziness.
+
+The already-performed first declaration and later definition type substitutions
+are both checked, including alias and `decltype` spellings that canonical types
+would erase. Direct written `auto` tokens remain source metadata only when the
+final type is an admitted scalar. Materialized initializers are always traversed,
+even if their values fold to constants. Each initializer uses its exact selected
+primary/partial argument frame; nested instances cannot borrow a caller's slots.
+A full specialization checks its own type and initializer. No additional
+instantiation or type substitution is performed just to obtain source evidence.
+
+Source depth remains bounded by 64 and shares the 200000-unit expansion budget.
+Unsupported materialized source reports `TR0201`, invalid C++ reports `TR0202`,
+and required missing definitions report `TR0203`. Legacy core v1 keeps rejecting
+variable templates. Paired source/protocol fixtures, 20 O0/O2 runtime checkpoints,
+canonical storage, reference closure and relocation checks are included; native
+results require the implementing revision's CI. Complete C++/STL remains
+unfinished. Only C++ input is implemented; E Language, Python and other input
+frontends remain planned.
+
 ## Class-template partial specializations
 
 Owned namespace class-template partial specializations support the same admitted
@@ -1053,7 +1119,7 @@ concrete type and integer/bool/enum/auto arguments, fields, ordinary members,
 scalar static data, constructors, destructors and defaulted operations as primary
 class templates. Each parameter list and concrete pack has at most 64 entries.
 Records still require supported standard-layout storage with no bases; member
-and variable templates, template-template parameters and full standard-library
+function/variable templates, template-template parameters and full standard-library
 headers remain outside this increment.
 
 ```cpp
@@ -1151,7 +1217,7 @@ identities stay unchanged. No runtime parameters, global initialization or opaqu
 representations are added.
 
 Final defaults must be supported scalar constants. Pointer/reference/record-valued
-arguments, member/friend/variable templates, standard headers and remaining
+arguments, member/friend templates, standard headers and remaining
 C++17/STL features are still unfinished. Invalid C++ retains TR0202; unsupported
 profile source uses TR0201, and selected definitions missing from this source unit
 use TR0203 where ordinary rules require them.

@@ -172,6 +172,16 @@ runtime parameter is added. Successful template-use events retain original and
 converted defaults with their exact selected declaration or type-use evidence.
 Validation happens at reached source uses and explicit declarations/directives;
 unselected overload candidates and uninstantiated dependent source remain lazy.
+Namespace scalar variable templates emit only existing concrete scalar globals,
+literals, variable references and ordinary function operations. Canonical
+primary/argument identity deduplicates storage; separate specializations keep
+separate globals. Fixed-type unevaluated uses without materialized definitions
+emit no object or unresolved global reference. Selected partial argument frames,
+per-use written arguments, defaults, and first/definition type-source records are
+private validation metadata, never wire operations. Resolved `auto` types and
+instantiated initializers are checked before emission. See
+[namespace scalar variable templates](cpp-core-v2.md#namespace-scalar-variable-templates).
+
 Namespace class partial specializations also use existing concrete record,
 function, scalar-global, reference and lifetime operations. The primary argument
 identity is separate from the selected partial's deduced slots and actual

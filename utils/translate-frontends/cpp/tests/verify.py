@@ -3327,7 +3327,6 @@ int main(){return read();}
         'tls': 'thread_local int value;',
         'folded-unsupported': 'int value=static_cast<int>(1.0);',
         'unused-folded-unsupported': 'constexpr int f(){return static_cast<int>(1.0);}int value=f();',
-        'variable-template': 'template<class T> int value=1;',
     }
     for name, source in mutable_global_reject.items():
         check("v2-mutable-global-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
@@ -6723,6 +6722,236 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     for name, source in template_parameter_queries_missing.items():
         check("v2-template-parameter-queries-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
 
+    variable_templates_positive = {
+        'full-zero-definition': 'template<class T>int value=1;template<>int value<int>;int main(){return value<int>;}',
+        'unused-primary': 'template<class T> int value=1;',
+        'unused-pack': 'template<class...T>int n=sizeof...(T);',
+        'scalar-read': 'template<class T>int value=3;int main(){return value<int>;}',
+        'zero-state': 'template<class T>int value;int main(){return value<int>;}',
+        'mutable-state': 'template<class T>int value=3;int main(){value<int>+=2;return value<int>;}',
+        'same-address': 'template<class T>int value=3;int main(){int*a=&value<int>;return a==&value<int>;}',
+        'distinct-address': 'template<class T>int value=3;int main(){return &value<int>!=&value<long long>;}',
+        'const-value': 'template<class T>const int value=3;int main(){return value<int>;}',
+        'constexpr-value': 'template<class T>constexpr int value=3;static_assert(value<int> == 3);',
+        'inline-value': 'template<class T>inline int value=3;int main(){return ++value<int>;}',
+        'inline-constexpr': 'template<class T>inline constexpr bool value=true;int main(){return value<int>;}',
+        'auto-integer': 'template<class T>constexpr auto value=3;int main(){return value<int>;}',
+        'auto-value-parameter': 'template<auto N>constexpr auto value=N;int main(){return value<3>+value<4LL>;}',
+        'bool-value-parameter': 'template<bool B>constexpr bool value=B;int main(){return value<true>;}',
+        'enum-value-parameter': 'enum class E:int{a=3};template<E V>constexpr E value=V;int main(){return static_cast<int>(value<E::a>);}',
+        'typed-value-parameter': 'template<class T,T N>constexpr T value=N;int main(){return value<int,3>;}',
+        'default-type': 'template<class T=int>constexpr int value=3;int main(){return value<>;}',
+        'default-value': 'template<int N=3>constexpr int value=N;int main(){return value<>;}',
+        'prior-slot-default': 'template<class T,int N=sizeof(T)>constexpr int value=N;int main(){return value<int>;}',
+        'inherited-default': 'template<class T=int>extern int value;template<class T>int value=3;int main(){return value<>;}',
+        'type-pack-empty': 'template<class...T>constexpr int value=sizeof...(T);int main(){return value<>;}',
+        'type-pack-many': 'template<class...T>constexpr int value=sizeof...(T);int main(){return value<int,bool,long long>;}',
+        'value-pack-empty': 'template<int...N>constexpr int value=(0+...+N);int main(){return value<>;}',
+        'value-pack-many': 'template<int...N>constexpr int value=(0+...+N);int main(){return value<1,2,3>;}',
+        'auto-pack-many': 'template<auto...N>constexpr int value=(0+...+N);int main(){return value<1,true,3LL>;}',
+        'namespace-import': 'namespace n{template<class T>int value=3;}using n::value;int main(){return value<int>;}',
+        'namespace-alias': 'namespace n{template<class T>int value=3;}namespace alias=n;int main(){return alias::value<int>;}',
+        'block-import': 'namespace n{template<class T>int value=3;}int main(){using n::value;return value<int>;}',
+        'full-specialization': 'template<class T>int value=1;template<>int value<int> = 3;int main(){return value<int>+value<bool>;}',
+        'full-before-primary-definition': 'template<class T>extern int value;template<>int value<int> = 3;int main(){return value<int>;}',
+        'partial-pointer': 'template<class T>int value=1;template<class T>int value<T*> = 3;int main(){return value<int*>;}',
+        'partial-ordering': 'template<class T>int value=1;template<class T>int value<T*> = 2;template<class T>int value<const T*> = 3;int main(){return value<const int*>;}',
+        'partial-primary-fallback': 'template<class T>int value=1;template<class T>int value<T*> = 3;int main(){return value<int>;}',
+        'partial-full-precedence': 'template<class T>int value=1;template<class T>int value<T*> = 2;template<>int value<int*> = 3;int main(){return value<int*>;}',
+        'partial-reordered-slots': 'template<class A,class B>constexpr int value=1;template<class X,class Y>constexpr int value<Y*,X> = sizeof(X)+sizeof(Y);int main(){return value<int*,long long>;}',
+        'partial-more-slots': 'template<class T>constexpr int value=1;template<class T,int N>constexpr int value<T[N]> = N;int main(){return value<int[3]>;}',
+        'partial-fewer-slots': 'template<class A,class B>constexpr int value=1;template<class T>constexpr int value<T,T> = 3;int main(){return value<int,int>;}',
+        'partial-reference': 'template<class T>constexpr int value=0;template<class T>constexpr int value<T&> = 1;template<class T>constexpr int value<T&&> = 2;int main(){return value<int&>+value<int&&>;}',
+        'partial-recursion': 'template<class T>constexpr int value=1;template<class T>constexpr int value<T*> = 1+value<T>;int main(){return value<int**>;}',
+        'partial-forward-definition': 'template<class T>extern int value;template<class T>extern int value<T*>;template<class T>int value<T*> = 3;int main(){return value<int*>;}',
+        'partial-type-pack': 'template<class...T>constexpr int value=0;template<class T,class...U>constexpr int value<T*,U...> = 1+sizeof...(U);int main(){return value<int*>+value<int*,bool,long long>;}',
+        'partial-value-pack': 'template<int...N>constexpr int value=0;template<int...N>constexpr int value<1,N...> = 1+(0+...+N);int main(){return value<1>+value<1,2,3>;}',
+        'recursive-scalar': 'template<int N>constexpr int value=N+value<N-1>;template<>constexpr int value<0> = 0;int main(){return value<3>;}',
+        'nested-variable': 'template<class T>constexpr int base=sizeof(T);template<class T>constexpr int value=base<T>+1;int main(){return value<int>;}',
+        'same-trait': 'template<class A,class B>inline constexpr bool same_v=false;template<class T>inline constexpr bool same_v<T,T> = true;static_assert(same_v<int,int>);static_assert(!same_v<int,bool>);',
+        'class-nttp': 'template<class T>constexpr int value=3;template<int N>struct R{int n=N;};int main(){R<value<int>>r;return r.n;}',
+        'function-nttp': 'template<class T>constexpr int value=3;template<int N>int f(){return N;}int main(){return f<value<int>>();}',
+        'alias-nttp': 'template<class T>constexpr int value=3;template<int N>using A=int[N];int main(){A<value<int>>a{1,2,3};return a[2];}',
+        'function-initializer': 'constexpr int f(int n){return n+1;}template<int N>constexpr int value=f(N);int main(){return value<2>;}',
+        'if-constexpr': 'template<class T>constexpr bool value=true;template<class T>int f(){if constexpr(value<T>)return 3;else return T::missing;}int main(){return f<int>();}',
+        'unused-dependent-initializer': 'template<class T>constexpr int value=T::missing;int main(){return 0;}',
+        'fixed-type-unevaluated': 'template<class T>int value=T::missing;static_assert(sizeof(value<int>)==sizeof(int));',
+        'extern-only-unevaluated': 'template<class T>extern int value;static_assert(sizeof(value<int>)==sizeof(int));',
+        'auto-type-demand': 'template<class T>constexpr auto value=3;int main(){decltype(value<int>) n=4;return n;}',
+        'explicit-definition': 'template<class T>int value=3;template int value<int>;int main(){return value<int>;}',
+        'explicit-extern-definition': 'template<class T>int value=3;extern template int value<int>;template int value<int>;int main(){return value<int>;}',
+        'explicit-no-effect': 'template<class T>int value=1;template<>int value<int> = 3;template int value<int>;int main(){return value<int>;}',
+        'explicit-partial': 'template<class T>int value=1;template<class T>int value<T*> = 3;template int value<int*>;int main(){return value<int*>;}',
+        'type-alias-identity': 'using I=int;template<class T>int value=3;int main(){return &value<I> == &value<int>;}',
+        'alias-result-type': 'template<class T>using I=T;template<class T>constexpr I<T> value=3;int main(){return value<int>;}',
+        'later-definition-type': 'template<class T>extern T value;template<class T>using I=T;template<class T>I<T> value=3;int main(){return value<int>;}',
+        'partial-pattern-safe': 'template<class T>using K=decltype((sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 3;int main(){return value<int*,int>;}',
+        'partial-parameter-type-safe': 'template<class T>using K=decltype((sizeof(T),int{}));template<class T,int N>int value=0;template<class T,K<T> N>int value<T*,N> = N;int main(){return value<int*,3>;}',
+        'partial-parameter-pack-empty-safe': 'template<class T>using K=decltype((sizeof(T),int{}));template<class H,int...N>int value=0;template<class T,K<T>...N>int value<T*,N...> = (0+...+N);int main(){return value<int*>;}',
+        'partial-parameter-pack-nonempty-safe': 'template<class T>using K=decltype((sizeof(T),int{}));template<class H,int...N>int value=0;template<class T,K<T>...N>int value<T*,N...> = (0+...+N);int main(){return value<int*,2,3>;}',
+        'explicit-partial-pattern-safe': 'template<class T>using K=decltype((sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 3;template int value<int*,int>;',
+        'unselected-hidden-pattern': 'template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 1;template<class T>int value<T*,bool> = 3;int main(){return value<int*,bool>;}',
+        'cached-written-use': 'template<class>using I=int;template<class T>int value=3;int main(){int n=value<int>;return n+value<I<int>>;}',
+        'extern-directive-unevaluated': 'template<class T>int value=T::missing;extern template int value<int>;static_assert(sizeof(value<int>)==sizeof(int));',
+        'trait-result-as-default': 'template<class A,class B>inline constexpr bool same_v=false;template<class T>inline constexpr bool same_v<T,T> = true;template<class T,bool B=same_v<T,int>>constexpr int value=B?3:4;int main(){return value<int>+value<bool>;}',
+        'type-pack-64': 'template<class...T>constexpr int value=sizeof...(T);int main(){return value<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>;}',
+        'value-pack-64': 'template<int...N>constexpr int value=(0+...+N);int main(){return value<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>;}',
+        'full-auto': 'template<class T>constexpr auto value=1;template<>constexpr auto value<int> = 3;int main(){return value<int>;}',
+        'full-decltype-auto': 'template<class T>constexpr decltype(auto) value=1;template<>constexpr decltype(auto) value<int> = 3;int main(){return value<int>;}',
+        'self-type-query': 'template<class T>constexpr int value=sizeof(value<T>);int main(){return value<int>;}',
+        'mutual-type-queries': 'template<class T>extern const int second;template<class T>constexpr int first=sizeof(second<T>);template<class T>const int second=sizeof(first<T>);int main(){return first<int>+second<int>;}',
+        'full-scalar-trait-type': 'template<class T>constexpr auto value=1;template<>constexpr bool value<int> = true;static_assert(value<int>);int main(){return value<long>;}',
+        'promoted-unused-primary': 'template<class T> int value=1;',
+        'promoted-unused-pack': 'template<class...T>int n=sizeof...(T);',
+        'protocol-source': 'template<int N>int counter=N;\ntemplate<class T>int slot=1;\ntemplate<class T>int slot<T*> = 7;\ntemplate<>int slot<bool> = 11;\ntemplate<class T>int zero;\ntemplate<class T>constexpr int width=sizeof(T);\ntemplate<class T>int lazy=T::missing;\ntemplate<class T>extern int declarationOnly;\ntemplate<class T>int untouched=1;\ntemplate<class...T>constexpr int count=sizeof...(T);\ntemplate<class A,class B>constexpr bool same=false;\ntemplate<class T>constexpr bool same<T,T> = true;\nstatic_assert(sizeof(lazy<int>)==sizeof(int));\nstatic_assert(sizeof(declarationOnly<int>)==sizeof(int));\nint&first(){return counter<3>;}\nint&again(){return counter<1+2>;}\nint&other(){return counter<4>;}\nint&partial(){return slot<int*>;}\nint&full(){return slot<bool>;}\nint&empty(){return zero<int>;}\nint integerWidth(){return width<int>;}\nint packSizes(){return count<>+count<int,bool>;}\nbool equalTypes(){return same<int,int>;}\nbool differentTypes(){return same<int,bool>;}\n',
+        'source-depth-64': 'template<int N>constexpr int value=N;int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<0>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;}',
+        'written-const-auto': 'template<class T>const auto value=3;int main(){return value<int>;}',
+        'full-written-const-auto': 'template<class T>const auto value=1;template<>const auto value<int> = 3;int main(){return value<int>+value<bool>;}',
+    }
+    for name, source in variable_templates_positive.items():
+        check("v2-variable-templates-positive-" + name, source, None, profile="cpp-core-v2")
+
+    variable_templates_reject = {
+        'floating-result': 'template<class T>constexpr double value=1.0;int main(){return int(value<int>);}',
+        'pointer-result': 'template<class T>constexpr T*value=nullptr;int main(){return value<int> == nullptr;}',
+        'reference-result': 'int n=3;template<class T>int&value=n;int main(){return value<int>;}',
+        'array-result': 'template<class T>int value[2]={1,2};int main(){return value<int>[1];}',
+        'class-result': 'struct R{int n;};template<class T>constexpr R value{3};int main(){return value<int>.n;}',
+        'dynamic-initializer': 'int f(){return 3;}template<class T>int value=f();int main(){return value<int>;}',
+        'thread-local': 'template<class T>thread_local int value=3;int main(){return value<int>;}',
+        'volatile-result': 'template<class T>volatile int value=3;int main(){return value<int>;}',
+        'member-variable': 'struct R{template<class T>inline static int value=3;};int main(){return R::value<int>;}',
+        'template-template': 'template<class T>struct R{};template<template<class>class C>constexpr int value=3;int main(){return value<R>;}',
+        'hidden-actual-type': 'template<class>using I=int;template<class T>constexpr int value=3;int main(){return value<I<decltype(1.0)>>;}',
+        'hidden-actual-scalar': 'template<int N>constexpr int value=N;int main(){return value<int(1.0)>;}',
+        'hidden-default-type': 'template<class>using I=int;template<class T=I<decltype(1.0)>>constexpr int value=3;int main(){return value<>;}',
+        'hidden-default-scalar': 'template<int N=int(1.0)>constexpr int value=N;int main(){return value<>;}',
+        'hidden-parameter-type': 'template<class>using I=int;template<class T,I<decltype(T{}+1.0)> N>constexpr int value=N;int main(){return value<int,3>;}',
+        'hidden-first-type': 'template<class>using I=int;template<class T>I<decltype(T{}+1.0)> value=3;int main(){return value<int>;}',
+        'hidden-definition-type': 'template<class T>extern int value;template<class>using I=int;template<class T>I<decltype(T{}+1.0)> value=3;int main(){return value<int>;}',
+        'hidden-initializer': 'template<class T>constexpr int value=int(T{}+1.0);int main(){return value<int>;}',
+        'hidden-full-declaration': 'template<class>using I=int;template<class T>int value=1;template<>I<decltype(1.0)> value<int> = 3;int main(){return value<int>;}',
+        'hidden-directive-type': 'template<class>using I=int;template<class T>int value=3;template I<decltype(1.0)> value<int>;',
+        'hidden-no-effect-directive': 'template<class>using I=int;template<class T>int value=1;template<>int value<int> = 3;template I<decltype(1.0)> value<int>;',
+        'hidden-partial-initializer': 'template<class T>constexpr int value=0;template<class T>constexpr int value<T*> = int(T{}+1.0);int main(){return value<int*>;}',
+        'partial-pattern-hidden': 'template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 3;int main(){return value<int*,int>;}',
+        'partial-parameter-type-hidden': 'template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class T,int N>int value=0;template<class T,K<T> N>int value<T*,N> = N;int main(){return value<int*,3>;}',
+        'partial-parameter-pack-empty-hidden': 'template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class H,int...N>int value=0;template<class T,K<T>...N>int value<T*,N...> = (0+...+N);int main(){return value<int*>;}',
+        'partial-parameter-pack-nonempty-hidden': 'template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class H,int...N>int value=0;template<class T,K<T>...N>int value<T*,N...> = (0+...+N);int main(){return value<int*,2,3>;}',
+        'explicit-partial-pattern-hidden': 'template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 3;template int value<int*,int>;',
+        'cached-hidden-written-use': 'template<class>using I=int;template<class T>int value=3;int main(){int n=value<int>;return n+value<I<decltype(1.0)>>;}',
+        'type-pack-65': 'template<class...T>constexpr int value=sizeof...(T);int main(){return value<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>;}',
+        'value-pack-65': 'template<int...N>constexpr int value=(0+...+N);int main(){return value<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>;}',
+        'full-auto-hidden-initializer': 'template<class T>constexpr auto value=1;template<>constexpr auto value<int> = int(1.0);int main(){return value<int>;}',
+        'source-depth-65': 'template<int N>constexpr int value=N;int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<0>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;}',
+        'written-const-auto-hidden-initializer': 'template<class T>const auto value=int(1.0);int main(){return value<int>;}',
+        'full-written-const-auto-hidden-initializer': 'template<class T>const auto value=1;template<>const auto value<int> = int(1.0);int main(){return value<int>;}',
+        'written-const-volatile-auto': 'template<class T>const volatile auto value=3;int main(){return value<int>;}',
+    }
+    for name, source in variable_templates_reject.items():
+        check("v2-variable-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    variable_templates_invalid = {
+        'full-extern-unevaluated': 'template<class T>int value=1;template<>extern int value<int>;static_assert(sizeof(value<int>)==sizeof(int));',
+        'full-static-unevaluated': 'template<class T>int value=1;template<>static int value<int>;static_assert(sizeof(value<int>)==sizeof(int));',
+        'full-zero-then-redefinition': 'template<class T>int value=1;template<>int value<int>;template<>int value<int> = 3;int main(){return value<int>;}',
+        'type-only-then-full': 'template<class T>int value=1;static_assert(sizeof(value<int>)==sizeof(int));template<>int value<int> = 3;int main(){return value<int>;}',
+        'ambiguous-partial': 'template<class A,class B>int value=1;template<class T,class U>int value<T*,U> = 2;template<class T,class U>int value<T,U*> = 3;int main(){return value<int*,int*>;}',
+        'late-specialization': 'template<class T>int value=1;int f(){return value<int>;}template<>int value<int> = 3;',
+        'duplicate-full': 'template<class T>int value=1;template<>int value<int> = 2;template<>int value<int> = 3;',
+        'invalid-selected-initializer': 'template<class T>constexpr int value=T::missing;int main(){return value<int>;}',
+        'auto-demand-invalid': 'template<class T>constexpr auto value=T::missing;int main(){return sizeof(value<int>);}',
+        'nonconstant-argument': 'int n=3;template<int N>int value=N;int main(){return value<n>;}',
+        'narrowing-argument': 'template<unsigned char N>int value=N;int main(){return value<300>;}',
+        'wrong-explicit-type': 'template<class T>int value=3;template long long value<int>;',
+        'ambiguous-hidden-pattern': 'template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 1;template<class T>int value<T**,int> = 3;int main(){return value<int**,int>;}',
+    }
+    for name, source in variable_templates_invalid.items():
+        check("v2-variable-templates-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    variable_templates_missing = {
+        'extern-instantiation-definition': 'template<class T>int value=3;extern template int value<int>;int main(){return value<int>;}',
+        'primary-definition': 'template<class T>extern int value;int main(){return value<int>;}',
+        'partial-definition': 'template<class T>int value=1;template<class T>extern int value<T*>;int main(){return value<int*>;}',
+    }
+    for name, source in variable_templates_missing.items():
+        check("v2-variable-templates-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    check("v1-variable-templates", "template<class T> int value=1;", "TR0201")
+    variable_template_source = variable_templates_positive["protocol-source"]
+    variable_templates = check("v2-variable-templates-protocol", variable_template_source,
+                               profile="cpp-core-v2")
+    vt_globals = {g["name"]: g for g in variable_templates["globals"]}
+    assert len(vt_globals) == len(variable_templates["globals"]) == 10
+    assert not variable_templates["records"]
+
+    def vt_line(prefix):
+        matches = [i for i, line in enumerate(variable_template_source.splitlines(), 1)
+                   if line.startswith(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def vt_global(prefix, kind, value, mutable=True):
+        matches = [g for g in vt_globals.values() if g["loc"]["line"] == vt_line(prefix)
+                   and g["value"]["value"] == value]
+        assert len(matches) == 1, (prefix, value, matches)
+        g = matches[0]
+        assert g["type"] == kind and g.get("mutable", False) is mutable, g
+        assert g["value"] == {"kind": "literal", "type": kind, "value": value, "loc": g["loc"]}, g
+        return g["name"]
+
+    vt_counter3 = vt_global("template<int N>int counter", "int", "3")
+    vt_counter4 = vt_global("template<int N>int counter", "int", "4")
+    vt_partial = vt_global("template<class T>int slot<T*>", "int", "7")
+    vt_full = vt_global("template<>int slot<bool>", "int", "11")
+    vt_zero = vt_global("template<class T>int zero", "int", "0")
+    vt_global("template<class T>constexpr int width", "int", "4", False)
+    vt_global("template<class...T>constexpr int count", "int", "0", False)
+    vt_global("template<class...T>constexpr int count", "int", "2", False)
+    vt_global("template<class A,class B>constexpr bool same", "bool", False, False)
+    vt_global("template<class T>constexpr bool same<T,T>", "bool", True, False)
+    vt_omitted = {vt_line(prefix) for prefix in (
+        "template<class T>int slot=", "template<class T>int lazy=",
+        "template<class T>extern int declarationOnly", "template<class T>int untouched=")}
+    assert all(g["loc"]["line"] not in vt_omitted for g in vt_globals.values())
+
+    def vt_root(function, expr):
+        if expr["kind"] in ("cast", "address", "dereference"):
+            return vt_root(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        if expr["name"] in vt_globals:
+            return expr["name"]
+        values = [i["value"] for i in function["body"] if i["op"] == "assign"
+                  and i["target"].get("kind") == "var" and i["target"].get("name") == expr["name"]]
+        assert len(values) == 1, (expr, values)
+        return vt_root(function, values[0])
+
+    for prefix, expected in (("int&first(", vt_counter3), ("int&again(", vt_counter3),
+                              ("int&other(", vt_counter4), ("int&partial(", vt_partial),
+                              ("int&full(", vt_full), ("int&empty(", vt_zero)):
+        functions = [f for f in variable_templates["functions"] if f["loc"]["line"] == vt_line(prefix)]
+        assert len(functions) == 1
+        function = functions[0]
+        assert function["result"] == "ptr:int" and not function["params"]
+        returns = [i["value"] for i in function["body"] if i["op"] == "return"]
+        assert len(returns) == 1 and vt_root(function, returns[0]) == expected, function
+    vt_names = {f["name"] for f in variable_templates["functions"]}
+    assert len(vt_names) == len(variable_templates["functions"]) == 10
+    for function in variable_templates["functions"]:
+        locals_and_globals = set(vt_globals) | {p["name"] for p in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in locals_and_globals, node
+            if node.get("kind") == "call":
+                assert node["callee"] in vt_names, node
+    with tempfile.TemporaryDirectory(prefix="neverc-variable-templates-relocated-") as temp:
+        relocated = check("variable-templates-relocated", variable_template_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == variable_templates, "variable identity depends on the absolute root"
+
+    variable_budget_source = 'template<int...N>constexpr int value=sizeof...(N);\n' + 'static_assert(value<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0> == 64);\n' * 1024
+    check("v2-variable-template-source-budget", variable_budget_source, "TR0201", profile="cpp-core-v2")
+
     class_partials_positive = {
         'promoted-declaration': 'template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};',
         'promoted-selected': 'template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};int main(){int n=3;R<int*>r{&n};return *r.n;}',
@@ -7444,7 +7673,6 @@ Token record(){return pp_record(2,3);}
         'template-template-pack': 'template<template<class>class...T>struct R{int n;};',
         'member-template-pack': 'struct R{template<class...T>int f(T...v){return sizeof...(v);}};',
         'friend-template-pack': 'struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};',
-        'variable-template-pack': 'template<class...T>int n=sizeof...(T);',
         'c-varargs': 'template<class...T>int f(T...v,...){return sizeof...(v);}int main(){return f(1);}',
         'zero-array': 'template<class...T>int f(){int a[sizeof...(T)];return 0;}int main(){return f<>();}',
     }
