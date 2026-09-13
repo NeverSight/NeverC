@@ -9016,7 +9016,8 @@ int&outsideValue(Outside<int>&r){return r;}
     uid = different["args"][0]["type"].removeprefix("ptr:")
     assert uid != bid and different["callee"] == cf_member(uid, "void")["name"]
     assert cf_records[uid]["fields"][1]["type"] == "uint"
-    forced = cf_record("template<class T>struct Forced{")
+    # The record location belongs to the explicit instantiation declaration.
+    forced = cf_record("template struct Forced<int>;")
     forced_constructor = cf_function("template<class T>Forced<T>::Forced(")
     assert [p["type"] for p in forced_constructor["params"]] == ["ptr:"+forced["id"]]
     assert [c["callee"] for c in gc_calls(forced_constructor)] == [leaf_default["name"]]
@@ -9196,7 +9197,8 @@ int&outsideValue(Outside<int>&r){return r;}
     assert [c["callee"] for c in gc_calls(wrapper)] == [bid+"_destroy"]
     expected = ("field", ("parameter", wrapper["params"][0]["name"]), cd_records[wid]["fields"][0]["name"])
     assert np_pointer(wrapper, gc_calls(wrapper)[0]["args"][0]) == expected
-    forced = cd_record("template<class T>struct Forced{")
+    # The record location belongs to the explicit instantiation declaration.
+    forced = cd_record("template struct Forced<int>;")
     assert [c["callee"] for c in gc_calls(cd_functions[forced["id"]+"_destroy"])] == [cd_mark]
     uncalled = cd_record("struct OnlyBody{")
     assert [c["callee"] for c in gc_calls(cd_functions[uncalled["id"]+"_destroy"])] == [cd_mark, leaf_ids[0]+"_destroy"]
