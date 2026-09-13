@@ -6250,11 +6250,7 @@ TEST_F(TranslateTest, CoreV2MemberClassesRetainSourceAndOwnerBoundaries) {
       {"type-pack-65", "struct R{template<class...T>struct I{int n=sizeof...(T);};};int f(){R::I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r;return r.n;}"},
       {"value-pack-65", "struct R{template<int...N>struct I{int n=sizeof...(N);};};int f(){R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return r.n;}"},
       {"parameters-65", "struct R{template<int N0,int N1,int N2,int N3,int N4,int N5,int N6,int N7,int N8,int N9,int N10,int N11,int N12,int N13,int N14,int N15,int N16,int N17,int N18,int N19,int N20,int N21,int N22,int N23,int N24,int N25,int N26,int N27,int N28,int N29,int N30,int N31,int N32,int N33,int N34,int N35,int N36,int N37,int N38,int N39,int N40,int N41,int N42,int N43,int N44,int N45,int N46,int N47,int N48,int N49,int N50,int N51,int N52,int N53,int N54,int N55,int N56,int N57,int N58,int N59,int N60,int N61,int N62,int N63,int N64>struct I{int n=N0;};};int f(){R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return r.n;}"},
-      {"dependent-outer", "template<class T>struct R{template<class U>struct I{U n;};};int f(){R<int>::I<int>r{3};return r.n;}"},
-      {"dependent-outer-partial", "template<class T>struct R;template<class T>struct R<T*>{template<class U>struct I{U n;};};int f(){R<int*>::I<int>r{3};return r.n;}"},
-      {"outer-full-owner", "template<class T>struct R;template<>struct R<int>{template<class U>struct I{U n;};};int f(){R<int>::I<int>r{3};return r.n;}"},
       {"generic-nested-record", "struct R{template<class T>struct I{struct J{T n;};};};"},
-      {"generic-nested-template", "struct R{template<class T>struct I{template<class U>struct J{U n;};};};"},
       {"template-template", "struct R{template<template<class>class T>struct I{int n;};};"},
       {"union-owner", "union R{template<class T>struct I{T n;};int n;};"},
       {"union-template", "struct R{template<class T>union I{T n;int m;};};"},
@@ -6477,6 +6473,254 @@ TEST_F(TranslateTest, CoreV2PartialDeclarationSourcesRetainLanguageDiagnostics) 
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DependentMemberClassesPreserveObjectsAndStorage) {
+  const auto Source = tmpFile("dependent-member-classes-runtime.cpp");
+  const auto Output = tmpFile("dependent-member-classes-runtime.nc");
+  writeFile(Source, R"cpp(int trace=0;
+template<int N>struct Owner{
+ template<int M>struct Item{
+  int n;
+  Item(int v):n(v){}
+  Item(const Item&v):n(v.n+1){}
+  Item(Item&&v):n(v.n){v.n=0;}
+  ~Item(){trace=trace*10+n;}
+  int get()const{return n+N+M;}
+ };
+};
+template<class T>struct Choices{
+ template<class U>struct Item{int data[1];int tag(){return 1;}inline static int count=10;};
+ template<class U>struct Item<U*>{int data[2];int tag(){return 2;}inline static int count=20;};
+};
+template<>template<>struct Choices<int>::Item<int*>{int data[3];int tag(){return 3;}inline static int count=30;};
+template<>template<class U>struct Choices<bool>::Item{U n;int tag(){return 4;}inline static int count=40;};
+template<int N>struct Levels{
+ template<int M>struct Inner{
+  template<class T>using Alias=T;
+  template<class T>inline static int value=1;
+  template<>inline int value<int> =N+M;
+  template<int K>int get(){return N+M+K;}
+  static int count;
+  int read()const;
+ };
+};
+template<int X>template<int Y>int Levels<X>::Inner<Y>::count=X*10+Y;
+template<int X>template<int Y>int Levels<X>::Inner<Y>::read()const{return X+Y;}
+template<class T>struct Copies{
+ template<class U>struct Item{
+  T a;U b;
+  Item()=default;
+  Item(const Item&)=default;
+  Item(Item&&)=default;
+  Item&operator=(const Item&)=default;
+  Item&operator=(Item&&)=default;
+  ~Item()=default;
+ };
+};
+int main(){
+ {Owner<1>::Item<2>a(1);if(a.get()!=4)return 1;}
+ if(trace!=1)return 2;
+ trace=0;
+ {Owner<1>::Item<2>a(1);Owner<1>::Item<2>b=a;Owner<1>::Item<2>c=static_cast<Owner<1>::Item<2>&&>(a);
+  if(a.n!=0||b.n!=2||c.n!=1)return 3;
+  if(&a==&b||&b==&c||&a==&c)return 4;}
+ if(trace!=120)return 5;
+ Choices<int>::Item<int>a{{1}};Choices<int>::Item<char*>b{{1,2}};Choices<int>::Item<int*>c{{1,2,3}};
+ Choices<bool>::Item<int>d{4};
+ if(a.tag()!=1||b.tag()!=2||c.tag()!=3||d.tag()!=4)return 6;
+ if(sizeof(a)!=sizeof(int)||sizeof(b)!=2*sizeof(int)||sizeof(c)!=3*sizeof(int))return 7;
+ using Same=Choices<int>::Item<int*>;
+ if(&Same::count!=&Choices<int>::Item<int*>::count)return 8;
+ if(&Choices<int>::Item<int>::count==&Choices<bool>::Item<int>::count)return 9;
+ ++Same::count;
+ if(Choices<int>::Item<int*>::count!=31||Choices<int>::Item<char*>::count!=20||Choices<bool>::Item<int>::count!=40)return 10;
+ Levels<1>::Inner<2>first;Levels<2>::Inner<1>second;
+ Levels<1>::Inner<2>::Alias<int>n=6;
+ if(first.get<3>()!=6||second.get<4>()!=7||n!=6)return 11;
+ if(first.read()!=3||second.read()!=3)return 12;
+ if(&Levels<1>::Inner<2>::value<int> == &Levels<2>::Inner<1>::value<int>)return 13;
+ ++Levels<1>::Inner<2>::value<int>;
+ if(Levels<1>::Inner<2>::value<int> !=4||Levels<2>::Inner<1>::value<int> !=3||Levels<1>::Inner<2>::value<bool> !=1)return 14;
+ if(&Levels<1>::Inner<2>::count==&Levels<2>::Inner<1>::count)return 15;
+ if(Levels<1>::Inner<2>::count!=12||Levels<2>::Inner<1>::count!=21)return 16;
+ Copies<int>::Item<long long>x;x.a=2;x.b=3;
+ Copies<int>::Item<long long>y=x;Copies<int>::Item<long long>z=static_cast<Copies<int>::Item<long long>&&>(y);
+ Copies<int>::Item<long long>w;w=x;w=static_cast<Copies<int>::Item<long long>&&>(z);
+ if(w.a!=2||w.b!=3||x.a!=2||x.b!=3)return 17;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("dependent-member-classes-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DependentMemberClassesAcceptConcreteInstances) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"two-level-types", "template<class T>struct O{template<class U>struct I{T a;U b;};};int f(){O<int>::I<long long>v{3,4};return v.a+v.b;}"},
+      {"three-level-types", "template<class T>struct O{template<class U>struct M{template<class V>struct I{T a;U b;V c;};};};int f(){O<int>::M<int>::I<int>v{1,2,3};return v.a+v.b+v.c;}"},
+      {"outer-and-inner-values", "template<int N>struct O{template<int M>struct I{int n=N+M;};};int f(){O<2>::I<3>v;return v.n;}"},
+      {"inner-partial", "template<class T>struct O{template<class U>struct I{int n=1;};template<class U>struct I<U*>{T n=2;};};int f(){O<int>::I<int*>v;return v.n;}"},
+      {"partial-in-partial", "template<class T>struct O;template<class T>struct O<T*>{template<class U>struct I;template<class U>struct I<U*>{T a;U b;};};int f(){O<int*>::I<int*>v{2,3};return v.a+v.b;}"},
+      {"direct-full", "template<class T>struct O{template<class U>struct I{int n=1;};};template<>template<>struct O<int>::I<bool>{int n=3;};int f(){O<int>::I<bool>v;return v.n;}"},
+      {"own-primary", "template<class T>struct O{template<class U>struct I{int n=1;};};template<>template<class U>struct O<int>::I{U n;};int f(){O<int>::I<int>v{3};return v.n;}"},
+      {"own-partial", "template<class T>struct O{template<class U>struct I{int n=1;};template<class U>struct I<U*>{int n=2;};};template<>template<class U>struct O<int>::I<U*>{U n;};int f(){O<int>::I<int*>v{3};return v.n;}"},
+      {"new-own-partial", "template<class T>struct O{template<class U>struct I{int n=1;};};template<>template<class U>struct O<int>::I<U*>{U n;};int f(){O<int>::I<int*>v{3};return v.n;}"},
+      {"out-of-line-primary", "template<class T>struct O{template<class U>struct I;};template<class X>template<class Y>struct O<X>::I{X a;Y b;};int f(){O<int>::I<int>v{1,2};return v.a+v.b;}"},
+      {"out-of-line-partial", "template<class T>struct O{template<class U>struct I;};template<class X>template<class Y>struct O<X>::I<Y*>{X a;Y b;};int f(){O<int>::I<int*>v{1,2};return v.a+v.b;}"},
+      {"out-of-line-method", "template<class T>struct O{template<class U>struct I{T a;U b;int get()const;};};template<class X>template<class Y>int O<X>::I<Y>::get()const{return a+b;}int f(){O<int>::I<int>v{1,2};return v.get();}"},
+      {"out-of-line-static", "template<int N>struct O{template<int M>struct I{static int n;};};template<int X>template<int Y>int O<X>::I<Y>::n=X+Y;int*f(){return &O<2>::I<3>::n;}"},
+      {"member-function", "template<int N>struct O{template<int M>struct I{template<int K>int f(){return N+M+K;}};};int f(){O<1>::I<2>v;return v.f<3>();}"},
+      {"member-alias", "template<class T>struct O{template<class U>struct I{template<class V>using A=T;};};O<int>::I<bool>::A<long long>f(){return 3;}"},
+      {"member-variable", "template<int N>struct O{template<int M>struct I{template<int K>inline static int n=N+M+K;};};int*f(){return &O<1>::I<2>::n<3>;}"},
+      {"member-variable-full", "template<int N>struct O{template<int M>struct I{template<class U>inline static int n=1;template<>inline int n<int> =N+M;};};int*f(){return &O<2>::I<3>::n<int>;}"},
+      {"default-outer-type", "template<class T>struct O{template<class U=T>struct I{U n;};};int f(){O<int>::I<>v{3};return v.n;}"},
+      {"default-outer-value", "template<int N>struct O{template<int M=N>struct I{int n=M;};};int f(){O<3>::I<>v;return v.n;}"},
+      {"auto-nttp", "template<auto N>struct O{template<auto M>struct I{int n=N+M;};};int f(){O<2>::I<3>v;return v.n;}"},
+      {"defaulted-copy", "template<class T>struct O{template<class U>struct I{T a;U b;I(const I&)=default;};};int f(){O<int>::I<int>a{1,2};O<int>::I<int>b=a;return b.a+b.b;}"},
+      {"copy-and-assignment", "template<class T>struct O{template<class U>struct I{T a;U b;I()=default;I(const I&)=default;I&operator=(const I&)=default;};};int f(){O<int>::I<int>a;a.a=1;a.b=2;O<int>::I<int>b=a;O<int>::I<int>c;c=b;return c.a+c.b;}"},
+      {"unused-missing-method", "template<class T>struct O{template<class U>struct I{int n;int get();};};int f(){O<int>::I<int>v{3};return v.n;}"},
+      {"outer-pack", "template<int...N>struct O{template<int M>struct I{int n=(0+...+N)+M;};};int f(){O<1,2>::I<3>v;return v.n;}"},
+      {"inner-pack", "template<int N>struct O{template<int...M>struct I{int n=N+(0+...+M);};};int f(){O<1>::I<2,3>v;return v.n;}"},
+      {"mixed-packs", "template<int...N>struct O{template<int...M>struct I{int n=sizeof...(N)*10+sizeof...(M);};};int f(){O<1,2>::I<3>v;O<>::I<>e;return v.n+e.n;}"},
+      {"out-of-line-packs", "template<int...N>struct O{template<int...M>struct I{static int n;};};template<int...X>template<int...Y>int O<X...>::I<Y...>::n=(0+...+X)+(0+...+Y);int*f(){return &O<1,2>::I<3,4>::n;}"},
+      {"promoted-dependent-outer", "template<class T>struct R{template<class U>struct I{U n;};};int f(){R<int>::I<int>r{3};return r.n;}"},
+      {"promoted-dependent-outer-partial", "template<class T>struct R;template<class T>struct R<T*>{template<class U>struct I{U n;};};int f(){R<int*>::I<int>r{3};return r.n;}"},
+      {"promoted-outer-full-owner", "template<class T>struct R;template<>struct R<int>{template<class U>struct I{U n;};};int f(){R<int>::I<int>r{3};return r.n;}"},
+      {"promoted-generic-nested-template", "struct R{template<class T>struct I{template<class U>struct J{U n;};};};"},
+      {"partial-parameter-safe-unused", "template<class U>using K=decltype((sizeof(int),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"partial-parameter-safe-used", "template<class U>using K=decltype((sizeof(int),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>::I<int,1>v;return sizeof(v);}"},
+      {"default-safe", "template<class T>struct O{template<class U=decltype((sizeof(int),1))>struct I{int n;};};"},
+      {"argument-safe", "template<class T>struct O{template<class U>struct I{int n;};};int f(){O<int>::I<decltype((sizeof(int),1))>v{3};return v.n;}"},
+      {"inner-pack-64", "template<int N>struct O{template<int...M>struct I{int n=N+sizeof...(M);};};int f(){O<1>::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}"},
+      {"three-level-member-function", "template<int N>struct O{template<int M>struct I{template<int K>struct J{template<int L>int f(){return N+M+K+L;}};};};int f(){O<1>::I<2>::J<3>v;return v.f<4>();}"},
+      {"three-level-alias", "template<class T>struct O{template<class U>struct I{template<class V>struct J{template<class W>using A=U;};};};O<bool>::I<int>::J<long long>::A<char>f(){return 3;}"},
+      {"outer-type-pack-empty", "template<class...T>struct O{template<class...U>struct I{int n=sizeof...(T)+sizeof...(U);};};int f(){O<>::I<>v;return v.n;}"},
+      {"outer-type-pack-mixed", "template<class...T>struct O{template<class...U>struct I{int n=sizeof...(T)*10+sizeof...(U);};};int f(){O<int,bool>::I<int>v;return v.n;}"},
+      {"outer-partial-pack", "template<int...N>struct O;template<int N,int...M>struct O<N,M...>{template<int...K>struct I{int n=N+sizeof...(M)+sizeof...(K);};};int f(){O<1,2>::I<3,4>v;return v.n;}"},
+      {"inner-partial-pack", "template<int N>struct O{template<int...M>struct I;template<int M,int...K>struct I<M,K...>{int n=N+M+(0+...+K);};};int f(){O<1>::I<2,3>v;return v.n;}"},
+      {"enum-outer-inner", "enum class E:int{a=2,b=3};template<E N>struct O{template<E M>struct I{int n=static_cast<int>(N)+static_cast<int>(M);};};int f(){O<E::a>::I<E::b>v;return v.n;}"},
+      {"dependent-nttp", "template<class T>struct O{template<T N>struct I{T n=N;};};int f(){O<int>::I<3>v;return v.n;}"},
+      {"constructor-template", "template<int N>struct O{template<int M>struct I{int n;template<class T>I(T v):n(N+M+v){}};};int f(){O<1>::I<2>v(3);return v.n;}"},
+      {"conversion-template", "template<int N>struct O{template<int M>struct I{template<class T>operator T()const{return N+M;}};};int f(){O<1>::I<2>v;return static_cast<int>(v);}"},
+      {"out-of-line-member-function", "template<int N>struct O{template<int M>struct I{template<int K>int get();};};template<int X>template<int Y>template<int Z>int O<X>::I<Y>::get(){return X+Y+Z;}int f(){O<1>::I<2>v;return v.get<3>();}"},
+      {"own-full-outer", "template<class T>struct O;template<>struct O<int>{template<class U>struct I{U n;};template<>struct I<bool>{int n;};};int f(){O<int>::I<bool>v{3};return v.n;}"},
+      {"partial-no-inner-instance", "template<class T>struct O{template<class U>struct I{};template<class U>struct I<U*>{};};int f(){O<int>v;return sizeof(v);}"},
+      {"copied-default-safe-unused", "template<int N>struct O{template<class T=decltype((sizeof(int),N))>struct I{int n;};};int f(){O<3>v;return sizeof(v);}"},
+      {"copied-default-safe-used", "template<int N>struct O{template<class T=decltype((sizeof(int),N))>struct I{int n;};};int f(){O<3>::I<>v{3};return v.n;}"},
+      {"outer-source-safe", "template<class T>struct O{template<class U>struct I{int get(){return sizeof(T);}};};int f(){O<int>::I<int>v;return v.get();}"},
+      {"empty-expanded-primary-pack", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};};int f(){O<>::I<int>v;return v.n;}"},
+      {"three-level-type-pack", "template<class T>struct O{template<class U>struct I{template<class...V>struct J{int n=sizeof...(V);};};};int f(){O<int>::I<int>::J<int,bool>v;return v.n;}"},
+      {"three-level-value-pack", "template<int N>struct O{template<int M>struct I{template<int...K>struct J{int n=N+M+(0+...+K);};};};int f(){O<1>::I<2>::J<3,4>v;return v.n;}"},
+      {"three-level-empty-pack", "template<class T>struct O{template<class U>struct I{template<class...V>struct J{int n=sizeof...(V);};};};int f(){O<int>::I<int>::J<>v;return v.n;}"},
+      {"deep-member-function-pack", "template<int N>struct O{template<int M>struct I{template<int K>struct J{template<int...L>int get(){return N+M+K+(0+...+L);}};};};int f(){O<1>::I<2>::J<3>v;return v.get<4,5>();}"},
+      {"deep-alias-pack", "template<class T>struct O{template<class U>struct I{template<class...V>using A=T;};};O<int>::I<bool>::A<int,long long>f(){return 3;}"},
+      {"deep-variable-pack", "template<class T>struct O{template<class U>struct I{template<class...V>inline static int n=sizeof...(V);};};int*f(){return &O<int>::I<bool>::n<int,long long>;}"},
+      {"deep-pack-64", "template<class T>struct O{template<class U>struct I{template<class...V>struct J{int n=sizeof...(V);};};};int f(){O<int>::I<int>::J<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>v;return v.n;}"},
+      {"variadic-frontier-safe-unused", "template<class T>struct O{template<class A,class...B>struct I{};template<class...U>struct I<decltype((sizeof(int),T{})),U...>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"variadic-frontier-safe-used", "template<class T>struct O{template<class A,class...B>struct I{};template<class...U>struct I<decltype((sizeof(int),T{})),U...>{};};int f(){O<int>::I<int,bool>v;return sizeof(v);}"},
+      {"out-of-line-class-packs", "template<int...N>struct O{template<int...M>struct I;};template<int...X>template<int...Y>struct O<X...>::I{int n=sizeof...(X)*10+sizeof...(Y);};int f(){O<1,2>::I<3>v;return v.n;}"},
+      {"out-of-line-type-class-packs", "template<class...N>struct O{template<class...M>struct I;};template<class...X>template<class...Y>struct O<X...>::I{int n=sizeof...(X)*10+sizeof...(Y);};int f(){O<int,bool>::I<int>v;return v.n;}"},
+      {"out-of-line-method-packs", "template<int...N>struct O{template<int...M>struct I{int get();};};template<int...X>template<int...Y>int O<X...>::I<Y...>::get(){return sizeof...(X)*10+sizeof...(Y);}int f(){O<1,2>::I<3>v;return v.get();}"},
+      {"three-level-out-of-line-packs", "template<int...N>struct O{template<int...M>struct I{template<int...K>struct J{static int n;};};};template<int...X>template<int...Y>template<int...Z>int O<X...>::I<Y...>::J<Z...>::n=sizeof...(X)*100+sizeof...(Y)*10+sizeof...(Z);int*f(){return &O<1,2>::I<3>::J<4,5,6>::n;}"},
+      {"runtime-source", "int trace=0;\ntemplate<int N>struct Owner{\n template<int M>struct Item{\n  int n;\n  Item(int v):n(v){}\n  Item(const Item&v):n(v.n+1){}\n  Item(Item&&v):n(v.n){v.n=0;}\n  ~Item(){trace=trace*10+n;}\n  int get()const{return n+N+M;}\n };\n};\ntemplate<class T>struct Choices{\n template<class U>struct Item{int data[1];int tag(){return 1;}inline static int count=10;};\n template<class U>struct Item<U*>{int data[2];int tag(){return 2;}inline static int count=20;};\n};\ntemplate<>template<>struct Choices<int>::Item<int*>{int data[3];int tag(){return 3;}inline static int count=30;};\ntemplate<>template<class U>struct Choices<bool>::Item{U n;int tag(){return 4;}inline static int count=40;};\ntemplate<int N>struct Levels{\n template<int M>struct Inner{\n  template<class T>using Alias=T;\n  template<class T>inline static int value=1;\n  template<>inline int value<int> =N+M;\n  template<int K>int get(){return N+M+K;}\n  static int count;\n  int read()const;\n };\n};\ntemplate<int X>template<int Y>int Levels<X>::Inner<Y>::count=X*10+Y;\ntemplate<int X>template<int Y>int Levels<X>::Inner<Y>::read()const{return X+Y;}\ntemplate<class T>struct Copies{\n template<class U>struct Item{\n  T a;U b;\n  Item()=default;\n  Item(const Item&)=default;\n  Item(Item&&)=default;\n  Item&operator=(const Item&)=default;\n  Item&operator=(Item&&)=default;\n  ~Item()=default;\n };\n};\nint main(){\n {Owner<1>::Item<2>a(1);if(a.get()!=4)return 1;}\n if(trace!=1)return 2;\n trace=0;\n {Owner<1>::Item<2>a(1);Owner<1>::Item<2>b=a;Owner<1>::Item<2>c=static_cast<Owner<1>::Item<2>&&>(a);\n  if(a.n!=0||b.n!=2||c.n!=1)return 3;\n  if(&a==&b||&b==&c||&a==&c)return 4;}\n if(trace!=120)return 5;\n Choices<int>::Item<int>a{{1}};Choices<int>::Item<char*>b{{1,2}};Choices<int>::Item<int*>c{{1,2,3}};\n Choices<bool>::Item<int>d{4};\n if(a.tag()!=1||b.tag()!=2||c.tag()!=3||d.tag()!=4)return 6;\n if(sizeof(a)!=sizeof(int)||sizeof(b)!=2*sizeof(int)||sizeof(c)!=3*sizeof(int))return 7;\n using Same=Choices<int>::Item<int*>;\n if(&Same::count!=&Choices<int>::Item<int*>::count)return 8;\n if(&Choices<int>::Item<int>::count==&Choices<bool>::Item<int>::count)return 9;\n ++Same::count;\n if(Choices<int>::Item<int*>::count!=31||Choices<int>::Item<char*>::count!=20||Choices<bool>::Item<int>::count!=40)return 10;\n Levels<1>::Inner<2>first;Levels<2>::Inner<1>second;\n Levels<1>::Inner<2>::Alias<int>n=6;\n if(first.get<3>()!=6||second.get<4>()!=7||n!=6)return 11;\n if(first.read()!=3||second.read()!=3)return 12;\n if(&Levels<1>::Inner<2>::value<int> == &Levels<2>::Inner<1>::value<int>)return 13;\n ++Levels<1>::Inner<2>::value<int>;\n if(Levels<1>::Inner<2>::value<int> !=4||Levels<2>::Inner<1>::value<int> !=3||Levels<1>::Inner<2>::value<bool> !=1)return 14;\n if(&Levels<1>::Inner<2>::count==&Levels<2>::Inner<1>::count)return 15;\n if(Levels<1>::Inner<2>::count!=12||Levels<2>::Inner<1>::count!=21)return 16;\n Copies<int>::Item<long long>x;x.a=2;x.b=3;\n Copies<int>::Item<long long>y=x;Copies<int>::Item<long long>z=static_cast<Copies<int>::Item<long long>&&>(y);\n Copies<int>::Item<long long>w;w=x;w=static_cast<Copies<int>::Item<long long>&&>(z);\n if(w.a!=2||w.b!=3||x.a!=2||x.b!=3)return 17;\n return 0;\n}\n"},
+      {"protocol-source", "template<class T>struct Outer{\n template<class U>struct Inner{U value;U get()const{return value;}inline static int count=sizeof(T);};\n};\nusing Same=Outer<int>::Inner<int>;\nstruct Holder{Outer<int>::Inner<int> item;};\nint readA(const Outer<int>::Inner<int>&value){return value.get();}\nint readB(const Outer<long long>::Inner<int>&value){return value.get();}\nlong long readWide(const Outer<int>::Inner<long long>&value){return value.get();}\nint*addressA(){return &Outer<int>::Inner<int>::count;}\nint*sameA(){return &Same::count;}\nint*addressB(){return &Outer<long long>::Inner<int>::count;}\nint field(const Holder&value){return value.item.value;}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dependent-member-classes-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("dependent-member-classes-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DependentMemberClassesRetainSourceAndOwnerBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"partial-parameter-hidden-unused", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"partial-parameter-hidden-used", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>::I<int,1>v;return sizeof(v);}"},
+      {"default-hidden", "template<class T>struct O{template<class U=decltype((sizeof(double),1))>struct I{int n;};};"},
+      {"argument-hidden", "template<class T>struct O{template<class U>struct I{int n;};};int f(){O<int>::I<decltype((sizeof(double),1))>v{3};return v.n;}"},
+      {"inner-pack-65", "template<int N>struct O{template<int...M>struct I{int n=N+sizeof...(M);};};int f(){O<1>::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}"},
+      {"copied-full-unused", "template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};int f(){O<int>o;return sizeof(o);}"},
+      {"copied-full-used", "template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};int f(){O<int>::I<int>v;return v.n;}"},
+      {"generic-nested-record", "template<class T>struct O{struct R{template<class U>struct I{U n;};};};"},
+      {"inner-reference-field", "template<class T>struct O{template<class U>struct I{U&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}"},
+      {"inner-virtual", "template<class T>struct O{template<class U>struct I{virtual int get(){return 3;}};};"},
+      {"selected-hidden-method", "template<class T>struct O{template<class U>struct I{int get(){double n=1.0;return 3;}};};int f(){O<int>::I<int>v;return v.get();}"},
+      {"hidden-static-init", "template<class T>struct O{template<class U>struct I{inline static int n=static_cast<int>(1.0);};};int*f(){return &O<int>::I<int>::n;}"},
+      {"copied-default-hidden-unused", "template<int N>struct O{template<class T=decltype((sizeof(double),N))>struct I{int n;};};int f(){O<3>v;return sizeof(v);}"},
+      {"copied-default-hidden-used", "template<int N>struct O{template<class T=decltype((sizeof(double),N))>struct I{int n;};};int f(){O<3>::I<>v{3};return v.n;}"},
+      {"outer-source-hidden", "template<class T>struct O{template<class U>struct I{int get(){return sizeof(T);}};};int f(){O<double>::I<int>v;return v.get();}"},
+      {"deep-pack-65", "template<class T>struct O{template<class U>struct I{template<class...V>struct J{int n=sizeof...(V);};};};int f(){O<int>::I<int>::J<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>v;return v.n;}"},
+      {"variadic-frontier-hidden-unused", "template<class T>struct O{template<class A,class...B>struct I{};template<class...U>struct I<decltype((sizeof(double),T{})),U...>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"variadic-frontier-hidden-used", "template<class T>struct O{template<class A,class...B>struct I{};template<class...U>struct I<decltype((sizeof(double),T{})),U...>{};};int f(){O<int>::I<int,bool>v;return sizeof(v);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dependent-member-classes-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("dependent-member-classes-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DependentMemberClassesRetainLanguageDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"distinct-outer", "template<class T>struct O{template<class U>struct I{U n;};};void f(){O<int>::I<int>a{3};O<bool>::I<int>b=a;}"},
+      {"distinct-inner", "template<class T>struct O{template<class U>struct I{T n;};};void f(){O<int>::I<int>a{3};O<int>::I<bool>b=a;}"},
+      {"partial-ambiguity", "template<class T>struct O{template<class U,class V>struct I;template<class U>struct I<U,int>{};template<class V>struct I<int,V>{};};O<int>::I<int,int>v;"},
+      {"no-outer-this", "template<class T>struct O{T n;template<class U>struct I{int get(){return n;}};};int f(){O<int>::I<int>v;return v.get();}"},
+      {"expanded-primary-pack-too-few", "template<class...Ts>struct O{template<Ts...Ns>struct I{int n=1;};};int f(){O<int,int>::I<1>v;return v.n;}"},
+      {"partial-frontier-safe-unused", "template<class T>struct O{template<class A,class B>struct I{};template<class...U>struct I<decltype((sizeof(int),T{})),U...>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"partial-frontier-safe-used", "template<class T>struct O{template<class A,class B>struct I{};template<class...U>struct I<decltype((sizeof(int),T{})),U...>{};};int f(){O<int>::I<int,bool>v;return sizeof(v);}"},
+      {"expanded-frontier-zero-int-unused", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<int...Ns>struct I<int,Ns...>{int n=2;};};int f(){O<int,int>o;return sizeof(o);}"},
+      {"expanded-frontier-zero-int-used", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<int...Ns>struct I<int,Ns...>{int n=2;};};int f(){O<int,int>::I<int,0,1>v;return v.n;}"},
+      {"expanded-frontier-one-int-unused", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<int...Ns>struct I<int,0,Ns...>{int n=2;};};int f(){O<int,int>o;return sizeof(o);}"},
+      {"expanded-frontier-one-int-used", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<int...Ns>struct I<int,0,Ns...>{int n=2;};};int f(){O<int,int>::I<int,0,1>v;return v.n;}"},
+      {"expanded-frontier-zero-long-long-unused", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<int...Ns>struct I<int,Ns...>{int n=2;};};int f(){O<long long,int>o;return sizeof(o);}"},
+      {"expanded-frontier-zero-long-long-used", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<int...Ns>struct I<int,Ns...>{int n=2;};};int f(){O<long long,int>::I<int,0,1>v;return v.n;}"},
+      {"expanded-frontier-one-long-long-unused", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<int...Ns>struct I<int,0,Ns...>{int n=2;};};int f(){O<long long,int>o;return sizeof(o);}"},
+      {"expanded-frontier-one-long-long-used", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<int...Ns>struct I<int,0,Ns...>{int n=2;};};int f(){O<long long,int>::I<int,0,1>v;return v.n;}"},
+      {"partial-frontier-hidden-unused", "template<class T>struct O{template<class A,class B>struct I{};template<class...U>struct I<decltype((sizeof(double),T{})),U...>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"partial-frontier-hidden-used", "template<class T>struct O{template<class A,class B>struct I{};template<class...U>struct I<decltype((sizeof(double),T{})),U...>{};};int f(){O<int>::I<int,bool>v;return sizeof(v);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dependent-member-classes-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("dependent-member-classes-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DependentMemberClassesRetainRequiredDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"used-method", "template<class T>struct O{template<class U>struct I{int get();};};int f(){O<int>::I<int>v;return v.get();}"},
+      {"used-static", "template<class T>struct O{template<class U>struct I{static int n;};};int*f(){return &O<int>::I<int>::n;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dependent-member-classes-missing-" + Name + ".cpp");
+    const auto Output = tmpFile("dependent-member-classes-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
     expectNoArtifacts(Output);
   }
 }

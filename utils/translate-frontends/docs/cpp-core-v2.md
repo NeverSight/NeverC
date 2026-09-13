@@ -1118,10 +1118,9 @@ owners include the member primary and each direct partial. Limits remain 64
 parameters/elements and the existing source-depth and total expansion budgets.
 Unsupported generic member bodies retain normal laziness until selected.
 
-The enclosing owner chain for a member class template must consist of ordinary,
-nondependent named records. A class template or its specialization as an outer
-owner requires a separate copied-member-class source contract and is not yet
-supported. Generic nested records inside a class template, local/union owners,
+Ordinary named record owners follow this contract. Templated outer owners follow
+[the dependent-owner contract](#dependent-outer-member-class-templates) below.
+Generic nested ordinary records inside a class template, local/union owners,
 inheritance, virtual dispatch, unsupported field types and allocation retain
 separate restrictions. Full C++/STL remains unfinished. Eighteen O0/O2 runtime
 checkpoints and paired protocol fixtures cover layouts, calls, storage identity,
@@ -1129,6 +1128,62 @@ lifetimes and relocation; native results require the implementing CI revision.
 Only C++ input is implemented; E Language, Python and other input frontends remain
 planned. Translation uses embedded Clang libraries without an external Clang
 executable.
+
+## Dependent outer member class templates
+
+Member class primary and partial templates can be nested inside admitted class
+primary/partial templates and concrete specializations, including multiple
+template levels. Directly written full specializations in concrete outer scopes
+and explicit own member-primary/partial specializations retain their own source
+and definition. For example:
+
+```cpp
+template<class T> struct Outer {
+  template<class U> struct Inner { T first; U second; };
+  template<class U> struct Inner<U*> { T first; U second[2]; };
+};
+template<> template<> struct Outer<int>::Inner<bool> { int result; };
+int read() {
+  Outer<int>::Inner<int*> value{1, {2, 3}};
+  return value.first + value.second[1];
+}
+```
+
+Parameter depth follows actual enclosing template contexts. An original inner
+parameter can have depth one or more; a copied primary loses substituted outer
+levels. Ordinary record scopes add no template level. Actual primaries and
+partials retain semantic argument ownership even when their instantiated body
+comes from an earlier member pattern. An explicit own member specialization
+requires a written declaration before it can stop that body-origin chain.
+
+Lexical declarations are indexed before hidden specialization lists. Newly found
+copied member primaries contribute their own hidden instances. Every written or
+copied partial retains its exact successful primary-argument source checks,
+including resolved non-type parameter types when values or pack lengths remain
+dependent. Unselected hidden copies are checked too; they cannot discard already
+resolved source. This reuses the partial-declaration contract without changing
+its actual argument slots, pack frontier rules or wire protocol.
+
+Nondependent defaults and qualifiers remain checked before erasure; dependent
+source is checked after substitution. Retained out-of-line headers, including
+renamed parameter packs and empty specialization headers, match the actual
+owner sequence. Class tags retain their own header storage. Definitions keep
+existing field layout, scalar static identity, method receiver and selected
+copy/move/assignment/destruction rules. Member function, alias and scalar
+variable templates can refer to these distinct outer and inner levels. Different
+outer instances do not share a static object merely because the final field or
+function types happen to agree.
+
+Copied class-scope full member class declarations written in a dependent outer
+class still require a separate producer contract and remain rejected. Ordinary
+nested records inside generic classes, local/union owners, inheritance, virtual
+dispatch, unsupported fields and allocation retain separate restrictions. Limits
+remain 64 parameters/elements, bounded declaration/owner depth and the total
+expansion budget. Full C++/STL remains unfinished. Paired source/protocol fixtures
+and seventeen O0/O2 runtime checkpoints require native CI from the implementing
+revision. Only C++ input is implemented; E Language, Python and other frontends
+remain planned. Translation uses embedded Clang libraries without invoking an
+external Clang executable.
 
 ## Concrete member variable templates
 

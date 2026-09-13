@@ -870,8 +870,8 @@ Member class templates in ordinary record scopes use the existing canonical
 record IDs, dependency-first field layout, method call signatures and scalar
 globals. Ordinary enclosing records add no implicit receiver or runtime template
 object. Full member declarations retain their exact argument source in the
-frontend; this adds no wire field or opcode. Templated outer record owners still
-require a separate source contract. See [member class templates](cpp-core-v2.md#ordinary-owner-member-class-templates).
+frontend; this adds no wire field or opcode. Templated outer record owners use the
+[dependent-owner contract](cpp-core-v2.md#dependent-outer-member-class-templates). See [member class templates](cpp-core-v2.md#ordinary-owner-member-class-templates).
 
 Partial declaration checks retain successful primary argument metadata in the
 embedded frontend before lowering. Written and copied declarations are distinct
@@ -881,3 +881,13 @@ positions cannot authorize concrete substitution edges. A declaration must still
 pass C++ specialization ordering and deduction checks before producing output. This does not add public
 protocol fields or opaque fallback nodes; emitted concrete values and storage
 identities retain their existing checks and relocation guarantees.
+
+Nested member class templates preserve canonical outer/inner record identity,
+dependency-first fields, concrete receiver signatures and scalar global names.
+Semantic parameter owners remain distinct from effective body origins. Hidden
+copied partial declaration checks reuse the existing source contract; no wire
+field, runtime template object or implicit enclosing receiver is added. Different
+outer arguments retain separate inner types and statics even when their final
+field types match. The paired protocol fixture checks receiver/call closure,
+shared equivalent storage and relocated-source equality. Copied class-scope full
+member class declarations from dependent outer templates remain unsupported.
