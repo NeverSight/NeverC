@@ -321,6 +321,14 @@ normal ownership rules. See the [source contract](cpp-core-v2.md#ordinary-overlo
 
 ## Core v2 conversion-function calls
 
+Deduced reference conversions use the same direct call contract. A mutable
+reference result is `ptr:T`, and a const reference is `cptr:T`; the receiver
+independently preserves its constness. Reference collapsing changes the selected
+signature before emission and introduces no wire opcode or runtime template
+parameter. Constructors and destructors still receive mutable storage even when
+a temporary is subsequently passed as a const reference. See the
+[deduced reference contract](cpp-core-v2.md#deduced-reference-conversions).
+
 A checked user-defined conversion emits the selected ordinary member `call`,
 with its receiver and no explicit source parameters. A record prvalue result
 adds the actual hidden destination before the receiver. Returned references use

@@ -2066,6 +2066,32 @@ inspected inside unused functions and noexcept queries. V1 admission is unchange
 member operator function templates, library headers and complete STL remain in development. Native evidence
 must come from the implementing revision's CI.
 
+## Deduced reference conversions
+
+Admitted ordinary classes and class-template instances support conversion
+functions whose deduced result is a reference. `operator decltype(auto)` can
+return an lvalue or rvalue reference; `operator auto&&` can collapse to an lvalue
+reference when its return expression is an lvalue. Const receivers and results,
+explicit calls/casts, out-of-line definitions and reference arguments retain
+normal C++17 selection and storage identity.
+
+The embedded frontend deduces only return forms that can become lvalue
+references before applying its reference-only candidate filter. Bare `auto`,
+`auto*`, `const auto&&` and `auto*&&` do not gain unnecessary instantiations on
+that path. `auto&` and conversions permitting rvalues use their existing
+deduction paths. Access, explicit/deleted selection, ambiguity and failed
+deduction still receive normal C++ diagnostics. Every materialized body remains
+subject to the profile's source and definition checks.
+
+Selected conversions emit ordinary typed calls with a receiver pointer and a
+`ptr:` or `cptr:` reference result. They preserve the original object or field;
+no owning copy or runtime type-deduction operation is introduced. Protocol
+fixtures check exact signatures, aliases, call closure and relocated identities.
+Native O0/O2 fixtures check mutation and single evaluation. Native results require
+CI from this implementation; full C++17/STL remains unfinished. C++ is currently
+the only input language, with other frontends planned. Clang libraries are
+embedded, and no external Clang executable is needed at translation time.
+
 ## User-defined conversion functions
 
 Core v2 admits ordinary source-owned conversion functions on live objects and

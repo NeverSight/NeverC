@@ -205,6 +205,58 @@ def isolate_math_calls(source_root):
         path.write_text(text, encoding="utf-8")
 
 
+def fix_deduced_reference_conversions(path):
+    before = """      else
+        Conv = cast<CXXConversionDecl>(D);
+
+      // If the conversion function doesn't return a reference type,
+      // it can't be considered for this conversion unless we're allowed to
+      // consider rvalues.
+      // FIXME: Do we need to make sure that we only consider conversion
+      // candidates with reference-compatible results? That might be needed to
+      // break recursion.
+      if ((AllowRValues ||
+           Conv->getConversionType()->isLValueReferenceType())) {
+        if (ConvTemplate)"""
+    insertion = """      // NeverC deduced reference conversions: determine only return forms
+      // that can become lvalue references before the reference-only filter.
+      if (!AllowRValues && !ConvTemplate && S.getLangOpts().CPlusPlus14 &&
+          Conv->getConversionType()->isUndeducedType()) {
+        QualType NeverCReturn = Conv->getConversionType();
+        const auto *NeverCAuto = NeverCReturn->getAs<AutoType>();
+        const auto *NeverCRValue = NeverCReturn->getAs<RValueReferenceType>();
+        bool NeverCCanBeLValue =
+            (NeverCAuto && NeverCAuto->isDecltypeAuto()) ||
+            (NeverCRValue &&
+             !NeverCRValue->getPointeeType().hasQualifiers() &&
+             NeverCRValue->getPointeeType()->getAs<AutoType>());
+        if (NeverCCanBeLValue &&
+            S.DeduceReturnType(Conv, Initializer->getExprLoc()))
+          continue;
+      }
+
+"""
+    after = before.replace("      // If the conversion function", insertion +
+                           "      // If the conversion function", 1)
+    error_message = "Unexpected pinned Clang deduced reference conversion source"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(error_message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if "NeverC deduced reference conversions" in remainder or "NeverCReturn" in remainder:
+        raise SystemExit(error_message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def fix_imported_namespace_defaults(source_root):
     # Check both parts before writing either private Clang source file.
     header_before = "  NamedDecl *getTargetDecl() const { return Underlying; }"
@@ -555,6 +607,7 @@ preserve_explicit_function_instantiation_source(args.source)
 fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
 fix_nested_friend_declaration_access(args.source)
 fix_imported_namespace_defaults(args.source)
+fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [

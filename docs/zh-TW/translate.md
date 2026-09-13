@@ -50,6 +50,8 @@ Core v2 也支援命名空間作用域的一般運算子函式範本。算術、
 
 Core v2 支援已准許的函式、運算子及類別範本的純量非型別參數預設值。相依於前面參數的運算式、純量 auto、繼承的預設值與已檢查的 constexpr 轉換保留 Clang 的選擇與推導規則。省略參數與明確指定等價參數時，共用函式、記錄和靜態物件。非相依預設值的原始碼會檢查；未使用的相依預設值維持按需實例化。轉換成功後保留原運算式與轉換後原始碼，替換或轉換失敗仍依一般多載回退處理。完整 C++17／STL 尚未完成；原生驗證以實作版本的 CI 為準。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-template-parameter-defaults).
 
+推導回傳型別的參考轉換保留別名及 const 屬性，包括 decltype(auto) 與 auto&& 的參考折疊。內建前端在篩選候選前推導必要的回傳型別，不實例化無關的按值回傳範本函式本體。完整 C++17／STL 尚未完成，原生驗證以實作版本的 CI 為準。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deduced-reference-conversions).
+
 ## 安裝與純量轉譯
 
 使用正常安裝的 NeverC 及其標準資源即可。C++ 前端與核准的 SDK 標頭均已內建，無需另行安裝 Clang。建置細節見[前端說明](../../utils/translate-frontends/cpp/README.md)。

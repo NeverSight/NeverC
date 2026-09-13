@@ -22,6 +22,14 @@ partial, missing and drifted states rejected before any group member is changed.
 NeverC bounds shared source evidence before retaining it and checks it after
 semantic analysis without changing declarations, overload selection or flags.
 
+A checked SemaInit.cpp patch resolves potentially lvalue-reference placeholder
+conversion results before the reference-only candidate filter. It handles bare
+decltype(auto) and unqualified bare auto&&, preserving lazy value-returning
+template bodies, the existing reference filter and normal overload diagnostics.
+The complete original or rewritten block must occur exactly once; missing,
+partial, duplicate and drifted states fail before this file is changed. Independent
+literal fixtures and paired semantic/runtime regressions cover the correction.
+
 The isolated build renames namespace llvm and selected global C/C++ symbols.
 IsolateSymbols.py applies checked, idempotent changes to the extracted
 IntrinsicInst.cpp, Debugify.h, and LoopUtils.cpp to isolate otherwise global

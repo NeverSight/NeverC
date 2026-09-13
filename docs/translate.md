@@ -50,6 +50,8 @@ These class templates also support integer, boolean and enum static data members
 
 Core v2 supports scalar non-type template parameter defaults for admitted function, operator and class templates. Earlier parameters, scalar auto, inherited defaults and checked constexpr conversions retain Clang selection and deduction. Equivalent omitted/explicit arguments share functions, records and static objects. Nondependent written defaults are checked; unused dependent defaults stay lazy. Successful conversions preserve original and converted source, while failed substitution/conversion keeps normal overload fallback. Full C++17/STL remains unfinished; native validation requires implementing CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-template-parameter-defaults).
 
+Deduced reference conversions preserve aliases and constness, including decltype(auto) and auto&& reference collapsing. The embedded frontend resolves candidate return types while keeping unrelated value-returning template bodies lazy. Complete C++17/STL remains unfinished; native validation requires implementing CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#deduced-reference-conversions).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

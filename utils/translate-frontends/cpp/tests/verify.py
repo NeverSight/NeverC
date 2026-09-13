@@ -6172,9 +6172,12 @@ int closedOverloads(){return Captured::select(true);}
     assert len(lifetime_calls) == 3 and lifetime_calls[1]["callee"] == lifetime["name"]
     constructor, destructor = [di_functions[lifetime_calls[i]["callee"]] for i in (0, 2)]
     receiver = lifetime["params"][0]["type"]
-    assert receiver.startswith("ptr:")
-    assert [p["type"] for p in constructor["params"]] == [receiver, "int"]
-    assert [p["type"] for p in destructor["params"]] == [receiver]
+    assert receiver.startswith("cptr:")
+    record_id = receiver[5:]
+    assert record_id in {r["id"] for r in imported_defaults["records"]}
+    mutable_receiver = "ptr:" + record_id
+    assert [p["type"] for p in constructor["params"]] == [mutable_receiver, "int"]
+    assert [p["type"] for p in destructor["params"]] == [mutable_receiver]
     caller = di_function("int temporaryDefault(")
     assert gc_identity(caller, lifetime_calls[0]["args"][1]) == 5
     assert np_pointer(caller, lifetime_calls[0]["args"][0]) == np_pointer(caller, lifetime_calls[1]["args"][0])
@@ -6287,8 +6290,12 @@ int grantedCall(){return granted(6);}
     assert len(calls) == 3 and calls[1]["callee"] == guard["name"]
     constructor, destructor = [fd_functions[calls[i]["callee"]] for i in (0, 2)]
     guard_pointer = guard["params"][1]["type"]
-    assert [p["type"] for p in constructor["params"]] == [guard_pointer, "int"]
-    assert [p["type"] for p in destructor["params"]] == [guard_pointer]
+    assert guard_pointer.startswith("cptr:")
+    guard_record = guard_pointer[5:]
+    assert guard_record in {r["id"] for r in friend_declarations["records"]}
+    mutable_guard = "ptr:" + guard_record
+    assert [p["type"] for p in constructor["params"]] == [mutable_guard, "int"]
+    assert [p["type"] for p in destructor["params"]] == [mutable_guard]
     assert gc_identity(caller, calls[0]["args"][1]) == 5
     assert np_pointer(caller, calls[0]["args"][0]) == np_pointer(caller, calls[1]["args"][1])
     assert np_pointer(caller, calls[0]["args"][0]) == np_pointer(caller, calls[2]["args"][0])
@@ -6439,6 +6446,135 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     }
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+
+    deduced_reference_source = """template<class T>struct Box{
+ T n;
+ operator decltype(auto)()&{return (n);}
+ operator decltype(auto)()const&{return (n);}
+};
+template<class T>struct Collapse{
+ T n;
+ operator auto&&(){return (n);}
+};
+template<class T>struct Move{
+ T n;
+ operator decltype(auto)(){return static_cast<T&&>(n);}
+};
+template<class T>struct Outside{T n;operator decltype(auto)();};
+template<class T>Outside<T>::operator decltype(auto)(){return (n);}
+int&mutableValue(Box<int>&r){return r;}
+const int&constValue(const Box<int>&r){return r;}
+int&explicitValue(Box<int>&r){return r.operator decltype(auto)();}
+int&collapsedValue(Collapse<int>&r){return r;}
+int&&movedValue(Move<int>&r){return r;}
+int&outsideValue(Outside<int>&r){return r;}
+"""
+    deduced_reference = check("v2-deduced-reference-protocol", deduced_reference_source, profile="cpp-core-v2")
+    dr_functions = {f["name"]: f for f in deduced_reference["functions"]}
+    dr_records = {r["id"]: r for r in deduced_reference["records"]}
+    assert len(dr_functions) == len(deduced_reference["functions"])
+    assert len(dr_records) == len(deduced_reference["records"]) == 4
+
+    def dr_line(prefix):
+        lines = [i for i, line in enumerate(deduced_reference_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def dr_function(prefix):
+        functions = [f for f in dr_functions.values() if f["loc"]["line"] == dr_line(prefix)]
+        assert len(functions) == 1, (prefix, functions)
+        return functions[0]
+
+    selected = {}
+    for prefix, result, receiver_kind, target_prefix in (
+            ("int&mutableValue(", "ptr:int", "ptr:", " operator decltype(auto)()&"),
+            ("const int&constValue(", "cptr:int", "cptr:", " operator decltype(auto)()const&"),
+            ("int&explicitValue(", "ptr:int", "ptr:", " operator decltype(auto)()&"),
+            ("int&collapsedValue(", "ptr:int", "ptr:", " operator auto&&()"),
+            ("int&&movedValue(", "ptr:int", "ptr:", " operator decltype(auto)(){"),
+            ("int&outsideValue(", "ptr:int", "ptr:", "template<class T>Outside<T>::operator")):
+        caller = dr_function(prefix)
+        assert caller["result"] == result and len(caller["params"]) == 1
+        receiver = caller["params"][0]["type"]
+        assert receiver.startswith(receiver_kind)
+        record = dr_records[receiver[len(receiver_kind):]]
+        assert [f["type"] for f in record["fields"]] == ["int"]
+        calls = gc_calls(caller)
+        assert len(calls) == 1
+        target = dr_functions[calls[0]["callee"]]
+        selected[prefix] = target["name"]
+        assert target["result"] == result and [p["type"] for p in target["params"]] == [receiver]
+        assert target["loc"]["line"] == dr_line(target_prefix)
+        assert np_pointer(caller, calls[0]["args"][0]) == ("parameter", caller["params"][0]["name"])
+        returned = [n["value"] for n in target["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and not gc_calls(target)
+        assert np_pointer(target, returned[0]) == ("field", ("parameter", target["params"][0]["name"]), record["fields"][0]["name"])
+        forwarded = [n["value"] for n in caller["body"] if n["op"] == "return"]
+        assert len(forwarded) == 1 and di_call_result(caller, forwarded[0]) == calls[0]["target"]["name"]
+    assert selected["int&mutableValue("] == selected["int&explicitValue("]
+    assert len(set(selected.values())) == 5
+    for function in dr_functions.values():
+        for call in gc_calls(function):
+            assert call["callee"] in dr_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in dr_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-deduced-reference-relocated-") as temp:
+        relocated = check("v2-deduced-reference-relocated", deduced_reference_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == deduced_reference
+
+    deduced_reference_positive = {
+        'ordinary-lvalue': 'struct R{int n;operator decltype(auto)(){return (n);}};int&f(R&r){return r;}',
+        'template-lvalue': 'template<class T>struct R{T n;operator decltype(auto)(){return (n);}};int&f(R<int>&r){return r;}',
+        'const-receiver': 'template<class T>struct R{T n;operator decltype(auto)()const{return (n);}};const int&f(const R<int>&r){return r;}',
+        'const-target': 'template<class T>struct R{T n;operator decltype(auto)(){return (n);}};const int&f(R<int>&r){return r;}',
+        'collapsed-auto-rvalue': 'template<class T>struct R{T n;operator auto&&(){return (n);}};int&f(R<int>&r){return r;}',
+        'existing-auto-lvalue': 'template<class T>struct R{T n;operator auto&(){return n;}};int&f(R<int>&r){return r;}',
+        'deduced-rvalue': 'template<class T>struct R{T n;operator decltype(auto)(){return static_cast<T&&>(n);}};int&&f(R<int>&r){return r;}',
+        'auto-rvalue-result': 'template<class T>struct R{T n;operator auto&&(){return static_cast<T&&>(n);}};int&&f(R<int>&r){return r;}',
+        'explicit-call': 'template<class T>struct R{T n;operator decltype(auto)(){return (n);}};int&f(R<int>&r){return r.operator decltype(auto)();}',
+        'explicit-cast': 'template<class T>struct R{T n;explicit operator decltype(auto)(){return (n);}};int&f(R<int>&r){return static_cast<int&>(r);}',
+        'out-of-line': 'template<class T>struct R{T n;operator decltype(auto)();};template<class T>R<T>::operator decltype(auto)(){return (n);}int&f(R<int>&r){return r;}',
+        'reference-argument': 'template<class T>struct R{T n;operator decltype(auto)(){return (n);}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
+        'deduced-value': 'template<class T>struct R{T n;operator decltype(auto)(){return n;}};int f(R<int>&r){return r;}',
+        'unused-value-body': 'template<class T>struct R{T n;operator int&(){return n;}operator auto(){return T::missing;}};int&f(R<int>&r){return r;}',
+        'unused-const-rvalue-body': 'template<class T>struct R{T n;operator int&(){return n;}operator const auto&&(){return T::missing;}};int&f(R<int>&r){return r;}',
+        'unused-pointer-rvalue-body': 'template<class T>struct R{T n;operator int&(){return n;}operator auto*&&(){return T::missing;}};int&f(R<int>&r){return r;}',
+        'unused-pointer-body': 'template<class T>struct R{T n;operator int&(){return n;}operator auto*(){return T::missing;}};int&f(R<int>&r){return r;}',
+        'protocol-source': 'template<class T>struct Box{\n T n;\n operator decltype(auto)()&{return (n);}\n operator decltype(auto)()const&{return (n);}\n};\ntemplate<class T>struct Collapse{\n T n;\n operator auto&&(){return (n);}\n};\ntemplate<class T>struct Move{\n T n;\n operator decltype(auto)(){return static_cast<T&&>(n);}\n};\ntemplate<class T>struct Outside{T n;operator decltype(auto)();};\ntemplate<class T>Outside<T>::operator decltype(auto)(){return (n);}\nint&mutableValue(Box<int>&r){return r;}\nconst int&constValue(const Box<int>&r){return r;}\nint&explicitValue(Box<int>&r){return r.operator decltype(auto)();}\nint&collapsedValue(Collapse<int>&r){return r;}\nint&&movedValue(Move<int>&r){return r;}\nint&outsideValue(Outside<int>&r){return r;}\n',
+    }
+    for name, source in deduced_reference_positive.items():
+        check("v2-deduced-reference-positive-" + name, source, profile="cpp-core-v2")
+
+    deduced_reference_reject = {
+        'deduced-floating-source': 'template<class T>struct R{T n;operator decltype(auto)(){n=int(1.0);return (n);}};int&f(R<int>&r){return r;}',
+        'collapsed-floating-source': 'template<class T>struct R{T n;operator auto&&(){n=int(1.0);return (n);}};int&f(R<int>&r){return r;}',
+    }
+    for name, source in deduced_reference_reject.items():
+        check("v2-deduced-reference-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+
+    deduced_reference_invalid = {
+        'value-to-lvalue': 'template<class T>struct R{T n;operator decltype(auto)(){return n;}};int&f(R<int>&r){return r;}',
+        'rvalue-to-lvalue': 'template<class T>struct R{T n;operator auto&&(){return static_cast<T&&>(n);}};int&f(R<int>&r){return r;}',
+        'const-to-mutable': 'template<class T>struct R{T n;operator decltype(auto)()const{return (n);}};int&f(const R<int>&r){return r;}',
+        'explicit-implicit': 'template<class T>struct R{T n;explicit operator decltype(auto)(){return (n);}};int&f(R<int>&r){return r;}',
+        'private': 'template<class T>class R{T n;operator decltype(auto)(){return (n);}};int&f(R<int>&r){return r;}',
+        'deleted': 'template<class T>struct R{operator int&()=delete;};int&f(R<int>&r){return r;}',
+        'ambiguous': 'template<class T>struct R{T n;operator decltype(auto)(){return (n);}operator auto&&(){return (n);}};int&f(R<int>&r){return r;}',
+        'deduction-error': 'template<class T>struct R{operator decltype(auto)(){return T::missing;}};int&f(R<int>&r){return r;}',
+        'selected-value-error': 'template<class T>struct R{operator auto(){return T::missing;}};int f(R<int>&r){return r;}',
+        'function-extern-after-definition': 'template<class T>T f(T n){return n;}template int f<int>(int);extern template int f<int>(int);',
+        'operator-extern-after-definition': 'struct R{int n;};template<class T>int operator+(R r,T n){return r.n+n;}template int operator+<int>(R,int);extern template int operator+<int>(R,int);',
+        'static-extern-after-definition': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=3;template int R<int>::n;extern template int R<int>::n;',
+    }
+    for name, source in deduced_reference_invalid.items():
+        check("v2-deduced-reference-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
+
+    deduced_reference_missing = {
+        'signature-only-operator': 'template<class T>struct R{int operator()()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){return noexcept(r());}',
+        'signature-only-conversion': 'template<class T>struct R{operator int()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){return noexcept(r.operator int());}',
+    }
+    for name, source in deduced_reference_missing.items():
+        check("v2-deduced-reference-missing-" + name, source, "TR0203", profile="cpp-core-v2")
 
     scalar_defaults_source = 'template<int N=3>int&slot(){static int n=N;return n;}\nint&omitted(){return slot();}\nint&explicitSame(){return slot<3>();}\nint&different(){return slot<4>();}\ntemplate<auto N=3u>auto tick(){static decltype(N)n=N;return ++n;}\nunsigned defaultTick(){return tick();}\nunsigned explicitTick(){return tick<3u>();}\nint signedTick(){return tick<3>();}\ntemplate<class T=int,int N=3,int M=N+2>struct Box{\n T values[N];\n inline static int shared=M;\n};\nint sizeDefault(){return sizeof(Box<>);}\nint sizeSame(){return sizeof(Box<int,3,5>);}\nint sizeDifferent(){return sizeof(Box<int,4>);}\nint staticDefault(){return Box<>::shared;}\nint staticSame(){return Box<int,3,5>::shared;}\nint staticDifferent(){return Box<int,4>::shared;}\nBox<>make(){return Box<>{{1,2,3}};}\nint&alias(Box<int,3,5>&r){return r.values[1];}\nstruct Token{int n;};\ntemplate<int N=4>int operator+(Token r,int n){return r.n+n+N;}\nint operatorDefault(){return Token{3}+2;}\nint operatorExplicit(){return operator+<4>(Token{3},2);}\nint operatorDifferent(){return operator+<5>(Token{3},2);}\nstruct Constant{constexpr operator int()const{return 3;}};\ntemplate<class T,int N=T{}>int converted(){return N;}\nint convertedDefault(){return converted<Constant>();}\ntemplate<int N>int inherited();\ntemplate<int N=6>int inherited(){return N;}\nint inheritedDefault(){return inherited();}\nint inheritedSame(){return inherited<6>();}\n'
     scalar_defaults = check("v2-scalar-default-protocol", scalar_defaults_source, profile="cpp-core-v2")
@@ -6633,7 +6769,7 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     for name, source in scalar_defaults_missing.items():
         check("v2-scalar-default-missing-" + name, source, "TR0203", profile="cpp-core-v2")
 
-    class_static_source = 'template<class T,int N>struct Store{\n inline static T value=T(N);\n inline static T unused;\n static constexpr T limit=T(N+2);\n static const int tag=N+1;\n T instance;\n};\nint valueA(){return Store<int,3>::value;}\nint valueAlias(){using A=Store<int,1+2>;return A::value;}\nint valueB(){return Store<int,4>::value;}\nint&referenceA(){return Store<int,3>::value;}\nconst int*limitAddress(){return &Store<int,3>::limit;}\nint tagA(){return Store<int,3>::tag;}\nint tagB(){return Store<int,4>::tag;}\nint queryTag(){return sizeof(&Store<int,3>::tag);}\nStore<int,3>&touch(Store<int,3>&r){++r.instance;return r;}\nint receiver(Store<int,3>&r){return touch(r).value;}\nint mutate(const Store<int,3>&r){return ++r.value;}\ntemplate int Store<int,3>::value;\nextern template int Store<int,3>::value;\ntemplate<class T>struct Outside{static T value;};\ntemplate<class T>T Outside<T>::value=T(7);\ntemplate<>int Outside<int>::value=9;\nint externalInt(){return Outside<int>::value;}\nunsigned externalUnsigned(){return Outside<unsigned>::value;}\nextern template unsigned Outside<unsigned>::value;\ntemplate unsigned Outside<unsigned>::value;\nextern template unsigned Outside<unsigned>::value;\ntemplate<class T>struct Lazy{static int missing;inline static int unused=T::missing;};\nint queryLazy(){return sizeof(Lazy<int>);}\ntemplate<class T>struct Life{inline static T value=T(8);Life(){}~Life(){}};\nint&lasting(){return Life<int>{}.value;}\n'
+    class_static_source = 'template<class T,int N>struct Store{\n inline static T value=T(N);\n inline static T unused;\n static constexpr T limit=T(N+2);\n static const int tag=N+1;\n T instance;\n};\nint valueA(){return Store<int,3>::value;}\nint valueAlias(){using A=Store<int,1+2>;return A::value;}\nint valueB(){return Store<int,4>::value;}\nint&referenceA(){return Store<int,3>::value;}\nconst int*limitAddress(){return &Store<int,3>::limit;}\nint tagA(){return Store<int,3>::tag;}\nint tagB(){return Store<int,4>::tag;}\nint queryTag(){return sizeof(&Store<int,3>::tag);}\nStore<int,3>&touch(Store<int,3>&r){++r.instance;return r;}\nint receiver(Store<int,3>&r){return touch(r).value;}\nint mutate(const Store<int,3>&r){return ++r.value;}\nextern template int Store<int,3>::value;\ntemplate int Store<int,3>::value;\ntemplate<class T>struct Outside{static T value;};\ntemplate<class T>T Outside<T>::value=T(7);\ntemplate<>int Outside<int>::value=9;\nint externalInt(){return Outside<int>::value;}\nunsigned externalUnsigned(){return Outside<unsigned>::value;}\nextern template unsigned Outside<unsigned>::value;\nextern template unsigned Outside<unsigned>::value;\ntemplate unsigned Outside<unsigned>::value;\ntemplate<class T>struct Lazy{static int missing;inline static int unused=T::missing;};\nint queryLazy(){return sizeof(Lazy<int>);}\ntemplate<class T>struct Life{inline static T value=T(8);Life(){}~Life(){}};\nint&lasting(){return Life<int>{}.value;}\n'
     class_static = check("v2-class-static-protocol", class_static_source, profile="cpp-core-v2")
     cs_functions = {f["name"]: f for f in class_static["functions"]}
     cs_records = {r["id"]: r for r in class_static["records"]}
@@ -6770,14 +6906,14 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
         'class-extern-definition': 'template<class T>struct R{inline static T n=3;};extern template struct R<int>;template struct R<int>;',
         'member-explicit': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;',
         'member-extern-definition': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);extern template int R<int>::n;template int R<int>::n;',
-        'member-repeat': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);extern template int R<int>::n;extern template int R<int>::n;template int R<int>::n;extern template int R<int>::n;',
+        'member-repeat': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);extern template int R<int>::n;extern template int R<int>::n;extern template int R<int>::n;template int R<int>::n;',
         'member-after-use': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);int f(){return R<int>::n;}template int R<int>::n;',
         'member-specialization': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template<>int R<int>::n=7;int f(){return R<int>::n+R<unsigned>::n;}',
         'member-after-specialization': 'template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template<>int R<int>::n=7;template int R<int>::n;',
         'full-specialization': 'template<class T>struct R{inline static T n=3;};template<>struct R<int>{inline static int n=9;};int f(){return R<int>::n+R<unsigned>::n;}',
         'namespace-alias': 'namespace N{template<class T>struct R{inline static T n=T(3);};}namespace A=N;template int A::R<int>::n;int f(){return A::R<int>::n;}',
         'explicit-const-type': 'template<class T>struct R{static const int n=3;};template<class T>const int R<T>::n;template const int R<int>::n;',
-        'protocol-source': 'template<class T,int N>struct Store{\n inline static T value=T(N);\n inline static T unused;\n static constexpr T limit=T(N+2);\n static const int tag=N+1;\n T instance;\n};\nint valueA(){return Store<int,3>::value;}\nint valueAlias(){using A=Store<int,1+2>;return A::value;}\nint valueB(){return Store<int,4>::value;}\nint&referenceA(){return Store<int,3>::value;}\nconst int*limitAddress(){return &Store<int,3>::limit;}\nint tagA(){return Store<int,3>::tag;}\nint tagB(){return Store<int,4>::tag;}\nint queryTag(){return sizeof(&Store<int,3>::tag);}\nStore<int,3>&touch(Store<int,3>&r){++r.instance;return r;}\nint receiver(Store<int,3>&r){return touch(r).value;}\nint mutate(const Store<int,3>&r){return ++r.value;}\ntemplate int Store<int,3>::value;\nextern template int Store<int,3>::value;\ntemplate<class T>struct Outside{static T value;};\ntemplate<class T>T Outside<T>::value=T(7);\ntemplate<>int Outside<int>::value=9;\nint externalInt(){return Outside<int>::value;}\nunsigned externalUnsigned(){return Outside<unsigned>::value;}\nextern template unsigned Outside<unsigned>::value;\ntemplate unsigned Outside<unsigned>::value;\nextern template unsigned Outside<unsigned>::value;\ntemplate<class T>struct Lazy{static int missing;inline static int unused=T::missing;};\nint queryLazy(){return sizeof(Lazy<int>);}\ntemplate<class T>struct Life{inline static T value=T(8);Life(){}~Life(){}};\nint&lasting(){return Life<int>{}.value;}\n',
+        'protocol-source': 'template<class T,int N>struct Store{\n inline static T value=T(N);\n inline static T unused;\n static constexpr T limit=T(N+2);\n static const int tag=N+1;\n T instance;\n};\nint valueA(){return Store<int,3>::value;}\nint valueAlias(){using A=Store<int,1+2>;return A::value;}\nint valueB(){return Store<int,4>::value;}\nint&referenceA(){return Store<int,3>::value;}\nconst int*limitAddress(){return &Store<int,3>::limit;}\nint tagA(){return Store<int,3>::tag;}\nint tagB(){return Store<int,4>::tag;}\nint queryTag(){return sizeof(&Store<int,3>::tag);}\nStore<int,3>&touch(Store<int,3>&r){++r.instance;return r;}\nint receiver(Store<int,3>&r){return touch(r).value;}\nint mutate(const Store<int,3>&r){return ++r.value;}\nextern template int Store<int,3>::value;\ntemplate int Store<int,3>::value;\ntemplate<class T>struct Outside{static T value;};\ntemplate<class T>T Outside<T>::value=T(7);\ntemplate<>int Outside<int>::value=9;\nint externalInt(){return Outside<int>::value;}\nunsigned externalUnsigned(){return Outside<unsigned>::value;}\nextern template unsigned Outside<unsigned>::value;\nextern template unsigned Outside<unsigned>::value;\ntemplate unsigned Outside<unsigned>::value;\ntemplate<class T>struct Lazy{static int missing;inline static int unused=T::missing;};\nint queryLazy(){return sizeof(Lazy<int>);}\ntemplate<class T>struct Life{inline static T value=T(8);Life(){}~Life(){}};\nint&lasting(){return Life<int>{}.value;}\n',
     }
     for name, source in class_static_positive.items():
         check("v2-class-static-positive-"+name, source, profile="cpp-core-v2")
@@ -6843,7 +6979,7 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
 
     check("class-static-legacy", 'template<class T>struct R{inline static T n=3;};int f(){return ++R<int>::n;}', code="TR0201")
 
-    free_operators_source = 'template<class T,int N>struct Cursor{T*p;};\ntemplate<class T,int N>T&operator*(const Cursor<T,N>&r){return *r.p;}\ntemplate<class T,int N>Cursor<T,N>&operator++(Cursor<T,N>&r){++r.p;return r;}\ntemplate<class T,int N>Cursor<T,N>operator++(Cursor<T,N>&r,int){T*p=r.p;++r.p;return Cursor<T,N>{p};}\ntemplate<class T,int N>Cursor<T,N>operator+(const Cursor<T,N>&r,int n){return Cursor<T,N>{r.p+n};}\ntemplate<class T,int N>Cursor<T,N>&operator+=(Cursor<T,N>&r,int n){r.p+=n;return r;}\ntemplate<class T,int N>bool operator&&(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p&&b.p;}\ntemplate<class T,int N>bool operator||(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p||b.p;}\ntemplate<class T,int N>Cursor<T,N>&operator,(Cursor<T,N>&a,Cursor<T,N>&b){return b;}\ntemplate<class T,int N>int operator<<(const Cursor<T,N>&r,int n){return n;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)+=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return operator+=(left(r),right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nint shift(Cursor<int,3>&r){return left(r)<<right();}\ntemplate int&operator*<int,3>(const Cursor<int,3>&);\nextern template int&operator*<int,3>(const Cursor<int,3>&);\nstruct Count{int n;};\ntemplate<auto N>int operator+(Count r){\n struct Local{int n;int get()const{return n;}};\n Local l{N};static int count=0;return r.n+l.get()+(++count);\n}\nint countA(Count r){return operator+<3>(r);}\nint countAlias(Count r){return operator+<1+2>(r);}\nint countB(Count r){return operator+<3u>(r);}\nextern template int operator+<3>(Count);\ntemplate int operator+<1+2>(Count);\nextern template int operator+<3>(Count);\ntemplate<class T>int operator-(Cursor<T,3>&r){static int count=0;return ++count;}\ntemplate<class T>int operator-(const Cursor<T,3>&r){static int count=0;return ++count;}\nint mutableCount(Cursor<int,3>&r){return -r;}\nint constCount(const Cursor<int,3>&r){return -r;}\nstruct Build{int n;};\nstruct Life{int n;Life(int v):n(v){}~Life(){}};\ntemplate<class T>Life operator+(Build r,T n){return Life(r.n+n);}\nLife create(Build r,int n){return r+n;}\nint extended(Build r){const Life&v=r+3;return v.n;}\n'
+    free_operators_source = 'template<class T,int N>struct Cursor{T*p;};\ntemplate<class T,int N>T&operator*(const Cursor<T,N>&r){return *r.p;}\ntemplate<class T,int N>Cursor<T,N>&operator++(Cursor<T,N>&r){++r.p;return r;}\ntemplate<class T,int N>Cursor<T,N>operator++(Cursor<T,N>&r,int){T*p=r.p;++r.p;return Cursor<T,N>{p};}\ntemplate<class T,int N>Cursor<T,N>operator+(const Cursor<T,N>&r,int n){return Cursor<T,N>{r.p+n};}\ntemplate<class T,int N>Cursor<T,N>&operator+=(Cursor<T,N>&r,int n){r.p+=n;return r;}\ntemplate<class T,int N>bool operator&&(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p&&b.p;}\ntemplate<class T,int N>bool operator||(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p||b.p;}\ntemplate<class T,int N>Cursor<T,N>&operator,(Cursor<T,N>&a,Cursor<T,N>&b){return b;}\ntemplate<class T,int N>int operator<<(const Cursor<T,N>&r,int n){return n;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)+=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return operator+=(left(r),right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nint shift(Cursor<int,3>&r){return left(r)<<right();}\nextern template int&operator*<int,3>(const Cursor<int,3>&);\ntemplate int&operator*<int,3>(const Cursor<int,3>&);\nstruct Count{int n;};\ntemplate<auto N>int operator+(Count r){\n struct Local{int n;int get()const{return n;}};\n Local l{N};static int count=0;return r.n+l.get()+(++count);\n}\nint countA(Count r){return operator+<3>(r);}\nint countAlias(Count r){return operator+<1+2>(r);}\nint countB(Count r){return operator+<3u>(r);}\nextern template int operator+<3>(Count);\nextern template int operator+<3>(Count);\ntemplate int operator+<1+2>(Count);\ntemplate<class T>int operator-(Cursor<T,3>&r){static int count=0;return ++count;}\ntemplate<class T>int operator-(const Cursor<T,3>&r){static int count=0;return ++count;}\nint mutableCount(Cursor<int,3>&r){return -r;}\nint constCount(const Cursor<int,3>&r){return -r;}\nstruct Build{int n;};\nstruct Life{int n;Life(int v):n(v){}~Life(){}};\ntemplate<class T>Life operator+(Build r,T n){return Life(r.n+n);}\nLife create(Build r,int n){return r+n;}\nint extended(Build r){const Life&v=r+3;return v.n;}\n'
     free_operators = check("v2-free-operators-protocol", free_operators_source, profile="cpp-core-v2")
     fo_functions = {f["name"]: f for f in free_operators["functions"]}
     fo_records = {r["id"]: r for r in free_operators["records"]}
@@ -6996,7 +7132,7 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
         'declaration-definition': 'struct R{int n;};template<class T>int operator+(R,T);template<class T>int operator+(R r,T n){return r.n+n;}int f(){return R{3}+4;}',
         'specialization': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return r.n+n+1;}int f(){R r{3};return r+4;}',
         'instantiation': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template int operator+<int>(const R&,int);',
-        'extern-definition': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}extern template int operator+<int>(const R&,int);template int operator+<int>(const R&,int);extern template int operator+<int>(const R&,int);',
+        'extern-definition': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}extern template int operator+<int>(const R&,int);extern template int operator+<int>(const R&,int);template int operator+<int>(const R&,int);',
         'instantiation-after-specialization': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return r.n+n+1;}template int operator+<int>(const R&,int);',
         'scalar-argument': 'struct R{int n;};template<int N>int operator+(const R&r,const R&s){return r.n+s.n+N;}template int operator+<1+2>(const R&,const R&);int f(){R r{3};return operator+<3>(r,r);}',
         'deduced-scalar': 'template<class T,int N>struct R{T n;};template<class T,int N>T operator+(const R<T,N>&r,T n){return r.n+n+N;}int f(){R<int,3>r{4};return r+5;}',
@@ -7012,7 +7148,7 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
         'constexpr-query': 'struct R{int n;};template<class T>constexpr int operator+(R r,T n){return r.n+n;}static_assert(R{3}+4==7);int f(){return sizeof(R{3}+4);}',
         'enum-operand': 'enum class E:int{v=3};template<class T>int operator+(E e,T n){return int(e)+n;}int f(){return E::v+4;}',
         'iterator-range': 'template<class T>struct Iterator{T*p;};template<class T>T&operator*(const Iterator<T>&r){return *r.p;}template<class T>Iterator<T>&operator++(Iterator<T>&r){++r.p;return r;}template<class T>bool operator!=(const Iterator<T>&a,const Iterator<T>&b){return a.p!=b.p;}template<class T,int N>struct Range{T data[N];Iterator<T>begin(){return Iterator<T>{data};}Iterator<T>end(){return Iterator<T>{data+N};}};int f(){Range<int,3>r{{1,2,3}};int sum=0;for(int&n:r){++n;sum+=n;}return sum;}',
-        'protocol-source': 'template<class T,int N>struct Cursor{T*p;};\ntemplate<class T,int N>T&operator*(const Cursor<T,N>&r){return *r.p;}\ntemplate<class T,int N>Cursor<T,N>&operator++(Cursor<T,N>&r){++r.p;return r;}\ntemplate<class T,int N>Cursor<T,N>operator++(Cursor<T,N>&r,int){T*p=r.p;++r.p;return Cursor<T,N>{p};}\ntemplate<class T,int N>Cursor<T,N>operator+(const Cursor<T,N>&r,int n){return Cursor<T,N>{r.p+n};}\ntemplate<class T,int N>Cursor<T,N>&operator+=(Cursor<T,N>&r,int n){r.p+=n;return r;}\ntemplate<class T,int N>bool operator&&(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p&&b.p;}\ntemplate<class T,int N>bool operator||(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p||b.p;}\ntemplate<class T,int N>Cursor<T,N>&operator,(Cursor<T,N>&a,Cursor<T,N>&b){return b;}\ntemplate<class T,int N>int operator<<(const Cursor<T,N>&r,int n){return n;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)+=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return operator+=(left(r),right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nint shift(Cursor<int,3>&r){return left(r)<<right();}\ntemplate int&operator*<int,3>(const Cursor<int,3>&);\nextern template int&operator*<int,3>(const Cursor<int,3>&);\nstruct Count{int n;};\ntemplate<auto N>int operator+(Count r){\n struct Local{int n;int get()const{return n;}};\n Local l{N};static int count=0;return r.n+l.get()+(++count);\n}\nint countA(Count r){return operator+<3>(r);}\nint countAlias(Count r){return operator+<1+2>(r);}\nint countB(Count r){return operator+<3u>(r);}\nextern template int operator+<3>(Count);\ntemplate int operator+<1+2>(Count);\nextern template int operator+<3>(Count);\ntemplate<class T>int operator-(Cursor<T,3>&r){static int count=0;return ++count;}\ntemplate<class T>int operator-(const Cursor<T,3>&r){static int count=0;return ++count;}\nint mutableCount(Cursor<int,3>&r){return -r;}\nint constCount(const Cursor<int,3>&r){return -r;}\nstruct Build{int n;};\nstruct Life{int n;Life(int v):n(v){}~Life(){}};\ntemplate<class T>Life operator+(Build r,T n){return Life(r.n+n);}\nLife create(Build r,int n){return r+n;}\nint extended(Build r){const Life&v=r+3;return v.n;}\n',
+        'protocol-source': 'template<class T,int N>struct Cursor{T*p;};\ntemplate<class T,int N>T&operator*(const Cursor<T,N>&r){return *r.p;}\ntemplate<class T,int N>Cursor<T,N>&operator++(Cursor<T,N>&r){++r.p;return r;}\ntemplate<class T,int N>Cursor<T,N>operator++(Cursor<T,N>&r,int){T*p=r.p;++r.p;return Cursor<T,N>{p};}\ntemplate<class T,int N>Cursor<T,N>operator+(const Cursor<T,N>&r,int n){return Cursor<T,N>{r.p+n};}\ntemplate<class T,int N>Cursor<T,N>&operator+=(Cursor<T,N>&r,int n){r.p+=n;return r;}\ntemplate<class T,int N>bool operator&&(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p&&b.p;}\ntemplate<class T,int N>bool operator||(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p||b.p;}\ntemplate<class T,int N>Cursor<T,N>&operator,(Cursor<T,N>&a,Cursor<T,N>&b){return b;}\ntemplate<class T,int N>int operator<<(const Cursor<T,N>&r,int n){return n;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)+=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return operator+=(left(r),right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nint shift(Cursor<int,3>&r){return left(r)<<right();}\nextern template int&operator*<int,3>(const Cursor<int,3>&);\ntemplate int&operator*<int,3>(const Cursor<int,3>&);\nstruct Count{int n;};\ntemplate<auto N>int operator+(Count r){\n struct Local{int n;int get()const{return n;}};\n Local l{N};static int count=0;return r.n+l.get()+(++count);\n}\nint countA(Count r){return operator+<3>(r);}\nint countAlias(Count r){return operator+<1+2>(r);}\nint countB(Count r){return operator+<3u>(r);}\nextern template int operator+<3>(Count);\nextern template int operator+<3>(Count);\ntemplate int operator+<1+2>(Count);\ntemplate<class T>int operator-(Cursor<T,3>&r){static int count=0;return ++count;}\ntemplate<class T>int operator-(const Cursor<T,3>&r){static int count=0;return ++count;}\nint mutableCount(Cursor<int,3>&r){return -r;}\nint constCount(const Cursor<int,3>&r){return -r;}\nstruct Build{int n;};\nstruct Life{int n;Life(int v):n(v){}~Life(){}};\ntemplate<class T>Life operator+(Build r,T n){return Life(r.n+n);}\nLife create(Build r,int n){return r+n;}\nint extended(Build r){const Life&v=r+3;return v.n;}\n',
     }
     for name, source in free_operators_positive.items():
         check("v2-free-operators-positive-"+name, source, profile="cpp-core-v2")
@@ -7064,7 +7200,7 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
 
     check("free-operator-legacy", 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}int f(){R r{3};return r+4;}', code="TR0201")
 
-    template_source_source = 'template<class T>T evaluate(T x){\n struct Local{\n  T value;\n  T get()const{return value;}\n  int next(){static int count=0;return ++count;}\n };\n Local l{x};return l.get()+l.next();\n}\nint signedValue(int n){return evaluate(n);}\nunsigned unsignedValue(unsigned n){return evaluate(n);}\ntemplate int evaluate<int>(int);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate unsigned evaluate<unsigned>(unsigned);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate<class T>T&alias(T&x){\n struct Reference{\n  T*p;\n  T&get(){return *p;}\n };\n Reference r{&x};return r.get();\n}\nint&reference(int&n){return alias(n);}\ntemplate<class T>T lifetime(T x){\n struct Life{\n  T value;\n  Life(T n):value(n){}\n  ~Life(){}\n  T read()const{return value;}\n };\n Life r(x);return r.read();\n}\nint lived(int n){return lifetime(n);}\ntemplate<class T>struct Outer{\n T run(T n){\n  struct Inner{\n   T value;\n   operator T()const{return value;}\n  };\n  Inner r{n};return r;\n }\n};\nint outer(Outer<int>&r,int n){return r.run(n);}\ntemplate<int N>int constant(){return N;}\nextern template int constant<3>();\ntemplate int constant<1+2>();\nextern template int constant<3>();\nint value(){return constant<3>();}\n'
+    template_source_source = 'template<class T>T evaluate(T x){\n struct Local{\n  T value;\n  T get()const{return value;}\n  int next(){static int count=0;return ++count;}\n };\n Local l{x};return l.get()+l.next();\n}\nint signedValue(int n){return evaluate(n);}\nunsigned unsignedValue(unsigned n){return evaluate(n);}\ntemplate int evaluate<int>(int);\nextern template unsigned evaluate<unsigned>(unsigned);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate unsigned evaluate<unsigned>(unsigned);\ntemplate<class T>T&alias(T&x){\n struct Reference{\n  T*p;\n  T&get(){return *p;}\n };\n Reference r{&x};return r.get();\n}\nint&reference(int&n){return alias(n);}\ntemplate<class T>T lifetime(T x){\n struct Life{\n  T value;\n  Life(T n):value(n){}\n  ~Life(){}\n  T read()const{return value;}\n };\n Life r(x);return r.read();\n}\nint lived(int n){return lifetime(n);}\ntemplate<class T>struct Outer{\n T run(T n){\n  struct Inner{\n   T value;\n   operator T()const{return value;}\n  };\n  Inner r{n};return r;\n }\n};\nint outer(Outer<int>&r,int n){return r.run(n);}\ntemplate<int N>int constant(){return N;}\nextern template int constant<3>();\nextern template int constant<3>();\ntemplate int constant<1+2>();\nint value(){return constant<3>();}\n'
     template_source = check("v2-template-source-protocol", template_source_source, profile="cpp-core-v2")
     ts_functions = {f["name"]: f for f in template_source["functions"]}
     ts_records = {r["id"]: r for r in template_source["records"]}
@@ -7196,7 +7332,7 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
         'directive-conversion': 'template<class T>struct R{operator T(){return T(3);}};template R<int>::operator int();',
         'directive-aliased-qualifier': 'namespace N{template<class T>struct R{T f(){return T(3);}};}namespace A=N;template int A::R<int>::f();',
         'directive-written-noexcept': 'template<int N>int f()noexcept{return N;}template int f<3>()noexcept(sizeof(int)==4);',
-        'protocol-source': 'template<class T>T evaluate(T x){\n struct Local{\n  T value;\n  T get()const{return value;}\n  int next(){static int count=0;return ++count;}\n };\n Local l{x};return l.get()+l.next();\n}\nint signedValue(int n){return evaluate(n);}\nunsigned unsignedValue(unsigned n){return evaluate(n);}\ntemplate int evaluate<int>(int);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate unsigned evaluate<unsigned>(unsigned);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate<class T>T&alias(T&x){\n struct Reference{\n  T*p;\n  T&get(){return *p;}\n };\n Reference r{&x};return r.get();\n}\nint&reference(int&n){return alias(n);}\ntemplate<class T>T lifetime(T x){\n struct Life{\n  T value;\n  Life(T n):value(n){}\n  ~Life(){}\n  T read()const{return value;}\n };\n Life r(x);return r.read();\n}\nint lived(int n){return lifetime(n);}\ntemplate<class T>struct Outer{\n T run(T n){\n  struct Inner{\n   T value;\n   operator T()const{return value;}\n  };\n  Inner r{n};return r;\n }\n};\nint outer(Outer<int>&r,int n){return r.run(n);}\ntemplate<int N>int constant(){return N;}\nextern template int constant<3>();\ntemplate int constant<1+2>();\nextern template int constant<3>();\nint value(){return constant<3>();}\n',
+        'protocol-source': 'template<class T>T evaluate(T x){\n struct Local{\n  T value;\n  T get()const{return value;}\n  int next(){static int count=0;return ++count;}\n };\n Local l{x};return l.get()+l.next();\n}\nint signedValue(int n){return evaluate(n);}\nunsigned unsignedValue(unsigned n){return evaluate(n);}\ntemplate int evaluate<int>(int);\nextern template unsigned evaluate<unsigned>(unsigned);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate unsigned evaluate<unsigned>(unsigned);\ntemplate<class T>T&alias(T&x){\n struct Reference{\n  T*p;\n  T&get(){return *p;}\n };\n Reference r{&x};return r.get();\n}\nint&reference(int&n){return alias(n);}\ntemplate<class T>T lifetime(T x){\n struct Life{\n  T value;\n  Life(T n):value(n){}\n  ~Life(){}\n  T read()const{return value;}\n };\n Life r(x);return r.read();\n}\nint lived(int n){return lifetime(n);}\ntemplate<class T>struct Outer{\n T run(T n){\n  struct Inner{\n   T value;\n   operator T()const{return value;}\n  };\n  Inner r{n};return r;\n }\n};\nint outer(Outer<int>&r,int n){return r.run(n);}\ntemplate<int N>int constant(){return N;}\nextern template int constant<3>();\nextern template int constant<3>();\ntemplate int constant<1+2>();\nint value(){return constant<3>();}\n',
     }
     for name, source in template_source_positive.items():
         check("v2-template-source-positive-" + name, source, profile="cpp-core-v2")
@@ -7443,8 +7579,8 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
         'selected-dmi': 'template<class T>struct R{T n=T(1.0);operator T(){return n;}};int f(){R<int>r;return r;}',
         'folded-operator': 'template<class T>struct R{constexpr int operator()()const{return int(1.0);}};static_assert(R<int>{}()==1);',
         'folded-conversion': 'template<class T>struct R{constexpr operator int()const{return int(1.0);}};static_assert(int(R<int>{})==1);',
-        'operator-noexcept': 'template<class T>struct R{int operator()()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){return noexcept(r());}',
-        'conversion-noexcept': 'template<class T>struct R{operator int()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){return noexcept(r.operator int());}',
+        'operator-noexcept': 'template<class T>struct R{int operator()()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){r();return noexcept(r());}',
+        'conversion-noexcept': 'template<class T>struct R{operator int()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){r.operator int();return noexcept(r.operator int());}',
         'selected-floating-type': 'template<class T>struct R{operator T(){return T();}};double f(R<double>&r){return r;}',
         'outside-header': 'template<decltype(sizeof(double)) N>struct R{int operator()();};template<decltype(sizeof(double)) N>int R<N>::operator()(){return N;}int f(){R<3>r;return r();}',
         'own-operator-template': 'template<class T>struct R{template<class U>int operator()(U){return 1;}};',
@@ -7918,7 +8054,7 @@ bool query(){return noexcept(Lazy<int>{1});}
         'private': 'template<class T>class R{~R(){}};void f(){R<int>r;}',
         'deleted-used': 'template<class T>struct R{~R()=delete;};void f(){R<int>r;}',
         'missing-explicit-instantiation': 'template<class T>struct R{~R();};template R<int>::~R();',
-        'late-specialization': 'template<class T>struct R{~R(){}};void f(){R<int>r;}template<>R<int>::~R(){}',
+        'late-specialization': 'template<class T>struct R{~R(){}};template R<int>::~R();void f(){R<int>r;}template<>R<int>::~R(){}',
         'duplicate': 'template<class T>struct R{~R(){}~R(){}};',
         'selected-noexcept-dependent': 'template<class T>struct R{~R()noexcept(T::missing){}};void f(){R<int>r;}',
     }

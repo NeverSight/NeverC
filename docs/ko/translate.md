@@ -50,6 +50,8 @@ Core v2는 네임스페이스 범위의 일반 연산자 함수 템플릿도 지
 
 Core v2는 지원되는 함수·연산자·클래스 템플릿의 스칼라 비타입 매개변수 기본값을 지원합니다. 앞선 매개변수, 스칼라 auto, 상속된 기본값과 검증된 constexpr 변환은 Clang 선택·추론 규칙을 따릅니다. 생략한 인수와 동등한 명시적 인수는 함수·레코드·정적 객체를 공유합니다. 비의존 기본값의 원문은 검사하고 사용하지 않는 의존 기본값은 지연합니다. 변환 성공 뒤 원래 식과 변환된 소스를 보존하며 치환·변환 실패 시 정상적인 오버로드 대체를 유지합니다. 전체 C++17/STL은 미완성이며 네이티브 검증에는 구현 버전의 CI가 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-template-parameter-defaults).
 
+반환형을 추론하는 참조 변환은 decltype(auto)와 auto&&의 참조 축약을 포함하여 별칭과 const를 보존합니다. 내장 프런트엔드는 후보 선택에 필요한 반환형을 추론하며, 관련 없는 값 반환 템플릿 본문은 인스턴스화하지 않습니다. 전체 C++17／STL 지원은 아직 미완료이며 네이티브 검증은 구현 버전의 CI를 기준으로 합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deduced-reference-conversions).
+
 ## 설치와 스칼라 변환
 
 일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.

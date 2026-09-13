@@ -50,6 +50,8 @@ Estas plantillas de clases también admiten miembros estáticos enteros, boolean
 
 Core v2 admite valores predeterminados de parámetros escalares no tipo en las plantillas de funciones, operadores y clases compatibles. Parámetros anteriores, auto escalar, valores heredados y conversiones constexpr comprobadas siguen a Clang. Argumentos omitidos y explícitos equivalentes comparten funciones, registros y objetos estáticos. Se comprueba el código no dependiente; los valores dependientes no usados siguen diferidos. Las conversiones correctas conservan el código original y convertido; los fallos permiten elegir otra sobrecarga normalmente. C++17/STL completo sigue pendiente; la validación nativa requiere el CI correspondiente. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-template-parameter-defaults).
 
+Las conversiones con retorno deducido conservan las referencias y const, incluidos decltype(auto) y el colapso de referencias auto&&. El frontend integrado deduce los tipos necesarios para seleccionar candidatos sin instanciar cuerpos de plantillas ajenos que devuelven valores. El soporte completo de C++17/STL sigue pendiente; la validación nativa requiere la CI de esta implementación. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deduced-reference-conversions).
+
 ## Instalación y traducción escalar
 
 Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).

@@ -50,6 +50,8 @@ Core v2 还支持命名空间作用域内的普通运算符函数模板。算术
 
 Core v2 支持已准许的函数、运算符和类模板的标量非类型参数默认值。依赖前面参数的表达式、标量 auto、继承的默认值和已检查的 constexpr 转换保留 Clang 的选择与推导规则。省略参数与显式写出等价参数时，共享函数、记录和静态对象。非依赖默认值的原始源码会检查；未使用的依赖默认值保持按需实例化。转换成功后保留原表达式及转换后源码，替换或转换失败仍按普通重载回退处理。完整 C++17／STL 尚未完成；原生验证以实现版本的 CI 为准。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-template-parameter-defaults).
 
+推导返回类型的引用转换保留别名和 const 属性，包括 decltype(auto) 及 auto&& 的引用折叠。内置前端在筛选候选前推导必要的返回类型，不实例化无关的按值返回模板函数体。完整 C++17／STL 尚未完成，原生验证以实现版本的 CI 为准。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deduced-reference-conversions).
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

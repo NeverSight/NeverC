@@ -50,6 +50,8 @@ Diese Klassentemplates unterstützen auch statische Integer-, Bool- und Enum-Dat
 
 Core v2 unterstützt skalare Nichttyp-Standardargumente für die zugelassenen Funktions-, Operator- und Klassentemplates. Vorherige Parameter, skalares auto, geerbte Vorgaben und geprüfte constexpr-Konvertierungen folgen Clang. Ausgelassene und äquivalente explizite Argumente teilen Funktionen, Records und statische Objekte. Nichtabhängiger Quelltext wird geprüft; unbenutzte abhängige Vorgaben bleiben verzögert. Erfolgreiche Konvertierungen behalten ursprünglichen und konvertierten Quelltext; Fehler erlauben die normale Überladungsauswahl. Vollständiges C++17/STL bleibt offen; native Validierung erfordert das zugehörige CI. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-template-parameter-defaults).
 
+Referenzkonvertierungen mit abgeleitetem Rückgabetyp bewahren Aliase und const, einschließlich decltype(auto) und der Referenzkollabierung bei auto&&. Das integrierte Frontend leitet die für die Kandidatenauswahl nötigen Typen ab, ohne unbeteiligte Template-Funktionskörper mit Wertrückgabe zu instanziieren. Vollständiges C++17/STL bleibt unvollständig; die native Prüfung erfordert die CI dieser Implementierung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deduced-reference-conversions).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

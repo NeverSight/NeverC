@@ -50,6 +50,8 @@ Questi template di classi supportano anche membri statici interi, booleani ed en
 
 Core v2 supporta valori predefiniti dei parametri scalari non di tipo nei template di funzioni, operatori e classi ammessi. Parametri precedenti, auto scalare, valori ereditati e conversioni constexpr verificate seguono Clang. Argomenti omessi ed espliciti equivalenti condividono funzioni, record e oggetti statici. Il sorgente non dipendente viene verificato; i valori dipendenti inutilizzati restano differiti. Le conversioni riuscite conservano sorgente originale e convertito; gli errori mantengono la normale scelta di un altro overload. C++17/STL completo resta incompleto; la verifica nativa richiede il CI corrispondente. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-template-parameter-defaults).
 
+Le conversioni con tipo di ritorno dedotto conservano riferimenti e const, inclusi decltype(auto) e il collasso dei riferimenti auto&&. Il frontend integrato deduce i tipi necessari alla selezione senza istanziare corpi di template non pertinenti che restituiscono valori. Il supporto completo di C++17/STL resta incompleto; la verifica nativa richiede la CI di questa implementazione. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deduced-reference-conversions).
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).
