@@ -1569,6 +1569,30 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
            classPatternShape(Found->second) ||
            aliasTemplateShape(dyn_cast<TypeAliasTemplateDecl>(Found->second));
   }
+  bool parameterTypeQueryMetadata(const UnaryExprOrTypeTraitExpr *Query) {
+    if (!TemplateParameterTypeSource || !Query->isArgumentType() ||
+        (Query->getKind() != UETT_SizeOf && Query->getKind() != UETT_AlignOf) ||
+        Query->isTypeDependent() || !Query->isValueDependent() ||
+        !Query->isInstantiationDependent() || !Query->isPRValue() ||
+        Query->getType().isNull() || !Query->getType()->isIntegralOrEnumerationType())
+      return false;
+    const auto *Info = Query->getArgumentTypeInfo();
+    if (!Info || !Info->getType()->isDependentType())
+      return false;
+    auto Written = Info->getTypeLoc().getUnqualifiedLoc().getAs<TemplateTypeParmTypeLoc>();
+    const auto *Parameter = Written ? Written.getDecl() : nullptr;
+    if (!owned(Parameter) || Parameter->isInvalidDecl() || Parameter->hasAttrs() ||
+        Parameter->isParameterPack())
+      return false;
+    // Only a direct type parameter from this written declaration's own list
+    // is metadata. Selected substitutions still undergo concrete source checks.
+    for (const auto *Candidate : *TemplateParameterTypeSource) {
+      A.chargeExpansion(1, Query->getExprLoc());
+      if (Candidate == Parameter)
+        return true;
+    }
+    return false;
+  }
   void checkPackSize(const SizeOfPackExpr *Query) {
     A.chargeExpansion(1, Query->getExprLoc());
     if (!validPackOwner(Query->getPack())) {
@@ -3972,7 +3996,8 @@ public:
         // RAV visits the unevaluated operand and written specification
         // expressions. Unsupported source must not disappear behind a bool.
       }
-      if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S)) {
+      if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S);
+          Query && !parameterTypeQueryMetadata(Query)) {
         auto Operand = Query->getTypeOfArgument();
         if ((Query->getKind() != UETT_SizeOf && Query->getKind() != UETT_AlignOf) ||
             (Query->getKind() == UETT_AlignOf && !Query->isArgumentType()) ||

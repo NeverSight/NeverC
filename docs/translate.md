@@ -8,6 +8,8 @@ Experimental `neverc translate` emits reviewable `.nc` source through `cpp-core-
 
 **Only C++ input translation is currently implemented.** Support for E Language (易语言, `.e`), Python, Go, Rust, TypeScript and JavaScript is planned; their translators are not yet available.
 
+A direct sizeof(T) or alignof(T) in a non-type parameter’s written type may remain declaration metadata when T is the exact type parameter from that same list. Selected substitutions still require concrete checked types; other dependent query forms are not covered by this exception. An extern template declaration alone does not provide the concrete definition required by the current closed-unit translation contract.
+
 Core v2 uses standard C++17 template parsing on every supported target, including Windows x64 and ARM64. Template definitions are parsed without MSVC delayed parsing; duplicate explicit instantiation definitions and incompatible exception specifications remain language errors. Unused dependent bodies still instantiate only when needed. This does not complete C++/STL support. Explicit function specializations still need their own definition in the source unit; repeated declarations alone do not provide it.
 
 Core v2 supports mutable namespace-scope integer, boolean and enum globals with zero initialization or a fully checked constant initializer. Their storage and addresses persist across calls; references, pointers and parameter defaults access the same variable. An `extern` declaration must resolve to a definition in this source unit. Const globals remain read-only. Dynamic initialization, global records/arrays/pointers/references, thread-local storage and static locals retain their separate restrictions.

@@ -4931,6 +4931,117 @@ int main(){
   }
 }
 
+TEST_F(TranslateTest, CoreV2TemplateParameterQueriesPreserveTraitSelection) {
+  const auto Source = tmpFile("template-parameter-queries-runtime.cpp");
+  const auto Output = tmpFile("template-parameter-queries-runtime.nc");
+  writeFile(Source, R"cpp(namespace traits{
+ template<bool B,class T=void>struct Enable{};
+ template<class T>struct Enable<true,T>{using type=T;};
+ template<bool B,class T=void>using When=typename Enable<B,T>::type;
+}
+template<class T,traits::When<(sizeof(T)>1),int> N=3>int value(){return N;}
+template<class T,decltype(sizeof(const T)) N=5>struct Box{int n=N;};
+template<class T,decltype(alignof(T)) N=7>int alignment(){return int(N);}
+template<class T>traits::When<(sizeof(T)>1),int>choose(T){return 3;}
+int choose(char){return 4;}
+int main(){
+ if(value<int>()!=3)return 1;
+ if(value<int,9>()!=9)return 2;
+ Box<int>box;
+ if(box.n!=5)return 3;
+ if(alignment<int>()!=7||alignment<int,11>()!=11)return 4;
+ if(choose(int(1))!=3||choose(char(1))!=4)return 5;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("template-parameter-queries-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TemplateParameterQueriesAcceptSameListTypes) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"observed-enable-if", "namespace traits{template<bool B,class T=void>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<bool B,class T=void>using When=typename Enable<B,T>::type;}template<class T,traits::When<(sizeof(T)>1),int> N=3>int f(){return N;}int main(){return f<int>();}"},
+      {"unselected-hidden-candidate", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=1;};template<class T>struct R<T*,bool>{int n=3;};int main(){R<int*,bool>r{};return r.n;}"},
+      {"unselected-safe-candidate", "template<class T>using K=decltype((sizeof(int),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=1;};template<class T>struct R<T*,bool>{int n=3;};int main(){R<int*,bool>r{};return r.n;}"},
+      {"extern-before-definition", "template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}extern template int f<int,3>();template int f<int,3>();"},
+      {"sizeof-parameter-type", "template<class T,decltype(sizeof(T)) N=3>int f(){return int(N);}int main(){return f<int>();}"},
+      {"alignof-parameter-type", "template<class T,decltype(alignof(T)) N=3>int f(){return int(N);}int main(){return f<int>();}"},
+      {"cv-sizeof-parameter-type", "template<class T,decltype(sizeof(const T)) N=3>int f(){return int(N);}int main(){return f<int>();}"},
+      {"class-parameter-type", "template<class T,decltype(sizeof(T)) N=3>struct R{int n=N;};int main(){R<int>r;return r.n;}"},
+      {"alias-parameter-type", "template<class T,decltype(sizeof(T)) N=3>using A=T[N];int main(){A<int>a{1,2,3};return a[2];}"},
+      {"unused-parameter-type", "template<class T,decltype(sizeof(T)) N=3>int f(){return T::missing;}"},
+      {"concrete-sizeof-unchanged", "int main(){int a[3]={1,2,3};return sizeof(a)==3*sizeof(int)?0:1;}"},
+      {"runtime-source", "namespace traits{\n template<bool B,class T=void>struct Enable{};\n template<class T>struct Enable<true,T>{using type=T;};\n template<bool B,class T=void>using When=typename Enable<B,T>::type;\n}\ntemplate<class T,traits::When<(sizeof(T)>1),int> N=3>int value(){return N;}\ntemplate<class T,decltype(sizeof(const T)) N=5>struct Box{int n=N;};\ntemplate<class T,decltype(alignof(T)) N=7>int alignment(){return int(N);}\ntemplate<class T>traits::When<(sizeof(T)>1),int>choose(T){return 3;}\nint choose(char){return 4;}\nint main(){\n if(value<int>()!=3)return 1;\n if(value<int,9>()!=9)return 2;\n Box<int>box;\n if(box.n!=5)return 3;\n if(alignment<int>()!=7||alignment<int,11>()!=11)return 4;\n if(choose(int(1))!=3||choose(char(1))!=4)return 5;\n return 0;\n}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("template-parameter-query-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("template-parameter-query-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TemplateParameterQueriesRetainSourceBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"hidden-floating-next-to-query", "template<class T,decltype((sizeof(double),sizeof(T))) N=3>int f(){return int(N);}int main(){return f<int>();}"},
+      {"hidden-selected-type-argument", "template<class T,decltype(sizeof(T)) N=3>int f(){return int(N);}int main(){return f<double>();}"},
+      {"hidden-selected-default", "template<class T,decltype(sizeof(T)) N=int(1.0)>int f(){return int(N);}int main(){return f<int>();}"},
+      {"expression-form-metadata", "template<class T,decltype(sizeof(T{})) N=3>int f(){return int(N);}int main(){return f<int>();}"},
+      {"pointer-type-metadata", "template<class T,decltype(sizeof(T*)) N=3>int f(){return int(N);}int main(){return f<int>();}"},
+      {"alias-shaped-metadata", "template<class T>using A=T;template<class T,decltype(sizeof(A<T>)) N=3>int f(){return int(N);}int main(){return f<int>();}"},
+      {"concrete-floating-query", "int main(){return sizeof(double);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("template-parameter-query-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("template-parameter-query-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TemplateParameterQueriesRetainLanguageDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"original-ambiguous-partials", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=1;};template<class T>struct R<T**,int>{int n=3;};int main(){R<int**,int>r{};return r.n;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("template-parameter-query-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("template-parameter-query-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TemplateParameterQueriesRetainDefinitionRequirements) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"original-extern-without-definition", "template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}extern template int f<int,3>();"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("template-parameter-query-missing-" + Name + ".cpp");
+    const auto Output = tmpFile("template-parameter-query-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ClassPartialsPreserveSelectionStorageAndLifetime) {
   const auto Source = tmpFile("class-partials-runtime.cpp");
   const auto Output = tmpFile("class-partials-runtime.nc");
@@ -5066,7 +5177,7 @@ TEST_F(TranslateTest, CoreV2ClassPartialsAcceptSelectedPatterns) {
       {"recursive-instances", "template<int N,class T>struct R;template<int N,class T>struct R<N,T*>{int f(){if constexpr(N)return N+R<N-1,T*>{}.f();else return 0;}};int main(){R<3,int*>r{};return r.f();}"},
       {"unused-dependent-body", "template<class T>struct R;template<class T>struct R<T*>{T n;int f(){return T::missing;}};int main(){R<int*>r{3};return r.n;}"},
       {"discarded-dependent-body", "template<class T>struct R;template<class T>struct R<T*>{int f(){if constexpr(sizeof(T)>0)return 3;else return T::missing;}};int main(){return R<int*>{}.f();}"},
-      {"unselected-hidden-pattern", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=1;};template<class T>struct R<T**,int>{int n=3;};int main(){R<int**,int>r{};return r.n;}"},
+      {"unselected-hidden-pattern", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=1;};template<class T>struct R<T*,bool>{int n=3;};int main(){R<int*,bool>r{};return r.n;}"},
       {"failed-substitution-primary", "template<class A,class B>struct R{int n=3;};template<class T>struct R<T*,typename T::value>{int n=1;};int main(){R<int*,int>r{};return r.n;}"},
       {"type-pack-64", "template<class H,class...T>struct R;template<class...T>struct R<int,T...>{int n=sizeof...(T);};int main(){R<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r{};return r.n;}"},
       {"scalar-pack-64", "template<int H,int...N>struct R;template<int...N>struct R<1,N...>{int n=(0+...+N);};int main(){R<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r{};return r.n;}"},
@@ -5380,7 +5491,7 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesAcceptConcreteTypesAndSelectedDefaults
       {"nttp-function-extended-pack", "template<class T>using K=decltype(T{});template<int N>struct Tag{int n;};template<class T,K<T>...N>int f(Tag<N>...v){return(0+...+N);}int g(){return f<int,1>(Tag<1>{3},Tag<2>{4});}"},
       {"nttp-recursive-primary", "template<class T>using K=decltype(T{});template<class T,K<T> N=0>int f(){if constexpr(N==0){return f<T,1>();}else{return N;}}int g(){return f<int>();}"},
       {"nttp-function-instantiation", "template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}template int f<int,3>();"},
-      {"nttp-function-extern-instantiation", "template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}extern template int f<int,3>();"},
+      {"nttp-function-extern-instantiation", "template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}extern template int f<int,3>();template int f<int,3>();"},
       {"nttp-function-specialization", "template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}template<>int f<int,3>(){return 3;}"},
       {"nttp-class-instantiation", "template<class T>using K=decltype(T{});template<class T,K<T> N=4>struct R{int n;};template struct R<int,3>;"},
       {"nttp-class-extern-instantiation", "template<class T>using K=decltype(T{});template<class T,K<T> N=4>struct R{int n;};extern template struct R<int,3>;"},

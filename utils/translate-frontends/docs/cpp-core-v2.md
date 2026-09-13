@@ -1364,6 +1364,21 @@ unfinished. Only C++ input is implemented; E Language, Python and other frontend
 are planned. Translation uses embedded Clang libraries without launching an
 external Clang executable.
 
+A direct type-form `sizeof(T)` or `alignof(T)` in a non-type parameter's
+written type can remain declaration metadata while that type is dependent.
+The written, optionally cv-qualified operand must be the exact non-pack type
+parameter from the same template parameter list. This does not permit arbitrary
+dependent expressions, alias-shaped operands, foreign owners or runtime query
+values. Normal source traversal still inspects neighboring expressions and all
+selected substituted parameter types before erasure; no extra Sema substitution
+is performed. For example, `template<class T, decltype(sizeof(T)) N=3>` and
+source-defined enable-if traits using a direct `sizeof(T)` are admitted when
+their selected concrete types satisfy the profile. Bare `extern template`
+declarations do not supply the concrete definitions required by the existing
+closed-source-unit function declaration contract. Ambiguous partial
+specializations remain C++ errors, including candidates whose alias patterns
+hide unsupported source.
+
 ## Concrete free function templates
 
 Core v2 admits source-owned namespace/free function templates with one to 64
