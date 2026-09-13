@@ -179,6 +179,14 @@ call-target signatures remain canonical across relocation. Source and definition
 checks include selected unevaluated calls and all materialized bodies. See
 [class-template operators and conversions](cpp-core-v2.md#class-template-operators-and-conversions).
 
+Instantiated local-class members retain ordinary receiver/result IR and distinct
+owning-function instance identities, including local records, fields and scalar
+static storage. Written explicit function-instantiation directives are source
+validation metadata, not extra runtime declarations: each argument, function type,
+conversion name, qualifier and parsed attribute check survives canonical reuse and
+no-effect repetitions. Collection and traversal remain bounded. See
+[instantiated local classes and written directives](cpp-core-v2.md#instantiated-local-classes-and-written-directives).
+
 Concrete core-v2 free function-template instances use ordinary function, record,
 scalar-global and call IR. Primary-template ordinals and source identities
 separate otherwise colliding specializations, including their local records and

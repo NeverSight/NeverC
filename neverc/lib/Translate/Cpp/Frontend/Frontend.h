@@ -3,6 +3,7 @@
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/NestedNameSpecifier.h"
 #include "clang/Basic/FileEntry.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/Support/FileSystem.h"
@@ -25,6 +26,7 @@ class MaterializeTemporaryExpr;
 class SubstNonTypeTemplateParmExpr;
 class InitListExpr;
 class Expr;
+struct ASTTemplateArgumentListInfo;
 }
 
 namespace nct {
@@ -36,6 +38,15 @@ struct ExpandedToken {
 };
 struct SDKFile {
   std::string Root, Path, SHA256;
+};
+struct ExplicitFunctionInstantiationSource {
+  clang::FunctionDecl *Function;
+  const clang::ASTTemplateArgumentListInfo *Arguments;
+  clang::TypeSourceInfo *Type;
+  clang::DeclarationNameInfo Name;
+  clang::NestedNameSpecifierLoc Qualifier;
+  clang::SourceLocation Location;
+  bool HasAttributes;
 };
 
 struct State {
@@ -189,7 +200,7 @@ public:
   void requireDestruction(const clang::CXXRecordDecl *Record,
                           clang::SourceLocation Location);
   json::Object lowerDestruction(const clang::CXXRecordDecl *Record);
-  void run();
+  void run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives = {});
 };
 } // namespace nct
 #endif

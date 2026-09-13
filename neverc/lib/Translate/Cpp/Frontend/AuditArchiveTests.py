@@ -660,6 +660,13 @@ public:
         original_declaration_parser = '    std::unique_ptr<CachedTokens> Toks = std::move(LM.DefaultArgs[I].Toks);\n    if (Toks) {\n      ParenBraceBracketBalancer BalancerRAIIObj(*this);'
         rewritten_declaration_parser = "    std::unique_ptr<CachedTokens> Toks = std::move(LM.DefaultArgs[I].Toks);\n    if (Toks) {\n      // A nested friend default uses the function's access context while\n      // preserving the surrounding class scopes for lexical name lookup.\n      auto *Function = dyn_cast<FunctionDecl>(LM.Method);\n      if (const auto *Template = dyn_cast<FunctionTemplateDecl>(LM.Method))\n        Function = Template->getTemplatedDecl();\n      const auto *Lexical = Function\n          ? dyn_cast<CXXRecordDecl>(Function->getLexicalDeclContext()) : nullptr;\n      bool NestedFriendDefault = Function && Function->getFriendObjectKind() &&\n          Lexical && isa<CXXRecordDecl>(Lexical->getDeclContext());\n      ParseScope DefaultScope(this, Scope::FnScope, NestedFriendDefault);\n      std::optional<Sema::ContextRAII> DefaultContext;\n      std::optional<Sema::FunctionScopeRAII> DefaultFunctionScope;\n      if (NestedFriendDefault) {\n        DefaultContext.emplace(Actions, Function, /*NewThisContext=*/false);\n        DefaultFunctionScope.emplace(Actions);\n        Actions.PushFunctionScope();\n      }\n      ParenBraceBracketBalancer BalancerRAIIObj(*this);"
         files['clang/lib/Parse/ParseCXXInlineMethods.cpp'] = original_declaration_parser
+        # Independent explicit-instantiation source callback fixtures.
+        explicit_header_original = '// Before header.\n  class FunctionDecl;\n  class ImportDecl;\n// Between header anchors.\n  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n// After header.\n'
+        explicit_header_expected = '// Before header.\n  class FunctionDecl;\n  class ImportDecl;\n  class TemplateArgumentListInfo;\n  class TypeSourceInfo;\n  struct DeclarationNameInfo;\n  class NestedNameSpecifierLoc;\n  class SourceLocation;\n// Between header anchors.\n  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n\n  // NeverC private source evidence; this does not request instantiation.\n  virtual void HandleNeverCExplicitFunctionInstantiation(\n      FunctionDecl *, const TemplateArgumentListInfo &, TypeSourceInfo *,\n      const DeclarationNameInfo &, const NestedNameSpecifierLoc &,\n      const SourceLocation &, bool) {}\n// After header.\n'
+        explicit_source_original = '// Before source.\n                                            Declarator &D) {\n  // Explicit instantiations always require a name.\n// Unchanged source between anchors.\n    Specialization = cast<FunctionDecl>(*Result);\n  }\n\n  // C++11 [except.spec]p4\n  // In an explicit instantiation an exception-specification may be specified,\n// After source.\n'
+        explicit_source_expected = '// Before source.\n                                            Declarator &D) {\n  // Retain attributes before declarator type processing can consume them.\n  const bool NeverCWrittenAttributes = D.hasAttributes();\n  // Explicit instantiations always require a name.\n// Unchanged source between anchors.\n    Specialization = cast<FunctionDecl>(*Result);\n  }\n\n  // Preserve every directive before duplicate/no-effect early returns.\n  Consumer.HandleNeverCExplicitFunctionInstantiation(\n      Specialization, TemplateArgs, T, NameInfo,\n      D.getCXXScopeSpec().getWithLocInContext(Context),\n      D.getIdentifierLoc(), NeverCWrittenAttributes);\n\n  // C++11 [except.spec]p4\n  // In an explicit instantiation an exception-specification may be specified,\n// After source.\n'
+        files['clang/include/clang/AST/ASTConsumer.h'] = explicit_header_original
+        files['clang/lib/Sema/SemaTemplate.cpp'] = explicit_source_original
         files.update(math_sources)
         for name in notice_names:
             files["llvm/lib/Support/" + name] = (
@@ -713,6 +720,13 @@ public:
             setup_path.write_text(original_setup, encoding="utf-8")
 
             run_script(True)
+            # Both callback files must match the independently written contract.
+            explicit_paths = [source / "clang/include/clang/AST/ASTConsumer.h",
+                              source / "clang/lib/Sema/SemaTemplate.cpp"]
+            explicit_original = [explicit_header_original, explicit_source_original]
+            explicit_expected = [explicit_header_expected, explicit_source_expected]
+            for path, expected in zip(explicit_paths, explicit_expected):
+                self.assertEqual(path.read_text(encoding="utf-8"), expected)
             access_path = source / "clang/lib/Sema/SemaAccess.cpp"
             self.assertEqual(access_path.read_text(encoding="utf-8"),
                              expected_access + "\n\n" + rewritten_declaration_access)
@@ -919,6 +933,51 @@ public:
                         self.assertEqual(snapshot_all_files(), untouched)
             for path, text in zip(declaration_paths, declaration_original):
                 path.write_text(text, encoding="utf-8")
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            # Partial, duplicate and drifted callback groups never rewrite either file.
+            explicit_states = [
+                ("original header only", explicit_header_original, explicit_source_expected),
+                ("original source only", explicit_header_expected, explicit_source_original),
+                ("missing forward anchor", explicit_header_original.replace("  class ImportDecl;", ""), explicit_source_original),
+                ("missing callback anchor", explicit_header_original.replace("  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}", ""), explicit_source_original),
+                ("missing capture anchor", explicit_header_original, explicit_source_original.replace("Declarator &D) {", "Declarator &Other) {")),
+                ("missing call anchor", explicit_header_original, explicit_source_original.replace("// C++11 [except.spec]p4", "// Drifted.")),
+                ("duplicate header", explicit_header_original * 2, explicit_source_original),
+                ("duplicate source", explicit_header_original, explicit_source_original * 2),
+                ("partial forward declarations", explicit_header_expected.replace("  struct DeclarationNameInfo;", ""), explicit_source_expected),
+                ("partial signature", explicit_header_expected.replace("const DeclarationNameInfo &, ", ""), explicit_source_expected),
+                ("partial capture", explicit_header_expected, explicit_source_expected.replace("D.hasAttributes()", "false")),
+                ("partial call", explicit_header_expected, explicit_source_expected.replace("TemplateArgs, T, NameInfo,", "TemplateArgs, T,")),
+                ("extra callback", explicit_header_expected + "// HandleNeverCExplicitFunctionInstantiation\n", explicit_source_expected),
+                ("extra marker", explicit_header_expected, explicit_source_expected + "// NeverCWrittenAttributes\n"),
+            ]
+            for state, header_text, source_text in explicit_states:
+                with self.subTest(explicit_source_state=state):
+                    explicit_paths[0].write_text(header_text, encoding="utf-8")
+                    explicit_paths[1].write_text(source_text, encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    if state in ("original header only", "original source only"):
+                        error = "Unexpected partial pinned Clang explicit-instantiation source"
+                    else:
+                        index = 0 if state in ("missing forward anchor", "missing callback anchor", "duplicate header", "partial forward declarations", "partial signature", "extra callback") else 1
+                        error = "Unexpected pinned Clang explicit-instantiation source in " + str(explicit_paths[index])
+                    run_script(False, error)
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            for missing in explicit_paths:
+                for path, original in zip(explicit_paths, explicit_original):
+                    path.write_text(original, encoding="utf-8")
+                missing.unlink()
+                untouched = snapshot_all_files()
+                run_script(False, "Unexpected pinned Clang explicit-instantiation source in " + str(missing))
+                self.assertEqual(snapshot_all_files(), untouched)
+            for path, original in zip(explicit_paths, explicit_original):
+                path.write_text(original, encoding="utf-8")
+            run_script(True)
+            for path, expected in zip(explicit_paths, explicit_expected):
+                self.assertEqual(path.read_text(encoding="utf-8"), expected)
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))

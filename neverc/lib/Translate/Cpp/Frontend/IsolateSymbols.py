@@ -23,6 +23,80 @@ def replace_once(path, before, after):
     path.write_text(text.replace(before, after), encoding="utf-8")
 
 
+def preserve_explicit_function_instantiation_source(source_root):
+    # Pinned Sema reuses a FunctionDecl and discards each directive's spelling,
+    # including no-effect directives. Collect metadata without changing Sema.
+    groups = (
+        ("clang/include/clang/AST/ASTConsumer.h", (
+            ("  class FunctionDecl;\n  class ImportDecl;",
+             "  class FunctionDecl;\n  class ImportDecl;\n"
+             "  class TemplateArgumentListInfo;\n  class TypeSourceInfo;\n"
+             "  struct DeclarationNameInfo;\n  class NestedNameSpecifierLoc;\n"
+             "  class SourceLocation;"),
+            ("  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}",
+             "  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n\n"
+             "  // NeverC private source evidence; this does not request instantiation.\n"
+             "  virtual void HandleNeverCExplicitFunctionInstantiation(\n"
+             "      FunctionDecl *, const TemplateArgumentListInfo &, TypeSourceInfo *,\n"
+             "      const DeclarationNameInfo &, const NestedNameSpecifierLoc &,\n"
+             "      const SourceLocation &, bool) {}"),
+        )),
+        ("clang/lib/Sema/SemaTemplate.cpp", (
+            ("                                            Declarator &D) {\n"
+             "  // Explicit instantiations always require a name.",
+             "                                            Declarator &D) {\n"
+             "  // Retain attributes before declarator type processing can consume them.\n"
+             "  const bool NeverCWrittenAttributes = D.hasAttributes();\n"
+             "  // Explicit instantiations always require a name."),
+            ("    Specialization = cast<FunctionDecl>(*Result);\n  }\n\n"
+             "  // C++11 [except.spec]p4\n"
+             "  // In an explicit instantiation an exception-specification may be specified,",
+             "    Specialization = cast<FunctionDecl>(*Result);\n  }\n\n"
+             "  // Preserve every directive before duplicate/no-effect early returns.\n"
+             "  Consumer.HandleNeverCExplicitFunctionInstantiation(\n"
+             "      Specialization, TemplateArgs, T, NameInfo,\n"
+             "      D.getCXXScopeSpec().getWithLocInContext(Context),\n"
+             "      D.getIdentifierLoc(), NeverCWrittenAttributes);\n\n"
+             "  // C++11 [except.spec]p4\n"
+             "  // In an explicit instantiation an exception-specification may be specified,"),
+        )),
+    )
+    updates = []
+    states = []
+    for relative, replacements in groups:
+        path = source_root / relative
+        message = "Unexpected pinned Clang explicit-instantiation source in " + str(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise SystemExit(message) from error
+        # Some rewritten blocks contain the original anchor as a prefix. Count
+        # pristine anchors only after removing each complete rewritten block.
+        counts = [(text.replace(after, "").count(before), text.count(after))
+                  for before, after in replacements]
+        if all(count == (1, 0) for count in counts):
+            state = 0
+        elif all(count == (0, 1) for count in counts):
+            state = 1
+        else:
+            raise SystemExit(message)
+        remainder = text
+        for pair in replacements:
+            remainder = remainder.replace(pair[state], "", 1)
+        if re.search(r"\b(?:HandleNeverCExplicitFunctionInstantiation|NeverCWrittenAttributes)\b", remainder):
+            raise SystemExit(message)
+        states.append(state)
+        if state == 0:
+            for before, after in replacements:
+                text = text.replace(before, after, 1)
+        updates.append((path, text))
+    if len(set(states)) != 1:
+        raise SystemExit("Unexpected partial pinned Clang explicit-instantiation source")
+    if states[0] == 0:
+        for path, text in updates:
+            path.write_text(text, encoding="utf-8")
+
+
 def isolate_pointer_bounds(path):
     before = ("struct PointerBounds {\n"
               "  TrackingVH<Value> Start;\n"
@@ -451,6 +525,7 @@ _COM_SMARTPTR_TYPEDEF(ISetupInstance2, __uuidof(ISetupInstance2));
 # Check Setup source before any other patch writes. Later unrelated failures
 # do not roll back previously completed patches.
 isolate_setup_bstr(args.source / "llvm/lib/WindowsDriver/MSVCPaths.cpp")
+preserve_explicit_function_instantiation_source(args.source)
 fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
 fix_nested_friend_declaration_access(args.source)
 fix_imported_namespace_defaults(args.source)

@@ -946,6 +946,51 @@ Only C++ input translation is implemented; E Language, Python and other frontend
 remain planned. The C++ frontend uses embedded Clang libraries and does not launch
 an external Clang executable.
 
+## Instantiated local classes and written directives
+
+Local classes inside admitted concrete free-function or class-template member
+instances retain ordinary named methods, operators, conversions, constructors,
+destructors and selected defaulted operations. The frontend distinguishes their
+member-specialization metadata from direct class-template instances. Each member
+must have matching method/record instantiation origins and a resolved concrete
+signature. Enclosing local-function chains are bounded to 64 levels. Existing
+ownership, access, qualifier, layout, field, definition and type rules apply.
+
+Clang eagerly instantiates local-class members with their enclosing entity; every
+materialized body is checked, including unused local methods. Uninstantiated
+outer function bodies remain lazy. Ordinary source and selected exception/default
+checks, receiver/result ABI, references, construction, copy/move, cleanup and
+per-instance scalar static locals use the existing implementation. Local class
+membership does not authorize own member function templates or virtual dispatch.
+
+The private embedded frontend preserves every explicit function-instantiation
+directive before Clang reuses a declaration or returns for a no-effect directive.
+The evidence retains written template arguments, the function type, declaration
+name (including a conversion-type-id), qualifiers, source location and parsed
+attribute presence. `extern template`, directives after implicit use or explicit
+specialization, and repeated equivalent arguments receive their own source checks.
+An earlier valid spelling cannot conceal a later unsupported expression, nor can
+a later valid spelling erase an earlier one. Parsed attributes remain unsupported
+even when a directive has no semantic effect. This metadata neither changes Clang
+specialization selection nor creates a runtime declaration or extra parameter.
+
+Evidence collection is bounded to 200000 directive-plus-argument units before
+copying; ordinary source expansion limits still apply during validation. All
+written type and expression checks run before emission through the same visitor.
+Dependent constructor patterns in the supported no-base class templates may only
+have written member initializers; a type/base initializer cannot hide delegation
+until instantiation. Member initializer expressions otherwise keep their normal
+lazy behavior. Source-invalid C++ retains Clang diagnostics; unsupported admitted
+source is rejected without publishing partial artifacts.
+
+Paired regressions cover these source paths, canonical instance identities,
+receiver/field storage, local static isolation, complete typed call signatures and
+relocation. Native O0/O2 fixtures cover actual mutation, results, references,
+copy/move, cleanup and imported array-reference defaults. Native results require
+CI of the implementing revision. Complete C++17/STL remains unfinished. The
+translator uses statically embedded Clang libraries, with no external Clang
+executable required at translation time; other input languages remain planned.
+
 ## Concrete free function templates
 
 Core v2 admits source-owned namespace/free function templates with one to 64

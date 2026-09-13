@@ -53,6 +53,14 @@ static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
   }
 }
 
+// Shape only: Allowlist separately validates the primary, arguments and body.
+static bool concreteFreeFunctionTemplate(const FunctionDecl *F) {
+  return F && F->getKind() == Decl::Function && F->getIdentifier() &&
+         F->getTemplatedKind() == FunctionDecl::TK_FunctionTemplateSpecialization &&
+         F->getPrimaryTemplate() && !F->isDependentContext() &&
+         !F->getType().isNull() && !F->getType()->isDependentType();
+}
+
 // Name shape only: patterns do not yet have concrete parameter/result types.
 static bool ordinaryOperatorKind(OverloadedOperatorKind Kind) {
   switch (Kind) {
@@ -92,6 +100,40 @@ static const ClassTemplateDecl *classFunctionPrimary(const FunctionDecl *F) {
 static bool concreteClassFunction(const FunctionDecl *F) {
   return classFunctionPrimary(F) && !F->isDependentContext() &&
          !F->getType().isNull() && !F->getType()->isDependentType();
+}
+
+// Local classes are instantiated with their enclosing function. They have
+// member-specialization metadata but are not ClassTemplateSpecializationDecls.
+static bool concreteLocalClassFunction(const FunctionDecl *F) {
+  for (unsigned Depth = 0; Depth < 64; ++Depth) {
+    const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
+    if (!M || (!isa<CXXConstructorDecl, CXXDestructorDecl, CXXConversionDecl>(M) &&
+               (M->getKind() != Decl::CXXMethod ||
+                (!M->getIdentifier() &&
+                 !ordinaryOperatorKind(M->getOverloadedOperator())))) ||
+        M->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
+        !M->getMemberSpecializationInfo() || M->getDescribedFunctionTemplate() ||
+        M->isDependentContext() || M->getType().isNull() ||
+        M->getType()->isDependentType())
+      return false;
+    const auto *Record = M->getParent();
+    const auto *Owner = Record->isLocalClass();
+    const auto *Origin = Record->getInstantiatedFromMemberClass();
+    const auto *Pattern =
+        dyn_cast_or_null<CXXMethodDecl>(M->getInstantiatedFromMemberFunction());
+    if (Record->getKind() != Decl::CXXRecord || Record->isDependentContext() ||
+        !Owner || !Origin || !Pattern || Pattern->getKind() != M->getKind() ||
+        Origin->getCanonicalDecl() != Pattern->getParent()->getCanonicalDecl())
+      return false;
+    if (concreteFreeFunctionTemplate(Owner) || concreteClassFunction(Owner))
+      return true;
+    F = Owner; // A local class can itself be declared in a local-class method.
+  }
+  return false;
+}
+
+static bool concreteMemberFunction(const FunctionDecl *F) {
+  return concreteClassFunction(F) || concreteLocalClassFunction(F);
 }
 
 // Classification evidence only. In particular, an out-of-line defaulted
@@ -135,7 +177,7 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
   if (!M || M->isImplicit() || !M->getIdentifier() || M->isVirtual() ||
       M->isExplicitObjectMemberFunction() || M->isVariadic() ||
       (M->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteClassFunction(M)) ||
+       !concreteMemberFunction(M)) ||
       M->isDeletedAsWritten() || M->isExplicitlyDefaulted() || M->isConsteval() ||
       M->getMethodQualifiers().hasVolatile() ||
       M->getMethodQualifiers().hasRestrict())
@@ -147,7 +189,7 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
 bool ordinaryOperator(const FunctionDecl *F) {
   if (!F || !F->isOverloadedOperator() || F->isImplicit() || F->isVariadic() ||
       (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteClassFunction(F)) ||
+       !concreteMemberFunction(F)) ||
       F->isDeletedAsWritten() || F->isDefaulted() || F->isConsteval())
     return false;
   if (!ordinaryOperatorKind(F->getOverloadedOperator()))
@@ -165,7 +207,7 @@ bool ordinaryConversion(const CXXConversionDecl *C) {
   if (!C || C->isImplicit() || !C->isUserProvided() || C->isVirtual() ||
       C->isStatic() || C->isExplicitObjectMemberFunction() || C->isVariadic() ||
       (C->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteClassFunction(C)) ||
+       !concreteMemberFunction(C)) ||
       C->isDeletedAsWritten() || C->isDefaulted() || C->isConsteval() ||
       C->getNumParams() || C->getMethodQualifiers().hasVolatile() ||
       C->getMethodQualifiers().hasRestrict())
@@ -176,7 +218,7 @@ bool ordinaryConversion(const CXXConversionDecl *C) {
 bool ordinaryConstructor(const CXXConstructorDecl *C) {
   if (!C || C->isImplicit() || !C->isUserProvided() || C->isVariadic() ||
       (C->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteClassFunction(C)) ||
+       !concreteMemberFunction(C)) ||
       C->isDeletedAsWritten() || C->isExplicitlyDefaulted() || C->isConsteval() ||
       C->isDelegatingConstructor() ||
       C->isInheritingConstructor())
@@ -187,7 +229,7 @@ bool ordinaryConstructor(const CXXConstructorDecl *C) {
     for (unsigned I = 1; I < C->getNumParams(); ++I) {
       const auto *P = C->getParamDecl(I);
       if (!P->hasDefaultArg() || P->hasUnparsedDefaultArg() ||
-          (P->hasUninstantiatedDefaultArg() && !concreteClassFunction(C)))
+          (P->hasUninstantiatedDefaultArg() && !concreteMemberFunction(C)))
         return false;
     }
     auto Source = C->getParamDecl(0)->getType();
@@ -210,7 +252,7 @@ static bool ordinaryAssignment(const CXXMethodDecl *M, bool Move) {
       M->isVirtual() ||
       M->isExplicitObjectMemberFunction() || M->isVariadic() ||
       (M->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteClassFunction(M)) ||
+       !concreteMemberFunction(M)) ||
       M->isDeletedAsWritten() || M->isExplicitlyDefaulted() || M->isConsteval() ||
       M->getNumParams() != 1 || M->getMethodQualifiers().getCVRQualifiers() ||
       (!Move && M->getRefQualifier() == RQ_RValue))
@@ -257,7 +299,7 @@ static bool defaultedFunction(const CXXMethodDecl *M) {
   if (!M || M->isInvalidDecl() || M->isDeleted() || M->isVirtual() ||
       M->isVariadic() || M->isExplicitObjectMemberFunction() ||
       (M->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteClassFunction(M)) || M->isConsteval())
+       !concreteMemberFunction(M)) || M->isConsteval())
     return false;
   if (!defaultedDeclaration(M))
     return false;
@@ -606,14 +648,6 @@ const InitListExpr *emptyVoidInitializer(const Expr *E) {
   return List;
 }
 
-// Shape only: Allowlist separately validates the primary, arguments and body.
-static bool concreteFreeFunctionTemplate(const FunctionDecl *F) {
-  return F && F->getKind() == Decl::Function && F->getIdentifier() &&
-         F->getTemplatedKind() == FunctionDecl::TK_FunctionTemplateSpecialization &&
-         F->getPrimaryTemplate() && !F->isDependentContext() &&
-         !F->getType().isNull() && !F->getType()->isDependentType();
-}
-
 static const TemplateDecl *scalarTemplateOwner(
     const SubstNonTypeTemplateParmExpr *E) {
   if (!E)
@@ -669,7 +703,7 @@ static bool lazyTemplateDefault(const ParmVarDecl *P) {
       !P->hasUninstantiatedDefaultArg())
     return false;
   const auto *Function = dyn_cast<FunctionDecl>(P->getDeclContext());
-  return concreteFreeFunctionTemplate(Function) || concreteClassFunction(Function);
+  return concreteFreeFunctionTemplate(Function) || concreteMemberFunction(Function);
 }
 
 const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context) {
@@ -679,7 +713,7 @@ const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context
     return nullptr;
   const auto *F = dyn_cast<FunctionDecl>(P->getDeclContext());
   if (!F || (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-             !concreteFreeFunctionTemplate(F) && !concreteClassFunction(F)) ||
+             !concreteFreeFunctionTemplate(F) && !concreteMemberFunction(F)) ||
       P->getFunctionScopeIndex() >= F->getNumParams() ||
       F->getParamDecl(P->getFunctionScopeIndex()) != P)
     return nullptr;
@@ -713,7 +747,7 @@ bool ordinaryDestructor(const CXXDestructorDecl *D) {
   if (!D || D->isImplicit() || !D->isUserProvided() || D->isVirtual() ||
       D->isDeletedAsWritten() || D->isExplicitlyDefaulted() ||
       (D->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteClassFunction(D)))
+       !concreteMemberFunction(D)))
     return false;
   // A spelled destructor without noexcept still has an implicit exception
   // specification. Keep that lazy state; written forms use the standard gate.
@@ -1138,6 +1172,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Constructor->isInheritingConstructor() || Constructor->isStatic() ||
           Constructor->getMethodQualifiers().getCVRQualifiers())
         return false;
+      // In a dependent primary, Sema represents delegation as a type/base
+      // initializer until instantiation. These class templates admit no bases.
+      for (const auto *Init : Constructor->inits())
+        if (Init->isWritten() && !Init->isAnyMemberInitializer())
+          return false;
     } else if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(M)) {
       if ((!Defaulted && !Destructor->isUserProvided()) || Destructor->isStatic() ||
           Destructor->getNumParams() ||
@@ -1567,7 +1606,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (Method->isTrivial())
       return;
     if (!Method->hasBody(Definition)) {
-      if (concreteClassFunction(Method) && Method->isUsed(/*CheckUsedAttr=*/false))
+      if (concreteMemberFunction(Method) && Method->isUsed(/*CheckUsedAttr=*/false))
         A.reject(L, "generated definition",
                  "A used nontrivial defaulted member needs a generated definition.", "TR0203");
       return; // Unevaluated uses can have no lazy body.
@@ -1648,6 +1687,48 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
+  void checkExplicitFunctionInstantiation(
+      const ExplicitFunctionInstantiationSource &Source) {
+    if (!A.S.coreV2() || !A.S.owns(A.Sources, Source.Location))
+      return;
+    A.chargeExpansion(1 + Source.Arguments->NumTemplateArgs, Source.Location);
+    if (!owned(Source.Function) || !Source.Type ||
+        (!concreteFreeFunctionTemplate(Source.Function) &&
+         !concreteMemberFunction(Source.Function)) || Source.HasAttributes) {
+      A.reject(Source.Location, "explicit function instantiation",
+               "An owned admitted function and attribute-free source directive are required.");
+      return;
+    }
+    auto *SavedFunction = CurrentFunction;
+    auto *SavedMethod = CurrentMethod;
+    auto SavedOwner = ImplicitInitializerOwner;
+    CurrentFunction = Source.Function;
+    CurrentMethod = dyn_cast<CXXMethodDecl>(Source.Function);
+    ImplicitInitializerOwner = Source.Location;
+    auto Restore = llvm::make_scope_exit([&] {
+      CurrentFunction = SavedFunction;
+      CurrentMethod = SavedMethod;
+      ImplicitInitializerOwner = SavedOwner;
+    });
+    // A directive is source evidence, not another function declaration. Its
+    // written type/name can differ from the reused function's source metadata.
+    const auto *Prototype = Source.Type->getType()->getAs<FunctionProtoType>();
+    if (!Prototype) {
+      A.reject(Source.Location, "explicit instantiation type",
+               "A resolved function prototype is required.");
+      return;
+    }
+    A.type(Prototype->getReturnType(), Source.Location, true);
+    for (auto Parameter : Prototype->param_types())
+      A.type(Parameter, Source.Location);
+    for (const auto &Argument : Source.Arguments->arguments())
+      if (!TraverseTemplateArgumentLoc(Argument))
+        return;
+    if (!TraverseDeclarationNameInfo(Source.Name) ||
+        !TraverseNestedNameSpecifierLoc(Source.Qualifier))
+      return;
+    TraverseTypeLoc(Source.Type->getTypeLoc());
+  }
   void indexFunctionTemplates() {
     if (!A.S.coreV2())
       return;
@@ -1779,7 +1860,7 @@ public:
     };
     if (!A.S.coreV2() ||
         (!concreteFreeFunctionTemplate(CurrentFunction) &&
-         !concreteClassFunction(CurrentFunction)))
+         !concreteMemberFunction(CurrentFunction)))
       return Normal();
     const auto *Info = CurrentFunction->getTypeSourceInfo();
     auto Outer = Info ? Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>()
@@ -2295,7 +2376,7 @@ public:
     if (!owned(D))
       return true;
     const bool Template = A.S.coreV2() && concreteFreeFunctionTemplate(D);
-    const bool ClassMethod = A.S.coreV2() && concreteClassFunction(D);
+    const bool InstantiatedMember = A.S.coreV2() && concreteMemberFunction(D);
     if (Template) {
       const auto *Primary = D->getPrimaryTemplate();
       const auto *Arguments = D->getTemplateSpecializationArgs();
@@ -2319,7 +2400,7 @@ public:
         D->isVariadic() ||
         D->getDescribedFunctionTemplate() ||
         (D->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-         !Template && !ClassMethod) ||
+         !Template && !InstantiatedMember) ||
         D->isDeletedAsWritten() || (D->isExplicitlyDefaulted() && !Defaulted) ||
         D->isConsteval())
       A.reject(D->getLocation(), "function",
@@ -2365,7 +2446,7 @@ public:
         Declaration = D;
     }
     // Explicit instantiation can generate a body without a runtime caller.
-    if (ClassMethod && Defaulted && D->hasBody()) {
+    if (InstantiatedMember && Defaulted && D->hasBody()) {
       if (isa<CXXDestructorDecl>(D)) {
         const auto *Body = dyn_cast_or_null<CompoundStmt>(D->getBody());
         if (!Body || !Body->body_empty())
@@ -2470,7 +2551,7 @@ public:
           Parent->getCanonicalDecl() != LexicalParent->getCanonicalDecl() ||
           Parent->isDependentContext() || Parent->isConstexpr() ||
           (Parent->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-           !concreteFreeFunctionTemplate(Parent) && !concreteClassFunction(Parent)) ||
+           !concreteFreeFunctionTemplate(Parent) && !concreteMemberFunction(Parent)) ||
           D->hasExternalStorage() || D->getTLSKind() != VarDecl::TLS_None ||
           D->getType().isVolatileQualified() ||
           !D->getType()->isIntegralOrEnumerationType() || Definition != D) {
@@ -3087,9 +3168,11 @@ static void orderCoreV2Records(Adapter &A) {
   A.Records = std::move(Ordered);
 }
 
-void Adapter::run() {
+void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives) {
   Allowlist Check(*this);
   Check.indexFunctionTemplates();
+  for (const auto &Directive : Directives)
+    Check.checkExplicitFunctionInstantiation(Directive);
   Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (!S.Diagnostics.empty())
     return;
@@ -3413,15 +3496,44 @@ public:
 
 class Consumer : public ASTConsumer {
   State &S;
+  std::vector<ExplicitFunctionInstantiationSource> Directives;
+  std::size_t DirectiveUnits = 0;
 
 public:
   explicit Consumer(State &S) : S(S) {}
+  void HandleNeverCExplicitFunctionInstantiation(
+      FunctionDecl *Function, const TemplateArgumentListInfo &Arguments,
+      TypeSourceInfo *Type, const DeclarationNameInfo &Name,
+      const NestedNameSpecifierLoc &Qualifier, const SourceLocation &Location,
+      bool HasAttributes) override {
+    if (!S.coreV2() || !Function || !S.Diagnostics.empty())
+      return;
+    auto &Context = Function->getASTContext();
+    auto &Sources = Context.getSourceManager();
+    if (!S.owns(Sources, Location))
+      return;
+    // Bound source evidence before copying any per-directive argument metadata.
+    constexpr std::size_t Limit = 200000;
+    auto Count = Arguments.size();
+    if (Count >= Limit || 1 + Count > Limit - DirectiveUnits) {
+      auto P = Sources.getPresumedLoc(Location);
+      S.diagnose("TR0201", "explicit instantiation source",
+                 "Explicit instantiation source exceeds the frontend budget.",
+                 "Reduce the number of source directives and template arguments.",
+                 P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
+      return;
+    }
+    DirectiveUnits += 1 + Count;
+    Directives.push_back({Function,
+        ASTTemplateArgumentListInfo::Create(Context, Arguments), Type, Name,
+        Qualifier, Location, HasAttributes});
+  }
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
     Adapter A(S, C);
     try {
-      A.run();
+      A.run(Directives);
     } catch (const Failure &) {
     }
   }

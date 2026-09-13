@@ -1281,7 +1281,6 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
         'throw-overridden': 'struct R{int n=(throw 1,2);R():n(7){}};',
         'new-default': 'struct R{int*p=new int(1);};',
         'reinterpret-default': 'struct R{int*p=reinterpret_cast<int*>(1);};',
-        'template-default': 'template<class T>struct R{T n=1;};',
         'excessive-array': 'struct R{int n[65537]={1};};',
         'address-of-member': 'struct R{int n=1;int R::*p=&R::n;};',
     }
@@ -6209,7 +6208,7 @@ int closedOverloads(){return Captured::select(true);}
         'namespace-binding': 'int value=99;namespace N{int value=3;int f(int);}using N::f;namespace N{int f(int n=value){return n;}}int main(){return f()-3;}',
         'side-effects': 'int ticks=0;int tick(){return ++ticks;}namespace N{int f(int);}using N::f;namespace N{int f(int n=tick()){return n;}}int main(){int a=f();int b=f(7);int d=f();return a-1+b-7+d-2+ticks-2;}',
         'const-reference-default': 'int live=0;struct R{int n;R(int v):n(v){++live;}~R(){--live;}};namespace N{int f(const R&);}using N::f;namespace N{int f(const R&r=R(3)){return r.n+live;}}int main(){int n=f();return n-4+live;}',
-        'array-reference-default': 'namespace N{int a[2]={3,4};int f(int(&)[2]);}using N::f;namespace N{int f(int(&v)[2]=a){return v[0]+v[1];}}int main(){return f()-7;}',
+        'array-reference-default': 'namespace N{struct A{int a[2];};int f(const int(&)[2]);}using N::f;namespace N{int f(const int(&v)[2]=A{{3,4}}.a){return v[0]+v[1];}}int main(){return f()-7;}',
         'prior-explicit-call': 'namespace N{int f(int);}using N::f;int before(){return f(4);}namespace N{int f(int n=3){return n;}}int main(){return before()-4+f()-3;}',
         'cross-namespace-c-defaults': 'namespace A{extern "C" int f(int);}using A::f;namespace B{extern "C" int f(int n=8);}namespace A{extern "C" int f(int n=3){return n;}}int main(){return f()-3;}',
     }
@@ -6440,6 +6439,183 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     }
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+
+    template_source_source = 'template<class T>T evaluate(T x){\n struct Local{\n  T value;\n  T get()const{return value;}\n  int next(){static int count=0;return ++count;}\n };\n Local l{x};return l.get()+l.next();\n}\nint signedValue(int n){return evaluate(n);}\nunsigned unsignedValue(unsigned n){return evaluate(n);}\ntemplate int evaluate<int>(int);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate unsigned evaluate<unsigned>(unsigned);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate<class T>T&alias(T&x){\n struct Reference{\n  T*p;\n  T&get(){return *p;}\n };\n Reference r{&x};return r.get();\n}\nint&reference(int&n){return alias(n);}\ntemplate<class T>T lifetime(T x){\n struct Life{\n  T value;\n  Life(T n):value(n){}\n  ~Life(){}\n  T read()const{return value;}\n };\n Life r(x);return r.read();\n}\nint lived(int n){return lifetime(n);}\ntemplate<class T>struct Outer{\n T run(T n){\n  struct Inner{\n   T value;\n   operator T()const{return value;}\n  };\n  Inner r{n};return r;\n }\n};\nint outer(Outer<int>&r,int n){return r.run(n);}\ntemplate<int N>int constant(){return N;}\nextern template int constant<3>();\ntemplate int constant<1+2>();\nextern template int constant<3>();\nint value(){return constant<3>();}\n'
+    template_source = check("v2-template-source-protocol", template_source_source, profile="cpp-core-v2")
+    ts_functions = {f["name"]: f for f in template_source["functions"]}
+    ts_records = {r["id"]: r for r in template_source["records"]}
+    ts_globals = {g["name"]: g for g in template_source["globals"]}
+    assert len(ts_functions) == len(template_source["functions"])
+    assert len(ts_records) == len(template_source["records"])
+    assert len(ts_globals) == len(template_source["globals"])
+
+    def ts_line(prefix):
+        lines = [i for i, line in enumerate(template_source_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def ts_function(prefix):
+        found = [f for f in ts_functions.values() if f["loc"]["line"] == ts_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def ts_selected(prefix):
+        calls = gc_calls(ts_function(prefix))
+        assert len(calls) == 1, (prefix, calls)
+        return ts_functions[calls[0]["callee"]]
+
+    def ts_signature(function, result, params):
+        assert function["result"] == result and [p["type"] for p in function["params"]] == params, function
+
+    signed = ts_selected("int signedValue(")
+    unsigned = ts_selected("unsigned unsignedValue(")
+    assert signed["name"] != unsigned["name"]
+    assert len([f for f in ts_functions.values() if f["loc"]["line"] == ts_line("template<class T>T evaluate(")]) == 2
+    instance_records = []
+    instance_globals = []
+    for function, scalar in ((signed, "int"), (unsigned, "uint")):
+        ts_signature(function, scalar, [scalar])
+        calls = gc_calls(function)
+        assert len(calls) == 2
+        getter, counter = [ts_functions[c["callee"]] for c in calls]
+        rid = counter["params"][0]["type"].removeprefix("ptr:")
+        record = ts_records[rid]
+        instance_records.append(record)
+        assert record["loc"]["line"] == ts_line(" struct Local{")
+        assert [f["type"] for f in record["fields"]] == [scalar]
+        ts_signature(getter, scalar, ["cptr:"+rid])
+        ts_signature(counter, "int", ["ptr:"+rid])
+        assert getter["loc"]["line"] == ts_line("  T get()const{return value;}")
+        assert counter["loc"]["line"] == ts_line("  int next(")
+        assert np_pointer(function, calls[0]["args"][0]) == np_pointer(function, calls[1]["args"][0])
+        returned = next(n["value"] for n in getter["body"] if n["op"] == "return")
+        assert gc_identity(getter, returned) == ("member", ("parameter", getter["params"][0]["name"]), record["fields"][0]["name"])
+        names = {n["target"]["name"] for n in counter["body"] if n["op"] == "assign"
+                 and n["target"].get("kind") == "var" and n["target"]["name"] in ts_globals}
+        assert len(names) == 1
+        item = ts_globals[next(iter(names))]
+        assert item["mutable"] and item["type"] == "int" and item["value"]["value"] == "0"
+        instance_globals.append(item["name"])
+    assert len({r["id"] for r in instance_records}) == 2
+    assert len({r["fields"][0]["name"] for r in instance_records}) == 2
+    assert len(set(instance_globals)) == 2 and len(ts_globals) == 2
+    alias = ts_selected("int&reference(")
+    ts_signature(alias, "ptr:int", ["ptr:int"])
+    alias_calls = gc_calls(alias)
+    assert len(alias_calls) == 1
+    returned = next(n["value"] for n in alias["body"] if n["op"] == "return")
+    assert di_call_result(alias, returned) == alias_calls[0]["target"]["name"]
+    alias_getter = ts_functions[alias_calls[0]["callee"]]
+    arid = alias_getter["params"][0]["type"].removeprefix("ptr:")
+    ts_signature(alias_getter, "ptr:int", ["ptr:"+arid])
+    assert [f["type"] for f in ts_records[arid]["fields"]] == ["ptr:int"]
+    life = ts_selected("int lived(")
+    ts_signature(life, "int", ["int"])
+    life_calls = gc_calls(life)
+    assert len(life_calls) == 3
+    constructor, getter, destructor = [ts_functions[c["callee"]] for c in life_calls]
+    lrid = constructor["params"][0]["type"].removeprefix("ptr:")
+    ts_signature(constructor, "void", ["ptr:"+lrid, "int"])
+    ts_signature(getter, "int", ["cptr:"+lrid])
+    ts_signature(destructor, "void", ["ptr:"+lrid])
+    assert destructor["name"] == lrid+"_destroy"
+    assert [np_pointer(life, c["args"][0]) for c in life_calls] == [np_pointer(life, life_calls[0]["args"][0])]*3
+    assert gc_identity(life, life_calls[0]["args"][1]) == ("parameter", life["params"][0]["name"])
+    outer = ts_selected("int outer(")
+    outer_calls = gc_calls(outer)
+    assert len(outer_calls) == 1
+    conversion = ts_functions[outer_calls[0]["callee"]]
+    irid = conversion["params"][0]["type"].removeprefix("cptr:")
+    ts_signature(conversion, "int", ["cptr:"+irid])
+    assert ts_records[irid]["loc"]["line"] == ts_line("  struct Inner{")
+    constant = ts_selected("int value(")
+    ts_signature(constant, "int", [])
+    assert [gc_identity(constant, n["value"]) for n in constant["body"] if n["op"] == "return"] == [3]
+    assert len([f for f in ts_functions.values() if f["loc"]["line"] == ts_line("template<int N>int constant(")]) == 1
+    for function in ts_functions.values():
+        assert not any(n["op"] == "mapped_call" for n in function["body"])
+        for call_node in gc_calls(function):
+            callee = ts_functions[call_node["callee"]]
+            assert [a["type"] for a in call_node["args"]] == [p["type"] for p in callee["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-template-source-relocated-") as temp:
+        relocated = check("template-source-relocated", template_source_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == template_source, "instantiation source evidence changed canonical identities"
+
+    template_source_positive = {
+        'promoted-template-default': 'template<class T>struct R{T n=1;};',
+        'selected-template-default': 'template<class T>struct R{T n=1;};int f(){R<int>r;return r.n;}',
+        'lazy-template-default': 'template<class T>struct R{T n=T::missing;};static_assert(sizeof(R<int>)==sizeof(int));',
+        'lazy-member-initializer': 'template<class T>struct R{T n;R():n(T::missing){}};static_assert(sizeof(R<int>)==sizeof(int));',
+        'ordinary-member-initializer': 'template<class T>struct R{T n;R(T v):n(v){}};int f(){R<int>r(3);return r.n;}',
+        'outside-member-initializer': 'template<class T>struct R{T n;R(T);};template<class T>R<T>::R(T v):n(v){}int f(){R<int>r(3);return r.n;}',
+        'local-method': 'template<class T>T f(T n){struct R{T n;T get()const{return n;}};R r{n};return r.get();}int g(){return f(3);}',
+        'local-static': 'template<class T>int f(){struct R{int get(){static int n=0;return ++n;}};R r;return r.get();}int g(){return f<int>()+f<unsigned>();}',
+        'local-construct-destruct': 'int live=0;template<class T>T f(T n){struct R{T n;R(T v):n(v){++live;}~R(){--live;}};R r(n);return r.n;}int g(){return f(3)+live;}',
+        'local-copy-move': 'template<class T>T f(T n){struct R{T n;R(T v):n(v){}R(const R&r):n(r.n+1){}R(R&&r):n(r.n+2){r.n=0;}};R a(n);R b(a);R c(static_cast<R&&>(b));return a.n+b.n+c.n;}int g(){return f(3);}',
+        'local-operators': 'template<class T>T f(T n){struct R{T n;T&operator*(){return n;}R&operator++(){++n;return *this;}T operator()(){return n;}operator T()const{return n;}R&operator=(const R&r){n=r.n;return *this;}};R a{n},b{n};*a=4;++a;b=a;return b()+T(a);}int g(){return f(3);}',
+        'local-defaulted': 'template<class T>T f(){struct R{T n=3;R()=default;R(const R&)=default;R(R&&)=default;R&operator=(const R&)=default;R&operator=(R&&)=default;~R()=default;};R a;R b(a);R c(static_cast<R&&>(b));a=c;b=static_cast<R&&>(c);return a.n+b.n;}int g(){return f<int>();}',
+        'local-defaulted-nontrivial': 'struct I{int n;I():n(3){}I(const I&r):n(r.n+1){}I&operator=(const I&r){n=r.n;return *this;}~I(){}};template<class T>int f(){struct R{T n=2;I i;R()=default;R(const R&)=default;R&operator=(const R&)=default;~R()=default;};R a;R b(a);a=b;return a.i.n;}int g(){return f<int>();}',
+        'local-nested': 'template<class T>T f(T n){struct R{struct S{T n;T get(){return n;}};T get(T n){S s{n};return s.get();}};R r;return r.get(n);}int g(){return f(3);}',
+        'local-in-local-method': 'template<class T>T f(T n){struct R{T get(T n){struct S{T n;T get(){return n;}};S s{n};return s.get();}};R r;return r.get(n);}int g(){return f(3);}',
+        'local-under-class-method': 'template<class T>struct R{T get(T n){struct S{T n;T get(){return n;}};S s{n};return s.get();}};int g(){R<int>r;return r.get(3);}',
+        'local-default-noexcept': 'template<int N>int f(){struct R{int get(int n=N)const noexcept(sizeof(int)==4){return n;}};R r;return r.get();}int g(){return f<3>();}',
+        'local-unused-defined': 'template<class T>int f(){struct R{T get(){return T(3);}T unused(){return T(4);}};R r;return r.get();}int g(){return f<int>();}',
+        'local-overloads': 'template<class T>int f(){struct R{T get()&{return 3;}T get()const&{return 4;}T get()&&{return 5;}};R r;const R&c=r;return r.get()+c.get()+static_cast<R&&>(r).get();}int g(){return f<int>();}',
+        'directive-scalar': 'template<int N>int f(){return N;}template int f<1+2>();',
+        'directive-types': 'template<class T>T f(T n){return n;}template int f<int>(int);template unsigned f<unsigned>(unsigned);',
+        'directive-deduced': 'template<class T>T f(T n){return n;}template int f(int);',
+        'directive-extern-definition': 'template<int N>int f(){return N;}extern template int f<3>();template int f<1+2>();',
+        'directive-after-use': 'template<int N>int f(){return N;}int g(){return f<3>();}template int f<1+2>();',
+        'directive-after-specialization': 'template<int N>int f(){return N;}template<>int f<3>(){return 7;}template int f<1+2>();',
+        'directive-repeat-extern': 'template<int N>int f(){return N;}extern template int f<3>();extern template int f<1+2>();template int f<3>();',
+        'directive-member': 'template<class T>struct R{T f(T n){return n;}};template int R<int>::f(int);',
+        'directive-conversion': 'template<class T>struct R{operator T(){return T(3);}};template R<int>::operator int();',
+        'directive-aliased-qualifier': 'namespace N{template<class T>struct R{T f(){return T(3);}};}namespace A=N;template int A::R<int>::f();',
+        'directive-written-noexcept': 'template<int N>int f()noexcept{return N;}template int f<3>()noexcept(sizeof(int)==4);',
+        'protocol-source': 'template<class T>T evaluate(T x){\n struct Local{\n  T value;\n  T get()const{return value;}\n  int next(){static int count=0;return ++count;}\n };\n Local l{x};return l.get()+l.next();\n}\nint signedValue(int n){return evaluate(n);}\nunsigned unsignedValue(unsigned n){return evaluate(n);}\ntemplate int evaluate<int>(int);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate unsigned evaluate<unsigned>(unsigned);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate<class T>T&alias(T&x){\n struct Reference{\n  T*p;\n  T&get(){return *p;}\n };\n Reference r{&x};return r.get();\n}\nint&reference(int&n){return alias(n);}\ntemplate<class T>T lifetime(T x){\n struct Life{\n  T value;\n  Life(T n):value(n){}\n  ~Life(){}\n  T read()const{return value;}\n };\n Life r(x);return r.read();\n}\nint lived(int n){return lifetime(n);}\ntemplate<class T>struct Outer{\n T run(T n){\n  struct Inner{\n   T value;\n   operator T()const{return value;}\n  };\n  Inner r{n};return r;\n }\n};\nint outer(Outer<int>&r,int n){return r.run(n);}\ntemplate<int N>int constant(){return N;}\nextern template int constant<3>();\ntemplate int constant<1+2>();\nextern template int constant<3>();\nint value(){return constant<3>();}\n',
+    }
+    for name, source in template_source_positive.items():
+        check("v2-template-source-positive-" + name, source, profile="cpp-core-v2")
+    template_source_reject = {
+        'dependent-delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};',
+        'outside-delegating': 'template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}',
+        'selected-delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};int f(){R<int>r;return r.n;}',
+        'local-selected-body': 'template<class T>int f(){struct R{int get(){return int(1.0);}};R r;return r.get();}int g(){return f<int>();}',
+        'local-unused-body': 'template<class T>int f(){struct R{int get(){return 3;}int unused(){return int(1.0);}};R r;return r.get();}int g(){return f<int>();}',
+        'local-noexcept-body': 'template<class T>int f(){struct R{int get()noexcept(sizeof(double)>0){return 3;}};R r;return r.get();}int g(){return f<int>();}',
+        'local-field-type': 'template<class T>int f(){struct R{double n;int get(){return 3;}};R r{};return r.get();}int g(){return f<int>();}',
+        'local-dynamic-static': 'template<class T>int f(int x){struct R{int get(int n){static int value=n;return value;}};R r;return r.get(x);}int g(){return f<int>(3);}',
+        'local-virtual': 'template<class T>int f(){struct R{virtual int get(){return 3;}};R r;return r.get();}int g(){return f<int>();}',
+        'directive-floating-cast': 'template<int N>int f(){return N;}template int f<static_cast<int>(1.0)>();',
+        'directive-floating-size': 'template<int N>int f(){return N;}template int f<sizeof(double)>();',
+        'directive-floating-fold': 'constexpr int n(){return int(1.0);}template<int N>int f(){return N;}template int f<n()>();',
+        'directive-floating-conditional': 'template<int N>int f(){return N;}template int f<(true?3:int(1.0))>();',
+        'directive-extern-floating': 'template<int N>int f(){return N;}extern template int f<int(1.0)>();',
+        'directive-after-use-floating': 'template<int N>int f(){return N;}int g(){return f<1>();}template int f<int(1.0)>();',
+        'directive-after-specialization-floating': 'template<int N>int f(){return N;}template<>int f<1>(){return 3;}template int f<int(1.0)>();',
+        'directive-first-bad-spelling': 'template<int N>int f(){return N;}extern template int f<int(1.0)>();extern template int f<1>();template int f<1>();',
+        'directive-last-bad-spelling': 'template<int N>int f(){return N;}extern template int f<1>();extern template int f<int(1.0)>();template int f<1>();',
+        'directive-return-type-source': 'template<int N>int f(){return N;}template decltype(int(1.0)) f<3>();',
+        'directive-parameter-type-source': 'template<class T>int f(T){return 3;}template int f<int>(decltype(int(1.0)));',
+        'directive-noexcept-source': 'template<int N>int f()noexcept{return N;}template int f<3>()noexcept(sizeof(double)>0);',
+        'directive-member-qualifier-source': 'template<int N>struct R{int f(){return N;}};template int R<int(1.0)>::f();',
+        'directive-conversion-name-source': 'template<class T>struct R{operator T(){return T(3);}};template R<int>::operator decltype(int(1.0))();',
+        'directive-attribute-after-specialization': 'template<int N>int f(){return N;}template<>int f<3>(){return 7;}template __attribute__((used)) int f<3>();',
+        'directive-attribute-after-use': 'template<int N>int f(){return N;}int g(){return f<3>();}extern template __attribute__((used)) int f<3>();',
+        'directive-declarator-attribute': 'template<int N>int f(){return N;}template int f<3>() __attribute__((used));',
+        'directive-type-chunk-attribute': 'template<int N>int*f(int*p){return p;}extern template int* __attribute__((aligned(8))) f<3>(int*);',
+    }
+    for name, source in template_source_reject.items():
+        check("v2-template-source-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    template_source_invalid = {
+        'local-private': 'template<class T>int f(){class R{int get(){return 3;}};R r;return r.get();}int g(){return f<int>();}',
+        'local-undefined-dependent': 'template<class T>int f(){struct R{int get(){return T::missing;}};R r;return r.get();}int g(){return f<int>();}',
+        'directive-type-mismatch': 'template<class T>T f(T n){return n;}template bool f<int>(int);',
+        'directive-duplicate-definition': 'template<int N>int f(){return N;}template int f<3>();template int f<1+2>();',
+    }
+    for name, source in template_source_invalid.items():
+        check("v2-template-source-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    check("v1-template-source-directive", 'template<int N>int f(){return N;}template int f<1+2>();', "TR0201")
 
     class_operators_source = 'int next(){return 2;}\ntemplate<class T,int N>struct Cursor{\n T*p;\n T&operator*()const{return *p;}\n T&operator[](int n){return p[n];}\n Cursor&operator++(){++p;return *this;}\n Cursor operator++(int){T*old=p;++p;return Cursor{old};}\n Cursor operator+(int n)const{return Cursor{p+n};}\n Cursor&operator=(int n){*p=n;return *this;}\n T operator()(int n=next()){return p[n]+N;}\n bool operator&&(const Cursor&r)const{return *p&&*r.p;}\n bool operator||(const Cursor&r)const{return *p||*r.p;}\n Cursor&operator,(Cursor&r){return r;}\n explicit operator bool()const{return *p!=0;}\n operator T&(){return *p;}\n int counter(){static int n=0;return ++n;}\n};\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 7;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nint&subscript(Cursor<int,3>&r){return left(r)[next()];}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return left(r).operator=(right());}\nint callDefault(Cursor<int,3>&r){return left(r)();}\nint callExplicit(Cursor<int,3>&r){return left(r)(right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nbool boolean(const Cursor<int,3>&r){return static_cast<bool>(r);}\nint&reference(Cursor<int,3>&r){return r;}\nint counterA(Cursor<int,3>&r){return r.counter();}\nusing Alias=Cursor<int,1+2>;\nint counterAlias(Alias&r){return r.counter();}\nint counterB(Cursor<int,4>&r){return r.counter();}\nint callDifferent(Cursor<int,4>&r){return r(1);}\ntemplate<class T>struct Qualified{\n T n;\n T operator()()&{return n;}\n T operator()()const&{return n+1;}\n T operator()()&&{return n+2;}\n};\nint mutableCall(Qualified<int>&r){return r();}\nint constCall(const Qualified<int>&r){return r();}\nint rvalueCall(Qualified<int>&r){return static_cast<Qualified<int>&&>(r)();}\nstruct Value{\n int n;\n ~Value(){}\n};\ntemplate<class T>struct Convert{\n T n;\n operator Value()const{return Value{n};}\n};\nValue converted(const Convert<int>&r){return r;}\nint extended(const Convert<int>&r){const Value&v=r;return v.n;}\ntemplate<auto N>struct Count{\n int operator()(){struct Local{int n;};static int count=0;Local l{++count};return l.n+N;}\n};\nint signedCount(){Count<3>c;return c();}\nint unsignedCount(){Count<3u>c;return c();}\nint aliasCount(){Count<1+2>c;return c();}\n'
     class_operators = check("v2-class-operators-protocol", class_operators_source, profile="cpp-core-v2")

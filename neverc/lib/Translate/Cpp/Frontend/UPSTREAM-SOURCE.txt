@@ -9,6 +9,15 @@ The archive is fetched and verified during the NeverC build. An offline copy
 can be selected with CMake's NEVERC_CPP_LLVM_SOURCE_ARCHIVE option; the same
 SHA256 is required. No upstream executable or shared library is installed.
 
+A checked private ASTConsumer.h/SemaTemplate.cpp patch preserves source evidence
+for each explicit function-instantiation directive. The default no-op consumer
+callback receives the chosen function plus parsed arguments, type, declaration
+name, qualifier, location and attribute presence before no-effect early returns.
+NeverC records bounded owned evidence and checks it after semantic analysis;
+it does not alter overload resolution, declarations or instantiation flags.
+The header/source group must be pristine or fully rewritten, with duplicate,
+partial, missing and drifted forms rejected before either file is changed.
+
 The isolated build renames namespace llvm and selected global C/C++ symbols.
 IsolateSymbols.py applies checked, idempotent changes to the extracted
 IntrinsicInst.cpp, Debugify.h, and LoopUtils.cpp to isolate otherwise global
