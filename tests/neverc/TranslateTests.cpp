@@ -5041,6 +5041,127 @@ TEST_F(TranslateTest, CoreV2TemplateParameterQueriesRetainDefinitionRequirements
   }
 }
 
+TEST_F(TranslateTest, CoreV2VariableSourcesAcceptNestedSources) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"qualified-source-depth-64", "namespace values{template<int N>constexpr int value=N;}namespace alias=values;int main(){return alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<3>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>-3;}"},
+      {"nested-selected-default", "template<int N,int M=N+1>constexpr int value=M;static_assert(value<value<1>> == 3);"},
+      {"nested-caller-slot", "template<int N>constexpr int value=N;template<int N>int f(){return value<value<N>>;}int main(){return f<3>()-3;}"},
+      {"cached-depth-64", "template<int N>constexpr int value=N;static_assert(value<3> == 3);static_assert(value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<3>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> == 3);"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("variable-source-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("variable-source-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariableSourcesRetainNestedSourceChecks) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"nested-hidden-value", "template<int N>constexpr int value=N;int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<sizeof(double)>>>>>>>>>>>>>>>>;}"},
+      {"cached-nested-hidden-type", "template<class>using I=int;template<int N>constexpr int value=N;static_assert(value<sizeof(int)> == sizeof(int));int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<sizeof(I<double>)>>>>>>>>>>>>>>>>;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("variable-source-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("variable-source-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariableSourcesPreserveNestedValues) {
+  const auto Source = tmpFile("variable-source-runtime.cpp");
+  const auto Output = tmpFile("variable-source-runtime.nc");
+  writeFile(Source, R"cpp(template<int N>constexpr int value=N;
+template<int N,int M=N+1>constexpr int next=M;
+int main(){
+ if(value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<13>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>!=13)return 1;
+ if(next<next<1>>!=3)return 2;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variable-source-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariablePackCountsPreserveResolvedValues) {
+  const auto Source = tmpFile("variable-pack-counts.cpp");
+  const auto Output = tmpFile("variable-pack-counts.nc");
+  writeFile(Source, R"cpp(template<int...N>constexpr int count=sizeof...(N);
+template<auto...N>constexpr int mixed=sizeof...(N);
+template<int...N>constexpr int tail=-1;
+template<int...N>constexpr int tail<0,N...> = sizeof...(N);
+template<class...T>constexpr int types=sizeof...(T);
+template<class T,class...U>constexpr int types<T*,U...> = 1+sizeof...(U);
+enum class E:int{one=1};
+int main(){
+ if(count<>!=0||count<3,4,5>!=3)return 1;
+ if(mixed<>!=0||mixed<true,2,E::one>!=3)return 2;
+ if(tail<1>!=-1||tail<0>!=0||tail<0,3,4>!=2)return 3;
+ if(types<>!=0||types<int,bool>!=2||types<int*>!=1||types<int*,bool,long long>!=3)return 4;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variable-pack-counts" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariablePackCountsAcceptOwnedParameters) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"value-pack-empty", "template<int...N>constexpr int count=sizeof...(N);static_assert(count<> == 0);"},
+      {"value-pack-many", "template<int...N>constexpr int count=sizeof...(N);static_assert(count<1,2,3> == 3);"},
+      {"auto-pack-types", "enum class E:int{one=1};template<auto...N>constexpr int count=sizeof...(N);static_assert(count<true,2,E::one> == 3);"},
+      {"partial-value-pack", "template<int...N>constexpr int count=-1;template<int...N>constexpr int count<0,N...> = sizeof...(N);static_assert(count<0> == 0&&count<0,4,5> == 2);"},
+      {"redeclared-type-pack", "template<class...A>extern const int count;template<class...B>const int count=sizeof...(B);int main(){return count<int,bool> - 2;}"},
+      {"nested-source-use", "template<int...N>constexpr int count=sizeof...(N);template<int N>constexpr int id=N;static_assert(id<count<1,2>> == 2);"},
+      {"value-pack-64", "template<int...N>constexpr int count=sizeof...(N);static_assert(count<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0> == 64);"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("variable-pack-count-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("variable-pack-count-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariablePackCountsRetainPackBounds) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"value-pack-65", "template<int...N>constexpr int count=sizeof...(N);int main(){return count<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("variable-pack-count-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("variable-pack-count-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VariableTemplatesPreserveValuesAndStorage) {
   const auto Source = tmpFile("variable-templates-runtime.cpp");
   const auto Output = tmpFile("variable-templates-runtime.nc");
@@ -5088,10 +5209,10 @@ int main(){
  first()=12;
  if(counter<3>!=12||counter<4>!=4||again()!=12)return 3;
  ++zero<int>;
- if(zero<int>!=1||zero<long long>!=0||&zero<int>==&zero<long long>)return 4;
+ if(zero<int>!=1||zero<long long>!=0||&zero<int> == &zero<long long>)return 4;
  if(cell<int>!=1||cell<int*>!=7||cell<const int*>!=9||cell<bool>!=11)return 5;
  ++cell<int*>;
- if(cell<int*>!=8||cell<long long*>!=7||&cell<int*>==&cell<long long*>)return 6;
+ if(cell<int*>!=8||cell<long long*>!=7||&cell<int*> == &cell<long long*>)return 6;
  if(count<>!=0||count<int,bool,long long>!=3||sum<>!=0||sum<1,2,3>!=6)return 7;
  if(steps<4>!=10||steps<3>!=6)return 8;
  if(!same<int,int>||same<int,bool>||!Imported::same<bool,bool>)return 9;
@@ -5125,6 +5246,7 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2VariableTemplatesAcceptConcreteInstances) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-unused-variable", "template<class T>int value=3;"},
       {"full-zero-definition", "template<class T>int value=1;template<>int value<int>;int main(){return value<int>;}"},
       {"unused-primary", "template<class T> int value=1;"},
       {"unused-pack", "template<class...T>int n=sizeof...(T);"},
@@ -5265,6 +5387,8 @@ TEST_F(TranslateTest, CoreV2VariableTemplatesRetainSourceAndResourceChecks) {
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     expectCode(Result, "TR0201");
+    if (Name == "source-depth-65")
+      EXPECT_TRUE(Result.stderrContains("template source depth")) << Result.out << Result.err;
     expectNoArtifacts(Output);
   }
 }
@@ -8804,7 +8928,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"member", "struct R{template<class T>T f(T v){return v;}};", "TR0201"},
       {"friend", "struct R{template<class T>friend T f(T v){return v;}};", "TR0201"},
       {"template-template", "template<template<class>class T>int f(){return 1;}", "TR0201"},
-      {"variable", "template<class T>int value=3;", "TR0201"},
       {"float-argument", "template<class T>int f(){return 1;}int main(){return f<double>();}", "TR0201"},
       {"float-signature", "template<class T>double f(T n){return n;}int main(){return static_cast<int>(f(1));}", "TR0201"},
       {"float-body", "template<class T>int f(T n){double x=1.0;return n;}int main(){return f(1);}", "TR0201"},

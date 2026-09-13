@@ -1661,7 +1661,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!owned(Pack) || !supportedPackDeclaration(Pack) || Found == PackOwners.end())
       return false;
     return functionTemplateShape(dyn_cast<FunctionTemplateDecl>(Found->second)) ||
-           classPatternShape(Found->second) ||
+           classPatternShape(Found->second) || variablePatternShape(Found->second) ||
            aliasTemplateShape(dyn_cast<TypeAliasTemplateDecl>(Found->second));
   }
   bool parameterTypeQueryMetadata(const UnaryExprOrTypeTraitExpr *Query) {
@@ -3268,6 +3268,19 @@ public:
     return WalkUpFromSubstTemplateTypeParmTypeLoc(TL) &&
            (!shouldWalkTypesOfTypeLocs() ||
             WalkUpFromSubstTemplateTypeParmType(const_cast<SubstTemplateTypeParmType *>(Type)));
+  }
+  bool TraverseDeclRefExpr(DeclRefExpr *Reference) {
+    if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()) ||
+        !isa<VarTemplateSpecializationDecl>(Reference->getDecl()))
+      return RecursiveASTVisitor<Allowlist>::TraverseDeclRefExpr(Reference);
+    // VisitDeclRefExpr checks every written argument against this exact source
+    // event and traverses it before entering the callee's parameter frame.
+    // RAV's normal argument traversal would visit nested variable uses again
+    // at every level, making a linear source chain expand exponentially.
+    // DeclRefExpr has no statement children; retain its qualifier/name visits.
+    return WalkUpFromDeclRefExpr(Reference) &&
+           TraverseNestedNameSpecifierLoc(Reference->getQualifierLoc()) &&
+           TraverseDeclarationNameInfo(Reference->getNameInfo());
   }
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))

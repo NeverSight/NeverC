@@ -6722,7 +6722,42 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     for name, source in template_parameter_queries_missing.items():
         check("v2-template-parameter-queries-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
 
+    variable_source_repairs_positive = {
+        'qualified-source-depth-64': 'namespace values{template<int N>constexpr int value=N;}namespace alias=values;int main(){return alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<3>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>-3;}',
+        'nested-selected-default': 'template<int N,int M=N+1>constexpr int value=M;static_assert(value<value<1>> == 3);',
+        'nested-caller-slot': 'template<int N>constexpr int value=N;template<int N>int f(){return value<value<N>>;}int main(){return f<3>()-3;}',
+        'cached-depth-64': 'template<int N>constexpr int value=N;static_assert(value<3> == 3);static_assert(value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<3>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> == 3);',
+    }
+    for name, source in variable_source_repairs_positive.items():
+        check("v2-variable-source-repair-positive-" + name, source, None, profile="cpp-core-v2")
+
+    variable_source_repairs_reject = {
+        'nested-hidden-value': 'template<int N>constexpr int value=N;int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<sizeof(double)>>>>>>>>>>>>>>>>;}',
+        'cached-nested-hidden-type': 'template<class>using I=int;template<int N>constexpr int value=N;static_assert(value<sizeof(int)> == sizeof(int));int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<sizeof(I<double>)>>>>>>>>>>>>>>>>;}',
+    }
+    for name, source in variable_source_repairs_reject.items():
+        check("v2-variable-source-repair-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    variable_pack_counts_positive = {
+        'value-pack-empty': 'template<int...N>constexpr int count=sizeof...(N);static_assert(count<> == 0);',
+        'value-pack-many': 'template<int...N>constexpr int count=sizeof...(N);static_assert(count<1,2,3> == 3);',
+        'auto-pack-types': 'enum class E:int{one=1};template<auto...N>constexpr int count=sizeof...(N);static_assert(count<true,2,E::one> == 3);',
+        'partial-value-pack': 'template<int...N>constexpr int count=-1;template<int...N>constexpr int count<0,N...> = sizeof...(N);static_assert(count<0> == 0&&count<0,4,5> == 2);',
+        'redeclared-type-pack': 'template<class...A>extern const int count;template<class...B>const int count=sizeof...(B);int main(){return count<int,bool> - 2;}',
+        'nested-source-use': 'template<int...N>constexpr int count=sizeof...(N);template<int N>constexpr int id=N;static_assert(id<count<1,2>> == 2);',
+        'value-pack-64': 'template<int...N>constexpr int count=sizeof...(N);static_assert(count<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0> == 64);',
+    }
+    for name, source in variable_pack_counts_positive.items():
+        check("v2-variable-pack-counts-positive-" + name, source, None, profile="cpp-core-v2")
+
+    variable_pack_counts_reject = {
+        'value-pack-65': 'template<int...N>constexpr int count=sizeof...(N);int main(){return count<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>;}',
+    }
+    for name, source in variable_pack_counts_reject.items():
+        check("v2-variable-pack-counts-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+
     variable_templates_positive = {
+        'promoted-unused-variable': 'template<class T>int value=3;',
         'full-zero-definition': 'template<class T>int value=1;template<>int value<int>;int main(){return value<int>;}',
         'unused-primary': 'template<class T> int value=1;',
         'unused-pack': 'template<class...T>int n=sizeof...(T);',
@@ -6849,7 +6884,9 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'written-const-volatile-auto': 'template<class T>const volatile auto value=3;int main(){return value<int>;}',
     }
     for name, source in variable_templates_reject.items():
-        check("v2-variable-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+        rejected = check("v2-variable-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+        if name == "source-depth-65":
+            assert any(d["construct"] == "template source depth" for d in rejected["diagnostics"]), rejected
 
     variable_templates_invalid = {
         'full-extern-unevaluated': 'template<class T>int value=1;template<>extern int value<int>;static_assert(sizeof(value<int>)==sizeof(int));',
@@ -10390,7 +10427,6 @@ Plain chosenRecord(){return choose<false>();}
         'member': 'struct R{template<class T>T f(T v){return v;}};',
         'friend': 'struct R{template<class T>friend T f(T v){return v;}};',
         'template-template': 'template<template<class>class T>int f(){return 1;}',
-        'variable': 'template<class T>int value=3;',
         'float-argument': 'template<class T>int f(){return 1;}int main(){return f<double>();}',
         'float-signature': 'template<class T>double f(T n){return n;}int main(){return static_cast<int>(f(1));}',
         'float-body': 'template<class T>int f(T n){double x=1.0;return n;}int main(){return f(1);}',
