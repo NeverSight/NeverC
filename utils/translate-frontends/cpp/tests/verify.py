@@ -6566,6 +6566,337 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     for name, source in fresh_reference_invalid.items():
         check("v2-fresh-reference-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
 
+    alias_templates_source = 'template<class T>using Identity=T;\ntemplate<class T>using Reference=T&;\ntemplate<class T,int N=3>using Array=T[N];\ntemplate<class T>struct Store{T value;inline static int state=3;};\ntemplate<class T>using Box=Store<T>;\ntemplate<class T,int N=sizeof(T)>int&slot(){static int n=N;return n;}\nstruct Token{int n;Token(int v):n(v){}~Token(){n=99;}};\nIdentity<int>scalar(Identity<int>n){return n;}\nReference<int>reference(int&n){return n;}\nconst Identity<int>*pointer(const int&n){return &n;}\nReference<int>element(Array<int>&a){return a[1];}\nint extent(){return sizeof(Array<int>);}\nBox<int>makeBox(){return Box<int>{3};}\nStore<int>sameBox(){return Store<int>{4};}\nBox<unsigned>otherBox(){return Box<unsigned>{5u};}\nint&boxState(){return Box<int>::state;}\nint&sameState(){return Store<int>::state;}\nint&otherState(){return Box<unsigned>::state;}\nint&aliasSlot(){return slot<Identity<int>>();}\nint&sameSlot(){return slot<int,sizeof(int)>();}\nint&otherSlot(){return slot<long long>();}\nIdentity<Token>makeToken(){return Token(7);}\nint observe(const Identity<Token>&v){return v.n;}\nint full(){return observe(makeToken());}\ntemplate<class T>using Scalar=decltype(T{});\ntemplate<class T,Scalar<T> N=4>int typed(){return N;}\ntemplate<class T,Scalar<T>...N>int typedPack(){return sizeof...(N);}\nint typedDefault(){return typed<int>();}\nint typedExplicit(){return typed<Identity<int>,7>();}\nint typedSame(){return typed<int,7>();}\nint typedEmpty(){return typedPack<int>();}\nint typedMany(){return typedPack<int,2,3>();}\n'
+    alias_templates = check("v2-alias-templates", alias_templates_source, profile="cpp-core-v2")
+    at_functions = {f["name"]: f for f in alias_templates["functions"]}
+    at_records = {r["id"]: r for r in alias_templates["records"]}
+    at_globals = {g["name"]: g for g in alias_templates["globals"]}
+
+    def at_line(prefix):
+        found = [i for i, text in enumerate(alias_templates_source.splitlines(), 1) if text.startswith(prefix)]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    def at_function(prefix):
+        found = [f for f in alias_templates["functions"] if f["loc"]["line"] == at_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    for prefix, result, params in (("Identity<int>scalar(", "int", ["int"]),
+                                    ("Reference<int>reference(", "ptr:int", ["ptr:int"]),
+                                    ("const Identity<int>*pointer(", "cptr:int", ["cptr:int"]),
+                                    ("Reference<int>element(", "ptr:int", ["ptr:arr:3:int"])):
+        f = at_function(prefix)
+        assert f["result"] == result and [p["type"] for p in f["params"]] == params, f
+        returns = [n["value"] for n in f["body"] if n["op"] == "return"]
+        assert len(returns) == 1
+        if prefix.startswith("Reference<int>reference") or prefix.startswith("const Identity"):
+            assert np_pointer(f, returns[0]) == ("parameter", f["params"][0]["name"])
+        elif prefix.startswith("Reference<int>element"):
+            assert np_pointer(f, returns[0]) == ("element", ("parameter", f["params"][0]["name"]), 1)
+    extent = at_function("int extent(")
+    assert [gc_identity(extent, n["value"]) for n in extent["body"] if n["op"] == "return"] == [12]
+    result_records = []
+    for prefix, field_type, value in (("Box<int>makeBox(", "int", 3), ("Store<int>sameBox(", "int", 4),
+                                       ("Box<unsigned>otherBox(", "uint", 5)):
+        f = at_function(prefix)
+        assert f["result"] == "void" and len(f["params"]) == 1
+        destination = f["params"][0]
+        assert destination["type"].startswith("ptr:")
+        record = at_records[destination["type"][4:]]
+        result_records.append(record["id"])
+        assert [x["type"] for x in record["fields"]] == [field_type]
+        stores = [n for n in f["body"] if n["op"] == "assign" and n["target"].get("kind") == "member"]
+        assert len(stores) == 1 and gc_identity(f, stores[0]["value"]) == value
+        assert np_place(f, stores[0]["target"]) == ("field", ("parameter", destination["name"]), record["fields"][0]["name"])
+    assert result_records[0] == result_records[1] != result_records[2]
+    state_names = []
+    for prefix in ("int&boxState(", "int&sameState(", "int&otherState("):
+        f = at_function(prefix)
+        assert f["result"] == "ptr:int" and not f["params"]
+        names = {n["name"] for n in walk(f["body"]) if n.get("kind") == "var" and n.get("name") in at_globals}
+        assert len(names) == 1
+        name = next(iter(names)); state_names.append(name)
+        assert at_globals[name]["type"] == "int" and at_globals[name]["mutable"]
+        assert int(at_globals[name]["value"]["value"]) == 3
+    assert state_names[0] == state_names[1] != state_names[2]
+    slots = []
+    for prefix, initial in (("int&aliasSlot(", 4), ("int&sameSlot(", 4), ("int&otherSlot(", 8)):
+        f = at_function(prefix); calls = gc_calls(f)
+        assert len(calls) == 1
+        target = at_functions[calls[0]["callee"]]; slots.append(target["name"])
+        assert target["result"] == "ptr:int" and not target["params"]
+        names = {n["name"] for n in walk(target["body"]) if n.get("kind") == "var" and n.get("name") in at_globals}
+        assert len(names) == 1
+        assert int(at_globals[next(iter(names))]["value"]["value"]) == initial
+    assert slots[0] == slots[1] != slots[2]
+    maker = at_function("Identity<Token>makeToken(")
+    assert maker["result"] == "void" and len(maker["params"]) == 1
+    token_id = maker["params"][0]["type"][4:]
+    assert [x["type"] for x in at_records[token_id]["fields"]] == ["int"]
+    assert len(at_records) == 3 and token_id not in result_records
+    full = at_function("int full("); calls = gc_calls(full)
+    assert [c["callee"] for c in calls] == [maker["name"], at_function("int observe(")["name"], token_id+"_destroy"]
+    assert np_pointer(full, calls[0]["args"][0]) == np_pointer(full, calls[1]["args"][0]) == np_pointer(full, calls[2]["args"][0])
+    returns = [n["value"] for n in full["body"] if n["op"] == "return"]
+    assert len(returns) == 1 and di_call_result(full, returns[0]) == calls[1]["target"]["name"]["target"]["name"]
+    typed_targets = []
+    for prefix, expected in (("int typedDefault(", 4), ("int typedExplicit(", 7),
+                             ("int typedSame(", 7), ("int typedEmpty(", 0),
+                             ("int typedMany(", 2)):
+        f = at_function(prefix); calls = gc_calls(f)
+        assert len(calls) == 1 and not calls[0]["args"]
+        target = at_functions[calls[0]["callee"]]; typed_targets.append(target["name"])
+        assert target["result"] == "int" and not target["params"]
+        assert [gc_identity(target, n["value"]) for n in target["body"] if n["op"] == "return"] == [expected]
+    assert typed_targets[1] == typed_targets[2] != typed_targets[0]
+    assert typed_targets[3] != typed_targets[4]
+    alias_lines = {at_line(prefix) for prefix in ("template<class T>using Identity", "template<class T>using Reference",
+                                                 "template<class T,int N=3>using Array", "template<class T>using Box",
+                                                 "template<class T>using Scalar")}
+    for collection in (alias_templates["functions"], alias_templates["records"], alias_templates["globals"]):
+        assert not any(item["loc"]["line"] in alias_lines for item in collection), "alias declaration created runtime storage"
+    for f in alias_templates["functions"]:
+        for call in gc_calls(f):
+            assert call["callee"] in at_functions
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in at_functions[call["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-alias-templates-relocated-") as temp:
+        relocated = check("v2-alias-templates-relocated", alias_templates_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == alias_templates
+
+    alias_templates_positive = {
+        'promoted-pack': 'template<class...T>using R=int;',
+        'promoted-class-boundary': 'template<class T>using R=T;',
+        'promoted-core-boundary': 'template<class T> using Hidden = T;\nint main() { return 0; }\n',
+        'promoted-protocol-boundary': 'template<class T> using Hidden=T; int main(){}',
+        'unused-chain': 'template<class T>using Ignore=int;template<class T>using Chain=Ignore<T>;',
+        'scalar': 'template<class T>using I=T;I<int> f(I<int> n){return n;}',
+        'boolean': 'template<class T>using I=T;I<bool>f(I<bool>n){return !n;}',
+        'enum': 'enum class E:unsigned{a=3};template<class T>using I=T;I<E>f(){return E::a;}',
+        'void': 'template<class T>using I=T;I<void>f(){}',
+        'pointer': 'template<class T>using P=T*;P<int>f(P<int>p){return p;}',
+        'const-pointer': 'template<class T>using P=const T*;P<int>f(const int&p){return &p;}',
+        'reference': 'template<class T>using R=T&;R<int>f(int&n){return n;}',
+        'collapsed-reference': 'template<class T>using R=T&&;R<int&>f(int&n){return n;}',
+        'rvalue-reference': 'template<class T>using R=T&&;R<int>f(int&n){return static_cast<int&&>(n);}',
+        'array': 'template<class T,int N>using A=T[N];int f(){A<int,3>a{1,2,3};return a[2];}',
+        'array-reference': 'template<class T,int N>using A=T[N];template<class T>using R=T&;R<A<int,3>>f(A<int,3>&a){return a;}',
+        'nested-same-alias': 'template<class T>using I=T;I<I<int>>f(int n){return n;}',
+        'nested-chain': 'template<class T>using I=T;template<class T>using P=I<T>*;P<int>f(int&n){return &n;}',
+        'concrete-ignore-chain': 'template<class T>using Ignore=int;template<class T>using Chain=Ignore<T>;Chain<bool>f(){return 3;}',
+        'namespace-import': 'namespace N{template<class T>using I=T;}using N::I;I<int>f(){return 3;}',
+        'inline-namespace': 'namespace N{inline namespace V{template<class T>using I=T;}}N::I<int>f(){return 3;}',
+        'namespace-alias': 'namespace N{template<class T>using I=T;}namespace A=N;A::I<int>f(){return 3;}',
+        'dependent-member': 'template<class T>using I=typename T::type;struct R{using type=int;};I<R>f(){return 3;}',
+        'type-default': 'template<class T=int>using I=T;I<>f(){return 3;}',
+        'dependent-type-default': 'template<class T,class U=T>using I=U;I<int>f(){return 3;}',
+        'nested-type-default': 'template<class T>using Inner=T;template<class T,class U=Inner<T>>using I=U;I<int>f(){return 3;}',
+        'scalar-default': 'template<class T,int N=3>using A=T[N];int f(){A<int>a{};return sizeof(a)/sizeof(int);}',
+        'dependent-scalar-default': 'template<class T,int N=sizeof(T)>using A=int[N];int f(){A<int>a{};return sizeof(a);}',
+        'auto-default': 'template<auto N=3u>using A=int[N];int f(){A<>a{};return sizeof(a);}',
+        'value-pack': 'template<int...N>using A=int[1+(0+...+N)];int f(){A<1,2>a{};return sizeof(a);}',
+        'type-pack': 'template<class...T>using A=int[1+sizeof...(T)];int f(){A<int,bool>a{};return sizeof(a);}',
+        'empty-pack': 'template<class...T>using A=int[1+sizeof...(T)];int f(){A<>a{};return sizeof(a);}',
+        'forwarded-pack': 'template<class...T>struct R{int n;};template<class...T>using A=R<T...>;int f(){A<int,bool>r{3};return r.n;}',
+        'pack-default': 'template<class...T,int N=sizeof...(T)>int f(T...v){return N;}int g(){return f(1,2);}',
+        'record': 'template<class T>struct R{T n;};template<class T>using A=R<T>;A<int>f(){return {3};}',
+        'canonical-record-identity': 'template<class T>struct R{inline static int n=3;};template<class T>using A=R<T>;int f(){A<int>::n=7;return R<int>::n;}',
+        'alias-deduction': 'template<class T>using P=T*;template<class T>T f(P<T>p){return *p;}int g(){int n=3;return f(&n);}',
+        'explicit-function': 'template<class T>using I=T;template<class T>T f(T n){return n;}extern template int f<I<int>>(int);template int f<I<int>>(int);',
+        'explicit-class': 'template<class T>using I=T;template<class T>struct R{T n;};extern template struct R<I<int>>;template struct R<I<int>>;',
+        'sfinae': 'template<class T>using I=typename T::type;template<class T>I<T>f(T){return 1;}int f(int){return 3;}int g(){return f(0);}',
+        'method-this': 'template<class T>using I=T;struct R{int n;R*f(){I<decltype(this)>p=this;return p;}};',
+        'const-method-this': 'template<class T>using I=T;struct R{int n;const R*f()const{I<decltype(this)>p=this;return p;}};',
+        'template-method-this': 'template<class T>using I=T;template<class T>struct R{T n;R*f(){I<decltype(this)>p=this;return p;}};R<int>*f(R<int>&r){return r.f();}',
+        'method-count-this': 'template<int N>using Count=int[N];struct R{int n;int f(){Count<sizeof(this->n)>a{};return sizeof(a);}};',
+        'dmi-this': 'template<class T>using I=T;template<int N>using Count=int[N];struct R{int n=sizeof(I<decltype(this)>);int m=sizeof(Count<sizeof(this->n)>);};int f(){R r;return r.n+r.m;}',
+        'consecutive-this': 'template<class T>using I=T;struct A{int n;A*f(){I<decltype(this)>p=this;return p;}};struct B{int n;B*f(){I<decltype(this)>p=this;return p;}};',
+        'function-alias-default': 'template<class T>using I=T;template<class T,int N=sizeof(T)>int f(){return N;}int g(){return f<I<int>>();}',
+        'function-dependent-type-default': 'template<class T,class U=T>int f(){return sizeof(U);}int g(){return f<int>();}',
+        'function-nested-type-default': 'template<class T>using I=T;template<class T,class U=I<T>>int f(){return sizeof(U);}int g(){return f<int>();}',
+        'class-alias-default': 'template<class T>using I=T;template<class T,int N=sizeof(T)>struct R{int n;};int g(){R<I<int>>r{3};return r.n;}',
+        'class-dependent-type-default': 'template<class T,class U=T>struct R{U n;};int g(){R<int>r{3};return r.n;}',
+        'class-nested-type-default': 'template<class T>using I=T;template<class T,class U=I<T>>struct R{U n;};int g(){R<int>r{3};return r.n;}',
+        'explicit-bypass-alias': 'template<class T,int N=(sizeof(double)+sizeof(T))>using I=int;I<int,3>f(){return 3;}',
+        'explicit-bypass-function': 'template<class T,int N=(sizeof(double)+sizeof(T))>int f(){return N;}int g(){return f<int,3>();}',
+        'explicit-bypass-class': 'template<class T,int N=(sizeof(double)+sizeof(T))>struct R{int n;};int g(){R<int,3>r{3};return r.n;}',
+        'inherited-function-default': 'template<class T,int N>int f();template<class T,int N=sizeof(T)>int f(){return N;}int g(){return f<int>();}',
+        'inherited-class-default': 'template<class T,int N=sizeof(T)>struct R;template<class T,int N>struct R{int n;};int g(){R<int>r{3};return r.n;}',
+        'unselected-default': 'template<class T,int N=(sizeof(double)+sizeof(T))>int f(T){return N;}int f(int n){return n;}int g(){return f(3);}',
+        'unused-dependent-underlying': 'template<int N>using I=int[sizeof(double)+N];template<class T>using J=decltype((sizeof(double),T{}));',
+        'unused-alias-body': 'template<class T>using I=int;template<class T>int f(){I<double>n=3;return n;}int g(){return 0;}',
+        'discarded-alias-body': 'template<class T>using I=int;template<class T>int f(){if constexpr(sizeof(T)==0){I<double>n=3;return n;}return 0;}int g(){return f<int>();}',
+        'same-canonical-unused-default': 'template<class T,int N=(sizeof(double)+sizeof(T))>int f(){return N;}template<class T>int unused(){return f<int>();}int g(){return f<int,sizeof(long long)+sizeof(int)>();}',
+        'pack-64': 'template<class...T>using I=int;I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>f(){return 3;}',
+        'unused-pack-overflow': 'template<class...T>using I=int;template<class T>int f(){I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>n=3;return n;}int g(){return 0;}',
+        'discarded-pack-overflow': 'template<class...T>using I=int;template<class T>int f(){if constexpr(sizeof(T)==0){I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>n=3;return n;}return 0;}int g(){return f<int>();}',
+        'class-specialization-scalar-safe': 'template<class T,int N=sizeof(T)>struct R{int n;};template<>struct R<int>{int n;};',
+        'class-specialization-type-safe': 'template<class T,class U=T>struct R{int n;};template<>struct R<int>{int n;};',
+        'class-instantiation-scalar-safe': 'template<class T,int N=sizeof(T)>struct R{int n;};template struct R<int>;',
+        'class-instantiation-type-safe': 'template<class T,class U=T>struct R{int n;};template struct R<int>;',
+        'class-extern-scalar-safe': 'template<class T,int N=sizeof(T)>struct R{int n;};extern template struct R<int>;',
+        'class-extern-type-safe': 'template<class T,class U=T>struct R{int n;};extern template struct R<int>;',
+        'class-repeated-scalar-safe': 'template<class T,int N=sizeof(T)>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;',
+        'class-repeated-type-safe': 'template<class T,class U=T>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;',
+        'function-specialization-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();',
+        'function-specialization-type-safe': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>();',
+        'function-repeated-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
+        'function-repeated-type-safe': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
+        'function-instantiation-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}extern template int f<int>();template int f<int>();',
+        'function-instantiation-type-safe': 'template<class T,class U=T>int f(){return 3;}extern template int f<int>();template int f<int>();',
+        'protocol-source': 'template<class T>using Identity=T;\ntemplate<class T>using Reference=T&;\ntemplate<class T,int N=3>using Array=T[N];\ntemplate<class T>struct Store{T value;inline static int state=3;};\ntemplate<class T>using Box=Store<T>;\ntemplate<class T,int N=sizeof(T)>int&slot(){static int n=N;return n;}\nstruct Token{int n;Token(int v):n(v){}~Token(){n=99;}};\nIdentity<int>scalar(Identity<int>n){return n;}\nReference<int>reference(int&n){return n;}\nconst Identity<int>*pointer(const int&n){return &n;}\nReference<int>element(Array<int>&a){return a[1];}\nint extent(){return sizeof(Array<int>);}\nBox<int>makeBox(){return Box<int>{3};}\nStore<int>sameBox(){return Store<int>{4};}\nBox<unsigned>otherBox(){return Box<unsigned>{5u};}\nint&boxState(){return Box<int>::state;}\nint&sameState(){return Store<int>::state;}\nint&otherState(){return Box<unsigned>::state;}\nint&aliasSlot(){return slot<Identity<int>>();}\nint&sameSlot(){return slot<int,sizeof(int)>();}\nint&otherSlot(){return slot<long long>();}\nIdentity<Token>makeToken(){return Token(7);}\nint observe(const Identity<Token>&v){return v.n;}\nint full(){return observe(makeToken());}\ntemplate<class T>using Scalar=decltype(T{});\ntemplate<class T,Scalar<T> N=4>int typed(){return N;}\ntemplate<class T,Scalar<T>...N>int typedPack(){return sizeof...(N);}\nint typedDefault(){return typed<int>();}\nint typedExplicit(){return typed<Identity<int>,7>();}\nint typedSame(){return typed<int,7>();}\nint typedEmpty(){return typedPack<int>();}\nint typedMany(){return typedPack<int,2,3>();}\n',
+        'alias-same-canonical-unused-type-default': 'template<class T,class U=decltype((sizeof(double),T{}))>using I=int;template<class T>int unused(){I<int>n=3;return n;}I<int,int>g(){return 3;}',
+        'alias-same-canonical-discarded-type-default': 'template<class T,class U=decltype((sizeof(double),T{}))>using I=int;template<class T>int unused(){if constexpr(sizeof(T)==0){I<int>n=3;return n;}return 0;}I<int,int>g(){return 3;}int h(){return unused<int>();}',
+        'class-same-canonical-unused-type-default': 'template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};template<class T>int unused(){R<int>r{3};return r.n;}int g(){R<int,int>r{3};return r.n;}',
+        'class-same-canonical-discarded-type-default': 'template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};template<class T>int unused(){if constexpr(sizeof(T)==0){R<int>r{3};return r.n;}return 0;}int g(){R<int,int>r{3};return r.n;}int h(){return unused<int>();}',
+        'function-same-canonical-unused-type-default': 'template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}template<class T>int unused(){return f<int>();}int g(){return f<int,int>();}',
+        'function-same-canonical-discarded-type-default': 'template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}template<class T>int unused(){if constexpr(sizeof(T)==0){return f<int>();}return 0;}int g(){return f<int,int>();}int h(){return unused<int>();}',
+        'repeated-source-contexts': 'template<class T>using I=T;template<class T,int N=sizeof(T)>int f(){return N;}template<class T>int g(){return f<I<T>>();}int a(){return g<int>();}int b(){return g<long long>();}',
+        'recursive-primary-argument-context': 'template<class T,int N=sizeof(T)>int f(){if constexpr(sizeof(T)==sizeof(int)){return f<long long>();}else{return N;}}int g(){return f<int>();}',
+        'recursive-primary-type-edge': 'template<class T,int N=0>int f(){if constexpr(N==0){return f<T,1>();}else{return sizeof(T);}}int g(){return f<int>();}',
+        'recursive-primary-scalar-edge': 'template<int N>int f(){if constexpr(N>0){return f<N-1>();}else{return N;}}int g(){return f<2>();}',
+        'nttp-function-explicit': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}int g(){return f<int,3>();}',
+        'nttp-function-default': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}int g(){return f<int>();}',
+        'nttp-function-earlier-default': 'template<class T>using K=decltype(T{});template<class T=int,K<T> N=4>int f(){return N;}int g(){return f<>();}',
+        'nttp-function-alias-argument': 'template<class T>using K=decltype(T{});template<class T>using I=T;template<class T,K<T> N=4>int f(){return N;}int g(){return f<I<int>,3>();}',
+        'nttp-class-explicit': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>struct R{int n;};int g(){R<int,3>r{7};return r.n;}',
+        'nttp-class-default': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>struct R{int n;};int g(){R<int>r{7};return r.n;}',
+        'nttp-class-earlier-default': 'template<class T>using K=decltype(T{});template<class T=int,K<T> N=4>struct R{int n;};int g(){R<>r{7};return r.n;}',
+        'nttp-alias-explicit': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>using I=int;I<int,3>g(){return 7;}',
+        'nttp-alias-default': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>using I=int;I<int>g(){return 7;}',
+        'nttp-alias-earlier-default': 'template<class T>using K=decltype(T{});template<class T=int,K<T> N=4>using I=int;I<>g(){return 7;}',
+        'nttp-function-empty-pack': 'template<class T>using K=decltype(T{});template<class T,K<T>...N>int f(){return sizeof...(N);}int g(){return f<int>();}',
+        'nttp-function-nonempty-pack': 'template<class T>using K=decltype(T{});template<class T,K<T>...N>int f(){return(0+...+N);}int g(){return f<int,1,2>();}',
+        'nttp-class-nonempty-pack': 'template<class T>using K=decltype(T{});template<class T,K<T>...N>struct R{int n;};int g(){R<int,1,2>r{7};return r.n;}',
+        'nttp-alias-nonempty-pack': 'template<class T>using K=decltype(T{});template<class T,K<T>...N>using I=int;I<int,1,2>g(){return 7;}',
+        'nttp-function-inherited': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f();template<class T,K<T> N>int f(){return N;}int g(){return f<int,3>();}',
+        'nttp-class-inherited': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>struct R;template<class T,K<T> N>struct R{int n;};int g(){R<int,3>r{7};return r.n;}',
+        'nttp-function-deduced': 'template<class T>using K=decltype(T{});template<int N>struct Tag{int n;};template<class T,K<T> N>int f(Tag<N>v){return N+v.n;}int g(){return f<int>(Tag<3>{7});}',
+        'nttp-function-extended-pack': 'template<class T>using K=decltype(T{});template<int N>struct Tag{int n;};template<class T,K<T>...N>int f(Tag<N>...v){return(0+...+N);}int g(){return f<int,1>(Tag<1>{3},Tag<2>{4});}',
+        'nttp-recursive-primary': 'template<class T>using K=decltype(T{});template<class T,K<T> N=0>int f(){if constexpr(N==0){return f<T,1>();}else{return N;}}int g(){return f<int>();}',
+        'nttp-function-instantiation': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}template int f<int,3>();',
+        'nttp-function-extern-instantiation': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}extern template int f<int,3>();',
+        'nttp-function-specialization': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f(){return N;}template<>int f<int,3>(){return 3;}',
+        'nttp-class-instantiation': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>struct R{int n;};template struct R<int,3>;',
+        'nttp-class-extern-instantiation': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>struct R{int n;};extern template struct R<int,3>;',
+        'nttp-class-repeated-instantiation': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>struct R{int n;};extern template struct R<int,3>;template struct R<int,3>;',
+        'nttp-class-specialization': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>struct R{int n;};template<>struct R<int,3>{int n;};',
+        'nttp-unused-body': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}template<class T>int unused(){return f<int,3>();}int g(){return 0;}',
+        'nttp-discarded-body': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}template<class T>int h(){if constexpr(sizeof(T)==0){return f<int,3>();}return 0;}int g(){return h<int>();}',
+        'nttp-unselected-overload': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(T v){return N;}int f(int n){return n;}int g(){return f(7);}',
+        'nttp-sfinae-substitution': 'template<class T>using K=typename T::missing;template<class T,K<T> N=4>int f(T v){return N;}int f(int n){return n;}int g(){return f(7);}',
+        'nttp-class-empty-lazy': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>struct R{int n;};int g(){R<int>r{7};return r.n;}',
+        'nttp-alias-empty-lazy': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>using I=int;I<int>g(){return 7;}',
+        'nttp-canonical-int-alias': 'template<class T>using K=int;template<class T,K<T> N=4>int f(){return N;}int g(){return f<int,3>();}',
+        'nttp-auto-empty': 'template<auto...N>int f(){return sizeof...(N);}int g(){return f<>();}',
+        'nttp-decltype-auto': 'template<decltype(auto) N>int f(){return N;}int g(){return f<3>();}',
+        'nttp-const-type': 'template<class T,const T N>int f(){return N;}int g(){return f<int,3>();}',
+        'nttp-inherited-default-source': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f();template<class T,K<T> N>int f(){return N;}int g(){return f<int>();}',
+        'nttp-empty-type-pack': 'template<class...T,T...N>int f(){return sizeof...(N);}int g(){return f<>();}',
+        'nttp-expanded-type-pack': 'template<int N>struct Tag{int n;};template<class...T,T...N>int f(Tag<N>...v){return(0+...+N);}int g(){return f<int,int>(Tag<1>{3},Tag<2>{4});}',
+    }
+    for name, source in alias_templates_positive.items():
+        check("v2-alias-templates-positive-" + name, source, profile="cpp-core-v2")
+
+    alias_templates_reject = {
+        'ignored-floating-type': 'template<class T>using I=int;I<double>f(){return 3;}',
+        'ignored-floating-chain': 'template<class T>using Ignore=int;template<class T>using Chain=Ignore<T>;Chain<double>f(){return 3;}',
+        'ignored-floating-value': 'template<int N>using I=int;I<int(1.0)>f(){return 3;}',
+        'ignored-pointer-value': 'int n;template<auto N>using I=int;I<&n>f(){return 3;}',
+        'ignored-null-value': 'template<auto N>using I=int;I<nullptr>f(){return 3;}',
+        'nondependent-floating-underlying': 'template<class T>using I=double;',
+        'nondependent-folded-underlying': 'template<class T>using I=int[sizeof(double)];',
+        'selected-folded-array': 'template<int N>using I=int[sizeof(double)+N];int f(){I<1>a{};return sizeof(a);}',
+        'selected-folded-decltype': 'template<class T>using I=decltype((sizeof(double),T{}));I<int>f(){return 3;}',
+        'ignored-floating-type-default': 'template<class T=double>using I=int;',
+        'ignored-floating-scalar-default': 'template<int N=int(1.0)>using I=int;',
+        'selected-dependent-scalar-default': 'template<class T,int N=(sizeof(double)+sizeof(T))>using I=int;I<int>f(){return 3;}',
+        'function-nondependent-type-default': 'template<class T=double>int f(){return 3;}',
+        'function-erased-alias-default': 'template<class T>using I=int;template<class T=I<double>>int f(){return 3;}',
+        'class-erased-alias-default': 'template<class T>using I=int;template<class T=I<double>>struct R{int n;};',
+        'selected-alias-body': 'template<class T>using I=int;template<class T>int f(){I<double>n=3;return n;}int g(){return f<int>();}',
+        'selected-function-default': 'template<class T,int N=(sizeof(double)+sizeof(T))>int f(T){return N;}int g(){return f(3);}',
+        'member-alias-template': 'struct R{template<class T>using I=T;};',
+        'template-template-parameter': 'template<template<class>class T>using I=int;',
+        'function-type': 'template<class T>using I=T();I<int>*f(){return nullptr;}',
+        'volatile-type': 'template<class T>using I=volatile T;I<int>f(){return 3;}',
+        'attribute': 'template<class T>using I [[deprecated]]=T;',
+        'zero-array': 'template<int N>using I=int[N];int f(){I<0>a{};return sizeof(a);}',
+        'pack-65': 'template<class...T>using I=int;I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>f(){return 3;}',
+        'selected-pack-overflow': 'template<class...T>using I=int;template<class T>int f(){I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>n=3;return n;}int g(){return f<int>();}',
+        'class-specialization-scalar-bad': 'template<class T,int N=(sizeof(double)+sizeof(T))>struct R{int n;};template<>struct R<int>{int n;};',
+        'class-specialization-type-bad': 'template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};template<>struct R<int>{int n;};',
+        'class-instantiation-scalar-bad': 'template<class T,int N=(sizeof(double)+sizeof(T))>struct R{int n;};template struct R<int>;',
+        'class-instantiation-type-bad': 'template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};template struct R<int>;',
+        'class-extern-scalar-bad': 'template<class T,int N=(sizeof(double)+sizeof(T))>struct R{int n;};extern template struct R<int>;',
+        'class-extern-type-bad': 'template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};extern template struct R<int>;',
+        'class-repeated-scalar-bad': 'template<class T,int N=(sizeof(double)+sizeof(T))>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;',
+        'class-repeated-type-bad': 'template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;',
+        'function-specialization-scalar-bad': 'template<class T,int N=(sizeof(double)+sizeof(T))>int f(){return 3;}template<>int f<int>();',
+        'function-specialization-type-bad': 'template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}template<>int f<int>();',
+        'function-repeated-scalar-bad': 'template<class T,int N=(sizeof(double)+sizeof(T))>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
+        'function-repeated-type-bad': 'template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
+        'function-instantiation-scalar-bad': 'template<class T,int N=(sizeof(double)+sizeof(T))>int f(){return 3;}extern template int f<int>();template int f<int>();',
+        'function-instantiation-type-bad': 'template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}extern template int f<int>();template int f<int>();',
+        'alias-same-canonical-selected-type-default': 'template<class T,class U=decltype((sizeof(double),T{}))>using I=int;template<class T>int used(){I<int>n=3;return n;}I<int,int>g(){return 3;}int h(){return used<int>();}',
+        'class-same-canonical-selected-type-default': 'template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};template<class T>int used(){R<int>r{3};return r.n;}int g(){R<int,int>r{3};return r.n;}int h(){return used<int>();}',
+        'function-same-canonical-selected-type-default': 'template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}template<class T>int used(){return f<int>();}int g(){return f<int,int>();}int h(){return used<int>();}',
+        'nttp-function-explicit': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}int g(){return f<int,3>();}',
+        'nttp-function-default': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}int g(){return f<int>();}',
+        'nttp-function-earlier-default': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T=int,K<T> N=4>int f(){return N;}int g(){return f<>();}',
+        'nttp-function-alias-argument': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T>using I=T;template<class T,K<T> N=4>int f(){return N;}int g(){return f<I<int>,3>();}',
+        'nttp-class-explicit': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};int g(){R<int,3>r{7};return r.n;}',
+        'nttp-class-default': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};int g(){R<int>r{7};return r.n;}',
+        'nttp-class-earlier-default': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T=int,K<T> N=4>struct R{int n;};int g(){R<>r{7};return r.n;}',
+        'nttp-alias-explicit': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>using I=int;I<int,3>g(){return 7;}',
+        'nttp-alias-default': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>using I=int;I<int>g(){return 7;}',
+        'nttp-alias-earlier-default': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T=int,K<T> N=4>using I=int;I<>g(){return 7;}',
+        'nttp-function-empty-pack': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>int f(){return sizeof...(N);}int g(){return f<int>();}',
+        'nttp-function-nonempty-pack': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>int f(){return(0+...+N);}int g(){return f<int,1,2>();}',
+        'nttp-class-nonempty-pack': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>struct R{int n;};int g(){R<int,1,2>r{7};return r.n;}',
+        'nttp-alias-nonempty-pack': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>using I=int;I<int,1,2>g(){return 7;}',
+        'nttp-function-inherited': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f();template<class T,K<T> N>int f(){return N;}int g(){return f<int,3>();}',
+        'nttp-class-inherited': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R;template<class T,K<T> N>struct R{int n;};int g(){R<int,3>r{7};return r.n;}',
+        'nttp-function-deduced': 'template<class T>using K=decltype((sizeof(double),T{}));template<int N>struct Tag{int n;};template<class T,K<T> N>int f(Tag<N>v){return N+v.n;}int g(){return f<int>(Tag<3>{7});}',
+        'nttp-function-extended-pack': 'template<class T>using K=decltype((sizeof(double),T{}));template<int N>struct Tag{int n;};template<class T,K<T>...N>int f(Tag<N>...v){return(0+...+N);}int g(){return f<int,1>(Tag<1>{3},Tag<2>{4});}',
+        'nttp-recursive-primary': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=0>int f(){if constexpr(N==0){return f<T,1>();}else{return N;}}int g(){return f<int>();}',
+        'nttp-function-instantiation': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}template int f<int,3>();',
+        'nttp-function-extern-instantiation': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}extern template int f<int,3>();',
+        'nttp-function-specialization': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}template<>int f<int,3>(){return 3;}',
+        'nttp-class-instantiation': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};template struct R<int,3>;',
+        'nttp-class-extern-instantiation': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};extern template struct R<int,3>;',
+        'nttp-class-repeated-instantiation': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};extern template struct R<int,3>;template struct R<int,3>;',
+        'nttp-class-specialization': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};template<>struct R<int,3>{int n;};',
+        'nttp-selected-body': 'template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}template<class T>int h(){return f<int,3>();}int g(){return h<int>();}',
+    }
+    for name, source in alias_templates_reject.items():
+        check("v2-alias-templates-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+
+    alias_templates_invalid = {
+        'missing-argument': 'template<class T>using I=T;I<>f(){return 3;}',
+        'wrong-kind': 'template<int N>using I=int;I<int>f(){return 3;}',
+        'nonconstant': 'template<int N>using I=int;int f(int n){I<n>x=3;return x;}',
+        'narrowing': 'template<unsigned char N>using I=int;I<256>f(){return 3;}',
+        'negative-array': 'template<int N>using I=int[N];int f(){I<-1>a{};return sizeof(a);}',
+        'specialization': 'template<class T>using I=T;template<>using I<int>=int;',
+        'explicit-alias-instantiation': 'template<class T>using I=T;template I<int>;',
+        'pack-position': 'template<class...T,int N>using I=int;',
+        'pack-default': 'template<class...T=int>using I=int;',
+        'selected-invalid-underlying': 'template<class T>using I=typename T::missing;I<int>f(){return 3;}',
+        'deleted-operation': 'struct R{R()=delete;};template<class T>using I=T;int f(){I<R>r;return 0;}',
+    }
+    for name, source in alias_templates_invalid.items():
+        check("v2-alias-templates-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
+
+    alias_templates_missing = {
+        'missing-function': 'template<class T>using I=T;template<class T>T f();int g(){return f<I<int>>();}',
+        'missing-static': 'template<class T>struct R{static T n;};template<class T>using I=R<T>;int f(){return I<int>::n;}',
+        'missing-destructor': 'template<class T>struct R{T n;~R();};template<class T>using I=R<T>;void f(){I<int>r{3};}',
+    }
+    for name, source in alias_templates_missing.items():
+        check("v2-alias-templates-missing-" + name, source, "TR0203", profile="cpp-core-v2")
+
     parameter_packs_source = """template<class...T>int pp_digits(T...v){int n=0;((n=n*10+v),...);return n;}
 template<int...N>int pp_values(){int n=0;((n=n*10+N),...);return n;}
 template<class...T>int pp_count(T...v){return sizeof...(T)+sizeof...(v);}
@@ -6779,7 +7110,6 @@ Token record(){return pp_record(2,3);}
         'template-template-pack': 'template<template<class>class...T>struct R{int n;};',
         'member-template-pack': 'struct R{template<class...T>int f(T...v){return sizeof...(v);}};',
         'friend-template-pack': 'struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};',
-        'alias-template-pack': 'template<class...T>using R=int;',
         'variable-template-pack': 'template<class...T>int n=sizeof...(T);',
         'partial-pack': 'template<class...T>struct R{int n;};template<class...T>struct R<int,T...>{int n;};',
         'c-varargs': 'template<class...T>int f(T...v,...){return sizeof...(v);}int main(){return f(1);}',
@@ -9195,7 +9525,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'nested-record': 'template<class T>struct R{struct I{T n;};};',
         'nested-template': 'struct R{template<class T>struct I{T n;};};',
         'member-template': 'template<class T>struct R{template<class U>U f(U n){return n;}};',
-        'alias-template': 'template<class T>using R=T;',
         'partial': 'template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};',
         'selected-partial': 'template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};int main(){int n=3;R<int*>r{&n};return *r.n;}',
         'union': 'template<class T>union R{T n;int m;};',
@@ -10114,7 +10443,6 @@ int main() {
         "unsupported-pointer-alias": "using Hidden=float*; int main(){}",
         "unused-volatile-alias": "using Hidden=volatile int; int main(){}",
         "unused-function-alias": "using Hidden=void(); int main(){}",
-        "alias-template": "template<class T> using Hidden=T; int main(){}",
         "folded-assert-type": "static_assert(1.0==1.0,\"condition\"); int main(){}",
         "runtime-string": "static_assert(true,\"message\"); const char *s=\"runtime\"; int main(){}",
     }

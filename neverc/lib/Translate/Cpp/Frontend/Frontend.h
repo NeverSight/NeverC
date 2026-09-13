@@ -30,6 +30,7 @@ class InitListExpr;
 class Expr;
 struct ASTTemplateArgumentListInfo;
 class TemplateDecl;
+class TemplateArgumentList;
 class NonTypeTemplateParmDecl;
 }
 
@@ -61,11 +62,34 @@ struct ExplicitStaticDataInstantiationSource {
   bool HasAttributes;
 };
 
-struct ScalarTemplateDefaultSource {
-  clang::TemplateDecl *Template;
-  clang::NonTypeTemplateParmDecl *Parameter;
+// Each successful template use owns the defaults selected by that deduction.
+// Type sugar and written locations remain distinct from canonical identities.
+struct TemplateDefaultArgumentSource {
+  const clang::NamedDecl *Parameter;
   clang::TemplateArgumentLoc Written, Converted;
-  clang::TemplateArgument Canonical;
+};
+struct NonTypeParameterSource {
+  const clang::NamedDecl *Parameter;
+  clang::TypeSourceInfo *Type;
+  unsigned PackIndex; // Forward index, or ~0u for a deduced empty pack's type.
+};
+enum class TemplateSourceKind { Type, Function, ClassDeclaration };
+struct TemplateUseSource {
+  TemplateSourceKind Kind;
+  clang::TemplateDecl *Template;
+  const clang::Decl *Declaration;
+  const clang::Type *Type;
+  clang::TypeSourceInfo *Underlying;
+  const clang::ASTTemplateArgumentListInfo *Written;
+  const clang::TemplateArgumentList *Canonical, *Sugared;
+  std::vector<TemplateDefaultArgumentSource> Defaults;
+  std::vector<NonTypeParameterSource> ParameterTypes;
+  clang::SourceLocation Location;
+  bool DefaultsOverflow, Instantiation;
+};
+struct FunctionSpecializationSource {
+  const clang::FunctionDecl *Declaration, *Selected;
+  const clang::ASTTemplateArgumentListInfo *Written;
   clang::SourceLocation Location;
 };
 
@@ -223,7 +247,8 @@ public:
   json::Object lowerDestruction(const clang::CXXRecordDecl *Record);
   void run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives = {},
            llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives = {},
-           llvm::ArrayRef<ScalarTemplateDefaultSource> Defaults = {});
+           llvm::ArrayRef<TemplateUseSource> TemplateUses = {},
+           llvm::ArrayRef<FunctionSpecializationSource> Specializations = {});
 };
 } // namespace nct
 #endif

@@ -168,9 +168,18 @@ for lazy bodies/defaults, source checks and definition requirements.
 
 Scalar non-type template defaults produce the same concrete argument identities
 and typed functions, records and globals as equivalent explicit arguments. No
-runtime parameter is added. Successful default conversions retain original and
-converted source plus the canonical scalar result, including inherited parameter
-origins; substitution/conversion failure preserves overload fallback. See
+runtime parameter is added. Successful template-use events retain original and
+converted defaults with their exact selected declaration or type-use evidence.
+Validation happens at reached source uses and explicit declarations/directives;
+unselected overload candidates and uninstantiated dependent source remain lazy.
+Namespace alias templates preserve canonical types and produce no wire opcode,
+wrapper function, duplicate record or static object. Written arguments, selected
+defaults and substituted underlying TypeLocs retain source checks, including
+ignored arguments and folded expressions. Selected non-type arguments also
+preserve their actual parameter type source, including preliminary explicit
+function conversions and empty deduced pack type substitutions. These source
+records add no runtime parameters or wire operations. See [namespace alias templates](cpp-core-v2.md#namespace-alias-templates)
+for exact-use matching, caller/default contexts and bounded source evidence. See
 [scalar template parameter defaults](cpp-core-v2.md#scalar-template-parameter-defaults).
 
 Scalar static members of admitted class-template instances use ordinary typed

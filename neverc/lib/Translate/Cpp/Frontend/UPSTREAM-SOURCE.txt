@@ -9,18 +9,31 @@ The archive is fetched and verified during the NeverC build. An offline copy
 can be selected with CMake's NEVERC_CPP_LLVM_SOURCE_ARCHIVE option; the same
 SHA256 is required. No upstream executable or shared library is installed.
 
-A checked private ASTConsumer.h/SemaTemplate.cpp/SemaTemplateDeduction.cpp patch
-preserves source evidence for explicit function/static-member directives and
-successfully converted scalar template defaults. Default no-op callbacks retain
-each selected declaration, written type/arguments/name/qualifier/location and
-attribute presence as applicable. Directive evidence precedes no-effect returns.
-Default evidence follows successful CheckTemplateArgument in both argument-list
-and deduction paths, preserving original and converted expressions plus the
-canonical argument. Failed substitution/conversion keeps normal SFINAE behavior.
-The three sources must all be pristine or fully rewritten, with duplicate,
-partial, missing and drifted states rejected before any group member is changed.
-NeverC bounds shared source evidence before retaining it and checks it after
-semantic analysis without changing declarations, overload selection or flags.
+A checked private ASTConsumer.h/Sema.h/TemplateDeduction.h/SemaTemplate.cpp/
+SemaTemplateDeduction.cpp patch preserves each explicit function/static-member directive and successful
+template-use source event. A default-false consumer request opts only core v2
+into single-pass alias TypeSourceInfo substitution and retained substitution
+wrappers on type/scalar defaults and non-type parameter types. Exact deduction
+Info carries preliminary explicit parameter-type evidence to completed uses;
+rechecked packs retain fresh complete records. Empty deduced NTTP packs preserve
+their actual separate type substitution without inventing an element. Temporary
+parameter-type evidence is bounded to 4096 records per use. Other consumers retain
+the upstream paths and
+finality. Bounded per-deduction records retain selected parameter identities,
+original/converted defaults and an overflow marker; successful type/function uses
+carry their complete canonical/sugared arguments. Explicit class specialization,
+class instantiation and function specialization preserve each declaration's own
+source, including unused/repeated occurrences. Existing directive evidence still
+precedes no-effect returns. No deduction, overload, access or SFINAE rule changes.
+The five sources must all be pristine or fully rewritten; duplicate, partial,
+missing, mixed, drifted and orphan-marker states fail before any group write.
+Independent literal fixtures check all anchors, exact results and idempotence.
+NeverC bounds persistent evidence before copying and indexes it after Sema.
+Only reached concrete types, selected callees and explicit declarations consume
+their exact source evidence. Explicit arguments keep caller context; selected
+defaults and alias underlying source use checked parameter frames. Type sugar
+and written locations are distinct from canonical runtime identities. No external
+Clang executable or opaque translation fallback is introduced.
 
 A checked SemaInit.cpp patch resolves potentially lvalue-reference placeholder
 conversion results before the reference-only candidate filter. It handles bare

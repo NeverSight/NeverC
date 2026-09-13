@@ -673,11 +673,11 @@ const InitListExpr *emptyVoidInitializer(const Expr *E) {
   return List;
 }
 
-static const TemplateDecl *scalarTemplateOwner(
-    const SubstNonTypeTemplateParmExpr *E) {
-  if (!E)
+static const TemplateDecl *templateSourceOwner(const Decl *Associated) {
+  if (!Associated)
     return nullptr;
-  const auto *Associated = E->getAssociatedDecl();
+  if (const auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Associated))
+    return Alias;
   if (const auto *Function = dyn_cast<FunctionDecl>(Associated))
     return concreteFreeFunctionTemplate(Function) ? Function->getPrimaryTemplate() : nullptr;
   if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Associated))
@@ -694,6 +694,10 @@ static const TemplateDecl *scalarTemplateOwner(
       Record && Record->getKind() == Decl::CXXRecord)
     return Record->getDescribedClassTemplate();
   return nullptr;
+}
+
+static const TemplateDecl *scalarTemplateOwner(const SubstNonTypeTemplateParmExpr *E) {
+  return E ? templateSourceOwner(E->getAssociatedDecl()) : nullptr;
 }
 
 static bool supportedPackDeclaration(const NamedDecl *Pack) {
@@ -1165,6 +1169,18 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   SourceLocation ImplicitInitializerOwner;
   const TemplateParameterList *TemplateParameterTypeSource = nullptr;
   std::map<const NamedDecl *, const TemplateDecl *> PackOwners;
+  using TypeSourceKey = std::pair<const Type *, unsigned>;
+  using FunctionSourceKey = std::pair<const FunctionDecl *, unsigned>;
+  std::map<TypeSourceKey, std::vector<const TemplateUseSource *>> TypeSources;
+  std::map<FunctionSourceKey, std::vector<const TemplateUseSource *>> FunctionSources;
+  std::map<const Decl *, std::vector<const TemplateUseSource *>> ClassSources;
+  std::map<const FunctionDecl *, std::vector<const FunctionSpecializationSource *>> SpecializationSources;
+  struct TemplateSourceFrame {
+    const TemplateUseSource &Source;
+    std::vector<bool> Ready;
+  };
+  std::vector<TemplateSourceFrame *> TemplateFrames;
+  std::vector<const TemplateUseSource *> ActiveTemplateUses;
   std::set<const Expr *> CheckedSemanticInitializers;
   std::set<const InitListExpr *> EmptyVoidLists;
   std::set<const CXXConstructExpr *> CheckedConstructions;
@@ -1301,6 +1317,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             !Definition->hasAttrs() && !Definition->getNumBases() &&
             classTemplateMembers(Definition));
   }
+  bool aliasTemplateShape(const TypeAliasTemplateDecl *D) {
+    if (!D || !owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
+        !isa<TranslationUnitDecl, NamespaceDecl>(D->getDeclContext()) ||
+        !isa<TranslationUnitDecl, NamespaceDecl>(D->getLexicalDeclContext()) ||
+        !templateParametersShape(D->getTemplateParameters()))
+      return false;
+    const auto *Pattern = D->getTemplatedDecl();
+    return owned(Pattern) && !Pattern->isInvalidDecl() && !Pattern->hasAttrs() &&
+           Pattern->getIdentifier() && Pattern->getTypeSourceInfo();
+  }
   bool functionTemplateShape(const FunctionTemplateDecl *D) {
     if (!D || !owned(D) || D->isInvalidDecl() ||
         !isa<TranslationUnitDecl, NamespaceDecl>(D->getDeclContext()) ||
@@ -1322,8 +1348,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return true;
   }
-  bool traverseTemplateParameterSource(const TemplateParameterList *Parameters,
-                                      bool TypeDefaults) {
+  bool traverseTemplateParameterSource(const TemplateParameterList *Parameters) {
     for (const auto *Parameter : *Parameters) {
       if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter)) {
         if (const auto *Info = Value->getTypeSourceInfo()) {
@@ -1340,7 +1365,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             !TraverseTemplateArgumentLoc(Value->getDefaultArgument()))
           return false;
       } else if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
-                 TypeDefaults && Type && Type->hasDefaultArgument()) {
+                 Type && Type->hasDefaultArgument() &&
+                 !Type->getDefaultArgument().getArgument().isInstantiationDependent()) {
         if (!TraverseTemplateArgumentLoc(Type->getDefaultArgument()))
           return false;
       }
@@ -1479,7 +1505,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!owned(Pack) || !supportedPackDeclaration(Pack) || Found == PackOwners.end())
       return false;
     return functionTemplateShape(dyn_cast<FunctionTemplateDecl>(Found->second)) ||
-           classTemplateShape(dyn_cast<ClassTemplateDecl>(Found->second));
+           classTemplateShape(dyn_cast<ClassTemplateDecl>(Found->second)) ||
+           aliasTemplateShape(dyn_cast<TypeAliasTemplateDecl>(Found->second));
   }
   void checkPackSize(const SizeOfPackExpr *Query) {
     A.chargeExpansion(1, Query->getExprLoc());
@@ -1558,7 +1585,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Supported = (isa<FunctionDecl, VarDecl, TypedefNameDecl, CXXRecordDecl,
                          EnumDecl>(Target) ||
                      functionTemplateShape(dyn_cast<FunctionTemplateDecl>(Target)) ||
-                     classTemplateShape(dyn_cast<ClassTemplateDecl>(Target))) &&
+                     classTemplateShape(dyn_cast<ClassTemplateDecl>(Target)) ||
+                     aliasTemplateShape(dyn_cast<TypeAliasTemplateDecl>(Target))) &&
                     importContext(Target->getDeclContext());
       }
     }
@@ -1926,9 +1954,12 @@ public:
     A.type(Prototype->getReturnType(), Source.Location, true);
     for (auto Parameter : Prototype->param_types())
       A.type(Parameter, Source.Location);
-    for (const auto &Argument : Source.Arguments->arguments())
-      if (!TraverseTemplateArgumentLoc(Argument))
-        return;
+    if (concreteFreeFunctionTemplate(Source.Function))
+      checkFunctionTemplateUse(Source.Function, Source.Name.getLoc(), Source.Arguments->arguments());
+    else
+      for (const auto &Argument : Source.Arguments->arguments())
+        if (!TraverseTemplateArgumentLoc(Argument))
+          return;
     if (!TraverseDeclarationNameInfo(Source.Name) ||
         !TraverseNestedNameSpecifierLoc(Source.Qualifier))
       return;
@@ -1962,70 +1993,429 @@ public:
     if (TraverseNestedNameSpecifierLoc(Source.Qualifier))
       TraverseTypeLoc(Source.Type->getTypeLoc());
   }
-  void checkScalarTemplateDefault(const ScalarTemplateDefaultSource &Source) {
-    if (!A.S.coreV2() || !A.S.owns(A.Sources, Source.Location))
-      return;
-    A.chargeExpansion(1, Source.Location);
-    const auto *Parameter = Source.Parameter;
-    const auto *Function = dyn_cast_or_null<FunctionTemplateDecl>(Source.Template);
-    const auto *Class = dyn_cast_or_null<ClassTemplateDecl>(Source.Template);
-    auto MatchesParameter = [&](const auto *Template) {
-      if (!Template || !Parameter || Parameter->getDepth() || Parameter->getIndex() >= 64)
+  bool templateSourceShape(const TemplateDecl *D) {
+    return functionTemplateShape(dyn_cast_or_null<FunctionTemplateDecl>(D)) ||
+           classTemplateShape(dyn_cast_or_null<ClassTemplateDecl>(D)) ||
+           aliasTemplateShape(dyn_cast_or_null<TypeAliasTemplateDecl>(D));
+  }
+  static const Expr *argumentExpression(const TemplateArgumentLoc &Argument) {
+    switch (Argument.getArgument().getKind()) {
+    case TemplateArgument::Expression: return Argument.getSourceExpression();
+    case TemplateArgument::Integral: return Argument.getSourceIntegralExpression();
+    default: return nullptr;
+    }
+  }
+  static bool sameArgumentSource(const TemplateArgumentLoc &Left,
+                                 const TemplateArgumentLoc &Right) {
+    if (Left.getArgument().getKind() != Right.getArgument().getKind())
+      return false;
+    switch (Left.getArgument().getKind()) {
+    case TemplateArgument::Type:
+      return Left.getTypeSourceInfo() &&
+             Left.getTypeSourceInfo() == Right.getTypeSourceInfo();
+    case TemplateArgument::Expression:
+    case TemplateArgument::Integral:
+      return argumentExpression(Left) &&
+             argumentExpression(Left) == argumentExpression(Right);
+    default: return false;
+    }
+  }
+  static bool sameArguments(const TemplateArgumentList *Left,
+                            const TemplateArgumentList *Right) {
+    if (!Left || !Right || Left->size() != Right->size())
+      return false;
+    for (unsigned I = 0; I < Left->size(); ++I)
+      if (!Left->get(I).structurallyEquals(Right->get(I)))
+        return false;
+    return true;
+  }
+  bool sourceMatchesArgument(const TemplateArgumentLoc &Source,
+                             const TemplateArgument &Canonical) {
+    if (Canonical.getKind() == TemplateArgument::Type) {
+      const auto &Argument = Source.getArgument();
+      return Argument.getKind() == TemplateArgument::Type &&
+             Source.getTypeSourceInfo() && !Argument.getAsType().isNull() &&
+             !Argument.isInstantiationDependent() &&
+             A.Context.hasSameType(Argument.getAsType(), Canonical.getAsType());
+    }
+    const auto *E = argumentExpression(Source);
+    if (Canonical.getKind() != TemplateArgument::Integral || !E ||
+        E->getType().isNull() || E->isInstantiationDependent() ||
+        !E->getType()->isIntegralOrEnumerationType())
+      return false;
+    APValue Value;
+    return A.Context.hasSameType(E->getType(), Canonical.getIntegralType()) &&
+           E->isCXX11ConstantExpr(A.Context, &Value) && Value.isInt() &&
+           Value.getInt() == Canonical.getAsIntegral();
+  }
+  bool parameterInTemplate(const TemplateDecl *Template, const NamedDecl *Parameter,
+                           unsigned Index) {
+    if (!Template || !owned(Parameter) || Parameter->isInvalidDecl() || Index >= 64)
+      return false;
+    auto Find = [&](const auto *Primary) {
+      if (!Primary)
         return false;
       unsigned Count = 0;
-      for (const auto *Declaration : Template->redecls()) {
-        A.chargeExpansion(1, Source.Location);
+      for (const auto *Declaration : Primary->redecls()) {
+        A.chargeExpansion(1, Parameter->getLocation());
         if (++Count > 64)
           return false;
         const auto *Parameters = Declaration->getTemplateParameters();
-        if (Parameter->getIndex() < Parameters->size() &&
-            Parameters->getParam(Parameter->getIndex()) == Parameter)
+        if (Parameters && Index < Parameters->size() && Parameters->getParam(Index) == Parameter)
           return owned(Declaration) && templateParametersShape(Parameters);
       }
       return false;
     };
-    const auto &Canonical = Source.Canonical;
-    if (!owned(Parameter) || Parameter->isInvalidDecl() ||
-        !Parameter->hasDefaultArgument() ||
-        !((functionTemplateShape(Function) && MatchesParameter(Function)) ||
-          (classTemplateShape(Class) && MatchesParameter(Class))) ||
-        Canonical.getKind() != TemplateArgument::Integral ||
-        Canonical.getIntegralType().isNull() || Canonical.isInstantiationDependent() ||
-        !Canonical.getIntegralType()->isIntegralOrEnumerationType()) {
-      A.reject(Source.Location, "scalar template default",
-               "A converted scalar default with an owned matching template parameter is required.");
+    return Find(dyn_cast<FunctionTemplateDecl>(Template)) ||
+           Find(dyn_cast<ClassTemplateDecl>(Template)) ||
+           Find(dyn_cast<TypeAliasTemplateDecl>(Template));
+  }
+  const TemplateArgument *sourceEdge(const TemplateDecl *Primary, unsigned Index,
+                                      std::optional<unsigned> PackIndex,
+                                      SourceLocation Location) {
+    for (auto I = TemplateFrames.rbegin(); I != TemplateFrames.rend(); ++I) {
+      const auto &Frame = **I;
+      if (Frame.Source.Template->getCanonicalDecl() != Primary->getCanonicalDecl())
+        continue;
+      if (Index >= Frame.Ready.size() || !Frame.Ready[Index])
+        break;
+      const auto *Argument = &Frame.Source.Canonical->get(Index);
+      if (!PackIndex)
+        return Argument->getKind() != TemplateArgument::Pack ? Argument : nullptr;
+      if (Argument->getKind() == TemplateArgument::Pack &&
+          Argument->pack_size() <= 64 && *PackIndex < Argument->pack_size())
+        return &Argument->pack_elements()[Argument->pack_size() - 1 - *PackIndex];
+      break;
+    }
+    A.reject(Location, "template source edge",
+             "A substitution requires the matching previously checked argument slot.");
+    return nullptr;
+  }
+  bool hasSourceFrame(const TemplateDecl *Primary) const {
+    for (const auto *Frame : TemplateFrames)
+      if (Frame->Source.Template->getCanonicalDecl() == Primary->getCanonicalDecl())
+        return true;
+    return false;
+  }
+  void checkScalarSourceEdge(const SubstNonTypeTemplateParmExpr *E, SourceLocation L) {
+    const auto *Primary = scalarTemplateOwner(E);
+    if (!Primary || (!isa<TypeAliasTemplateDecl>(Primary) && !hasSourceFrame(Primary)))
+      return; // Existing concrete function/class bodies retain their source checks.
+    const auto *Argument = sourceEdge(Primary, E->getIndex(), E->getPackIndex(), L);
+    APValue Value;
+    if (!Argument || Argument->getKind() != TemplateArgument::Integral ||
+        !A.Context.hasSameType(E->getType(), Argument->getIntegralType()) ||
+        !E->getReplacement()->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt() ||
+        Value.getInt() != Argument->getAsIntegral())
+      A.reject(L, "template scalar source", "The replacement must equal its checked scalar argument.");
+  }
+  bool emptyTypePackSource(const SubstTemplateTypeParmPackType *Type,
+                           SourceLocation L) {
+    const auto *Primary = templateSourceOwner(Type->getAssociatedDecl());
+    if (!owned(Type->getAssociatedDecl()) || !templateSourceShape(Primary) ||
+        Type->getNumArgs() || Type->getIndex() >= Primary->getTemplateParameters()->size())
+      return false;
+    const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(
+        Primary->getTemplateParameters()->getParam(Type->getIndex()));
+    if (!Parameter || !Parameter->isParameterPack() || Parameter->getDepth() || !owned(Parameter))
+      return false;
+    for (auto I = TemplateFrames.rbegin(); I != TemplateFrames.rend(); ++I) {
+      const auto &Frame = **I;
+      if (Frame.Source.Template->getCanonicalDecl() != Primary->getCanonicalDecl())
+        continue;
+      if (Type->getIndex() >= Frame.Ready.size() || !Frame.Ready[Type->getIndex()])
+        return false;
+      const auto &Argument = Frame.Source.Canonical->get(Type->getIndex());
+      A.chargeExpansion(1, L);
+      return Argument.getKind() == TemplateArgument::Pack && !Argument.pack_size();
+    }
+    return false;
+  }
+  bool checkNonTypeParameterSource(const NonTypeParameterSource &Source,
+                                    const TemplateArgument *Argument,
+                                    SourceLocation L) {
+    auto *Info = Source.Type;
+    if (!Info || Info->getType().isNull() ||
+        !A.S.owns(A.Sources, Info->getTypeLoc().getBeginLoc())) {
+      A.reject(L, "template parameter type source", "Each checked non-type argument needs its actual parameter type source.");
+      return true;
+    }
+    auto Type = Info->getType();
+    if (!Argument) {
+      if (auto Expansion = Info->getTypeLoc().getAs<PackExpansionTypeLoc>()) {
+        auto Pattern = Expansion.getPatternLoc();
+        const auto *Pack = Pattern.getType()->getAs<SubstTemplateTypeParmPackType>();
+        if (!Pack || Pattern.getType().isVolatileQualified() ||
+            Pattern.getType().isRestrictQualified() || !emptyTypePackSource(Pack, L)) {
+          A.reject(L, "empty parameter type expansion", "An unresolved empty type expansion requires its checked empty source pack.");
+          return true;
+        }
+        return TraverseTypeLoc(Pattern);
+      }
+    }
+    const auto *Auto = dyn_cast<AutoType>(Type.getTypePtr());
+    const bool Placeholder = Auto && Auto->getDeducedType().isNull() && !Auto->isConstrained();
+    if (Type.isVolatileQualified() || Type.isRestrictQualified() ||
+        (!Placeholder && (Type->isInstantiationDependentType() ||
+                          !Type->isIntegralOrEnumerationType())) ||
+        (Argument && (Argument->getKind() != TemplateArgument::Integral ||
+                      (!Placeholder && !A.Context.hasSameType(Type.getUnqualifiedType(),
+                                      Argument->getIntegralType().getUnqualifiedType()))))) {
+      A.reject(L, "template parameter type", "A concrete scalar parameter type must match its converted argument; plain auto remains source metadata.");
+      return true;
+    }
+    if (!Placeholder)
+      A.type(Type, L);
+    return TraverseTypeLoc(Info->getTypeLoc());
+  }
+  bool checkTemplateUse(const TemplateUseSource &Source,
+                        llvm::ArrayRef<TemplateArgumentLoc> Written) {
+    const auto L = Source.Location;
+    A.chargeExpansion(1, L);
+    if (!templateSourceShape(Source.Template) || !Source.Canonical || !Source.Sugared ||
+        Source.DefaultsOverflow || Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
+        Source.Canonical->size() != Source.Template->getTemplateParameters()->size() ||
+        Source.Canonical->size() != Source.Sugared->size()) {
+      A.reject(L, "template use source", "A complete use of an admitted primary is required.");
+      return true;
+    }
+    if (ActiveTemplateUses.size() >= 64) {
+      A.reject(L, "template source depth", "Nested template source uses exceed the expansion limit.");
+      return true;
+    }
+    for (const auto *Active : ActiveTemplateUses)
+      if (Active == &Source) {
+        A.reject(L, "template source cycle", "Template source evidence cannot recursively refer to itself.");
+        return true;
+      }
+    ActiveTemplateUses.push_back(&Source);
+    auto RestoreActive = llvm::make_scope_exit([&] { ActiveTemplateUses.pop_back(); });
+    if (Source.Kind == TemplateSourceKind::ClassDeclaration) {
+      const auto *Declaration = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Source.Declaration);
+      const auto *Primary = Declaration ? Declaration->getSpecializedTemplateOrPartial()
+                                              .dyn_cast<ClassTemplateDecl *>() : nullptr;
+      if (!owned(Declaration) || !Primary ||
+          !sameArguments(Source.Canonical, &Declaration->getTemplateArgs()) ||
+          Primary->getCanonicalDecl() != Source.Template->getCanonicalDecl()) {
+        A.reject(L, "class template declaration source", "Each declaration needs its own matching concrete argument evidence.");
+        return true;
+      }
+    }
+    const auto *Parameters = Source.Template->getTemplateParameters();
+    const unsigned Count = Parameters->size();
+    checkTemplateArguments(Parameters, *Source.Canonical, L);
+    if (!A.S.Diagnostics.empty())
+      return true;
+    for (unsigned I = 0; I < Count; ++I) {
+      const auto &Canonical = Source.Canonical->get(I);
+      const auto &Sugared = Source.Sugared->get(I);
+      bool Bounded = Canonical.getKind() == Sugared.getKind();
+      if (Bounded && Canonical.getKind() == TemplateArgument::Pack) {
+        Bounded = Canonical.pack_size() == Sugared.pack_size();
+        if (Bounded)
+          for (const auto &Element : Sugared.pack_elements())
+            Bounded &= Element.getKind() == TemplateArgument::Type ||
+                       Element.getKind() == TemplateArgument::Integral;
+      }
+      if (!Bounded || !Canonical.structurallyEquals(A.Context.getCanonicalTemplateArgument(Sugared))) {
+        A.reject(L, "template argument sugar", "Written substitution arguments must preserve their bounded canonical values.");
+        return true;
+      }
+    }
+    std::vector<const TemplateDefaultArgumentSource *> Defaults(Count, nullptr);
+    unsigned Previous = 0;
+    bool First = true;
+    for (const auto &Default : Source.Defaults) {
+      const auto *Type = dyn_cast_or_null<TemplateTypeParmDecl>(Default.Parameter);
+      const auto *Value = dyn_cast_or_null<NonTypeTemplateParmDecl>(Default.Parameter);
+      const unsigned Index = Type ? Type->getIndex() : Value ? Value->getIndex() : Count;
+      if (Index >= Count || (!First && Index <= Previous) || Defaults[Index] ||
+          !parameterInTemplate(Source.Template, Default.Parameter, Index) ||
+          (Type ? (!Type->hasDefaultArgument() || Type->isParameterPack())
+                : (!Value || !Value->hasDefaultArgument() || Value->isParameterPack())) ||
+          !sourceMatchesArgument(Default.Converted, Source.Canonical->get(Index))) {
+        A.reject(L, "selected template default", "Defaults must match ordered, owned parameter slots and converted values.");
+        return true;
+      }
+      Defaults[Index] = &Default;
+      First = false;
+      Previous = Index;
+    }
+    std::vector<std::map<unsigned, const NonTypeParameterSource *>> ParameterTypes(Count);
+    for (const auto &Type : Source.ParameterTypes) {
+      const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Type.Parameter);
+      const unsigned Index = Parameter ? Parameter->getIndex() : Count;
+      if (Index >= Count || !parameterInTemplate(Source.Template, Type.Parameter, Index) ||
+          (!Parameter->isParameterPack() && Type.PackIndex != 0) ||
+          (Parameter->isParameterPack() && Type.PackIndex >= 64 && Type.PackIndex != ~0u) ||
+          !ParameterTypes[Index].emplace(Type.PackIndex, &Type).second) {
+        A.reject(L, "template parameter source slots", "Parameter source records must identify distinct owned scalar slots and forward pack positions.");
+        return true;
+      }
+    }
+    for (unsigned Index = 0; Index < Count; ++Index) {
+      const auto &Argument = Source.Canonical->get(Index);
+      unsigned Expected = 0;
+      bool Empty = false;
+      if (isa<NonTypeTemplateParmDecl>(Parameters->getParam(Index))) {
+        Expected = Argument.getKind() == TemplateArgument::Pack ? Argument.pack_size() : 1;
+        // Function deduction substitutes empty NTTP pack types; class/alias
+        // argument-list checking forms an empty pack without that operation.
+        Empty = !Expected && Source.Kind == TemplateSourceKind::Function;
+        if (Empty)
+          Expected = 1;
+      }
+      if (ParameterTypes[Index].size() != Expected) {
+        A.reject(L, "template parameter source coverage", "Every checked argument and deduced empty parameter pack needs its complete type source.");
+        return true;
+      }
+      for (unsigned E = 0; E < Expected; ++E)
+        if (!ParameterTypes[Index].count(Empty ? ~0u : E)) {
+          A.reject(L, "template parameter pack source", "Source indices must cover this exact scalar argument pack.");
+          return true;
+        }
+    }
+    TemplateSourceFrame Frame{Source, std::vector<bool>(Count, false)};
+    const unsigned WrittenCount = Written.size();
+    unsigned Position = 0;
+    for (unsigned Index = 0; Index < Count; ++Index) {
+      const auto &Argument = Source.Canonical->get(Index);
+      if (Defaults[Index])
+        continue;
+      unsigned Elements = Argument.getKind() == TemplateArgument::Pack ? Argument.pack_size() : 1;
+      if (Elements > 64)
+        return true; // checkTemplateArguments already diagnosed this pack.
+      unsigned Available = std::min(Elements, WrittenCount - Position);
+      for (unsigned E = 0; E < Available; ++E)
+        if (!TraverseTemplateArgumentLoc(Written[Position++]))
+          return false;
+      if (Source.Kind != TemplateSourceKind::Function && Available != Elements) {
+        A.reject(L, "template argument source", "Every nondeduced argument requires its written source or selected default.");
+        return true;
+      }
+      // Function arguments not written in <...> come from ordinary deduction;
+      // their call expressions and instantiated signatures are checked by RAV.
+      Frame.Ready[Index] = true;
+    }
+    if (Position != WrittenCount) {
+      A.reject(L, "template argument source", "Written argument count does not match this selected use.");
+      return true;
+    }
+    // Explicit arguments belong to the caller's source context. Installing
+    // this callee frame earlier would capture substitutions from a recursive
+    // call to the same primary, before the callee's own slots were checked.
+    TemplateFrames.push_back(&Frame);
+    auto Restore = llvm::make_scope_exit([&] { TemplateFrames.pop_back(); });
+    for (unsigned Index = 0; Index < Count; ++Index) {
+      for (const auto &Entry : ParameterTypes[Index]) {
+        const auto &Canonical = Source.Canonical->get(Index);
+        const TemplateArgument *Argument = &Canonical;
+        if (Entry.first == ~0u)
+          Argument = nullptr;
+        else if (Canonical.getKind() == TemplateArgument::Pack)
+          Argument = &Canonical.pack_elements()[Entry.first];
+        if (!checkNonTypeParameterSource(*Entry.second, Argument, L))
+          return false;
+        if (!A.S.Diagnostics.empty())
+          return true;
+      }
+      const auto *Default = Defaults[Index];
+      if (!Default)
+        continue;
+      for (const auto *Argument : {&Default->Written, &Default->Converted}) {
+        if (!A.S.owns(A.Sources, Argument->getLocation()) ||
+            Argument->getArgument().isInstantiationDependent()) {
+          A.reject(L, "template default source", "A selected default requires concrete owned source evidence.");
+          return true;
+        }
+        if (!TraverseTemplateArgumentLoc(*Argument))
+          return false;
+      }
+      Frame.Ready[Index] = true;
+    }
+    if (isa<TypeAliasTemplateDecl>(Source.Template)) {
+      const auto *Alias = dyn_cast_or_null<TemplateSpecializationType>(Source.Type);
+      if (Source.Kind != TemplateSourceKind::Type || !Alias || !Alias->isTypeAlias() || !Source.Underlying ||
+          Source.Underlying->getType().isNull() ||
+          Source.Underlying->getType()->isInstantiationDependentType() ||
+          !A.Context.hasSameType(QualType(Source.Type, 0), Source.Underlying->getType())) {
+        A.reject(L, "alias underlying source", "The alias requires its matching concrete substituted source type.");
+        return true;
+      }
+      A.type(Source.Underlying->getType(), L, true);
+      return TraverseTypeLoc(Source.Underlying->getTypeLoc());
+    }
+    return true;
+  }
+  bool equivalentUse(const TemplateUseSource &Left, const TemplateUseSource &Right) {
+    if (Left.Template->getCanonicalDecl() != Right.Template->getCanonicalDecl() ||
+        !sameArguments(Left.Canonical, Right.Canonical) ||
+        Left.DefaultsOverflow != Right.DefaultsOverflow ||
+        Left.Defaults.size() != Right.Defaults.size() ||
+        Left.ParameterTypes.size() != Right.ParameterTypes.size())
+      return false;
+    for (unsigned I = 0; I < Left.Defaults.size(); ++I) {
+      const auto &L = Left.Defaults[I];
+      const auto &R = Right.Defaults[I];
+      if (L.Parameter != R.Parameter || L.Written.getSourceRange() != R.Written.getSourceRange() ||
+          L.Converted.getSourceRange() != R.Converted.getSourceRange())
+        return false;
+    }
+    for (unsigned I = 0; I < Left.ParameterTypes.size(); ++I) {
+      const auto &L = Left.ParameterTypes[I];
+      const auto &R = Right.ParameterTypes[I];
+      if (L.Parameter != R.Parameter || L.PackIndex != R.PackIndex || !L.Type || !R.Type ||
+          !A.Context.hasSameType(L.Type->getType(), R.Type->getType()) ||
+          L.Type->getTypeLoc().getSourceRange() != R.Type->getTypeLoc().getSourceRange())
+        return false;
+    }
+    // Every matched event is traversed, including fresh substituted expression
+    // nodes. Equivalent result types alone never exempt their written source.
+    return true;
+  }
+  void checkFunctionTemplateUse(const FunctionDecl *Function, SourceLocation Location,
+                                 llvm::ArrayRef<TemplateArgumentLoc> Written) {
+    if (!concreteFreeFunctionTemplate(Function))
+      return;
+    auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
+    if (Found == FunctionSources.end() || Found->second.empty()) {
+      A.reject(Location, "selected function template source", "The selected function needs its exact successful deduction source.");
       return;
     }
-    auto Expression = [](const TemplateArgumentLoc &Argument) -> const Expr * {
-      if (Argument.getArgument().getKind() == TemplateArgument::Expression)
-        return Argument.getSourceExpression();
-      if (Argument.getArgument().getKind() == TemplateArgument::Integral)
-        return Argument.getSourceIntegralExpression();
-      return nullptr;
-    };
-    const auto *Written = Expression(Source.Written);
-    const auto *Converted = Expression(Source.Converted);
-    for (const auto *E : {Written, Converted})
-      if (!E || E->getType().isNull() || E->isTypeDependent() || E->isValueDependent() ||
-          E->isInstantiationDependent() || !A.S.owns(A.Sources, E->getBeginLoc())) {
-        A.reject(Source.Location, "template default source",
-                 "Original and converted defaults require concrete owned expression evidence.");
+    const auto &First = *Found->second.front();
+    for (const auto *Source : Found->second) {
+      if (!equivalentUse(First, *Source) ||
+          !sameArguments(Source->Canonical, Function->getTemplateSpecializationArgs())) {
+        A.reject(Location, "selected template source conflict", "Repeated selected deductions must preserve equivalent complete source evidence.");
         return;
       }
-    auto *SavedFunction = CurrentFunction;
-    auto *SavedMethod = CurrentMethod;
-    auto SavedOwner = ImplicitInitializerOwner;
-    CurrentFunction = nullptr;
-    CurrentMethod = nullptr;
-    ImplicitInitializerOwner = Source.Location;
-    auto Restore = llvm::make_scope_exit([&] {
-      CurrentFunction = SavedFunction;
-      CurrentMethod = SavedMethod;
-      ImplicitInitializerOwner = SavedOwner;
-    });
-    A.type(Canonical.getIntegralType(), Source.Location);
-    if (TraverseTemplateArgumentLoc(Source.Written) && Written != Converted)
-      TraverseTemplateArgumentLoc(Source.Converted);
+      if (!checkTemplateUse(*Source, Written))
+        return;
+    }
+  }
+  void indexTemplateSources(llvm::ArrayRef<TemplateUseSource> Sources,
+                            llvm::ArrayRef<FunctionSpecializationSource> Specializations) {
+    if (!A.S.coreV2())
+      return;
+    for (const auto &Source : Sources) {
+      A.chargeExpansion(1, Source.Location);
+      switch (Source.Kind) {
+      case TemplateSourceKind::Type:
+        TypeSources[{Source.Type, Source.Location.getRawEncoding()}].push_back(&Source);
+        break;
+      case TemplateSourceKind::Function:
+        if (const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration))
+          FunctionSources[{Function, Source.Location.getRawEncoding()}].push_back(&Source);
+        break;
+      case TemplateSourceKind::ClassDeclaration:
+        ClassSources[Source.Declaration].push_back(&Source);
+        break;
+      }
+    }
+    for (const auto &Source : Specializations) {
+      A.chargeExpansion(1, Source.Location);
+      SpecializationSources[Source.Declaration].push_back(&Source);
+    }
   }
   void indexTemplates() {
     if (!A.S.coreV2())
@@ -2041,7 +2431,7 @@ public:
           A.TemplateOrdinals.emplace(Canonical, A.TemplateOrdinals.size());
       }
       if (const auto *Template = dyn_cast<TemplateDecl>(D);
-          Template && isa<FunctionTemplateDecl, ClassTemplateDecl>(Template))
+          Template && isa<FunctionTemplateDecl, ClassTemplateDecl, TypeAliasTemplateDecl>(Template))
         indexTemplatePackSources(Template);
       // Out-of-line member definitions are separate lexical namespace entries.
       if (const auto *Method = dyn_cast<CXXMethodDecl>(D)) {
@@ -2070,6 +2460,114 @@ public:
       std::reverse(Work.begin() + Begin, Work.end());
     }
   }
+  bool TraverseTypeAliasTemplateDecl(TypeAliasTemplateDecl *D) {
+    if (!A.S.coreV2() || !owned(D))
+      return RecursiveASTVisitor<Allowlist>::TraverseTypeAliasTemplateDecl(D);
+    if (!WalkUpFromTypeAliasTemplateDecl(D))
+      return false;
+    if (!aliasTemplateShape(D)) {
+      A.reject(D->getLocation(), "alias template", "An owned namespace alias with supported type or scalar parameters is required.");
+      return true;
+    }
+    if (!traverseTemplateParameterSource(D->getTemplateParameters()))
+      return false;
+    auto *Pattern = D->getTemplatedDecl();
+    auto Type = Pattern->getUnderlyingType();
+    if (Type.isNull() || Type->isDependentType() || Type->isInstantiationDependentType())
+      return true;
+    // Even an unused nondependent alias retains ordinary source checks. An
+    // erased canonical type such as Ignore<T> is still instantiation-dependent.
+    return TraverseDecl(Pattern);
+  }
+  bool TraverseTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc TL) {
+    auto Normal = [&] {
+      return RecursiveASTVisitor<Allowlist>::TraverseTemplateSpecializationTypeLoc(TL);
+    };
+    if (!A.S.coreV2() || !A.S.owns(A.Sources, TL.getTemplateNameLoc()))
+      return Normal();
+    const auto *Type = TL.getTypePtr();
+    if (Type->isDependentType() || Type->isInstantiationDependentType()) {
+      if (TemplateParameterTypeSource)
+        return Normal();
+      A.reject(TL.getTemplateNameLoc(), "dependent template source", "A materialized source type must have concrete arguments.");
+      return true;
+    }
+    if (!WalkUpFromTemplateSpecializationTypeLoc(TL) ||
+        (shouldWalkTypesOfTypeLocs() &&
+         !WalkUpFromTemplateSpecializationType(const_cast<TemplateSpecializationType *>(Type))))
+      return false;
+    auto Found = TypeSources.find({Type, TL.getTemplateNameLoc().getRawEncoding()});
+    const TemplateUseSource *First = nullptr;
+    if (Found != TypeSources.end())
+      for (const auto *Source : Found->second) {
+        if (!Source->Written || Source->Written->NumTemplateArgs != TL.getNumArgs())
+          continue;
+        bool Matches = true;
+        for (unsigned I = 0; I < TL.getNumArgs(); ++I)
+          Matches &= sameArgumentSource(TL.getArgLoc(I), Source->Written->arguments()[I]);
+        if (!Matches)
+          continue;
+        auto *Template = Type->getTemplateName().getAsTemplateDecl();
+        if (!Template || Template->getCanonicalDecl() != Source->Template->getCanonicalDecl() ||
+            (First && !equivalentUse(*First, *Source))) {
+          A.reject(TL.getTemplateNameLoc(), "template type source conflict", "Type sugar and exact use evidence must identify the same primary and arguments.");
+          return true;
+        }
+        First = Source;
+        if (!checkTemplateUse(*Source, Source->Written->arguments()))
+          return false;
+      }
+    if (!First)
+      A.reject(TL.getTemplateNameLoc(), "template type source", "A concrete template type requires its exact written substitution evidence.");
+    return true;
+  }
+  bool TraverseSubstTemplateTypeParmTypeLoc(SubstTemplateTypeParmTypeLoc TL) {
+    if (!A.S.coreV2())
+      return RecursiveASTVisitor<Allowlist>::TraverseSubstTemplateTypeParmTypeLoc(TL);
+    const auto *Type = TL.getTypePtr();
+    auto L = TL.getBeginLoc();
+    A.chargeExpansion(1, L);
+    const auto *Primary = templateSourceOwner(Type->getAssociatedDecl());
+    if (!owned(Type->getAssociatedDecl()) || !templateSourceShape(Primary) ||
+        Type->getIndex() >= Primary->getTemplateParameters()->size()) {
+      A.reject(L, "template type replacement", "A type substitution requires its exact admitted parameter owner.");
+      return true;
+    }
+    const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(
+        Primary->getTemplateParameters()->getParam(Type->getIndex()));
+    if (!Parameter || Parameter->getDepth() || !owned(Parameter) ||
+        Parameter->isParameterPack() != Type->getPackIndex().has_value() ||
+        (Type->getPackIndex() && *Type->getPackIndex() >= 64) ||
+        Type->getReplacementType().isNull() ||
+        Type->getReplacementType()->isInstantiationDependentType()) {
+      A.reject(L, "template type parameter", "The resolved type must match a guarded type parameter and pack position.");
+      return true;
+    }
+    if (isa<TypeAliasTemplateDecl>(Primary) || hasSourceFrame(Primary)) {
+      const auto *Argument = sourceEdge(Primary, Type->getIndex(), Type->getPackIndex(), L);
+      if (!Argument || Argument->getKind() != TemplateArgument::Type ||
+          !A.Context.hasSameType(Argument->getAsType(), Type->getReplacementType())) {
+        A.reject(L, "template type source edge", "The replacement must equal the previously checked type argument.");
+        return true;
+      }
+    }
+    // A retained substitution is a parameter edge, never a new alias use at
+    // the parameter's synthetic name location. Its source slot was checked
+    // by the enclosing use; concrete function/class signatures keep their
+    // existing canonical argument and ordinary written-source validation.
+    A.type(Type->getReplacementType(), L, true);
+    return WalkUpFromSubstTemplateTypeParmTypeLoc(TL) &&
+           (!shouldWalkTypesOfTypeLocs() ||
+            WalkUpFromSubstTemplateTypeParmType(const_cast<SubstTemplateTypeParmType *>(Type)));
+  }
+  bool VisitDeclRefExpr(DeclRefExpr *Reference) {
+    if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))
+      return true;
+    if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
+        concreteFreeFunctionTemplate(Function))
+      checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments());
+    return true;
+  }
   bool TraverseFunctionTemplateDecl(FunctionTemplateDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseFunctionTemplateDecl(D);
@@ -2083,7 +2581,7 @@ public:
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
     // TypeLoc retains source expressions that disappear from a folded type.
     // Direct dependent T/auto have no expression and remain lazy metadata.
-    if (!traverseTemplateParameterSource(D->getTemplateParameters(), false))
+    if (!traverseTemplateParameterSource(D->getTemplateParameters()))
       return false;
     // Sema has finished. Inspect materialized definitions, not dependent
     // patterns or unused overload candidates that have only a signature.
@@ -2113,7 +2611,7 @@ public:
       return true;
     }
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
-    if (!traverseTemplateParameterSource(D->getTemplateParameters(), true))
+    if (!traverseTemplateParameterSource(D->getTemplateParameters()))
       return false;
     if (D != D->getCanonicalDecl())
       return true;
@@ -2134,6 +2632,10 @@ public:
   bool TraverseClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseClassTemplateSpecializationDecl(D);
+    if (auto Found = ClassSources.find(D); Found != ClassSources.end())
+      for (const auto *Source : Found->second)
+        if (!checkTemplateUse(*Source, Source->Written->arguments()))
+          return false;
     if (const auto *Written = D->getTemplateArgsAsWritten())
       for (const auto &Argument : Written->arguments()) {
         A.chargeExpansion(1, D->getLocation());
@@ -2237,7 +2739,7 @@ public:
                        "An admitted outer class parameter list is required.");
               return true;
             }
-            if (!traverseTemplateParameterSource(Parameters, true))
+            if (!traverseTemplateParameterSource(Parameters))
               return false;
           }
           return true; // The member type and initializer retain normal laziness.
@@ -2279,7 +2781,7 @@ public:
                        "An admitted outer class parameter list is required.");
               return true;
             }
-            if (!traverseTemplateParameterSource(Parameters, true))
+            if (!traverseTemplateParameterSource(Parameters))
               return false;
           }
           return true; // No uninstantiated body, qualifier or function default.
@@ -2381,6 +2883,12 @@ public:
     auto *Saved = CurrentMethod;
     if (D && isa<FunctionDecl>(D))
       CurrentMethod = dyn_cast<CXXMethodDecl>(D);
+    if (A.S.coreV2())
+      if (const auto *Function = dyn_cast_or_null<FunctionDecl>(D))
+        if (auto Found = SpecializationSources.find(Function); Found != SpecializationSources.end())
+          for (const auto *Source : Found->second)
+            checkFunctionTemplateUse(Source->Selected, Source->Location,
+                Source->Written ? Source->Written->arguments() : llvm::ArrayRef<TemplateArgumentLoc>{});
     bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecl(D);
     if (const auto *C = dyn_cast_or_null<CXXConstructorDecl>(D);
         Result && A.S.coreV2() && C && owned(C) &&
@@ -2614,7 +3122,7 @@ public:
         A.S.coreV2() &&
         (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl, FriendDecl,
              NamespaceAliasDecl, UsingDirectiveDecl, UsingDecl,
-             FunctionTemplateDecl, ClassTemplateDecl>(D) ||
+             FunctionTemplateDecl, ClassTemplateDecl, TypeAliasTemplateDecl>(D) ||
          D->getKind() == Decl::UsingShadow ||
          (isa<AccessSpecDecl>(D) && D->getDeclContext()->isRecord()));
     if (!ExtendedDeclaration &&
@@ -3085,9 +3593,12 @@ public:
             !owned(Substitution->getAssociatedDecl()) ||
             !owned(Substitution->getParameter()) ||
             (!functionTemplateShape(dyn_cast<FunctionTemplateDecl>(scalarTemplateOwner(Substitution))) &&
-             !classTemplateShape(dyn_cast<ClassTemplateDecl>(scalarTemplateOwner(Substitution)))))
+             !classTemplateShape(dyn_cast<ClassTemplateDecl>(scalarTemplateOwner(Substitution))) &&
+             !aliasTemplateShape(dyn_cast<TypeAliasTemplateDecl>(scalarTemplateOwner(Substitution)))))
           A.reject(L, "template value replacement",
                    "A checked scalar replacement from an admitted owned template is required.");
+        else
+          checkScalarSourceEdge(Substitution, L);
       }
     }
     if (A.S.coreV2())
@@ -3533,15 +4044,15 @@ static void orderCoreV2Records(Adapter &A) {
 
 void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives,
                   llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives,
-                  llvm::ArrayRef<ScalarTemplateDefaultSource> Defaults) {
+                  llvm::ArrayRef<TemplateUseSource> TemplateUses,
+                  llvm::ArrayRef<FunctionSpecializationSource> Specializations) {
   Allowlist Check(*this);
   Check.indexTemplates();
+  Check.indexTemplateSources(TemplateUses, Specializations);
   for (const auto &Directive : Directives)
     Check.checkExplicitFunctionInstantiation(Directive);
   for (const auto &Directive : StaticDirectives)
     Check.checkExplicitStaticDataInstantiation(Directive);
-  for (const auto &Default : Defaults)
-    Check.checkScalarTemplateDefault(Default);
   Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (!S.Diagnostics.empty())
     return;
@@ -3867,7 +4378,8 @@ class Consumer : public ASTConsumer {
   State &S;
   std::vector<ExplicitFunctionInstantiationSource> Directives;
   std::vector<ExplicitStaticDataInstantiationSource> StaticDirectives;
-  std::vector<ScalarTemplateDefaultSource> Defaults;
+  std::vector<TemplateUseSource> TemplateUses;
+  std::vector<FunctionSpecializationSource> Specializations;
   std::size_t DirectiveUnits = 0;
 
   bool reserveSourceUnits(SourceManager &Sources, SourceLocation Location,
@@ -3885,8 +4397,136 @@ class Consumer : public ASTConsumer {
     return true;
   }
 
+  void retainTemplateUse(
+      TemplateSourceKind Kind, TemplateDecl *Template, const Decl *Declaration,
+      const Type *Type, TypeSourceInfo *Underlying,
+      const TemplateArgumentListInfo *Written,
+      const TemplateArgument *Canonical, const TemplateArgument *Sugared,
+      unsigned Count, NamedDecl *const *DefaultParameters,
+      const TemplateArgumentLoc *OriginalDefaults,
+      const TemplateArgumentLoc *ConvertedDefaults, unsigned DefaultCount,
+      NamedDecl *const *TypeParameters, TypeSourceInfo *const *ParameterTypes,
+      const unsigned *PackIndices, unsigned TypeCount,
+      bool Overflow, const SourceLocation &Location, bool Instantiation = false) {
+    if (!S.coreV2() || !Template || !S.Diagnostics.empty())
+      return;
+    auto &Context = Template->getASTContext();
+    auto &Sources = Context.getSourceManager();
+    if (!S.owns(Sources, Location))
+      return;
+    // These are successful Clang callbacks, not input protocol records. Bound
+    // collection globally without eagerly rejecting an unused generic body.
+    constexpr std::size_t Limit = 200000;
+    if (Count >= Limit || DefaultCount > 64 || TypeCount > 4096 ||
+        (Written && Written->size() >= Limit)) {
+      reserveSourceUnits(Sources, Location, Limit);
+      return;
+    }
+    if ((Count && (!Canonical || !Sugared)) ||
+        (DefaultCount && (!DefaultParameters || !OriginalDefaults || !ConvertedDefaults)) ||
+        (TypeCount && (!TypeParameters || !ParameterTypes || !PackIndices))) {
+      S.diagnose("TR0201", "template source evidence",
+                 "Successful template source metadata is incomplete.",
+                 "Use a frontend build with matching source-preservation hooks.");
+      return;
+    }
+    std::size_t Units = 2 * std::size_t(Count) + 3 * std::size_t(DefaultCount) +
+                        3 * std::size_t(TypeCount) +
+                        (Written ? Written->size() : 0);
+    for (unsigned I = 0; I < Count; ++I) {
+      if (Canonical[I].isNull() || Canonical[I].isInstantiationDependent())
+        return; // Unresolved primary metadata has no materialized source use.
+      for (const auto *Argument : {&Canonical[I], &Sugared[I]})
+        if (Argument->getKind() == TemplateArgument::Pack) {
+          if (Argument->pack_size() >= Limit || Units >= Limit ||
+              Argument->pack_size() >= Limit - Units) {
+            reserveSourceUnits(Sources, Location, Limit);
+            return;
+          }
+          Units += Argument->pack_size();
+        }
+    }
+    if (!reserveSourceUnits(Sources, Location, Units))
+      return;
+    TemplateUseSource Source{
+        Kind, Template, Declaration, Type, Underlying,
+        Written ? ASTTemplateArgumentListInfo::Create(Context, *Written) : nullptr,
+        TemplateArgumentList::CreateCopy(Context, llvm::ArrayRef<TemplateArgument>(Canonical, Count)),
+        TemplateArgumentList::CreateCopy(Context, llvm::ArrayRef<TemplateArgument>(Sugared, Count)),
+        {}, {}, Location, Overflow, Instantiation};
+    Source.Defaults.reserve(DefaultCount);
+    for (unsigned I = 0; I < DefaultCount; ++I)
+      Source.Defaults.push_back({DefaultParameters[I], OriginalDefaults[I], ConvertedDefaults[I]});
+    Source.ParameterTypes.reserve(TypeCount);
+    for (unsigned I = 0; I < TypeCount; ++I)
+      Source.ParameterTypes.push_back({TypeParameters[I], ParameterTypes[I], PackIndices[I]});
+    TemplateUses.push_back(std::move(Source));
+  }
+
 public:
   explicit Consumer(State &S) : S(S) {}
+  bool wantsNeverCTemplateSource() const override { return S.coreV2(); }
+  void HandleNeverCTemplateTypeSource(
+      TemplateDecl *Template, const Type *Type, TypeSourceInfo *Underlying,
+      const TemplateArgumentListInfo &Written,
+      const TemplateArgument *Canonical, const TemplateArgument *Sugared, unsigned Count,
+      NamedDecl *const *DefaultParameters, const TemplateArgumentLoc *OriginalDefaults,
+      const TemplateArgumentLoc *ConvertedDefaults, unsigned DefaultCount,
+      NamedDecl *const *TypeParameters, TypeSourceInfo *const *ParameterTypes,
+      const unsigned *PackIndices, unsigned TypeCount,
+      bool Overflow, const SourceLocation &Location) override {
+    retainTemplateUse(TemplateSourceKind::Type, Template, nullptr, Type, Underlying,
+                      &Written, Canonical, Sugared, Count, DefaultParameters,
+                      OriginalDefaults, ConvertedDefaults, DefaultCount,
+                      TypeParameters, ParameterTypes, PackIndices, TypeCount, Overflow, Location);
+  }
+  void HandleNeverCFunctionTemplateSource(
+      FunctionDecl *Function,
+      const TemplateArgument *Canonical, const TemplateArgument *Sugared, unsigned Count,
+      NamedDecl *const *DefaultParameters, const TemplateArgumentLoc *OriginalDefaults,
+      const TemplateArgumentLoc *ConvertedDefaults, unsigned DefaultCount,
+      NamedDecl *const *TypeParameters, TypeSourceInfo *const *ParameterTypes,
+      const unsigned *PackIndices, unsigned TypeCount,
+      bool Overflow, const SourceLocation &Location) override {
+    retainTemplateUse(TemplateSourceKind::Function,
+                      Function ? Function->getPrimaryTemplate() : nullptr,
+                      Function, nullptr, nullptr, nullptr,
+                      Canonical, Sugared, Count, DefaultParameters,
+                      OriginalDefaults, ConvertedDefaults, DefaultCount,
+                      TypeParameters, ParameterTypes, PackIndices, TypeCount, Overflow, Location);
+  }
+  void HandleNeverCClassTemplateSource(
+      ClassTemplateSpecializationDecl *Declaration,
+      const TemplateArgumentListInfo &Written, bool Instantiation,
+      const TemplateArgument *Canonical, const TemplateArgument *Sugared, unsigned Count,
+      NamedDecl *const *DefaultParameters, const TemplateArgumentLoc *OriginalDefaults,
+      const TemplateArgumentLoc *ConvertedDefaults, unsigned DefaultCount,
+      NamedDecl *const *TypeParameters, TypeSourceInfo *const *ParameterTypes,
+      const unsigned *PackIndices, unsigned TypeCount,
+      bool Overflow, const SourceLocation &Location) override {
+    retainTemplateUse(TemplateSourceKind::ClassDeclaration,
+                      Declaration ? Declaration->getSpecializedTemplateOrPartial()
+                                        .dyn_cast<ClassTemplateDecl *>() : nullptr,
+                      Declaration, nullptr, nullptr, &Written,
+                      Canonical, Sugared, Count, DefaultParameters,
+                      OriginalDefaults, ConvertedDefaults, DefaultCount,
+                      TypeParameters, ParameterTypes, PackIndices, TypeCount, Overflow,
+                      Location, Instantiation);
+  }
+  void HandleNeverCFunctionSpecializationSource(
+      FunctionDecl *Declaration, FunctionDecl *Selected,
+      const TemplateArgumentListInfo *Written,
+      const SourceLocation &Location) override {
+    if (!S.coreV2() || !Declaration || !Selected || !S.Diagnostics.empty())
+      return;
+    auto &Context = Declaration->getASTContext();
+    auto &Sources = Context.getSourceManager();
+    if (!S.owns(Sources, Location) ||
+        !reserveSourceUnits(Sources, Location, Written ? Written->size() : 0))
+      return;
+    Specializations.push_back({Declaration, Selected,
+        Written ? ASTTemplateArgumentListInfo::Create(Context, *Written) : nullptr, Location});
+  }
   void HandleNeverCExplicitFunctionInstantiation(
       FunctionDecl *Function, const TemplateArgumentListInfo &Arguments,
       TypeSourceInfo *Type, const DeclarationNameInfo &Name,
@@ -3916,25 +4556,12 @@ public:
       return;
     StaticDirectives.push_back({Variable, Type, Qualifier, Location, HasAttributes});
   }
-  void HandleNeverCScalarTemplateDefault(
-      TemplateDecl *Template, NonTypeTemplateParmDecl *Parameter,
-      const TemplateArgumentLoc &Written, const TemplateArgumentLoc &Converted,
-      const TemplateArgument &Canonical, const SourceLocation &Location) override {
-    if (!S.coreV2() || !Template || !Parameter || !S.Diagnostics.empty() ||
-        Canonical.isNull() || Canonical.isInstantiationDependent())
-      return;
-    auto &Sources = Template->getASTContext().getSourceManager();
-    if (!S.owns(Sources, Location) || !S.owns(Sources, Parameter->getLocation()) ||
-        !reserveSourceUnits(Sources, Location, 0))
-      return;
-    Defaults.push_back({Template, Parameter, Written, Converted, Canonical, Location});
-  }
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
     Adapter A(S, C);
     try {
-      A.run(Directives, StaticDirectives, Defaults);
+      A.run(Directives, StaticDirectives, TemplateUses, Specializations);
     } catch (const Failure &) {
     }
   }

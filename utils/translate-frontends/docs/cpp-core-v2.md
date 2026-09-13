@@ -946,6 +946,91 @@ Only C++ input translation is implemented; E Language, Python and other frontend
 remain planned. The C++ frontend uses embedded Clang libraries and does not launch
 an external Clang executable.
 
+## Namespace alias templates
+
+Core v2 admits owned namespace alias templates with up to 64 type or scalar
+parameters and at most 64 elements per concrete pack. Supported aliases include
+scalar and enum types, void, pointers, references, fixed arrays and admitted
+class-template instances. Alias chains, namespace imports, dependent member
+names, type/scalar/auto defaults and concrete pack substitutions preserve the
+underlying canonical type. An alias creates no runtime function, record identity,
+static object or wire opcode. Equivalent underlying class instances and function
+arguments continue to share their canonical records and static storage.
+
+Each reached concrete template type retains its exact sugared Type identity,
+raw template-name location and written argument-source identities. Namespace
+aliases also retain the substituted underlying TypeLoc. Explicit arguments,
+selected defaults and underlying source are checked even when the resulting
+canonical type ignores an argument or folds away an expression. Type source is
+never reconstructed from a canonical type or an approximate line number.
+
+The same selected-use evidence covers existing function and class templates.
+Successful deduction events own their original and converted defaults; only the
+selected callee consumes the matching event. Explicit class specialization and
+instantiation declarations, and explicit function-specialization declarations,
+retain their own source evidence even when unused or repeated with no effect.
+Failed substitution and unselected overload candidates retain ordinary C++
+behavior. A successful but unselected candidate does not trigger default-source
+validation merely because another use has the same canonical arguments.
+
+Selected non-type arguments also retain the actual substituted parameter
+TypeLoc, so a dependent alias used as the parameter type cannot hide unsupported
+source behind a folded scalar type. Preliminary explicit function arguments
+carry their evidence through the same deduction candidate; an extended pack uses
+its fresh complete conversion. Parameter type source is checked in declaration
+order before that parameter's selected default. Plain unconstrained auto and
+decltype(auto) leaves remain written metadata beside the checked scalar result.
+Inherited parameter declarations retain their actual source identities.
+
+An empty deduced function parameter pack still substitutes its parameter type in
+Clang. Its separate source record has no argument element and is checked at the
+selected function use. An unresolved direct type-pack expansion requires the
+matching checked empty type pack; other unresolved shapes remain unsupported.
+Class/alias argument-list checking does not substitute an unused empty pack's
+parameter type, so that dependent source stays lazy. Per-use temporary parameter
+type evidence is bounded to 4096 records and persistent copies share the source
+budget. Missing or conflicting source coverage is diagnosed.
+
+Nondependent parameter defaults and alias underlying types are checked at their
+primary declaration. Dependent defaults and underlying types remain lazy until
+selected. Uninstantiated generic bodies and discarded dependent if-constexpr
+branches keep their existing traversal rules. Instantiation-dependence is checked
+in addition to canonical type dependence: Ignore<T> can have canonical type int
+while its written argument still requires substitution. Evidence collected while
+parsing such a body is retained for a later reached source use.
+
+Explicit arguments are visited in the caller's existing source context. The
+selected template frame is then installed for ordered defaults and the alias
+underlying source. Retained Subst nodes resolve to previously checked parameter
+slots, with guarded owner, index, argument kind and reverse pack index. They do
+not manufacture a new alias use at a parameter name. Ordinary method, const
+method, instantiated member and field-initializer contexts remain active, so
+Identity<decltype(this)> and Count<sizeof(this->n)> retain normal this checks.
+A separate active-use stack enforces cycle/depth checks throughout argument
+traversal, including recursive calls to the same primary. All source collection
+shares the 200000-unit budget before copying; selected-use depth is bounded to 64.
+
+The built-in frontend opts into a private five-file source-preservation patch in
+ASTConsumer.h, Sema.h, TemplateDeduction.h, SemaTemplate.cpp and
+SemaTemplateDeduction.cpp. It substitutes
+an alias TypeSourceInfo once and retains substitution wrappers for alias/default
+and non-type parameter source. Other profiles and consumers keep their original substitution path and
+finality. No external Clang process is invoked. Independent literal archive
+fixtures verify complete, idempotent patch states and rejection of missing,
+duplicate, partial, mixed, drifted and orphan-marker states before any group file
+is rewritten.
+
+Paired fixtures cover source boundaries, default selection, recursion, this
+contexts, SFINAE, explicit declarations and 64/65-element limits. Native O0/O2
+fixtures verify array extents, reference writes, shared/distinct static objects,
+record results, copies, moves and full-expression destruction. Protocol fixtures
+check exact types, record reuse, result destinations, reference roots, selected
+calls and relocation. Native results require the implementing revision's CI.
+Member alias templates, template-template parameters, partial class
+specializations, standard headers and complete C++17/STL remain unfinished.
+Only C++ input is implemented; E Language, Python and other frontends remain
+planned.
+
 ## Scalar template parameter defaults
 
 Admitted namespace function, operator and class templates support scalar non-type
@@ -960,23 +1045,24 @@ different values or deduced types retain independent identities.
 The frontend checks every nondependent written default through the existing source
 visitor, including unused or overridden declarations. Unsupported floating source
 cannot disappear through constant folding. Unused dependent defaults stay lazy;
-an explicit value can bypass them. Once a default is successfully converted,
-original and converted expression evidence is checked, together with the final
-scalar argument type. This preserves dependent arithmetic, sizeof/noexcept,
+an explicit value can bypass them. Once a successful default belongs to a reached
+selected use or explicit declaration, its original and converted source is checked
+together with the final scalar argument type. This preserves dependent arithmetic, sizeof/noexcept,
 constexpr calls and conversion-added operations. An allowed constexpr record
 conversion can produce an integer argument; this does not admit record-valued
 non-type parameters. Selected calls retain ordinary source-definition checks.
 
-Private no-op callbacks run after CheckTemplateArgument succeeds in the explicit
-argument-list and function-deduction paths. Both original and converted ArgLocs
-and the canonical result survive erasure. Failed substitution or conversion
-produces no callback and retains normal SFINAE overload fallback. A successful
-conversion remains checked even if later parameters or overload selection discard
-the candidate, as with other materialized source. Actual parameter identity is
+Private callbacks attach successful defaults to their own completed template-use
+or deduction event. Original and converted ArgLocs and canonical results survive
+erasure. Failed substitution/conversion retains normal SFINAE overload fallback;
+unselected candidates stay lazy. Reached type uses, selected callees and every
+explicit declaration/directive consume their matching source evidence. Actual parameter identity is
 matched at its index across at most 64 redeclarations of the same template, so
 inherited defaults retain their real declaration provenance. Evidence collection
-shares the 200000-unit template source budget; it does not mutate semantic flags
-or add runtime parameters, global initialization or opaque representations.
+shares the 200000-unit template source budget. Core v2 retains substitution
+wrappers on the private source-bearing paths; deduction results and canonical
+identities stay unchanged. No runtime parameters, global initialization or opaque
+representations are added.
 
 Final defaults must be supported scalar constants. Pointer/reference/record-valued
 arguments, member/friend/variable templates, standard headers and remaining
