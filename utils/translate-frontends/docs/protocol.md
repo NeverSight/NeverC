@@ -187,6 +187,14 @@ conversion name, qualifier and parsed attribute check survives canonical reuse a
 no-effect repetitions. Collection and traversal remain bounded. See
 [instantiated local classes and written directives](cpp-core-v2.md#instantiated-local-classes-and-written-directives).
 
+Namespace operator function templates use the same canonical instance and typed
+call representation. A free operator has its explicit parameters and, for record
+results, the existing hidden result pointer; no receiver or runtime template
+parameter is added. Operator sequencing, reference identity and all temporary,
+parameter and result cleanup follow the ordinary call rules. Source directives
+remain independent validation evidence. See
+[namespace operator function templates](cpp-core-v2.md#namespace-operator-function-templates).
+
 Concrete core-v2 free function-template instances use ordinary function, record,
 scalar-global and call IR. Primary-template ordinals and source identities
 separate otherwise colliding specializations, including their local records and

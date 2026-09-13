@@ -912,8 +912,8 @@ results use their deduced admitted types.
 
 Out-of-line definitions, explicit class/member instantiation and explicit
 specialization follow the existing ownership and definition rules. These are
-members of a class template; a member's own function-template parameter list and
-free operator function templates remain unsupported. Allocation/deallocation,
+members of a class template; a member's own function-template parameter list
+remains unsupported. Namespace operator templates follow their separate contract. Allocation/deallocation,
 virtual dispatch, unsupported qualifiers, fields and signatures retain their
 restrictions. C++20 conditional `explicit` remains outside C++17.
 
@@ -991,6 +991,49 @@ CI of the implementing revision. Complete C++17/STL remains unfinished. The
 translator uses statically embedded Clang libraries, with no external Clang
 executable required at translation time; other input languages remain planned.
 
+## Namespace operator function templates
+
+Core v2 admits source-owned namespace operator function templates for the existing
+ordinary C++17 operator set. This includes arithmetic, comparisons, logical/comma,
+shifts, compound assignment, increment/decrement, dereference, address and
+arrow-star forms that C++ permits as non-members. Embedded Clang enforces arity,
+operand types, access and overload resolution. Allocation/deallocation, literal
+operators, member/friend templates and later-standard operators remain excluded.
+
+The existing function-template limits apply: up to 64 non-pack type or supported
+scalar parameters, deduction, type defaults, scalar C++17 auto and dependent
+scalar parameter types. ADL, namespace imports, explicit calls, specialization,
+instantiation and recursion retain selected concrete identities. Unused primary
+bodies stay lazy. Selected types, definitions, exception specifications, folded
+source and every materialized body remain checked. Explicit directives keep each
+written argument/type/name/qualifier and attribute check, including extern and
+no-effect repetition. An unevaluated signature-only call still needs a definition
+under the existing source-closure rule.
+
+Free operator calls contain only explicit source parameters plus the ordinary
+hidden result pointer for record returns. There is no implicit receiver or runtime
+template parameter. References preserve actual object/field addresses; record
+results use their destination directly. Operator notation keeps C++17 sequencing:
+assignment forms evaluate the right side first, while shifts, comma and overloaded
+logical operations evaluate the left side first. Both operands of overloaded
+logical operators are evaluated. Explicit function notation uses an existing
+permitted function-call order. Temporary, by-value, returned and lifetime-extended
+objects keep normal construction and cleanup rules.
+
+Canonical primary/argument identities also separate local classes, fields and
+scalar static locals. Equivalent instances and repeated directives reuse one
+function; distinct primary templates, values and deduced types retain their own
+state. Iterator dereference, comparison and increment can therefore be free
+function templates within an otherwise admitted range.
+
+Native O0/O2 fixtures cover mutation, aliases, sequencing, iterator ranges, record
+results, copies and lifetime cleanup. Protocol fixtures check complete signatures,
+selected calls, canonical reuse, distinct local/static identities and relocation.
+Native validation requires CI of this implementation. Complete C++17/STL remains
+unfinished. C++ is the only implemented input frontend; other languages remain
+planned. Translation uses embedded Clang libraries without an external Clang
+executable.
+
 ## Concrete free function templates
 
 Core v2 admits source-owned namespace/free function templates with one to 64
@@ -998,7 +1041,7 @@ non-pack, unconstrained parameters, mixing supported types with integer, boolean
 and enum values. Embedded Clang performs deduction, overload ordering,
 substitution and explicit specialization/instantiation. Type-parameter defaults,
 namespace imports, recursion and nested calls use ordinary typed functions.
-Member, friend and operator templates, template-template parameters,
+Member and friend templates, template-template parameters,
 parameter packs, abbreviated/constrained templates and standard headers remain
 outside this stage.
 
@@ -1860,7 +1903,7 @@ parameters. Reference results preserve their aliases, including subscript and
 increment results. Taking an overloaded operator's function/member address still
 requires later function-pointer support. Conversion functions follow their separate
 contract below. The operators of admitted class-template instances follow the contract above.
-Free/member operator function templates, dependent friend declarations,
+Member operator function templates, dependent friend declarations,
 virtual dispatch and allocation/deallocation operators remain excluded. Temporary call operands
 follow the separate full-expression contract below.
 
@@ -1913,7 +1956,7 @@ lifetime counts. Protocol fixtures check selected identities and full signatures
 free/member argument offsets, parameter capture versus destruction order, direct
 result storage, cleanup and deterministic relocation. Unsupported code is still
 inspected inside unused functions and noexcept queries. V1 admission is unchanged;
-operator function templates, library headers and complete STL remain in development. Native evidence
+member operator function templates, library headers and complete STL remain in development. Native evidence
 must come from the implementing revision's CI.
 
 ## User-defined conversion functions

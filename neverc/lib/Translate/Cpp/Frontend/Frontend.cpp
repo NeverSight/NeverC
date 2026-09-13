@@ -53,14 +53,6 @@ static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
   }
 }
 
-// Shape only: Allowlist separately validates the primary, arguments and body.
-static bool concreteFreeFunctionTemplate(const FunctionDecl *F) {
-  return F && F->getKind() == Decl::Function && F->getIdentifier() &&
-         F->getTemplatedKind() == FunctionDecl::TK_FunctionTemplateSpecialization &&
-         F->getPrimaryTemplate() && !F->isDependentContext() &&
-         !F->getType().isNull() && !F->getType()->isDependentType();
-}
-
 // Name shape only: patterns do not yet have concrete parameter/result types.
 static bool ordinaryOperatorKind(OverloadedOperatorKind Kind) {
   switch (Kind) {
@@ -78,6 +70,20 @@ static bool ordinaryOperatorKind(OverloadedOperatorKind Kind) {
   default:
     return false;
   }
+}
+
+// Name shape only; primary ownership and concrete types are checked separately.
+static bool ordinaryFreeFunctionName(const FunctionDecl *F) {
+  return F && F->getKind() == Decl::Function &&
+         (F->getIdentifier() || ordinaryOperatorKind(F->getOverloadedOperator()));
+}
+
+// Shape only: Allowlist separately validates the primary, arguments and body.
+static bool concreteFreeFunctionTemplate(const FunctionDecl *F) {
+  return ordinaryFreeFunctionName(F) &&
+         F->getTemplatedKind() == FunctionDecl::TK_FunctionTemplateSpecialization &&
+         F->getPrimaryTemplate() && !F->isDependentContext() &&
+         !F->getType().isNull() && !F->getType()->isDependentType();
 }
 
 // Identity only: unused member instances can have an undeduced auto return.
@@ -189,7 +195,7 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
 bool ordinaryOperator(const FunctionDecl *F) {
   if (!F || !F->isOverloadedOperator() || F->isImplicit() || F->isVariadic() ||
       (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteMemberFunction(F)) ||
+       !concreteFreeFunctionTemplate(F) && !concreteMemberFunction(F)) ||
       F->isDeletedAsWritten() || F->isDefaulted() || F->isConsteval())
     return false;
   if (!ordinaryOperatorKind(F->getOverloadedOperator()))
@@ -1242,7 +1248,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Pattern = D->getTemplatedDecl();
     if (!templateParametersShape(Parameters) || D->isAbbreviated() ||
         !owned(Pattern) || Pattern->isInvalidDecl() ||
-        Pattern->getKind() != Decl::Function || !Pattern->getIdentifier() ||
+        !ordinaryFreeFunctionName(Pattern) ||
         Pattern->isVariadic() || Pattern->isDeletedAsWritten() ||
         Pattern->isDefaulted() || Pattern->isConsteval() ||
         Pattern->getTrailingRequiresClause() || Pattern->hasAttrs())

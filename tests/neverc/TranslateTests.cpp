@@ -4688,6 +4688,255 @@ TEST_F(TranslateTest, CoreV2FrontendRepairsRetainWrittenExceptionSource) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesPreserveStorageSequencingAndLifetimes) {
+  const auto Source = tmpFile("free-operator-runtime.cpp");
+  const auto Output = tmpFile("free-operator-runtime.nc");
+  writeFile(Source, R"cpp(int trace=0;
+int live=0;
+int copies=0;
+int moves=0;
+int observed=0;
+void mark(int n){trace=trace*10+n;}
+template<class T>struct Cursor{T*p;};
+template<class T>T&operator*(const Cursor<T>&r){return *r.p;}
+template<class T>Cursor<T>&operator++(Cursor<T>&r){++r.p;return r;}
+template<class T>Cursor<T>operator++(Cursor<T>&r,int){T*p=r.p;++r.p;return Cursor<T>{p};}
+template<class T>Cursor<T>&operator--(Cursor<T>&r){--r.p;return r;}
+template<class T>Cursor<T>operator--(Cursor<T>&r,int){T*p=r.p;--r.p;return Cursor<T>{p};}
+template<class T>bool operator!=(const Cursor<T>&a,const Cursor<T>&b){return a.p!=b.p;}
+template<class T,int N>struct Range{T data[N];Cursor<T>begin(){return Cursor<T>{data};}Cursor<T>end(){return Cursor<T>{data+N};}};
+template<class T>struct Box{
+ T n;
+ Box(T v):n(v){++live;}
+ Box(const Box&r):n(r.n){++live;++copies;}
+ Box(Box&&r):n(r.n){++live;++moves;r.n=0;}
+ ~Box(){--live;}
+};
+template<class T>Box<T>&operator+=(Box<T>&r,T n){mark(3);r.n+=n;return r;}
+template<class T>Box<T>operator+(const Box<T>&r,T n){return Box<T>(r.n+n);}
+template<class T>Box<T>operator+(Box<T>a,Box<T>b){observed=live;return Box<T>(a.n+b.n);}
+template<class T>bool operator&&(const Box<T>&a,const Box<T>&b){mark(3);return a.n&&b.n;}
+template<class T>bool operator||(const Box<T>&a,const Box<T>&b){mark(3);return a.n||b.n;}
+template<class T>Box<T>&operator,(Box<T>&a,Box<T>&b){mark(3);return b;}
+template<class T>T operator<<(const Box<T>&a,T n){mark(3);return a.n<<n;}
+template<class T>T operator>>(const Box<T>&a,T n){mark(3);return a.n>>n;}
+Box<int>&left(Box<int>&r){mark(1);return r;}
+Box<int>&right(Box<int>&r){mark(2);return r;}
+int number(){mark(2);return 2;}
+Box<int>&select(Box<int>*&p,Box<int>&r){mark(2);p=&r;return r;}
+int consume(Box<int>r){return r.n+live*10;}
+int observe(const Box<int>&r){return r.n+live*10;}
+Box<int>sum(const Box<int>&r){return r+2;}
+template<class T>struct Value{T n;};
+template<class T>T*operator&(Value<T>&r){return &r.n;}
+template<class T>T&operator*(Value<T>&r){return r.n;}
+template<class T>T&operator->*(Value<T>&r,int n){r.n+=n;return r.n;}
+template<class T>T operator+(Value<T>&r){return r.n;}
+template<class T>T operator+(const Value<T>&r){return r.n+1;}
+template<class T>T operator+(Value<T>&&r){return r.n+2;}
+struct Count{int n;};
+template<auto N>int operator+(Count r){static int count=0;return r.n+N+(++count);}
+template<auto N>int&operator*(Count&){static int value=0;return value;}
+template<class T>int operator+(Count r,T n){struct Local{T n;T get()const{return n;}};Local l{n};static int count=0;return r.n+l.get()+(++count);}
+extern template int operator+<3>(Count);
+template int operator+<1+2>(Count);
+extern template int operator+<3>(Count);
+template<class T>int operator-(Count r,T n){if(n==0)return r.n;return r-T(n-1)+1;}
+int main(){
+ int a[4]={1,2,3,4};Cursor<int>c{a};
+ if(&*c!=&a[0])return 1;
+ *c=7;Cursor<int>old=c++;Cursor<int>&advanced=++c;
+ if(old.p!=a||&advanced!=&c||c.p!=a+2||a[0]!=7)return 2;
+ Cursor<int>back=c--;Cursor<int>&again=--c;
+ if(back.p!=a+2||&again!=&c||c.p!=a)return 3;
+ Range<int,3>range{{1,2,3}};int total=0;for(int&n:range){++n;total+=n;}
+ if(total!=9||range.data[0]!=2||range.data[2]!=4)return 4;
+ {
+  Box<int>x(4),y(6);trace=0;
+  Box<int>&assigned=(left(x)+=number());
+  if(trace!=213||&assigned!=&x||x.n!=6||live!=2)return 5;
+  trace=0;operator+=<int>(left(x),number());
+  if((trace!=123&&trace!=213)||x.n!=8)return 6;
+  x.n=4;trace=0;Box<int>*p=&x;*p+=select(p,y).n;
+  if(trace!=23||p!=&y||x.n!=4||y.n!=12)return 7;
+  x.n=0;y.n=5;trace=0;bool both=left(x)&&right(y);
+  if(trace!=123||both)return 8;
+  x.n=1;trace=0;both=left(x)||right(y);
+  if(trace!=123||!both)return 9;
+  trace=0;Box<int>&last=(left(x),right(y));
+  if(trace!=123||&last!=&y)return 10;
+  x.n=8;trace=0;int shifted=left(x)<<number();
+  if(trace!=123||shifted!=32)return 11;
+  trace=0;shifted=left(x)>>number();
+  if(trace!=123||shifted!=2)return 12;
+  copies=0;moves=0;Box<int>z=sum(x);
+  if(z.n!=10||live!=3||copies!=0||moves!=0)return 13;
+  {const Box<int>&extended=x+3;if(extended.n!=11||live!=4)return 14;}
+  if(live!=3)return 15;
+  if(observe(x+4)!=52||live!=3)return 16;
+  if(consume(x+5)!=53||live!=3||copies!=0||moves!=0)return 17;
+  {copies=0;Box<int>v=x+y;
+   if(v.n!=13||live!=4||observed!=5||copies!=2||moves!=0)return 18;}
+  if(live!=3)return 19;
+ }
+ if(live!=0)return 20;
+ Value<int>v{3};int*ptr=&v;int&ref=*v;*ptr=4;ref=5;
+ if(ptr!=&v.n||&ref!=&v.n||v.n!=5)return 21;
+ int&member=(v->*2);member=9;
+ if(&member!=&v.n||v.n!=9)return 22;
+ const Value<int>&cv=v;
+ if(+v!=9||+cv!=10||+static_cast<Value<int>&&>(v)!=11)return 23;
+ Count count{2};
+ if(operator+<3>(count)!=6||operator+<1+2>(count)!=7||operator+<3u>(count)!=6)return 24;
+ int&one=operator*<3>(count);int&alias=operator*<1+2>(count);int&different=operator*<3u>(count);one=4;different=7;
+ if(&one!=&alias||&one==&different||alias!=4||different!=7)return 25;
+ if((count+3)!=6||(count+3)!=7||(count+3u)!=6)return 26;
+ if((count-4)!=6)return 27;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("free-operator-runtime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesAcceptConcreteOperators) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-free-template", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}"},
+      {"selected-free-template", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}int f(){R r{3};return r+4;}"},
+      {"arithmetic", "template<class T>struct R{T n;};template<class T>T operator+(const R<T>&r,T n){return r.n+n;}template<class T>T operator-(const R<T>&r,T n){return r.n-n;}template<class T>T operator*(const R<T>&r,T n){return r.n*n;}template<class T>T operator/(const R<T>&r,T n){return r.n/n;}template<class T>T operator%(const R<T>&r,T n){return r.n%n;}template<class T>T operator^(const R<T>&r,T n){return r.n^n;}template<class T>T operator&(const R<T>&r,T n){return r.n&n;}template<class T>T operator|(const R<T>&r,T n){return r.n|n;}template<class T>T operator<<(const R<T>&r,T n){return r.n<<n;}template<class T>T operator>>(const R<T>&r,T n){return r.n>>n;}int f(){R<int>r{6};return (r+2)+(r-2)+(r*2)+(r/2)+(r%2)+(r^2)+(r&2)+(r|2)+(r<<2)+(r>>2);}"},
+      {"comparison", "template<class T>struct R{T n;};template<class T>bool operator==(const R<T>&a,const R<T>&b){return a.n==b.n;}template<class T>bool operator!=(const R<T>&a,const R<T>&b){return a.n!=b.n;}template<class T>bool operator<(const R<T>&a,const R<T>&b){return a.n<b.n;}template<class T>bool operator>(const R<T>&a,const R<T>&b){return a.n>b.n;}template<class T>bool operator<=(const R<T>&a,const R<T>&b){return a.n<=b.n;}template<class T>bool operator>=(const R<T>&a,const R<T>&b){return a.n>=b.n;}int f(){R<int>a{3},b{4};return (a==b)+(a!=b)+(a<b)+(a>b)+(a<=b)+(a>=b);}"},
+      {"compound", "template<class T>struct R{T n;};template<class T>R<T>&operator+=(R<T>&r,T n){r.n+=n;return r;}template<class T>R<T>&operator-=(R<T>&r,T n){r.n-=n;return r;}template<class T>R<T>&operator*=(R<T>&r,T n){r.n*=n;return r;}template<class T>R<T>&operator/=(R<T>&r,T n){r.n/=n;return r;}template<class T>R<T>&operator%=(R<T>&r,T n){r.n%=n;return r;}template<class T>R<T>&operator^=(R<T>&r,T n){r.n^=n;return r;}template<class T>R<T>&operator&=(R<T>&r,T n){r.n&=n;return r;}template<class T>R<T>&operator|=(R<T>&r,T n){r.n|=n;return r;}template<class T>R<T>&operator<<=(R<T>&r,T n){r.n<<=n;return r;}template<class T>R<T>&operator>>=(R<T>&r,T n){r.n>>=n;return r;}int f(){R<int>r{6};r+=2;r-=1;r*=2;r/=2;r%=5;r^=3;r|=2;r&=3;r<<=1;r>>=1;return r.n;}"},
+      {"unary", "template<class T>struct R{T n;};template<class T>T operator+(const R<T>&r){return +r.n;}template<class T>T operator-(const R<T>&r){return -r.n;}template<class T>T operator~(const R<T>&r){return ~r.n;}template<class T>bool operator!(const R<T>&r){return !r.n;}int f(){R<int>r{3};return +r+ -r+ ~r+ !r;}"},
+      {"increment-decrement", "template<class T>struct R{T n;};template<class T>R<T>&operator++(R<T>&r){++r.n;return r;}template<class T>R<T>operator++(R<T>&r,int){R<T>old{r.n};++r.n;return old;}template<class T>R<T>&operator--(R<T>&r){--r.n;return r;}template<class T>R<T>operator--(R<T>&r,int){R<T>old{r.n};--r.n;return old;}int f(){R<int>r{3};++r;R<int>a=r++;--r;R<int>b=r--;return r.n+a.n+b.n;}"},
+      {"pointer-reference", "template<class T>struct R{T n;};template<class T>T*operator&(R<T>&r){return &r.n;}template<class T>T&operator*(R<T>&r){return r.n;}int f(){R<int>r{3};int*p=&r;*p=4;*r=5;return r.n;}"},
+      {"arrow-star", "template<class T>struct R{T n;};template<class T>T&operator->*(R<T>&r,int n){r.n+=n;return r.n;}int f(){R<int>r{3};int&n=(r->*2);n=7;return r.n;}"},
+      {"logical-comma", "template<class T>struct R{T n;};template<class T>bool operator&&(const R<T>&a,const R<T>&b){return a.n&&b.n;}template<class T>bool operator||(const R<T>&a,const R<T>&b){return a.n||b.n;}template<class T>R<T>&operator,(R<T>&a,R<T>&b){a.n+=1;return b;}int f(){R<int>a{0},b{3};(a,b).n=4;return (a&&b)+(a||b)+b.n;}"},
+      {"record-result", "template<class T>struct R{T n;};template<class T>R<T>operator+(const R<T>&a,const R<T>&b){return R<T>{a.n+b.n};}R<int>f(const R<int>&a,const R<int>&b){return a+b;}"},
+      {"rvalue-reference", "template<class T>struct R{T n;};template<class T>R<T>&&operator+(R<T>&&r){++r.n;return static_cast<R<T>&&>(r);}int f(){R<int>r{3};R<int>&&s=+static_cast<R<int>&&>(r);s.n=7;return r.n;}"},
+      {"const-overloads", "template<class T>struct R{T n;};template<class T>T operator+(R<T>&r){return r.n+1;}template<class T>T operator+(const R<T>&r){return r.n+2;}template<class T>T operator+(R<T>&&r){return r.n+3;}int f(){R<int>r{3};const R<int>&c=r;return +r+ +c+ +static_cast<R<int>&&>(r);}"},
+      {"adl", "namespace N{template<class T>struct R{T n;};template<class T>T operator+(R<T>r,T n){return r.n+n;}}int f(){N::R<int>r{3};return r+4;}"},
+      {"using-import", "namespace N{struct R{int n;};template<class T>int operator+(R r,T n){return r.n+n;}}using N::operator+;int f(){N::R r{3};return operator+<int>(r,4);}"},
+      {"explicit-notation", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}int f(){R r{3};return operator+<int>(r,4)+operator+(r,5);}"},
+      {"declaration-definition", "struct R{int n;};template<class T>int operator+(R,T);template<class T>int operator+(R r,T n){return r.n+n;}int f(){return R{3}+4;}"},
+      {"specialization", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return r.n+n+1;}int f(){R r{3};return r+4;}"},
+      {"instantiation", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template int operator+<int>(const R&,int);"},
+      {"extern-definition", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}extern template int operator+<int>(const R&,int);template int operator+<int>(const R&,int);extern template int operator+<int>(const R&,int);"},
+      {"instantiation-after-specialization", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return r.n+n+1;}template int operator+<int>(const R&,int);"},
+      {"scalar-argument", "struct R{int n;};template<int N>int operator+(const R&r,const R&s){return r.n+s.n+N;}template int operator+<1+2>(const R&,const R&);int f(){R r{3};return operator+<3>(r,r);}"},
+      {"deduced-scalar", "template<class T,int N>struct R{T n;};template<class T,int N>T operator+(const R<T,N>&r,T n){return r.n+n+N;}int f(){R<int,3>r{4};return r+5;}"},
+      {"auto-argument", "struct R{int n;};template<auto N>int operator+(R r,R s){return r.n+s.n+N;}int f(){return operator+<true>(R{3},R{4});}"},
+      {"type-default", "struct R{int n;};template<class T=int>T operator+(R a,R b){return T(a.n+b.n);}int f(){return R{3}+R{4};}"},
+      {"dependent-type", "enum class E:int{three=3};template<class T,T N>struct R{int n;};template<class T,T N>int operator+(R<T,N>r,int n){return r.n+n+int(N);}int f(){R<E,E::three>r{4};return r+5;}"},
+      {"recursive", "struct R{int n;};template<class T>int operator+(R r,T n){if(n==0)return r.n;return r+T(n-1)+1;}int f(){return R{3}+4;}"},
+      {"lazy-unsupported", "struct R{int n;};template<class T>int operator+(R,T){return int(1.0);}"},
+      {"lazy-dependent", "struct R{int n;};template<class T>int operator+(R,T){return T::missing;}"},
+      {"local-class", "struct R{int n;};template<class T>int operator+(const R&r,T v){struct Local{T n;T get(){return n;}};Local l{v};return r.n+l.get();}int f(){return R{3}+4;}"},
+      {"static-isolation", "struct R{int n;};template<class T>int operator+(R r,T n){static int count=0;return r.n+n+(++count);}int f(){R r{3};return (r+4)+(r+4u);}"},
+      {"noexcept", "struct R{int n;};template<class T>int operator+(R r,T n)noexcept(sizeof(T)>0){return r.n+n;}static_assert(noexcept(R{3}+4));int f(){return R{3}+4;}"},
+      {"constexpr-query", "struct R{int n;};template<class T>constexpr int operator+(R r,T n){return r.n+n;}static_assert(R{3}+4==7);int f(){return sizeof(R{3}+4);}"},
+      {"enum-operand", "enum class E:int{v=3};template<class T>int operator+(E e,T n){return int(e)+n;}int f(){return E::v+4;}"},
+      {"iterator-range", "template<class T>struct Iterator{T*p;};template<class T>T&operator*(const Iterator<T>&r){return *r.p;}template<class T>Iterator<T>&operator++(Iterator<T>&r){++r.p;return r;}template<class T>bool operator!=(const Iterator<T>&a,const Iterator<T>&b){return a.p!=b.p;}template<class T,int N>struct Range{T data[N];Iterator<T>begin(){return Iterator<T>{data};}Iterator<T>end(){return Iterator<T>{data+N};}};int f(){Range<int,3>r{{1,2,3}};int sum=0;for(int&n:r){++n;sum+=n;}return sum;}"},
+      {"protocol-source", "template<class T,int N>struct Cursor{T*p;};\ntemplate<class T,int N>T&operator*(const Cursor<T,N>&r){return *r.p;}\ntemplate<class T,int N>Cursor<T,N>&operator++(Cursor<T,N>&r){++r.p;return r;}\ntemplate<class T,int N>Cursor<T,N>operator++(Cursor<T,N>&r,int){T*p=r.p;++r.p;return Cursor<T,N>{p};}\ntemplate<class T,int N>Cursor<T,N>operator+(const Cursor<T,N>&r,int n){return Cursor<T,N>{r.p+n};}\ntemplate<class T,int N>Cursor<T,N>&operator+=(Cursor<T,N>&r,int n){r.p+=n;return r;}\ntemplate<class T,int N>bool operator&&(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p&&b.p;}\ntemplate<class T,int N>bool operator||(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p||b.p;}\ntemplate<class T,int N>Cursor<T,N>&operator,(Cursor<T,N>&a,Cursor<T,N>&b){return b;}\ntemplate<class T,int N>int operator<<(const Cursor<T,N>&r,int n){return n;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)+=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return operator+=(left(r),right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nint shift(Cursor<int,3>&r){return left(r)<<right();}\ntemplate int&operator*<int,3>(const Cursor<int,3>&);\nextern template int&operator*<int,3>(const Cursor<int,3>&);\nstruct Count{int n;};\ntemplate<auto N>int operator+(Count r){\n struct Local{int n;int get()const{return n;}};\n Local l{N};static int count=0;return r.n+l.get()+(++count);\n}\nint countA(Count r){return operator+<3>(r);}\nint countAlias(Count r){return operator+<1+2>(r);}\nint countB(Count r){return operator+<3u>(r);}\nextern template int operator+<3>(Count);\ntemplate int operator+<1+2>(Count);\nextern template int operator+<3>(Count);\ntemplate<class T>int operator-(Cursor<T,3>&r){static int count=0;return ++count;}\ntemplate<class T>int operator-(const Cursor<T,3>&r){static int count=0;return ++count;}\nint mutableCount(Cursor<int,3>&r){return -r;}\nint constCount(const Cursor<int,3>&r){return -r;}\nstruct Build{int n;};\nstruct Life{int n;Life(int v):n(v){}~Life(){}};\ntemplate<class T>Life operator+(Build r,T n){return Life(r.n+n);}\nLife create(Build r,int n){return r+n;}\nint extended(Build r){const Life&v=r+3;return v.n;}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("free-operator-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("free-operator-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesRetainSourceBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"selected-floating-body", "struct R{int n;};template<class T>int operator+(R,T){return int(1.0);}int f(){return R{3}+4;}"},
+      {"selected-floating-result", "struct R{int n;};template<class T>T operator+(R r,T n){return n;}int f(){return int(R{3}+1.0);}"},
+      {"selected-floating-parameter", "struct R{int n;};template<class T>int operator+(R r,T n){return 3;}int f(){return R{3}+1.0;}"},
+      {"folded-constexpr", "struct R{int n;};template<class T>constexpr int operator+(R r,T n){return int(1.0);}static_assert(R{3}+4==1);"},
+      {"query-body", "struct R{int n;};template<class T>auto operator+(R,T){return int(1.0);}int f(){return sizeof(R{3}+4);}"},
+      {"selected-noexcept", "struct R{int n;};template<class T>int operator+(R,T)noexcept(sizeof(double)>0){return 3;}int f(){return R{3}+4;}"},
+      {"materialized-specialization", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return int(1.0);}"},
+      {"materialized-explicit", "struct R{int n;};template<class T>int operator+(R,T){return int(1.0);}template int operator+<int>(R,int);"},
+      {"directive-value-source", "struct R{int n;};template<int N>int operator+(R r,R s){return r.n+s.n+N;}template int operator+<int(1.0)>(R,R);"},
+      {"directive-extern-source", "struct R{int n;};template<int N>int operator+(R r,R s){return r.n+s.n+N;}extern template int operator+<int(1.0)>(R,R);"},
+      {"directive-return-source", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template decltype(int(1.0)) operator+<int>(const R&,int);"},
+      {"directive-param-source", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template int operator+<int>(const R&,decltype(int(1.0)));"},
+      {"directive-noexcept-source", "struct R{int n;};template<class T>int operator+(R,T)noexcept{return 3;}template int operator+<int>(R,int)noexcept(sizeof(double)>0);"},
+      {"allocation", "template<class T>void*operator new(decltype(sizeof(0)),T*p){return p;}"},
+      {"literal", "template<char... C>int operator\"\"_number(){return 1;}"},
+      {"member-template", "struct R{template<class T>int operator()(T){return 1;}};"},
+      {"friend-template", "struct R{int n;template<class T>friend int operator+(const R&r,T n){return r.n+n;}};"},
+      {"pack", "struct R{int n;};template<class... T>int operator+(R){return 1;}"},
+      {"value-default", "struct R{int n;};template<int N=3>int operator+(R,R){return N;}"},
+      {"local-unused-body", "struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0);}};Local l;return r.n+n;}int f(){return R{3}+4;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("free-operator-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("free-operator-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesRetainLanguageDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"wrong-arity", "struct R{int n;};template<class T>int operator+(R,T,T){return 1;}"},
+      {"no-class-operand", "template<class T>int operator+(T,T){return 1;}int f(){return operator+<int>(1,2);}"},
+      {"function-default", "struct R{int n;};template<class T>int operator+(R,T n=T(3)){return n;}"},
+      {"ambiguous", "struct R{int n;};template<class T>int operator+(const R&,T){return 1;}template<class T>int operator+(R,T){return 2;}int f(){R r{3};return r+4;}"},
+      {"private-access", "class R{int n;};template<class T>int operator+(const R&r,T n){return r.n+n;}int f(){R r;return r+4;}"},
+      {"deleted-selected", "struct R{int n;};template<class T>int operator+(R,T)=delete;int f(){return R{3}+4;}"},
+      {"member-only", "struct R{int n;};template<class T>int operator[](R,T){return 1;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("free-operator-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("free-operator-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesRequireSelectedDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"selected-definition", "struct R{int n;};template<class T>int operator+(R,T);int f(){return R{3}+4;}"},
+      {"query-definition", "struct R{int n;};template<class T>int operator+(R,T)noexcept;static_assert(noexcept(R{3}+4));"},
+      {"extern-definition", "struct R{int n;};template<class T>int operator+(R,T);extern template int operator+<int>(R,int);"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("free-operator-missing-" + Name + ".cpp");
+    const auto Output = tmpFile("free-operator-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesKeepLegacyProfile) {
+  const auto Source = tmpFile("free-operator-legacy.cpp");
+  const auto Output = tmpFile("free-operator-legacy.nc");
+  writeFile(Source, "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}int f(){R r{3};return r+4;}");
+  auto Result = translate(Source, {"-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2TemplateSourceRepairsPreserveLocalStorageAndLifetimes) {
   const auto Source = tmpFile("template-source-runtime.cpp");
   const auto Output = tmpFile("template-source-runtime.nc");
@@ -5092,7 +5341,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsRetainSourceBoundaries) {
       {"outside-header", "template<decltype(sizeof(double)) N>struct R{int operator()();};template<decltype(sizeof(double)) N>int R<N>::operator()(){return N;}int f(){R<3>r;return r();}"},
       {"own-operator-template", "template<class T>struct R{template<class U>int operator()(U){return 1;}};"},
       {"own-conversion-template", "template<class T>struct R{template<class U>operator U(){return U();}};"},
-      {"free-operator-template", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}"},
       {"virtual-conversion", "template<class T>struct R{virtual operator int(){return 1;}};"},
       {"volatile-operator", "template<class T>struct R{int operator()()volatile{return 1;}};"},
       {"allocation", "template<class T>struct R{static void*operator new(decltype(sizeof(0))){return nullptr;}};"},
@@ -6471,7 +6719,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"member", "struct R{template<class T>T f(T v){return v;}};", "TR0201"},
       {"friend", "struct R{template<class T>friend T f(T v){return v;}};", "TR0201"},
-      {"operator", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}", "TR0201"},
       {"pack", "template<class...T>int f(T...v){return 1;}", "TR0201"},
       {"template-template", "template<template<class>class T>int f(){return 1;}", "TR0201"},
       {"variable", "template<class T>int value=3;", "TR0201"},

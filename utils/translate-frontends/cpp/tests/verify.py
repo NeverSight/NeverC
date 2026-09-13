@@ -6440,6 +6440,227 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
 
+    free_operators_source = 'template<class T,int N>struct Cursor{T*p;};\ntemplate<class T,int N>T&operator*(const Cursor<T,N>&r){return *r.p;}\ntemplate<class T,int N>Cursor<T,N>&operator++(Cursor<T,N>&r){++r.p;return r;}\ntemplate<class T,int N>Cursor<T,N>operator++(Cursor<T,N>&r,int){T*p=r.p;++r.p;return Cursor<T,N>{p};}\ntemplate<class T,int N>Cursor<T,N>operator+(const Cursor<T,N>&r,int n){return Cursor<T,N>{r.p+n};}\ntemplate<class T,int N>Cursor<T,N>&operator+=(Cursor<T,N>&r,int n){r.p+=n;return r;}\ntemplate<class T,int N>bool operator&&(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p&&b.p;}\ntemplate<class T,int N>bool operator||(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p||b.p;}\ntemplate<class T,int N>Cursor<T,N>&operator,(Cursor<T,N>&a,Cursor<T,N>&b){return b;}\ntemplate<class T,int N>int operator<<(const Cursor<T,N>&r,int n){return n;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)+=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return operator+=(left(r),right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nint shift(Cursor<int,3>&r){return left(r)<<right();}\ntemplate int&operator*<int,3>(const Cursor<int,3>&);\nextern template int&operator*<int,3>(const Cursor<int,3>&);\nstruct Count{int n;};\ntemplate<auto N>int operator+(Count r){\n struct Local{int n;int get()const{return n;}};\n Local l{N};static int count=0;return r.n+l.get()+(++count);\n}\nint countA(Count r){return operator+<3>(r);}\nint countAlias(Count r){return operator+<1+2>(r);}\nint countB(Count r){return operator+<3u>(r);}\nextern template int operator+<3>(Count);\ntemplate int operator+<1+2>(Count);\nextern template int operator+<3>(Count);\ntemplate<class T>int operator-(Cursor<T,3>&r){static int count=0;return ++count;}\ntemplate<class T>int operator-(const Cursor<T,3>&r){static int count=0;return ++count;}\nint mutableCount(Cursor<int,3>&r){return -r;}\nint constCount(const Cursor<int,3>&r){return -r;}\nstruct Build{int n;};\nstruct Life{int n;Life(int v):n(v){}~Life(){}};\ntemplate<class T>Life operator+(Build r,T n){return Life(r.n+n);}\nLife create(Build r,int n){return r+n;}\nint extended(Build r){const Life&v=r+3;return v.n;}\n'
+    free_operators = check("v2-free-operators-protocol", free_operators_source, profile="cpp-core-v2")
+    fo_functions = {f["name"]: f for f in free_operators["functions"]}
+    fo_records = {r["id"]: r for r in free_operators["records"]}
+    fo_globals = {g["name"]: g for g in free_operators["globals"]}
+    assert len(fo_functions) == len(free_operators["functions"])
+    assert len(fo_records) == len(free_operators["records"])
+    assert len(fo_globals) == len(free_operators["globals"])
+
+    def fo_line(prefix):
+        lines = [i for i, line in enumerate(free_operators_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def fo_function(prefix):
+        found = [f for f in fo_functions.values() if f["loc"]["line"] == fo_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def fo_selected(prefix):
+        calls = gc_calls(fo_function(prefix))
+        assert len(calls) == 1, (prefix, calls)
+        return fo_functions[calls[0]["callee"]]
+
+    def fo_signature(function, result, params):
+        assert function["result"] == result and [p["type"] for p in function["params"]] == params, function
+
+    rid = fo_function("int&dereference(")["params"][0]["type"].removeprefix("cptr:")
+    assert [f["type"] for f in fo_records[rid]["fields"]] == ["ptr:int"]
+    dereference = fo_selected("int&dereference(")
+    prefix = fo_selected("Cursor<int,3>&prefix(")
+    postfix = fo_selected("Cursor<int,3>postfix(")
+    result = fo_selected("Cursor<int,3>result(")
+    for function, output, params in (
+        (dereference, "ptr:int", ["cptr:"+rid]),
+        (prefix, "ptr:"+rid, ["ptr:"+rid]),
+        (postfix, "void", ["ptr:"+rid, "ptr:"+rid, "int"]),
+        (result, "void", ["ptr:"+rid, "cptr:"+rid, "int"]),
+    ):
+        fo_signature(function, output, params)
+    assert len({f["name"] for f in (dereference, prefix, postfix, result)}) == 4
+    assert len([f for f in fo_functions.values() if f["loc"]["line"] == fo_line("template<class T,int N>T&operator*(")]) == 1
+    for name in ("int&dereference(", "Cursor<int,3>&prefix("):
+        caller = fo_function(name)
+        call = gc_calls(caller)[0]
+        assert np_pointer(caller, call["args"][0]) == ("parameter", caller["params"][0]["name"])
+        returned = next(n["value"] for n in caller["body"] if n["op"] == "return")
+        assert di_call_result(caller, returned) == call["target"]["name"]
+    returned = next(n["value"] for n in prefix["body"] if n["op"] == "return")
+    assert np_pointer(prefix, returned) == ("parameter", prefix["params"][0]["name"])
+    for name, literal in (("Cursor<int,3>postfix(", 0), ("Cursor<int,3>result(", 1)):
+        caller = fo_function(name)
+        call = gc_calls(caller)[0]
+        assert "target" not in call
+        assert [np_pointer(caller, arg) for arg in call["args"][:2]] == [
+            ("parameter", p["name"]) for p in caller["params"]]
+        assert gc_identity(caller, call["args"][2]) == literal
+        assert not any(n["op"] == "assign" and n["target"]["type"] == rid for n in caller["body"])
+    left = fo_function("Cursor<int,3>&left(")
+    right = fo_function("int right(")
+    for name, effects in (("Cursor<int,3>&assign(", [right, left]),
+                          ("Cursor<int,3>&explicitAssign(", [right, left]),
+                          ("int shift(", [left, right])):
+        caller = fo_function(name)
+        calls = gc_calls(caller)
+        assert len(calls) == 3 and [c["callee"] for c in calls[:2]] == [f["name"] for f in effects]
+        operand = next(c for c in calls[:2] if c["callee"] == left["name"])
+        number = next(c for c in calls[:2] if c["callee"] == right["name"])
+        assert di_call_result(caller, calls[2]["args"][0]) == operand["target"]["name"]
+        assert di_call_result(caller, calls[2]["args"][1]) == number["target"]["name"]
+    assignment = gc_calls(fo_function("Cursor<int,3>&assign("))[-1]
+    assert assignment["callee"] == gc_calls(fo_function("Cursor<int,3>&explicitAssign("))[-1]["callee"]
+    fo_signature(fo_functions[assignment["callee"]], "ptr:"+rid, ["ptr:"+rid, "int"])
+    for name, output in (("bool bothAnd(", "bool"), ("bool bothOr(", "bool"), ("Cursor<int,3>&comma(", "ptr:"+rid)):
+        caller = fo_function(name)
+        calls = gc_calls(caller)
+        assert len(calls) == 3 and [c["callee"] for c in calls[:2]] == [left["name"]]*2
+        assert [np_pointer(caller, c["args"][0]) for c in calls[:2]] == [
+            ("parameter", p["name"]) for p in caller["params"]]
+        assert [di_call_result(caller, a) for a in calls[2]["args"]] == [c["target"]["name"] for c in calls[:2]]
+        qualifier = "ptr:" if output.startswith("ptr:") else "cptr:"
+        fo_signature(fo_functions[calls[2]["callee"]], output, [qualifier+rid]*2)
+        assert not any(n["op"] == "branch" for n in caller["body"]), "overloaded operator call was short-circuited"
+    count_a = fo_selected("int countA(")
+    count_b = fo_selected("int countB(")
+    assert count_a == fo_selected("int countAlias(") and count_a["name"] != count_b["name"]
+    cid = fo_function("int countA(")["params"][0]["type"]
+    for function in (count_a, count_b):
+        fo_signature(function, "int", [cid])
+        calls = gc_calls(function)
+        assert len(calls) == 1
+        getter = fo_functions[calls[0]["callee"]]
+        local_id = getter["params"][0]["type"].removeprefix("cptr:")
+        fo_signature(getter, "int", ["cptr:"+local_id])
+        assert fo_records[local_id]["loc"]["line"] == fo_line(" struct Local{")
+    local_records = [r for r in fo_records.values() if r["loc"]["line"] == fo_line(" struct Local{")]
+    assert len(local_records) == 2 and len({r["fields"][0]["name"] for r in local_records}) == 2
+    mutable = fo_selected("int mutableCount(")
+    constant = fo_selected("int constCount(")
+    assert mutable["name"] != constant["name"]
+    fo_signature(mutable, "int", ["ptr:"+rid])
+    fo_signature(constant, "int", ["cptr:"+rid])
+    storage = []
+    for function in (count_a, count_b, mutable, constant):
+        names = {n["target"]["name"] for n in function["body"] if n["op"] == "assign"
+                 and n["target"].get("kind") == "var" and n["target"]["name"] in fo_globals}
+        assert len(names) == 1
+        item = fo_globals[next(iter(names))]
+        assert item["mutable"] and item["type"] == "int" and item["value"]["value"] == "0"
+        storage.append(item["name"])
+    assert len(set(storage)) == 4 and len(fo_globals) == 4
+    created = fo_function("Life create(")
+    builder = fo_selected("Life create(")
+    lid = created["params"][0]["type"].removeprefix("ptr:")
+    fo_signature(builder, "void", [p["type"] for p in created["params"]])
+    created_call = gc_calls(created)[0]
+    assert np_pointer(created, created_call["args"][0]) == ("parameter", created["params"][0]["name"])
+    assert [gc_identity(created, a) for a in created_call["args"][1:]] == [
+        ("parameter", p["name"]) for p in created["params"][1:]]
+    assert not any(n["op"] == "assign" and n["target"]["type"] == lid for n in created["body"])
+    extended = fo_function("int extended(")
+    calls = gc_calls(extended)
+    assert [c["callee"] for c in calls] == [builder["name"], lid+"_destroy"]
+    assert np_pointer(extended, calls[0]["args"][0]) == np_pointer(extended, calls[1]["args"][0])
+    for function in fo_functions.values():
+        assert not any(n["op"] == "mapped_call" for n in function["body"])
+        for call_node in gc_calls(function):
+            callee = fo_functions[call_node["callee"]]
+            assert [a["type"] for a in call_node["args"]] == [p["type"] for p in callee["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-free-operators-relocated-") as temp:
+        relocated = check("free-operators-relocated", free_operators_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == free_operators, "operator template identities depend on the absolute root"
+
+    free_operators_positive = {
+        'promoted-free-template': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}',
+        'selected-free-template': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}int f(){R r{3};return r+4;}',
+        'arithmetic': 'template<class T>struct R{T n;};template<class T>T operator+(const R<T>&r,T n){return r.n+n;}template<class T>T operator-(const R<T>&r,T n){return r.n-n;}template<class T>T operator*(const R<T>&r,T n){return r.n*n;}template<class T>T operator/(const R<T>&r,T n){return r.n/n;}template<class T>T operator%(const R<T>&r,T n){return r.n%n;}template<class T>T operator^(const R<T>&r,T n){return r.n^n;}template<class T>T operator&(const R<T>&r,T n){return r.n&n;}template<class T>T operator|(const R<T>&r,T n){return r.n|n;}template<class T>T operator<<(const R<T>&r,T n){return r.n<<n;}template<class T>T operator>>(const R<T>&r,T n){return r.n>>n;}int f(){R<int>r{6};return (r+2)+(r-2)+(r*2)+(r/2)+(r%2)+(r^2)+(r&2)+(r|2)+(r<<2)+(r>>2);}',
+        'comparison': 'template<class T>struct R{T n;};template<class T>bool operator==(const R<T>&a,const R<T>&b){return a.n==b.n;}template<class T>bool operator!=(const R<T>&a,const R<T>&b){return a.n!=b.n;}template<class T>bool operator<(const R<T>&a,const R<T>&b){return a.n<b.n;}template<class T>bool operator>(const R<T>&a,const R<T>&b){return a.n>b.n;}template<class T>bool operator<=(const R<T>&a,const R<T>&b){return a.n<=b.n;}template<class T>bool operator>=(const R<T>&a,const R<T>&b){return a.n>=b.n;}int f(){R<int>a{3},b{4};return (a==b)+(a!=b)+(a<b)+(a>b)+(a<=b)+(a>=b);}',
+        'compound': 'template<class T>struct R{T n;};template<class T>R<T>&operator+=(R<T>&r,T n){r.n+=n;return r;}template<class T>R<T>&operator-=(R<T>&r,T n){r.n-=n;return r;}template<class T>R<T>&operator*=(R<T>&r,T n){r.n*=n;return r;}template<class T>R<T>&operator/=(R<T>&r,T n){r.n/=n;return r;}template<class T>R<T>&operator%=(R<T>&r,T n){r.n%=n;return r;}template<class T>R<T>&operator^=(R<T>&r,T n){r.n^=n;return r;}template<class T>R<T>&operator&=(R<T>&r,T n){r.n&=n;return r;}template<class T>R<T>&operator|=(R<T>&r,T n){r.n|=n;return r;}template<class T>R<T>&operator<<=(R<T>&r,T n){r.n<<=n;return r;}template<class T>R<T>&operator>>=(R<T>&r,T n){r.n>>=n;return r;}int f(){R<int>r{6};r+=2;r-=1;r*=2;r/=2;r%=5;r^=3;r|=2;r&=3;r<<=1;r>>=1;return r.n;}',
+        'unary': 'template<class T>struct R{T n;};template<class T>T operator+(const R<T>&r){return +r.n;}template<class T>T operator-(const R<T>&r){return -r.n;}template<class T>T operator~(const R<T>&r){return ~r.n;}template<class T>bool operator!(const R<T>&r){return !r.n;}int f(){R<int>r{3};return +r+ -r+ ~r+ !r;}',
+        'increment-decrement': 'template<class T>struct R{T n;};template<class T>R<T>&operator++(R<T>&r){++r.n;return r;}template<class T>R<T>operator++(R<T>&r,int){R<T>old{r.n};++r.n;return old;}template<class T>R<T>&operator--(R<T>&r){--r.n;return r;}template<class T>R<T>operator--(R<T>&r,int){R<T>old{r.n};--r.n;return old;}int f(){R<int>r{3};++r;R<int>a=r++;--r;R<int>b=r--;return r.n+a.n+b.n;}',
+        'pointer-reference': 'template<class T>struct R{T n;};template<class T>T*operator&(R<T>&r){return &r.n;}template<class T>T&operator*(R<T>&r){return r.n;}int f(){R<int>r{3};int*p=&r;*p=4;*r=5;return r.n;}',
+        'arrow-star': 'template<class T>struct R{T n;};template<class T>T&operator->*(R<T>&r,int n){r.n+=n;return r.n;}int f(){R<int>r{3};int&n=(r->*2);n=7;return r.n;}',
+        'logical-comma': 'template<class T>struct R{T n;};template<class T>bool operator&&(const R<T>&a,const R<T>&b){return a.n&&b.n;}template<class T>bool operator||(const R<T>&a,const R<T>&b){return a.n||b.n;}template<class T>R<T>&operator,(R<T>&a,R<T>&b){a.n+=1;return b;}int f(){R<int>a{0},b{3};(a,b).n=4;return (a&&b)+(a||b)+b.n;}',
+        'record-result': 'template<class T>struct R{T n;};template<class T>R<T>operator+(const R<T>&a,const R<T>&b){return R<T>{a.n+b.n};}R<int>f(const R<int>&a,const R<int>&b){return a+b;}',
+        'rvalue-reference': 'template<class T>struct R{T n;};template<class T>R<T>&&operator+(R<T>&&r){++r.n;return static_cast<R<T>&&>(r);}int f(){R<int>r{3};R<int>&&s=+static_cast<R<int>&&>(r);s.n=7;return r.n;}',
+        'const-overloads': 'template<class T>struct R{T n;};template<class T>T operator+(R<T>&r){return r.n+1;}template<class T>T operator+(const R<T>&r){return r.n+2;}template<class T>T operator+(R<T>&&r){return r.n+3;}int f(){R<int>r{3};const R<int>&c=r;return +r+ +c+ +static_cast<R<int>&&>(r);}',
+        'adl': 'namespace N{template<class T>struct R{T n;};template<class T>T operator+(R<T>r,T n){return r.n+n;}}int f(){N::R<int>r{3};return r+4;}',
+        'using-import': 'namespace N{struct R{int n;};template<class T>int operator+(R r,T n){return r.n+n;}}using N::operator+;int f(){N::R r{3};return operator+<int>(r,4);}',
+        'explicit-notation': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}int f(){R r{3};return operator+<int>(r,4)+operator+(r,5);}',
+        'declaration-definition': 'struct R{int n;};template<class T>int operator+(R,T);template<class T>int operator+(R r,T n){return r.n+n;}int f(){return R{3}+4;}',
+        'specialization': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return r.n+n+1;}int f(){R r{3};return r+4;}',
+        'instantiation': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template int operator+<int>(const R&,int);',
+        'extern-definition': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}extern template int operator+<int>(const R&,int);template int operator+<int>(const R&,int);extern template int operator+<int>(const R&,int);',
+        'instantiation-after-specialization': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return r.n+n+1;}template int operator+<int>(const R&,int);',
+        'scalar-argument': 'struct R{int n;};template<int N>int operator+(const R&r,const R&s){return r.n+s.n+N;}template int operator+<1+2>(const R&,const R&);int f(){R r{3};return operator+<3>(r,r);}',
+        'deduced-scalar': 'template<class T,int N>struct R{T n;};template<class T,int N>T operator+(const R<T,N>&r,T n){return r.n+n+N;}int f(){R<int,3>r{4};return r+5;}',
+        'auto-argument': 'struct R{int n;};template<auto N>int operator+(R r,R s){return r.n+s.n+N;}int f(){return operator+<true>(R{3},R{4});}',
+        'type-default': 'struct R{int n;};template<class T=int>T operator+(R a,R b){return T(a.n+b.n);}int f(){return R{3}+R{4};}',
+        'dependent-type': 'enum class E:int{three=3};template<class T,T N>struct R{int n;};template<class T,T N>int operator+(R<T,N>r,int n){return r.n+n+int(N);}int f(){R<E,E::three>r{4};return r+5;}',
+        'recursive': 'struct R{int n;};template<class T>int operator+(R r,T n){if(n==0)return r.n;return r+T(n-1)+1;}int f(){return R{3}+4;}',
+        'lazy-unsupported': 'struct R{int n;};template<class T>int operator+(R,T){return int(1.0);}',
+        'lazy-dependent': 'struct R{int n;};template<class T>int operator+(R,T){return T::missing;}',
+        'local-class': 'struct R{int n;};template<class T>int operator+(const R&r,T v){struct Local{T n;T get(){return n;}};Local l{v};return r.n+l.get();}int f(){return R{3}+4;}',
+        'static-isolation': 'struct R{int n;};template<class T>int operator+(R r,T n){static int count=0;return r.n+n+(++count);}int f(){R r{3};return (r+4)+(r+4u);}',
+        'noexcept': 'struct R{int n;};template<class T>int operator+(R r,T n)noexcept(sizeof(T)>0){return r.n+n;}static_assert(noexcept(R{3}+4));int f(){return R{3}+4;}',
+        'constexpr-query': 'struct R{int n;};template<class T>constexpr int operator+(R r,T n){return r.n+n;}static_assert(R{3}+4==7);int f(){return sizeof(R{3}+4);}',
+        'enum-operand': 'enum class E:int{v=3};template<class T>int operator+(E e,T n){return int(e)+n;}int f(){return E::v+4;}',
+        'iterator-range': 'template<class T>struct Iterator{T*p;};template<class T>T&operator*(const Iterator<T>&r){return *r.p;}template<class T>Iterator<T>&operator++(Iterator<T>&r){++r.p;return r;}template<class T>bool operator!=(const Iterator<T>&a,const Iterator<T>&b){return a.p!=b.p;}template<class T,int N>struct Range{T data[N];Iterator<T>begin(){return Iterator<T>{data};}Iterator<T>end(){return Iterator<T>{data+N};}};int f(){Range<int,3>r{{1,2,3}};int sum=0;for(int&n:r){++n;sum+=n;}return sum;}',
+        'protocol-source': 'template<class T,int N>struct Cursor{T*p;};\ntemplate<class T,int N>T&operator*(const Cursor<T,N>&r){return *r.p;}\ntemplate<class T,int N>Cursor<T,N>&operator++(Cursor<T,N>&r){++r.p;return r;}\ntemplate<class T,int N>Cursor<T,N>operator++(Cursor<T,N>&r,int){T*p=r.p;++r.p;return Cursor<T,N>{p};}\ntemplate<class T,int N>Cursor<T,N>operator+(const Cursor<T,N>&r,int n){return Cursor<T,N>{r.p+n};}\ntemplate<class T,int N>Cursor<T,N>&operator+=(Cursor<T,N>&r,int n){r.p+=n;return r;}\ntemplate<class T,int N>bool operator&&(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p&&b.p;}\ntemplate<class T,int N>bool operator||(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p||b.p;}\ntemplate<class T,int N>Cursor<T,N>&operator,(Cursor<T,N>&a,Cursor<T,N>&b){return b;}\ntemplate<class T,int N>int operator<<(const Cursor<T,N>&r,int n){return n;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)+=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return operator+=(left(r),right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nint shift(Cursor<int,3>&r){return left(r)<<right();}\ntemplate int&operator*<int,3>(const Cursor<int,3>&);\nextern template int&operator*<int,3>(const Cursor<int,3>&);\nstruct Count{int n;};\ntemplate<auto N>int operator+(Count r){\n struct Local{int n;int get()const{return n;}};\n Local l{N};static int count=0;return r.n+l.get()+(++count);\n}\nint countA(Count r){return operator+<3>(r);}\nint countAlias(Count r){return operator+<1+2>(r);}\nint countB(Count r){return operator+<3u>(r);}\nextern template int operator+<3>(Count);\ntemplate int operator+<1+2>(Count);\nextern template int operator+<3>(Count);\ntemplate<class T>int operator-(Cursor<T,3>&r){static int count=0;return ++count;}\ntemplate<class T>int operator-(const Cursor<T,3>&r){static int count=0;return ++count;}\nint mutableCount(Cursor<int,3>&r){return -r;}\nint constCount(const Cursor<int,3>&r){return -r;}\nstruct Build{int n;};\nstruct Life{int n;Life(int v):n(v){}~Life(){}};\ntemplate<class T>Life operator+(Build r,T n){return Life(r.n+n);}\nLife create(Build r,int n){return r+n;}\nint extended(Build r){const Life&v=r+3;return v.n;}\n',
+    }
+    for name, source in free_operators_positive.items():
+        check("v2-free-operators-positive-"+name, source, profile="cpp-core-v2")
+
+    free_operators_reject = {
+        'selected-floating-body': 'struct R{int n;};template<class T>int operator+(R,T){return int(1.0);}int f(){return R{3}+4;}',
+        'selected-floating-result': 'struct R{int n;};template<class T>T operator+(R r,T n){return n;}int f(){return int(R{3}+1.0);}',
+        'selected-floating-parameter': 'struct R{int n;};template<class T>int operator+(R r,T n){return 3;}int f(){return R{3}+1.0;}',
+        'folded-constexpr': 'struct R{int n;};template<class T>constexpr int operator+(R r,T n){return int(1.0);}static_assert(R{3}+4==1);',
+        'query-body': 'struct R{int n;};template<class T>auto operator+(R,T){return int(1.0);}int f(){return sizeof(R{3}+4);}',
+        'selected-noexcept': 'struct R{int n;};template<class T>int operator+(R,T)noexcept(sizeof(double)>0){return 3;}int f(){return R{3}+4;}',
+        'materialized-specialization': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return int(1.0);}',
+        'materialized-explicit': 'struct R{int n;};template<class T>int operator+(R,T){return int(1.0);}template int operator+<int>(R,int);',
+        'directive-value-source': 'struct R{int n;};template<int N>int operator+(R r,R s){return r.n+s.n+N;}template int operator+<int(1.0)>(R,R);',
+        'directive-extern-source': 'struct R{int n;};template<int N>int operator+(R r,R s){return r.n+s.n+N;}extern template int operator+<int(1.0)>(R,R);',
+        'directive-return-source': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template decltype(int(1.0)) operator+<int>(const R&,int);',
+        'directive-param-source': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template int operator+<int>(const R&,decltype(int(1.0)));',
+        'directive-noexcept-source': 'struct R{int n;};template<class T>int operator+(R,T)noexcept{return 3;}template int operator+<int>(R,int)noexcept(sizeof(double)>0);',
+        'allocation': 'template<class T>void*operator new(decltype(sizeof(0)),T*p){return p;}',
+        'literal': 'template<char... C>int operator""_number(){return 1;}',
+        'member-template': 'struct R{template<class T>int operator()(T){return 1;}};',
+        'friend-template': 'struct R{int n;template<class T>friend int operator+(const R&r,T n){return r.n+n;}};',
+        'pack': 'struct R{int n;};template<class... T>int operator+(R){return 1;}',
+        'value-default': 'struct R{int n;};template<int N=3>int operator+(R,R){return N;}',
+        'local-unused-body': 'struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0);}};Local l;return r.n+n;}int f(){return R{3}+4;}',
+    }
+    for name, source in free_operators_reject.items():
+        check("v2-free-operators-reject-"+name, source, code="TR0201", profile="cpp-core-v2")
+
+    free_operators_invalid = {
+        'wrong-arity': 'struct R{int n;};template<class T>int operator+(R,T,T){return 1;}',
+        'no-class-operand': 'template<class T>int operator+(T,T){return 1;}int f(){return operator+<int>(1,2);}',
+        'function-default': 'struct R{int n;};template<class T>int operator+(R,T n=T(3)){return n;}',
+        'ambiguous': 'struct R{int n;};template<class T>int operator+(const R&,T){return 1;}template<class T>int operator+(R,T){return 2;}int f(){R r{3};return r+4;}',
+        'private-access': 'class R{int n;};template<class T>int operator+(const R&r,T n){return r.n+n;}int f(){R r;return r+4;}',
+        'deleted-selected': 'struct R{int n;};template<class T>int operator+(R,T)=delete;int f(){return R{3}+4;}',
+        'member-only': 'struct R{int n;};template<class T>int operator[](R,T){return 1;}',
+    }
+    for name, source in free_operators_invalid.items():
+        check("v2-free-operators-invalid-"+name, source, code="TR0202", profile="cpp-core-v2")
+
+    free_operators_missing = {
+        'selected-definition': 'struct R{int n;};template<class T>int operator+(R,T);int f(){return R{3}+4;}',
+        'query-definition': 'struct R{int n;};template<class T>int operator+(R,T)noexcept;static_assert(noexcept(R{3}+4));',
+        'extern-definition': 'struct R{int n;};template<class T>int operator+(R,T);extern template int operator+<int>(R,int);',
+    }
+    for name, source in free_operators_missing.items():
+        check("v2-free-operators-missing-"+name, source, code="TR0203", profile="cpp-core-v2")
+
+    check("free-operator-legacy", 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}int f(){R r{3};return r+4;}', code="TR0201")
+
     template_source_source = 'template<class T>T evaluate(T x){\n struct Local{\n  T value;\n  T get()const{return value;}\n  int next(){static int count=0;return ++count;}\n };\n Local l{x};return l.get()+l.next();\n}\nint signedValue(int n){return evaluate(n);}\nunsigned unsignedValue(unsigned n){return evaluate(n);}\ntemplate int evaluate<int>(int);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate unsigned evaluate<unsigned>(unsigned);\nextern template unsigned evaluate<unsigned>(unsigned);\ntemplate<class T>T&alias(T&x){\n struct Reference{\n  T*p;\n  T&get(){return *p;}\n };\n Reference r{&x};return r.get();\n}\nint&reference(int&n){return alias(n);}\ntemplate<class T>T lifetime(T x){\n struct Life{\n  T value;\n  Life(T n):value(n){}\n  ~Life(){}\n  T read()const{return value;}\n };\n Life r(x);return r.read();\n}\nint lived(int n){return lifetime(n);}\ntemplate<class T>struct Outer{\n T run(T n){\n  struct Inner{\n   T value;\n   operator T()const{return value;}\n  };\n  Inner r{n};return r;\n }\n};\nint outer(Outer<int>&r,int n){return r.run(n);}\ntemplate<int N>int constant(){return N;}\nextern template int constant<3>();\ntemplate int constant<1+2>();\nextern template int constant<3>();\nint value(){return constant<3>();}\n'
     template_source = check("v2-template-source-protocol", template_source_source, profile="cpp-core-v2")
     ts_functions = {f["name"]: f for f in template_source["functions"]}
@@ -6825,7 +7046,6 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
         'outside-header': 'template<decltype(sizeof(double)) N>struct R{int operator()();};template<decltype(sizeof(double)) N>int R<N>::operator()(){return N;}int f(){R<3>r;return r();}',
         'own-operator-template': 'template<class T>struct R{template<class U>int operator()(U){return 1;}};',
         'own-conversion-template': 'template<class T>struct R{template<class U>operator U(){return U();}};',
-        'free-operator-template': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}',
         'virtual-conversion': 'template<class T>struct R{virtual operator int(){return 1;}};',
         'volatile-operator': 'template<class T>struct R{int operator()()volatile{return 1;}};',
         'allocation': 'template<class T>struct R{static void*operator new(decltype(sizeof(0))){return nullptr;}};',
@@ -8391,7 +8611,6 @@ Plain chosenRecord(){return choose<false>();}
     function_templates_reject = {
         'member': 'struct R{template<class T>T f(T v){return v;}};',
         'friend': 'struct R{template<class T>friend T f(T v){return v;}};',
-        'operator': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}',
         'pack': 'template<class...T>int f(T...v){return 1;}',
         'template-template': 'template<template<class>class T>int f(){return 1;}',
         'variable': 'template<class T>int value=3;',
