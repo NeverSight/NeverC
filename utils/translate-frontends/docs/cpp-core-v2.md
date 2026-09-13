@@ -699,10 +699,10 @@ including forward declarations followed by definitions, are supported.
 
 Patterns and explicit specializations may declare fields, ordinary type aliases,
 enums, static assertions, access labels, ordinary named methods and user-provided
-constructors and destructors as described below. Aggregates and constructed instances must be
+constructors, destructors, operators and conversions as described below. Aggregates and constructed instances must be
 complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
-remain checked when selected. Other operators/conversions, member function templates, static data, friends, nested
+remain checked when selected. Member function templates, static data, friends, nested
 records/templates, bases and partial specializations
 remain outside this class-template increment. Non-type defaults, packs,
 template-template parameters and non-scalar value arguments remain excluded.
@@ -756,9 +756,9 @@ the same source checks as the primary parameter list before metadata is erased.
 Selected default/noexcept expressions and materialized signatures/bodies must pass
 the ordinary profile checks. Attributes, virtual/variadic/deleted methods,
 volatile/restrict qualifiers and member function templates are excluded. The class
-must remain an admitted standard-layout record; other
-operator/conversion, static data, friend, nested/partial-template and base support
-is not expanded here.
+must remain an admitted standard-layout record. Static data, friend,
+nested/partial-template and base support is not expanded here. Operators and
+conversions follow their separate class-template contract below.
 
 Methods use ordinary typed functions: instance receivers keep their cv-qualified
 pointer, record results use existing hidden result storage, and static functions
@@ -801,8 +801,8 @@ temporary lifetime extension, by-value arguments and return storage use existing
 operations. Constructor-local records and scalar static locals retain concrete
 class-instance identities. No template argument becomes a runtime parameter.
 
-Delegating/inherited constructors, other operators/conversions and own member
-templates are not included. Defaulted special members follow the rules below. User-provided template destructors and
+Delegating/inherited constructors and own member function templates are not
+included. Operators and conversions follow their separate contract below. Defaulted special members follow the rules below. User-provided template destructors and
 member/array cleanup follow the destructor rules below.
 Native O0/O2 and protocol fixtures cover calls, defaults, copy/move storage,
 initialization order, member/array lifetimes, identities and relocation. Native
@@ -858,8 +858,8 @@ use the existing concrete special-member signature checks. Explicit instantiatio
 and specialization retain their source and definition requirements. Copy sources
 may be const or mutable lvalue references as selected by Clang; move sources are
 unqualified rvalue references. Copy assignment permits unqualified or `&`
-receivers, and move assignment also permits `&&`. Other template operators,
-member function templates, bases, unsupported field types and layouts remain
+receivers, and move assignment also permits `&&`. Member function templates,
+bases, unsupported field types and layouts remain
 outside this increment.
 
 Defaulting evidence comes from the concrete declarations or their exact direct
@@ -897,6 +897,54 @@ O0/O2 fixtures check values, side effects and lifetimes; results require CI of t
 implementing revision. Full C++17/STL, hosted standard headers and other language
 frontends remain unfinished. Translation uses embedded Clang libraries and never
 requires launching an external Clang executable.
+
+## Class-template operators and conversions
+
+Concrete instances of admitted namespace standard-layout class templates support
+user-provided member operators and conversion functions. The operator kinds and
+concrete signatures follow the ordinary operator contract: arithmetic, bitwise,
+comparison, logical, comma, shifts, assignment, increment/decrement, dereference,
+subscript, arrow/arrow-star and call. Copy/move assignment and other ordinary
+assignment signatures preserve their selected result and source types. Integral,
+bool, pointer, reference and record conversions retain explicit/contextual and
+const/ref-qualified selection. Resolved `auto` and `decltype(auto)` conversion
+results use their deduced admitted types.
+
+Out-of-line definitions, explicit class/member instantiation and explicit
+specialization follow the existing ownership and definition rules. These are
+members of a class template; a member's own function-template parameter list and
+free operator function templates remain unsupported. Allocation/deallocation,
+virtual dispatch, unsupported qualifiers, fields and signatures retain their
+restrictions. C++20 conditional `explicit` remains outside C++17.
+
+Unused dependent bodies, undeduced conversion returns and lazy defaults are not
+forced. Selected declarations, concrete source signatures, instantiated defaults,
+written exception specifications and every materialized body are checked before
+folding or erasure. This includes constexpr results and unevaluated queries.
+Selected user-operator/conversion declarations still require a definition in this
+unit, including under `sizeof`/`noexcept` (`TR0203` if absent). Invalid C++17
+remains a source diagnostic; valid but unsupported profile forms are rejected.
+Out-of-line outer parameter expressions cannot bypass the normal source checks.
+
+Calls use existing typed functions, with a cv-qualified receiver pointer and an
+initial hidden destination for record results. Template arguments become concrete
+types or constants, never runtime parameters. References retain the actual source
+storage. Record prvalues initialize the final destination without an extra copy;
+temporary, reference-extension, parameter and result cleanup follow existing
+lifetime rules. Operator assignment captures the RHS before the receiver; explicit
+member-call syntax captures the receiver first. Overloaded logical operators
+evaluate both operands; contextual bool conversions retain builtin short circuiting.
+
+Equivalent arguments and aliases share canonical members and scalar static local
+storage. Different class arguments, deduced value types and overloads keep their
+own function, local record, field and static identities. Paired source regressions,
+native O0/O2 fixtures and protocol assertions cover iterator operations, overloads,
+defaults, sequencing, actual storage, lifetime, full call signatures and relocation.
+Native results require CI of the implementing revision. Standard headers, hosted
+libraries, remaining class-template forms and complete C++17/STL are unfinished.
+Only C++ input translation is implemented; E Language, Python and other frontends
+remain planned. The C++ frontend uses embedded Clang libraries and does not launch
+an external Clang executable.
 
 ## Concrete free function templates
 
@@ -1766,8 +1814,9 @@ pointer. Record results use the existing hidden destination before receiver and
 parameters. Reference results preserve their aliases, including subscript and
 increment results. Taking an overloaded operator's function/member address still
 requires later function-pointer support. Conversion functions follow their separate
-contract below. This stage does not admit operator templates, dependent friend declarations,
-virtual dispatch or allocation/deallocation operators. Temporary call operands
+contract below. The operators of admitted class-template instances follow the contract above.
+Free/member operator function templates, dependent friend declarations,
+virtual dispatch and allocation/deallocation operators remain excluded. Temporary call operands
 follow the separate full-expression contract below.
 
 Operator notation preserves the required C++17 operand sequencing. Assignment and
@@ -1819,7 +1868,7 @@ lifetime counts. Protocol fixtures check selected identities and full signatures
 free/member argument offsets, parameter capture versus destruction order, direct
 result storage, cleanup and deterministic relocation. Unsupported code is still
 inspected inside unused functions and noexcept queries. V1 admission is unchanged;
-operator templates, library headers and complete STL remain in development. Native evidence
+operator function templates, library headers and complete STL remain in development. Native evidence
 must come from the implementing revision's CI.
 
 ## User-defined conversion functions
@@ -1864,7 +1913,8 @@ int main() {
 }
 ```
 
-Conversion functions have no explicit parameters. Virtual/template conversions,
+Conversion functions have no explicit parameters. Admitted class-template
+instances follow the contract above. Virtual and member-template conversions,
 volatile/restrict receivers, unsupported result types and function/member
 pointers remain excluded. Full-expression temporary receivers and converted
 reference arguments follow the next section. Automatic local reference extension

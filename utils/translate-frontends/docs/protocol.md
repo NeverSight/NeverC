@@ -169,6 +169,16 @@ Materialized generated bodies retain source closure, concrete instance identitie
 and complete typed call signatures, without runtime template parameters or an
 opaque fallback. See [defaulted class-template special members](cpp-core-v2.md#defaulted-class-template-special-members).
 
+Class-template operators and conversion functions use the same direct typed call
+IR as ordinary members. A hidden record-result destination precedes the receiver;
+references retain actual aliases and template arguments add no runtime parameters.
+Operator notation preserves C++17 sequencing, including RHS-first assignment and
+evaluation of both overloaded logical operands. Explicit member notation captures
+the receiver first. Instance/overload identities, static local storage and complete
+call-target signatures remain canonical across relocation. Source and definition
+checks include selected unevaluated calls and all materialized bodies. See
+[class-template operators and conversions](cpp-core-v2.md#class-template-operators-and-conversions).
+
 Concrete core-v2 free function-template instances use ordinary function, record,
 scalar-global and call IR. Primary-template ordinals and source identities
 separate otherwise colliding specializations, including their local records and

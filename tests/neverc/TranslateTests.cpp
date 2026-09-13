@@ -4688,6 +4688,293 @@ TEST_F(TranslateTest, CoreV2FrontendRepairsRetainWrittenExceptionSource) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsPreserveStorageOrderAndLifetimes) {
+  const auto Source = tmpFile("class-operators-runtime.cpp");
+  const auto Output = tmpFile("class-operators-runtime.nc");
+  writeFile(Source, R"cpp(int trace=0;
+int live=0;
+int copies=0;
+int moves=0;
+int defaults=0;
+void mark(int n){trace=trace*10+n;}
+int next(){++defaults;return 1;}
+struct Item{int n;};
+template<class T>struct Cursor{
+ T*p;
+ T&operator*()const{return *p;}
+ T&operator[](int n)const{return p[n];}
+ T*operator->()const{return p;}
+ Cursor&operator++(){++p;return *this;}
+ Cursor operator++(int){T*old=p;++p;return Cursor{old};}
+ bool operator!=(const Cursor&r)const{return p!=r.p;}
+};
+template<class T,int N>struct Range{T data[N];Cursor<T>begin(){return Cursor<T>{data};}Cursor<T>end(){return Cursor<T>{data+N};}};
+template<class T>struct Box{
+ T n;
+ Box(T value):n(value){++live;}
+ Box(const Box&r):n(r.n){++live;++copies;}
+ Box(Box&&r):n(r.n){++live;++moves;r.n=0;}
+ ~Box(){--live;}
+ Box&operator=(const Box&r){n=r.n;mark(3);return *this;}
+ Box&operator=(Box&&r){n=r.n;r.n=0;mark(4);return *this;}
+ Box&operator=(T value){n=value;mark(5);return *this;}
+ Box operator+(T value)const{return Box(n+value);}
+ T&operator[](int){mark(3);return n;}
+ T operator()(T value=next()){mark(3);return n+value;}
+ bool operator&&(const Box&r)const{mark(3);return n&&r.n;}
+ bool operator||(const Box&r)const{mark(3);return n||r.n;}
+ Box&operator,(Box&r){mark(3);return r;}
+ explicit operator bool()const{mark(6);return n!=0;}
+};
+Box<int>&left(Box<int>&b){mark(1);return b;}
+Box<int>&right(Box<int>&b){mark(2);return b;}
+int number(){mark(2);return 7;}
+Box<int>&select(Box<int>*&p,Box<int>&b){mark(2);p=&b;return b;}
+int consume(Box<int>b){return b.n+live*10;}
+Box<int>sum(const Box<int>&b){return b+2;}
+template<class T>struct Convert{
+ T n;
+ operator T&(){return n;}
+ operator const T&()const{return n;}
+};
+template<class T>struct Pointer{T*p;operator T*()const{return p;}};
+template<class T>struct Result{T n;operator Box<T>()const{return Box<T>(n);}};
+template<class T>struct Qualified{
+ T n;
+ T operator()()&{return n;}
+ T operator()()const&{return n+1;}
+ T operator()()&&{return n+2;}
+ operator T()const&{return n+3;}
+ operator T()&&{return n+4;}
+};
+template<auto N>struct Count{
+ int operator()(){static int count=0;return ++count+N;}
+ int&operator*(){static int n=0;return n;}
+};
+template<class T>struct MoveReference{T n;operator T&&()&&{return static_cast<T&&>(n);}};
+int main(){
+ int a[4]={1,2,3,4};Cursor<int>c{a};
+ if(&*c!=&a[0]||&c[2]!=&a[2])return 1;
+ *c=7;c[1]=8;Cursor<int>old=c++;Cursor<int>&advanced=++c;
+ if(old.p!=a||&advanced!=&c||c.p!=a+2||a[0]!=7||a[1]!=8)return 2;
+ Item item{9};Cursor<Item>p{&item};p->n=10;
+ if(item.n!=10)return 3;
+ {
+  Box<int>x(0),y(5);trace=0;
+  Box<int>&assigned=(left(x)=right(y));
+  if(trace!=213||&assigned!=&x||x.n!=5||live!=2)return 4;
+  trace=0;left(x).operator=(right(y));
+  if(trace!=123)return 5;
+  x.n=4;y.n=6;trace=0;Box<int>*pointer=&x;*pointer=select(pointer,y);
+  if(trace!=23||pointer!=&y||x.n!=4||y.n!=6)return 6;
+  x.n=1;y.n=6;pointer=&x;trace=0;pointer->operator=(select(pointer,y));
+  if(trace!=23||pointer!=&y||x.n!=6)return 7;
+  trace=0;Box<int>&scalar=(left(x)=number());
+  if(trace!=215||&scalar!=&x||x.n!=7)return 8;
+  trace=0;left(x)[number()]=9;
+  if(trace!=123||x.n!=9)return 9;
+  trace=0;int explicitValue=left(x)(number());
+  if(trace!=123||explicitValue!=16||defaults!=0)return 10;
+  trace=0;int defaultValue=left(x)();
+  if(trace!=13||defaultValue!=10||defaults!=1)return 11;
+  x.n=0;y.n=5;trace=0;bool both=left(x)&&right(y);
+  if(trace!=123||both)return 12;
+  x.n=1;trace=0;both=left(x)||right(y);
+  if(trace!=123||!both)return 13;
+  trace=0;Box<int>&last=(left(x),right(y));
+  if(trace!=123||&last!=&y)return 14;
+  x.n=0;trace=0;bool builtin=static_cast<bool>(x)&&static_cast<bool>(y);
+  if(trace!=6||builtin)return 15;
+  trace=0;x=static_cast<Box<int>&&>(y);
+  if(trace!=4||x.n!=5||y.n!=0||live!=2)return 16;
+  trace=0;copies=0;moves=0;Box<int>z=sum(x);
+  if(z.n!=7||live!=3||copies!=0||moves!=0)return 17;
+  if(consume(x)!=45||live!=3||copies!=1)return 18;
+  {const Box<int>&extended=x+3;if(extended.n!=8||live!=4)return 19;}
+  if(live!=3)return 20;
+ }
+ if(live!=0)return 21;
+ Convert<int>r{2};const Convert<int>&cr=r;int&reference=r;const int&constReference=cr;reference=11;
+ if(&reference!=&r.n||&constReference!=&r.n||r.n!=11)return 22;
+ Pointer<int>ptr{&r.n};int*raw=ptr;*raw=12;
+ if(r.n!=12)return 23;
+ {Result<int>source{8};copies=0;moves=0;Box<int>v=source;
+  if(v.n!=8||live!=1||copies!=0||moves!=0)return 24;
+  {const Box<int>&v2=source;if(v2.n!=8||live!=2)return 25;}
+  if(live!=1)return 26;}
+ if(live!=0)return 27;
+ Qualified<int>q{3};const Qualified<int>&cq=q;
+ if(q()!=3||cq()!=4||static_cast<Qualified<int>&&>(q)()!=5||int(cq)!=6||int(static_cast<Qualified<int>&&>(q))!=7)return 28;
+ Count<3>one;Count<1+2>alias;Count<3u>different;
+ if(one()!=4||alias()!=5||different()!=4||&*one!=&*alias||&*one==&*different)return 29;
+ {MoveReference<Box<int>>source{Box<int>(9)};moves=0;Box<int>destination=static_cast<MoveReference<Box<int>>&&>(source);
+  if(destination.n!=9||source.n.n!=0||live!=2||moves!=1)return 30;}
+ if(live!=0)return 31;
+ Range<int,3>range{{1,2,3}};int total=0;for(int&n:range){++n;total+=n;}
+ if(total!=9||range.data[0]!=2||range.data[2]!=4)return 32;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("class-operators-runtime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsAcceptSelectedOperations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-0", "template<class T>struct R{T n;R&operator=(const R&r){n=r.n;return *this;}};"},
+      {"promoted-1", "template<class T>struct R{R()=default;int operator()(){return 3;}};"},
+      {"promoted-2", "template<class T>struct R{T n;R(T v):n(v){}T operator()(){return n;}};"},
+      {"promoted-3", "template<class T>struct R{T n;R(T v):n(v){}operator T(){return n;}};"},
+      {"promoted-4", "template<class T>struct R{T n;T operator()(){return n;}};"},
+      {"promoted-5", "template<class T>struct R{T n;operator int(){return 1;}};"},
+      {"iterator", "template<class T>struct R{T*p;T&operator*()const{return *p;}R&operator++(){++p;return *this;}R operator++(int){R old{p};++p;return old;}T&operator[](int n)const{return p[n];}T*operator->()const{return p;}};struct I{int n;};int f(){int a[3]={1,2,3};R<int>r{a};(*r)++;r[1]=7;int n=*r++;++r;I i{4};R<I>p{&i};return n+*r+p->n;}"},
+      {"call-default", "int count=0;int next(){return ++count;}template<class T>struct R{T n;T operator()(T x=next()){return n+x;}};int f(){R<int>r{3};return r()+r(7);}"},
+      {"subscript-ref", "template<class T>struct R{T*p;T&operator[](int n){return p[n];}};int&f(R<int>&r,int n){return r[n];}"},
+      {"arrow-chain", "struct I{int n;};template<class T>struct R{T*p;T*operator->(){return p;}};template<class T>struct S{T n;T&operator->(){return n;}};int f(){I i{3};S<R<I>>s{{&i}};return s->n;}"},
+      {"arrow-star", "template<class T>struct R{T n;T&operator->*(int){return n;}};int&f(R<int>&r){return r->*0;}"},
+      {"logical-comma", "template<class T>struct R{T n;bool operator&&(const R&r){return n&&r.n;}bool operator||(const R&r){return n||r.n;}R&operator,(R&r){return r;}};bool f(R<int>&a,R<int>&b){(a,b).n=2;return (a&&b)||(a||b);}"},
+      {"copy-move-assignment", "template<class T>struct R{T n;R&operator=(const R&r){n=r.n;return *this;}R&operator=(R&&r){n=r.n;r.n=0;return *this;}};int f(){R<int>a{1},b{2};a=b;b=static_cast<R<int>&&>(a);return b.n;}"},
+      {"general-assignment", "template<class T>struct R{T n;T operator=(T x)&&{n=x;return n;}};int f(){return R<int>{1}=7;}"},
+      {"record-result", "template<class T>struct R{T n;R operator+(const R&r)const{return R{n+r.n};}};R<int>f(const R<int>&a,const R<int>&b){return a+b;}"},
+      {"qualified-overloads", "template<class T>struct R{T n;T&operator()()&{return n;}const T&operator()()const&{return n;}T operator()()&&{return n+1;}};int f(R<int>&r,const R<int>&c){r()=3;return c()+static_cast<R<int>&&>(r)();}"},
+      {"explicit-bool", "template<class T>struct R{T n;explicit operator bool()const noexcept{return n!=0;}};bool f(R<int>&r){if(r)return !r;return static_cast<bool>(r);}"},
+      {"implicit-scalar", "template<class T>struct R{T n;operator T()const{return n;}};int f(){R<int>r{3};int n=r;return n+r.operator int();}"},
+      {"reference-conversion", "template<class T>struct R{T n;operator T&(){return n;}operator const T&()const{return n;}};int f(R<int>&r,const R<int>&s){int&n=r;const int&m=s;n=5;return m;}"},
+      {"pointer-conversion", "template<class T>struct R{T*p;operator T*()const{return p;}};int f(){int n=3;R<int>r{&n};int*p=r;*p=7;return n;}"},
+      {"record-conversion", "struct I{int n;};template<class T>struct R{T n;operator I()const{return I{n};}};I f(const R<int>&r){return r;}"},
+      {"rvalue-conversion", "struct I{int n;I(I&&r):n(r.n){r.n=0;}};template<class T>struct R{T n;operator T&&()&&{return static_cast<T&&>(n);}};I f(R<I>&r){return static_cast<R<I>&&>(r);}"},
+      {"deduced-conversion", "template<class T>struct R{T n;operator auto()const{return n;}};int f(R<int>&r){return r;}"},
+      {"decltype-auto-conversion", "template<class T>struct R{T n;operator decltype(auto)(){return (n);}};int&f(R<int>&r){return r;}"},
+      {"value-arguments", "template<class T,T N>struct R{T n;T operator()(){return n+N;}};template<auto N>struct S{int operator()(){static int count=0;return ++count+N;}};int f(){R<int,3>r{2};S<3>a;S<3u>b;S<1+2>c;return r()+a()+b()+c();}"},
+      {"local-types", "template<class T>struct R{int operator()(){struct Local{T n;};Local l{3};static int count=0;return l.n+ ++count;}};int f(){R<int>a;R<unsigned>b;return a()+b();}"},
+      {"outside-operator", "template<class T>struct R{T n;T operator()(T x);};template<class T>T R<T>::operator()(T x){return n+x;}int f(){R<int>r{3};return r(4);}"},
+      {"outside-conversion", "template<class T>struct R{T n;operator T()const;};template<class T>R<T>::operator T()const{return n;}int f(R<int>&r){return r;}"},
+      {"member-specialization", "template<class T>struct R{T n;T operator()(){return n;}operator T(){return n;}};template<>int R<int>::operator()(){return n+1;}template<>R<int>::operator int(){return n+2;}int f(R<int>&r){return r()+int(r);}"},
+      {"class-specialization", "template<class T>struct R{T n;T operator()(){return n;}};template<>struct R<int>{int n;int operator()(){return n+1;}operator int(){return n+2;}};int f(R<int>&r){return r()+int(r);}"},
+      {"class-instantiation", "template<class T>struct R{T n;T operator()(){return n;}operator T(){return n;}};template struct R<int>;"},
+      {"operator-instantiation", "template<class T>struct R{T n;T operator()(){return n;}};template int R<int>::operator()();"},
+      {"conversion-instantiation", "template<class T>struct R{T n;operator T(){return n;}};template R<int>::operator int();"},
+      {"late-definition", "template<class T>struct R{T n;T operator()();};template struct R<int>;template<class T>T R<T>::operator()(){return n;}int f(R<int>&r){return r();}"},
+      {"lazy-bodies", "template<class T>struct R{int n;int operator()(){return T::missing;}operator auto(){return T::missing;}};static_assert(sizeof(R<int>)==sizeof(int));"},
+      {"lazy-unsupported", "template<class T>struct R{int n;int operator()(){return int(1.0);}operator auto(){return 1.0;}};static_assert(sizeof(R<int>)==sizeof(int));"},
+      {"lazy-default", "template<class T>struct R{T n;T operator()(T x=T::missing){return n+x;}};int f(){R<int>r{3};return r(4);}"},
+      {"folded-source", "template<class T>struct R{T n;constexpr T operator()()const{return n;}constexpr operator T()const{return n;}};static_assert(R<int>{3}()==3);static_assert(int(R<int>{4})==4);"},
+      {"noexcept-source", "template<class T>struct R{T n;T operator()()noexcept(sizeof(this->n)>0){return n;}operator T()const noexcept(sizeof(T)>0){return n;}};bool f(R<int>&r){return noexcept(r())&&noexcept(r.operator int());}"},
+      {"conversion-default", "template<class T>struct R{T n;constexpr operator T()const{return n;}};template<class T>struct S{T n=R<T>{3};T operator()(T x=R<T>{4}){return n+x;}};int f(){S<int>s;return s();}"},
+      {"arithmetic", "template<class T>struct R{T n;T operator+(T x)const{return n+x;}T operator-(T x)const{return n-x;}T operator*(T x)const{return n*x;}T operator/(T x)const{return n/x;}T operator%(T x)const{return n%x;}T operator^(T x)const{return n^x;}T operator&(T x)const{return n&x;}T operator|(T x)const{return n|x;}T operator<<(T x)const{return n<<x;}T operator>>(T x)const{return n>>x;}};int f(){R<int>r{6};return (r+2)+(r-2)+(r*2)+(r/2)+(r%2)+(r^2)+(r&2)+(r|2)+(r<<2)+(r>>2);}"},
+      {"comparison", "template<class T>struct R{T n;bool operator==(T x)const{return n==x;}bool operator!=(T x)const{return n!=x;}bool operator<(T x)const{return n<x;}bool operator>(T x)const{return n>x;}bool operator<=(T x)const{return n<=x;}bool operator>=(T x)const{return n>=x;}};int f(){R<int>r{6};return (r==2)+(r!=2)+(r<2)+(r>2)+(r<=2)+(r>=2);}"},
+      {"compound", "template<class T>struct R{T n;R&operator+=(T x){n+=x;return *this;}R&operator-=(T x){n-=x;return *this;}R&operator*=(T x){n*=x;return *this;}R&operator/=(T x){n/=x;return *this;}R&operator%=(T x){n%=x;return *this;}R&operator^=(T x){n^=x;return *this;}R&operator&=(T x){n&=x;return *this;}R&operator|=(T x){n|=x;return *this;}R&operator<<=(T x){n<<=x;return *this;}R&operator>>=(T x){n>>=x;return *this;}};int f(){R<int>r{6};r+=2;r-=1;r*=2;r/=2;r%=5;r^=3;r|=2;r&=3;r<<=1;r>>=1;return r.n;}"},
+      {"unary", "template<class T>struct R{T n;T operator+()const{return +n;}T operator-()const{return -n;}T operator~()const{return ~n;}bool operator!()const{return !n;}R&operator--(){--n;return *this;}R operator--(int){R old{n};--n;return old;}};int f(){R<int>r{3};--r;r--;return +r+ -r+ ~r+ !r;}"},
+      {"template-iterator-range", "template<class T>struct Iterator{T*p;T&operator*()const{return *p;}Iterator&operator++(){++p;return *this;}bool operator!=(const Iterator&r)const{return p!=r.p;}};template<class T,int N>struct Range{T data[N];Iterator<T>begin(){return Iterator<T>{data};}Iterator<T>end(){return Iterator<T>{data+N};}};int f(){Range<int,3>r{{1,2,3}};int sum=0;for(int&n:r){++n;sum+=n;}return sum;}"},
+      {"protocol-source", "int next(){return 2;}\ntemplate<class T,int N>struct Cursor{\n T*p;\n T&operator*()const{return *p;}\n T&operator[](int n){return p[n];}\n Cursor&operator++(){++p;return *this;}\n Cursor operator++(int){T*old=p;++p;return Cursor{old};}\n Cursor operator+(int n)const{return Cursor{p+n};}\n Cursor&operator=(int n){*p=n;return *this;}\n T operator()(int n=next()){return p[n]+N;}\n bool operator&&(const Cursor&r)const{return *p&&*r.p;}\n bool operator||(const Cursor&r)const{return *p||*r.p;}\n Cursor&operator,(Cursor&r){return r;}\n explicit operator bool()const{return *p!=0;}\n operator T&(){return *p;}\n int counter(){static int n=0;return ++n;}\n};\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 7;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nint&subscript(Cursor<int,3>&r){return left(r)[next()];}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return left(r).operator=(right());}\nint callDefault(Cursor<int,3>&r){return left(r)();}\nint callExplicit(Cursor<int,3>&r){return left(r)(right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nbool boolean(const Cursor<int,3>&r){return static_cast<bool>(r);}\nint&reference(Cursor<int,3>&r){return r;}\nint counterA(Cursor<int,3>&r){return r.counter();}\nusing Alias=Cursor<int,1+2>;\nint counterAlias(Alias&r){return r.counter();}\nint counterB(Cursor<int,4>&r){return r.counter();}\nint callDifferent(Cursor<int,4>&r){return r(1);}\ntemplate<class T>struct Qualified{\n T n;\n T operator()()&{return n;}\n T operator()()const&{return n+1;}\n T operator()()&&{return n+2;}\n};\nint mutableCall(Qualified<int>&r){return r();}\nint constCall(const Qualified<int>&r){return r();}\nint rvalueCall(Qualified<int>&r){return static_cast<Qualified<int>&&>(r)();}\nstruct Value{\n int n;\n ~Value(){}\n};\ntemplate<class T>struct Convert{\n T n;\n operator Value()const{return Value{n};}\n};\nValue converted(const Convert<int>&r){return r;}\nint extended(const Convert<int>&r){const Value&v=r;return v.n;}\ntemplate<auto N>struct Count{\n int operator()(){struct Local{int n;};static int count=0;Local l{++count};return l.n+N;}\n};\nint signedCount(){Count<3>c;return c();}\nint unsignedCount(){Count<3u>c;return c();}\nint aliasCount(){Count<1+2>c;return c();}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-operators-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("class-operators-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsRetainSourceBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"selected-operator-body", "template<class T>struct R{int operator()(){return int(1.0);}};int f(){R<int>r;return r();}"},
+      {"selected-conversion-body", "template<class T>struct R{operator int(){return int(1.0);}};int f(){R<int>r;return r;}"},
+      {"forced-operator-body", "template<class T>struct R{int operator()(){return int(1.0);}};template int R<int>::operator()();"},
+      {"forced-conversion-body", "template<class T>struct R{operator int(){return int(1.0);}};template R<int>::operator int();"},
+      {"forced-class-body", "template<class T>struct R{int operator()(){return int(1.0);}};template struct R<int>;"},
+      {"selected-default", "template<class T>struct R{int operator()(int x=int(1.0)){return x;}};int f(){R<int>r;return r();}"},
+      {"selected-dmi", "template<class T>struct R{T n=T(1.0);operator T(){return n;}};int f(){R<int>r;return r;}"},
+      {"folded-operator", "template<class T>struct R{constexpr int operator()()const{return int(1.0);}};static_assert(R<int>{}()==1);"},
+      {"folded-conversion", "template<class T>struct R{constexpr operator int()const{return int(1.0);}};static_assert(int(R<int>{})==1);"},
+      {"operator-noexcept", "template<class T>struct R{int operator()()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){return noexcept(r());}"},
+      {"conversion-noexcept", "template<class T>struct R{operator int()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){return noexcept(r.operator int());}"},
+      {"selected-floating-type", "template<class T>struct R{operator T(){return T();}};double f(R<double>&r){return r;}"},
+      {"outside-header", "template<decltype(sizeof(double)) N>struct R{int operator()();};template<decltype(sizeof(double)) N>int R<N>::operator()(){return N;}int f(){R<3>r;return r();}"},
+      {"own-operator-template", "template<class T>struct R{template<class U>int operator()(U){return 1;}};"},
+      {"own-conversion-template", "template<class T>struct R{template<class U>operator U(){return U();}};"},
+      {"free-operator-template", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}"},
+      {"virtual-conversion", "template<class T>struct R{virtual operator int(){return 1;}};"},
+      {"volatile-operator", "template<class T>struct R{int operator()()volatile{return 1;}};"},
+      {"allocation", "template<class T>struct R{static void*operator new(decltype(sizeof(0))){return nullptr;}};"},
+      {"conditional-explicit-conversion", "template<class T>struct R{explicit(true) operator bool(){return true;}};"},
+      {"conditional-explicit-constructor", "template<class T>struct R{explicit(sizeof(double)>0) R(){}};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-operators-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("class-operators-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsRetainLanguageDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"dependent-operator-use", "template<class T>struct R{int operator()(){return T::missing;}};int f(){R<int>r;return r();}"},
+      {"dependent-conversion-use", "template<class T>struct R{operator int(){return T::missing;}};int f(){R<int>r;return r;}"},
+      {"explicit-implicit-use", "template<class T>struct R{explicit operator int(){return 1;}};int f(){R<int>r;return r;}"},
+      {"private-conversion", "template<class T>class R{operator int(){return 1;}};int f(R<int>&r){return r;}"},
+      {"wrong-receiver", "template<class T>struct R{int operator()()&&{return 1;}};int f(R<int>&r){return r();}"},
+      {"ambiguous-conversion", "template<class T>struct R{operator int(){return 1;}operator unsigned(){return 2;}};bool f(R<int>&r){return r;}"},
+      {"defaulted-ordinary-operator", "template<class T>struct R{int operator()()=default;};"},
+      {"wrong-arity", "template<class T>struct R{int operator+(int,int){return 1;}};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-operators-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("class-operators-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsRequireDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"selected-operator", "template<class T>struct R{int operator()();};int f(R<int>&r){return r();}"},
+      {"selected-conversion", "template<class T>struct R{operator int();};int f(R<int>&r){return r;}"},
+      {"query-operator", "template<class T>struct R{int operator()()noexcept;};bool f(R<int>&r){return noexcept(r());}"},
+      {"query-conversion", "template<class T>struct R{operator int()noexcept;};bool f(R<int>&r){return noexcept(r.operator int());}"},
+      {"specialized-operator", "template<class T>struct R{int operator()(){return 1;}};template<>int R<int>::operator()();"},
+      {"specialized-conversion", "template<class T>struct R{operator int(){return 1;}};template<>R<int>::operator int();"},
+      {"selected-copy-assignment", "template<class T>struct R{T n;R&operator=(const R&);};void f(R<int>&a,const R<int>&b){a=b;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-operators-missing-" + Name + ".cpp");
+    const auto Output = tmpFile("class-operators-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV1RejectsClassTemplateOperatorsAndConversions) {
+  for (const std::string &Code : {"template<class T>struct R{T n;T operator()(){return n;}};", "template<class T>struct R{T n;operator int(){return 1;}};"}) {
+    const auto Source = tmpFile("class-operators-v1.cpp");
+    const auto Output = tmpFile("class-operators-v1.nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersPreserveStorageAndLifetimes) {
   const auto Source = tmpFile("class-defaulted-runtime.cpp");
   const auto Output = tmpFile("class-defaulted-runtime.nc");
@@ -4901,8 +5188,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersRetainSourceBoundaries)
       {"attribute", "template<class T>struct R{[[deprecated]]R()=default;};"},
       {"deleted-written", "template<class T>struct R{R()=delete;};"},
       {"virtual", "template<class T>struct R{virtual ~R()=default;};"},
-      {"user-assignment", "template<class T>struct R{T n;R&operator=(const R&r){n=r.n;return *this;}};"},
-      {"user-operator", "template<class T>struct R{R()=default;int operator()(){return 3;}};"},
       {"explicit-destruction", "template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}"},
       {"outer-type", "template<int N>struct R{R();};template<decltype(static_cast<int>(1.0)) N>R<N>::R()=default;"},
   };
@@ -5269,8 +5554,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBo
       {"parameter-attribute", "template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};", "TR0201"},
       {"delegating", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};", "TR0201"},
       {"own-template", "template<class T>struct R{T n;template<class U>R(U v):n(v){}};", "TR0201"},
-      {"operator", "template<class T>struct R{T n;R(T v):n(v){}T operator()(){return n;}};", "TR0201"},
-      {"conversion-function", "template<class T>struct R{T n;R(T v):n(v){}operator T(){return n;}};", "TR0201"},
       {"static-data", "template<class T>struct R{T n;static int v;R(T x):n(x){}};", "TR0201"},
       {"base", "struct I{int n;};template<class T>struct R:I{R(){}};", "TR0201"},
       {"reference-field", "template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}", "TR0201"},
@@ -5455,8 +5738,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateMethodsRetainSourceAndDefinitionBoundar
       {"volatile", "template<class T>struct R{int f()volatile{return 1;}};", "TR0201"},
       {"deleted", "template<class T>struct R{int f()=delete;};", "TR0201"},
       {"member-template", "template<class T>struct R{template<class U>U f(U v){return v;}};", "TR0201"},
-      {"operator", "template<class T>struct R{T n;T operator()(){return n;}};", "TR0201"},
-      {"conversion", "template<class T>struct R{T n;operator int(){return 1;}};", "TR0201"},
       {"static-data", "template<class T>struct R{static int n;int f(){return n;}};", "TR0201"},
       {"friend", "template<class T>struct R{friend int f(R r){return 1;}};", "TR0201"},
       {"nested-record", "template<class T>struct R{struct I{int n;};int f(){return 1;}};", "TR0201"},

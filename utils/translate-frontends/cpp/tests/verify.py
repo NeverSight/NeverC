@@ -6441,6 +6441,249 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
 
+    class_operators_source = 'int next(){return 2;}\ntemplate<class T,int N>struct Cursor{\n T*p;\n T&operator*()const{return *p;}\n T&operator[](int n){return p[n];}\n Cursor&operator++(){++p;return *this;}\n Cursor operator++(int){T*old=p;++p;return Cursor{old};}\n Cursor operator+(int n)const{return Cursor{p+n};}\n Cursor&operator=(int n){*p=n;return *this;}\n T operator()(int n=next()){return p[n]+N;}\n bool operator&&(const Cursor&r)const{return *p&&*r.p;}\n bool operator||(const Cursor&r)const{return *p||*r.p;}\n Cursor&operator,(Cursor&r){return r;}\n explicit operator bool()const{return *p!=0;}\n operator T&(){return *p;}\n int counter(){static int n=0;return ++n;}\n};\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 7;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nint&subscript(Cursor<int,3>&r){return left(r)[next()];}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return left(r).operator=(right());}\nint callDefault(Cursor<int,3>&r){return left(r)();}\nint callExplicit(Cursor<int,3>&r){return left(r)(right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nbool boolean(const Cursor<int,3>&r){return static_cast<bool>(r);}\nint&reference(Cursor<int,3>&r){return r;}\nint counterA(Cursor<int,3>&r){return r.counter();}\nusing Alias=Cursor<int,1+2>;\nint counterAlias(Alias&r){return r.counter();}\nint counterB(Cursor<int,4>&r){return r.counter();}\nint callDifferent(Cursor<int,4>&r){return r(1);}\ntemplate<class T>struct Qualified{\n T n;\n T operator()()&{return n;}\n T operator()()const&{return n+1;}\n T operator()()&&{return n+2;}\n};\nint mutableCall(Qualified<int>&r){return r();}\nint constCall(const Qualified<int>&r){return r();}\nint rvalueCall(Qualified<int>&r){return static_cast<Qualified<int>&&>(r)();}\nstruct Value{\n int n;\n ~Value(){}\n};\ntemplate<class T>struct Convert{\n T n;\n operator Value()const{return Value{n};}\n};\nValue converted(const Convert<int>&r){return r;}\nint extended(const Convert<int>&r){const Value&v=r;return v.n;}\ntemplate<auto N>struct Count{\n int operator()(){struct Local{int n;};static int count=0;Local l{++count};return l.n+N;}\n};\nint signedCount(){Count<3>c;return c();}\nint unsignedCount(){Count<3u>c;return c();}\nint aliasCount(){Count<1+2>c;return c();}\n'
+    class_operators = check("v2-class-operators-protocol", class_operators_source, profile="cpp-core-v2")
+    co_functions = {f["name"]: f for f in class_operators["functions"]}
+    co_records = {r["id"]: r for r in class_operators["records"]}
+    co_globals = {g["name"]: g for g in class_operators["globals"]}
+    assert len(co_functions) == len(class_operators["functions"])
+    assert len(co_records) == len(class_operators["records"])
+    assert len(co_globals) == len(class_operators["globals"])
+
+    def co_line(prefix):
+        lines = [i for i, line in enumerate(class_operators_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def co_function(prefix):
+        found = [f for f in co_functions.values() if f["loc"]["line"] == co_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def co_selected(prefix):
+        calls = gc_calls(co_function(prefix))
+        assert len(calls) == 1, (prefix, calls)
+        return co_functions[calls[0]["callee"]]
+
+    def co_signature(function, result, params):
+        assert function["result"] == result and [p["type"] for p in function["params"]] == params, function
+
+    rid = co_function("int&dereference(")["params"][0]["type"].removeprefix("cptr:")
+    assert [f["type"] for f in co_records[rid]["fields"]] == ["ptr:int"]
+    dereference = co_selected("int&dereference(")
+    prefix = co_selected("Cursor<int,3>&prefix(")
+    postfix = co_selected("Cursor<int,3>postfix(")
+    result = co_selected("Cursor<int,3>result(")
+    boolean = co_selected("bool boolean(")
+    reference = co_selected("int&reference(")
+    for function, output, params in (
+        (dereference, "ptr:int", ["cptr:"+rid]),
+        (prefix, "ptr:"+rid, ["ptr:"+rid]),
+        (postfix, "void", ["ptr:"+rid, "ptr:"+rid, "int"]),
+        (result, "void", ["ptr:"+rid, "cptr:"+rid, "int"]),
+        (boolean, "bool", ["cptr:"+rid]),
+        (reference, "ptr:int", ["ptr:"+rid]),
+    ):
+        co_signature(function, output, params)
+    assert len({f["name"] for f in (dereference, prefix, postfix, result, boolean, reference)}) == 6
+    for name in ("int&dereference(", "Cursor<int,3>&prefix(", "int&reference("):
+        caller = co_function(name)
+        call = gc_calls(caller)[0]
+        assert np_pointer(caller, call["args"][0]) == ("parameter", caller["params"][0]["name"])
+        returned = next(n["value"] for n in caller["body"] if n["op"] == "return")
+        assert di_call_result(caller, returned) == call["target"]["name"]
+    returned = next(n["value"] for n in prefix["body"] if n["op"] == "return")
+    assert np_pointer(prefix, returned) == ("parameter", prefix["params"][0]["name"])
+    for name, literal in (("Cursor<int,3>postfix(", 0), ("Cursor<int,3>result(", 1)):
+        caller = co_function(name)
+        call = gc_calls(caller)[0]
+        assert "target" not in call
+        assert [np_pointer(caller, arg) for arg in call["args"][:2]] == [
+            ("parameter", p["name"]) for p in caller["params"]]
+        assert gc_identity(caller, call["args"][2]) == literal
+        assert not any(n["op"] == "assign" and n["target"]["type"] == rid for n in caller["body"])
+    left = co_function("Cursor<int,3>&left(")
+    right = co_function("int right(")
+    next_value = co_function("int next(")
+    for name, effects in (("Cursor<int,3>&assign(", [right, left]),
+                          ("Cursor<int,3>&explicitAssign(", [left, right]),
+                          ("int&subscript(", [left, next_value]),
+                          ("int callDefault(", [left, next_value]),
+                          ("int callExplicit(", [left, right])):
+        caller = co_function(name)
+        calls = gc_calls(caller)
+        assert len(calls) == 3 and [c["callee"] for c in calls[:2]] == [f["name"] for f in effects]
+        receiver = next(c for c in calls[:2] if c["callee"] == left["name"])
+        argument = next(c for c in calls[:2] if c["callee"] != left["name"])
+        assert di_call_result(caller, calls[2]["args"][0]) == receiver["target"]["name"]
+        assert di_call_result(caller, calls[2]["args"][1]) == argument["target"]["name"]
+    assignment = gc_calls(co_function("Cursor<int,3>&assign("))[-1]
+    assert assignment["callee"] == gc_calls(co_function("Cursor<int,3>&explicitAssign("))[-1]["callee"]
+    co_signature(co_functions[assignment["callee"]], "ptr:"+rid, ["ptr:"+rid, "int"])
+    call = gc_calls(co_function("int callDefault("))[-1]
+    assert call["callee"] == gc_calls(co_function("int callExplicit("))[-1]["callee"]
+    co_signature(co_functions[call["callee"]], "int", ["ptr:"+rid, "int"])
+    for name, output in (("bool bothAnd(", "bool"), ("bool bothOr(", "bool"), ("Cursor<int,3>&comma(", "ptr:"+rid)):
+        caller = co_function(name)
+        calls = gc_calls(caller)
+        assert len(calls) == 3 and [c["callee"] for c in calls[:2]] == [left["name"]]*2
+        assert [np_pointer(caller, c["args"][0]) for c in calls[:2]] == [
+            ("parameter", p["name"]) for p in caller["params"]]
+        assert [di_call_result(caller, a) for a in calls[2]["args"]] == [c["target"]["name"] for c in calls[:2]]
+        qualifier = "ptr:" if output.startswith("ptr:") else "cptr:"
+        co_signature(co_functions[calls[2]["callee"]], output, [qualifier+rid]*2)
+        assert not any(n["op"] == "branch" for n in caller["body"]), "overloaded logical/comma call was short-circuited"
+    qualified = [co_selected(p) for p in ("int mutableCall(", "int constCall(", "int rvalueCall(")]
+    qid = co_function("int mutableCall(")["params"][0]["type"].removeprefix("ptr:")
+    assert len({f["name"] for f in qualified}) == 3
+    for function, qualifier in zip(qualified, ("ptr:", "cptr:", "ptr:")):
+        co_signature(function, "int", [qualifier+qid])
+    counter_a = co_selected("int counterA(")
+    counter_b = co_selected("int counterB(")
+    assert counter_a == co_selected("int counterAlias(") and counter_a["name"] != counter_b["name"]
+    other_rid = counter_b["params"][0]["type"].removeprefix("ptr:")
+    assert other_rid != rid and co_records[rid]["fields"][0]["name"] != co_records[other_rid]["fields"][0]["name"]
+    different_call = co_selected("int callDifferent(")
+    assert different_call["name"] != call["callee"]
+    co_signature(different_call, "int", ["ptr:"+other_rid, "int"])
+    signed_count = co_selected("int signedCount(")
+    unsigned_count = co_selected("int unsignedCount(")
+    assert signed_count == co_selected("int aliasCount(") and signed_count["name"] != unsigned_count["name"]
+    count_record_ids = {f["params"][0]["type"] for f in (signed_count, unsigned_count)}
+    assert len(count_record_ids) == 2 and all(len(f["params"]) == 1 for f in (signed_count, unsigned_count))
+    local_records = [r for r in co_records.values() if r["loc"]["line"] == co_line(" int operator()(){struct Local")]
+    assert len(local_records) == 2 and len({r["fields"][0]["name"] for r in local_records}) == 2
+    globals_used = []
+    for function in (counter_a, counter_b, signed_count, unsigned_count):
+        names = {n["target"]["name"] for n in function["body"] if n["op"] == "assign"
+                 and n["target"].get("kind") == "var" and n["target"]["name"] in co_globals}
+        assert len(names) == 1
+        item = co_globals[next(iter(names))]
+        assert item["mutable"] and item["type"] == "int" and item["value"]["value"] == "0"
+        globals_used.append(item["name"])
+    assert len(set(globals_used)) == 4 and len(co_globals) == 4
+    converted = co_function("Value converted(")
+    conversion = co_selected("Value converted(")
+    vid = converted["params"][0]["type"].removeprefix("ptr:")
+    co_signature(conversion, "void", [p["type"] for p in converted["params"]])
+    converted_call = gc_calls(converted)[0]
+    assert [np_pointer(converted, a) for a in converted_call["args"]] == [
+        ("parameter", p["name"]) for p in converted["params"]]
+    assert not any(n["op"] == "assign" and n["target"]["type"] == vid for n in converted["body"])
+    extended = co_function("int extended(")
+    extended_calls = gc_calls(extended)
+    assert [c["callee"] for c in extended_calls] == [conversion["name"], vid+"_destroy"]
+    assert np_pointer(extended, extended_calls[0]["args"][0]) == np_pointer(extended, extended_calls[1]["args"][0])
+    for function in co_functions.values():
+        assert not any(n["op"] == "mapped_call" for n in function["body"])
+        for call_node in gc_calls(function):
+            callee = co_functions[call_node["callee"]]
+            assert [a["type"] for a in call_node["args"]] == [p["type"] for p in callee["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-class-operators-relocated-") as temp:
+        relocated = check("class-operators-relocated", class_operators_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == class_operators, "class operator identities depend on the absolute root"
+
+    class_operators_positive = {
+        'promoted-0': 'template<class T>struct R{T n;R&operator=(const R&r){n=r.n;return *this;}};',
+        'promoted-1': 'template<class T>struct R{R()=default;int operator()(){return 3;}};',
+        'promoted-2': 'template<class T>struct R{T n;R(T v):n(v){}T operator()(){return n;}};',
+        'promoted-3': 'template<class T>struct R{T n;R(T v):n(v){}operator T(){return n;}};',
+        'promoted-4': 'template<class T>struct R{T n;T operator()(){return n;}};',
+        'promoted-5': 'template<class T>struct R{T n;operator int(){return 1;}};',
+        'iterator': 'template<class T>struct R{T*p;T&operator*()const{return *p;}R&operator++(){++p;return *this;}R operator++(int){R old{p};++p;return old;}T&operator[](int n)const{return p[n];}T*operator->()const{return p;}};struct I{int n;};int f(){int a[3]={1,2,3};R<int>r{a};(*r)++;r[1]=7;int n=*r++;++r;I i{4};R<I>p{&i};return n+*r+p->n;}',
+        'call-default': 'int count=0;int next(){return ++count;}template<class T>struct R{T n;T operator()(T x=next()){return n+x;}};int f(){R<int>r{3};return r()+r(7);}',
+        'subscript-ref': 'template<class T>struct R{T*p;T&operator[](int n){return p[n];}};int&f(R<int>&r,int n){return r[n];}',
+        'arrow-chain': 'struct I{int n;};template<class T>struct R{T*p;T*operator->(){return p;}};template<class T>struct S{T n;T&operator->(){return n;}};int f(){I i{3};S<R<I>>s{{&i}};return s->n;}',
+        'arrow-star': 'template<class T>struct R{T n;T&operator->*(int){return n;}};int&f(R<int>&r){return r->*0;}',
+        'logical-comma': 'template<class T>struct R{T n;bool operator&&(const R&r){return n&&r.n;}bool operator||(const R&r){return n||r.n;}R&operator,(R&r){return r;}};bool f(R<int>&a,R<int>&b){(a,b).n=2;return (a&&b)||(a||b);}',
+        'copy-move-assignment': 'template<class T>struct R{T n;R&operator=(const R&r){n=r.n;return *this;}R&operator=(R&&r){n=r.n;r.n=0;return *this;}};int f(){R<int>a{1},b{2};a=b;b=static_cast<R<int>&&>(a);return b.n;}',
+        'general-assignment': 'template<class T>struct R{T n;T operator=(T x)&&{n=x;return n;}};int f(){return R<int>{1}=7;}',
+        'record-result': 'template<class T>struct R{T n;R operator+(const R&r)const{return R{n+r.n};}};R<int>f(const R<int>&a,const R<int>&b){return a+b;}',
+        'qualified-overloads': 'template<class T>struct R{T n;T&operator()()&{return n;}const T&operator()()const&{return n;}T operator()()&&{return n+1;}};int f(R<int>&r,const R<int>&c){r()=3;return c()+static_cast<R<int>&&>(r)();}',
+        'explicit-bool': 'template<class T>struct R{T n;explicit operator bool()const noexcept{return n!=0;}};bool f(R<int>&r){if(r)return !r;return static_cast<bool>(r);}',
+        'implicit-scalar': 'template<class T>struct R{T n;operator T()const{return n;}};int f(){R<int>r{3};int n=r;return n+r.operator int();}',
+        'reference-conversion': 'template<class T>struct R{T n;operator T&(){return n;}operator const T&()const{return n;}};int f(R<int>&r,const R<int>&s){int&n=r;const int&m=s;n=5;return m;}',
+        'pointer-conversion': 'template<class T>struct R{T*p;operator T*()const{return p;}};int f(){int n=3;R<int>r{&n};int*p=r;*p=7;return n;}',
+        'record-conversion': 'struct I{int n;};template<class T>struct R{T n;operator I()const{return I{n};}};I f(const R<int>&r){return r;}',
+        'rvalue-conversion': 'struct I{int n;I(I&&r):n(r.n){r.n=0;}};template<class T>struct R{T n;operator T&&()&&{return static_cast<T&&>(n);}};I f(R<I>&r){return static_cast<R<I>&&>(r);}',
+        'deduced-conversion': 'template<class T>struct R{T n;operator auto()const{return n;}};int f(R<int>&r){return r;}',
+        'decltype-auto-conversion': 'template<class T>struct R{T n;operator decltype(auto)(){return (n);}};int&f(R<int>&r){return r;}',
+        'value-arguments': 'template<class T,T N>struct R{T n;T operator()(){return n+N;}};template<auto N>struct S{int operator()(){static int count=0;return ++count+N;}};int f(){R<int,3>r{2};S<3>a;S<3u>b;S<1+2>c;return r()+a()+b()+c();}',
+        'local-types': 'template<class T>struct R{int operator()(){struct Local{T n;};Local l{3};static int count=0;return l.n+ ++count;}};int f(){R<int>a;R<unsigned>b;return a()+b();}',
+        'outside-operator': 'template<class T>struct R{T n;T operator()(T x);};template<class T>T R<T>::operator()(T x){return n+x;}int f(){R<int>r{3};return r(4);}',
+        'outside-conversion': 'template<class T>struct R{T n;operator T()const;};template<class T>R<T>::operator T()const{return n;}int f(R<int>&r){return r;}',
+        'member-specialization': 'template<class T>struct R{T n;T operator()(){return n;}operator T(){return n;}};template<>int R<int>::operator()(){return n+1;}template<>R<int>::operator int(){return n+2;}int f(R<int>&r){return r()+int(r);}',
+        'class-specialization': 'template<class T>struct R{T n;T operator()(){return n;}};template<>struct R<int>{int n;int operator()(){return n+1;}operator int(){return n+2;}};int f(R<int>&r){return r()+int(r);}',
+        'class-instantiation': 'template<class T>struct R{T n;T operator()(){return n;}operator T(){return n;}};template struct R<int>;',
+        'operator-instantiation': 'template<class T>struct R{T n;T operator()(){return n;}};template int R<int>::operator()();',
+        'conversion-instantiation': 'template<class T>struct R{T n;operator T(){return n;}};template R<int>::operator int();',
+        'late-definition': 'template<class T>struct R{T n;T operator()();};template struct R<int>;template<class T>T R<T>::operator()(){return n;}int f(R<int>&r){return r();}',
+        'lazy-bodies': 'template<class T>struct R{int n;int operator()(){return T::missing;}operator auto(){return T::missing;}};static_assert(sizeof(R<int>)==sizeof(int));',
+        'lazy-unsupported': 'template<class T>struct R{int n;int operator()(){return int(1.0);}operator auto(){return 1.0;}};static_assert(sizeof(R<int>)==sizeof(int));',
+        'lazy-default': 'template<class T>struct R{T n;T operator()(T x=T::missing){return n+x;}};int f(){R<int>r{3};return r(4);}',
+        'folded-source': 'template<class T>struct R{T n;constexpr T operator()()const{return n;}constexpr operator T()const{return n;}};static_assert(R<int>{3}()==3);static_assert(int(R<int>{4})==4);',
+        'noexcept-source': 'template<class T>struct R{T n;T operator()()noexcept(sizeof(this->n)>0){return n;}operator T()const noexcept(sizeof(T)>0){return n;}};bool f(R<int>&r){return noexcept(r())&&noexcept(r.operator int());}',
+        'conversion-default': 'template<class T>struct R{T n;constexpr operator T()const{return n;}};template<class T>struct S{T n=R<T>{3};T operator()(T x=R<T>{4}){return n+x;}};int f(){S<int>s;return s();}',
+        'arithmetic': 'template<class T>struct R{T n;T operator+(T x)const{return n+x;}T operator-(T x)const{return n-x;}T operator*(T x)const{return n*x;}T operator/(T x)const{return n/x;}T operator%(T x)const{return n%x;}T operator^(T x)const{return n^x;}T operator&(T x)const{return n&x;}T operator|(T x)const{return n|x;}T operator<<(T x)const{return n<<x;}T operator>>(T x)const{return n>>x;}};int f(){R<int>r{6};return (r+2)+(r-2)+(r*2)+(r/2)+(r%2)+(r^2)+(r&2)+(r|2)+(r<<2)+(r>>2);}',
+        'comparison': 'template<class T>struct R{T n;bool operator==(T x)const{return n==x;}bool operator!=(T x)const{return n!=x;}bool operator<(T x)const{return n<x;}bool operator>(T x)const{return n>x;}bool operator<=(T x)const{return n<=x;}bool operator>=(T x)const{return n>=x;}};int f(){R<int>r{6};return (r==2)+(r!=2)+(r<2)+(r>2)+(r<=2)+(r>=2);}',
+        'compound': 'template<class T>struct R{T n;R&operator+=(T x){n+=x;return *this;}R&operator-=(T x){n-=x;return *this;}R&operator*=(T x){n*=x;return *this;}R&operator/=(T x){n/=x;return *this;}R&operator%=(T x){n%=x;return *this;}R&operator^=(T x){n^=x;return *this;}R&operator&=(T x){n&=x;return *this;}R&operator|=(T x){n|=x;return *this;}R&operator<<=(T x){n<<=x;return *this;}R&operator>>=(T x){n>>=x;return *this;}};int f(){R<int>r{6};r+=2;r-=1;r*=2;r/=2;r%=5;r^=3;r|=2;r&=3;r<<=1;r>>=1;return r.n;}',
+        'unary': 'template<class T>struct R{T n;T operator+()const{return +n;}T operator-()const{return -n;}T operator~()const{return ~n;}bool operator!()const{return !n;}R&operator--(){--n;return *this;}R operator--(int){R old{n};--n;return old;}};int f(){R<int>r{3};--r;r--;return +r+ -r+ ~r+ !r;}',
+        'template-iterator-range': 'template<class T>struct Iterator{T*p;T&operator*()const{return *p;}Iterator&operator++(){++p;return *this;}bool operator!=(const Iterator&r)const{return p!=r.p;}};template<class T,int N>struct Range{T data[N];Iterator<T>begin(){return Iterator<T>{data};}Iterator<T>end(){return Iterator<T>{data+N};}};int f(){Range<int,3>r{{1,2,3}};int sum=0;for(int&n:r){++n;sum+=n;}return sum;}',
+        'protocol-source': 'int next(){return 2;}\ntemplate<class T,int N>struct Cursor{\n T*p;\n T&operator*()const{return *p;}\n T&operator[](int n){return p[n];}\n Cursor&operator++(){++p;return *this;}\n Cursor operator++(int){T*old=p;++p;return Cursor{old};}\n Cursor operator+(int n)const{return Cursor{p+n};}\n Cursor&operator=(int n){*p=n;return *this;}\n T operator()(int n=next()){return p[n]+N;}\n bool operator&&(const Cursor&r)const{return *p&&*r.p;}\n bool operator||(const Cursor&r)const{return *p||*r.p;}\n Cursor&operator,(Cursor&r){return r;}\n explicit operator bool()const{return *p!=0;}\n operator T&(){return *p;}\n int counter(){static int n=0;return ++n;}\n};\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 7;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nint&subscript(Cursor<int,3>&r){return left(r)[next()];}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return left(r).operator=(right());}\nint callDefault(Cursor<int,3>&r){return left(r)();}\nint callExplicit(Cursor<int,3>&r){return left(r)(right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nbool boolean(const Cursor<int,3>&r){return static_cast<bool>(r);}\nint&reference(Cursor<int,3>&r){return r;}\nint counterA(Cursor<int,3>&r){return r.counter();}\nusing Alias=Cursor<int,1+2>;\nint counterAlias(Alias&r){return r.counter();}\nint counterB(Cursor<int,4>&r){return r.counter();}\nint callDifferent(Cursor<int,4>&r){return r(1);}\ntemplate<class T>struct Qualified{\n T n;\n T operator()()&{return n;}\n T operator()()const&{return n+1;}\n T operator()()&&{return n+2;}\n};\nint mutableCall(Qualified<int>&r){return r();}\nint constCall(const Qualified<int>&r){return r();}\nint rvalueCall(Qualified<int>&r){return static_cast<Qualified<int>&&>(r)();}\nstruct Value{\n int n;\n ~Value(){}\n};\ntemplate<class T>struct Convert{\n T n;\n operator Value()const{return Value{n};}\n};\nValue converted(const Convert<int>&r){return r;}\nint extended(const Convert<int>&r){const Value&v=r;return v.n;}\ntemplate<auto N>struct Count{\n int operator()(){struct Local{int n;};static int count=0;Local l{++count};return l.n+N;}\n};\nint signedCount(){Count<3>c;return c();}\nint unsignedCount(){Count<3u>c;return c();}\nint aliasCount(){Count<1+2>c;return c();}\n',
+    }
+    for name, source in class_operators_positive.items():
+        check("v2-class-operators-positive-" + name, source, profile="cpp-core-v2")
+    class_operators_reject = {
+        'selected-operator-body': 'template<class T>struct R{int operator()(){return int(1.0);}};int f(){R<int>r;return r();}',
+        'selected-conversion-body': 'template<class T>struct R{operator int(){return int(1.0);}};int f(){R<int>r;return r;}',
+        'forced-operator-body': 'template<class T>struct R{int operator()(){return int(1.0);}};template int R<int>::operator()();',
+        'forced-conversion-body': 'template<class T>struct R{operator int(){return int(1.0);}};template R<int>::operator int();',
+        'forced-class-body': 'template<class T>struct R{int operator()(){return int(1.0);}};template struct R<int>;',
+        'selected-default': 'template<class T>struct R{int operator()(int x=int(1.0)){return x;}};int f(){R<int>r;return r();}',
+        'selected-dmi': 'template<class T>struct R{T n=T(1.0);operator T(){return n;}};int f(){R<int>r;return r;}',
+        'folded-operator': 'template<class T>struct R{constexpr int operator()()const{return int(1.0);}};static_assert(R<int>{}()==1);',
+        'folded-conversion': 'template<class T>struct R{constexpr operator int()const{return int(1.0);}};static_assert(int(R<int>{})==1);',
+        'operator-noexcept': 'template<class T>struct R{int operator()()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){return noexcept(r());}',
+        'conversion-noexcept': 'template<class T>struct R{operator int()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){return noexcept(r.operator int());}',
+        'selected-floating-type': 'template<class T>struct R{operator T(){return T();}};double f(R<double>&r){return r;}',
+        'outside-header': 'template<decltype(sizeof(double)) N>struct R{int operator()();};template<decltype(sizeof(double)) N>int R<N>::operator()(){return N;}int f(){R<3>r;return r();}',
+        'own-operator-template': 'template<class T>struct R{template<class U>int operator()(U){return 1;}};',
+        'own-conversion-template': 'template<class T>struct R{template<class U>operator U(){return U();}};',
+        'free-operator-template': 'struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}',
+        'virtual-conversion': 'template<class T>struct R{virtual operator int(){return 1;}};',
+        'volatile-operator': 'template<class T>struct R{int operator()()volatile{return 1;}};',
+        'allocation': 'template<class T>struct R{static void*operator new(decltype(sizeof(0))){return nullptr;}};',
+        'conditional-explicit-conversion': 'template<class T>struct R{explicit(true) operator bool(){return true;}};',
+        'conditional-explicit-constructor': 'template<class T>struct R{explicit(sizeof(double)>0) R(){}};',
+    }
+    for name, source in class_operators_reject.items():
+        check("v2-class-operators-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+    class_operators_invalid = {
+        'dependent-operator-use': 'template<class T>struct R{int operator()(){return T::missing;}};int f(){R<int>r;return r();}',
+        'dependent-conversion-use': 'template<class T>struct R{operator int(){return T::missing;}};int f(){R<int>r;return r;}',
+        'explicit-implicit-use': 'template<class T>struct R{explicit operator int(){return 1;}};int f(){R<int>r;return r;}',
+        'private-conversion': 'template<class T>class R{operator int(){return 1;}};int f(R<int>&r){return r;}',
+        'wrong-receiver': 'template<class T>struct R{int operator()()&&{return 1;}};int f(R<int>&r){return r();}',
+        'ambiguous-conversion': 'template<class T>struct R{operator int(){return 1;}operator unsigned(){return 2;}};bool f(R<int>&r){return r;}',
+        'defaulted-ordinary-operator': 'template<class T>struct R{int operator()()=default;};',
+        'wrong-arity': 'template<class T>struct R{int operator+(int,int){return 1;}};',
+    }
+    for name, source in class_operators_invalid.items():
+        check("v2-class-operators-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    class_operators_missing = {
+        'selected-operator': 'template<class T>struct R{int operator()();};int f(R<int>&r){return r();}',
+        'selected-conversion': 'template<class T>struct R{operator int();};int f(R<int>&r){return r;}',
+        'query-operator': 'template<class T>struct R{int operator()()noexcept;};bool f(R<int>&r){return noexcept(r());}',
+        'query-conversion': 'template<class T>struct R{operator int()noexcept;};bool f(R<int>&r){return noexcept(r.operator int());}',
+        'specialized-operator': 'template<class T>struct R{int operator()(){return 1;}};template<>int R<int>::operator()();',
+        'specialized-conversion': 'template<class T>struct R{operator int(){return 1;}};template<>R<int>::operator int();',
+        'selected-copy-assignment': 'template<class T>struct R{T n;R&operator=(const R&);};void f(R<int>&a,const R<int>&b){a=b;}',
+    }
+    for name, source in class_operators_missing.items():
+        check("v2-class-operators-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+    check("v1-class-operator", 'template<class T>struct R{T n;T operator()(){return n;}};', "TR0201")
+    check("v1-class-conversion", 'template<class T>struct R{T n;operator int(){return 1;}};', "TR0201")
+
     class_defaulted_source = 'int trace=0;\nvoid mark(int n){trace=n;}\nstruct Leaf{\n int n;Leaf*self;\n Leaf():n(1),self(this){mark(1);}\n Leaf(const Leaf&s):n(s.n+10),self(this){mark(2);}\n Leaf(Leaf&&s):n(s.n+20),self(this){s.n=-1;mark(3);}\n Leaf&operator=(const Leaf&s){n=s.n+30;mark(4);return *this;}\n Leaf&operator=(Leaf&&s){n=s.n+40;s.n=-1;mark(5);return *this;}\n ~Leaf(){mark(6);}\n};\ntemplate<class T,int N>struct Box{\n T plain;T value=N;Leaf first;Leaf items[2];\n Box()=default;Box(const Box&)=default;Box(Box&&)=default;\n Box&operator=(const Box&)& =default;Box&operator=(Box&&)& =default;~Box()=default;\n};\ntemplate<class T>struct Outside{T plain;Leaf leaf;Outside();~Outside();};\ntemplate<class T>Outside<T>::Outside()=default;\ntemplate<class T>Outside<T>::~Outside()=default;\ntemplate<class T>struct Trivial{T n;T*p;Trivial(const Trivial&)=default;Trivial&operator=(const Trivial&)=default;};\ntemplate<class T>struct Forced{T n=3;Leaf leaf;Forced();};\ntemplate<class T>Forced<T>::Forced()=default;\ntemplate struct Forced<int>;\nusing Alias=Box<int,3>;\nvoid defaultInit(){Box<int,3>r;Outside<int>o;}\nvoid valueInit(){Box<int,3>r=Box<int,3>();Outside<int>o=Outside<int>();}\nBox<int,3>copy(const Box<int,3>&r){return r;}\nBox<int,3>move(Box<int,3>&r){return static_cast<Box<int,3>&&>(r);}\nBox<int,3>&copyAssign(Box<int,3>&a,const Box<int,3>&b){return a=b;}\nBox<int,3>&moveAssign(Box<int,3>&a,Box<int,3>&b){return a=static_cast<Box<int,3>&&>(b);}\nvoid alias(){Alias r;}\nvoid different(){Box<unsigned int,4>r;}\nTrivial<int>trivialCopy(const Trivial<int>&r){return r;}\nTrivial<int>&trivialAssign(Trivial<int>&a,const Trivial<int>&b){return a=b;}\n'
     class_defaulted = check("v2-class-defaulted-protocol", class_defaulted_source, profile="cpp-core-v2")
     cf_functions = {f["name"]: f for f in class_defaulted["functions"]}
@@ -6632,8 +6875,6 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
         'attribute': 'template<class T>struct R{[[deprecated]]R()=default;};',
         'deleted-written': 'template<class T>struct R{R()=delete;};',
         'virtual': 'template<class T>struct R{virtual ~R()=default;};',
-        'user-assignment': 'template<class T>struct R{T n;R&operator=(const R&r){n=r.n;return *this;}};',
-        'user-operator': 'template<class T>struct R{R()=default;int operator()(){return 3;}};',
         'explicit-destruction': 'template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}',
         'outer-type': 'template<int N>struct R{R();};template<decltype(static_cast<int>(1.0)) N>R<N>::R()=default;',
     }
@@ -7142,8 +7383,6 @@ int privateRead(const Private<int>&v){return v.get();}
         'parameter-attribute': 'template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};',
         'delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};',
         'own-template': 'template<class T>struct R{T n;template<class U>R(U v):n(v){}};',
-        'operator': 'template<class T>struct R{T n;R(T v):n(v){}T operator()(){return n;}};',
-        'conversion-function': 'template<class T>struct R{T n;R(T v):n(v){}operator T(){return n;}};',
         'static-data': 'template<class T>struct R{T n;static int v;R(T x):n(x){}};',
         'base': 'struct I{int n;};template<class T>struct R:I{R(){}};',
         'reference-field': 'template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}',
@@ -7415,8 +7654,6 @@ int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;r
         'volatile': 'template<class T>struct R{int f()volatile{return 1;}};',
         'deleted': 'template<class T>struct R{int f()=delete;};',
         'member-template': 'template<class T>struct R{template<class U>U f(U v){return v;}};',
-        'operator': 'template<class T>struct R{T n;T operator()(){return n;}};',
-        'conversion': 'template<class T>struct R{T n;operator int(){return 1;}};',
         'static-data': 'template<class T>struct R{static int n;int f(){return n;}};',
         'friend': 'template<class T>struct R{friend int f(R r){return 1;}};',
         'nested-record': 'template<class T>struct R{struct I{int n;};int f(){return 1;}};',

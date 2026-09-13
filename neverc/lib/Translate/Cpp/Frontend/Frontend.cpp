@@ -53,13 +53,32 @@ static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
   }
 }
 
+// Name shape only: patterns do not yet have concrete parameter/result types.
+static bool ordinaryOperatorKind(OverloadedOperatorKind Kind) {
+  switch (Kind) {
+  case OO_Plus: case OO_Minus: case OO_Star: case OO_Slash: case OO_Percent:
+  case OO_Caret: case OO_Amp: case OO_Pipe: case OO_Tilde: case OO_Exclaim:
+  case OO_Equal: case OO_Less: case OO_Greater:
+  case OO_PlusEqual: case OO_MinusEqual: case OO_StarEqual: case OO_SlashEqual:
+  case OO_PercentEqual: case OO_CaretEqual: case OO_AmpEqual: case OO_PipeEqual:
+  case OO_LessLess: case OO_GreaterGreater:
+  case OO_LessLessEqual: case OO_GreaterGreaterEqual:
+  case OO_EqualEqual: case OO_ExclaimEqual: case OO_LessEqual: case OO_GreaterEqual:
+  case OO_AmpAmp: case OO_PipePipe: case OO_PlusPlus: case OO_MinusMinus:
+  case OO_Comma: case OO_ArrowStar: case OO_Arrow: case OO_Call: case OO_Subscript:
+    return true;
+  default:
+    return false;
+  }
+}
+
 // Identity only: unused member instances can have an undeduced auto return.
 static const ClassTemplateDecl *classFunctionPrimary(const FunctionDecl *F) {
   const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
-  if (!M || (!isa<CXXConstructorDecl, CXXDestructorDecl>(M) &&
+  if (!M || (!isa<CXXConstructorDecl, CXXDestructorDecl, CXXConversionDecl>(M) &&
              (M->getKind() != Decl::CXXMethod ||
-              (!M->getIdentifier() && !M->isCopyAssignmentOperator() &&
-               !M->isMoveAssignmentOperator()))) ||
+              (!M->getIdentifier() &&
+               !ordinaryOperatorKind(M->getOverloadedOperator())))) ||
       M->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
       !M->getMemberSpecializationInfo() || M->getDescribedFunctionTemplate())
     return nullptr;
@@ -127,24 +146,12 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
 
 bool ordinaryOperator(const FunctionDecl *F) {
   if (!F || !F->isOverloadedOperator() || F->isImplicit() || F->isVariadic() ||
-      F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       !concreteClassFunction(F)) ||
       F->isDeletedAsWritten() || F->isDefaulted() || F->isConsteval())
     return false;
-  switch (F->getOverloadedOperator()) {
-  case OO_Plus: case OO_Minus: case OO_Star: case OO_Slash: case OO_Percent:
-  case OO_Caret: case OO_Amp: case OO_Pipe: case OO_Tilde: case OO_Exclaim:
-  case OO_Equal: case OO_Less: case OO_Greater:
-  case OO_PlusEqual: case OO_MinusEqual: case OO_StarEqual: case OO_SlashEqual:
-  case OO_PercentEqual: case OO_CaretEqual: case OO_AmpEqual: case OO_PipeEqual:
-  case OO_LessLess: case OO_GreaterGreater:
-  case OO_LessLessEqual: case OO_GreaterGreaterEqual:
-  case OO_EqualEqual: case OO_ExclaimEqual: case OO_LessEqual: case OO_GreaterEqual:
-  case OO_AmpAmp: case OO_PipePipe: case OO_PlusPlus: case OO_MinusMinus:
-  case OO_Comma: case OO_ArrowStar: case OO_Arrow: case OO_Call: case OO_Subscript:
-    break;
-  default:
+  if (!ordinaryOperatorKind(F->getOverloadedOperator()))
     return false;
-  }
   if (const auto *M = dyn_cast<CXXMethodDecl>(F))
     if (!M->isUserProvided() || M->isVirtual() || M->isStatic() ||
         M->isExplicitObjectMemberFunction() ||
@@ -157,7 +164,8 @@ bool ordinaryOperator(const FunctionDecl *F) {
 bool ordinaryConversion(const CXXConversionDecl *C) {
   if (!C || C->isImplicit() || !C->isUserProvided() || C->isVirtual() ||
       C->isStatic() || C->isExplicitObjectMemberFunction() || C->isVariadic() ||
-      C->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      (C->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       !concreteClassFunction(C)) ||
       C->isDeletedAsWritten() || C->isDefaulted() || C->isConsteval() ||
       C->getNumParams() || C->getMethodQualifiers().hasVolatile() ||
       C->getMethodQualifiers().hasRestrict())
@@ -201,7 +209,8 @@ static bool ordinaryAssignment(const CXXMethodDecl *M, bool Move) {
       (Move ? !M->isMoveAssignmentOperator() : !M->isCopyAssignmentOperator()) ||
       M->isVirtual() ||
       M->isExplicitObjectMemberFunction() || M->isVariadic() ||
-      M->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      (M->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       !concreteClassFunction(M)) ||
       M->isDeletedAsWritten() || M->isExplicitlyDefaulted() || M->isConsteval() ||
       M->getNumParams() != 1 || M->getMethodQualifiers().getCVRQualifiers() ||
       (!Move && M->getRefQualifier() == RQ_RValue))
@@ -1134,9 +1143,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Destructor->getNumParams() ||
           Destructor->getMethodQualifiers().getCVRQualifiers())
         return false;
-    } else if (M->getKind() != Decl::CXXMethod ||
-               (!M->getIdentifier() && !Defaulted)) {
+    } else if (const auto *Conversion = dyn_cast<CXXConversionDecl>(M)) {
+      if (!Conversion->isUserProvided() || Conversion->isStatic() ||
+          Conversion->getNumParams())
+        return false;
+    } else if (M->getKind() != Decl::CXXMethod) {
       return false;
+    } else if (!M->getIdentifier() && !Defaulted) {
+      if (!M->isUserProvided() || M->isStatic() ||
+          !ordinaryOperatorKind(M->getOverloadedOperator()))
+        return false;
     }
     A.chargeExpansion(1, M->getLocation());
     for (const auto *Parameter : M->parameters()) {
@@ -1701,7 +1717,7 @@ public:
       return false;
     if (!classTemplateShape(D)) {
       A.reject(D->getLocation(), "class template",
-               "Only owned namespace class templates with supported parameters and field/type/named-method/constructor/destructor declarations are admitted.");
+               "Only owned namespace class templates with supported parameters and field/type/member-function declarations are admitted.");
       return true;
     }
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
@@ -1819,7 +1835,7 @@ public:
           if (!classTemplateShape(Primary) || !classTemplateFunctionShape(Method) ||
               Method->getNumTemplateParameterLists() > 1) {
             A.reject(Method->getLocation(), "class template function pattern",
-                     "A named method or admitted special member of an owned namespace class template is required.");
+                     "An admitted member function of an owned namespace class template is required.");
             return true;
           }
           for (unsigned I = 0; I < Method->getNumTemplateParameterLists(); ++I) {
@@ -1838,7 +1854,7 @@ public:
         if (const auto *Primary = classFunctionPrimary(Method)) {
           if (!classTemplateShape(Primary) || !classTemplateFunctionShape(Method)) {
             A.reject(Method->getLocation(), "class template function",
-                     "A named method or special-member instance of an admitted owned primary is required.");
+                     "An admitted member-function instance of an owned class primary is required.");
             return true;
           }
           auto Kind = Method->getTemplateSpecializationKind();
