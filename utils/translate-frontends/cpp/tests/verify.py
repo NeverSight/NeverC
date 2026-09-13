@@ -4469,7 +4469,6 @@ int main(){
     nested_records_reject = {
         'anonymous-field': 'struct R{struct{int n;} value;};',
         'anonymous-typedef': 'struct R{typedef struct{int n;} I;I i;};',
-        'nested-template': 'struct R{template<class T>struct I{T n;};};',
         'dependent-type': 'template<class T>struct R{struct I{T n;};};',
         'union': 'struct R{union I{int n;unsigned int u;};};',
         'anonymous-union': 'struct R{union{int n;unsigned int u;};};',
@@ -4759,7 +4758,6 @@ int unevaluated(){return sizeof(make().shared);}
         'record': 'struct I{int n;};struct R{inline static I i{1};};',
         'tls': 'struct R{inline static thread_local int n=1;};',
         'volatile': 'struct R{inline static volatile int n=1;};',
-        'variable-template': 'struct R{template<class T>inline static int n=1;};',
         'folded-unsupported': 'struct R{inline static int n=static_cast<int>(1.0);};',
         'folded-body': 'constexpr int f(){return static_cast<int>(1.0);}struct R{inline static int n=f();};',
     }
@@ -4985,7 +4983,6 @@ bool pure(){return noexcept(Values::first);}
         'pointer': 'struct R{static const int*n;};',
         'volatile-storage': 'struct R{static const volatile int n;};const volatile int R::n=3;',
         'tls': 'struct R{static thread_local const int n=3;};',
-        'variable-template': 'struct R{template<class T>static const int n=3;};',
     }
     for name, source in static_values_reject.items():
         check("v2-static-values-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
@@ -6722,6 +6719,395 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     for name, source in template_parameter_queries_missing.items():
         check("v2-template-parameter-queries-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
 
+    member_templates_positive = {
+        'plain-method': 'struct R{int n;template<class T>T add(T v){return v+n;}};int main(){R r{3};return r.add(4);}',
+        'static-method': 'struct R{template<class T>static T id(T v){return v;}};int main(){return R::id(3);}',
+        'qualified-static': 'namespace A{struct R{template<class T>static T id(T v){return v;}};}int main(){return ::A::R::id<int>(3);}',
+        'const-method': 'struct R{int n;template<class T>T add(T v)const{return v+n;}};int main(){const R r{3};return r.add(4);}',
+        'ref-qualified': 'struct R{int n;template<class T>int f(T)&{return n;}template<class T>int f(T)&&{return n+1;}};int main(){R r{3};return r.f(1)+R{3}.f(1);}',
+        'scalar-parameter': 'struct R{template<int N>int f(){return N;}};int main(){R r;return r.f<3>();}',
+        'type-default': 'struct R{template<class T=int>T f(T n=T(3)){return n;}};int main(){R r;return r.f();}',
+        'scalar-default': 'struct R{template<class T,int N=sizeof(T)>int f(){return N;}};int main(){R r;return r.f<int>();}',
+        'auto-parameter': 'struct R{template<auto N>int f(){return int(N);}};int main(){R r;return r.f<3>()+r.f<true>();}',
+        'type-pack': 'struct R{template<class...T>int count(T...v){return sizeof...(v);}};int main(){R r;return r.count()+r.count(1,2LL,true);}',
+        'scalar-pack': 'struct R{template<int...N>int sum(){return (0+...+N);}};int main(){R r;return r.sum<>()+r.sum<1,2,3>();}',
+        'reference-result': 'struct R{int n;template<class T>T& get(T&v){return v;}};int main(){R r{3};r.get(r.n)=4;return r.n;}',
+        'array-deduction': 'struct R{template<class T,int N>int size(T(&)[N]){return N;}};int main(){R r;int a[3]{};return r.size(a);}',
+        'class-primary': 'template<class C>struct R{C n;template<class T>T add(T v){return v+n;}};int main(){R<int>r{3};return r.add(4);}',
+        'outer-scalar': 'template<int N>struct R{template<int M>int add(){return N+M;}};int main(){R<3>a;R<4>b;return a.add<2>()+b.add<2>();}',
+        'outer-dependent-parameter': 'template<class T>struct R{template<T N>int f(){return int(N);}};int main(){R<int>r;return r.f<3>();}',
+        'outer-dependent-default': 'template<class T>struct R{template<class U=T,int N=sizeof(U)>int f(){return N;}};int main(){R<int>r;return r.f<>();}',
+        'class-partial': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>int f(U n){return int(n)+sizeof(T);}};int main(){R<int*>r;return r.f(3);}',
+        'class-partial-reordered': 'template<class A,class B>struct R;template<class X,class Y>struct R<Y*,X>{template<class U>int f(U n){return int(n)+sizeof(X)+sizeof(Y);}};int main(){R<int*,long long>r;return r.f(3);}',
+        'class-full': 'template<class T>struct R;template<>struct R<int>{template<class U>U f(U n){return n;}};int main(){R<int>r;return r.f(3);}',
+        'out-of-line-ordinary': 'struct R{template<class T>T f(T n);};template<class T>T R::f(T n){return n;}int main(){R r;return r.f(3);}',
+        'out-of-line-class': 'template<class C>struct R{template<class T>T f(T n);};template<class C>template<class T>T R<C>::f(T n){return n;}int main(){R<int>r;return r.f(3);}',
+        'out-of-line-partial': 'template<class C>struct R;template<class C>struct R<C*>{template<class T>T f(T n);};template<class C>template<class T>T R<C*>::f(T n){return n;}int main(){R<int*>r;return r.f(3);}',
+        'member-recursion': 'template<int N>struct R{template<int M>int f(){if constexpr(M==0)return N;else return M+this->template f<M-1>();}};int main(){R<3>r;return r.f<2>();}',
+        'other-outer-instance': 'template<int N>struct R{template<int M>int f(){if constexpr(M==0)return N;else{R<N+1>r;return r.template f<M-1>();}}};int main(){R<3>r;return r.f<2>();}',
+        'unused-dependent-body': 'struct R{template<class T>int f(){return T::missing;}};int main(){R r;return 0;}',
+        'unused-floating-body': 'struct R{template<class T>int f(T){return int(1.0);}};int main(){R r;return 0;}',
+        'constructor': 'struct R{int n;template<class T>R(T v):n(v){}};int main(){R r(3);return r.n;}',
+        'class-constructor': 'template<class C>struct R{C n;template<class T>R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
+        'constructor-record-return': 'struct R{int n;template<class T>R(T v):n(v){}};R make(){return R(3);}int main(){R r=make();return r.n;}',
+        'constructor-cross-instance': 'template<class C>struct R{C n;R(C v):n(v){}template<class U>R(const R<U>&r):n(r.n){}};int main(){R<int>a(3);R<long long>b(a);return int(b.n);}',
+        'constructor-default-field': 'struct R{int n=4;int other;template<class T>R(T v):other(v){}};int main(){R r(3);return r.n+r.other;}',
+        'conversion-value': 'struct R{int n;template<class T>operator T()const{return T(n);}};int main(){R r{3};int n=r;return n;}',
+        'conversion-reference': 'struct R{int n;template<class T>operator T&(){return n;}};int main(){R r{3};int&n=r;n=4;return r.n;}',
+        'conversion-pointer': 'struct R{int n;template<class T>operator T*(){return &n;}};int main(){R r{3};int*p=r;return *p;}',
+        'conversion-explicit': 'struct R{int n;template<class T>explicit operator T()const{return T(n);}};int main(){R r{3};return static_cast<int>(r);}',
+        'call-operator': 'struct R{int n;template<class T>int operator()(T v){return n+int(v);}};int main(){R r{3};return r(4);}',
+        'subscript-operator': 'struct R{int a[2];template<class T>int&operator[](T i){return a[int(i)];}};int main(){R r{{3,4}};r[1]=5;return r[1];}',
+        'arithmetic-operator': 'struct R{int n;template<class T>int operator+(T v)const{return n+int(v);}};int main(){R r{3};return r+4;}',
+        'assignment-operator': 'struct R{int n;template<class T>R&operator=(T v){n=int(v);return *this;}};int main(){R r{3};r=4;return r.n;}',
+        'explicit-function-specialization': 'struct R{template<class T>T f(T n){return n;}};template<>int R::f<int>(int n){return n+1;}int main(){R r;return r.f(3);}',
+        'explicit-instantiation': 'struct R{template<class T>T f(T n){return n;}};extern template int R::f<int>(int);template int R::f<int>(int);int main(){R r;return r.f(3);}',
+        'specialized-member-primary': 'template<class C>struct R{template<class T>int f(T){return C::missing;}};template<>template<class T>int R<int>::f(T n){return int(n);}int main(){R<int>r;return r.f(3);}',
+        'specialized-partial-member-primary': 'template<class C>struct R;template<class C>struct R<C*>{template<class T>int f(T){return C::missing;}};template<>template<class T>int R<int*>::f(T n){return int(n);}int main(){R<int*>r;return r.f(3);}',
+        'alias-argument': 'template<class T>using I=T;struct R{template<class T>T f(T n){return n;}};int main(){R r;return r.f<I<int>>(3);}',
+        'variable-trait-argument': 'template<class T>constexpr int width=sizeof(T);struct R{template<int N>int f(){return N;}};int main(){R r;return r.f<width<int>>();}',
+        'specialized-default': 'template<class T>struct R{template<class U>int f(int n=sizeof(T));};template<>template<class U>int R<int>::f(int n){return n;}int main(){R<int>r;return r.f<bool>();}',
+        'specialized-default-unused': 'template<class T>struct R{template<class U>int f(int n=int(sizeof(double))+int(sizeof(T)));};template<>template<class U>int R<int>::f(int n){return n;}int main(){R<int>r;return r.f<bool>(3);}',
+        'constructor-copy-initialization': 'struct R{int n;template<class T>R(T v):n(v){}};int main(){R r=3;return r.n;}',
+        'constructor-implicit-argument': 'struct R{int n;template<class T>R(T v):n(v){}};int f(R r){return r.n;}int main(){return f(3);}',
+        'constructor-implicit-return': 'struct R{int n;template<class T>R(T v):n(v){}};R f(){return 3;}int main(){R r=f();return r.n;}',
+        'constructor-default-argument': 'struct R{int n;template<class T=int>R(int v=sizeof(T)):n(v){}};int main(){R r;return r.n;}',
+        'constructor-template-body-copy': 'struct R{int n;template<class T>R(T v):n(v){}};template<int N>int f(){R r=3;return r.n+N;}int main(){return f<2>();}',
+        'constructor-template-body-default': 'struct R{int n;template<class T=int>R(int v=3):n(v){}};template<int N>int f(){R r;return r.n+N;}int main(){return f<2>();}',
+        'constructor-field-initialization': 'struct R{int n;template<class T>R(T v):n(v){}};struct H{R r;H():r(3){}};int main(){H h;return h.r.n;}',
+        'constructor-default-member-initialization': 'struct R{int n;template<class T>R(T v):n(v){}};struct H{R r=3;H(){}};int main(){H h;return h.r.n;}',
+        'constructor-over-copy': 'struct R{int n;R():n(1){}R(const R&r):n(r.n+10){}template<class T>R(T&r):n(r.n+2){}};int main(){R a;R b=a;return b.n;}',
+        'constructor-own-specialization': 'struct R{int n;template<class T>R(T v):n(v){}};template<>R::R(int v):n(v+1){}int main(){R r=3;return r.n;}',
+        'conversion-own-specialization': 'struct R{template<class T>operator T(){return T(1);}};template<>R::operator int(){return 3;}int main(){R r;return int(r);}',
+        'conversion-record-result': 'template<class T>struct V{T n;};struct R{int n;template<class T>operator V<T>()const{return {T(n)};}};int main(){R r{3};V<int>v=r;return v.n;}',
+        'conversion-reference-argument': 'struct R{int n;template<class T>operator T&(){return n;}};int f(int&n){n+=1;return n;}int main(){R r{3};return f(r);}',
+        'conversion-in-template-body': 'struct R{int n;template<class T>operator T()const{return T(n);}};template<int N>int f(){R r{3};int n=r;return n+N;}int main(){return f<2>();}',
+        'conversion-contextual': 'struct R{operator int()const{return 1;}template<class T>operator T(){return T(3);}};int main(){R r;switch(r){case 3:return 3;default:return 1;}}',
+        'conversion-bool-condition': 'struct R{template<class T>explicit operator T(){return T(1);}};int main(){R r;return r?3:1;}',
+        'out-of-line-conversion': 'struct R{int n;template<class T>operator T()const;};template<class T>R::operator T()const{return T(n);}int main(){R r{3};return int(r);}',
+        'out-of-line-constructor': 'struct R{int n;template<class T>R(T v);};template<class T>R::R(T v):n(v){}int main(){R r=3;return r.n;}',
+        'outer-pack': 'template<class...C>struct R{template<class...T>int f(T...v){return sizeof...(C)+sizeof...(v);}};int main(){R<int,bool>r;return r.f(1,2,3);}',
+        'outer-list-pack': 'template<class...C>struct R{template<class...T>int f(T...v);};template<class...C>template<class...T>int R<C...>::f(T...v){return sizeof...(C)+sizeof...(v);}int main(){R<int,bool>r;return r.f(1,2,3);}',
+        'non-type-empty-pack-source': 'template<class T>using I=decltype((sizeof(int),T{}));struct R{template<class T,I<T>...N>int f(){return sizeof...(N);}};int main(){R r;return r.f<int>();}',
+        'outer-member-decltype': 'template<class T>struct R{template<decltype(sizeof(T)) N>int f(){return int(N);}};int main(){R<int>r;return r.f<3>();}',
+        'static-instance-identity': 'template<int N>struct R{template<class T>static int&f(){static int v=N;return v;}};int main(){return (&R<3>::f<int>()==&R<3>::f<int>())+(&R<3>::f<int>()!=&R<3>::f<long long>())+(&R<3>::f<int>()!=&R<4>::f<int>());}',
+        'same-macro-location': '#define MEMBERS template<class T>int a(T){return 1;}template<class T>int b(T){return 2;}\nstruct R{MEMBERS};int main(){R r;return r.a(3)+r.b(3);}',
+        'hidden-unused-function-default': 'struct R{template<class T=int>int f(int n=int(sizeof(double))+int(sizeof(T))){return n;}};int main(){R r;return r.f<int>(3);}',
+        'hidden-unused-constructor-default': 'struct R{int n;template<class T=int>R(int v=int(sizeof(double))+int(sizeof(T))):n(v){}};int main(){R r(3);return r.n;}',
+        'noexcept-source': 'struct R{template<class T>int f(T n)noexcept(sizeof(T)>0){return int(n);}};int main(){R r;return r.f(3);}',
+        'repeated-extern-after-definition': 'struct R{template<class T>int f(T n){return int(n);}};extern template int R::f<int>(int);template int R::f<int>(int);extern template int R::f<int>(int);int main(){R r;return r.f(3);}',
+        'pack-64': 'struct R{template<int...N>int f(){return sizeof...(N);}};int main(){R r;return r.f<0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63>();}',
+        'promoted-1-member-template': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>U f(U n){return n;}};',
+        'promoted-2-member-template-pack': 'struct R{template<class...T>int f(T...v){return sizeof...(v);}};',
+        'promoted-3-member-template': 'struct R{template<class T>int operator()(T){return 1;}};',
+        'promoted-4-own-conversion-template': 'template<class T>struct R{template<class U>operator U(){return U();}};',
+        'promoted-5-member-template': 'template<class T>struct R{template<class U>U f(U v){return v;}};',
+        'promoted-6-member-template': 'template<class T>struct R{template<class U>U f(U n){return n;}};',
+        'promoted-7-member-template': 'struct R{template<int N>int f(){return N;}};int main(){R r;return r.f<3>();}',
+        'promoted-8-method-member-template': 'struct R{int n;template<class T>T get(T v){return v;}};',
+        'promoted-9-constructor-template-constructor': 'struct R{int n;template<class T> R(T v):n(v){}};',
+        'protocol-source': 'template<int N>struct R{\n int base;\n template<class T>static int&cell(){static int value=N;return value;}\n template<class T>int add(T v){return base+int(v)+N;}\n template<class T>int unused(T){return T::missing;}\n};\nint&first(){return R<3>::cell<int>();}\nint&again(){return R<1+2>::cell<int>();}\nint&inner(){return R<3>::cell<long long>();}\nint&outer(){return R<4>::cell<int>();}\nint addInt(R<3>&r,int n){return r.add(n);}\nint addLong(R<3>&r,long long n){return r.add(n);}\nint addOuter(R<4>&r,int n){return r.add(n);}\n',
+        'source-depth-64': 'struct R{template<int N>static constexpr int f(){return N;}};int main(){return R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}',
+        'own-primary-qualifier-unused': 'template<int N>struct R{template<class T>int f(T);};template<>template<class T>int R<(sizeof(int),3)>::f(T n){return int(n);}',
+        'own-primary-alias-qualifier-unused': 'template<class>using Ignore=int;template<class C>struct R{template<class T>int f(T);};template<>template<class T>int R<Ignore<int>>::f(T n){return int(n);}',
+        'own-primary-qualifier-used': 'template<int N>struct R{template<class T>int f(T);};template<>template<class T>int R<(sizeof(int),3)>::f(T n){return int(n);}int main(){R<3>r;return r.f(3);}',
+        'own-primary-alias-qualifier-used': 'template<class>using Ignore=int;template<class C>struct R{template<class T>int f(T);};template<>template<class T>int R<Ignore<int>>::f(T n){return int(n);}int main(){R<int>r;return r.f(3);}',
+    }
+    for name, source in member_templates_positive.items():
+        check("v2-member-templates-positive-" + name, source, None, profile="cpp-core-v2")
+
+    member_templates_reject = {
+        'used-floating-body': 'struct R{template<class T>int f(T){return int(1.0);}};int main(){R r;return r.f(3);}',
+        'hidden-written-argument': 'template<class>using I=int;struct R{template<class T>int f(){return 3;}};int main(){R r;return r.f<I<double>>();}',
+        'hidden-selected-default': 'template<class>using I=int;struct R{template<class T=I<double>>int f(){return 3;}};int main(){R r;return r.f();}',
+        'hidden-parameter-type': 'template<class T>using I=decltype((sizeof(double),T{}));struct R{template<class T,I<T> N>int f(){return N;}};int main(){R r;return r.f<int,3>();}',
+        'constructor-hidden-initializer': 'struct R{int n;template<class T>R(T v):n(int(1.0)+int(v)){}};int main(){R r(3);return r.n;}',
+        'conversion-hidden-body': 'struct R{template<class T>operator T(){return T(int(1.0));}};int main(){R r;return static_cast<int>(r);}',
+        'own-specialized-hidden-body': 'template<class C>struct R{template<class T>int f(T){return 3;}};template<>template<class T>int R<int>::f(T n){return int(1.0)+int(n);}int main(){R<int>r;return r.f(3);}',
+        'member-function-pointer': 'struct R{template<class T>int f(T){return 3;}};int main(){auto p=&R::f<int>;R r;return (r.*p)(3);}',
+        'static-function-pointer': 'struct R{template<class T>static int f(T){return 3;}};int main(){auto p=&R::f<int>;return p(3);}',
+        'volatile-member': 'struct R{template<class T>int f(T)volatile{return 3;}};int main(){R r;return r.f(3);}',
+        'specialized-default-hidden': 'template<class T>struct R{template<class U>int f(int n=int(sizeof(double))+int(sizeof(T)));};template<>template<class U>int R<int>::f(int n){return n;}int main(){R<int>r;return r.f<bool>();}',
+        'hidden-function-default': 'struct R{template<class T=int>int f(int n=int(sizeof(double))+int(sizeof(T))){return n;}};int main(){R r;return r.f<int>();}',
+        'hidden-constructor-default': 'struct R{int n;template<class T=int>R(int v=int(sizeof(double))+int(sizeof(T))):n(v){}};int main(){R r;return r.n;}',
+        'hidden-template-body-constructor-default': 'struct R{int n;template<class T=int>R(int v=int(sizeof(double))+int(sizeof(T))):n(v){}};template<int N>int f(){R r;return r.n+N;}int main(){return f<2>();}',
+        'hidden-template-body-conversion': 'struct R{template<class T>operator T(){return T(int(sizeof(double)));}};template<int N>int f(){R r;int n=r;return n+N;}int main(){return f<2>();}',
+        'hidden-default-member-constructor': 'struct R{int n;template<class T=int>R(int v=int(sizeof(double))+int(sizeof(T))):n(v){}};struct H{R r;H(){}};int main(){H h;return h.r.n;}',
+        'hidden-noexcept-source': 'struct R{template<class T>int f(T n)noexcept((sizeof(double),sizeof(T)>0)){return int(n);}};int main(){R r;return r.f(3);}',
+        'hidden-empty-pack-type': 'template<class T>using I=decltype((sizeof(double),T{}));struct R{template<class T,I<T>...N>int f(){return sizeof...(N);}};int main(){R r;return r.f<int>();}',
+        'hidden-out-of-line-outer-list': 'template<class T,int N>struct R{template<class U>int f(U);};template<class T,decltype((sizeof(double),int{}))N>template<class U>int R<T,N>::f(U n){return int(n);}int main(){R<int,3>r;return r.f(3);}',
+        'hidden-no-effect-directive': 'template<class>using I=int;struct R{template<class T>int f(T n){return int(n);}};template int R::f<int>(int);extern template int R::f<I<double>>(int);int main(){R r;return r.f(3);}',
+        'template-template-parameter': 'struct R{template<template<class>class C>int f(){return 1;}};',
+        'pack-65': 'struct R{template<int...N>int f(){return sizeof...(N);}};int main(){R r;return r.f<0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64>();}',
+        'source-depth-65': 'struct R{template<int N>static constexpr int f(){return N;}};int main(){return R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}',
+        'own-primary-qualifier-unused': 'template<int N>struct R{template<class T>int f(T);};template<>template<class T>int R<(sizeof(double),3)>::f(T n){return int(n);}',
+        'own-primary-alias-qualifier-unused': 'template<class>using Ignore=int;template<class C>struct R{template<class T>int f(T);};template<>template<class T>int R<Ignore<double>>::f(T n){return int(n);}',
+        'own-primary-qualifier-used': 'template<int N>struct R{template<class T>int f(T);};template<>template<class T>int R<(sizeof(double),3)>::f(T n){return int(n);}int main(){R<3>r;return r.f(3);}',
+        'own-primary-alias-qualifier-used': 'template<class>using Ignore=int;template<class C>struct R{template<class T>int f(T);};template<>template<class T>int R<Ignore<double>>::f(T n){return int(n);}int main(){R<int>r;return r.f(3);}',
+    }
+    for name, source in member_templates_reject.items():
+        check("v2-member-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    member_templates_invalid = {
+        'defaulted-constructor-template': 'template<class T>struct R{template<class U>R(U)=default;};',
+        'duplicate-instantiation': 'struct R{template<class T>int f(T){return 3;}};template int R::f<int>(int);template int R::f<int>(int);',
+        'invalid-default': 'struct R{template<int N=1.0>int f(){return N;}};int main(){R r;return r.f();}',
+        'no-matching-overload': 'struct R{template<class T>int f(T*){return 3;}};int main(){R r;return r.f(3);}',
+        'selected-invalid-body': 'struct R{template<class T>int f(T){return T::missing;}};int main(){R r;return r.f(3);}',
+        'private-member': 'class R{template<class T>int f(T){return 3;}};int main(){R r;return r.f(3);}',
+        'const-to-mutable': 'struct R{template<class T>int f(T){return 3;}};int main(){const R r;return r.f(3);}',
+        'explicit-constructor-implicit': 'struct R{int n;template<class T>explicit R(T n):n(n){}};int f(R r){return r.n;}int main(){return f(3);}',
+        'explicit-conversion-implicit': 'struct R{template<class T>explicit operator T(){return T(3);}};int main(){R r;int n=r;return n;}',
+        'local-member-template': 'int main(){struct R{template<class T>int f(T){return 3;}};R r;return r.f(3);}',
+        'virtual-template': 'struct R{template<class T>virtual int f(T){return 1;}};',
+        'late-specialization': 'struct R{template<class T>int f(T n){return int(n);}};int main(){R r;return r.f(3);}template<>int R::f<int>(int n){return n+1;}',
+        'invalid-member-specialization-default': 'template<class T>struct R{template<class U>int f(U);};template<>template<class U>int R<int>::f(U n=U(3)){return int(n);}',
+    }
+    for name, source in member_templates_invalid.items():
+        check("v2-member-templates-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    member_templates_missing = {
+        'required-method': 'struct R{template<class T>int f(T);};int main(){R r;return r.f(3);}',
+        'required-constructor': 'struct R{template<class T>R(T);};int main(){R r(3);return 0;}',
+        'required-conversion': 'struct R{template<class T>operator T();};int main(){R r;return static_cast<int>(r);}',
+        'required-member-specialization': 'struct R{template<class T>int f(T){return 3;}};template<>int R::f<int>(int);int main(){R r;return r.f(3);}',
+        'unevaluated-required-method': 'struct R{template<class T>int f(T);};int main(){R r;decltype(r.f(3))n=0;return n;}',
+        'missing-explicit-instantiation': 'struct R{template<class T>int f(T);};extern template int R::f<int>(int);int main(){R r;return r.f(3);}',
+    }
+    for name, source in member_templates_missing.items():
+        check("v2-member-templates-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    check("v1-member-function-templates", "struct R{template<class T>int f(T n){return int(n);}};int main(){R r;return r.f(3);}", "TR0201")
+    member_template_source = member_templates_positive["protocol-source"]
+    member_templates = check("v2-member-templates-protocol", member_template_source,
+                             profile="cpp-core-v2")
+    mt_functions = {f["name"]: f for f in member_templates["functions"]}
+    mt_records = {r["id"]: r for r in member_templates["records"]}
+    mt_globals = {g["name"]: g for g in member_templates["globals"]}
+    assert len(mt_functions) == len(member_templates["functions"]) == 13
+    assert len(mt_records) == len(member_templates["records"]) == 2
+    assert len(mt_globals) == len(member_templates["globals"]) == 3
+
+    def mt_line(prefix):
+        lines = [i for i, line in enumerate(member_template_source.splitlines(), 1)
+                 if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def mt_function(prefix):
+        found = [f for f in mt_functions.values() if f["loc"]["line"] == mt_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def mt_selected(prefix):
+        caller = mt_function(prefix)
+        calls = gc_calls(caller)
+        assert len(calls) == 1, (prefix, calls)
+        return mt_functions[calls[0]["callee"]]
+
+    assert mt_selected("int&first(")["name"] == mt_selected("int&again(")["name"]
+    storage = []
+    selected_cells = []
+    for prefix in ("int&first(", "int&inner(", "int&outer("):
+        function = mt_selected(prefix)
+        selected_cells.append(function["name"])
+        assert function["result"] == "ptr:int" and not function["params"], function
+        assert function["loc"]["line"] == mt_line(" template<class T>static int&cell(")
+        references = {n["name"] for n in walk(function["body"])
+                      if n.get("kind") == "var" and n["name"] in mt_globals}
+        assert len(references) == 1, (function, references)
+        storage.append(mt_globals[next(iter(references))])
+    assert len(set(selected_cells)) == len({g["name"] for g in storage}) == 3
+    assert [int(g["value"]["value"]) for g in storage] == [3, 3, 4]
+    assert all(g["type"] == "int" and g["mutable"]
+               and g["value"]["kind"] == "literal" for g in storage)
+    selected_adds = []
+    receivers = []
+    for prefix, scalar in (("int addInt(", "int"), ("int addLong(", "i64"),
+                            ("int addOuter(", "int")):
+        caller = mt_function(prefix)
+        selected = mt_selected(prefix)
+        selected_adds.append(selected["name"])
+        receiver = caller["params"][0]["type"]
+        receivers.append(receiver)
+        assert receiver.startswith("ptr:") and receiver[4:] in mt_records
+        record = mt_records[receiver[4:]]
+        assert [f["type"] for f in record["fields"]] == ["int"], record
+        assert selected["result"] == "int"
+        assert [p["type"] for p in selected["params"]] == [receiver, scalar], selected
+        assert selected["loc"]["line"] == mt_line(" template<class T>int add(")
+        call = gc_calls(caller)[0]
+        assert np_pointer(caller, call["args"][0]) == ("parameter", caller["params"][0]["name"])
+        assert gc_identity(caller, call["args"][1]) == ("parameter", caller["params"][1]["name"])
+        members = [n for n in walk(selected["body"]) if n.get("kind") == "member"]
+        assert members and all(n["name"] == record["fields"][0]["name"] for n in members)
+    assert len(set(selected_adds)) == 3
+    assert receivers[0] == receivers[1] and receivers[0] != receivers[2]
+    assert all(f["loc"]["line"] != mt_line(" template<class T>int unused(")
+               for f in mt_functions.values())
+    for function in mt_functions.values():
+        variables = set(mt_globals) | {p["name"] for p in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in variables, node
+            if node.get("op") == "call":
+                assert node["callee"] in mt_functions, node
+    with tempfile.TemporaryDirectory(prefix="neverc-member-templates-relocated-") as temp:
+        relocated = check("member-templates-relocated", member_template_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == member_templates, "member identity depends on the absolute root"
+
+    member_template_budget_source = 'struct R{template<int...N>static constexpr int count(){return sizeof...(N);}};\n' + 'static_assert(R::count<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>() == 64);\n' * 1024
+    check("v2-member-function-template-source-budget", member_template_budget_source, "TR0201", profile="cpp-core-v2")
+
+    member_aliases_positive = {
+        'ordinary': 'struct R{template<class T>using I=T;};int main(){R::I<int> n=3;return n;}',
+        'unused-ordinary': 'struct R{template<class T>using I=T;};',
+        'private-inside': 'class R{template<class T>using I=T;public:I<int> f(){return 3;}};int main(){R r;return r.f();}',
+        'namespace-qualified': 'namespace n{struct R{template<class T>using I=T;};}int main(){n::R::I<int> n=3;return n;}',
+        'namespace-owner-alias': 'namespace n{struct R{template<class T>using I=T;};}namespace a=n;int main(){a::R::I<int> n=3;return n;}',
+        'primary-inner': 'template<class T>struct R{template<class U>using I=U;};int main(){R<int>::I<bool> n=true;return n;}',
+        'primary-outer': 'template<class T>struct R{template<class U>using I=T;};int main(){R<int>::I<bool> n=3;return n;}',
+        'partial-outer': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>using I=T;};int main(){R<int*>::I<bool> n=3;return n;}',
+        'partial-reordered': 'template<class A,class B>struct R;template<class X,class Y>struct R<Y*,X>{template<class U>using I=X;};int main(){R<bool*,int>::I<long long> n=3;return n;}',
+        'full-class': 'template<class T>struct R;template<>struct R<int>{template<class U>using I=U;};int main(){R<int>::I<bool> n=true;return n;}',
+        'distinct-outer': 'template<class T>struct R{template<class U>using I=T;};static_assert(sizeof(R<int>::I<bool>)==sizeof(int));static_assert(sizeof(R<long long>::I<bool>)==sizeof(long long));',
+        'dependent-lookup': 'template<class T>struct R{template<class U>using I=U;};template<class C>int f(){typename C::template I<int> n=3;return n;}int main(){return f<R<bool>>();}',
+        'member-function-use': 'template<class T>struct R{template<class U>using I=U;template<class U>I<U> f(U n){return n;}};int main(){R<bool> r;return r.f(3);}',
+        'inside-field': 'struct R{template<class T>using I=T;I<int> n;};int main(){R r{3};return r.n;}',
+        'inside-parameter-result': 'struct R{template<class T>using I=T;I<int> f(I<int> n){return n;}};int main(){R r;return r.f(3);}',
+        'chain-member': 'struct R{template<class T>using I=T;template<class T>using P=I<T>*;};int main(){int n=3;R::P<int> p=&n;return *p;}',
+        'chain-namespace': 'template<class T>using I=T;struct R{template<class T>using A=I<T>;};template<class T>using B=R::A<T>;int main(){B<int> n=3;return n;}',
+        'cross-member': 'struct A{template<class T>using I=T;};struct B{template<class T>using I=A::I<T>;};int main(){B::I<int> n=3;return n;}',
+        'record-result': 'struct V{int n;};struct R{template<class T>using I=T;};int main(){R::I<V> v{3};return v.n;}',
+        'const-pointer': 'struct R{template<class T>using I=const T*;};int main(){int n=3;R::I<int> p=&n;return *p;}',
+        'lvalue-reference': 'struct R{template<class T>using I=T&;};int main(){int n=3;R::I<int> ref=n;ref=4;return n;}',
+        'rvalue-reference': 'struct R{template<class T>using I=T&&;};int main(){int n=3;R::I<int> ref=static_cast<int&&>(n);ref=4;return n;}',
+        'void-result': 'struct R{template<class T>using I=void;};R::I<int> f(){return;}int main(){f();return 0;}',
+        'array-inner': 'struct R{template<int N>using A=int[N];};int main(){R::A<2> a{1,2};return a[1];}',
+        'array-outer-inner': 'template<int N>struct R{template<int M>using A=int[N+M];};int main(){R<2>::A<1> a{1,2,3};return a[2];}',
+        'outer-default-type': 'template<class T>struct R{template<class U=T>using I=U;};int main(){R<int>::I<> n=3;return n;}',
+        'inner-default-type': 'struct R{template<class T,class U=T>using I=U;};int main(){R::I<int> n=3;return n;}',
+        'inner-default-value': 'struct R{template<int N,int M=N+1>using A=int[M];};int main(){R::A<2> a{1,2,3};return a[2];}',
+        'outer-default-value': 'template<int N>struct R{template<int M=N>using A=int[M];};int main(){R<2>::A<> a{1,2};return a[1];}',
+        'scalar-type-default': 'struct R{template<class T,T N=3>using A=int[N];};int main(){R::A<int> a{1,2,3};return a[2];}',
+        'auto-argument': 'struct R{template<auto N>using A=int[N];};int main(){R::A<2u> a{1,2};return a[1];}',
+        'enum-argument': 'enum class E:int{two=2};struct R{template<E N>using A=int[static_cast<int>(N)];};int main(){R::A<E::two> a{1,2};return a[1];}',
+        'inner-type-pack-empty': 'struct R{template<class...T>using A=int[1+sizeof...(T)];};int main(){R::A<> a{3};return a[0];}',
+        'inner-type-pack-many': 'struct R{template<class...T>using A=int[1+sizeof...(T)];};int main(){R::A<int,bool> a{1,2,3};return a[2];}',
+        'inner-value-pack': 'struct R{template<int...N>using A=int[1+sizeof...(N)];};int main(){R::A<2,4> a{1,2,3};return a[2];}',
+        'outer-inner-packs': 'template<class...A>struct R{template<class...B>using I=int[1+sizeof...(A)+sizeof...(B)];};int main(){R<int,bool>::I<long long> a{1,2,3,4};return a[3];}',
+        'nttp-type-source': 'struct R{template<class T>using I=decltype(T{});};template<class T,R::I<T> N=3>int f(){return N;}int main(){return f<int>();}',
+        'trait-variable-type': 'struct R{template<class T>using I=T;};template<class T>R::I<T> value=3;int main(){return value<int>;}',
+        'class-argument': 'struct R{template<class T>using I=T;};template<class T>struct V{T n;};int main(){V<R::I<int>> v{3};return v.n;}',
+        'lazy-unused-dependent': 'struct R{template<class T>using I=typename T::missing;};int main(){return 0;}',
+        'lazy-copied-dependent': 'template<class T>struct R{template<class U>using I=typename U::missing;int n;};int main(){R<int> r{3};return r.n;}',
+        'unselected-partial': 'template<class T>struct R{int n;};template<class T>struct R<T*>{template<class U>using I=decltype((sizeof(double),U{}));int n;};int main(){R<int> r{3};return r.n;}',
+        'declared-in-primary-only': 'template<class T>struct R{template<class U>using I=U;};',
+        'inner-type-pack-64': 'struct R{template<class...T>using I=int[sizeof...(T)];};static_assert(sizeof(R::I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>)==64*sizeof(int));',
+        'outer-type-nttp': 'template<class T>struct R{template<T N>using A=int[N];};int main(){R<int>::A<2> a{1,2};return a[1];}',
+        'inner-decltype-nttp': 'struct R{template<class T,decltype(T{}) N=3>using A=int[N];};int main(){R::A<int> a{1,2,3};return a[2];}',
+        'unused-nondependent-supported': 'struct R{template<class T>using I=int;};',
+        'outer-substituted-supported-unused': 'template<class T>struct R{template<class U>using I=decltype((sizeof(T),int{}));int n;};int main(){R<int> r{3};return r.n;}',
+        'private-alias-inside-template': 'template<class T>class R{template<class U>using I=U;public:I<T> f(){return T(3);}};int main(){R<int> r;return r.f();}',
+        'inner-auto-pack-empty': 'struct R{template<auto...N>using A=int[1+sizeof...(N)];};int main(){R::A<> a{3};return a[0];}',
+        'inner-auto-pack-mixed': 'struct R{template<auto...N>using A=int[1+sizeof...(N)];};int main(){R::A<true,2u> a{1,2,3};return a[2];}',
+        'source-depth-64': 'struct R{template<int N>using I=int;};int main(){return sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<0>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>);}',
+        'promoted-member_templates_reject': 'struct R{template<class T>using I=T;};int main(){R::I<int>n=3;return n;}',
+        'promoted-class_partials_reject': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>using A=U;};',
+        'promoted-alias_templates_reject': 'struct R{template<class T>using I=T;};',
+        'protocol-source': 'struct Aliases {\n template<class T>using I=T;\n template<class T>using Ref=T&;\n};\ntemplate<class T>struct Outer {template<class U>using I=T;};\nstruct Data{int value;};\nAliases::I<int> scalar(Aliases::I<int> value){return value;}\nOuter<int>::I<bool> narrow(Outer<int>::I<bool> value){return value;}\nOuter<long long>::I<bool> wide(Outer<long long>::I<bool> value){return value;}\nAliases::Ref<int> reference(Aliases::Ref<int> value){return value;}\nint data(Aliases::Ref<Data> value){return value.value;}\n',
+    }
+    for name, source in member_aliases_positive.items():
+        check("v2-member-aliases-positive-" + name, source, None, profile="cpp-core-v2")
+
+    member_aliases_reject = {
+        'unused-nondependent-floating': 'struct R{template<class T>using I=double;};',
+        'hidden-inner-argument': 'struct R{template<int N>using I=int;};int main(){R::I<sizeof(double)> n=3;return n;}',
+        'hidden-outer-argument': 'template<int N>struct R{template<class T>using I=T;};int main(){R<sizeof(double)>::I<int> n=3;return n;}',
+        'hidden-underlying': 'struct R{template<class T>using I=decltype((sizeof(double),T{}));};int main(){R::I<int> n=3;return n;}',
+        'hidden-array-bound': 'struct R{template<int N>using A=int[(sizeof(double),N)];};int main(){R::A<2> a{1,2};return a[1];}',
+        'hidden-selected-default': 'struct R{template<class T,class U=decltype((sizeof(double),T{}))>using I=U;};int main(){R::I<int> n=3;return n;}',
+        'hidden-outer-copied-unused': 'template<class T>struct R{template<class U>using I=decltype((sizeof(double),T{}));int n;};int main(){R<int> r{3};return r.n;}',
+        'hidden-nttp-type': 'struct R{template<class T,decltype((sizeof(double),T{})) N=3>using I=int;};int main(){R::I<int> n=3;return n;}',
+        'floating-argument': 'struct R{template<class T>using I=int;};int main(){R::I<double> n=3;return n;}',
+        'function-pointer': 'struct R{template<class T>using I=T(*)();};int f(){return 3;}int main(){R::I<int> p=&f;return p();}',
+        'member-pointer': 'struct V{int n;};struct R{template<class T>using I=T V::*;};int main(){R::I<int> p=&V::n;V v{3};return v.*p;}',
+        'volatile': 'struct R{template<class T>using I=volatile T;};int main(){R::I<int> n=3;return n;}',
+        'union-owner': 'union R{template<class T>using I=T;int n;};int main(){R::I<int> n=3;return n;}',
+        'template-template-parameter': 'struct R{template<template<class>class T>using I=T<int>;};template<class T>struct V{T n;};int main(){R::I<V> v{3};return v.n;}',
+        'alias-attribute': 'struct R{template<class T>using I [[deprecated]]=T;};int main(){R::I<int> n=3;return n;}',
+        'inner-type-pack-65': 'struct R{template<class...T>using I=int;};int main(){R::I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int> n=3;return n;}',
+        'source-depth-65': 'struct R{template<int N>using I=int;};int main(){return sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<0>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>);}',
+        'unused-nondependent-default': 'struct R{template<class T=double>using I=int;};',
+        'outer-substituted-hidden-default': 'template<class T>struct R{template<class U=decltype((sizeof(double),T{}))>using I=U;int n;};int main(){R<int> r{3};return r.n;}',
+    }
+    for name, source in member_aliases_reject.items():
+        check("v2-member-aliases-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    member_aliases_invalid = {
+        'private-access': 'class R{template<class T>using I=T;};int main(){R::I<int> n=3;return n;}',
+        'full-alias-specialization': 'struct R{template<class T>using I=T;};template<>using R::I<int>=bool;',
+        'partial-alias-specialization': 'struct R{template<class T>using I=T;};template<class T>using R::I<T*>=T;',
+        'duplicate-alias-member': 'struct R{template<class T>using I=T;template<class T>using I=T*;};',
+        'local-class': 'int main(){struct R{template<class T>using I=T;};return 0;}',
+        'cyclic-alias': 'struct R{template<class T>using I=I<T>;};',
+        'missing-dependent-name': 'struct R{template<class T>using I=typename T::missing;};int main(){R::I<int> n=3;return n;}',
+        'default-order': 'struct R{template<class T=int,class U>using I=U;};',
+    }
+    for name, source in member_aliases_invalid.items():
+        check("v2-member-aliases-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    member_aliases_missing = {
+        'unevaluated-required-definition': 'template<class T>int f();struct R{template<class T>using I=decltype(f<T>());};int main(){R::I<int> n=3;return n;}',
+    }
+    for name, source in member_aliases_missing.items():
+        check("v2-member-aliases-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    check("v1-member-aliases", "struct R{template<class T>using I=T;};", "TR0201")
+    member_alias_source = member_aliases_positive["protocol-source"]
+    member_aliases = check("v2-member-aliases-protocol", member_alias_source, profile="cpp-core-v2")
+    assert not member_aliases["globals"]
+    ma_functions = {function["name"]: function for function in member_aliases["functions"]}
+    assert len(ma_functions) == len(member_aliases["functions"]) == 5
+    ma_records = {record["id"]: record for record in member_aliases["records"]}
+    assert len(ma_records) == len(member_aliases["records"]) == 4
+    ma_data_records = [record for record in ma_records.values() if record["fields"]]
+    assert len(ma_data_records) == 1
+    ma_record = ma_data_records[0]
+    assert len(ma_record["fields"]) == 1 and ma_record["fields"][0]["type"] == "int"
+
+    def ma_line(prefix):
+        matches = [i for i, line in enumerate(member_alias_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(matches) == 1, prefix
+        return matches[0]
+
+    for prefix, kind in (("Aliases::I<int> scalar", "int"), ("Outer<int>::I<bool> narrow", "int"),
+                         ("Outer<long long>::I<bool> wide", "i64"),
+                         ("Aliases::Ref<int> reference", "ptr:int")):
+        matches = [function for function in ma_functions.values() if function["loc"]["line"] == ma_line(prefix)]
+        assert len(matches) == 1, (prefix, matches)
+        function = matches[0]
+        assert function["result"] == kind and len(function["params"]) == 1
+        assert function["params"][0]["type"] == kind, function
+    ma_data = [function for function in ma_functions.values() if function["loc"]["line"] == ma_line("int data(")]
+    assert len(ma_data) == 1 and ma_data[0]["result"] == "int" and len(ma_data[0]["params"]) == 1
+    assert ma_data[0]["params"][0]["type"] == "ptr:" + ma_record["id"]
+    for function in ma_functions.values():
+        values = {value["name"] for value in function["params"]} | {value["name"] for value in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in ma_functions, node
+    with tempfile.TemporaryDirectory(prefix="neverc-member-aliases-relocated-") as temp:
+        relocated = check("v2-member-aliases-relocated", member_alias_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == member_aliases, "member alias translation depends on the absolute root"
+
+    member_alias_budget_source = 'struct R{template<int...N>using I=int;};\n' + 'static_assert(sizeof(R::I<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>)==sizeof(int));\n' * 1024
+    check("v2-member-alias-source-budget", member_alias_budget_source, "TR0201", profile="cpp-core-v2")
+
     variable_source_repairs_positive = {
         'qualified-source-depth-64': 'namespace values{template<int N>constexpr int value=N;}namespace alias=values;int main(){return alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<alias::value<3>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>-3;}',
         'nested-selected-default': 'template<int N,int M=N+1>constexpr int value=M;static_assert(value<value<1>> == 3);',
@@ -6737,6 +7123,653 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     }
     for name, source in variable_source_repairs_reject.items():
         check("v2-variable-source-repair-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    member_variables_positive = {
+        'unused': 'struct R{template<class T>static int n;};',
+        'inline': 'struct R{template<class T>inline static int n=3;};int main(){return R::n<int>;}',
+        'zero': 'struct R{template<class T>static int n;};template<class T>int R::n;int main(){return R::n<int>;}',
+        'out-of-line': 'struct R{template<class T>static int n;};template<class T>int R::n=3;int main(){return R::n<int>;}',
+        'primary-class': 'template<int N>struct R{template<class T>inline static int n=N;};int main(){return R<3>::n<int>;}',
+        'primary-out-of-line': 'template<int N>struct R{template<class T>static int n;};template<int N>template<class T>int R<N>::n=N;int main(){return R<3>::n<int>;}',
+        'class-partial': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>inline static int n=sizeof(T);};int main(){return R<int*>::n<bool>;}',
+        'class-partial-out-of-line': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>static int n;};template<class T>template<class U>int R<T*>::n=sizeof(T);int main(){return R<int*>::n<bool>;}',
+        'class-partial-reordered': 'template<class A,class B>struct R;template<class X,class Y>struct R<Y*,X>{template<class U>inline static int n=sizeof(X);};int main(){return R<bool*,int>::n<long long>;}',
+        'class-full': 'template<class T>struct R;template<>struct R<int>{template<class U>inline static int n=3;};int main(){return R<int>::n<bool>;}',
+        'inner-partial': 'struct R{template<class T>inline static int n=1;};template<class T>inline int R::n<T*> = 3;int main(){return R::n<int>+R::n<int*>;}',
+        'inner-partial-in-class': 'struct R{template<class T>inline static int n=1;template<class T>inline static int n<T*> = 3;};int main(){return R::n<int*>;}',
+        'inner-partial-class': 'template<int N>struct R{template<class T>inline static int n=N;template<class T>inline static int n<T*> = N+1;};int main(){return R<3>::n<int*>;}',
+        'inner-partial-out-of-line-class': 'template<int N>struct R{template<class T>inline static int n=N;};template<int N>template<class T>inline int R<N>::n<T*> = N+1;int main(){return R<3>::n<int*>;}',
+        'inner-full': 'struct R{template<class T>inline static int n=1;};template<>inline int R::n<int> = 3;int main(){return R::n<int>+R::n<bool>;}',
+        'inner-full-class': 'template<int N>struct R{template<class T>inline static int n=N;};template<>template<>inline int R<3>::n<int> = 7;int main(){return R<3>::n<int>+R<3>::n<bool>;}',
+        'member-primary-specialization': 'template<int N>struct R{template<class T>static int n;};template<int N>template<class T>int R<N>::n=N;template<>template<class T>int R<3>::n=7;int main(){return R<3>::n<int>+R<4>::n<int>;}',
+        'member-partial-specialization': 'template<int N>struct R{template<class T>inline static int n=N;template<class T>inline static int n<T*> = N+1;};template<>template<class T>inline int R<3>::n<T*> = 7;int main(){return R<3>::n<int*>+R<4>::n<int*>;}',
+        'constexpr': 'struct R{template<class T>static constexpr int n=sizeof(T);};static_assert(R::n<int> == sizeof(int));',
+        'non-inline-const-value': 'struct R{template<class T>static const int n=3;};int main(){return R::n<int>;}',
+        'non-inline-const-discard': 'struct R{template<class T>static const int n=3;};int main(){R::n<int>;return 0;}',
+        'non-inline-const-definition': 'struct R{template<class T>static const int n=3;};template<class T>const int R::n;int main(){const int*p=&R::n<int>;return *p;}',
+        'non-inline-const-class-definition': 'template<int N>struct R{template<class T>static const int n=N;};template<int N>template<class T>const int R<N>::n;int main(){const int*p=&R<3>::n<int>;return *p;}',
+        'auto': 'struct R{template<class T>inline static auto n=T(3);};int main(){return R::n<int>;}',
+        'const-auto': 'struct R{template<class T>static constexpr auto n=T(3);};int main(){return R::n<int>;}',
+        'enum': 'enum class E:int{three=3};struct R{template<class T>static constexpr E n=E::three;};int main(){return static_cast<int>(R::n<int>);}',
+        'bool': 'struct R{template<class A,class B>static constexpr bool same=false;template<class T>static constexpr bool same<T,T> = true;};static_assert(R::same<int,int>&&!R::same<int,bool>);',
+        'value-default': 'struct R{template<int N=3>inline static int n=N;};int main(){return R::n<>;}',
+        'outer-value-default': 'template<int N>struct R{template<int M=N>inline static int n=M;};int main(){return R<3>::n<>;}',
+        'outer-type-default': 'template<class T>struct R{template<class U=T>inline static int n=sizeof(U);};int main(){return R<int>::n<>;}',
+        'earlier-default': 'struct R{template<class T,int N=sizeof(T)>inline static int n=N;};int main(){return R::n<int>;}',
+        'inner-value-type': 'struct R{template<class T,T N=3>inline static T n=N;};int main(){return R::n<int>;}',
+        'outer-value-type': 'template<class T>struct R{template<T N=3>inline static T n=N;};int main(){return R<int>::n<>;}',
+        'member-alias-result': 'struct R{template<class T>using I=T;template<class T>inline static I<T> n=3;};int main(){return R::n<int>;}',
+        'member-alias-parameter': 'struct R{template<class T>using I=decltype(T{});template<class T,I<T> N=3>inline static int n=N;};int main(){return R::n<int>;}',
+        'inner-type-pack-empty': 'struct R{template<class...T>static constexpr int n=sizeof...(T);};static_assert(R::n<> == 0);',
+        'inner-type-pack-many': 'struct R{template<class...T>static constexpr int n=sizeof...(T);};static_assert(R::n<int,bool> == 2);',
+        'inner-value-pack': 'struct R{template<int...N>static constexpr int n=(0+...+N);};static_assert(R::n<> == 0&&R::n<1,2,3> == 6);',
+        'inner-value-pack-count': 'struct R{template<int...N>static constexpr int n=sizeof...(N);};static_assert(R::n<1,2,3> == 3);',
+        'outer-inner-packs': 'template<class...A>struct R{template<class...B>static constexpr int n=sizeof...(A)+sizeof...(B);};static_assert(R<int>::n<bool,long long> == 3);',
+        'outer-scalar-packs': 'template<int...A>struct R{template<int...B>static constexpr int n=(0+...+A)+(0+...+B);};static_assert(R<1,2>::n<3,4> == 10);',
+        'auto-mixed-pack': 'enum class E:int{one=1};struct R{template<auto...N>static constexpr int n=sizeof...(N);};static_assert(R::n<true,2,E::one> == 3);',
+        'partial-pack': 'struct R{template<class...T>static constexpr int n=0;template<class T,class...U>static constexpr int n<T*,U...> = 1+sizeof...(U);};static_assert(R::n<int*,bool> == 2);',
+        'partial-reordered': 'struct R{template<class A,class B>static constexpr int n=0;template<class X,class Y>static constexpr int n<Y*,X> = sizeof(X);};static_assert(R::n<bool*,int> == sizeof(int));',
+        'object-access': 'struct R{template<class T>inline static int n=3;};int main(){R r;r.n<int> = 4;return R::n<int>;}',
+        'pointer-access': 'struct R{template<class T>inline static int n=3;};int main(){R r;R*p=&r;p->n<int> = 4;return r.n<int>;}',
+        'object-side-effect': 'int effects=0;struct R{template<class T>inline static int n=3;};R&get(R&r){++effects;return r;}int main(){R r;int n=get(r).n<int>;return n+effects;}',
+        'implicit-this': 'struct R{template<class T>inline static int n=3;int f(){return n<int>;}};int main(){R r;return r.f();}',
+        'explicit-template-member': 'struct R{template<class T>inline static int n=3;};template<class C>int f(C&r){return r.template n<int>;}int main(){R r;return f(r);}',
+        'reference-result': 'struct R{template<class T>inline static int n=3;};int&f(){return R::n<int>;}int main(){f()=4;return R::n<int>;}',
+        'same-inner-identity': 'struct R{template<int N>inline static int n=N;};int main(){return &R::n<3> == &R::n<1+2>;}',
+        'distinct-outer-identity': 'template<int N>struct R{template<class T>inline static int n=N;};int main(){return &R<3>::n<int> != &R<4>::n<int>;}',
+        'distinct-inner-identity': 'struct R{template<class T>inline static int n=3;};int main(){return &R::n<int> != &R::n<bool>;}',
+        'fixed-type-unused-initializer': 'struct R{template<class T>inline static int n=T::missing;};static_assert(sizeof(R::n<int>)==sizeof(int));',
+        'explicit-instantiation': 'struct R{template<class T>inline static int n=3;};template int R::n<int>;',
+        'extern-then-definition': 'struct R{template<class T>inline static int n=3;};extern template int R::n<int>;template int R::n<int>;int main(){return R::n<int>;}',
+        'constexpr-function': 'constexpr int f(int n){return n+2;}struct R{template<int N>inline static int n=f(N);};int main(){return R::n<3>;}',
+        'private-inside': 'class R{template<class T>inline static int n=3;public:int f(){return n<int>;}};int main(){R r;return r.f();}',
+        'outer-private-inside': 'template<int N>class R{template<class T>inline static int n=N;public:int f(){return n<int>;}};int main(){R<3> r;return r.f();}',
+        'array-argument': 'struct R{template<class T>static constexpr int n=sizeof(T);};static_assert(R::n<int[2]> == 2*sizeof(int));',
+        'pack-64': 'struct R{template<int...N>static constexpr int n=sizeof...(N);};int main(){return R::n<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>;}',
+        'first-type-alias': 'template<class>using I=int;struct R{template<class T>static I<T> n;};template<class T>int R::n=3;int main(){return R::n<int>;}',
+        'definition-type-alias': 'template<class>using I=int;struct R{template<class T>static int n;};template<class T>I<T> R::n=3;int main(){return R::n<int>;}',
+        'partial-definition-type-alias': 'template<class>using I=int;struct R{template<class T>static int n;template<class T>static int n<T*>;};template<class T>I<T> R::n<T*> = 3;int main(){return R::n<int*>;}',
+        'unused-concrete-qualifier': 'template<int N>struct R{template<class T>static int n;};template<>template<class T>int R<(sizeof(int),3)>::n=1;',
+        'used-concrete-qualifier': 'template<int N>struct R{template<class T>static int n;};template<>template<class T>int R<(sizeof(int),3)>::n=1;int main(){return R<3>::n<int>;}',
+        'unused-concrete-alias-qualifier': 'template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<>template<class T>int R<I<bool>>::n=1;',
+        'used-concrete-alias-qualifier': 'template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<>template<class T>int R<I<bool>>::n=1;int main(){return R<int>::n<bool>;}',
+        'class-scope-full': 'struct R{template<class T>inline static int n=1;template<>inline int n<int> = 3;};int main(){return R::n<int>;}',
+        'full-class-scope-full': 'template<class A>struct R;template<>struct R<int>{template<class T>inline static int n=1;template<>inline int n<int> = 3;};int main(){return R<int>::n<int>;}',
+        'own-new-partial': 'template<class A>struct R{template<class T>inline static int n=1;};template<>template<class T>inline int R<int>::n<T*> = 3;int main(){return R<int>::n<bool*>;}',
+        'self-type-query': 'struct R{template<class T>static constexpr int n=sizeof(n<T>);};int main(){return R::n<int>;}',
+        'unselected-hidden-partial': 'template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));struct R{template<class A,class B>inline static int n=0;template<class T>inline static int n<T*,K<T>> = 1;template<class T>inline static int n<T**,bool> = 3;};int main(){return R::n<int**,bool>;}',
+        'source-depth-64': 'struct R{template<int N>static constexpr int n=N;};int main(){return R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<0>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;}',
+        'protocol-source': 'int effects=0;\nstruct Values{\n template<class T>inline static T item=3;\n template<class T>static const int constant=7;\n template<class T>static int absent;\n};\ntemplate<int N>struct Outer{template<class T>inline static int item=N;};\nint&first(){return Values::item<int>;}\nlong long&wide(){return Values::item<long long>;}\nint&same(){return Values::item<int>;}\nint&left(){return Outer<1>::item<int>;}\nint&right(){return Outer<2>::item<int>;}\nint read(){return Values::constant<int>;}\nint unused(){return sizeof(Values::absent<int>);}\nValues&receiver(Values&r){++effects;return r;}\nint access(Values&r){return receiver(r).item<int>;}\ntemplate<int N>struct Full{\n template<class T>inline static int full=1;\n template<>inline int full<int> = N;\n template<class T>static const int fullConstant=1;\n template<>const int fullConstant<int> = N+1;\n};\nint&fullFirst(){return Full<3>::full<int>;}\nint&fullSame(){return Full<1+2>::full<int>;}\nint&fullOther(){return Full<4>::full<int>;}\nint fullRead(){return Full<3>::fullConstant<int>;}\n',
+        'outer-class-partial-pack': 'template<int N>struct R{template<class...T>static constexpr int n=N;template<class T,class...U>static constexpr int n<T*,U...> = N+sizeof...(U);};static_assert(R<3>::n<int*,bool,long long> == 5);',
+        'outer-class-partial-value-pack': 'template<int N>struct R{template<int M,int...V>static constexpr int n=N;template<int...V>static constexpr int n<0,V...> = N+sizeof...(V);};static_assert(R<3>::n<0,1,2> == 5);',
+        'promoted-1': 'struct R{template<class T>inline static int n=1;};',
+        'promoted-2': 'struct R{template<class T>static const int n=3;};',
+        'promoted-3': 'struct R{template<class T>inline static T n=3;};int main(){return R::n<int>;}',
+        'promoted-4': 'struct R{template<class T>inline static int value=3;};int main(){return R::value<int>;}',
+        'promoted-5': 'template<class T>struct R{template<class U>inline static U n=3;};',
+        'dependent-class-scope-full-unused': 'template<class T>struct R{template<class U>inline static int n=1;template<>inline int n<int> = 3;};',
+        'dependent-class-scope-full-used': 'template<class T>struct R{template<class U>inline static int n=1;template<>inline int n<int> = 3;};int main(){return R<bool>::n<int>;}',
+        'full-outer-value': 'template<int N>struct R{template<class U>inline static int n=1;template<>inline int n<int> = N;};int main(){return R<3>::n<int>+R<4>::n<int>;}',
+        'full-outer-type': 'template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<int> = sizeof(A);};int main(){return R<int>::n<int>;}',
+        'full-outer-result-type': 'template<class A>struct R{template<class U>inline static A n=1;template<>inline A n<int> = A(3);};int main(){return int(R<long long>::n<int>);}',
+        'full-outer-partial': 'template<class A>struct R;template<class A>struct R<A*>{template<class U>inline static int n=1;template<>inline int n<int> = sizeof(A);};int main(){return R<int*>::n<int>;}',
+        'full-type-alias': 'template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline I<A> n<int> = 3;};int main(){return R<bool>::n<int>;}',
+        'full-auto': 'template<class A>struct R{template<class U>inline static auto n=1;template<>inline auto n<int> = 3;};int main(){return R<bool>::n<int>;}',
+        'full-inner-default': 'template<class A>struct R{template<class U,int N=sizeof(U)>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<bool>::n<int>;}',
+        'full-outer-default': 'template<class A>struct R{template<class U,int N=sizeof(A)>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<bool>::n<int>;}',
+        'full-outer-type-default': 'template<class A>struct R{template<class U=A>inline static int n=1;template<>inline int n<> = 7;};int main(){return R<int>::n<>;}',
+        'full-late-concrete-definition': 'template<class A>struct R{template<class U>static int n;template<>int n<int>;};template<>template<>int R<bool>::n<int> = 3;int main(){return R<bool>::n<int>;}',
+        'full-noninline-const': 'template<class A>struct R{template<class U>static const int n=1;template<>const int n<int> = 3;};int main(){return R<bool>::n<int>;}',
+        'full-unused-type-query': 'template<class A>struct R{template<class U>static int n;template<>int n<int>;};static_assert(sizeof(R<bool>::n<int>)==sizeof(int));',
+        'full-inner-default-safe-unused': 'template<class A>struct R{template<class U,int N=(sizeof(int),sizeof(U))>inline static int n=1;template<>inline int n<int> = 7;};',
+        'full-inner-default-safe-used': 'template<class A>struct R{template<class U,int N=(sizeof(int),sizeof(U))>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<int>::n<int>;}',
+        'full-resolved-parameter-type-safe-unused': 'template<class A>struct R{template<class U,decltype((sizeof(int),0)) N>inline static int n=1;template<>inline int n<int,3> = 7;};',
+        'full-resolved-parameter-type-safe-used': 'template<class A>struct R{template<class U,decltype((sizeof(int),0)) N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}',
+        'full-pending-inner-parameter-type-safe-unused': 'template<class T>using K=decltype((sizeof(int),T{}));template<class A>struct R{template<class U,K<U> N>inline static int n=1;template<>inline int n<int,3> = 7;};',
+        'full-pending-inner-parameter-type-safe-used': 'template<class T>using K=decltype((sizeof(int),T{}));template<class A>struct R{template<class U,K<U> N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}',
+        'full-pending-inner-parameter-type-hidden-unused': 'template<class T>using K=decltype((sizeof(double),T{}));template<class A>struct R{template<class U,K<U> N>inline static int n=1;template<>inline int n<int,3> = 7;};',
+        'full-pending-outer-default-safe-unused': 'template<class A>struct R{template<class U,int N=(sizeof(int),sizeof(A))>inline static int n=1;template<>inline int n<int> = 7;};',
+        'full-pending-outer-default-safe-used': 'template<class A>struct R{template<class U,int N=(sizeof(int),sizeof(A))>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<int>::n<int>;}',
+        'full-pending-outer-default-hidden-unused': 'template<class A>struct R{template<class U,int N=(sizeof(double),sizeof(A))>inline static int n=1;template<>inline int n<int> = 7;};',
+        'full-pending-outer-parameter-type-safe-unused': 'template<class T>using K=decltype((sizeof(int),T{}));template<class A>struct R{template<class U,K<A> N>inline static int n=1;template<>inline int n<int,3> = 7;};',
+        'full-pending-outer-parameter-type-safe-used': 'template<class T>using K=decltype((sizeof(int),T{}));template<class A>struct R{template<class U,K<A> N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}',
+        'full-pending-outer-parameter-type-hidden-unused': 'template<class T>using K=decltype((sizeof(double),T{}));template<class A>struct R{template<class U,K<A> N>inline static int n=1;template<>inline int n<int,3> = 7;};',
+        'member-expression-depth-64': 'struct R{template<int N>static constexpr int n=N;};int main(){R r;return r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<3>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>-3;}',
+        'pointer-expression-depth-64': 'struct R{template<int N>static constexpr int n=N;};int main(){R r;R*p=&r;return p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<p->n<3>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>-3;}',
+        'full-auto-earlier-default-unused': 'template<class A>struct R{template<auto V,int N=V>inline static int n=1;template<>inline int n<3> = 7;};',
+        'full-auto-earlier-default-used': 'template<class A>struct R{template<auto V,int N=V>inline static int n=1;template<>inline int n<3> = 7;};int main(){return R<bool>::n<3>;}',
+        'full-type-pack': 'template<class A>struct R{template<class...U>inline static int n=1;template<>inline int n<int,bool> = 7;};int main(){return R<bool>::n<int,bool>;}',
+        'full-auto-pack': 'template<class A>struct R{template<auto...U>inline static int n=1;template<>inline int n<3,4> = 7;};int main(){return R<bool>::n<3,4>;}',
+    }
+    for name, source in member_variables_positive.items():
+        check("v2-member-variables-positive-" + name, source, None, profile="cpp-core-v2")
+
+    member_variables_reject = {
+        'dynamic': 'int f(){return 3;}struct R{template<class T>inline static int n=f();};int main(){return R::n<int>;}',
+        'floating-result': 'struct R{template<class T>inline static double n=3.0;};int main(){return int(R::n<int>);}',
+        'pointer-result': 'struct R{template<class T>inline static T*n=nullptr;};int main(){return R::n<int> == nullptr;}',
+        'reference-result': 'int value=3;struct R{template<class T>inline static int&n=value;};int main(){return R::n<int>;}',
+        'array-result': 'struct R{template<class T>inline static int n[2]={1,2};};int main(){return R::n<int>[1];}',
+        'record-result': 'struct V{int n;};struct R{template<class T>inline static V n{3};};int main(){return R::n<int>.n;}',
+        'volatile': 'struct R{template<class T>inline static volatile int n=3;};int main(){return R::n<int>;}',
+        'thread-local': 'struct R{template<class T>inline static thread_local int n=3;};int main(){return R::n<int>;}',
+        'attribute': 'struct R{template<class T>[[deprecated]]inline static int n=3;};int main(){return R::n<int>;}',
+        'hidden-inner': 'struct R{template<int N>inline static int n=1;};int main(){return R::n<sizeof(double)>;}',
+        'hidden-outer': 'template<int N>struct R{template<class T>inline static int n=1;};int main(){return R<sizeof(double)>::n<int>;}',
+        'hidden-initializer': 'struct R{template<class T>inline static int n=(sizeof(double),3);};int main(){return R::n<int>;}',
+        'hidden-default': 'struct R{template<class T,int N=(sizeof(double),sizeof(T))>inline static int n=N;};int main(){return R::n<int>;}',
+        'hidden-nttp-type': 'struct R{template<class T,decltype((sizeof(double),T{})) N=3>inline static int n=N;};int main(){return R::n<int>;}',
+        'hidden-constexpr-query-auto': 'struct R{template<class T>inline static auto n=(sizeof(double),T(3));};static_assert(sizeof(R::n<int>)==sizeof(int));',
+        'no-effect-directive-source': 'struct R{template<int N>inline static int n=N;};template int R::n<1>;extern template int R::n<(sizeof(double),1)>;',
+        'union-owner': 'union R{template<class T>inline static int n=3;int field;};int main(){return R::n<int>;}',
+        'pack-65': 'struct R{template<int...N>static constexpr int n=sizeof...(N);};int main(){return R::n<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>;}',
+        'hidden-first-type': 'template<class>using I=int;struct R{template<class T>static I<decltype(T{}+1.0)> n;};template<class T>int R::n=3;int main(){return R::n<int>;}',
+        'hidden-definition-type': 'template<class>using I=int;struct R{template<class T>static int n;};template<class T>I<decltype(T{}+1.0)> R::n=3;int main(){return R::n<int>;}',
+        'hidden-partial-definition-type': 'template<class>using I=int;struct R{template<class T>static int n;template<class T>static int n<T*>;};template<class T>I<decltype(T{}+1.0)> R::n<T*> = 3;int main(){return R::n<int*>;}',
+        'hidden-outer-definition-type': 'template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<class A>template<class T>I<decltype(A{}+1.0)> R<A>::n=3;int main(){return R<int>::n<bool>;}',
+        'unused-concrete-qualifier': 'template<int N>struct R{template<class T>static int n;};template<>template<class T>int R<(sizeof(double),3)>::n=1;',
+        'used-concrete-qualifier': 'template<int N>struct R{template<class T>static int n;};template<>template<class T>int R<(sizeof(double),3)>::n=1;int main(){return R<3>::n<int>;}',
+        'unused-concrete-alias-qualifier': 'template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<>template<class T>int R<I<double>>::n=1;',
+        'used-concrete-alias-qualifier': 'template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<>template<class T>int R<I<double>>::n=1;int main(){return R<int>::n<bool>;}',
+        'hidden-member-expression': 'struct R{template<int N>inline static int n=3;};int main(){R r;return r.n<(sizeof(double),1)>;}',
+        'hidden-pointer-expression': 'struct R{template<int N>inline static int n=3;};int main(){R r;R*p=&r;return p->n<(sizeof(double),1)>;}',
+        'hidden-full-qualifier': 'template<int N>struct R{template<class T>inline static int n=N;};template<>template<>inline int R<(sizeof(double),3)>::n<int> = 7;',
+        'template-template-parameter': 'template<class T>struct V{int n;};struct R{template<template<class>class C>inline static int n=3;};int main(){return R::n<V>;}',
+        'source-depth-65': 'struct R{template<int N>static constexpr int n=N;};int main(){return R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<0>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;}',
+        'full-hidden-result-type-unused': 'template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline I<double> n<int> = 3;};',
+        'full-hidden-argument-unused': 'template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<I<double>> = 3;};',
+        'full-hidden-outer-argument': 'template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<int> = 3;};int main(){return R<I<double>>::n<int>;}',
+        'full-hidden-first-type': 'template<class>using I=int;template<class A>struct R{template<class U>static int n;template<>I<decltype(A{}+1.0)> n<int>;};template<>template<>int R<int>::n<int> = 3;int main(){return R<int>::n<int>;}',
+        'full-hidden-late-type': 'template<class>using I=int;template<class A>struct R{template<class U>static int n;template<>int n<int>;};template<>template<>I<double> R<int>::n<int> = 3;int main(){return R<int>::n<int>;}',
+        'full-hidden-initializer': 'template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<int> = (sizeof(double),sizeof(A));};int main(){return R<int>::n<int>;}',
+        'full-inner-default-hidden-unused': 'template<class A>struct R{template<class U,int N=(sizeof(double),sizeof(U))>inline static int n=1;template<>inline int n<int> = 7;};',
+        'full-inner-default-hidden-used': 'template<class A>struct R{template<class U,int N=(sizeof(double),sizeof(U))>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<int>::n<int>;}',
+        'full-resolved-parameter-type-hidden-unused': 'template<class A>struct R{template<class U,decltype((sizeof(double),0)) N>inline static int n=1;template<>inline int n<int,3> = 7;};',
+        'full-resolved-parameter-type-hidden-used': 'template<class A>struct R{template<class U,decltype((sizeof(double),0)) N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}',
+        'full-pending-inner-parameter-type-hidden-used': 'template<class T>using K=decltype((sizeof(double),T{}));template<class A>struct R{template<class U,K<U> N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}',
+        'full-pending-outer-default-hidden-used': 'template<class A>struct R{template<class U,int N=(sizeof(double),sizeof(A))>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<int>::n<int>;}',
+        'full-pending-outer-parameter-type-hidden-used': 'template<class T>using K=decltype((sizeof(double),T{}));template<class A>struct R{template<class U,K<A> N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}',
+        'member-expression-depth-65': 'struct R{template<int N>static constexpr int n=N;};int main(){R r;return r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<3>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;}',
+        'member-expression-hidden-depth': 'struct R{template<int N>static constexpr int n=N;};int main(){R r;return r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<sizeof(double)>>>>>>>>>>>>>>>>;}',
+        'full-auto-hidden-default-unused': 'template<class A>struct R{template<auto V,int N=(sizeof(double),V)>inline static int n=1;template<>inline int n<3> = 7;};',
+        'full-auto-hidden-default-used': 'template<class A>struct R{template<auto V,int N=(sizeof(double),V)>inline static int n=1;template<>inline int n<3> = 7;};int main(){return R<bool>::n<3>;}',
+    }
+    for name, source in member_variables_reject.items():
+        check("v2-member-variables-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    member_variables_invalid = {
+        'private-access': 'class R{template<class T>inline static int n=3;};int main(){return R::n<int>;}',
+        'nonstatic': 'struct R{template<class T>int n=3;};',
+        'local-class': 'int main(){struct R{template<class T>static constexpr int n=3;};return 0;}',
+        'duplicate-instantiation': 'struct R{template<class T>inline static int n=3;};template int R::n<int>;template int R::n<int>;',
+        'late-specialization': 'struct R{template<class T>inline static int n=3;};int f(){return R::n<int>;}template<>inline int R::n<int> = 4;',
+        'full-storage-specifier': 'struct R{template<class T>inline static int n=3;};template<>static int R::n<int> = 4;',
+        'const-write': 'struct R{template<class T>static constexpr int n=3;};int main(){R::n<int> = 4;return 0;}',
+        'unknown-member': 'struct R{template<class T>inline static int n=3;};int main(){return R::missing<int>;}',
+        'wrong-template-argument': 'struct R{template<int N>inline static int n=N;};int main(){return R::n<int>;}',
+        'partial-duplicate-after-outer': 'template<class T,class U>struct R{template<class A,class B>inline static int n=0;template<class A>inline static int n<T,A> = 1;template<class A>inline static int n<U,A> = 2;};int main(){R<int,int> r;return 0;}',
+        'different-dependent-hidden-first-type': 'struct R{template<class T>static decltype((sizeof(double),T{})) n;};template<class T>T R::n=3;int main(){return R::n<int>;}',
+        'different-dependent-hidden-definition-type': 'struct R{template<class T>static T n;};template<class T>decltype((sizeof(double),T{})) R::n=3;int main(){return R::n<int>;}',
+        'full-in-class-storage-specifier': 'struct R{template<class T>inline static int n=1;template<>inline static int n<int> = 3;};int main(){return R::n<int>;}',
+        'generic-full-written-static': 'template<class A>struct R{template<class U>inline static int n=1;template<>inline static int n<int> = 3;};',
+        'generic-full-duplicate': 'template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<int> = 3;template<>inline int n<int> = 4;};',
+        'generic-full-invalid-selected': 'template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<int> = A::missing;};int main(){return R<int>::n<int>;}',
+    }
+    for name, source in member_variables_invalid.items():
+        check("v2-member-variables-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    member_variables_missing = {
+        'primary-definition': 'struct R{template<class T>static int n;};int main(){return R::n<int>;}',
+        'const-address': 'struct R{template<class T>static const int n=3;};int main(){return *&R::n<int>;}',
+        'const-reference': 'struct R{template<class T>static const int n=3;};const int&f(){return R::n<int>;}',
+        'extern-suppression': 'struct R{template<class T>inline static int n=3;};extern template int R::n<int>;int main(){return R::n<int>;}',
+        'outer-out-of-line': 'template<int N>struct R{template<class T>static int n;};int main(){return R<3>::n<int>;}',
+        'generic-full-required-storage': 'template<class A>struct R{template<class U>static int n;template<>int n<int>;};int main(){return R<int>::n<int>;}',
+        'generic-full-const-address': 'template<class A>struct R{template<class U>static const int n=1;template<>const int n<int> = 3;};const int*f(){return &R<int>::n<int>;}',
+    }
+    for name, source in member_variables_missing.items():
+        check("v2-member-variables-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    check("v1-member-variables", "struct R{template<class T>inline static int n=3;};", "TR0201")
+    member_variable_source = member_variables_positive["protocol-source"]
+    member_variables = check("v2-member-variables-protocol", member_variable_source, profile="cpp-core-v2")
+    mv_globals = {g["name"]: g for g in member_variables["globals"]}
+    mv_functions = {f["name"]: f for f in member_variables["functions"]}
+    assert len(mv_globals) == len(member_variables["globals"]) == 7
+    assert len(mv_functions) == len(member_variables["functions"]) == 13
+    assert len({record["id"] for record in member_variables["records"]}) == len(member_variables["records"]) == 5
+    assert all(not record["fields"] for record in member_variables["records"])
+
+    def mv_line(prefix):
+        matches = [i for i, line in enumerate(member_variable_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(matches) == 1, prefix
+        return matches[0]
+
+    def mv_global(prefix, kind, value):
+        matches = [g for g in mv_globals.values() if g["loc"]["line"] == mv_line(prefix)
+                   and g["type"] == kind and g["value"]["value"] == value]
+        assert len(matches) == 1, (prefix, kind, value, matches)
+        g = matches[0]
+        assert g.get("mutable", False) is True
+        assert g["value"] == {"kind": "literal", "type": kind, "value": value, "loc": g["loc"]}
+        return g["name"]
+
+    mv_effects = mv_global("int effects=", "int", "0")
+    mv_int = mv_global(" template<class T>inline static T item", "int", "3")
+    mv_wide = mv_global(" template<class T>inline static T item", "i64", "3")
+    mv_left = mv_global("template<int N>struct Outer", "int", "1")
+    mv_right = mv_global("template<int N>struct Outer", "int", "2")
+    assert len({mv_effects, mv_int, mv_wide, mv_left, mv_right}) == 5
+    mv_full3 = mv_global(" template<>inline int full<int>", "int", "3")
+    mv_full4 = mv_global(" template<>inline int full<int>", "int", "4")
+    assert len({mv_effects, mv_int, mv_wide, mv_left, mv_right, mv_full3, mv_full4}) == 7
+    mv_omitted = {mv_line(" template<class T>static const int constant"),
+                  mv_line(" template<class T>static int absent"),
+                  mv_line(" template<class T>static const int fullConstant"),
+                  mv_line(" template<>const int fullConstant<int>")}
+    assert all(g["loc"]["line"] not in mv_omitted for g in mv_globals.values())
+
+    def mv_function(prefix):
+        matches = [f for f in mv_functions.values() if f["loc"]["line"] == mv_line(prefix)]
+        assert len(matches) == 1, prefix
+        return matches[0]
+
+    def mv_root(function, expr):
+        if expr["kind"] in ("cast", "address", "dereference"):
+            return mv_root(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        if expr["name"] in mv_globals:
+            return expr["name"]
+        assigned = [i["value"] for i in function["body"] if i["op"] == "assign"
+                    and i["target"].get("kind") == "var" and i["target"].get("name") == expr["name"]]
+        assert len(assigned) == 1, (expr, assigned)
+        return mv_root(function, assigned[0])
+
+    for prefix, kind, target in (("int&first(", "ptr:int", mv_int), ("int&same(", "ptr:int", mv_int),
+                                 ("long long&wide(", "ptr:i64", mv_wide),
+                                 ("int&left(", "ptr:int", mv_left), ("int&right(", "ptr:int", mv_right),
+                                 ("int&fullFirst(", "ptr:int", mv_full3), ("int&fullSame(", "ptr:int", mv_full3),
+                                 ("int&fullOther(", "ptr:int", mv_full4)):
+        function = mv_function(prefix)
+        assert function["result"] == kind and not function["params"]
+        returns = [i["value"] for i in function["body"] if i["op"] == "return"]
+        assert len(returns) == 1 and mv_root(function, returns[0]) == target
+    mv_receiver = mv_function("Values&receiver(")
+    mv_access = mv_function("int access(")
+    mv_calls = [node for node in walk(mv_access["body"]) if node.get("op") == "call"]
+    assert len(mv_calls) == 1 and mv_calls[0]["callee"] == mv_receiver["name"]
+    assert len(mv_calls[0]["args"]) == 1
+    assert np_pointer(mv_access, mv_calls[0]["args"][0]) == ("parameter", mv_access["params"][0]["name"])
+    mv_access_returns = [i["value"] for i in mv_access["body"] if i["op"] == "return"]
+    assert len(mv_access_returns) == 1 and mv_root(mv_access, mv_access_returns[0]) == mv_int
+    for function in mv_functions.values():
+        values = set(mv_globals) | {v["name"] for v in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in mv_functions, node
+    with tempfile.TemporaryDirectory(prefix="neverc-member-variables-relocated-") as temp:
+        relocated = check("v2-member-variables-relocated", member_variable_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == member_variables, "member variable identity depends on the absolute root"
+
+    member_variable_budget_source = 'struct R{template<int...N>static constexpr int n=sizeof...(N);};\n' + 'static_assert(R::n<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0> == 64);\n' * 1024
+    check("v2-member-variable-source-budget", member_variable_budget_source, "TR0201", profile="cpp-core-v2")
+
+    member_classes_positive = {
+        'unused-primary': 'struct R{template<class T>struct I{T n;};};',
+        'primary': 'struct R{template<class T>struct I{T n;};};int main(){R::I<int>n{3};return n.n;}',
+        'out-of-line-primary': 'struct R{template<class T>struct I;};template<class T>struct R::I{T n;};int f(){R::I<int>r{3};return r.n;}',
+        'namespace-primary': 'namespace N{struct R{template<class T>struct I;};template<class T>struct R::I{T n;};}int f(){N::R::I<int>r{3};return r.n;}',
+        'alias-qualified-primary': 'struct R{template<class T>struct I;};using Owner=R;template<class T>struct Owner::I{T n;};int f(){R::I<int>r{3};return r.n;}',
+        'type-default': 'struct R{template<class T=int>struct I{T n;};};int f(){R::I<>r{3};return r.n;}',
+        'integral-default': 'struct R{template<int N,int M=N+1>struct I{int a[M];};};int f(){R::I<2>r{{1,2,3}};return r.a[2];}',
+        'inner-dependent-type': 'struct R{template<class T,T N>struct I{T n=N;};};int f(){R::I<int,3>r;return r.n;}',
+        'enum-parameter': 'struct R{enum class E:int{v=3};template<E N>struct I{int n=static_cast<int>(N);};};int f(){R::I<R::E::v>r;return r.n;}',
+        'auto-parameter': 'struct R{template<auto N>struct I{int n=N;};};int f(){R::I<3u>r;return r.n;}',
+        'auto-default': 'struct R{template<auto N,auto M=N+1>struct I{int a[M];};};int f(){R::I<2>r{{1,2,3}};return r.a[2];}',
+        'type-pack-empty': 'struct R{template<class...T>struct I{int n=sizeof...(T);};};int f(){R::I<>r;return r.n;}',
+        'type-pack-many': 'struct R{template<class...T>struct I{int n=sizeof...(T);};};int f(){R::I<int,bool,long long>r;return r.n;}',
+        'value-pack-empty': 'struct R{template<int...N>struct I{int n=(0+...+N);};};int f(){R::I<>r;return r.n;}',
+        'value-pack-many': 'struct R{template<int...N>struct I{int n=(0+...+N);};};int f(){R::I<1,2,3>r;return r.n;}',
+        'auto-pack-mixed': 'struct R{template<auto...N>struct I{int n=sizeof...(N);};};int f(){R::I<true,2u,3>r;return r.n;}',
+        'partial-in-class': 'struct R{template<class T>struct I{int n;};template<class T>struct I<T*>{T n;};};int f(){R::I<int*>r{3};return r.n;}',
+        'partial-out-of-line': 'struct R{template<class T>struct I;};template<class T>struct R::I<T*>{T n;};int f(){R::I<int*>r{3};return r.n;}',
+        'partial-forward-definition': 'struct R{template<class T>struct I;template<class T>struct I<T*>;};template<class T>struct R::I<T*>{T n;};int f(){R::I<int*>r{3};return r.n;}',
+        'partial-ordering': 'struct R{template<class T>struct I{int n=1;};template<class T>struct I<T*>{int n=2;};template<class T>struct I<const T*>{int n=3;};};int f(){R::I<const int*>r;return r.n;}',
+        'partial-type-pack': 'struct R{template<class...T>struct I;template<class T,class...U>struct I<T,U...>{int n=sizeof...(U);};};int f(){R::I<int,bool,long long>r;return r.n;}',
+        'partial-value-pack': 'struct R{template<int...N>struct I;template<int N,int...M>struct I<N,M...>{int n=N+(0+...+M);};};int f(){R::I<1,2,3>r;return r.n;}',
+        'full-in-class': 'struct R{template<class T>struct I{int n=1;};template<>struct I<int>{int n=3;};};int f(){R::I<int>r;return r.n;}',
+        'full-out-of-line': 'struct R{template<class T>struct I;};template<>struct R::I<int>{int n;};int f(){R::I<int>r{3};return r.n;}',
+        'full-forward-definition': 'struct R{template<class T>struct I;template<>struct I<int>;};template<>struct R::I<int>{int n;};int f(){R::I<int>r{3};return r.n;}',
+        'full-over-partial': 'struct R{template<class T>struct I{int n=1;};template<class T>struct I<T*>{int n=2;};template<>struct I<int*>{int n=3;};};int f(){R::I<int*>r;return r.n;}',
+        'multi-ordinary-owner': 'struct A{struct B{struct C{template<class T>struct I{T n;};};};};int f(){A::B::C::I<int>r{3};return r.n;}',
+        'private-through-alias': 'class R{template<class T>struct I{T n;};public:using Item=I<int>;};int f(){R::Item r{3};return r.n;}',
+        'protected-through-factory': 'class R{protected:template<class T>struct I{T n;};public:static I<int>make(){return I<int>{3};}};int f(){return R::make().n;}',
+        'same-name-distinct-owners': 'struct A{template<class T>struct I{T n;};};struct B{template<class T>struct I{T n;};};int get(const A::I<int>&r){return r.n;}int get(const B::I<int>&r){return r.n+1;}int f(){A::I<int>a{3};B::I<int>b{3};return get(a)+get(b);}',
+        'self-pointer': 'struct R{template<class T>struct I{T n;I*next;};};int f(){R::I<int>r{3,nullptr};r.next=&r;return r.next->n;}',
+        'outer-by-value-field': 'struct R{template<class T>struct I{T n;};I<int>value;};int f(){R r{{3}};return r.value.n;}',
+        'outer-array-field': 'struct R{template<class T>struct I{T n;};I<int>value[2];};int f(){R r{{{1},{2}}};return r.value[1].n;}',
+        'method-this': 'struct R{template<class T>struct I{T n;T get()const{return n;}};};int f(){R::I<int>r{3};return r.get();}',
+        'out-of-line-method': 'struct R{template<class T>struct I{T n;T get()const;};};template<class T>T R::I<T>::get()const{return n;}int f(){R::I<int>r{3};return r.get();}',
+        'ordinary-constructor': 'struct R{template<class T>struct I{T n;I(T v):n(v){}};};int f(){R::I<int>r(3);return r.n;}',
+        'out-of-line-constructor': 'struct R{template<class T>struct I{T n;I(T);};};template<class T>R::I<T>::I(T v):n(v){}int f(){R::I<int>r(3);return r.n;}',
+        'out-of-line-static': 'struct R{template<class T>struct I{static int n;};};template<class T>int R::I<T>::n=3;int f(){return ++R::I<int>::n;}',
+        'inline-static': 'struct R{template<class T>struct I{inline static int n=3;};};int*f(){return &R::I<int>::n;}',
+        'member-function-template': 'struct R{template<class T>struct I{template<class U>U f(U n){return n;}};};int f(){R::I<int>r;return r.f(3);}',
+        'member-alias-template': 'struct R{template<class T>struct I{template<class U>using A=T;};};R::I<int>::A<bool>f(){return 3;}',
+        'member-variable-template': 'struct R{template<int N>struct I{template<class T>inline static int n=N;};};int*f(){return &R::I<3>::n<int>;}',
+        'member-variable-full': 'struct R{template<int N>struct I{template<class T>inline static int n=1;template<>inline int n<int> =N;};};int*f(){return &R::I<3>::n<int>;}',
+        'member-variable-partial': 'struct R{template<int N>struct I{template<class T>inline static int n=1;template<class T>inline static int n<T*> =N;};};int*f(){return &R::I<3>::n<int*>;}',
+        'partial-member-function': 'struct R{template<class T>struct I;template<class T>struct I<T*>{template<class U>U f(U n){return n;}};};int f(){R::I<int*>r;return r.f(3);}',
+        'partial-member-alias': 'struct R{template<class T>struct I;template<class T>struct I<T*>{template<class U>using A=T;};};R::I<int*>::A<bool>f(){return 3;}',
+        'full-member-function': 'struct R{template<class T>struct I;template<>struct I<int>{template<class U>U f(U n){return n;}};};int f(){R::I<int>r;return r.f(3);}',
+        'full-member-variable': 'struct R{template<class T>struct I;template<>struct I<int>{template<class U>inline static int n=3;};};int*f(){return &R::I<int>::n<bool>;}',
+        'nested-ordinary-function': 'struct R{struct I{template<class T>T f(T n){return n;}};};int f(){R::I r;return r.f(3);}',
+        'nested-ordinary-alias': 'struct Outer{struct R{template<class T>using I=T;};};int main(){Outer::R::I<int> n=3;return n;}',
+        'nested-ordinary-variable': 'struct O{struct R{template<class T>inline static int n=3;};};int main(){return O::R::n<int>;}',
+        'unused-missing-method': 'struct R{template<class T>struct I{int n;int get();};};int f(){R::I<int>r{3};return r.n;}',
+        'unused-unsupported-method': 'struct R{template<class T>struct I{int n;int get(){double n=1.0;return 1;}};};int f(){R::I<int>r{3};return r.n;}',
+        'declared-unused-static': 'struct R{template<class T>struct I{int n;static int missing;};};int f(){R::I<int>r{3};return r.n;}',
+        'partial-unused-unsupported-method': 'struct R{template<class T>struct I;template<class T>struct I<T*>{int n;int get(){double n=1.0;return 1;}};};int f(){R::I<int*>r{3};return r.n;}',
+        'written-query': 'struct R{template<int N>struct I{int n=N;};};int f(){R::I<sizeof(int)>r;return r.n;}',
+        'template-default-source': 'struct R{template<class T=decltype(1)>struct I{T n;};};int f(){R::I<>r{3};return r.n;}',
+        'method-noexcept': 'struct R{template<class T>struct I{T n;T get()const noexcept(sizeof(T)>0){return n;}};};int f(){R::I<int>r{3};return r.get();}',
+        'explicit-instantiation': 'struct R{template<class T>struct I{T n;T get(){return n;}};};template struct R::I<int>;int f(){R::I<int>r{3};return r.get();}',
+        'extern-instantiation-definition': 'struct R{template<class T>struct I{T n;T get(){return n;}};};extern template struct R::I<int>;template struct R::I<int>;int f(){R::I<int>r{3};return r.get();}',
+        'type-pack-64': 'struct R{template<class...T>struct I{int n=sizeof...(T);};};int f(){R::I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r;return r.n;}',
+        'value-pack-64': 'struct R{template<int...N>struct I{int n=sizeof...(N);};};int f(){R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return r.n;}',
+        'parameters-64': 'struct R{template<int N0,int N1,int N2,int N3,int N4,int N5,int N6,int N7,int N8,int N9,int N10,int N11,int N12,int N13,int N14,int N15,int N16,int N17,int N18,int N19,int N20,int N21,int N22,int N23,int N24,int N25,int N26,int N27,int N28,int N29,int N30,int N31,int N32,int N33,int N34,int N35,int N36,int N37,int N38,int N39,int N40,int N41,int N42,int N43,int N44,int N45,int N46,int N47,int N48,int N49,int N50,int N51,int N52,int N53,int N54,int N55,int N56,int N57,int N58,int N59,int N60,int N61,int N62,int N63>struct I{int n=N0;};};int f(){R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return r.n;}',
+        'qualifier-primary-safe-unused': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(int),1))>::I{T n;};',
+        'qualifier-primary-safe-used': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(int),1))>::I{T n;};int f(){R::I<int>r{3};return r.n;}',
+        'qualifier-partial-safe-unused': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(int),1))>::I<T*>{T n;};',
+        'qualifier-partial-safe-used': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(int),1))>::I<T*>{T n;};int f(){R::I<int*>r{3};return r.n;}',
+        'qualifier-full-safe-unused': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<>struct Owner<decltype((sizeof(int),1))>::I<int>{int n;};',
+        'qualifier-full-safe-used': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<>struct Owner<decltype((sizeof(int),1))>::I<int>{int n;};int f(){R::I<int>r{3};return r.n;}',
+        'protocol-source': 'struct A{\n template<class T>struct Box{T value;T get()const{return value;}static int count;};\n template<>struct Box<bool>{int value;int get()const{return value+1;}inline static int count=7;};\n Box<int>inside;\n};\nstruct B{\n template<class T>struct Box{T value;T get()const{return value;}static int count;};\n};\ntemplate<class T>int A::Box<T>::count=3;\ntemplate<class T>int B::Box<T>::count=5;\nusing Same=A::Box<int>;\nint readA(const A::Box<int>&value){return value.get();}\nlong long readWide(const A::Box<long long>&value){return value.get();}\nint readB(const B::Box<int>&value){return value.get();}\nint readFull(const A::Box<bool>&value){return value.get();}\nint*addressA(){return &A::Box<int>::count;}\nint*sameA(){return &Same::count;}\nint*addressB(){return &B::Box<int>::count;}\nint*addressFull(){return &A::Box<bool>::count;}\nint field(const A&value){return value.inside.value;}\n',
+        'runtime-source': 'int trace=0;\nstruct Objects{\n template<class T>struct Box{\n  T n;\n  Box(T v):n(v){}\n  Box(const Box&v):n(v.n+1){}\n  Box(Box&&v):n(v.n){v.n=0;}\n  ~Box(){trace=trace*10+n;}\n  T get()const{return n;}\n  template<class U>U echo(U v){return v;}\n };\n};\nstruct Choices{\n template<class T>struct Item{int data[1];int tag(){return 1;}inline static int count=10;};\n template<class T>struct Item<T*>{int data[2];int tag(){return 2;}inline static int count=20;};\n template<>struct Item<int*>{int data[3];int tag(){return 3;}inline static int count=30;};\n};\nstruct Other{template<class T>struct Item{int n;inline static int count=40;};};\nstruct Holder{template<int N>struct Item{int data[N];};Item<2>items[2];};\nstruct Deep{struct Scope{template<class T>struct Item{T n;T get()const;};};};\ntemplate<class T>T Deep::Scope::Item<T>::get()const{return n;}\nstruct Members{\n template<int N>struct Inner{\n  template<class T>using Alias=T;\n  template<class T>inline static int value=1;\n  template<>inline int value<int> = N;\n  template<class T>T echo(T n){return n;}\n };\n};\nclass Private{\n template<class T>struct Item{T n;};\npublic:\n using Value=Item<int>;\n};\nint main(){\n {Objects::Box<int>a(1);if(a.get()!=1||a.echo(3)!=3)return 1;}\n if(trace!=1)return 2;\n trace=0;\n {Objects::Box<int>a(1);Objects::Box<int>b=a;Objects::Box<int>c=static_cast<Objects::Box<int>&&>(a);\n  if(a.n!=0||b.n!=2||c.n!=1)return 3;\n  if(&a==&b||&b==&c||&a==&c)return 4;}\n if(trace!=120)return 5;\n trace=0;\n {Objects::Box<int>a[2]={1,2};if(a[0].n+a[1].n!=3)return 6;}\n if(trace!=21)return 7;\n Choices::Item<int>a{{1}};Choices::Item<char*>b{{1,2}};Choices::Item<int*>c{{1,2,3}};\n if(a.tag()!=1||b.tag()!=2||c.tag()!=3)return 8;\n if(sizeof(a)!=sizeof(int)||sizeof(b)!=2*sizeof(int)||sizeof(c)!=3*sizeof(int))return 9;\n using Same=Choices::Item<int*>;\n if(&Same::count!=&Choices::Item<int*>::count)return 10;\n if(&Choices::Item<int>::count==&Choices::Item<char*>::count||\n    &Choices::Item<int*>::count==&Other::Item<int*>::count)return 11;\n ++Same::count;\n if(Choices::Item<int*>::count!=31||Choices::Item<char*>::count!=20||Other::Item<int*>::count!=40)return 12;\n Holder h{{{{1,2}},{{3,4}}}};\n if(h.items[0].data[1]!=2||h.items[1].data[0]!=3||sizeof(h)!=4*sizeof(int))return 13;\n Deep::Scope::Item<int>deep{5};\n if(deep.get()!=5||sizeof(deep)!=sizeof(int))return 14;\n Members::Inner<3>first;Members::Inner<4>second;\n Members::Inner<3>::Alias<int>n=6;\n if(first.echo(n)!=6||second.echo(7)!=7)return 15;\n if(&Members::Inner<3>::value<int> == &Members::Inner<4>::value<int>)return 16;\n ++Members::Inner<3>::value<int>;\n if(Members::Inner<3>::value<int> !=4||Members::Inner<4>::value<int> !=4||Members::Inner<3>::value<bool> !=1)return 17;\n Private::Value value{8};\n if(value.n!=8)return 18;\n return 0;\n}\n',
+    }
+    for name, source in member_classes_positive.items():
+        check("v2-member-classes-positive-" + name, source, None, profile="cpp-core-v2")
+
+    member_classes_reject = {
+        'type-pack-65': 'struct R{template<class...T>struct I{int n=sizeof...(T);};};int f(){R::I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r;return r.n;}',
+        'value-pack-65': 'struct R{template<int...N>struct I{int n=sizeof...(N);};};int f(){R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return r.n;}',
+        'parameters-65': 'struct R{template<int N0,int N1,int N2,int N3,int N4,int N5,int N6,int N7,int N8,int N9,int N10,int N11,int N12,int N13,int N14,int N15,int N16,int N17,int N18,int N19,int N20,int N21,int N22,int N23,int N24,int N25,int N26,int N27,int N28,int N29,int N30,int N31,int N32,int N33,int N34,int N35,int N36,int N37,int N38,int N39,int N40,int N41,int N42,int N43,int N44,int N45,int N46,int N47,int N48,int N49,int N50,int N51,int N52,int N53,int N54,int N55,int N56,int N57,int N58,int N59,int N60,int N61,int N62,int N63,int N64>struct I{int n=N0;};};int f(){R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return r.n;}',
+        'dependent-outer': 'template<class T>struct R{template<class U>struct I{U n;};};int f(){R<int>::I<int>r{3};return r.n;}',
+        'dependent-outer-partial': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>struct I{U n;};};int f(){R<int*>::I<int>r{3};return r.n;}',
+        'outer-full-owner': 'template<class T>struct R;template<>struct R<int>{template<class U>struct I{U n;};};int f(){R<int>::I<int>r{3};return r.n;}',
+        'generic-nested-record': 'struct R{template<class T>struct I{struct J{T n;};};};',
+        'generic-nested-template': 'struct R{template<class T>struct I{template<class U>struct J{U n;};};};',
+        'template-template': 'struct R{template<template<class>class T>struct I{int n;};};',
+        'union-owner': 'union R{template<class T>struct I{T n;};int n;};',
+        'union-template': 'struct R{template<class T>union I{T n;int m;};};',
+        'base': 'struct B{int n;};struct R{template<class T>struct I:B{T m;};};int f(){R::I<int>r;return 1;}',
+        'virtual-method': 'struct R{template<class T>struct I{virtual int f(){return 1;}};};',
+        'floating-field': 'struct R{template<class T>struct I{T n;};};int f(){R::I<double>r{1.0};return 1;}',
+        'reference-field': 'struct R{template<class T>struct I{T&n;};};int f(){int n=3;R::I<int>r{n};return r.n;}',
+        'const-field': 'struct R{template<class T>struct I{const T n;};};int f(){R::I<int>r{3};return r.n;}',
+        'mutable-field': 'struct R{template<class T>struct I{mutable T n;};};int f(){R::I<int>r{3};return r.n;}',
+        'bitfield': 'struct R{template<class T>struct I{unsigned int n:2;};};int f(){R::I<int>r{1};return r.n;}',
+        'unused-hidden-default': 'struct R{template<class T=decltype((sizeof(double),1))>struct I{int n;};};',
+        'used-hidden-default': 'struct R{template<class T=decltype((sizeof(double),1))>struct I{int n;};};int f(){R::I<>r{3};return r.n;}',
+        'erased-written-argument': 'struct R{template<class T>struct I{int n;};};int f(){R::I<decltype((sizeof(double),1))>r{3};return r.n;}',
+        'full-hidden-argument-unused': 'struct R{template<int N>struct I;};template<>struct R::I<sizeof(double)>{int n;};',
+        'selected-unsupported-method': 'struct R{template<class T>struct I{int get(){double n=1.0;return 1;}};};int f(){R::I<int>r;return r.get();}',
+        'selected-unsupported-member-template': 'struct R{template<class T>struct I{template<class U>int get(U){double n=1.0;return 1;}};};int f(){R::I<int>r;return r.get(3);}',
+        'unsupported-static-initializer': 'struct R{template<class T>struct I{inline static int n=static_cast<int>(1.0);};};int f(){return R::I<int>::n;}',
+        'oversized-array': 'struct R{template<int N>struct I{int n[N];};};int f(){R::I<65537>r{};return r.n[0];}',
+        'qualifier-primary-hidden-unused': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(double),1))>::I{T n;};',
+        'qualifier-primary-hidden-used': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(double),1))>::I{T n;};int f(){R::I<int>r{3};return r.n;}',
+        'qualifier-partial-hidden-unused': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(double),1))>::I<T*>{T n;};',
+        'qualifier-partial-hidden-used': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(double),1))>::I<T*>{T n;};int f(){R::I<int*>r{3};return r.n;}',
+        'qualifier-full-hidden-unused': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<>struct Owner<decltype((sizeof(double),1))>::I<int>{int n;};',
+        'qualifier-full-hidden-used': 'struct R{template<class T>struct I;};template<class T>using Owner=R;template<>struct Owner<decltype((sizeof(double),1))>::I<int>{int n;};int f(){R::I<int>r{3};return r.n;}',
+    }
+    for name, source in member_classes_reject.items():
+        check("v2-member-classes-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    member_classes_invalid = {
+        'private-access': 'class R{template<class T>struct I{T n;};};R::I<int>f(){return R::I<int>{3};}',
+        'protected-access': 'class R{protected:template<class T>struct I{T n;};};R::I<int>f(){return R::I<int>{3};}',
+        'wrong-arity': 'struct R{template<class T>struct I{T n;};};R::I<int,bool>r;',
+        'missing-argument': 'struct R{template<class T>struct I{T n;};};R::I<>r;',
+        'distinct-type': 'struct A{template<class T>struct I{T n;};};struct B{template<class T>struct I{T n;};};void f(){A::I<int>a{3};B::I<int>b=a;}',
+        'incomplete-by-value': 'struct R{template<class T>struct I;I<int>n;};',
+        'partial-ambiguity': 'struct R{template<class T,class U>struct I;template<class T>struct I<T,int>{int n;};template<class U>struct I<int,U>{int n;};};R::I<int,int>r;',
+        'full-after-instantiation': 'struct R{template<class T>struct I{T n;};I<int>n;};template<>struct R::I<int>{int n;};',
+        'no-implicit-outer-this': 'struct R{int n;template<class T>struct I{int get(){return n;}};};int f(){R::I<int>r;return r.get();}',
+        'outer-cannot-read-inner-private': 'struct R{template<class T>class I{T n;};int get(const I<int>&r){return r.n;}};',
+    }
+    for name, source in member_classes_invalid.items():
+        check("v2-member-classes-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    member_classes_missing = {
+        'missing-method': 'struct R{template<class T>struct I{int get();};};int f(){R::I<int>r;return r.get();}',
+        'missing-constructor': 'struct R{template<class T>struct I{I();};};int f(){R::I<int>r;return 1;}',
+        'missing-destructor': 'struct R{template<class T>struct I{~I();};};void f(){R::I<int>r;}',
+        'missing-static-storage': 'struct R{template<class T>struct I{static int n;};};int*f(){return &R::I<int>::n;}',
+    }
+    for name, source in member_classes_missing.items():
+        check("v2-member-classes-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    check("v1-member-classes", "struct R{template<class T>struct I{T n;};};", "TR0201")
+
+    member_class_source = member_classes_positive["protocol-source"]
+    member_classes = check("v2-member-classes-protocol", member_class_source, profile="cpp-core-v2")
+    mc_records = {r["id"]: r for r in member_classes["records"]}
+    mc_functions = {f["name"]: f for f in member_classes["functions"]}
+    mc_globals = {g["name"]: g for g in member_classes["globals"]}
+    assert len(mc_records) == len(member_classes["records"]) == 6
+    assert len(mc_functions) == len(member_classes["functions"]) == 13
+    assert len(mc_globals) == len(member_classes["globals"]) == 3
+
+    def mc_line(prefix):
+        found = [i for i, line in enumerate(member_class_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    def mc_function(prefix):
+        found = [f for f in mc_functions.values() if f["loc"]["line"] == mc_line(prefix)]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    mc_outer = [r for r in mc_records.values() if r["loc"]["line"] == mc_line("struct A{")]
+    assert len(mc_outer) == 1 and len(mc_outer[0]["fields"]) == 1
+    mc_a = mc_outer[0]["fields"][0]["type"]
+    assert mc_a in mc_records
+    mc_readers = [("int readA(", "int"), ("long long readWide(", "i64"),
+                  ("int readB(", "int"), ("int readFull(", "int")]
+    mc_inner_ids = []
+    for prefix, kind in mc_readers:
+        function = mc_function(prefix)
+        assert function["result"] == kind and len(function["params"]) == 1
+        param = function["params"][0]
+        assert param["type"].startswith("ptr:")
+        record_id = param["type"][4:]
+        assert record_id in mc_records
+        record = mc_records[record_id]
+        assert len(record["fields"]) == 1 and record["fields"][0]["type"] == kind
+        mc_inner_ids.append(record_id)
+        calls = [node for node in walk(function["body"]) if node.get("op") == "call"]
+        assert len(calls) == 1, function
+        call = calls[0]
+        assert call["callee"] in mc_functions
+        method = mc_functions[call["callee"]]
+        assert method["result"] == kind and len(method["params"]) == 1
+        assert method["params"][0]["type"] == param["type"]
+        assert [arg["type"] for arg in call["args"]] == [param["type"]]
+        assert np_pointer(function, call["args"][0]) == ("parameter", param["name"])
+    assert len(set(mc_inner_ids)) == 4 and mc_inner_ids[0] == mc_a
+    mc_order = {record["id"]: i for i, record in enumerate(member_classes["records"])}
+    for record in mc_records.values():
+        for field in record["fields"]:
+            if field["type"] in mc_records:
+                assert mc_order[field["type"]] < mc_order[record["id"]]
+    assert sum(bool(r["fields"]) for r in mc_records.values()) == 5
+
+    def mc_global(value):
+        found = [g for g in mc_globals.values() if g["type"] == "int" and g["value"]["value"] == value]
+        assert len(found) == 1, (value, found)
+        g = found[0]
+        assert g.get("mutable", False) is True
+        assert g["value"] == {"kind": "literal", "type": "int", "value": value, "loc": g["loc"]}
+        return g["name"]
+
+    def mc_root(function, expression):
+        if expression["kind"] in ("cast", "address", "dereference"):
+            return mc_root(function, expression["args"][0])
+        assert expression["kind"] == "var", expression
+        if expression["name"] in mc_globals:
+            return expression["name"]
+        assigned = [n["value"] for n in function["body"] if n["op"] == "assign"
+                    and n["target"].get("kind") == "var" and n["target"]["name"] == expression["name"]]
+        assert len(assigned) == 1, (expression, assigned)
+        return mc_root(function, assigned[0])
+
+    mc_first, mc_second, mc_full = mc_global("3"), mc_global("5"), mc_global("7")
+    assert len({mc_first, mc_second, mc_full}) == 3
+    for prefix, target in (("int*addressA(", mc_first), ("int*sameA(", mc_first),
+                           ("int*addressB(", mc_second), ("int*addressFull(", mc_full)):
+        function = mc_function(prefix)
+        assert function["result"] == "ptr:int" and not function["params"]
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and mc_root(function, returned[0]) == target
+    mc_field = mc_function("int field(")
+    assert mc_field["result"] == "int" and len(mc_field["params"]) == 1
+    assert mc_field["params"][0]["type"] == "ptr:" + mc_outer[0]["id"]
+    for function in mc_functions.values():
+        values = set(mc_globals) | {v["name"] for v in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in mc_functions, node
+                target = mc_functions[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in target["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-member-classes-relocated-") as temp:
+        relocated = check("v2-member-classes-relocated", member_class_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == member_classes, "member class identities depend on the absolute root"
+
+    partial_declarations_positive = {
+        'class-namespace-type-unused': 'template<class U>using K=decltype((U{}));template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};int f(){return 0;}',
+        'class-namespace-type-used': 'template<class U>using K=decltype((U{}));template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};P<int,3>p{4};int f(){return p.n;}',
+        'class-ordinary-type-unused': 'template<class U>using K=decltype((U{}));struct O{template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};};int f(){return sizeof(O);}',
+        'variable-namespace-type-unused': 'template<class U>using K=decltype((U{}));template<class U,K<U> N>inline int p=1;template<int N>inline int p<int,N> =2;int f(){return 0;}',
+        'variable-namespace-type-used': 'template<class U>using K=decltype((U{}));template<class U,K<U> N>inline int p=1;template<int N>inline int p<int,N> =2;int f(){return p<int,3>;}',
+        'variable-ordinary-type-unused': 'template<class U>using K=decltype((U{}));struct O{template<class U,K<U> N>inline static int p=1;template<int N>inline static int p<int,N> =2;};int f(){return sizeof(O);}',
+        'variable-copied-primary-type-unused': 'template<class U>using K=decltype((U{}));template<class T>struct O{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){O<int>o;return sizeof(o);}',
+        'variable-copied-primary-type-used': 'template<class U>using K=decltype((U{}));template<class T>struct O{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){return O<int>::v<int,3>;}',
+        'variable-copied-partial-type-unused': 'template<class U>using K=decltype((U{}));template<class T>struct O;template<class T>struct O<T*>{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){O<int*>o;return sizeof(o);}',
+        'variable-copied-partial-type-used': 'template<class U>using K=decltype((U{}));template<class T>struct O;template<class T>struct O<T*>{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){return O<int*>::v<int,3>;}',
+        'generic-full-pending-safe': 'template<class T>struct O{template<class U,T N>inline static int v=1;template<>inline int v<int,T{}> = 2;};int f(){return O<int>::v<int,0>;}',
+        'class-fixed-frontier-unused': 'template<class A,class B,class C>struct P{int n;};template<class...Ts>struct P<int,Ts...>{int n;};int f(){return 0;}',
+        'class-fixed-frontier-used': 'template<class A,class B,class C>struct P{int n;};template<class...Ts>struct P<int,Ts...>{int n;};P<int,bool,char>p{7};int f(){return p.n;}',
+        'class-scalar-frontier-int': 'template<int A,int B,int C>struct Q{int n;};template<int...Ns>struct Q<0,Ns...>{int n;};int f(){return 0;}',
+        'class-scalar-frontier-long-long': 'template<long long A,long long B,long long C>struct Q{int n;};template<int...Ns>struct Q<0,Ns...>{int n;};int f(){return 0;}',
+        'variable-fixed-frontier-unused': 'template<class A,class B,class C>inline int p=1;template<class...Ts>inline int p<int,Ts...> =2;int f(){return 0;}',
+        'variable-fixed-frontier-used': 'template<class A,class B,class C>inline int p=1;template<class...Ts>inline int p<int,Ts...> =2;int f(){return p<int,bool,char>;}',
+        'variable-scalar-frontier-int': 'template<int A,int B,int C>inline int q=1;template<int...Ns>inline int q<0,Ns...> =2;int f(){return 0;}',
+        'variable-scalar-frontier-long-long': 'template<long long A,long long B,long long C>inline int q=1;template<int...Ns>inline int q<0,Ns...> =2;int f(){return 0;}',
+        'class-frontier-type-safe': 'template<class U>using K=decltype((U{}));template<class U,K<U> A,int B>struct P{int n;};template<int...Ns>struct P<int,Ns...>{int n;};int f(){return 0;}',
+        'variable-frontier-type-safe': 'template<class U>using K=decltype((U{}));template<class U,K<U> A,int B>inline int p=1;template<int...Ns>inline int p<int,Ns...> =2;int f(){return 0;}',
+        'expanded-frontier-zero-int-int-unused': 'template<class...Ts>struct O{template<class U,Ts...Vs>inline static int v=1;template<int...Ns>inline static int v<int,Ns...> =2;};int f(){O<int,int>o;return sizeof(o);}',
+        'expanded-frontier-zero-int-int-used': 'template<class...Ts>struct O{template<class U,Ts...Vs>inline static int v=1;template<int...Ns>inline static int v<int,Ns...> =2;};int f(){return O<int,int>::v<int,0,1>;}',
+        'expanded-frontier-zero-long-long-int-unused': 'template<class...Ts>struct O{template<class U,Ts...Vs>inline static int v=1;template<int...Ns>inline static int v<int,Ns...> =2;};int f(){O<long long,int>o;return sizeof(o);}',
+        'expanded-frontier-zero-long-long-int-used': 'template<class...Ts>struct O{template<class U,Ts...Vs>inline static int v=1;template<int...Ns>inline static int v<int,Ns...> =2;};int f(){return O<long long,int>::v<int,0,1>;}',
+        'expanded-frontier-one-int-int-unused': 'template<class...Ts>struct O{template<class U,Ts...Vs>inline static int v=1;template<int...Ns>inline static int v<int,0,Ns...> =2;};int f(){O<int,int>o;return sizeof(o);}',
+        'expanded-frontier-one-int-int-used': 'template<class...Ts>struct O{template<class U,Ts...Vs>inline static int v=1;template<int...Ns>inline static int v<int,0,Ns...> =2;};int f(){return O<int,int>::v<int,0,1>;}',
+        'expanded-frontier-one-long-long-int-unused': 'template<class...Ts>struct O{template<class U,Ts...Vs>inline static int v=1;template<int...Ns>inline static int v<int,0,Ns...> =2;};int f(){O<long long,int>o;return sizeof(o);}',
+        'expanded-frontier-one-long-long-int-used': 'template<class...Ts>struct O{template<class U,Ts...Vs>inline static int v=1;template<int...Ns>inline static int v<int,0,Ns...> =2;};int f(){return O<long long,int>::v<int,0,1>;}',
+        'empty-expanded-pack': 'template<class...Ts>struct O{template<class U,Ts...Vs>inline static int v=1;};static_assert(O<>::v<int> == 1);',
+        'trailing-value-pack': 'template<int A,int...Ns>inline int v=1;template<int...Ns>inline int v<0,Ns...> =2;int f(){return v<0>+v<0,1,2>;}',
+        'trailing-type-pack': 'template<class A,class...Ts>struct P{int n;};template<class...Ts>struct P<int,Ts...>{int n;};P<int>p{1};P<int,bool,char>q{2};int f(){return p.n+q.n;}',
+        'own-member-partial': 'template<class T>struct O{template<class A,int N>inline static int v=1;template<int N>inline static int v<int,N> =2;};template<>template<int N>inline int O<int>::v<int,N> =3;int f(){return O<int>::v<int,4>+O<char>::v<int,4>;}',
+        'partial-default': 'template<class T,int N=3>struct P{int n;};template<class T>struct P<T*>{int n;};P<int*>p{4};int f(){return p.n;}',
+        'partial-auto': 'template<class T,auto N>inline int v=1;template<int N>inline int v<int,N> =2;int f(){return v<int,3>;}',
+        'runtime-source': 'template<class U>using K=decltype(U{});\ntemplate<class T>struct O{\n template<class U,K<U> N>inline static int v=1;\n template<int N>inline static int v<int,N> = N+2;\n};\ntemplate<class A,class B,class C>struct P{int n;};\ntemplate<class...Ts>struct P<int,Ts...>{int n;};\ntemplate<int A,int...Ns>inline int pack=1;\ntemplate<int...Ns>inline int pack<0,Ns...> = sizeof...(Ns)+2;\nint*left(){return &O<int>::v<int,3>;}\nint*same(){return &O<int>::v<int,3>;}\nint*right(){return &O<char>::v<int,3>;}\nint read(){return O<int>::v<int,3>+O<char>::v<int,3>;}\nint main(){\n if(read()!=10)return 1;\n if(left()!=same())return 2;\n if(left()==right())return 3;\n *left()=8;\n if(read()!=13)return 4;\n P<int,bool,char>p{7};\n if(p.n!=7)return 5;\n if(pack<0>!=2)return 6;\n if(pack<0,1,2>!=4)return 7;\n return 0;\n}\n',
+    }
+    for name, source in partial_declarations_positive.items():
+        check("v2-partial-declarations-positive-" + name, source, None, profile="cpp-core-v2")
+
+    partial_declarations_reject = {
+        'class-namespace-type-unused': 'template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};int f(){return 0;}',
+        'class-namespace-type-used': 'template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};P<int,3>p{4};int f(){return p.n;}',
+        'class-ordinary-type-unused': 'template<class U>using K=decltype((sizeof(double),U{}));struct O{template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};};int f(){return sizeof(O);}',
+        'variable-namespace-type-unused': 'template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> N>inline int p=1;template<int N>inline int p<int,N> =2;int f(){return 0;}',
+        'variable-namespace-type-used': 'template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> N>inline int p=1;template<int N>inline int p<int,N> =2;int f(){return p<int,3>;}',
+        'variable-ordinary-type-unused': 'template<class U>using K=decltype((sizeof(double),U{}));struct O{template<class U,K<U> N>inline static int p=1;template<int N>inline static int p<int,N> =2;};int f(){return sizeof(O);}',
+        'variable-copied-primary-type-unused': 'template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){O<int>o;return sizeof(o);}',
+        'variable-copied-primary-type-used': 'template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){return O<int>::v<int,3>;}',
+        'variable-copied-partial-type-unused': 'template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O;template<class T>struct O<T*>{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){O<int*>o;return sizeof(o);}',
+        'variable-copied-partial-type-used': 'template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O;template<class T>struct O<T*>{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){return O<int*>::v<int,3>;}',
+        'generic-full-pending-hidden': 'template<class T>struct O{template<class U,T N>inline static int v=1;template<>inline int v<int,T{}> = 2;};int f(){return O<decltype((sizeof(double),int{}))>::v<int,0>;}',
+        'class-frontier-type-hidden': 'template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> A,int B>struct P{int n;};template<int...Ns>struct P<int,Ns...>{int n;};int f(){return 0;}',
+        'variable-frontier-type-hidden': 'template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> A,int B>inline int p=1;template<int...Ns>inline int p<int,Ns...> =2;int f(){return 0;}',
+    }
+    for name, source in partial_declarations_reject.items():
+        check("v2-partial-declarations-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    partial_declarations_invalid = {
+        'duplicate-partial': 'template<class T>inline int v=1;template<class T>inline int v<T*> =2;template<class T>inline int v<T*> =3;',
+        'duplicate-class-partial': 'template<class T>struct P{};template<class T>struct P<T*>{};template<class T>struct P<T*>{};',
+        'frontier-too-many-concrete': 'template<class A,class B>struct P{};template<class...Ts>struct P<int,Ts...>{};P<int,bool,char>p;',
+        'expanded-pack-too-few': 'template<class...Ts>struct O{template<Ts...Ns>inline static int v=1;};int f(){return O<int,int>::v<1>;}',
+    }
+    for name, source in partial_declarations_invalid.items():
+        check("v2-partial-declarations-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    partial_storage = check("v2-partial-declarations-storage", partial_declarations_positive["runtime-source"], profile="cpp-core-v2")
+    pd_globals = {g["name"]: g for g in partial_storage["globals"]}
+    pd_functions = {f["name"]: f for f in partial_storage["functions"]}
+    assert len(pd_globals) == len(partial_storage["globals"]) == 4
+    assert len(pd_functions) == len(partial_storage["functions"]) == 5
+    pd_lines = partial_declarations_positive["runtime-source"].splitlines()
+
+    def pd_function(prefix):
+        lines = [i for i, line in enumerate(pd_lines, 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        matches = [f for f in pd_functions.values() if f["loc"]["line"] == lines[0]]
+        assert len(matches) == 1, (prefix, matches)
+        return matches[0]
+
+    def pd_root(function, expr):
+        if expr["kind"] in ("cast", "address", "dereference"):
+            return pd_root(function, expr["args"][0])
+        assert expr["kind"] == "var", expr
+        if expr["name"] in pd_globals:
+            return expr["name"]
+        assigned = [n["value"] for n in function["body"] if n["op"] == "assign"
+                    and n["target"].get("kind") == "var" and n["target"].get("name") == expr["name"]]
+        assert len(assigned) == 1, (expr, assigned)
+        return pd_root(function, assigned[0])
+
+    pd_objects = []
+    for prefix in ("int*left(", "int*same(", "int*right("):
+        function = pd_function(prefix)
+        assert function["result"] == "ptr:int" and not function["params"]
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1
+        pd_objects.append(pd_root(function, returned[0]))
+    assert pd_objects[0] == pd_objects[1] and pd_objects[0] != pd_objects[2]
+    for target in (pd_objects[0], pd_objects[2]):
+        value = pd_globals[target]
+        assert value["type"] == "int" and value["mutable"] is True
+        assert value["value"]["kind"] == "literal" and value["value"]["value"] == "5"
+    assert sorted(g["value"]["value"] for name, g in pd_globals.items() if name not in pd_objects) == ["2", "4"]
+    for function in pd_functions.values():
+        values = set(pd_globals) | {p["name"] for p in function["params"]} | {p["name"] for p in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                target = pd_functions[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in target["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-partial-declarations-relocated-") as temp:
+        relocated = check("partial-declarations-relocated", partial_declarations_positive["runtime-source"], root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == partial_storage, "partial declaration identities depend on the absolute root"
 
     variable_pack_counts_positive = {
         'value-pack-empty': 'template<int...N>constexpr int count=sizeof...(N);static_assert(count<> == 0);',
@@ -6855,7 +7888,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'dynamic-initializer': 'int f(){return 3;}template<class T>int value=f();int main(){return value<int>;}',
         'thread-local': 'template<class T>thread_local int value=3;int main(){return value<int>;}',
         'volatile-result': 'template<class T>volatile int value=3;int main(){return value<int>;}',
-        'member-variable': 'struct R{template<class T>inline static int value=3;};int main(){return R::value<int>;}',
         'template-template': 'template<class T>struct R{};template<template<class>class C>constexpr int value=3;int main(){return value<R>;}',
         'hidden-actual-type': 'template<class>using I=int;template<class T>constexpr int value=3;int main(){return value<I<decltype(1.0)>>;}',
         'hidden-actual-scalar': 'template<int N>constexpr int value=N;int main(){return value<int(1.0)>;}',
@@ -7078,9 +8110,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'selected-floating-default': 'template<class T>struct R;template<class T>struct R<T*>{int f(int n=static_cast<int>(1.0)){return n;}};int main(){return R<int*>{}.f();}',
         'selected-floating-static': 'template<class T>struct R;template<class T>struct R<T*>{inline static int n=static_cast<int>(1.0);};int main(){return R<int*>::n;}',
         'base': 'struct B{int n;};template<class T>struct R;template<class T>struct R<T*>:B{int m;};',
-        'member-template': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>U f(U n){return n;}};',
         'friend-function': 'template<class T>struct R;template<class T>struct R<T*>{friend int f(R){return 3;}};',
-        'member-alias-template': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>using A=U;};',
         'nested-record': 'template<class T>struct R;template<class T>struct R<T*>{struct Inner{int n;};};',
         'volatile-pointee': 'template<class T>struct R;template<class T>struct R<T*>{T*n;};int main(){volatile int n=3;R<volatile int*>r{&n};return 0;}',
         'pointer-nontype': 'int n;template<int*P,class T>struct R;template<int*P,class T>struct R<P,T*>{int n;};',
@@ -7413,7 +8443,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'class-erased-alias-default': 'template<class T>using I=int;template<class T=I<double>>struct R{int n;};',
         'selected-alias-body': 'template<class T>using I=int;template<class T>int f(){I<double>n=3;return n;}int g(){return f<int>();}',
         'selected-function-default': 'template<class T,int N=(sizeof(double)+sizeof(T))>int f(T){return N;}int g(){return f(3);}',
-        'member-alias-template': 'struct R{template<class T>using I=T;};',
         'template-template-parameter': 'template<template<class>class T>using I=int;',
         'function-type': 'template<class T>using I=T();I<int>*f(){return nullptr;}',
         'volatile-type': 'template<class T>using I=volatile T;I<int>f(){return 3;}',
@@ -7708,7 +8737,6 @@ Token record(){return pp_record(2,3);}
         'floating-selected-default': 'template<class...T,int N=(sizeof(double)+sizeof...(T))>int f(T...v){return N;}int main(){return f(1);}',
         'floating-explicit-instantiation': 'template<int...N>int f(){return sizeof...(N);}template int f<int(1.0)>();',
         'template-template-pack': 'template<template<class>class...T>struct R{int n;};',
-        'member-template-pack': 'struct R{template<class...T>int f(T...v){return sizeof...(v);}};',
         'friend-template-pack': 'struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};',
         'c-varargs': 'template<class...T>int f(T...v,...){return sizeof...(v);}int main(){return f(1);}',
         'zero-array': 'template<class...T>int f(){int a[sizeof...(T)];return 0;}int main(){return f<>();}',
@@ -8227,7 +9255,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'selected-dependent-type': 'template<class T>struct R{static T n;};static_assert(sizeof(R<int*>)==1);',
         'volatile': 'template<class T>struct R{inline static volatile T n=3;};',
         'thread-local': 'template<class T>struct R{inline static thread_local T n=3;};',
-        'variable-template': 'template<class T>struct R{template<class U>inline static U n=3;};',
         'outside-parameter-source': 'template<int N>struct R{static int n;};template<decltype(int(1.0)) N>int R<N>::n=N;',
         'directive-qualifier': 'template<int N>struct R{inline static int n=N;};template int R<int(1.0)>::n;',
         'directive-extern-qualifier': 'template<int N>struct R{inline static int n=N;};extern template int R<int(1.0)>::n;',
@@ -8461,7 +9488,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'directive-noexcept-source': 'struct R{int n;};template<class T>int operator+(R,T)noexcept{return 3;}template int operator+<int>(R,int)noexcept(sizeof(double)>0);',
         'allocation': 'template<class T>void*operator new(decltype(sizeof(0)),T*p){return p;}',
         'literal': 'template<char... C>int operator""_number(){return 1;}',
-        'member-template': 'struct R{template<class T>int operator()(T){return 1;}};',
         'friend-template': 'struct R{int n;template<class T>friend int operator+(const R&r,T n){return r.n+n;}};',
         'local-unused-body': 'struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0);}};Local l;return r.n+n;}int f(){return R{3}+4;}',
     }
@@ -8874,7 +9900,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'selected-floating-type': 'template<class T>struct R{operator T(){return T();}};double f(R<double>&r){return r;}',
         'outside-header': 'template<decltype(sizeof(double)) N>struct R{int operator()();};template<decltype(sizeof(double)) N>int R<N>::operator()(){return N;}int f(){R<3>r;return r();}',
         'own-operator-template': 'template<class T>struct R{template<class U>int operator()(U){return 1;}};',
-        'own-conversion-template': 'template<class T>struct R{template<class U>operator U(){return U();}};',
         'virtual-conversion': 'template<class T>struct R{virtual operator int(){return 1;}};',
         'volatile-operator': 'template<class T>struct R{int operator()()volatile{return 1;}};',
         'allocation': 'template<class T>struct R{static void*operator new(decltype(sizeof(0))){return nullptr;}};',
@@ -9880,7 +10905,6 @@ int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;r
         'variadic': 'template<class T>struct R{int f(int v,...){return v;}};',
         'volatile': 'template<class T>struct R{int f()volatile{return 1;}};',
         'deleted': 'template<class T>struct R{int f()=delete;};',
-        'member-template': 'template<class T>struct R{template<class U>U f(U v){return v;}};',
         'friend': 'template<class T>struct R{friend int f(R r){return 1;}};',
         'nested-record': 'template<class T>struct R{struct I{int n;};int f(){return 1;}};',
         'bases': 'struct B{int n;};template<class T>struct R:B{int f(){return n;}};',
@@ -10122,8 +11146,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'template-template': 'template<template<class>class T>struct R{int n;};',
         'friend': 'template<class T>struct R{T n;friend int get(R r){return r.n;}};',
         'nested-record': 'template<class T>struct R{struct I{T n;};};',
-        'nested-template': 'struct R{template<class T>struct I{T n;};};',
-        'member-template': 'template<class T>struct R{template<class U>U f(U n){return n;}};',
         'union': 'template<class T>union R{T n;int m;};',
         'base': 'struct B{int n;};template<class T>struct R:B{T m;};',
         'bitfield': 'template<class T>struct R{unsigned int n:3;};int main(){R<int>r{};return r.n;}',
@@ -10355,7 +11377,6 @@ Plain chosenRecord(){return choose<false>();}
         'parameter-decltype-sizeof-float': 'template<decltype(sizeof(double)) N>int f(){return N;}int main(){return f<1>();}',
         'argument-sizeof-float': 'template<int N>int f(){return N;}int main(){return f<sizeof(double)>();}',
         'oversized-array': 'template<int N>int f(){int a[N]={};return a[0];}int main(){return f<65537>();}',
-        'member-template': 'struct R{template<int N>int f(){return N;}};int main(){R r;return r.f<3>();}',
         'mixed-65': 'template<class T0,int N1,class T2,int N3,class T4,int N5,class T6,int N7,class T8,int N9,class T10,int N11,class T12,int N13,class T14,int N15,class T16,int N17,class T18,int N19,class T20,int N21,class T22,int N23,class T24,int N25,class T26,int N27,class T28,int N29,class T30,int N31,class T32,int N33,class T34,int N35,class T36,int N37,class T38,int N39,class T40,int N41,class T42,int N43,class T44,int N45,class T46,int N47,class T48,int N49,class T50,int N51,class T52,int N53,class T54,int N55,class T56,int N57,class T58,int N59,class T60,int N61,class T62,int N63,class T64>int f(){return N1;}int main(){return f<int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int>()-1;}',
     }
     for name, source in non_type_templates_reject.items():
@@ -11101,7 +12122,6 @@ int main() {
         'method-volatile-method': 'struct R{int n;int get()volatile{return n;}};',
         'method-mutable-field': 'struct R{mutable int n;int get()const{return n;}};',
         'method-reference-field': 'struct R{int&n;int get()const{return n;}};',
-        'method-member-template': 'struct R{int n;template<class T>T get(T v){return v;}};',
         'method-method-comma-callee': 'struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}',
     })
     v2_rejections.update({
@@ -11109,7 +12129,6 @@ int main() {
         'constructor-base-initializer': 'struct B{int n;B(int v):n(v){}};struct R:B{R():B(1){}};',
         'constructor-inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};',
         'constructor-virtual-method': 'struct R{int n;R():n(1){} virtual int get(){return n;}};',
-        'constructor-template-constructor': 'struct R{int n;template<class T> R(T v):n(v){}};',
         'constructor-variadic-constructor': 'struct R{int n;R(int v,...):n(v){}};',
         'constructor-deleted-constructor': 'struct R{int n;R()=delete;};',
         'constructor-const-field': 'struct R{const int n;R():n(1){}};',

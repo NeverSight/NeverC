@@ -172,6 +172,36 @@ runtime parameter is added. Successful template-use events retain original and
 converted defaults with their exact selected declaration or type-use evidence.
 Validation happens at reached source uses and explicit declarations/directives;
 unselected overload candidates and uninstantiated dependent source remain lazy.
+Scalar static member variable templates emit the existing typed globals and
+storage operations. Canonical inner and outer arguments determine shared or
+distinct identities. Checked declaration-only non-inline const reads carry values
+without invented storage; evaluated addresses and references require definitions.
+Member expressions preserve receiver evaluation and temporary cleanup. The
+frontend-private type record retains the exact previous concrete declaration
+when Sema creates a separate out-of-line definition; both source types remain
+checked, without adding a wire operation or replaying substitution. A copied
+class-scope full specialization also joins its exact argument event, type event,
+original full declaration and selected outer instance. The original primary
+argument frame checks resolved default/parameter-type sources; the full
+initializer has no inner generic slots. This remains frontend-private metadata.
+See [member variable templates](cpp-core-v2.md#concrete-member-variable-templates).
+
+Member alias templates erase to the same supported types as their underlying
+source. They add no runtime template declarations or new wire operations.
+Concrete enclosing class records keep their normal identities; aliases preserve
+existing function signatures, references, fields and lifetime operations. Outer
+class and inner alias substitution sources remain separate private validation
+metadata. See [member alias templates](cpp-core-v2.md#concrete-member-alias-templates).
+
+Concrete member function templates emit existing typed functions, explicit
+receiver/result pointers and canonical scalar static globals. Their enclosing
+record and own argument identities jointly determine concrete code and storage.
+Equivalent calls share both; distinct instances do not merge. Successful
+constructor/conversion expression identities and deduction locations are private
+source validation metadata. Definition/default frames, parameter packs and
+written primaries add no runtime template operations or opaque payloads. See
+[concrete member function templates](cpp-core-v2.md#concrete-member-function-templates).
+
 Namespace scalar variable templates emit only existing concrete scalar globals,
 literals, variable references and ordinary function operations. Canonical
 primary/argument identity deduplicates storage; separate specializations keep
@@ -835,3 +865,18 @@ construct NaN constants (builtin constructors, bit casts, pointers, unions,
 from external scalar parameters remain supported and differentially tested;
 exact NaN literal representation remains available where this floor restriction
 does not apply.
+
+Member class templates in ordinary record scopes use the existing canonical
+record IDs, dependency-first field layout, method call signatures and scalar
+globals. Ordinary enclosing records add no implicit receiver or runtime template
+object. Full member declarations retain their exact argument source in the
+frontend; this adds no wire field or opcode. Templated outer record owners still
+require a separate source contract. See [member class templates](cpp-core-v2.md#ordinary-owner-member-class-templates).
+
+Partial declaration checks retain successful primary argument metadata in the
+embedded frontend before lowering. Written and copied declarations are distinct
+from selected-partial deduction events. Resolved parameter type sources are
+checked even while another argument or pack length is pending. Unknown tail
+positions cannot authorize concrete substitution edges. This does not add public
+protocol fields or opaque fallback nodes; emitted concrete values and storage
+identities retain their existing checks and relocation guarantees.

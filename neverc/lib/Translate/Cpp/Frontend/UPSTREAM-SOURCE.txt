@@ -61,7 +61,7 @@ category, explicitness, access and candidate-selection checks remain active.
 Independent literal source fixtures cover exact output, idempotence and drift;
 paired source/protocol and native O0/O2 cases cover fresh argument conversions.
 
-The same private six-file source group preserves completed namespace class
+The shared private ten-file source group preserves completed namespace class
 partial-specialization deductions in SemaTemplateDeduction.cpp. For requesting
 consumers only, the existing successful class-partial pattern substitution keeps
 source sugar (Final=false); partial ordering keeps its original path. After conversion, substituted-primary equality, trap and
@@ -75,7 +75,7 @@ original AST and no-op callback behavior. Independent literal archive fixtures
 cover the extended group and failure-before-write states; paired native/protocol
 fixtures cover selected source, canonical storage and lifetime behavior.
 
-The same six-file group retains namespace variable-template source only for
+The shared ten-file group retains namespace variable-template source only for
 requesting consumers. Successful CheckVarTemplateId and explicit full declaration
 checks preserve actual variables, locations, written arguments, defaults and
 non-type parameter types. Each full declaration also retains its written
@@ -91,8 +91,24 @@ substitution or initializer instantiation is introduced. Existing partial
 ordering, error traps, reference conversion and conversion-definition-name
 repairs remain intact. Source retention remains bounded and opt-in, with no-op
 callbacks and the original semantic paths for other consumers. Independent
-literal fixtures cover exact six-file output, mixed states and drift before any
+literal fixtures cover exact ten-file output, mixed states and drift before any
 write. Native/protocol fixtures check source, scalar storage and lazy demand.
+
+The shared source-retention group also records successful member-template
+construction and conversion expressions with the exact selected FunctionDecl
+and original deduction location. ASTConsumer.h adds an opt-in default-noop
+HandleNeverCSelectedTemplateCallSource callback. Overload.h carries a default-
+initialized SourceLocation outside the ImplicitConversionSequence union, copies
+it explicitly and clears it when conversion kind changes. Successful overload
+selection populates it after constructor ranking, preserving Standard.CopyConstructor
+cases without changing ranking or semantic flags. SemaOverload.cpp, SemaInit.cpp
+and SemaExprCXX.cpp report direct successful expressions before conversion and
+lifetime wrappers. No additional deduction or instantiation is performed.
+The source group now spans ten files and is preflighted before group writes.
+Independent literal contracts cover copied/reset metadata, exact result identity,
+selection locations, includes and callbacks. Mixed, missing, duplicated and
+partially patched states are rejected. Shared SemaInit/SemaOverload fixtures
+also retain the independent existing deduced-reference fixes.
 
 The isolated build renames namespace llvm and selected global C/C++ symbols.
 IsolateSymbols.py applies checked, idempotent changes to the extracted
@@ -142,6 +158,22 @@ or COFF writer required by the installed NeverC translator. Internal Clang
 libraries remain statically included. The Windows CI contract retains separate
 baseline/isolated SDK smart-pointer and deterministic COM runtime evidence;
 it does not claim to test COM activation, VS discovery or private LTO behavior.
+The opt-in variable type callback also retains the exact previous concrete
+VarTemplateSpecializationDecl when Sema creates a separate out-of-line member
+definition. In-place completion carries no previous-node argument. This lets
+source checks validate both declarations without replaying substitution or
+matching an unrelated use by template argument values. The same atomic ten-file
+source contract covers the callback signature and both producer paths.
+For a class-scope full member variable copied into a concrete outer class, the
+existing successful argument check is retained with the exact resulting variable
+and type source. The original written storage specifier belongs to the original
+declaration; inherited static storage on a copy is not a written specifier. No
+argument conversion or type substitution is repeated for this source event.
+Written and copied class/variable partial declarations also retain the successful
+primary argument check, including resolved non-type parameter source types when
+some argument values remain dependent. Copied events retain the exact original
+partial declaration; direct events remain separate from later selected-partial
+deduction. Collection never requests another substitution or instantiation.
 The exact scripts and compilation rules are part of the NeverC source tree at
 neverc/lib/Translate/Cpp/Frontend and neverc/cmake/modules/BuiltinCppFrontend.cmake.
 

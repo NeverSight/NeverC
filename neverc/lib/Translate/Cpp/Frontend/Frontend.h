@@ -75,7 +75,7 @@ struct NonTypeParameterSource {
   unsigned PackIndex; // Forward index, or ~0u for a deduced empty pack's type.
 };
 enum class TemplateSourceKind {
-  Type, Function, ClassDeclaration, PartialDeduction, PartialPattern,
+  Type, Function, ClassDeclaration, PartialDeclaration, PartialDeduction, PartialPattern,
   VariableUse, VariableDeclaration, VariablePartialDeduction, VariablePartialPattern
 };
 struct TemplateUseSource {
@@ -95,15 +95,23 @@ struct TemplateUseSource {
   // Argument values alone do not identify the successful candidate.
   const clang::TemplateArgumentList *Selection;
   bool WrittenStorageClass;
+  const clang::NamedDecl *Origin = nullptr; // Exact copied partial; null for a written event.
 };
 // Retain each type substitution already performed by Sema. The final
 // VarDecl may keep its first declaration's TypeSourceInfo after completion.
 struct VariableTypeSource {
-  const clang::VarTemplateSpecializationDecl *Variable;
+  const clang::VarTemplateSpecializationDecl *Variable, *Previous;
   const clang::VarDecl *Pattern;
   clang::TypeSourceInfo *Type;
   clang::SourceLocation Location;
   bool Completion;
+};
+// The final semantic call/construction can have a different display location
+// from the candidate set that performed its successful template deduction.
+struct SelectedTemplateCallSource {
+  const clang::Expr *Expression;
+  const clang::FunctionDecl *Function;
+  clang::SourceLocation Location;
 };
 struct FunctionSpecializationSource {
   const clang::FunctionDecl *Declaration, *Selected;
@@ -267,7 +275,8 @@ public:
            llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives = {},
            llvm::ArrayRef<TemplateUseSource> TemplateUses = {},
            llvm::ArrayRef<FunctionSpecializationSource> Specializations = {},
-           llvm::ArrayRef<VariableTypeSource> VariableTypes = {});
+           llvm::ArrayRef<VariableTypeSource> VariableTypes = {},
+           llvm::ArrayRef<SelectedTemplateCallSource> SelectedCalls = {});
 };
 } // namespace nct
 #endif

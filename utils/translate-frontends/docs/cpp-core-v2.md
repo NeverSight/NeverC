@@ -237,7 +237,8 @@ live object. Static/instance reference arguments share the full-expression
 temporary-call contract below; they introduce no reference lifetime extension.
 
 Virtual methods, inheritance,
-volatile/restrict methods and member templates remain unsupported. Defined scalar
+volatile/restrict methods remain unsupported; member function templates follow
+their separate contract below. Defined scalar
 static data follows its separate storage contract below. Ordinary
 constructors and destructors follow the separate rules below. The existing
 implicit trivial copy paths are unchanged.
@@ -482,7 +483,7 @@ both are admitted under these contracts.
 
 Anonymous nested structs, including typedef-named anonymous nested definitions,
 remain rejected; a named tag with a typedef alias is supported. Existing
-non-nested anonymous-record behavior is unchanged. Unions, nested class templates, inheritance,
+non-nested anonymous-record behavior is unchanged. Unions, unsupported member class templates, inheritance,
 virtual dispatch and unsupported field/body operations retain their restrictions,
 including unused nested definitions. Older profiles continue to reject nested
 records. Full C++ and STL remain unfinished.
@@ -552,7 +553,7 @@ layout, and authorized operations use those same fields. No access flag, new IR
 instruction or runtime wrapper is needed. Generated source remains reviewable.
 
 Mixed-access non-standard-layout classes, friend templates, inheritance,
-anonymous nested records and nested class templates remain outside current support. Bitfields and
+anonymous nested records and unsupported member class templates remain outside current support. Bitfields and
 mutable, const, reference or unsupported numeric fields retain their existing
 restrictions. A getter returning a field's ordinary `T*` address does not admit
 pointer-to-member types such as `T C::*`. Older profiles keep their contracts.
@@ -709,7 +710,7 @@ enums, static assertions, access labels, ordinary named methods and user-provide
 constructors, destructors, operators and conversions as described below. Aggregates and constructed instances must be
 complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
-remain checked when selected. Member function templates, friends, nested
+remain checked when selected. Friends, nested
 records/templates and bases remain outside this class-template increment.
 Namespace partial specializations follow their separate contract below. Template-template parameters and non-scalar value arguments remain excluded.
 
@@ -761,9 +762,9 @@ Written outer template parameter types on separate out-of-line definitions recei
 the same source checks as the primary parameter list before metadata is erased.
 Selected default/noexcept expressions and materialized signatures/bodies must pass
 the ordinary profile checks. Attributes, virtual/variadic/deleted methods,
-volatile/restrict qualifiers and member function templates are excluded. The class
+volatile/restrict qualifiers are excluded. The class
 must remain an admitted standard-layout record. Static data, friend,
-nested-template and base support is not expanded here. Namespace partial
+Member class templates follow the ordinary-owner contract below; bases remain unsupported. Namespace partial
 specializations follow their separate contract below. Operators and
 conversions follow their separate class-template contract below.
 
@@ -808,8 +809,8 @@ temporary lifetime extension, by-value arguments and return storage use existing
 operations. Constructor-local records and scalar static locals retain concrete
 class-instance identities. No template argument becomes a runtime parameter.
 
-Delegating/inherited constructors and own member function templates are not
-included. Operators and conversions follow their separate contract below. Defaulted special members follow the rules below. User-provided template destructors and
+Delegating/inherited constructors are not included. Member function templates
+follow their separate contract below. Operators and conversions follow their separate contract below. Defaulted special members follow the rules below. User-provided template destructors and
 member/array cleanup follow the destructor rules below.
 Native O0/O2 and protocol fixtures cover calls, defaults, copy/move storage,
 initialization order, member/array lifetimes, identities and relocation. Native
@@ -865,8 +866,7 @@ use the existing concrete special-member signature checks. Explicit instantiatio
 and specialization retain their source and definition requirements. Copy sources
 may be const or mutable lvalue references as selected by Clang; move sources are
 unqualified rvalue references. Copy assignment permits unqualified or `&`
-receivers, and move assignment also permits `&&`. Member function templates,
-bases, unsupported field types and layouts remain
+receivers, and move assignment also permits `&&`. Bases, unsupported field types and layouts remain
 outside this increment.
 
 Defaulting evidence comes from the concrete declarations or their exact direct
@@ -920,7 +920,7 @@ results use their deduced admitted types.
 Out-of-line definitions, explicit class/member instantiation and explicit
 specialization follow the existing ownership and definition rules. These are
 members of a class template; a member's own function-template parameter list
-remains unsupported. Namespace operator templates follow their separate contract. Allocation/deallocation,
+follows the separate member function template contract below. Namespace operator templates follow their separate contract. Allocation/deallocation,
 virtual dispatch, unsupported qualifiers, fields and signatures retain their
 restrictions. C++20 conditional `explicit` remains outside C++17.
 
@@ -1040,11 +1040,298 @@ fixtures verify array extents, reference writes, shared/distinct static objects,
 record results, copies, moves and full-expression destruction. Protocol fixtures
 check exact types, record reuse, result destinations, reference roots, selected
 calls and relocation. Native results require the implementing revision's CI.
-Member alias templates, template-template parameters, standard headers and
+Member alias templates follow their separate contract below. Template-template parameters, standard headers and
 complete C++17/STL remain unfinished. Namespace class partial specializations
 follow the contract below.
 Only C++ input is implemented; E Language, Python and other frontends remain
 planned.
+
+## Partial declaration source checks
+
+Written class and variable partial specializations retain the successful primary
+argument check separately from later partial-selection deduction. A member
+variable partial copied into a concrete outer class retains that copy's exact
+original declaration, actual written arguments and converted parameter type
+sources. Already resolved parameter type syntax is checked even if no inner
+specialization is selected. For example, a type alias used by a primary non-type
+parameter cannot hide unsupported source solely because the partial's value
+argument remains dependent. Original generic class-scope full member variable
+declarations also retain pending arguments for their existing source checks.
+
+An unknown-length pack expansion can end Clang's argument-to-parameter matching
+before all primary slots are known. The checked prefix and all actual source are
+retained; only completely checked primary slots can provide substitution edges.
+For an already expanded primary pack, each checked parameter type keeps its
+actual forward pack index. A partially checked pack does not become a concrete
+source slot. Later selected specializations still require complete concrete
+argument and deduction evidence. Checking never guesses missing arguments,
+reorders the successful conversion result or requests another instantiation.
+
+Paired native and protocol cases cover direct declarations, unused and selected
+copies, fixed and expanded packs, resolved type sources, pending full declarations
+and language diagnostics. Seven O0/O2 runtime checkpoints check values and static
+storage identity. All native results require the implementing CI revision.
+Template-owner restrictions remain unchanged by these source checks; full
+C++/STL remains unfinished. Only C++ input is implemented. E Language, Python
+and other frontends remain planned, and translation uses embedded Clang libraries
+without installing or invoking an external Clang executable.
+
+## Ordinary-owner member class templates
+
+Named member class templates are supported inside admitted ordinary record
+scopes, including multiple ordinary nested owners. Ordinary owners add lexical
+scope identity without adding template parameter levels. Primaries, in-class or
+out-of-line partial/full specializations, defaults, bounded type/scalar packs,
+forward declarations, definitions and explicit instantiation retain their
+existing source and materialization checks. For example:
+
+```cpp
+struct Scope {
+  template<class T> struct Item { T value; };
+  template<class T> struct Item<T*> { T value[2]; };
+  template<> struct Item<int*> { int value[3]; };
+};
+int selected() {
+  Scope::Item<int*> item{{1, 2, 3}};
+  return item.value[2];
+}
+```
+
+The full specialization above takes precedence over the partial. Equivalent
+instantiations share canonical types and scalar static storage; distinct owners
+or arguments retain distinct identities. Records are emitted after by-value
+field dependencies, including an enclosing ordinary record that contains its
+member class instance. There is no implicit enclosing-object pointer. Ordinary
+methods and selected constructors, copies, moves and destructors keep their
+existing receiver and lifetime rules. Member function, alias and scalar variable
+templates can be used within these classes under their separate contracts.
+
+Every nondependent declaration qualifier remains source-checked before erasure,
+including unused out-of-line primaries and partials. Full declarations retain
+their own exact successful argument check and written argument source. Pack
+owners include the member primary and each direct partial. Limits remain 64
+parameters/elements and the existing source-depth and total expansion budgets.
+Unsupported generic member bodies retain normal laziness until selected.
+
+The enclosing owner chain for a member class template must consist of ordinary,
+nondependent named records. A class template or its specialization as an outer
+owner requires a separate copied-member-class source contract and is not yet
+supported. Generic nested records inside a class template, local/union owners,
+inheritance, virtual dispatch, unsupported field types and allocation retain
+separate restrictions. Full C++/STL remains unfinished. Eighteen O0/O2 runtime
+checkpoints and paired protocol fixtures cover layouts, calls, storage identity,
+lifetimes and relocation; native results require the implementing CI revision.
+Only C++ input is implemented; E Language, Python and other input frontends remain
+planned. Translation uses embedded Clang libraries without an external Clang
+executable.
+
+## Concrete member variable templates
+
+Admitted ordinary records, including nested records, and concrete class-template primary, partial
+and full instances support scalar static member variable templates. Results are
+integer, boolean or enum values, including scalar deduced `auto`, with zero or
+constant initialization. Inner type/scalar arguments, defaults, partial/full
+specializations and bounded packs retain the existing 64-entry limits. Ordinary
+C++ access, specialization ordering and required definitions still apply.
+
+```cpp
+template<int N> struct Values {
+  template<class T> inline static int item = N;
+  template<class T> static const int constant = N + 1;
+  template<class T> static int late;
+};
+template<int N> template<class T> int Values<N>::late = N + 2;
+int main() {
+  Values<3>::item<int> = 5;
+  return Values<3>::item<int> + Values<4>::item<int>
+       + Values<3>::constant<bool> + Values<3>::late<int>;
+}
+```
+
+Equivalent arguments share a canonical global; different inner or outer
+arguments keep separate objects. Out-of-line definitions retain their exact
+previous concrete declaration, selected primary/partial and type substitution.
+Both first declaration and later definition source are checked. Specialized
+member primaries and partials use their own definitions; copied patterns retain
+the selected outer class origin. No use is recovered by matching argument values
+or approximate source positions, and no second Sema substitution is performed.
+Nondependent written outer qualifiers are checked even for unused templates.
+
+Non-inline const values with an already checked in-class constant initializer
+may be read or discarded without emitting a storage definition. Evaluated
+addresses and references require a definition. Unused fixed-type queries do not
+force an initializer or create storage; deduced auto still requires its actual
+initializer. Object and pointer access evaluate the receiver once and preserve
+full-expression cleanup, using the existing typed storage and lifetime paths.
+
+Five former rejection sources are promoted without changing their spelling.
+Paired source/protocol fixtures and twenty-two O0/O2 runtime checkpoints cover
+storage identity, values, mutations, defaults, partial/full selection, late
+initializers, receiver effects and temporary destruction. Protocol fixtures
+check canonical globals, omitted declaration-only storage, calls and relocation.
+Native validation requires the implementing CI revision. Invalid C++ reports
+`TR0202`, unsupported source reports `TR0201`, and required missing definitions
+report `TR0203`; failed translation emits no artifacts.
+
+A full member variable specialization written inside a dependent outer class
+retains its original declaration and the exact copied declaration in each actual
+outer instance. Already resolved written arguments, selected defaults and
+non-type parameter types are checked even when the outer class is unused.
+Remaining outer-dependent source is checked after instantiation. The full
+initializer has no inner generic slots and cannot borrow a caller's arguments.
+The copied declaration is joined to its exact original pattern and successful
+argument/type source without repeating substitution. For example:
+
+```cpp
+template<int N> struct Full {
+  template<class T> inline static int value = 1;
+  template<> inline int value<int> = N;
+};
+int& first() { return Full<3>::value<int>; }
+int& other() { return Full<4>::value<int>; }
+```
+
+The objects above remain distinct. Concrete namespace-written full
+specializations and those in an ordinary or fully specialized outer class keep
+their own declaration source. Nested member accesses check argument source once
+and still evaluate each receiver once, with the existing 64-level source bound
+and total expansion budget. Other result types,
+thread-local or dynamic initialization, local/union owners, unsupported template owner chains, template-template parameters, inheritance, allocation and full
+C++/STL remain unfinished. Only C++ input is implemented; E Language, Python and
+other frontends are planned. Translation uses embedded Clang libraries and
+launches no external Clang executable.
+
+## Concrete member alias templates
+
+Admitted ordinary records, including nested records, and concrete class-template primary,
+partial and full specializations support member alias templates. Their type,
+scalar, enum and scalar `auto` arguments, defaults and packs follow the existing
+64-entry parameter/pack limits. Results may use admitted scalar, void, pointer,
+reference, fixed-array and record types. C++ access and lookup remain authoritative.
+
+```cpp
+template<class T> struct Types {
+  template<class U = T> using Value = U;
+  template<int N> using Array = T[N];
+};
+struct Aliases {
+  template<class T> using Reference = T&;
+};
+int main() {
+  Types<int>::Array<2> values{3, 4};
+  Aliases::Reference<int> first = values[0];
+  first = 5;
+  return values[0] + values[1];
+}
+```
+
+Outer class arguments and inner alias arguments retain separate source contexts.
+Copied member aliases must identify their exact written origin and selected
+class pattern, including reordered partial-specialization parameters. An alias
+written in a full class specialization has its own declaration. Equal underlying
+types keep their existing identities; using aliases does not create runtime
+objects, distinct overloads or copies of the referenced storage.
+
+Every concrete use checks written arguments, selected defaults, non-type
+parameter types and the actual substituted underlying TypeLoc. Canonical type
+folding cannot hide unsupported source. A nondependent declaration is checked
+even when unused, including a member alias made nondependent by outer class
+substitution. Still-dependent underlying types retain template laziness until
+substitution. Unselected class partials do not force their dependent aliases.
+The embedded Clang frontend retains the original two-stage substitution source;
+it performs no second source-only substitution and launches no external compiler.
+
+Three former member-alias rejection cases are promoted without changing their
+source. Paired source/protocol fixtures, nine O0/O2 runtime checkpoints, concrete
+signature/storage behavior and relocation checks require validation on the
+implementing CI revision. Source-depth and shared source-budget guards still
+apply. Unsupported source reports `TR0201`, invalid C++ reports `TR0202`, and
+required missing definitions report `TR0203`.
+
+Local/union owners, unsupported template owner chains, template-template
+parameters, inheritance, allocation and hosted standard-library headers remain
+outside this increment. C++17 does not allow explicit or partial specialization
+of an alias template. Full C++/STL remains unfinished. C++ is the only implemented
+input frontend; E Language, Python and other frontends are planned.
+
+## Concrete member function templates
+
+Admitted standard-layout ordinary records, including nested records, and concrete
+class-template instances in namespaces or ordinary record scopes support named and static member function templates, ordinary operator templates,
+constructor templates and conversion-function templates. Their concrete parameter
+and result types use the existing scalar, pointer, reference, array and record
+rules. Type/scalar parameters, C++17 scalar `auto`, selected defaults, concrete
+packs, out-of-line definitions, explicit instantiation and specialization are
+included. Each parameter list and pack has at most 64 entries.
+
+```cpp
+template<int N> struct Counter {
+  template<class T> static int& state() {
+    static int value = N;
+    return value;
+  }
+  template<class T> int add(T value) { return N + int(value); }
+};
+struct Number {
+  int value;
+  template<class T> Number(T n) : value(int(n)) {}
+  template<class T> operator T() const { return T(value); }
+};
+int main() {
+  Number number = 3;
+  int value = number;
+  Counter<4> counter;
+  return counter.add(value);
+}
+```
+
+A member's own template arguments remain separate from its enclosing class
+arguments, including selected class partials and member-template specializations.
+Written member primaries receive deterministic identities before hidden concrete
+copies are indexed. Equivalent calls share functions and scalar static locals;
+different inner arguments, outer instances or written primaries remain distinct.
+No template arguments or source-check records enter the runtime protocol.
+Concrete outer class qualifiers on member-template declarations are checked
+even without an instantiated body. A folded argument or erased alias inside
+the qualifier cannot bypass the existing source checks.
+
+Selected calls retain the actual function and its written arguments, selected
+defaults and non-type parameter types. Constructor and implicit-conversion
+expressions also retain their exact successful selection location before lifetime
+or conversion wrappers are added. This matters when an equals token or implicit
+member name differs from deduction's location. The embedded frontend records
+these already-computed results; it does not repeat deduction or instantiate a
+body just to recover source evidence.
+
+Materialized function definitions and selected function defaults have their own
+exact argument contexts. Nested instances cannot borrow another specialization's
+slots. A specialization of the member template itself uses its own body while
+retaining the actual inherited function-default source selected by C++. Unused
+bodies, dependent defaults and unselected candidates remain lazy. Every
+materialized body, selected exception specification and explicit directive still
+receives source checks, including repeated and no-effect directives.
+
+Calls reuse existing receiver/result storage, C++17 evaluation order, reference
+aliases and construction/destruction rules. Static calls through an object retain
+receiver effects. Constructors cover direct/copy initialization, argument/return
+conversions and member initialization. Conversion templates preserve the selected
+scalar, pointer, reference or record destination and subsequent standard
+conversions. Access and invalid C++ diagnostics remain authoritative.
+
+Unsupported template owner chains,
+template-template parameters, friend templates, inheritance, virtual dispatch, unsupported layouts, allocation and
+standard-library headers remain outside this increment. A constructor template
+cannot be explicitly defaulted under C++17; that remains a language error.
+Source depth is bounded at 64 with the shared 200000-unit budget. Unsupported
+materialized source reports `TR0201`, invalid C++ reports `TR0202`, and required
+missing definitions report `TR0203`. Legacy core v1 keeps rejecting templates.
+
+Paired source/protocol cases, 20 O0/O2 runtime checkpoints, canonical call/storage
+identity, reference closure and relocation fixtures are included. Native results
+require the implementing revision's CI. Full C++/STL remains unfinished. C++ is
+the only implemented input frontend; E Language, Python and others remain
+planned. Translation uses embedded Clang libraries and requires no external
+Clang executable.
 
 ## Namespace scalar variable templates
 
@@ -1053,7 +1340,7 @@ results with zero or fully checked scalar constant initialization. This includes
 plain or constexpr variables, C++17 inline variables, deduced `auto` and
 `decltype(auto)`, primary templates, selected partial specializations, explicit
 full specializations, type/scalar defaults and concrete packs. Each parameter
-list and pack has at most 64 entries. Member variable templates, other result
+list and pack has at most 64 entries. Member variable templates follow their separate contract above. Other result
 types, thread-local storage and dynamic initialization remain excluded.
 
 ```cpp
@@ -1119,7 +1406,7 @@ concrete type and integer/bool/enum/auto arguments, fields, ordinary members,
 scalar static data, constructors, destructors and defaulted operations as primary
 class templates. Each parameter list and concrete pack has at most 64 entries.
 Records still require supported standard-layout storage with no bases; member
-function/variable templates, template-template parameters and full standard-library
+class templates, template-template parameters and full standard-library
 headers remain outside this increment.
 
 ```cpp
@@ -1217,7 +1504,7 @@ identities stay unchanged. No runtime parameters, global initialization or opaqu
 representations are added.
 
 Final defaults must be supported scalar constants. Pointer/reference/record-valued
-arguments, member/friend templates, standard headers and remaining
+arguments, friend templates, standard headers and remaining
 C++17/STL features are still unfinished. Invalid C++ retains TR0202; unsupported
 profile source uses TR0201, and selected definitions missing from this source unit
 use TR0203 where ordinary rules require them.
@@ -1239,7 +1526,7 @@ out-of-line definitions, scalar auto/decltype(auto), private/protected access,
 explicit member instantiation/specialization and full class specialization retain
 ordinary C++ source semantics. A dependent static type must resolve to a supported
 scalar. Static pointers, references, arrays, records, volatile/thread-local data,
-member variable templates and dynamic initialization remain excluded.
+dynamic initialization remain excluded.
 
 Each actual definition becomes one ordinary typed global. Equivalent class
 arguments, aliases and repeated instantiations share it; distinct values, types
@@ -1343,7 +1630,8 @@ ordinary C++17 operator set. This includes arithmetic, comparisons, logical/comm
 shifts, compound assignment, increment/decrement, dereference, address and
 arrow-star forms that C++ permits as non-members. Embedded Clang enforces arity,
 operand types, access and overload resolution. Allocation/deallocation, literal
-operators, member/friend templates and later-standard operators remain excluded.
+operators, friend templates and later-standard operators remain excluded.
+Member function templates follow their separate contract above.
 
 The existing function-template limits apply: up to 64 type or supported
 scalar parameters, deduction, type defaults, scalar C++17 auto and dependent
@@ -1387,8 +1675,8 @@ at most 64 parameters; each concrete pack has at most 64 elements, including zer
 Every packed type or integer/bool/enum value is checked, even if the body uses only
 the count. Scalar auto packs may contain different admitted deduced scalar types.
 Pointer/reference/class-valued non-type arguments, template-template parameters,
-own member/friend/alias/variable templates and bases retain their existing
-exclusions. Namespace class partial specializations use the contract above. C ellipsis varargs are separate and unsupported.
+unsupported member class templates, friend templates and bases retain their
+existing exclusions. Namespace class partial specializations use the contract above. C ellipsis varargs are separate and unsupported.
 
 Embedded Clang performs deduction, reference collapsing, explicit prefix handling
 and parameter expansion. Each concrete function parameter uses separate ordinary
@@ -1452,7 +1740,7 @@ unconstrained parameters, mixing supported types with integer, boolean
 and enum values. Embedded Clang performs deduction, overload ordering,
 substitution and explicit specialization/instantiation. Type-parameter defaults,
 namespace imports, recursion and nested calls use ordinary typed functions.
-Member and friend templates, template-template parameters,
+Friend templates, template-template parameters,
 abbreviated/constrained templates and standard headers remain
 outside this stage.
 
@@ -1938,8 +2226,7 @@ its result. Reference source parameters do not own or destroy their referents.
 A containing aggregate may be initialized with a member having user-defined
 copy operations without selecting a copy of the containing object. Generated
 copy construction and assignment follow the next sections. Deleted special
-members, member templates, variadic/default
-arguments,
+members, unsupported variadic/default arguments,
 allocation and exception unwinding are not added. Temporary source-reference
 arguments and receivers follow the full-expression call contract below. Missing definitions and
 invalid source const/access operations remain diagnostics. V1 admission and
@@ -2314,7 +2601,7 @@ parameters. Reference results preserve their aliases, including subscript and
 increment results. Taking an overloaded operator's function/member address still
 requires later function-pointer support. Conversion functions follow their separate
 contract below. The operators of admitted class-template instances follow the contract above.
-Member operator function templates, dependent friend declarations,
+Dependent friend declarations,
 virtual dispatch and allocation/deallocation operators remain excluded. Temporary call operands
 follow the separate full-expression contract below.
 
@@ -2367,7 +2654,7 @@ lifetime counts. Protocol fixtures check selected identities and full signatures
 free/member argument offsets, parameter capture versus destruction order, direct
 result storage, cleanup and deterministic relocation. Unsupported code is still
 inspected inside unused functions and noexcept queries. V1 admission is unchanged;
-member operator function templates, library headers and complete STL remain in development. Native evidence
+library headers and complete STL remain in development. Native evidence
 must come from the implementing revision's CI.
 
 ## Deduced reference conversions
@@ -2469,7 +2756,7 @@ int main() {
 ```
 
 Conversion functions have no explicit parameters. Admitted class-template
-instances follow the contract above. Virtual and member-template conversions,
+instances and member conversion templates follow the contracts above. Virtual conversions,
 volatile/restrict receivers, unsupported result types and function/member
 pointers remain excluded. Full-expression temporary receivers and converted
 reference arguments follow the next section. Automatic local reference extension
