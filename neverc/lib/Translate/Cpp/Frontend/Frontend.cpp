@@ -3633,7 +3633,7 @@ public:
     if (!variablePatternShape(Owner) || !variablePatternType(Pattern))
       return false;
     const auto *SourceOwner = variableTemplatePattern(Pattern);
-    std::set<const NamedDecl *> Seen;
+    std::set<const Decl *> Seen;
     for (const auto *Current = Owner; Current;) {
       A.chargeExpansion(1, Current->getLocation());
       if (Seen.size() >= 64 || !Seen.insert(Current->getCanonicalDecl()).second ||
