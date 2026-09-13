@@ -18,6 +18,12 @@ C++17 source without includes and uses the existing native hosted target rules.
 `--check`, output ownership, diagnostics and artifact validation follow the
 [existing design](design.md).
 
+## Standard template parsing across targets
+
+The embedded frontend disables MSVC compatibility extensions and delayed template parsing for `cpp-core-v2` on every supported target, including Windows x64 and ARM64. Definitions use standard C++17 parsing and lookup rules. Duplicate explicit instantiation definitions, late specializations and incompatible exception specifications retain language diagnostics (`TR0202`); parsed source still receives the existing support checks (`TR0201`). Unused dependent bodies remain lazy until instantiation is needed. This setting does not change project/math profile configuration or the target data layout, and requires no external Clang executable. Full C++/STL support remains unfinished.
+
+Explicit function specializations still require their own definition in this source unit. Repeated declarations do not provide a body and remain `TR0203`, even when the primary template has a definition.
+
 ## Accepted declarations
 
 | Construct | Translation behavior |

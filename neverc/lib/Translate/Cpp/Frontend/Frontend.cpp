@@ -4940,9 +4940,14 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
         "-std=c++17",          "-nostdinc", "-nostdinc++",
         "-fsyntax-only",       "-target",   S.Target};
     Args.insert(Args.end(), S.Arguments.begin(), S.Arguments.end());
-    if (S.coreV2())
+    if (S.coreV2()) {
+      // Keep standard template parsing and diagnostics independent of the
+      // target's default Microsoft compatibility options.
       Args.insert(Args.end(), {"-Wc++20-extensions", "-Wc++23-extensions",
-                               "-Wc++26-extensions"});
+                               "-Wc++26-extensions", "-fno-ms-compatibility",
+                               "-fno-ms-extensions",
+                               "-fno-delayed-template-parsing"});
+    }
     if (S.math()) {
       Args.insert(Args.end(),
                   {"-fno-fast-math", "-ffp-contract=off", "-resource-dir",

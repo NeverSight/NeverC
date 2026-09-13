@@ -29,8 +29,9 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
 
-    def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1"):
+    def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1", target=None):
         nonlocal count
+        request_target = args.target if target is None else target
         directory = root or (args.output_dir / name)
         directory.mkdir(parents=True)
         file = directory / "input.cpp"
@@ -39,7 +40,7 @@ def main():
         response = directory / "response.json"
         request.write_text(json.dumps({"protocol": 1, "profile": profile,
             "root": str(directory.resolve()), "source": str(file.resolve()),
-            "target": args.target, "arguments": ["-std=c++17", *options]}))
+            "target": request_target, "arguments": ["-std=c++17", *options]}))
         result = subprocess.run([str(args.neverc), "__neverc_cpp_frontend", "--request", str(request),
             "--output", str(response)], text=True, capture_output=True, timeout=120)
         assert response.exists(), (name, result.returncode, result.stderr)
@@ -50,7 +51,7 @@ def main():
         else:
             assert result.returncode == 0 and not codes, (name, result.returncode, data)
             assert data["profile"] == profile
-            assert data["target"]["triple"] == args.target
+            assert data["target"]["triple"] == request_target
             if profile == "cpp-core-v2":
                 layout = data["target"]["carrier_layout"]
                 widths = {"i8": 8, "u8": 8, "i16": 16, "u16": 16,
@@ -78,6 +79,35 @@ def main():
             assert again.returncode and response.read_bytes() == before, "existing response overwritten"
         count += 1
         return data
+
+    # Windows driver defaults must not change core-v2 source visibility or
+    # standard diagnostics. Exercise both MSVC architectures on every CI host.
+    standard_template_parsing = {
+        'conversion-mismatched-dependent-definition': ('template<class T>struct Box{T n;};template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator I<Box<T>>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}', 'TR0202'),
+        'conversion-concrete-written-name': ('template<class T>struct R{operator int()const;};template<class T>R<T>::operator decltype((sizeof(int),int{}))()const{return 3;}int main(){R<int>r;return r;}', None),
+        'conversion-hidden-concrete-written-name': ('template<class T>struct R{operator int()const;};template<class T>R<T>::operator decltype((sizeof(double),int{}))()const{return 3;}int main(){R<int>r;return r;}', 'TR0201'),
+        'out-of-line-reference': ('template<class T>struct R{T n;operator decltype(auto)();};template<class T>R<T>::operator decltype(auto)(){return (n);}int&f(R<int>&r){return r;}', None),
+        'repeated-extern-before-definition': ('template<class T>int f(){return 3;}extern template int f<int>();extern template int f<int>();template int f<int>();int main(){return f<int>()-3;}', None),
+        'single-function-definition': ('template<int N>int f(){return N;}template int f<3>();int main(){return f<3>()-3;}', None),
+        'single-static-definition': ('template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;int main(){return R<int>::n-3;}', None),
+        'matching-noexcept': ('int f()noexcept;int f()noexcept{return 1;}int main(){return f()-1;}', None),
+        'unused-dependent-body': ('template<class T>int f(){return T::missing;}int main(){return 0;}', None),
+        'dependent-delegating': ('template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};', 'TR0201'),
+        'outside-delegating': ('template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}', 'TR0201'),
+        'duplicate-function-definition': ('template<int N>int f(){return N;}template int f<3>();template int f<1+2>();', 'TR0202'),
+        'duplicate-static-definition': ('template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;template int R<int>::n;', 'TR0202'),
+        'function-extern-after-definition': ('template<class T>T f(T n){return n;}template int f<int>(int);extern template int f<int>(int);', 'TR0202'),
+        'operator-extern-after-definition': ('struct R{int n;};template<class T>int operator+(R r,T n){return r.n+n;}template int operator+<int>(R,int);extern template int operator+<int>(R,int);', 'TR0202'),
+        'static-extern-after-definition': ('template<class T>struct R{static T n;};template<class T>T R<T>::n=3;template int R<int>::n;extern template int R<int>::n;', 'TR0202'),
+        'late-destructor-specialization': ('template<class T>struct R{~R(){}};template R<int>::~R();void f(){R<int>r;}template<>R<int>::~R(){}', 'TR0202'),
+        'incompatible-noexcept': ('int f()noexcept;int f()noexcept(false){return 1;}', 'TR0202'),
+        'ordinary-lookup-before-later-definition': ('template<class T>int f(T n){return later(n);}int later(int n){return n;}int main(){return f(3);}', 'TR0202'),
+        'missing-selected-definition': ('template<class T>T f(T n);int main(){return f(3);}', 'TR0203'),
+    }
+    for target in dict.fromkeys((args.target, "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")):
+        for name, (source, code) in standard_template_parsing.items():
+            check("v2-standard-template-parsing-" + target + "-" + name, source,
+                  code, profile="cpp-core-v2", target=target)
 
     for fixture in ("program.cpp", "module.cpp", "unspecified-order.cpp"):
         check(fixture[:-4], (repository / "tests/neverc/Inputs/translate/cpp" / fixture).read_text())
@@ -6640,7 +6670,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     assert [c["callee"] for c in calls] == [maker["name"], at_function("int observe(")["name"], token_id+"_destroy"]
     assert np_pointer(full, calls[0]["args"][0]) == np_pointer(full, calls[1]["args"][0]) == np_pointer(full, calls[2]["args"][0])
     returns = [n["value"] for n in full["body"] if n["op"] == "return"]
-    assert len(returns) == 1 and di_call_result(full, returns[0]) == calls[1]["target"]["name"]["target"]["name"]
+    assert len(returns) == 1 and di_call_result(full, returns[0]) == calls[1]["target"]["name"]
     typed_targets = []
     for prefix, expected in (("int typedDefault(", 4), ("int typedExplicit(", 7),
                              ("int typedSame(", 7), ("int typedEmpty(", 0),
@@ -6701,7 +6731,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'selected-dependent-floating-default': 'template<class T>using D=double;template<class T,class U=D<T>>using I=int;I<int>f(){return 3;}',
         'qualified-fresh-hidden-argument': 'template<class T>using I=int;namespace A{template<class T>int f(){return 3;}}int g(){return A::f<int>()+A::f<I<double>>();}',
         'qualified-hidden-default': 'template<class T>using I=int;namespace A{template<class T=I<double>>int f(){return 3;}}int g(){return A::f();}',
-        'conversion-hidden-definition': 'template<class T>struct Box{T n;};template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator I<Box<T>>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}',
         'conversion-hidden-body': 'template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{int hidden=int(1.0);return {n};}};int f(){R<int>r{3};Box<int>b=r;return b.n;}',
         'conversion-hidden-parameter': 'template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator I<T>()const{return n;}};int f(){R<int>r{3};return r;}',
     }
@@ -6790,9 +6819,9 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'class-repeated-scalar-safe': 'template<class T,int N=sizeof(T)>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;',
         'class-repeated-type-safe': 'template<class T,class U=T>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;',
         'function-specialization-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>(){return 3;}',
-        'function-specialization-type-safe': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>();',
-        'function-repeated-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
-        'function-repeated-type-safe': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
+        'function-specialization-type-safe': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>(){return 3;}',
+        'function-repeated-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();template<>int f<int>(){return 3;}',
+        'function-repeated-type-safe': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>();template<>int f<int>(){return 3;}',
         'function-instantiation-scalar-safe': 'template<class T,int N=sizeof(T)>int f(){return 3;}extern template int f<int>();template int f<int>();',
         'function-instantiation-type-safe': 'template<class T,class U=T>int f(){return 3;}extern template int f<int>();template int f<int>();',
         'protocol-source': 'template<class T>using Identity=T;\ntemplate<class T>using Reference=T&;\ntemplate<class T,int N=3>using Array=T[N];\ntemplate<class T>struct Store{T value;inline static int state=3;};\ntemplate<class T>using Box=Store<T>;\ntemplate<class T,int N=sizeof(T)>int&slot(){static int n=N;return n;}\nstruct Token{int n;Token(int v):n(v){}~Token(){n=99;}};\nIdentity<int>scalar(Identity<int>n){return n;}\nReference<int>reference(int&n){return n;}\nconst Identity<int>*pointer(const int&n){return &n;}\nReference<int>element(Array<int>&a){return a[1];}\nint extent(){return sizeof(Array<int>);}\nBox<int>makeBox(){return Box<int>{3};}\nStore<int>sameBox(){return Store<int>{4};}\nBox<unsigned>otherBox(){return Box<unsigned>{5u};}\nint&boxState(){return Box<int>::state;}\nint&sameState(){return Store<int>::state;}\nint&otherState(){return Box<unsigned>::state;}\nint&aliasSlot(){return slot<Identity<int>>();}\nint&sameSlot(){return slot<int,sizeof(int)>();}\nint&otherSlot(){return slot<long long>();}\nIdentity<Token>makeToken(){return Token(7);}\nint observe(const Identity<Token>&v){return v.n;}\nint full(){return observe(makeToken());}\ntemplate<class T>using Scalar=decltype(T{});\ntemplate<class T,Scalar<T> N=4>int typed(){return N;}\ntemplate<class T,Scalar<T>...N>int typedPack(){return sizeof...(N);}\nint typedDefault(){return typed<int>();}\nint typedExplicit(){return typed<Identity<int>,7>();}\nint typedSame(){return typed<int,7>();}\nint typedEmpty(){return typedPack<int>();}\nint typedMany(){return typedPack<int,2,3>();}\n',
@@ -6940,6 +6969,9 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-alias-templates-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
 
     alias_templates_missing = {
+        'function-specialization-type-declaration-only': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>();',
+        'function-repeated-scalar-declaration-only': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
+        'function-repeated-type-declaration-only': 'template<class T,class U=T>int f(){return 3;}template<>int f<int>();template<>int f<int>();',
         'function-specialization-scalar-declaration': 'template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();',
         'missing-function': 'template<class T>using I=T;template<class T>T f();int g(){return f<I<int>>();}',
         'missing-static': 'template<class T>struct R{static T n;};template<class T>using I=R<T>;int f(){return I<int>::n;}',

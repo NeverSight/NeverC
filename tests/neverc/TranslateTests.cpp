@@ -4869,7 +4869,6 @@ TEST_F(TranslateTest, CoreV2ConcreteTemplateSourceRepairsReject) {
       {"selected-dependent-floating-default", "template<class T>using D=double;template<class T,class U=D<T>>using I=int;I<int>f(){return 3;}"},
       {"qualified-fresh-hidden-argument", "template<class T>using I=int;namespace A{template<class T>int f(){return 3;}}int g(){return A::f<int>()+A::f<I<double>>();}"},
       {"qualified-hidden-default", "template<class T>using I=int;namespace A{template<class T=I<double>>int f(){return 3;}}int g(){return A::f();}"},
-      {"conversion-hidden-definition", "template<class T>struct Box{T n;};template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator I<Box<T>>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}"},
       {"conversion-hidden-body", "template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{int hidden=int(1.0);return {n};}};int f(){R<int>r{3};Box<int>b=r;return b.n;}"},
       {"conversion-hidden-parameter", "template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator I<T>()const{return n;}};int f(){R<int>r{3};return r;}"},
   };
@@ -5093,9 +5092,9 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesAcceptConcreteTypesAndSelectedDefaults
       {"class-repeated-scalar-safe", "template<class T,int N=sizeof(T)>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;"},
       {"class-repeated-type-safe", "template<class T,class U=T>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;"},
       {"function-specialization-scalar-safe", "template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>(){return 3;}"},
-      {"function-specialization-type-safe", "template<class T,class U=T>int f(){return 3;}template<>int f<int>();"},
-      {"function-repeated-scalar-safe", "template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
-      {"function-repeated-type-safe", "template<class T,class U=T>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
+      {"function-specialization-type-safe", "template<class T,class U=T>int f(){return 3;}template<>int f<int>(){return 3;}"},
+      {"function-repeated-scalar-safe", "template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();template<>int f<int>(){return 3;}"},
+      {"function-repeated-type-safe", "template<class T,class U=T>int f(){return 3;}template<>int f<int>();template<>int f<int>(){return 3;}"},
       {"function-instantiation-scalar-safe", "template<class T,int N=sizeof(T)>int f(){return 3;}extern template int f<int>();template int f<int>();"},
       {"function-instantiation-type-safe", "template<class T,class U=T>int f(){return 3;}extern template int f<int>();template int f<int>();"},
       {"protocol-source", "template<class T>using Identity=T;\ntemplate<class T>using Reference=T&;\ntemplate<class T,int N=3>using Array=T[N];\ntemplate<class T>struct Store{T value;inline static int state=3;};\ntemplate<class T>using Box=Store<T>;\ntemplate<class T,int N=sizeof(T)>int&slot(){static int n=N;return n;}\nstruct Token{int n;Token(int v):n(v){}~Token(){n=99;}};\nIdentity<int>scalar(Identity<int>n){return n;}\nReference<int>reference(int&n){return n;}\nconst Identity<int>*pointer(const int&n){return &n;}\nReference<int>element(Array<int>&a){return a[1];}\nint extent(){return sizeof(Array<int>);}\nBox<int>makeBox(){return Box<int>{3};}\nStore<int>sameBox(){return Store<int>{4};}\nBox<unsigned>otherBox(){return Box<unsigned>{5u};}\nint&boxState(){return Box<int>::state;}\nint&sameState(){return Store<int>::state;}\nint&otherState(){return Box<unsigned>::state;}\nint&aliasSlot(){return slot<Identity<int>>();}\nint&sameSlot(){return slot<int,sizeof(int)>();}\nint&otherSlot(){return slot<long long>();}\nIdentity<Token>makeToken(){return Token(7);}\nint observe(const Identity<Token>&v){return v.n;}\nint full(){return observe(makeToken());}\ntemplate<class T>using Scalar=decltype(T{});\ntemplate<class T,Scalar<T> N=4>int typed(){return N;}\ntemplate<class T,Scalar<T>...N>int typedPack(){return sizeof...(N);}\nint typedDefault(){return typed<int>();}\nint typedExplicit(){return typed<Identity<int>,7>();}\nint typedSame(){return typed<int,7>();}\nint typedEmpty(){return typedPack<int>();}\nint typedMany(){return typedPack<int,2,3>();}\n"},
@@ -5155,7 +5154,7 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesAcceptConcreteTypesAndSelectedDefaults
     const auto Output = tmpFile("alias-templates-positive-" + Name + ".nc");
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
-    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
   }
 }
 
@@ -5269,6 +5268,9 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesRetainLanguageDiagnostics) {
 
 TEST_F(TranslateTest, CoreV2AliasTemplatesRetainDefinitionClosure) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"function-specialization-type-declaration-only", "template<class T,class U=T>int f(){return 3;}template<>int f<int>();"},
+      {"function-repeated-scalar-declaration-only", "template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
+      {"function-repeated-type-declaration-only", "template<class T,class U=T>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
       {"function-specialization-scalar-declaration", "template<class T,int N=sizeof(T)>int f(){return 3;}template<>int f<int>();"},
       {"missing-function", "template<class T>using I=T;template<class T>T f();int g(){return f<I<int>>();}"},
       {"missing-static", "template<class T>struct R{static T n;};template<class T>using I=R<T>;int f(){return I<int>::n;}"},
@@ -5507,6 +5509,46 @@ TEST_F(TranslateTest, CoreV2ParameterPacksRequireSelectedDefinitions) {
     auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     expectCode(Result, "TR0203");
     expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UsesStandardTemplateParsing) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"conversion-mismatched-dependent-definition", "template<class T>struct Box{T n;};template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator I<Box<T>>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}", "TR0202"},
+      {"conversion-concrete-written-name", "template<class T>struct R{operator int()const;};template<class T>R<T>::operator decltype((sizeof(int),int{}))()const{return 3;}int main(){R<int>r;return r;}", ""},
+      {"conversion-hidden-concrete-written-name", "template<class T>struct R{operator int()const;};template<class T>R<T>::operator decltype((sizeof(double),int{}))()const{return 3;}int main(){R<int>r;return r;}", "TR0201"},
+      {"out-of-line-reference", "template<class T>struct R{T n;operator decltype(auto)();};template<class T>R<T>::operator decltype(auto)(){return (n);}int&f(R<int>&r){return r;}", ""},
+      {"repeated-extern-before-definition", "template<class T>int f(){return 3;}extern template int f<int>();extern template int f<int>();template int f<int>();int main(){return f<int>()-3;}", ""},
+      {"single-function-definition", "template<int N>int f(){return N;}template int f<3>();int main(){return f<3>()-3;}", ""},
+      {"single-static-definition", "template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;int main(){return R<int>::n-3;}", ""},
+      {"matching-noexcept", "int f()noexcept;int f()noexcept{return 1;}int main(){return f()-1;}", ""},
+      {"unused-dependent-body", "template<class T>int f(){return T::missing;}int main(){return 0;}", ""},
+      {"dependent-delegating", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};", "TR0201"},
+      {"outside-delegating", "template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}", "TR0201"},
+      {"duplicate-function-definition", "template<int N>int f(){return N;}template int f<3>();template int f<1+2>();", "TR0202"},
+      {"duplicate-static-definition", "template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;template int R<int>::n;", "TR0202"},
+      {"function-extern-after-definition", "template<class T>T f(T n){return n;}template int f<int>(int);extern template int f<int>(int);", "TR0202"},
+      {"operator-extern-after-definition", "struct R{int n;};template<class T>int operator+(R r,T n){return r.n+n;}template int operator+<int>(R,int);extern template int operator+<int>(R,int);", "TR0202"},
+      {"static-extern-after-definition", "template<class T>struct R{static T n;};template<class T>T R<T>::n=3;template int R<int>::n;extern template int R<int>::n;", "TR0202"},
+      {"late-destructor-specialization", "template<class T>struct R{~R(){}};template R<int>::~R();void f(){R<int>r;}template<>R<int>::~R(){}", "TR0202"},
+      {"incompatible-noexcept", "int f()noexcept;int f()noexcept(false){return 1;}", "TR0202"},
+      {"ordinary-lookup-before-later-definition", "template<class T>int f(T n){return later(n);}int later(int n){return n;}int main(){return f(3);}", "TR0202"},
+      {"missing-selected-definition", "template<class T>T f(T n);int main(){return f(3);}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("standard-template-parsing-" + Name + ".cpp");
+    const auto Output = tmpFile("standard-template-parsing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    if (Diagnostic.empty()) {
+      EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+      EXPECT_TRUE(fs::is_regular_file(Output));
+    } else {
+      expectCode(Result, Diagnostic);
+      expectNoArtifacts(Output);
+    }
   }
 }
 
