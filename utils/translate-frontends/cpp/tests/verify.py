@@ -7618,8 +7618,8 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         function = mc_function(prefix)
         assert function["result"] == kind and len(function["params"]) == 1
         param = function["params"][0]
-        assert param["type"].startswith("ptr:")
-        record_id = param["type"][4:]
+        assert param["type"].startswith("cptr:")
+        record_id = param["type"][5:]
         assert record_id in mc_records
         record = mc_records[record_id]
         assert len(record["fields"]) == 1 and record["fields"][0]["type"] == kind
@@ -7670,7 +7670,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         assert len(returned) == 1 and mc_root(function, returned[0]) == target
     mc_field = mc_function("int field(")
     assert mc_field["result"] == "int" and len(mc_field["params"]) == 1
-    assert mc_field["params"][0]["type"] == "ptr:" + mc_outer[0]["id"]
+    assert mc_field["params"][0]["type"] == "cptr:" + mc_outer[0]["id"]
     for function in mc_functions.values():
         values = set(mc_globals) | {v["name"] for v in function["params"]} | {v["name"] for v in function["locals"]}
         for node in walk(function["body"]):
