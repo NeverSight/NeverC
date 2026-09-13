@@ -4477,11 +4477,12 @@ public:
   }
   bool TraverseDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()) ||
-        !isa<VarTemplateSpecializationDecl>(Reference->getDecl()))
+        (!isa<VarTemplateSpecializationDecl>(Reference->getDecl()) &&
+         !concreteFunctionTemplate(dyn_cast<FunctionDecl>(Reference->getDecl()))))
       return RecursiveASTVisitor<Allowlist>::TraverseDeclRefExpr(Reference);
     // VisitDeclRefExpr checks every written argument against this exact source
     // event and traverses it before entering the callee's parameter frame.
-    // RAV's normal argument traversal would visit nested variable uses again
+    // RAV's normal argument traversal would visit nested template uses again
     // at every level, making a linear source chain expand exponentially.
     // DeclRefExpr has no statement children; retain its qualifier/name visits.
     return WalkUpFromDeclRefExpr(Reference) &&
@@ -4507,8 +4508,11 @@ public:
   bool TraverseMemberExpr(MemberExpr *Reference) {
     if (!A.S.coreV2() || Reference->getMemberLoc().isInvalid() ||
         !A.S.owns(A.Sources, Reference->getMemberLoc()) ||
-        !isa<VarTemplateSpecializationDecl>(Reference->getMemberDecl()))
+        (!isa<VarTemplateSpecializationDecl>(Reference->getMemberDecl()) &&
+         !concreteMemberFunctionTemplate(dyn_cast<FunctionDecl>(Reference->getMemberDecl()))))
       return RecursiveASTVisitor<Allowlist>::TraverseMemberExpr(Reference);
+    // The selected source check owns explicit arguments here as well. Keep
+    // the receiver traversal: its type, source and effects still matter.
     return WalkUpFromMemberExpr(Reference) &&
            TraverseNestedNameSpecifierLoc(Reference->getQualifierLoc()) &&
            TraverseDeclarationNameInfo(Reference->getMemberNameInfo()) &&

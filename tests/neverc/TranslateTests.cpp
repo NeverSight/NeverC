@@ -5162,6 +5162,73 @@ int main(){
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionTemplateSourcesTraverseArgumentsOnce) {
+  struct Case { std::string Name, Code, Diagnostic; };
+  const std::vector<Case> Cases = {
+      {"namespace-depth-64", "template<int N>constexpr int id(){return N;}int main(){return id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", ""},
+      {"namespace-depth-65", "template<int N>constexpr int id(){return N;}int main(){return id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"namespace-hidden-source", "template<int N>constexpr int id(){return N;}int main(){return id<id<id<id<id<id<id<id<id<id<id<id<int(sizeof(double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"namespace-alias-depth-64", "namespace A{template<int N>constexpr int id(){return N;}}namespace B=A;int main(){return B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", ""},
+      {"namespace-alias-depth-65", "namespace A{template<int N>constexpr int id(){return N;}}namespace B=A;int main(){return B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"namespace-alias-hidden-source", "namespace A{template<int N>constexpr int id(){return N;}}namespace B=A;int main(){return B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<int(sizeof(double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"static-object-depth-64", "struct R{template<int N>static constexpr int id(){return N;}};int main(){R r;return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", ""},
+      {"static-object-depth-65", "struct R{template<int N>static constexpr int id(){return N;}};int main(){R r;return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"static-object-hidden-source", "struct R{template<int N>static constexpr int id(){return N;}};int main(){R r;return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<int(sizeof(double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"const-object-depth-64", "struct R{template<int N>constexpr int id()const{return N;}};int main(){constexpr R r{};return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", ""},
+      {"const-object-depth-65", "struct R{template<int N>constexpr int id()const{return N;}};int main(){constexpr R r{};return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"const-object-hidden-source", "struct R{template<int N>constexpr int id()const{return N;}};int main(){constexpr R r{};return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<int(sizeof(double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"member-hidden-base", "struct R{template<int N>static int id(){return N;}};R&touch(R&r,int){return r;}int main(){R r;return touch(r,int(1.0)).id<3>();}", "TR0201"},
+      {"member-hidden-qualifier", "template<class>using I=int;template<class T>struct R{template<int N>static int id(){return N;}};int main(){return R<I<double>>::id<3>();}", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile("function-template-source-once-" + Case.Name + ".cpp");
+    const auto Output = tmpFile("function-template-source-once-" + Case.Name + ".nc");
+    writeFile(Source, Case.Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    if (Case.Diagnostic.empty()) {
+      EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    } else {
+      expectCode(Result, Case.Diagnostic);
+      if (Case.Name.find("depth-65") != std::string::npos)
+        EXPECT_TRUE(Result.stderrContains("template source depth")) << Result.out << Result.err;
+      expectNoArtifacts(Output);
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionTemplateSourceTraversalPreservesReceiverEffects) {
+  const auto Source = tmpFile("function-template-source-receiver.cpp");
+  const auto Output = tmpFile("function-template-source-receiver.nc");
+  writeFile(Source, R"cpp(
+namespace A { template<int N>constexpr int id(){return N;} }
+int effects=0;
+struct R {
+ int value;
+ template<int N>static int id(int n){return N+n;}
+ template<int N>int add(int n)const{return value+N+n;}
+};
+R&touch(R&r){++effects;return r;}
+int main(){
+ R r{4};
+ if(touch(r).id<A::id<A::id<2>()>()>(3)!=5||effects!=1)return 1;
+ if(touch(r).add<A::id<A::id<3>()>()>(5)!=12||effects!=2)return 2;
+ if((&touch(r))->add<A::id<2>()>(1)!=7||effects!=3)return 3;
+ return r.value-4;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("function-template-source-receiver" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemberFunctionTemplatesAcceptConcreteInstances) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"previous-operator-template", "struct R{int n;template<class T>int operator()(T v){return n;}};"},
