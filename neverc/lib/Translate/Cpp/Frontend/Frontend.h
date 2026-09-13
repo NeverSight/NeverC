@@ -4,6 +4,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/NestedNameSpecifier.h"
+#include "clang/AST/TemplateBase.h"
 #include "clang/Basic/FileEntry.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/Support/FileSystem.h"
@@ -27,6 +28,8 @@ class SubstNonTypeTemplateParmExpr;
 class InitListExpr;
 class Expr;
 struct ASTTemplateArgumentListInfo;
+class TemplateDecl;
+class NonTypeTemplateParmDecl;
 }
 
 namespace nct {
@@ -55,6 +58,14 @@ struct ExplicitStaticDataInstantiationSource {
   clang::NestedNameSpecifierLoc Qualifier;
   clang::SourceLocation Location;
   bool HasAttributes;
+};
+
+struct ScalarTemplateDefaultSource {
+  clang::TemplateDecl *Template;
+  clang::NonTypeTemplateParmDecl *Parameter;
+  clang::TemplateArgumentLoc Written, Converted;
+  clang::TemplateArgument Canonical;
+  clang::SourceLocation Location;
 };
 
 struct State {
@@ -209,7 +220,8 @@ public:
                           clang::SourceLocation Location);
   json::Object lowerDestruction(const clang::CXXRecordDecl *Record);
   void run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives = {},
-           llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives = {});
+           llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives = {},
+           llvm::ArrayRef<ScalarTemplateDefaultSource> Defaults = {});
 };
 } // namespace nct
 #endif

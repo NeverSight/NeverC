@@ -9,15 +9,18 @@ The archive is fetched and verified during the NeverC build. An offline copy
 can be selected with CMake's NEVERC_CPP_LLVM_SOURCE_ARCHIVE option; the same
 SHA256 is required. No upstream executable or shared library is installed.
 
-A checked private ASTConsumer.h/SemaTemplate.cpp patch preserves source evidence
-for each explicit function or static-data-member instantiation directive. The
-default no-op callbacks receive the selected declaration and written type,
-qualifier, location and attribute presence before no-effect early returns.
-Function directives additionally preserve parsed arguments and declaration name.
-Both share a bounded source-evidence budget checked after semantic analysis;
-NeverC does not alter overload resolution, declarations or instantiation flags.
-The header/source group must be pristine or fully rewritten, with duplicate,
-partial, missing and drifted forms rejected before either file is changed.
+A checked private ASTConsumer.h/SemaTemplate.cpp/SemaTemplateDeduction.cpp patch
+preserves source evidence for explicit function/static-member directives and
+successfully converted scalar template defaults. Default no-op callbacks retain
+each selected declaration, written type/arguments/name/qualifier/location and
+attribute presence as applicable. Directive evidence precedes no-effect returns.
+Default evidence follows successful CheckTemplateArgument in both argument-list
+and deduction paths, preserving original and converted expressions plus the
+canonical argument. Failed substitution/conversion keeps normal SFINAE behavior.
+The three sources must all be pristine or fully rewritten, with duplicate,
+partial, missing and drifted states rejected before any group member is changed.
+NeverC bounds shared source evidence before retaining it and checks it after
+semantic analysis without changing declarations, overload selection or flags.
 
 The isolated build renames namespace llvm and selected global C/C++ symbols.
 IsolateSymbols.py applies checked, idempotent changes to the extracted

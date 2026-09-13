@@ -25,14 +25,16 @@ def replace_once(path, before, after):
 
 def preserve_explicit_function_instantiation_source(source_root):
     # Pinned Sema reuses declarations and discards each directive's spelling,
-    # including no-effect directives. Collect metadata without changing Sema.
+    # including no-effect directives and converted defaults. Keep Sema semantics.
     groups = (
         ("clang/include/clang/AST/ASTConsumer.h", (
             ("  class FunctionDecl;\n  class ImportDecl;",
              "  class FunctionDecl;\n  class ImportDecl;\n"
              "  class TemplateArgumentListInfo;\n  class TypeSourceInfo;\n"
              "  struct DeclarationNameInfo;\n  class NestedNameSpecifierLoc;\n"
-             "  class SourceLocation;"),
+             "  class SourceLocation;\n  class TemplateDecl;\n"
+             "  class NonTypeTemplateParmDecl;\n  class TemplateArgumentLoc;\n"
+             "  class TemplateArgument;"),
             ("  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}",
              "  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n\n"
              "  // NeverC private source evidence; this does not request instantiation.\n"
@@ -45,9 +47,16 @@ def preserve_explicit_function_instantiation_source(source_root):
              "  // NeverC private source evidence for each static member directive.\n"
              "  virtual void HandleNeverCExplicitStaticDataInstantiation(\n"
              "      VarDecl *, TypeSourceInfo *, const NestedNameSpecifierLoc &,\n"
-             "      const SourceLocation &, bool) {}"),
+             "      const SourceLocation &, bool) {}\n\n"
+             "  // NeverC retains defaults only after successful argument conversion.\n"
+             "  virtual void HandleNeverCScalarTemplateDefault(\n"
+             "      TemplateDecl *, NonTypeTemplateParmDecl *,\n"
+             "      const TemplateArgumentLoc &, const TemplateArgumentLoc &,\n"
+             "      const TemplateArgument &, const SourceLocation &) {}"),
         )),
         ("clang/lib/Sema/SemaTemplate.cpp", (
+            ('    // Check the default template argument.\n    if (CheckTemplateArgument(*Param, Arg, Template, TemplateLoc, RAngleLoc, 0,\n                              CTAI, CTAK_Specified))\n      return true;\n\n    CTAI.SugaredConverted.back().setIsDefaulted(true);',
+             '    // Preserve original spelling as well as any conversion-added operations.\n    const auto NeverCWrittenDefault = Arg;\n    // Check the default template argument.\n    if (CheckTemplateArgument(*Param, Arg, Template, TemplateLoc, RAngleLoc, 0,\n                              CTAI, CTAK_Specified))\n      return true;\n\n    if (auto *NeverCParameter = dyn_cast<NonTypeTemplateParmDecl>(*Param))\n      Consumer.HandleNeverCScalarTemplateDefault(\n          Template, NeverCParameter, NeverCWrittenDefault, Arg,\n          CTAI.CanonicalConverted.back(), TemplateLoc);\n    CTAI.SugaredConverted.back().setIsDefaulted(true);'),
             ("                                            Declarator &D) {\n"
              "  // Explicit instantiations always require a name.",
              "                                            Declarator &D) {\n"
@@ -72,6 +81,11 @@ def preserve_explicit_function_instantiation_source(source_root):
              "  // C++11 [except.spec]p4\n"
              "  // In an explicit instantiation an exception-specification may be specified,"),
         )),
+        ("clang/lib/Sema/SemaTemplateDeduction.cpp", (
+            ('#include "clang/AST/ASTContext.h"', '#include "clang/AST/ASTConsumer.h"\n#include "clang/AST/ASTContext.h"'),
+            ('    // Check whether we can actually use the default argument.\n    if (S.CheckTemplateArgument(\n            Param, DefArg, TD, TD->getLocation(), TD->getSourceRange().getEnd(),\n            /*ArgumentPackIndex=*/0, CTAI, Sema::CTAK_Specified)) {\n      Info.Param = makeTemplateParameter(\n                         const_cast<NamedDecl *>(TemplateParams->getParam(I)));\n      // FIXME: These template arguments are temporary. Free them!\n      Info.reset(\n          TemplateArgumentList::CreateCopy(S.Context, CTAI.SugaredConverted),\n          TemplateArgumentList::CreateCopy(S.Context, CTAI.CanonicalConverted));\n      return TemplateDeductionResult::SubstitutionFailure;\n    }\n\n    // If we get here, we successfully used the default template argument.',
+             '    // Preserve spelling before CheckTemplateArgument adds conversions.\n    const auto NeverCWrittenDefault = DefArg;\n    // Check whether we can actually use the default argument.\n    if (S.CheckTemplateArgument(\n            Param, DefArg, TD, TD->getLocation(), TD->getSourceRange().getEnd(),\n            /*ArgumentPackIndex=*/0, CTAI, Sema::CTAK_Specified)) {\n      Info.Param = makeTemplateParameter(\n                         const_cast<NamedDecl *>(TemplateParams->getParam(I)));\n      // FIXME: These template arguments are temporary. Free them!\n      Info.reset(\n          TemplateArgumentList::CreateCopy(S.Context, CTAI.SugaredConverted),\n          TemplateArgumentList::CreateCopy(S.Context, CTAI.CanonicalConverted));\n      return TemplateDeductionResult::SubstitutionFailure;\n    }\n\n    if (auto *NeverCParameter = dyn_cast<NonTypeTemplateParmDecl>(Param))\n      S.getASTConsumer().HandleNeverCScalarTemplateDefault(\n          TD, NeverCParameter, NeverCWrittenDefault, DefArg,\n          CTAI.CanonicalConverted.back(), TD->getLocation());\n    // If we get here, we successfully used the default template argument.'),
+        )),
     )
     updates = []
     states = []
@@ -95,7 +109,7 @@ def preserve_explicit_function_instantiation_source(source_root):
         remainder = text
         for pair in replacements:
             remainder = remainder.replace(pair[state], "", 1)
-        if re.search(r"\b(?:HandleNeverCExplicitFunctionInstantiation|HandleNeverCExplicitStaticDataInstantiation|NeverCWrittenAttributes)\b", remainder):
+        if re.search(r"\b(?:HandleNeverCExplicitFunctionInstantiation|HandleNeverCExplicitStaticDataInstantiation|HandleNeverCScalarTemplateDefault|NeverCWrittenAttributes|NeverCWrittenDefault|NeverCParameter)\b", remainder):
             raise SystemExit(message)
         states.append(state)
         if state == 0:

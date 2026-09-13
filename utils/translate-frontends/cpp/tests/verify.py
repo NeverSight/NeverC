@@ -6440,6 +6440,199 @@ int imports(){using Second::Value;using Second::read;Value n=Second::count;retur
     for name, source in frontend_repairs_reject.items():
         check("v2-frontend-repairs-reject-" + name, source, "TR0201", profile="cpp-core-v2")
 
+    scalar_defaults_source = 'template<int N=3>int&slot(){static int n=N;return n;}\nint&omitted(){return slot();}\nint&explicitSame(){return slot<3>();}\nint&different(){return slot<4>();}\ntemplate<auto N=3u>auto tick(){static decltype(N)n=N;return ++n;}\nunsigned defaultTick(){return tick();}\nunsigned explicitTick(){return tick<3u>();}\nint signedTick(){return tick<3>();}\ntemplate<class T=int,int N=3,int M=N+2>struct Box{\n T values[N];\n inline static int shared=M;\n};\nint sizeDefault(){return sizeof(Box<>);}\nint sizeSame(){return sizeof(Box<int,3,5>);}\nint sizeDifferent(){return sizeof(Box<int,4>);}\nint staticDefault(){return Box<>::shared;}\nint staticSame(){return Box<int,3,5>::shared;}\nint staticDifferent(){return Box<int,4>::shared;}\nBox<>make(){return Box<>{{1,2,3}};}\nint&alias(Box<int,3,5>&r){return r.values[1];}\nstruct Token{int n;};\ntemplate<int N=4>int operator+(Token r,int n){return r.n+n+N;}\nint operatorDefault(){return Token{3}+2;}\nint operatorExplicit(){return operator+<4>(Token{3},2);}\nint operatorDifferent(){return operator+<5>(Token{3},2);}\nstruct Constant{constexpr operator int()const{return 3;}};\ntemplate<class T,int N=T{}>int converted(){return N;}\nint convertedDefault(){return converted<Constant>();}\ntemplate<int N>int inherited();\ntemplate<int N=6>int inherited(){return N;}\nint inheritedDefault(){return inherited();}\nint inheritedSame(){return inherited<6>();}\n'
+    scalar_defaults = check("v2-scalar-default-protocol", scalar_defaults_source, profile="cpp-core-v2")
+    sd_functions = {f["name"]: f for f in scalar_defaults["functions"]}
+    sd_records = {r["id"]: r for r in scalar_defaults["records"]}
+    sd_globals = {g["name"]: g for g in scalar_defaults["globals"]}
+    assert len(sd_functions) == len(scalar_defaults["functions"])
+    assert len(sd_records) == len(scalar_defaults["records"])
+    assert len(sd_globals) == len(scalar_defaults["globals"]) == 6
+
+    def sd_line(prefix):
+        lines = [i for i, line in enumerate(scalar_defaults_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, (prefix, lines)
+        return lines[0]
+
+    def sd_function(prefix):
+        found = [f for f in sd_functions.values() if f["loc"]["line"] == sd_line(prefix)]
+        assert len(found) == 1, (prefix, found)
+        return found[0]
+
+    def sd_selected(prefix):
+        calls = gc_calls(sd_function(prefix))
+        assert len(calls) == 1, (prefix, calls)
+        return sd_functions[calls[0]["callee"]]
+
+    def sd_nodes(value):
+        if isinstance(value, dict):
+            yield value
+            for child in value.values():
+                yield from sd_nodes(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from sd_nodes(child)
+
+    def sd_storage(function):
+        names = {n["name"] for n in sd_nodes(function["body"])
+                 if n.get("kind") == "var" and n.get("name") in sd_globals}
+        assert len(names) == 1, (function, names)
+        return sd_globals[next(iter(names))]
+
+    first = sd_selected("int&omitted(")
+    different = sd_selected("int&different(")
+    assert first == sd_selected("int&explicitSame(") and first != different
+    for function, value in ((first, "3"), (different, "4")):
+        assert function["result"] == "ptr:int" and not function["params"]
+        storage = sd_storage(function)
+        assert storage["type"] == "int" and storage["value"]["value"] == value and storage["mutable"]
+        returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+        assert np_pointer(function, returned) == ("object", storage["name"])
+    unsigned = sd_selected("unsigned defaultTick(")
+    signed = sd_selected("int signedTick(")
+    assert unsigned == sd_selected("unsigned explicitTick(") and unsigned != signed
+    for function, scalar in ((unsigned, "uint"), (signed, "int")):
+        assert function["result"] == scalar and not function["params"]
+        storage = sd_storage(function)
+        assert storage["type"] == scalar and storage["value"]["value"] == "3" and storage["mutable"]
+        assert any(n["op"] == "assign" and n["target"].get("name") == storage["name"] for n in function["body"])
+    default_static = sd_storage(sd_function("int staticDefault("))
+    other_static = sd_storage(sd_function("int staticDifferent("))
+    assert default_static == sd_storage(sd_function("int staticSame(")) and default_static != other_static
+    assert default_static["value"]["value"] == "5" and other_static["value"]["value"] == "6"
+    assert all(g["mutable"] for g in sd_globals.values())
+    boxes = [r for r in sd_records.values() if r["loc"]["line"] == sd_line("template<class T=int,int N=3,int M=N+2>struct Box{")]
+    assert len(boxes) == 2
+    box_by_array = {r["fields"][0]["type"]: r for r in boxes}
+    assert set(box_by_array) == {"arr:3:int", "arr:4:int"}
+    assert all(len(r["fields"]) == 1 and r["layout"]["abi_align_bits"] == 32 for r in boxes)
+    assert box_by_array["arr:3:int"]["layout"]["size_bits"] == 96
+    assert box_by_array["arr:4:int"]["layout"]["size_bits"] == 128
+    for prefix, value in (("int sizeDefault(", 12), ("int sizeSame(", 12), ("int sizeDifferent(", 16)):
+        function = sd_function(prefix)
+        returned = next(n["value"] for n in function["body"] if n["op"] == "return")
+        assert gc_identity(function, returned) == value and not gc_calls(function)
+    maker = sd_function("Box<>make(")
+    bid = box_by_array["arr:3:int"]["id"]
+    assert maker["result"] == "void" and [p["type"] for p in maker["params"]] == ["ptr:"+bid]
+    alias = sd_function("int&alias(")
+    assert alias["result"] == "ptr:int" and [p["type"] for p in alias["params"]] == ["ptr:"+bid]
+    operator = sd_selected("int operatorDefault(")
+    alternate = sd_selected("int operatorDifferent(")
+    assert operator == sd_selected("int operatorExplicit(") and operator != alternate
+    for function in (operator, alternate):
+        assert function["result"] == "int" and len(function["params"]) == 2
+        assert function["params"][0]["type"].startswith("ptr:") and function["params"][1]["type"] == "int"
+    converted = sd_selected("int convertedDefault(")
+    assert converted["result"] == "int" and not converted["params"] and not gc_calls(converted)
+    returned = next(n["value"] for n in converted["body"] if n["op"] == "return")
+    assert gc_identity(converted, returned) == 3
+    inherited = sd_selected("int inheritedDefault(")
+    assert inherited == sd_selected("int inheritedSame(") and not inherited["params"]
+    returned = next(n["value"] for n in inherited["body"] if n["op"] == "return")
+    assert gc_identity(inherited, returned) == 6
+    for function in sd_functions.values():
+        assert not any(n["op"] == "mapped_call" for n in function["body"])
+        for call in gc_calls(function):
+            callee = sd_functions[call["callee"]]
+            assert [a["type"] for a in call["args"]] == [p["type"] for p in callee["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-scalar-default-relocated-") as temp:
+        relocated = check("scalar-default-relocated", scalar_defaults_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == scalar_defaults, "scalar default identities depend on the absolute root"
+
+    scalar_defaults_positive = {
+        'promoted-class': 'template<int N=3>struct R{int n;};',
+        'promoted-class-redecl': 'template<int N=3>struct R;template<int N>struct R{int n;};',
+        'promoted-function': 'template<int N=3>int f(){return N;}int main(){return f<>();}',
+        'promoted-function-unused': 'template<int N=3>int f(){return N;}',
+        'promoted-function-redecl': 'template<int N=3>int f();template<int N>int f(){return N;}int main(){return f<3>();}',
+        'function-omitted': 'template<int N=3>int f(){return N;}int main(){return f()-3;}',
+        'function-explicit': 'template<int N=3>int f(){return N;}int main(){return f<4>()-4;}',
+        'earlier-value': 'template<int N=3,int M=N+2>int f(){return N+M;}int main(){return f()+f<4>()-18;}',
+        'partial-values': 'template<int N=3,int M=N+2>int f(){return N+M;}int main(){return f<4,7>()-11;}',
+        'dependent-type': 'template<class T=int,T N=T(3)>T f(){return N;}int main(){return f()+f<unsigned>()-6;}',
+        'auto-default': 'template<auto N=3u>auto f(){return N;}int main(){return int(f()+f<4>())-7;}',
+        'auto-earlier': 'template<auto N=3u,auto M=N+1>auto f(){return M;}int main(){return int(f()+f<4>())-9;}',
+        'bool-default': 'template<bool B=true>int f(){return B?3:5;}int main(){return f()+f<false>()-8;}',
+        'enum-default': 'enum class E:unsigned{v=3};template<E V=E::v>int f(){return int(V);}int main(){return f()-3;}',
+        'negative-default': 'template<int N=-3>int f(){return N;}int main(){return f()+3;}',
+        'deduction-precedence': 'template<int N=3>int f(const int(&a)[N]){return N+a[0];}int main(){int a[2]{4,5};return f(a)-6;}',
+        'inherited-selected': 'template<int N=3>int f();template<int M>int f(){return M;}int main(){return f()-3;}',
+        'later-default': 'template<int N>int f();template<int M=3>int f(){return M;}int main(){return f()-3;}',
+        'class-later-default': 'template<int N>struct R;template<int M=3>struct R{int n=M;};int main(){R<>r;return r.n-3;}',
+        'merged-defaults': 'template<int N,int M=2>struct R;template<int N=3,int M>struct R{int n=N+M;};int main(){R<>r;return r.n-5;}',
+        'namespace-binding': 'namespace A{constexpr int n=3;template<int N=n>int f(){return N;}}namespace B{constexpr int n=8;int g(){return A::f();}}int main(){return B::g()-3;}',
+        'using-import': 'namespace A{template<int N=3>int f(){return N;}}using A::f;int main(){return f()-3;}',
+        'class-array': 'template<int N=3>struct R{int a[N];};int main(){R<>r{{1,2,3}};return r.a[2]-3;}',
+        'class-method': 'template<int N=3>struct R{int f(int n=N){return n;}};int main(){R<>r;return r.f()-3;}',
+        'class-construction': 'template<int N=3>struct R{int n;R():n(N){}};int main(){R<>r;return r.n-3;}',
+        'class-static': 'template<int N=3>struct R{inline static int n=N;};int main(){R<>::n=4;return R<3>::n-4;}',
+        'class-operator': 'template<int N=3>struct R{int operator()(){return N;}};int main(){R<>r;return r()-3;}',
+        'free-operator': 'struct R{int n;};template<int N=3>int operator+(R r,int n){return r.n+n+N;}int main(){return (R{1}+2)-6;}',
+        'function-instantiation': 'template<int N=3>int f(){return N;}extern template int f<>();template int f<3>();int main(){return f()-3;}',
+        'class-instantiation': 'template<int N=3>struct R{int n=N;};template struct R<>;int main(){R<>r;return r.n-3;}',
+        'static-instantiation': 'template<int N=3>struct R{inline static int n=N;};template int R<>::n;int main(){return R<3>::n-3;}',
+        'function-specialization': 'template<int N=3>int f(){return N;}template<>int f<3>(){return 7;}int main(){return f()-7;}',
+        'class-specialization': 'template<int N=3>struct R{int n=N;};template<>struct R<3>{int n=7;};int main(){R<>r;return r.n-7;}',
+        'sizeof-default': 'template<class T,int N=sizeof(T)>int f(){return N;}int main(){return f<int>()-4;}',
+        'noexcept-default': 'struct R{R()noexcept{}};template<class T,bool B=noexcept(T{})>int f(){return B;}int main(){return f<R>()-1;}',
+        'constexpr-call': 'template<class T>constexpr int size(){return sizeof(T);}template<class T,int N=size<T>()>int f(){return N;}int main(){return f<int>()-4;}',
+        'static-constant-default': 'struct K{static const int n=4;};template<class T,int N=T::n>int f(){return N;}int main(){return f<K>()-4;}',
+        'record-conversion': 'struct C{constexpr operator int()const{return 3;}};template<class T,int N=T{}>int f(){return N;}int main(){return f<C>()-3;}',
+        'unused-dependent': 'template<class T,int N=T::missing>int f(){return N;}',
+        'overridden-dependent': 'template<class T,int N=T::missing>int f(){return N;}int main(){return f<int,5>()-5;}',
+        'overridden-floating': 'template<class T,int N=T(1.0)>int f(){return N;}int main(){return f<int,5>()-5;}',
+        'substitution-fallback': 'template<class T,int N=T::missing>int f(T){return 1;}int f(int){return 2;}int main(){return f(3)-2;}',
+        'conversion-fallback': 'template<class T,int N=T{}>int f(T){return 1;}int f(int*){return 2;}int main(){int*p=nullptr;return f(p)-2;}',
+        'inherited-lazy': 'template<class T,int N=T::missing>int f();template<class T,int N>int f(){return N;}int main(){return f<int,4>()-4;}',
+        'protocol-source': 'template<int N=3>int&slot(){static int n=N;return n;}\nint&omitted(){return slot();}\nint&explicitSame(){return slot<3>();}\nint&different(){return slot<4>();}\ntemplate<auto N=3u>auto tick(){static decltype(N)n=N;return ++n;}\nunsigned defaultTick(){return tick();}\nunsigned explicitTick(){return tick<3u>();}\nint signedTick(){return tick<3>();}\ntemplate<class T=int,int N=3,int M=N+2>struct Box{\n T values[N];\n inline static int shared=M;\n};\nint sizeDefault(){return sizeof(Box<>);}\nint sizeSame(){return sizeof(Box<int,3,5>);}\nint sizeDifferent(){return sizeof(Box<int,4>);}\nint staticDefault(){return Box<>::shared;}\nint staticSame(){return Box<int,3,5>::shared;}\nint staticDifferent(){return Box<int,4>::shared;}\nBox<>make(){return Box<>{{1,2,3}};}\nint&alias(Box<int,3,5>&r){return r.values[1];}\nstruct Token{int n;};\ntemplate<int N=4>int operator+(Token r,int n){return r.n+n+N;}\nint operatorDefault(){return Token{3}+2;}\nint operatorExplicit(){return operator+<4>(Token{3},2);}\nint operatorDifferent(){return operator+<5>(Token{3},2);}\nstruct Constant{constexpr operator int()const{return 3;}};\ntemplate<class T,int N=T{}>int converted(){return N;}\nint convertedDefault(){return converted<Constant>();}\ntemplate<int N>int inherited();\ntemplate<int N=6>int inherited(){return N;}\nint inheritedDefault(){return inherited();}\nint inheritedSame(){return inherited<6>();}\n',
+    }
+    for name, source in scalar_defaults_positive.items():
+        check("v2-scalar-default-positive-" + name, source, profile="cpp-core-v2")
+
+    scalar_defaults_reject = {
+        'floating-used': 'template<int N=int(1.0)>int f(){return N;}int main(){return f();}',
+        'floating-unused': 'template<int N=int(1.0)>int f(){return N;}',
+        'floating-overridden': 'template<int N=int(1.0)>int f(){return N;}int main(){return f<3>();}',
+        'floating-inherited': 'template<int N=int(1.0)>int f();template<int M>int f(){return M;}int main(){return f<3>();}',
+        'floating-class-unused': 'template<int N=int(1.0)>struct R{int n;};',
+        'dependent-floating': 'template<class T,int N=T(1.0)>int f(){return N;}int main(){return f<int>();}',
+        'dependent-class-floating': 'template<class T,int N=T(1.0)>struct R{int n=N;};int main(){R<int>r;return r.n;}',
+        'dependent-constexpr-floating': 'template<class T>constexpr int value(){return int(1.0);}template<class T,int N=value<T>()>int f(){return N;}int main(){return f<int>();}',
+        'conversion-body-floating': 'struct C{constexpr operator int()const{return int(1.0);}};template<class T,int N=T{}>int f(){return N;}int main(){return f<C>();}',
+        'sizeof-floating': 'template<int N=sizeof(double)>int f(){return N;}',
+        'noexcept-floating': 'template<bool B=noexcept(int(1.0))>int f(){return B;}',
+        'decltype-floating': 'template<decltype(int(1.0)) N=3>int f(){return N;}',
+        'auto-pointer-default': 'int n=3;template<auto N=&n>int f(){return 1;}int main(){return f();}',
+        'auto-null-default': 'template<auto N=nullptr>int f(){return 1;}int main(){return f();}',
+        'pointer-parameter': 'template<int*P=nullptr>int f(){return 1;}',
+        'default-function-query-source': 'template<class T,int N=sizeof(T(1.0))>int f(){return N;}int main(){return f<int>();}',
+        'default-static-directive-source': 'template<class T=int,int N=T(1.0)>struct R{inline static int n=N;};template int R<>::n;',
+        'default-explicit-directive-source': 'template<class T=int,int N=T(1.0)>int f(){return N;}template int f<>();',
+    }
+    for name, source in scalar_defaults_reject.items():
+        check("v2-scalar-default-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+
+    scalar_defaults_invalid = {
+        'selected-invalid-default': 'template<class T,int N=T::missing>int f(){return N;}int main(){return f<int>();}',
+        'selected-dynamic-default': 'int value(){return 3;}template<int N=value()>int f(){return N;}int main(){return f();}',
+        'selected-class-dynamic': 'int value(){return 3;}template<int N=value()>struct R{int n;};int main(){R<>r;return 0;}',
+        'duplicate-default': 'template<int N=3>int f();template<int N=3>int f(){return N;}',
+        'class-missing-trailing-default': 'template<int N=3,int M>struct R{int n;};',
+        'selected-pointer-conversion': 'template<class T,int N=T{}>int f(){return N;}int main(){return f<int*>();}',
+        'nonconstexpr-conversion': 'struct C{operator int()const{return 3;}};template<class T,int N=T{}>int f(){return N;}int main(){return f<C>();}',
+    }
+    for name, source in scalar_defaults_invalid.items():
+        check("v2-scalar-default-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
+
+    scalar_defaults_missing = {
+        'sizeof-missing-function': 'template<class T>int missing();template<class T,int N=sizeof(missing<T>())>int f(){return N;}int main(){return f<int>();}',
+        'noexcept-missing-function': 'template<class T>int missing()noexcept;template<class T,bool B=noexcept(missing<T>())>int f(){return B;}int main(){return f<int>();}',
+        'sizeof-missing-static': 'template<class T>struct R{static int n;};template<class T,int N=sizeof(R<T>::n)>int f(){return N;}int main(){return f<int>();}',
+    }
+    for name, source in scalar_defaults_missing.items():
+        check("v2-scalar-default-missing-" + name, source, "TR0203", profile="cpp-core-v2")
+
     class_static_source = 'template<class T,int N>struct Store{\n inline static T value=T(N);\n inline static T unused;\n static constexpr T limit=T(N+2);\n static const int tag=N+1;\n T instance;\n};\nint valueA(){return Store<int,3>::value;}\nint valueAlias(){using A=Store<int,1+2>;return A::value;}\nint valueB(){return Store<int,4>::value;}\nint&referenceA(){return Store<int,3>::value;}\nconst int*limitAddress(){return &Store<int,3>::limit;}\nint tagA(){return Store<int,3>::tag;}\nint tagB(){return Store<int,4>::tag;}\nint queryTag(){return sizeof(&Store<int,3>::tag);}\nStore<int,3>&touch(Store<int,3>&r){++r.instance;return r;}\nint receiver(Store<int,3>&r){return touch(r).value;}\nint mutate(const Store<int,3>&r){return ++r.value;}\ntemplate int Store<int,3>::value;\nextern template int Store<int,3>::value;\ntemplate<class T>struct Outside{static T value;};\ntemplate<class T>T Outside<T>::value=T(7);\ntemplate<>int Outside<int>::value=9;\nint externalInt(){return Outside<int>::value;}\nunsigned externalUnsigned(){return Outside<unsigned>::value;}\nextern template unsigned Outside<unsigned>::value;\ntemplate unsigned Outside<unsigned>::value;\nextern template unsigned Outside<unsigned>::value;\ntemplate<class T>struct Lazy{static int missing;inline static int unused=T::missing;};\nint queryLazy(){return sizeof(Lazy<int>);}\ntemplate<class T>struct Life{inline static T value=T(8);Life(){}~Life(){}};\nint&lasting(){return Life<int>{}.value;}\n'
     class_static = check("v2-class-static-protocol", class_static_source, profile="cpp-core-v2")
     cs_functions = {f["name"]: f for f in class_static["functions"]}
@@ -8495,8 +8688,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
     class_templates_reject = {
         'floating-field': 'template<class T>struct R{T n;};int main(){R<double>r{1.0};return 0;}',
         'floating-default': 'template<class T>struct R{int n=static_cast<int>(1.0);};int main(){R<int>r{};return r.n;}',
-        'default-value': 'template<int N=3>struct R{int n;};',
-        'default-value-inherited': 'template<int N=3>struct R;template<int N>struct R{int n;};',
         'pointer-value': 'int n;template<int*P>struct R{int n;};',
         'auto-pointer': 'int n;template<auto P>struct R{int n;};int main(){R<&n>r{};return r.n;}',
         'auto-null': 'template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}',
@@ -8724,9 +8915,6 @@ Plain chosenRecord(){return choose<false>();}
         check("v2-non-type-templates-positive-" + name, source, profile="cpp-core-v2")
     non_type_templates_reject = {
         'zero-array': 'template<int N>int f(){int a[N];return 0;}int main(){return f<0>();}',
-        'default-value': 'template<int N=3>int f(){return N;}int main(){return f<>();}',
-        'default-unused': 'template<int N=3>int f(){return N;}',
-        'default-inherited': 'template<int N=3>int f();template<int N>int f(){return N;}int main(){return f<3>();}',
         'value-pack': 'template<int... N>int f(){return sizeof...(N);}int main(){return f<1,2>();}',
         'template-template': 'template<template<class>class T,int N>int f(){return N;}',
         'pointer-parameter': 'int n=3;template<int*P>int f(){return *P;}int main(){return f<&n>();}',

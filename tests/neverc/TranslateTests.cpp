@@ -4688,6 +4688,206 @@ TEST_F(TranslateTest, CoreV2FrontendRepairsRetainWrittenExceptionSource) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsPreserveStorageAndLifetime) {
+  const auto Source = tmpFile("scalar-default-runtime.cpp");
+  const auto Output = tmpFile("scalar-default-runtime.nc");
+  writeFile(Source, R"cpp(int live=0;
+template<int N=3>int&slot(){static int n=N;return n;}
+template<auto N=3u>auto tick(){static decltype(N)n=N;return ++n;}
+template<class T=int,int N=3,int M=N+2>struct Box{
+ T values[N];
+ inline static int shared=M;
+ Box(T first){++live;for(int i=0;i<N;++i)values[i]=first+T(i);}
+ ~Box(){--live;}
+ T last(){return values[N-1];}
+};
+Box<>make(){return Box<>(7);}
+struct Token{int n;};
+template<int N=4>int operator+(Token r,int n){return r.n+n+N;}
+struct Constant{constexpr operator int()const{return 3;}};
+template<class T,int N=T{}>int converted(){return N;}
+template<class T,int N=T{}>int choose(T){return 1;}
+int choose(int*){return 2;}
+template<int N>int inherited();
+template<int N=6>int inherited(){return N;}
+template<int N=3>int extent(const int(&a)[N]){return N+a[N-1];}
+template<class T=int,T N=T(3)>T value(){return N;}
+int main(){
+ if(slot()!=3)return 1;
+ int*address=&slot<>();slot<3>()=8;
+ if(&slot()!=address||slot()!=8)return 2;
+ if(slot<4>()!=4||&slot<4>()==address)return 3;
+ if(tick()!=4u||tick<3u>()!=5u||tick<3>()!=4)return 4;
+ if(tick<1+2>()!=5||tick()!=6u)return 5;
+ if(value()!=3||value<unsigned>()!=3u||value<int,7>()!=7)return 6;
+ {
+  Box<>a(2),b(4);
+  if(live!=2||a.last()!=4||b.last()!=6)return 7;
+  Box<int,3>&alias=a;alias.values[1]=9;
+  if(a.values[1]!=9||&alias.values[0]!=&a.values[0])return 8;
+  if(a.shared!=5||b.shared!=5)return 9;
+  a.shared=11;
+  if(b.shared!=11||Box<int,3,5>::shared!=11)return 10;
+  if(Box<int,4>::shared!=6||Box<unsigned>::shared!=5)return 11;
+  Box<int,4>::shared=12;
+  if(a.shared!=11||Box<unsigned>::shared!=5)return 12;
+ }
+ if(live!=0)return 13;
+ {
+  Box<>result=make();
+  if(live!=1||result.values[0]!=7||result.last()!=9)return 14;
+ }
+ if(live!=0)return 15;
+ if((Token{3}+2)!=9||operator+<5>(Token{3},2)!=10)return 16;
+ if(converted<Constant>()!=3)return 17;
+ int*p=nullptr;
+ if(choose(p)!=2||choose(0)!=1)return 18;
+ if(inherited()!=6||inherited<8>()!=8)return 19;
+ int a[2]{4,5};
+ if(extent(a)!=7)return 20;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("scalar-default-runtime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsAcceptConcreteValues) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-class", "template<int N=3>struct R{int n;};"},
+      {"promoted-class-redecl", "template<int N=3>struct R;template<int N>struct R{int n;};"},
+      {"promoted-function", "template<int N=3>int f(){return N;}int main(){return f<>();}"},
+      {"promoted-function-unused", "template<int N=3>int f(){return N;}"},
+      {"promoted-function-redecl", "template<int N=3>int f();template<int N>int f(){return N;}int main(){return f<3>();}"},
+      {"function-omitted", "template<int N=3>int f(){return N;}int main(){return f()-3;}"},
+      {"function-explicit", "template<int N=3>int f(){return N;}int main(){return f<4>()-4;}"},
+      {"earlier-value", "template<int N=3,int M=N+2>int f(){return N+M;}int main(){return f()+f<4>()-18;}"},
+      {"partial-values", "template<int N=3,int M=N+2>int f(){return N+M;}int main(){return f<4,7>()-11;}"},
+      {"dependent-type", "template<class T=int,T N=T(3)>T f(){return N;}int main(){return f()+f<unsigned>()-6;}"},
+      {"auto-default", "template<auto N=3u>auto f(){return N;}int main(){return int(f()+f<4>())-7;}"},
+      {"auto-earlier", "template<auto N=3u,auto M=N+1>auto f(){return M;}int main(){return int(f()+f<4>())-9;}"},
+      {"bool-default", "template<bool B=true>int f(){return B?3:5;}int main(){return f()+f<false>()-8;}"},
+      {"enum-default", "enum class E:unsigned{v=3};template<E V=E::v>int f(){return int(V);}int main(){return f()-3;}"},
+      {"negative-default", "template<int N=-3>int f(){return N;}int main(){return f()+3;}"},
+      {"deduction-precedence", "template<int N=3>int f(const int(&a)[N]){return N+a[0];}int main(){int a[2]{4,5};return f(a)-6;}"},
+      {"inherited-selected", "template<int N=3>int f();template<int M>int f(){return M;}int main(){return f()-3;}"},
+      {"later-default", "template<int N>int f();template<int M=3>int f(){return M;}int main(){return f()-3;}"},
+      {"class-later-default", "template<int N>struct R;template<int M=3>struct R{int n=M;};int main(){R<>r;return r.n-3;}"},
+      {"merged-defaults", "template<int N,int M=2>struct R;template<int N=3,int M>struct R{int n=N+M;};int main(){R<>r;return r.n-5;}"},
+      {"namespace-binding", "namespace A{constexpr int n=3;template<int N=n>int f(){return N;}}namespace B{constexpr int n=8;int g(){return A::f();}}int main(){return B::g()-3;}"},
+      {"using-import", "namespace A{template<int N=3>int f(){return N;}}using A::f;int main(){return f()-3;}"},
+      {"class-array", "template<int N=3>struct R{int a[N];};int main(){R<>r{{1,2,3}};return r.a[2]-3;}"},
+      {"class-method", "template<int N=3>struct R{int f(int n=N){return n;}};int main(){R<>r;return r.f()-3;}"},
+      {"class-construction", "template<int N=3>struct R{int n;R():n(N){}};int main(){R<>r;return r.n-3;}"},
+      {"class-static", "template<int N=3>struct R{inline static int n=N;};int main(){R<>::n=4;return R<3>::n-4;}"},
+      {"class-operator", "template<int N=3>struct R{int operator()(){return N;}};int main(){R<>r;return r()-3;}"},
+      {"free-operator", "struct R{int n;};template<int N=3>int operator+(R r,int n){return r.n+n+N;}int main(){return (R{1}+2)-6;}"},
+      {"function-instantiation", "template<int N=3>int f(){return N;}extern template int f<>();template int f<3>();int main(){return f()-3;}"},
+      {"class-instantiation", "template<int N=3>struct R{int n=N;};template struct R<>;int main(){R<>r;return r.n-3;}"},
+      {"static-instantiation", "template<int N=3>struct R{inline static int n=N;};template int R<>::n;int main(){return R<3>::n-3;}"},
+      {"function-specialization", "template<int N=3>int f(){return N;}template<>int f<3>(){return 7;}int main(){return f()-7;}"},
+      {"class-specialization", "template<int N=3>struct R{int n=N;};template<>struct R<3>{int n=7;};int main(){R<>r;return r.n-7;}"},
+      {"sizeof-default", "template<class T,int N=sizeof(T)>int f(){return N;}int main(){return f<int>()-4;}"},
+      {"noexcept-default", "struct R{R()noexcept{}};template<class T,bool B=noexcept(T{})>int f(){return B;}int main(){return f<R>()-1;}"},
+      {"constexpr-call", "template<class T>constexpr int size(){return sizeof(T);}template<class T,int N=size<T>()>int f(){return N;}int main(){return f<int>()-4;}"},
+      {"static-constant-default", "struct K{static const int n=4;};template<class T,int N=T::n>int f(){return N;}int main(){return f<K>()-4;}"},
+      {"record-conversion", "struct C{constexpr operator int()const{return 3;}};template<class T,int N=T{}>int f(){return N;}int main(){return f<C>()-3;}"},
+      {"unused-dependent", "template<class T,int N=T::missing>int f(){return N;}"},
+      {"overridden-dependent", "template<class T,int N=T::missing>int f(){return N;}int main(){return f<int,5>()-5;}"},
+      {"overridden-floating", "template<class T,int N=T(1.0)>int f(){return N;}int main(){return f<int,5>()-5;}"},
+      {"substitution-fallback", "template<class T,int N=T::missing>int f(T){return 1;}int f(int){return 2;}int main(){return f(3)-2;}"},
+      {"conversion-fallback", "template<class T,int N=T{}>int f(T){return 1;}int f(int*){return 2;}int main(){int*p=nullptr;return f(p)-2;}"},
+      {"inherited-lazy", "template<class T,int N=T::missing>int f();template<class T,int N>int f(){return N;}int main(){return f<int,4>()-4;}"},
+      {"protocol-source", "template<int N=3>int&slot(){static int n=N;return n;}\nint&omitted(){return slot();}\nint&explicitSame(){return slot<3>();}\nint&different(){return slot<4>();}\ntemplate<auto N=3u>auto tick(){static decltype(N)n=N;return ++n;}\nunsigned defaultTick(){return tick();}\nunsigned explicitTick(){return tick<3u>();}\nint signedTick(){return tick<3>();}\ntemplate<class T=int,int N=3,int M=N+2>struct Box{\n T values[N];\n inline static int shared=M;\n};\nint sizeDefault(){return sizeof(Box<>);}\nint sizeSame(){return sizeof(Box<int,3,5>);}\nint sizeDifferent(){return sizeof(Box<int,4>);}\nint staticDefault(){return Box<>::shared;}\nint staticSame(){return Box<int,3,5>::shared;}\nint staticDifferent(){return Box<int,4>::shared;}\nBox<>make(){return Box<>{{1,2,3}};}\nint&alias(Box<int,3,5>&r){return r.values[1];}\nstruct Token{int n;};\ntemplate<int N=4>int operator+(Token r,int n){return r.n+n+N;}\nint operatorDefault(){return Token{3}+2;}\nint operatorExplicit(){return operator+<4>(Token{3},2);}\nint operatorDifferent(){return operator+<5>(Token{3},2);}\nstruct Constant{constexpr operator int()const{return 3;}};\ntemplate<class T,int N=T{}>int converted(){return N;}\nint convertedDefault(){return converted<Constant>();}\ntemplate<int N>int inherited();\ntemplate<int N=6>int inherited(){return N;}\nint inheritedDefault(){return inherited();}\nint inheritedSame(){return inherited<6>();}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("scalar-default-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("scalar-default-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsRetainSourceBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"floating-used", "template<int N=int(1.0)>int f(){return N;}int main(){return f();}"},
+      {"floating-unused", "template<int N=int(1.0)>int f(){return N;}"},
+      {"floating-overridden", "template<int N=int(1.0)>int f(){return N;}int main(){return f<3>();}"},
+      {"floating-inherited", "template<int N=int(1.0)>int f();template<int M>int f(){return M;}int main(){return f<3>();}"},
+      {"floating-class-unused", "template<int N=int(1.0)>struct R{int n;};"},
+      {"dependent-floating", "template<class T,int N=T(1.0)>int f(){return N;}int main(){return f<int>();}"},
+      {"dependent-class-floating", "template<class T,int N=T(1.0)>struct R{int n=N;};int main(){R<int>r;return r.n;}"},
+      {"dependent-constexpr-floating", "template<class T>constexpr int value(){return int(1.0);}template<class T,int N=value<T>()>int f(){return N;}int main(){return f<int>();}"},
+      {"conversion-body-floating", "struct C{constexpr operator int()const{return int(1.0);}};template<class T,int N=T{}>int f(){return N;}int main(){return f<C>();}"},
+      {"sizeof-floating", "template<int N=sizeof(double)>int f(){return N;}"},
+      {"noexcept-floating", "template<bool B=noexcept(int(1.0))>int f(){return B;}"},
+      {"decltype-floating", "template<decltype(int(1.0)) N=3>int f(){return N;}"},
+      {"auto-pointer-default", "int n=3;template<auto N=&n>int f(){return 1;}int main(){return f();}"},
+      {"auto-null-default", "template<auto N=nullptr>int f(){return 1;}int main(){return f();}"},
+      {"pointer-parameter", "template<int*P=nullptr>int f(){return 1;}"},
+      {"default-function-query-source", "template<class T,int N=sizeof(T(1.0))>int f(){return N;}int main(){return f<int>();}"},
+      {"default-static-directive-source", "template<class T=int,int N=T(1.0)>struct R{inline static int n=N;};template int R<>::n;"},
+      {"default-explicit-directive-source", "template<class T=int,int N=T(1.0)>int f(){return N;}template int f<>();"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("scalar-default-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("scalar-default-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsRetainLanguageDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"selected-invalid-default", "template<class T,int N=T::missing>int f(){return N;}int main(){return f<int>();}"},
+      {"selected-dynamic-default", "int value(){return 3;}template<int N=value()>int f(){return N;}int main(){return f();}"},
+      {"selected-class-dynamic", "int value(){return 3;}template<int N=value()>struct R{int n;};int main(){R<>r;return 0;}"},
+      {"duplicate-default", "template<int N=3>int f();template<int N=3>int f(){return N;}"},
+      {"class-missing-trailing-default", "template<int N=3,int M>struct R{int n;};"},
+      {"selected-pointer-conversion", "template<class T,int N=T{}>int f(){return N;}int main(){return f<int*>();}"},
+      {"nonconstexpr-conversion", "struct C{operator int()const{return 3;}};template<class T,int N=T{}>int f(){return N;}int main(){return f<C>();}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("scalar-default-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("scalar-default-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsRequireSelectedDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"sizeof-missing-function", "template<class T>int missing();template<class T,int N=sizeof(missing<T>())>int f(){return N;}int main(){return f<int>();}"},
+      {"noexcept-missing-function", "template<class T>int missing()noexcept;template<class T,bool B=noexcept(missing<T>())>int f(){return B;}int main(){return f<int>();}"},
+      {"sizeof-missing-static", "template<class T>struct R{static int n;};template<class T,int N=sizeof(R<T>::n)>int f(){return N;}int main(){return f<int>();}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("scalar-default-missing-" + Name + ".cpp");
+    const auto Output = tmpFile("scalar-default-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ClassTemplateStaticDataPreserveStorageAndLifetime) {
   const auto Source = tmpFile("class-static-runtime.cpp");
   const auto Output = tmpFile("class-static-runtime.nc");
@@ -6576,8 +6776,6 @@ TEST_F(TranslateTest, CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundari
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"floating-field", "template<class T>struct R{T n;};int main(){R<double>r{1.0};return 0;}", "TR0201"},
       {"floating-default", "template<class T>struct R{int n=static_cast<int>(1.0);};int main(){R<int>r{};return r.n;}", "TR0201"},
-      {"default-value", "template<int N=3>struct R{int n;};", "TR0201"},
-      {"default-value-inherited", "template<int N=3>struct R;template<int N>struct R{int n;};", "TR0201"},
       {"pointer-value", "int n;template<int*P>struct R{int n;};", "TR0201"},
       {"auto-pointer", "int n;template<auto P>struct R{int n;};int main(){R<&n>r{};return r.n;}", "TR0201"},
       {"auto-null", "template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}", "TR0201"},
@@ -6751,9 +6949,6 @@ TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesAcceptResolvedScalarArgument
 
 TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesRetainSourceAndValueBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"default-value", "template<int N=3>int f(){return N;}int main(){return f<>();}", "TR0201"},
-      {"default-unused", "template<int N=3>int f(){return N;}", "TR0201"},
-      {"default-inherited", "template<int N=3>int f();template<int N>int f(){return N;}int main(){return f<3>();}", "TR0201"},
       {"value-pack", "template<int... N>int f(){return sizeof...(N);}int main(){return f<1,2>();}", "TR0201"},
       {"template-template", "template<template<class>class T,int N>int f(){return N;}", "TR0201"},
       {"pointer-parameter", "int n=3;template<int*P>int f(){return *P;}int main(){return f<&n>();}", "TR0201"},

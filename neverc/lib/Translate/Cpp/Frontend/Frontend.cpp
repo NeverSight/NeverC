@@ -1169,7 +1169,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       }
       const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter);
       if (!Value || Value->getDepth() || Value->isParameterPack() ||
-          Value->hasDefaultArgument() || Value->getType().isNull())
+          Value->getType().isNull())
         return false;
       auto T = Value->getType();
       if (T.isVolatileQualified() || T.isRestrictQualified() ||
@@ -1293,12 +1293,18 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return false;
     return true;
   }
-  bool traverseTemplateParameterTypes(const TemplateParameterList *Parameters,
+  bool traverseTemplateParameterSource(const TemplateParameterList *Parameters,
                                       bool TypeDefaults) {
     for (const auto *Parameter : *Parameters) {
       if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter)) {
         if (const auto *Info = Value->getTypeSourceInfo();
             Info && !TraverseTypeLoc(Info->getTypeLoc()))
+          return false;
+        // Nondependent written defaults cannot hide unsupported source. A
+        // dependent default stays lazy until Sema successfully converts a use.
+        if (Value->hasDefaultArgument() &&
+            !Value->getDefaultArgument().getArgument().isInstantiationDependent() &&
+            !TraverseTemplateArgumentLoc(Value->getDefaultArgument()))
           return false;
       } else if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
                  TypeDefaults && Type && Type->hasDefaultArgument()) {
@@ -1797,6 +1803,71 @@ public:
     if (TraverseNestedNameSpecifierLoc(Source.Qualifier))
       TraverseTypeLoc(Source.Type->getTypeLoc());
   }
+  void checkScalarTemplateDefault(const ScalarTemplateDefaultSource &Source) {
+    if (!A.S.coreV2() || !A.S.owns(A.Sources, Source.Location))
+      return;
+    A.chargeExpansion(1, Source.Location);
+    const auto *Parameter = Source.Parameter;
+    const auto *Function = dyn_cast_or_null<FunctionTemplateDecl>(Source.Template);
+    const auto *Class = dyn_cast_or_null<ClassTemplateDecl>(Source.Template);
+    auto MatchesParameter = [&](const auto *Template) {
+      if (!Template || !Parameter || Parameter->getDepth() || Parameter->getIndex() >= 64)
+        return false;
+      unsigned Count = 0;
+      for (const auto *Declaration : Template->redecls()) {
+        A.chargeExpansion(1, Source.Location);
+        if (++Count > 64)
+          return false;
+        const auto *Parameters = Declaration->getTemplateParameters();
+        if (Parameter->getIndex() < Parameters->size() &&
+            Parameters->getParam(Parameter->getIndex()) == Parameter)
+          return owned(Declaration) && templateParametersShape(Parameters);
+      }
+      return false;
+    };
+    const auto &Canonical = Source.Canonical;
+    if (!owned(Parameter) || Parameter->isInvalidDecl() ||
+        !Parameter->hasDefaultArgument() ||
+        !((functionTemplateShape(Function) && MatchesParameter(Function)) ||
+          (classTemplateShape(Class) && MatchesParameter(Class))) ||
+        Canonical.getKind() != TemplateArgument::Integral ||
+        Canonical.getIntegralType().isNull() || Canonical.isInstantiationDependent() ||
+        !Canonical.getIntegralType()->isIntegralOrEnumerationType()) {
+      A.reject(Source.Location, "scalar template default",
+               "A converted scalar default with an owned matching template parameter is required.");
+      return;
+    }
+    auto Expression = [](const TemplateArgumentLoc &Argument) -> const Expr * {
+      if (Argument.getArgument().getKind() == TemplateArgument::Expression)
+        return Argument.getSourceExpression();
+      if (Argument.getArgument().getKind() == TemplateArgument::Integral)
+        return Argument.getSourceIntegralExpression();
+      return nullptr;
+    };
+    const auto *Written = Expression(Source.Written);
+    const auto *Converted = Expression(Source.Converted);
+    for (const auto *E : {Written, Converted})
+      if (!E || E->getType().isNull() || E->isTypeDependent() || E->isValueDependent() ||
+          E->isInstantiationDependent() || !A.S.owns(A.Sources, E->getBeginLoc())) {
+        A.reject(Source.Location, "template default source",
+                 "Original and converted defaults require concrete owned expression evidence.");
+        return;
+      }
+    auto *SavedFunction = CurrentFunction;
+    auto *SavedMethod = CurrentMethod;
+    auto SavedOwner = ImplicitInitializerOwner;
+    CurrentFunction = nullptr;
+    CurrentMethod = nullptr;
+    ImplicitInitializerOwner = Source.Location;
+    auto Restore = llvm::make_scope_exit([&] {
+      CurrentFunction = SavedFunction;
+      CurrentMethod = SavedMethod;
+      ImplicitInitializerOwner = SavedOwner;
+    });
+    A.type(Canonical.getIntegralType(), Source.Location);
+    if (TraverseTemplateArgumentLoc(Source.Written) && Written != Converted)
+      TraverseTemplateArgumentLoc(Source.Converted);
+  }
   void indexFunctionTemplates() {
     if (!A.S.coreV2())
       return;
@@ -1840,7 +1911,7 @@ public:
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
     // TypeLoc retains source expressions that disappear from a folded type.
     // Direct dependent T/auto have no expression and remain lazy metadata.
-    if (!traverseTemplateParameterTypes(D->getTemplateParameters(), false))
+    if (!traverseTemplateParameterSource(D->getTemplateParameters(), false))
       return false;
     // Sema has finished. Inspect materialized definitions, not dependent
     // patterns or unused overload candidates that have only a signature.
@@ -1870,7 +1941,7 @@ public:
       return true;
     }
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
-    if (!traverseTemplateParameterTypes(D->getTemplateParameters(), true))
+    if (!traverseTemplateParameterSource(D->getTemplateParameters(), true))
       return false;
     if (D != D->getCanonicalDecl())
       return true;
@@ -1994,7 +2065,7 @@ public:
                        "An admitted outer class parameter list is required.");
               return true;
             }
-            if (!traverseTemplateParameterTypes(Parameters, true))
+            if (!traverseTemplateParameterSource(Parameters, true))
               return false;
           }
           return true; // The member type and initializer retain normal laziness.
@@ -2036,7 +2107,7 @@ public:
                        "An admitted outer class parameter list is required.");
               return true;
             }
-            if (!traverseTemplateParameterTypes(Parameters, true))
+            if (!traverseTemplateParameterSource(Parameters, true))
               return false;
           }
           return true; // No uninstantiated body, qualifier or function default.
@@ -3284,13 +3355,16 @@ static void orderCoreV2Records(Adapter &A) {
 }
 
 void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives,
-                  llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives) {
+                  llvm::ArrayRef<ExplicitStaticDataInstantiationSource> StaticDirectives,
+                  llvm::ArrayRef<ScalarTemplateDefaultSource> Defaults) {
   Allowlist Check(*this);
   Check.indexFunctionTemplates();
   for (const auto &Directive : Directives)
     Check.checkExplicitFunctionInstantiation(Directive);
   for (const auto &Directive : StaticDirectives)
     Check.checkExplicitStaticDataInstantiation(Directive);
+  for (const auto &Default : Defaults)
+    Check.checkScalarTemplateDefault(Default);
   Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (!S.Diagnostics.empty())
     return;
@@ -3616,6 +3690,7 @@ class Consumer : public ASTConsumer {
   State &S;
   std::vector<ExplicitFunctionInstantiationSource> Directives;
   std::vector<ExplicitStaticDataInstantiationSource> StaticDirectives;
+  std::vector<ScalarTemplateDefaultSource> Defaults;
   std::size_t DirectiveUnits = 0;
 
   bool reserveSourceUnits(SourceManager &Sources, SourceLocation Location,
@@ -3623,9 +3698,9 @@ class Consumer : public ASTConsumer {
     constexpr std::size_t Limit = 200000;
     if (ArgumentCount >= Limit || 1 + ArgumentCount > Limit - DirectiveUnits) {
       auto P = Sources.getPresumedLoc(Location);
-      S.diagnose("TR0201", "explicit instantiation source",
-                 "Explicit instantiation source exceeds the frontend budget.",
-                 "Reduce the number of source directives and template arguments.",
+      S.diagnose("TR0201", "template source evidence",
+                 "Template source evidence exceeds the frontend budget.",
+                 "Reduce source directives, defaults and template arguments.",
                  P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
       return false;
     }
@@ -3646,7 +3721,7 @@ public:
     auto &Sources = Context.getSourceManager();
     if (!S.owns(Sources, Location))
       return;
-    // Function and static directives share one source-evidence budget.
+    // Directives and converted defaults share one source-evidence budget.
     if (!reserveSourceUnits(Sources, Location, Arguments.size()))
       return;
     Directives.push_back({Function,
@@ -3664,12 +3739,25 @@ public:
       return;
     StaticDirectives.push_back({Variable, Type, Qualifier, Location, HasAttributes});
   }
+  void HandleNeverCScalarTemplateDefault(
+      TemplateDecl *Template, NonTypeTemplateParmDecl *Parameter,
+      const TemplateArgumentLoc &Written, const TemplateArgumentLoc &Converted,
+      const TemplateArgument &Canonical, const SourceLocation &Location) override {
+    if (!S.coreV2() || !Template || !Parameter || !S.Diagnostics.empty() ||
+        Canonical.isNull() || Canonical.isInstantiationDependent())
+      return;
+    auto &Sources = Template->getASTContext().getSourceManager();
+    if (!S.owns(Sources, Location) || !S.owns(Sources, Parameter->getLocation()) ||
+        !reserveSourceUnits(Sources, Location, 0))
+      return;
+    Defaults.push_back({Template, Parameter, Written, Converted, Canonical, Location});
+  }
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
     Adapter A(S, C);
     try {
-      A.run(Directives, StaticDirectives);
+      A.run(Directives, StaticDirectives, Defaults);
     } catch (const Failure &) {
     }
   }

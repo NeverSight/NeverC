@@ -704,7 +704,7 @@ complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
 remain checked when selected. Member function templates, friends, nested
 records/templates, bases and partial specializations
-remain outside this class-template increment. Non-type defaults, packs,
+remain outside this class-template increment. Packs,
 template-template parameters and non-scalar value arguments remain excluded.
 
 The producer traverses materialized records without enabling unrestricted
@@ -946,6 +946,53 @@ Only C++ input translation is implemented; E Language, Python and other frontend
 remain planned. The C++ frontend uses embedded Clang libraries and does not launch
 an external Clang executable.
 
+## Scalar template parameter defaults
+
+Admitted namespace function, operator and class templates support scalar non-type
+parameter defaults, including integer, boolean and enum values, scalar C++17 auto,
+and types or expressions depending on earlier parameters. Deduction takes
+precedence where applicable; otherwise embedded Clang substitutes the selected
+default. Partial explicit argument lists, inherited defaults and ordinary explicit
+instantiation/specialization retain C++ lookup and selection. Equivalent omitted
+and explicit arguments share canonical functions, records and static storage;
+different values or deduced types retain independent identities.
+
+The frontend checks every nondependent written default through the existing source
+visitor, including unused or overridden declarations. Unsupported floating source
+cannot disappear through constant folding. Unused dependent defaults stay lazy;
+an explicit value can bypass them. Once a default is successfully converted,
+original and converted expression evidence is checked, together with the final
+scalar argument type. This preserves dependent arithmetic, sizeof/noexcept,
+constexpr calls and conversion-added operations. An allowed constexpr record
+conversion can produce an integer argument; this does not admit record-valued
+non-type parameters. Selected calls retain ordinary source-definition checks.
+
+Private no-op callbacks run after CheckTemplateArgument succeeds in the explicit
+argument-list and function-deduction paths. Both original and converted ArgLocs
+and the canonical result survive erasure. Failed substitution or conversion
+produces no callback and retains normal SFINAE overload fallback. A successful
+conversion remains checked even if later parameters or overload selection discard
+the candidate, as with other materialized source. Actual parameter identity is
+matched at its index across at most 64 redeclarations of the same template, so
+inherited defaults retain their real declaration provenance. Evidence collection
+shares the 200000-unit template source budget; it does not mutate semantic flags
+or add runtime parameters, global initialization or opaque representations.
+
+Final defaults must be supported scalar constants. Pointer/reference/record-valued
+arguments, packs, member/friend/variable templates, standard headers and remaining
+C++17/STL features are still unfinished. Invalid C++ retains TR0202; unsupported
+profile source uses TR0201, and selected definitions missing from this source unit
+use TR0203 where ordinary rules require them.
+
+Paired source fixtures cover lazy and inherited defaults, both conversion paths,
+source checks, overload fallback and diagnostics. Native O0/O2 fixtures cover
+actual arrays, object lifetime, canonical static objects, aliases, operator defaults
+and typed auto identities. Protocol fixtures check signatures, values, extents,
+call closure and relocation, including no runtime default-expression calls.
+Native validation requires the implementing revision's CI. Only C++ input is
+implemented; E Language, Python and other frontends remain planned. Translation
+uses built-in Clang libraries and does not launch an external Clang executable.
+
 ## Class-template scalar static data
 
 Admitted concrete class templates support integer, boolean and enum static data
@@ -992,7 +1039,7 @@ unsupported spelling, attributes or disagreement produce TR0201. Clang-diagnosed
 invalid C++ still produces TR0202. Written outer parameter types and expressions
 inside qualifiers or decltype cannot disappear behind semantic canonicalization.
 Static and function directives share the bounded source-evidence budget described
-above. No semantic flags, runtime template arguments or new wire types are added.
+below. No semantic flags, runtime template arguments or new wire types are added.
 
 Paired source fixtures cover definitions, lazy use, constant-only values,
 specialization and complete directive evidence. Native O0/O2 fixtures cover real
@@ -1032,9 +1079,10 @@ a later valid spelling erase an earlier one. Parsed attributes remain unsupporte
 even when a directive has no semantic effect. This metadata neither changes Clang
 specialization selection nor creates a runtime declaration or extra parameter.
 
-Function and static-member evidence share a limit of 200000 source units,
-charging one per directive plus each copied function template argument before
-retention; ordinary source expansion limits still apply during validation. All
+Function directives, static-member directives and converted scalar defaults share
+a limit of 200000 source units. Each directive/default charges one unit plus each
+copied explicit function template argument before retention; ordinary source
+expansion limits still apply during validation. All
 written type and expression checks run before emission through the same visitor.
 Dependent constructor patterns in the supported no-base class templates may only
 have written member initializers; a type/base initializer cannot hide delegation
@@ -1108,9 +1156,9 @@ Scalar non-type parameters include C++17 `template<auto N>` and dependent scalar
 types such as `template<class T, T N>`. Every materialized value argument must
 resolve to an integral argument with a supported concrete integer/bool/enum type.
 Pointers, references, null pointers, function/member pointers and class values
-are not admitted, even through `auto` or a dependent parameter type. Non-type
-template-parameter defaults, including inherited defaults, remain unsupported;
-this does not affect supported type defaults or instantiated function defaults.
+are not admitted, even through `auto` or a dependent parameter type. Scalar
+non-type defaults, including inherited defaults, follow their source-evidence
+contract above. Existing type and function defaults retain their own rules.
 
 The substituted scalar becomes an ordinary typed constant; `N` does not become
 a runtime function parameter or mutable local. Array-bound deduction, fixed

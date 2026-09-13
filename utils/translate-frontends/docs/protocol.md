@@ -145,6 +145,13 @@ Equivalent instances share identities; differing values/types/primaries do not.
 No runtime template parameter is emitted. See [class-template methods](cpp-core-v2.md#ordinary-class-template-member-functions)
 for lazy bodies/defaults, source checks and definition requirements.
 
+Scalar non-type template defaults produce the same concrete argument identities
+and typed functions, records and globals as equivalent explicit arguments. No
+runtime parameter is added. Successful default conversions retain original and
+converted source plus the canonical scalar result, including inherited parameter
+origins; substitution/conversion failure preserves overload fallback. See
+[scalar template parameter defaults](cpp-core-v2.md#scalar-template-parameter-defaults).
+
 Scalar static members of admitted class-template instances use ordinary typed
 globals for actual definitions, with canonical class/member identity and checked
 constant or zero values. They add no record fields. Declaration-only constant

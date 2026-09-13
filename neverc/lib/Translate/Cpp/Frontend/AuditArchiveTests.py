@@ -662,11 +662,14 @@ public:
         files['clang/lib/Parse/ParseCXXInlineMethods.cpp'] = original_declaration_parser
         # Independent explicit-instantiation source callback fixtures.
         explicit_header_original = '// Before header.\n  class FunctionDecl;\n  class ImportDecl;\n// Between header anchors.\n  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n  virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *D) {}\n// After header.\n'
-        explicit_header_expected = '// Before header.\n  class FunctionDecl;\n  class ImportDecl;\n  class TemplateArgumentListInfo;\n  class TypeSourceInfo;\n  struct DeclarationNameInfo;\n  class NestedNameSpecifierLoc;\n  class SourceLocation;\n// Between header anchors.\n  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n\n  // NeverC private source evidence; this does not request instantiation.\n  virtual void HandleNeverCExplicitFunctionInstantiation(\n      FunctionDecl *, const TemplateArgumentListInfo &, TypeSourceInfo *,\n      const DeclarationNameInfo &, const NestedNameSpecifierLoc &,\n      const SourceLocation &, bool) {}\n  virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *D) {}\n\n  // NeverC private source evidence for each static member directive.\n  virtual void HandleNeverCExplicitStaticDataInstantiation(\n      VarDecl *, TypeSourceInfo *, const NestedNameSpecifierLoc &,\n      const SourceLocation &, bool) {}\n// After header.\n'
-        explicit_source_original = '// Before source.\n                                            Declarator &D) {\n  // Explicit instantiations always require a name.\n    CheckExplicitInstantiation(*this, Prev, D.getIdentifierLoc(), true, TSK);\n// Unchanged source between anchors.\n    Specialization = cast<FunctionDecl>(*Result);\n  }\n\n  // C++11 [except.spec]p4\n  // In an explicit instantiation an exception-specification may be specified,\n// After source.\n'
-        explicit_source_expected = '// Before source.\n                                            Declarator &D) {\n  // Retain attributes before declarator type processing can consume them.\n  const bool NeverCWrittenAttributes = D.hasAttributes();\n  // Explicit instantiations always require a name.\n    // Preserve written static-member source before no-effect handling.\n    Consumer.HandleNeverCExplicitStaticDataInstantiation(\n        Prev, T, D.getCXXScopeSpec().getWithLocInContext(Context),\n        D.getIdentifierLoc(), NeverCWrittenAttributes);\n\n    CheckExplicitInstantiation(*this, Prev, D.getIdentifierLoc(), true, TSK);\n// Unchanged source between anchors.\n    Specialization = cast<FunctionDecl>(*Result);\n  }\n\n  // Preserve every directive before duplicate/no-effect early returns.\n  Consumer.HandleNeverCExplicitFunctionInstantiation(\n      Specialization, TemplateArgs, T, NameInfo,\n      D.getCXXScopeSpec().getWithLocInContext(Context),\n      D.getIdentifierLoc(), NeverCWrittenAttributes);\n\n  // C++11 [except.spec]p4\n  // In an explicit instantiation an exception-specification may be specified,\n// After source.\n'
+        explicit_header_expected = '// Before header.\n  class FunctionDecl;\n  class ImportDecl;\n  class TemplateArgumentListInfo;\n  class TypeSourceInfo;\n  struct DeclarationNameInfo;\n  class NestedNameSpecifierLoc;\n  class SourceLocation;\n  class TemplateDecl;\n  class NonTypeTemplateParmDecl;\n  class TemplateArgumentLoc;\n  class TemplateArgument;\n// Between header anchors.\n  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n\n  // NeverC private source evidence; this does not request instantiation.\n  virtual void HandleNeverCExplicitFunctionInstantiation(\n      FunctionDecl *, const TemplateArgumentListInfo &, TypeSourceInfo *,\n      const DeclarationNameInfo &, const NestedNameSpecifierLoc &,\n      const SourceLocation &, bool) {}\n  virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *D) {}\n\n  // NeverC private source evidence for each static member directive.\n  virtual void HandleNeverCExplicitStaticDataInstantiation(\n      VarDecl *, TypeSourceInfo *, const NestedNameSpecifierLoc &,\n      const SourceLocation &, bool) {}\n\n  // NeverC retains defaults only after successful argument conversion.\n  virtual void HandleNeverCScalarTemplateDefault(\n      TemplateDecl *, NonTypeTemplateParmDecl *,\n      const TemplateArgumentLoc &, const TemplateArgumentLoc &,\n      const TemplateArgument &, const SourceLocation &) {}\n// After header.\n'
+        explicit_source_original = '// Before source.\n                                            Declarator &D) {\n  // Explicit instantiations always require a name.\n    CheckExplicitInstantiation(*this, Prev, D.getIdentifierLoc(), true, TSK);\n// Unchanged source between anchors.\n    Specialization = cast<FunctionDecl>(*Result);\n  }\n\n  // C++11 [except.spec]p4\n  // In an explicit instantiation an exception-specification may be specified,\n// After source.\n// Default argument path.\n    // Check the default template argument.\n    if (CheckTemplateArgument(*Param, Arg, Template, TemplateLoc, RAngleLoc, 0,\n                              CTAI, CTAK_Specified))\n      return true;\n\n    CTAI.SugaredConverted.back().setIsDefaulted(true);\n// End default path.\n'
+        explicit_source_expected = '// Before source.\n                                            Declarator &D) {\n  // Retain attributes before declarator type processing can consume them.\n  const bool NeverCWrittenAttributes = D.hasAttributes();\n  // Explicit instantiations always require a name.\n    // Preserve written static-member source before no-effect handling.\n    Consumer.HandleNeverCExplicitStaticDataInstantiation(\n        Prev, T, D.getCXXScopeSpec().getWithLocInContext(Context),\n        D.getIdentifierLoc(), NeverCWrittenAttributes);\n\n    CheckExplicitInstantiation(*this, Prev, D.getIdentifierLoc(), true, TSK);\n// Unchanged source between anchors.\n    Specialization = cast<FunctionDecl>(*Result);\n  }\n\n  // Preserve every directive before duplicate/no-effect early returns.\n  Consumer.HandleNeverCExplicitFunctionInstantiation(\n      Specialization, TemplateArgs, T, NameInfo,\n      D.getCXXScopeSpec().getWithLocInContext(Context),\n      D.getIdentifierLoc(), NeverCWrittenAttributes);\n\n  // C++11 [except.spec]p4\n  // In an explicit instantiation an exception-specification may be specified,\n// After source.\n// Default argument path.\n    // Preserve original spelling as well as any conversion-added operations.\n    const auto NeverCWrittenDefault = Arg;\n    // Check the default template argument.\n    if (CheckTemplateArgument(*Param, Arg, Template, TemplateLoc, RAngleLoc, 0,\n                              CTAI, CTAK_Specified))\n      return true;\n\n    if (auto *NeverCParameter = dyn_cast<NonTypeTemplateParmDecl>(*Param))\n      Consumer.HandleNeverCScalarTemplateDefault(\n          Template, NeverCParameter, NeverCWrittenDefault, Arg,\n          CTAI.CanonicalConverted.back(), TemplateLoc);\n    CTAI.SugaredConverted.back().setIsDefaulted(true);\n// End default path.\n'
+        explicit_deduction_original = '// Before deduction.\n#include "clang/AST/ASTContext.h"\n// Conversion path.\n    // Check whether we can actually use the default argument.\n    if (S.CheckTemplateArgument(\n            Param, DefArg, TD, TD->getLocation(), TD->getSourceRange().getEnd(),\n            /*ArgumentPackIndex=*/0, CTAI, Sema::CTAK_Specified)) {\n      Info.Param = makeTemplateParameter(\n                         const_cast<NamedDecl *>(TemplateParams->getParam(I)));\n      // FIXME: These template arguments are temporary. Free them!\n      Info.reset(\n          TemplateArgumentList::CreateCopy(S.Context, CTAI.SugaredConverted),\n          TemplateArgumentList::CreateCopy(S.Context, CTAI.CanonicalConverted));\n      return TemplateDeductionResult::SubstitutionFailure;\n    }\n\n    // If we get here, we successfully used the default template argument.\n// After deduction.\n'
+        explicit_deduction_expected = '// Before deduction.\n#include "clang/AST/ASTConsumer.h"\n#include "clang/AST/ASTContext.h"\n// Conversion path.\n    // Preserve spelling before CheckTemplateArgument adds conversions.\n    const auto NeverCWrittenDefault = DefArg;\n    // Check whether we can actually use the default argument.\n    if (S.CheckTemplateArgument(\n            Param, DefArg, TD, TD->getLocation(), TD->getSourceRange().getEnd(),\n            /*ArgumentPackIndex=*/0, CTAI, Sema::CTAK_Specified)) {\n      Info.Param = makeTemplateParameter(\n                         const_cast<NamedDecl *>(TemplateParams->getParam(I)));\n      // FIXME: These template arguments are temporary. Free them!\n      Info.reset(\n          TemplateArgumentList::CreateCopy(S.Context, CTAI.SugaredConverted),\n          TemplateArgumentList::CreateCopy(S.Context, CTAI.CanonicalConverted));\n      return TemplateDeductionResult::SubstitutionFailure;\n    }\n\n    if (auto *NeverCParameter = dyn_cast<NonTypeTemplateParmDecl>(Param))\n      S.getASTConsumer().HandleNeverCScalarTemplateDefault(\n          TD, NeverCParameter, NeverCWrittenDefault, DefArg,\n          CTAI.CanonicalConverted.back(), TD->getLocation());\n    // If we get here, we successfully used the default template argument.\n// After deduction.\n'
         files['clang/include/clang/AST/ASTConsumer.h'] = explicit_header_original
         files['clang/lib/Sema/SemaTemplate.cpp'] = explicit_source_original
+        files['clang/lib/Sema/SemaTemplateDeduction.cpp'] = explicit_deduction_original
         files.update(math_sources)
         for name in notice_names:
             files["llvm/lib/Support/" + name] = (
@@ -720,11 +723,12 @@ public:
             setup_path.write_text(original_setup, encoding="utf-8")
 
             run_script(True)
-            # Both callback files must match the independently written contract.
+            # All callback files must match the independently written contract.
             explicit_paths = [source / "clang/include/clang/AST/ASTConsumer.h",
-                              source / "clang/lib/Sema/SemaTemplate.cpp"]
-            explicit_original = [explicit_header_original, explicit_source_original]
-            explicit_expected = [explicit_header_expected, explicit_source_expected]
+                              source / "clang/lib/Sema/SemaTemplate.cpp",
+                              source / 'clang/lib/Sema/SemaTemplateDeduction.cpp']
+            explicit_original = [explicit_header_original, explicit_source_original, explicit_deduction_original]
+            explicit_expected = [explicit_header_expected, explicit_source_expected, explicit_deduction_expected]
             for path, expected in zip(explicit_paths, explicit_expected):
                 self.assertEqual(path.read_text(encoding="utf-8"), expected)
             access_path = source / "clang/lib/Sema/SemaAccess.cpp"
@@ -937,7 +941,7 @@ public:
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))
 
-            # Partial, duplicate and drifted callback groups never rewrite either file.
+            # Partial, duplicate and drifted callback groups never rewrite any file.
             explicit_states = [
                 ("original header only", explicit_header_original, explicit_source_expected),
                 ("original source only", explicit_header_expected, explicit_source_original),
@@ -964,6 +968,7 @@ public:
                 with self.subTest(explicit_source_state=state):
                     explicit_paths[0].write_text(header_text, encoding="utf-8")
                     explicit_paths[1].write_text(source_text, encoding="utf-8")
+                    explicit_paths[2].write_text(explicit_deduction_expected, encoding="utf-8")
                     untouched = snapshot_all_files()
                     if state in ("original header only", "original source only"):
                         error = "Unexpected partial pinned Clang explicit-instantiation source"
@@ -971,6 +976,36 @@ public:
                         index = 0 if state in ("missing forward anchor", "missing callback anchor", "duplicate header", "partial forward declarations", "partial signature", "extra callback", "missing static header anchor", "partial static signature", "extra static callback") else 1
                         error = "Unexpected pinned Clang explicit-instantiation source in " + str(explicit_paths[index])
                     run_script(False, error)
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            for mask in range(1, 7):
+                with self.subTest(template_source_mixed_state=mask):
+                    for index, path in enumerate(explicit_paths):
+                        contents = (explicit_expected if mask & (1 << index) else explicit_original)[index]
+                        path.write_text(contents, encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected partial pinned Clang explicit-instantiation source")
+                    self.assertEqual(snapshot_all_files(), untouched)
+            default_source_states = [
+                (0, "missing default forward", explicit_header_expected.replace("  class TemplateArgument;", "")),
+                (0, "partial default signature", explicit_header_expected.replace("TemplateDecl *, NonTypeTemplateParmDecl *,", "TemplateDecl *,")),
+                (0, "extra default callback", explicit_header_expected + "// HandleNeverCScalarTemplateDefault\n"),
+                (1, "missing default capture", explicit_source_expected.replace("const auto NeverCWrittenDefault = Arg;", "")),
+                (1, "partial default conversion", explicit_source_expected.replace("NeverCWrittenDefault, Arg,", "NeverCWrittenDefault, NeverCWrittenDefault,")),
+                (1, "partial default canonical", explicit_source_expected.replace("CTAI.CanonicalConverted.back(), TemplateLoc", "CTAI.SugaredConverted.back(), TemplateLoc")),
+                (1, "duplicate default marker", explicit_source_expected + "// NeverCWrittenDefault\n"),
+                (2, "missing deduction include", explicit_deduction_expected.replace('#include "clang/AST/ASTConsumer.h"\n', "")),
+                (2, "partial deduction conversion", explicit_deduction_expected.replace("NeverCWrittenDefault, DefArg,", "NeverCWrittenDefault, NeverCWrittenDefault,")),
+                (2, "partial deduction capture", explicit_deduction_expected.replace("const auto NeverCWrittenDefault = DefArg;", "")),
+                (2, "duplicate deduction", explicit_deduction_expected * 2),
+                (2, "missing deduction anchor", explicit_deduction_original.replace("// Check whether we can actually use the default argument.", "// Drifted.")),
+            ]
+            for index, state, contents in default_source_states:
+                with self.subTest(template_default_source_state=state):
+                    for path, expected in zip(explicit_paths, explicit_expected):
+                        path.write_text(expected, encoding="utf-8")
+                    explicit_paths[index].write_text(contents, encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang explicit-instantiation source in " + str(explicit_paths[index]))
                     self.assertEqual(snapshot_all_files(), untouched, state)
             for missing in explicit_paths:
                 for path, original in zip(explicit_paths, explicit_original):
