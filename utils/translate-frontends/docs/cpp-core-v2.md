@@ -1067,9 +1067,14 @@ source slot. Later selected specializations still require complete concrete
 argument and deduction evidence. Checking never guesses missing arguments,
 reorders the successful conversion result or requests another instantiation.
 
+Successful argument conversion does not establish a valid partial specialization.
+Clang still checks specialization ordering and parameter deducibility; invalid
+fixed-arity or expanded-pack patterns retain C++ diagnostics (`TR0202`). An extern
+instantiation declaration after an instantiation definition also remains invalid.
+
 Paired native and protocol cases cover direct declarations, unused and selected
-copies, fixed and expanded packs, resolved type sources, pending full declarations
-and language diagnostics. Seven O0/O2 runtime checkpoints check values and static
+copies, valid trailing packs, resolved type sources, pending full declarations
+and invalid fixed/expanded-pack language diagnostics. Seven O0/O2 runtime checkpoints check values and static
 storage identity. All native results require the implementing CI revision.
 Template-owner restrictions remain unchanged by these source checks; full
 C++/STL remains unfinished. Only C++ input is implemented. E Language, Python
@@ -1238,6 +1243,10 @@ folding cannot hide unsupported source. A nondependent declaration is checked
 even when unused, including a member alias made nondependent by outer class
 substitution. Still-dependent underlying types retain template laziness until
 substitution. Unselected class partials do not force their dependent aliases.
+A member alias can retain a dependent non-type parameter type such as
+`decltype(T{})` until its actual use, including in an ordinary class. The selected
+substitution checks the complete type source, so expressions such as
+`decltype((sizeof(double), T{}))` cannot conceal an unsupported operand.
 The embedded Clang frontend retains the original two-stage substitution source;
 it performs no second source-only substitution and launches no external compiler.
 

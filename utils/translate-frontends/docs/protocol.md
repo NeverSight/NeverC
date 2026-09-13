@@ -877,6 +877,7 @@ Partial declaration checks retain successful primary argument metadata in the
 embedded frontend before lowering. Written and copied declarations are distinct
 from selected-partial deduction events. Resolved parameter type sources are
 checked even while another argument or pack length is pending. Unknown tail
-positions cannot authorize concrete substitution edges. This does not add public
+positions cannot authorize concrete substitution edges. A declaration must still
+pass C++ specialization ordering and deduction checks before producing output. This does not add public
 protocol fields or opaque fallback nodes; emitted concrete values and storage
 identities retain their existing checks and relocation guarantees.

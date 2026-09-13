@@ -174,6 +174,11 @@ primary argument check, including resolved non-type parameter source types when
 some argument values remain dependent. Copied events retain the exact original
 partial declaration; direct events remain separate from later selected-partial
 deduction. Collection never requests another substitution or instantiation.
+A non-inline static member variable template reuses the initializer from its
+actual redeclaration chain. Repeated references to an out-of-line definition do
+not instantiate its in-class constant initializer a second time. This private
+pinned-source correction preserves the first instantiation and C++ diagnostics
+for genuinely repeated written initializers.
 The exact scripts and compilation rules are part of the NeverC source tree at
 neverc/lib/Translate/Cpp/Frontend and neverc/cmake/modules/BuiltinCppFrontend.cmake.
 

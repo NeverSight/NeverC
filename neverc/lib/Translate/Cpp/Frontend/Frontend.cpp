@@ -1262,6 +1262,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   SourceLocation ImplicitInitializerOwner;
   const TemplateParameterList *TemplateParameterTypeSource = nullptr;
   std::map<const NamedDecl *, const NamedDecl *> PackOwners;
+  std::map<const NamedDecl *, const DeclaratorDecl *> OuterPackDeclarations;
   using TypeSourceKey = std::pair<const Type *, unsigned>;
   using FunctionSourceKey = std::pair<const FunctionDecl *, unsigned>;
   using VariableSourceKey = std::pair<const VarDecl *, unsigned>;
@@ -1977,8 +1978,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   void recordOuterPacks(const DeclaratorDecl *D, const NamedDecl *Owner) {
     if (!owned(D) || !owned(Owner) || D->getNumTemplateParameterLists() > 1)
       return;
-    for (unsigned I = 0; I < D->getNumTemplateParameterLists(); ++I)
-      recordTemplatePacks(D->getTemplateParameterList(I), Owner);
+    for (unsigned I = 0; I < D->getNumTemplateParameterLists(); ++I) {
+      const auto *Parameters = D->getTemplateParameterList(I);
+      recordTemplatePacks(Parameters, Owner);
+      for (const auto *Parameter : *Parameters)
+        if (supportedPackDeclaration(Parameter))
+          OuterPackDeclarations.emplace(Parameter, D);
+    }
   }
   void recordFunctionPacks(const FunctionDecl *Function, const NamedDecl *Owner) {
     if (!owned(Function) || !owned(Owner))
@@ -2065,12 +2071,29 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     auto Found = PackOwners.find(Pack);
     if (!owned(Pack) || !supportedPackDeclaration(Pack) || Found == PackOwners.end())
       return false;
-    if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(Pack))
-      if (!parameterInTemplate(Found->second, Pack, Type->getIndex()))
+    const auto *Type = dyn_cast<TemplateTypeParmDecl>(Pack);
+    const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Pack);
+    if (Type || Value) {
+      const unsigned Index = Type ? Type->getIndex() : Value->getIndex();
+      bool Matches = parameterInTemplate(Found->second, Pack, Index);
+      // Out-of-line member headers own fresh parameter declarations. They
+      // are not redeclarations of the class template's parameter objects.
+      auto Written = OuterPackDeclarations.find(Pack);
+      if (!Matches && Written != OuterPackDeclarations.end()) {
+        const auto *Declaration = Written->second;
+        const auto *Record = dyn_cast<CXXRecordDecl>(Declaration->getDeclContext());
+        const auto *Owner = Record ? classTemplatePattern(Record) : nullptr;
+        if (owned(Declaration) && !Declaration->isInvalidDecl() && Owner &&
+            Owner->getCanonicalDecl() == Found->second->getCanonicalDecl() &&
+            Declaration->getNumTemplateParameterLists() == 1) {
+          const auto *Parameters = Declaration->getTemplateParameterList(0);
+          Matches = Index < Parameters->size() && Parameters->getParam(Index) == Pack &&
+                    templateParametersShape(Parameters, templateSourceParameterDepth(Owner));
+        }
+      }
+      if (!Matches)
         return false;
-    if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Pack))
-      if (!parameterInTemplate(Found->second, Pack, Value->getIndex()))
-        return false;
+    }
     return functionTemplateShape(dyn_cast<FunctionTemplateDecl>(Found->second)) ||
            classPatternShape(Found->second) || variablePatternShape(Found->second) ||
            aliasTemplateShape(dyn_cast<TypeAliasTemplateDecl>(Found->second));
@@ -2838,11 +2861,12 @@ public:
                                                std::optional<unsigned> PackIndex,
                                                SourceLocation L, bool WholePack = false) {
     const TemplateArgument *Argument = nullptr;
-    if (const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Associated)) {
-      if (Record->getKind() != Decl::ClassTemplateSpecialization ||
-          !owned(Record) || Record->isDependentContext() ||
+    if (const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Associated);
+        Record && Record->getKind() == Decl::ClassTemplateSpecialization) {
+      const auto *Pattern = classTemplatePattern(Record);
+      if (!owned(Record) || Record->isDependentContext() || !Pattern ||
           !classPatternShape(Primary) ||
-          classTemplatePattern(Record)->getCanonicalDecl() != Primary->getCanonicalDecl() ||
+          Pattern->getCanonicalDecl() != Primary->getCanonicalDecl() ||
           !checkClassPartialSource(Record, L) || !A.S.Diagnostics.empty())
         return nullptr;
       const auto &Arguments = Record->getTemplateInstantiationArgs();
@@ -3433,7 +3457,8 @@ public:
                                  SourceLocation QualifiedBegin = {}) {
     if (!concreteFunctionTemplate(Function))
       return;
-    if (QualifiedBegin == Location || isa<CXXMethodDecl>(Function))
+    const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+    if (QualifiedBegin == Location || (Method && !Method->isStatic()))
       QualifiedBegin = {};
     const TemplateUseSource *First = nullptr;
     // Overload-call deduction uses the unresolved expression's begin location,
@@ -3895,6 +3920,13 @@ public:
       if (!D)
         return;
       A.chargeExpansion(1, D->getLocation());
+      if (const auto *Record = dyn_cast<CXXRecordDecl>(D);
+          Record && Record->isInjectedClassName())
+        return;
+      // Match the existing record-depth limit: the outermost record is
+      // depth zero. Template wrappers, injected names and fields add no edge.
+      if (isa<CXXRecordDecl>(D) && isa<CXXRecordDecl>(D->getDeclContext()))
+        ++Depth;
       if (Depth > 64) {
         A.reject(D->getLocation(), "member template index depth",
                  "Nested declaration indexing exceeds the source depth limit.");
@@ -3977,7 +4009,7 @@ public:
           }
           if (SeenClasses.insert(Template->getCanonicalDecl()).second)
             Classes.push_back(Template->getCanonicalDecl());
-          Queue(Template->getTemplatedDecl(), Depth + 1);
+          Queue(Template->getTemplatedDecl(), Depth);
           continue;
         }
         const DeclContext *Context = nullptr;
@@ -3996,7 +4028,7 @@ public:
           continue;
         const auto Begin = Work.size();
         for (auto *Child : Context->decls())
-          Queue(Child, Depth + 1);
+          Queue(Child, Depth);
         std::reverse(Work.begin() + Begin, Work.end());
       }
       if (Phase == 0) {
@@ -4004,7 +4036,7 @@ public:
         for (auto *Template : Classes)
           for (auto *Instance : Template->specializations())
             for (auto *Declaration : Instance->redecls())
-              Queue(Declaration, 1);
+              Queue(Declaration, 0);
       }
     }
     for (auto *Copy : Copies) {
@@ -4343,8 +4375,10 @@ public:
       return true;
     }
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
-    const bool DependentClass = Parent && Parent->isDependentContext();
-    if (!traverseTemplateParameterSource(D->getTemplateParameters(), DependentClass))
+    // A member alias's own parameter type can depend on an earlier inner
+    // parameter even when its class is ordinary. Every selected alias use
+    // checks the retained substituted parameter type in checkTemplateUse.
+    if (!traverseTemplateParameterSource(D->getTemplateParameters(), Parent != nullptr))
       return false;
     auto *Pattern = D->getTemplatedDecl();
     auto Type = Pattern->getUnderlyingType();
