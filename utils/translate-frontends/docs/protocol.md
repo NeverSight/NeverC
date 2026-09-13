@@ -172,6 +172,15 @@ runtime parameter is added. Successful template-use events retain original and
 converted defaults with their exact selected declaration or type-use evidence.
 Validation happens at reached source uses and explicit declarations/directives;
 unselected overload candidates and uninstantiated dependent source remain lazy.
+Namespace class partial specializations also use existing concrete record,
+function, scalar-global, reference and lifetime operations. The primary argument
+identity is separate from the selected partial's deduced slots and actual
+substituted pattern source. Exact selected deduction evidence validates both;
+canonical argument equality alone cannot identify the candidate. These private
+source records never appear as wire operations. Empty deduced non-type packs
+retain their checked type substitution without inventing an argument element.
+See [class partial specializations](cpp-core-v2.md#class-template-partial-specializations).
+
 Namespace alias templates preserve canonical types and produce no wire opcode,
 wrapper function, duplicate record or static object. Written arguments, selected
 defaults and substituted underlying TypeLocs retain source checks, including

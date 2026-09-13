@@ -61,6 +61,21 @@ category, explicitness, access and candidate-selection checks remain active.
 Independent literal source fixtures cover exact output, idempotence and drift;
 paired source/protocol and native O0/O2 cases cover fresh argument conversions.
 
+The same private six-file source group preserves completed namespace class
+partial-specialization deductions in SemaTemplateDeduction.cpp. For requesting
+consumers only, the existing successful class-partial pattern substitution keeps
+source sugar (Final=false); variable partials and partial ordering keep their
+original path. After conversion, substituted-primary equality, trap and
+constraint checks, two bounded callback records preserve deduced partial slots
+and the actual substituted pattern/primary slots. The exact canonical deduced
+argument-list object is retained as identity: upstream SemaTemplateInstantiate.cpp
+moves Info.takeCanonical() unchanged into the chosen match and setInstantiationOf,
+and getTemplateInstantiationArgs() exposes it on the concrete class. No additional
+selection, deduction or instantiation is performed. Other consumers retain the
+original AST and no-op callback behavior. Independent literal archive fixtures
+cover the extended group and failure-before-write states; paired native/protocol
+fixtures cover selected source, canonical storage and lifetime behavior.
+
 The isolated build renames namespace llvm and selected global C/C++ symbols.
 IsolateSymbols.py applies checked, idempotent changes to the extracted
 IntrinsicInst.cpp, Debugify.h, and LoopUtils.cpp to isolate otherwise global

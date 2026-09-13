@@ -710,8 +710,8 @@ constructors, destructors, operators and conversions as described below. Aggrega
 complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
 remain checked when selected. Member function templates, friends, nested
-records/templates, bases and partial specializations
-remain outside this class-template increment. Template-template parameters and non-scalar value arguments remain excluded.
+records/templates and bases remain outside this class-template increment.
+Namespace partial specializations follow their separate contract below. Template-template parameters and non-scalar value arguments remain excluded.
 
 The producer traverses materialized records without enabling unrestricted
 implicit AST traversal. Dependent field types and unused field defaults stay
@@ -763,7 +763,8 @@ Selected default/noexcept expressions and materialized signatures/bodies must pa
 the ordinary profile checks. Attributes, virtual/variadic/deleted methods,
 volatile/restrict qualifiers and member function templates are excluded. The class
 must remain an admitted standard-layout record. Static data, friend,
-nested/partial-template and base support is not expanded here. Operators and
+nested-template and base support is not expanded here. Namespace partial
+specializations follow their separate contract below. Operators and
 conversions follow their separate class-template contract below.
 
 Methods use ordinary typed functions: instance receivers keep their cv-qualified
@@ -1039,10 +1040,82 @@ fixtures verify array extents, reference writes, shared/distinct static objects,
 record results, copies, moves and full-expression destruction. Protocol fixtures
 check exact types, record reuse, result destinations, reference roots, selected
 calls and relocation. Native results require the implementing revision's CI.
-Member alias templates, template-template parameters, partial class
-specializations, standard headers and complete C++17/STL remain unfinished.
+Member alias templates, template-template parameters, standard headers and
+complete C++17/STL remain unfinished. Namespace class partial specializations
+follow the contract below.
 Only C++ input is implemented; E Language, Python and other frontends remain
 planned.
+
+## Class-template partial specializations
+
+Owned namespace class-template partial specializations support the same admitted
+concrete type and integer/bool/enum/auto arguments, fields, ordinary members,
+scalar static data, constructors, destructors and defaulted operations as primary
+class templates. Each parameter list and concrete pack has at most 64 entries.
+Records still require supported standard-layout storage with no bases; member
+and variable templates, template-template parameters and full standard-library
+headers remain outside this increment.
+
+```cpp
+template<class T> struct View;
+template<class T, int N> struct View<T[N]> {
+  T data[N];
+  int count() { return N; }
+};
+int main() {
+  View<int[3]> v{{2, 4, 6}};
+  return v.count() == 3 && v.data[2] == 6 ? 0 : 1;
+}
+```
+
+Embedded Clang selects the primary, the uniquely best matching partial, or an
+explicit full specialization under normal C++17 rules. Successful deduction,
+partial ordering, non-deduced contexts, namespace lookup and SFINAE keep their
+language semantics. Ambiguous or otherwise ill-formed required uses retain
+`TR0202`. Uninstantiated dependent member bodies and unselected candidates remain
+lazy. A partial declaration's ordinary structural constraints and nondependent
+written source are still checked even if that partial is never selected.
+
+Primary arguments identify the concrete record. The selected partial has its
+own separately checked deduced parameters: for `View<int[3]>`, the primary has
+one type argument while the partial has the type `int` and scalar `3`. Parameter
+order may also differ. Types, scalar substitutions and pack counts use the exact
+selected owner, slot and pack element, preserving Clang's reverse substitution
+index convention. They never reinterpret a partial slot as a primary slot.
+Equivalent aliases and redeclarations share the same concrete record, methods
+and static objects; distinct concrete primary arguments retain distinct identity.
+Out-of-line definitions, explicit class/member/static instantiations and admitted
+member specializations use their real declarations and selected definitions.
+
+The private source hook retains two completed records: the partial deduction,
+including its selected non-type parameter type source, and the actual substituted
+written pattern checked against the primary arguments. The exact deduced AST
+argument-list object is transferred by Clang to the selected instance; that
+object joins the two records to the class. A canonical argument value alone does
+not identify the candidate. Collection uses the existing shared source budget;
+selected-source recursion has a depth bound and cycle checks. No extra deduction,
+instantiation, external compiler process or runtime protocol operation is added.
+
+The written pattern is traversed in its deduced-parameter context before the
+primary argument frame is installed. Alias expansion, folded scalar expressions,
+selected primary defaults, non-type parameter types and deduced empty-pack type
+substitutions keep their source checks. Unsupported source erased to an otherwise
+supported canonical type still receives `TR0201`; neither a losing candidate nor
+an uninstantiated dependent body is forced just to inspect its source. Actual
+class-associated substitutions use that class's exact selected argument list,
+preventing a recursive instance from borrowing another instance's source frame.
+
+Paired native/protocol fixtures cover selection, different parameter layouts,
+primary/full-specialization precedence, aliases, forward and out-of-line
+declarations, remove-reference/conditional/is-same/enable-if-style traits, empty/nonempty and 64/65 packs, source erasure, diagnostics and
+missing selected definitions. The native O0/O2 fixture checks 18 runtime
+checkpoints for values, field arrays, reference writes, shared/distinct static
+storage, recursive instances, copy/move effects and destruction. Protocol fixtures
+check selected call targets, exact record/field types, result destinations,
+reference identity, destruction, closure and relocation. Native validation
+requires the implementing revision's CI; these fixtures do not establish full
+C++17/STL coverage. Only C++ input is implemented; E Language, Python and other
+language frontends remain planned.
 
 ## Scalar template parameter defaults
 
@@ -1248,8 +1321,8 @@ at most 64 parameters; each concrete pack has at most 64 elements, including zer
 Every packed type or integer/bool/enum value is checked, even if the body uses only
 the count. Scalar auto packs may contain different admitted deduced scalar types.
 Pointer/reference/class-valued non-type arguments, template-template parameters,
-own member/friend/alias/variable templates, partial specializations and bases
-retain their existing exclusions. C ellipsis varargs are separate and unsupported.
+own member/friend/alias/variable templates and bases retain their existing
+exclusions. Namespace class partial specializations use the contract above. C ellipsis varargs are separate and unsupported.
 
 Embedded Clang performs deduction, reference collapsing, explicit prefix handling
 and parameter expansion. Each concrete function parameter uses separate ordinary

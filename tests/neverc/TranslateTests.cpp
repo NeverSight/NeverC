@@ -4931,6 +4931,258 @@ int main(){
   }
 }
 
+TEST_F(TranslateTest, CoreV2ClassPartialsPreserveSelectionStorageAndLifetime) {
+  const auto Source = tmpFile("class-partials-runtime.cpp");
+  const auto Output = tmpFile("class-partials-runtime.nc");
+  writeFile(Source, R"cpp(int live=0,copies=0,moves=0,destroyed=0,trace=0;
+template<class T>struct Choice{T value;int kind(){return 1;}};
+template<class T>struct Choice<T*>{T value;inline static int state=3;int kind(){return 2;}T&get();};
+template<class U>U&Choice<U*>::get(){return value;}
+template<class T>struct Choice<const T*>{T value;int kind(){return 3;}};
+template<>struct Choice<char*>{int value;int kind(){return 4;}};
+template<class T>using Alias=Choice<T*>;
+template<class A,class B>struct Reordered;
+template<class X,class Y>struct Reordered<Y*,X>{X value;Y tag;};
+template<class T>struct Extent;
+template<class T,int N>struct Extent<T[N]>{T value[N];int count(){return N;}};
+template<class H,class...T>struct Types;
+template<class...T>struct Types<int,T...>{int count(){return sizeof...(T);}};
+template<class T,int...N>struct Values;
+template<class T,int...N>struct Values<T*,N...>{int sum(){return(0+...+N);}int count(){return sizeof...(N);}};
+template<int N,class T>struct Recursive;
+template<int N,class T>struct Recursive<N,T*>{int get(){if constexpr(N)return N+Recursive<N-1,T*>{}.get();else return 0;}};
+template<class T>struct Token;
+template<class T>struct Token<T*>{
+ T n;
+ Token(T v):n(v){++live;}
+ Token(const Token&v):n(v.n){++live;++copies;}
+ Token(Token&&v):n(v.n){v.n=-1;++live;++moves;}
+ ~Token(){--live;++destroyed;trace=trace*10+(n<0?9:n);}
+ operator T&()&{return n;}
+};
+Token<int*>make(int n){return Token<int*>(n);}
+int observe(const Token<int*>&v){return v.n;}
+int bump(int&n){return ++n;}
+template<class T>struct Plain;
+template<class T>struct Plain<T*>{T n=3;Plain();Plain(const Plain&)=default;Plain&operator=(const Plain&)=default;~Plain();};
+template<class U>Plain<U*>::Plain()=default;
+template<class U>Plain<U*>::~Plain()=default;
+int main(){
+ Choice<int>a{1};Choice<int*>b{2};Choice<const int*>c{3};Choice<char*>d{4};
+ if(a.kind()!=1||b.kind()!=2||c.kind()!=3||d.kind()!=4)return 1;
+ b.get()=7;
+ if(b.value!=7||&b.get()!=&b.value)return 2;
+ Alias<int>::state=8;
+ if(Choice<int*>::state!=8||&Alias<int>::state!=&Choice<int*>::state)return 3;
+ if(Choice<long long*>::state!=3||&Choice<long long*>::state==&Choice<int*>::state)return 4;
+ Reordered<int*,long long>ordered{11,2};
+ if(ordered.value!=11||ordered.tag!=2||sizeof(ordered.value)!=sizeof(long long))return 5;
+ Extent<int[3]>array{{2,4,6}};
+ if(array.count()!=3||array.value[2]!=6||sizeof(array.value)!=3*sizeof(int))return 6;
+ Types<int>empty{};Types<int,int,long long>many{};
+ if(empty.count()!=0||many.count()!=2)return 7;
+ Values<int*>zero{};Values<int*,2,3>sum{};
+ if(zero.sum()!=0||zero.count()!=0||sum.sum()!=5||sum.count()!=2)return 8;
+ if(Recursive<3,int*>{}.get()!=6)return 9;
+ {Token<int*>x=make(1);
+  if(live!=1||copies||moves||x.n!=1)return 10;
+  {Token<int*>y=x;
+   if(live!=2||copies!=1||y.n!=1)return 11;
+  }
+  if(live!=1||destroyed!=1||trace!=1)return 12;
+  {Token<int*>z=static_cast<Token<int*>&&>(x);
+   if(live!=2||moves!=1||z.n!=1||x.n!=-1)return 13;
+   if(bump(z)!=2||z.n!=2)return 14;
+  }
+  if(live!=1||destroyed!=2||trace!=12)return 15;
+ }
+ if(live||destroyed!=3||trace!=129)return 16;
+ int seen=observe(make(3));
+ if(seen!=3||live||destroyed!=4||trace!=1293)return 17;
+ Plain<int*>first;Plain<int*>second(first);second.n=7;first=second;
+ if(first.n!=7||second.n!=7)return 18;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("class-partials-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassPartialsAcceptSelectedPatterns) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-declaration", "template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};"},
+      {"promoted-selected", "template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};int main(){int n=3;R<int*>r{&n};return *r.n;}"},
+      {"promoted-pack", "template<class...T>struct R{int n;};template<class...T>struct R<int,T...>{int n;};"},
+      {"promoted-method", "template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;int f(){return 1;}};"},
+      {"reordered-slots", "template<class A,class B>struct R{int n=1;};template<class X,class Y>struct R<Y*,X>{X n=4;};int main(){R<int*,long long>r{};return r.n;}"},
+      {"extra-deduced-slot", "template<class T>struct R;template<class T,int N>struct R<T[N]>{T n[N];};int main(){R<int[3]>r{{1,2,3}};return r.n[2];}"},
+      {"fewer-deduced-slots", "template<class A,class B>struct R{int n=1;};template<class T>struct R<T,T>{T n=3;};int main(){R<int,int>r{};return r.n;}"},
+      {"pointer-order", "template<class T>struct R{int n=1;};template<class T>struct R<T*>{int n=2;};template<class T>struct R<const T*>{int n=3;};int main(){R<const int*>r{};return r.n;}"},
+      {"pointer-depth", "template<class T>struct R{int n=1;};template<class T>struct R<T*>{int n=2;};template<class T>struct R<T**>{int n=3;};int main(){R<int**>r{};return r.n;}"},
+      {"primary-fallback", "template<class T>struct R{T n=5;};template<class T>struct R<T*>{T*n;};int main(){R<int>r{};return r.n;}"},
+      {"full-specialization", "template<class T>struct R{int n=1;};template<class T>struct R<T*>{int n=2;};template<>struct R<int*>{int n=3;};int main(){R<int*>r{};return r.n;}"},
+      {"forward-partial", "template<class T>struct R;template<class T>struct R<T*>;template<class U>struct R<U*>{U n=3;};int main(){R<int*>r{};return r.n;}"},
+      {"namespace-import", "namespace a{template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};}using a::R;int main(){int n=4;R<int*>r{&n};return *r.n;}"},
+      {"namespace-alias", "namespace a{template<class T>struct R{T n;};template<class T>struct R<T*>{T n=3;};}namespace b=a;int main(){b::R<int*>r{};return r.n;}"},
+      {"alias-type", "template<class T>struct R;template<class T>struct R<T*>{using value=T;T n=4;};template<class T>using A=typename R<T*>::value;A<int>f(){return 3;}"},
+      {"type-pattern-alias", "template<class T>using P=T*;template<class T>struct R;template<class T>struct R<P<T>>{T n=3;};int main(){R<int*>r{};return r.n;}"},
+      {"method-out-of-line", "template<class T>struct R;template<class T>struct R<T*>{T n;T f();};template<class U>U R<U*>::f(){return n;}int main(){R<int*>r{4};return r.f();}"},
+      {"constructor-out-of-line", "template<class T>struct R;template<class T>struct R<T*>{T n;R(T v);};template<class U>R<U*>::R(U v):n(v){}int main(){R<int*>r(4);return r.n;}"},
+      {"destructor-out-of-line", "template<class T>struct R;template<class T>struct R<T*>{T n;~R();};template<class U>R<U*>::~R(){n=0;}int main(){R<int*>r{4};return r.n;}"},
+      {"static-out-of-line", "template<class T>struct R;template<class T>struct R<T*>{static int n;};template<class U>int R<U*>::n=4;int main(){return R<int*>::n++;}"},
+      {"static-inline-alias", "template<class T>struct R;template<class T>struct R<T*>{inline static int n=4;};template<class T>using A=R<T*>;int main(){++A<int>::n;return R<int*>::n;}"},
+      {"class-explicit", "template<class T>struct R;template<class T>struct R<T*>{T n;int f(){return 3;}};template struct R<int*>;int main(){R<int*>r{2};return r.f();}"},
+      {"class-extern", "template<class T>struct R;template<class T>struct R<T*>{T n;};extern template struct R<int*>;int main(){R<int*>r{2};return r.n;}"},
+      {"method-explicit", "template<class T>struct R;template<class T>struct R<T*>{T n;int f(){return n;}};template int R<int*>::f();int main(){R<int*>r{2};return r.f();}"},
+      {"member-specialization", "template<class T>struct R;template<class T>struct R<T*>{T n;int f(){return 1;}};template<>int R<int*>::f(){return 3;}int main(){R<int*>r{2};return r.f();}"},
+      {"static-explicit", "template<class T>struct R;template<class T>struct R<T*>{static int n;};template<class T>int R<T*>::n=3;template int R<int*>::n;int main(){return R<int*>::n;}"},
+      {"local-method-class", "template<class T>struct R;template<class T>struct R<T*>{T f(T x){struct L{T n;T get(){return n;}};L v{x};return v.get();}};int main(){R<int*>r{};return r.f(3);}"},
+      {"selected-parameter-default", "template<class T>struct R;template<class T>struct R<T*>{int f(int n=sizeof(T)){return n;}};int main(){R<int*>r{};return r.f();}"},
+      {"selected-field-default", "template<class T>struct R;template<class T>struct R<T*>{T n=4;T m=n+1;};int main(){R<int*>r{};return r.m;}"},
+      {"scalar-deduction", "template<int A,int B>struct R{int n=0;};template<int N>struct R<N,N>{int n=N;};int main(){R<3,3>r{};return r.n;}"},
+      {"bool-deduction", "template<bool B,class T>struct R;template<bool B,class T>struct R<B,T*>{int n=B?2:3;};int main(){R<true,int*>r{};return r.n;}"},
+      {"enum-deduction", "enum class E:unsigned{a=3};template<E N,class T>struct R;template<E N,class T>struct R<N,T*>{int n=static_cast<int>(N);};int main(){R<E::a,int*>r{};return r.n;}"},
+      {"auto-deduction", "template<auto N,class T>struct R;template<auto N,class T>struct R<N,T*>{decltype(N)n=N;};int main(){R<3LL,int*>r{};return r.n;}"},
+      {"type-dependent-scalar", "template<class T,T N,class U>struct R;template<class T,T N,class U>struct R<T,N,U*>{T n=N;};int main(){R<int,3,int*>r{};return r.n;}"},
+      {"scalar-nondeduced-expression", "template<int A,int B>struct R{int n=0;};template<int N>struct R<N,N+1>{int n=N;};int main(){R<3,4>r{};return r.n;}"},
+      {"sizeof-nondeduced-pattern", "template<class T,int N>struct R{int n=0;};template<class T>struct R<T*,sizeof(T)>{int n=sizeof(T);};int main(){R<int*,sizeof(int)>r{};return r.n;}"},
+      {"type-pack-empty", "template<class H,class...T>struct R;template<class...T>struct R<int,T...>{int n=sizeof...(T);};int main(){R<int>r{};return r.n;}"},
+      {"type-pack-nonempty", "template<class H,class...T>struct R;template<class...T>struct R<int,T...>{int n=sizeof...(T);};int main(){R<int,int,long long>r{};return r.n;}"},
+      {"scalar-pack-empty", "template<int H,int...N>struct R;template<int...N>struct R<1,N...>{int n=(0+...+N);};int main(){R<1>r{};return r.n;}"},
+      {"scalar-pack-nonempty", "template<int H,int...N>struct R;template<int...N>struct R<1,N...>{int n=(0+...+N);};int main(){R<1,2,3>r{};return r.n;}"},
+      {"pack-method-out-of-line", "template<class H,class...T>struct R;template<class...T>struct R<int,T...>{int f();};template<class...U>int R<int,U...>::f(){return sizeof...(U);}int main(){R<int,int,long long>r{};return r.f();}"},
+      {"pack-static-out-of-line", "template<int H,int...N>struct R;template<int...N>struct R<1,N...>{static int n;};template<int...M>int R<1,M...>::n=(0+...+M);int main(){return R<1,2,3>::n;}"},
+      {"defaulted-copy", "template<class T>struct R;template<class T>struct R<T*>{T n;R(T v):n(v){}R(const R&)=default;R&operator=(const R&)=default;~R()=default;};int main(){R<int*>a(3);R<int*>b(a);b=a;return b.n;}"},
+      {"defaulted-out-of-line", "template<class T>struct R;template<class T>struct R<T*>{T n=3;R();~R();};template<class T>R<T*>::R()=default;template<class T>R<T*>::~R()=default;int main(){R<int*>r;return r.n;}"},
+      {"conversion-reference", "template<class T>struct R;template<class T>struct R<T*>{T n;operator T&()&{return n;}};int take(int&n){return ++n;}int main(){R<int*>r{3};return take(r);}"},
+      {"recursive-instances", "template<int N,class T>struct R;template<int N,class T>struct R<N,T*>{int f(){if constexpr(N)return N+R<N-1,T*>{}.f();else return 0;}};int main(){R<3,int*>r{};return r.f();}"},
+      {"unused-dependent-body", "template<class T>struct R;template<class T>struct R<T*>{T n;int f(){return T::missing;}};int main(){R<int*>r{3};return r.n;}"},
+      {"discarded-dependent-body", "template<class T>struct R;template<class T>struct R<T*>{int f(){if constexpr(sizeof(T)>0)return 3;else return T::missing;}};int main(){return R<int*>{}.f();}"},
+      {"unselected-hidden-pattern", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=1;};template<class T>struct R<T**,int>{int n=3;};int main(){R<int**,int>r{};return r.n;}"},
+      {"failed-substitution-primary", "template<class A,class B>struct R{int n=3;};template<class T>struct R<T*,typename T::value>{int n=1;};int main(){R<int*,int>r{};return r.n;}"},
+      {"type-pack-64", "template<class H,class...T>struct R;template<class...T>struct R<int,T...>{int n=sizeof...(T);};int main(){R<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r{};return r.n;}"},
+      {"scalar-pack-64", "template<int H,int...N>struct R;template<int...N>struct R<1,N...>{int n=(0+...+N);};int main(){R<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r{};return r.n;}"},
+      {"alias-pattern-safe", "template<class T>using K=decltype((sizeof(int),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=3;};int main(){R<int*,int>r{};return r.n;}"},
+      {"parameter-type-safe", "template<class T>using K=decltype((sizeof(int),sizeof(T),int{}));template<class T,int N>struct R;template<class T,K<T> N>struct R<T*,N>{int n=N;};int main(){R<int*,3>r{};return r.n;}"},
+      {"parameter-pack-type-empty-safe", "template<class T>using K=decltype((sizeof(int),sizeof(T),int{}));template<class H,int...N>struct R;template<class T,K<T>...N>struct R<T*,N...>{int n=(0+...+N);};int main(){R<int*>r{};return r.n;}"},
+      {"parameter-pack-type-nonempty-safe", "template<class T>using K=decltype((sizeof(int),sizeof(T),int{}));template<class H,int...N>struct R;template<class T,K<T>...N>struct R<T*,N...>{int n=(0+...+N);};int main(){R<int*,2,3>r{};return r.n;}"},
+      {"scalar-pattern-safe", "template<class T,int N>struct R;template<class T>struct R<T*,static_cast<int>((sizeof(int),sizeof(T)))>{int n=3;};int main(){R<int*,sizeof(int)>r{};return r.n;}"},
+      {"explicit-pattern-safe", "template<class T>using K=decltype((sizeof(int),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=3;};template struct R<int*,int>;"},
+      {"unused-nondependent-pattern-safe", "template<class A,class B>struct R;template<class T>struct R<T*,decltype((sizeof(int),int{}))>{int n;};"},
+      {"actual-argument-safe", "template<class T>struct R;template<class T>struct R<T*>{int n=3;};int main(){R<decltype((sizeof(int),int{}))* >r{};return r.n;}"},
+      {"primary-default-in-pattern", "template<class T,class U=int>struct R;template<class T>struct R<T*>{T n=3;};int main(){R<int*>r{};return r.n;}"},
+      {"inherited-primary-default", "template<class T,class U=int>struct R;template<class T,class U>struct R;template<class T>struct R<T*>{T n=3;};int main(){R<int*>r{};return r.n;}"},
+      {"trait-remove-reference", "namespace traits{template<class T>struct Remove{using type=T;};template<class T>struct Remove<T&>{using type=T;};template<class T>struct Remove<T&&>{using type=T;};template<class T>using Value=typename Remove<T>::type;}int main(){traits::Value<int&>a=3;traits::Value<int&&>b=4;return a+b;}"},
+      {"trait-remove-const", "namespace traits{template<class T>struct Remove{using type=T;};template<class T>struct Remove<const T>{using type=T;};}int main(){traits::Remove<const int>::type n=3;return ++n;}"},
+      {"trait-is-same", "namespace traits{template<class A,class B>struct Same{static constexpr bool value=false;};template<class T>struct Same<T,T>{static constexpr bool value=true;};}static_assert(traits::Same<int,int>::value);static_assert(!traits::Same<int,long long>::value);int main(){return traits::Same<int,int>::value?0:1;}"},
+      {"trait-conditional", "namespace traits{template<bool B,class T,class F>struct Choose{using type=T;};template<class T,class F>struct Choose<false,T,F>{using type=F;};template<bool B,class T,class F>using Select=typename Choose<B,T,F>::type;}int main(){traits::Select<false,int,long long>n=4;return sizeof(n)==sizeof(long long)?0:1;}"},
+      {"trait-enable-if", "namespace traits{template<bool B,class T=void>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<bool B,class T=void>using When=typename Enable<B,T>::type;}template<class T,traits::When<(sizeof(T)>1),int> N=3>int f(){return N;}int main(){return f<int>();}"},
+      {"trait-enable-if-sfinae", "namespace traits{template<bool B,class T=void>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<bool B,class T=void>using When=typename Enable<B,T>::type;}template<class T>traits::When<(sizeof(T)>1),int>f(T){return 3;}int f(char){return 4;}int main(){return f(char(1));}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-partials-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("class-partials-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassPartialsRetainSourceBoundaries) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"type-pack-65", "template<class H,class...T>struct R;template<class...T>struct R<int,T...>{int n=sizeof...(T);};int main(){R<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r{};return r.n;}"},
+      {"scalar-pack-65", "template<int H,int...N>struct R;template<int...N>struct R<1,N...>{int n=(0+...+N);};int main(){R<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r{};return r.n;}"},
+      {"alias-pattern-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=3;};int main(){R<int*,int>r{};return r.n;}"},
+      {"parameter-type-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class T,int N>struct R;template<class T,K<T> N>struct R<T*,N>{int n=N;};int main(){R<int*,3>r{};return r.n;}"},
+      {"parameter-pack-type-empty-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class H,int...N>struct R;template<class T,K<T>...N>struct R<T*,N...>{int n=(0+...+N);};int main(){R<int*>r{};return r.n;}"},
+      {"parameter-pack-type-nonempty-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class H,int...N>struct R;template<class T,K<T>...N>struct R<T*,N...>{int n=(0+...+N);};int main(){R<int*,2,3>r{};return r.n;}"},
+      {"scalar-pattern-hidden", "template<class T,int N>struct R;template<class T>struct R<T*,static_cast<int>((sizeof(double),sizeof(T)))>{int n=3;};int main(){R<int*,sizeof(int)>r{};return r.n;}"},
+      {"explicit-pattern-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=3;};template struct R<int*,int>;"},
+      {"unused-nondependent-pattern-hidden", "template<class A,class B>struct R;template<class T>struct R<T*,decltype((sizeof(double),int{}))>{int n;};"},
+      {"actual-argument-hidden", "template<class T>struct R;template<class T>struct R<T*>{int n=3;};int main(){R<decltype((sizeof(double),int{}))* >r{};return r.n;}"},
+      {"selected-floating-field", "template<class T>struct R;template<class T>struct R<T*>{double n;};int main(){R<int*>r{};return 0;}"},
+      {"selected-floating-method", "template<class T>struct R;template<class T>struct R<T*>{int f(){return static_cast<int>(1.0);}};int main(){return R<int*>{}.f();}"},
+      {"selected-floating-default", "template<class T>struct R;template<class T>struct R<T*>{int f(int n=static_cast<int>(1.0)){return n;}};int main(){return R<int*>{}.f();}"},
+      {"selected-floating-static", "template<class T>struct R;template<class T>struct R<T*>{inline static int n=static_cast<int>(1.0);};int main(){return R<int*>::n;}"},
+      {"base", "struct B{int n;};template<class T>struct R;template<class T>struct R<T*>:B{int m;};"},
+      {"member-template", "template<class T>struct R;template<class T>struct R<T*>{template<class U>U f(U n){return n;}};"},
+      {"friend-function", "template<class T>struct R;template<class T>struct R<T*>{friend int f(R){return 3;}};"},
+      {"member-alias-template", "template<class T>struct R;template<class T>struct R<T*>{template<class U>using A=U;};"},
+      {"nested-record", "template<class T>struct R;template<class T>struct R<T*>{struct Inner{int n;};};"},
+      {"volatile-pointee", "template<class T>struct R;template<class T>struct R<T*>{T*n;};int main(){volatile int n=3;R<volatile int*>r{&n};return 0;}"},
+      {"pointer-nontype", "int n;template<int*P,class T>struct R;template<int*P,class T>struct R<P,T*>{int n;};"},
+      {"template-template", "template<template<class>class C,class T>struct R;template<template<class>class C,class T>struct R<C,T*>{int n;};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-partials-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("class-partials-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassPartialsRetainLanguageDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"ambiguous", "template<class A,class B>struct R;template<class T>struct R<T*,int>{int n;};template<class T>struct R<int*,T>{int n;};int main(){R<int*,int>r{};return r.n;}"},
+      {"no-complete-match", "template<class T>struct R;template<class T>struct R<T*>{T n;};int main(){R<int>r{};return 0;}"},
+      {"undefined-partial", "template<class T>struct R{int n;};template<class T>struct R<T*>;int main(){R<int*>r{};return 0;}"},
+      {"identical-pattern", "template<class T>struct R;template<class T>struct R<T>{int n;};"},
+      {"default-on-partial", "template<class T>struct R;template<class T=int>struct R<T*>{int n;};"},
+      {"duplicate-definition", "template<class T>struct R;template<class T>struct R<T*>{int n;};template<class U>struct R<U*>{int n;};"},
+      {"invalid-selected-body", "template<class T>struct R;template<class T>struct R<T*>{int f(){return T::missing;}};int main(){return R<int*>{}.f();}"},
+      {"failed-selected-assert", "template<class T>struct R;template<class T>struct R<T*>{static_assert(sizeof(T)==0);int n;};int main(){R<int*>r{};return r.n;}"},
+      {"nonconstant-argument", "template<int N,class T>struct R;template<int N,class T>struct R<N,T*>{int n=N;};int main(){int n=3;R<n,int*>r{};return r.n;}"},
+      {"narrowing-argument", "template<unsigned char N,class T>struct R;template<unsigned char N,class T>struct R<N,T*>{int n=N;};int main(){R<256,int*>r{};return r.n;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-partials-invalid-" + Name + ".cpp");
+    const auto Output = tmpFile("class-partials-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ClassPartialsRequireSelectedDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"method", "template<class T>struct R;template<class T>struct R<T*>{int f();};int main(){return R<int*>{}.f();}"},
+      {"destructor", "template<class T>struct R;template<class T>struct R<T*>{int n;~R();};int main(){R<int*>r{};return r.n;}"},
+      {"static", "template<class T>struct R;template<class T>struct R<T*>{static int n;};int main(){return R<int*>::n;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("class-partials-missing-" + Name + ".cpp");
+    const auto Output = tmpFile("class-partials-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV1RejectsClassPartials) {
+  const auto Source = tmpFile("class-partials-v1.cpp");
+  const auto Output = tmpFile("class-partials-v1.nc");
+  writeFile(Source, "template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};int main(){int n=3;R<int*>r{&n};return *r.n;}");
+  auto Result = translate(Source, {"-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2AliasTemplatesPreserveStorageAndLifetime) {
   const auto Source = tmpFile("alias-templates-runtime.cpp");
   const auto Output = tmpFile("alias-templates-runtime.nc");
@@ -5456,7 +5708,6 @@ TEST_F(TranslateTest, CoreV2ParameterPacksRetainSourceAndResourceChecks) {
       {"member-template-pack", "struct R{template<class...T>int f(T...v){return sizeof...(v);}};"},
       {"friend-template-pack", "struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};"},
       {"variable-template-pack", "template<class...T>int n=sizeof...(T);"},
-      {"partial-pack", "template<class...T>struct R{int n;};template<class...T>struct R<int,T...>{int n;};"},
       {"c-varargs", "template<class...T>int f(T...v,...){return sizeof...(v);}int main(){return f(1);}"},
       {"zero-array", "template<class...T>int f(){int a[sizeof...(T)];return 0;}int main(){return f<>();}"},
   };
@@ -7622,7 +7873,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateMethodsRetainSourceAndDefinitionBoundar
       {"member-template", "template<class T>struct R{template<class U>U f(U v){return v;}};", "TR0201"},
       {"friend", "template<class T>struct R{friend int f(R r){return 1;}};", "TR0201"},
       {"nested-record", "template<class T>struct R{struct I{int n;};int f(){return 1;}};", "TR0201"},
-      {"partial", "template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;int f(){return 1;}};", "TR0201"},
       {"bases", "struct B{int n;};template<class T>struct R:B{int f(){return n;}};", "TR0201"},
       {"dynamic-static", "template<class T>struct R{static int f(int v){static int n=v;return n;}};int main(){return R<int>::f(3);}", "TR0201"},
       {"private-call", "template<class T>struct R{T n;private:T f(){return n;}};int main(){R<int>r{3};return r.f();}", "TR0202"},
@@ -7792,8 +8042,6 @@ TEST_F(TranslateTest, CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundari
       {"nested-record", "template<class T>struct R{struct I{T n;};};", "TR0201"},
       {"nested-template", "struct R{template<class T>struct I{T n;};};", "TR0201"},
       {"member-template", "template<class T>struct R{template<class U>U f(U n){return n;}};", "TR0201"},
-      {"partial", "template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};", "TR0201"},
-      {"selected-partial", "template<class T>struct R{T n;};template<class T>struct R<T*>{T*n;};int main(){int n=3;R<int*>r{&n};return *r.n;}", "TR0201"},
       {"union", "template<class T>union R{T n;int m;};", "TR0201"},
       {"base", "struct B{int n;};template<class T>struct R:B{T m;};", "TR0201"},
       {"bitfield", "template<class T>struct R{unsigned int n:3;};int main(){R<int>r{};return r.n;}", "TR0201"},

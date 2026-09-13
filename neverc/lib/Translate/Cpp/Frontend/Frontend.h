@@ -73,10 +73,12 @@ struct NonTypeParameterSource {
   clang::TypeSourceInfo *Type;
   unsigned PackIndex; // Forward index, or ~0u for a deduced empty pack's type.
 };
-enum class TemplateSourceKind { Type, Function, ClassDeclaration };
+enum class TemplateSourceKind {
+  Type, Function, ClassDeclaration, PartialDeduction, PartialPattern
+};
 struct TemplateUseSource {
   TemplateSourceKind Kind;
-  clang::TemplateDecl *Template;
+  clang::NamedDecl *Template; // A primary/alias or a partial parameter owner.
   const clang::Decl *Declaration;
   const clang::Type *Type;
   clang::TypeSourceInfo *Underlying;
@@ -86,6 +88,9 @@ struct TemplateUseSource {
   std::vector<NonTypeParameterSource> ParameterTypes;
   clang::SourceLocation Location;
   bool DefaultsOverflow, Instantiation;
+  // Identity of the successful deduction, transferred unchanged by Sema to
+  // the selected class instance. Argument values alone do not identify it.
+  const clang::TemplateArgumentList *Selection;
 };
 struct FunctionSpecializationSource {
   const clang::FunctionDecl *Declaration, *Selected;
