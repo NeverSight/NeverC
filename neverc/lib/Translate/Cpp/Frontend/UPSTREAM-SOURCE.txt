@@ -32,8 +32,10 @@ literal fixtures and paired semantic/runtime regressions cover the correction.
 
 A separate checked SemaOverload.cpp patch applies the same ordering to fresh
 reference arguments in FindConversionForRefInit. Result deduction precedes the
-compatibility filter, while a written non-function lvalue result remains excluded
-from rvalue-reference binding before its body is instantiated. All original
+compatibility filter. Its direct reference-candidate search excludes written
+non-function lvalue results from direct rvalue-reference binding. Later full
+initialization still deduces results needed for indirect standard conversions;
+an invalid competing auto& body retains its normal diagnostic. All original
 category, explicitness, access and candidate-selection checks remain active.
 Independent literal source fixtures cover exact output, idempotence and drift;
 paired source/protocol and native O0/O2 cases cover fresh argument conversions.

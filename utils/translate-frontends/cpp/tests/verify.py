@@ -6156,6 +6156,16 @@ int closedOverloads(){return Captured::select(true);}
     def di_call_result(function, expr):
         if expr["kind"] == "cast":
             return di_call_result(function, expr["args"][0])
+        if expr["kind"] == "address":
+            # Reference forwarding can spell the same call-result pointer &*p.
+            assert len(expr["args"]) == 1, expr
+            pointee = expr["args"][0]
+            assert pointee["kind"] == "dereference" and len(pointee["args"]) == 1, expr
+            pointer = pointee["args"][0]
+            carrier = expr["type"]
+            assert carrier.startswith(("ptr:", "cptr:")) and pointer["type"] == carrier, expr
+            assert pointee["type"] == carrier.split(":", 1)[1], expr
+            return di_call_result(function, pointer)
         assert expr["kind"] == "var", expr
         name = expr["name"]
         if any(call.get("target", {}).get("name") == name for call in gc_calls(function)):
@@ -6528,7 +6538,8 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'irrelevant-pointer': 'template<class T>struct R{int n;operator int&(){return n;}operator auto*(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
         'irrelevant-const-rvalue': 'template<class T>struct R{int n;operator int&(){return n;}operator const auto&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
         'irrelevant-pointer-rvalue': 'template<class T>struct R{int n;operator int&(){return n;}operator auto*&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}',
-        'irrelevant-lvalue-for-rvalue': 'template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return T::missing;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}',
+        'valid-competing-lvalue-for-rvalue': 'template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return n;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}',
+        'indirect-lvalue-to-rvalue': 'template<class T>struct R{T n;operator auto&(){return n;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}',
         'promoted-value-default': 'struct R{int n;};template<int N=3>int operator+(R,R){return N;}',
         'selected-value-default': 'struct R{int n;};template<int N=3>int operator+(R,R){return N;}int f(){R r{1};return r+r;}',
         'protocol-source': 'template<class T>struct RefArg{\n T n;operator decltype(auto)(){return (n);}\n};\ntemplate<class T>struct ConstArg{\n T n;operator decltype(auto)()const{return (n);}\n};\ntemplate<class T>struct MoveArg{\n T n;operator auto&&(){return static_cast<T&&>(n);}\n};\nint&assignArgument(int&n){n=7;return n;}\nconst int&readArgument(const int&n){return n;}\nint&&moveArgument(int&&n){n=9;return static_cast<int&&>(n);}\nint&freshMutable(RefArg<int>&r){return assignArgument(r);}\nconst int&freshConst(const ConstArg<int>&r){return readArgument(r);}\nint&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}\n',
@@ -6542,6 +6553,8 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     for name, source in fresh_reference_reject.items():
         check("v2-fresh-reference-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
     fresh_reference_invalid = {
+        'invalid-competing-lvalue-result': 'template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return T::missing;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}',
+        'invalid-indirect-lvalue-result': 'template<class T>struct R{T n;operator auto&(){return T::missing;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}',
         'explicit-argument': 'template<class T>struct R{T n;explicit operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}',
         'private-argument': 'template<class T>class R{T n;operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}',
         'const-to-mutable': 'template<class T>struct R{T n;operator decltype(auto)()const{return (n);}};void set(int&){}void f(const R<int>&r){set(r);}',

@@ -4696,13 +4696,15 @@ template<class T>struct Constant{T n;operator decltype(auto)()const{++calls;retu
 template<class T>struct Collapse{T n;operator auto&&(){++calls;return (n);}};
 template<class T>struct Move{T n;operator decltype(auto)(){++calls;return static_cast<T&&>(n);}};
 template<class T>struct Value{T n;operator auto(){++calls;return n;}};
-template<class T>struct Lazy{T n;operator int&&(){++calls;return static_cast<int&&>(n);}operator auto&(){return T::missing;}};
+template<class T>struct Competing{T n;operator int&&(){++calls;return static_cast<int&&>(n);}operator auto&(){++calls;return n;}};
+template<class T>struct Widen{T n;operator auto&(){++calls;return n;}};
 int&set(int&n){n=7;return n;}
 const int&get(const int&n){return n;}
 int&&take(int&&n){n=9;return static_cast<int&&>(n);}
 int choose(int&n){n=11;return 1;}
 int choose(const int&n){return 2;}
 int read(const int&n){return n;}
+long long widen(long long&&n){n=9;return n;}
 int live=0;
 struct Life{int n;Life(int v):n(v){++live;}~Life(){--live;}};
 template<class T>Life operator+(const Life&r,T n){return Life(r.n+n);}
@@ -4722,8 +4724,8 @@ int main(){
  if(selected!=1||e.n!=11||calls!=5)return 5;
  Value<int>f{6};int value=read(f);
  if(value!=6||f.n!=6||calls!=6)return 6;
- Lazy<int>g{7};int&&lazy=take(g);
- if(g.n!=9||&lazy!=&g.n||calls!=7)return 7;
+ Competing<int>g{7};int&&chosenReference=take(g);
+ if(g.n!=9||&chosenReference!=&g.n||calls!=7)return 7;
  {
   Life original(2);
   bool inside=observe(original+3)==25&&live==2;
@@ -4734,6 +4736,8 @@ int main(){
   if(consumed!=27||live!=1)return 10;
  }
  if(live!=0)return 11;
+ Widen<int>h{6};long long widened=widen(h);
+ if(widened!=9||h.n!=6||calls!=8)return 12;
  return 0;
 }
 )cpp");
@@ -4765,7 +4769,8 @@ TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsPositive) {
       {"irrelevant-pointer", "template<class T>struct R{int n;operator int&(){return n;}operator auto*(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
       {"irrelevant-const-rvalue", "template<class T>struct R{int n;operator int&(){return n;}operator const auto&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
       {"irrelevant-pointer-rvalue", "template<class T>struct R{int n;operator int&(){return n;}operator auto*&&(){return T::missing;}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
-      {"irrelevant-lvalue-for-rvalue", "template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return T::missing;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"valid-competing-lvalue-for-rvalue", "template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return n;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"indirect-lvalue-to-rvalue", "template<class T>struct R{T n;operator auto&(){return n;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}"},
       {"promoted-value-default", "struct R{int n;};template<int N=3>int operator+(R,R){return N;}"},
       {"selected-value-default", "struct R{int n;};template<int N=3>int operator+(R,R){return N;}int f(){R r{1};return r+r;}"},
       {"protocol-source", "template<class T>struct RefArg{\n T n;operator decltype(auto)(){return (n);}\n};\ntemplate<class T>struct ConstArg{\n T n;operator decltype(auto)()const{return (n);}\n};\ntemplate<class T>struct MoveArg{\n T n;operator auto&&(){return static_cast<T&&>(n);}\n};\nint&assignArgument(int&n){n=7;return n;}\nconst int&readArgument(const int&n){return n;}\nint&&moveArgument(int&&n){n=9;return static_cast<int&&>(n);}\nint&freshMutable(RefArg<int>&r){return assignArgument(r);}\nconst int&freshConst(const ConstArg<int>&r){return readArgument(r);}\nint&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}\n"},
@@ -4798,6 +4803,8 @@ TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsReject) {
 
 TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsInvalid) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"invalid-competing-lvalue-result", "template<class T>struct R{int n;operator int&&(){return static_cast<int&&>(n);}operator auto&(){return T::missing;}};void set(int&&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"invalid-indirect-lvalue-result", "template<class T>struct R{T n;operator auto&(){return T::missing;}};long long set(long long&&n){n=9;return n;}long long f(R<int>&r){return set(r);}"},
       {"explicit-argument", "template<class T>struct R{T n;explicit operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}"},
       {"private-argument", "template<class T>class R{T n;operator decltype(auto)(){return (n);}};void set(int&){}void f(R<int>&r){set(r);}"},
       {"const-to-mutable", "template<class T>struct R{T n;operator decltype(auto)()const{return (n);}};void set(int&){}void f(const R<int>&r){set(r);}"},

@@ -2146,9 +2146,13 @@ embedded, and no external Clang executable is needed at translation time.
 Fresh function arguments use the same reference rules without a preceding local
 binding or explicit conversion call to trigger deduction. The private frontend
 resolves necessary placeholder results before reference compatibility checks in
-both initialization and overload argument analysis. It still excludes a written
-non-function lvalue result from rvalue-reference binding before instantiating that
-body. Explicit conversions, access, constness, result category and overload
+both initialization and overload argument analysis. Direct reference-candidate
+search excludes a written non-function lvalue result from direct rvalue-reference
+binding. Later initialization can still require its result type to assess an
+indirect standard conversion, such as int& to a long long&& temporary. A competing
+auto& body whose result cannot be deduced retains its ordinary C++ diagnostic;
+it is not guaranteed to remain uninstantiated. Explicit conversions, access,
+constness, result category and overload
 ranking retain ordinary C++ diagnostics. Paired fixtures keep the conversion
 source fresh; O0/O2 cases verify the selected call, alias, mutation and constness.
 

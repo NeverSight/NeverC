@@ -405,6 +405,11 @@ and early exits use the existing control-flow cleanup. Protocol major 1 and its
 opcodes remain unchanged. See the
 [source lifetime contract](cpp-core-v2.md#automatic-local-reference-lifetime-extension).
 
+Reference-result checks recognize a typed address(dereference(pointer)) pair as
+forwarding the same pointer carrier. Pointee and pointer types must match, and
+assignment chains still resolve to the exact selected call's result storage.
+This normalization does not create an owner or change the lifetime contract.
+
 ## Core v2 default argument evaluation
 
 Default arguments are expanded at the selected call site using checked semantic
