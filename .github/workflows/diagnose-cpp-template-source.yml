@@ -36,7 +36,8 @@ jobs:
           # Separate processes retain evidence for every fixture after a crash.
           for fixture in nested-method nested-static nested-pack \
             own-member-friend-function own-member-friend-type \
-            visible-copied-friend callback-array-field; do
+            visible-copied-friend callback-array-field qualified-friend-class \
+            static-temporary-values; do
             if "$RUNNER_TEMP/template-source" "$fixture"; then
               echo "$fixture: success"
             else

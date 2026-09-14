@@ -60,9 +60,71 @@ public:
     declaration(Decl::castFromDeclContext(D->getDeclContext()));
     llvm::outs() << "\n";
     qualifier(D->getQualifierLoc());
+    if (auto *Primary = D->getPrimaryTemplate()) {
+      llvm::outs() << "  body pattern ";
+      declaration(D->getTemplateInstantiationPattern());
+      llvm::outs() << "\n";
+      for (const auto *Redecl : Primary->redecls()) {
+        const auto *Template = cast<FunctionTemplateDecl>(Redecl);
+        const auto *Function = Template->getTemplatedDecl();
+        llvm::outs() << "  primary redeclaration compatible="
+                     << Template->isCompatibleWithDefinition() << " lexical=";
+        declaration(Decl::castFromDeclContext(Function->getLexicalDeclContext()));
+        llvm::outs() << " definition-lexical=";
+        const auto *Definition = Function->getDefinition();
+        declaration(Definition ? Decl::castFromDeclContext(Definition->getLexicalDeclContext()) : nullptr);
+        llvm::outs() << "\n";
+      }
+    }
+    return true;
+  }
+  bool VisitFriendDecl(FriendDecl *D) {
+    const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(D->getFriendDecl());
+    if (!Template)
+      return true;
+    llvm::outs() << "friend class target=";
+    declaration(Template);
+    llvm::outs() << " owner=";
+    declaration(Decl::castFromDeclContext(D->getDeclContext()));
+    llvm::outs() << " target-lexical=";
+    declaration(Decl::castFromDeclContext(Template->getLexicalDeclContext()));
+    llvm::outs() << " record-previous=";
+    declaration(Template->getTemplatedDecl()->getPreviousDecl());
+    llvm::outs() << " template-previous=";
+    declaration(Template->getPreviousDecl());
+    llvm::outs() << " friend-kind=" << Template->getFriendObjectKind()
+                 << " unsupported=" << D->isUnsupportedFriend()
+                 << " parameter-lists=" << Template->getTemplatedDecl()->getNumTemplateParameterLists()
+                 << "\n";
+    qualifier(Template->getTemplatedDecl()->getQualifierLoc());
+    return true;
+  }
+  bool VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E) {
+    if (E->getStorageDuration() != SD_Static)
+      return true;
+    llvm::outs() << "static temporary type=" << E->getType().getAsString()
+                 << " operand=" << E->getSubExpr()->getType().getAsString() << " owner=";
+    declaration(E->getExtendingDecl());
+    if (auto *Value = E->getOrCreateValue(false)) {
+      llvm::outs() << " value=";
+      Value->printPretty(llvm::outs(), Context, E->getType());
+    }
+    llvm::outs() << "\n";
     return true;
   }
   bool VisitVarDecl(VarDecl *D) {
+    if (D->hasGlobalStorage() && !D->getDeclContext()->isDependentContext() &&
+        D->hasInit() && (D->getType()->isReferenceType() || D->getType()->isPointerType())) {
+      APValue Value;
+      llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+      bool Constant = D->getInit()->EvaluateAsInitializer(Value, Context, D, Notes, true);
+      llvm::outs() << "constant binding " << D->getNameAsString()
+                   << " success=" << Constant << " notes=" << Notes.size();
+      if (Value.isLValue())
+        llvm::outs() << " call=" << Value.getLValueCallIndex()
+                     << " version=" << Value.getLValueVersion();
+      llvm::outs() << "\n";
+    }
     if (!D->isStaticDataMember())
       return true;
     llvm::outs() << "static ";
@@ -134,6 +196,16 @@ int main(int Argc, const char **Argv) {
       "template<int N>int get(){return N;}"
       "struct R{int(*p[2])();};"
       "int main(){R r{{get<2>,get<3>}};return r.p[1]();}"},
+      {"qualified-friend-class",
+      "namespace N{template<class U>struct A;template<class V>struct A;}"
+      "template<class T>class R{int n=3;template<class U>friend struct N::A;};"
+      "namespace N{template<class U>struct A{static int get(const R<int>&r){return r.n;}};}"
+      "int main(){R<int>r;return N::A<int>::get(r)-3;}"},
+      {"static-temporary-values",
+      "const int&r=3;int&&v=4;const int(&a)[2]={5,6};"
+      "struct R{int n;int*p;constexpr R():n(7),p(&n){}};R&&s=R();"
+      "const int&field=R().n;const char*text=\"cat\";"
+      "int main(){return r+v+a[1]+s.n+field+text[0];}"},
   };
   bool Found = false;
   bool Failed = false;
