@@ -707,7 +707,50 @@ public:
   }
 // After lazy initialization.
 '''
-        files['clang/lib/Sema/SemaExpr.cpp'] = full_initializer_original
+        # Independent pinned branch and expected result. The enclosing
+        # NeedDefinition/TSK guards and subsequent expression refresh stay put.
+        deduced_variable_original = '''// Before variable instantiation.
+      if (UsableInConstantExpr) {
+        // Do not defer instantiations of variables that could be used in a
+        // constant expression.
+        SemaRef.runWithSufficientStackSpace(PointOfInstantiation, [&] {
+          SemaRef.InstantiateVariableDefinition(PointOfInstantiation, Var);
+        });
+
+        // Re-set the member to trigger a recomputation of the dependence bits
+        // for the expression.
+        if (auto *DRE = dyn_cast_or_null<DeclRefExpr>(E))
+          DRE->setDecl(DRE->getDecl());
+        else if (auto *ME = dyn_cast_or_null<MemberExpr>(E))
+          ME->setMemberDecl(ME->getMemberDecl());
+      } else if (FirstInstantiation) {
+// After variable instantiation.
+'''
+        deduced_variable_expected = '''// Before variable instantiation.
+      // Clang 21.1.8 also instantiates undeduced variable types here: a
+      // reference needs the initializer's type before its enclosing use is
+      // checked. Keep this backport private to NeverC's source consumer.
+      const bool NeverCNeedsVariableType =
+          SemaRef.getASTConsumer().wantsNeverCTemplateSource() &&
+          Var->getType()->isUndeducedType();
+      if (UsableInConstantExpr || NeverCNeedsVariableType) {
+        // Do not defer instantiations of variables that could be used in a
+        // constant expression.
+        SemaRef.runWithSufficientStackSpace(PointOfInstantiation, [&] {
+          SemaRef.InstantiateVariableDefinition(PointOfInstantiation, Var);
+        });
+
+        // Re-set the member to trigger a recomputation of the dependence bits
+        // for the expression.
+        if (auto *DRE = dyn_cast_or_null<DeclRefExpr>(E))
+          DRE->setDecl(DRE->getDecl());
+        else if (auto *ME = dyn_cast_or_null<MemberExpr>(E))
+          ME->setMemberDecl(ME->getMemberDecl());
+      } else if (FirstInstantiation) {
+// After variable instantiation.
+'''
+        files['clang/lib/Sema/SemaExpr.cpp'] = (full_initializer_original +
+                                             deduced_variable_original)
 
         # Independent explicit-instantiation source callback fixtures.
         explicit_header_original = '// Independent template-source contract fixture.\n  class CXXRecordDecl;\n  class VarDecl;\n  class FunctionDecl;\n  class ImportDecl;\n// Unchanged between source anchors.\n  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {}\n// Unchanged between source anchors.\n  virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *D) {}\n// End source contract fixture.\n'
@@ -805,7 +848,7 @@ public:
             self.assertEqual(argument_reference_path.read_text(encoding="utf-8"), argument_reference_expected + call_overload_expected)
             full_initializer_path = source / "clang/lib/Sema/SemaExpr.cpp"
             self.assertEqual(full_initializer_path.read_text(encoding="utf-8"),
-                             full_initializer_expected)
+                             full_initializer_expected + deduced_variable_expected)
             # All callback files must match the independently written contract.
             explicit_paths = [
                 source / 'clang/include/clang/AST/ASTConsumer.h',
@@ -1031,7 +1074,8 @@ public:
             }
             for state, contents in full_initializer_states.items():
                 with self.subTest(copied_full_initializer_state=state):
-                    full_initializer_path.write_text(contents, encoding="utf-8")
+                    full_initializer_path.write_text(contents + deduced_variable_expected,
+                                                     encoding="utf-8")
                     untouched = snapshot_all_files()
                     run_script(False, "Unexpected pinned Clang copied full initializer source in " +
                                str(full_initializer_path))
@@ -1041,7 +1085,40 @@ public:
             run_script(False, "Unexpected pinned Clang copied full initializer source in " +
                        str(full_initializer_path))
             self.assertEqual(snapshot_all_files(), untouched)
-            full_initializer_path.write_text(full_initializer_original, encoding="utf-8")
+            full_initializer_path.write_text(full_initializer_original + deduced_variable_original,
+                                             encoding="utf-8")
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            deduced_variable_states = {
+                "missing block": "// Missing variable instantiation.\n",
+                "duplicate original": deduced_variable_original * 2,
+                "duplicate rewritten": deduced_variable_expected * 2,
+                "mixed blocks": deduced_variable_original + deduced_variable_expected,
+                "removed consumer guard": deduced_variable_expected.replace(
+                    "SemaRef.getASTConsumer().wantsNeverCTemplateSource() &&", "true &&", 1),
+                "changed type condition": deduced_variable_expected.replace(
+                    "Var->getType()->isUndeducedType()", "true", 1),
+                "changed definition target": deduced_variable_expected.replace(
+                    "InstantiateVariableDefinition(PointOfInstantiation, Var)",
+                    "InstantiateVariableDefinition(PointOfInstantiation, Pattern)", 1),
+                "missing reference refresh": deduced_variable_expected.replace(
+                    "          DRE->setDecl(DRE->getDecl());\n", "", 1),
+                "missing member refresh": deduced_variable_expected.replace(
+                    "          ME->setMemberDecl(ME->getMemberDecl());\n", "", 1),
+                "orphan marker": deduced_variable_original + "bool NeverCNeedsVariableType;\n",
+            }
+            for state, contents in deduced_variable_states.items():
+                with self.subTest(deduced_variable_state=state):
+                    full_initializer_path.write_text(full_initializer_expected + contents,
+                                                     encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang deduced variable source in " +
+                               str(full_initializer_path))
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            full_initializer_path.write_text(full_initializer_expected + deduced_variable_original,
+                                             encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))

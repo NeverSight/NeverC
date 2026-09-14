@@ -353,6 +353,48 @@ def fix_copied_full_initializers(path):
         path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
 
+def fix_deduced_variable_instantiations(path):
+    before = '''      if (UsableInConstantExpr) {
+        // Do not defer instantiations of variables that could be used in a
+        // constant expression.
+        SemaRef.runWithSufficientStackSpace(PointOfInstantiation, [&] {
+          SemaRef.InstantiateVariableDefinition(PointOfInstantiation, Var);
+        });
+
+        // Re-set the member to trigger a recomputation of the dependence bits
+        // for the expression.
+        if (auto *DRE = dyn_cast_or_null<DeclRefExpr>(E))
+          DRE->setDecl(DRE->getDecl());
+        else if (auto *ME = dyn_cast_or_null<MemberExpr>(E))
+          ME->setMemberDecl(ME->getMemberDecl());
+      } else if (FirstInstantiation) {'''
+    replacement = '''      // Clang 21.1.8 also instantiates undeduced variable types here: a
+      // reference needs the initializer's type before its enclosing use is
+      // checked. Keep this backport private to NeverC's source consumer.
+      const bool NeverCNeedsVariableType =
+          SemaRef.getASTConsumer().wantsNeverCTemplateSource() &&
+          Var->getType()->isUndeducedType();
+      if (UsableInConstantExpr || NeverCNeedsVariableType) {'''
+    after = before.replace("      if (UsableInConstantExpr) {", replacement, 1)
+    error_message = "Unexpected pinned Clang deduced variable source in " + str(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(error_message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if re.search(r"\bNeverCNeedsVariableType\b", remainder):
+        raise SystemExit(error_message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def fix_deduced_reference_conversions(path):
     before = """      else
         Conv = cast<CXXConversionDecl>(D);
@@ -781,6 +823,7 @@ fix_imported_namespace_defaults(args.source)
 fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
 fix_deduced_reference_arguments(args.source / "clang/lib/Sema/SemaOverload.cpp")
 fix_copied_full_initializers(args.source / "clang/lib/Sema/SemaExpr.cpp")
+fix_deduced_variable_instantiations(args.source / "clang/lib/Sema/SemaExpr.cpp")
 
 intrinsics = args.source / "llvm/lib/IR/IntrinsicInst.cpp"
 for before, after in [
