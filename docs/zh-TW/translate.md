@@ -94,6 +94,8 @@ Core v2 支援獨立的 `decltype(nullptr)` 值型別，包括別名、參考、
 
 Core v2 支援一般類別與泛型類別的委派建構，包括建構鏈與選定的建構函式範本。目標建構與委派方本體使用同一最終物件，成員只初始化一次，引數暫存物件在委派方本體執行前解構。來源選擇與定義檢查仍有效；原生驗證須以實作版本的 CI 為準。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#delegating-constructors).
 
+Core v2 支援一般、泛型及巢狀類別中的 const 資料成員，型別可為受支援的純量、紀錄、指標、回呼或陣列。初始化寫入最終儲存，保留來源選定的複製／移動、獨立成員位址及 const 參考／指標型別；非法寫入與已刪除的指派由 Clang 拒絕。這可用於自訂的常數鍵值類別，標準標頭與完整 STL 仍未完成。原生驗證須以實作版本的 CI 為準。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#const-data-members).
+
 ## 安裝與純量轉譯
 
 使用正常安裝的 NeverC 及其標準資源即可。C++ 前端與核准的 SDK 標頭均已內建，無需另行安裝 Clang。建置細節見[前端說明](../../utils/translate-frontends/cpp/README.md)。

@@ -431,8 +431,8 @@ records follow the scope contract below. Empty records
 follow the storage contract above. Each
 selected construction, copy or assignment must follow its admitted operation
 contract, including the user moves described below.
-Destruction follows the separate lifetime contract below. Fields remain non-mutable, non-const,
-non-reference and non-bitfield. Default member initializers follow the contract below. Ordinary
+Destruction follows the separate lifetime contract below. Fields remain non-mutable, non-reference and non-bitfield. Const members
+follow their initialization and access contract below. Default member initializers follow the contract below. Ordinary
 methods may use these records. Allowing a constructor does not admit arbitrary
 class layouts or foreign C++ ABI interchange.
 
@@ -490,6 +490,49 @@ guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
+
+## Const data members
+
+Core v2 admits const-qualified nonstatic data members with supported scalar,
+record, pointer, callback or fixed-array types, including fields in concrete
+class templates, partial/full specializations and named nested classes. Aggregate,
+zero, member-default and constructor initialization use the actual destination.
+Source-selected copy/move construction remains valid even when assignment is
+implicitly deleted. A const record member can select its copy constructor when
+the containing object is moved; the frontend preserves that selected operation.
+
+```cpp
+template<class Key, class Value>
+struct Pair { Key first; Value second; };
+
+int main() {
+  Pair<const int, int> item{3, 4};
+  item.second = 5;
+  const int &key = item.first;
+  return key + item.second - 8;
+}
+```
+
+Clang rejects writes, increments, mutable-reference binding, qualification loss,
+non-const member calls and deleted assignments at their source locations.
+A const pointer member cannot be reseated, but its non-const pointee can still
+be modified. The original object and member addresses remain distinct across
+copies. Missing required constructors/destructors retain definition checks.
+
+As with const locals, translated field storage uses the unqualified carrier so
+initialization and selected construction can write it. This internal representation
+does not perform a source assignment to a const member. Evaluated addresses,
+references and array decay preserve source constness through typed `cptr:`
+carriers, and source access is checked before lowering. Record layout and field
+offsets are independently verified using the same carriers. User-written assignment
+operators can modify permitted non-const members while leaving const keys intact.
+
+Volatile, mutable, reference and bitfield members remain outside this increment.
+Existing restrictions on explicitly deleted or deleted defaulted declarations,
+dynamic static lifetime and unsupported element types remain. V1 profiles retain
+their const-field rejection. Paired source/protocol tests, const-pointer signature
+and relocation checks, and O0/O2 fixtures require native CI of the implementing
+revision. Standard headers and complete C++/STL remain unfinished.
 
 ## Delegating constructors
 
@@ -638,8 +681,8 @@ instruction or runtime wrapper is needed. Generated source remains reviewable.
 
 Mixed-access non-standard-layout classes, unsupported dependent friend class-template forms, inheritance,
 anonymous nested records and unsupported member class templates remain outside current support. Bitfields and
-mutable, const, reference or unsupported numeric fields retain their existing
-restrictions. A getter returning a field's ordinary `T*` address does not admit
+mutable, reference or unsupported numeric fields retain their existing
+restrictions; const members follow their separate contract. A getter returning a field's ordinary `T*` address does not admit
 pointer-to-member types such as `T C::*`. Older profiles keep their contracts.
 Native O0/O2 fixtures cover state, aliasing, defaulted array copying/moving and
 nontrivial member cleanup; protocol fixtures cover storage, signatures, layout

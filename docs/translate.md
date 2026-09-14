@@ -94,6 +94,8 @@ Core v2 supports the distinct `decltype(nullptr)` value type, including aliases,
 
 Core v2 supports delegating constructors in admitted ordinary and generic classes, including chains and selected constructor templates. The target and delegating body use the same final object; member initialization runs once, and argument temporaries are destroyed before the delegating body executes. Source selection and definition checks remain in force. Native validation requires CI of the implementing revision. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#delegating-constructors).
 
+Core v2 supports const data members with admitted scalar, record, pointer, callback and array types, including generic and nested classes. Initialization targets final storage; source-selected copying/moving, distinct member addresses and const reference/pointer types are preserved. Clang rejects invalid writes and deleted assignments. This supports source-defined const-key/value classes; standard headers and full STL remain unfinished. Native validation requires implementing-revision CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#const-data-members).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

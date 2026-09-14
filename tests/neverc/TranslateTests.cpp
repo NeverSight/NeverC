@@ -2605,7 +2605,6 @@ TEST_F(TranslateTest, CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"mixed-access", "struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};", "TR0201"},
       {"inheritance", "class R{protected:int n=1;};class D:public R{public:int get(){return n;}};", "TR0201"},
-      {"const-field", "class R{const int n=1;public:int get()const{return n;}};", "TR0201"},
       {"reference-field", "class R{int&n;public:R(int&v):n(v){}};", "TR0201"},
       {"mutable-field", "class R{mutable int n=1;public:int get()const{return ++n;}};", "TR0201"},
       {"bitfield", "class R{unsigned int n:2;public:R():n(1){}};", "TR0201"},
@@ -3168,7 +3167,6 @@ TEST_F(TranslateTest, CoreV2NestedRecordsRetainAccessAndSourceBoundaries) {
       {"float-field", "struct R{struct I{double n;};};", "TR0201"},
       {"bitfield", "struct R{struct I{int n:2;};};", "TR0201"},
       {"reference-field", "struct R{struct I{int&n;};};", "TR0201"},
-      {"const-field", "struct R{struct I{const int n;};};", "TR0201"},
       {"mutable-field", "struct R{struct I{mutable int n;};};", "TR0201"},
       {"unused-body", "struct R{struct I{int get(){double d=1.0;return 1;}};};", "TR0201"},
       {"erased-alias", "struct R{struct I{using Unsupported=double;int n;};};", "TR0201"},
@@ -6249,7 +6247,6 @@ TEST_F(TranslateTest, CoreV2MemberClassesRetainSourceAndOwnerBoundaries) {
       {"virtual-method", "struct R{template<class T>struct I{virtual int f(){return 1;}};};"},
       {"floating-field", "struct R{template<class T>struct I{T n;};};int f(){R::I<double>r{1.0};return 1;}"},
       {"reference-field", "struct R{template<class T>struct I{T&n;};};int f(){int n=3;R::I<int>r{n};return r.n;}"},
-      {"const-field", "struct R{template<class T>struct I{const T n;};};int f(){R::I<int>r{3};return r.n;}"},
       {"mutable-field", "struct R{template<class T>struct I{mutable T n;};};int f(){R::I<int>r{3};return r.n;}"},
       {"bitfield", "struct R{template<class T>struct I{unsigned int n:2;};};int f(){R::I<int>r{1};return r.n;}"},
       {"unused-hidden-default", "struct R{template<class T=decltype((sizeof(double),1))>struct I{int n;};};"},
@@ -7980,6 +7977,168 @@ TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainRequiredDefinitions) {
     expectCode(Result, "TR0203");
     expectNoArtifacts(Output);
   }
+}
+
+TEST_F(TranslateTest, CoreV2ConstFieldsRetainValuesAliasesAndCopySelection) {
+  const auto Source = tmpFile("const-fields-runtime.cpp");
+  const auto Output = tmpFile("const-fields-runtime.nc");
+  writeFile(Source, R"cpp(int initialized=0;
+int copied=0;
+int moved=0;
+int destroyed=0;
+struct Leaf{
+ int n;
+ Leaf(int v):n(v){++initialized;}
+ Leaf(const Leaf&r):n(r.n){++copied;}
+ Leaf(Leaf&&r):n(r.n){++moved;r.n=-1;}
+ ~Leaf(){++destroyed;}
+ int get()const{return n;}
+};
+struct Holder{const Leaf one;const Leaf many[2];};
+template<class A,class B>struct Pair{A first;B second;};
+struct Arrays{const int a[2];const int b[2][2];};
+struct Pointer{int*const p;};
+int value(){return 7;}
+using Callback=int(*)();
+struct Function{Callback const p;};
+using Null=decltype(nullptr);
+struct NullField{const Null n;};
+struct Constructed{const int n;Constructed():Constructed(3){}Constructed(int v):n(v){}};
+int defaults=0;
+struct Default{const int n=++defaults;Default(){}};
+struct Assignable{const int key;int value;Assignable&operator=(const Assignable&r){value=r.value;return *this;}};
+struct Global{const int n;};
+constexpr Global global{11};
+const int&read(const Global&r){return r.n;}
+int main(){
+ Pair<const int,int>pair{3,4};pair.second=5;
+ Pair<const int,int>copy(pair);
+ if(pair.first!=3||pair.second!=5||copy.first!=3||&copy.first==&pair.first)return 1;
+ const int*key=&pair.first;const int&alias=pair.first;
+ if(key!=&alias||*key!=3)return 2;
+ Arrays arrays{{1,2},{{3,4},{5,6}}};Arrays arrayCopy(arrays);
+ if(arrayCopy.a[1]!=2||arrayCopy.b[1][0]!=5||&arrayCopy.a[0]==&arrays.a[0])return 3;
+ int sum=0;for(const int&n:arrays.a)sum+=n;
+ if(sum!=3)return 4;
+ int n=3;Pointer pointer{&n};*pointer.p=4;int*const*pp=&pointer.p;
+ if(**pp!=4||*pp!=&n)return 5;
+ Function callback{value};Callback const&function=callback.p;
+ if(function()!=7)return 6;
+ NullField nulls{nullptr};const Null&nullRef=nulls.n;
+ if(nullRef!=nullptr||&nullRef!=&nulls.n)return 7;
+ Constructed constructed;
+ if(constructed.n!=3)return 8;
+ Default first;Default second;
+ if(first.n!=1||second.n!=2||defaults!=2)return 9;
+ Assignable left{1,2},right{3,4};left=right;
+ if(left.key!=1||left.value!=4)return 10;
+ if(read(global)!=11||&read(global)!=&global.n)return 11;
+ initialized=copied=moved=destroyed=0;
+ {
+  Holder source{Leaf(1),{Leaf(2),Leaf(3)}};
+  if(initialized!=3||copied!=0||moved!=0||destroyed!=0)return 12;
+  Holder duplicate(source);
+  if(copied!=3||duplicate.one.get()!=1||duplicate.many[1].n!=3||&source.one==&duplicate.one)return 13;
+  Holder movement(static_cast<Holder&&>(source));
+  if(copied!=6||moved!=0||source.one.n!=1||movement.many[0].n!=2)return 14;
+ }
+ if(destroyed!=9)return 15;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("const-fields-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConstFieldsAcceptSupportedInitialization) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"private-default", "class R{const int n=1;public:int get()const{return n;}};"},
+      {"nested-unused", "struct R{struct I{const int n;};};"},
+      {"member-class-template", "struct R{template<class T>struct I{const T n;};};int f(){R::I<int>r{3};return r.n;}"},
+      {"class-template-constructor", "template<class T>struct R{const T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}"},
+      {"class-template-aggregate", "template<class T>struct R{const T n;};int main(){R<int>r{3};return r.n;}"},
+      {"defaulted-move-unused", "struct R{const int n;R(R&&)=default;};"},
+      {"default-member", "struct R{const int n=1;};"},
+      {"defaulted-copy-unused", "struct R{const int n;R(const R&)=default;};"},
+      {"constructor", "struct R{const int n;R():n(1){}};"},
+      {"aggregate-zero", "struct R{const int n;};int main(){R r{};return r.n;}"},
+      {"pair", "template<class A,class B>struct Pair{A first;B second;};int main(){Pair<const int,int>p{3,4};p.second=5;return p.first+p.second-8;}"},
+      {"const-alias", "using Key=const int;struct R{Key n;};int main(){R r{3};return r.n-3;}"},
+      {"reference", "struct R{const int n;};const int&f(R&r){return r.n;}int main(){R r{3};return &f(r)!=&r.n;}"},
+      {"pointer", "struct R{const int n;};const int*f(R&r){return &r.n;}int main(){R r{3};return *f(r)-3;}"},
+      {"const-array", "struct R{const int n[2];};int main(){R r{{3,4}};const int*p=r.n;return p[1]-4;}"},
+      {"const-pointer-field", "struct R{int*const p;};int main(){int n=3;R r{&n};*r.p=4;int*const&alias=r.p;return *alias-4;}"},
+      {"const-pointee-and-pointer", "struct R{const int*const p;};int main(){int n=3;R r{&n};const int*const*pp=&r.p;return **pp-3;}"},
+      {"const-callback", "int f(){return 3;}using F=int(*)();struct R{F const p;};int main(){R r{f};return r.p()-3;}"},
+      {"const-null", "using N=decltype(nullptr);struct R{const N n;};int main(){R r{nullptr};return r.n!=nullptr;}"},
+      {"const-record", "struct Leaf{int n;int get()const{return n;}};struct R{const Leaf leaf;};int main(){R r{{3}};return r.leaf.get()-3;}"},
+      {"const-record-array", "struct Leaf{int n;};struct R{const Leaf a[2];};int main(){R r{{{3},{4}}};R copy(r);return copy.a[1].n-4;}"},
+      {"constexpr-global", "struct R{const int n;};constexpr R r{3};const int*f(){return &r.n;}int main(){return *f()-3;}"},
+      {"constructor-default", "int calls=0;struct R{const int n=++calls;R(){}};int main(){R r;return r.n-1+calls-1;}"},
+      {"delegating", "struct R{const int n;R():R(3){}R(int v):n(v){}};int main(){R r;return r.n-3;}"},
+      {"user-copy", "struct R{const int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};int main(){R a(3);R b(a);return b.n-4;}"},
+      {"user-assignment", "struct R{const int key;int value;R&operator=(const R&r){value=r.value;return *this;}};int main(){R a{1,2},b{3,4};a=b;return a.key-1+a.value-4;}"},
+      {"partial", "template<class T>struct R;template<class T>struct R<T*>{const T n;};int main(){R<int*>r{3};return r.n-3;}"},
+      {"full", "template<class T>struct R;template<>struct R<int>{const int n;};int main(){R<int>r{3};return r.n-3;}"},
+      {"const-narrow-wide", "struct R{const unsigned char small;const unsigned long long wide;};int main(){R r{255,9ull};return r.small!=255||r.wide!=9ull;}"},
+      {"const-range", "struct R{const int a[2];};int main(){R r{{3,4}};int n=0;for(const int&v:r.a)n+=v;return n-7;}"},
+      {"protocol-source", "struct Record{const int key;int value;const int array[2];int*const pointer;};\nconst int&key(Record&r){return r.key;}\nconst int*array(Record&r){return r.array;}\nint*const*pointer(Record&r){return &r.pointer;}\nvoid update(Record&r,int n){r.value=n;*r.pointer=n;}\nint probe(){int n=0;Record r{3,4,{5,6},&n};update(r,7);return key(r)+array(r)[1]+**pointer(r);}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("const-fields-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("const-fields-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ConstFieldsRetainSourceRestrictions) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"write-member", "struct R{const int n;};void f(R&r){r.n=3;}", "TR0202"},
+      {"increment-member", "struct R{const int n;};void f(R&r){++r.n;}", "TR0202"},
+      {"write-array", "struct R{const int a[2];};void f(R&r){r.a[0]=3;}", "TR0202"},
+      {"drop-pointer-const", "struct R{const int n;};int*f(R&r){return &r.n;}", "TR0202"},
+      {"drop-reference-const", "struct R{const int n;};int&f(R&r){return r.n;}", "TR0202"},
+      {"drop-array-const", "struct R{const int a[2];};int*f(R&r){return r.a;}", "TR0202"},
+      {"reseat-const-pointer", "struct R{int*const p;};void f(R&r,int*p){r.p=p;}", "TR0202"},
+      {"mutate-const-pointee", "struct R{const int*const p;};void f(R&r){*r.p=3;}", "TR0202"},
+      {"write-const-record", "struct Leaf{int n;};struct R{const Leaf leaf;};void f(R&r){r.leaf.n=3;}", "TR0202"},
+      {"call-nonconst-method", "struct Leaf{void set(){}};struct R{const Leaf leaf;};void f(R&r){r.leaf.set();}", "TR0202"},
+      {"deleted-implicit-assignment", "struct R{const int n;};void f(R&a,const R&b){a=b;}", "TR0202"},
+      {"deleted-implicit-move-assignment", "struct R{const int n;};void f(R&a,R&&b){a=static_cast<R&&>(b);}", "TR0202"},
+      {"uninitialized-local", "struct R{const int n;};void f(){R r;}", "TR0202"},
+      {"uninitialized-constructor", "struct R{const int n;R(){}};", "TR0202"},
+      {"volatile", "struct R{const volatile int n;};", "TR0201"},
+      {"mutable", "struct R{mutable int n;};", "TR0201"},
+      {"float", "struct R{const double n;};", "TR0201"},
+      {"hidden-constant", "struct R{const int n=sizeof(double);};", "TR0201"},
+      {"missing-copy", "struct R{const int n;R(int v):n(v){}R(const R&);};int main(){R a(3);R b(a);return b.n;}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("const-fields-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("const-fields-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("const-fields-v1.cpp");
+  const auto Output = tmpFile("const-fields-v1.nc");
+  writeFile(Source, "struct R{const int n;};int main(){R r{3};return r.n;}");
+  auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
 }
 
 TEST_F(TranslateTest, CoreV2DelegatingConstructorsReuseDestinationAndLifetime) {
@@ -12265,7 +12424,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBo
       {"parameter-attribute", "template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};", "TR0201"},
       {"base", "struct I{int n;};template<class T>struct R:I{R(){}};", "TR0201"},
       {"reference-field", "template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}", "TR0201"},
-      {"const-field", "template<class T>struct R{const T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}", "TR0201"},
       {"floating-field", "template<class T>struct R{double n;R(T v):n(v){}};int main(){R<int>r(3);return 0;}", "TR0201"},
       {"mixed-access-layout", "template<class T>class R{T n;public:T m;R(T v):n(v),m(v){}T get(){return n;}};int main(){R<int>r(3);return r.get();}", "TR0201"},
       {"private", "template<class T>struct R{T n;private:R(T v):n(v){}};int main(){R<int>r(3);return r.n;}", "TR0202"},
@@ -12614,7 +12772,6 @@ TEST_F(TranslateTest, CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundari
       {"base", "struct B{int n;};template<class T>struct R:B{T m;};", "TR0201"},
       {"bitfield", "template<class T>struct R{unsigned int n:3;};int main(){R<int>r{};return r.n;}", "TR0201"},
       {"mutable-field", "template<class T>struct R{mutable T n;};int main(){R<int>r{3};return r.n;}", "TR0201"},
-      {"const-field", "template<class T>struct R{const T n;};int main(){R<int>r{3};return r.n;}", "TR0201"},
       {"reference-field", "template<class T>struct R{T&n;};int main(){int n=3;R<int>r{n};return r.n;}", "TR0201"},
       {"zero-array", "template<int N>struct R{int n[N];};int main(){R<0>r;return 0;}", "TR0201"},
       {"oversized-array", "template<int N>struct R{int n[N];};int main(){R<65537>r{};return r.n[0];}", "TR0201"},
@@ -14796,7 +14953,6 @@ TEST_F(TranslateTest, CoreV2GeneratedMovesRetainSourceAndLifetimeBoundaries) {
       {"defaulted-deleted-assignment", "struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};", "TR0201"},
       {"attribute", "struct R{int n;[[deprecated]] R(R&&)=default;};", "TR0201"},
       {"reference-field", "struct R{int&n;R(R&&)=default;};", "TR0201"},
-      {"const-field", "struct R{const int n;R(R&&)=default;};", "TR0201"},
       {"base", "struct B{int n;};struct R:B{int value;R(R&&)=default;};", "TR0201"},
       {"source-builtin", "struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}", "TR0201"},
       {"lambda-array", "int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}", "TR0201"},
@@ -15289,7 +15445,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2DefaultMembersCheckWrittenAndSelectedExpressions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"const-field", "struct R{const int n=1;};"},
       {"reference-field", "struct R{int value;int&ref=value;};"},
       {"mutable-field", "struct R{mutable int n=1;};"},
       {"bitfield", "struct R{int bits:2;int n=1;};"},
@@ -15679,7 +15834,6 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
       {"deleted-copy", "struct R{int n;R(const R&)=delete;};"},
       {"defaulted-deleted-copy", "struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};"},
       {"reference-field", "struct R{int &n;R(const R&)=default;};"},
-      {"const-field", "struct R{const int n;R(const R&)=default;};"},
       {"base-copy", "struct B{int n;};struct R:B{int m;R(const R&)=default;};"},
       {"lambda-array-copy", "int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}"},
       {"decomposed-array-copy", "int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}"},
@@ -16468,7 +16622,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"virtual-method", "struct R{int n;R():n(1){} virtual int get(){return n;}};"},
       {"variadic-constructor", "struct R{int n;R(int v,...):n(v){}};"},
       {"deleted-constructor", "struct R{int n;R()=delete;};"},
-      {"const-field", "struct R{const int n;R():n(1){}};"},
       {"reference-field", "struct R{int &n;R(int &v):n(v){}};"},
       {"mutable-field", "struct R{mutable int n;R():n(1){}};"},
       {"union", "union R{int n;unsigned u;R():n(1){}};"},

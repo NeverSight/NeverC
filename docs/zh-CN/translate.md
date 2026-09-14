@@ -94,6 +94,8 @@ Core v2 支持独立的 `decltype(nullptr)` 值类型，包括别名、引用、
 
 Core v2 支持普通类与泛型类中的委托构造，包括构造链和选定的构造函数模板。目标构造与委托方函数体使用同一最终对象，成员只初始化一次，实参临时对象在委托方函数体执行前析构。源代码选择与定义检查仍然有效；原生验证须以实现版本的 CI 为准。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#delegating-constructors).
 
+Core v2 支持普通、泛型及嵌套类中的 const 数据成员，类型可为受支持的标量、记录、指针、回调或数组。初始化写入最终存储，保留源代码选定的复制／移动、独立成员地址及 const 引用／指针类型；非法写入和已删除的赋值由 Clang 拒绝。这可用于自定义的常量键值类，标准头文件与完整 STL 仍未完成。原生验证须以实现版本的 CI 为准。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#const-data-members).
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

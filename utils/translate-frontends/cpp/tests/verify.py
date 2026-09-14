@@ -1043,7 +1043,6 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
         'deleted-copy': 'struct R{int n;R(const R&)=delete;};',
         'defaulted-deleted-copy': 'struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};',
         'reference-field': 'struct R{int &n;R(const R&)=default;};',
-        'const-field': 'struct R{const int n;R(const R&)=default;};',
         'base-copy': 'struct B{int n;};struct R:B{int m;R(const R&)=default;};',
         'lambda-array-copy': 'int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}',
         'decomposed-array-copy': 'int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}',
@@ -1298,7 +1297,6 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
             assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]]
 
     default_member_rejected = {
-        'const-field': 'struct R{const int n=1;};',
         'reference-field': 'struct R{int value;int&ref=value;};',
         'mutable-field': 'struct R{mutable int n=1;};',
         'bitfield': 'struct R{int bits:2;int n=1;};',
@@ -1724,7 +1722,6 @@ void consume(Box&source){take(static_cast<Box&&>(source));}
         'defaulted-deleted-assignment': 'struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};',
         'attribute': 'struct R{int n;[[deprecated]] R(R&&)=default;};',
         'reference-field': 'struct R{int&n;R(R&&)=default;};',
-        'const-field': 'struct R{const int n;R(R&&)=default;};',
         'base': 'struct B{int n;};struct R:B{int value;R(R&&)=default;};',
         'source-builtin': 'struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}',
         'lambda-array': 'int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}',
@@ -3800,7 +3797,6 @@ void boxes(){Box a;Box b=a;}
     nonpublic_reject = {
         'mixed-access': 'struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};',
         'inheritance': 'class R{protected:int n=1;};class D:public R{public:int get(){return n;}};',
-        'const-field': 'class R{const int n=1;public:int get()const{return n;}};',
         'reference-field': 'class R{int&n;public:R(int&v):n(v){}};',
         'mutable-field': 'class R{mutable int n=1;public:int get()const{return ++n;}};',
         'bitfield': 'class R{unsigned int n:2;public:R():n(1){}};',
@@ -4469,7 +4465,6 @@ int main(){
         'float-field': 'struct R{struct I{double n;};};',
         'bitfield': 'struct R{struct I{int n:2;};};',
         'reference-field': 'struct R{struct I{int&n;};};',
-        'const-field': 'struct R{struct I{const int n;};};',
         'mutable-field': 'struct R{struct I{mutable int n;};};',
         'unused-body': 'struct R{struct I{int get(){double d=1.0;return 1;}};};',
         'erased-alias': 'struct R{struct I{using Unsupported=double;int n;};};',
@@ -7527,7 +7522,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'virtual-method': 'struct R{template<class T>struct I{virtual int f(){return 1;}};};',
         'floating-field': 'struct R{template<class T>struct I{T n;};};int f(){R::I<double>r{1.0};return 1;}',
         'reference-field': 'struct R{template<class T>struct I{T&n;};};int f(){int n=3;R::I<int>r{n};return r.n;}',
-        'const-field': 'struct R{template<class T>struct I{const T n;};};int f(){R::I<int>r{3};return r.n;}',
         'mutable-field': 'struct R{template<class T>struct I{mutable T n;};};int f(){R::I<int>r{3};return r.n;}',
         'bitfield': 'struct R{template<class T>struct I{unsigned int n:2;};};int f(){R::I<int>r{1};return r.n;}',
         'unused-hidden-default': 'struct R{template<class T=decltype((sizeof(double),1))>struct I{int n;};};',
@@ -9162,6 +9156,83 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         relocated = check("v2-class-friends-relocated", class_friend_source,
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == class_friends, "class target identity depends on the absolute root"
+
+    const_fields_positive = {
+        'private-default': 'class R{const int n=1;public:int get()const{return n;}};',
+        'nested-unused': 'struct R{struct I{const int n;};};',
+        'member-class-template': 'struct R{template<class T>struct I{const T n;};};int f(){R::I<int>r{3};return r.n;}',
+        'class-template-constructor': 'template<class T>struct R{const T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
+        'class-template-aggregate': 'template<class T>struct R{const T n;};int main(){R<int>r{3};return r.n;}',
+        'defaulted-move-unused': 'struct R{const int n;R(R&&)=default;};',
+        'default-member': 'struct R{const int n=1;};',
+        'defaulted-copy-unused': 'struct R{const int n;R(const R&)=default;};',
+        'constructor': 'struct R{const int n;R():n(1){}};',
+        'aggregate-zero': 'struct R{const int n;};int main(){R r{};return r.n;}',
+        'pair': 'template<class A,class B>struct Pair{A first;B second;};int main(){Pair<const int,int>p{3,4};p.second=5;return p.first+p.second-8;}',
+        'const-alias': 'using Key=const int;struct R{Key n;};int main(){R r{3};return r.n-3;}',
+        'reference': 'struct R{const int n;};const int&f(R&r){return r.n;}int main(){R r{3};return &f(r)!=&r.n;}',
+        'pointer': 'struct R{const int n;};const int*f(R&r){return &r.n;}int main(){R r{3};return *f(r)-3;}',
+        'const-array': 'struct R{const int n[2];};int main(){R r{{3,4}};const int*p=r.n;return p[1]-4;}',
+        'const-pointer-field': 'struct R{int*const p;};int main(){int n=3;R r{&n};*r.p=4;int*const&alias=r.p;return *alias-4;}',
+        'const-pointee-and-pointer': 'struct R{const int*const p;};int main(){int n=3;R r{&n};const int*const*pp=&r.p;return **pp-3;}',
+        'const-callback': 'int f(){return 3;}using F=int(*)();struct R{F const p;};int main(){R r{f};return r.p()-3;}',
+        'const-null': 'using N=decltype(nullptr);struct R{const N n;};int main(){R r{nullptr};return r.n!=nullptr;}',
+        'const-record': 'struct Leaf{int n;int get()const{return n;}};struct R{const Leaf leaf;};int main(){R r{{3}};return r.leaf.get()-3;}',
+        'const-record-array': 'struct Leaf{int n;};struct R{const Leaf a[2];};int main(){R r{{{3},{4}}};R copy(r);return copy.a[1].n-4;}',
+        'constexpr-global': 'struct R{const int n;};constexpr R r{3};const int*f(){return &r.n;}int main(){return *f()-3;}',
+        'constructor-default': 'int calls=0;struct R{const int n=++calls;R(){}};int main(){R r;return r.n-1+calls-1;}',
+        'delegating': 'struct R{const int n;R():R(3){}R(int v):n(v){}};int main(){R r;return r.n-3;}',
+        'user-copy': 'struct R{const int n;R(int v):n(v){}R(const R&r):n(r.n+1){}};int main(){R a(3);R b(a);return b.n-4;}',
+        'user-assignment': 'struct R{const int key;int value;R&operator=(const R&r){value=r.value;return *this;}};int main(){R a{1,2},b{3,4};a=b;return a.key-1+a.value-4;}',
+        'partial': 'template<class T>struct R;template<class T>struct R<T*>{const T n;};int main(){R<int*>r{3};return r.n-3;}',
+        'full': 'template<class T>struct R;template<>struct R<int>{const int n;};int main(){R<int>r{3};return r.n-3;}',
+        'const-narrow-wide': 'struct R{const unsigned char small;const unsigned long long wide;};int main(){R r{255,9ull};return r.small!=255||r.wide!=9ull;}',
+        'const-range': 'struct R{const int a[2];};int main(){R r{{3,4}};int n=0;for(const int&v:r.a)n+=v;return n-7;}',
+        'runtime': 'int initialized=0;\nint copied=0;\nint moved=0;\nint destroyed=0;\nstruct Leaf{\n int n;\n Leaf(int v):n(v){++initialized;}\n Leaf(const Leaf&r):n(r.n){++copied;}\n Leaf(Leaf&&r):n(r.n){++moved;r.n=-1;}\n ~Leaf(){++destroyed;}\n int get()const{return n;}\n};\nstruct Holder{const Leaf one;const Leaf many[2];};\ntemplate<class A,class B>struct Pair{A first;B second;};\nstruct Arrays{const int a[2];const int b[2][2];};\nstruct Pointer{int*const p;};\nint value(){return 7;}\nusing Callback=int(*)();\nstruct Function{Callback const p;};\nusing Null=decltype(nullptr);\nstruct NullField{const Null n;};\nstruct Constructed{const int n;Constructed():Constructed(3){}Constructed(int v):n(v){}};\nint defaults=0;\nstruct Default{const int n=++defaults;Default(){}};\nstruct Assignable{const int key;int value;Assignable&operator=(const Assignable&r){value=r.value;return *this;}};\nstruct Global{const int n;};\nconstexpr Global global{11};\nconst int&read(const Global&r){return r.n;}\nint main(){\n Pair<const int,int>pair{3,4};pair.second=5;\n Pair<const int,int>copy(pair);\n if(pair.first!=3||pair.second!=5||copy.first!=3||&copy.first==&pair.first)return 1;\n const int*key=&pair.first;const int&alias=pair.first;\n if(key!=&alias||*key!=3)return 2;\n Arrays arrays{{1,2},{{3,4},{5,6}}};Arrays arrayCopy(arrays);\n if(arrayCopy.a[1]!=2||arrayCopy.b[1][0]!=5||&arrayCopy.a[0]==&arrays.a[0])return 3;\n int sum=0;for(const int&n:arrays.a)sum+=n;\n if(sum!=3)return 4;\n int n=3;Pointer pointer{&n};*pointer.p=4;int*const*pp=&pointer.p;\n if(**pp!=4||*pp!=&n)return 5;\n Function callback{value};Callback const&function=callback.p;\n if(function()!=7)return 6;\n NullField nulls{nullptr};const Null&nullRef=nulls.n;\n if(nullRef!=nullptr||&nullRef!=&nulls.n)return 7;\n Constructed constructed;\n if(constructed.n!=3)return 8;\n Default first;Default second;\n if(first.n!=1||second.n!=2||defaults!=2)return 9;\n Assignable left{1,2},right{3,4};left=right;\n if(left.key!=1||left.value!=4)return 10;\n if(read(global)!=11||&read(global)!=&global.n)return 11;\n initialized=copied=moved=destroyed=0;\n {\n  Holder source{Leaf(1),{Leaf(2),Leaf(3)}};\n  if(initialized!=3||copied!=0||moved!=0||destroyed!=0)return 12;\n  Holder duplicate(source);\n  if(copied!=3||duplicate.one.get()!=1||duplicate.many[1].n!=3||&source.one==&duplicate.one)return 13;\n  Holder movement(static_cast<Holder&&>(source));\n  if(copied!=6||moved!=0||source.one.n!=1||movement.many[0].n!=2)return 14;\n }\n if(destroyed!=9)return 15;\n return 0;\n}\n',
+        'protocol-source': 'struct Record{const int key;int value;const int array[2];int*const pointer;};\nconst int&key(Record&r){return r.key;}\nconst int*array(Record&r){return r.array;}\nint*const*pointer(Record&r){return &r.pointer;}\nvoid update(Record&r,int n){r.value=n;*r.pointer=n;}\nint probe(){int n=0;Record r{3,4,{5,6},&n};update(r,7);return key(r)+array(r)[1]+**pointer(r);}\n',
+    }
+    for name, source in const_fields_positive.items():
+        check("v2-const-fields-positive-" + name, source, profile="cpp-core-v2")
+    const_fields_negative = {
+        'write-member': ('struct R{const int n;};void f(R&r){r.n=3;}', 'TR0202'),
+        'increment-member': ('struct R{const int n;};void f(R&r){++r.n;}', 'TR0202'),
+        'write-array': ('struct R{const int a[2];};void f(R&r){r.a[0]=3;}', 'TR0202'),
+        'drop-pointer-const': ('struct R{const int n;};int*f(R&r){return &r.n;}', 'TR0202'),
+        'drop-reference-const': ('struct R{const int n;};int&f(R&r){return r.n;}', 'TR0202'),
+        'drop-array-const': ('struct R{const int a[2];};int*f(R&r){return r.a;}', 'TR0202'),
+        'reseat-const-pointer': ('struct R{int*const p;};void f(R&r,int*p){r.p=p;}', 'TR0202'),
+        'mutate-const-pointee': ('struct R{const int*const p;};void f(R&r){*r.p=3;}', 'TR0202'),
+        'write-const-record': ('struct Leaf{int n;};struct R{const Leaf leaf;};void f(R&r){r.leaf.n=3;}', 'TR0202'),
+        'call-nonconst-method': ('struct Leaf{void set(){}};struct R{const Leaf leaf;};void f(R&r){r.leaf.set();}', 'TR0202'),
+        'deleted-implicit-assignment': ('struct R{const int n;};void f(R&a,const R&b){a=b;}', 'TR0202'),
+        'deleted-implicit-move-assignment': ('struct R{const int n;};void f(R&a,R&&b){a=static_cast<R&&>(b);}', 'TR0202'),
+        'uninitialized-local': ('struct R{const int n;};void f(){R r;}', 'TR0202'),
+        'uninitialized-constructor': ('struct R{const int n;R(){}};', 'TR0202'),
+        'volatile': ('struct R{const volatile int n;};', 'TR0201'),
+        'mutable': ('struct R{mutable int n;};', 'TR0201'),
+        'float': ('struct R{const double n;};', 'TR0201'),
+        'hidden-constant': ('struct R{const int n=sizeof(double);};', 'TR0201'),
+        'missing-copy': ('struct R{const int n;R(int v):n(v){}R(const R&);};int main(){R a(3);R b(a);return b.n;}', 'TR0203'),
+    }
+    for name, (source, diagnostic) in const_fields_negative.items():
+        check("v2-const-fields-reject-" + name, source, diagnostic, profile="cpp-core-v2")
+    check("const-fields-v1", "struct R{const int n;};int main(){R r{3};return r.n;}", "TR0201", profile="cpp-core-v1")
+
+    const_fields = check("v2-const-fields-protocol", const_fields_positive["protocol-source"], profile="cpp-core-v2")
+    assert len(const_fields["records"]) == 1
+    cf_record = const_fields["records"][0]
+    assert [f["type"] for f in cf_record["fields"]] == ["int", "int", "arr:2:int", "ptr:int"]
+    cf_source = const_fields_positive["protocol-source"]
+    for prefix, result in (("const int&key(", "cptr:int"), ("const int*array(", "cptr:int"),
+                           ("int*const*pointer(", "cptr:ptr:int")):
+        line = next(i for i, text in enumerate(cf_source.splitlines(), 1) if text.startswith(prefix))
+        matches = [f for f in const_fields["functions"] if f["loc"]["line"] == line]
+        assert len(matches) == 1 and matches[0]["result"] == result
+        assert [p["type"] for p in matches[0]["params"]] == ["ptr:"+cf_record["id"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-const-fields-relocated-") as temp:
+        relocated = check("v2-const-fields-relocated", cf_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == const_fields, "const field identity depends on the absolute root"
 
     delegating_positive = {
         'alias-template': 'template<class T,int N>using Alias=T;struct R{int n;R():Alias<R,3>(3){}R(int v):n(v){}};int main(){R r;return r.n-3;}',
@@ -12755,7 +12826,6 @@ int privateRead(const Private<int>&v){return v.get();}
         'parameter-attribute': 'template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};',
         'base': 'struct I{int n;};template<class T>struct R:I{R(){}};',
         'reference-field': 'template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}',
-        'const-field': 'template<class T>struct R{const T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
         'floating-field': 'template<class T>struct R{double n;R(T v):n(v){}};int main(){R<int>r(3);return 0;}',
         'mixed-access-layout': 'template<class T>class R{T n;public:T m;R(T v):n(v),m(v){}T get(){return n;}};int main(){R<int>r(3);return r.get();}',
     }
@@ -13263,7 +13333,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'base': 'struct B{int n;};template<class T>struct R:B{T m;};',
         'bitfield': 'template<class T>struct R{unsigned int n:3;};int main(){R<int>r{};return r.n;}',
         'mutable-field': 'template<class T>struct R{mutable T n;};int main(){R<int>r{3};return r.n;}',
-        'const-field': 'template<class T>struct R{const T n;};int main(){R<int>r{3};return r.n;}',
         'reference-field': 'template<class T>struct R{T&n;};int main(){int n=3;R<int>r{n};return r.n;}',
         'zero-array': 'template<int N>struct R{int n[N];};int main(){R<0>r;return 0;}',
         'oversized-array': 'template<int N>struct R{int n[N];};int main(){R<65537>r{};return r.n[0];}',
@@ -14235,7 +14304,6 @@ int main() {
         'constructor-virtual-method': 'struct R{int n;R():n(1){} virtual int get(){return n;}};',
         'constructor-variadic-constructor': 'struct R{int n;R(int v,...):n(v){}};',
         'constructor-deleted-constructor': 'struct R{int n;R()=delete;};',
-        'constructor-const-field': 'struct R{const int n;R():n(1){}};',
         'constructor-reference-field': 'struct R{int &n;R(int &v):n(v){}};',
         'constructor-mutable-field': 'struct R{mutable int n;R():n(1){}};',
         'constructor-union': 'union R{int n;unsigned u;R():n(1){}};',

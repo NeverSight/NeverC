@@ -8141,11 +8141,14 @@ public:
     if (!owned(D))
       return true;
     A.type(D->getType(), D->getLocation());
-    if (D->isBitField() || (!A.S.coreV2() && D->hasInClassInitializer()) || D->isMutable() ||
-        D->getType().isConstQualified() || D->getType()->isReferenceType())
+    // Const members share the initialization carriers used by const locals.
+    // Clang checks source writes; addresses/references retain source qualifiers.
+    if (D->isBitField() ||
+        (!A.S.coreV2() && (D->hasInClassInitializer() || D->getType().isConstQualified())) ||
+        D->isMutable() || D->getType()->isReferenceType())
       A.reject(D->getLocation(), "field",
-               "Bitfield and mutable/const/reference fields are unsupported; "
-               "default field initializers require core v2.");
+               "Bitfield and mutable/reference fields are unsupported; "
+               "const fields and default field initializers require core v2.");
     return true;
   }
   bool VisitStmt(Stmt *S) {

@@ -122,6 +122,18 @@ The consumer validates the entire module and all referenced symbols, types, fiel
 
 NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record frontend and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
 
+## Core v2 const member storage
+
+Const data members use the ordinary unqualified field carrier, as const local
+objects do, so initialization and copy/move construction can target their final
+storage. Source checking controls which member writes and special-member
+operations are legal; this adds no field qualifier or initialization opcode.
+Pointers, references, method receivers and array decay preserve the source
+qualification with `cptr:`. A const pointer field retains its pointee type while
+its own address adds the corresponding const pointer layer. The consumer still
+checks pointer qualification conversions, types, globals and layout. See the
+[const-member contract](cpp-core-v2.md#const-data-members).
+
 ## Core v2 delegating construction
 
 A delegating constructor uses an ordinary void function and the same typed

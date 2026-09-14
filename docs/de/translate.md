@@ -94,6 +94,8 @@ Core v2 unterstützt den eigenständigen Werttyp `decltype(nullptr)` für Aliase
 
 Core v2 unterstützt delegierende Konstruktoren in zulässigen gewöhnlichen und generischen Klassen, einschließlich Ketten und ausgewählter Konstruktor-Templates. Ziel und delegierender Rumpf verwenden dasselbe endgültige Objekt; Mitglieder werden einmal initialisiert, temporäre Argumente vor dem delegierenden Rumpf zerstört. Auswahl und Definitionen werden weiterhin geprüft. Native Prüfung erfordert die CI der Implementierungsrevision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#delegating-constructors).
 
+Core v2 unterstützt const-Datenmitglieder mit zulässigen Skalar-, Record-, Zeiger-, Callback- und Arraytypen, auch in generischen und verschachtelten Klassen. Initialisierung im endgültigen Speicher, ausgewählte Kopier-/Move-Operationen, eigene Adressen und const-Referenzen/-Zeiger bleiben erhalten. Clang weist ungültige Schreibzugriffe und gelöschte Zuweisungen zurück. Eigene Klassen mit konstantem Schlüssel sind möglich; Standard-Header und vollständige STL stehen noch aus. Native Prüfung erfordert die CI der Implementierungsrevision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#const-data-members).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

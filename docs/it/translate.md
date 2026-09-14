@@ -94,6 +94,8 @@ Core v2 supporta il tipo di valore distinto `decltype(nullptr)` per alias, rifer
 
 Core v2 supporta costruttori deleganti nelle classi ordinarie e generiche ammesse, comprese catene e template di costruttori selezionati. Il destinatario e il corpo delegante usano lo stesso oggetto finale; i membri vengono inizializzati una volta e gli argomenti temporanei sono distrutti prima del corpo delegante. Restano attivi i controlli di selezione e definizione. La verifica nativa richiede la CI della revisione implementata. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#delegating-constructors).
 
+Core v2 ammette membri const di tipi scalari, record, puntatori, callback e array supportati, anche in classi generiche e annidate. Mantiene memoria finale, copie/spostamenti selezionati, indirizzi distinti e riferimenti/puntatori const. Clang rifiuta scritture non valide e assegnazioni eliminate. Sono possibili classi con chiavi costanti definite nel sorgente; gli header standard e lo STL completo restano da realizzare. La verifica nativa richiede la CI della revisione implementata. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#const-data-members).
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).
