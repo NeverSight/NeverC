@@ -2178,7 +2178,6 @@ TEST_F(TranslateTest, CoreV2MutableScalarGlobalsRetainTypeAndInitializationBound
       {"dynamic-call", "int f(){return 1;}int value=f();", "TR0201"},
       {"dynamic-read", "int a=1;int b=a;", "TR0201"},
       {"dynamic-effect", "int a=1;int b=++a;", "TR0201"},
-      {"reference", "int n;int&value=n;", "TR0201"},
       {"record", "struct R{int n;};R value{1};", "TR0201"},
       {"float", "long double value=1.0L;", "TR0201"},
       {"volatile", "volatile int value;", "TR0201"},
@@ -3393,7 +3392,6 @@ TEST_F(TranslateTest, CoreV2StaticMembersRetainStorageAndSourceBoundaries) {
       {"dynamic-call", "int value(){return 3;}struct R{inline static int n=value();};", "TR0201"},
       {"dynamic-write", "int n=0;struct R{inline static int value=++n;};", "TR0201"},
       {"floating", "struct R{inline static long double n=1.0L;};", "TR0201"},
-      {"reference", "int n=0;struct R{inline static int&value=n;};", "TR0201"},
       {"record", "struct I{int n;};struct R{inline static I i{1};};", "TR0201"},
       {"tls", "struct R{inline static thread_local int n=1;};", "TR0201"},
       {"volatile", "struct R{inline static volatile int n=1;};", "TR0201"},
@@ -3753,7 +3751,6 @@ TEST_F(TranslateTest, CoreV2StaticLocalsRetainInitializationAndLanguageBoundarie
       {"static-tls", "int f(){static thread_local int n=3;return n;}", "TR0201"},
       {"volatile", "int f(){static volatile int n=3;return n;}", "TR0201"},
       {"floating", "long double f(){static long double n=3.0L;return n;}", "TR0201"},
-      {"reference", "int value=3;int&f(){static int&n=value;return n;}", "TR0201"},
       {"record", "struct R{int n;};int f(){static R r{3};return r.n;}", "TR0201"},
       {"record-destruction", "struct R{int n;~R(){}};int f(){static R r{3};return r.n;}", "TR0201"},
       {"extern", "int value=3;int f(){extern int value;return value;}", "TR0201"},
@@ -5925,7 +5922,6 @@ TEST_F(TranslateTest, CoreV2MemberVariablesRetainSourceAndBounds) {
       {"full-auto-hidden-default-outer-copy", "template<class A>struct R{template<auto V,int N=(sizeof(long double),V)>inline static int n=1;template<>inline int n<3> = 7;};int main(){R<bool>r;return sizeof(r);}"},
       {"dynamic", "int f(){return 3;}struct R{template<class T>inline static int n=f();};int main(){return R::n<int>;}"},
       {"floating-result", "struct R{template<class T>inline static long double n=3.0L;};int main(){return int(R::n<int>);}"},
-      {"reference-result", "int value=3;struct R{template<class T>inline static int&n=value;};int main(){return R::n<int>;}"},
       {"record-result", "struct V{int n;};struct R{template<class T>inline static V n{3};};int main(){return R::n<int>.n;}"},
       {"volatile", "struct R{template<class T>inline static volatile int n=3;};int main(){return R::n<int>;}"},
       {"thread-local", "struct R{template<class T>inline static thread_local int n=3;};int main(){return R::n<int>;}"},
@@ -7965,6 +7961,188 @@ TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainRequiredDefinitions) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StaticReferencesPreserveAliasesAndIdentity) {
+  const auto Source = tmpFile("static-reference-runtime.cpp");
+  const auto Output = tmpFile("static-reference-runtime.nc");
+  writeFile(Source, R"cpp(int n=3;
+int&r=n;
+const int&view=n;
+int&&moved=static_cast<int&&>(n);
+constexpr int&fixed=n;
+int&chain=r;
+int values[2]={4,5};
+int(&array)[2]=values;
+int&element=values[1];
+const char(&text)[4]="cat";
+int*pointer=&n;
+int*&pointerAlias=pointer;
+int*const fixedPointer=&n;
+int*const&constPointerAlias=fixedPointer;
+struct R{const int key;int value;int data[2];};
+R records[2]={{1,2,{3,4}},{5,6,{7,8}}};
+R&record=records[1];
+const int&key=record.key;
+int(&data)[2]=record.data;
+int&local(){static int value=9;static int&alias=value;return alias;}
+int effects=0,drops=0;
+struct Holder{inline static int&alias=n;~Holder(){++drops;}};
+Holder&receiver(Holder&h){++effects;return h;}
+int&temporary(){return Holder{}.alias;}
+template<int N>int&slot(){static int value=N;static int&alias=value;return alias;}
+template<int N>struct Store{inline static int value=N;inline static int&alias=value;};
+template<int N>inline int value=N;
+template<int N>inline int&alias=value<N>;
+int main(){
+ if(&r!=&n||&view!=&n||&moved!=&n||&fixed!=&n||&chain!=&n)return 1;
+ r=10;if(n!=10||view!=10||fixed!=10)return 2;
+ moved=11;chain=12;if(n!=12||r!=12)return 3;
+ if(&array!=&values||&element!=&values[1])return 4;
+ array[0]=13;element=14;if(values[0]!=13||values[1]!=14)return 5;
+ if(sizeof(text)!=4||text[1]!='a'||text[3]!=0)return 6;
+ pointerAlias=values;if(pointer!=values||*pointerAlias!=13)return 7;
+ *constPointerAlias=15;if(n!=15||fixed!=15)return 8;
+ if(&record!=&records[1]||&key!=&records[1].key||key!=5)return 9;
+ record.value=16;data[1]=17;if(records[1].value!=16||records[1].data[1]!=17)return 10;
+ int*p=&local();local()=18;if(&local()!=p||local()!=18)return 11;
+ {Holder h;receiver(h).alias=19;if(effects!=1||n!=19)return 12;}
+ if(drops!=1)return 13;
+ temporary()=20;if(n!=20||drops!=2)return 14;
+ slot<3>()=21;if(slot<3>()!=21||slot<5>()!=5||&slot<3>()==&slot<5>())return 15;
+ Store<3>::alias=22;if(Store<3>::value!=22||Store<5>::value!=5)return 16;
+ alias<3> =23;if(value<3> !=23||value<5> !=5||&alias<3> !=&value<3>)return 17;
+ alias<3> =alias<5>;if(value<3> !=5||&alias<3> !=&value<3>)return 18;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("static-reference-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticReferencesAcceptSourceComposition) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"global-lvalue", "int n=3;int&r=n;int f(){return ++r;}"},
+      {"global-const", "const int n=3;const int&r=n;int f(){return r;}"},
+      {"global-const-view", "int n=3;const int&r=n;int f(){n=4;return r;}"},
+      {"global-rvalue", "int n=3;int&&r=static_cast<int&&>(n);int f(){return ++r;}"},
+      {"global-constexpr", "int n=3;constexpr int&r=n;int f(){return ++r;}"},
+      {"global-auto", "int n=3;auto&r=n;decltype(auto)s=(n);int f(){return ++r+s;}"},
+      {"global-collapsed", "int n=3;auto&&r=n;int f(){return ++r;}"},
+      {"global-chain", "int n=3;int&r=n;int&s=r;int f(){return ++s;}"},
+      {"global-forward", "extern int n;int&r=n;int n=3;int f(){return r;}"},
+      {"global-redeclaration", "int n=3;extern int&r;int&r=n;extern int&r;int f(){return r;}"},
+      {"global-array", "int a[2]={1,2};int(&r)[2]=a;int f(){return ++r[1];}"},
+      {"global-const-array", "const int a[2]={1,2};const int(&r)[2]=a;int f(){return r[1];}"},
+      {"global-array-rvalue", "int a[2]={1,2};int(&&r)[2]=static_cast<int(&&)[2]>(a);int f(){return ++r[1];}"},
+      {"global-matrix-row", "int a[2][2]={{1,2},{3,4}};int(&r)[2]=a[1];int f(){return ++r[1];}"},
+      {"global-array-element", "int a[2]={1,2};int&r=a[1];int f(){return ++r;}"},
+      {"global-string", "const char(&r)[4]=\"cat\";char f(){return r[1];}"},
+      {"global-string-element", "const char&r=\"cat\"[1];char f(){return r;}"},
+      {"global-utf16", "const char16_t(&r)[3]=u\"\\U0001f600\";char16_t f(){return r[1];}"},
+      {"global-record", "struct R{int n;};R a[2]={{1},{2}};R&r=a[1];int f(){return ++r.n;}"},
+      {"global-const-record", "struct R{int n;};constexpr R value{3};const R&r=value;int f(){return r.n;}"},
+      {"global-const-field", "struct R{const int key;int n;};R a[2]={{1,2},{3,4}};const int&r=a[1].key;int f(){return r;}"},
+      {"global-field-array", "struct R{int a[2];};R v[1]={{{1,2}}};int(&r)[2]=v[0].a;int f(){return ++r[1];}"},
+      {"global-pointer", "int n=3;int*p=&n;int*&r=p;int f(){r=nullptr;return p==nullptr;}"},
+      {"global-const-pointer", "int n=3;int*const p=&n;int*const&r=p;int f(){return ++*r;}"},
+      {"global-callback-object", "int f(){return 3;}using F=int(*)();F p=f;F&r=p;int g(){return r();}"},
+      {"global-nullptr-object", "using N=decltype(nullptr);N value;N&r=value;bool f(){return r==nullptr;}"},
+      {"global-float", "float n=1.25f;float&r=n;float f(){return ++r;}"},
+      {"global-constexpr-call", "int n=3;constexpr int&get(){return n;}int&r=get();int f(){return ++r;}"},
+      {"global-constexpr-conversion", "int n=3;struct R{constexpr operator int&()const{return n;}};int&r=R{};int f(){return ++r;}"},
+      {"local-static-global", "int n=3;int&f(){static int&r=n;return r;}"},
+      {"local-static-local", "int&f(){static int n=3;static int&r=n;return r;}"},
+      {"local-static-array", "int(&f())[2]{static int a[2]={1,2};static int(&r)[2]=a;return r;}"},
+      {"local-static-string", "const char(&f())[4]{static const char(&r)[4]=\"cat\";return r;}"},
+      {"local-static-template", "template<int N>int&f(){static int n=N;static int&r=n;return r;}int&g(){return f<3>();}"},
+      {"member-inline", "int n=3;struct R{inline static int&r=n;};int f(){return ++R::r;}"},
+      {"member-outline", "int n=3;struct R{static int&r;};int&R::r=n;int f(){return ++R::r;}"},
+      {"member-array", "struct R{inline static int a[2]={1,2};inline static int(&r)[2]=a;};int f(){return ++R::r[1];}"},
+      {"member-constexpr", "int n=3;struct R{inline static constexpr int&r=n;};int f(){return ++R::r;}"},
+      {"member-class-template", "template<int N>struct R{inline static int n=N;inline static int&r=n;};int f(){return ++R<3>::r;}"},
+      {"member-class-outline", "int n=3;template<class T>struct R{static T&r;};template<class T>T&R<T>::r=n;int f(){return ++R<int>::r;}"},
+      {"variable-template", "int n=3;template<class T>inline T&r=n;int f(){return ++r<int>;}"},
+      {"variable-template-auto", "int n=3;template<class T>inline auto&r=n;int f(){return ++r<int>;}"},
+      {"variable-template-partial", "int a=3,b=4;template<class T>inline int&r=a;template<class T>inline int&r<T*> =b;int f(){return ++r<int*>;}"},
+      {"variable-template-full", "int a=3,b=4;template<class T>inline int&r=a;template<>inline int&r<int> =b;int f(){return ++r<int>;}"},
+      {"member-variable-template", "int n=3;struct R{template<class T>inline static T&r=n;};int f(){return ++R::r<int>;}"},
+      {"member-variable-outline", "int n=3;struct R{template<class T>static T&r;};template<class T>T&R::r=n;int f(){return ++R::r<int>;}"},
+      {"promoted-1", "int n;int&&r=static_cast<int&&>(n);"},
+      {"promoted-2", "int n;int&value=n;"},
+      {"promoted-3", "int n=0;struct R{inline static int&value=n;};"},
+      {"promoted-4", "int value=3;int&f(){static int&n=value;return n;}"},
+      {"promoted-5", "int value=3;struct R{template<class T>inline static int&n=value;};int main(){return R::n<int>;}"},
+      {"promoted-6", "int n;int&r=n;"},
+      {"promoted-7", "int n;int&f(){static int&r=n;return r;}"},
+      {"promoted-8", "int n=3;template<class T>int&value=n;int main(){return value<int>;}"},
+      {"promoted-9", "int n=3;template<class T>struct R{inline static int&r=n;};"},
+      {"protocol-source", "extern int target;\nint&forward=target;\nint target=3;\nint values[2]={1,2};\nint(&array)[2]=values;\nint&element=values[1];\nconst char(&literal)[4]=\"cat\";\nint*pointer=&target;\nint*&pointerRef=pointer;\nint&chain=forward;\nint&local(){static int&r=target;return r;}\nint change(){forward=4;array[1]=5;return chain+element;}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static-reference-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("static-reference-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticReferencesRetainBindingAndLifetimeRequirements) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"global-runtime-call", "int n;int&get(){return n;}int&r=get();", "TR0201"},
+      {"global-runtime-pointer", "int n;int*p=&n;int&r=*p;", "TR0201"},
+      {"local-parameter", "int&f(int&n){static int&r=n;return r;}", "TR0201"},
+      {"local-automatic", "int&f(){int n=3;static int&r=n;return r;}", "TR0201"},
+      {"local-runtime-choice", "int a,b;int&f(bool c){static int&r=c?a:b;return r;}", "TR0201"},
+      {"global-temporary", "const int&r=3;", "TR0201"},
+      {"local-temporary", "int f(){static const int&r=3;return r;}", "TR0201"},
+      {"global-array-temporary", "const int(&r)[2]={1,2};", "TR0201"},
+      {"global-null", "int&r=*static_cast<int*>(nullptr);", "TR0201"},
+      {"global-one-past", "int a[2];int&r=*(a+2);", "TR0201"},
+      {"global-object-end", "int n;int&r=*(&n+1);", "TR0201"},
+      {"global-integer-address", "int&r=*reinterpret_cast<int*>(1);", "TR0201"},
+      {"global-tls", "int n;thread_local int&r=n;", "TR0201"},
+      {"local-tls-target", "int&f(){thread_local int n;static int&r=n;return r;}", "TR0201"},
+      {"global-volatile", "volatile int n;volatile int&r=n;", "TR0201"},
+      {"hidden-type", "long double n;long double&r=n;", "TR0201"},
+      {"hidden-initializer", "int n;int&r=(static_cast<void>(1.0L),n);", "TR0201"},
+      {"hidden-template", "template<class T>using I=int;int n;template<class T>I<decltype(T{}+1.0L)>&r=n;int f(){return r<int>;}", "TR0201"},
+      {"reference-member", "struct R{int&r;};", "TR0201"},
+      {"reference-nontype", "int n;template<int&R>int f(){return R;}int g(){return f<n>();}", "TR0201"},
+      {"function-reference", "int f(){return 3;}int(&r)()=f;", "TR0201"},
+      {"global-missing-target", "extern int n;int&r=n;", "TR0203"},
+      {"global-missing-reference", "extern int&r;int f(){return r;}", "TR0203"},
+      {"member-missing-reference", "struct R{static int&r;};", "TR0203"},
+      {"global-drop-const", "const int n=3;int&r=n;", "TR0202"},
+      {"global-const-write", "const int n=3;const int&r=n;void f(){r=4;}", "TR0202"},
+      {"global-array-const-write", "const int a[2]={1,2};const int(&r)[2]=a;void f(){r[0]=4;}", "TR0202"},
+      {"global-string-write", "const char(&r)[4]=\"cat\";void f(){r[0]='b';}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static-reference-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("static-reference-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("static-reference-v1.cpp");
+  const auto Output = tmpFile("static-reference-v1.nc");
+  writeFile(Source, "int n=3;int&r=n;");
+  auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2StaticPointersPreserveObjectAddressesAndState) {
   const auto Source = tmpFile("static-pointer-runtime.cpp");
   const auto Output = tmpFile("static-pointer-runtime.nc");
@@ -8152,8 +8330,6 @@ TEST_F(TranslateTest, CoreV2StaticPointersRetainConstantAddressAndSourceRequirem
       {"hidden-bound", "int a[2];int(*p)[(sizeof(long double),2)]=&a;", "TR0201"},
       {"hidden-initializer", "int n;int*p=(static_cast<void>(1.0L),&n);", "TR0201"},
       {"hidden-template-type", "template<class T>using I=int;int n;template<class T>I<decltype(T{}+1.0L)>*p=&n;int*f(){return p<int>;}", "TR0201"},
-      {"global-reference", "int n;int&r=n;", "TR0201"},
-      {"static-reference", "int n;int&f(){static int&r=n;return r;}", "TR0201"},
       {"pointer-nontype", "int n;template<int*P>int f(){return *P;}int g(){return f<&n>();}", "TR0201"},
       {"global-missing-pointee", "extern int n;int*p=&n;", "TR0203"},
       {"global-missing-pointer", "extern int*p;int*f(){return p;}", "TR0203"},
@@ -10534,7 +10710,6 @@ TEST_F(TranslateTest, CoreV2VariableTemplatesAcceptConcreteInstances) {
 TEST_F(TranslateTest, CoreV2VariableTemplatesRetainSourceAndResourceChecks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"floating-result", "template<class T>constexpr long double value=1.0L;int main(){return int(value<int>);}"},
-      {"reference-result", "int n=3;template<class T>int&value=n;int main(){return value<int>;}"},
       {"class-result", "struct R{int n;};template<class T>constexpr R value{3};int main(){return value<int>.n;}"},
       {"dynamic-initializer", "int f(){return 3;}template<class T>int value=f();int main(){return value<int>;}"},
       {"thread-local", "template<class T>thread_local int value=3;int main(){return value<int>;}"},
@@ -12002,7 +12177,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateStaticDataRetainSourceBoundaries) {
       {"discard-floating", "template<class T>struct R{static const int n=int(1.0L);};int f(){(void)R<int>::n;return 0;}"},
       {"hidden-definition-floating", "template<class T>struct R{static int n;};template<class T>int R<T>::n=int(1.0L);int f(){return R<int>::n;}"},
       {"floating-type", "template<class T>struct R{inline static long double n=1.0L;};"},
-      {"reference-type", "int n=3;template<class T>struct R{inline static int&r=n;};"},
       {"record-type", "struct I{int n;};template<class T>struct R{inline static I n{3};};"},
       {"volatile", "template<class T>struct R{inline static volatile T n=3;};"},
       {"thread-local", "template<class T>struct R{inline static thread_local T n=3;};"},
@@ -16221,7 +16395,6 @@ TEST_F(TranslateTest, CoreV2LiveRvalueReferencesRetainTemporaryAndMoveBoundaries
       {"reference-return", "int&&f(){return 1;}", "TR0201"},
       {"volatile-reference", "int f(volatile int&&n){return n;}", "TR0201"},
       {"reference-field", "struct R{int&&n;};", "TR0201"},
-      {"global-reference", "int n;int&&r=static_cast<int&&>(n);", "TR0201"},
       {"function-reference", "int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}", "TR0201"},
       {"direct-lvalue-binding", "void f(){int n=1;int&&r=n;}", "TR0202"},
       {"lvalue-method-on-xvalue", "struct R{int n;int get()&{return n;}};int f(R&r){return static_cast<R&&>(r).get();}", "TR0202"},

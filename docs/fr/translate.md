@@ -106,6 +106,8 @@ Core v2 prend en charge les tableaux modifiables et constants initialisés à z�
 
 Core v2 prend en charge l’initialisation nulle ou constante des pointeurs statiques vers des objets globaux, des littéraux, des éléments de tableau et des champs, y compris les adresses valides juste après la fin. Identité, mutabilité et accès const restent distincts pour les espaces de noms, fonctions, classes et modèles. Les adresses déclarées plus loin deviennent des constantes C23 sans initialisation à l’exécution. Références statiques, allocation et STL complète restent en développement. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
 
+Les références statiques peuvent désigner des objets statiques existants, des sous-objets de tableaux ou de structures et des chaînes, y compris dans les variables statiques locales, les classes et les instances de modèles admises. Les lectures et écritures conservent l’objet initial et les droits const. La prolongation de vie des temporaires statiques et l’initialisation dynamique restent inachevées ; la validation native nécessite la CI de cette version. Voir le [contrat des références statiques](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings).
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).

@@ -106,6 +106,8 @@ Core v2 supporta array modificabili e costanti con inizializzazione a zero o cos
 
 Core v2 supporta l’inizializzazione a zero o costante dei puntatori statici a oggetti globali, letterali, elementi di array e campi, inclusi i puntatori validi subito dopo la fine. Memoria di namespace, funzioni, classi e template conserva identità, modificabilità e accesso const. Gli indirizzi definiti più avanti diventano costanti C23 senza inizializzazione a runtime. Riferimenti statici, allocazione e STL completa restano in sviluppo. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
 
+I riferimenti statici possono legarsi a oggetti statici esistenti, sottooggetti di array o record e stringhe, inclusi riferimenti statici locali, di classe e istanze di template ammesse. Letture e scritture mantengono l’oggetto originale e i permessi const. L’estensione della durata dei temporanei statici e l’inizializzazione dinamica restano incomplete; la verifica nativa richiede la CI della versione implementata. Vedere il [contratto dei riferimenti statici](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings).
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

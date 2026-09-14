@@ -108,7 +108,8 @@ initialization is invented. All written initializer source remains checked.
 Namespace and local/member static arrays also follow the
 [fixed-array static storage contract](#fixed-array-static-storage).
 Object pointers follow their [static address contract](#static-object-pointer-storage).
-Reference globals, dynamic initialization, global destruction,
+Static reference bindings follow their [alias contract](#static-reference-bindings).
+Dynamic initialization, global destruction,
 user-defined literal operators, standard headers and `std::string`
 allocation/operations remain unfinished.
 Existing array extent and generated-node budgets apply; no runtime bounds checks
@@ -166,7 +167,7 @@ static declarations emit no automatic shadow, runtime initialization guard or
 repeated element stores. Arrays cannot be assigned as whole values.
 
 Dynamic initialization and synchronized guards, TLS and volatile storage,
-nontrivial static destruction, reference storage and mutable
+nontrivial static destruction, static reference lifetime extension and mutable
 record globals still need further support. Object-pointer elements follow the
 [static address contract](#static-object-pointer-storage). Standard headers and full STL remain
 unfinished. Paired source/protocol cases, IR checks and O0/O2 fixtures cover
@@ -223,11 +224,63 @@ operations continue to use their existing sequencing and arithmetic rules.
 
 Canonical static identity, receiver effects, temporary cleanup and separate
 template-instance state follow the existing storage contracts. Static reference
-bindings, dynamic initialization/guards, TLS, allocation, static destruction,
+bindings follow their [alias contract](#static-reference-bindings).
+Dynamic initialization/guards, TLS, allocation, static destruction,
 mutable record globals and standard-library headers/runtime still require
 further work. Paired source/protocol cases, malformed-address IR cases,
 relocation and O0/O2 fixtures require native validation in implementing CI.
 This increment does not establish complete C++/STL.
+
+## Static reference bindings
+
+Core v2 admits constant bindings of namespace references, function-local static
+references and defined class static references, including admitted concrete
+class/variable templates. Lvalue references and rvalue references can alias
+existing source-owned static objects, their array/record subobjects, and string
+literal storage. Chained references and constexpr calls/conversions retain the
+actual target; no copy of the referred object is introduced.
+
+```cpp
+int value = 3;
+int& alias = value;
+int values[2] = {4, 5};
+int (&array)[2] = values;
+const char (&text)[4] = "cat";
+int& local() {
+  static int& binding = value;
+  return binding;
+}
+int main() {
+  alias = 7;
+  local() = 8;
+  array[1] = 9;
+  return value != 8 || values[1] != 9 || text[1] != 'a';
+}
+```
+
+The initializer is evaluated in the context of its actual reference definition.
+Its canonical declaration, owning scope, type and source initializer must agree.
+The resulting address must designate permanent storage, with the same typed
+subobject/offset checks as static pointers. Null and one-past addresses cannot
+bind references. Missing required reference or target definitions retain
+`TR0203`; source qualification errors retain `TR0202`.
+
+Each reference uses one immutable internal pointer carrier. Reading, assigning,
+taking an address, returning an alias or selecting a member dereferences that
+carrier and accesses the original object. Assigning through a reference cannot
+reseat its binding. Referred-to constness, array extents, pointer-object constness
+and template-instance identity remain intact. Class static receivers still
+produce their source effects and temporary cleanup; the reference owns no
+referred object and introduces no destruction or block-entry initializer.
+
+Automatic objects, runtime pointer loads/calls, TLS, null/one-past addresses,
+integer-derived pointers and unsupported source types cannot provide these
+constant bindings. Static lifetime extension of temporary scalars, arrays or
+records remains unfinished, as do function references, nonstatic reference
+members, reference non-type template arguments, dynamic initialization/guards
+and actual standard-library headers/runtime. Native validation of the paired
+source/protocol cases, const-carrier IR checks, relocation and O0/O2 fixtures
+requires implementing CI. Complete C++/STL remains an active goal.
 
 ## Binary floating-point values
 
@@ -399,11 +452,11 @@ int main() {
 ```
 
 Automatic local reference lifetime extension, including converted values and
-record subobjects, follows the dedicated contract below. Reference fields and
-pointer/reference globals (including pointer-valued global aggregate fields)
+record subobjects, follows the dedicated contract below. Static pointers and
+references follow their storage contracts above. Nonstatic reference fields
 remain rejected.
 Unused/dead bindings are checked too. Standalone
-`nullptr_t` variables are not supported. The contract covers accesses to live
+`nullptr_t` variables follow the [null-value contract](#null-pointer-values). The contract covers accesses to live
 objects; it does not define dangling/invalid pointer behavior or remove C++
 undefined behavior. In particular, casting away `const` does not make an
 originally const object writable. Generated `.nc` source targets NeverC's
@@ -450,7 +503,7 @@ member/array access, casts, conditionals and comma expressions. Call-site
 bindings and receivers may use full-expression temporaries under the contract
 below. Automatic local extension follows its exact-owner contract below;
 fresh-reference returns remain rejected, including converted values and subobjects
-in dead code. Reference fields/globals, function references, volatile types,
+in dead code. Nonstatic reference fields, function references, volatile types,
 static lifetime extension and arbitrary dangling-reference analysis are not enabled. Invalid C++ category/qualification uses retain source diagnostics.
 V1 profiles continue to reject rvalue references and methods.
 
@@ -1045,7 +1098,8 @@ members used only for their checked values follow the
 They need no invented storage definition.
 
 Fixed arrays follow the [static array contract](#fixed-array-static-storage).
-Dynamic initialization, static reference/record objects and TLS
+Static references follow their [alias contract](#static-reference-bindings).
+Dynamic initialization, static record objects and TLS
 retain their restrictions. There is no startup or
 static-destruction function in this representation. Older profiles retain their
 existing behavior. Native O0/O2 fixtures and protocol checks cover shared state,
@@ -2524,8 +2578,8 @@ out-of-line definitions, scalar auto/decltype(auto), private/protected access,
 explicit member instantiation/specialization and full class specialization retain
 ordinary C++ source semantics. A dependent static type must resolve to a supported
 scalar, a [fixed array](#fixed-array-static-storage) or an
-[object pointer](#static-object-pointer-storage). Static references,
-records, volatile/thread-local data,
+[object pointer](#static-object-pointer-storage) or a
+[static reference](#static-reference-bindings). Records, volatile/thread-local data,
 dynamic initialization remain excluded.
 
 Each actual definition becomes one ordinary typed global. Equivalent class
@@ -2999,8 +3053,9 @@ C++17 inline definitions retain their source identity. Globals are emitted with
 internal generated names, without adding a public C data-export ABI.
 
 Const globals retain their existing read-only representation. Fixed arrays
-follow their [static storage contract](#fixed-array-static-storage). Mutable record,
-reference globals, volatile/atomic globals,
+follow their [static storage contract](#fixed-array-static-storage), and references
+follow their [alias contract](#static-reference-bindings). Mutable record globals,
+volatile/atomic globals,
 dynamic initialization and thread-local storage remain outside current support.
 Statically initialized scalar locals and defined scalar static data members
 follow their separate contracts above. Nontrivial global object destruction

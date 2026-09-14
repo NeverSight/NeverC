@@ -1704,7 +1704,8 @@ json::Object Adapter::stringObject(const StringLiteral *Literal) {
                       {"name", Found->second}, {"loc", loc(L)}};
 }
 
-json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocation L) {
+json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocation L,
+                                      bool ReferenceBinding) {
   auto Reject = [&](llvm::StringRef Reason, llvm::StringRef Code = "TR0201") {
     reject(L, "constant object address", Reason, Code);
     throw Failure{};
@@ -1714,6 +1715,8 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
       !V.isLValue() || V.getLValueCallIndex() || V.getLValueVersion())
     Reject("A constant pointer must identify null or permanent source-owned object storage.");
   if (V.isNullPointer()) {
+    if (ReferenceBinding)
+      Reject("A static reference must bind to an existing object, not null.");
     if (!V.getLValueOffset().isZero() || V.isLValueOnePastTheEnd() ||
         (V.hasLValuePath() && !V.getLValuePath().empty()))
       Reject("A null object pointer cannot carry a subobject path or offset.");
@@ -1762,7 +1765,7 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
     if (const auto *Array = Context.getAsConstantArrayType(Current)) {
       auto N = Path[I].getAsArrayIndex();
       auto Count = Array->getSize().getLimitedValue(65537);
-      if (N > Count || (N == Count && I + 1 != Path.size()))
+      if (N > Count || (N == Count && (ReferenceBinding || I + 1 != Path.size())))
         Reject("A constant array path must stay within its extent; only the final address may be one-past.");
       auto Element = Array->getElementType();
       json::Object Decay{{"kind", "array_decay"},
@@ -1793,6 +1796,8 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
     }
   }
   if (V.isLValueOnePastTheEnd()) {
+    if (ReferenceBinding)
+      Reject("A static reference must designate an existing object, not one-past storage.");
     if (AtArrayEnd)
       Reject("A constant address cannot advance beyond an array's one-past position.");
     Place = Index(Address(std::move(Place), Current), Current, 1);
@@ -2384,11 +2389,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         V->getType().isRestrictQualified())
       return false;
     auto T = V->getType();
-    if (T->isPointerType())
+    if (T->isPointerType() || T->isReferenceType())
       return true; // Actual instances retain source, ABI and constant checks.
     if (T->isArrayType())
       return true; // Bound, element type and initializer are checked on use.
-    if (T->isReferenceType() || T->isRecordType())
+    if (T->isRecordType())
       return false;
     return T->isDependentType() || T->isUndeducedAutoType() || T->isNullPtrType() ||
            T->isIntegralOrEnumerationType() || binaryFloatingType(T);
@@ -2440,11 +2445,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     }
     auto Type = D->getType();
-    if (Type->isPointerType())
+    if (Type->isPointerType() || Type->isReferenceType())
       return true; // Concrete source, signature and initializer checks follow.
     if (Type->isArrayType())
       return true; // Concrete instances retain their complete written type.
-    if (Type->isReferenceType() || Type->isRecordType())
+    if (Type->isRecordType())
       return false;
     return Type->isDependentType() || Type->isUndeducedAutoType() || Type->isNullPtrType() ||
            Type->isIntegralOrEnumerationType() || binaryFloatingType(Type);
@@ -8070,7 +8075,8 @@ public:
            T->isNullPtrType() || binaryFloatingType(T);
   }
   bool staticStorageType(QualType T) {
-    return staticScalarType(T) || A.Context.getAsConstantArrayType(T);
+    return staticScalarType(T) || T->isReferenceType() ||
+           A.Context.getAsConstantArrayType(T);
   }
   bool staticArrayElementType(QualType T, unsigned Depth = 0) {
     if (Depth > 64)
@@ -8138,6 +8144,38 @@ public:
     }
     return Value.isInt() || (binaryFloatingType(T) && Value.isFloat());
   }
+  bool cacheStaticReferenceInitializer(VarDecl *Definition) {
+    auto Canonical = Definition->getCanonicalDecl();
+    if (A.StaticReferenceInitializers.count(Canonical))
+      return true;
+    auto T = Definition->getType();
+    if (!Definition->hasGlobalStorage() || !T->isReferenceType() ||
+        !T->getPointeeType()->isObjectType() ||
+        Definition->getTLSKind() != VarDecl::TLS_None) {
+      A.reject(Definition->getLocation(), "static reference storage",
+               "A static reference requires an admitted object type without TLS.");
+      return false;
+    }
+    const VarDecl *InitializingDecl = nullptr;
+    const auto *Init = Definition->getAnyInitializer(InitializingDecl);
+    APValue Value;
+    llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+    if (!Init || !InitializingDecl || !owned(InitializingDecl) ||
+        InitializingDecl->getCanonicalDecl() != Canonical ||
+        InitializingDecl->getDeclContext()->getRedeclContext() !=
+            Definition->getDeclContext()->getRedeclContext() ||
+        !A.Context.hasSameType(InitializingDecl->getType(), T) ||
+        !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
+        !Notes.empty()) {
+      A.reject(Definition->getLocation(), "static reference initializer",
+               "A static reference requires its source-owned constant binding to permanent storage.");
+      return false;
+    }
+    auto PointerType = A.Context.getPointerType(T->getPointeeType());
+    auto Initializer = A.constantPointer(Value, PointerType, Definition->getLocation(), /*ReferenceBinding=*/true);
+    A.StaticReferenceInitializers.emplace(Canonical, std::move(Initializer));
+    return true;
+  }
   bool checkStaticData(VarDecl *D, bool TemplateInstance = false) {
     const auto ExpectedKind = TemplateInstance ? Decl::VarTemplateSpecialization : Decl::Var;
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
@@ -8147,7 +8185,7 @@ public:
         D->getTLSKind() != VarDecl::TLS_None ||
         D->getType().isVolatileQualified()) {
       A.reject(D->getLocation(), "static data member",
-               "Only non-thread-local scalar or fixed-array members in supported owned classes are admitted.");
+               "Only non-thread-local scalar, reference or fixed-array members in supported owned classes are admitted.");
       return true;
     }
     auto *Definition = D->getDefinition();
@@ -8188,6 +8226,12 @@ public:
         A.Globals.push_back(Definition);
       return true;
     }
+    if (D->getType()->isReferenceType()) {
+      if (cacheStaticReferenceInitializer(Definition) &&
+          CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
+        A.Globals.push_back(Definition);
+      return true;
+    }
     const VarDecl *InitializingDecl = nullptr;
     if (const auto *Init = Definition->getAnyInitializer(InitializingDecl)) {
       APValue Value;
@@ -8220,7 +8264,7 @@ public:
       if (const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(D)) {
         if (Variable->getKind() != Decl::VarTemplateSpecialization ||
             !variablePatternType(Variable) || !staticStorageType(D->getType())) {
-          A.reject(D->getLocation(), "variable specialization storage", "Only concrete namespace or admitted member scalar and fixed-array variables are admitted.");
+          A.reject(D->getLocation(), "variable specialization storage", "Only concrete namespace or admitted member scalar, reference and fixed-array variables are admitted.");
           return true;
         }
         if (D->isStaticDataMember())
@@ -8236,11 +8280,17 @@ public:
             !variablePatternType(Definition) ||
             Definition->getCanonicalDecl() != D->getCanonicalDecl() ||
             !A.Context.hasSameType(Definition->getType(), D->getType())) {
-          A.reject(D->getLocation(), "variable template definition identity", "A scalar instance requires its own source-owned canonical definition.", "TR0203");
+          A.reject(D->getLocation(), "variable template definition identity", "A variable instance requires its own source-owned canonical definition.", "TR0203");
           return true;
         }
         if (D->getType()->isArrayType()) {
           if (cacheStaticArrayInitializer(Definition) &&
+              CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
+            A.Globals.push_back(Definition);
+          return true;
+        }
+        if (D->getType()->isReferenceType()) {
+          if (cacheStaticReferenceInitializer(Definition) &&
               CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
             A.Globals.push_back(Definition);
           return true;
@@ -8288,11 +8338,19 @@ public:
           D->getType().isVolatileQualified() ||
           !staticStorageType(D->getType()) || Definition != D) {
         A.reject(D->getLocation(), "static local",
-                 "Only owned non-volatile scalar or fixed-array static locals in non-constexpr functions are supported.");
+                 "Only owned non-volatile scalar, reference or fixed-array static locals in non-constexpr functions are supported.");
         return true;
       }
       if (D->getType()->isArrayType()) {
         if (cacheStaticArrayInitializer(D) &&
+            A.StaticLocals.insert(D->getCanonicalDecl()).second) {
+          A.chargeExpansion(1, D->getLocation());
+          A.Globals.push_back(D);
+        }
+        return true;
+      }
+      if (D->getType()->isReferenceType()) {
+        if (cacheStaticReferenceInitializer(D) &&
             A.StaticLocals.insert(D->getCanonicalDecl()).second) {
           A.chargeExpansion(1, D->getLocation());
           A.Globals.push_back(D);
@@ -8318,6 +8376,21 @@ public:
       }
       // The declaration allocates static storage, not a block-entry action.
       // RAV still checks every written initializer, including folded operations.
+      return true;
+    }
+    if (A.S.coreV2() && !D->isLocalVarDeclOrParm() && D->getType()->isReferenceType()) {
+      auto *Definition = D->getDefinition();
+      if (!Definition || !owned(Definition) || Definition->getKind() != Decl::Var ||
+          !Definition->getDeclContext()->getRedeclContext()->isFileContext() ||
+          Definition->getCanonicalDecl() != D->getCanonicalDecl() ||
+          !A.Context.hasSameType(Definition->getType(), D->getType())) {
+        A.reject(D->getLocation(), "static reference definition",
+                 "A namespace reference requires its owned definition in this unit.", "TR0203");
+        return true;
+      }
+      if (cacheStaticReferenceInitializer(Definition) &&
+          CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
+        A.Globals.push_back(Definition);
       return true;
     }
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
@@ -9083,11 +9156,15 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     RecordData.push_back(std::move(Record));
   }
   for (const auto *G : Globals) {
-    const bool Mutable = S.coreV2() && !G->getType().isConstQualified();
+    const bool Mutable = S.coreV2() && !G->getType().isConstQualified() &&
+                         !G->getType()->isReferenceType();
     json::Object Initializer;
     const auto *Init = S.coreV2() && G->isStaticDataMember()
                            ? G->getAnyInitializer() : G->getInit();
-    if (auto Found = ConstantArrayInitializers.find(G->getCanonicalDecl());
+    if (auto Found = StaticReferenceInitializers.find(G->getCanonicalDecl());
+        Found != StaticReferenceInitializers.end()) {
+      Initializer = json::Object(Found->second);
+    } else if (auto Found = ConstantArrayInitializers.find(G->getCanonicalDecl());
         Found != ConstantArrayInitializers.end()) {
       Initializer = json::Object(Found->second);
     } else if (Init) {

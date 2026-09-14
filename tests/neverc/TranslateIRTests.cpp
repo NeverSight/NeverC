@@ -1150,6 +1150,38 @@ TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
   }
 }
 
+TEST(TranslateIR, CoreV2StaticReferenceCarriersKeepBindingReadonlyAndPointeeWritable) {
+  auto M = module(true);
+  const auto Pointer = pointerType(intType());
+  M.Globals.push_back({"nct_alias", Pointer,
+      pointerExpr(ExprKind::Address, Pointer, {variable("nct_target", intType())}), InputLoc});
+  M.Globals.push_back({"nct_target", intType(), literal("3"), InputLoc, true});
+  Instruction Assign;
+  Assign.Op = InstructionKind::Assign;
+  Assign.Loc = InputLoc;
+  Assign.Target = pointerExpr(ExprKind::Dereference, intType(), {variable("nct_alias", Pointer)});
+  Assign.Value = literal("4");
+  M.Functions[0].Body = {label(), Assign, ret(variable("nct_target", intType()))};
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static int *const nct_alias = (&(nct_target));"), std::string::npos);
+  auto Bad = M;
+  Bad.Functions[0].Body[1].Target = variable("nct_alias", Pointer);
+  Bad.Functions[0].Body[1].Value = pointerExpr(ExprKind::Null, Pointer);
+  invalid(Bad, "Global constants");
+  const auto ConstPointer = pointerType(intType(), true);
+  Bad = M;
+  Bad.Globals[0].ValueType = ConstPointer;
+  Bad.Globals[0].Value.ValueType = ConstPointer;
+  Bad.Globals[1].Mutable = false;
+  Bad.Functions[0].Body[1].Target.Args[0].ValueType = ConstPointer;
+  invalid(Bad, "Const pointee");
+  Bad.Functions[0].Body.erase(Bad.Functions[0].Body.begin() + 1);
+  D.clear();
+  ASSERT_TRUE(verifyModule(Bad, context(Bad), D));
+}
+
 TEST(TranslateIR, CoreV2StaticPointersDeclareForwardObjectsAndRetainStoragePermissions) {
   auto M = module(true);
   const auto Pointer = pointerType(intType());

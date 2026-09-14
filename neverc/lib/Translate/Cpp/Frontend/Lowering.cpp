@@ -232,6 +232,12 @@ class FunctionLowering {
   }
   Expression storage(const NamedDecl *D, SourceLocation L) {
     if (const auto *V = dyn_cast<VarDecl>(D);
+        A.S.coreV2() && V && V->hasGlobalStorage() && V->getType()->isReferenceType()) {
+      if (!A.StaticReferenceInitializers.count(V->getCanonicalDecl()))
+        reject(L, "static reference storage", "No checked permanent binding exists.");
+      return dereference(variable(A.name(V), type(V->getType(), L), L), L);
+    }
+    if (const auto *V = dyn_cast<VarDecl>(D);
         A.S.coreV2() && V && V->isStaticLocal()) {
       if (!A.StaticLocals.count(V->getCanonicalDecl()))
         reject(L, "static local storage", "No checked static definition exists.");

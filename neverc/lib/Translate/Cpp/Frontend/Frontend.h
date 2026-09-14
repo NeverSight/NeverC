@@ -280,6 +280,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredDestructions;
   std::vector<clang::VarDecl *> Globals;
   std::map<const clang::VarDecl *, json::Object> ConstantArrayInitializers;
+  std::map<const clang::VarDecl *, json::Object> StaticReferenceInitializers;
   std::map<const clang::StringLiteral *, std::string> StringObjects;
   json::Array StringGlobals;
   std::set<const clang::VarDecl *> StaticLocals;
@@ -316,7 +317,7 @@ public:
   json::Object stringInitializer(const clang::StringLiteral *Literal);
   json::Object stringObject(const clang::StringLiteral *Literal);
   json::Object constantPointer(const clang::APValue &Value, clang::QualType T,
-                               clang::SourceLocation L);
+                               clang::SourceLocation L, bool ReferenceBinding = false);
   std::string mapping(const clang::CallExpr *Call);
   json::Object zero(clang::QualType T, clang::SourceLocation L);
   json::Object constant(const clang::APValue &V, clang::QualType T,

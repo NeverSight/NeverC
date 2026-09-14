@@ -888,6 +888,24 @@ without a runtime helper call. Runtime pointer arithmetic retains its existing
 helpers. No new opcode, arbitrary byte relocation, allocator or initializer
 function is introduced. See the [source contract](cpp-core-v2.md#static-object-pointer-storage).
 
+## Core v2 static reference carriers
+
+A statically bound object reference is an ordinary pointer-typed global with
+`mutable` absent/false and a checked constant object address. The producer
+requires an actual source-owned reference definition and constant initializer,
+rejecting null, one-past, automatic and lifetime-extended temporary targets.
+The existing pointer nodes encode the canonical target and full typed path;
+no protocol reference opcode or writable binding flag is added.
+
+Uses dereference the immutable carrier. Thus assignment changes the referred
+object, while assignment to the carrier itself is rejected as a global-constant
+write. Pointee constness independently controls writes through the alias. Array
+reference carriers retain complete array extents and string aliases retain
+read-only storage. A local static reference creates no automatic binding shadow
+or block-entry initialization. Return snapshots and normal expression effects
+still use the ordinary lowering rules. See the
+[source contract](cpp-core-v2.md#static-reference-bindings).
+
 ## Core v2 binary floating-point values
 
 Core v2 accepts `float` (IEEE binary32) and `double` (IEEE binary64). A literal is

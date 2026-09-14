@@ -106,6 +106,8 @@ Core v2 unterstützt null- oder konstantinitialisierte veränderliche und konsta
 
 Core v2 unterstützt null- oder konstantinitialisierte statische Objektzeiger auf globale Objekte, Literale, Arrayelemente und Felder sowie gültige Zeiger hinter dem letzten Element. Namespace-, lokale, Klassen- und Template-Speicher behalten Identität, Veränderlichkeit und const-Zugriff. Vorwärtsadressen werden C23-Konstanten ohne Laufzeitinitialisierung. Statische Referenzen, Allokation und die vollständige STL bleiben in Entwicklung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
 
+Statische Referenzen können vorhandene statische Objekte, Teilobjekte von Arrays oder Strukturen und Zeichenketten binden, auch als lokale oder Klassenvariablen und in unterstützten Templateinstanzen. Lesen und Schreiben erhalten das ursprüngliche Objekt und dessen const-Rechte. Die Lebensdauerverlängerung statischer temporärer Objekte und dynamische Initialisierung bleiben offen; die native Prüfung erfordert die CI der Implementierung. Siehe den [Vertrag für statische Referenzen](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).
