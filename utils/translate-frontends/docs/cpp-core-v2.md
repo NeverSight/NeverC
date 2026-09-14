@@ -2226,6 +2226,14 @@ instances remain distinct even when their normalized signatures are identical.
 Friend outer/inner instance identity follows the same source-owner rules as direct
 calls. The postfix callback is captured before argument evaluation.
 
+Pinned Clang can attach a visible friend-template specialization to a namespace
+declaration even though its body originates in an instantiated granting class.
+The private declaration-instantiation walk follows the compatible definition's
+concrete lexical class when resolving original fields, methods and static members.
+It preserves the actual declaration's lexical context and the independently
+retained body-source evidence. The upstream CI experiment isolates this context
+loss; native translator acceptance still requires the implementing revision's CI.
+
 Braced callback arrays retain the written clause alongside Clang's selected
 semantic initializer. A stale unresolved name is admitted only when the same
 explicit clause proves the selected lookup declaration, name, qualifier,

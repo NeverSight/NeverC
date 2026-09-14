@@ -304,6 +304,64 @@ def isolate_math_calls(source_root):
         path.write_text(text, encoding="utf-8")
 
 
+def fix_visible_friend_instantiation_context(path):
+    before = '''      if (FunctionDecl *FD = dyn_cast<FunctionDecl>(DC)) {
+        if (FD->getFriendObjectKind() &&
+            FD->getNonTransparentDeclContext()->isFileContext()) {
+          DC = FD->getLexicalDeclContext();
+          continue;
+        }
+        // An implicit deduction guide acts as if it's within the class template'''
+    after = '''      if (FunctionDecl *FD = dyn_cast<FunctionDecl>(DC)) {
+        if (FD->getNonTransparentDeclContext()->isFileContext()) {
+          // NeverC visible friend bodies resolve class members in the same
+          // compatible lexical owner used by InstantiateFunctionDefinition.
+          // A namespace redeclaration can own FD without carrying friendship.
+          DeclContext *NeverCFriendContext = nullptr;
+          if (auto *Primary = FD->getPrimaryTemplate()) {
+            for (auto *Redecl : Primary->redecls()) {
+              auto *Template = cast<FunctionTemplateDecl>(Redecl);
+              if (!Template->isCompatibleWithDefinition())
+                continue;
+              if (Template->getFriendObjectKind()) {
+                auto *Definition = Template->getTemplatedDecl()->getDefinition();
+                auto *Lexical = Definition ? Definition->getLexicalDeclContext()
+                                           : Template->getLexicalDeclContext();
+                if (isa<CXXRecordDecl>(Lexical) && !Lexical->isDependentContext())
+                  NeverCFriendContext = Lexical;
+              }
+              break;
+            }
+          }
+          if (NeverCFriendContext) {
+            DC = NeverCFriendContext;
+            continue;
+          }
+          if (FD->getFriendObjectKind()) {
+            DC = FD->getLexicalDeclContext();
+            continue;
+          }
+        }
+        // An implicit deduction guide acts as if it's within the class template'''
+    error_message = "Unexpected pinned Clang visible friend context source in " + str(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(error_message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if "NeverCFriendContext" in remainder or "NeverC visible friend bodies" in remainder:
+        raise SystemExit(error_message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def fix_copied_full_initializers(path):
     before = '''  if (!Field->getInClassInitializer()) {
     // Maybe we haven't instantiated the in-class initializer. Go check the
@@ -862,6 +920,7 @@ _COM_SMARTPTR_TYPEDEF(ISetupInstance2, __uuidof(ISetupInstance2));
 # do not roll back previously completed patches.
 isolate_setup_bstr(args.source / "llvm/lib/WindowsDriver/MSVCPaths.cpp")
 preserve_explicit_function_instantiation_source(args.source)
+fix_visible_friend_instantiation_context(args.source / "clang/lib/Sema/SemaTemplateInstantiateDecl.cpp")
 fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
 fix_nested_friend_declaration_access(args.source)
 fix_imported_namespace_defaults(args.source)

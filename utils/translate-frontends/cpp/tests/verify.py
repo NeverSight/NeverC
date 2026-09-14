@@ -10491,6 +10491,9 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         assert relocated == callbacks, "callback identities depend on the absolute root"
 
     template_function_pointers_positive = {
+        'visible-copied-friend-private': 'template<class T>class R{T n=3;template<class U>friend int get(const R&r,U n){return r.n+n;}};template<class U>int get(const R<int>&,U);int main(){R<int>r;auto p=&get<int>;return p(r,2)-5;}',
+        'visible-copied-friend-static': 'template<class T>struct R{static T value;template<class U>friend int get(const R&,U n){return value+n;}};template<class T>T R<T>::value=3;template<class U>int get(const R<int>&,U);int main(){R<int>r;auto p=&get<int>;return p(r,2)-5;}',
+        'visible-copied-friend-member-call': 'template<class T>struct R{T n;int value()const{return n;}template<class U>friend int get(const R&r,U n){return r.value()+n;}};template<class U>int get(const R<int>&,U);int main(){R<int>r{3};auto p=&get<int>;return p(r,2)-5;}',
         'callback-array-deduction': 'template<class T>T get(T n){return n;}int main(){int(*p[2])(int)={get,get};return p[1](3);}',
         'callback-array-parentheses': 'template<int N>int get(){return N;}struct R{int(*p[2])();};int main(){R r{{(get<2>),((get<3>))}};return r.p[1]();}',
         'callback-array-address': 'template<int N>int get(){return N;}struct R{int(*p[2])();};int main(){R r{{&get<2>,&(get<3>)}};return r.p[1]();}',
