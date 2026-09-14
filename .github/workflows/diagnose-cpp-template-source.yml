@@ -23,11 +23,26 @@ jobs:
           sudo bash "$RUNNER_TEMP/llvm.sh" 20
           sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev
           clang++-20 --version
-      - name: Inspect template qualifiers and substitution owners
+      - name: Build the upstream diagnostic probe
         run: |
           clang++-20 -std=c++17 \
             -I/usr/lib/llvm-20/include \
             utils/translate-frontends/cpp/diagnostics/template-source.cpp \
             -L/usr/lib/llvm-20/lib -lclang-cpp -lLLVM-20 \
             -o "$RUNNER_TEMP/template-source"
-          "$RUNNER_TEMP/template-source"
+      - name: Inspect template qualifiers, friend bodies and callback initializers
+        run: |
+          status=0
+          # Separate processes retain evidence for every fixture after a crash.
+          for fixture in nested-method nested-static nested-pack \
+            own-member-friend-function own-member-friend-type \
+            visible-copied-friend callback-array-field; do
+            if "$RUNNER_TEMP/template-source" "$fixture"; then
+              echo "$fixture: success"
+            else
+              result=$?
+              echo "$fixture: exit $result"
+              status=1
+            fi
+          done
+          exit "$status"
