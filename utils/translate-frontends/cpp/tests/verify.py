@@ -7794,6 +7794,13 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         assert relocated == partial_storage, "partial declaration identities depend on the absolute root"
 
     dependent_member_classes_positive = {
+        'partial-header-static': 'template<int N>struct O{template<class U>struct I;template<class U>struct I<U*>{static int n;};};template<int X>template<class Y>int O<X>::I<Y*>::n=X+sizeof(Y);int f(){return O<2>::I<int*>::n+O<3>::I<bool*>::n;}',
+        'partial-header-constructor': 'template<class T>struct O{template<class U>struct I;template<class U>struct I<U*>{int n;I(int);};};template<class X>template<class Y>O<X>::I<Y*>::I(int v):n(v+sizeof(X)+sizeof(Y)){}int f(){O<int>::I<bool*>v(2);return v.n;}',
+        'partial-header-destructor': 'int count=0;template<class T>struct O{template<class U>struct I;template<class U>struct I<U*>{~I();};};template<class X>template<class Y>O<X>::I<Y*>::~I(){count=sizeof(X)+sizeof(Y);}int f(){{O<int>::I<bool*>v;}return count;}',
+        'partial-header-two-partials': 'template<class T>struct O;template<class T>struct O<T*>{template<class U>struct I;template<class U>struct I<U*>{T a;U b;int get()const;};};template<class X>template<class Y>int O<X*>::I<Y*>::get()const{return a+b;}int f(){O<int*>::I<int*>v{2,3};return v.get();}',
+        'partial-header-middle-partial': 'template<class T>struct O{template<class U>struct M;template<class U>struct M<U*>{template<class V>struct I{int get();};};};template<class X>template<class Y>template<class Z>int O<X>::M<Y*>::I<Z>::get(){return sizeof(X)+sizeof(Y)+sizeof(Z);}int f(){O<int>::M<int*>::I<bool>v;return v.get();}',
+        'partial-header-full-barrier': 'template<class T>struct O;template<>struct O<int>{template<class U>struct I;template<class U>struct I<U*>{int get();};};template<class Y>int O<int>::I<Y*>::get(){return sizeof(Y);}int f(){O<int>::I<int*>v;return v.get();}',
+        'qualifier-populated-pack-fold': 'template<int...N>struct Packs{template<int...M>struct I{static int n;int get()const;};};template<int...X>template<int...Y>int Packs<X...>::I<Y...>::n=(0+...+X)*10+(0+...+Y);template<int...X>template<int...Y>int Packs<X...>::I<Y...>::get()const{return n;}int f(){Packs<1,2>::I<3,4>v;return v.get();}',
         'qualifier-namespaces': 'namespace A{template<class T>struct O{template<class U>struct I{int get();};};}template<class X>template<class Y>int A::O<X>::I<Y>::get(){return sizeof(X)+sizeof(Y);}int f(){A::O<int>::I<bool>v;return v.get();}',
         'qualifier-inner-partial': 'template<class T>struct O{template<class U>struct I;template<class U>struct I<U*>{T a;U b;int get();};};template<class X>template<class Y>int O<X>::I<Y*>::get(){return a+b;}int f(){O<int>::I<int*>v{2,3};return v.get();}',
         'qualifier-outer-partial': 'template<class T>struct O;template<class T>struct O<T*>{template<class U>struct I{T a;U b;int get();};};template<class X>template<class Y>int O<X*>::I<Y>::get(){return a+b;}int f(){O<int*>::I<int>v{2,3};return v.get();}',
@@ -7876,6 +7883,8 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-dependent-member-classes-positive-" + name, source, None, profile="cpp-core-v2")
 
     dependent_member_classes_reject = {
+        'partial-header-hidden-outer-unused': 'template<int N>struct O{template<class U>struct I;template<class U>struct I<U*>{int get();};};template<decltype((sizeof(double),0)) X>template<class Y>int O<X>::I<Y*>::get(){return X;}',
+        'partial-header-hidden-outer-used': 'template<int N>struct O{template<class U>struct I;template<class U>struct I<U*>{int get();};};template<decltype((sizeof(double),0)) X>template<class Y>int O<X>::I<Y*>::get(){return X;}int f(){O<2>::I<int*>v;return v.get();}',
         'qualifier-hidden-body': 'template<class T>struct O{template<class U>struct I{int get();};};template<class X>template<class Y>int O<X>::I<Y>::get(){return sizeof(double);}int f(){O<int>::I<int>v;return v.get();}',
         'qualifier-hidden-parameter': 'template<class T>struct O{template<class U>struct I{int get(decltype((sizeof(double),0)));};};template<class X>template<class Y>int O<X>::I<Y>::get(decltype((sizeof(double),0))v){return v;}int f(){O<int>::I<int>v;return v.get(3);}',
         'qualifier-hidden-noexcept': 'template<class T>struct O{template<class U>struct I{int get()noexcept(sizeof(double)>0);};};template<class X>template<class Y>int O<X>::I<Y>::get()noexcept(sizeof(double)>0){return 3;}int f(){O<int>::I<int>v;return v.get();}',

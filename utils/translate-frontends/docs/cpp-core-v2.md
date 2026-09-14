@@ -1170,7 +1170,9 @@ its actual argument slots, pack frontier rules or wire protocol.
 Nondependent defaults and qualifiers remain checked before erasure; dependent
 source is checked after substitution. Retained out-of-line headers, including
 renamed parameter packs and empty specialization headers, match the actual
-owner sequence. Class tags retain their own header storage. Definitions keep
+owner sequence. A partial specialization retains the enclosing template levels
+even though Clang marks it as explicitly specialized; only a full specialization
+stops that walk. Class tags retain their own header storage. Definitions keep
 existing field layout, scalar static identity, method receiver and selected
 copy/move/assignment/destruction rules. Member function, alias and scalar
 variable templates can refer to these distinct outer and inner levels. Different

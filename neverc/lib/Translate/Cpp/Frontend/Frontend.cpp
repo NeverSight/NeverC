@@ -1939,7 +1939,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       } else if (Spec) {
         Owners.push_back(nullptr);
       }
-      if (Record->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      // Clang assigns this kind to partials too, but their members still need
+      // the parameter lists of enclosing templates. Only a full stops here.
+      if (!isa<ClassTemplatePartialSpecializationDecl>(Record) &&
+          Record->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
         break;
       Context = Record->getDeclContext();
     }
