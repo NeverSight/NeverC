@@ -1175,7 +1175,7 @@ TEST(TranslateIR, CoreV2StaticReferenceCarriersKeepBindingReadonlyAndPointeeWrit
   Bad.Globals[0].ValueType = ConstPointer;
   Bad.Globals[0].Value.ValueType = ConstPointer;
   Bad.Globals[1].Mutable = false;
-  Bad.Functions[0].Body[1].Target.Args[0].ValueType = ConstPointer;
+  Bad.Functions[0].Body[1].Target->Args[0].ValueType = ConstPointer;
   invalid(Bad, "Const pointee");
   Bad.Functions[0].Body.erase(Bad.Functions[0].Body.begin() + 1);
   D.clear();
