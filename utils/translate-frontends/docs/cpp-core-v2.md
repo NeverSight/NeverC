@@ -757,14 +757,35 @@ Constant bindings serialize their actual referent address; a reference-field
 layout offset cannot stand in for the referent. Dynamic aggregates and their
 extended temporary children use one flat initialization group and one guard.
 Children initialize at their final addresses and require trivial destruction.
-Repeated runtime array fillers allocate a separate child for each occurrence.
+Materializing default elements retain distinct constant and runtime identities.
 
-One pinned-Clang limitation remains: repeated constant array fillers can share
-one static materialization AST and overwrite its retained APValue, losing the
-distinct temporary identities. Such initializers currently receive `TR0201`;
-explicit element initializers and runtime fillers retain separate identities.
-They are not silently shared or converted from constant to dynamic initialization.
-Separating those source identities remains work toward full C++/STL.
+Materializing default array elements receive separate semantic initializers in
+the private Clang frontend. Each omitted element runs the existing initialization
+sequence with its actual element index, preserving independent static APValues,
+self references and runtime objects. Even a single omitted element has an explicit
+semantic slot, so a later outer reference-to-array lifetime extension reaches its
+inner temporaries. The original written initializer list remains intact.
+
+The frontend preserves the exact identity of every generated omitted-element
+initializer. When that initializer directly invokes the element's default
+constructor, its temporary default arguments are destroyed before the next element
+initializes. Explicit clauses and constructor calls initializing fields inside an
+aggregate element keep the enclosing initializer's full-expression. Nested arrays
+establish their own qualifying element-constructor boundaries. An aggregate's
+reference-field temporary can live until the complete array is destroyed. These
+boundaries follow the [C++17 temporary rules](https://timsong-cpp.github.io/cppwp/n4659/class.temporary#5)
+and [full-expression definition](https://timsong-cpp.github.io/cppwp/n4659/intro.execution#12),
+including when the unmodified upstream filler code emits earlier cleanup.
+
+A default-neutral AST consumer hook requests this source representation only for
+core v2. Nonmaterializing fillers, verification-only checks, vectors, NoInit
+updates and ordinary upstream consumers retain their previous paths. Before a
+semantic list grows, the consumer reserves a global allowance of at most 200000
+weighted source nodes and bounds each array dimension to 65536. Scanning is bounded
+in depth and work, and nested reconstruction shares the same reservation. Exceeding
+these source limits receives `TR0201` without output artifacts. Unexpected retained
+sharing of static materializations remains a checked invariant rather than silently
+merging objects or forcing constant initialization into runtime initialization.
 
 Paired source/protocol fixtures cover binding, copied aliases, nested layouts,
 source diagnostics, zero children, owner graphs and relocation. O0/O2 and

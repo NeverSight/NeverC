@@ -41,6 +41,25 @@ defaults and alias underlying source use checked parameter frames. Type sugar
 and written locations are distinct from canonical runtime identities. No external
 Clang executable or opaque translation fallback is introduced.
 
+The same checked source group also adds a default-neutral ASTConsumer decision
+and provenance hook in SemaInit.cpp's actual empty-array-element initialization.
+Core v2 can request separate semantic initializer expressions when a filler
+contains materializations, including selected default arguments and default member
+initializers. Its consumer bounds the array extent and reserves a global weighted
+source budget before the list grows. Sema retains the first constructed filler,
+rebuilds each remaining missing slot through PerformEmptyInit at its actual index,
+updates NumInits, and records the exact omitted-element expression. Lowering gives
+direct element default construction its C++17 default-argument cleanup boundary;
+constructors of aggregate fields retain the enclosing initializer full-expression.
+Single-element fillers also need semantic slots because later outer-reference
+lifetime revisits do not traverse ArrayFiller. Second passes retain those slots.
+VerifyOnly, NoInit, vectors and default consumers preserve upstream behavior.
+This repairs repeated static MTE/APValue identity loss without rewriting constant
+results or changing the ordinary C23 compiler. Independent literal fixtures check
+complete group states, including reservation/provenance loss and stale list counts.
+Source/protocol and O0/O2 fixtures check distinct self addresses, static/automatic
+lifetimes and default-argument cleanup; native acceptance requires implementing CI.
+
 A separate checked SemaExpr.cpp repair enables lazy default member initializer
 substitution for copied class-scope full specializations in requesting consumers.
 Their explicit specialization kind coexists with an implicit member-class origin;

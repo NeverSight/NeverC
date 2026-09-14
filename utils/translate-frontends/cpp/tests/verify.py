@@ -5345,6 +5345,97 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         relocated = check("v2-dynamic-temporary-relocated", dt_source, root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == dt_module
 
+    array_filler_positive = {
+        'scalar': 'struct R{const int&r=3;};const R r[2]{};',
+        'self': 'struct H;struct T{const H*owner;};struct H{const T&r=T{this};};const H h[2]{};',
+        'mutable-temporary': 'struct R{int&&r=3;};R r[2]{};int f(){return ++r[0].r+r[1].r;}',
+        'array-temporary': 'struct R{const int(&r)[2]={3,4};};const R r[2]{};int f(){return r[0].r[0]+r[1].r[1];}',
+        'record-temporary': 'struct T{int n;};struct R{const T&r=T{3};};const R r[2]{};int f(){return r[0].r.n+r[1].r.n;}',
+        'float-temporary': 'struct R{const double&r=1.5;};const R r[2]{};double f(){return r[0].r+r[1].r;}',
+        'pointer-temporary': 'int n=3;struct R{int*const&r=&n;};const R r[2]{};int f(){return ++*r[0].r;}',
+        'callback-temporary': 'int f(){return 3;}using F=int(*)();struct R{const F&r=&f;};const R r[2]{};int g(){return r[0].r();}',
+        'explicit-and-omitted': 'struct R{const int&r=3;};const R r[3]={{7}};int f(){return r[0].r+r[1].r+r[2].r;}',
+        'nested-record': 'struct R{const int&r=3;};struct H{R r[2];};const H h[2]{};int f(){return h[1].r[1].r;}',
+        'multidimensional': 'struct R{const int&r=3;};const R r[2][2]{};int f(){return r[1][1].r;}',
+        'reference-single': 'struct R{const int&r=3;};const R(&r)[1]={};int f(){return r[0].r;}',
+        'reference-multiple': 'struct R{const int&r=3;};const R(&r)[2]={};int f(){return r[1].r;}',
+        'reference-nested-single': 'struct R{const int&r=3;};const R(&r)[2][1]={};int f(){return r[1][0].r;}',
+        'reference-rvalue-array': 'struct R{const int&r=3;};using A=R[2];const A&r=A{};int f(){return r[1].r;}',
+        'local-static': 'struct R{const int&r=3;};const R*f(){static const R r[2]{};return r;}',
+        'local-static-reference': 'struct R{const int&r=3;};const R(&f())[1]{static const R(&r)[1]={};return r;}',
+        'inline-member': 'struct R{const int&r=3;};struct H{inline static const R r[2]{};};int f(){return H::r[1].r;}',
+        'outline-member': 'struct R{const int&r=3;};struct H{static const R r[2];};const R H::r[2]{};int f(){return H::r[1].r;}',
+        'class-template': 'template<int N>struct R{const int&r=N;};const R<3>r[2]{};int f(){return r[1].r;}',
+        'variable-template': 'template<int N>struct R{const int&r=N;};template<int N>inline const R<N>r[2]{};int f(){return r<3>[1].r;}',
+        'local-template': 'template<int N>struct R{const int&r=N;};template<int N>const R<N>*f(){static const R<N>r[2]{};return r;}int g(){return f<3>()[1].r;}',
+        'existing-alias': 'int n;struct R{int&r=n;};const R r[2]{};int f(){return ++r[1].r;}',
+        'direct-self-alias': 'struct R{int n=3;int&r=n;};R r[2]{};int f(){return ++r[1].r;}',
+        'dynamic-reference-single': 'int next(){return 3;}struct R{const int&r=next();};const R(&f())[1]{static const R(&r)[1]={};return r;}',
+        'dynamic-mixed': 'int next(){return 3;}struct R{const int&r=next();};const R*f(int n){static const R r[2]={{n}};return r;}',
+        'default-argument-cleanup': 'int live;struct T{T(){++live;}~T(){--live;}};struct H{H(const T&t=T{}){}};int f(){H h[2]{};return live;}',
+        'automatic-reference-single': 'int live;struct T{T(){++live;}~T(){--live;}};struct H{const T&t=T{};};int f(){const H(&h)[1]={};return live;}',
+        'runtime-source': 'struct Scalar{const int&value=3;};\nconst Scalar values[3]{};\nScalar mutableValues[2]{};\nstruct Mutable{int&&value=4;};\nMutable mutableTemporaries[2]{};\nstruct Holder;\nstruct Item{const Holder*owner;int value;};\nstruct Holder{int value=5;const Item&item=Item{this,value};};\nconst Holder holders[3]{};\nconst Holder mixed[3]={{7},{}};\nconst Holder grid[2][2]{};\nstruct Nested{Holder values[2];};\nconst Nested nested[2]{};\nconst Holder(&single)[1]={};\nconst Holder(&multiple)[2]={};\nconst Holder(&nestedSingle)[2][1]={};\nusing Block=Holder[2];\nconst Block&block=Block{};\nstruct Array{const int(&values)[2]={8,9};};\nconst Array arrays[2]{};\nint existing=6;\nstruct Alias{int&value=existing;};\nconst Alias aliases[2]{};\nstruct DirectSelf{int value=7;int&alias=value;};\nDirectSelf directSelf[2]{};\ntemplate<int N>struct Generic{const int&value=N;};\ntemplate<int N>inline const Generic<N>generic[2]{};\nstruct Static{inline static const Scalar values[2]{};};\nconst Holder*local(){static const Holder values[2]{};return values;}\nconst Holder(&localReference())[1]{static const Holder(&values)[1]={};return values;}\nint calls=0;\nint next(){return ++calls;}\nstruct Dynamic{const int&value=next();};\nconst Dynamic*dynamic(){static const Dynamic values[2]{};return values;}\nconst Dynamic(&dynamicReference())[1]{static const Dynamic(&values)[1]={};return values;}\nunsigned long long events=0;\nint live=0;\nvoid mark(unsigned n){events=events*10+n;}\nstruct Temporary{unsigned value;Temporary(unsigned n):value(n){++live;mark(n);}~Temporary(){mark(value+4);--live;}};\nstruct Member{int seen;Member(const Temporary&argument=Temporary(1)):seen(live){mark(2);}};\nstruct WithReference{Member member;const Temporary&reference=Temporary(3);~WithReference(){mark(4);}};\nstruct Plain{Member member;};\nstruct WithArray{Member elements[2];const Temporary&reference=Temporary(3);};\nstruct DestructibleMember{int seen;DestructibleMember(const Temporary&argument=Temporary(1)):seen(live){mark(2);}~DestructibleMember(){mark(4);}};\nint main(){\n if(values[0].value!=3||values[1].value!=3||&values[0].value==&values[1].value||&values[1].value==&values[2].value)return 1;\n if(&mutableValues[0].value==&mutableValues[1].value)return 2;\n ++mutableTemporaries[0].value;if(mutableTemporaries[0].value!=5||mutableTemporaries[1].value!=4)return 3;\n for(int i=0;i<3;++i)if(holders[i].item.owner!=&holders[i]||holders[i].item.value!=5)return 4;\n if(&holders[0].item==&holders[1].item||&holders[1].item==&holders[2].item)return 5;\n for(int i=0;i<3;++i)if(mixed[i].item.owner!=&mixed[i]||mixed[i].item.value!=(i==0?7:5))return 6;\n for(int i=0;i<2;++i)for(int j=0;j<2;++j)if(grid[i][j].item.owner!=&grid[i][j]||nested[i].values[j].item.owner!=&nested[i].values[j])return 7;\n if(single[0].item.owner!=&single[0]||multiple[0].item.owner!=&multiple[0]||multiple[1].item.owner!=&multiple[1])return 8;\n if(nestedSingle[0][0].item.owner!=&nestedSingle[0][0]||nestedSingle[1][0].item.owner!=&nestedSingle[1][0])return 9;\n if(block[0].item.owner!=&block[0]||block[1].item.owner!=&block[1])return 10;\n if(arrays[0].values[0]!=8||arrays[1].values[1]!=9||&arrays[0].values==&arrays[1].values)return 11;\n aliases[0].value=11;if(existing!=11||&aliases[0].value!=&aliases[1].value)return 12;\n directSelf[0].alias=12;if(directSelf[0].value!=12||directSelf[1].value!=7||&directSelf[1].alias!=&directSelf[1].value)return 13;\n if(generic<13>[0].value!=13||generic<14>[1].value!=14||&generic<13>[0].value==&generic<13>[1].value)return 14;\n if(&Static::values[0].value==&Static::values[1].value)return 15;\n const Holder*p=local();if(local()!=p||p[0].item.owner!=&p[0]||p[1].item.owner!=&p[1])return 16;\n const Holder(&q)[1]=localReference();if(&localReference()!=&q||q[0].item.owner!=&q[0])return 17;\n const Dynamic*d=dynamic();if(calls!=2||d[0].value!=1||d[1].value!=2||dynamic()!=d||calls!=2)return 18;\n const Dynamic(&dr)[1]=dynamicReference();if(calls!=3||dr[0].value!=3||&dynamicReference()!=&dr||calls!=3)return 19;\n events=0;{Member objects[2]{};if(events!=125125ULL||live||objects[0].seen!=1||objects[1].seen!=1)return 20;}if(live)return 21;\n events=0;{WithReference objects[2]{};if(events!=12312355ULL||live!=2||objects[0].member.seen!=1||objects[1].member.seen!=3||&objects[0].reference==&objects[1].reference)return 22;}if(events!=123123554477ULL||live)return 23;\n events=0;{WithReference objects[1][2]{};if(events!=12312355ULL||live!=2)return 24;}if(events!=123123554477ULL||live)return 25;\n events=0;{const WithReference(&objects)[1]={};if(events!=1235ULL||live!=1||objects[0].reference.value!=3)return 26;}if(events!=123547ULL||live)return 27;\n Scalar copy=values[0];if(&copy.value!=&values[0].value)return 28;\n events=0;{Plain objects[2]{};if(events!=121255ULL||live||objects[0].member.seen!=1||objects[1].member.seen!=2)return 29;}\n events=0;{Member objects[3]={Member{}};if(events!=121251255ULL||live||objects[0].seen!=1||objects[1].seen!=2||objects[2].seen!=2)return 30;}\n events=0;{WithArray objects[2]{};if(events!=12512531251253ULL||live!=2||objects[0].elements[0].seen!=1||objects[1].elements[0].seen!=2)return 31;}if(events!=1251253125125377ULL||live)return 32;\n events=0;{DestructibleMember objects[2]{};if(events!=125125ULL||live||objects[0].seen!=1||objects[1].seen!=1)return 33;}if(events!=12512544ULL||live)return 34;\n return 0;\n}\n',
+        'protocol-source': 'struct Ref{const int&value=3;};\nconst Ref values[3]{};\nconst Ref(&one)[1]={};\nconst Ref(&matrix)[2][1]={};\nint live;\nstruct Temporary{Temporary(){++live;}~Temporary(){--live;}};\nstruct Member{Member(const Temporary&t=Temporary{}){}};\nvoid omitted(){Member values[2]{};}\nvoid explicitClauses(){Member values[2]={Member{},Member{}};}\nstruct Aggregate{Member member;};\nvoid aggregateMembers(){Aggregate values[2]{};}\nvoid nestedElements(){Member values[1][2]{};}\n',
+    }
+    for name, source in array_filler_positive.items():
+        check("v2-array-filler-"+name, source, profile="cpp-core-v2")
+
+    array_filler_negative = {
+        'default-array-constructor': ('struct R{const int&r=3;};void f(){R r[2];}', 'TR0202'),
+        'static-nontrivial': ('struct T{int n;~T(){}};struct R{const T&r=T{3};};const R r[2]{};', 'TR0201'),
+        'tls': ('struct R{const int&r=3;};thread_local const R r[2]{};', 'TR0201'),
+        'extent-budget': ('struct R{const int&r=3;};const R r[65537]{};', 'TR0201'),
+        'nested-source-budget': ('struct R{const int&r=3;};const R r[512][512]{};', 'TR0201'),
+        'const-write': ('struct R{const int&r=3;};const R r[2]{};void f(){r[0].r=4;}', 'TR0202'),
+        'unsupported-default': ('struct R{const int&r=(static_cast<void>(1.0L),3);};const R r[2]{};', 'TR0201'),
+    }
+    for name, (source, code) in array_filler_negative.items():
+        rejected = check("v2-array-filler-reject-"+name, source, code, profile="cpp-core-v2")
+        if name in ("extent-budget", "nested-source-budget"):
+            assert any(d["construct"] == "array filler source expansion" for d in rejected["diagnostics"])
+
+    af = check("v2-array-filler-protocol", array_filler_positive["protocol-source"], profile="cpp-core-v2")
+    af_globals = {g["name"]:g for g in af["globals"]}
+    af_source_globals = {g["loc"]["line"]:g for g in af["globals"] if not g["name"].startswith("nct_static_temporary_")}
+    af_scalars = {g["name"] for g in af["globals"] if g["name"].startswith("nct_static_temporary_") and g["type"] == "int"}
+    assert len(af_scalars) == 6
+    assert all(af_globals[name]["value"]["value"] == "3" for name in af_scalars)
+    assert not any(g.get("dynamic_initialization") or g.get("initialization_owner") for g in af["globals"])
+    assert not any(i["op"] == "static_init_begin" for f in af["functions"] for i in f["body"])
+    def af_names(value):
+        return [n["name"] for n in walk(value) if n.get("kind") == "var"]
+    direct_names = af_names(af_source_globals[2]["value"])
+    assert len(direct_names) == 3 and len(set(direct_names)) == 3 and set(direct_names) <= af_scalars
+    af_groups = [direct_names]
+    for line, count in ((3, 1), (4, 2)):
+        outer_names = af_names(af_source_globals[line]["value"])
+        assert len(outer_names) == 1 and outer_names[0] not in af_scalars
+        outer = af_globals[outer_names[0]]
+        assert outer["type"].startswith("arr:")
+        names = af_names(outer["value"])
+        assert len(names) == count and len(set(names)) == count and set(names) <= af_scalars
+        af_groups.append(names)
+    assert {name for group in af_groups for name in group} == af_scalars
+    af_records = {r["loc"]["line"]:r for r in af["records"]}
+    af_destroy = af_records[6]["id"] + "_destroy"
+    af_temp_ctors = [f["name"] for f in af["functions"] if f["loc"]["line"] == 6 and f["name"] != af_destroy]
+    af_member_ctors = [f["name"] for f in af["functions"] if f["loc"]["line"] == 7]
+    assert len(af_temp_ctors) == len(af_member_ctors) == 1
+    af_tc, af_mc = af_temp_ctors[0], af_member_ctors[0]
+    for line, order, destroyed_at in ((8, [af_tc, af_mc, af_destroy, af_tc, af_mc, af_destroy], (2, 5)),
+                                      (9, [af_tc, af_mc, af_tc, af_mc, af_destroy, af_destroy], (5, 4)),
+                                      (11, [af_tc, af_mc, af_tc, af_mc, af_destroy, af_destroy], (5, 4)),
+                                      (12, [af_tc, af_mc, af_destroy, af_tc, af_mc, af_destroy], (2, 5))):
+        function = next(f for f in af["functions"] if f["loc"]["line"] == line)
+        calls = gc_calls(function)
+        assert [c["callee"] for c in calls] == order
+        constructed = [storage_pointer_object(function, c["args"][0]) for c in calls if c["callee"] == af_tc]
+        assert len(constructed) == 2 and constructed[0] != constructed[1]
+        assert [storage_pointer_object(function, calls[index]["args"][0]) for index in destroyed_at] == constructed
+    with tempfile.TemporaryDirectory(prefix="neverc-array-filler-relocated-") as temp:
+        relocated = check("v2-array-filler-relocated", array_filler_positive["protocol-source"], root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == af
+
     reference_member_positive = {
         'declaration-only': 'struct R{int&r;};',
         'thread-source': 'int constructions=0,destructions=0;\nstruct Temporary{int n;~Temporary(){++destructions;}};\nstruct Record{\n int first,last;const Record*self;\n Record(const Temporary&t):first(t.n),last(t.n+1),self(this){++constructions;}\n};\nconst Record&value(){static const Record r{Temporary{41}};return r;}\nconst Record&extended(){static const Record&r=Record(Temporary{51});return r;}\nstruct Binding{const Record&record;const int&number;};\nconst Binding&binding(){static const Binding r{extended(),61};return r;}\nextern "C" int read_value(){const Record&r=value();const Record&t=extended();const Binding&b=binding();return r.first==41&&r.last==42&&r.self==&r&&t.first==51&&t.last==52&&t.self==&t&&&b.record==&t&&b.number==61&&destructions==2?0:1;}\nextern "C" int initialization_count(){return constructions;}\n',
@@ -5426,8 +5517,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'constructor-default-temporary': ('struct R{const int&r=3;};void f(){R r;}', 'TR0202'),
         'static-temporary-destruction': ('struct T{int n;~T(){}};struct R{const T&r;};void f(int n){static R r{T{n}};}', 'TR0201'),
         'dead-static-temporary-destruction': ('struct T{int n;~T(){}};struct R{const T&r;};void f(int n){if(false){static R r{T{n}};}}', 'TR0201'),
-        'static-constant-shared-filler': ('struct R{const int&r=3;};const R r[2]{};', 'TR0201'),
-        'static-constant-shared-self': ('struct H;struct T{const H*owner;};struct H{const T&r=T{this};};const H h[2]{};', 'TR0201'),
         'nonlocal-dynamic': ('int seed(){return 3;}struct R{const int&r;};R r{seed()};', 'TR0201'),
         'unowned-reference': ('int&get();struct R{int&r;};R f(){return R{get()};}', 'TR0203'),
     }

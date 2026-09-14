@@ -104,7 +104,8 @@ public:
   bool VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E) {
     if (E->getStorageDuration() != SD_Static)
       return true;
-    llvm::outs() << "static temporary type=" << E->getType().getAsString()
+    llvm::outs() << "static temporary node=" << static_cast<const void *>(E)
+                 << " type=" << E->getType().getAsString()
                  << " operand=" << E->getSubExpr()->getType().getAsString() << " owner=";
     declaration(E->getExtendingDecl());
     if (auto *Value = E->getOrCreateValue(false)) {
@@ -116,7 +117,8 @@ public:
   }
   bool VisitVarDecl(VarDecl *D) {
     if (D->hasGlobalStorage() && !D->getDeclContext()->isDependentContext() &&
-        D->hasInit() && (D->getType()->isReferenceType() || D->getType()->isPointerType())) {
+        D->hasInit() && (D->getType()->isReferenceType() || D->getType()->isPointerType() ||
+                         D->getType()->isRecordType() || D->getType()->isArrayType())) {
       APValue Value;
       llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
       bool Constant = D->getInit()->EvaluateAsInitializer(Value, Context, D, Notes, true);
@@ -125,6 +127,10 @@ public:
       if (Value.isLValue())
         llvm::outs() << " call=" << Value.getLValueCallIndex()
                      << " version=" << Value.getLValueVersion();
+      if (Value.hasValue()) {
+        llvm::outs() << " value=";
+        Value.printPretty(llvm::outs(), Context, D->getType());
+      }
       llvm::outs() << "\n";
     }
     if (!D->isStaticDataMember())
@@ -246,6 +252,24 @@ int main(int Argc, const char **Argv) {
       "struct R{int n;int*p;constexpr R():n(7),p(&n){}};R&&s=R();"
       "const int&field=R().n;const char*text=\"cat\";"
       "int main(){return r+v+a[1]+s.n+field+text[0];}"},
+      {"static-reference-fillers",
+      "struct H;struct T{const H*owner;};struct H{const T&value=T{this};};"
+      "const H values[2]{};"
+      "int main(){if(&values[0].value==&values[1].value)return 1;"
+      "return values[0].value.owner!=&values[0]||values[1].value.owner!=&values[1]?2:0;}"},
+      {"static-reference-single-filler",
+      "struct H;struct T{const H*owner;};struct H{const T&value=T{this};};"
+      "const H(&values)[1]={};"
+      "int main(){return values[0].value.owner!=&values[0]?2:0;}"},
+      {"automatic-reference-fillers",
+      "int live;struct T{T(){++live;}~T(){--live;}};"
+      "struct H{const T&value=T{};};"
+      "int main(){H values[2]{};return live!=2||&values[0].value==&values[1].value;}"},
+      {"aggregate-member-cleanup",
+      "int live;struct T{T(){++live;}~T(){--live;}};"
+      "struct M{int seen;M(const T&argument=T{}):seen(live){}};"
+      "struct A{M member;};"
+      "int main(){A values[2]{};if(live)return 2;return values[1].member.seen!=2;}"},
   };
   bool Found = false;
   bool Failed = false;
@@ -256,6 +280,10 @@ int main(int Argc, const char **Argv) {
                                  : llvm::StringRef(Argv[1])) != Input.Name)
       continue;
     Found = true;
+    if (Argc > 2 && llvm::StringRef(Argv[2]) == "--source-only") {
+      llvm::outs() << Input.Source << "\n";
+      return 0;
+    }
     llvm::outs() << "fixture " << Input.Name << "\n";
     llvm::outs().flush();
     if (FriendContext) {

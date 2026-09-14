@@ -1298,6 +1298,12 @@ Constant fields serialize the checked actual referent address. Runtime aggregate
 initializers may have zero pointer carriers before guarded construction, and
 extended static temporaries name that aggregate's root initialization group.
 Nested temporary groups remain flat; children do not acquire their own guards.
-Each lowered repeated runtime filler gets distinct storage. Unsupported shared
-constant temporary identities are diagnosed by the source frontend. See the
+Materializing default array elements have distinct source identities and storage
+for constant and runtime initialization. The source frontend records each generated
+omitted element so direct default construction retains its element cleanup
+boundary after semantic-list expansion. Constructors of fields inside aggregate
+elements retain the enclosing full-expression; nested array constructors apply
+their own element rule. No omission flag is accepted from the IR protocol; ordinary instructions still
+express the actual initialization and cleanup order. Source expansion remains
+bounded, and unexpected shared static temporary identities are diagnosed. See the
 [source contract](cpp-core-v2.md#reference-members).

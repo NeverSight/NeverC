@@ -4307,6 +4307,160 @@ int main(){
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayFillersAcceptDistinctTemporarySources) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"scalar", "struct R{const int&r=3;};const R r[2]{};"},
+      {"self", "struct H;struct T{const H*owner;};struct H{const T&r=T{this};};const H h[2]{};"},
+      {"mutable-temporary", "struct R{int&&r=3;};R r[2]{};int f(){return ++r[0].r+r[1].r;}"},
+      {"array-temporary", "struct R{const int(&r)[2]={3,4};};const R r[2]{};int f(){return r[0].r[0]+r[1].r[1];}"},
+      {"record-temporary", "struct T{int n;};struct R{const T&r=T{3};};const R r[2]{};int f(){return r[0].r.n+r[1].r.n;}"},
+      {"float-temporary", "struct R{const double&r=1.5;};const R r[2]{};double f(){return r[0].r+r[1].r;}"},
+      {"pointer-temporary", "int n=3;struct R{int*const&r=&n;};const R r[2]{};int f(){return ++*r[0].r;}"},
+      {"callback-temporary", "int f(){return 3;}using F=int(*)();struct R{const F&r=&f;};const R r[2]{};int g(){return r[0].r();}"},
+      {"explicit-and-omitted", "struct R{const int&r=3;};const R r[3]={{7}};int f(){return r[0].r+r[1].r+r[2].r;}"},
+      {"nested-record", "struct R{const int&r=3;};struct H{R r[2];};const H h[2]{};int f(){return h[1].r[1].r;}"},
+      {"multidimensional", "struct R{const int&r=3;};const R r[2][2]{};int f(){return r[1][1].r;}"},
+      {"reference-single", "struct R{const int&r=3;};const R(&r)[1]={};int f(){return r[0].r;}"},
+      {"reference-multiple", "struct R{const int&r=3;};const R(&r)[2]={};int f(){return r[1].r;}"},
+      {"reference-nested-single", "struct R{const int&r=3;};const R(&r)[2][1]={};int f(){return r[1][0].r;}"},
+      {"reference-rvalue-array", "struct R{const int&r=3;};using A=R[2];const A&r=A{};int f(){return r[1].r;}"},
+      {"local-static", "struct R{const int&r=3;};const R*f(){static const R r[2]{};return r;}"},
+      {"local-static-reference", "struct R{const int&r=3;};const R(&f())[1]{static const R(&r)[1]={};return r;}"},
+      {"inline-member", "struct R{const int&r=3;};struct H{inline static const R r[2]{};};int f(){return H::r[1].r;}"},
+      {"outline-member", "struct R{const int&r=3;};struct H{static const R r[2];};const R H::r[2]{};int f(){return H::r[1].r;}"},
+      {"class-template", "template<int N>struct R{const int&r=N;};const R<3>r[2]{};int f(){return r[1].r;}"},
+      {"variable-template", "template<int N>struct R{const int&r=N;};template<int N>inline const R<N>r[2]{};int f(){return r<3>[1].r;}"},
+      {"local-template", "template<int N>struct R{const int&r=N;};template<int N>const R<N>*f(){static const R<N>r[2]{};return r;}int g(){return f<3>()[1].r;}"},
+      {"existing-alias", "int n;struct R{int&r=n;};const R r[2]{};int f(){return ++r[1].r;}"},
+      {"direct-self-alias", "struct R{int n=3;int&r=n;};R r[2]{};int f(){return ++r[1].r;}"},
+      {"dynamic-reference-single", "int next(){return 3;}struct R{const int&r=next();};const R(&f())[1]{static const R(&r)[1]={};return r;}"},
+      {"dynamic-mixed", "int next(){return 3;}struct R{const int&r=next();};const R*f(int n){static const R r[2]={{n}};return r;}"},
+      {"default-argument-cleanup", "int live;struct T{T(){++live;}~T(){--live;}};struct H{H(const T&t=T{}){}};int f(){H h[2]{};return live;}"},
+      {"automatic-reference-single", "int live;struct T{T(){++live;}~T(){--live;}};struct H{const T&t=T{};};int f(){const H(&h)[1]={};return live;}"},
+      {"protocol-source", "struct Ref{const int&value=3;};\nconst Ref values[3]{};\nconst Ref(&one)[1]={};\nconst Ref(&matrix)[2][1]={};\nint live;\nstruct Temporary{Temporary(){++live;}~Temporary(){--live;}};\nstruct Member{Member(const Temporary&t=Temporary{}){}};\nvoid omitted(){Member values[2]{};}\nvoid explicitClauses(){Member values[2]={Member{},Member{}};}\nstruct Aggregate{Member member;};\nvoid aggregateMembers(){Aggregate values[2]{};}\nvoid nestedElements(){Member values[1][2]{};}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("array-filler-" + Name + ".cpp");
+    const auto Output = tmpFile("array-filler-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayFillersRetainSourceAndResourceBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"default-array-constructor", "struct R{const int&r=3;};void f(){R r[2];}", "TR0202"},
+      {"static-nontrivial", "struct T{int n;~T(){}};struct R{const T&r=T{3};};const R r[2]{};", "TR0201"},
+      {"tls", "struct R{const int&r=3;};thread_local const R r[2]{};", "TR0201"},
+      {"extent-budget", "struct R{const int&r=3;};const R r[65537]{};", "TR0201"},
+      {"nested-source-budget", "struct R{const int&r=3;};const R r[512][512]{};", "TR0201"},
+      {"const-write", "struct R{const int&r=3;};const R r[2]{};void f(){r[0].r=4;}", "TR0202"},
+      {"unsupported-default", "struct R{const int&r=(static_cast<void>(1.0L),3);};const R r[2]{};", "TR0201"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("array-filler-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("array-filler-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayFillersPreserveStaticIdentityAndElementCleanup) {
+  const auto Source = tmpFile("array-filler-runtime.cpp");
+  const auto Output = tmpFile("array-filler-runtime.nc");
+  writeFile(Source, R"cpp(struct Scalar{const int&value=3;};
+const Scalar values[3]{};
+Scalar mutableValues[2]{};
+struct Mutable{int&&value=4;};
+Mutable mutableTemporaries[2]{};
+struct Holder;
+struct Item{const Holder*owner;int value;};
+struct Holder{int value=5;const Item&item=Item{this,value};};
+const Holder holders[3]{};
+const Holder mixed[3]={{7},{}};
+const Holder grid[2][2]{};
+struct Nested{Holder values[2];};
+const Nested nested[2]{};
+const Holder(&single)[1]={};
+const Holder(&multiple)[2]={};
+const Holder(&nestedSingle)[2][1]={};
+using Block=Holder[2];
+const Block&block=Block{};
+struct Array{const int(&values)[2]={8,9};};
+const Array arrays[2]{};
+int existing=6;
+struct Alias{int&value=existing;};
+const Alias aliases[2]{};
+struct DirectSelf{int value=7;int&alias=value;};
+DirectSelf directSelf[2]{};
+template<int N>struct Generic{const int&value=N;};
+template<int N>inline const Generic<N>generic[2]{};
+struct Static{inline static const Scalar values[2]{};};
+const Holder*local(){static const Holder values[2]{};return values;}
+const Holder(&localReference())[1]{static const Holder(&values)[1]={};return values;}
+int calls=0;
+int next(){return ++calls;}
+struct Dynamic{const int&value=next();};
+const Dynamic*dynamic(){static const Dynamic values[2]{};return values;}
+const Dynamic(&dynamicReference())[1]{static const Dynamic(&values)[1]={};return values;}
+unsigned long long events=0;
+int live=0;
+void mark(unsigned n){events=events*10+n;}
+struct Temporary{unsigned value;Temporary(unsigned n):value(n){++live;mark(n);}~Temporary(){mark(value+4);--live;}};
+struct Member{int seen;Member(const Temporary&argument=Temporary(1)):seen(live){mark(2);}};
+struct WithReference{Member member;const Temporary&reference=Temporary(3);~WithReference(){mark(4);}};
+struct Plain{Member member;};
+struct WithArray{Member elements[2];const Temporary&reference=Temporary(3);};
+struct DestructibleMember{int seen;DestructibleMember(const Temporary&argument=Temporary(1)):seen(live){mark(2);}~DestructibleMember(){mark(4);}};
+int main(){
+ if(values[0].value!=3||values[1].value!=3||&values[0].value==&values[1].value||&values[1].value==&values[2].value)return 1;
+ if(&mutableValues[0].value==&mutableValues[1].value)return 2;
+ ++mutableTemporaries[0].value;if(mutableTemporaries[0].value!=5||mutableTemporaries[1].value!=4)return 3;
+ for(int i=0;i<3;++i)if(holders[i].item.owner!=&holders[i]||holders[i].item.value!=5)return 4;
+ if(&holders[0].item==&holders[1].item||&holders[1].item==&holders[2].item)return 5;
+ for(int i=0;i<3;++i)if(mixed[i].item.owner!=&mixed[i]||mixed[i].item.value!=(i==0?7:5))return 6;
+ for(int i=0;i<2;++i)for(int j=0;j<2;++j)if(grid[i][j].item.owner!=&grid[i][j]||nested[i].values[j].item.owner!=&nested[i].values[j])return 7;
+ if(single[0].item.owner!=&single[0]||multiple[0].item.owner!=&multiple[0]||multiple[1].item.owner!=&multiple[1])return 8;
+ if(nestedSingle[0][0].item.owner!=&nestedSingle[0][0]||nestedSingle[1][0].item.owner!=&nestedSingle[1][0])return 9;
+ if(block[0].item.owner!=&block[0]||block[1].item.owner!=&block[1])return 10;
+ if(arrays[0].values[0]!=8||arrays[1].values[1]!=9||&arrays[0].values==&arrays[1].values)return 11;
+ aliases[0].value=11;if(existing!=11||&aliases[0].value!=&aliases[1].value)return 12;
+ directSelf[0].alias=12;if(directSelf[0].value!=12||directSelf[1].value!=7||&directSelf[1].alias!=&directSelf[1].value)return 13;
+ if(generic<13>[0].value!=13||generic<14>[1].value!=14||&generic<13>[0].value==&generic<13>[1].value)return 14;
+ if(&Static::values[0].value==&Static::values[1].value)return 15;
+ const Holder*p=local();if(local()!=p||p[0].item.owner!=&p[0]||p[1].item.owner!=&p[1])return 16;
+ const Holder(&q)[1]=localReference();if(&localReference()!=&q||q[0].item.owner!=&q[0])return 17;
+ const Dynamic*d=dynamic();if(calls!=2||d[0].value!=1||d[1].value!=2||dynamic()!=d||calls!=2)return 18;
+ const Dynamic(&dr)[1]=dynamicReference();if(calls!=3||dr[0].value!=3||&dynamicReference()!=&dr||calls!=3)return 19;
+ events=0;{Member objects[2]{};if(events!=125125ULL||live||objects[0].seen!=1||objects[1].seen!=1)return 20;}if(live)return 21;
+ events=0;{WithReference objects[2]{};if(events!=12312355ULL||live!=2||objects[0].member.seen!=1||objects[1].member.seen!=3||&objects[0].reference==&objects[1].reference)return 22;}if(events!=123123554477ULL||live)return 23;
+ events=0;{WithReference objects[1][2]{};if(events!=12312355ULL||live!=2)return 24;}if(events!=123123554477ULL||live)return 25;
+ events=0;{const WithReference(&objects)[1]={};if(events!=1235ULL||live!=1||objects[0].reference.value!=3)return 26;}if(events!=123547ULL||live)return 27;
+ Scalar copy=values[0];if(&copy.value!=&values[0].value)return 28;
+ events=0;{Plain objects[2]{};if(events!=121255ULL||live||objects[0].member.seen!=1||objects[1].member.seen!=2)return 29;}
+ events=0;{Member objects[3]={Member{}};if(events!=121251255ULL||live||objects[0].seen!=1||objects[1].seen!=2||objects[2].seen!=2)return 30;}
+ events=0;{WithArray objects[2]{};if(events!=12512531251253ULL||live!=2||objects[0].elements[0].seen!=1||objects[1].elements[0].seen!=2)return 31;}if(events!=1251253125125377ULL||live)return 32;
+ events=0;{DestructibleMember objects[2]{};if(events!=125125ULL||live||objects[0].seen!=1||objects[1].seen!=1)return 33;}if(events!=12512544ULL||live)return 34;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-filler-runtime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceMembersAcceptBindingsAndOwnedLifetimes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"declaration-only", "struct R{int&r;};"},
@@ -4396,8 +4550,6 @@ TEST_F(TranslateTest, CoreV2ReferenceMembersRetainSourceAndLayoutBoundaries) {
       {"constructor-default-temporary", "struct R{const int&r=3;};void f(){R r;}", "TR0202"},
       {"static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){static R r{T{n}};}", "TR0201"},
       {"dead-static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){if(false){static R r{T{n}};}}", "TR0201"},
-      {"static-constant-shared-filler", "struct R{const int&r=3;};const R r[2]{};", "TR0201"},
-      {"static-constant-shared-self", "struct H;struct T{const H*owner;};struct H{const T&r=T{this};};const H h[2]{};", "TR0201"},
       {"nonlocal-dynamic", "int seed(){return 3;}struct R{const int&r;};R r{seed()};", "TR0201"},
       {"unowned-reference", "int&get();struct R{int&r;};R f(){return R{get()};}", "TR0203"},
   };

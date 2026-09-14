@@ -1745,10 +1745,9 @@ void Adapter::checkConstantTemporaryOccurrences(const VarDecl *Owner) {
     if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(Node);
         M && M->getStorageDuration() == SD_Static &&
         staticTemporaryOwner(M) == Owner && (Occurrences[M] += Repeats) > 1) {
-      // Clang retains one APValue per static MTE. A shared array filler can
-      // overwrite that value for distinct elements, losing their identities.
-      // Runtime lowering allocates per occurrence; constant emission must not
-      // silently reuse the last retained value until these ASTs are separated.
+      // Private semantic filling gives materializing defaults distinct ASTs.
+      // Clang retains one APValue per static MTE, so any unexpected sharing
+      // still cannot represent separate elements' values and identities.
       reject(M->getExprLoc(), "shared constant temporary",
              "Repeated constant array fillers require distinct temporary identities from the source frontend.");
       throw Failure{};
@@ -9857,6 +9856,8 @@ class Consumer : public ASTConsumer {
   std::vector<FunctionTemplateBodySource> TemplateBodies;
   std::vector<FriendClassTemplateSource> FriendClasses;
   std::size_t DirectiveUnits = 0;
+  std::size_t ArrayFillerUnits = 0;
+  std::set<const Expr *> SeparateArrayFillers;
 
   bool reserveSourceUnits(SourceManager &Sources, SourceLocation Location,
                           std::size_t ArgumentCount) {
@@ -9961,6 +9962,66 @@ class Consumer : public ASTConsumer {
 public:
   explicit Consumer(State &S) : S(S) {}
   bool wantsNeverCTemplateSource() const override { return S.coreV2(); }
+  NeverCArrayFillerAction HandleNeverCArrayFiller(
+      ASTContext &Context, const Expr *Filler, unsigned long long Count,
+      unsigned long long Extent) override {
+    if (!S.coreV2())
+      return NeverCArrayFillerAction::KeepShared;
+    if (!S.Diagnostics.empty())
+      return NeverCArrayFillerAction::Invalid;
+    auto Reject = [&] {
+      auto P = Filler ? Context.getSourceManager().getPresumedLoc(Filler->getExprLoc())
+                      : PresumedLoc();
+      S.diagnose("TR0201", "array filler source expansion",
+                 "Separate array default initializers exceed the frontend source budget.",
+                 "Reduce the array extent or default initializer complexity.",
+                 P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
+      return NeverCArrayFillerAction::Invalid;
+    };
+    constexpr std::size_t Limit = 200000;
+    std::size_t Nodes = 0;
+    bool HasTemporary = false;
+    auto Walk = [&](auto &&Self, const Stmt *Node, unsigned Depth) -> bool {
+      if (!Node)
+        return true;
+      if (Depth > 64 || Nodes == Limit)
+        return false;
+      ++Nodes;
+      HasTemporary |= isa<MaterializeTemporaryExpr>(Node);
+      if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node))
+        return Self(Self, Default->getExpr(), Depth + 1);
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node))
+        return Self(Self, Default->getExpr(), Depth + 1);
+      if (const auto *List = dyn_cast<InitListExpr>(Node)) {
+        if (List->isSyntacticForm() && List->getSemanticForm())
+          List = List->getSemanticForm();
+        for (const auto *Init : List->inits())
+          if (!Self(Self, Init, Depth + 1))
+            return false;
+        return !List->hasArrayFiller() ||
+               Self(Self, List->getArrayFiller(), Depth + 1);
+      }
+      for (const auto *Child : Node->children())
+        if (!Self(Self, Child, Depth + 1))
+          return false;
+      return true;
+    };
+    if (!Filler || !Count || Count > Extent || !Walk(Walk, Filler, 0))
+      return Reject();
+    if (!HasTemporary)
+      return NeverCArrayFillerAction::KeepShared;
+    // Even one omitted element needs an explicit semantic slot: Clang's later
+    // outer-reference lifetime revisit does not traverse ArrayFiller. Reserve
+    // before rebuilding, including nested/reentrant construction of new lists.
+    if (Extent > 65536 || Count > (Limit - ArrayFillerUnits) / Nodes)
+      return Reject();
+    ArrayFillerUnits += std::size_t(Count) * Nodes;
+    return NeverCArrayFillerAction::Separate;
+  }
+  void HandleNeverCArrayFillerElement(const Expr *Filler) override {
+    if (S.coreV2() && S.Diagnostics.empty())
+      SeparateArrayFillers.insert(Filler);
+  }
   void HandleNeverCTemplateTypeSource(
       TemplateDecl *Template, const Type *Type, TypeSourceInfo *Underlying,
       const TemplateArgumentListInfo &Written,
@@ -10256,6 +10317,7 @@ public:
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
     Adapter A(S, C);
+    A.SeparateArrayFillers = std::move(SeparateArrayFillers);
     try {
       A.run(Directives, StaticDirectives, TemplateUses, Specializations,
             VariableTypes, SelectedCalls, MemberClassDirectives,

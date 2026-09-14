@@ -283,6 +283,7 @@ public:
   std::map<const clang::VarDecl *, json::Object> StaticReferenceInitializers;
   std::set<const clang::VarDecl *> ConstantStaticTemporaryOwners;
   std::set<const clang::VarDecl *> CheckedConstantTemporaryOccurrences;
+  std::set<const clang::Expr *> SeparateArrayFillers;
   std::map<const clang::StringLiteral *, std::string> StringObjects;
   json::Array StringGlobals;
   std::map<const clang::MaterializeTemporaryExpr *, std::string> StaticTemporaryObjects;

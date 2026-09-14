@@ -1415,6 +1415,38 @@ class FunctionLowering {
       endFullExpression();
     }
   }
+  bool omittedDefaultConstruction(const Expr *Init, QualType Element) const {
+    const auto *Record = Element->getAsCXXRecordDecl();
+    if (!Init || !Record)
+      return false;
+    while (true) {
+      Init = Init->IgnoreParens();
+      if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
+        Init = W->getSubExpr();
+      } else if (const auto *B = dyn_cast<CXXBindTemporaryExpr>(Init)) {
+        Init = B->getSubExpr();
+      } else if (const auto *C = dyn_cast<ConstantExpr>(Init)) {
+        Init = C->getSubExpr();
+      } else if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(Init);
+                 M && fullExpressionTemporary(M, A.Context)) {
+        Init = M->getSubExpr();
+      } else if (const auto *C = dyn_cast<CastExpr>(Init);
+                 C && C->getCastKind() == CK_ConstructorConversion) {
+        Init = constructorConversion(C, A.Context);
+        if (!Init)
+          return false;
+      } else if (const auto *C = dyn_cast<CastExpr>(Init);
+                 C && C->getCastKind() == CK_NoOp && C->isPRValue() &&
+                 A.Context.hasSameUnqualifiedType(C->getType(), C->getSubExpr()->getType())) {
+        Init = C->getSubExpr();
+      } else {
+        const auto *C = dyn_cast<CXXConstructExpr>(Init);
+        return C && C->getConstructor()->isDefaultConstructor() &&
+               C->getConstructor()->getParent()->getCanonicalDecl() ==
+                   Record->getCanonicalDecl();
+      }
+    }
+  }
   void initialize(Expression Place, const Expr *Init, SourceLocation L) {
     Init = Init->IgnoreParens();
     if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
@@ -1569,17 +1601,20 @@ class FunctionLowering {
           reject(L, "array initialization", "Too many semantic initializers.");
         for (unsigned N = 0; N < Count; ++N) {
           auto Target = initialElement(Place, Element, N, L);
-          const bool Omitted = N >= I->getNumInits();
-          const Expr *Value = Omitted ? I->getArrayFiller() : I->getInit(N);
-          // Explicit clauses retain the enclosing list's full expression.
-          // Only omitted elements use the default-argument array exception.
-          if (Omitted)
+          const bool SharedFiller = N >= I->getNumInits();
+          const Expr *Value = SharedFiller ? I->getArrayFiller() : I->getInit(N);
+          const bool Omitted = SharedFiller || A.SeparateArrayFillers.count(Value);
+          // C++17's exception concerns the default constructor of an omitted
+          // array element. A constructor of a field inside an aggregate element
+          // retains the whole initializer's full expression, as do explicit clauses.
+          const bool ElementCleanup = Omitted && omittedDefaultConstruction(Value, Element);
+          if (ElementCleanup)
             beginFullExpression();
           if (Value)
             initialize(std::move(Target), Value, L);
           else
             initializeZero(std::move(Target), Element, L);
-          if (Omitted)
+          if (ElementCleanup)
             endFullExpression();
         }
         return;
