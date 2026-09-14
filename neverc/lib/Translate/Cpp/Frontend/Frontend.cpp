@@ -1870,6 +1870,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::map<const CXXRecordDecl *, bool> HasArray;
   std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees, FunctionValueDesignators;
+  std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
@@ -2981,19 +2982,33 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         D->getFriendLoc() != Written->getFriendLoc() ||
         Template->getDeclName() != Source.Written->getDeclName() ||
         Template->getDeclContext() != Source.Context ||
-        Template->getPreviousDecl() != Source.Previous ||
         Template->getTemplateParameters()->size() != Source.Written->getTemplateParameters()->size())
       return false;
     const auto *Previous = Source.Previous;
+    const auto *LinkedPrevious = Template->getPreviousDecl();
     if (!Previous)
-      return !Template->getTemplatedDecl()->getQualifier() &&
+      return !LinkedPrevious && !Template->getTemplatedDecl()->getQualifier() &&
              isa<TranslationUnitDecl, NamespaceDecl>(Source.Context) &&
              Template == Template->getCanonicalDecl();
-    return owned(Previous) && !Previous->isInvalidDecl() &&
-           Previous->getDeclContext()->getRedeclContext() == Source.Context->getRedeclContext() &&
-           Previous->getCanonicalDecl() == Template->getCanonicalDecl() &&
-           Previous->getDeclName() == Template->getDeclName() &&
-           Template->getTemplatedDecl()->getPreviousDecl() == Previous->getTemplatedDecl();
+    if (!owned(Previous) || Previous->isInvalidDecl() || !owned(LinkedPrevious) ||
+        Previous->getDeclContext()->getRedeclContext() != Source.Context->getRedeclContext() ||
+        Previous->getCanonicalDecl() != Template->getCanonicalDecl() ||
+        Previous->getDeclName() != Template->getDeclName() ||
+        Template->getTemplatedDecl()->getPreviousDecl() != LinkedPrevious->getTemplatedDecl())
+      return false;
+    // Lookup may return an earlier visible declaration. Clang links both the
+    // template and its record to the most recent redeclaration instead. Keep
+    // the exact lookup result and prove it belongs to the preceding chain.
+    std::set<const ClassTemplateDecl *> Seen;
+    for (auto *Current = LinkedPrevious; Current; Current = Current->getPreviousDecl()) {
+      A.chargeExpansion(1, Current->getLocation());
+      if (Seen.size() >= 64 || !Seen.insert(Current).second || !owned(Current) ||
+          Current->isInvalidDecl() || Current->getCanonicalDecl() != Template->getCanonicalDecl())
+        return false;
+      if (Current == Previous)
+        return true;
+    }
+    return false;
   }
   bool admittedFriendClassDeclaration(const ClassTemplateDecl *Template) {
     if (!friendClassTemplateDeclarationShape(Template))
@@ -4283,6 +4298,8 @@ public:
       return friendTypeSourceIdentity(D);
     if (D && isa_and_nonnull<FunctionTemplateDecl>(D->getFriendDecl()))
       return friendTemplateSourceIdentity(D);
+    if (D && isa_and_nonnull<ClassTemplateDecl>(D->getFriendDecl()))
+      return friendClassSourceIdentity(D);
     auto Found = FriendDeclarationSources.find(D);
     const auto *Function = D ? dyn_cast_or_null<FunctionDecl>(D->getFriendDecl()) : nullptr;
     auto Event = FriendFunctionSources.find(Function);
@@ -5500,17 +5517,21 @@ public:
   }
   void checkFunctionTemplateUse(const FunctionDecl *Function, SourceLocation Location,
                                  llvm::ArrayRef<TemplateArgumentLoc> Written,
-                                 SourceLocation QualifiedBegin = {}) {
+                                 SourceLocation QualifiedBegin = {},
+                                 SourceLocation CallLocation = {}) {
     if (!concreteFunctionTemplate(Function))
       return;
     const auto *Method = dyn_cast<CXXMethodDecl>(Function);
     if (QualifiedBegin == Location || (Method && !Method->isStatic()))
       QualifiedBegin = {};
+    if (CallLocation == Location || CallLocation == QualifiedBegin)
+      CallLocation = {};
     const TemplateUseSource *First = nullptr;
     // Overload-call deduction uses the unresolved expression's begin location,
-    // including a written namespace qualifier. Address selection and explicit
-    // directives use the name location. Both still identify this exact function.
-    for (auto UseLocation : {Location, QualifiedBegin}) {
+    // including a written namespace qualifier or enclosing parentheses.
+    // Address selection and explicit directives use the name location. Each
+    // location is tied to this exact selected function and source expression.
+    for (auto UseLocation : {Location, QualifiedBegin, CallLocation}) {
       if (UseLocation.isInvalid())
         continue;
       auto Found = FunctionSources.find({Function, UseLocation.getRawEncoding()});
@@ -5529,6 +5550,10 @@ public:
     }
     if (!First)
       A.reject(Location, "selected function template source", "The selected function needs its exact successful deduction source.");
+  }
+  SourceLocation directTemplateCallLocation(const Expr *Reference) const {
+    auto Found = DirectTemplateCallLocations.find(Reference);
+    return Found == DirectTemplateCallLocations.end() ? SourceLocation() : Found->second;
   }
   void indexSelectedTemplateCalls(llvm::ArrayRef<SelectedTemplateCallSource> Sources) {
     for (const auto &Source : Sources) {
@@ -5661,13 +5686,14 @@ public:
   bool copiedMemberVariableFullOrigin(const VarTemplateSpecializationDecl *Variable,
                                       const VariableTypeSource &TypeSource) {
     const auto *Pattern = dyn_cast_or_null<VarTemplateSpecializationDecl>(TypeSource.Pattern);
-    const auto *Parent = dyn_cast<ClassTemplateSpecializationDecl>(Variable->getDeclContext());
+    const auto *Parent = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
     const auto *Primary = Variable->getSpecializedTemplate();
     const auto *Origin = Primary->getInstantiatedFromMemberTemplate();
     const auto *Selected = Parent ? classBodyRecord(Parent) : nullptr;
     if (TypeSource.Variable != Variable || !Variable->isExplicitSpecialization() ||
         !genericMemberVariableFullShape(Pattern) || !owned(Parent) ||
-        Parent->getKind() != Decl::ClassTemplateSpecialization || Parent->isDependentContext() ||
+        (Parent->getKind() != Decl::ClassTemplateSpecialization && !ordinaryCopiedBody(Parent)) ||
+        Parent->isDependentContext() ||
         !Origin || !Selected || Primary->getDeclContext() != Parent ||
         Variable->getDeclName() != Pattern->getDeclName() ||
         Origin->getCanonicalDecl() != Pattern->getSpecializedTemplate()->getCanonicalDecl() ||
@@ -6748,7 +6774,8 @@ public:
     if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
         concreteFunctionTemplate(Function))
       checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments(),
-          Reference->hasQualifier() ? Reference->getBeginLoc() : SourceLocation());
+          Reference->hasQualifier() ? Reference->getBeginLoc() : SourceLocation(),
+          directTemplateCallLocation(Reference));
     return true;
   }
   bool TraverseMemberExpr(MemberExpr *Reference) {
@@ -6776,7 +6803,8 @@ public:
     if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getMemberDecl());
         concreteMemberFunctionTemplate(Function))
       checkFunctionTemplateUse(Function, Reference->getMemberLoc(),
-                               Reference->template_arguments());
+                               Reference->template_arguments(), {},
+                               directTemplateCallLocation(Reference));
     return true;
   }
   bool TraverseFunctionTemplateDecl(FunctionTemplateDecl *D) {
@@ -8613,6 +8641,9 @@ public:
     if (A.S.coreV2())
       if (const auto *Call = dyn_cast<CallExpr>(S))
         if (const auto *Leaf = directFunctionReference(Call)) {
+          // BuildOverloadedCallExpr ranks candidates at the complete callee's
+          // expression location, which can be a parenthesis before the name.
+          DirectTemplateCallLocations.emplace(Leaf, Call->getCallee()->getExprLoc());
           const Expr *E = Call->getCallee();
           while (true) {
             DirectFunctionCallees.insert(E);

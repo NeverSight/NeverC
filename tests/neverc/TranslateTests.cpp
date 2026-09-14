@@ -7868,6 +7868,7 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2FriendClassTemplatesAcceptConcreteInstances) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"qualified-redeclarations-and-grants", "namespace N{template<class U>struct A;template<class V>struct A;}template<class T>class R{int n=3;template<class U>friend struct N::A;};namespace N{template<class U>struct A{static int get(const R<int>&r){return r.n;}static int get(const R<bool>&r){return r.n;}};}int main(){R<int>a;R<bool>b;return N::A<int>::get(a)+N::A<bool>::get(b)-6;}"},
       {"ordinary-unused", "class R{template<class T>friend struct A;};"},
       {"ordinary-introduction", "class R{int n=3;template<class T>friend struct A;};template<class T>struct A{static int get(const R&r){return r.n;}};int main(){R r;return A<int>::get(r)-3;}"},
       {"generic-unused", "template<class T>class R{template<class U>friend struct A;};"},
@@ -9940,6 +9941,10 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2FunctionPointersAcceptTypedCallbacks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"parenthesized-template-name", "template<class T>T get(T n){return n;}int main(){return ((get<int>))(3)-3;}"},
+      {"parenthesized-qualified-template", "namespace N{template<class T>T get(T n){return n;}}int main(){return ((N::get<int>))(3)-3;}"},
+      {"parenthesized-static-template", "struct R{template<class T>static T get(T n){return n;}};int main(){return ((R::get<int>))(3)-3;}"},
+      {"parenthesized-template-two-uses", "template<int N>int get(int n){return n+N;}int main(){return (get<2>)(3)+((get<4>))(5)-14;}"},
       {"ordinary-decay", "int add(int n){return n+1;}int main(){int(*p)(int)=add;return p(3);}"},
       {"unary-plus", "int get(int n){return n;}int main(){auto p=+get;return (+p)(3);}"},
       {"ordinary-address", "int add(int n){return n+1;}int main(){auto p=&add;return (*p)(3);}"},
@@ -10243,6 +10248,8 @@ TEST_F(TranslateTest, CoreV2TemplateFunctionPointersAcceptTypedCallbacks) {
 
 TEST_F(TranslateTest, CoreV2TemplateFunctionPointersRetainSourceAndSignatureBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"parenthesized-template-hidden-argument", "template<class T>int get(int n){return n;}int main(){return ((get<decltype((sizeof(long double),1))>))(3);}"},
+      {"parenthesized-template-second-source", "template<int N>int get(int n){return n+N;}int main(){return (get<8>)(3)+((get<sizeof(long double)>))(5);}"},
       {"object-pointer-unary-plus", "int main(){int n=1;int*p=&n;return *+p;}"},
       {"record-value-argument", "struct R{int n;};template<class T>int get(T r){return r.n;}int main(){auto p=&get<R>;return p(R{3});}"},
       {"record-value-result", "struct R{int n;};template<class T>T get(){return T{3};}int main(){auto p=&get<R>;return p().n;}"},
@@ -10419,7 +10426,7 @@ TEST_F(TranslateTest, CoreV2CallbackVariableTemplatesAcceptTypedCallbacks) {
       {"member-partial-owner", "int get(){return 3;}template<class T>struct R;template<class T>struct R<T*>{template<class U>inline static auto p=&get;};int main(){return R<int*>::p<bool>();}"},
       {"member-full-owner", "int get(){return 3;}template<class T>struct R;template<>struct R<int>{template<class U>inline static auto p=&get;};int main(){return R<int>::p<bool>();}"},
       {"member-full-specialization", "int a(){return 1;}int b(){return 3;}struct R{template<class T>inline static auto p=&a;};template<>inline auto R::p<bool> = &b;int main(){return R::p<bool>();}"},
-      {"member-copied-full", "int a(){return 1;}int b(){return 3;}template<class T>struct R{template<class U>inline static auto p=&a;template<>inline static auto p<int> = &b;};int main(){return R<bool>::p<int>();}"},
+      {"member-copied-full", "int a(){return 1;}int b(){return 3;}template<class T>struct R{template<class U>inline static auto p=&a;template<>inline auto p<int> = &b;};int main(){return R<bool>::p<int>();}"},
       {"member-receiver", "int get(){return 3;}struct R{template<class T>inline static auto p=&get;};int use(R&r){return r.p<int>();}"},
       {"reference-callback", "template<class T>T&get(T&n){return n;}template<class T>inline auto p=&get<T>;int main(){int n=2;p<int>(n)=3;return n;}"},
       {"promoted-variable-template-callback-retained", "int get(){return 3;}template<class T>inline int(*p)()=get;int main(){return p<int>();}"},
