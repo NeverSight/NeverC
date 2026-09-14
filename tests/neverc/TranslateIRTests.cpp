@@ -1321,6 +1321,35 @@ TEST(TranslateIR, CoreV2DynamicStaticOwnershipRejectsForgedControlFlowAndWrites)
   EXPECT_TRUE(verifyModule(M, context(M), D));
 }
 
+TEST(TranslateIR, CoreV2DynamicStaticReferenceCarriersKeepBindingReadonly) {
+  auto M = dynamicStaticModule();
+  auto Pointer = pointerType(intType());
+  M.Globals[0].ValueType = Pointer;
+  M.Globals[0].Value = pointerExpr(ExprKind::Null, Pointer);
+  auto &F = M.Functions[0];
+  F.Result = Pointer;
+  F.Params[0].ValueType = Pointer;
+  F.Body[3].Target->ValueType = Pointer;
+  F.Body[3].Value->ValueType = Pointer;
+  F.Body.back().Value->ValueType = Pointer;
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_EQ(Output.Text.find("*const nct_static"), std::string::npos);
+  auto Bad = M;
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.begin() + 7,
+                               Bad.Functions[0].Body[3]);
+  invalid(Bad, "not writable");
+  Instruction ThroughReference;
+  ThroughReference.Op = InstructionKind::Assign;
+  ThroughReference.Loc = InputLoc;
+  ThroughReference.Target = pointerExpr(
+      ExprKind::Dereference, intType(), {variable("nct_static", Pointer)});
+  ThroughReference.Value = literal("7");
+  F.Body.insert(F.Body.begin() + 7, ThroughReference);
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+}
+
 TEST(TranslateIR, CoreV2DynamicStaticProtocolRejectsMissingOrForeignPayloads) {
   const auto Location = R"json({"file":"input.cpp","line":1,"column":1})json";
   const auto Global = std::string(R"json({"name":"nct_static","type":"int","dynamic_initialization":true,"loc":)json") +

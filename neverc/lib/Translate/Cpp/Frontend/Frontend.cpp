@@ -953,6 +953,7 @@ const VarDecl *Adapter::staticTemporaryOwner(const MaterializeTemporaryExpr *M) 
   if (!Descriptor || Descriptor->getTemporaryExpr() != M->getSubExpr() ||
       Descriptor->getExtendingDecl() != Owner || Descriptor->getStorageDuration() != SD_Static ||
       !Owner || Owner->isImplicit() || Owner->isInvalidDecl() ||
+      DynamicStaticLocals.count(Owner->getCanonicalDecl()) ||
       Owner->getDeclContext()->isDependentContext() || !Owner->getType()->isReferenceType() ||
       !Owner->hasGlobalStorage() || Owner->getTLSKind() != VarDecl::TLS_None ||
       !S.owns(Sources, M->getExprLoc()) || !S.owns(Sources, Owner->getLocation()))
@@ -8358,14 +8359,27 @@ public:
         InitializingDecl->getCanonicalDecl() != Canonical ||
         InitializingDecl->getDeclContext()->getRedeclContext() !=
             Definition->getDeclContext()->getRedeclContext() ||
-        !A.Context.hasSameType(InitializingDecl->getType(), T) ||
-        !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
-        !Notes.empty()) {
+        !A.Context.hasSameType(InitializingDecl->getType(), T)) {
       A.reject(Definition->getLocation(), "static reference initializer",
-               "A static reference requires its source-owned constant binding to permanent storage.");
+               "A static reference requires its source-owned initializer.");
       return false;
     }
     auto PointerType = A.Context.getPointerType(T->getPointeeType());
+    if (!Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
+        !Notes.empty()) {
+      if (!Definition->isStaticLocal()) {
+        A.reject(Definition->getLocation(), "static reference initializer",
+                 "A nonlocal static reference requires a constant binding to permanent storage.");
+        return false;
+      }
+      // Only the binding carrier is initialized at first passage. A dynamic
+      // owner cannot use the constant static-temporary path to erase runtime
+      // effects or manufacture a lifetime extension (see staticTemporaryOwner).
+      A.DynamicStaticLocals.insert(Canonical);
+      A.StaticReferenceInitializers.emplace(
+          Canonical, A.zero(PointerType, Definition->getLocation()));
+      return true;
+    }
     auto Initializer = A.constantPointer(Value, PointerType, Definition->getLocation(), /*ReferenceBinding=*/true);
     A.StaticReferenceInitializers.emplace(Canonical, std::move(Initializer));
     return true;
@@ -9364,7 +9378,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                            ? G->getAnyInitializer() : G->getInit();
     const bool Dynamic = DynamicStaticLocals.count(G->getCanonicalDecl());
     if (Dynamic) {
-      Initializer = zero(G->getType(), G->getLocation());
+      auto StorageType = G->getType()->isReferenceType()
+                             ? Context.getPointerType(G->getType()->getPointeeType())
+                             : G->getType();
+      Initializer = zero(StorageType, G->getLocation());
     } else if (auto Found = StaticReferenceInitializers.find(G->getCanonicalDecl());
         Found != StaticReferenceInitializers.end()) {
       Initializer = json::Object(Found->second);

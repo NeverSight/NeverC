@@ -129,6 +129,17 @@ destruction. The original initializer stays in the declaring function and may
 use parameters, automatic locals and its actual `this`. Constant initialization
 keeps its existing eager, guard-free representation.
 
+Local static lvalue/rvalue references can also bind existing objects through
+parameters, pointer loads, conditional glvalues and owned reference-returning
+calls. Their readonly binding carrier is zero-initialized pointer storage;
+the first-use region assigns the selected address, not a value into the referent.
+Later calls reuse that binding. Const pointees, arrays, callback slots and
+template instances retain their normal types and identity. The binding does not
+extend the lifetime of an existing object. Temporary call arguments retain
+ordinary full-expression cleanup. A lifetime-extended temporary owned by a
+dynamic reference remains rejected, even if failed Clang evaluation retained a
+partial constant value; that value cannot erase runtime initializer effects.
+
 ```cpp
 int constructions = 0;
 struct Value {
@@ -181,7 +192,7 @@ Generated assertions check atomic capability and storage layout. Protocol/IR
 checks, O0/O2 execution, sixteen-thread visibility tests and assembly checks for
 runtime helper dependencies require native validation at the implementing CI head.
 
-Dynamic reference bindings and lifetime-extended static temporaries, nontrivial
+Nonlocal dynamic reference bindings and dynamic lifetime-extended static temporaries, nontrivial
 static destruction, TLS, nonlocal dynamic initialization and exception
 propagation/retry still require implementation. Unsupported throwing source and
 unowned callees remain diagnosed; there is no substitute termination or fake
@@ -346,8 +357,10 @@ Automatic objects, runtime pointer loads/calls, TLS, null/one-past addresses,
 integer-derived pointers and unsupported source types cannot provide these
 constant bindings. Constant-initialized static temporaries follow the contract
 below. Function references, nonstatic reference members, reference non-type
-template arguments, dynamic initialization/guards
-and actual standard-library headers/runtime. Native validation of the paired
+template arguments, nonlocal dynamic bindings and dynamic lifetime-extended
+static temporaries still require further work. Local runtime bindings use the
+[first-use contract](#dynamic-local-static-initialization). Actual standard-library
+headers/runtime remain unfinished. Native validation of the paired
 source/protocol cases, const-carrier IR checks, relocation and O0/O2 fixtures
 requires implementing CI. Complete C++/STL remains an active goal.
 

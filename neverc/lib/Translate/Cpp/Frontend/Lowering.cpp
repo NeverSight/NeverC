@@ -1621,7 +1621,11 @@ class FunctionLowering {
         Open = false;
         label(Initialize, L);
         beginFullExpression();
-        initialize(std::move(Place), V->getInit(), L);
+        if (V->getType()->isReferenceType())
+          assign(variable(Global, type(V->getType(), L), L),
+                 bind(V->getInit(), V->getType()), L);
+        else
+          initialize(std::move(Place), V->getInit(), L);
         endFullExpression();
         Body.push_back(json::Object{{"op", "static_init_end"},
                                     {"global", Global}, {"loc", A.loc(L)}});

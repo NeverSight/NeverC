@@ -4065,6 +4065,113 @@ TEST_F(TranslateTest, CoreV2DynamicStaticLocalsRetainSourceAndLifetimeBoundaries
   }
 }
 
+TEST_F(TranslateTest, CoreV2DynamicStaticReferencesAcceptExistingObjects) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-1", "int f(int n){static const int&r=n;return r;}"},
+      {"promoted-2", "int&f(int&n){static int&r=n;return r;}"},
+      {"promoted-3", "int&f(){int n=3;static int&r=n;return r;}"},
+      {"promoted-4", "int a,b;int&f(bool c){static int&r=c?a:b;return r;}"},
+      {"pointer-load", "int&f(int*p){static int&r=*p;return r;}"},
+      {"const-array", "const int(&f(const int(&a)[2]))[2]{static const int(&r)[2]=a;return r;}"},
+      {"auto-reference", "int&f(int&n){static auto&r=n;return r;}"},
+      {"auto-rvalue", "int&&f(int&n){static auto&&r=static_cast<int&&>(n);return static_cast<int&&>(r);}"},
+      {"record-field", "struct R{int n;};int&f(R&n){static int&r=n.n;return r;}"},
+      {"callback-slot", "using F=int(*)();F&f(F&n){static F&r=n;return r;}"},
+      {"array-index", "int&f(int*p,int n){static int&r=p[n];return r;}"},
+      {"dead-declaration", "void f(int&n){if(false){static int&r=n;}}"},
+      {"runtime-source", "int calls=0,drops=0;\nint&choose(int&a,int&b,bool first){++calls;return first?a:b;}\nint&selected(int&a,int&b,bool first){static int&r=choose(a,b,first);return r;}\nconst int&readonly(int&n){static const int&r=n;return r;}\nint*&pointerSlot(int*&n){static int*&r=n;return r;}\nint(&array(int(&n)[2]))[2]{static int(&r)[2]=n;return r;}\nstruct Record{int n;};\nRecord&record(Record&r){static Record&value=r;return value;}\nint&asLvalue(int&&n){return n;}\nint&&rvalue(int&n){static int&&r=static_cast<int&&>(n);return static_cast<int&&>(r);}\ntemplate<class T>T&instance(T&n){static T&r=n;return r;}\nstruct Method{int n;int&get(){static int&r=n;return r;}};\nstruct Temp{int*pointer;~Temp(){++drops;}};\nint&fromTemp(const Temp&t){++calls;return *t.pointer;}\nint&temporary(int&n){static int&r=fromTemp(Temp{&n});return r;}\nint&inner(int&n){static int&r=n;return r;}\nint&outer(int&n){static int&r=inner(n);return r;}\nstruct Owned{int n;~Owned(){++drops;}};\nOwned&owned(Owned&r){static Owned&value=r;return value;}\nint main(){\n int a=3,b=4;\n if(calls||drops)return 1;\n if(&selected(a,b,true)!=&a||&selected(a,b,false)!=&a||calls!=1)return 2;\n selected(a,b,false)=7;if(a!=7||b!=4||calls!=1)return 3;\n if(&readonly(a)!=&a||&readonly(b)!=&a)return 4;\n int*p=&a,*q=&b;\n if(&pointerSlot(p)!=&p||&pointerSlot(q)!=&p)return 5;\n pointerSlot(q)=&b;if(p!=&b)return 6;\n int x[2]={1,2},y[2]={3,4};\n if(&array(x)!=&x||&array(y)!=&x)return 7;\n array(y)[1]=9;if(x[1]!=9||y[1]!=4)return 8;\n Record r{3},s{4};if(&record(r)!=&r||&record(s)!=&r)return 9;\n record(s).n=8;if(r.n!=8||s.n!=4)return 10;\n if(&asLvalue(rvalue(a))!=&a||&asLvalue(rvalue(b))!=&a)return 11;\n unsigned u=2,v=5;\n if(&instance(a)!=&a||&instance(b)!=&a||&instance(u)!=&u||&instance(v)!=&u)return 12;\n Method one{3},two{4};if(&one.get()!=&one.n||&two.get()!=&one.n)return 13;\n calls=0;\n if(&temporary(a)!=&a||&temporary(b)!=&a||calls!=1||drops!=1)return 14;\n if(&outer(a)!=&a||&outer(b)!=&a||&inner(b)!=&a)return 15;\n {Owned r{3};if(&owned(r)!=&r||drops!=1)return 16;}\n if(drops!=2)return 17;\n return 0;\n}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dynamic-reference-" + Name + ".cpp");
+    const auto Output = tmpFile("dynamic-reference-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DynamicStaticReferencesRetainTemporaryAndSourceBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"dynamic-scalar-temporary", "int seed(){return 3;}int f(){static const int&r=seed();return r;}", "TR0201"},
+      {"dynamic-record-temporary", "struct R{int n;R(int v):n(v){}};int f(int n){static const R&r=R(n);return r.n;}", "TR0201"},
+      {"dynamic-array-temporary", "int f(int n){static const int(&r)[2]={n,2};return r[0];}", "TR0201"},
+      {"discarded-constant-value", "int calls;int f(){static const int&r=(++calls,3);return r;}", "TR0201"},
+      {"conditional-temporary", "int f(bool b){static const int&r=b?3:4;return r;}", "TR0201"},
+      {"hidden-reference-type", "int&f(int&n){static decltype((sizeof(long double),n))r=n;return r;}", "TR0201"},
+      {"nonlocal-dynamic", "int n;int&get(){return n;}int&r=get();", "TR0201"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dynamic-reference-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("dynamic-reference-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DynamicStaticReferencesPreserveBindingAndCleanup) {
+  const auto Source = tmpFile("dynamic-reference-runtime.cpp");
+  const auto Output = tmpFile("dynamic-reference-runtime.nc");
+  writeFile(Source, R"cpp(int calls=0,drops=0;
+int&choose(int&a,int&b,bool first){++calls;return first?a:b;}
+int&selected(int&a,int&b,bool first){static int&r=choose(a,b,first);return r;}
+const int&readonly(int&n){static const int&r=n;return r;}
+int*&pointerSlot(int*&n){static int*&r=n;return r;}
+int(&array(int(&n)[2]))[2]{static int(&r)[2]=n;return r;}
+struct Record{int n;};
+Record&record(Record&r){static Record&value=r;return value;}
+int&asLvalue(int&&n){return n;}
+int&&rvalue(int&n){static int&&r=static_cast<int&&>(n);return static_cast<int&&>(r);}
+template<class T>T&instance(T&n){static T&r=n;return r;}
+struct Method{int n;int&get(){static int&r=n;return r;}};
+struct Temp{int*pointer;~Temp(){++drops;}};
+int&fromTemp(const Temp&t){++calls;return *t.pointer;}
+int&temporary(int&n){static int&r=fromTemp(Temp{&n});return r;}
+int&inner(int&n){static int&r=n;return r;}
+int&outer(int&n){static int&r=inner(n);return r;}
+struct Owned{int n;~Owned(){++drops;}};
+Owned&owned(Owned&r){static Owned&value=r;return value;}
+int main(){
+ int a=3,b=4;
+ if(calls||drops)return 1;
+ if(&selected(a,b,true)!=&a||&selected(a,b,false)!=&a||calls!=1)return 2;
+ selected(a,b,false)=7;if(a!=7||b!=4||calls!=1)return 3;
+ if(&readonly(a)!=&a||&readonly(b)!=&a)return 4;
+ int*p=&a,*q=&b;
+ if(&pointerSlot(p)!=&p||&pointerSlot(q)!=&p)return 5;
+ pointerSlot(q)=&b;if(p!=&b)return 6;
+ int x[2]={1,2},y[2]={3,4};
+ if(&array(x)!=&x||&array(y)!=&x)return 7;
+ array(y)[1]=9;if(x[1]!=9||y[1]!=4)return 8;
+ Record r{3},s{4};if(&record(r)!=&r||&record(s)!=&r)return 9;
+ record(s).n=8;if(r.n!=8||s.n!=4)return 10;
+ if(&asLvalue(rvalue(a))!=&a||&asLvalue(rvalue(b))!=&a)return 11;
+ unsigned u=2,v=5;
+ if(&instance(a)!=&a||&instance(b)!=&a||&instance(u)!=&u||&instance(v)!=&u)return 12;
+ Method one{3},two{4};if(&one.get()!=&one.n||&two.get()!=&one.n)return 13;
+ calls=0;
+ if(&temporary(a)!=&a||&temporary(b)!=&a||calls!=1||drops!=1)return 14;
+ if(&outer(a)!=&a||&outer(b)!=&a||&inner(b)!=&a)return 15;
+ {Owned r{3};if(&owned(r)!=&r||drops!=1)return 16;}
+ if(drops!=2)return 17;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("dynamic-reference-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StaticLocalsRetainInitializationAndLanguageBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"folded-float", "int f(){static int n=static_cast<int>(1.0L);return n;}", "TR0201"},
@@ -8601,7 +8708,6 @@ TEST_F(TranslateTest, CoreV2StaticTemporariesAcceptSourceComposition) {
 TEST_F(TranslateTest, CoreV2StaticTemporariesRetainInitializationAndLifetimeChecks) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"runtime-call", "int make(){return 3;}const int&r=make();", "TR0201"},
-      {"local-runtime-parameter", "int f(int n){static const int&r=n;return r;}", "TR0201"},
       {"runtime-constructor", "struct R{int n;R():n(3){}};const R&r=R();", "TR0201"},
       {"nontrivial-destructor", "struct R{int n;~R(){}};const R&r=R{3};", "TR0201"},
       {"array-destructor", "struct R{int n;~R(){}};const R(&r)[2]={{3},{4}};", "TR0201"},
@@ -8765,9 +8871,6 @@ TEST_F(TranslateTest, CoreV2StaticReferencesRetainBindingAndLifetimeRequirements
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"global-runtime-call", "int n;int&get(){return n;}int&r=get();", "TR0201"},
       {"global-runtime-pointer", "int n;int*p=&n;int&r=*p;", "TR0201"},
-      {"local-parameter", "int&f(int&n){static int&r=n;return r;}", "TR0201"},
-      {"local-automatic", "int&f(){int n=3;static int&r=n;return r;}", "TR0201"},
-      {"local-runtime-choice", "int a,b;int&f(bool c){static int&r=c?a:b;return r;}", "TR0201"},
       {"global-null", "int&r=*static_cast<int*>(nullptr);", "TR0201"},
       {"global-one-past", "int a[2];int&r=*(a+2);", "TR0201"},
       {"global-object-end", "int n;int&r=*(&n+1);", "TR0201"},

@@ -5201,6 +5201,43 @@ int*address(){return &state();}
     for name, (source, diagnostic) in dynamic_static_reject.items():
         check("v2-dynamic-static-reject-" + name, source, diagnostic, profile="cpp-core-v2")
 
+    dynamic_reference_positive = {
+        'promoted-1': 'int f(int n){static const int&r=n;return r;}',
+        'promoted-2': 'int&f(int&n){static int&r=n;return r;}',
+        'promoted-3': 'int&f(){int n=3;static int&r=n;return r;}',
+        'promoted-4': 'int a,b;int&f(bool c){static int&r=c?a:b;return r;}',
+        'pointer-load': 'int&f(int*p){static int&r=*p;return r;}',
+        'const-array': 'const int(&f(const int(&a)[2]))[2]{static const int(&r)[2]=a;return r;}',
+        'auto-reference': 'int&f(int&n){static auto&r=n;return r;}',
+        'auto-rvalue': 'int&&f(int&n){static auto&&r=static_cast<int&&>(n);return static_cast<int&&>(r);}',
+        'record-field': 'struct R{int n;};int&f(R&n){static int&r=n.n;return r;}',
+        'callback-slot': 'using F=int(*)();F&f(F&n){static F&r=n;return r;}',
+        'array-index': 'int&f(int*p,int n){static int&r=p[n];return r;}',
+        'dead-declaration': 'void f(int&n){if(false){static int&r=n;}}',
+        'runtime-source': 'int calls=0,drops=0;\nint&choose(int&a,int&b,bool first){++calls;return first?a:b;}\nint&selected(int&a,int&b,bool first){static int&r=choose(a,b,first);return r;}\nconst int&readonly(int&n){static const int&r=n;return r;}\nint*&pointerSlot(int*&n){static int*&r=n;return r;}\nint(&array(int(&n)[2]))[2]{static int(&r)[2]=n;return r;}\nstruct Record{int n;};\nRecord&record(Record&r){static Record&value=r;return value;}\nint&asLvalue(int&&n){return n;}\nint&&rvalue(int&n){static int&&r=static_cast<int&&>(n);return static_cast<int&&>(r);}\ntemplate<class T>T&instance(T&n){static T&r=n;return r;}\nstruct Method{int n;int&get(){static int&r=n;return r;}};\nstruct Temp{int*pointer;~Temp(){++drops;}};\nint&fromTemp(const Temp&t){++calls;return *t.pointer;}\nint&temporary(int&n){static int&r=fromTemp(Temp{&n});return r;}\nint&inner(int&n){static int&r=n;return r;}\nint&outer(int&n){static int&r=inner(n);return r;}\nstruct Owned{int n;~Owned(){++drops;}};\nOwned&owned(Owned&r){static Owned&value=r;return value;}\nint main(){\n int a=3,b=4;\n if(calls||drops)return 1;\n if(&selected(a,b,true)!=&a||&selected(a,b,false)!=&a||calls!=1)return 2;\n selected(a,b,false)=7;if(a!=7||b!=4||calls!=1)return 3;\n if(&readonly(a)!=&a||&readonly(b)!=&a)return 4;\n int*p=&a,*q=&b;\n if(&pointerSlot(p)!=&p||&pointerSlot(q)!=&p)return 5;\n pointerSlot(q)=&b;if(p!=&b)return 6;\n int x[2]={1,2},y[2]={3,4};\n if(&array(x)!=&x||&array(y)!=&x)return 7;\n array(y)[1]=9;if(x[1]!=9||y[1]!=4)return 8;\n Record r{3},s{4};if(&record(r)!=&r||&record(s)!=&r)return 9;\n record(s).n=8;if(r.n!=8||s.n!=4)return 10;\n if(&asLvalue(rvalue(a))!=&a||&asLvalue(rvalue(b))!=&a)return 11;\n unsigned u=2,v=5;\n if(&instance(a)!=&a||&instance(b)!=&a||&instance(u)!=&u||&instance(v)!=&u)return 12;\n Method one{3},two{4};if(&one.get()!=&one.n||&two.get()!=&one.n)return 13;\n calls=0;\n if(&temporary(a)!=&a||&temporary(b)!=&a||calls!=1||drops!=1)return 14;\n if(&outer(a)!=&a||&outer(b)!=&a||&inner(b)!=&a)return 15;\n {Owned r{3};if(&owned(r)!=&r||drops!=1)return 16;}\n if(drops!=2)return 17;\n return 0;\n}\n',
+    }
+    for name, source in dynamic_reference_positive.items():
+        check("v2-dynamic-reference-" + name, source, profile="cpp-core-v2")
+    dynamic_reference_negative = {
+        'dynamic-scalar-temporary': ('int seed(){return 3;}int f(){static const int&r=seed();return r;}', 'TR0201'),
+        'dynamic-record-temporary': ('struct R{int n;R(int v):n(v){}};int f(int n){static const R&r=R(n);return r.n;}', 'TR0201'),
+        'dynamic-array-temporary': ('int f(int n){static const int(&r)[2]={n,2};return r[0];}', 'TR0201'),
+        'discarded-constant-value': ('int calls;int f(){static const int&r=(++calls,3);return r;}', 'TR0201'),
+        'conditional-temporary': ('int f(bool b){static const int&r=b?3:4;return r;}', 'TR0201'),
+        'hidden-reference-type': ('int&f(int&n){static decltype((sizeof(long double),n))r=n;return r;}', 'TR0201'),
+        'nonlocal-dynamic': ('int n;int&get(){return n;}int&r=get();', 'TR0201'),
+    }
+    for name, (source, diagnostic) in dynamic_reference_negative.items():
+        check("v2-dynamic-reference-" + name, source, diagnostic, profile="cpp-core-v2")
+    dynamic_reference = check("v2-dynamic-reference-protocol", "int&f(int&n){static int&r=n;return r;}", profile="cpp-core-v2")
+    reference_globals = [g for g in dynamic_reference["globals"] if g.get("dynamic_initialization")]
+    assert len(reference_globals) == 1
+    reference_global = reference_globals[0]
+    assert reference_global["type"] == "ptr:int" and reference_global["value"]["kind"] == "null"
+    assert not reference_global.get("mutable", False)
+    reference_stores = [i for f in dynamic_reference["functions"] for i in f["body"] if i["op"] == "assign" and i["target"].get("name") == reference_global["name"]]
+    assert len(reference_stores) == 1 and reference_stores[0]["value"]["type"] == "ptr:int"
+
     static_locals_reject = {
         'folded-float': 'int f(){static int n=static_cast<int>(1.0L);return n;}',
         'folded-body': 'constexpr int seed(){return static_cast<int>(1.0L);}int f(){static int n=seed();return n;}',
@@ -9356,7 +9393,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-static-temporary-positive-"+name, source, profile="cpp-core-v2")
     static_temporary_negative = {
         'runtime-call': ('int make(){return 3;}const int&r=make();', 'TR0201'),
-        'local-runtime-parameter': ('int f(int n){static const int&r=n;return r;}', 'TR0201'),
         'runtime-constructor': ('struct R{int n;R():n(3){}};const R&r=R();', 'TR0201'),
         'nontrivial-destructor': ('struct R{int n;~R(){}};const R&r=R{3};', 'TR0201'),
         'array-destructor': ('struct R{int n;~R(){}};const R(&r)[2]={{3},{4}};', 'TR0201'),
@@ -9460,9 +9496,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     static_reference_negative = {
         'global-runtime-call': ('int n;int&get(){return n;}int&r=get();', 'TR0201'),
         'global-runtime-pointer': ('int n;int*p=&n;int&r=*p;', 'TR0201'),
-        'local-parameter': ('int&f(int&n){static int&r=n;return r;}', 'TR0201'),
-        'local-automatic': ('int&f(){int n=3;static int&r=n;return r;}', 'TR0201'),
-        'local-runtime-choice': ('int a,b;int&f(bool c){static int&r=c?a:b;return r;}', 'TR0201'),
         'global-null': ('int&r=*static_cast<int*>(nullptr);', 'TR0201'),
         'global-one-past': ('int a[2];int&r=*(a+2);', 'TR0201'),
         'global-object-end': ('int n;int&r=*(&n+1);', 'TR0201'),

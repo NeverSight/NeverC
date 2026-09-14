@@ -136,6 +136,12 @@ zero aggregates. Type, arity, payload and depth checks still apply. `mutable`
 retains its source-storage meaning; a const dynamic global has writable physical
 C storage only to implement initialization.
 
+A dynamically bound local static reference uses the same readonly pointer
+carrier and guard operations. Its initialization assignment stores the result of
+binding the original glvalue; ordinary uses dereference the carrier. This grants
+no reassignment permission for the binding after publication and no new lifetime
+for its referent. No distinct reference opcode or new protocol field is needed.
+
 Each present `static_init_begin` site uniquely owns its global module-wide.
 There is at most one `static_init_end`, in the same function. A pruned declaration
 may leave zero storage without a site. A nonterminating initializer may have no
