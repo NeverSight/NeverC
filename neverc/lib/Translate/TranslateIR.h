@@ -239,6 +239,8 @@ struct VerificationContext {
   std::optional<CarrierLayout> ExpectedCarrierLayout;
   // Zero unless the consumer independently found a signed native ptrdiff type.
   uint32_t ExpectedPtrDiffBits = 0;
+  // Zero unless the native target has a checked flat object-address carrier.
+  uint32_t ExpectedUIntPtrBits = 0;
 };
 struct SourceMapEntry {
   uint32_t BeginLine = 1;

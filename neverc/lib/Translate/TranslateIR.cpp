@@ -945,7 +945,12 @@ class Verifier {
             E.BinaryOp == BinaryOperator::LessEqual ||
             E.BinaryOp == BinaryOperator::Greater ||
             E.BinaryOp == BinaryOperator::GreaterEqual)
-          return error(E.Loc, "Pointer ordering remains unsupported.");
+          return (A == B && E.ValueType.Kind == TypeKind::Bool &&
+                  completeObject(A.Elements[0]) &&
+                  Context.ExpectedUIntPtrBits == M.Target.PointerBits) ||
+                 error(E.Loc, "Pointer ordering requires matching complete object "
+                              "pointers, a bool result and an independently "
+                              "verified native address carrier.");
         if (A.Kind == TypeKind::Pointer && B.Kind == TypeKind::Pointer) {
           if (E.BinaryOp != BinaryOperator::Subtract ||
               A.Elements[0] != B.Elements[0] ||

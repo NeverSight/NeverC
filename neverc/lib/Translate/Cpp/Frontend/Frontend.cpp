@@ -9153,16 +9153,17 @@ public:
         bool Offset = B->getOpcode() == BO_Add || B->getOpcode() == BO_Sub ||
                       B->getOpcode() == BO_AddAssign ||
                       B->getOpcode() == BO_SubAssign;
-        if (!Offset)
+        const bool Ordering = B->isRelationalOp();
+        if (!Offset && !Ordering)
           A.reject(S->getBeginLoc(), "pointer binary operator",
-                   "Only pointer offsets, difference and equality are supported.");
+                   "Only object pointer offsets, difference and comparisons are supported.");
         for (const auto *Operand : {B->getLHS(), B->getRHS()}) {
           if (!Operand->getType()->isPointerType())
             continue;
           auto Pointee = Operand->getType()->getPointeeType();
           if (!Pointee->isObjectType() || Pointee->isIncompleteType())
-            A.reject(S->getBeginLoc(), "pointer arithmetic",
-                     "Pointer arithmetic requires complete object pointees.");
+            A.reject(S->getBeginLoc(), "pointer object operation",
+                     "Pointer offsets and ordering require complete object pointees.");
         }
         if (B->getOpcode() == BO_Sub &&
             B->getLHS()->getType()->isPointerType() &&

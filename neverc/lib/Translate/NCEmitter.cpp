@@ -169,7 +169,16 @@ class Emitter {
   };
   std::vector<PointerHelper> PointerHelpers;
   std::map<std::string, size_t> PointerHelperIndices;
-  bool HasPointerDifference = false;
+  bool HasPointerDifference = false, HasPointerOrdering = false;
+
+  static bool pointerOrdering(const Expr &E) {
+    return E.Kind == ExprKind::Binary &&
+           E.Args[0].ValueType.Kind == TypeKind::Pointer &&
+           (E.BinaryOp == BinaryOperator::Less ||
+            E.BinaryOp == BinaryOperator::LessEqual ||
+            E.BinaryOp == BinaryOperator::Greater ||
+            E.BinaryOp == BinaryOperator::GreaterEqual);
+  }
 
   std::string pointerKey(BinaryOperator Op, const Type &Left, const Type &Right,
                          const Type &Result) {
@@ -204,6 +213,7 @@ class Emitter {
   }
   void inspect(const Expr &E) {
     inspectType(E.ValueType);
+    HasPointerOrdering |= pointerOrdering(E);
     if (E.Kind == ExprKind::Binary &&
         (E.BinaryOp == BinaryOperator::Add ||
          E.BinaryOp == BinaryOperator::Subtract) &&
@@ -295,6 +305,13 @@ class Emitter {
            E.Args[1].ValueType.Kind == TypeKind::Pointer))
         return pointerCall(E.BinaryOp, E.Args[0], E.Args[1], E.ValueType);
       std::string A = expression(E.Args[0]), B = expression(E.Args[1]);
+      if (pointerOrdering(E))
+        // C++ permits unspecified results for unrelated object pointers. A
+        // native C relational comparison would instead introduce undefined
+        // behavior. The independently checked flat-address carrier picks one
+        // consistent ordering and preserves same-object/subobject ordering.
+        return "((bool)(((__UINTPTR_TYPE__)(" + A + ")) " +
+               binarySpelling(E.BinaryOp) + " ((__UINTPTR_TYPE__)(" + B + "))))";
       auto Bits = E.ValueType.integerBits();
       if (E.ValueType.isSignedInteger() && E.BinaryOp == BinaryOperator::ShiftLeft)
         return conversionHelper(Bits) + "(((" + unsignedCarrier(Bits) + ")(" +
@@ -387,6 +404,13 @@ class Emitter {
              std::to_string(C.ABIAlignBits) +
              ", \"translated carrier alignment mismatch\");");
       }
+    if (HasPointerOrdering) {
+      line("static_assert(sizeof(__UINTPTR_TYPE__) * __CHAR_BIT__ == " +
+           std::to_string(M.Target.PointerBits) +
+           ", \"translated pointer ordering width mismatch\");");
+      line("static_assert(((__UINTPTR_TYPE__)-1) > 0, "
+           "\"translated pointer ordering requires an unsigned carrier\");");
+    }
     if (HasPointerDifference) {
       line("static_assert(sizeof(__typeof__((int *)0 - (int *)0)) * "
            "__CHAR_BIT__ == " +

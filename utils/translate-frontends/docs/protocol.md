@@ -612,7 +612,12 @@ the consumer context, not to frontend-supplied target evidence. Existing `index`
 and `address` nodes retain their typing rules; direct address-of-index emission
 uses guarded offsets and direct address-of-dereference emission cancels the pair.
 Pure typed emitter helpers preserve null/zero rules and bound output growth;
-they add no protocol call kind. Relational pointer operations remain rejected.
+they add no protocol call kind. Relational `binary` nodes accept equally typed
+complete-object pointers and a `bool` result only when the consumer independently
+verifies a native flat-address unsigned carrier of the recorded pointer width.
+The emitter uses that private carrier to preserve C++ ordering without introducing
+C undefined behavior for unrelated pointers. Source/wire pointer-integer casts
+remain rejected. No schema version or frontend-supplied ABI permission is added.
 See the [source and emission contract](cpp-core-v2.md#pointer-offsets-and-differences).
 
 ## Core v2 method calls

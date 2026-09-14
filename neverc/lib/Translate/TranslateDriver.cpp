@@ -104,6 +104,13 @@ bool expectedCarrierLayout(VerificationContext &Context, Diagnostics &D,
   Context.ExpectedPtrDiffBits = neverc::TargetInfo::isTypeSigned(PtrDiff)
                                     ? Target->getTypeWidth(PtrDiff)
                                     : 0;
+  const llvm::Triple NativeTriple(Context.TargetTriple);
+  Context.ExpectedUIntPtrBits = 0;
+  if (NativeTriple.isX86() || NativeTriple.isAArch64()) {
+    const auto UIntPtr = Target->getUIntPtrType();
+    if (!neverc::TargetInfo::isTypeSigned(UIntPtr))
+      Context.ExpectedUIntPtrBits = Target->getTypeWidth(UIntPtr);
+  }
   Context.LittleEndian = Target->isLittleEndian();
   Context.ExpectedCarrierLayout = Layout;
   return true;

@@ -1402,13 +1402,101 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2PointerOrderingPreservesArrayAndSubobjectRelations) {
+  const auto Source = tmpFile("pointer-ordering.cpp");
+  const auto Output = tmpFile("pointer-ordering.nc");
+  writeFile(Source, R"cpp(struct Pair{int a;int b;};
+template<class T>bool less(T*a,T*b){return a<b;}
+int *visit(int*p,int&count){++count;return p;}
+int main(){
+ int a[4]={2,3,5,7};int*p=a;const int*q=a+4;
+ if(!(p<q)||!(p<=q)||p>q||p>=q)return 1;
+ if(!(q>p)||!(q>=p)||q<p||q<=p)return 2;
+ if(p<p||p>p||!(p<=p)||!(p>=p))return 3;
+ int*null=nullptr;
+ if(null<null||null>null||!(null<=null)||!(null>=null))return 4;
+ int sum=0;for(int*it=a;it<a+4;++it)sum+=*it;
+ if(sum!=17)return 5;
+ Pair pairs[2]={{1,2},{3,4}};
+ if(!(pairs<pairs+1)||!(&pairs[0].a<&pairs[0].b)||
+    !(&pairs[0].b<&pairs[1].a))return 6;
+ int rows[2][3]={{1,2,3},{4,5,6}};
+ if(!(rows<rows+1)||!(&rows[0][2]<&rows[1][0])||!less(rows,rows+2))return 7;
+ int*slots[2]={a,a+4};int**first=slots;int*const*last=slots+2;
+ if(!(first<last)||!(last>=first))return 8;
+ int left=0,right=0;
+ if(!(visit(a,left)<visit(a+1,right))||left!=1||right!=1)return 9;
+ // Distinct complete objects have unspecified C++ relational results. Check
+ // the selected flat-address order without requiring one stack placement.
+ int separate=0;int*other=&separate;
+ if((p<other)!=(other>p)||(p<=other)!=(other>=p)||
+    (p<other)==(p>other)||(p<=other)!=(p<other))return 10;
+ if(less(a,a+4)!=true)return 11;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_NE(readFile(Output).find("translated pointer ordering width mismatch"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pointer-ordering" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerOrderingAcceptsSourceComposition) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"protocol-source", "bool lt(const int*a,const int*b){return a<b;}bool le(const int*a,const int*b){return a<=b;}bool gt(const int*a,const int*b){return a>b;}bool ge(const int*a,const int*b){return a>=b;}"},
+      {"less", "bool f(int*a,int*b){return a<b;}"},
+      {"less-equal", "bool f(int*a,int*b){return a<=b;}"},
+      {"greater", "bool f(int*a,int*b){return a>b;}"},
+      {"greater-equal", "bool f(int*a,int*b){return a>=b;}"},
+      {"discarded-branch", "int f(int*p){if(false){bool b=p<p;}return 0;}"},
+      {"qualification", "bool f(int*a,const int*b){return a<b&&b>=a;}"},
+      {"rows", "bool f(int(*a)[3],const int(*b)[3]){return a<b;}"},
+      {"records", "struct R{int n;};bool f(R*a,const R*b){return a<=b;}"},
+      {"nested-pointers", "bool f(int**a,int*const*b){return a>=b;}"},
+      {"constant-array", "int a[2]={1,2};constexpr bool ordered=&a[0]<&a[1];static_assert(ordered);int main(){return !ordered;}"},
+      {"constexpr-function", "template<class T>constexpr bool less(T*a,T*b){return a<b;}constexpr int a[2]={1,2};static_assert(less(a,a+1));int main(){return 0;}"},
+      {"iterators", "template<class T>struct It{T*p;};template<class T>bool operator<(It<T>a,It<T>b){return a.p<b.p;}int main(){int a[2]={1,2};return It<int>{a}<It<int>{a+2}?0:1;}"},
+      {"runtime-source", "struct Pair{int a;int b;};\ntemplate<class T>bool less(T*a,T*b){return a<b;}\nint *visit(int*p,int&count){++count;return p;}\nint main(){\n int a[4]={2,3,5,7};int*p=a;const int*q=a+4;\n if(!(p<q)||!(p<=q)||p>q||p>=q)return 1;\n if(!(q>p)||!(q>=p)||q<p||q<=p)return 2;\n if(p<p||p>p||!(p<=p)||!(p>=p))return 3;\n int*null=nullptr;\n if(null<null||null>null||!(null<=null)||!(null>=null))return 4;\n int sum=0;for(int*it=a;it<a+4;++it)sum+=*it;\n if(sum!=17)return 5;\n Pair pairs[2]={{1,2},{3,4}};\n if(!(pairs<pairs+1)||!(&pairs[0].a<&pairs[0].b)||\n    !(&pairs[0].b<&pairs[1].a))return 6;\n int rows[2][3]={{1,2,3},{4,5,6}};\n if(!(rows<rows+1)||!(&rows[0][2]<&rows[1][0])||!less(rows,rows+2))return 7;\n int*slots[2]={a,a+4};int**first=slots;int*const*last=slots+2;\n if(!(first<last)||!(last>=first))return 8;\n int left=0,right=0;\n if(!(visit(a,left)<visit(a+1,right))||left!=1||right!=1)return 9;\n // Distinct complete objects have unspecified C++ relational results. Check\n // the selected flat-address order without requiring one stack placement.\n int separate=0;int*other=&separate;\n if((p<other)!=(other>p)||(p<=other)!=(other>=p)||\n    (p<other)==(p>other)||(p<=other)!=(p<other))return 10;\n if(less(a,a+4)!=true)return 11;\n return 0;\n}\n"},
+  };
+  for (const auto &[Name, Text] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("pointer-ordering-" + Name + ".cpp");
+    const auto Output = tmpFile("pointer-ordering-" + Name + ".nc");
+    writeFile(Source, Text);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PointerOrderingRetainsSourceAndTypeChecks) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"void", "bool f(void*a,void*b){return a<b;}"},
+      {"incomplete", "struct R;bool f(R*a,R*b){return a<b;}"},
+      {"volatile", "bool f(volatile int*a,volatile int*b){return a<b;}"},
+      {"hidden-source", "template<class T>bool less(int*a,int*b){return a<b;}bool f(int*a,int*b){return less<decltype((sizeof(long double),1))>(a,b);}"},
+      {"pointer-to-integer", "bool f(int*a,int*b){return (unsigned long long)a<(unsigned long long)b;}"},
+      {"integer-to-pointer", "bool f(int n,int*p){return (int*)n<p;}"},
+  };
+  for (const auto &[Name, Text] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("pointer-ordering-" + Name + ".cpp");
+    const auto Output = tmpFile("pointer-ordering-" + Name + ".nc");
+    writeFile(Source, Text);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PointerArithmeticKeepsUnsupportedOperationsRejected) {
   const std::vector<std::string> Sources = {
-      "bool f(int*a,int*b){return a<b;}",
-      "bool f(int*a,int*b){return a<=b;}",
-      "bool f(int*a,int*b){return a>b;}",
-      "bool f(int*a,int*b){return a>=b;}",
-      "int f(int*p){if(false){bool b=p<p;}return 0;}",
       "void*f(void*p){return p+1;}",
       "void f(void*p){++p;}",
       "auto f(void*a,void*b){return a-b;}",
@@ -1453,7 +1541,6 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
   };
   const Rejection Cases[] = {
       {"reference-field", "struct R{int &value;};", "TR0201"},
-      {"pointer-ordering", "bool f(int *a,int *b){return a<b;}", "TR0201"},
       {"unsupported-pointee", "long double *f(long double *p){return p;}", "TR0201"},
       {"const-write", "void f(const int *p){*p=1;}", "TR0202"}};
   for (const auto &Case : Cases) {

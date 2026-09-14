@@ -535,8 +535,8 @@ expression-form alignment are rejected. Resolved `sizeof...` follows the
   null initialization (`nullptr`, zero and value initialization), qualification
   conversions and pointer/`void *` round trips preserve the admitted source
   behavior. `const_cast` may adjust qualifications on supported pointer and
-  reference types. Pointer ordering, unary pointer plus and pointer/integer
-  reinterpretation remain rejected. Offsets and differences follow the rules below.
+  reference types. Unary object-pointer plus and pointer/integer reinterpretation
+  remain rejected. Ordering, offsets and differences follow the rules below.
 - A reference binds to the original storage. Returning a reference, assigning
   through that result, references to pointer variables (`int *&`) and conditional,
   comma, assignment and preincrement lvalues preserve identity and sequencing.
@@ -4215,9 +4215,41 @@ No load, store or member access through null or past-the-end pointers is thereby
 permitted. Array bounds, object lifetimes and representable same-array differences
 retain the defined-source-execution contract.
 
-Pointer ordering (`<`, `<=`, `>`, `>=`), unary pointer `+`, pointer/integer casts,
+Unary object-pointer `+`, source pointer/integer casts,
 void/function/member-pointer arithmetic, and general iterator/container/STL
-implementations remain outside this increment. Pointer `==`/`!=` remain supported.
+implementations remain outside this increment. Pointer comparisons follow the
+contract below.
+
+## Object pointer ordering
+
+Core v2 admits `<`, `<=`, `>`, and `>=` between equally typed pointers to supported
+complete objects after Clang's composite-pointer and qualification conversions.
+This includes array ends, rows, record objects and subobjects, nested pointer
+elements, concrete template functions and overloaded iterator comparisons.
+The result is `bool`. The written types, template source and discarded branches
+still pass the existing source checks.
+
+[C++17 relational rules](https://timsong-cpp.github.io/cppwp/n4659/expr.rel)
+define ordering within arrays and appropriately ordered record subobjects, and
+give equality-specific results for all four operations. Results for other unequal
+object pointers can be unspecified. Direct C23 pointer comparison could introduce
+undefined behavior in that last case. Emission therefore compares the native
+unsigned address representations. On the admitted flat-address targets this
+preserves the required object order and chooses a consistent order for unrelated
+objects, including null versus nonnull pointers. Each operand is emitted once.
+
+The consumer independently verifies the unsigned pointer-sized carrier on native
+x86 or AArch64 targets. The frontend cannot provide this expectation through the
+protocol. Generated width and unsignedness assertions check the NC compilation
+context again. Unsupported target representations fail validation. These private
+emission casts do not admit source or wire pointer/integer conversion expressions.
+Void, incomplete, volatile, function and member pointees retain their restrictions.
+
+Paired positive/negative source cases and forged-IR tests check the operator/type
+contract and independent carrier requirement. O0/O2 runtime fixtures with inlining
+disabled cover arrays, rows, member order, one-past and equal/null pointers,
+operand effects, iterator loops and the selected unrelated-object order. Native
+acceptance requires CI for the implementing revision. Full C++/STL is unfinished.
 
 ## Fixed arrays and initialization
 

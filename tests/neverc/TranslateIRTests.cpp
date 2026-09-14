@@ -106,6 +106,7 @@ VerificationContext context(const Module &M) {
   if (M.Profile == "cpp-core-v2") {
     C.ExpectedCarrierLayout = x64CarrierLayout();
     C.ExpectedPtrDiffBits = 64;
+    C.ExpectedUIntPtrBits = 64;
   }
   return C;
 }
@@ -1102,7 +1103,7 @@ TEST(TranslateIR, CoreV2PointerAddressCancellationAndNestedOffsetsStayBounded) {
   invalid(M, "core v2");
 }
 
-TEST(TranslateIR, CoreV2RejectsPointerIntegerCastsAndOrdering) {
+TEST(TranslateIR, CoreV2RejectsPointerIntegerCasts) {
   Type Pointer = pointerType(intType());
   for (const auto &Pair : std::vector<std::pair<Type, Type>>{
            {Pointer, intType()}, {intType(), Pointer},
@@ -1114,14 +1115,56 @@ TEST(TranslateIR, CoreV2RejectsPointerIntegerCastsAndOrdering) {
         ExprKind::Cast, Pair.second, {variable("nct_value", Pair.first)}));
     invalid(M, "pointer conversion");
   }
+}
+
+TEST(TranslateIR, CoreV2PointerOrderingRequiresIndependentAddressRepresentation) {
+  for (auto P : {pointerType(intType()), pointerType(intType(), true),
+                 pointerType(arrayType(intType(), 3)),
+                 pointerType(pointerType(intType(), true), true)}) {
+    for (auto Op : {BinaryOperator::Less, BinaryOperator::LessEqual,
+                    BinaryOperator::Greater, BinaryOperator::GreaterEqual}) {
+      auto M = module(true);
+      M.Functions[0].Result = boolType();
+      M.Functions[0].Params = {{"nct_p", P, InputLoc}, {"nct_q", P, InputLoc}};
+      M.Functions[0].Body.back() = ret(binary(Op, variable("nct_p", P),
+                                            variable("nct_q", P), boolType()));
+      Diagnostics D;
+      EmittedSource Output;
+      ASSERT_TRUE(emitNC(M, context(M), Output, D));
+      EXPECT_NE(Output.Text.find("translated pointer ordering width mismatch"),
+                std::string::npos);
+      EXPECT_NE(Output.Text.find("(__UINTPTR_TYPE__)(nct_p)"), std::string::npos);
+      EXPECT_EQ(Output.Text.find("translated ptrdiff width mismatch"), std::string::npos);
+      for (unsigned BadWidth : {0u, 16u, 32u}) {
+        auto C = context(M);
+        C.ExpectedUIntPtrBits = BadWidth;
+        D.clear();
+        EXPECT_FALSE(verifyModule(M, C, D));
+      }
+      auto Bad = M;
+      Bad.Functions[0].Result = intType();
+      Bad.Functions[0].Body.back().Value->ValueType = intType();
+      invalid(Bad, "ordering");
+      Bad = M;
+      Bad.Functions[0].Params[1].ValueType = uintType();
+      Bad.Functions[0].Body.back().Value->Args[1].ValueType = uintType();
+      invalid(Bad, "ordering");
+      Bad = M;
+      const auto Other = pointerType(boolType());
+      Bad.Functions[0].Params[1].ValueType = Other;
+      Bad.Functions[0].Body.back().Value->Args[1].ValueType = Other;
+      invalid(Bad, "ordering");
+    }
+  }
   auto M = module(true);
   M.Functions[0].Result = boolType();
-  auto Null = pointerExpr(ExprKind::Null, Pointer);
-  M.Functions[0].Body.back() = ret(binary(BinaryOperator::Equal, Null, Null, boolType()));
+  const auto VoidPointer = pointerType({TypeKind::Void, {}});
+  auto Null = pointerExpr(ExprKind::Null, VoidPointer);
+  M.Functions[0].Body.back() = ret(binary(BinaryOperator::Less, Null, Null, boolType()));
+  invalid(M, "ordering");
+  M.Functions[0].Body.back().Value->BinaryOp = BinaryOperator::Equal;
   Diagnostics D;
   EXPECT_TRUE(verifyModule(M, context(M), D));
-  M.Functions[0].Body.back().Value->BinaryOp = BinaryOperator::Less;
-  invalid(M, "ordering");
 }
 
 TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
