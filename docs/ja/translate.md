@@ -4,7 +4,7 @@
 
 # C++ を NeverC に変換する
 
-Core v2 は非仮想レコードの明示的デストラクター呼び出しとスカラーの擬似デストラクター呼び出しに対応し、レシーバーの評価と既存の自動破棄を保持します。未評価のテンプレート照会は未使用の本体を実体化しません。生成する C23 は検証済みの別名参照可能なオブジェクト型を使用します。ネイティブ検証には実装版の CI が必要です。割り当て、placement による再構築、例外、標準ヘッダー、完全な C++/STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+Core v2 は検証済みのソース定義割り当て関数による単一オブジェクトの new/delete に対応し、クラスやテンプレートの placement オーバーロード、格納アドレス、引数の破棄を保持します。明示的破棄と placement 再構築でも後の自動破棄義務は残ります。ネイティブ検証には実装版 CI が必要です。既定のヒープ実行時機構、配列割り当て、例外、標準ヘッダー、完全な C++/STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 実験的な `neverc translate` は `cpp-core-v1`、`cpp-core-v2`、`cpp-project-v1`、`cpp-math-v1` でレビュー可能な `.nc` ソースを生成します。
 

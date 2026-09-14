@@ -316,6 +316,8 @@ public:
   std::string functionPointerType(clang::QualType T, clang::SourceLocation L,
                                   unsigned Depth = 0);
   bool functionAddressTarget(const clang::FunctionDecl *F, clang::SourceLocation L);
+  const clang::FunctionDecl *allocationFunction(const clang::FunctionDecl *F,
+                                               bool Allocate, clang::SourceLocation L);
   json::Object functionAddress(const clang::FunctionDecl *F, clang::SourceLocation L);
   std::size_t storageUnits(clang::QualType T, unsigned Depth = 0);
   void chargeExpansion(std::size_t Nodes, clang::SourceLocation L);

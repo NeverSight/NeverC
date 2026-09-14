@@ -4,7 +4,7 @@
 
 # Tradurre C++ in NeverC
 
-Core v2 supporta chiamate esplicite a distruttori non virtuali e pseudo-distruttori scalari, mantenendo gli effetti del ricevitore e gli obblighi di pulizia automatica. Le interrogazioni di template non valutate non istanziano corpi inutilizzati. Il C23 generato usa tipi di oggetto verificati che consentono alias. La verifica nativa richiede la CI di questa implementazione; allocazione, ricostruzione placement, eccezioni, header standard e C++/STL completo restano incompleti. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+Core v2 supporta new/delete per singoli oggetti tramite funzioni di allocazione definite nel sorgente e verificate, inclusi overload placement di classi e template, identità della memoria e pulizia degli argomenti. Distruzione esplicita e ricostruzione placement mantengono gli obblighi di pulizia automatica successivi. La verifica nativa richiede la CI di questa implementazione. Runtime heap predefinito, array, eccezioni, header standard e C++/STL completo restano incompleti. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 Il comando sperimentale `neverc translate` genera sorgenti `.nc` verificabili con `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1` e `cpp-math-v1`.
 

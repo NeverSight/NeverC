@@ -55,8 +55,14 @@ static bool standardExceptionSpecification(const FunctionProtoType *Prototype) {
 }
 
 // Name shape only: patterns do not yet have concrete parameter/result types.
+static bool allocationOperatorKind(OverloadedOperatorKind Kind) {
+  return Kind == OO_New || Kind == OO_Array_New ||
+         Kind == OO_Delete || Kind == OO_Array_Delete;
+}
+
 static bool ordinaryOperatorKind(OverloadedOperatorKind Kind) {
   switch (Kind) {
+  case OO_New: case OO_Array_New: case OO_Delete: case OO_Array_Delete:
   case OO_Plus: case OO_Minus: case OO_Star: case OO_Slash: case OO_Percent:
   case OO_Caret: case OO_Amp: case OO_Pipe: case OO_Tilde: case OO_Exclaim:
   case OO_Equal: case OO_Less: case OO_Greater:
@@ -71,6 +77,39 @@ static bool ordinaryOperatorKind(OverloadedOperatorKind Kind) {
   default:
     return false;
   }
+}
+
+static bool supportedDeclarationAttributes(const Decl *D) {
+  if (!D->hasAttrs())
+    return true;
+  const auto *F = dyn_cast<FunctionDecl>(D);
+  if (!F || (F->getOverloadedOperator() != OO_New &&
+             F->getOverloadedOperator() != OO_Array_New))
+    return false;
+  std::optional<unsigned> AlignmentParameter;
+  bool Nothrow = false;
+  if (!F->isReplaceableGlobalAllocationFunction(&AlignmentParameter, &Nothrow))
+    return false;
+  // These exact implicit facts are synthesized by pinned Clang's
+  // AddKnownFunctionAttributesForReplaceableGlobalAllocationFunction. Written
+  // attributes never gain this exception and are not copied to emitted calls.
+  for (const auto *Attribute : F->attrs()) {
+    if (!Attribute->isImplicit())
+      return false;
+    if (isa<ReturnsNonNullAttr>(Attribute) && !Nothrow)
+      continue;
+    if (const auto *Size = dyn_cast<AllocSizeAttr>(Attribute);
+        Size && Size->getElemSizeParam().isValid() &&
+        Size->getElemSizeParam().getSourceIndex() == 1 &&
+        !Size->getNumElemsParam().isValid())
+      continue;
+    if (const auto *Align = dyn_cast<AllocAlignAttr>(Attribute);
+        Align && AlignmentParameter && Align->getParamIndex().isValid() &&
+        Align->getParamIndex().getSourceIndex() == *AlignmentParameter)
+      continue;
+    return false;
+  }
+  return true;
 }
 
 // Name shape only; primary ownership and concrete types are checked separately.
@@ -604,7 +643,8 @@ bool ordinaryOperator(const FunctionDecl *F) {
   if (!ordinaryOperatorKind(F->getOverloadedOperator()))
     return false;
   if (const auto *M = dyn_cast<CXXMethodDecl>(F))
-    if (!M->isUserProvided() || M->isVirtual() || M->isStatic() ||
+    if (!M->isUserProvided() || M->isVirtual() ||
+        M->isStatic() != allocationOperatorKind(F->getOverloadedOperator()) ||
         M->isExplicitObjectMemberFunction() ||
         M->getMethodQualifiers().hasVolatile() ||
         M->getMethodQualifiers().hasRestrict())
@@ -1501,11 +1541,14 @@ std::string Adapter::functionPointerType(QualType T, SourceLocation L,
 }
 
 bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
+  if (F && allocationOperatorKind(F->getOverloadedOperator()))
+    if (const auto *Definition = F->getDefinition())
+      F = Definition;
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(F);
   // Classification alone does not admit a template source use: Allowlist still
   // checks the selected declaration, deduction source, primary and actual body.
   const bool ConcreteTemplate = concreteFunctionTemplate(F);
-  if (!S.coreV2() || !F || F->isInvalidDecl() || F->hasAttrs() ||
+  if (!S.coreV2() || !F || F->isInvalidDecl() || !supportedDeclarationAttributes(F) ||
       F->isImplicit() || F->isMain() || F->getBuiltinID() ||
       !S.owns(Sources, F->getLocation()) || F->isDeletedAsWritten() ||
       F->isDefaulted() || F->isConsteval() ||
@@ -1514,7 +1557,8 @@ bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
       (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
        !ConcreteTemplate && !concreteMemberFunction(F) &&
        !concreteFriendFunction(F)) ||
-      (Method && (!Method->isStatic() || !ordinaryMethod(Method)))) {
+      (Method && (!Method->isStatic() ||
+                  (!ordinaryMethod(Method) && !ordinaryOperator(Method))))) {
     reject(L, "function address", "An ordinary source-owned free function or static method is required.");
     return false;
   }
@@ -1526,6 +1570,32 @@ bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
     return false;
   }
   return true;
+}
+
+const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
+                                               bool Allocate, SourceLocation L) {
+  const auto *Definition = F ? F->getDefinition() : nullptr;
+  if (!Definition || !S.owns(Sources, Definition->getLocation())) {
+    reject(L, Allocate ? "allocation definition" : "deallocation definition",
+           "The selected allocation function requires its definition in this source unit.", "TR0203");
+    throw Failure{};
+  }
+  if (!S.coreV2() || Definition->getOverloadedOperator() != (Allocate ? OO_New : OO_Delete) ||
+      !ordinaryOperator(Definition) || !supportedDeclarationAttributes(Definition) ||
+      Definition->isReservedGlobalPlacementOperator() ||
+      Definition->isDestroyingOperatorDelete() || !Definition->getNumParams() ||
+      !Context.hasSameUnqualifiedType(Definition->getReturnType(),
+                                      Allocate ? Context.VoidPtrTy : Context.VoidTy) ||
+      !Context.hasSameUnqualifiedType(Definition->getParamDecl(0)->getType(),
+                                      Allocate ? Context.getSizeType() : Context.VoidPtrTy)) {
+    reject(L, Allocate ? "allocation function" : "deallocation function",
+           "An admitted source-defined single-object allocation operator is required.");
+    throw Failure{};
+  }
+  type(Definition->getReturnType(), L, true);
+  for (const auto *P : Definition->parameters())
+    type(P->getType(), L);
+  return Definition;
 }
 
 json::Object Adapter::functionAddress(const FunctionDecl *F, SourceLocation L) {
@@ -2498,7 +2568,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           C->isStatic() || C->getNumParams())
         return false;
     } else if (M->isOverloadedOperator() &&
-               ((!M->isUserProvided() && !M->isDeletedAsWritten()) || M->isStatic())) {
+               ((!M->isUserProvided() && !M->isDeletedAsWritten()) ||
+                M->isStatic() != allocationOperatorKind(M->getOverloadedOperator()))) {
       return false;
     }
     for (const auto *Parameter : M->parameters()) {
@@ -2561,7 +2632,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     } else if (M->getKind() != Decl::CXXMethod) {
       return false;
     } else if (!M->getIdentifier() && !Defaulted) {
-      if ((!Deleted && !M->isUserProvided()) || M->isStatic() ||
+      if ((!Deleted && !M->isUserProvided()) ||
+          M->isStatic() != allocationOperatorKind(M->getOverloadedOperator()) ||
           !ordinaryOperatorKind(M->getOverloadedOperator()))
         return false;
     }
@@ -2825,7 +2897,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   bool friendFunctionSourceShape(const FunctionDecl *F) {
     if (!owned(F) || F->getKind() != Decl::Function || F->isInvalidDecl() ||
-        F->hasAttrs() || (!F->getIdentifier() &&
+        !supportedDeclarationAttributes(F) || (!F->getIdentifier() &&
                          !ordinaryOperatorKind(F->getOverloadedOperator())) ||
         !F->getDeclContext()->getRedeclContext()->isFileContext() ||
         F->getDescribedFunctionTemplate() || F->getPrimaryTemplate() ||
@@ -2871,7 +2943,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Parent->isLocalClass() || !classOwnerScope(Parent->getDeclContext()) ||
         !D->getDeclContext()->getRedeclContext()->isFileContext() ||
         !ordinaryFreeFunctionName(Function) || !owned(Function) ||
-        Function->isInvalidDecl() || Function->hasAttrs() ||
+        Function->isInvalidDecl() || !supportedDeclarationAttributes(Function) ||
         !Function->getFriendObjectKind() ||
         Function->getDescribedFunctionTemplate() != D ||
         Function->getLexicalDeclContext() != Parent ||
@@ -3616,7 +3688,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         !ordinaryFreeFunctionName(Pattern) ||
         Pattern->isVariadic() ||
         Pattern->isDefaulted() || Pattern->isConsteval() ||
-        Pattern->getTrailingRequiresClause() || Pattern->hasAttrs())
+        Pattern->getTrailingRequiresClause() || !supportedDeclarationAttributes(Pattern))
       return false;
     for (const auto *Parameter : Pattern->parameters()) {
       A.chargeExpansion(1, Parameter->getLocation());
@@ -4290,11 +4362,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   void checkSelectedTemplateCall(const Expr *Expression, const FunctionDecl *Function,
                                   SourceLocation L) {
-    if (!concreteMemberFunctionTemplate(Function))
+    if (!(isa<CXXNewExpr>(Expression) ? concreteFunctionTemplate(Function)
+                                     : concreteMemberFunctionTemplate(Function)))
       return;
     auto Found = SelectedCallSources.find(Expression);
     if (Found == SelectedCallSources.end() || Found->second.empty()) {
-      A.reject(L, "selected member template source", "A construction or implicit conversion needs its exact successful selection source.");
+      A.reject(L, "selected member template source", "Construction, conversion or allocation needs its exact successful selection source.");
       return;
     }
     for (const auto *Source : Found->second) {
@@ -5827,8 +5900,11 @@ public:
         Selected = Construction->getConstructor();
       else if (const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(Source.Expression))
         Selected = Call->getDirectCallee();
+      else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
+        Selected = Allocation->getOperatorNew();
       if (!Selected || Selected != Source.Function ||
-          !concreteMemberFunctionTemplate(Selected) || !owned(Selected) ||
+          !(isa<CXXNewExpr>(Source.Expression) ? concreteFunctionTemplate(Selected)
+                                              : concreteMemberFunctionTemplate(Selected)) || !owned(Selected) ||
           !A.S.owns(A.Sources, Source.Location)) {
         A.reject(Source.Location, "selected member template source", "A retained record requires its actual direct source-owned template call.");
         continue;
@@ -7980,7 +8056,7 @@ public:
   bool VisitDecl(Decl *D) {
     if (!owned(D))
       return true;
-    if (D->hasAttrs())
+    if (D->hasAttrs() && (!A.S.coreV2() || !supportedDeclarationAttributes(D)))
       A.reject(D->getLocation(), "attribute",
                "Source declaration attributes are unsupported.");
     const bool ExtendedDeclaration =
@@ -8316,6 +8392,10 @@ public:
         !ordinaryOperator(D) && !supportedAssignment(Method))
       A.reject(D->getLocation(), "operator declaration",
                "This operator function is outside the selected profile.");
+    if (A.S.coreV2() && allocationOperatorKind(D->getOverloadedOperator()) &&
+        D->isReservedGlobalPlacementOperator())
+      A.reject(D->getLocation(), "reserved placement operator",
+               "Reserved global placement operators require the standard library runtime.", "TR0203");
     const auto *Prototype = D->getType()->getAs<FunctionProtoType>();
     if (Prototype && Prototype->hasExceptionSpec() && !Defaulted && !Deleted &&
         !(A.S.coreV2() && (standardExceptionSpecification(Prototype) ||
@@ -9124,7 +9204,7 @@ public:
               UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
               CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt,
               SubstNonTypeTemplateParmExpr, SizeOfPackExpr,
-              CXXPseudoDestructorExpr>(S)) &&
+              CXXPseudoDestructorExpr, CXXNewExpr, CXXDeleteExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -9136,6 +9216,53 @@ public:
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
+      if (const auto *N = dyn_cast<CXXNewExpr>(S)) {
+        auto Object = N->getAllocatedType();
+        if (N->isArray() || Object->isArrayType() || !Object->isObjectType() ||
+            Object->isIncompleteType() || N->isTypeDependent() ||
+            N->isValueDependent() || N->isInstantiationDependent()) {
+          A.reject(L, "new expression", "Single complete admitted objects require checked allocation and initialization.");
+          return true;
+        }
+        A.type(Object, L);
+        if (A.storageUnits(Object) > 200000)
+          A.reject(L, "new object storage", "Allocated object exceeds the storage limit.");
+        const auto *Selected = N->getOperatorNew();
+        const auto *F = A.allocationFunction(Selected, true, L);
+        checkSelectedTemplateCall(N, Selected, L);
+        unsigned Prefix = 1 + unsigned(N->passAlignment());
+        if (F->getNumParams() != Prefix + N->getNumPlacementArgs() ||
+            (N->passAlignment() && !F->getParamDecl(1)->getType()->isAlignValT())) {
+          A.reject(L, "allocation arguments", "Allocation size, alignment and placement arguments must match the selected function.");
+        } else {
+          for (unsigned I = 0; I < N->getNumPlacementArgs(); ++I) {
+            const auto *Arg = N->getPlacementArg(I);
+            checkDefaultArgument(Arg, Selected, Prefix + I, L);
+            if (F->getParamDecl(Prefix + I)->getType()->isReferenceType())
+              checkBinding(Arg, true);
+          }
+        }
+        A.S.Module["memory_lifetimes"] = true;
+      }
+      if (const auto *Delete = dyn_cast<CXXDeleteExpr>(S)) {
+        auto Object = Delete->getDestroyedType();
+        if (Delete->isArrayForm() || Object.isNull() || !Object->isObjectType() ||
+            Object->isArrayType() || Object->isIncompleteType()) {
+          A.reject(L, "delete expression", "Single complete admitted objects require their selected deallocation function.");
+          return true;
+        }
+        A.type(Object, L);
+        const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L);
+        unsigned Index = 1;
+        if (Index < F->getNumParams() &&
+            A.Context.hasSameUnqualifiedType(F->getParamDecl(Index)->getType(), A.Context.getSizeType()))
+          ++Index;
+        if (Index < F->getNumParams() && F->getParamDecl(Index)->getType()->isAlignValT())
+          ++Index;
+        if (Index != F->getNumParams() || concreteFunctionTemplate(F))
+          A.reject(L, "deallocation arguments", "Usual deallocation requires a pointer followed only by selected size and alignment values.");
+        A.S.Module["memory_lifetimes"] = true;
+      }
       if (const auto *D = dyn_cast<CXXPseudoDestructorExpr>(S);
           D && !DirectFunctionCallees.count(D))
         A.reject(L, "scalar destruction", "A checked zero-argument pseudo-destructor call is required.");

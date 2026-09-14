@@ -1925,9 +1925,6 @@ TEST_F(TranslateTest, CoreV2OperatorsRetainSourceAndLifetimeBoundaries) {
       {"volatile-argument", "struct R{int n;int operator+(volatile R&r)const{return r.n;}};", "TR0201"},
       {"member-pointer", "struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}", "TR0201"},
       {"free-pointer", "struct R{int n;};int operator+(R r,int v){return r.n+v;}void f(){auto p=&operator+;}", "TR0201"},
-      {"new-member", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}};", "TR0201"},
-      {"delete-member", "struct R{int n;static void operator delete(void*){}};", "TR0201"},
-      {"new-free", "using Size=decltype(sizeof(0));void*operator new(Size){return nullptr;}", "TR0201"},
       {"attribute", "struct R{int n;[[deprecated]] int operator()()const{return n;}};", "TR0201"},
       {"virtual", "struct R{int n;virtual int operator()()const{return n;}};", "TR0201"},
       {"binary-arity", "struct R{int n;int operator+(int,int){return n;}};", "TR0202"},
@@ -4308,6 +4305,218 @@ int main(){
 }
 
 
+
+TEST_F(TranslateTest, CoreV2AllocationAcceptsSourceDefinedFunctions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      // Source-only compiler fixture: the enum stand-in does not supply an SDK.
+      {"aligned-delete-protocol", "using Size=decltype(sizeof(0));\nnamespace std{enum class align_val_t:Size{};}\nstruct Aligned{int n;static void operator delete(void*p,std::align_val_t a)noexcept{}};\nstruct SizedAligned{int n;static void operator delete(void*p,Size n,std::align_val_t a)noexcept{}};\nvoid disposeAligned(Aligned*p){delete p;}\nvoid disposeSizedAligned(SizedAligned*p){delete p;}\n"},
+      {"member-new-declaration", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}};"},
+      {"member-delete-declaration", "struct R{int n;static void operator delete(void*){}};"},
+      {"global-new-declaration", "using Size=decltype(sizeof(0));void*operator new(Size){return nullptr;}"},
+      {"free-template-declaration", "template<class T>void*operator new(decltype(sizeof(0)),T*p){return p;}"},
+      {"class-template-declaration", "template<class T>struct R{static void*operator new(decltype(sizeof(0))){return nullptr;}};"},
+      {"scalar", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int f(){int*p=new int(3);int n=*p;delete p;return n;}"},
+      {"default-scalar", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int f(){int*p=new int;*p=4;int n=*p;delete p;return n;}"},
+      {"value-scalar", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int f(){int*p=new int();int n=*p;delete p;return n;}"},
+      {"const-scalar", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int f(){const int*p=new const int(3);int n=*p;delete p;return n;}"},
+      {"pointer-object", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int f(){using P=int*;P*p=new P(nullptr);bool b=*p==nullptr;delete p;return b;}"},
+      {"callback-object", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int g(int n){return n+1;}int f(){using P=int(*)(int);P*p=new P(&g);int n=(*p)(4);delete p;return n;}"},
+      {"enum-object", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};enum E{a,b};E f(){E*p=new E(b);E n=*p;delete p;return n;}"},
+      {"nullptr-object", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};bool f(){using N=decltype(nullptr);N*p=new N{};bool b=*p==nullptr;delete p;return b;}"},
+      {"record-aggregate", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};struct R{int n;double d;};int f(){R*p=new R{3,4};int n=p->n;delete p;return n;}"},
+      {"record-array-member", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};struct R{int n[3];};int f(){R*p=new R{{3,4,5}};int n=p->n[1];delete p;return n;}"},
+      {"record-construction", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};struct R{int n;R*self;R(int v):n(v),self(this){}~R(){++n;}};int f(){R*p=new R(3);int n=p->n;delete p;return n;}"},
+      {"reference-field", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};struct R{int&n;};int f(){int n=3;R*p=new R{n};++p->n;delete p;return n;}"},
+      {"late-global-definition", "int*f(){return new int(3);}void g(int*p){delete p;}using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};"},
+      {"member-functions", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}static void operator delete(void*){}};R*f(){return new R{3};}void g(R*p){delete p;}"},
+      {"member-sized-delete", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}static void operator delete(void*,Size){}};R*f(){return new R{3};}void g(R*p){delete p;}"},
+      {"qualified-global", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};struct R{int n;static void*operator new(Size)=delete;static void operator delete(void*)=delete;};R*f(){return ::new R{3};}void g(R*p){::delete p;}"},
+      {"class-placement", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size,void*p){return p;}};R*f(void*p){return new(p)R{3};}"},
+      {"global-tag-placement", "using Size=decltype(sizeof(0));struct Tag{};void*operator new(Size,Tag,void*p){return p;}int*f(void*p){return ::new(Tag{},p)int(3);}"},
+      {"placement-default", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct R{int n;static void*operator new(Size,void*p,const A&a=A()){return p;}};R*f(void*p){return new(p)R{3};}"},
+      {"placement-value", "using Size=decltype(sizeof(0));struct A{int n;A(int v):n(v){}~A(){}};struct R{int n;static void*operator new(Size,void*p,A a){return p;}};R*f(void*p){return new(p,A(4))R{3};}"},
+      {"null-nothrow", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size)noexcept{return nullptr;}R(int v):n(v){}};int effect(){return 3;}R*f(){return new R(effect());}"},
+      {"free-template-placement", "using Size=decltype(sizeof(0));template<class T>void*operator new(Size,T*p){return p;}int*f(int*p){return new(p)int(3);}"},
+      {"free-template-default", "using Size=decltype(sizeof(0));template<class T=int>void*operator new(Size,int*p,int n=sizeof(T)){return p;}int*f(int*p){return new(p)int(3);}"},
+      {"member-template-placement", "using Size=decltype(sizeof(0));struct R{int n;template<class T>static void*operator new(Size,T*p){return p;}};R*f(void*p){return new(p)R{3};}"},
+      {"class-template-placement", "using Size=decltype(sizeof(0));template<class T>struct R{T n;static void*operator new(Size,void*p){return p;}};R<int>*f(void*p){return new(p)R<int>{3};}"},
+      {"class-member-template-placement", "using Size=decltype(sizeof(0));template<class T>struct R{T n;template<class P>static void*operator new(Size,P*p){return p;}};R<int>*f(void*p){return new(p)R<int>{3};}"},
+      {"operator-direct-address", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};void*f(Size n){auto a=static_cast<void*(*)(Size)>(&operator new);auto d=static_cast<void(*)(void*)noexcept>(&operator delete);void*p=a(n);d(p);return p;}"},
+      {"member-operator-address", "using Size=decltype(sizeof(0));struct R{static void*operator new(Size){return nullptr;}static void operator delete(void*){}};void*f(Size n){auto a=&R::operator new;auto d=&R::operator delete;void*p=a(n);d(p);return p;}"},
+      {"array-operator-direct", "using Size=decltype(sizeof(0));void*operator new[](Size){return nullptr;}void operator delete[](void*)noexcept{}void*f(Size n){void*p=operator new[](n);operator delete[](p);return p;}"},
+      {"explicit-reconstruction", "using Size=decltype(sizeof(0));struct Tag{};void*operator new(Size,Tag,void*p){return p;}struct R{int n;R(int v):n(v){}~R(){}};int f(){R r(3);r.~R();::new(Tag{},&r)R(4);return r.n;}"},
+      {"scalar-reconstruction", "using Size=decltype(sizeof(0));struct Tag{};void*operator new(Size,Tag,void*p){return p;}int f(void*p){using I=int;I*old=new(Tag{},p)I(3);old->~I();float*value=new(Tag{},p)float(4);return static_cast<int>(*value);}"},
+      {"template-new", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};template<class T>T*make(){return new T{};}int f(){int*p=make<int>();int n=*p;delete p;return n;}"},
+      {"local-static-new", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int*f(){static int*p=new int(3);return p;}"},
+      {"default-argument-new", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int f(int*p=new int(3)){int n=*p;delete p;return n;}int g(){return f();}"},
+      {"default-member-new", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};struct R{int*p=new int(3);~R(){delete p;}};int f(){R r;return *r.p;}"},
+      {"discarded-source", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int f(){if constexpr(false){int*p=new int(3);delete p;}return 0;}"},
+      {"query", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};bool f(int*p){return noexcept(new int(3))||noexcept(delete p);}"},
+      {"lazy-template-body", "using Size=decltype(sizeof(0));struct R{int n;template<class T>static void*operator new(Size,T*p){T::missing();return p;}};R*f(R*p){return p;}"},
+      {"protocol-source", "using Size=decltype(sizeof(0));\nunsigned char storage[64]{};\nvoid*operator new(Size n){return storage;}\nvoid operator delete(void*p)noexcept{}\nstruct R{int n;R(int v):n(v){}~R(){++n;}};\nR*make(int n){return new R(n);}\nvoid dispose(R*p){delete p;}\nint*scalar(){return new int();}\nvoid escaped(){int*p=new int(3);}\nint*late(){return new int(4);}\n"},
+      {"runtime-source", "using Size=decltype(sizeof(0));\nstruct Storage{unsigned long long alignment;unsigned char bytes[128];};\nStorage slots[64]{};\nSize used=0,lastSize=0;\nint allocations=0,deallocations=0,placementCalls=0,destructions=0;\nvoid*lastFreed=nullptr;\nvoid*take(Size n){lastSize=n;++allocations;return slots[used++].bytes;}\nvoid*operator new(Size n){return take(n);}\nvoid operator delete(void*p)noexcept{lastFreed=p;++deallocations;}\nstruct Tag{};\nvoid*operator new(Size n,Tag,void*p){lastSize=n;++placementCalls;return p;}\nint liveArguments=0,seenArguments=0,initializers=0;\nstruct Argument{Argument(){++liveArguments;}~Argument(){--liveArguments;}};\nint initial(){++initializers;return 17;}\nstruct Failed{\n int n;\n static void*operator new(Size,const Argument&)noexcept{seenArguments=liveArguments;return nullptr;}\n Failed(int v):n(v){++initializers;}\n};\nstruct R{\n int value;R*self;R**slot;\n R(int v):value(v),self(this),slot(nullptr){}\n ~R(){++destructions;if(slot)*slot=nullptr;}\n static void*operator new(Size n){return take(n);}\n static void operator delete(void*p)noexcept{lastFreed=p;++deallocations;}\n};\nstruct Placement{\n int value;Placement*self;\n static void*operator new(Size n,void*p,const Argument&arg=Argument()){\n  lastSize=n;++placementCalls;seenArguments=liveArguments;return p;\n }\n Placement(int v):value(v),self(this){seenArguments=seenArguments*10+liveArguments;}\n ~Placement(){++destructions;}\n};\nstruct Sized{\n int value;\n static void*operator new(Size n){return take(n);}\n static void operator delete(void*p,Size n)noexcept{lastFreed=p;lastSize=n;++deallocations;}\n};\ntemplate<class T>void*operator new(Size n,T*p,int){lastSize=n;++placementCalls;return p;}\ntemplate<class T>struct Generic{\n T value;\n template<class P>static void*operator new(Size n,P*p){lastSize=n;++placementCalls;return p;}\n static void operator delete(void*p)noexcept{lastFreed=p;++deallocations;}\n};\nstruct Temporary{int*destroyed;~Temporary(){++*destroyed;}};\nstruct References{const Temporary&value;};\nint main(){\n int*p=new int(7);if(*p!=7||lastSize!=sizeof(int)||allocations!=1)return 1;\n void*expected=p;delete p;if(lastFreed!=expected||deallocations!=1)return 2;\n const int*cp=new const int(8);if(*cp!=8)return 3;expected=const_cast<int*>(cp);delete cp;if(lastFreed!=expected)return 4;\n int*z=new int();if(*z!=0)return 5;delete z;\n int*u=new int;*u=9;if(*u!=9)return 6;delete u;\n using Pointer=int*;Pointer*pp=new Pointer(nullptr);if(*pp!=nullptr)return 7;delete pp;\n using Null=decltype(nullptr);Null*np=new Null{};if(*np!=nullptr)return 8;delete np;\n Failed*failed=new(Argument())Failed(initial());if(failed!=nullptr||initializers||liveArguments||seenArguments!=1)return 9;\n Storage storage{};seenArguments=0;\n Placement*placed=new(storage.bytes)Placement(initial());\n if(placed->self!=placed||placed->value!=17||seenArguments!=11||liveArguments||initializers!=1)return 10;\n int before=destructions;placed->~Placement();if(destructions!=before+1)return 11;\n int*first=::new(Tag{},storage.bytes)int(21);if(*first!=21)return 12;\n using I=int;first->~I();\n float*middle=::new(Tag{},storage.bytes)float(2.5f);if(*middle!=2.5f)return 13;\n using F=float;middle->~F();\n int*again=::new(Tag{},storage.bytes)int(22);if(*again!=22||again!=first)return 14;\n before=destructions;\n {R object(30);object.~R();::new(Tag{},&object)R(31);if(object.value!=31||object.self!=&object||destructions!=before+1)return 15;}\n if(destructions!=before+2)return 16;\n R*record=new R(40);expected=record;record->slot=&record;before=destructions;\n delete record;if(record!=nullptr||lastFreed!=expected||destructions!=before+1)return 17;\n before=deallocations;delete record;if(deallocations!=before)return 18;\n Sized*sized=new Sized{41};expected=sized;delete sized;if(lastFreed!=expected||lastSize!=sizeof(Sized))return 19;\n Generic<int>*generic=new(storage.bytes)Generic<int>{42};if(generic->value!=42||lastSize!=sizeof(Generic<int>))return 20;\n generic->~Generic();\n int*templated=new(storage.bytes,0)int(43);if(*templated!=43||lastSize!=sizeof(int))return 21;\n before=allocations;{int*escaped=new int(44);expected=escaped;}if(allocations!=before+1||lastFreed==expected)return 22;\n delete static_cast<int*>(expected);if(lastFreed!=expected)return 23;\n R*escapedRecord=nullptr;before=destructions;\n {R*local=new R(45);escapedRecord=local;}if(destructions!=before)return 24;\n delete escapedRecord;if(destructions!=before+1)return 25;\n int temporaryDestructions=0;References*references=new References{Temporary{&temporaryDestructions}};\n if(temporaryDestructions!=1)return 26;delete references;if(temporaryDestructions!=1)return 27;\n return 0;\n}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("allocation-" + Name + ".cpp");
+    auto Output = tmpFile("allocation-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocationRetainsSourceAndRuntimeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"discarded-void-new", "void f(){static_cast<void>(new int(1));}", "TR0203"},
+      {"discarded-new", "int f(){if constexpr(false){int*p=new int(3);}return 0;}", "TR0203"},
+      {"template-new", "template<class T>T* f(){return new T{};}int main(){return *f<int>();}", "TR0203"},
+      {"default-argument-new", "int f(int*p=new int(1)){return *p;}", "TR0203"},
+      {"void-new", "void*f(){return new void;}", "TR0202"},
+      {"default-member-new", "struct R{int*p=new int(1);};", "TR0203"},
+      {"record-new", "struct R{int n;~R(){}};R*f(){return new R{1};}", "TR0203"},
+      {"record-delete", "struct R{int n;~R(){}};void f(R*p){delete p;}", "TR0203"},
+      {"missing-class-new", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size);};R*f(){return new R{3};}", "TR0203"},
+      {"missing-class-delete", "struct R{int n;static void operator delete(void*);};void f(R*p){delete p;}", "TR0203"},
+      {"missing-placement", "using Size=decltype(sizeof(0));void*operator new(Size,void*);int*f(void*p){return new(p)int(3);}", "TR0203"},
+      {"reserved-placement-definition", "using Size=decltype(sizeof(0));void*operator new(Size,void*p){return p;}", "TR0203"},
+      {"reserved-placement-delete", "void operator delete(void*,void*){}", "TR0203"},
+      {"array-new", "int*f(){return new int[3]{};}", "TR0201"},
+      {"array-delete", "void f(int*p){delete[]p;}", "TR0201"},
+      {"alias-array-new", "using A=int[3];int*f(){return new A{};}", "TR0201"},
+      {"incomplete-new", "struct R;R*f(){return new R;}", "TR0202"},
+      {"void-delete", "void f(void*p){delete p;}", "TR0201"},
+      {"incomplete-delete", "struct R;void f(R*p){delete p;}", "TR0201"},
+      {"written-attribute", "using Size=decltype(sizeof(0));__attribute__((returns_nonnull))void*operator new(Size){return nullptr;}", "TR0201"},
+      {"allocator-body", "using Size=decltype(sizeof(0));void*operator new(Size){long double n=0;return nullptr;}", "TR0201"},
+      {"placement-source-erasure", "using Size=decltype(sizeof(0));struct Tag{};void*operator new(Size,Tag,void*p){return p;}int*f(void*p){return new(Tag{},(sizeof(long double),p))int(3);}", "TR0201"},
+      {"allocated-written-type", "using Size=decltype(sizeof(0));struct Tag{};void*operator new(Size,Tag,void*p){return p;}int*f(void*p){return new(Tag{},p)decltype(sizeof(long double),int())(3);}", "TR0201"},
+      {"template-default-source", "using Size=decltype(sizeof(0));template<class T=long double>void*operator new(Size,int*p){return p;}int*f(int*p){return new(p)int(3);}", "TR0201"},
+      {"selected-template-body", "using Size=decltype(sizeof(0));template<class T>void*operator new(Size,T*p){T::missing();return p;}int*f(int*p){return new(p)int(3);}", "TR0202"},
+      {"constructor-body", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};struct R{R(){long double n=0;}};R*f(){return new R;}", "TR0201"},
+      {"destructor-body", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};struct R{~R(){long double n=0;}};void f(R*p){delete p;}", "TR0201"},
+      {"invalid-size-parameter", "void*operator new(int){return nullptr;}", "TR0202"},
+      {"invalid-return-type", "using Size=decltype(sizeof(0));int*operator new(Size){return nullptr;}", "TR0202"},
+      {"nonlocal-dynamic", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int*p=new int(3);", "TR0201"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("allocation-reject-" + Name + ".cpp");
+    auto Output = tmpFile("allocation-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const auto &Code : {"int*f(){return new int(3);}", "void f(int*p){delete p;}"}) {
+    auto Source = tmpFile("allocation-v1.cpp");
+    auto Output = tmpFile("allocation-v1.nc");
+    writeFile(Source, Code);
+    expectCode(translate(Source, {"-o", Output.string()}), "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AllocationPreservesStorageIdentityAndLifetimes) {
+  auto Source = tmpFile("allocation-runtime.cpp");
+  auto Output = tmpFile("allocation-runtime.nc");
+  writeFile(Source, R"cpp(using Size=decltype(sizeof(0));
+struct Storage{unsigned long long alignment;unsigned char bytes[128];};
+Storage slots[64]{};
+Size used=0,lastSize=0;
+int allocations=0,deallocations=0,placementCalls=0,destructions=0;
+void*lastFreed=nullptr;
+void*take(Size n){lastSize=n;++allocations;return slots[used++].bytes;}
+void*operator new(Size n){return take(n);}
+void operator delete(void*p)noexcept{lastFreed=p;++deallocations;}
+struct Tag{};
+void*operator new(Size n,Tag,void*p){lastSize=n;++placementCalls;return p;}
+int liveArguments=0,seenArguments=0,initializers=0;
+struct Argument{Argument(){++liveArguments;}~Argument(){--liveArguments;}};
+int initial(){++initializers;return 17;}
+struct Failed{
+ int n;
+ static void*operator new(Size,const Argument&)noexcept{seenArguments=liveArguments;return nullptr;}
+ Failed(int v):n(v){++initializers;}
+};
+struct R{
+ int value;R*self;R**slot;
+ R(int v):value(v),self(this),slot(nullptr){}
+ ~R(){++destructions;if(slot)*slot=nullptr;}
+ static void*operator new(Size n){return take(n);}
+ static void operator delete(void*p)noexcept{lastFreed=p;++deallocations;}
+};
+struct Placement{
+ int value;Placement*self;
+ static void*operator new(Size n,void*p,const Argument&arg=Argument()){
+  lastSize=n;++placementCalls;seenArguments=liveArguments;return p;
+ }
+ Placement(int v):value(v),self(this){seenArguments=seenArguments*10+liveArguments;}
+ ~Placement(){++destructions;}
+};
+struct Sized{
+ int value;
+ static void*operator new(Size n){return take(n);}
+ static void operator delete(void*p,Size n)noexcept{lastFreed=p;lastSize=n;++deallocations;}
+};
+template<class T>void*operator new(Size n,T*p,int){lastSize=n;++placementCalls;return p;}
+template<class T>struct Generic{
+ T value;
+ template<class P>static void*operator new(Size n,P*p){lastSize=n;++placementCalls;return p;}
+ static void operator delete(void*p)noexcept{lastFreed=p;++deallocations;}
+};
+struct Temporary{int*destroyed;~Temporary(){++*destroyed;}};
+struct References{const Temporary&value;};
+int main(){
+ int*p=new int(7);if(*p!=7||lastSize!=sizeof(int)||allocations!=1)return 1;
+ void*expected=p;delete p;if(lastFreed!=expected||deallocations!=1)return 2;
+ const int*cp=new const int(8);if(*cp!=8)return 3;expected=const_cast<int*>(cp);delete cp;if(lastFreed!=expected)return 4;
+ int*z=new int();if(*z!=0)return 5;delete z;
+ int*u=new int;*u=9;if(*u!=9)return 6;delete u;
+ using Pointer=int*;Pointer*pp=new Pointer(nullptr);if(*pp!=nullptr)return 7;delete pp;
+ using Null=decltype(nullptr);Null*np=new Null{};if(*np!=nullptr)return 8;delete np;
+ Failed*failed=new(Argument())Failed(initial());if(failed!=nullptr||initializers||liveArguments||seenArguments!=1)return 9;
+ Storage storage{};seenArguments=0;
+ Placement*placed=new(storage.bytes)Placement(initial());
+ if(placed->self!=placed||placed->value!=17||seenArguments!=11||liveArguments||initializers!=1)return 10;
+ int before=destructions;placed->~Placement();if(destructions!=before+1)return 11;
+ int*first=::new(Tag{},storage.bytes)int(21);if(*first!=21)return 12;
+ using I=int;first->~I();
+ float*middle=::new(Tag{},storage.bytes)float(2.5f);if(*middle!=2.5f)return 13;
+ using F=float;middle->~F();
+ int*again=::new(Tag{},storage.bytes)int(22);if(*again!=22||again!=first)return 14;
+ before=destructions;
+ {R object(30);object.~R();::new(Tag{},&object)R(31);if(object.value!=31||object.self!=&object||destructions!=before+1)return 15;}
+ if(destructions!=before+2)return 16;
+ R*record=new R(40);expected=record;record->slot=&record;before=destructions;
+ delete record;if(record!=nullptr||lastFreed!=expected||destructions!=before+1)return 17;
+ before=deallocations;delete record;if(deallocations!=before)return 18;
+ Sized*sized=new Sized{41};expected=sized;delete sized;if(lastFreed!=expected||lastSize!=sizeof(Sized))return 19;
+ Generic<int>*generic=new(storage.bytes)Generic<int>{42};if(generic->value!=42||lastSize!=sizeof(Generic<int>))return 20;
+ generic->~Generic();
+ int*templated=new(storage.bytes,0)int(43);if(*templated!=43||lastSize!=sizeof(int))return 21;
+ before=allocations;{int*escaped=new int(44);expected=escaped;}if(allocations!=before+1||lastFreed==expected)return 22;
+ delete static_cast<int*>(expected);if(lastFreed!=expected)return 23;
+ R*escapedRecord=nullptr;before=destructions;
+ {R*local=new R(45);escapedRecord=local;}if(destructions!=before)return 24;
+ delete escapedRecord;if(destructions!=before+1)return 25;
+ int temporaryDestructions=0;References*references=new References{Temporary{&temporaryDestructions}};
+ if(temporaryDestructions!=1)return 26;delete references;if(temporaryDestructions!=1)return 27;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const auto &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(std::string("allocation-runtime") + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization,
+                                     {"-fno-inline", "-fstrict-aliasing"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ExplicitDestructionAcceptsSourceLifetimes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"class-defaulted", "template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}"},
@@ -5333,7 +5542,6 @@ TEST_F(TranslateTest, CoreV2ConstexprIfAcceptsResolvedConstantConditions) {
 TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"discarded-floating", "int f(){if constexpr(false){long double n=3;return static_cast<int>(n);}return 0;}", "TR0201"},
-      {"discarded-new", "int f(){if constexpr(false){int*p=new int(3);}return 0;}", "TR0201"},
       {"discarded-throw", "int f(){if constexpr(false)throw 3;return 0;}", "TR0201"},
       {"discarded-type", "int f(){if constexpr(false){using T=long double;}return 0;}", "TR0201"},
       {"discarded-attribute", "int f(){if constexpr(false){[[maybe_unused]] int n=3;}return 0;}", "TR0201"},
@@ -13897,7 +14105,6 @@ TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesRetainSourceBoundaries) {
       {"directive-return-source", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template decltype(int(1.0L)) operator+<int>(const R&,int);"},
       {"directive-param-source", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template int operator+<int>(const R&,decltype(int(1.0L)));"},
       {"directive-noexcept-source", "struct R{int n;};template<class T>int operator+(R,T)noexcept{return 3;}template int operator+<int>(R,int)noexcept(sizeof(long double)>0);"},
-      {"allocation", "template<class T>void*operator new(decltype(sizeof(0)),T*p){return p;}"},
       {"literal", "template<char... C>int operator\"\"_number(){return 1;}"},
       {"local-unused-body", "struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0L);}};Local l;return r.n+n;}int f(){return R{3}+4;}"},
   };
@@ -14359,7 +14566,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsRetainSourceBoundaries) {
       {"outside-header", "template<decltype(sizeof(long double)) N>struct R{int operator()();};template<decltype(sizeof(long double)) N>int R<N>::operator()(){return N;}int f(){R<3>r;return r();}"},
       {"virtual-conversion", "template<class T>struct R{virtual operator int(){return 1;}};"},
       {"volatile-operator", "template<class T>struct R{int operator()()volatile{return 1;}};"},
-      {"allocation", "template<class T>struct R{static void*operator new(decltype(sizeof(0))){return nullptr;}};"},
       {"conditional-explicit-conversion", "template<class T>struct R{explicit(true) operator bool(){return true;}};"},
       {"conditional-explicit-constructor", "template<class T>struct R{explicit(sizeof(long double)>0) R(){}};"},
   };
@@ -15710,7 +15916,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"explicit-unsupported-body", "template<class T>int f(T n){long double x=1.0L;return n;}template int f<int>(int);", "TR0201"},
       {"specialization-unsupported-body", "template<class T>int f(T n){return n;}template<>int f<int>(int n){long double x=1.0L;return n;}", "TR0201"},
       {"runtime-dead-body", "template<class T>int f(T n){if(false){long double x=1.0L;}return n;}int main(){return f(1);}", "TR0201"},
-      {"allocation", "template<class T>T* f(){return new T{};}int main(){return *f<int>();}", "TR0201"},
       {"constexpr-static", "template<class T>constexpr int f(){static int n=1;return n;}int main(){return f<int>();}", "TR0201"},
       {"attribute", "template<class T>[[nodiscard]]T f(T v){return v;}", "TR0201"},
       {"parameter-attribute", "template<class T>T f([[maybe_unused]]T v){return v;}", "TR0201"},
@@ -15972,7 +16177,6 @@ TEST_F(TranslateTest, CoreV2DefaultArgumentsRetainSourceAndParameterBoundaries) 
       {"noexcept-floating", "void f(int n=(static_cast<void>(1.0L),1))noexcept{}static_assert(noexcept(f()));", "TR0201"},
       {"volatile", "volatile int n=1;int f(int x=n){return x;}", "TR0201"},
       {"lambda", "int f(int n=(static_cast<void>([]{}),1)){return n;}", "TR0201"},
-      {"allocation", "int f(int*p=new int(1)){return *p;}", "TR0201"},
       {"throw", "int f(int n=(throw 1,2)){return n;}", "TR0201"},
       {"member-pointer", "struct R{int n;};void f(int R::*p=&R::n){}", "TR0201"},
       {"fresh-reference-return", "int f(const int&r=1){return r;}const int&g(){return 1;}", "TR0201"},
@@ -16173,7 +16377,6 @@ TEST_F(TranslateTest, CoreV2VoidExpressionsRetainSourceAndTypeBoundaries) {
       {"floating", "void f(){static_cast<void>(1.0L);}", "TR0201"},
       {"volatile", "void f(){volatile int n=1;static_cast<void>(n);}", "TR0201"},
       {"volatile-void-alias", "using V=volatile void;void f(){V();}", "TR0201"},
-      {"allocation", "void f(){static_cast<void>(new int(1));}", "TR0201"},
       {"lambda", "void f(){static_cast<void>([]{});}", "TR0201"},
       {"dead-operand", "void f(){if(false){static_cast<void>(1.0L);}}", "TR0201"},
       {"constexpr-operand", "constexpr int f(){static_cast<void>(1.0L);return 1;}static_assert(f()==1);", "TR0201"},
@@ -18006,7 +18209,6 @@ TEST_F(TranslateTest, CoreV2DefaultMembersCheckWrittenAndSelectedExpressions) {
       {"lambda-overridden", "struct R{int n=[](){return 1;}();};void f(){R r{7};}"},
       {"throw-unused", "struct R{int n=(throw 1,2);};"},
       {"throw-overridden", "struct R{int n=(throw 1,2);R():n(7){}};"},
-      {"new-default", "struct R{int*p=new int(1);};"},
       {"reinterpret-default", "struct R{int*p=reinterpret_cast<int*>(1);};"},
       {"excessive-array", "struct R{int n[65537]={1};};"},
       {"address-of-member", "struct R{int n=1;int R::*p=&R::n;};"},
@@ -18837,8 +19039,6 @@ TEST_F(TranslateTest, CoreV2RecordDestructionRetainsUnsupportedLifetimeDiagnosti
       {"global-containing", "struct R{int n;~R(){}};struct Box{R r;};const Box box{{1}};"},
       {"static-local", "struct R{int n;~R(){}};int f(){static R r{1};return r.n;}"},
       {"thread-local", "struct R{int n;~R(){}};int f(){thread_local R r{1};return r.n;}"},
-      {"allocation", "struct R{int n;~R(){}};R*f(){return new R{1};}"},
-      {"delete", "struct R{int n;~R(){}};void f(R*p){delete p;}"},
       {"unwinding", "struct R{int n;~R(){}};void f(){R r{1};throw 7;}"},
       {"body-throw", "struct R{int n;~R(){throw 7;}};"},
       {"body-try", "struct R{int n;~R(){try{n=1;}catch(...){n=2;}}};"},

@@ -4,7 +4,7 @@
 
 # 将 C++ 转译为 NeverC
 
-Core v2 支持显式非虚记录析构和标量伪析构调用，保留接收者求值副作用及原有自动清理义务。未求值的模板查询不会强制实例化未使用的函数体。生成的 C23 使用经过检查的可别名对象类型来处理这些生命周期。原生验证需要实现版本的 CI；分配、placement 重建、异常、标准头文件和完整 C++/STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+Core v2 支持通过经过检查的源代码分配函数执行单对象 new/delete，包括类和模板 placement 重载、原始存储地址及参数清理。显式析构与 placement 重建保留后续自动清理义务。原生验证需要实现版本的 CI。默认堆运行时、数组分配、异常、标准头文件和完整 C++/STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 实验性命令 `neverc translate` 通过 `cpp-core-v1`、`cpp-core-v2`、`cpp-project-v1` 和 `cpp-math-v1` 生成可审查的 `.nc` 源码。
 

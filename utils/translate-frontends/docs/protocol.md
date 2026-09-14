@@ -888,9 +888,31 @@ record destruction and scalar pseudo-destruction preserve only source receiver
 effects. Scalar dot operands do not acquire a load; arrow operands evaluate the
 pointer. Calls in unevaluated expressions introduce no runtime destruction or
 otherwise unused template-body instantiation. Automatic cleanup flags remain
-registered after explicit calls. No new destruction opcode, allocation capability,
-foreign ABI or exception behavior is added. See the
+registered after explicit calls. No new destruction opcode, foreign ABI or exception behavior is added.
+Source-defined single-object allocation uses the checked operations below. See the
 [source contract](cpp-core-v2.md#explicit-destruction).
+
+## Core v2 source-defined allocation
+
+Single-object new/delete set `memory_lifetimes: true` and reuse existing checked
+calls, captures, casts, initialization, branches and destruction helpers. There is
+no opaque allocation opcode or foreign runtime escape. The ordinary consumer
+verifies every callee's source function closure, argument/result types, layout,
+const permissions and control flow as before.
+
+New passes a typed size literal and an optional selected alignment literal, then
+captured placement arguments to the allocator. Its saved `void*` result becomes
+the cv-qualified source result pointer. Initialization uses an internal mutable
+view at that exact address. A semantic null-check branch skips initialization for
+failed nonthrowing allocation. Placement temporaries keep their existing
+full-expression flags; the new object acquires no lexical cleanup flag.
+
+Delete saves its operand before branching. The nonnull block destroys through
+that saved address, then calls the selected deallocator with the saved pointer and
+optional typed size/preferred-alignment literals. A source destructor cannot
+reseat this private capture. Missing source definitions are rejected before
+emission. Default heap/runtime, arrays and exceptions remain unfinished; see the
+[source contract](cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 ## Core v2 destruction
 

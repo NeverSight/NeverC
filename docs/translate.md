@@ -4,7 +4,7 @@
 
 # Translate C++ to NeverC
 
-Core v2 supports explicit nonvirtual record destruction and scalar pseudo-destructor calls, preserving receiver effects and automatic cleanup obligations. Unevaluated template queries keep unused bodies lazy. Generated C23 uses checked alias-permissive object types for these lifetimes. Native validation requires implementing CI; allocation, placement restart, exceptions, standard headers and full C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+Core v2 supports single-object new/delete through checked source-defined allocation functions, including class/template placement overloads, exact storage identity and argument cleanup. Explicit destruction and placement reconstruction preserve later automatic cleanup obligations. Native verification requires implementing CI. Default heap runtime, array allocation, exceptions, standard headers and full C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 Experimental `neverc translate` emits reviewable `.nc` source through `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1` and `cpp-math-v1`.
 

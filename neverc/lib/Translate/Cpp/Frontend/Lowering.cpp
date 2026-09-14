@@ -713,11 +713,91 @@ class FunctionLowering {
       return dereference(std::move(Result), L);
     return Result;
   }
+  Expression allocationExtent(QualType Object, QualType Parameter, bool Alignment,
+                              SourceLocation L, bool Deallocation = false) {
+    auto T = type(Parameter, L);
+    auto Quantity = Alignment ? A.Context.getTypeAlignInChars(Object)
+                              : A.Context.getTypeSizeInChars(Object);
+    if (Alignment && Deallocation)
+      Quantity = A.Context.toCharUnitsFromBits(
+          A.Context.getTypeAlignIfKnown(Object, /*NeedsPreferredAlignment=*/true));
+    return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), Quantity.getQuantity()),
+                                  unsignedInteger(T)), T, L);
+  }
+  Expression allocate(const CXXNewExpr *N) {
+    auto L = N->getExprLoc();
+    const auto *F = A.allocationFunction(N->getOperatorNew(), true, L);
+    auto Object = N->getAllocatedType();
+    json::Array Args;
+    Args.push_back(allocationExtent(Object, F->getParamDecl(0)->getType(), false, L));
+    unsigned Prefix = 1;
+    if (N->passAlignment()) {
+      Args.push_back(allocationExtent(Object, F->getParamDecl(1)->getType(), true, L));
+      ++Prefix;
+    }
+    for (unsigned I = 0; I < N->getNumPlacementArgs(); ++I)
+      Args.push_back(argument(N->getPlacementArg(I), F->getParamDecl(Prefix + I)->getType()));
+    auto Storage = temporary(type(F->getReturnType(), L), L);
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(F)},
+                                {"args", std::move(Args)}, {"target", json::Object(Storage)},
+                                {"loc", A.loc(L)}});
+    auto Result = snapshot(cast(std::move(Storage), type(N->getType(), L), L), L);
+    std::string End;
+    if (N->shouldNullCheckAllocation() && N->hasInitializer()) {
+      auto Initialize = labelName();
+      End = labelName();
+      branch(cast(Result, "bool", L), Initialize, End, L);
+      label(Initialize, L);
+    }
+    if (N->hasInitializer()) {
+      // Initialization gets an internal mutable view; the returned pointer
+      // preserves source cv. New storage never acquires lexical ownership.
+      auto Destination = cast(Result, "ptr:" + type(Object.getUnqualifiedType(), L), L);
+      initialize(dereference(std::move(Destination), L), N->getInitializer(), L);
+    }
+    if (!End.empty()) {
+      jump(End, L);
+      label(End, L);
+    }
+    return Result;
+  }
+  void deallocate(const CXXDeleteExpr *Delete) {
+    auto L = Delete->getExprLoc();
+    const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L);
+    auto Object = Delete->getDestroyedType().getUnqualifiedType();
+    // A destructor may reseat the variable which supplied this pointer.
+    auto Pointer = snapshot(expression(Delete->getArgument()), L);
+    auto Destroy = labelName(), End = labelName();
+    branch(cast(Pointer, "bool", L), Destroy, End, L);
+    label(Destroy, L);
+    auto Receiver = cast(Pointer, "ptr:" + type(Object, L), L);
+    destroy(dereference(std::move(Receiver), L), Object, L);
+    json::Array Args;
+    Args.push_back(cast(std::move(Pointer), type(F->getParamDecl(0)->getType(), L), L));
+    for (unsigned I = 1; I < F->getNumParams(); ++I) {
+      auto Parameter = F->getParamDecl(I)->getType();
+      Args.push_back(allocationExtent(Object, Parameter, Parameter->isAlignValT(), L, true));
+    }
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(F)},
+                                {"args", std::move(Args)}, {"loc", A.loc(L)}});
+    jump(End, L);
+    label(End, L);
+  }
   Expression expression(const Expr *E) {
     if (A.S.coreV2() && E->getType()->isFunctionType())
       return functionValue(E);
     auto L = E->getExprLoc();
     auto T = type(E->getType(), L, true);
+    if (A.S.coreV2()) {
+      if (const auto *N = dyn_cast<CXXNewExpr>(E))
+        return allocate(N);
+      if (const auto *D = dyn_cast<CXXDeleteExpr>(E)) {
+        deallocate(D);
+        return {};
+      }
+    }
     if (auto Value = staticMemberValue(E))
       return std::move(*Value);
     if (const auto *Substitution = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {

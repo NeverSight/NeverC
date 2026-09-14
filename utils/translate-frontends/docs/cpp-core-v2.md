@@ -54,7 +54,7 @@ binary ABI or foreign-object identity.
 
 Unsupported operations remain errors even inside constant-evaluated assertions
 and enumerator initializers. A cast to `void` cannot hide an unsupported operand
-such as a `long double` expression or allocation. Diagnostic assertion messages
+such as a `long double` expression or unsupported array allocation. Diagnostic assertion messages
 remain separate from runtime string objects. String literals follow the storage
 contract below; `std::string` requires further library and lifetime support.
 
@@ -306,7 +306,7 @@ Canonical static identity, receiver effects, temporary cleanup and separate
 template-instance state follow the existing storage contracts. Static reference
 bindings follow their [alias contract](#static-reference-bindings).
 Dynamic local pointers follow the [first-use contract](#dynamic-local-static-initialization).
-Nonlocal dynamic initialization, TLS, allocation, static destruction,
+Nonlocal dynamic initialization, TLS, default heap runtime, static destruction,
 standard-library headers/runtime still require further work. Mutable records
 follow their [static object contract](#static-record-objects). Paired source/protocol cases, malformed-address IR cases,
 relocation and O0/O2 fixtures require native validation in implementing CI.
@@ -454,7 +454,7 @@ later static member definitions. Merely retaining an APValue grants no access.
 Nontrivial destruction remains diagnosed even in dead or unselected source.
 Paired source/protocol, malformed IR, relocation, O0/O2 and concurrent-reader
 fixtures require native validation at the implementing CI revision. Static
-destruction, exceptions/retry, TLS, nonlocal dynamic startup, allocation and real
+destruction, exceptions/retry, TLS, nonlocal dynamic startup, default heap runtime and real
 standard-library support remain unfinished parts of the full C++/STL goal.
 
 ## Static record objects
@@ -506,7 +506,7 @@ forward declarations needed for self addresses.
 Local nonconstant constructor calls and initializer reads follow the
 [first-use contract](#dynamic-local-static-initialization). Nonlocal dynamic
 initialization, TLS, volatile objects,
-nontrivial static destruction, unsupported layouts/fields and allocation remain
+nontrivial static destruction, unsupported layouts/fields and default heap runtime remain
 outside this increment. Exception unwinding and actual
 standard-library headers/runtime still require
 further work. Paired source/protocol cases, mutable/self-address IR cases,
@@ -791,7 +791,7 @@ Paired source/protocol fixtures cover binding, copied aliases, nested layouts,
 source diagnostics, zero children, owner graphs and relocation. O0/O2 and
 concurrent-reader fixtures cover identity, first-use state and destruction order;
 native acceptance requires the implementing CI revision. Actual standard-library
-headers/runtime, remaining templates, allocation, exceptions, static destruction,
+headers/runtime, remaining templates, default heap runtime, exceptions, static destruction,
 inheritance/virtual dispatch and multi-TU v2 remain unfinished.
 
 ## Live-object rvalue references
@@ -940,7 +940,7 @@ In non-template declarations, both declared defaults and selected call-site
 semantic expressions are fully inspected, even when unused, explicitly overridden, folded in constexpr code or
 inside a noexcept query. Queries create no runtime default effects. Unsupported
 operand types, volatile objects, member pointers, unsupported template forms,
-allocation and throwing remain diagnosed under their existing boundaries.
+Unsupported allocation and throwing remain diagnosed under their existing boundaries.
 Invalid C++ defaults or calls remain Clang diagnostics; missing required owned
 definitions remain definition errors. Only core v2 gains this support.
 
@@ -1098,7 +1098,7 @@ qualifications.
 Deleted, inherited and variadic constructors remain rejected. Delegating
 constructors and constructor templates follow their contracts below. Dynamic
 local statics follow their first-use contract above. Exception unwinding,
-allocation, inheritance, virtual dispatch and STL are still outside this increment.
+default heap runtime, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic global forms remain rejected. Static pointer fields and arrays follow their
@@ -1714,7 +1714,7 @@ results use their deduced admitted types.
 Out-of-line definitions, explicit class/member instantiation and explicit
 specialization follow the existing ownership and definition rules. These are
 members of a class template; a member's own function-template parameter list
-follows the separate member function template contract below. Namespace operator templates follow their separate contract. Allocation/deallocation,
+follows the separate member function template contract below. Namespace operator templates follow their separate contract. Allocation/deallocation follows its contract below;
 virtual dispatch, unsupported qualifiers, fields and signatures retain their
 restrictions. C++20 conditional `explicit` remains outside C++17.
 
@@ -1915,7 +1915,7 @@ Unsupported generic member bodies retain normal laziness until selected.
 Ordinary named record owners follow this contract. Templated outer owners follow
 [the dependent-owner contract](#dependent-outer-member-class-templates) below.
 Generic nested ordinary records inside a class template, local/union owners,
-inheritance, virtual dispatch, unsupported field types and allocation retain
+inheritance, virtual dispatch, unsupported field types and default heap runtime retain
 separate restrictions. Full C++/STL remains unfinished. Eighteen O0/O2 runtime
 checkpoints and paired protocol fixtures cover layouts, calls, storage identity,
 lifetimes and relocation; native results require the implementing CI revision.
@@ -1982,7 +1982,7 @@ Copied class-scope full declarations follow the separate
 [full declaration contract](#copied-class-scope-full-specializations) below.
 Ordinary nested records follow the [ordinary member contract](#ordinary-nested-classes-in-generic-owners).
 Local/union owners, inheritance, virtual
-dispatch, unsupported fields and allocation retain separate restrictions. Limits
+dispatch, unsupported fields and default heap runtime retain separate restrictions. Limits
 remain 64 parameters/elements, bounded declaration/owner depth and the total
 expansion budget. Full C++/STL remains unfinished. Paired source/protocol fixtures
 and seventeen O0/O2 runtime checkpoints require native CI from the implementing
@@ -2045,7 +2045,7 @@ owner, substitute twice, call an external Clang executable or emit an opaque
 body. Limits remain 64 parameters/elements and bounded owner/source traversal.
 Ordinary nested records follow the [ordinary member contract](#ordinary-nested-classes-in-generic-owners).
 Inheritance, unsupported fields,
-allocation and complete C++/STL remain unfinished. Only C++ input is implemented;
+default heap runtime and complete C++/STL remain unfinished. Only C++ input is implemented;
 E Language and Python remain planned. Paired source/protocol fixtures and
 seventeen O0/O2 runtime checkpoints require native CI of the implementing
 revision; protocol counts remain subject to that verification.
@@ -2103,7 +2103,7 @@ Windows' existing extern-template rules for enclosing-class instantiations remai
 those of the embedded frontend.
 
 Named nonlocal standard-layout records and existing field restrictions apply.
-Unsupported dependent friend class-template forms and friend-type expansions, unions, anonymous records, inheritance, allocation and complete
+Unsupported dependent friend class-template forms and friend-type expansions, unions, anonymous records, inheritance, default heap runtime and complete
 C++/STL remain unfinished. Invalid C++ keeps `TR0202`; unsupported materialized
 source keeps `TR0201`; missing required function/storage definitions keep `TR0203`,
 without output artifacts. Source owner/redeclaration walks and packs remain
@@ -2158,7 +2158,7 @@ Declaration-only friends retain the same source-unit definition policy as
 ordinary declarations. Missing required definitions yield `TR0203`. Invalid
 C++ lookup, access or conflicting definitions yield `TR0202`. Unsupported source
 produces `TR0201` without output artifacts. Unsupported dependent friend class-template forms, friend
-type expansions, inheritance, allocation and complete C++/STL
+type expansions, inheritance, default heap runtime and complete C++/STL
 remain unfinished; existing nondependent friend type/member rules are preserved.
 No wire schema or lowering ABI is added. Paired source/protocol fixtures and
 seventeen O0/O2 runtime checkpoints require implementing-revision native CI;
@@ -2598,7 +2598,7 @@ specializations and those in an ordinary or fully specialized outer class keep
 their own declaration source. Nested member accesses check argument source once
 and still evaluate each receiver once, with the existing 64-level source bound
 and total expansion budget. Other result types,
-thread-local or dynamic initialization, local/union owners, unsupported template owner chains, template-template parameters, inheritance, allocation and full
+thread-local or dynamic initialization, local/union owners, unsupported template owner chains, template-template parameters, inheritance, default heap runtime and full
 C++/STL remain unfinished. Only C++ input is implemented; E Language, Python and
 other frontends are planned. Translation uses embedded Clang libraries and
 launches no external Clang executable.
@@ -2655,7 +2655,7 @@ apply. Unsupported source reports `TR0201`, invalid C++ reports `TR0202`, and
 required missing definitions report `TR0203`.
 
 Local/union owners, unsupported template owner chains, template-template
-parameters, inheritance, allocation and hosted standard-library headers remain
+parameters, inheritance, default heap runtime and hosted standard-library headers remain
 outside this increment. C++17 does not allow explicit or partial specialization
 of an alias template. Full C++/STL remains unfinished. C++ is the only implemented
 input frontend; E Language, Python and other frontends are planned.
@@ -2725,7 +2725,7 @@ scalar, pointer, reference or record destination and subsequent standard
 conversions. Access and invalid C++ diagnostics remain authoritative.
 
 Unsupported template owner chains,
-template-template parameters, unsupported dependent friend class-template forms, inheritance, virtual dispatch, unsupported layouts, allocation and
+template-template parameters, unsupported dependent friend class-template forms, inheritance, virtual dispatch, unsupported layouts, default heap runtime and
 standard-library headers remain outside this increment. A constructor template
 cannot be explicitly defaulted under C++17; that remains a language error.
 Source depth is bounded at 64 with the shared 200000-unit budget. Unsupported
@@ -3042,7 +3042,7 @@ Core v2 admits source-owned namespace operator function templates for the existi
 ordinary C++17 operator set. This includes arithmetic, comparisons, logical/comma,
 shifts, compound assignment, increment/decrement, dereference, address and
 arrow-star forms that C++ permits as non-members. Embedded Clang enforces arity,
-operand types, access and overload resolution. Allocation/deallocation, literal
+operand types, access and overload resolution. Allocation/deallocation follows the separate source-defined contract below. Literal
 operators, unsupported dependent friend class-template forms and later-standard operators remain excluded.
 Member function templates follow their separate contract above.
 
@@ -3927,6 +3927,72 @@ mutable sources, returned aliases, self/chained assignment, pointer capture and
 value-read sequencing, destruction counts, lazy definitions and deterministic
 relocation. Native results require the implementing revision's CI.
 
+## Single-object allocation and placement reuse
+
+Core v2 admits C++17 single-object `new` and `delete` when their selected allocation
+and deallocation functions have checked definitions in this source unit. Global
+replacement functions, class-specific static functions, custom placement overloads
+and existing concrete function/class/member templates compose with supported
+scalar and complete record types. Allocation operator declarations and direct
+calls, including `operator new[]`/`operator delete[]`, follow ordinary checked
+function rules; array new/delete expressions are not yet implemented.
+
+The selected allocator must return `void*` and start with the target `size_t`.
+Clang supplies allocation selection and converted placement arguments. An exact
+private source event records the final new expression, selected template function
+and overload-resolution location, preserving template arguments, deduction,
+defaults and written source. Synthetic size/alignment arguments are not retained
+as source AST pointers. The checked object layout determines allocation size and,
+when Clang selects it, the additional alignment argument. The existing bounded
+object size and type restrictions still apply.
+
+Placement arguments are evaluated and captured before the allocation call. Their
+full-expression temporaries remain live through initialization. Initialization
+executes directly at the returned address, preserving constructor `this`, record
+self-pointers, reference bindings and source cv qualifiers. Scalar default
+initialization performs no store; value initialization follows the existing zero
+initialization rules. A failed nonthrowing allocation skips the initializer as
+required by Clang's semantic null-check flag, while retaining argument cleanup.
+A newly allocated object receives no automatic scope cleanup registration.
+
+Delete captures its pointer operand once. Null skips destruction and deallocation.
+For nonnull pointers it runs the existing destructor helper first, then calls the
+selected usual deallocator with that captured address. Optional size and alignment
+parameters use the source object layout; aligned deletion uses the target's
+preferred object alignment, matching pinned Clang. A destructor that changes the
+variable originally holding the pointer cannot change the deallocation address.
+Global qualification and class-specific selection remain Clang's decisions.
+
+Explicit destruction followed by placement construction can reuse supported
+storage and satisfy an automatic object's later cleanup obligation. Both source
+operations enable the independently verified `memory_lifetimes` alias policy
+below. The translator does not prove runtime ownership, storage capacity, address
+alignment or transparent replacement of every old alias. Defined C++ source must
+supply suitable storage and obey const, reference-member and lifetime rules.
+
+The self-contained source profile supplies no default heap or standard placement runtime.
+A selected function without an owned definition reports `TR0203`; it never becomes
+an unchecked host allocation call. Reserved global `operator new(size_t, void*)`
+and its matching delete cannot be defined as user functions here and also report
+`TR0203`. Use class-specific placement or a custom global overload with a distinct
+parameter list until SDK integration provides the standard forms. Only exact
+implicit allocation attributes synthesized by pinned Clang are admitted; written
+or unrelated attributes remain rejected. No exception-throwing path, construction
+rollback or foreign ABI is newly admitted.
+
+Paired source/diagnostic fixtures check function/template selection, missing
+runtime, unsupported source, type aliases, default arguments and operator
+addresses. A source-only enum stand-in tests aligned-only and sized/aligned
+deallocator selection; it supplies no SDK or implicit extended-alignment new.
+Protocol checks cover call closure, size/alignment, construction/destruction
+order, null branching, lack of lexical new ownership and relocation. Twenty-seven
+runtime checkpoints at O0/O2 with strict aliasing and inlining disabled cover
+storage identity, failed allocation, temporary cleanup, placement reuse and saved
+deallocation addresses. Native validation requires CI of this implementation.
+Default/standard heap runtime, array allocation/cookies, extended-alignment source
+support, exceptions/unwinding, standard headers, inheritance and full C++/STL
+remain unfinished.
+
 ## Explicit destruction
 
 Core v2 admits direct nonvirtual destructor calls on the complete owned records
@@ -3967,7 +4033,8 @@ Paired source/diagnostic cases, lazy-body and relocation protocol checks, and
 O0/O2 receiver/cleanup fixtures accompany this change. Independent generated-NC
 fixtures cover scalar, pointer-object, array, record and callback alias accesses
 at O0, O2 and explicit strict aliasing, with inlining disabled. Native validation
-requires implementing CI. Allocation, placement restart, default heap runtime,
+requires implementing CI. Single-object allocation and placement restart follow
+the contract above. Default heap runtime,
 array cookies, exceptions/unwinding, standard headers and full C++/STL remain
 unfinished.
 
@@ -4041,7 +4108,7 @@ int main() {
 ```
 
 This increment covers normal completion only. Throw/catch, stack unwinding,
-partial construction rollback, allocation/deallocation, static/global object
+partial construction rollback, default heap runtime, static/global object
 destruction remain rejected. Temporary calls and automatic local reference
 extension follow their separate contracts below. Existing expansion/storage limits also bound emitted
 cleanup instructions and recursive array destruction. V1 profiles retain their
@@ -4068,7 +4135,7 @@ increment results. Addresses of ordinary free operators follow the callback sign
 nonstatic member addresses and record-by-value callback signatures remain unsupported. Conversion functions follow their separate
 contract below. The operators of admitted class-template instances follow the contract above.
 Unsupported dependent friend class-template forms and friend-type expansions,
-virtual dispatch and allocation/deallocation operators remain excluded. Temporary call operands
+virtual dispatch remains excluded. Allocation/deallocation operators follow their separate contract. Temporary call operands
 follow the separate full-expression contract below.
 
 Operator notation preserves the required C++17 operand sequencing. Assignment and
@@ -4397,7 +4464,7 @@ break and continue clean the appropriate scopes. Array construction needs no
 external helper or memory-copy call. Static lifetimes and reference fields follow
 their separate contracts. Thread-local storage, fresh reference returns,
 non-extended pointer-derived bindings,
-unsupported element types, allocation, unwinding, other template forms
+unsupported element types, array allocation, unwinding, other template forms
 and complete STL remain outside this increment. V1 and protocol major 1 are unchanged.
 
 O0/O2 no-inline fixtures cover real element addresses, reference calls, decay,
