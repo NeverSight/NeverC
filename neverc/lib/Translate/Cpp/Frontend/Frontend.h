@@ -72,7 +72,7 @@ struct FriendFunctionTemplateSource {
 struct FunctionTemplateBodySource {
   clang::FunctionDecl *Function;
   clang::FunctionTemplateDecl *Compatible;
-  clang::FunctionDecl *Pattern;
+  const clang::FunctionDecl *Pattern;
   clang::DeclContext *LexicalContext;
 };
 

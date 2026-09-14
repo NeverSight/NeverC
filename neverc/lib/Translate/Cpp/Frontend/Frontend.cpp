@@ -9495,7 +9495,7 @@ public:
     FriendTemplates.push_back({Template, Incoming, Selected, GrantingClass});
   }
   void HandleNeverCFunctionTemplateBodySource(FunctionDecl *Function,
-      FunctionTemplateDecl *Compatible, FunctionDecl *Pattern,
+      FunctionTemplateDecl *Compatible, const FunctionDecl *Pattern,
       DeclContext *LexicalContext) override {
     if (!S.coreV2() || !Function || !Compatible || !Pattern || !LexicalContext ||
         !S.Diagnostics.empty())
