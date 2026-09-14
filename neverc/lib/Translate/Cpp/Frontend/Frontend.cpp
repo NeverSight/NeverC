@@ -1768,8 +1768,15 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
   };
   auto ResultType = type(T, L);
   if (ResultType.empty() || !S.coreV2() || !T->isPointerType() || T->isFunctionPointerType() ||
-      !V.isLValue() || V.getLValueCallIndex() || V.getLValueVersion())
+      !V.isLValue() || V.getLValueCallIndex())
     Reject("A constant pointer must identify null or permanent source-owned object storage.");
+  // Clang assigns a fresh version to each evaluated string literal, including
+  // static literals. That version is not an automatic-object lifetime. This
+  // translator consistently pools evaluations of the same literal AST node.
+  const auto Base = V.getLValueBase();
+  if (V.getLValueVersion() &&
+      !isa_and_nonnull<StringLiteral>(Base.dyn_cast<const Expr *>()))
+    Reject("Only string literal evaluations may carry a permanent-object version.");
   if (V.isNullPointer()) {
     if (ReferenceBinding)
       Reject("A static reference must bind to an existing object, not null.");
@@ -1780,7 +1787,6 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
   }
   if (!V.hasLValuePath())
     Reject("A nonnull constant pointer requires its typed source subobject path.");
-  const auto Base = V.getLValueBase();
   QualType Current;
   json::Object Place;
   if (const auto *Variable = dyn_cast_or_null<VarDecl>(Base.dyn_cast<const ValueDecl *>())) {
@@ -6351,11 +6357,11 @@ public:
       return true;
     }
     auto Type = Info->getType();
-    // A written const auto has a QualifiedTypeLoc outside the actual token.
-    // Strip qualifiers only for token identification; traverse the full source.
-    const bool AutoToken = Type->isUndeducedAutoType() &&
-                          !Info->getTypeLoc().getUnqualifiedLoc()
-                               .getAs<AutoTypeLoc>().isNull();
+    // Qualifiers and pointer/reference declarators surround the written auto
+    // token. Inspect that exact token, then traverse the complete written type.
+    const auto Auto = Info->getTypeLoc().getContainedAutoTypeLoc();
+    const bool AutoToken = Auto && Auto.getTypePtr()->getDeducedType().isNull() &&
+                          !Auto.isConstrained();
     if ((!AutoToken && (Type->isDependentType() || Type->isInstantiationDependentType() ||
                        !A.Context.hasSameType(Type, Variable->getType()))) ||
         (AutoToken && !staticStorageType(Variable->getType()))) {
@@ -6802,8 +6808,15 @@ public:
         (!isa<VarTemplateSpecializationDecl>(Reference->getDecl()) &&
          !concreteFunctionTemplate(dyn_cast<FunctionDecl>(Reference->getDecl()))))
       return RecursiveASTVisitor<Allowlist>::TraverseDeclRefExpr(Reference);
-    // VisitDeclRefExpr checks every written argument against this exact source
-    // event and traverses it before entering the callee's parameter frame.
+    // Check source before WalkUp's callback-definition validation. An
+    // unevaluated address may lack a body, but its written arguments still
+    // require inspection before that diagnostic suppresses further traversal.
+    if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
+        concreteFunctionTemplate(Function))
+      checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments(),
+          Reference->hasQualifier() ? Reference->getBeginLoc() : SourceLocation(),
+          directTemplateCallLocation(Reference));
+    // Each source event owns argument traversal before the callee's frame.
     // RAV's normal argument traversal would visit nested template uses again
     // at every level, making a linear source chain expand exponentially.
     // DeclRefExpr has no statement children; retain its qualifier/name visits.
@@ -6830,11 +6843,6 @@ public:
         if (!TraverseDecl(Definition))
           return false;
     }
-    if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
-        concreteFunctionTemplate(Function))
-      checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments(),
-          Reference->hasQualifier() ? Reference->getBeginLoc() : SourceLocation(),
-          directTemplateCallLocation(Reference));
     return true;
   }
   bool TraverseMemberExpr(MemberExpr *Reference) {
@@ -6845,6 +6853,11 @@ public:
       return RecursiveASTVisitor<Allowlist>::TraverseMemberExpr(Reference);
     // The selected source check owns explicit arguments here as well. Keep
     // the receiver traversal: its type, source and effects still matter.
+    if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getMemberDecl());
+        concreteMemberFunctionTemplate(Function))
+      checkFunctionTemplateUse(Function, Reference->getMemberLoc(),
+                               Reference->template_arguments(), {},
+                               directTemplateCallLocation(Reference));
     return WalkUpFromMemberExpr(Reference) &&
            TraverseNestedNameSpecifierLoc(Reference->getQualifierLoc()) &&
            TraverseDeclarationNameInfo(Reference->getMemberNameInfo()) &&
@@ -6859,11 +6872,6 @@ public:
         return false;
       return !A.S.Diagnostics.empty() || TraverseVarTemplateSpecializationDecl(Variable);
     }
-    if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getMemberDecl());
-        concreteMemberFunctionTemplate(Function))
-      checkFunctionTemplateUse(Function, Reference->getMemberLoc(),
-                               Reference->template_arguments(), {},
-                               directTemplateCallLocation(Reference));
     return true;
   }
   bool TraverseFunctionTemplateDecl(FunctionTemplateDecl *D) {

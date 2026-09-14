@@ -8025,7 +8025,7 @@ TEST_F(TranslateTest, CoreV2StaticRecordsPreserveStateAndSelfAddresses) {
 R zero;
 R value{3,{4,5},&value.n};
 R array[2];
-const R seed{6,{7,8},nullptr};
+constexpr R seed{6,{7,8},nullptr};
 R copied=seed;
 R&alias=value;
 struct Self{int n;int*p;constexpr Self():n(9),p(&n){}};
@@ -8074,6 +8074,9 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2StaticRecordsAcceptSourceComposition) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-empty-template", "template<class T>struct E{};E<int> e;"},
+      {"promoted-record-variable", "struct R{int n;};template<class T>constexpr R value{3};int main(){return value<int>.n;}"},
+      {"constant-copy", "struct R{int n;};constexpr R seed{3};R copy=seed;int f(){return ++copy.n;}"},
       {"namespace-zero", "struct R{int n;int*p;};R r;int f(){return r.n+(r.p!=nullptr);}"},
       {"namespace-value", "struct R{int n;};R r{3};int f(){return ++r.n;}"},
       {"namespace-empty", "struct E{};E e;E&f(){return e;}"},
@@ -8236,6 +8239,11 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2StaticTemporariesAcceptSourceComposition) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"auto-lvalue", "int n=3;template<class T>inline auto&r=n;int f(){return ++r<int>;}"},
+      {"auto-const-lvalue", "int n=3;template<class T>inline const auto&r=n;int f(){return r<int>;}"},
+      {"auto-pointer", "int n=3;template<class T>inline auto*p=&n;int f(){return ++*p<int>;}"},
+      {"auto-rvalue", "template<int N>inline auto&&r=N;int f(){return ++r<3>;}"},
+      {"auto-forwarding-lvalue", "int n=3;template<class T>inline auto&&r=n;int f(){return ++r<int>;}"},
       {"global-scalar", "const int&r=3;int f(){return r;}"},
       {"local-scalar", "int f(){static const int&r=3;return r;}"},
       {"global-array", "const int(&r)[2]={1,2};int f(){return r[1];}"},
@@ -11080,7 +11088,6 @@ TEST_F(TranslateTest, CoreV2VariableTemplatesAcceptConcreteInstances) {
 TEST_F(TranslateTest, CoreV2VariableTemplatesRetainSourceAndResourceChecks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"floating-result", "template<class T>constexpr long double value=1.0L;int main(){return int(value<int>);}"},
-      {"class-result", "struct R{int n;};template<class T>constexpr R value{3};int main(){return value<int>.n;}"},
       {"dynamic-initializer", "int f(){return 3;}template<class T>int value=f();int main(){return value<int>;}"},
       {"thread-local", "template<class T>thread_local int value=3;int main(){return value<int>;}"},
       {"volatile-result", "template<class T>volatile int value=3;int main(){return value<int>;}"},
@@ -15348,7 +15355,6 @@ TEST_F(TranslateTest, CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries) {
       {"base", "struct E{};struct D:E{};", "TR0201"},
       {"union", "union E{};", "TR0201"},
       {"virtual", "struct E{virtual void f(){}};", "TR0201"},
-      {"template", "template<class T>struct E{};E<int> e;", "TR0201"},
       {"overaligned", "struct alignas(2) E{};", "TR0201"},
       {"attribute", "struct __attribute__((packed)) E{};", "TR0201"},
       {"reference-field", "struct E{int&r;};", "TR0201"},

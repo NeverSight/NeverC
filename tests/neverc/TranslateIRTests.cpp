@@ -1186,6 +1186,7 @@ TEST(TranslateIR, CoreV2MutableStaticRecordsPreserveMemberAndWholeObjectWrites) 
   ASSERT_TRUE(verifyModule(M, context(M), D));
   M.Profile = "cpp-core-v1";
   M.Target.Carriers.reset();
+  M.Records[0].Layout.reset();
   invalid(M, "Mutable globals require core v2");
 }
 

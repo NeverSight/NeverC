@@ -2949,7 +2949,6 @@ bool query(){return noexcept(C());}
         'base': 'struct E{};struct D:E{};',
         'union': 'union E{};',
         'virtual': 'struct E{virtual void f(){}};',
-        'template': 'template<class T>struct E{};E<int> e;',
         'overaligned': 'struct alignas(2) E{};',
         'attribute': 'struct __attribute__((packed)) E{};',
         'reference-field': 'struct E{int&r;};',
@@ -9150,6 +9149,9 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-admitted-values-" + name, source, profile="cpp-core-v2")
 
     static_record_positive = {
+        'promoted-empty-template': 'template<class T>struct E{};E<int> e;',
+        'promoted-record-variable': 'struct R{int n;};template<class T>constexpr R value{3};int main(){return value<int>.n;}',
+        'constant-copy': 'struct R{int n;};constexpr R seed{3};R copy=seed;int f(){return ++copy.n;}',
         'namespace-zero': 'struct R{int n;int*p;};R r;int f(){return r.n+(r.p!=nullptr);}',
         'namespace-value': 'struct R{int n;};R r{3};int f(){return ++r.n;}',
         'namespace-empty': 'struct E{};E e;E&f(){return e;}',
@@ -9199,7 +9201,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'promoted-5': 'struct R{int a[2];};R r{{1,2}};',
         'promoted-6': 'struct R{int n;};template<class T>R p{3};int main(){return p<int>.n;}',
         'promoted-7': 'struct I{int n;};template<class T>struct R{inline static I n{3};};',
-        'runtime': 'struct R{int n;int data[2];int*p;};\nR zero;\nR value{3,{4,5},&value.n};\nR array[2];\nconst R seed{6,{7,8},nullptr};\nR copied=seed;\nR&alias=value;\nstruct Self{int n;int*p;constexpr Self():n(9),p(&n){}};\nSelf self;\nconstexpr Self readonly;\nSelf duplicate=readonly;\nR&local(){static R r{10,{11,12},&r.n};return r;}\nSelf&localSelf(){static Self r;return r;}\nint effects=0,drops=0;\nstruct Holder{inline static R object{13,{14,15},nullptr};~Holder(){++drops;}};\nHolder&receiver(Holder&h){++effects;return h;}\nR&temporary(){return Holder{}.object;}\ntemplate<int N>R&slot(){static R r{N,{0,0},&r.n};return r;}\ntemplate<int N>struct Store{inline static R object{N,{0,0},nullptr};};\ntemplate<int N>inline R object{N,{0,0},nullptr};\nint main(){\n if(zero.n||zero.data[1]||zero.p||array[1].n||array[1].p)return 1;\n if(value.n!=3||value.data[1]!=5||value.p!=&value.n)return 2;\n *value.p=16;alias.data[0]=17;if(value.n!=16||value.data[0]!=17)return 3;\n if(copied.n!=6||copied.data[1]!=8||copied.p)return 4;\n copied.n=18;if(seed.n!=6||copied.n!=18)return 5;\n if(self.p!=&self.n||*self.p!=9)return 6;\n *self.p=19;if(self.n!=19||*readonly.p!=9)return 7;\n if(duplicate.p!=readonly.p||duplicate.p==&duplicate.n)return 8;\n R*p=&local();*p->p=20;p->data[1]=21;if(&local()!=p||local().n!=20||local().data[1]!=21)return 9;\n Self*s=&localSelf();*s->p=22;if(&localSelf()!=s||localSelf().n!=22||localSelf().p!=&s->n)return 10;\n {Holder h;receiver(h).object.n=23;if(effects!=1||Holder::object.n!=23)return 11;}\n temporary().n=24;if(drops!=2||Holder::object.n!=24)return 12;\n slot<3>().n=25;if(slot<3>().n!=25||slot<5>().n!=5||slot<3>().p!=&slot<3>().n)return 13;\n Store<3>::object.n=26;if(Store<3>::object.n!=26||Store<5>::object.n!=5)return 14;\n object<3>.n=27;if(object<3>.n!=27||object<5>.n!=5)return 15;\n return 0;\n}\n',
+        'runtime': 'struct R{int n;int data[2];int*p;};\nR zero;\nR value{3,{4,5},&value.n};\nR array[2];\nconstexpr R seed{6,{7,8},nullptr};\nR copied=seed;\nR&alias=value;\nstruct Self{int n;int*p;constexpr Self():n(9),p(&n){}};\nSelf self;\nconstexpr Self readonly;\nSelf duplicate=readonly;\nR&local(){static R r{10,{11,12},&r.n};return r;}\nSelf&localSelf(){static Self r;return r;}\nint effects=0,drops=0;\nstruct Holder{inline static R object{13,{14,15},nullptr};~Holder(){++drops;}};\nHolder&receiver(Holder&h){++effects;return h;}\nR&temporary(){return Holder{}.object;}\ntemplate<int N>R&slot(){static R r{N,{0,0},&r.n};return r;}\ntemplate<int N>struct Store{inline static R object{N,{0,0},nullptr};};\ntemplate<int N>inline R object{N,{0,0},nullptr};\nint main(){\n if(zero.n||zero.data[1]||zero.p||array[1].n||array[1].p)return 1;\n if(value.n!=3||value.data[1]!=5||value.p!=&value.n)return 2;\n *value.p=16;alias.data[0]=17;if(value.n!=16||value.data[0]!=17)return 3;\n if(copied.n!=6||copied.data[1]!=8||copied.p)return 4;\n copied.n=18;if(seed.n!=6||copied.n!=18)return 5;\n if(self.p!=&self.n||*self.p!=9)return 6;\n *self.p=19;if(self.n!=19||*readonly.p!=9)return 7;\n if(duplicate.p!=readonly.p||duplicate.p==&duplicate.n)return 8;\n R*p=&local();*p->p=20;p->data[1]=21;if(&local()!=p||local().n!=20||local().data[1]!=21)return 9;\n Self*s=&localSelf();*s->p=22;if(&localSelf()!=s||localSelf().n!=22||localSelf().p!=&s->n)return 10;\n {Holder h;receiver(h).object.n=23;if(effects!=1||Holder::object.n!=23)return 11;}\n temporary().n=24;if(drops!=2||Holder::object.n!=24)return 12;\n slot<3>().n=25;if(slot<3>().n!=25||slot<5>().n!=5||slot<3>().p!=&slot<3>().n)return 13;\n Store<3>::object.n=26;if(Store<3>::object.n!=26||Store<5>::object.n!=5)return 14;\n object<3>.n=27;if(object<3>.n!=27||object<5>.n!=5)return 15;\n return 0;\n}\n',
         'protocol-source': 'struct R{int n;int values[2];};\nR zero;\nR value{3,{4,5}};\nconst R fixed{6,{7,8}};\nR&alias=value;\nint*pointer=&value.n;\nR&local(){static R r{9,{10,11}};return r;}\ntemplate<int N>struct Store{inline static R r{N,{0,0}};};\nR&instance(){return Store<12>::r;}\nint change(){value.n=13;alias.values[1]=14;return *pointer;}\n',
     }
     for name, source in static_record_positive.items():
@@ -9249,6 +9251,11 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         assert relocated==static_record_ir, "static record storage depends on the source root"
 
     static_temporary_positive = {
+        'auto-lvalue': 'int n=3;template<class T>inline auto&r=n;int f(){return ++r<int>;}',
+        'auto-const-lvalue': 'int n=3;template<class T>inline const auto&r=n;int f(){return r<int>;}',
+        'auto-pointer': 'int n=3;template<class T>inline auto*p=&n;int f(){return ++*p<int>;}',
+        'auto-rvalue': 'template<int N>inline auto&&r=N;int f(){return ++r<3>;}',
+        'auto-forwarding-lvalue': 'int n=3;template<class T>inline auto&&r=n;int f(){return ++r<int>;}',
         'global-scalar': 'const int&r=3;int f(){return r;}',
         'local-scalar': 'int f(){static const int&r=3;return r;}',
         'global-array': 'const int(&r)[2]={1,2};int f(){return r[1];}',
@@ -10969,7 +10976,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
 
     variable_templates_reject = {
         'floating-result': 'template<class T>constexpr long double value=1.0L;int main(){return int(value<int>);}',
-        'class-result': 'struct R{int n;};template<class T>constexpr R value{3};int main(){return value<int>.n;}',
         'dynamic-initializer': 'int f(){return 3;}template<class T>int value=f();int main(){return value<int>;}',
         'thread-local': 'template<class T>thread_local int value=3;int main(){return value<int>;}',
         'volatile-result': 'template<class T>volatile int value=3;int main(){return value<int>;}',
