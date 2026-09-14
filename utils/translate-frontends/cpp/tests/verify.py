@@ -2374,11 +2374,22 @@ bool query(){return noexcept(R(1).get(2));}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == temporary_calls, "temporary-call identities depend on the absolute root"
 
+    static_storage_promoted = {
+        'wrapped-auto-pointer': 'int get(){return 3;}template<class T>auto*p=&get;int main(){return p<int>();}',
+        'wrapped-auto-result': 'int get(){return 3;}template<class T>auto(*p)()=&get;int main(){return p<int>();}',
+        'static-array': 'int f(){static const int(&r)[2]={1,2};return r[0];}',
+        'global-array': 'const int(&r)[2]={1,2};',
+        'static-brace': 'int f(){static const int&r{1};return r;}',
+        'global-brace': 'const int&r{1};',
+        'static-extension': 'int f(){static const int&r=1;return r;}',
+        'global-extension': 'const int&r=1;',
+    }
+    for name, source in static_storage_promoted.items():
+        check("v2-static-storage-promoted-" + name, source, profile="cpp-core-v2")
+
     temporary_call_rejected = {
         'fresh-return': 'const int&f(){return 1;}',
         'fresh-record-return': 'struct R{int n;};const R&f(){return R{1};}',
-        'static-extension': 'int f(){static const int&r=1;return r;}',
-        'global-extension': 'const int&r=1;',
         'unused-throw': 'struct R{int get()const{throw 1;}};int f(){return R{}.get();}',
         'query-float': 'struct R{long double get()const noexcept{return 1.0L;}};bool f(){return noexcept(R{}.get());}',
     }
@@ -2545,9 +2556,7 @@ int converted(){Source s{13};const int&r{s};mark();return r;}
         'fresh-brace-scalar-return': 'const int&f(){return {1};}',
         'fresh-equal-record-return': 'struct R{int n;};const R&f(){return {R{1}};}',
         'fresh-brace-member-return': 'struct R{int n;};const int&f(){return {R{1}.n};}',
-        'static-brace': 'int f(){static const int&r{1};return r;}',
         'tls-brace': 'int f(){thread_local const int&r{1};return r;}',
-        'global-brace': 'const int&r{1};',
         'reference-field': 'struct R{const int&r;};int f(){R r{1};return r.r;}',
         'braced-offset': 'struct R{int a[2];};int f(){const int&r{*(R{{1,2}}.a+1)};return r;}',
         'braced-arrow': 'struct I{int n;};struct R{I a[2];};int f(){const int&r{(R{{{1},{2}}}.a+1)->n};return r;}',
@@ -2726,8 +2735,6 @@ bool query(){return noexcept(Items{R(1),R(2)});}
         assert relocated == array_temporaries, "array temporary identities depend on the absolute root"
 
     array_temporary_rejected = {
-        'static-array': 'int f(){static const int(&r)[2]={1,2};return r[0];}',
-        'global-array': 'const int(&r)[2]={1,2};',
         'tls-array': 'int f(){thread_local const int(&r)[2]={1,2};return r[0];}',
         'reference-field': 'struct R{const int(&a)[2];};void f(){R r{{1,2}};}',
         'fresh-array-return': 'using A=int[2];const A&f(){return A{1,2};}',
@@ -10927,8 +10934,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-callback-variable-templates-positive-" + name, source, None, profile="cpp-core-v2")
 
     callback_variable_templates_reject = {
-        'wrapped-auto-pointer': 'int get(){return 3;}template<class T>auto*p=&get;int main(){return p<int>();}',
-        'wrapped-auto-result': 'int get(){return 3;}template<class T>auto(*p)()=&get;int main(){return p<int>();}',
         'dynamic-initializer': 'int get(){return 3;}int(*make())(){return get;}template<class T>auto p=make();int main(){return p<int>();}',
         'thread-local': 'int get(){return 3;}template<class T>thread_local auto p=&get;int main(){return p<int>();}',
         'volatile': 'int get(){return 3;}template<class T>auto volatile p=&get;int main(){return p<int>();}',

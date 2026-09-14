@@ -8725,6 +8725,27 @@ TEST_F(TranslateTest, CoreV2StaticRecordsRetainInitializationAndLifetimeRequirem
   expectNoArtifacts(Output);
 }
 
+TEST_F(TranslateTest, CoreV2StaticStorageAcceptsPreviouslyRejectedSourceForms) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"wrapped-auto-pointer", "int get(){return 3;}template<class T>auto*p=&get;int main(){return p<int>();}"},
+      {"wrapped-auto-result", "int get(){return 3;}template<class T>auto(*p)()=&get;int main(){return p<int>();}"},
+      {"static-array", "int f(){static const int(&r)[2]={1,2};return r[0];}"},
+      {"global-array", "const int(&r)[2]={1,2};"},
+      {"static-brace", "int f(){static const int&r{1};return r;}"},
+      {"global-brace", "const int&r{1};"},
+      {"static-extension", "int f(){static const int&r=1;return r;}"},
+      {"global-extension", "const int&r=1;"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static-storage-promoted-" + Name + ".cpp");
+    const auto Output = tmpFile("static-storage-promoted-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StaticTemporariesPreserveStorageAndIdentity) {
   const auto Source = tmpFile("static-temporary-runtime.cpp");
   const auto Output = tmpFile("static-temporary-runtime.nc");
@@ -11224,8 +11245,6 @@ TEST_F(TranslateTest, CoreV2CallbackVariableTemplatesAcceptTypedCallbacks) {
 
 TEST_F(TranslateTest, CoreV2CallbackVariableTemplatesRetainSourceAndSignatureBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"wrapped-auto-pointer", "int get(){return 3;}template<class T>auto*p=&get;int main(){return p<int>();}"},
-      {"wrapped-auto-result", "int get(){return 3;}template<class T>auto(*p)()=&get;int main(){return p<int>();}"},
       {"dynamic-initializer", "int get(){return 3;}int(*make())(){return get;}template<class T>auto p=make();int main(){return p<int>();}"},
       {"thread-local", "int get(){return 3;}template<class T>thread_local auto p=&get;int main(){return p<int>();}"},
       {"volatile", "int get(){return 3;}template<class T>auto volatile p=&get;int main(){return p<int>();}"},
@@ -16129,8 +16148,6 @@ TEST_F(TranslateTest, CoreV2ArrayTemporariesAcceptBoundedLifetimes) {
 
 TEST_F(TranslateTest, CoreV2ArrayTemporariesRetainTypeAndLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"static-array", "int f(){static const int(&r)[2]={1,2};return r[0];}", "TR0201"},
-      {"global-array", "const int(&r)[2]={1,2};", "TR0201"},
       {"tls-array", "int f(){thread_local const int(&r)[2]={1,2};return r[0];}", "TR0201"},
       {"reference-field", "struct R{const int(&a)[2];};void f(){R r{{1,2}};}", "TR0201"},
       {"fresh-array-return", "using A=int[2];const A&f(){return A{1,2};}", "TR0201"},
@@ -16359,9 +16376,7 @@ TEST_F(TranslateTest, CoreV2AutomaticReferencesRetainLifetimeBoundaries) {
       {"fresh-brace-scalar-return", "const int&f(){return {1};}", "TR0201"},
       {"fresh-equal-record-return", "struct R{int n;};const R&f(){return {R{1}};}", "TR0201"},
       {"fresh-brace-member-return", "struct R{int n;};const int&f(){return {R{1}.n};}", "TR0201"},
-      {"static-brace", "int f(){static const int&r{1};return r;}", "TR0201"},
       {"tls-brace", "int f(){thread_local const int&r{1};return r;}", "TR0201"},
-      {"global-brace", "const int&r{1};", "TR0201"},
       {"reference-field", "struct R{const int&r;};int f(){R r{1};return r.r;}", "TR0201"},
       {"braced-offset", "struct R{int a[2];};int f(){const int&r{*(R{{1,2}}.a+1)};return r;}", "TR0201"},
       {"braced-arrow", "struct I{int n;};struct R{I a[2];};int f(){const int&r{(R{{{1},{2}}}.a+1)->n};return r;}", "TR0201"},
@@ -16608,8 +16623,6 @@ TEST_F(TranslateTest, CoreV2TemporaryCallsRetainLifetimeExtensionBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"fresh-return", "const int&f(){return 1;}", "TR0201"},
       {"fresh-record-return", "struct R{int n;};const R&f(){return R{1};}", "TR0201"},
-      {"static-extension", "int f(){static const int&r=1;return r;}", "TR0201"},
-      {"global-extension", "const int&r=1;", "TR0201"},
       {"unused-throw", "struct R{int get()const{throw 1;}};int f(){return R{}.get();}", "TR0201"},
       {"query-float", "struct R{long double get()const noexcept{return 1.0L;}};bool f(){return noexcept(R{}.get());}", "TR0201"},
       {"mutable-reference", "void take(int&){}void f(){take(1);}", "TR0202"},

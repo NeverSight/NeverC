@@ -2387,8 +2387,10 @@ Core v2 supports callback storage in concrete namespace and static-member variab
 templates, with the existing admitted primary, partial/full specialization and
 owner forms. Fixed and supported dependent function-pointer types, directly
 written `auto`/`const auto`, defaults, bounded packs and explicit instantiation
-retain the variable-template source rules. Wrapped placeholder declarators such
-as `auto *` or `auto (*)()` remain outside the direct-auto source contract.
+retain the variable-template source rules. Supported pointer/reference declarators
+around the actual written `auto` token, including `auto *` and `auto (*)()`, retain
+that token and traversal of the complete written type. The concrete deduced type
+must still satisfy the static-storage and callback-signature rules.
 
 Each materialized instance retains its own actual type substitution, first/previous
 and completion declaration relation, selected argument/default source and reached
