@@ -3839,6 +3839,7 @@ TEST_F(TranslateTest, CoreV2StaticLocalsAcceptConstantAndZeroInitialization) {
 
 TEST_F(TranslateTest, CoreV2DynamicStaticLocalsAcceptSourceComposition) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"const-cast-address", "int*f(int v){static const int n=v;return const_cast<int*>(&n);}"},
       {"promoted-1", "int seed(){return 3;}int f(){static int n=seed();return n;}"},
       {"promoted-2", "int f(int p){static int n=p;return n;}"},
       {"promoted-3", "int value=3;int f(){static int n=value;return n;}"},
@@ -3864,7 +3865,7 @@ TEST_F(TranslateTest, CoreV2DynamicStaticLocalsAcceptSourceComposition) {
       {"nonterminating-initializer", "int forever(){for(;;){}}int f(){static int n=forever();return n;}"},
       {"const-callback", "int add(int n){return n+1;}using F=int(*)(int);F select(){return add;}int f(int n){static F const callback=select();return callback(n);}"},
       {"constructor-escape", "struct R;R*alias;struct R{int n;R(int v):n(v){alias=this;}};const R&f(int n){static const R r(n);return r;}"},
-      {"runtime-source", "int calls=0,drops=0;\nint seed(int n){++calls;return n;}\nint&scalar(int n){static int value=seed(n);return value;}\nint capture(bool first){int n;if(first)n=9;static const int value=seed(n);return value;}\nint zero(){static int n=n+4;return n;}\nconst int*array(int n){static const int values[3]={seed(n),values[0]+1,0};return values;}\nstruct Record{int n;const Record*self;Record(int v):n(seed(v)),self(this){}};\nRecord make(int n){return Record(n);}\nconst Record&record(int n){static const Record value=make(n);return value;}\nstruct Temp{int n;~Temp(){++drops;}};\nint take(const Temp&t){return seed(t.n);}\nint temporary(int n){static int value=take(Temp{n});return value;}\ntemplate<class T>int instance(int n){static int value=seed(n);return value;}\nstruct Method{int n;int get(){static int value=seed(n);return value;}};\nint inner(int n){static int value=seed(n);return value;}\nint outer(int n){static int value=inner(n)+1;return value;}\nusing Callback=int(*)(int);\nCallback choose(){++calls;return seed;}\nint callback(int n){static Callback const f=choose();return f(n);}\nusing Null=decltype(nullptr);\nNull nullFactory(){++calls;return nullptr;}\nNull nullValue(){static Null n=nullFactory();return n;}\nfloat floating(float n){static const float value=n;return value;}\nint branch(bool b){if(b){static int n=seed(8);return n;}return 0;}\nint loop(){int sum=0;for(int i=0;i<3;++i){static int n=seed(i+2);sum+=n;}return sum;}\nint main(){\n if(calls||drops)return 1;\n if(branch(false)||calls)return 2;\n if(scalar(3)!=3||scalar(9)!=3||calls!=1)return 3;\n scalar(8)=4;if(scalar(7)!=4||calls!=1)return 4;\n calls=0;\n if(capture(true)!=9||capture(false)!=9||calls!=1)return 5;\n if(zero()!=4||zero()!=4)return 6;\n calls=0;\n const int*a=array(5);if(a[0]!=5||a[1]!=6||a[2]||array(9)!=a||calls!=1)return 7;\n calls=0;\n const Record&r=record(7);if(r.n!=7||r.self!=&r||&record(9)!=&r||calls!=1)return 8;\n calls=0;\n if(temporary(6)!=6||drops!=1||temporary(9)!=6||drops!=1||calls!=1)return 9;\n calls=0;\n if(instance<int>(3)!=3||instance<unsigned>(4)!=4||instance<int>(9)!=3||calls!=2)return 10;\n calls=0;\n Method one{3},two{4};if(one.get()!=3||two.get()!=3||calls!=1)return 11;\n calls=0;\n if(outer(5)!=6||outer(9)!=6||inner(8)!=5||calls!=1)return 12;\n calls=0;\n if(callback(3)!=3||calls!=2||callback(4)!=4||calls!=3)return 13;\n calls=0;\n if(nullValue()!=nullptr||nullValue()!=nullptr||calls!=1)return 14;\n if(floating(1.5f)!=1.5f||floating(2.5f)!=1.5f)return 15;\n calls=0;\n if(branch(true)!=8||branch(true)!=8||calls!=1)return 16;\n calls=0;\n if(loop()!=6||loop()!=6||calls!=1)return 17;\n return 0;\n}\n"},
+      {"runtime-source", "int calls=0,drops=0;\nint seed(int n){++calls;return n;}\nint&scalar(int n){static int value=seed(n);return value;}\nint capture(bool first){int n;if(first)n=9;static const int value=seed(n);return value;}\nint zero(){static int n=n+4;return n;}\nconst int*array(int n){static const int values[3]={seed(n),values[0]+1,0};return values;}\nstruct Record{int n;const Record*self;Record(int v):n(seed(v)),self(this){}};\nRecord make(int n){return Record(n);}\nconst Record&record(int n){static const Record value=make(n);return value;}\nstruct Temp{int n;~Temp(){++drops;}};\nint take(const Temp&t){return seed(t.n);}\nint temporary(int n){static int value=take(Temp{n});return value;}\ntemplate<class T>int instance(int n){static int value=seed(n);return value;}\nstruct Method{int n;int get(){static int value=seed(n);return value;}};\nint inner(int n){static int value=seed(n);return value;}\nint outer(int n){static int value=inner(n)+1;return value;}\nusing Callback=int(*)(int);\nCallback choose(){++calls;return seed;}\nint callback(int n){static Callback const f=choose();return f(n);}\nusing Null=decltype(nullptr);\nNull nullFactory(){++calls;return nullptr;}\nNull nullValue(){static Null n=nullFactory();return n;}\nfloat floating(float n){static const float value=n;return value;}\nint branch(bool b){if(b){static int n=seed(8);return n;}return 0;}\nint loop(){int sum=0;for(int i=0;i<3;++i){static int n=seed(i+2);sum+=n;}return sum;}\nint*constAddress(int n){static const int value=seed(n);return const_cast<int*>(&value);}\nint main(){\n if(calls||drops)return 1;\n if(branch(false)||calls)return 2;\n if(scalar(3)!=3||scalar(9)!=3||calls!=1)return 3;\n scalar(8)=4;if(scalar(7)!=4||calls!=1)return 4;\n calls=0;\n if(capture(true)!=9||capture(false)!=9||calls!=1)return 5;\n if(zero()!=4||zero()!=4)return 6;\n calls=0;\n const int*a=array(5);if(a[0]!=5||a[1]!=6||a[2]||array(9)!=a||calls!=1)return 7;\n calls=0;\n const Record&r=record(7);if(r.n!=7||r.self!=&r||&record(9)!=&r||calls!=1)return 8;\n calls=0;\n if(temporary(6)!=6||drops!=1||temporary(9)!=6||drops!=1||calls!=1)return 9;\n calls=0;\n if(instance<int>(3)!=3||instance<unsigned>(4)!=4||instance<int>(9)!=3||calls!=2)return 10;\n calls=0;\n Method one{3},two{4};if(one.get()!=3||two.get()!=3||calls!=1)return 11;\n calls=0;\n if(outer(5)!=6||outer(9)!=6||inner(8)!=5||calls!=1)return 12;\n calls=0;\n if(callback(3)!=3||calls!=2||callback(4)!=4||calls!=3)return 13;\n calls=0;\n if(nullValue()!=nullptr||nullValue()!=nullptr||calls!=1)return 14;\n if(floating(1.5f)!=1.5f||floating(2.5f)!=1.5f)return 15;\n calls=0;\n if(branch(true)!=8||branch(true)!=8||calls!=1)return 16;\n calls=0;\n if(loop()!=6||loop()!=6||calls!=1)return 17;\n calls=0;int*address=constAddress(21);if(*address!=21||constAddress(29)!=address||calls!=1)return 18;\n return 0;\n}\n"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -3904,6 +3905,7 @@ Null nullValue(){static Null n=nullFactory();return n;}
 float floating(float n){static const float value=n;return value;}
 int branch(bool b){if(b){static int n=seed(8);return n;}return 0;}
 int loop(){int sum=0;for(int i=0;i<3;++i){static int n=seed(i+2);sum+=n;}return sum;}
+int*constAddress(int n){static const int value=seed(n);return const_cast<int*>(&value);}
 int main(){
  if(calls||drops)return 1;
  if(branch(false)||calls)return 2;
@@ -3933,6 +3935,7 @@ int main(){
  if(branch(true)!=8||branch(true)!=8||calls!=1)return 16;
  calls=0;
  if(loop()!=6||loop()!=6||calls!=1)return 17;
+ calls=0;int*address=constAddress(21);if(*address!=21||constAddress(29)!=address||calls!=1)return 18;
  return 0;
 }
 )cpp");
@@ -4048,7 +4051,6 @@ TEST_F(TranslateTest, CoreV2DynamicStaticLocalsRetainSourceAndLifetimeBoundaries
       {"hidden-source", "int seed(){return 3;}int f(){static int n=(static_cast<void>(sizeof(long double)),seed());return n;}", "TR0201"},
       {"unowned-call", "extern int seed();int f(){static int n=seed();return n;}", "TR0203"},
       {"const-write", "int f(int v){static const int n=v;return ++n;}", "TR0202"},
-      {"const-cast", "int*f(int v){static const int n=v;return const_cast<int*>(&n);}", "TR0201"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
     SCOPED_TRACE(Name);
@@ -4840,7 +4842,7 @@ TEST_F(TranslateTest, CoreV2ReferenceMembersAcceptBindingsAndOwnedLifetimes) {
       {"owned-nested-static-reference", "struct R{const int&r;};const R&f(int n){static const R&r=R{n+1};return r;}"},
       {"owned-conditional", "struct T{int n;~T(){}};struct R{const int&r;};int f(bool b,int n){R r{b?T{n}.n:T{n+1}.n};return r.r;}"},
       {"aggregate-default-array", "int count;struct T{int n;~T(){count+=n;}};struct R{const T&r=T{3};};int f(){{R r[2]{};if(count)return 1;}return count;}"},
-      {"static-forward-member", "int n=3;struct R{int&r;};struct S{static const R a;static const R b;};const R S::a=S::b;const R S::b{n};int f(){return ++S::a.r;}"},
+      {"static-forward-constexpr-member", "int n=3;struct R{int&r;};struct S{static const R a;static constexpr R b{n};};const R S::a=S::b;int f(){return ++S::a.r;}"},
       {"pair-template", "template<class A,class B>struct Pair{A first;B second;};int f(int&a,int&b){Pair<int&,int&>p{a,b};auto q=p;++q.first;return &q.first==&a&&&q.second==&b;}"},
       {"promoted-CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries", "struct R{int&n;int get()const{return n;}};"},
       {"promoted-CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries", "struct R{int &n;R(int &v):n(v){}};"},
@@ -4876,6 +4878,7 @@ TEST_F(TranslateTest, CoreV2ReferenceMembersAcceptBindingsAndOwnedLifetimes) {
 
 TEST_F(TranslateTest, CoreV2ReferenceMembersRetainSourceAndLayoutBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"nonlocal-dynamic-copy", "int n=3;struct R{int&r;};struct S{static const R a;static const R b;};const R S::a=S::b;const R S::b{n};int f(){return ++S::a.r;}", "TR0201"},
       {"const-referent", "struct R{const int&r;};void f(R&r){r.r=3;}", "TR0202"},
       {"missing-binding", "struct R{int&r;};void f(){R r{};}", "TR0202"},
       {"deleted-assignment", "struct R{int&r;};void f(R&a,const R&b){a=b;}", "TR0202"},

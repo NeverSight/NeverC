@@ -696,6 +696,14 @@ pointer aliasing behavior, not an arbitrary C compiler's alias rules.
 
 ## Reference members
 
+A nonlocal reference-member copy still requires actual constant initialization.
+A `const` record is not automatically usable as a `constexpr` source: copying
+`S::b` before its definition into `S::a` can require dynamic startup even when
+`S::b` itself later receives a constant initializer. Use of a preceding `constexpr`
+source is covered; nonlocal dynamic initialization remains unfinished. The
+translator does not silently promote such initialization or change source order.
+
+
 Core v2 supports nonstatic lvalue/rvalue reference members whose referents have
 admitted object types, including scalars, records, fixed arrays, pointer objects
 and function-pointer objects. Each reference field has one checked pointer

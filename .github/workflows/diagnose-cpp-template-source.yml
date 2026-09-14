@@ -41,7 +41,8 @@ jobs:
             callback-array-field qualified-friend-class \
             static-temporary-values static-reference-fillers \
             static-reference-single-filler automatic-reference-fillers \
-            aggregate-member-cleanup; do
+            aggregate-member-cleanup static-forward-reference-copy \
+            static-prior-reference-copy static-constexpr-reference-copy; do
             if "$RUNNER_TEMP/template-source" "$fixture"; then
               echo "$fixture: success"
             else

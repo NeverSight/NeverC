@@ -121,8 +121,10 @@ public:
                          D->getType()->isRecordType() || D->getType()->isArrayType())) {
       APValue Value;
       llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+      const bool NativeConstant = D->hasConstantInitialization();
       bool Constant = D->getInit()->EvaluateAsInitializer(Value, Context, D, Notes, true);
       llvm::outs() << "constant binding " << D->getNameAsString()
+                   << " native-constant=" << NativeConstant
                    << " success=" << Constant << " notes=" << Notes.size();
       if (Value.isLValue())
         llvm::outs() << " call=" << Value.getLValueCallIndex()
@@ -211,6 +213,12 @@ int main(int Argc, const char **Argv) {
     const char *Source;
   };
   const Fixture Sources[] = {
+      {"static-forward-reference-copy",
+      "int n=3;struct R{int&r;};struct S{static const R a;static const R b;};const R S::a=S::b;const R S::b{n};int f(){return ++S::a.r;}"},
+      {"static-prior-reference-copy",
+      "int n=3;struct R{int&r;};struct S{static const R a;static const R b;};const R S::b{n};const R S::a=S::b;int f(){return ++S::a.r;}"},
+      {"static-constexpr-reference-copy",
+      "int n=3;struct R{int&r;};struct S{static const R a;static constexpr R b{n};};const R S::a=S::b;int f(){return ++S::a.r;}"},
       {"nested-method",
       "template<class T>struct O{template<class U>struct I{T a;U b;int get()const;};};"
       "template<class X>template<class Y>int O<X>::I<Y>::get()const{return a+b;}"
