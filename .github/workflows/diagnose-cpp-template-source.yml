@@ -1,0 +1,33 @@
+name: cpp-template-source-diagnostics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/diagnose-cpp-template-source.yml
+      - utils/translate-frontends/cpp/diagnostics/template-source.cpp
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-source-metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Clang 20 development libraries for the diagnostic probe
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+          sudo bash "$RUNNER_TEMP/llvm.sh" 20
+          sudo apt-get install -y libclang-20-dev libclang-cpp20-dev llvm-20-dev
+          clang++-20 --version
+      - name: Inspect template qualifiers and substitution owners
+        run: |
+          clang++-20 -std=c++17 \
+            -I/usr/lib/llvm-20/include \
+            utils/translate-frontends/cpp/diagnostics/template-source.cpp \
+            -L/usr/lib/llvm-20/lib -lclang-cpp -lLLVM-20 \
+            -o "$RUNNER_TEMP/template-source"
+          "$RUNNER_TEMP/template-source"

@@ -7883,7 +7883,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'argument-hidden': 'template<class T>struct O{template<class U>struct I{int n;};};int f(){O<int>::I<decltype((sizeof(double),1))>v{3};return v.n;}',
         'inner-pack-65': 'template<int N>struct O{template<int...M>struct I{int n=N+sizeof...(M);};};int f(){O<1>::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}',
         'copied-full-unused': 'template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};int f(){O<int>o;return sizeof(o);}',
-        'copied-full-used': 'template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};int f(){O<int>::I<int>v;return v.n;}',
         'generic-nested-record': 'template<class T>struct O{struct R{template<class U>struct I{U n;};};};',
         'inner-reference-field': 'template<class T>struct O{template<class U>struct I{U&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}',
         'inner-virtual': 'template<class T>struct O{template<class U>struct I{virtual int get(){return 3;}};};',
@@ -7900,6 +7899,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-dependent-member-classes-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
 
     dependent_member_classes_invalid = {
+        'copied-full-used': 'template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};int f(){O<int>::I<int>v;return v.n;}',
         'distinct-outer': 'template<class T>struct O{template<class U>struct I{U n;};};void f(){O<int>::I<int>a{3};O<bool>::I<int>b=a;}',
         'distinct-inner': 'template<class T>struct O{template<class U>struct I{T n;};};void f(){O<int>::I<int>a{3};O<int>::I<bool>b=a;}',
         'partial-ambiguity': 'template<class T>struct O{template<class U,class V>struct I;template<class U>struct I<U,int>{};template<class V>struct I<int,V>{};};O<int>::I<int,int>v;',
