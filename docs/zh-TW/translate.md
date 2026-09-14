@@ -108,6 +108,8 @@ Core v2 支援靜態物件指標的零初始化與常數初始化，保留全域
 
 靜態參考現在可繫結既有靜態物件、陣列／記錄子物件及字串，涵蓋區域／類別靜態參考及已支援的範本實例。讀寫保留原物件身分與 const 權限。靜態暫存物件的生命週期延長及動態初始化尚未完成，原生驗證仍需對應實作版本的 CI。請參閱[靜態參考契約](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings)。
 
+靜態記錄物件現在支援常量初始化與共用可寫狀態，涵蓋區域／類別靜態物件及已支援的範本實例。物件自身位址、constexpr 建構與靜態零初始化保留原物件身分。動態初始化及靜態解構尚未完成，原生驗證仍需對應實作版本的 CI。請參閱[靜態記錄契約](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects)。
+
 ## 安裝與純量轉譯
 
 使用正常安裝的 NeverC 及其標準資源即可。C++ 前端與核准的 SDK 標頭均已內建，無需另行安裝 Clang。建置細節見[前端說明](../../utils/translate-frontends/cpp/README.md)。

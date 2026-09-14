@@ -85,7 +85,7 @@ Types are strings: `int`, `uint`, `bool`, `void`, or the identifier of a record.
 
 Identifiers are ASCII C identifiers. Non-C-export declarations use an `nct_` prefix and a deterministic digest of their semantic identity. Internal-linkage identities include the normalized relative source path. Native C exports retain their explicit source name and must use scalar signatures; `main` retains its spelling, int return, and empty argument list. All emitted identifiers reject NC keywords and reserved runtime/compiler spellings, including the emitter-private `nct_emit_` prefix. Record typedefs, globals and functions occupy one disjoint ordinary-identifier namespace; parameters and locals are mutually distinct and cannot shadow module declarations. Field names are distinct within each record. Source C exports may not use the generated `nct_` namespace. Identifiers never depend on AST addresses or absolute roots.
 
-Globals are `{name,type,value,loc}`. Their values must be fully folded constant trees: literals, aggregates, and the profile-specific null or address constants described below. The frontend resolves constant references, operators and conversions before serialization. The v1 profiles represent only checked compile-time constants and never permit global writes. Core v2 additionally accepts an optional boolean `mutable` field, defaulting to `false`: supported numeric, boolean, null, object-pointer and callback scalar globals and complete fixed arrays may set it to `true`, with a folded constant or static-zero initializer. The consumer permits writes and mutable addresses only for those exact global identities. Other profiles reject the field, and const globals remain read-only. Mutable record globals are not admitted. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. The v1 profiles restrict this representation to their admitted trivial value types. Core v2 represents source aliases, addressable storage and lifetimes through explicit operations described below; declarations at entry do not perform initialization or start object lifetimes.
+Globals are `{name,type,value,loc}`. Their values must be fully folded constant trees: literals, aggregates, and the profile-specific null or address constants described below. The frontend resolves constant references, operators and conversions before serialization. The v1 profiles represent only checked compile-time constants and never permit global writes. Core v2 additionally accepts an optional boolean `mutable` field, defaulting to `false`: supported numeric, boolean, null, object-pointer and callback scalar globals, complete fixed arrays and records may set it to `true`, with a folded constant or static-zero initializer. The consumer permits writes and mutable addresses only for those exact global identities. Other profiles reject the field, and const globals remain read-only. Mutable records follow their static-object contract below. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. The v1 profiles restrict this representation to their admitted trivial value types. Core v2 represents source aliases, addressable storage and lifetimes through explicit operations described below; declarations at entry do not perform initialization or start object lifetimes.
 
 ## Pure expressions
 
@@ -905,6 +905,23 @@ read-only storage. A local static reference creates no automatic binding shadow
 or block-entry initialization. Return snapshots and normal expression effects
 still use the ordinary lowering rules. See the
 [source contract](cpp-core-v2.md#static-reference-bindings).
+
+## Core v2 static record storage
+
+Record globals in core v2 may use either mutability, with complete folded
+aggregate initializers checked against their declared field types and target
+layout. Pointer fields may hold checked object addresses, including addresses
+of the containing record or its fields. Internal tentative declarations precede
+initialized definitions when needed for these addresses. Mutable member writes
+and admitted record assignments use existing operations; const objects retain
+the global write prohibition.
+
+The producer evaluates the actual source definition and retains canonical
+identity across namespace redeclarations, local/class statics and template
+instances. Trivial default construction at static storage supplies zero values
+before any ordinary runtime use; automatic uninitialized storage retains its
+existing rules. Dynamic initializer code, allocator calls and static destruction
+are not introduced here. See the [source contract](cpp-core-v2.md#static-record-objects).
 
 ## Core v2 binary floating-point values
 

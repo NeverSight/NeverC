@@ -279,7 +279,7 @@ public:
   std::vector<const clang::CXXRecordDecl *> Destructions;
   std::set<const clang::CXXRecordDecl *> RequiredDestructions;
   std::vector<clang::VarDecl *> Globals;
-  std::map<const clang::VarDecl *, json::Object> ConstantArrayInitializers;
+  std::map<const clang::VarDecl *, json::Object> ConstantStaticObjectInitializers;
   std::map<const clang::VarDecl *, json::Object> StaticReferenceInitializers;
   std::map<const clang::StringLiteral *, std::string> StringObjects;
   json::Array StringGlobals;

@@ -2389,12 +2389,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         V->getType().isRestrictQualified())
       return false;
     auto T = V->getType();
-    if (T->isPointerType() || T->isReferenceType())
+    if (T->isPointerType() || T->isReferenceType() || T->isRecordType())
       return true; // Actual instances retain source, ABI and constant checks.
     if (T->isArrayType())
       return true; // Bound, element type and initializer are checked on use.
-    if (T->isRecordType())
-      return false;
     return T->isDependentType() || T->isUndeducedAutoType() || T->isNullPtrType() ||
            T->isIntegralOrEnumerationType() || binaryFloatingType(T);
   }
@@ -2445,12 +2443,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     }
     auto Type = D->getType();
-    if (Type->isPointerType() || Type->isReferenceType())
+    if (Type->isPointerType() || Type->isReferenceType() || Type->isRecordType())
       return true; // Concrete source, signature and initializer checks follow.
     if (Type->isArrayType())
       return true; // Concrete instances retain their complete written type.
-    if (Type->isRecordType())
-      return false;
     return Type->isDependentType() || Type->isUndeducedAutoType() || Type->isNullPtrType() ||
            Type->isIntegralOrEnumerationType() || binaryFloatingType(Type);
   }
@@ -8075,34 +8071,34 @@ public:
            T->isNullPtrType() || binaryFloatingType(T);
   }
   bool staticStorageType(QualType T) {
-    return staticScalarType(T) || T->isReferenceType() ||
+    return staticScalarType(T) || T->isReferenceType() || T->isRecordType() ||
            A.Context.getAsConstantArrayType(T);
   }
-  bool staticArrayElementType(QualType T, unsigned Depth = 0) {
+  bool staticObjectElementType(QualType T, unsigned Depth = 0) {
     if (Depth > 64)
       return false;
     if (staticScalarType(T))
       return true;
     if (const auto *Array = A.Context.getAsConstantArrayType(T))
-      return staticArrayElementType(Array->getElementType(), Depth + 1);
+      return staticObjectElementType(Array->getElementType(), Depth + 1);
     if (const auto *Record = T->getAsCXXRecordDecl(); Record && Record->getDefinition()) {
       A.chargeExpansion(1, Record->getLocation());
       for (const auto *Field : Record->getDefinition()->fields())
-        if (!staticArrayElementType(Field->getType(), Depth + 1))
+        if (!staticObjectElementType(Field->getType(), Depth + 1))
           return false;
       return true;
     }
     return false;
   }
-  bool cacheStaticArrayInitializer(VarDecl *Definition) {
+  bool cacheStaticObjectInitializer(VarDecl *Definition) {
     auto Canonical = Definition->getCanonicalDecl();
-    if (A.ConstantArrayInitializers.count(Canonical))
+    if (A.ConstantStaticObjectInitializers.count(Canonical))
       return true;
     auto T = Definition->getType();
-    if (!staticArrayElementType(T) || needsDestruction(T) ||
+    if (!staticObjectElementType(T) || needsDestruction(T) ||
         Definition->getTLSKind() != VarDecl::TLS_None || T.isVolatileQualified()) {
-      A.reject(Definition->getLocation(), "static array storage",
-               "Static arrays require admitted constant elements without TLS, volatile storage or destruction.");
+      A.reject(Definition->getLocation(), "static object storage",
+               "Static arrays and records require admitted constant elements without TLS, volatile storage or destruction.");
       return false;
     }
     const VarDecl *InitializingDecl = nullptr;
@@ -8115,23 +8111,37 @@ public:
           InitializingDecl->getCanonicalDecl() != Canonical ||
           InitializingDecl->getDeclContext()->getRedeclContext() !=
               Definition->getDeclContext()->getRedeclContext() ||
-          !A.Context.hasSameType(InitializingDecl->getType(), T) ||
-          !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
-          !Notes.empty()) {
-        A.reject(Definition->getLocation(), "static array initializer",
-                 "A static array requires fully defined source-owned constant initialization.");
+          !A.Context.hasSameType(InitializingDecl->getType(), T)) {
+        A.reject(Definition->getLocation(), "static object initializer",
+                 "A static object requires fully defined source-owned constant initialization.");
         return false;
       }
-      Initializer = A.constant(Value, T, Definition->getLocation());
+      const auto *Construct = dyn_cast<CXXConstructExpr>(Init->IgnoreParenImpCasts());
+      const bool ZeroOnly = Construct && !Construct->getNumArgs() &&
+          Construct->getConstructor()->isDefaultConstructor() &&
+          Construct->getConstructor()->isTrivial();
+      if (ZeroOnly) {
+        // Static storage is zero-initialized before a trivial default constructor.
+        // Evaluating that constructor alone would leave scalar fields indeterminate.
+        Initializer = A.zero(T, Definition->getLocation());
+      } else {
+        if (!Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
+            !Notes.empty()) {
+          A.reject(Definition->getLocation(), "static object initializer",
+                   "A static object requires fully defined source-owned constant initialization.");
+          return false;
+        }
+        Initializer = A.constant(Value, T, Definition->getLocation());
+      }
     } else {
-      if (T.isConstQualified()) {
-        A.reject(Definition->getLocation(), "static array initializer",
+      if (T.isConstQualified() && !T->isRecordType()) {
+        A.reject(Definition->getLocation(), "static object initializer",
                  "A const static array requires its initializer in this unit.");
         return false;
       }
       Initializer = A.zero(T, Definition->getLocation());
     }
-    A.ConstantArrayInitializers.emplace(Canonical, std::move(Initializer));
+    A.ConstantStaticObjectInitializers.emplace(Canonical, std::move(Initializer));
     return true;
   }
   bool staticScalarValue(const APValue &Value, QualType T, SourceLocation L) {
@@ -8185,7 +8195,7 @@ public:
         D->getTLSKind() != VarDecl::TLS_None ||
         D->getType().isVolatileQualified()) {
       A.reject(D->getLocation(), "static data member",
-               "Only non-thread-local scalar, reference or fixed-array members in supported owned classes are admitted.");
+               "Only non-thread-local scalar, reference, record or fixed-array members in supported owned classes are admitted.");
       return true;
     }
     auto *Definition = D->getDefinition();
@@ -8220,8 +8230,8 @@ public:
                "TR0203");
       return true;
     }
-    if (D->getType()->isArrayType()) {
-      if (cacheStaticArrayInitializer(Definition) &&
+    if (D->getType()->isArrayType() || D->getType()->isRecordType()) {
+      if (cacheStaticObjectInitializer(Definition) &&
           CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
         A.Globals.push_back(Definition);
       return true;
@@ -8264,7 +8274,7 @@ public:
       if (const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(D)) {
         if (Variable->getKind() != Decl::VarTemplateSpecialization ||
             !variablePatternType(Variable) || !staticStorageType(D->getType())) {
-          A.reject(D->getLocation(), "variable specialization storage", "Only concrete namespace or admitted member scalar, reference and fixed-array variables are admitted.");
+          A.reject(D->getLocation(), "variable specialization storage", "Only concrete namespace or admitted member scalar, reference, record and fixed-array variables are admitted.");
           return true;
         }
         if (D->isStaticDataMember())
@@ -8283,8 +8293,8 @@ public:
           A.reject(D->getLocation(), "variable template definition identity", "A variable instance requires its own source-owned canonical definition.", "TR0203");
           return true;
         }
-        if (D->getType()->isArrayType()) {
-          if (cacheStaticArrayInitializer(Definition) &&
+        if (D->getType()->isArrayType() || D->getType()->isRecordType()) {
+          if (cacheStaticObjectInitializer(Definition) &&
               CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
             A.Globals.push_back(Definition);
           return true;
@@ -8338,11 +8348,11 @@ public:
           D->getType().isVolatileQualified() ||
           !staticStorageType(D->getType()) || Definition != D) {
         A.reject(D->getLocation(), "static local",
-                 "Only owned non-volatile scalar, reference or fixed-array static locals in non-constexpr functions are supported.");
+                 "Only owned non-volatile scalar, reference, record or fixed-array static locals in non-constexpr functions are supported.");
         return true;
       }
-      if (D->getType()->isArrayType()) {
-        if (cacheStaticArrayInitializer(D) &&
+      if (D->getType()->isArrayType() || D->getType()->isRecordType()) {
+        if (cacheStaticObjectInitializer(D) &&
             A.StaticLocals.insert(D->getCanonicalDecl()).second) {
           A.chargeExpansion(1, D->getLocation());
           A.Globals.push_back(D);
@@ -8404,21 +8414,20 @@ public:
       return true;
     }
     if (A.S.coreV2() && !D->isLocalVarDeclOrParm() &&
-        (D->getType()->isArrayType() ||
-         (D->getType().isConstQualified() && containsArray(D->getType())))) {
+        (D->getType()->isArrayType() || D->getType()->isRecordType())) {
       auto *Definition = D->getDefinition();
       if (!Definition || !owned(Definition) || Definition->getKind() != Decl::Var ||
           !Definition->getDeclContext()->getRedeclContext()->isFileContext() ||
           Definition->getCanonicalDecl() != D->getCanonicalDecl() ||
           !A.Context.hasSameType(Definition->getType(), D->getType())) {
-        A.reject(D->getLocation(), "static array definition",
-                 "A static array object requires its owned definition in this unit.", "TR0203");
+        A.reject(D->getLocation(), "static object definition",
+                 "A static array or record requires its owned definition in this unit.", "TR0203");
         return true;
       }
       auto Canonical = Definition->getCanonicalDecl();
-      if (A.ConstantArrayInitializers.count(Canonical))
+      if (A.ConstantStaticObjectInitializers.count(Canonical))
         return true;
-      if (!cacheStaticArrayInitializer(Definition))
+      if (!cacheStaticObjectInitializer(Definition))
         return true;
       A.Globals.push_back(Definition);
       return true;
@@ -9164,8 +9173,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     if (auto Found = StaticReferenceInitializers.find(G->getCanonicalDecl());
         Found != StaticReferenceInitializers.end()) {
       Initializer = json::Object(Found->second);
-    } else if (auto Found = ConstantArrayInitializers.find(G->getCanonicalDecl());
-        Found != ConstantArrayInitializers.end()) {
+    } else if (auto Found = ConstantStaticObjectInitializers.find(G->getCanonicalDecl());
+        Found != ConstantStaticObjectInitializers.end()) {
       Initializer = json::Object(Found->second);
     } else if (Init) {
       APValue Value;

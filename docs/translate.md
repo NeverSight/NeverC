@@ -108,6 +108,8 @@ Core v2 supports zero or constant initialization of static object pointers, incl
 
 Static references can bind to existing static objects, array/record subobjects and strings, including local/class statics and admitted template instances. Reads and assignments preserve the original object and const permissions. Static temporary lifetime extension and dynamic initialization remain unfinished; native validation requires implementing CI. See the [static reference contract](../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings).
 
+Static records now support constant initialization and shared mutable state, including local/class statics and admitted template instances. Typed self addresses, constexpr construction and static zero initialization retain object identity. Dynamic initialization and static destruction remain unfinished; native validation requires implementing CI. See the [static record contract](../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

@@ -108,6 +108,8 @@ Core v2 unterstützt null- oder konstantinitialisierte statische Objektzeiger au
 
 Statische Referenzen können vorhandene statische Objekte, Teilobjekte von Arrays oder Strukturen und Zeichenketten binden, auch als lokale oder Klassenvariablen und in unterstützten Templateinstanzen. Lesen und Schreiben erhalten das ursprüngliche Objekt und dessen const-Rechte. Die Lebensdauerverlängerung statischer temporärer Objekte und dynamische Initialisierung bleiben offen; die native Prüfung erfordert die CI der Implementierung. Siehe den [Vertrag für statische Referenzen](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings).
 
+Statische Datensätze unterstützen konstante Initialisierung und gemeinsamen veränderlichen Zustand, auch lokal, in Klassen und in unterstützten Templateinstanzen. Eigene Adressen, constexpr-Konstruktion und statische Nullinitialisierung erhalten die Objektidentität. Dynamische Initialisierung und statische Destruktion bleiben offen; die native Prüfung erfordert die CI der Implementierung. Siehe den [Vertrag für statische Datensätze](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).

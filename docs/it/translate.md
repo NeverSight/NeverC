@@ -108,6 +108,8 @@ Core v2 supporta l’inizializzazione a zero o costante dei puntatori statici a 
 
 I riferimenti statici possono legarsi a oggetti statici esistenti, sottooggetti di array o record e stringhe, inclusi riferimenti statici locali, di classe e istanze di template ammesse. Letture e scritture mantengono l’oggetto originale e i permessi const. L’estensione della durata dei temporanei statici e l’inizializzazione dinamica restano incomplete; la verifica nativa richiede la CI della versione implementata. Vedere il [contratto dei riferimenti statici](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings).
 
+I record statici supportano inizializzazione costante e stato modificabile condiviso, anche nelle variabili statiche locali, nelle classi e nelle istanze di template ammesse. Gli indirizzi interni, la costruzione constexpr e l’inizializzazione statica a zero preservano l’identità dell’oggetto. L’inizializzazione dinamica e la distruzione statica restano incomplete; la verifica nativa richiede la CI dell’implementazione. Vedere il [contratto dei record statici](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects).
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

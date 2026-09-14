@@ -3294,7 +3294,6 @@ int main(){return read();}
         'dynamic-call': 'int f(){return 1;}int value=f();',
         'dynamic-read': 'int a=1;int b=a;',
         'dynamic-effect': 'int a=1;int b=++a;',
-        'record': 'struct R{int n;};R value{1};',
         'float': 'long double value=1.0L;',
         'volatile': 'volatile int value;',
         'atomic': '_Atomic(int) value;',
@@ -4720,7 +4719,6 @@ int unevaluated(){return sizeof(make().shared);}
         'dynamic-call': 'int value(){return 3;}struct R{inline static int n=value();};',
         'dynamic-write': 'int n=0;struct R{inline static int value=++n;};',
         'floating': 'struct R{inline static long double n=1.0L;};',
-        'record': 'struct I{int n;};struct R{inline static I i{1};};',
         'tls': 'struct R{inline static thread_local int n=1;};',
         'volatile': 'struct R{inline static volatile int n=1;};',
         'folded-unsupported': 'struct R{inline static int n=static_cast<int>(1.0L);};',
@@ -5158,7 +5156,6 @@ int*address(){return &state();}
         'static-tls': 'int f(){static thread_local int n=3;return n;}',
         'volatile': 'int f(){static volatile int n=3;return n;}',
         'floating': 'long double f(){static long double n=3.0L;return n;}',
-        'record': 'struct R{int n;};int f(){static R r{3};return r.n;}',
         'record-destruction': 'struct R{int n;~R(){}};int f(){static R r{3};return r.n;}',
         'extern': 'int value=3;int f(){extern int value;return value;}',
         'constexpr-function': 'constexpr int f(bool b){if(b){static int n=3;return n;}return 0;}',
@@ -7237,7 +7234,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     member_variables_reject = {
         'dynamic': 'int f(){return 3;}struct R{template<class T>inline static int n=f();};int main(){return R::n<int>;}',
         'floating-result': 'struct R{template<class T>inline static long double n=3.0L;};int main(){return int(R::n<int>);}',
-        'record-result': 'struct V{int n;};struct R{template<class T>inline static V n{3};};int main(){return R::n<int>.n;}',
         'volatile': 'struct R{template<class T>inline static volatile int n=3;};int main(){return R::n<int>;}',
         'thread-local': 'struct R{template<class T>inline static thread_local int n=3;};int main(){return R::n<int>;}',
         'attribute': 'struct R{template<class T>[[deprecated]]inline static int n=3;};int main(){return R::n<int>;}',
@@ -9127,6 +9123,105 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == class_friends, "class target identity depends on the absolute root"
 
+    static_record_positive = {
+        'namespace-zero': 'struct R{int n;int*p;};R r;int f(){return r.n+(r.p!=nullptr);}',
+        'namespace-value': 'struct R{int n;};R r{3};int f(){return ++r.n;}',
+        'namespace-empty': 'struct E{};E e;E&f(){return e;}',
+        'namespace-const-empty': 'struct E{};const E e;const E&f(){return e;}',
+        'namespace-nested-zero': 'struct I{int a[2];};struct R{I i;float n;};R r;int f(){return r.i.a[1]+static_cast<int>(r.n);}',
+        'namespace-array-zero': 'struct R{int n;};R a[2];int f(){return a[1].n;}',
+        'namespace-default-fields': 'struct R{int n=3;int a[2]={4,5};};R r;int f(){return ++r.a[1];}',
+        'namespace-constexpr-ctor': 'struct R{int n;constexpr R(int v):n(v){}};R r(3);int f(){return ++r.n;}',
+        'namespace-constexpr-default': 'struct R{int n;constexpr R():n(3){}};R r;int f(){return ++r.n;}',
+        'namespace-delegating': 'struct R{int n;constexpr R(int v):n(v){}constexpr R():R(3){}};R r;int f(){return ++r.n;}',
+        'namespace-self-pointer': 'struct R{int n;int*p;constexpr R():n(3),p(&n){}};R r;int f(){return ++*r.p;}',
+        'namespace-self-const': 'struct R{int n;const int*p;constexpr R():n(3),p(&n){}};constexpr R r;int f(){return *r.p;}',
+        'namespace-copy': 'struct R{int n;};constexpr R seed{3};R r=seed;int f(){return ++r.n;}',
+        'namespace-pointer-field': 'int n=3;struct R{int*p;};R r{&n};int f(){return ++*r.p;}',
+        'namespace-forward-pointer': 'struct R{int n;};extern R r;int*p=&r.n;R r{3};int f(){return ++*p;}',
+        'namespace-const-field': 'struct R{const int key;int n;};R r{1,2};int f(){return ++r.n+r.key;}',
+        'namespace-string-field': 'struct R{char text[4];const char*p;};R r{"cat","dog"};char f(){r.text[0]=\'b\';return r.p[0];}',
+        'namespace-callback-field': 'int f(){return 3;}struct R{int(*p)();};R r{f};int g(){return r.p();}',
+        'namespace-nullptr-field': 'using N=decltype(nullptr);struct R{N n;};R r;bool f(){return r.n==nullptr;}',
+        'namespace-redeclaration': 'struct R{int n;};extern R r;R r{3};extern R r;int f(){return r.n;}',
+        'namespace-const-redeclaration': 'struct R{int n;};extern const R r;const R r{3};int f(){return r.n;}',
+        'namespace-record-reference': 'struct R{int n;};R r{3};R&alias=r;int f(){return ++alias.n;}',
+        'namespace-whole-assignment': 'struct R{int n;};R r{3};void f(){r=R{4};}',
+        'namespace-nested-assignment': 'struct I{int n;};struct R{I i;};R r{{3}};void f(){r.i=I{4};}',
+        'local-static-zero': 'struct R{int n;};int f(){static R r;return r.n++;}',
+        'local-static-initialized': 'struct R{int n;};R&f(){static R r{3};return r;}',
+        'local-static-const': 'struct R{int n;};const R&f(){static const R r{3};return r;}',
+        'local-static-self': 'struct R{int n;int*p;constexpr R():n(3),p(&n){}};R&f(){static R r;return r;}',
+        'local-class-static-object': 'int f(){struct R{int n;};static R r{3};return r.n++;}',
+        'local-template': 'template<int N>int&f(){struct R{int n;};static R r{N};return r.n;}int&g(){return f<3>();}',
+        'member-inline': 'struct I{int n;};struct R{inline static I i{3};};int f(){return ++R::i.n;}',
+        'member-outline': 'struct I{int n;};struct R{static I i;};I R::i{3};int f(){return ++R::i.n;}',
+        'member-const': 'struct I{int n;};struct R{inline static const I i{3};};int f(){return R::i.n;}',
+        'member-class-template': 'struct I{int n;};template<int N>struct R{inline static I i{N};};int f(){return ++R<3>::i.n;}',
+        'member-dependent-type': 'struct I{int n;};template<class T>struct R{inline static T i{};};int f(){return ++R<I>::i.n;}',
+        'member-template-outline': 'struct I{int n;};template<class T>struct R{static T i;};template<class T>T R<T>::i{3};int f(){return ++R<I>::i.n;}',
+        'variable-template': 'struct R{int n;};template<int N>inline R r{N};int f(){return ++r<3>.n;}',
+        'variable-template-auto': 'struct R{int n;};template<int N>inline auto r=R{N};int f(){return ++r<3>.n;}',
+        'variable-template-partial': 'struct R{int n;};template<class T>inline R r{3};template<class T>inline R r<T*>{4};int f(){return r<int*>.n;}',
+        'variable-template-full': 'struct R{int n;};template<class T>inline R r{3};template<>inline R r<int>{4};int f(){return r<int>.n;}',
+        'member-variable-template': 'struct I{int n;};struct R{template<int N>inline static I i{N};};int f(){return ++R::i<3>.n;}',
+        'member-variable-outline': 'struct I{int n;};struct R{template<int N>static I i;};template<int N>I R::i{N};int f(){return ++R::i<3>.n;}',
+        'promoted-1': 'struct R{int n;};R value{1};',
+        'promoted-2': 'struct I{int n;};struct R{inline static I i{1};};',
+        'promoted-3': 'struct R{int n;};int f(){static R r{3};return r.n;}',
+        'promoted-4': 'struct V{int n;};struct R{template<class T>inline static V n{3};};int main(){return R::n<int>.n;}',
+        'promoted-5': 'struct R{int a[2];};R r{{1,2}};',
+        'promoted-6': 'struct R{int n;};template<class T>R p{3};int main(){return p<int>.n;}',
+        'promoted-7': 'struct I{int n;};template<class T>struct R{inline static I n{3};};',
+        'runtime': 'struct R{int n;int data[2];int*p;};\nR zero;\nR value{3,{4,5},&value.n};\nR array[2];\nconst R seed{6,{7,8},nullptr};\nR copied=seed;\nR&alias=value;\nstruct Self{int n;int*p;constexpr Self():n(9),p(&n){}};\nSelf self;\nconstexpr Self readonly;\nSelf duplicate=readonly;\nR&local(){static R r{10,{11,12},&r.n};return r;}\nSelf&localSelf(){static Self r;return r;}\nint effects=0,drops=0;\nstruct Holder{inline static R object{13,{14,15},nullptr};~Holder(){++drops;}};\nHolder&receiver(Holder&h){++effects;return h;}\nR&temporary(){return Holder{}.object;}\ntemplate<int N>R&slot(){static R r{N,{0,0},&r.n};return r;}\ntemplate<int N>struct Store{inline static R object{N,{0,0},nullptr};};\ntemplate<int N>inline R object{N,{0,0},nullptr};\nint main(){\n if(zero.n||zero.data[1]||zero.p||array[1].n||array[1].p)return 1;\n if(value.n!=3||value.data[1]!=5||value.p!=&value.n)return 2;\n *value.p=16;alias.data[0]=17;if(value.n!=16||value.data[0]!=17)return 3;\n if(copied.n!=6||copied.data[1]!=8||copied.p)return 4;\n copied.n=18;if(seed.n!=6||copied.n!=18)return 5;\n if(self.p!=&self.n||*self.p!=9)return 6;\n *self.p=19;if(self.n!=19||*readonly.p!=9)return 7;\n if(duplicate.p!=readonly.p||duplicate.p==&duplicate.n)return 8;\n R*p=&local();*p->p=20;p->data[1]=21;if(&local()!=p||local().n!=20||local().data[1]!=21)return 9;\n Self*s=&localSelf();*s->p=22;if(&localSelf()!=s||localSelf().n!=22||localSelf().p!=&s->n)return 10;\n {Holder h;receiver(h).object.n=23;if(effects!=1||Holder::object.n!=23)return 11;}\n temporary().n=24;if(drops!=2||Holder::object.n!=24)return 12;\n slot<3>().n=25;if(slot<3>().n!=25||slot<5>().n!=5||slot<3>().p!=&slot<3>().n)return 13;\n Store<3>::object.n=26;if(Store<3>::object.n!=26||Store<5>::object.n!=5)return 14;\n object<3>.n=27;if(object<3>.n!=27||object<5>.n!=5)return 15;\n return 0;\n}\n',
+        'protocol-source': 'struct R{int n;int values[2];};\nR zero;\nR value{3,{4,5}};\nconst R fixed{6,{7,8}};\nR&alias=value;\nint*pointer=&value.n;\nR&local(){static R r{9,{10,11}};return r;}\ntemplate<int N>struct Store{inline static R r{N,{0,0}};};\nR&instance(){return Store<12>::r;}\nint change(){value.n=13;alias.values[1]=14;return *pointer;}\n',
+    }
+    for name, source in static_record_positive.items():
+        check("v2-static-record-positive-"+name, source, profile="cpp-core-v2")
+    static_record_negative = {
+        'dynamic-constructor': ('struct R{int n;R():n(3){}};R r;', 'TR0201'),
+        'dynamic-call': ('int f(){return 3;}struct R{int n;};R r{f()};', 'TR0201'),
+        'dynamic-read': ('int n=3;struct R{int value;};R r{n};', 'TR0201'),
+        'local-parameter': ('struct R{int n;};int f(int n){static R r{n};return r.n;}', 'TR0201'),
+        'global-destruction': ('struct R{int n;~R(){}};R r{3};', 'TR0201'),
+        'local-destruction': ('struct R{int n;~R(){}};int f(){static R r{3};return r.n;}', 'TR0201'),
+        'member-destruction': ('struct I{int n;~I(){}};struct R{inline static I i{3};};', 'TR0201'),
+        'tls': ('struct R{int n;};thread_local R r{3};', 'TR0201'),
+        'volatile': ('struct R{int n;};volatile R r{3};', 'TR0201'),
+        'unsupported-field': ('struct R{long double n;};R r{};', 'TR0201'),
+        'hidden-initializer': ('struct R{int n;};R r{static_cast<int>(1.0L)};', 'TR0201'),
+        'hidden-template': ('template<class T>using I=int;struct R{int n;};template<class T>R r{sizeof(I<decltype(T{}+1.0L)>)};int f(){return r<int>.n;}', 'TR0201'),
+        'reference-field': ('int n;struct R{int&r;};R r{n};', 'TR0201'),
+        'mutable-field': ('struct R{mutable int n;};R r{3};', 'TR0201'),
+        'bitfield': ('struct R{int n:3;};R r{2};', 'TR0201'),
+        'union': ('union R{int n;};R r{3};', 'TR0201'),
+        'base': ('struct B{int n;};struct R:B{};R r{{3}};', 'TR0201'),
+        'missing-namespace': ('struct R{int n;};extern R r;int f(){return r.n;}', 'TR0203'),
+        'missing-const': ('struct R{int n;};extern const R r;int f(){return r.n;}', 'TR0203'),
+        'missing-member': ('struct I{int n;};struct R{static I i;};', 'TR0203'),
+        'const-write': ('struct R{int n;};const R r{3};void f(){r.n=4;}', 'TR0202'),
+        'const-field-write': ('struct R{const int n;};R r{3};void f(){r.n=4;}', 'TR0202'),
+    }
+    for name, (source, diagnostic) in static_record_negative.items():
+        check("v2-static-record-reject-"+name, source, diagnostic, profile="cpp-core-v2")
+    check("static-record-v1", "struct R{int n;};R r{3};", "TR0201", profile="cpp-core-v1")
+    static_record_ir=check("v2-static-record-protocol",static_record_positive["protocol-source"],profile="cpp-core-v2")
+    records={g["loc"]["line"]:g for g in static_record_ir["globals"]}
+    assert len(records)==7
+    def static_record_values(value):
+        return [int(value["args"][0]["value"]),*[int(x["value"]) for x in value["args"][1]["args"]]]
+    for line,values in ((2,[0,0,0]),(3,[3,4,5]),(4,[6,7,8]),(7,[9,10,11]),(8,[12,0,0])):
+        assert static_record_values(records[line]["value"])==values
+        assert records[line].get("mutable",False)==(line!=4)
+    assert not records[5].get("mutable",False)
+    assert records[5]["value"]["args"][0]["name"]==records[3]["name"]
+    field=records[6]["value"]["args"][0]
+    assert field["kind"]=="member" and field["args"][0]["name"]==records[3]["name"]
+    assert all(not local["type"].startswith("nct_") for f in static_record_ir["functions"] for local in f["locals"])
+    with tempfile.TemporaryDirectory(prefix="neverc-static-record-relocated-") as temp:
+        relocated=check("v2-static-record-relocated",static_record_positive["protocol-source"],root=Path(temp)/"project",profile="cpp-core-v2")
+        assert relocated==static_record_ir, "static record storage depends on the source root"
+
     static_reference_positive = {
         'global-lvalue': 'int n=3;int&r=n;int f(){return ++r;}',
         'global-const': 'const int n=3;const int&r=n;int f(){return r;}',
@@ -9462,7 +9557,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'local-destructor': ('struct R{int n;~R(){}};R*f(){static R a[2]={{1},{2}};return a;}', 'TR0201'),
         'member-destructor': ('struct I{int n;~I(){}};struct R{inline static I a[2]={{1},{2}};};', 'TR0201'),
         'template-destructor': ('struct R{int n;~R(){}};template<class T>inline T a[2]{};R*f(){return a<R>;}', 'TR0201'),
-        'mutable-record-root': ('struct R{int a[2];};R r{{1,2}};', 'TR0201'),
         'volatile-array': ('volatile int a[2];', 'TR0201'),
         'tls-local': ('int*f(){thread_local int a[2];return a;}', 'TR0201'),
         'tls-member': ('struct R{inline static thread_local int a[2];};', 'TR0201'),
@@ -10501,7 +10595,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'dynamic-initializer': 'int get(){return 3;}int(*make())(){return get;}template<class T>auto p=make();int main(){return p<int>();}',
         'thread-local': 'int get(){return 3;}template<class T>thread_local auto p=&get;int main(){return p<int>();}',
         'volatile': 'int get(){return 3;}template<class T>auto volatile p=&get;int main(){return p<int>();}',
-        'record-storage': 'struct R{int n;};template<class T>R p{3};int main(){return p<int>.n;}',
         'nonstatic-member-pointer': 'struct R{int get(){return 3;}};template<class T>auto p=&R::get;int main(){R r;return (r.*p<int>)();}',
         'record-callback-signature': 'struct R{int n;};int get(R r){return r.n;}template<class T>auto p=&get;int main(){return p<int>(R{3});}',
         'pointer-nontype-argument': 'int get(){return 3;}template<int(*P)()>auto p=P;int main(){return p<get>();}',
@@ -12114,7 +12207,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'discard-floating': 'template<class T>struct R{static const int n=int(1.0L);};int f(){(void)R<int>::n;return 0;}',
         'hidden-definition-floating': 'template<class T>struct R{static int n;};template<class T>int R<T>::n=int(1.0L);int f(){return R<int>::n;}',
         'floating-type': 'template<class T>struct R{inline static long double n=1.0L;};',
-        'record-type': 'struct I{int n;};template<class T>struct R{inline static I n{3};};',
         'volatile': 'template<class T>struct R{inline static volatile T n=3;};',
         'thread-local': 'template<class T>struct R{inline static thread_local T n=3;};',
         'outside-parameter-source': 'template<int N>struct R{static int n;};template<decltype(int(1.0L)) N>int R<N>::n=N;',

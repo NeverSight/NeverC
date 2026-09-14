@@ -1513,9 +1513,10 @@ public:
                          G.ValueType.Kind != TypeKind::Bool &&
                          G.ValueType.Kind != TypeKind::NullPtr &&
                          G.ValueType.Kind != TypeKind::Array &&
+                         G.ValueType.Kind != TypeKind::Record &&
                          G.ValueType.Kind != TypeKind::Pointer &&
                          G.ValueType.Kind != TypeKind::FunctionPointer)))
-        return error(G.Loc, "Mutable globals require core v2 numeric, boolean, nullptr, pointer, callback or fixed-array storage.");
+        return error(G.Loc, "Mutable globals require core v2 numeric, boolean, nullptr, pointer, callback, record or fixed-array storage.");
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
           !type(G.ValueType, G.Loc) ||
           (G.ValueType.Kind == TypeKind::Pointer && M.Profile != "cpp-core-v2") ||

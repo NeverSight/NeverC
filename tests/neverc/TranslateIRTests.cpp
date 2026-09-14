@@ -877,11 +877,10 @@ TEST(TranslateIR, MutableGlobalsRetainProfileTypeAndInitializerBoundaries) {
   auto Old = module();
   Old.Globals.push_back({"nct_mutable", intType(), literal("0"), InputLoc, true});
   invalid(Old, "Mutable globals require core v2");
-  for (const auto &T : {Type{TypeKind::Record, "nct_record"},
-                        Type{TypeKind::Void, {}}}) {
+  for (const auto &T : {Type{TypeKind::Void, {}}}) {
     auto M = module(true);
     M.Globals.push_back({"nct_mutable", T, literal("0", T), InputLoc, true});
-    invalid(M, "Mutable globals require core v2 numeric, boolean, nullptr, pointer, callback or fixed-array storage");
+    invalid(M, "Mutable globals require core v2 numeric, boolean, nullptr, pointer, callback, record or fixed-array storage");
   }
   auto M = module(true);
   M.Globals.push_back({"nct_mutable", integerType(8, true), literal("256", integerType(8, true)), InputLoc, true});
@@ -1148,6 +1147,73 @@ TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
     M.Functions[0].Body.back() = ret(Value);
     invalid(M);
   }
+}
+
+TEST(TranslateIR, CoreV2MutableStaticRecordsPreserveMemberAndWholeObjectWrites) {
+  auto M = module(true);
+  const Type Record{TypeKind::Record, "nct_record"};
+  M.Records.push_back({"nct_record", {{"nct_value", intType()}}, InputLoc,
+                       RecordLayout{{32, 32}, {0}}});
+  auto Value = pointerExpr(ExprKind::Aggregate, Record, {literal("3")});
+  M.Globals.push_back({"nct_object", Record, Value, InputLoc, true});
+  auto Member = pointerExpr(ExprKind::Member, intType(), {variable("nct_object", Record)});
+  Member.Name = "nct_value";
+  Instruction Assign;
+  Assign.Op = InstructionKind::Assign;
+  Assign.Loc = InputLoc;
+  Assign.Target = Member;
+  Assign.Value = literal("4");
+  M.Functions[0].Body = {label(), Assign, ret(Member)};
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static nct_record nct_object = {"), std::string::npos);
+  auto Bad = M;
+  Bad.Globals[0].Mutable = false;
+  invalid(Bad, "Global constants");
+  Bad = M;
+  Bad.Globals[0].Value = literal("0", Record);
+  invalid(Bad, "literal");
+  Bad = M;
+  Bad.Globals[0].Value.Args.clear();
+  invalid(Bad, "operand count");
+  Bad = M;
+  Bad.Globals[0].Value.Args[0] = binary(BinaryOperator::Add, literal("1"), literal("2"));
+  invalid(Bad, "folded");
+  M.Functions[0].Body[1].Target = variable("nct_object", Record);
+  M.Functions[0].Body[1].Value = Value;
+  D.clear();
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  M.Profile = "cpp-core-v1";
+  M.Target.Carriers.reset();
+  invalid(M, "Mutable globals require core v2");
+}
+
+TEST(TranslateIR, CoreV2MutableStaticRecordSelfAddressesRequireExactLayoutAndStorage) {
+  auto M = module(true);
+  const Type Record{TypeKind::Record, "nct_record"};
+  const auto Pointer = pointerType(intType());
+  M.Records.push_back({"nct_record", {{"nct_value", intType()}, {"nct_pointer", Pointer}},
+                       InputLoc, RecordLayout{{128, 64}, {0, 64}}});
+  auto Member = pointerExpr(ExprKind::Member, intType(), {variable("nct_object", Record)});
+  Member.Name = "nct_value";
+  auto Address = pointerExpr(ExprKind::Address, Pointer, {Member});
+  M.Globals.push_back({"nct_object", Record,
+      pointerExpr(ExprKind::Aggregate, Record, {literal("3"), Address}), InputLoc, true});
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  auto Declaration = Output.Text.find("static nct_record nct_object;");
+  auto Initializer = Output.Text.find("static nct_record nct_object = {");
+  ASSERT_NE(Declaration, std::string::npos);
+  ASSERT_NE(Initializer, std::string::npos);
+  EXPECT_LT(Declaration, Initializer);
+  auto Bad = M;
+  Bad.Globals[0].Value.Args[1].Args[0].Name = "missing";
+  invalid(Bad, "Unknown member");
+  Bad = M;
+  Bad.Records[0].Layout->FieldOffsetsBits[1] = 32;
+  invalid(Bad, "layout");
 }
 
 TEST(TranslateIR, CoreV2StaticReferenceCarriersKeepBindingReadonlyAndPointeeWritable) {

@@ -108,6 +108,8 @@ Core v2 prend en charge l’initialisation nulle ou constante des pointeurs stat
 
 Les références statiques peuvent désigner des objets statiques existants, des sous-objets de tableaux ou de structures et des chaînes, y compris dans les variables statiques locales, les classes et les instances de modèles admises. Les lectures et écritures conservent l’objet initial et les droits const. La prolongation de vie des temporaires statiques et l’initialisation dynamique restent inachevées ; la validation native nécessite la CI de cette version. Voir le [contrat des références statiques](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings).
 
+Les enregistrements statiques prennent en charge l’initialisation constante et un état mutable partagé, y compris dans les variables statiques locales, les classes et les modèles admis. Les adresses internes, la construction constexpr et l’initialisation statique à zéro conservent l’identité de l’objet. L’initialisation dynamique et la destruction statique restent inachevées ; la validation native nécessite la CI de cette version. Voir le [contrat des objets statiques](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects).
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).

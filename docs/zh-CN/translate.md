@@ -108,6 +108,8 @@ Core v2 支持静态对象指针的零初始化和常量初始化，保留全局
 
 静态引用现在可绑定已有静态对象、数组／记录子对象和字符串，并覆盖局部／类静态引用及已支持的模板实例。读写保持原对象身份和 const 权限。静态临时对象的生命周期延长及动态初始化尚未完成，原生验证仍需对应实现版本的 CI。参见[静态引用契约](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings)。
 
+静态记录对象现在支持常量初始化和共享可写状态，涵盖局部／类静态对象及已支持的模板实例。对象自身地址、constexpr 构造和静态零初始化保留原对象身份。动态初始化和静态析构尚未完成，原生验证仍需对应实现版本的 CI。参见[静态记录契约](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects)。
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

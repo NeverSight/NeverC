@@ -108,6 +108,8 @@ Core v2 admite inicialización a cero o constante de punteros estáticos a objet
 
 Las referencias estáticas pueden enlazar objetos estáticos existentes, subobjetos de arreglos o registros y cadenas, incluidas referencias estáticas locales, de clase e instancias de plantillas admitidas. Las lecturas y escrituras conservan el objeto original y los permisos const. La extensión de vida de temporales estáticos y la inicialización dinámica siguen pendientes; la validación nativa requiere la CI de la implementación. Consulte el [contrato de referencias estáticas](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings).
 
+Los registros estáticos admiten inicialización constante y estado mutable compartido, también en variables estáticas locales, clases e instancias de plantillas admitidas. Las direcciones internas, la construcción constexpr y la inicialización estática a cero conservan la identidad del objeto. La inicialización dinámica y la destrucción estática siguen pendientes; la validación nativa requiere la CI de la implementación. Consulte el [contrato de registros estáticos](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects).
+
 ## Instalación y traducción escalar
 
 Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).
