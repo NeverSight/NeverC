@@ -98,6 +98,8 @@ Core v2 admite miembros const de tipos escalares, registros, punteros, callbacks
 
 Core v2 admite funciones eliminadas y miembros especiales predeterminados definidos como eliminados, incluidas las formas compatibles de plantillas y amigos. Clang conserva la resolución de sobrecargas y los diagnósticos de acceso; estas declaraciones no generan definiciones ejecutables. Los objetos solo movibles, las copias alternativas seleccionadas y la elisión garantizada de C++17 mantienen la gestión de duración. Se requiere CI de la revisión; C++/STL completo sigue pendiente. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deleted-function-declarations).
 
+Core v2 admite IEEE `float` y `double`, aritmética y conversiones, referencias, campos y matrices, callbacks y objetos escalares estáticos inicializados a cero o con constantes. Los bits exactos de los literales y la comprobación independiente de la disposición conservan la representación. La ejecución requiere el entorno flotante predeterminado, sin matemática rápida, precisión adicional ni contracción implícita. Se requiere CI de la revisión; `long double`, cabeceras estándar y C++/STL completo siguen pendientes. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#binary-floating-point-values).
+
 ## Instalación y traducción escalar
 
 Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).

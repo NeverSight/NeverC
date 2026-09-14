@@ -208,15 +208,18 @@ void State::addSDKMetadata() {
 
 json::Object Adapter::floatingLiteral(const llvm::APFloat &V,
                                       SourceLocation L) {
-  if (&V.getSemantics() != &llvm::APFloat::IEEEdouble()) {
+  const bool Single = &V.getSemantics() == &llvm::APFloat::IEEEsingle();
+  if ((!Single && &V.getSemantics() != &llvm::APFloat::IEEEdouble()) ||
+      (Single ? !S.coreV2() : !S.coreV2() && !S.math())) {
     reject(L, "floating literal",
-           "Only IEEE binary64 literal semantics are admitted.");
+           "Only supported IEEE binary32/binary64 literal semantics are admitted.");
     throw Failure{};
   }
   auto Bits = llvm::utohexstr(V.bitcastToAPInt().getZExtValue(), true);
-  Bits.insert(Bits.begin(), 16 - Bits.size(), '0');
+  Bits.insert(Bits.begin(), (Single ? 8 : 16) - Bits.size(), '0');
   return json::Object{
-      {"kind", "literal"}, {"type", "double"}, {"bits", Bits}, {"loc", loc(L)}};
+      {"kind", "literal"}, {"type", Single ? "float" : "double"},
+      {"bits", Bits}, {"loc", loc(L)}};
 }
 
 static bool standardNamespace(const DeclContext *C) {

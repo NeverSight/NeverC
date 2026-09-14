@@ -13,6 +13,7 @@
 #include "neverc/Foundation/LangOpts/LangOptions.h"
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Foundation/Target/TargetOptions.h"
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FileSystem.h"
@@ -90,6 +91,13 @@ bool expectedCarrierLayout(VerificationContext &Context, Diagnostics &D,
   Layout.Carriers[9] = {
       uint32_t(Target->getPointerWidth(neverc::LangAS::Default)),
       uint32_t(Target->getPointerAlign(neverc::LangAS::Default))};
+  Layout.Carriers[10] = {Target->getFloatWidth(), Target->getFloatAlign()};
+  Layout.Carriers[11] = {Target->getDoubleWidth(), Target->getDoubleAlign()};
+  if (&Target->getFloatFormat() != &llvm::APFloat::IEEEsingle() ||
+      &Target->getDoubleFormat() != &llvm::APFloat::IEEEdouble())
+    return fail(D, "TR0204", Source, "NeverC floating layout",
+                "Core v2 requires IEEE binary32 float and binary64 double.",
+                "Select an admitted native target.");
   Context.IntBits = Target->getIntWidth();
   Context.PointerBits = Layout.Carriers[9].SizeBits;
   auto PtrDiff = Target->getPtrDiffType(neverc::LangAS::Default);

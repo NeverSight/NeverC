@@ -85,6 +85,9 @@ class FunctionLowering {
     return variable(Name, Type, L);
   }
   Expression one(llvm::StringRef T, SourceLocation L) {
+    if (T == "float" || T == "double")
+      return A.floatingLiteral(
+          T == "float" ? llvm::APFloat(1.0f) : llvm::APFloat(1.0), L);
     return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), 1), unsignedInteger(T)), T, L);
   }
   Expression boolean(bool Value, SourceLocation L) {
@@ -790,7 +793,8 @@ class FunctionLowering {
       case CK_IntegralToFloating:
       case CK_FloatingToIntegral:
       case CK_FloatingToBoolean:
-        if (A.S.math())
+      case CK_FloatingCast:
+        if (A.S.math() || A.S.coreV2())
           return cast(expression(C->getSubExpr()), T, L);
         [[fallthrough]];
       default:
@@ -899,7 +903,8 @@ class FunctionLowering {
           assign(Place, std::move(New), L);
           return U->isPostfix() ? Old : Place;
         }
-        auto Computation = integerBits(T) < 32 ? std::string("int") : T;
+        auto Computation = integerBits(T) && integerBits(T) < 32
+                               ? std::string("int") : T;
         auto New = binary(U->isIncrementOp() ? "+" : "-", cast(Old, Computation, L),
                           one(Computation, L), Computation, L);
         assign(Place, cast(std::move(New), T, L), L);

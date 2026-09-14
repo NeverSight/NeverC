@@ -27,6 +27,8 @@ std::string typeName(const Type &T) {
     return T.RecordID;
   case TypeKind::Double:
     return "double";
+  case TypeKind::Float:
+    return "float";
   case TypeKind::NullPtr:
     return "nullptr";
   case TypeKind::Pointer:
@@ -74,6 +76,7 @@ class Parser {
   Diagnostics &D;
   std::size_t Nodes = 0;
   bool Math = false;
+  bool CoreV2 = false;
   SourceLocation Anchor{"<frontend>", 1, 1};
 
 public:
@@ -229,6 +232,8 @@ public:
       T.Kind = TypeKind::Void;
     else if (S == "double")
       T.Kind = TypeKind::Double;
+    else if (S == "float")
+      T.Kind = TypeKind::Float;
     else if (S == "nullptr")
       T.Kind = TypeKind::NullPtr;
     else {
@@ -268,17 +273,19 @@ public:
       E.Kind = ExprKind::Literal;
       if (E.ValueType.Kind == TypeKind::Bool)
         return boolean(O, "value", E.Boolean);
-      if (E.ValueType.Kind == TypeKind::Double) {
+      if (E.ValueType.isFloating()) {
         std::string Bits;
-        if (!Math || !string(O, "bits", Bits) || Bits.size() != 16 ||
+        const bool Single = E.ValueType.Kind == TypeKind::Float;
+        if (!(CoreV2 || (Math && !Single)) || O.size() != 4 ||
+            !string(O, "bits", Bits) || Bits.size() != (Single ? 8 : 16) ||
             !std::all_of(Bits.begin(), Bits.end(),
                          [](char C) {
                            return (C >= '0' && C <= '9') ||
                                   (C >= 'a' && C <= 'f');
                          }) ||
             llvm::StringRef(Bits).getAsInteger(16, E.Binary64Bits))
-          return error("A math double literal requires exactly 16 lowercase "
-                       "hexadecimal bits.");
+          return error("A supported floating literal requires exactly 8 (float) "
+                       "or 16 (double) lowercase hexadecimal digits and no extra payload.");
         return true;
       }
       return string(O, "value", E.Integer);
@@ -467,6 +474,7 @@ public:
     if (M.Protocol != FrontendProtocolMajor)
       return error("Incompatible frontend protocol major version.");
     Math = M.Profile == "cpp-math-v1";
+    CoreV2 = M.Profile == "cpp-core-v2";
     const auto *F = O.getObject("frontend");
     const auto *T = O.getObject("target");
     if (!F || !T)
@@ -723,8 +731,11 @@ class Verifier {
       return (Void && T.RecordID.empty()) ||
              error(L, "Void is permitted only as a function result.");
     case TypeKind::Double:
-      return (Math && T.RecordID.empty()) ||
-             error(L, "Double requires the explicit math profile.");
+      return ((Math || M.Profile == "cpp-core-v2") && T.RecordID.empty()) ||
+             error(L, "Double requires core v2 or the explicit math profile.");
+    case TypeKind::Float:
+      return (M.Profile == "cpp-core-v2" && T.RecordID.empty()) ||
+             error(L, "Float requires core v2 and no record identity.");
     case TypeKind::NullPtr:
       return (M.Profile == "cpp-core-v2" && T.RecordID.empty()) ||
              error(L, "Null pointer values require core v2 and no record identity.");
@@ -816,13 +827,17 @@ class Verifier {
     case ExprKind::Literal:
       if (!Arity(0))
         return false;
+      if (E.ValueType.isFloating() &&
+          (!E.Name.empty() || !E.Integer.empty() || E.Boolean ||
+           (E.ValueType.Kind == TypeKind::Float && E.Binary64Bits > UINT32_MAX)))
+        return error(E.Loc, "Floating literal has an invalid payload or width.");
       if (E.ValueType.Kind == TypeKind::Double &&
           (E.Binary64Bits & UINT64_C(0x7ff8000000000000)) ==
               UINT64_C(0x7ff0000000000000) &&
           (E.Binary64Bits & UINT64_C(0x0007ffffffffffff)))
         HasSignalingNaNLiteral = true;
       return E.ValueType.Kind == TypeKind::Bool ||
-             E.ValueType.Kind == TypeKind::Double ||
+             E.ValueType.isFloating() ||
              canonicalInteger(E.Integer, E.ValueType) ||
              error(E.Loc, "Invalid scalar literal value or range.");
     case ExprKind::Var: {
@@ -842,7 +857,7 @@ class Verifier {
         return false;
       if (E.UnaryOp == UnaryOperator::LogicalNot)
         return (E.Args[0].ValueType.isScalar() &&
-                E.Args[0].ValueType.Kind != TypeKind::Double &&
+                !E.Args[0].ValueType.isFloating() &&
                 E.ValueType.Kind == TypeKind::Bool) ||
                error(E.Loc,
                      "Logical not requires a scalar operand and bool result.");
@@ -850,11 +865,12 @@ class Verifier {
           E.UnaryOp != UnaryOperator::Minus &&
           E.UnaryOp != UnaryOperator::BitNot)
         return error(E.Loc, "Unknown unary operator.");
-      if (E.ValueType.Kind == TypeKind::Double)
-        return (Math && E.Args[0].ValueType == E.ValueType &&
+      if (E.ValueType.isFloating())
+        return ((Math || M.Profile == "cpp-core-v2") &&
+                E.Args[0].ValueType == E.ValueType &&
                 E.UnaryOp != UnaryOperator::BitNot) ||
                error(E.Loc,
-                     "Math unary +/- requires a double operand and result.");
+                     "Floating unary +/- requires matching operand and result types.");
       return (E.Args[0].ValueType.isPromotedInteger() &&
               E.ValueType == E.Args[0].ValueType) ||
              error(E.Loc, "Unary arithmetic requires an explicitly promoted "
@@ -931,12 +947,18 @@ class Verifier {
       default:
         return error(E.Loc, "Unknown binary operator.");
       }
-      if (A.Kind == TypeKind::Double || B.Kind == TypeKind::Double)
-        return (Math && Compare && A.Kind == TypeKind::Double &&
-                B.Kind == TypeKind::Double &&
-                E.ValueType.Kind == TypeKind::Bool) ||
-               error(E.Loc, "The math profile permits double comparisons but "
-                            "excludes binary floating arithmetic.");
+      if (A.isFloating() || B.isFloating()) {
+        const bool Arithmetic =
+            E.BinaryOp == BinaryOperator::Add ||
+            E.BinaryOp == BinaryOperator::Subtract ||
+            E.BinaryOp == BinaryOperator::Multiply ||
+            E.BinaryOp == BinaryOperator::Divide;
+        return (A == B &&
+                (Compare ? E.ValueType.Kind == TypeKind::Bool
+                         : M.Profile == "cpp-core-v2" && Arithmetic && E.ValueType == A)) ||
+               error(E.Loc, "Floating operands require matching converted types; "
+                            "core v2 permits comparisons and +, -, *, /.");
+      }
       if (!A.isPromotedInteger() || !B.isPromotedInteger())
         return error(E.Loc,
                      "Binary operands must include source integer promotions.");
@@ -1273,7 +1295,7 @@ class Verifier {
       return error(L, "Core v2 requires independent carrier layout evidence.");
     const auto &Layout = *M.Target.Carriers;
     const uint32_t Widths[] = {0, 8, 8, 16, 16, 32, 32, 64, 64,
-                               M.Target.PointerBits};
+                               M.Target.PointerBits, 32, 64};
     if (Layout.CharBits != 8 ||
         Layout != *Context.ExpectedCarrierLayout)
       return error(L, "Source and NeverC carrier layouts disagree.");
@@ -1297,6 +1319,8 @@ class Verifier {
     const auto &C = Context.ExpectedCarrierLayout->Carriers;
     switch (T.Kind) {
     case TypeKind::Bool: return C[0];
+    case TypeKind::Float: return C[10];
+    case TypeKind::Double: return C[11];
     case TypeKind::Int:
     case TypeKind::UInt: {
       unsigned Bits = T.integerBits();
@@ -1438,10 +1462,11 @@ public:
     }
     for (const auto &G : M.Globals) {
       if (G.Mutable && (M.Profile != "cpp-core-v2" ||
-                        (!G.ValueType.isInteger() && G.ValueType.Kind != TypeKind::Bool &&
+                        (!G.ValueType.isInteger() && !G.ValueType.isFloating() &&
+                         G.ValueType.Kind != TypeKind::Bool &&
                          G.ValueType.Kind != TypeKind::NullPtr &&
                          G.ValueType.Kind != TypeKind::FunctionPointer)))
-        return error(G.Loc, "Mutable globals require core v2 integer, boolean, nullptr or callback storage.");
+        return error(G.Loc, "Mutable globals require core v2 numeric, boolean, nullptr or callback storage.");
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
           !type(G.ValueType, G.Loc) || G.ValueType.Kind == TypeKind::Pointer ||
           containsArray(G.ValueType) ||

@@ -1,8 +1,8 @@
-# C++ core v2: integral types, declarations and object storage
+# C++ core v2: scalar types, declarations and object storage
 
 `cpp-core-v2` is an experimental, explicitly selected extension of the
 single-source `cpp-core-v1` contract. It adds the declarations, bounded pointer
-and reference operations, fixed arrays, integer widths, size queries and ordinary
+and reference operations, fixed arrays, integer and floating types, size queries and ordinary
 record methods and constructors below. It is a step toward broader C++17 translation; it does not
 claim complete C++17 or STL support. The existing core, project and math v1
 profiles retain their accepted-input contracts.
@@ -54,9 +54,63 @@ binary ABI or foreign-object identity.
 
 Unsupported operations remain errors even inside constant-evaluated assertions
 and enumerator initializers. A cast to `void` cannot hide an unsupported operand
-such as a floating literal or runtime string. A successful
+such as a `long double` literal or runtime string. A successful
 `static_assert(true, "message")` does not admit runtime string literals or
 `std::string`.
+
+## Binary floating-point values
+
+Core v2 admits IEEE binary32 `float` and binary64 `double` in values, aliases,
+parameters/results, locals, references, object pointers, fixed arrays, record
+fields and supported callback signatures. Clang selects source overloads and
+conversions before lowering. Arithmetic `+`, `-`, `*`, `/`, comparisons, boolean
+conversion, increments and compound assignments preserve those selected types
+and source effects. Mixed operations explicitly convert their operands; a
+compound assignment converts its computed result back to the stored type.
+Supported integer/floating conversions follow C++ rules, including rounding and
+truncation. Out-of-range floating-to-integer conversions gain no invented
+saturation behavior.
+
+```cpp
+double total = 0.5;
+float add(float value) {
+  static float calls = 0.0f;
+  ++calls;
+  total += value;
+  return calls;
+}
+int main() {
+  return add(1.25f) != 1.0f || total != 1.75;
+}
+```
+
+Zero or checked constant initialization supports floating globals, scalar static
+locals, defined static data members and admitted concrete variable templates.
+Their addresses and values persist through the existing scalar storage model.
+Automatic scalar locals keep their source initialization semantics. Source
+expressions in defaults, assertions, size queries and materialized template
+arguments remain inspected even when their result is folded or discarded.
+
+Literals and folded constants carry exact 32/64-bit hexadecimal representations,
+including signed zero, subnormals, infinities and NaN sign/payload/quiet bits.
+Finite NC literals use exact hexadecimal spelling; special values use typed
+compiler constants. Carrier widths, ABI alignments and record offsets are
+checked independently against NeverC and asserted in generated code.
+
+The execution contract uses round-to-nearest, masked floating traps and gradual
+underflow, without FTZ/DAZ. Arithmetic evaluates in its declared type with no
+implicit fused multiply-add contraction. The embedded source frontend disables
+fast math and contraction; generated code disables contraction and rejects
+fast-math/finite-math-only or excess-precision settings. Source floating-
+environment pragmas/APIs, `long double`, complex types, dynamic static
+initialization and standard headers remain outside this increment. The existing
+math v1 mapping contract is unchanged; core v2 does not inherit its SDK or calls.
+
+Paired source/protocol fixtures and independent IR cases cover representations,
+conversions, layout, malformed payloads and retained source checks. O0/O2 fixtures
+exercise rounding, subnormals, signed zero, noncontracted arithmetic, aliases,
+static persistence, callbacks and record lifetimes. Native results require CI
+of the implementing revision; complete C++/STL remains unfinished.
 
 ## Null pointer values
 
@@ -782,8 +836,8 @@ apply, and older profiles retain their previous range-loop rejection.
 
 ## Defined scalar static data members
 
-Core v2 admits source-owned definitions of non-volatile integer, boolean and enum
-static data members in supported non-template classes. This includes C++17
+Core v2 admits source-owned definitions of non-volatile integer, boolean, enum,
+float and double static data members in supported non-template classes. This includes C++17
 inline and constexpr definitions and ordinary out-of-line definitions. Mutable
 members use constant or static zero initialization. Const members require a
 fully defined constant initializer. For a non-inline const integral member, the
@@ -898,7 +952,7 @@ aliases/assertions receive ordinary checks. Written parameter types, type
 defaults and explicit argument expressions are checked before erasure, including
 explicit instantiation/specialization arguments. Direct dependent type metadata
 can remain lazy; expression-bearing dependent default types must still pass the
-source-expression checks. Unsupported floating expressions cannot be hidden by
+source-expression checks. Unsupported `long double` expressions cannot be hidden by
 an integral argument or a `decltype` result. Ordinary non-template declarations
 retain their existing checks.
 
@@ -1887,7 +1941,7 @@ libraries are embedded and no external Clang executable is invoked.
 
 Admitted ordinary records, including nested records, and concrete class-template primary, partial
 and full instances support scalar static member variable templates. Results are
-integer, boolean or enum values, including scalar deduced `auto`, with zero or
+integer, boolean, enum, float or double values, including scalar deduced `auto`, with zero or
 constant initialization. Callback results additionally follow the
 [callback variable-template contract](#callback-variable-templates). Inner
 type/scalar arguments, defaults, partial/full
@@ -2001,7 +2055,7 @@ substitution. Unselected class partials do not force their dependent aliases.
 A member alias can retain a dependent non-type parameter type such as
 `decltype(T{})` until its actual use, including in an ordinary class. The selected
 substitution checks the complete type source, so expressions such as
-`decltype((sizeof(double), T{}))` cannot conceal an unsupported operand.
+`decltype((sizeof(long double), T{}))` cannot conceal an unsupported operand.
 The embedded Clang frontend retains the original two-stage substitution source;
 it performs no second source-only substitution and launches no external compiler.
 
@@ -2099,8 +2153,8 @@ Clang executable.
 
 ## Namespace scalar variable templates
 
-Owned namespace variable templates support non-volatile integer, boolean and enum
-results with zero or fully checked scalar constant initialization. This includes
+Owned namespace variable templates support non-volatile integer, boolean, enum,
+float and double results with zero or fully checked scalar constant initialization. This includes
 plain or constexpr variables, C++17 inline variables, deduced `auto` and
 `decltype(auto)`, primary templates, selected partial specializations, explicit
 full specializations, type/scalar defaults and concrete packs. Each parameter
@@ -2248,7 +2302,7 @@ and explicit arguments share canonical functions, records and static storage;
 different values or deduced types retain independent identities.
 
 The frontend checks every nondependent written default through the existing source
-visitor, including unused or overridden declarations. Unsupported floating source
+visitor, including unused or overridden declarations. Unsupported `long double` source
 cannot disappear through constant folding. Unused dependent defaults stay lazy;
 an explicit value can bypass them. Once a successful default belongs to a reached
 selected use or explicit declaration, its original and converted source is checked
@@ -2286,7 +2340,7 @@ uses built-in Clang libraries and does not launch an external Clang executable.
 
 ## Class-template scalar static data
 
-Admitted concrete class templates support integer, boolean and enum static data
+Admitted concrete class templates support integer, boolean, enum, float and double static data
 members with checked zero or constant initialization. C++17 inline/constexpr,
 out-of-line definitions, scalar auto/decltype(auto), private/protected access,
 explicit member instantiation/specialization and full class specialization retain
@@ -2467,8 +2521,8 @@ Concrete fold expressions become ordinary builtin or selected overloaded
 operations. Unary/binary, left/right folds retain sequencing, builtin logical
 short circuit, reference writes, record result storage and existing cleanup.
 Empty logical/comma identities and binary seeds follow C++17. Empty expansions
-do not instantiate their pattern: `(0 + ... + (sizeof(double), Ns))` is admitted
-for an empty pack, but a nonempty materialization is rejected for its floating
+do not instantiate their pattern: `(0 + ... + (sizeof(long double), Ns))` is admitted
+for an empty pack, but a nonempty materialization is rejected for its `long double`
 source. Seeds and every materialized element are checked. Unresolved folds or
 pack-expansion AST nodes are not accepted as runtime representations.
 
@@ -2527,7 +2581,7 @@ or deduced argument types preserve distinct instance identities and storage.
 
 The producer checks written non-type parameter types and explicit argument
 expressions before erasure, including `sizeof`/`decltype` source expressions and
-explicit instantiation/specialization arguments. Unsupported floating operations
+explicit instantiation/specialization arguments. Unsupported `long double` operations
 cannot disappear behind an integer result. Direct dependent `T` and `auto` type
 metadata stay lazy; other expression-bearing dependent parameter types must pass
 the ordinary source checks and are not generally admitted by this increment.
@@ -2703,7 +2757,7 @@ remains unfinished.
 
 ## Statically initialized scalar locals
 
-Core v2 admits source-owned static integer, boolean and enum local variables in
+Core v2 admits source-owned static integer, boolean, enum, float and double local variables in
 ordinary non-constexpr functions, admitted concrete free function-template
 instances and methods, including constructors and
 destructors. The type must be non-volatile and non-thread-local. Mutable scalars
@@ -2748,7 +2802,8 @@ revision; full C++/STL remains unfinished.
 ## Mutable scalar globals
 
 Core v2 admits mutable namespace/file-scope globals of the supported integer,
-boolean and enum types. Definitions without an initializer receive C++ static
+boolean, enum, float and double types. Null and callback objects follow their
+separate scalar contracts. Definitions without an initializer receive C++ static
 zero initialization. Explicit initializers must be fully defined constant
 expressions; an admitted constexpr function or conversion may supply that value.
 All source initializer operations are still inspected, including unused and
@@ -2763,7 +2818,7 @@ C++17 inline definitions retain their source identity. Globals are emitted with
 internal generated names, without adding a public C data-export ABI.
 
 Const globals retain their existing read-only representation. Mutable record,
-array, pointer and reference globals, floating-point/volatile/atomic globals,
+array, object-pointer and reference globals, volatile/atomic globals,
 dynamic initialization and thread-local storage remain outside current support.
 Statically initialized scalar locals and defined scalar static data members
 follow their separate contracts above. Nontrivial global object destruction
@@ -2771,7 +2826,8 @@ still requires separate lifetime support. Other profiles retain their prior
 constant-global contract.
 
 The optional global IR field `mutable` defaults to `false`. Only core v2 accepts
-this field, and only supported integer/boolean carriers can set it to `true`.
+this field, and only supported numeric, boolean, null and callback carriers can
+set it to `true`.
 The consumer checks the folded scalar initializer and grants writes or mutable
 addresses only to that exact global. Emission uses `static` for mutable storage
 and `static const` for constant storage. No startup function or new instruction
@@ -3875,8 +3931,8 @@ int main() {
 
 Experimental core v2 now requires `target.carrier_layout` in frontend responses
 and manifests. It contains `char_bits: 8` and exact `size_bits`/`abi_align_bits`
-entries named `bool`, `i8`, `u8`, `i16`, `u16`, `int`, `uint`, `i64`, `u64` and
-`default-pointer`. These name the native emission carriers for the admitted source types.
+entries named `bool`, `i8`, `u8`, `i16`, `u16`, `int`, `uint`, `i64`, `u64`,
+`default-pointer`, `float` and `double`. These name the native emission carriers for the admitted source types.
 
 The driver independently constructs NeverC's target model for its recorded
 C23 validation options. The verifier compares all source carrier evidence
@@ -3901,7 +3957,7 @@ a separate generated header belongs to project mode.
 
 ## Remaining scope and wire representation
 
-128-bit and extended integers, floating-point types,
+128-bit and extended integers, `long double` and complex types,
 exception unwinding, other template forms,
 exceptions, STL headers
 and library mappings are not implemented by core v2. Project translation
@@ -3947,7 +4003,7 @@ the frontend checks the resolved semantic `noexcept` expression when Clang's
 written function type retains the primary's dependent expression. The match is
 limited to that declaration's own function TypeLoc, including parenthesized
 declarators. Written return and parameter types, and non-dependent exception
-expressions, remain checked. Folding a floating-point expression inside an
+expressions, remain checked. Folding a `long double` expression inside an
 exception specification does not admit it into core v2. Queries retain their
 compile-time boolean result and do not execute the queried call.
 

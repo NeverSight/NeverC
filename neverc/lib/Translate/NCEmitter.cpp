@@ -95,6 +95,28 @@ std::string binary64Literal(uint64_t Bits) {
   }
   return Negative ? "(-" + S + ")" : S;
 }
+std::string binary32Literal(uint32_t Bits) {
+  const bool Negative = (Bits >> 31) != 0;
+  const unsigned Exponent = (Bits >> 23) & 255;
+  const uint32_t Fraction = Bits & UINT32_C(0x007fffff);
+  std::string S;
+  if (Exponent == 255) {
+    if (!Fraction)
+      S = "__builtin_huge_valf()";
+    else {
+      const bool Quiet = (Fraction & UINT32_C(0x00400000)) != 0;
+      S = std::string(Quiet ? "__builtin_nanf(\"0x" : "__builtin_nansf(\"0x") +
+          hexadecimal(Fraction & UINT32_C(0x003fffff), 6) + "\")";
+    }
+  } else if (Exponent == 0 && Fraction == 0) {
+    S = "0x0p+0f";
+  } else {
+    const int Power = Exponent ? int(Exponent) - 127 : -126;
+    S = std::string(Exponent ? "0x1." : "0x0.") + hexadecimal(Fraction << 1, 6) +
+        "p" + (Power >= 0 ? "+" : "") + std::to_string(Power) + "f";
+  }
+  return Negative ? "(-" + S + ")" : S;
+}
 const char *binarySpelling(BinaryOperator Op) {
   switch (Op) {
   case BinaryOperator::Add:
@@ -139,7 +161,7 @@ class Emitter {
   uint32_t Line = 1;
   std::set<unsigned> SignedConversions, ArithmeticShifts;
   std::map<std::string, Type> FunctionPointers;
-  bool HasNullPtr = false;
+  bool HasNullPtr = false, HasFloating = false;
   struct PointerHelper {
     Type Left, Right, Result;
     BinaryOperator Op;
@@ -234,6 +256,8 @@ class Emitter {
         return E.Boolean ? "true" : "false";
       if (E.ValueType.Kind == TypeKind::Double)
         return binary64Literal(E.Binary64Bits);
+      if (E.ValueType.Kind == TypeKind::Float)
+        return binary32Literal(uint32_t(E.Binary64Bits));
       if (E.ValueType.integerBits() < 32)
         return "((" + cType(E.ValueType) + ")(" + E.Integer + "))";
       if (E.ValueType.integerBits() == 64) {
@@ -368,7 +392,7 @@ class Emitter {
            "\"translated ptrdiff must be signed\");");
     }
     if (HasNullPtr) {
-      const auto &Layout = M.Target.Carriers->Carriers.back();
+      const auto &Layout = M.Target.Carriers->Carriers[PointerCarrierSlot];
       line("static_assert(sizeof(typeof(nullptr)) * __CHAR_BIT__ == " +
            std::to_string(Layout.SizeBits) +
            ", \"translated nullptr size mismatch\");");
@@ -391,6 +415,17 @@ class Emitter {
       line("#endif");
       line("/* FP contract: masked traps, IEEE subnormals (no FTZ/DAZ); "
            "preserve mapped-call errno and flags. */");
+    }
+    if (M.Profile == "cpp-core-v2" && HasFloating) {
+      line("static_assert(__FLT_RADIX__ == 2 && __FLT_MANT_DIG__ == 24 && "
+           "__FLT_MAX_EXP__ == 128 && __DBL_MANT_DIG__ == 53 && "
+           "__DBL_MAX_EXP__ == 1024, \"translated floating types require IEEE binary32/binary64\");");
+      line("static_assert(__FLT_EVAL_METHOD__ == 0, \"translated floating operations exclude excess precision\");");
+      line("#if defined(__FAST_MATH__) || (defined(__FINITE_MATH_ONLY__) && __FINITE_MATH_ONLY__ != 0)");
+      line("#error \"translated floating operations require strict IEEE optimization settings\"");
+      line("#endif");
+      line("#pragma STDC FP_CONTRACT OFF");
+      line("/* FP contract: default nearest rounding, masked traps, IEEE subnormals (no FTZ/DAZ). */");
     }
     line("");
   }
@@ -469,6 +504,7 @@ class Emitter {
   }
   void inspectType(const Type &T) {
     HasNullPtr |= T.Kind == TypeKind::NullPtr;
+    HasFloating |= T.isFloating();
     if (T.Kind == TypeKind::FunctionPointer)
       FunctionPointers.emplace(typeName(T), T);
     for (const auto &Element : T.Elements)
@@ -477,7 +513,7 @@ class Emitter {
   void callableGuards() {
     if (FunctionPointers.empty())
       return;
-    const auto &Layout = M.Target.Carriers->Carriers.back();
+    const auto &Layout = M.Target.Carriers->Carriers[PointerCarrierSlot];
     for (const auto &Entry : FunctionPointers) {
       auto Spelling = cType(Entry.second);
       line("static_assert(sizeof(" + Spelling + ") * __CHAR_BIT__ == " +

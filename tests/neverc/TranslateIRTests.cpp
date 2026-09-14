@@ -70,7 +70,8 @@ CarrierLayout x64CarrierLayout() {
   CarrierLayout L;
   // Explicit x86_64 Linux ABI fixture, independent of module evidence.
   L.Carriers = {{{8, 8}, {8, 8}, {8, 8}, {16, 16}, {16, 16},
-                 {32, 32}, {32, 32}, {64, 64}, {64, 64}, {64, 64}}};
+                 {32, 32}, {32, 32}, {64, 64}, {64, 64}, {64, 64},
+                 {32, 32}, {64, 64}}};
   return L;
 }
 std::string carrierLayoutWire() {
@@ -778,7 +779,7 @@ TEST(TranslateIR, CoreV2BoundsPointerWireTypesAndRejectsMalformedTrees) {
       {TypeKind::Int, {}, {intType()}},
       {TypeKind::Int, {}, {}, true},
       pointerType({TypeKind::Record, "nct_missing"}),
-      pointerType({TypeKind::Double, {}})};
+      pointerType({TypeKind::Double, "nct_invalid"})};
   Type DeepType = intType();
   for (unsigned I = 0; I != 66; ++I)
     DeepType = pointerType(std::move(DeepType));
@@ -877,10 +878,10 @@ TEST(TranslateIR, MutableGlobalsRetainProfileTypeAndInitializerBoundaries) {
   Old.Globals.push_back({"nct_mutable", intType(), literal("0"), InputLoc, true});
   invalid(Old, "Mutable globals require core v2");
   for (const auto &T : {Type{TypeKind::Record, "nct_record"}, pointerType(intType()),
-                        arrayType(intType(), 2), Type{TypeKind::Double, {}}, Type{TypeKind::Void, {}}}) {
+                        arrayType(intType(), 2), Type{TypeKind::Void, {}}}) {
     auto M = module(true);
     M.Globals.push_back({"nct_mutable", T, literal("0", T), InputLoc, true});
-    invalid(M, "Mutable globals require core v2 integer or boolean storage");
+    invalid(M, "Mutable globals require core v2 numeric, boolean, nullptr or callback storage");
   }
   auto M = module(true);
   M.Globals.push_back({"nct_mutable", integerType(8, true), literal("256", integerType(8, true)), InputLoc, true});
@@ -1149,6 +1150,144 @@ TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
   }
 }
 
+TEST(TranslateIR, CoreV2FloatingLiteralsPreserveExactBitsAndGuards) {
+  struct Case { TypeKind Kind; uint64_t Bits; const char *Text; };
+  for (const auto &C : std::vector<Case>{
+           {TypeKind::Float, 0, "0x0p+0f"},
+           {TypeKind::Float, 0x80000000, "(-0x0p+0f)"},
+           {TypeKind::Float, 1, "0x0.000002p-126f"},
+           {TypeKind::Float, 0x007fffff, "0x0.fffffep-126f"},
+           {TypeKind::Float, 0x00800000, "0x1.000000p-126f"},
+           {TypeKind::Float, 0x3fc00000, "0x1.800000p+0f"},
+           {TypeKind::Float, 0x7f7fffff, "0x1.fffffep+127f"},
+           {TypeKind::Float, 0x7f800000, "__builtin_huge_valf()"},
+           {TypeKind::Float, 0xff800000, "(-__builtin_huge_valf())"},
+           {TypeKind::Float, 0x7fc01234, "__builtin_nanf(\"0x001234\")"},
+           {TypeKind::Float, 0x7f801234, "__builtin_nansf(\"0x001234\")"},
+           {TypeKind::Double, UINT64_C(0x8000000000000000), "(-0x0p+0)"},
+           {TypeKind::Double, 1, "0x0.0000000000001p-1022"},
+           {TypeKind::Double, UINT64_C(0x3ff8000000000000), "0x1.8000000000000p+0"}}) {
+    SCOPED_TRACE(C.Text);
+    auto M = module(true);
+    M.Functions[0].Result = {C.Kind, {}};
+    auto Value = pointerExpr(ExprKind::Literal, M.Functions[0].Result);
+    Value.Binary64Bits = C.Bits;
+    M.Functions[0].Body.back() = ret(Value);
+    Diagnostics D;
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find(C.Text), std::string::npos);
+    EXPECT_NE(Output.Text.find("#pragma STDC FP_CONTRACT OFF"), std::string::npos);
+    EXPECT_NE(Output.Text.find("__FLT_EVAL_METHOD__ == 0"), std::string::npos);
+    EXPECT_NE(Output.Text.find("__FAST_MATH__"), std::string::npos);
+    EXPECT_NE(Output.Text.find("sizeof(float) * __CHAR_BIT__ == 32"), std::string::npos);
+    EXPECT_NE(Output.Text.find("sizeof(double) * __CHAR_BIT__ == 64"), std::string::npos);
+    M.Profile = "cpp-core-v1";
+    M.Target.Carriers.reset();
+    invalid(M, C.Kind == TypeKind::Float ? "Float requires" : "Double requires");
+  }
+}
+
+TEST(TranslateIR, CoreV2FloatingArithmeticRequiresSourceConversions) {
+  for (auto Kind : {TypeKind::Float, TypeKind::Double}) {
+    Type T{Kind, {}};
+    auto Value = pointerExpr(ExprKind::Literal, T);
+    Value.Binary64Bits = Kind == TypeKind::Float ? UINT64_C(0x3f800000)
+                                               : UINT64_C(0x3ff0000000000000);
+    for (auto Op : {BinaryOperator::Add, BinaryOperator::Subtract,
+                   BinaryOperator::Multiply, BinaryOperator::Divide,
+                   BinaryOperator::Equal, BinaryOperator::NotEqual,
+                   BinaryOperator::Less, BinaryOperator::LessEqual,
+                   BinaryOperator::Greater, BinaryOperator::GreaterEqual}) {
+      auto M = module(true);
+      const auto Result = Op >= BinaryOperator::Equal ? boolType() : T;
+      M.Functions[0].Result = Result;
+      M.Functions[0].Body.back() = ret(binary(Op, Value, Value, Result));
+      Diagnostics D;
+      ASSERT_TRUE(verifyModule(M, context(M), D));
+      M.Functions[0].Body.back().Value->Args[1] = literal("1");
+      invalid(M, "matching converted types");
+    }
+    for (auto Op : {BinaryOperator::Remainder, BinaryOperator::BitAnd,
+                   BinaryOperator::BitOr, BinaryOperator::BitXor,
+                   BinaryOperator::ShiftLeft, BinaryOperator::ShiftRight}) {
+      auto M = module(true);
+      M.Functions[0].Result = T;
+      M.Functions[0].Body.back() = ret(binary(Op, Value, Value, T));
+      invalid(M, "matching converted types");
+    }
+    for (auto To : {intType(), uintType(), boolType(), Type{TypeKind::Float, {}},
+                    Type{TypeKind::Double, {}}, integerType(64, true), integerType(64, false)}) {
+      auto M = module(true);
+      M.Functions[0].Result = To;
+      M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Cast, To, {Value}));
+      Diagnostics D;
+      EXPECT_TRUE(verifyModule(M, context(M), D));
+    }
+    auto M = module(true);
+    M.Functions[0].Result = T;
+    Value.Integer = "1";
+    M.Functions[0].Body.back() = ret(Value);
+    invalid(M, "invalid payload");
+  }
+  auto M = module(true);
+  M.Functions[0].Result = {TypeKind::Float, {}};
+  auto Value = pointerExpr(ExprKind::Literal, M.Functions[0].Result);
+  Value.Binary64Bits = UINT64_C(0x100000000);
+  M.Functions[0].Body.back() = ret(Value);
+  invalid(M, "invalid payload or width");
+}
+
+TEST(TranslateIR, CoreV2FloatingLayoutAndMutableStorageAreIndependent) {
+  auto M = module(true);
+  const Type F32{TypeKind::Float, {}}, F64{TypeKind::Double, {}};
+  M.Records.push_back({"nct_box", {{"values", arrayType(F32, 3)}, {"wide", F64}},
+                       InputLoc, RecordLayout{{192, 64}, {0, 128}}});
+  auto Value = pointerExpr(ExprKind::Literal, F32);
+  Value.Binary64Bits = 0x3fc00000;
+  M.Globals.push_back({"nct_global", F32, Value, InputLoc, true});
+  M.Functions[0].Result = F32;
+  M.Functions[0].Body.back() = ret(variable("nct_global", F32));
+  Diagnostics D;
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  auto Bad = M;
+  Bad.Target.Carriers->Carriers[10].ABIAlignBits = 16;
+  invalid(Bad, "layouts disagree");
+  Bad = M;
+  Bad.Target.Carriers->Carriers[11].SizeBits = 32;
+  invalid(Bad, "layouts disagree");
+  Bad = M;
+  Bad.Records[0].Layout->FieldOffsetsBits[1] = 96;
+  invalid(Bad, "layout");
+}
+
+TEST(TranslateIR, CoreV2FloatingWireRequiresCanonicalBitsAndPayload) {
+  for (const auto *Type : {"float", "double"}) {
+    const std::string Good = std::string(Type) == "float" ? "3fc00000" : "3ff8000000000000";
+    auto Wire = [&](const std::string &Bits, const std::string &Extra = "") {
+      auto JSON = wireModule(true);
+      replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + std::string(Type) + "\"");
+      replaceOnce(JSON, "\"type\": \"bool\", \"value\": true",
+                  "\"type\": \"" + std::string(Type) + "\", \"bits\": \"" + Bits + "\"" + Extra);
+      return JSON;
+    };
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(Wire(Good), M, D));
+    ASSERT_TRUE(verifyModule(M, context(M), D));
+    for (const auto &Bits : {Good + "0", Good.substr(1), std::string("+1"),
+                             std::string("0x") + Good, std::string(Good.size(), 'F')}) {
+      D.clear();
+      EXPECT_FALSE(parseModule(Wire(Bits), M, D));
+      ASSERT_FALSE(D.empty());
+    }
+    for (const auto *Extra : {",\"value\":\"1\"", ",\"args\":[]", ",\"name\":\"nct_x\""}) {
+      D.clear();
+      EXPECT_FALSE(parseModule(Wire(Good, Extra), M, D));
+    }
+  }
+}
+
 TEST(TranslateIR, CoreV2RetainsSingleUnitAndNoMathContract) {
   Module Base = module(true);
   Module M = Base;
@@ -1160,9 +1299,6 @@ TEST(TranslateIR, CoreV2RetainsSingleUnitAndNoMathContract) {
   M = Base;
   M.SDKDistributionID = "unapproved-sdk";
   invalid(M, "Math metadata");
-  M = Base;
-  M.Functions.front().Result = {TypeKind::Double, {}};
-  invalid(M, "Double requires");
   M = Base;
   Instruction Call;
   Call.Op = InstructionKind::MappedCall;
@@ -1675,7 +1811,7 @@ TEST(TranslateIR, CoreV2FunctionPointerSyntheticTypesCannotBypassSignatureRules)
       functionPointerType(arrayType(intType(), 2)),
       functionPointerType(intType(), {arrayType(intType(), 2)}),
       functionPointerType({TypeKind::Record, "nct_record"}),
-      functionPointerType({TypeKind::Double, {}})};
+      functionPointerType({TypeKind::Double, "nct_invalid"})};
   for (unsigned Field = 0; Field < 4; ++Field) {
     auto T = Valid;
     if (Field == 0) T.RecordID = "nct_record";

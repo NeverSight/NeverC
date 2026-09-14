@@ -17,6 +17,8 @@ must reject incompatible major versions.
   part of reproducible semantic output.
 
 Core v2 manifests require `target.carrier_layout` and `record_layouts`.
+The carrier table includes IEEE `float` (32 bits) and `double` (64 bits) after
+`default-pointer`; older experimental v2 manifests must be regenerated.
 The compiler independently verifies carrier and record layout evidence and
 emits static layout assertions. V1 profiles reject these fields; older
 experimental v2 output must be regenerated with the current built-in frontend.

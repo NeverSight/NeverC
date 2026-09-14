@@ -85,7 +85,7 @@ Types are strings: `int`, `uint`, `bool`, `void`, or the identifier of a record.
 
 Identifiers are ASCII C identifiers. Non-C-export declarations use an `nct_` prefix and a deterministic digest of their semantic identity. Internal-linkage identities include the normalized relative source path. Native C exports retain their explicit source name and must use scalar signatures; `main` retains its spelling, int return, and empty argument list. All emitted identifiers reject NC keywords and reserved runtime/compiler spellings, including the emitter-private `nct_emit_` prefix. Record typedefs, globals and functions occupy one disjoint ordinary-identifier namespace; parameters and locals are mutually distinct and cannot shadow module declarations. Field names are distinct within each record. Source C exports may not use the generated `nct_` namespace. Identifiers never depend on AST addresses or absolute roots.
 
-Globals are `{name,type,value,loc}`. Their values must be fully folded literal/aggregate trees: the frontend resolves constant references, operators and conversions before serialization. The v1 profiles represent only checked compile-time constants and never permit global writes. Core v2 additionally accepts an optional boolean `mutable` field, defaulting to `false`: only supported integer/boolean scalar globals may set it to `true`, with a folded constant or static-zero initializer. The consumer permits writes and mutable addresses only for those exact global identities. Other profiles reject the field, and const globals remain read-only. Mutable records, arrays, pointers and floating-point globals are not admitted. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. The v1 profiles restrict this representation to their admitted trivial value types. Core v2 represents source aliases, addressable storage and lifetimes through explicit operations described below; declarations at entry do not perform initialization or start object lifetimes.
+Globals are `{name,type,value,loc}`. Their values must be fully folded literal/aggregate trees: the frontend resolves constant references, operators and conversions before serialization. The v1 profiles represent only checked compile-time constants and never permit global writes. Core v2 additionally accepts an optional boolean `mutable` field, defaulting to `false`: only supported numeric, boolean, null and callback scalar globals may set it to `true`, with a folded constant or static-zero initializer. The consumer permits writes and mutable addresses only for those exact global identities. Other profiles reject the field, and const globals remain read-only. Mutable records, arrays and object-pointer globals are not admitted. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. The v1 profiles restrict this representation to their admitted trivial value types. Core v2 represents source aliases, addressable storage and lifetimes through explicit operations described below; declarations at entry do not perform initialization or start object lifetimes.
 
 ## Pure expressions
 
@@ -822,13 +822,40 @@ check these values during NC compilation. Manifests retain the carrier table
 and `record_layouts`. See the [exact core v2 fields and compatibility rules](cpp-core-v2.md#verified-target-and-record-layout).
 Older v1 profiles exclude this evidence.
 
+## Core v2 binary floating-point values
+
+Core v2 accepts `float` (IEEE binary32) and `double` (IEEE binary64). A literal is
+exactly `{kind:"literal",type:"float",bits:"<8 lowercase hex digits>",loc:...}`
+or the corresponding `double` object with 16 digits. Decimal JSON values,
+incorrect widths, uppercase digits and extra payload fields are rejected.
+Representations preserve signed zero, subnormals, infinity and NaN bits through
+typed compiler constants; they never pass through host JSON floating numbers.
+
+Floating unary signs, arithmetic `+`, `-`, `*`, `/` and comparisons require
+matching operand types after explicit source-selected conversions. Arithmetic
+retains that type and comparisons produce bool. Scalar casts express integer,
+floating and boolean conversions. Increment and compound assignment reuse
+checked loads, arithmetic, conversions and stores. Remainder, bitwise and shift
+instructions do not accept floating operands. Constant trees and mutable scalar
+globals admit either type, using ordinary permissions and storage identity.
+
+The carrier table appends `float` and `double` after the existing `default-pointer`
+entry; their required sizes are 32 and 64 bits. The driver independently checks
+the source formats and layouts against NeverC, and the consumer reconstructs
+record layouts. Generated code checks the target and strict evaluation policy
+and disables contraction. This profile uses no math metadata or mapping calls.
+See the [floating contract](cpp-core-v2.md#binary-floating-point-values) for the
+default floating environment and remaining source restrictions. Older experimental
+v2 responses lacking the two carrier entries must be regenerated.
+
 ## Gated mathematics extension
 
 `cpp-math-v1` uses project schema 1 and the same owned declaration/ODR envelope
 as `cpp-project-v1`. Admission requires independent SDK, exact-runtime and
 link checks; differential and installed-output tests establish the published
-support boundary. Core and project profiles reject math metadata, double types, and
-mapped instructions.
+support boundary. Core and project profiles reject math metadata and mapped
+instructions. Core v1 and project v1 also reject double types; core v2 admits
+general floating values through its separate contract above.
 
 The additional scalar type is `double`, with IEEE binary64 storage. Its literal
 is `{kind:"literal",type:"double",bits:"<16 lowercase hex digits>",loc:...}`.

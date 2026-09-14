@@ -1123,7 +1123,7 @@ TEST_F(TranslateTest, CoreV2ArrayScopeRejectsUnsupportedStorage) {
       {"dead-variable-array",
        "int f(int n){if(false){int a[n];} return 0;}", "TR0201"},
       {"unsupported-element",
-       "int f(){float a[2]; return 0;}", "TR0201"},
+       "int f(){long double a[2]; return 0;}", "TR0201"},
       {"global-array",
        "const int a[2]={1,2};", "TR0201"},
       {"global-array-field",
@@ -1433,7 +1433,7 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
        "TR0201"},
       {"pointer-ordering", "bool f(int *a,int *b){return a<b;}", "TR0201"},
       {"function-pointer", "int f(int (*call)()){return call();}", "TR0201"},
-      {"unsupported-pointee", "float *f(float *p){return p;}", "TR0201"},
+      {"unsupported-pointee", "long double *f(long double *p){return p;}", "TR0201"},
       {"const-write", "void f(const int *p){*p=1;}", "TR0202"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -2021,14 +2021,14 @@ TEST_F(TranslateTest, CoreV2ConversionsAcceptOrdinaryDefinitions) {
 
 TEST_F(TranslateTest, CoreV2ConversionsRetainSourceAndLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"float", "struct R{operator double()const{return 1.0;}};", "TR0201"},
+      {"float", "struct R{operator long double()const{return 1.0L;}};", "TR0201"},
       {"string", "struct R{operator const char*()const{return \"x\";}};", "TR0201"},
       {"volatile", "struct R{operator int()volatile{return 1;}};", "TR0201"},
       {"restrict", "struct R{operator int()__restrict{return 1;}};", "TR0201"},
       {"member-address", "struct R{operator int()const{return 1;}};auto f(){return &R::operator int;}", "TR0201"},
       {"unused-throw", "struct R{operator int()const{throw 1;}};", "TR0201"},
       {"query-throw", "struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}", "TR0201"},
-      {"folded-float", "struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,\"value\");", "TR0201"},
+      {"folded-float", "struct R{constexpr operator int()const{return static_cast<int>(1.0L);}};constexpr R r{};static_assert(int(r)==1,\"value\");", "TR0201"},
       {"virtual", "struct R{virtual operator int()const{return 1;}};", "TR0201"},
       {"explicit-copy", "struct R{explicit operator int()const{return 1;}};int f(){R r;int n=r;return n;}", "TR0202"},
       {"parameters", "struct R{operator int(int n){return n;}};", "TR0202"},
@@ -2183,12 +2183,12 @@ TEST_F(TranslateTest, CoreV2MutableScalarGlobalsRetainTypeAndInitializationBound
       {"reference", "int n;int&value=n;", "TR0201"},
       {"record", "struct R{int n;};R value{1};", "TR0201"},
       {"array", "int value[2]={1,2};", "TR0201"},
-      {"float", "double value=1.0;", "TR0201"},
+      {"float", "long double value=1.0L;", "TR0201"},
       {"volatile", "volatile int value;", "TR0201"},
       {"atomic", "_Atomic(int) value;", "TR0201"},
       {"tls", "thread_local int value;", "TR0201"},
-      {"folded-unsupported", "int value=static_cast<int>(1.0);", "TR0201"},
-      {"unused-folded-unsupported", "constexpr int f(){return static_cast<int>(1.0);}int value=f();", "TR0201"},
+      {"folded-unsupported", "int value=static_cast<int>(1.0L);", "TR0201"},
+      {"unused-folded-unsupported", "constexpr int f(){return static_cast<int>(1.0L);}int value=f();", "TR0201"},
       {"duplicate", "int value=1;int value=2;", "TR0202"},
       {"conflicting", "extern int value;bool value;", "TR0202"},
       {"const-write", "const int value=1;int main(){value=2;}", "TR0202"},
@@ -2402,16 +2402,16 @@ TEST_F(TranslateTest, CoreV2RangeForAcceptsResolvedRanges) {
 TEST_F(TranslateTest, CoreV2RangeForRetainsSourceAndTypeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"cxx20-init-statement", "void f(){for(int a[1]={1};int v:a){}}", "TR0201"},
-      {"floating-range", "void f(){double a[1]={1.0};for(auto v:a){}}", "TR0201"},
+      {"floating-range", "void f(){long double a[1]={1.0L};for(auto v:a){}}", "TR0201"},
       {"volatile-range", "void f(){volatile int a[1]={1};for(auto&v:a){}}", "TR0201"},
       {"structured-binding", "struct R{int a,b;};void f(){R a[1]={{1,2}};for(auto [x,y]:a){}}", "TR0201"},
-      {"unused-floating-body", "void f(){int a[1]={1};for(int v:a){double unused=1.0;}}", "TR0201"},
-      {"dead-floating-body", "void f(){int a[1]={1};if(false)for(int v:a){double unused=1.0;}}", "TR0201"},
-      {"floating-begin-body", "struct R{int a[1];int*begin(){double v=1.0;return a;}int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}", "TR0201"},
-      {"floating-begin-default", "struct R{int a[1];int*begin(double v=1.0){return a;}int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}", "TR0201"},
-      {"floating-comparison-body", "struct I{int*p;int&operator*(){return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{double v=1.0;return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0201"},
-      {"floating-dereference-body", "struct I{int*p;int&operator*(){double v=1.0;return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0201"},
-      {"floating-increment-body", "struct I{int*p;int&operator*(){return *p;}I&operator++(){double v=1.0;++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"unused-floating-body", "void f(){int a[1]={1};for(int v:a){long double unused=1.0L;}}", "TR0201"},
+      {"dead-floating-body", "void f(){int a[1]={1};if(false)for(int v:a){long double unused=1.0L;}}", "TR0201"},
+      {"floating-begin-body", "struct R{int a[1];int*begin(){long double v=1.0L;return a;}int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"floating-begin-default", "struct R{int a[1];int*begin(long double v=1.0L){return a;}int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"floating-comparison-body", "struct I{int*p;int&operator*(){return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{long double v=1.0L;return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"floating-dereference-body", "struct I{int*p;int&operator*(){long double v=1.0L;return *p;}I&operator++(){++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0201"},
+      {"floating-increment-body", "struct I{int*p;int&operator*(){return *p;}I&operator++(){long double v=1.0L;++p;return *this;}bool operator!=(const I&r)const{return p!=r.p;}};struct R{int a[1];I begin(){return {a};}I end(){return {a+1};}};void f(){for(int v:R{{1}}){}}", "TR0201"},
       {"inherited-range", "struct B{int a[1];int*begin(){return a;}int*end(){return a+1;}};struct R:B{};void f(){R r;for(int v:r){}}", "TR0201"},
       {"resource-range", "void f(){int a[65537]={};for(int v:a){}}", "TR0201"},
       {"static-loop-variable", "void f(){int a[1]={1};for(static int v:a){}}", "TR0202"},
@@ -2605,8 +2605,8 @@ TEST_F(TranslateTest, CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries) {
       {"reference-field", "class R{int&n;public:R(int&v):n(v){}};", "TR0201"},
       {"mutable-field", "class R{mutable int n=1;public:int get()const{return ++n;}};", "TR0201"},
       {"bitfield", "class R{unsigned int n:2;public:R():n(1){}};", "TR0201"},
-      {"floating-field", "class R{double n=1.0;};", "TR0201"},
-      {"unused-floating-helper", "class R{int n=1;double hidden(){return 1.0;}public:int get()const{return n;}};", "TR0201"},
+      {"floating-field", "class R{long double n=1.0L;};", "TR0201"},
+      {"unused-floating-helper", "class R{int n=1;long double hidden(){return 1.0L;}public:int get()const{return n;}};", "TR0201"},
       {"pointer-to-member", "class R{int n=1;public:static int R::*field(){return &R::n;}};", "TR0201"},
       {"private-read", "class R{int n=1;};int f(const R&r){return r.n;}", "TR0202"},
       {"private-write", "class R{int n=1;};void f(R&r){r.n=3;}", "TR0202"},
@@ -2691,9 +2691,9 @@ TEST_F(TranslateTest, CoreV2FoldedVoidAcceptsSupportedErasedOperations) {
 
 TEST_F(TranslateTest, CoreV2FoldedVoidStillInspectsUnsupportedOperands) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"unsupported-void-sizeof", "int f(){return sizeof((void(1.0),1));}"},
-      {"unsupported-void-case", "int f(int n){switch(n){case (void(1.0),1):return 7;default:return 9;}}"},
-      {"unsupported-void-assert", "static_assert((void(1.0),true));int main(){}"},
+      {"unsupported-void-sizeof", "int f(){return sizeof((void(1.0L),1));}"},
+      {"unsupported-void-case", "int f(int n){switch(n){case (void(1.0L),1):return 7;default:return 9;}}"},
+      {"unsupported-void-assert", "static_assert((void(1.0L),true));int main(){}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -2860,10 +2860,10 @@ TEST_F(TranslateTest, CoreV2FriendsAcceptResolvedDeclarations) {
 TEST_F(TranslateTest, CoreV2FriendsRetainAccessAndSourceBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"unsupported-friend-form", "template<class T>class A{public:struct B{};};class R{int n=1;template<class T>friend class A<T>::B;};", "TR0201"},
-      {"floating-body", "class R{int n=1;friend int get(const R&r){double ignored=1.0;return r.n;}};", "TR0201"},
-      {"floating-default", "class R{int n=1;friend int get(const R&r,double v=1.0){return r.n;}};", "TR0201"},
-      {"floating-friend-type", "class R{int n=1;friend double;};", "TR0201"},
-      {"dead-floating-body", "class R{int n=1;friend int get(const R&r){if(false){double ignored=1.0;}return r.n;}};", "TR0201"},
+      {"floating-body", "class R{int n=1;friend int get(const R&r){long double ignored=1.0L;return r.n;}};", "TR0201"},
+      {"floating-default", "class R{int n=1;friend int get(const R&r,long double v=1.0L){return r.n;}};", "TR0201"},
+      {"floating-friend-type", "class R{int n=1;friend long double;};", "TR0201"},
+      {"dead-floating-body", "class R{int n=1;friend int get(const R&r){if(false){long double ignored=1.0L;}return r.n;}};", "TR0201"},
       {"inheritance", "struct B{int n;};class R:public B{friend int get(const R&r){return r.n;}};", "TR0201"},
       {"nonfriend-private", "class R{int n=1;friend int get(const R&r){return r.n;}};int other(const R&r){return r.n;}", "TR0202"},
       {"not-reciprocal", "class B;class A{int n=1;friend class B;public:int get(const B&);};class B{int n=2;};int A::get(const B&b){return b.n;}", "TR0202"},
@@ -3161,12 +3161,12 @@ TEST_F(TranslateTest, CoreV2NestedRecordsRetainAccessAndSourceBoundaries) {
       {"anonymous-union", "struct R{union{int n;unsigned int u;};};", "TR0201"},
       {"inherited", "struct R{struct B{int n;};struct I:B{};};", "TR0201"},
       {"virtual", "struct R{struct I{virtual int get(){return 1;}};};", "TR0201"},
-      {"float-field", "struct R{struct I{double n;};};", "TR0201"},
+      {"float-field", "struct R{struct I{long double n;};};", "TR0201"},
       {"bitfield", "struct R{struct I{int n:2;};};", "TR0201"},
       {"reference-field", "struct R{struct I{int&n;};};", "TR0201"},
       {"mutable-field", "struct R{struct I{mutable int n;};};", "TR0201"},
-      {"unused-body", "struct R{struct I{int get(){double d=1.0;return 1;}};};", "TR0201"},
-      {"erased-alias", "struct R{struct I{using Unsupported=double;int n;};};", "TR0201"},
+      {"unused-body", "struct R{struct I{int get(){long double d=1.0L;return 1;}};};", "TR0201"},
+      {"erased-alias", "struct R{struct I{using Unsupported=long double;int n;};};", "TR0201"},
       {"oversized-array", "struct R{struct I{int a[65537];};I i;};", "TR0201"},
       {"private-type", "class R{struct I{int n;};};R::I f(){return R::I{1};}", "TR0202"},
       {"protected-type", "class R{protected:struct I{int n;};};R::I f(){return R::I{1};}", "TR0202"},
@@ -3395,15 +3395,15 @@ TEST_F(TranslateTest, CoreV2StaticMembersRetainStorageAndSourceBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"dynamic-call", "int value(){return 3;}struct R{inline static int n=value();};", "TR0201"},
       {"dynamic-write", "int n=0;struct R{inline static int value=++n;};", "TR0201"},
-      {"floating", "struct R{inline static double n=1.0;};", "TR0201"},
+      {"floating", "struct R{inline static long double n=1.0L;};", "TR0201"},
       {"pointer", "struct R{inline static int*n=nullptr;};", "TR0201"},
       {"reference", "int n=0;struct R{inline static int&value=n;};", "TR0201"},
       {"array", "struct R{inline static int a[2]={1,2};};", "TR0201"},
       {"record", "struct I{int n;};struct R{inline static I i{1};};", "TR0201"},
       {"tls", "struct R{inline static thread_local int n=1;};", "TR0201"},
       {"volatile", "struct R{inline static volatile int n=1;};", "TR0201"},
-      {"folded-unsupported", "struct R{inline static int n=static_cast<int>(1.0);};", "TR0201"},
-      {"folded-body", "constexpr int f(){return static_cast<int>(1.0);}struct R{inline static int n=f();};", "TR0201"},
+      {"folded-unsupported", "struct R{inline static int n=static_cast<int>(1.0L);};", "TR0201"},
+      {"folded-body", "constexpr int f(){return static_cast<int>(1.0L);}struct R{inline static int n=f();};", "TR0201"},
       {"private", "class R{inline static int n=1;};int f(){return R::n;}", "TR0202"},
       {"protected", "class R{protected:inline static int n=1;};int f(){return R::n;}", "TR0202"},
       {"write-const", "struct R{static constexpr int n=1;};void f(){R::n=2;}", "TR0202"},
@@ -3580,9 +3580,9 @@ TEST_F(TranslateTest, CoreV2StaticConstantValuesAcceptCheckedNonOdrUses) {
 
 TEST_F(TranslateTest, CoreV2StaticConstantValuesRequireDefinitionsForIdentity) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"floating", "struct R{static const double n;};const double R::n=1.0;", "TR0201"},
-      {"folded-float", "struct R{static const int n=static_cast<int>(1.0);};", "TR0201"},
-      {"folded-body", "constexpr int f(){return static_cast<int>(1.0);}struct R{static const int n=f();};", "TR0201"},
+      {"floating", "struct R{static const long double n;};const long double R::n=1.0L;", "TR0201"},
+      {"folded-float", "struct R{static const int n=static_cast<int>(1.0L);};", "TR0201"},
+      {"folded-body", "constexpr int f(){return static_cast<int>(1.0L);}struct R{static const int n=f();};", "TR0201"},
       {"array", "struct R{static const int n[2];};", "TR0201"},
       {"pointer", "struct R{static const int*n;};", "TR0201"},
       {"volatile-in-class-initializer", "struct R{static const volatile int n=3;};", "TR0202"},
@@ -3754,12 +3754,12 @@ TEST_F(TranslateTest, CoreV2StaticLocalsRetainInitializationAndLanguageBoundarie
       {"dynamic-self", "int f(){static int n=n;return n;}", "TR0201"},
       {"unused-dynamic", "int seed(){return 3;}void f(){static int unused=seed();}", "TR0201"},
       {"skipped-dynamic", "int seed(){return 3;}void f(){if(false){static int unused=seed();}}", "TR0201"},
-      {"folded-float", "int f(){static int n=static_cast<int>(1.0);return n;}", "TR0201"},
-      {"folded-body", "constexpr int seed(){return static_cast<int>(1.0);}int f(){static int n=seed();return n;}", "TR0201"},
+      {"folded-float", "int f(){static int n=static_cast<int>(1.0L);return n;}", "TR0201"},
+      {"folded-body", "constexpr int seed(){return static_cast<int>(1.0L);}int f(){static int n=seed();return n;}", "TR0201"},
       {"tls", "int f(){thread_local int n=3;return n;}", "TR0201"},
       {"static-tls", "int f(){static thread_local int n=3;return n;}", "TR0201"},
       {"volatile", "int f(){static volatile int n=3;return n;}", "TR0201"},
-      {"floating", "double f(){static double n=3.0;return n;}", "TR0201"},
+      {"floating", "long double f(){static long double n=3.0L;return n;}", "TR0201"},
       {"pointer", "int*f(){static int*n=nullptr;return n;}", "TR0201"},
       {"reference", "int value=3;int&f(){static int&n=value;return n;}", "TR0201"},
       {"array", "int f(){static int n[2]={1,2};return n[0];}", "TR0201"},
@@ -3944,11 +3944,11 @@ TEST_F(TranslateTest, CoreV2NameImportsRetainSourceClosureAndLanguageBoundaries)
       {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct D:B{using B::B;};", "TR0201"},
       {"dependent", "template<class T>struct R:T{using T::n;};", "TR0201"},
       {"pack", "template<class...T>struct R:T...{using T::n...;};", "TR0201"},
-      {"unsupported-type", "namespace N{using T=double;}using N::T;", "TR0201"},
-      {"unused-body", "namespace N{int f(){double n=3;return static_cast<int>(n);}}using N::f;", "TR0201"},
-      {"unused-initializer", "namespace N{int n=static_cast<int>(3.0);}using N::n;", "TR0201"},
-      {"skipped-body", "namespace N{int f(){if(false){double n=3;}return 0;}}using N::f;", "TR0201"},
-      {"folded-body", "namespace N{constexpr int f(){return static_cast<int>(3.0);}}using N::f;const int value=f();", "TR0201"},
+      {"unsupported-type", "namespace N{using T=long double;}using N::T;", "TR0201"},
+      {"unused-body", "namespace N{int f(){long double n=3;return static_cast<int>(n);}}using N::f;", "TR0201"},
+      {"unused-initializer", "namespace N{int n=static_cast<int>(3.0L);}using N::n;", "TR0201"},
+      {"skipped-body", "namespace N{int f(){if(false){long double n=3;}return 0;}}using N::f;", "TR0201"},
+      {"folded-body", "namespace N{constexpr int f(){return static_cast<int>(3.0L);}}using N::f;const int value=f();", "TR0201"},
       {"inactive-include", "#if 0\n#include \"missing.h\"\n#endif\nnamespace N{int n=3;}using N::n;", "TR0201"},
       {"active-include", "#include <vector>\nnamespace N{int n=3;}using N::n;", "TR0201"},
       {"missing-namespace", "namespace A=Missing;", "TR0202"},
@@ -4146,10 +4146,10 @@ TEST_F(TranslateTest, CoreV2InlineNamespacesRetainSourceClosureAndLanguageBounda
       {"macro-nested-inline", "#define INLINE inline\nnamespace N::INLINE V{int n=3;}", "TR0201"},
       {"macro-argument-inline", "#define ID(x) x\nnamespace N::ID(inline) V{int n=3;}", "TR0201"},
       {"attribute", "namespace N{inline namespace [[deprecated]] V{int n=3;}}", "TR0201"},
-      {"unused-type", "namespace N{inline namespace V{using T=double;}}", "TR0201"},
-      {"unused-body", "namespace N{inline namespace V{int f(){double n=3;return static_cast<int>(n);}}}", "TR0201"},
-      {"skipped-body", "namespace N{inline namespace V{int f(){if(false){double n=3;}return 0;}}}", "TR0201"},
-      {"folded-initializer", "namespace N{inline namespace V{int n=static_cast<int>(3.0);}}", "TR0201"},
+      {"unused-type", "namespace N{inline namespace V{using T=long double;}}", "TR0201"},
+      {"unused-body", "namespace N{inline namespace V{int f(){long double n=3;return static_cast<int>(n);}}}", "TR0201"},
+      {"skipped-body", "namespace N{inline namespace V{int f(){if(false){long double n=3;}return 0;}}}", "TR0201"},
+      {"folded-initializer", "namespace N{inline namespace V{int n=static_cast<int>(3.0L);}}", "TR0201"},
       {"active-include", "#include <vector>\nnamespace N{inline namespace V{int n=3;}}", "TR0201"},
       {"inactive-include", "#if 0\n#include \"missing.h\"\n#endif\nnamespace N{inline namespace V{int n=3;}}", "TR0201"},
       {"inline-mismatch", "namespace N{}inline namespace N{}", "TR0202"},
@@ -4297,13 +4297,13 @@ TEST_F(TranslateTest, CoreV2ConstexprIfAcceptsResolvedConstantConditions) {
 
 TEST_F(TranslateTest, CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"discarded-floating", "int f(){if constexpr(false){double n=3;return static_cast<int>(n);}return 0;}", "TR0201"},
+      {"discarded-floating", "int f(){if constexpr(false){long double n=3;return static_cast<int>(n);}return 0;}", "TR0201"},
       {"discarded-new", "int f(){if constexpr(false){int*p=new int(3);}return 0;}", "TR0201"},
       {"discarded-throw", "int f(){if constexpr(false)throw 3;return 0;}", "TR0201"},
-      {"discarded-type", "int f(){if constexpr(false){using T=double;}return 0;}", "TR0201"},
+      {"discarded-type", "int f(){if constexpr(false){using T=long double;}return 0;}", "TR0201"},
       {"discarded-attribute", "int f(){if constexpr(false){[[maybe_unused]] int n=3;}return 0;}", "TR0201"},
-      {"folded-condition", "int f(){if constexpr(static_cast<int>(3.0)==3)return 1;else return 0;}", "TR0201"},
-      {"folded-function", "constexpr bool f(){return static_cast<int>(3.0)==3;}int g(){if constexpr(f())return 1;else return 0;}", "TR0201"},
+      {"folded-condition", "int f(){if constexpr(static_cast<int>(3.0L)==3)return 1;else return 0;}", "TR0201"},
+      {"folded-function", "constexpr bool f(){return static_cast<int>(3.0L)==3;}int g(){if constexpr(f())return 1;else return 0;}", "TR0201"},
       {"if-consteval", "int f(){if consteval{return 1;}else{return 0;}}", "TR0202"},
       {"if-not-consteval", "int f(){if !consteval{return 1;}else{return 0;}}", "TR0202"},
       {"if-not-keyword", "int f(){if not consteval{return 1;}else{return 0;}}", "TR0202"},
@@ -4650,14 +4650,14 @@ TEST_F(TranslateTest, CoreV2FrontendRepairsAcceptSourceOwnedConcreteFunctions) {
 
 TEST_F(TranslateTest, CoreV2FrontendRepairsRetainWrittenExceptionSource) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"noexcept-selected-floating", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)&&1.0>0.0){return v;}int main(){return f(3);}"},
-      {"noexcept-method-floating", "template<class T>struct R{int get()const noexcept(sizeof(T)==sizeof(int)&&1.0>0.0){return 3;}};int main(){R<int>r;return r.get();}"},
-      {"noexcept-constructor-floating", "template<class T>struct R{int n;R()noexcept(sizeof(T)==sizeof(int)&&1.0>0.0):n(3){}};int main(){R<int>r;return r.n;}"},
-      {"noexcept-return-source", "template<class T>auto f(T v)noexcept(sizeof(T)==sizeof(int))->decltype(static_cast<T>(1.0)){return v;}int main(){return f(3);}"},
-      {"noexcept-parameter-source", "template<class T>int f(decltype(static_cast<T>(1.0)) v)noexcept(sizeof(T)==sizeof(int)){return v;}int main(){return f<int>(3);}"},
-      {"noexcept-redeclaration-source", "template<class T>int f(T v)noexcept(true);template<class T>int f(T v)noexcept(1.0>0.0){return v;}int main(){return f(3);}"},
-      {"noexcept-ordinary-source", "int f(int v)noexcept(1.0>0.0){return v;}int main(){return f(3);}"},
-      {"noexcept-local-method-source", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){struct R{int get()const noexcept(1.0>0.0){return 3;}};R r;return r.get()+v;}int main(){return f(3);}"},
+      {"noexcept-selected-floating", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)&&1.0L>0.0L){return v;}int main(){return f(3);}"},
+      {"noexcept-method-floating", "template<class T>struct R{int get()const noexcept(sizeof(T)==sizeof(int)&&1.0L>0.0L){return 3;}};int main(){R<int>r;return r.get();}"},
+      {"noexcept-constructor-floating", "template<class T>struct R{int n;R()noexcept(sizeof(T)==sizeof(int)&&1.0L>0.0L):n(3){}};int main(){R<int>r;return r.n;}"},
+      {"noexcept-return-source", "template<class T>auto f(T v)noexcept(sizeof(T)==sizeof(int))->decltype(static_cast<T>(1.0L)){return v;}int main(){return f(3);}"},
+      {"noexcept-parameter-source", "template<class T>int f(decltype(static_cast<T>(1.0L)) v)noexcept(sizeof(T)==sizeof(int)){return v;}int main(){return f<int>(3);}"},
+      {"noexcept-redeclaration-source", "template<class T>int f(T v)noexcept(true);template<class T>int f(T v)noexcept(1.0L>0.0L){return v;}int main(){return f(3);}"},
+      {"noexcept-ordinary-source", "int f(int v)noexcept(1.0L>0.0L){return v;}int main(){return f(3);}"},
+      {"noexcept-local-method-source", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)){struct R{int get()const noexcept(1.0L>0.0L){return 3;}};R r;return r.get()+v;}int main(){return f(3);}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -4770,8 +4770,8 @@ TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsPositive) {
 
 TEST_F(TranslateTest, CoreV2FreshReferenceArgumentsReject) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"selected-floating-body", "template<class T>struct R{T n;operator decltype(auto)(){int discarded=int(1.0);return (n);}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
-      {"selected-floating-default", "struct R{int n;};template<int N=int(1.0)>int operator+(R,R){return N;}int f(){R r{1};return r+r;}"},
+      {"selected-floating-body", "template<class T>struct R{T n;operator decltype(auto)(){int discarded=int(1.0L);return (n);}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"selected-floating-default", "struct R{int n;};template<int N=int(1.0L)>int operator+(R,R){return N;}int f(){R r{1};return r+r;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -4845,15 +4845,15 @@ TEST_F(TranslateTest, CoreV2ConcreteTemplateSourceRepairsPositive) {
 
 TEST_F(TranslateTest, CoreV2ConcreteTemplateSourceRepairsReject) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"class-floating-type-default", "template<class T=double>struct R{int n;};"},
-      {"class-ignored-floating-default", "template<class T>using I=int;template<class T=I<double>>struct R{int n;};"},
-      {"function-ignored-floating-default", "template<class T>using I=int;template<class T=I<double>>int f(){return 3;}"},
-      {"alias-ignored-floating-default", "template<class T>using I=int;template<class T=I<double>>using A=int;"},
-      {"selected-dependent-floating-default", "template<class T>using D=double;template<class T,class U=D<T>>using I=int;I<int>f(){return 3;}"},
-      {"qualified-fresh-hidden-argument", "template<class T>using I=int;namespace A{template<class T>int f(){return 3;}}int g(){return A::f<int>()+A::f<I<double>>();}"},
-      {"qualified-hidden-default", "template<class T>using I=int;namespace A{template<class T=I<double>>int f(){return 3;}}int g(){return A::f();}"},
-      {"conversion-hidden-body", "template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{int hidden=int(1.0);return {n};}};int f(){R<int>r{3};Box<int>b=r;return b.n;}"},
-      {"conversion-hidden-parameter", "template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator I<T>()const{return n;}};int f(){R<int>r{3};return r;}"},
+      {"class-floating-type-default", "template<class T=long double>struct R{int n;};"},
+      {"class-ignored-floating-default", "template<class T>using I=int;template<class T=I<long double>>struct R{int n;};"},
+      {"function-ignored-floating-default", "template<class T>using I=int;template<class T=I<long double>>int f(){return 3;}"},
+      {"alias-ignored-floating-default", "template<class T>using I=int;template<class T=I<long double>>using A=int;"},
+      {"selected-dependent-floating-default", "template<class T>using D=long double;template<class T,class U=D<T>>using I=int;I<int>f(){return 3;}"},
+      {"qualified-fresh-hidden-argument", "template<class T>using I=int;namespace A{template<class T>int f(){return 3;}}int g(){return A::f<int>()+A::f<I<long double>>();}"},
+      {"qualified-hidden-default", "template<class T>using I=int;namespace A{template<class T=I<long double>>int f(){return 3;}}int g(){return A::f();}"},
+      {"conversion-hidden-body", "template<class T>struct Box{T n;};template<class T>struct R{T n;operator Box<T>()const{int hidden=int(1.0L);return {n};}};int f(){R<int>r{3};Box<int>b=r;return b.n;}"},
+      {"conversion-hidden-parameter", "template<class T>using I=decltype((sizeof(long double),T{}));template<class T>struct R{T n;operator I<T>()const{return n;}};int f(){R<int>r{3};return r;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -4976,13 +4976,13 @@ TEST_F(TranslateTest, CoreV2TemplateParameterQueriesAcceptSameListTypes) {
 
 TEST_F(TranslateTest, CoreV2TemplateParameterQueriesRetainSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"hidden-floating-next-to-query", "template<class T,decltype((sizeof(double),sizeof(T))) N=3>int f(){return int(N);}int main(){return f<int>();}"},
-      {"hidden-selected-type-argument", "template<class T,decltype(sizeof(T)) N=3>int f(){return int(N);}int main(){return f<double>();}"},
-      {"hidden-selected-default", "template<class T,decltype(sizeof(T)) N=int(1.0)>int f(){return int(N);}int main(){return f<int>();}"},
+      {"hidden-floating-next-to-query", "template<class T,decltype((sizeof(long double),sizeof(T))) N=3>int f(){return int(N);}int main(){return f<int>();}"},
+      {"hidden-selected-type-argument", "template<class T,decltype(sizeof(T)) N=3>int f(){return int(N);}int main(){return f<long double>();}"},
+      {"hidden-selected-default", "template<class T,decltype(sizeof(T)) N=int(1.0L)>int f(){return int(N);}int main(){return f<int>();}"},
       {"expression-form-metadata", "template<class T,decltype(sizeof(T{})) N=3>int f(){return int(N);}int main(){return f<int>();}"},
       {"pointer-type-metadata", "template<class T,decltype(sizeof(T*)) N=3>int f(){return int(N);}int main(){return f<int>();}"},
       {"alias-shaped-metadata", "template<class T>using A=T;template<class T,decltype(sizeof(A<T>)) N=3>int f(){return int(N);}int main(){return f<int>();}"},
-      {"concrete-floating-query", "int main(){return sizeof(double);}"},
+      {"concrete-floating-query", "int main(){return sizeof(long double);}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -5156,18 +5156,18 @@ TEST_F(TranslateTest, CoreV2FunctionTemplateSourcesTraverseArgumentsOnce) {
   const std::vector<Case> Cases = {
       {"namespace-depth-64", "template<int N>constexpr int id(){return N;}int main(){return id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", ""},
       {"namespace-depth-65", "template<int N>constexpr int id(){return N;}int main(){return id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
-      {"namespace-hidden-source", "template<int N>constexpr int id(){return N;}int main(){return id<id<id<id<id<id<id<id<id<id<id<id<int(sizeof(double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"namespace-hidden-source", "template<int N>constexpr int id(){return N;}int main(){return id<id<id<id<id<id<id<id<id<id<id<id<int(sizeof(long double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
       {"namespace-alias-depth-64", "namespace A{template<int N>constexpr int id(){return N;}}namespace B=A;int main(){return B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", ""},
       {"namespace-alias-depth-65", "namespace A{template<int N>constexpr int id(){return N;}}namespace B=A;int main(){return B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
-      {"namespace-alias-hidden-source", "namespace A{template<int N>constexpr int id(){return N;}}namespace B=A;int main(){return B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<int(sizeof(double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"namespace-alias-hidden-source", "namespace A{template<int N>constexpr int id(){return N;}}namespace B=A;int main(){return B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<B::id<int(sizeof(long double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
       {"static-object-depth-64", "struct R{template<int N>static constexpr int id(){return N;}};int main(){R r;return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", ""},
       {"static-object-depth-65", "struct R{template<int N>static constexpr int id(){return N;}};int main(){R r;return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
-      {"static-object-hidden-source", "struct R{template<int N>static constexpr int id(){return N;}};int main(){R r;return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<int(sizeof(double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"static-object-hidden-source", "struct R{template<int N>static constexpr int id(){return N;}};int main(){R r;return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<int(sizeof(long double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
       {"const-object-depth-64", "struct R{template<int N>constexpr int id()const{return N;}};int main(){constexpr R r{};return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", ""},
       {"const-object-depth-65", "struct R{template<int N>constexpr int id()const{return N;}};int main(){constexpr R r{};return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
-      {"const-object-hidden-source", "struct R{template<int N>constexpr int id()const{return N;}};int main(){constexpr R r{};return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<int(sizeof(double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
-      {"member-hidden-base", "struct R{template<int N>static int id(){return N;}};R&touch(R&r,int){return r;}int main(){R r;return touch(r,int(1.0)).id<3>();}", "TR0201"},
-      {"member-hidden-qualifier", "template<class>using I=int;template<class T>struct R{template<int N>static int id(){return N;}};int main(){return R<I<double>>::id<3>();}", "TR0201"},
+      {"const-object-hidden-source", "struct R{template<int N>constexpr int id()const{return N;}};int main(){constexpr R r{};return r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<r.id<int(sizeof(long double))>()>()>()>()>()>()>()>()>()>()>()>();}", "TR0201"},
+      {"member-hidden-base", "struct R{template<int N>static int id(){return N;}};R&touch(R&r,int){return r;}int main(){R r;return touch(r,int(1.0L)).id<3>();}", "TR0201"},
+      {"member-hidden-qualifier", "template<class>using I=int;template<class T>struct R{template<int N>static int id(){return N;}};int main(){return R<I<long double>>::id<3>();}", "TR0201"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -5331,32 +5331,32 @@ TEST_F(TranslateTest, CoreV2MemberFunctionTemplatesAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2MemberFunctionTemplatesRetainSourceAndResourceChecks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"used-floating-body", "struct R{template<class T>int f(T){return int(1.0);}};int main(){R r;return r.f(3);}"},
-      {"hidden-written-argument", "template<class>using I=int;struct R{template<class T>int f(){return 3;}};int main(){R r;return r.f<I<double>>();}"},
-      {"hidden-selected-default", "template<class>using I=int;struct R{template<class T=I<double>>int f(){return 3;}};int main(){R r;return r.f();}"},
-      {"hidden-parameter-type", "template<class T>using I=decltype((sizeof(double),T{}));struct R{template<class T,I<T> N>int f(){return N;}};int main(){R r;return r.f<int,3>();}"},
-      {"constructor-hidden-initializer", "struct R{int n;template<class T>R(T v):n(int(1.0)+int(v)){}};int main(){R r(3);return r.n;}"},
-      {"conversion-hidden-body", "struct R{template<class T>operator T(){return T(int(1.0));}};int main(){R r;return static_cast<int>(r);}"},
-      {"own-specialized-hidden-body", "template<class C>struct R{template<class T>int f(T){return 3;}};template<>template<class T>int R<int>::f(T n){return int(1.0)+int(n);}int main(){R<int>r;return r.f(3);}"},
+      {"used-floating-body", "struct R{template<class T>int f(T){return int(1.0L);}};int main(){R r;return r.f(3);}"},
+      {"hidden-written-argument", "template<class>using I=int;struct R{template<class T>int f(){return 3;}};int main(){R r;return r.f<I<long double>>();}"},
+      {"hidden-selected-default", "template<class>using I=int;struct R{template<class T=I<long double>>int f(){return 3;}};int main(){R r;return r.f();}"},
+      {"hidden-parameter-type", "template<class T>using I=decltype((sizeof(long double),T{}));struct R{template<class T,I<T> N>int f(){return N;}};int main(){R r;return r.f<int,3>();}"},
+      {"constructor-hidden-initializer", "struct R{int n;template<class T>R(T v):n(int(1.0L)+int(v)){}};int main(){R r(3);return r.n;}"},
+      {"conversion-hidden-body", "struct R{template<class T>operator T(){return T(int(1.0L));}};int main(){R r;return static_cast<int>(r);}"},
+      {"own-specialized-hidden-body", "template<class C>struct R{template<class T>int f(T){return 3;}};template<>template<class T>int R<int>::f(T n){return int(1.0L)+int(n);}int main(){R<int>r;return r.f(3);}"},
       {"member-function-pointer", "struct R{template<class T>int f(T){return 3;}};int main(){auto p=&R::f<int>;R r;return (r.*p)(3);}"},
       {"volatile-member", "struct R{template<class T>int f(T)volatile{return 3;}};int main(){R r;return r.f(3);}"},
-      {"specialized-default-hidden", "template<class T>struct R{template<class U>int f(int n=int(sizeof(double))+int(sizeof(T)));};template<>template<class U>int R<int>::f(int n){return n;}int main(){R<int>r;return r.f<bool>();}"},
-      {"hidden-function-default", "struct R{template<class T=int>int f(int n=int(sizeof(double))+int(sizeof(T))){return n;}};int main(){R r;return r.f<int>();}"},
-      {"hidden-constructor-default", "struct R{int n;template<class T=int>R(int v=int(sizeof(double))+int(sizeof(T))):n(v){}};int main(){R r;return r.n;}"},
-      {"hidden-template-body-constructor-default", "struct R{int n;template<class T=int>R(int v=int(sizeof(double))+int(sizeof(T))):n(v){}};template<int N>int f(){R r;return r.n+N;}int main(){return f<2>();}"},
-      {"hidden-template-body-conversion", "struct R{template<class T>operator T(){return T(int(sizeof(double)));}};template<int N>int f(){R r;int n=r;return n+N;}int main(){return f<2>();}"},
-      {"hidden-default-member-constructor", "struct R{int n;template<class T=int>R(int v=int(sizeof(double))+int(sizeof(T))):n(v){}};struct H{R r;H(){}};int main(){H h;return h.r.n;}"},
-      {"hidden-noexcept-source", "struct R{template<class T>int f(T n)noexcept((sizeof(double),sizeof(T)>0)){return int(n);}};int main(){R r;return r.f(3);}"},
-      {"hidden-empty-pack-type", "template<class T>using I=decltype((sizeof(double),T{}));struct R{template<class T,I<T>...N>int f(){return sizeof...(N);}};int main(){R r;return r.f<int>();}"},
-      {"hidden-out-of-line-outer-list", "template<class T,int N>struct R{template<class U>int f(U);};template<class T,decltype((sizeof(double),int{}))N>template<class U>int R<T,N>::f(U n){return int(n);}int main(){R<int,3>r;return r.f(3);}"},
-      {"hidden-no-effect-directive", "template<class>using I=int;struct R{template<class T>int f(T n){return int(n);}};extern template int R::f<int>(int);extern template int R::f<I<double>>(int);int main(){R r;return r.f(3);}"},
+      {"specialized-default-hidden", "template<class T>struct R{template<class U>int f(int n=int(sizeof(long double))+int(sizeof(T)));};template<>template<class U>int R<int>::f(int n){return n;}int main(){R<int>r;return r.f<bool>();}"},
+      {"hidden-function-default", "struct R{template<class T=int>int f(int n=int(sizeof(long double))+int(sizeof(T))){return n;}};int main(){R r;return r.f<int>();}"},
+      {"hidden-constructor-default", "struct R{int n;template<class T=int>R(int v=int(sizeof(long double))+int(sizeof(T))):n(v){}};int main(){R r;return r.n;}"},
+      {"hidden-template-body-constructor-default", "struct R{int n;template<class T=int>R(int v=int(sizeof(long double))+int(sizeof(T))):n(v){}};template<int N>int f(){R r;return r.n+N;}int main(){return f<2>();}"},
+      {"hidden-template-body-conversion", "struct R{template<class T>operator T(){return T(int(sizeof(long double)));}};template<int N>int f(){R r;int n=r;return n+N;}int main(){return f<2>();}"},
+      {"hidden-default-member-constructor", "struct R{int n;template<class T=int>R(int v=int(sizeof(long double))+int(sizeof(T))):n(v){}};struct H{R r;H(){}};int main(){H h;return h.r.n;}"},
+      {"hidden-noexcept-source", "struct R{template<class T>int f(T n)noexcept((sizeof(long double),sizeof(T)>0)){return int(n);}};int main(){R r;return r.f(3);}"},
+      {"hidden-empty-pack-type", "template<class T>using I=decltype((sizeof(long double),T{}));struct R{template<class T,I<T>...N>int f(){return sizeof...(N);}};int main(){R r;return r.f<int>();}"},
+      {"hidden-out-of-line-outer-list", "template<class T,int N>struct R{template<class U>int f(U);};template<class T,decltype((sizeof(long double),int{}))N>template<class U>int R<T,N>::f(U n){return int(n);}int main(){R<int,3>r;return r.f(3);}"},
+      {"hidden-no-effect-directive", "template<class>using I=int;struct R{template<class T>int f(T n){return int(n);}};extern template int R::f<int>(int);extern template int R::f<I<long double>>(int);int main(){R r;return r.f(3);}"},
       {"template-template-parameter", "struct R{template<template<class>class C>int f(){return 1;}};"},
       {"pack-65", "struct R{template<int...N>int f(){return sizeof...(N);}};int main(){R r;return r.f<0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64>();}"},
       {"source-depth-65", "struct R{template<int N>static constexpr int f(){return N;}};int main(){return R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<R::f<0>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>()>();}"},
-      {"own-primary-qualifier-unused", "template<int N>struct R{template<class T>int f(T);};template<>template<class T>int R<(sizeof(double),3)>::f(T n){return int(n);}"},
-      {"own-primary-alias-qualifier-unused", "template<class>using Ignore=int;template<class C>struct R{template<class T>int f(T);};template<>template<class T>int R<Ignore<double>>::f(T n){return int(n);}"},
-      {"own-primary-qualifier-used", "template<int N>struct R{template<class T>int f(T);};template<>template<class T>int R<(sizeof(double),3)>::f(T n){return int(n);}int main(){R<3>r;return r.f(3);}"},
-      {"own-primary-alias-qualifier-used", "template<class>using Ignore=int;template<class C>struct R{template<class T>int f(T);};template<>template<class T>int R<Ignore<double>>::f(T n){return int(n);}int main(){R<int>r;return r.f(3);}"},
+      {"own-primary-qualifier-unused", "template<int N>struct R{template<class T>int f(T);};template<>template<class T>int R<(sizeof(long double),3)>::f(T n){return int(n);}"},
+      {"own-primary-alias-qualifier-unused", "template<class>using Ignore=int;template<class C>struct R{template<class T>int f(T);};template<>template<class T>int R<Ignore<long double>>::f(T n){return int(n);}"},
+      {"own-primary-qualifier-used", "template<int N>struct R{template<class T>int f(T);};template<>template<class T>int R<(sizeof(long double),3)>::f(T n){return int(n);}int main(){R<3>r;return r.f(3);}"},
+      {"own-primary-alias-qualifier-used", "template<class>using Ignore=int;template<class C>struct R{template<class T>int f(T);};template<>template<class T>int R<Ignore<long double>>::f(T n){return int(n);}int main(){R<int>r;return r.f(3);}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -5563,16 +5563,16 @@ TEST_F(TranslateTest, CoreV2MemberAliasesAcceptConcreteTypes) {
 
 TEST_F(TranslateTest, CoreV2MemberAliasesRetainSourceAndBounds) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"inner-decltype-nttp-hidden", "struct R{template<class T,decltype((sizeof(double),T{})) N=3>using A=int[N];};int main(){R::A<int> a{1,2,3};return a[2];}"},
-      {"unused-nondependent-floating", "struct R{template<class T>using I=double;};"},
-      {"hidden-inner-argument", "struct R{template<int N>using I=int;};int main(){R::I<sizeof(double)> n=3;return n;}"},
-      {"hidden-outer-argument", "template<int N>struct R{template<class T>using I=T;};int main(){R<sizeof(double)>::I<int> n=3;return n;}"},
-      {"hidden-underlying", "struct R{template<class T>using I=decltype((sizeof(double),T{}));};int main(){R::I<int> n=3;return n;}"},
-      {"hidden-array-bound", "struct R{template<int N>using A=int[(sizeof(double),N)];};int main(){R::A<2> a{1,2};return a[1];}"},
-      {"hidden-selected-default", "struct R{template<class T,class U=decltype((sizeof(double),T{}))>using I=U;};int main(){R::I<int> n=3;return n;}"},
-      {"hidden-outer-copied-unused", "template<class T>struct R{template<class U>using I=decltype((sizeof(double),T{}));int n;};int main(){R<int> r{3};return r.n;}"},
-      {"hidden-nttp-type", "struct R{template<class T,decltype((sizeof(double),T{})) N=3>using I=int;};int main(){R::I<int> n=3;return n;}"},
-      {"floating-argument", "struct R{template<class T>using I=int;};int main(){R::I<double> n=3;return n;}"},
+      {"inner-decltype-nttp-hidden", "struct R{template<class T,decltype((sizeof(long double),T{})) N=3>using A=int[N];};int main(){R::A<int> a{1,2,3};return a[2];}"},
+      {"unused-nondependent-floating", "struct R{template<class T>using I=long double;};"},
+      {"hidden-inner-argument", "struct R{template<int N>using I=int;};int main(){R::I<sizeof(long double)> n=3;return n;}"},
+      {"hidden-outer-argument", "template<int N>struct R{template<class T>using I=T;};int main(){R<sizeof(long double)>::I<int> n=3;return n;}"},
+      {"hidden-underlying", "struct R{template<class T>using I=decltype((sizeof(long double),T{}));};int main(){R::I<int> n=3;return n;}"},
+      {"hidden-array-bound", "struct R{template<int N>using A=int[(sizeof(long double),N)];};int main(){R::A<2> a{1,2};return a[1];}"},
+      {"hidden-selected-default", "struct R{template<class T,class U=decltype((sizeof(long double),T{}))>using I=U;};int main(){R::I<int> n=3;return n;}"},
+      {"hidden-outer-copied-unused", "template<class T>struct R{template<class U>using I=decltype((sizeof(long double),T{}));int n;};int main(){R<int> r{3};return r.n;}"},
+      {"hidden-nttp-type", "struct R{template<class T,decltype((sizeof(long double),T{})) N=3>using I=int;};int main(){R::I<int> n=3;return n;}"},
+      {"floating-argument", "struct R{template<class T>using I=int;};int main(){R::I<long double> n=3;return n;}"},
       {"member-pointer", "struct V{int n;};struct R{template<class T>using I=T V::*;};int main(){R::I<int> p=&V::n;V v{3};return v.*p;}"},
       {"volatile", "struct R{template<class T>using I=volatile T;};int main(){R::I<int> n=3;return n;}"},
       {"union-owner", "union R{template<class T>using I=T;int n;};int main(){R::I<int> n=3;return n;}"},
@@ -5580,8 +5580,8 @@ TEST_F(TranslateTest, CoreV2MemberAliasesRetainSourceAndBounds) {
       {"alias-attribute", "struct R{template<class T>using I [[deprecated]]=T;};int main(){R::I<int> n=3;return n;}"},
       {"inner-type-pack-65", "struct R{template<class...T>using I=int;};int main(){R::I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int> n=3;return n;}"},
       {"source-depth-65", "struct R{template<int N>using I=int;};int main(){return sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<sizeof(R::I<0>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>)>);}"},
-      {"unused-nondependent-default", "struct R{template<class T=double>using I=int;};"},
-      {"outer-substituted-hidden-default", "template<class T>struct R{template<class U=decltype((sizeof(double),T{}))>using I=U;int n;};int main(){R<int> r{3};return r.n;}"},
+      {"unused-nondependent-default", "struct R{template<class T=long double>using I=int;};"},
+      {"outer-substituted-hidden-default", "template<class T>struct R{template<class U=decltype((sizeof(long double),T{}))>using I=U;int n;};int main(){R<int> r{3};return r.n;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -5671,8 +5671,8 @@ TEST_F(TranslateTest, CoreV2VariableSourcesAcceptNestedSources) {
 
 TEST_F(TranslateTest, CoreV2VariableSourcesRetainNestedSourceChecks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"nested-hidden-value", "template<int N>constexpr int value=N;int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<sizeof(double)>>>>>>>>>>>>>>>>;}"},
-      {"cached-nested-hidden-type", "template<class>using I=int;template<int N>constexpr int value=N;static_assert(value<sizeof(int)> == sizeof(int));int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<sizeof(I<double>)>>>>>>>>>>>>>>>>;}"},
+      {"nested-hidden-value", "template<int N>constexpr int value=N;int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<sizeof(long double)>>>>>>>>>>>>>>>>;}"},
+      {"cached-nested-hidden-type", "template<class>using I=int;template<int N>constexpr int value=N;static_assert(value<sizeof(int)> == sizeof(int));int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<sizeof(I<long double>)>>>>>>>>>>>>>>>>;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -5931,9 +5931,9 @@ TEST_F(TranslateTest, CoreV2MemberVariablesAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2MemberVariablesRetainSourceAndBounds) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"full-auto-hidden-default-outer-copy", "template<class A>struct R{template<auto V,int N=(sizeof(double),V)>inline static int n=1;template<>inline int n<3> = 7;};int main(){R<bool>r;return sizeof(r);}"},
+      {"full-auto-hidden-default-outer-copy", "template<class A>struct R{template<auto V,int N=(sizeof(long double),V)>inline static int n=1;template<>inline int n<3> = 7;};int main(){R<bool>r;return sizeof(r);}"},
       {"dynamic", "int f(){return 3;}struct R{template<class T>inline static int n=f();};int main(){return R::n<int>;}"},
-      {"floating-result", "struct R{template<class T>inline static double n=3.0;};int main(){return int(R::n<int>);}"},
+      {"floating-result", "struct R{template<class T>inline static long double n=3.0L;};int main(){return int(R::n<int>);}"},
       {"pointer-result", "struct R{template<class T>inline static T*n=nullptr;};int main(){return R::n<int> == nullptr;}"},
       {"reference-result", "int value=3;struct R{template<class T>inline static int&n=value;};int main(){return R::n<int>;}"},
       {"array-result", "struct R{template<class T>inline static int n[2]={1,2};};int main(){return R::n<int>[1];}"},
@@ -5941,44 +5941,44 @@ TEST_F(TranslateTest, CoreV2MemberVariablesRetainSourceAndBounds) {
       {"volatile", "struct R{template<class T>inline static volatile int n=3;};int main(){return R::n<int>;}"},
       {"thread-local", "struct R{template<class T>inline static thread_local int n=3;};int main(){return R::n<int>;}"},
       {"attribute", "struct R{template<class T>[[deprecated]]inline static int n=3;};int main(){return R::n<int>;}"},
-      {"hidden-inner", "struct R{template<int N>inline static int n=1;};int main(){return R::n<sizeof(double)>;}"},
-      {"hidden-outer", "template<int N>struct R{template<class T>inline static int n=1;};int main(){return R<sizeof(double)>::n<int>;}"},
-      {"hidden-initializer", "struct R{template<class T>inline static int n=(sizeof(double),3);};int main(){return R::n<int>;}"},
-      {"hidden-default", "struct R{template<class T,int N=(sizeof(double),sizeof(T))>inline static int n=N;};int main(){return R::n<int>;}"},
-      {"hidden-nttp-type", "struct R{template<class T,decltype((sizeof(double),T{})) N=3>inline static int n=N;};int main(){return R::n<int>;}"},
-      {"hidden-constexpr-query-auto", "struct R{template<class T>inline static auto n=(sizeof(double),T(3));};static_assert(sizeof(R::n<int>)==sizeof(int));"},
-      {"no-effect-directive-source", "struct R{template<int N>inline static int n=N;};extern template int R::n<1>;extern template int R::n<(sizeof(double),1)>;"},
+      {"hidden-inner", "struct R{template<int N>inline static int n=1;};int main(){return R::n<sizeof(long double)>;}"},
+      {"hidden-outer", "template<int N>struct R{template<class T>inline static int n=1;};int main(){return R<sizeof(long double)>::n<int>;}"},
+      {"hidden-initializer", "struct R{template<class T>inline static int n=(sizeof(long double),3);};int main(){return R::n<int>;}"},
+      {"hidden-default", "struct R{template<class T,int N=(sizeof(long double),sizeof(T))>inline static int n=N;};int main(){return R::n<int>;}"},
+      {"hidden-nttp-type", "struct R{template<class T,decltype((sizeof(long double),T{})) N=3>inline static int n=N;};int main(){return R::n<int>;}"},
+      {"hidden-constexpr-query-auto", "struct R{template<class T>inline static auto n=(sizeof(long double),T(3));};static_assert(sizeof(R::n<int>)==sizeof(int));"},
+      {"no-effect-directive-source", "struct R{template<int N>inline static int n=N;};extern template int R::n<1>;extern template int R::n<(sizeof(long double),1)>;"},
       {"union-owner", "union R{template<class T>inline static int n=3;int field;};int main(){return R::n<int>;}"},
       {"pack-65", "struct R{template<int...N>static constexpr int n=sizeof...(N);};int main(){return R::n<0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0>;}"},
-      {"hidden-first-type", "template<class>using I=int;struct R{template<class T>static I<decltype(T{}+1.0)> n;};template<class T>int R::n=3;int main(){return R::n<int>;}"},
-      {"hidden-definition-type", "template<class>using I=int;struct R{template<class T>static int n;};template<class T>I<decltype(T{}+1.0)> R::n=3;int main(){return R::n<int>;}"},
-      {"hidden-partial-definition-type", "template<class>using I=int;struct R{template<class T>static int n;template<class T>static int n<T*>;};template<class T>I<decltype(T{}+1.0)> R::n<T*> = 3;int main(){return R::n<int*>;}"},
-      {"hidden-outer-definition-type", "template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<class A>template<class T>I<decltype(A{}+1.0)> R<A>::n=3;int main(){return R<int>::n<bool>;}"},
-      {"unused-concrete-qualifier", "template<int N>struct R{template<class T>static int n;};template<>template<class T>int R<(sizeof(double),3)>::n=1;"},
-      {"used-concrete-qualifier", "template<int N>struct R{template<class T>static int n;};template<>template<class T>int R<(sizeof(double),3)>::n=1;int main(){return R<3>::n<int>;}"},
-      {"unused-concrete-alias-qualifier", "template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<>template<class T>int R<I<double>>::n=1;"},
-      {"used-concrete-alias-qualifier", "template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<>template<class T>int R<I<double>>::n=1;int main(){return R<int>::n<bool>;}"},
-      {"hidden-member-expression", "struct R{template<int N>inline static int n=3;};int main(){R r;return r.n<(sizeof(double),1)>;}"},
-      {"hidden-pointer-expression", "struct R{template<int N>inline static int n=3;};int main(){R r;R*p=&r;return p->n<(sizeof(double),1)>;}"},
-      {"hidden-full-qualifier", "template<int N>struct R{template<class T>inline static int n=N;};template<>template<>inline int R<(sizeof(double),3)>::n<int> = 7;"},
+      {"hidden-first-type", "template<class>using I=int;struct R{template<class T>static I<decltype(T{}+1.0L)> n;};template<class T>int R::n=3;int main(){return R::n<int>;}"},
+      {"hidden-definition-type", "template<class>using I=int;struct R{template<class T>static int n;};template<class T>I<decltype(T{}+1.0L)> R::n=3;int main(){return R::n<int>;}"},
+      {"hidden-partial-definition-type", "template<class>using I=int;struct R{template<class T>static int n;template<class T>static int n<T*>;};template<class T>I<decltype(T{}+1.0L)> R::n<T*> = 3;int main(){return R::n<int*>;}"},
+      {"hidden-outer-definition-type", "template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<class A>template<class T>I<decltype(A{}+1.0L)> R<A>::n=3;int main(){return R<int>::n<bool>;}"},
+      {"unused-concrete-qualifier", "template<int N>struct R{template<class T>static int n;};template<>template<class T>int R<(sizeof(long double),3)>::n=1;"},
+      {"used-concrete-qualifier", "template<int N>struct R{template<class T>static int n;};template<>template<class T>int R<(sizeof(long double),3)>::n=1;int main(){return R<3>::n<int>;}"},
+      {"unused-concrete-alias-qualifier", "template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<>template<class T>int R<I<long double>>::n=1;"},
+      {"used-concrete-alias-qualifier", "template<class>using I=int;template<class A>struct R{template<class T>static int n;};template<>template<class T>int R<I<long double>>::n=1;int main(){return R<int>::n<bool>;}"},
+      {"hidden-member-expression", "struct R{template<int N>inline static int n=3;};int main(){R r;return r.n<(sizeof(long double),1)>;}"},
+      {"hidden-pointer-expression", "struct R{template<int N>inline static int n=3;};int main(){R r;R*p=&r;return p->n<(sizeof(long double),1)>;}"},
+      {"hidden-full-qualifier", "template<int N>struct R{template<class T>inline static int n=N;};template<>template<>inline int R<(sizeof(long double),3)>::n<int> = 7;"},
       {"template-template-parameter", "template<class T>struct V{int n;};struct R{template<template<class>class C>inline static int n=3;};int main(){return R::n<V>;}"},
       {"source-depth-65", "struct R{template<int N>static constexpr int n=N;};int main(){return R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<R::n<0>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;}"},
-      {"full-hidden-result-type-unused", "template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline I<double> n<int> = 3;};"},
-      {"full-hidden-argument-unused", "template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<I<double>> = 3;};"},
-      {"full-hidden-outer-argument", "template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<int> = 3;};int main(){return R<I<double>>::n<int>;}"},
-      {"full-hidden-first-type", "template<class>using I=int;template<class A>struct R{template<class U>static int n;template<>I<decltype(A{}+1.0)> n<int>;};template<>template<>int R<int>::n<int> = 3;int main(){return R<int>::n<int>;}"},
-      {"full-hidden-late-type", "template<class>using I=int;template<class A>struct R{template<class U>static int n;template<>int n<int>;};template<>template<>I<double> R<int>::n<int> = 3;int main(){return R<int>::n<int>;}"},
-      {"full-hidden-initializer", "template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<int> = (sizeof(double),sizeof(A));};int main(){return R<int>::n<int>;}"},
-      {"full-inner-default-hidden-unused", "template<class A>struct R{template<class U,int N=(sizeof(double),sizeof(U))>inline static int n=1;template<>inline int n<int> = 7;};"},
-      {"full-inner-default-hidden-used", "template<class A>struct R{template<class U,int N=(sizeof(double),sizeof(U))>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<int>::n<int>;}"},
-      {"full-resolved-parameter-type-hidden-unused", "template<class A>struct R{template<class U,decltype((sizeof(double),0)) N>inline static int n=1;template<>inline int n<int,3> = 7;};"},
-      {"full-resolved-parameter-type-hidden-used", "template<class A>struct R{template<class U,decltype((sizeof(double),0)) N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}"},
-      {"full-pending-inner-parameter-type-hidden-used", "template<class T>using K=decltype((sizeof(double),T{}));template<class A>struct R{template<class U,K<U> N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}"},
-      {"full-pending-outer-default-hidden-used", "template<class A>struct R{template<class U,int N=(sizeof(double),sizeof(A))>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<int>::n<int>;}"},
-      {"full-pending-outer-parameter-type-hidden-used", "template<class T>using K=decltype((sizeof(double),T{}));template<class A>struct R{template<class U,K<A> N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}"},
+      {"full-hidden-result-type-unused", "template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline I<long double> n<int> = 3;};"},
+      {"full-hidden-argument-unused", "template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<I<long double>> = 3;};"},
+      {"full-hidden-outer-argument", "template<class>using I=int;template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<int> = 3;};int main(){return R<I<long double>>::n<int>;}"},
+      {"full-hidden-first-type", "template<class>using I=int;template<class A>struct R{template<class U>static int n;template<>I<decltype(A{}+1.0L)> n<int>;};template<>template<>int R<int>::n<int> = 3;int main(){return R<int>::n<int>;}"},
+      {"full-hidden-late-type", "template<class>using I=int;template<class A>struct R{template<class U>static int n;template<>int n<int>;};template<>template<>I<long double> R<int>::n<int> = 3;int main(){return R<int>::n<int>;}"},
+      {"full-hidden-initializer", "template<class A>struct R{template<class U>inline static int n=1;template<>inline int n<int> = (sizeof(long double),sizeof(A));};int main(){return R<int>::n<int>;}"},
+      {"full-inner-default-hidden-unused", "template<class A>struct R{template<class U,int N=(sizeof(long double),sizeof(U))>inline static int n=1;template<>inline int n<int> = 7;};"},
+      {"full-inner-default-hidden-used", "template<class A>struct R{template<class U,int N=(sizeof(long double),sizeof(U))>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<int>::n<int>;}"},
+      {"full-resolved-parameter-type-hidden-unused", "template<class A>struct R{template<class U,decltype((sizeof(long double),0)) N>inline static int n=1;template<>inline int n<int,3> = 7;};"},
+      {"full-resolved-parameter-type-hidden-used", "template<class A>struct R{template<class U,decltype((sizeof(long double),0)) N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}"},
+      {"full-pending-inner-parameter-type-hidden-used", "template<class T>using K=decltype((sizeof(long double),T{}));template<class A>struct R{template<class U,K<U> N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}"},
+      {"full-pending-outer-default-hidden-used", "template<class A>struct R{template<class U,int N=(sizeof(long double),sizeof(A))>inline static int n=1;template<>inline int n<int> = 7;};int main(){return R<int>::n<int>;}"},
+      {"full-pending-outer-parameter-type-hidden-used", "template<class T>using K=decltype((sizeof(long double),T{}));template<class A>struct R{template<class U,K<A> N>inline static int n=1;template<>inline int n<int,3> = 7;};int main(){return R<int>::n<int,3>;}"},
       {"member-expression-depth-65", "struct R{template<int N>static constexpr int n=N;};int main(){R r;return r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<3>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;}"},
-      {"member-expression-hidden-depth", "struct R{template<int N>static constexpr int n=N;};int main(){R r;return r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<sizeof(double)>>>>>>>>>>>>>>>>;}"},
-      {"full-auto-hidden-default-used", "template<class A>struct R{template<auto V,int N=(sizeof(double),V)>inline static int n=1;template<>inline int n<3> = 7;};int main(){return R<bool>::n<3>;}"},
+      {"member-expression-hidden-depth", "struct R{template<int N>static constexpr int n=N;};int main(){R r;return r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<r.n<sizeof(long double)>>>>>>>>>>>>>>>>;}"},
+      {"full-auto-hidden-default-used", "template<class A>struct R{template<auto V,int N=(sizeof(long double),V)>inline static int n=1;template<>inline int n<3> = 7;};int main(){return R<bool>::n<3>;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -6242,24 +6242,24 @@ TEST_F(TranslateTest, CoreV2MemberClassesRetainSourceAndOwnerBoundaries) {
       {"union-template", "struct R{template<class T>union I{T n;int m;};};"},
       {"base", "struct B{int n;};struct R{template<class T>struct I:B{T m;};};int f(){R::I<int>r;return 1;}"},
       {"virtual-method", "struct R{template<class T>struct I{virtual int f(){return 1;}};};"},
-      {"floating-field", "struct R{template<class T>struct I{T n;};};int f(){R::I<double>r{1.0};return 1;}"},
+      {"floating-field", "struct R{template<class T>struct I{T n;};};int f(){R::I<long double>r{1.0L};return 1;}"},
       {"reference-field", "struct R{template<class T>struct I{T&n;};};int f(){int n=3;R::I<int>r{n};return r.n;}"},
       {"mutable-field", "struct R{template<class T>struct I{mutable T n;};};int f(){R::I<int>r{3};return r.n;}"},
       {"bitfield", "struct R{template<class T>struct I{unsigned int n:2;};};int f(){R::I<int>r{1};return r.n;}"},
-      {"unused-hidden-default", "struct R{template<class T=decltype((sizeof(double),1))>struct I{int n;};};"},
-      {"used-hidden-default", "struct R{template<class T=decltype((sizeof(double),1))>struct I{int n;};};int f(){R::I<>r{3};return r.n;}"},
-      {"erased-written-argument", "struct R{template<class T>struct I{int n;};};int f(){R::I<decltype((sizeof(double),1))>r{3};return r.n;}"},
-      {"full-hidden-argument-unused", "struct R{template<int N>struct I;};template<>struct R::I<sizeof(double)>{int n;};"},
-      {"selected-unsupported-method", "struct R{template<class T>struct I{int get(){double n=1.0;return 1;}};};int f(){R::I<int>r;return r.get();}"},
-      {"selected-unsupported-member-template", "struct R{template<class T>struct I{template<class U>int get(U){double n=1.0;return 1;}};};int f(){R::I<int>r;return r.get(3);}"},
-      {"unsupported-static-initializer", "struct R{template<class T>struct I{inline static int n=static_cast<int>(1.0);};};int f(){return R::I<int>::n;}"},
+      {"unused-hidden-default", "struct R{template<class T=decltype((sizeof(long double),1))>struct I{int n;};};"},
+      {"used-hidden-default", "struct R{template<class T=decltype((sizeof(long double),1))>struct I{int n;};};int f(){R::I<>r{3};return r.n;}"},
+      {"erased-written-argument", "struct R{template<class T>struct I{int n;};};int f(){R::I<decltype((sizeof(long double),1))>r{3};return r.n;}"},
+      {"full-hidden-argument-unused", "struct R{template<int N>struct I;};template<>struct R::I<sizeof(long double)>{int n;};"},
+      {"selected-unsupported-method", "struct R{template<class T>struct I{int get(){long double n=1.0L;return 1;}};};int f(){R::I<int>r;return r.get();}"},
+      {"selected-unsupported-member-template", "struct R{template<class T>struct I{template<class U>int get(U){long double n=1.0L;return 1;}};};int f(){R::I<int>r;return r.get(3);}"},
+      {"unsupported-static-initializer", "struct R{template<class T>struct I{inline static int n=static_cast<int>(1.0L);};};int f(){return R::I<int>::n;}"},
       {"oversized-array", "struct R{template<int N>struct I{int n[N];};};int f(){R::I<65537>r{};return r.n[0];}"},
-      {"qualifier-primary-hidden-unused", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(double),1))>::I{T n;};"},
-      {"qualifier-primary-hidden-used", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(double),1))>::I{T n;};int f(){R::I<int>r{3};return r.n;}"},
-      {"qualifier-partial-hidden-unused", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(double),1))>::I<T*>{T n;};"},
-      {"qualifier-partial-hidden-used", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(double),1))>::I<T*>{T n;};int f(){R::I<int*>r{3};return r.n;}"},
-      {"qualifier-full-hidden-unused", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<>struct Owner<decltype((sizeof(double),1))>::I<int>{int n;};"},
-      {"qualifier-full-hidden-used", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<>struct Owner<decltype((sizeof(double),1))>::I<int>{int n;};int f(){R::I<int>r{3};return r.n;}"},
+      {"qualifier-primary-hidden-unused", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(long double),1))>::I{T n;};"},
+      {"qualifier-primary-hidden-used", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(long double),1))>::I{T n;};int f(){R::I<int>r{3};return r.n;}"},
+      {"qualifier-partial-hidden-unused", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(long double),1))>::I<T*>{T n;};"},
+      {"qualifier-partial-hidden-used", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<class T>struct Owner<decltype((sizeof(long double),1))>::I<T*>{T n;};int f(){R::I<int*>r{3};return r.n;}"},
+      {"qualifier-full-hidden-unused", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<>struct Owner<decltype((sizeof(long double),1))>::I<int>{int n;};"},
+      {"qualifier-full-hidden-used", "struct R{template<class T>struct I;};template<class T>using Owner=R;template<>struct Owner<decltype((sizeof(long double),1))>::I<int>{int n;};int f(){R::I<int>r{3};return r.n;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -6399,19 +6399,19 @@ TEST_F(TranslateTest, CoreV2PartialDeclarationSourcesAcceptPendingArguments) {
 
 TEST_F(TranslateTest, CoreV2PartialDeclarationSourcesCheckResolvedTypeSources) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"class-resolved-prefix-type-hidden", "template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> A,int...Rest>struct P{int n;};template<int N,int...Ns>struct P<int,N,Ns...>{int n;};int f(){return 0;}"},
-      {"variable-resolved-prefix-type-hidden", "template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> A,int...Rest>inline int p=1;template<int N,int...Ns>inline int p<int,N,Ns...> =2;int f(){return 0;}"},
-      {"class-namespace-type-unused", "template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};int f(){return 0;}"},
-      {"class-namespace-type-used", "template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};P<int,3>p{4};int f(){return p.n;}"},
-      {"class-ordinary-type-unused", "template<class U>using K=decltype((sizeof(double),U{}));struct O{template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};};int f(){return sizeof(O);}"},
-      {"variable-namespace-type-unused", "template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> N>inline int p=1;template<int N>inline int p<int,N> =2;int f(){return 0;}"},
-      {"variable-namespace-type-used", "template<class U>using K=decltype((sizeof(double),U{}));template<class U,K<U> N>inline int p=1;template<int N>inline int p<int,N> =2;int f(){return p<int,3>;}"},
-      {"variable-ordinary-type-unused", "template<class U>using K=decltype((sizeof(double),U{}));struct O{template<class U,K<U> N>inline static int p=1;template<int N>inline static int p<int,N> =2;};int f(){return sizeof(O);}"},
-      {"variable-copied-primary-type-unused", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){O<int>o;return sizeof(o);}"},
-      {"variable-copied-primary-type-used", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){return O<int>::v<int,3>;}"},
-      {"variable-copied-partial-type-unused", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O;template<class T>struct O<T*>{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){O<int*>o;return sizeof(o);}"},
-      {"variable-copied-partial-type-used", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O;template<class T>struct O<T*>{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){return O<int*>::v<int,3>;}"},
-      {"generic-full-pending-hidden", "template<class T>struct O{template<class U,T N>inline static int v=1;template<>inline int v<int,T{}> = 2;};int f(){return O<decltype((sizeof(double),int{}))>::v<int,0>;}"},
+      {"class-resolved-prefix-type-hidden", "template<class U>using K=decltype((sizeof(long double),U{}));template<class U,K<U> A,int...Rest>struct P{int n;};template<int N,int...Ns>struct P<int,N,Ns...>{int n;};int f(){return 0;}"},
+      {"variable-resolved-prefix-type-hidden", "template<class U>using K=decltype((sizeof(long double),U{}));template<class U,K<U> A,int...Rest>inline int p=1;template<int N,int...Ns>inline int p<int,N,Ns...> =2;int f(){return 0;}"},
+      {"class-namespace-type-unused", "template<class U>using K=decltype((sizeof(long double),U{}));template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};int f(){return 0;}"},
+      {"class-namespace-type-used", "template<class U>using K=decltype((sizeof(long double),U{}));template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};P<int,3>p{4};int f(){return p.n;}"},
+      {"class-ordinary-type-unused", "template<class U>using K=decltype((sizeof(long double),U{}));struct O{template<class U,K<U> N>struct P{int n;};template<int N>struct P<int,N>{int n;};};int f(){return sizeof(O);}"},
+      {"variable-namespace-type-unused", "template<class U>using K=decltype((sizeof(long double),U{}));template<class U,K<U> N>inline int p=1;template<int N>inline int p<int,N> =2;int f(){return 0;}"},
+      {"variable-namespace-type-used", "template<class U>using K=decltype((sizeof(long double),U{}));template<class U,K<U> N>inline int p=1;template<int N>inline int p<int,N> =2;int f(){return p<int,3>;}"},
+      {"variable-ordinary-type-unused", "template<class U>using K=decltype((sizeof(long double),U{}));struct O{template<class U,K<U> N>inline static int p=1;template<int N>inline static int p<int,N> =2;};int f(){return sizeof(O);}"},
+      {"variable-copied-primary-type-unused", "template<class U>using K=decltype((sizeof(long double),U{}));template<class T>struct O{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){O<int>o;return sizeof(o);}"},
+      {"variable-copied-primary-type-used", "template<class U>using K=decltype((sizeof(long double),U{}));template<class T>struct O{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){return O<int>::v<int,3>;}"},
+      {"variable-copied-partial-type-unused", "template<class U>using K=decltype((sizeof(long double),U{}));template<class T>struct O;template<class T>struct O<T*>{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){O<int*>o;return sizeof(o);}"},
+      {"variable-copied-partial-type-used", "template<class U>using K=decltype((sizeof(long double),U{}));template<class T>struct O;template<class T>struct O<T*>{template<class U,K<U> N>inline static int v=1;template<int N>inline static int v<int,N> =2;};int f(){return O<int*>::v<int,3>;}"},
+      {"generic-full-pending-hidden", "template<class T>struct O{template<class U,T N>inline static int v=1;template<>inline int v<int,T{}> = 2;};int f(){return O<decltype((sizeof(long double),int{}))>::v<int,0>;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -6696,30 +6696,30 @@ TEST_F(TranslateTest, CoreV2DependentMemberClassesAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2DependentMemberClassesRetainSourceAndOwnerBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"partial-header-hidden-outer-unused", "template<int N>struct O{template<class U>struct I;template<class U>struct I<U*>{int get();};};template<decltype((sizeof(double),0)) X>template<class Y>int O<X>::I<Y*>::get(){return X;}"},
-      {"partial-header-hidden-outer-used", "template<int N>struct O{template<class U>struct I;template<class U>struct I<U*>{int get();};};template<decltype((sizeof(double),0)) X>template<class Y>int O<X>::I<Y*>::get(){return X;}int f(){O<2>::I<int*>v;return v.get();}"},
-      {"qualifier-hidden-body", "template<class T>struct O{template<class U>struct I{int get();};};template<class X>template<class Y>int O<X>::I<Y>::get(){return sizeof(double);}int f(){O<int>::I<int>v;return v.get();}"},
-      {"qualifier-hidden-parameter", "template<class T>struct O{template<class U>struct I{int get(decltype((sizeof(double),0)));};};template<class X>template<class Y>int O<X>::I<Y>::get(decltype((sizeof(double),0))v){return v;}int f(){O<int>::I<int>v;return v.get(3);}"},
-      {"qualifier-hidden-noexcept", "template<class T>struct O{template<class U>struct I{int get()noexcept(sizeof(double)>0);};};template<class X>template<class Y>int O<X>::I<Y>::get()noexcept(sizeof(double)>0){return 3;}int f(){O<int>::I<int>v;return v.get();}"},
-      {"qualifier-hidden-static-init", "template<int N>struct O{template<int M>struct I{static int n;};};template<int X>template<int Y>int O<X>::I<Y>::n=X+Y+static_cast<int>(1.0);int*f(){return &O<1>::I<2>::n;}"},
-      {"qualifier-hidden-inner-argument", "template<class T>struct O{template<class U>struct I{int get();};};template<class X>template<class Y>int O<X>::I<Y>::get(){return 3;}int f(){O<int>::I<decltype((sizeof(double),1))>v;return v.get();}"},
-      {"qualifier-hidden-pack-argument", "template<int...N>struct O{template<int...M>struct I{int get();};};template<int...X>template<int...Y>int O<X...>::I<Y...>::get(){return sizeof...(X)+sizeof...(Y);}int f(){O<1>::I<(sizeof(double),2)>v;return v.get();}"},
-      {"qualifier-hidden-same-named-owner", "namespace A{template<class T>struct O{template<class U>struct I{int get();};};}namespace B{template<class T>struct O{template<class U>struct I{int get();};};}template<class X>template<class Y>int A::O<X>::I<Y>::get(){return 3;}template<class X>template<class Y>int B::O<X>::I<Y>::get(){return sizeof(double);}int f(){A::O<int>::I<int>a;B::O<int>::I<int>b;return a.get()+b.get();}"},
-      {"partial-parameter-hidden-unused", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>o;return sizeof(o);}"},
-      {"partial-parameter-hidden-used", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>::I<int,1>v;return sizeof(v);}"},
-      {"default-hidden", "template<class T>struct O{template<class U=decltype((sizeof(double),1))>struct I{int n;};};"},
-      {"argument-hidden", "template<class T>struct O{template<class U>struct I{int n;};};int f(){O<int>::I<decltype((sizeof(double),1))>v{3};return v.n;}"},
+      {"partial-header-hidden-outer-unused", "template<int N>struct O{template<class U>struct I;template<class U>struct I<U*>{int get();};};template<decltype((sizeof(long double),0)) X>template<class Y>int O<X>::I<Y*>::get(){return X;}"},
+      {"partial-header-hidden-outer-used", "template<int N>struct O{template<class U>struct I;template<class U>struct I<U*>{int get();};};template<decltype((sizeof(long double),0)) X>template<class Y>int O<X>::I<Y*>::get(){return X;}int f(){O<2>::I<int*>v;return v.get();}"},
+      {"qualifier-hidden-body", "template<class T>struct O{template<class U>struct I{int get();};};template<class X>template<class Y>int O<X>::I<Y>::get(){return sizeof(long double);}int f(){O<int>::I<int>v;return v.get();}"},
+      {"qualifier-hidden-parameter", "template<class T>struct O{template<class U>struct I{int get(decltype((sizeof(long double),0)));};};template<class X>template<class Y>int O<X>::I<Y>::get(decltype((sizeof(long double),0))v){return v;}int f(){O<int>::I<int>v;return v.get(3);}"},
+      {"qualifier-hidden-noexcept", "template<class T>struct O{template<class U>struct I{int get()noexcept(sizeof(long double)>0);};};template<class X>template<class Y>int O<X>::I<Y>::get()noexcept(sizeof(long double)>0){return 3;}int f(){O<int>::I<int>v;return v.get();}"},
+      {"qualifier-hidden-static-init", "template<int N>struct O{template<int M>struct I{static int n;};};template<int X>template<int Y>int O<X>::I<Y>::n=X+Y+static_cast<int>(1.0L);int*f(){return &O<1>::I<2>::n;}"},
+      {"qualifier-hidden-inner-argument", "template<class T>struct O{template<class U>struct I{int get();};};template<class X>template<class Y>int O<X>::I<Y>::get(){return 3;}int f(){O<int>::I<decltype((sizeof(long double),1))>v;return v.get();}"},
+      {"qualifier-hidden-pack-argument", "template<int...N>struct O{template<int...M>struct I{int get();};};template<int...X>template<int...Y>int O<X...>::I<Y...>::get(){return sizeof...(X)+sizeof...(Y);}int f(){O<1>::I<(sizeof(long double),2)>v;return v.get();}"},
+      {"qualifier-hidden-same-named-owner", "namespace A{template<class T>struct O{template<class U>struct I{int get();};};}namespace B{template<class T>struct O{template<class U>struct I{int get();};};}template<class X>template<class Y>int A::O<X>::I<Y>::get(){return 3;}template<class X>template<class Y>int B::O<X>::I<Y>::get(){return sizeof(long double);}int f(){A::O<int>::I<int>a;B::O<int>::I<int>b;return a.get()+b.get();}"},
+      {"partial-parameter-hidden-unused", "template<class U>using K=decltype((sizeof(long double),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"partial-parameter-hidden-used", "template<class U>using K=decltype((sizeof(long double),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>::I<int,1>v;return sizeof(v);}"},
+      {"default-hidden", "template<class T>struct O{template<class U=decltype((sizeof(long double),1))>struct I{int n;};};"},
+      {"argument-hidden", "template<class T>struct O{template<class U>struct I{int n;};};int f(){O<int>::I<decltype((sizeof(long double),1))>v{3};return v.n;}"},
       {"inner-pack-65", "template<int N>struct O{template<int...M>struct I{int n=N+sizeof...(M);};};int f(){O<1>::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}"},
       {"inner-reference-field", "template<class T>struct O{template<class U>struct I{U&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}"},
       {"inner-virtual", "template<class T>struct O{template<class U>struct I{virtual int get(){return 3;}};};"},
-      {"selected-hidden-method", "template<class T>struct O{template<class U>struct I{int get(){double n=1.0;return 3;}};};int f(){O<int>::I<int>v;return v.get();}"},
-      {"hidden-static-init", "template<class T>struct O{template<class U>struct I{inline static int n=static_cast<int>(1.0);};};int*f(){return &O<int>::I<int>::n;}"},
-      {"copied-default-hidden-unused", "template<int N>struct O{template<class T=decltype((sizeof(double),N))>struct I{int n;};};int f(){O<3>v;return sizeof(v);}"},
-      {"copied-default-hidden-used", "template<int N>struct O{template<class T=decltype((sizeof(double),N))>struct I{int n;};};int f(){O<3>::I<>v{3};return v.n;}"},
-      {"outer-source-hidden", "template<class T>struct O{template<class U>struct I{int get(){return sizeof(T);}};};int f(){O<double>::I<int>v;return v.get();}"},
+      {"selected-hidden-method", "template<class T>struct O{template<class U>struct I{int get(){long double n=1.0L;return 3;}};};int f(){O<int>::I<int>v;return v.get();}"},
+      {"hidden-static-init", "template<class T>struct O{template<class U>struct I{inline static int n=static_cast<int>(1.0L);};};int*f(){return &O<int>::I<int>::n;}"},
+      {"copied-default-hidden-unused", "template<int N>struct O{template<class T=decltype((sizeof(long double),N))>struct I{int n;};};int f(){O<3>v;return sizeof(v);}"},
+      {"copied-default-hidden-used", "template<int N>struct O{template<class T=decltype((sizeof(long double),N))>struct I{int n;};};int f(){O<3>::I<>v{3};return v.n;}"},
+      {"outer-source-hidden", "template<class T>struct O{template<class U>struct I{int get(){return sizeof(T);}};};int f(){O<long double>::I<int>v;return v.get();}"},
       {"deep-pack-65", "template<class T>struct O{template<class U>struct I{template<class...V>struct J{int n=sizeof...(V);};};};int f(){O<int>::I<int>::J<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>v;return v.n;}"},
-      {"variadic-frontier-hidden-unused", "template<class T>struct O{template<class A,class...B>struct I{};template<class...U>struct I<decltype((sizeof(double),T{})),U...>{};};int f(){O<int>o;return sizeof(o);}"},
-      {"variadic-frontier-hidden-used", "template<class T>struct O{template<class A,class...B>struct I{};template<class...U>struct I<decltype((sizeof(double),T{})),U...>{};};int f(){O<int>::I<int,bool>v;return sizeof(v);}"},
+      {"variadic-frontier-hidden-unused", "template<class T>struct O{template<class A,class...B>struct I{};template<class...U>struct I<decltype((sizeof(long double),T{})),U...>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"variadic-frontier-hidden-used", "template<class T>struct O{template<class A,class...B>struct I{};template<class...U>struct I<decltype((sizeof(long double),T{})),U...>{};};int f(){O<int>::I<int,bool>v;return sizeof(v);}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -6941,21 +6941,21 @@ TEST_F(TranslateTest, CoreV2CopiedFullClassesAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2CopiedFullClassesRetainSourceAndOwnerBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"resolved-parameter-hidden-generic", "template<class T>struct O{template<decltype((sizeof(double),1)) N>struct I{};template<>struct I<1>{};};"},
-      {"resolved-parameter-hidden-unused", "template<class T>struct O{template<decltype((sizeof(double),1)) N>struct I{};template<>struct I<1>{};};int f(){O<int>o;return sizeof(o);}"},
-      {"copied-parameter-hidden-unused", "template<class T>struct O{template<decltype((sizeof(double),T{})) N>struct I{};template<>struct I<1>{};};int f(){O<int>o;return sizeof(o);}"},
-      {"resolved-parameter-hidden-used", "template<class T>struct O{template<decltype((sizeof(double),1)) N>struct I{};template<>struct I<1>{};};int f(){O<int>::I<1>v;return sizeof(v);}"},
-      {"copied-parameter-hidden-used", "template<class T>struct O{template<decltype((sizeof(double),T{})) N>struct I{};template<>struct I<1>{};};int f(){O<int>::I<1>v;return sizeof(v);}"},
-      {"full-argument-hidden-unused", "template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(double)>{};};int f(){O<int>o;return sizeof(o);}"},
-      {"full-argument-hidden-used", "template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(double)>{};};int f(){O<int>::I<4>v;return sizeof(v);}"},
-      {"copied-float-field", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{double n;};};int f(){O<int>v;return sizeof(v);}"},
-      {"selected-hidden-method", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int get(){double d=1.0;return 3;}};};int f(){O<int>::I<int>v;return v.get();}"},
+      {"resolved-parameter-hidden-generic", "template<class T>struct O{template<decltype((sizeof(long double),1)) N>struct I{};template<>struct I<1>{};};"},
+      {"resolved-parameter-hidden-unused", "template<class T>struct O{template<decltype((sizeof(long double),1)) N>struct I{};template<>struct I<1>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"copied-parameter-hidden-unused", "template<class T>struct O{template<decltype((sizeof(long double),T{})) N>struct I{};template<>struct I<1>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"resolved-parameter-hidden-used", "template<class T>struct O{template<decltype((sizeof(long double),1)) N>struct I{};template<>struct I<1>{};};int f(){O<int>::I<1>v;return sizeof(v);}"},
+      {"copied-parameter-hidden-used", "template<class T>struct O{template<decltype((sizeof(long double),T{})) N>struct I{};template<>struct I<1>{};};int f(){O<int>::I<1>v;return sizeof(v);}"},
+      {"full-argument-hidden-unused", "template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(long double)>{};};int f(){O<int>o;return sizeof(o);}"},
+      {"full-argument-hidden-used", "template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(long double)>{};};int f(){O<int>::I<4>v;return sizeof(v);}"},
+      {"copied-float-field", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{long double n;};};int f(){O<int>v;return sizeof(v);}"},
+      {"selected-hidden-method", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int get(){long double d=1.0L;return 3;}};};int f(){O<int>::I<int>v;return v.get();}"},
       {"reference-field", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}"},
-      {"default-hidden-generic", "template<class T>struct O{template<int N=sizeof(double)>struct I{};template<>struct I<>{};};"},
-      {"default-hidden-unused", "template<class T>struct O{template<int N=sizeof(double)>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}"},
-      {"copied-default-hidden-unused", "template<class T>struct O{template<int N=(sizeof(double),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}"},
-      {"default-hidden-used", "template<class T>struct O{template<int N=sizeof(double)>struct I{};template<>struct I<>{};};int f(){O<int>::I<>v;return sizeof(v);}"},
-      {"copied-default-hidden-used", "template<class T>struct O{template<int N=(sizeof(double),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>::I<>v;return sizeof(v);}"},
+      {"default-hidden-generic", "template<class T>struct O{template<int N=sizeof(long double)>struct I{};template<>struct I<>{};};"},
+      {"default-hidden-unused", "template<class T>struct O{template<int N=sizeof(long double)>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}"},
+      {"copied-default-hidden-unused", "template<class T>struct O{template<int N=(sizeof(long double),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}"},
+      {"default-hidden-used", "template<class T>struct O{template<int N=sizeof(long double)>struct I{};template<>struct I<>{};};int f(){O<int>::I<>v;return sizeof(v);}"},
+      {"copied-default-hidden-used", "template<class T>struct O{template<int N=(sizeof(long double),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>::I<>v;return sizeof(v);}"},
       {"outer-pack-65", "template<class...T>struct O{template<class U>struct I{};template<>struct I<int>{int n=sizeof...(T);};};int f(){O<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>::I<int>v;return v.n;}"},
       {"member-pack-65", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{template<class...V>int get(){return sizeof...(V);}};};int f(){O<int>::I<int>v;return v.get<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>();}"},
   };
@@ -7167,21 +7167,21 @@ TEST_F(TranslateTest, CoreV2OrdinaryNestedClassesAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2OrdinaryNestedClassesRetainSourceAndOwnerBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"materialized-field", "template<class T>struct O{struct R{double n;};};int f(){O<int>::R v;return sizeof(v);}"},
-      {"selected-method", "template<class T>struct O{struct R{int get(){double n=1.0;return 3;}};};int f(){O<int>::R v;return v.get();}"},
-      {"full-eager-field", "template<class T>struct O{struct R{template<class U>struct I{};template<>struct I<int>{double n;};};};int f(){O<int>::R v;return sizeof(v);}"},
-      {"explicit-selected-body", "template<class T>struct O{struct R{int get(){double n=1.0;return 3;}};};template struct O<int>::R;"},
-      {"explicit-own-hidden-no-effect", "template<int N>struct O{struct R{int n;};};template<>struct O<8>::R{int n;};template struct O<sizeof(double)>::R;"},
-      {"repeated-extern-hidden", "template<int N>struct O{struct R{int n;};};extern template struct O<8>::R;extern template struct O<sizeof(double)>::R;"},
+      {"materialized-field", "template<class T>struct O{struct R{long double n;};};int f(){O<int>::R v;return sizeof(v);}"},
+      {"selected-method", "template<class T>struct O{struct R{int get(){long double n=1.0L;return 3;}};};int f(){O<int>::R v;return v.get();}"},
+      {"full-eager-field", "template<class T>struct O{struct R{template<class U>struct I{};template<>struct I<int>{long double n;};};};int f(){O<int>::R v;return sizeof(v);}"},
+      {"explicit-selected-body", "template<class T>struct O{struct R{int get(){long double n=1.0L;return 3;}};};template struct O<int>::R;"},
+      {"explicit-own-hidden-no-effect", "template<int N>struct O{struct R{int n;};};template<>struct O<8>::R{int n;};template struct O<sizeof(long double)>::R;"},
+      {"repeated-extern-hidden", "template<int N>struct O{struct R{int n;};};extern template struct O<8>::R;extern template struct O<sizeof(long double)>::R;"},
       {"reference-field", "template<class T>struct O{struct R{T&n;};};int f(){int n=3;O<int>::R v{n};return v.n;}"},
       {"inheritance", "struct B{int n;};template<class T>struct O{struct R:B{T m;};};int f(){O<int>::R v;return sizeof(v);}"},
-      {"own-hidden-qualifier", "template<int N>struct O{struct R{int n;};};template<>struct O<sizeof(double)>::R{int n;};"},
-      {"own-body-field", "template<class T>struct O{struct R{int n;};};template<>struct O<int>::R{double n;};"},
-      {"own-used-body", "template<class T>struct O{struct R{int get(){return 1;}};};template<>struct O<int>::R{int get(){double n=1.0;return 2;}};int f(){O<int>::R v;return v.get();}"},
+      {"own-hidden-qualifier", "template<int N>struct O{struct R{int n;};};template<>struct O<sizeof(long double)>::R{int n;};"},
+      {"own-body-field", "template<class T>struct O{struct R{int n;};};template<>struct O<int>::R{long double n;};"},
+      {"own-used-body", "template<class T>struct O{struct R{int get(){return 1;}};};template<>struct O<int>::R{int get(){long double n=1.0L;return 2;}};int f(){O<int>::R v;return v.get();}"},
       {"ordinary-union", "template<class T>struct O{union R{T n;int m;};};"},
       {"ordinary-anonymous", "template<class T>struct O{struct{T n;}r;};"},
       {"explicit-attribute", "template<class T>struct O{struct R{T n;};};template struct [[deprecated]] O<int>::R;"},
-      {"explicit-hidden-after-use", "template<int N>struct O{struct R{int n;};};int before(){O<8>::R v{3};return v.n;}extern template struct O<sizeof(double)>::R;"},
+      {"explicit-hidden-after-use", "template<int N>struct O{struct R{int n;};};int before(){O<8>::R v{3};return v.n;}extern template struct O<sizeof(long double)>::R;"},
       {"ordinary-member-pack-65", "template<int N>struct O{struct R{template<int...M>struct I{int n=N+sizeof...(M);};};};int f(){O<1>::R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -7376,15 +7376,15 @@ TEST_F(TranslateTest, CoreV2InstantiatedFriendsAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2InstantiatedFriendsRetainSourceAndOwnerBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"floating-signature", "template<class T>struct R{friend double get(R){return 1.0;}};int main(){R<int>r;return get(r);}"},
-      {"hidden-signature-source", "template<class T>struct R{friend decltype((sizeof(double),0))get(R){return 3;}};int main(){R<int>r;return get(r)-3;}"},
-      {"hidden-body-used", "template<class T>struct R{friend int get(R){double d=1.0;return 3;}};int main(){R<int>r;return get(r)-3;}"},
-      {"folded-hidden-source", "template<class T>struct R{friend constexpr int get(R){return sizeof(double);}};static_assert(get(R<int>{})>0);"},
-      {"noexcept-hidden", "template<class T>struct R{friend int get(R)noexcept(sizeof(double)>0){return 3;}};int main(){R<int>r;return get(r)-3;}"},
-      {"noexcept-dependent-hidden", "template<class T>struct R{friend int get(R)noexcept((sizeof(double),sizeof(T))>0){return 3;}};int main(){R<int>r;return get(r)-3;}"},
-      {"default-hidden", "template<class T>struct R{friend int get(R,int n=sizeof(double)){return n;}};int main(){R<int>r;return get(r);}"},
-      {"default-dependent-hidden", "template<class T>struct R{friend int get(R,int n=(sizeof(double),sizeof(T))){return n;}};int main(){R<int>r;return get(r);}"},
-      {"local-hidden", "template<class T>struct R{friend int get(R){struct L{int read(){return sizeof(double);}};L x;return x.read();}};int main(){R<int>r;return get(r);}"},
+      {"floating-signature", "template<class T>struct R{friend long double get(R){return 1.0L;}};int main(){R<int>r;return get(r);}"},
+      {"hidden-signature-source", "template<class T>struct R{friend decltype((sizeof(long double),0))get(R){return 3;}};int main(){R<int>r;return get(r)-3;}"},
+      {"hidden-body-used", "template<class T>struct R{friend int get(R){long double d=1.0L;return 3;}};int main(){R<int>r;return get(r)-3;}"},
+      {"folded-hidden-source", "template<class T>struct R{friend constexpr int get(R){return sizeof(long double);}};static_assert(get(R<int>{})>0);"},
+      {"noexcept-hidden", "template<class T>struct R{friend int get(R)noexcept(sizeof(long double)>0){return 3;}};int main(){R<int>r;return get(r)-3;}"},
+      {"noexcept-dependent-hidden", "template<class T>struct R{friend int get(R)noexcept((sizeof(long double),sizeof(T))>0){return 3;}};int main(){R<int>r;return get(r)-3;}"},
+      {"default-hidden", "template<class T>struct R{friend int get(R,int n=sizeof(long double)){return n;}};int main(){R<int>r;return get(r);}"},
+      {"default-dependent-hidden", "template<class T>struct R{friend int get(R,int n=(sizeof(long double),sizeof(T))){return n;}};int main(){R<int>r;return get(r);}"},
+      {"local-hidden", "template<class T>struct R{friend int get(R){struct L{int read(){return sizeof(long double);}};L x;return x.read();}};int main(){R<int>r;return get(r);}"},
       {"friend-attribute", "template<class T>struct R{friend __attribute__((noinline)) int get(R){return 3;}};"},
       {"outer-pack-65", "template<class...T>struct R{friend int get(R){return sizeof...(T);}};int main(){R<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r;return get(r)-65;}"},
       {"local-pack-65", "template<int...N>struct R{friend int get(R){struct L{int read(){return sizeof...(N);}};L x;return x.read();}};int main(){R<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return get(r)-65;}"},
@@ -7556,12 +7556,12 @@ TEST_F(TranslateTest, CoreV2InstantiatedFriendTypesAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2InstantiatedFriendTypesRetainSourceAndOwnerBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"selected-floating-type", "template<class T>struct R{friend T;};int main(){R<double>r;return sizeof(r);}"},
-      {"nondependent-floating-type", "template<class T>struct R{friend double;};"},
-      {"folded-hidden-type", "template<class T>struct R{friend decltype((sizeof(double),T{}));};int main(){R<int>r;return sizeof(r);}"},
-      {"alias-hidden-source", "template<class T>using Ignore=int;template<class T>struct R{friend Ignore<decltype((sizeof(double),T{}))>;};int main(){R<int>r;return sizeof(r);}"},
+      {"selected-floating-type", "template<class T>struct R{friend T;};int main(){R<long double>r;return sizeof(r);}"},
+      {"nondependent-floating-type", "template<class T>struct R{friend long double;};"},
+      {"folded-hidden-type", "template<class T>struct R{friend decltype((sizeof(long double),T{}));};int main(){R<int>r;return sizeof(r);}"},
+      {"alias-hidden-source", "template<class T>using Ignore=int;template<class T>struct R{friend Ignore<decltype((sizeof(long double),T{}))>;};int main(){R<int>r;return sizeof(r);}"},
       {"unsupported-header", "template<class T>struct A{struct B{};};template<class U>struct R{template<class T>friend class A<T>::B;};"},
-      {"nondependent-hidden-type", "template<class T>struct R{friend decltype((sizeof(double),0));};"},
+      {"nondependent-hidden-type", "template<class T>struct R{friend decltype((sizeof(long double),0));};"},
       {"friend-type-pack", "template<class...T>struct R{friend T...;};"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -7733,13 +7733,13 @@ TEST_F(TranslateTest, CoreV2FriendFunctionTemplatesAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2FriendFunctionTemplatesRetainSourceAndOwnerBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"hidden-written-type", "template<class>using I=int;struct R{template<class U>friend int get(R,U){return 3;}};int main(){R r;I<double> n=1;return get(r,n);}"},
-      {"hidden-return-alias", "template<class>using I=int;struct R{template<class U>friend I<double> get(R,U){return 3;}};"},
-      {"hidden-folded-constexpr", "struct R{template<class U>friend constexpr int get(R,U){return int(sizeof(double));}};static_assert(get(R{},1)>0);"},
-      {"hidden-noexcept", "struct R{template<class U>friend int get(R,U)noexcept((sizeof(double),sizeof(U)>0)){return 3;}};int main(){return get(R{},1);}"},
-      {"hidden-default", "struct R{template<class U=int>friend int get(R,int n=int(sizeof(double))){return n;}};int main(){return get(R{});}"},
-      {"hidden-template-default", "template<class>using I=int;struct R{template<class U=I<double>>friend int get(R){return 3;}};int main(){return get(R{});}"},
-      {"used-floating-body", "struct R{template<class U>friend int get(R,U){return int(1.0);}};int main(){return get(R{},1);}"},
+      {"hidden-written-type", "template<class>using I=int;struct R{template<class U>friend int get(R,U){return 3;}};int main(){R r;I<long double> n=1;return get(r,n);}"},
+      {"hidden-return-alias", "template<class>using I=int;struct R{template<class U>friend I<long double> get(R,U){return 3;}};"},
+      {"hidden-folded-constexpr", "struct R{template<class U>friend constexpr int get(R,U){return int(sizeof(long double));}};static_assert(get(R{},1)>0);"},
+      {"hidden-noexcept", "struct R{template<class U>friend int get(R,U)noexcept((sizeof(long double),sizeof(U)>0)){return 3;}};int main(){return get(R{},1);}"},
+      {"hidden-default", "struct R{template<class U=int>friend int get(R,int n=int(sizeof(long double))){return n;}};int main(){return get(R{});}"},
+      {"hidden-template-default", "template<class>using I=int;struct R{template<class U=I<long double>>friend int get(R){return 3;}};int main(){return get(R{});}"},
+      {"used-floating-body", "struct R{template<class U>friend int get(R,U){return int(1.0L);}};int main(){return get(R{},1);}"},
       {"template-template-parameter", "struct R{template<template<class>class U>friend int get(R){return 3;}};"},
       {"ellipsis", "struct R{template<class U>friend int get(R,U,...){return 3;}};"},
       {"attribute", "struct R{template<class U>friend __attribute__((noinline)) int get(R,U){return 3;}};"},
@@ -7917,12 +7917,12 @@ TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainSourceAndOwnerBoundaries) 
       {"unsupported-header", "template<class T>struct A{struct B{};};template<class U>struct R{template<class T>friend class A<T>::B;};"},
       {"template-template-parameter", "template<class T>struct R{template<template<class>class U>friend struct A;};"},
       {"pointer-value-parameter", "template<class T>struct R{template<int*P>friend struct A;};"},
-      {"float-value-parameter", "template<class T>struct R{template<double N>friend struct A;};"},
-      {"hidden-parameter-type", "using Hidden=double;template<class T>struct R{template<Hidden N>friend struct A;};"},
-      {"hidden-folded-parameter-type", "template<class T>using Ignore=int;template<class T>struct R{template<Ignore<double> N>friend struct A;};"},
-      {"hidden-dependent-parameter-copy", "template<class T>using Ignore=int;template<class T>struct R{template<Ignore<T> N>friend struct A;};R<double>r;"},
-      {"hidden-inherited-default", "template<class T>using Ignore=int;template<class U=Ignore<double>>struct A;template<class T>struct R{template<class U>friend struct A;};R<int>r;"},
-      {"hidden-qualifier", "template<class T>struct Q{template<class U>struct A;};template<class T>struct R{template<class U>friend struct Q<double>::A;};"},
+      {"float-value-parameter", "template<class T>struct R{template<decltype((sizeof(long double),0)) N>friend struct A;};"},
+      {"hidden-parameter-type", "using Hidden=long double;template<class T>struct R{template<Hidden N>friend struct A;};"},
+      {"hidden-folded-parameter-type", "template<class T>using Ignore=int;template<class T>struct R{template<Ignore<long double> N>friend struct A;};"},
+      {"hidden-dependent-parameter-copy", "template<class T>using Ignore=int;template<class T>struct R{template<Ignore<T> N>friend struct A;};R<long double>r;"},
+      {"hidden-inherited-default", "template<class T>using Ignore=int;template<class U=Ignore<long double>>struct A;template<class T>struct R{template<class U>friend struct A;};R<int>r;"},
+      {"hidden-qualifier", "template<class T>struct Q{template<class U>struct A;};template<class T>struct R{template<class U>friend struct Q<long double>::A;};"},
       {"target-union", "template<class T>union A;class R{template<class U>friend union A;};"},
       {"friend-attribute", "template<class T>struct R{template<class U>friend struct __attribute__((deprecated)) A;};"},
   };
@@ -7974,6 +7974,222 @@ TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainRequiredDefinitions) {
     expectCode(Result, "TR0203");
     expectNoArtifacts(Output);
   }
+}
+
+TEST_F(TranslateTest, CoreV2FloatingValuesPreserveArithmeticAndStorage) {
+  const auto Source = tmpFile("floating-runtime.cpp");
+  const auto Output = tmpFile("floating-runtime.nc");
+  writeFile(Source, R"cpp(float add(float a,float b){return a+b;}
+float multiply(float a,float b){return a*b;}
+float divide(float a,float b){return a/b;}
+double wideAdd(double a,double b){return a+b;}
+double wideMultiply(double a,double b){return a*b;}
+float narrow(double n){return static_cast<float>(n);}
+float uncontracted(float a,float b,float c){return a*b+c;}
+double wideUncontracted(double a,double b,double c){return a*b+c;}
+unsigned char byte(float&n,int i){return static_cast<unsigned char*>(static_cast<void*>(&n))[i];}
+float global=1.5f;
+double zeroGlobal;
+const float negativeZero=-0.0f;
+float*accumulator(){static float value;value+=1.5f;return &value;}
+template<class T>inline T cached=T(1.5);
+struct Static{inline static float value=2.5f;};
+struct Record{const float key;double value;float array[2];};
+using Callback=float(*)(float,float);
+Callback callback=add;
+double destroyed=0.0;
+struct Lifetime{float value;Lifetime(float n):value(n){}~Lifetime(){destroyed+=value;}};
+constexpr double twice(double n){return n*2.0+0.25;}
+constexpr double folded=twice(1.5);
+int main(){
+ if(add(1.5f,2.5f)!=4.0f||multiply(1.5f,2.0f)!=3.0f||divide(3.0f,2.0f)!=1.5f)return 1;
+ if(add(16777216.0f,1.0f)!=16777216.0f||wideAdd(16777216.0,1.0)!=16777217.0)return 2;
+ if(narrow(0x1.000001p0)!=1.0f||narrow(0x1.0000010000001p0)!=0x1.000002p0f)return 3;
+ if(multiply(0x1p-149f,2.0f)!=0x1p-148f||wideMultiply(0x1p-1074,2.0)!=0x1p-1073)return 4;
+ float minusZero=negativeZero;
+ if(byte(minusZero,0)!=0||byte(minusZero,1)!=0||byte(minusZero,2)!=0||byte(minusZero,3)!=128)return 5;
+ float one=1.0f;
+ if(byte(one,0)!=0||byte(one,1)!=0||byte(one,2)!=128||byte(one,3)!=63)return 6;
+ if(uncontracted(0x1.000002p0f,0x1.fffffcp-1f,-1.0f)!=0.0f)return 7;
+ if(wideUncontracted(0x1.0000000000001p0,0x1.ffffffffffffep-1,-1.0)!=0.0)return 8;
+ float infinity=divide(1.0f,0.0f);float nan=divide(0.0f,0.0f);
+ if(!(infinity>0x1.fffffep127f)||nan==nan||!nan||static_cast<bool>(minusZero))return 9;
+ float value=1.5f;float old=value++;float&alias=--value;
+ if(old!=1.5f||value!=1.5f||&alias!=&value)return 10;
+ value+=0.25;value*=2;value/=2.0f;value-=0.5;
+ if(value!=1.25f)return 11;
+ int integral=3;integral+=1.75;
+ if(integral!=4||static_cast<long long>(-0x1p40)!=-1099511627776ll)return 12;
+ if(global!=1.5f||zeroGlobal!=0.0||folded!=3.25)return 13;
+ float*first=accumulator();float*second=accumulator();
+ if(first!=second||*first!=3.0f)return 14;
+ cached<float>+=1.0f;cached<double>+=2.0;Static::value+=0.5f;
+ if(cached<float>!=2.5f||cached<double>!=3.5||Static::value!=3.0f)return 15;
+ Record record{1.5f,2.5,{3.5f,4.5f}};Record copy(record);copy.value+=1.0;
+ if(record.key!=1.5f||copy.value!=3.5||copy.array[1]!=4.5f||&record.key==&copy.key)return 16;
+ float sum=0.0f;for(float&n:copy.array){n+=0.5f;sum+=n;}
+ if(sum!=9.0f||record.array[0]!=3.5f)return 17;
+ if(callback(1.5f,2.5f)!=4.0f)return 18;
+ {Lifetime firstLife(1.5f);Lifetime secondLife(2.5f);}
+ if(destroyed!=4.0)return 19;
+ const double&temporary=wideAdd(1.5,2.5);
+ if(temporary!=4.0)return 20;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("floating-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  auto Fast = compileGenerated(Output, tmpFile("floating-fast"), "-O2", {"-ffast-math"});
+  EXPECT_NE(Fast.exitCode, 0);
+  EXPECT_NE((Fast.out+Fast.err).find("strict IEEE optimization settings"), std::string::npos);
+}
+
+TEST_F(TranslateTest, CoreV2FloatingValuesAcceptSourceComposition) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"float-arithmetic", "float f(float a,float b){return (a+b)*(a-b)/2.0f;}"},
+      {"double-arithmetic", "double f(double a,double b){return (a+b)*(a-b)/2.0;}"},
+      {"usual-conversions", "double f(float a,int b,unsigned c){return a+b+c+0.5;}"},
+      {"compound-conversions", "void f(float&a,double b,int&n){a+=b;a*=2;a/=2.0;n+=b;}"},
+      {"increment", "float f(float&n){float old=n++;--n;return old+n;}"},
+      {"cast-widths", "float f(double n){return static_cast<float>(n);}double g(float n){return n;}"},
+      {"cast-integers", "long long f(double n){return static_cast<long long>(n);}float g(unsigned long long n){return n;}"},
+      {"boolean", "bool f(float n){return !n||static_cast<bool>(n);}bool g(double n){return n&&true;}"},
+      {"zero-init", "struct R{float a;double b;};int main(){R r{};return r.a!=0.0f||r.b!=0.0;}"},
+      {"const-fields", "struct R{const float a;const double b;};int main(){R r{1.5f,2.5};R copy(r);return copy.a!=1.5f||copy.b!=2.5;}"},
+      {"array", "float f(){float a[2][2]={{1,2},{3,4}};float sum=0;for(auto&r:a)for(float&v:r){v+=0.5f;sum+=v;}return sum;}"},
+      {"reference", "const float&f(const float&r){return r;}double&g(double&r){return r;}"},
+      {"pointer", "float*f(float*p){return p+1;}double f(double*p,double*q){return static_cast<double>(p-q);}"},
+      {"conversion-member", "struct R{float n;operator double()const{return n;}};double f(R r){return r;}"},
+      {"constructor", "struct R{float a;double b;R(float n):a(n),b(n+0.5){}};int main(){R r(1.5f);return r.a!=1.5f||r.b!=2.0;}"},
+      {"constexpr", "constexpr double twice(double n){return n*2.0;}constexpr double n=twice(1.5);static_assert(n==3.0);"},
+      {"global", "float a=1.5f;double b;float f(){b+=a;return a;}"},
+      {"static-local", "float*f(){static float n;n+=1.5f;return &n;}"},
+      {"static-member", "struct R{inline static float a=1.5f;inline static double b;};float f(){R::b+=R::a;return R::a;}"},
+      {"variable-template", "template<class T>inline T value=T(1.5);float f(){value<float>+=1.0f;return value<float>;}double g(){return value<double>;}"},
+      {"class-template", "template<class T>struct R{T n;R(T v):n(v){}T get()const{return n;}};float f(){R<float>r(1.5f);return r.get();}"},
+      {"partial", "template<class T>struct R;template<class T>struct R<T*>{T n;};int main(){R<float*>r{1.5f};return r.n!=1.5f;}"},
+      {"callback", "float add(float a,float b){return a+b;}using F=float(*)(float,float);F callback=add;float f(){return callback(1.5f,2.5f);}"},
+      {"callback-reference", "const double&identity(const double&n){return n;}using F=const double&(*)(const double&);F f=identity;const double&g(const double&n){return f(n);}"},
+      {"default-noexcept", "float f(float n=1.5f)noexcept(sizeof(float)==4){return n;}static_assert(noexcept(f()));"},
+      {"folded-void", "static_assert((void(1.5f),true));enum E:int{value=(void(2.5),1)};"},
+      {"hex-bounds", "float a=0x1p-149f;float b=0x1.fffffep127f;double c=0x1p-1074;double d=0x1.fffffffffffffp1023;"},
+      {"narrow-rounding", "constexpr float a=0x1.000001p0;constexpr float b=0x1.0000010000001p0;static_assert(a==1.0f&&b==0x1.000002p0f);"},
+      {"former-CoreV2ArrayScopeRejectsUnsupportedStorage", "int f(){float a[2]; return 0;}"},
+      {"former-CoreV2PointerScopeDiagnosesUnsupportedBindings", "float *f(float *p){return p;}"},
+      {"former-CoreV2ConversionsRetainSourceAndLifetimeBoundaries", "struct R{operator double()const{return 1.0;}};"},
+      {"former-CoreV2MutableScalarGlobalsRetainTypeAndInitializationBoundaries", "double value=1.0;"},
+      {"former-CoreV2RangeForRetainsSourceAndTypeBoundaries", "void f(){double a[1]={1.0};for(auto v:a){}}"},
+      {"former-CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries", "class R{double n=1.0;};"},
+      {"former-CoreV2FoldedVoidStillInspectsUnsupportedOperands", "int f(){return sizeof((void(1.0),1));}"},
+      {"former-CoreV2FriendsRetainAccessAndSourceBoundaries", "class R{int n=1;friend int get(const R&r){double ignored=1.0;return r.n;}};"},
+      {"former-CoreV2NestedRecordsRetainAccessAndSourceBoundaries", "struct R{struct I{double n;};};"},
+      {"former-CoreV2StaticMembersRetainStorageAndSourceBoundaries", "struct R{inline static double n=1.0;};"},
+      {"former-CoreV2StaticLocalsRetainInitializationAndLanguageBoundaries", "int f(){static int n=static_cast<int>(1.0);return n;}"},
+      {"former-CoreV2NameImportsRetainSourceClosureAndLanguageBoundaries", "namespace N{using T=double;}using N::T;"},
+      {"former-CoreV2InlineNamespacesRetainSourceClosureAndLanguageBoundaries", "namespace N{inline namespace V{using T=double;}}"},
+      {"former-CoreV2ConstexprIfRetainsSourceClosureAndLanguageBoundaries", "int f(){if constexpr(false){double n=3;return static_cast<int>(n);}return 0;}"},
+      {"former-CoreV2FrontendRepairsRetainWrittenExceptionSource", "template<class T>int f(T v)noexcept(sizeof(T)==sizeof(int)&&1.0>0.0){return v;}int main(){return f(3);}"},
+      {"former-CoreV2FreshReferenceArgumentsReject", "template<class T>struct R{T n;operator decltype(auto)(){int discarded=int(1.0);return (n);}};void set(int&n){n=7;}void f(R<int>&r){set(r);}"},
+      {"former-CoreV2ConcreteTemplateSourceRepairsReject", "template<class T=double>struct R{int n;};"},
+      {"former-CoreV2TemplateParameterQueriesRetainSourceBoundaries", "template<class T,decltype((sizeof(double),sizeof(T))) N=3>int f(){return int(N);}int main(){return f<int>();}"},
+      {"former-CoreV2MemberFunctionTemplatesRetainSourceAndResourceChecks", "struct R{template<class T>int f(T){return int(1.0);}};int main(){R r;return r.f(3);}"},
+      {"former-CoreV2MemberAliasesRetainSourceAndBounds", "struct R{template<class T,decltype((sizeof(double),T{})) N=3>using A=int[N];};int main(){R::A<int> a{1,2,3};return a[2];}"},
+      {"former-CoreV2VariableSourcesRetainNestedSourceChecks", "template<int N>constexpr int value=N;int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<sizeof(double)>>>>>>>>>>>>>>>>;}"},
+      {"former-CoreV2MemberVariablesRetainSourceAndBounds", "template<class A>struct R{template<auto V,int N=(sizeof(double),V)>inline static int n=1;template<>inline int n<3> = 7;};int main(){R<bool>r;return sizeof(r);}"},
+      {"former-CoreV2MemberClassesRetainSourceAndOwnerBoundaries", "struct R{template<class T>struct I{T n;};};int f(){R::I<double>r{1.0};return 1;}"},
+      {"former-CoreV2DependentMemberClassesRetainSourceAndOwnerBoundaries", "template<int N>struct O{template<class U>struct I;template<class U>struct I<U*>{int get();};};template<decltype((sizeof(double),0)) X>template<class Y>int O<X>::I<Y*>::get(){return X;}"},
+      {"former-CoreV2CopiedFullClassesRetainSourceAndOwnerBoundaries", "template<class T>struct O{template<decltype((sizeof(double),1)) N>struct I{};template<>struct I<1>{};};"},
+      {"former-CoreV2OrdinaryNestedClassesRetainSourceAndOwnerBoundaries", "template<class T>struct O{struct R{double n;};};int f(){O<int>::R v;return sizeof(v);}"},
+      {"former-CoreV2InstantiatedFriendsRetainSourceAndOwnerBoundaries", "template<class T>struct R{friend double get(R){return 1.0;}};int main(){R<int>r;return get(r);}"},
+      {"former-CoreV2InstantiatedFriendTypesRetainSourceAndOwnerBoundaries", "template<class T>struct R{friend T;};int main(){R<double>r;return sizeof(r);}"},
+      {"former-CoreV2FriendFunctionTemplatesRetainSourceAndOwnerBoundaries", "template<class>using I=int;struct R{template<class U>friend int get(R,U){return 3;}};int main(){R r;I<double> n=1;return get(r,n);}"},
+      {"friend-integral-parameter-source", "template<class T>struct R{template<decltype((sizeof(double),0)) N>friend struct A;};"},
+      {"former-CoreV2DeletedDeclarationsRetainSourceDiagnostics", "double denied(int)=delete;"},
+      {"former-CoreV2ConstFieldsRetainSourceRestrictions", "struct R{const double n;};"},
+      {"former-CoreV2DelegatingConstructorsRetainSourceBoundaries", "template<class T,int N>using Alias=T;struct R{int n;R():Alias<R,sizeof(double)>(3){}R(int v):n(v){}};"},
+      {"former-CoreV2NullPtrValuesRetainSourceBoundaries", "using N=decltype((sizeof(double),nullptr));"},
+      {"former-CoreV2FunctionPointersRetainSourceAndSignatureBoundaries", "double get(double n){return n;}int main(){auto p=&get;return int(p(3.0));}"},
+      {"former-CoreV2TemplateFunctionPointersRetainSourceAndSignatureBoundaries", "template<class T>int get(int n){return n;}int main(){auto p=&get<decltype((sizeof(double),1))>;return p(3);}"},
+      {"former-CoreV2CallbackVariableTemplatesRetainSourceAndSignatureBoundaries", "int get(){return 3;}template<class T>auto p=&get;int main(){return p<decltype((sizeof(double),1))>();}"},
+      {"former-CoreV2CopiedFullInitializersRetainSourceBoundaries", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=static_cast<int>(1.0);};};int f(){O<int>::I<int>v;return v.n;}"},
+      {"former-CoreV2VariableTemplatesRetainSourceAndResourceChecks", "template<class T>constexpr double value=1.0;int main(){return int(value<int>);}"},
+      {"former-CoreV2ClassPartialsRetainSourceBoundaries", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=3;};int main(){R<int*,int>r{};return r.n;}"},
+      {"former-CoreV2AliasTemplatesRetainSourceAndResourceChecks", "template<class T>using I=int;I<double>f(){return 3;}"},
+      {"former-CoreV2ParameterPacksRetainSourceAndResourceChecks", "template<class...T>int f(){return sizeof...(T);}int main(){return f<int,double>();}"},
+      {"former-CoreV2DeducedReferenceConversionsRetainSourceChecks", "template<class T>struct R{T n;operator decltype(auto)(){n=int(1.0);return (n);}};int&f(R<int>&r){return r;}"},
+      {"former-CoreV2ScalarTemplateDefaultsRetainSourceBoundaries", "template<int N=int(1.0)>int f(){return N;}int main(){return f();}"},
+      {"former-CoreV2ClassTemplateStaticDataRetainSourceBoundaries", "template<class T>struct R{inline static int n=int(1.0);};int f(){return R<int>::n;}"},
+      {"former-CoreV2FreeOperatorTemplatesRetainSourceBoundaries", "struct R{int n;};template<class T>int operator+(R,T){return int(1.0);}int f(){return R{3}+4;}"},
+      {"former-CoreV2TemplateSourceRepairsRetainWrittenSourceBoundaries", "template<class T>int f(){struct R{int get(){return int(1.0);}};R r;return r.get();}int g(){return f<int>();}"},
+      {"former-CoreV2ClassTemplateOperatorsRetainSourceBoundaries", "template<class T>struct R{int operator()(){return int(1.0);}};int f(){R<int>r;return r();}"},
+      {"former-CoreV2ClassTemplateDefaultedMembersRetainSourceBoundaries", "template<class T>struct R{T n=static_cast<T>(1.0);R()=default;};void f(){R<int>r;}"},
+      {"former-CoreV2ClassTemplateDestructorsRetainSourceAndDefinitionBoundaries", "template<class T>struct R{~R(){double n=1.0;}};void f(){R<int>r;}"},
+      {"former-CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBoundaries", "template<class T>struct R{T n;R():n(static_cast<int>(1.0)){}};int main(){R<int>r;return r.n;}"},
+      {"former-CoreV2ClassTemplateMethodsRetainSourceAndDefinitionBoundaries", "template<class T>struct R{int f(){return static_cast<int>(1.0);}};int main(){R<int>r{};return r.f();}"},
+      {"former-CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundaries", "template<class T>struct R{T n;};int main(){R<double>r{1.0};return 0;}"},
+      {"former-CoreV2NonTypeFunctionTemplatesRetainSourceAndValueBoundaries", "template<int N>int f(){double d=N;return static_cast<int>(d);}int main(){return f<3>();}"},
+      {"former-CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries", "template<class T>int f(){return 1;}int main(){return f<double>();}"},
+      {"former-CoreV2DefaultArgumentsRetainSourceAndParameterBoundaries", "int f(int n=(static_cast<void>(1.0),1)){return n;}"},
+      {"former-CoreV2VoidExpressionsRetainSourceAndTypeBoundaries", "void f(){static_cast<void>(1.0);}"},
+      {"former-CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries", "struct E{operator double()const{return 1.0;}};bool f(){E e;return noexcept(static_cast<double>(e));}"},
+      {"former-CoreV2ArrayTemporariesRetainTypeAndLifetimeBoundaries", "void f(){const double(&r)[2]={1.0,2.0};}"},
+      {"former-CoreV2AutomaticReferencesRetainLifetimeBoundaries", "int f(){const int&r=static_cast<int>(1.0);return r;}"},
+      {"former-CoreV2TemporaryCallsRetainLifetimeExtensionBoundaries", "struct R{double get()const noexcept{return 1.0;}};bool f(){return noexcept(R{}.get());}"},
+      {"former-CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries", "struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;"},
+      {"former-CoreV2RejectsUnsupportedErasedDeclarations", "using Hidden = float *;"},
+      {"protocol-source", "float small=0x1p-149f;\nfloat negative=-0.0f;\ndouble wide=1.5;\nstruct Record{float a;double b;float c[2];};\nfloat add(float a,float b){return a+b;}\ndouble convert(float a,int b){return a+b+0.5;}\nconst float&reference(const float&n){return n;}\nusing Callback=float(*)(float,float);\nCallback callback=add;\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("floating-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("floating-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FloatingValuesRetainSourceRestrictions) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"extended-local", "long double f(long double n){return n+1.0L;}", "TR0201"},
+      {"extended-hidden-default", "int f(int n=int(1.0L)){return n;}", "TR0201"},
+      {"extended-static-pattern", "template<class T>struct R{inline static long double n=1.0L;};", "TR0201"},
+      {"extended-variable-pattern", "template<class T>inline long double n=1.0L;", "TR0201"},
+      {"volatile", "float f(volatile float&n){return n;}", "TR0201"},
+      {"dynamic-static", "float f(float n){static float value=n;return value;}", "TR0201"},
+      {"dynamic-global", "float seed(){return 1.5f;}float value=seed();", "TR0201"},
+      {"complex", "_Complex double value;", "TR0201"},
+      {"source-fp-pragma", "#pragma STDC FP_CONTRACT ON\nfloat f(float a,float b,float c){return a*b+c;}", "TR0201"},
+      {"remainder", "float f(float a,float b){return a%b;}", "TR0202"},
+      {"bitwise", "float f(float a,float b){return a&b;}", "TR0202"},
+      {"floating-nttp", "template<double N>int f(){return 1;}", "TR0202"},
+      {"narrowing-list", "int main(){float n{1.5};int value{n};return value;}", "TR0202"},
+      {"drop-const", "float&f(const float&n){return n;}", "TR0202"},
+      {"missing-definition", "float f(float);float g(){return f(1.5f);}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("floating-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("floating-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("floating-v1.cpp");
+  const auto Output = tmpFile("floating-v1.nc");
+  writeFile(Source, "float f(float n){return n+1.0f;}");
+  auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
 }
 
 TEST_F(TranslateTest, CoreV2DeletedDeclarationsPreserveSelectedConstruction) {
@@ -8129,10 +8345,10 @@ TEST_F(TranslateTest, CoreV2DeletedDeclarationsRetainSourceDiagnostics) {
       {"member-template", "struct R{template<class T>int denied(T)=delete;};int main(){R r;return r.denied(3);}", "TR0202"},
       {"friend-template", "struct R{template<class T>friend int get(R,T)=delete;};int main(){return get(R{},3);}", "TR0202"},
       {"function-full", "template<class T>int get(T n){return n;}template<>int get<bool>(bool)=delete;int main(){return get(true);}", "TR0202"},
-      {"float-signature", "double denied(int)=delete;", "TR0201"},
-      {"float-parameter", "int denied(double)=delete;", "TR0201"},
-      {"hidden-default", "int denied(int n=sizeof(double))=delete;", "TR0201"},
-      {"hidden-noexcept", "int denied()noexcept(sizeof(double)>0)=delete;", "TR0201"},
+      {"float-signature", "long double denied(int)=delete;", "TR0201"},
+      {"float-parameter", "int denied(long double)=delete;", "TR0201"},
+      {"hidden-default", "int denied(int n=sizeof(long double))=delete;", "TR0201"},
+      {"hidden-noexcept", "int denied()noexcept(sizeof(long double)>0)=delete;", "TR0201"},
       {"volatile-method", "struct R{int denied()volatile=delete;};", "TR0201"},
       {"virtual-method", "struct R{virtual int denied()=delete;};", "TR0201"},
       {"variadic", "int denied(...)=delete;", "TR0201"},
@@ -8297,8 +8513,8 @@ TEST_F(TranslateTest, CoreV2ConstFieldsRetainSourceRestrictions) {
       {"uninitialized-constructor", "struct R{const int n;R(){}};", "TR0202"},
       {"volatile", "struct R{const volatile int n;};", "TR0201"},
       {"mutable", "struct R{mutable int n;};", "TR0201"},
-      {"float", "struct R{const double n;};", "TR0201"},
-      {"hidden-constant", "struct R{const int n=sizeof(double);};", "TR0201"},
+      {"float", "struct R{const long double n;};", "TR0201"},
+      {"hidden-constant", "struct R{const int n=sizeof(long double);};", "TR0201"},
       {"missing-copy", "struct R{const int n;R(int v):n(v){}R(const R&);};int main(){R a(3);R b(a);return b.n;}", "TR0203"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
@@ -8440,11 +8656,11 @@ TEST_F(TranslateTest, CoreV2DelegatingConstructorsAcceptSelectedTargets) {
 
 TEST_F(TranslateTest, CoreV2DelegatingConstructorsRetainSourceBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"hidden-target-type", "template<class T,int N>using Alias=T;struct R{int n;R():Alias<R,sizeof(double)>(3){}R(int v):n(v){}};", "TR0201"},
-      {"hidden-dependent-target-type", "template<class T,int N>using Alias=T;template<class T>struct R{T n;R():Alias<R<T>,sizeof(double)>(3){}R(T v):n(v){}};int main(){R<int>r;return r.n;}", "TR0201"},
-      {"floating-argument", "struct R{int n;R():R(sizeof(double)){}R(int v):n(v){}};", "TR0201"},
-      {"constant-hidden-argument", "struct R{int n;constexpr R():R(sizeof(double)){}constexpr R(int v):n(v){}};constexpr R r;", "TR0201"},
-      {"dead-body", "struct R{int n;R():R(3){if(false)(void)1.0;}R(int v):n(v){}};", "TR0201"},
+      {"hidden-target-type", "template<class T,int N>using Alias=T;struct R{int n;R():Alias<R,sizeof(long double)>(3){}R(int v):n(v){}};", "TR0201"},
+      {"hidden-dependent-target-type", "template<class T,int N>using Alias=T;template<class T>struct R{T n;R():Alias<R<T>,sizeof(long double)>(3){}R(T v):n(v){}};int main(){R<int>r;return r.n;}", "TR0201"},
+      {"floating-argument", "struct R{int n;R():R(sizeof(long double)){}R(int v):n(v){}};", "TR0201"},
+      {"constant-hidden-argument", "struct R{int n;constexpr R():R(sizeof(long double)){}constexpr R(int v):n(v){}};constexpr R r;", "TR0201"},
+      {"dead-body", "struct R{int n;R():R(3){if(false)(void)1.0L;}R(int v):n(v){}};", "TR0201"},
       {"base", "struct B{B(int){}};struct R:B{R():R(3){}R(int n):B(n){}};", "TR0201"},
       {"virtual", "struct R{R():R(3){}R(int){}virtual void f(){}};", "TR0201"},
       {"variadic", "struct R{R():R(3){}R(int,...){}};", "TR0201"},
@@ -8659,10 +8875,10 @@ TEST_F(TranslateTest, CoreV2NullPtrValuesRetainSourceBoundaries) {
       {"dynamic-static", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N g(){static N n=f();return n;}", "TR0201"},
       {"dynamic-member", "using N=decltype(nullptr);N f(){return nullptr;}struct R{inline static N n=f();};", "TR0201"},
       {"dynamic-template", "using N=decltype(nullptr);N f(){return nullptr;}template<class T>inline N n=f();int main(){return n<int> != nullptr;}", "TR0201"},
-      {"hidden-decltype", "using N=decltype((sizeof(double),nullptr));", "TR0201"},
-      {"hidden-initializer", "constexpr auto n=(sizeof(double),nullptr);", "TR0201"},
-      {"hidden-noexcept", "bool f(){return noexcept((sizeof(double),nullptr));}", "TR0201"},
-      {"hidden-default", "void f(decltype(nullptr) n=(sizeof(double),nullptr)){}", "TR0201"},
+      {"hidden-decltype", "using N=decltype((sizeof(long double),nullptr));", "TR0201"},
+      {"hidden-initializer", "constexpr auto n=(sizeof(long double),nullptr);", "TR0201"},
+      {"hidden-noexcept", "bool f(){return noexcept((sizeof(long double),nullptr));}", "TR0201"},
+      {"hidden-default", "void f(decltype(nullptr) n=(sizeof(long double),nullptr)){}", "TR0201"},
       {"null-template-argument", "template<auto N>int f(){return 0;}int main(){return f<nullptr>();}", "TR0201"},
       {"arithmetic", "auto f(){return nullptr+1;}", "TR0202"},
       {"ordering", "bool f(){return nullptr<nullptr;}", "TR0202"},
@@ -8888,9 +9104,9 @@ TEST_F(TranslateTest, CoreV2FunctionPointersRetainSourceAndSignatureBoundaries) 
       {"nonstatic-member", "struct R{int get(){return 3;}};int main(){auto p=&R::get;R r;return (r.*p)();}"},
       {"variadic", "int get(int,...){return 3;}int main(){auto p=&get;return p(1,2);}"},
       {"lambda-conversion", "int main(){int(*p)(int)=[](int n){return n;};return p(3);}"},
-      {"double-signature", "double get(double n){return n;}int main(){auto p=&get;return int(p(3.0));}"},
-      {"hidden-signature", "using I=decltype((sizeof(double),1));int get(I n){return n;}int main(){auto p=&get;return p(3);}"},
-      {"hidden-erased-alias", "template<class T>using F=int(*)();using P=F<decltype((sizeof(double),1))>;int get(){return 3;}P p=get;"},
+      {"double-signature", "long double get(long double n){return n;}int main(){auto p=&get;return int(p(3.0L));}"},
+      {"hidden-signature", "using I=decltype((sizeof(long double),1));int get(I n){return n;}int main(){auto p=&get;return p(3);}"},
+      {"hidden-erased-alias", "template<class T>using F=int(*)();using P=F<decltype((sizeof(long double),1))>;int get(){return 3;}P p=get;"},
       {"function-to-object", "int get(){return 3;}int main(){void*p=reinterpret_cast<void*>(&get);return p!=nullptr;}"},
       {"object-to-function", "int main(){void*p=nullptr;auto f=reinterpret_cast<int(*)()>(p);return f!=nullptr;}"},
       {"function-to-integer", "int get(){return 3;}int main(){return int(reinterpret_cast<unsigned long long>(&get));}"},
@@ -9107,14 +9323,14 @@ TEST_F(TranslateTest, CoreV2TemplateFunctionPointersRetainSourceAndSignatureBoun
       {"function-reference", "template<class T>T get(T n){return n;}int main(){int(&p)(int)=get<int>;return p(3);}"},
       {"nonstatic-member", "struct R{template<class T>T get(T n){return n;}};int main(){auto p=&R::get<int>;R r;return (r.*p)(3);}"},
       {"variadic", "template<class T>int get(T n,...){return 3;}int main(){auto p=&get<int>;return p(1,2);}"},
-      {"hidden-explicit-type", "template<class T>int get(int n){return n;}int main(){auto p=&get<decltype((sizeof(double),1))>;return p(3);}"},
-      {"hidden-explicit-value", "template<int N>int get(int n){return n;}int main(){auto p=&get<(sizeof(double),1)>;return p(3);}"},
-      {"hidden-type-default", "template<class T=decltype((sizeof(double),1))>int get(int n){return n;}int main(){auto p=&get<>;return p(3);}"},
-      {"hidden-scalar-default", "template<class T,int N=(sizeof(double),1)>T get(T n){return n;}int main(){int(*p)(int)=get;return p(3);}"},
-      {"hidden-alias-argument", "template<class T>using I=int;template<class T>int get(int n){return n;}int main(){auto p=&get<I<decltype((sizeof(double),1))>>;return p(3);}"},
-      {"folded-address-source", "template<class T>int get(int n){return n;}static_assert((&get<decltype((sizeof(double),1))>,true));"},
-      {"noexcept-address-source", "template<class T>int get(int n){return n;}int main(){return noexcept(&get<decltype((sizeof(double),1))>);}"},
-      {"unsupported-selected-body", "template<class T>int get(int n){double x=1.0;return n;}int main(){auto p=&get<int>;return p(3);}"},
+      {"hidden-explicit-type", "template<class T>int get(int n){return n;}int main(){auto p=&get<decltype((sizeof(long double),1))>;return p(3);}"},
+      {"hidden-explicit-value", "template<int N>int get(int n){return n;}int main(){auto p=&get<(sizeof(long double),1)>;return p(3);}"},
+      {"hidden-type-default", "template<class T=decltype((sizeof(long double),1))>int get(int n){return n;}int main(){auto p=&get<>;return p(3);}"},
+      {"hidden-scalar-default", "template<class T,int N=(sizeof(long double),1)>T get(T n){return n;}int main(){int(*p)(int)=get;return p(3);}"},
+      {"hidden-alias-argument", "template<class T>using I=int;template<class T>int get(int n){return n;}int main(){auto p=&get<I<decltype((sizeof(long double),1))>>;return p(3);}"},
+      {"folded-address-source", "template<class T>int get(int n){return n;}static_assert((&get<decltype((sizeof(long double),1))>,true));"},
+      {"noexcept-address-source", "template<class T>int get(int n){return n;}int main(){return noexcept(&get<decltype((sizeof(long double),1))>);}"},
+      {"unsupported-selected-body", "template<class T>int get(int n){long double x=1.0L;return n;}int main(){auto p=&get<int>;return p(3);}"},
       {"pointer-nontype-argument", "int get(){return 3;}template<int(*P)()>int invoke(){return P();}int main(){auto p=&invoke<get>;return p();}"},
       {"nondefault-pointee-address-space", "typedef int __attribute__((address_space(1))) A;template<class T>int get(T*p){return 3;}int main(){auto p=&get<A>;return 0;}"},
   };
@@ -9307,13 +9523,13 @@ TEST_F(TranslateTest, CoreV2CallbackVariableTemplatesRetainSourceAndSignatureBou
       {"nonstatic-member-pointer", "struct R{int get(){return 3;}};template<class T>auto p=&R::get;int main(){R r;return (r.*p<int>)();}"},
       {"record-callback-signature", "struct R{int n;};int get(R r){return r.n;}template<class T>auto p=&get;int main(){return p<int>(R{3});}"},
       {"pointer-nontype-argument", "int get(){return 3;}template<int(*P)()>auto p=P;int main(){return p<get>();}"},
-      {"hidden-written-argument", "int get(){return 3;}template<class T>auto p=&get;int main(){return p<decltype((sizeof(double),1))>();}"},
-      {"hidden-default-argument", "int get(){return 3;}template<class T=decltype((sizeof(double),1))>auto p=&get;int main(){return p<>();}"},
-      {"hidden-initializer", "int get(){return 3;}template<class T>auto p=(sizeof(double),&get);int main(){return p<int>();}"},
-      {"hidden-target-argument", "template<class T>int get(){return 3;}template<class T>auto p=&get<decltype((sizeof(double),1))>;int main(){return p<int>();}"},
-      {"hidden-type-alias", "template<class T>using F=int(*)();int get(){return 3;}template<class T>F<decltype((sizeof(double),1))>p=&get;int main(){return p<int>();}"},
-      {"folded-address-source", "int get(){return 3;}template<class T>auto p=&get;static_assert((&p<decltype((sizeof(double),1))>,true));"},
-      {"noexcept-source", "int get(){return 3;}template<class T>auto p=&get;int main(){return noexcept(p<decltype((sizeof(double),1))>());}"},
+      {"hidden-written-argument", "int get(){return 3;}template<class T>auto p=&get;int main(){return p<decltype((sizeof(long double),1))>();}"},
+      {"hidden-default-argument", "int get(){return 3;}template<class T=decltype((sizeof(long double),1))>auto p=&get;int main(){return p<>();}"},
+      {"hidden-initializer", "int get(){return 3;}template<class T>auto p=(sizeof(long double),&get);int main(){return p<int>();}"},
+      {"hidden-target-argument", "template<class T>int get(){return 3;}template<class T>auto p=&get<decltype((sizeof(long double),1))>;int main(){return p<int>();}"},
+      {"hidden-type-alias", "template<class T>using F=int(*)();int get(){return 3;}template<class T>F<decltype((sizeof(long double),1))>p=&get;int main(){return p<int>();}"},
+      {"folded-address-source", "int get(){return 3;}template<class T>auto p=&get;static_assert((&p<decltype((sizeof(long double),1))>,true));"},
+      {"noexcept-source", "int get(){return 3;}template<class T>auto p=&get;int main(){return noexcept(p<decltype((sizeof(long double),1))>());}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -9445,8 +9661,8 @@ TEST_F(TranslateTest, CoreV2CopiedFullInitializersAcceptDefaults) {
 
 TEST_F(TranslateTest, CoreV2CopiedFullInitializersRetainSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"hidden-default-source", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=static_cast<int>(1.0);};};int f(){O<int>::I<int>v;return v.n;}"},
-      {"hidden-outer-source", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=sizeof(T);};};int f(){O<double>::I<int>v;return v.n;}"},
+      {"hidden-default-source", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=static_cast<int>(1.0L);};};int f(){O<int>::I<int>v;return v.n;}"},
+      {"hidden-outer-source", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=sizeof(T);};};int f(){O<long double>::I<int>v;return v.n;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -9746,7 +9962,7 @@ TEST_F(TranslateTest, CoreV2VariableTemplatesAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2VariableTemplatesRetainSourceAndResourceChecks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"floating-result", "template<class T>constexpr double value=1.0;int main(){return int(value<int>);}"},
+      {"floating-result", "template<class T>constexpr long double value=1.0L;int main(){return int(value<int>);}"},
       {"pointer-result", "template<class T>constexpr T*value=nullptr;int main(){return value<int> == nullptr;}"},
       {"reference-result", "int n=3;template<class T>int&value=n;int main(){return value<int>;}"},
       {"array-result", "template<class T>int value[2]={1,2};int main(){return value<int>[1];}"},
@@ -9755,30 +9971,30 @@ TEST_F(TranslateTest, CoreV2VariableTemplatesRetainSourceAndResourceChecks) {
       {"thread-local", "template<class T>thread_local int value=3;int main(){return value<int>;}"},
       {"volatile-result", "template<class T>volatile int value=3;int main(){return value<int>;}"},
       {"template-template", "template<class T>struct R{};template<template<class>class C>constexpr int value=3;int main(){return value<R>;}"},
-      {"hidden-actual-type", "template<class>using I=int;template<class T>constexpr int value=3;int main(){return value<I<decltype(1.0)>>;}"},
-      {"hidden-actual-scalar", "template<int N>constexpr int value=N;int main(){return value<int(1.0)>;}"},
-      {"hidden-default-type", "template<class>using I=int;template<class T=I<decltype(1.0)>>constexpr int value=3;int main(){return value<>;}"},
-      {"hidden-default-scalar", "template<int N=int(1.0)>constexpr int value=N;int main(){return value<>;}"},
-      {"hidden-parameter-type", "template<class>using I=int;template<class T,I<decltype(T{}+1.0)> N>constexpr int value=N;int main(){return value<int,3>;}"},
-      {"hidden-first-type", "template<class>using I=int;template<class T>I<decltype(T{}+1.0)> value=3;int main(){return value<int>;}"},
-      {"hidden-definition-type", "template<class T>extern int value;template<class>using I=int;template<class T>I<decltype(T{}+1.0)> value=3;int main(){return value<int>;}"},
-      {"hidden-initializer", "template<class T>constexpr int value=int(T{}+1.0);int main(){return value<int>;}"},
-      {"hidden-full-declaration", "template<class>using I=int;template<class T>int value=1;template<>I<decltype(1.0)> value<int> = 3;int main(){return value<int>;}"},
-      {"hidden-directive-type", "template<class>using I=int;template<class T>int value=3;template I<decltype(1.0)> value<int>;"},
-      {"hidden-no-effect-directive", "template<class>using I=int;template<class T>int value=1;template<>int value<int> = 3;template I<decltype(1.0)> value<int>;"},
-      {"hidden-partial-initializer", "template<class T>constexpr int value=0;template<class T>constexpr int value<T*> = int(T{}+1.0);int main(){return value<int*>;}"},
-      {"partial-pattern-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 3;int main(){return value<int*,int>;}"},
-      {"partial-parameter-type-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class T,int N>int value=0;template<class T,K<T> N>int value<T*,N> = N;int main(){return value<int*,3>;}"},
-      {"partial-parameter-pack-empty-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class H,int...N>int value=0;template<class T,K<T>...N>int value<T*,N...> = (0+...+N);int main(){return value<int*>;}"},
-      {"partial-parameter-pack-nonempty-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class H,int...N>int value=0;template<class T,K<T>...N>int value<T*,N...> = (0+...+N);int main(){return value<int*,2,3>;}"},
-      {"explicit-partial-pattern-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 3;template int value<int*,int>;"},
-      {"cached-hidden-written-use", "template<class>using I=int;template<class T>int value=3;int main(){int n=value<int>;return n+value<I<decltype(1.0)>>;}"},
+      {"hidden-actual-type", "template<class>using I=int;template<class T>constexpr int value=3;int main(){return value<I<decltype(1.0L)>>;}"},
+      {"hidden-actual-scalar", "template<int N>constexpr int value=N;int main(){return value<int(1.0L)>;}"},
+      {"hidden-default-type", "template<class>using I=int;template<class T=I<decltype(1.0L)>>constexpr int value=3;int main(){return value<>;}"},
+      {"hidden-default-scalar", "template<int N=int(1.0L)>constexpr int value=N;int main(){return value<>;}"},
+      {"hidden-parameter-type", "template<class>using I=int;template<class T,I<decltype(T{}+1.0L)> N>constexpr int value=N;int main(){return value<int,3>;}"},
+      {"hidden-first-type", "template<class>using I=int;template<class T>I<decltype(T{}+1.0L)> value=3;int main(){return value<int>;}"},
+      {"hidden-definition-type", "template<class T>extern int value;template<class>using I=int;template<class T>I<decltype(T{}+1.0L)> value=3;int main(){return value<int>;}"},
+      {"hidden-initializer", "template<class T>constexpr int value=int(T{}+1.0L);int main(){return value<int>;}"},
+      {"hidden-full-declaration", "template<class>using I=int;template<class T>int value=1;template<>I<decltype(1.0L)> value<int> = 3;int main(){return value<int>;}"},
+      {"hidden-directive-type", "template<class>using I=int;template<class T>int value=3;template I<decltype(1.0L)> value<int>;"},
+      {"hidden-no-effect-directive", "template<class>using I=int;template<class T>int value=1;template<>int value<int> = 3;template I<decltype(1.0L)> value<int>;"},
+      {"hidden-partial-initializer", "template<class T>constexpr int value=0;template<class T>constexpr int value<T*> = int(T{}+1.0L);int main(){return value<int*>;}"},
+      {"partial-pattern-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 3;int main(){return value<int*,int>;}"},
+      {"partial-parameter-type-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class T,int N>int value=0;template<class T,K<T> N>int value<T*,N> = N;int main(){return value<int*,3>;}"},
+      {"partial-parameter-pack-empty-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class H,int...N>int value=0;template<class T,K<T>...N>int value<T*,N...> = (0+...+N);int main(){return value<int*>;}"},
+      {"partial-parameter-pack-nonempty-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class H,int...N>int value=0;template<class T,K<T>...N>int value<T*,N...> = (0+...+N);int main(){return value<int*,2,3>;}"},
+      {"explicit-partial-pattern-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class A,class B>int value=0;template<class T>int value<T*,K<T>> = 3;template int value<int*,int>;"},
+      {"cached-hidden-written-use", "template<class>using I=int;template<class T>int value=3;int main(){int n=value<int>;return n+value<I<decltype(1.0L)>>;}"},
       {"type-pack-65", "template<class...T>constexpr int value=sizeof...(T);int main(){return value<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>;}"},
       {"value-pack-65", "template<int...N>constexpr int value=(0+...+N);int main(){return value<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>;}"},
-      {"full-auto-hidden-initializer", "template<class T>constexpr auto value=1;template<>constexpr auto value<int> = int(1.0);int main(){return value<int>;}"},
+      {"full-auto-hidden-initializer", "template<class T>constexpr auto value=1;template<>constexpr auto value<int> = int(1.0L);int main(){return value<int>;}"},
       {"source-depth-65", "template<int N>constexpr int value=N;int main(){return value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<value<0>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;}"},
-      {"written-const-auto-hidden-initializer", "template<class T>const auto value=int(1.0);int main(){return value<int>;}"},
-      {"full-written-const-auto-hidden-initializer", "template<class T>const auto value=1;template<>const auto value<int> = int(1.0);int main(){return value<int>;}"},
+      {"written-const-auto-hidden-initializer", "template<class T>const auto value=int(1.0L);int main(){return value<int>;}"},
+      {"full-written-const-auto-hidden-initializer", "template<class T>const auto value=1;template<>const auto value<int> = int(1.0L);int main(){return value<int>;}"},
       {"written-const-volatile-auto", "template<class T>const volatile auto value=3;int main(){return value<int>;}"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -10029,18 +10245,18 @@ TEST_F(TranslateTest, CoreV2ClassPartialsRetainSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"type-pack-65", "template<class H,class...T>struct R;template<class...T>struct R<int,T...>{int n=sizeof...(T);};int main(){R<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r{};return r.n;}"},
       {"scalar-pack-65", "template<int H,int...N>struct R;template<int...N>struct R<1,N...>{int n=(0+...+N);};int main(){R<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r{};return r.n;}"},
-      {"alias-pattern-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=3;};int main(){R<int*,int>r{};return r.n;}"},
-      {"parameter-type-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class T,int N>struct R;template<class T,K<T> N>struct R<T*,N>{int n=N;};int main(){R<int*,3>r{};return r.n;}"},
-      {"parameter-pack-type-empty-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class H,int...N>struct R;template<class T,K<T>...N>struct R<T*,N...>{int n=(0+...+N);};int main(){R<int*>r{};return r.n;}"},
-      {"parameter-pack-type-nonempty-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class H,int...N>struct R;template<class T,K<T>...N>struct R<T*,N...>{int n=(0+...+N);};int main(){R<int*,2,3>r{};return r.n;}"},
-      {"scalar-pattern-hidden", "template<class T,int N>struct R;template<class T>struct R<T*,static_cast<int>((sizeof(double),sizeof(T)))>{int n=3;};int main(){R<int*,sizeof(int)>r{};return r.n;}"},
-      {"explicit-pattern-hidden", "template<class T>using K=decltype((sizeof(double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=3;};template struct R<int*,int>;"},
-      {"unused-nondependent-pattern-hidden", "template<class A,class B>struct R;template<class T>struct R<T*,decltype((sizeof(double),int{}))>{int n;};"},
-      {"actual-argument-hidden", "template<class T>struct R;template<class T>struct R<T*>{int n=3;};int main(){R<decltype((sizeof(double),int{}))* >r{};return r.n;}"},
-      {"selected-floating-field", "template<class T>struct R;template<class T>struct R<T*>{double n;};int main(){R<int*>r{};return 0;}"},
-      {"selected-floating-method", "template<class T>struct R;template<class T>struct R<T*>{int f(){return static_cast<int>(1.0);}};int main(){return R<int*>{}.f();}"},
-      {"selected-floating-default", "template<class T>struct R;template<class T>struct R<T*>{int f(int n=static_cast<int>(1.0)){return n;}};int main(){return R<int*>{}.f();}"},
-      {"selected-floating-static", "template<class T>struct R;template<class T>struct R<T*>{inline static int n=static_cast<int>(1.0);};int main(){return R<int*>::n;}"},
+      {"alias-pattern-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=3;};int main(){R<int*,int>r{};return r.n;}"},
+      {"parameter-type-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class T,int N>struct R;template<class T,K<T> N>struct R<T*,N>{int n=N;};int main(){R<int*,3>r{};return r.n;}"},
+      {"parameter-pack-type-empty-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class H,int...N>struct R;template<class T,K<T>...N>struct R<T*,N...>{int n=(0+...+N);};int main(){R<int*>r{};return r.n;}"},
+      {"parameter-pack-type-nonempty-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class H,int...N>struct R;template<class T,K<T>...N>struct R<T*,N...>{int n=(0+...+N);};int main(){R<int*,2,3>r{};return r.n;}"},
+      {"scalar-pattern-hidden", "template<class T,int N>struct R;template<class T>struct R<T*,static_cast<int>((sizeof(long double),sizeof(T)))>{int n=3;};int main(){R<int*,sizeof(int)>r{};return r.n;}"},
+      {"explicit-pattern-hidden", "template<class T>using K=decltype((sizeof(long double),sizeof(T),int{}));template<class A,class B>struct R;template<class T>struct R<T*,K<T>>{int n=3;};template struct R<int*,int>;"},
+      {"unused-nondependent-pattern-hidden", "template<class A,class B>struct R;template<class T>struct R<T*,decltype((sizeof(long double),int{}))>{int n;};"},
+      {"actual-argument-hidden", "template<class T>struct R;template<class T>struct R<T*>{int n=3;};int main(){R<decltype((sizeof(long double),int{}))* >r{};return r.n;}"},
+      {"selected-floating-field", "template<class T>struct R;template<class T>struct R<T*>{long double n;};int main(){R<int*>r{};return 0;}"},
+      {"selected-floating-method", "template<class T>struct R;template<class T>struct R<T*>{int f(){return static_cast<int>(1.0L);}};int main(){return R<int*>{}.f();}"},
+      {"selected-floating-default", "template<class T>struct R;template<class T>struct R<T*>{int f(int n=static_cast<int>(1.0L)){return n;}};int main(){return R<int*>{}.f();}"},
+      {"selected-floating-static", "template<class T>struct R;template<class T>struct R<T*>{inline static int n=static_cast<int>(1.0L);};int main(){return R<int*>::n;}"},
       {"base", "struct B{int n;};template<class T>struct R;template<class T>struct R<T*>:B{int m;};"},
       {"volatile-pointee", "template<class T>struct R;template<class T>struct R<T*>{T*n;};int main(){volatile int n=3;R<volatile int*>r{&n};return 0;}"},
       {"pointer-nontype", "int n;template<int*P,class T>struct R;template<int*P,class T>struct R<P,T*>{int n;};"},
@@ -10336,23 +10552,23 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesAcceptConcreteTypesAndSelectedDefaults
 
 TEST_F(TranslateTest, CoreV2AliasTemplatesRetainSourceAndResourceChecks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"ignored-floating-type", "template<class T>using I=int;I<double>f(){return 3;}"},
-      {"ignored-floating-chain", "template<class T>using Ignore=int;template<class T>using Chain=Ignore<T>;Chain<double>f(){return 3;}"},
-      {"ignored-floating-value", "template<int N>using I=int;I<int(1.0)>f(){return 3;}"},
+      {"ignored-floating-type", "template<class T>using I=int;I<long double>f(){return 3;}"},
+      {"ignored-floating-chain", "template<class T>using Ignore=int;template<class T>using Chain=Ignore<T>;Chain<long double>f(){return 3;}"},
+      {"ignored-floating-value", "template<int N>using I=int;I<int(1.0L)>f(){return 3;}"},
       {"ignored-pointer-value", "int n;template<auto N>using I=int;I<&n>f(){return 3;}"},
       {"ignored-null-value", "template<auto N>using I=int;I<nullptr>f(){return 3;}"},
-      {"nondependent-floating-underlying", "template<class T>using I=double;"},
-      {"nondependent-folded-underlying", "template<class T>using I=int[sizeof(double)];"},
-      {"selected-folded-array", "template<int N>using I=int[sizeof(double)+N];int f(){I<1>a{};return sizeof(a);}"},
-      {"selected-folded-decltype", "template<class T>using I=decltype((sizeof(double),T{}));I<int>f(){return 3;}"},
-      {"ignored-floating-type-default", "template<class T=double>using I=int;"},
-      {"ignored-floating-scalar-default", "template<int N=int(1.0)>using I=int;"},
-      {"selected-dependent-scalar-default", "template<class T,int N=(sizeof(double)+sizeof(T))>using I=int;I<int>f(){return 3;}"},
-      {"function-nondependent-type-default", "template<class T=double>int f(){return 3;}"},
-      {"function-erased-alias-default", "template<class T>using I=int;template<class T=I<double>>int f(){return 3;}"},
-      {"class-erased-alias-default", "template<class T>using I=int;template<class T=I<double>>struct R{int n;};"},
-      {"selected-alias-body", "template<class T>using I=int;template<class T>int f(){I<double>n=3;return n;}int g(){return f<int>();}"},
-      {"selected-function-default", "template<class T,int N=(sizeof(double)+sizeof(T))>int f(T){return N;}int g(){return f(3);}"},
+      {"nondependent-floating-underlying", "template<class T>using I=long double;"},
+      {"nondependent-folded-underlying", "template<class T>using I=int[sizeof(long double)];"},
+      {"selected-folded-array", "template<int N>using I=int[sizeof(long double)+N];int f(){I<1>a{};return sizeof(a);}"},
+      {"selected-folded-decltype", "template<class T>using I=decltype((sizeof(long double),T{}));I<int>f(){return 3;}"},
+      {"ignored-floating-type-default", "template<class T=long double>using I=int;"},
+      {"ignored-floating-scalar-default", "template<int N=int(1.0L)>using I=int;"},
+      {"selected-dependent-scalar-default", "template<class T,int N=(sizeof(long double)+sizeof(T))>using I=int;I<int>f(){return 3;}"},
+      {"function-nondependent-type-default", "template<class T=long double>int f(){return 3;}"},
+      {"function-erased-alias-default", "template<class T>using I=int;template<class T=I<long double>>int f(){return 3;}"},
+      {"class-erased-alias-default", "template<class T>using I=int;template<class T=I<long double>>struct R{int n;};"},
+      {"selected-alias-body", "template<class T>using I=int;template<class T>int f(){I<long double>n=3;return n;}int g(){return f<int>();}"},
+      {"selected-function-default", "template<class T,int N=(sizeof(long double)+sizeof(T))>int f(T){return N;}int g(){return f(3);}"},
       {"template-template-parameter", "template<template<class>class T>using I=int;"},
       {"function-type", "template<class T>using I=T();I<int>*f(){return nullptr;}"},
       {"volatile-type", "template<class T>using I=volatile T;I<int>f(){return 3;}"},
@@ -10360,50 +10576,50 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesRetainSourceAndResourceChecks) {
       {"zero-array", "template<int N>using I=int[N];int f(){I<0>a{};return sizeof(a);}"},
       {"pack-65", "template<class...T>using I=int;I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>f(){return 3;}"},
       {"selected-pack-overflow", "template<class...T>using I=int;template<class T>int f(){I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>n=3;return n;}int g(){return f<int>();}"},
-      {"class-specialization-scalar-bad", "template<class T,int N=(sizeof(double)+sizeof(T))>struct R{int n;};template<>struct R<int>{int n;};"},
-      {"class-specialization-type-bad", "template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};template<>struct R<int>{int n;};"},
-      {"class-instantiation-scalar-bad", "template<class T,int N=(sizeof(double)+sizeof(T))>struct R{int n;};template struct R<int>;"},
-      {"class-instantiation-type-bad", "template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};template struct R<int>;"},
-      {"class-extern-scalar-bad", "template<class T,int N=(sizeof(double)+sizeof(T))>struct R{int n;};extern template struct R<int>;"},
-      {"class-extern-type-bad", "template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};extern template struct R<int>;"},
-      {"class-repeated-scalar-bad", "template<class T,int N=(sizeof(double)+sizeof(T))>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;"},
-      {"class-repeated-type-bad", "template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;"},
-      {"function-specialization-scalar-bad", "template<class T,int N=(sizeof(double)+sizeof(T))>int f(){return 3;}template<>int f<int>();"},
-      {"function-specialization-type-bad", "template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}template<>int f<int>();"},
-      {"function-repeated-scalar-bad", "template<class T,int N=(sizeof(double)+sizeof(T))>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
-      {"function-repeated-type-bad", "template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
-      {"function-instantiation-scalar-bad", "template<class T,int N=(sizeof(double)+sizeof(T))>int f(){return 3;}extern template int f<int>();template int f<int>();"},
-      {"function-instantiation-type-bad", "template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}extern template int f<int>();template int f<int>();"},
-      {"alias-same-canonical-selected-type-default", "template<class T,class U=decltype((sizeof(double),T{}))>using I=int;template<class T>int used(){I<int>n=3;return n;}I<int,int>g(){return 3;}int h(){return used<int>();}"},
-      {"class-same-canonical-selected-type-default", "template<class T,class U=decltype((sizeof(double),T{}))>struct R{int n;};template<class T>int used(){R<int>r{3};return r.n;}int g(){R<int,int>r{3};return r.n;}int h(){return used<int>();}"},
-      {"function-same-canonical-selected-type-default", "template<class T,class U=decltype((sizeof(double),T{}))>int f(){return 3;}template<class T>int used(){return f<int>();}int g(){return f<int,int>();}int h(){return used<int>();}"},
-      {"nttp-function-explicit", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}int g(){return f<int,3>();}"},
-      {"nttp-function-default", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}int g(){return f<int>();}"},
-      {"nttp-function-earlier-default", "template<class T>using K=decltype((sizeof(double),T{}));template<class T=int,K<T> N=4>int f(){return N;}int g(){return f<>();}"},
-      {"nttp-function-alias-argument", "template<class T>using K=decltype((sizeof(double),T{}));template<class T>using I=T;template<class T,K<T> N=4>int f(){return N;}int g(){return f<I<int>,3>();}"},
-      {"nttp-class-explicit", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};int g(){R<int,3>r{7};return r.n;}"},
-      {"nttp-class-default", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};int g(){R<int>r{7};return r.n;}"},
-      {"nttp-class-earlier-default", "template<class T>using K=decltype((sizeof(double),T{}));template<class T=int,K<T> N=4>struct R{int n;};int g(){R<>r{7};return r.n;}"},
-      {"nttp-alias-explicit", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>using I=int;I<int,3>g(){return 7;}"},
-      {"nttp-alias-default", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>using I=int;I<int>g(){return 7;}"},
-      {"nttp-alias-earlier-default", "template<class T>using K=decltype((sizeof(double),T{}));template<class T=int,K<T> N=4>using I=int;I<>g(){return 7;}"},
-      {"nttp-function-empty-pack", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>int f(){return sizeof...(N);}int g(){return f<int>();}"},
-      {"nttp-function-nonempty-pack", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>int f(){return(0+...+N);}int g(){return f<int,1,2>();}"},
-      {"nttp-class-nonempty-pack", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>struct R{int n;};int g(){R<int,1,2>r{7};return r.n;}"},
-      {"nttp-alias-nonempty-pack", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T>...N>using I=int;I<int,1,2>g(){return 7;}"},
-      {"nttp-function-inherited", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f();template<class T,K<T> N>int f(){return N;}int g(){return f<int,3>();}"},
-      {"nttp-class-inherited", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R;template<class T,K<T> N>struct R{int n;};int g(){R<int,3>r{7};return r.n;}"},
-      {"nttp-function-deduced", "template<class T>using K=decltype((sizeof(double),T{}));template<int N>struct Tag{int n;};template<class T,K<T> N>int f(Tag<N>v){return N+v.n;}int g(){return f<int>(Tag<3>{7});}"},
-      {"nttp-function-extended-pack", "template<class T>using K=decltype((sizeof(double),T{}));template<int N>struct Tag{int n;};template<class T,K<T>...N>int f(Tag<N>...v){return(0+...+N);}int g(){return f<int,1>(Tag<1>{3},Tag<2>{4});}"},
-      {"nttp-recursive-primary", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=0>int f(){if constexpr(N==0){return f<T,1>();}else{return N;}}int g(){return f<int>();}"},
-      {"nttp-function-instantiation", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}template int f<int,3>();"},
-      {"nttp-function-extern-instantiation", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}extern template int f<int,3>();"},
-      {"nttp-function-specialization", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}template<>int f<int,3>(){return 3;}"},
-      {"nttp-class-instantiation", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};template struct R<int,3>;"},
-      {"nttp-class-extern-instantiation", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};extern template struct R<int,3>;"},
-      {"nttp-class-repeated-instantiation", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};extern template struct R<int,3>;template struct R<int,3>;"},
-      {"nttp-class-specialization", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>struct R{int n;};template<>struct R<int,3>{int n;};"},
-      {"nttp-selected-body", "template<class T>using K=decltype((sizeof(double),T{}));template<class T,K<T> N=4>int f(){return N;}template<class T>int h(){return f<int,3>();}int g(){return h<int>();}"},
+      {"class-specialization-scalar-bad", "template<class T,int N=(sizeof(long double)+sizeof(T))>struct R{int n;};template<>struct R<int>{int n;};"},
+      {"class-specialization-type-bad", "template<class T,class U=decltype((sizeof(long double),T{}))>struct R{int n;};template<>struct R<int>{int n;};"},
+      {"class-instantiation-scalar-bad", "template<class T,int N=(sizeof(long double)+sizeof(T))>struct R{int n;};template struct R<int>;"},
+      {"class-instantiation-type-bad", "template<class T,class U=decltype((sizeof(long double),T{}))>struct R{int n;};template struct R<int>;"},
+      {"class-extern-scalar-bad", "template<class T,int N=(sizeof(long double)+sizeof(T))>struct R{int n;};extern template struct R<int>;"},
+      {"class-extern-type-bad", "template<class T,class U=decltype((sizeof(long double),T{}))>struct R{int n;};extern template struct R<int>;"},
+      {"class-repeated-scalar-bad", "template<class T,int N=(sizeof(long double)+sizeof(T))>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;"},
+      {"class-repeated-type-bad", "template<class T,class U=decltype((sizeof(long double),T{}))>struct R{int n;};extern template struct R<int>;extern template struct R<int>;template struct R<int>;"},
+      {"function-specialization-scalar-bad", "template<class T,int N=(sizeof(long double)+sizeof(T))>int f(){return 3;}template<>int f<int>();"},
+      {"function-specialization-type-bad", "template<class T,class U=decltype((sizeof(long double),T{}))>int f(){return 3;}template<>int f<int>();"},
+      {"function-repeated-scalar-bad", "template<class T,int N=(sizeof(long double)+sizeof(T))>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
+      {"function-repeated-type-bad", "template<class T,class U=decltype((sizeof(long double),T{}))>int f(){return 3;}template<>int f<int>();template<>int f<int>();"},
+      {"function-instantiation-scalar-bad", "template<class T,int N=(sizeof(long double)+sizeof(T))>int f(){return 3;}extern template int f<int>();template int f<int>();"},
+      {"function-instantiation-type-bad", "template<class T,class U=decltype((sizeof(long double),T{}))>int f(){return 3;}extern template int f<int>();template int f<int>();"},
+      {"alias-same-canonical-selected-type-default", "template<class T,class U=decltype((sizeof(long double),T{}))>using I=int;template<class T>int used(){I<int>n=3;return n;}I<int,int>g(){return 3;}int h(){return used<int>();}"},
+      {"class-same-canonical-selected-type-default", "template<class T,class U=decltype((sizeof(long double),T{}))>struct R{int n;};template<class T>int used(){R<int>r{3};return r.n;}int g(){R<int,int>r{3};return r.n;}int h(){return used<int>();}"},
+      {"function-same-canonical-selected-type-default", "template<class T,class U=decltype((sizeof(long double),T{}))>int f(){return 3;}template<class T>int used(){return f<int>();}int g(){return f<int,int>();}int h(){return used<int>();}"},
+      {"nttp-function-explicit", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>int f(){return N;}int g(){return f<int,3>();}"},
+      {"nttp-function-default", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>int f(){return N;}int g(){return f<int>();}"},
+      {"nttp-function-earlier-default", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T=int,K<T> N=4>int f(){return N;}int g(){return f<>();}"},
+      {"nttp-function-alias-argument", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T>using I=T;template<class T,K<T> N=4>int f(){return N;}int g(){return f<I<int>,3>();}"},
+      {"nttp-class-explicit", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>struct R{int n;};int g(){R<int,3>r{7};return r.n;}"},
+      {"nttp-class-default", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>struct R{int n;};int g(){R<int>r{7};return r.n;}"},
+      {"nttp-class-earlier-default", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T=int,K<T> N=4>struct R{int n;};int g(){R<>r{7};return r.n;}"},
+      {"nttp-alias-explicit", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>using I=int;I<int,3>g(){return 7;}"},
+      {"nttp-alias-default", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>using I=int;I<int>g(){return 7;}"},
+      {"nttp-alias-earlier-default", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T=int,K<T> N=4>using I=int;I<>g(){return 7;}"},
+      {"nttp-function-empty-pack", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T>...N>int f(){return sizeof...(N);}int g(){return f<int>();}"},
+      {"nttp-function-nonempty-pack", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T>...N>int f(){return(0+...+N);}int g(){return f<int,1,2>();}"},
+      {"nttp-class-nonempty-pack", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T>...N>struct R{int n;};int g(){R<int,1,2>r{7};return r.n;}"},
+      {"nttp-alias-nonempty-pack", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T>...N>using I=int;I<int,1,2>g(){return 7;}"},
+      {"nttp-function-inherited", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>int f();template<class T,K<T> N>int f(){return N;}int g(){return f<int,3>();}"},
+      {"nttp-class-inherited", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>struct R;template<class T,K<T> N>struct R{int n;};int g(){R<int,3>r{7};return r.n;}"},
+      {"nttp-function-deduced", "template<class T>using K=decltype((sizeof(long double),T{}));template<int N>struct Tag{int n;};template<class T,K<T> N>int f(Tag<N>v){return N+v.n;}int g(){return f<int>(Tag<3>{7});}"},
+      {"nttp-function-extended-pack", "template<class T>using K=decltype((sizeof(long double),T{}));template<int N>struct Tag{int n;};template<class T,K<T>...N>int f(Tag<N>...v){return(0+...+N);}int g(){return f<int,1>(Tag<1>{3},Tag<2>{4});}"},
+      {"nttp-recursive-primary", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=0>int f(){if constexpr(N==0){return f<T,1>();}else{return N;}}int g(){return f<int>();}"},
+      {"nttp-function-instantiation", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>int f(){return N;}template int f<int,3>();"},
+      {"nttp-function-extern-instantiation", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>int f(){return N;}extern template int f<int,3>();"},
+      {"nttp-function-specialization", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>int f(){return N;}template<>int f<int,3>(){return 3;}"},
+      {"nttp-class-instantiation", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>struct R{int n;};template struct R<int,3>;"},
+      {"nttp-class-extern-instantiation", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>struct R{int n;};extern template struct R<int,3>;"},
+      {"nttp-class-repeated-instantiation", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>struct R{int n;};extern template struct R<int,3>;template struct R<int,3>;"},
+      {"nttp-class-specialization", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>struct R{int n;};template<>struct R<int,3>{int n;};"},
+      {"nttp-selected-body", "template<class T>using K=decltype((sizeof(long double),T{}));template<class T,K<T> N=4>int f(){return N;}template<class T>int h(){return f<int,3>();}int g(){return h<int>();}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -10615,18 +10831,18 @@ TEST_F(TranslateTest, CoreV2ParameterPacksRetainSourceAndResourceChecks) {
       {"type-pack-65", "template<class...T>int f(){return sizeof...(T);}int main(){return f<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>();}"},
       {"value-pack-65", "template<int...N>int f(){return sizeof...(N);}int main(){return f<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>();}"},
       {"function-pack-65", "template<class...T>int f(T...v){return sizeof...(v);}int main(){return f(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1);}"},
-      {"counted-floating-type", "template<class...T>int f(){return sizeof...(T);}int main(){return f<int,double>();}"},
-      {"class-counted-floating-type", "template<class...T>struct R{int n;};int main(){R<int,double>r{};return r.n;}"},
+      {"counted-floating-type", "template<class...T>int f(){return sizeof...(T);}int main(){return f<int,long double>();}"},
+      {"class-counted-floating-type", "template<class...T>struct R{int n;};int main(){R<int,long double>r{};return r.n;}"},
       {"pointer-value-pack", "int n;template<int*...P>int f(){return sizeof...(P);}int main(){return f<&n>();}"},
       {"auto-pointer-pack", "int n;template<auto...P>int f(){return sizeof...(P);}int main(){return f<1,&n>();}"},
       {"auto-null-pack", "template<auto...P>int f(){return sizeof...(P);}int main(){return f<nullptr>();}"},
       {"reference-value-pack", "int n;template<int&...P>int f(){return sizeof...(P);}int main(){return f<n>();}"},
-      {"nonempty-floating-pattern", "template<int...Ns>int f(){return (0 + ... + (sizeof(double), Ns));}int main(){return f<1>();}"},
-      {"empty-floating-seed", "template<int...N>int f(){return (int(1.0)+...+N);}int main(){return f<>();}"},
-      {"floating-written-argument", "template<int...N>int f(){return sizeof...(N);}int main(){return f<int(1.0)>();}"},
-      {"floating-count-type-source", "template<class...T,decltype((sizeof(double),sizeof...(T))) N=0>int f(T...v){return N;}int main(){return f(1);}"},
-      {"floating-selected-default", "template<class...T,int N=(sizeof(double)+sizeof...(T))>int f(T...v){return N;}int main(){return f(1);}"},
-      {"floating-explicit-instantiation", "template<int...N>int f(){return sizeof...(N);}template int f<int(1.0)>();"},
+      {"nonempty-floating-pattern", "template<int...Ns>int f(){return (0 + ... + (sizeof(long double), Ns));}int main(){return f<1>();}"},
+      {"empty-floating-seed", "template<int...N>int f(){return (int(1.0L)+...+N);}int main(){return f<>();}"},
+      {"floating-written-argument", "template<int...N>int f(){return sizeof...(N);}int main(){return f<int(1.0L)>();}"},
+      {"floating-count-type-source", "template<class...T,decltype((sizeof(long double),sizeof...(T))) N=0>int f(T...v){return N;}int main(){return f(1);}"},
+      {"floating-selected-default", "template<class...T,int N=(sizeof(long double)+sizeof...(T))>int f(T...v){return N;}int main(){return f(1);}"},
+      {"floating-explicit-instantiation", "template<int...N>int f(){return sizeof...(N);}template int f<int(1.0L)>();"},
       {"template-template-pack", "template<template<class>class...T>struct R{int n;};"},
       {"friend-template-pack", "struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};"},
       {"c-varargs", "template<class...T>int f(T...v,...){return sizeof...(v);}int main(){return f(1);}"},
@@ -10688,7 +10904,7 @@ TEST_F(TranslateTest, CoreV2UsesStandardTemplateParsing) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"conversion-mismatched-dependent-definition", "template<class T>struct Box{T n;};template<class T>using I=decltype((sizeof(double),T{}));template<class T>struct R{T n;operator Box<T>()const;};template<class T>R<T>::operator I<Box<T>>()const{return {n};}int f(){R<int>r{3};Box<int>b=r;return b.n;}", "TR0202"},
       {"conversion-concrete-written-name", "template<class T>struct R{operator int()const;};template<class T>R<T>::operator decltype((sizeof(int),int{}))()const{return 3;}int main(){R<int>r;return r;}", ""},
-      {"conversion-hidden-concrete-written-name", "template<class T>struct R{operator int()const;};template<class T>R<T>::operator decltype((sizeof(double),int{}))()const{return 3;}int main(){R<int>r;return r;}", "TR0201"},
+      {"conversion-hidden-concrete-written-name", "template<class T>struct R{operator int()const;};template<class T>R<T>::operator decltype((sizeof(long double),int{}))()const{return 3;}int main(){R<int>r;return r;}", "TR0201"},
       {"out-of-line-reference", "template<class T>struct R{T n;operator decltype(auto)();};template<class T>R<T>::operator decltype(auto)(){return (n);}int&f(R<int>&r){return r;}", ""},
       {"repeated-extern-before-definition", "template<class T>int f(){return 3;}extern template int f<int>();extern template int f<int>();template int f<int>();int main(){return f<int>()-3;}", ""},
       {"single-function-definition", "template<int N>int f(){return N;}template int f<3>();int main(){return f<3>()-3;}", ""},
@@ -10807,8 +11023,8 @@ TEST_F(TranslateTest, CoreV2DeducedReferenceConversionsAcceptDeducedResults) {
 
 TEST_F(TranslateTest, CoreV2DeducedReferenceConversionsRetainSourceChecks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"deduced-floating-source", "template<class T>struct R{T n;operator decltype(auto)(){n=int(1.0);return (n);}};int&f(R<int>&r){return r;}"},
-      {"collapsed-floating-source", "template<class T>struct R{T n;operator auto&&(){n=int(1.0);return (n);}};int&f(R<int>&r){return r;}"},
+      {"deduced-floating-source", "template<class T>struct R{T n;operator decltype(auto)(){n=int(1.0L);return (n);}};int&f(R<int>&r){return r;}"},
+      {"collapsed-floating-source", "template<class T>struct R{T n;operator auto&&(){n=int(1.0L);return (n);}};int&f(R<int>&r){return r;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -10995,24 +11211,24 @@ TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsAcceptConcreteValues) {
 
 TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsRetainSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"floating-used", "template<int N=int(1.0)>int f(){return N;}int main(){return f();}"},
-      {"floating-unused", "template<int N=int(1.0)>int f(){return N;}"},
-      {"floating-overridden", "template<int N=int(1.0)>int f(){return N;}int main(){return f<3>();}"},
-      {"floating-inherited", "template<int N=int(1.0)>int f();template<int M>int f(){return M;}int main(){return f<3>();}"},
-      {"floating-class-unused", "template<int N=int(1.0)>struct R{int n;};"},
-      {"dependent-floating", "template<class T,int N=T(1.0)>int f(){return N;}int main(){return f<int>();}"},
-      {"dependent-class-floating", "template<class T,int N=T(1.0)>struct R{int n=N;};int main(){R<int>r;return r.n;}"},
-      {"dependent-constexpr-floating", "template<class T>constexpr int value(){return int(1.0);}template<class T,int N=value<T>()>int f(){return N;}int main(){return f<int>();}"},
-      {"conversion-body-floating", "struct C{constexpr operator int()const{return int(1.0);}};template<class T,int N=T{}>int f(){return N;}int main(){return f<C>();}"},
-      {"sizeof-floating", "template<int N=sizeof(double)>int f(){return N;}"},
-      {"noexcept-floating", "template<bool B=noexcept(int(1.0))>int f(){return B;}"},
-      {"decltype-floating", "template<decltype(int(1.0)) N=3>int f(){return N;}"},
+      {"floating-used", "template<int N=int(1.0L)>int f(){return N;}int main(){return f();}"},
+      {"floating-unused", "template<int N=int(1.0L)>int f(){return N;}"},
+      {"floating-overridden", "template<int N=int(1.0L)>int f(){return N;}int main(){return f<3>();}"},
+      {"floating-inherited", "template<int N=int(1.0L)>int f();template<int M>int f(){return M;}int main(){return f<3>();}"},
+      {"floating-class-unused", "template<int N=int(1.0L)>struct R{int n;};"},
+      {"dependent-floating", "template<class T,int N=T(1.0L)>int f(){return N;}int main(){return f<int>();}"},
+      {"dependent-class-floating", "template<class T,int N=T(1.0L)>struct R{int n=N;};int main(){R<int>r;return r.n;}"},
+      {"dependent-constexpr-floating", "template<class T>constexpr int value(){return int(1.0L);}template<class T,int N=value<T>()>int f(){return N;}int main(){return f<int>();}"},
+      {"conversion-body-floating", "struct C{constexpr operator int()const{return int(1.0L);}};template<class T,int N=T{}>int f(){return N;}int main(){return f<C>();}"},
+      {"sizeof-floating", "template<int N=sizeof(long double)>int f(){return N;}"},
+      {"noexcept-floating", "template<bool B=noexcept(int(1.0L))>int f(){return B;}"},
+      {"decltype-floating", "template<decltype(int(1.0L)) N=3>int f(){return N;}"},
       {"auto-pointer-default", "int n=3;template<auto N=&n>int f(){return 1;}int main(){return f();}"},
       {"auto-null-default", "template<auto N=nullptr>int f(){return 1;}int main(){return f();}"},
       {"pointer-parameter", "template<int*P=nullptr>int f(){return 1;}"},
-      {"default-function-query-source", "template<class T,int N=sizeof(T(1.0))>int f(){return N;}int main(){return f<int>();}"},
-      {"default-static-directive-source", "template<class T=int,int N=T(1.0)>struct R{inline static int n=N;};template int R<>::n;"},
-      {"default-explicit-directive-source", "template<class T=int,int N=T(1.0)>int f(){return N;}template int f<>();"},
+      {"default-function-query-source", "template<class T,int N=sizeof(T(1.0L))>int f(){return N;}int main(){return f<int>();}"},
+      {"default-static-directive-source", "template<class T=int,int N=T(1.0L)>struct R{inline static int n=N;};template int R<>::n;"},
+      {"default-explicit-directive-source", "template<class T=int,int N=T(1.0L)>int f(){return N;}template int f<>();"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -11210,13 +11426,13 @@ TEST_F(TranslateTest, CoreV2ClassTemplateStaticDataRetainSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"dynamic-initializer", "int value(){return 3;}template<class T>struct R{inline static int n=value();};int f(){return R<int>::n;}"},
       {"side-effect-initializer", "int count=0;template<class T>struct R{inline static int n=++count;};int f(){return R<int>::n;}"},
-      {"floating-initializer", "template<class T>struct R{inline static int n=int(1.0);};int f(){return R<int>::n;}"},
-      {"eager-const-floating", "template<class T>struct R{static const int n=int(1.0);};static_assert(sizeof(R<int>)==1);"},
-      {"value-only-floating", "template<class T>struct R{static const int n=int(1.0);};int f(){return R<int>::n;}"},
-      {"query-floating", "template<class T>struct R{static const int n=int(1.0);};int f(){return sizeof(R<int>::n);}"},
-      {"discard-floating", "template<class T>struct R{static const int n=int(1.0);};int f(){(void)R<int>::n;return 0;}"},
-      {"hidden-definition-floating", "template<class T>struct R{static int n;};template<class T>int R<T>::n=int(1.0);int f(){return R<int>::n;}"},
-      {"floating-type", "template<class T>struct R{inline static double n=1.0;};"},
+      {"floating-initializer", "template<class T>struct R{inline static int n=int(1.0L);};int f(){return R<int>::n;}"},
+      {"eager-const-floating", "template<class T>struct R{static const int n=int(1.0L);};static_assert(sizeof(R<int>)==1);"},
+      {"value-only-floating", "template<class T>struct R{static const int n=int(1.0L);};int f(){return R<int>::n;}"},
+      {"query-floating", "template<class T>struct R{static const int n=int(1.0L);};int f(){return sizeof(R<int>::n);}"},
+      {"discard-floating", "template<class T>struct R{static const int n=int(1.0L);};int f(){(void)R<int>::n;return 0;}"},
+      {"hidden-definition-floating", "template<class T>struct R{static int n;};template<class T>int R<T>::n=int(1.0L);int f(){return R<int>::n;}"},
+      {"floating-type", "template<class T>struct R{inline static long double n=1.0L;};"},
       {"pointer-type", "template<class T>struct R{inline static T*p=nullptr;};"},
       {"reference-type", "int n=3;template<class T>struct R{inline static int&r=n;};"},
       {"array-type", "template<class T>struct R{inline static T n[2]{};};"},
@@ -11224,18 +11440,18 @@ TEST_F(TranslateTest, CoreV2ClassTemplateStaticDataRetainSourceBoundaries) {
       {"selected-dependent-type", "template<class T>struct R{static T n;};static_assert(sizeof(R<int*>)==1);"},
       {"volatile", "template<class T>struct R{inline static volatile T n=3;};"},
       {"thread-local", "template<class T>struct R{inline static thread_local T n=3;};"},
-      {"outside-parameter-source", "template<int N>struct R{static int n;};template<decltype(int(1.0)) N>int R<N>::n=N;"},
-      {"directive-qualifier", "template<int N>struct R{inline static int n=N;};template int R<int(1.0)>::n;"},
-      {"directive-extern-qualifier", "template<int N>struct R{inline static int n=N;};extern template int R<int(1.0)>::n;"},
-      {"directive-type", "template<int N>struct R{inline static int n=N;};template decltype(int(1.0)) R<3>::n;"},
+      {"outside-parameter-source", "template<int N>struct R{static int n;};template<decltype(int(1.0L)) N>int R<N>::n=N;"},
+      {"directive-qualifier", "template<int N>struct R{inline static int n=N;};template int R<int(1.0L)>::n;"},
+      {"directive-extern-qualifier", "template<int N>struct R{inline static int n=N;};extern template int R<int(1.0L)>::n;"},
+      {"directive-type", "template<int N>struct R{inline static int n=N;};template decltype(int(1.0L)) R<3>::n;"},
       {"directive-mismatched-type", "template<int N>struct R{inline static int n=N;};template bool R<3>::n;"},
-      {"directive-first-bad", "template<int N>struct R{inline static int n=N;};extern template int R<int(1.0)>::n;extern template int R<1>::n;template int R<1>::n;"},
-      {"directive-last-bad", "template<int N>struct R{inline static int n=N;};extern template int R<1>::n;extern template int R<int(1.0)>::n;template int R<1>::n;"},
-      {"directive-after-specialization", "template<int N>struct R{inline static int n=N;};template<>int R<1>::n=7;template int R<int(1.0)>::n;"},
+      {"directive-first-bad", "template<int N>struct R{inline static int n=N;};extern template int R<int(1.0L)>::n;extern template int R<1>::n;template int R<1>::n;"},
+      {"directive-last-bad", "template<int N>struct R{inline static int n=N;};extern template int R<1>::n;extern template int R<int(1.0L)>::n;template int R<1>::n;"},
+      {"directive-after-specialization", "template<int N>struct R{inline static int n=N;};template<>int R<1>::n=7;template int R<int(1.0L)>::n;"},
       {"directive-attribute-specialization", "template<int N>struct R{inline static int n=N;};template<>int R<3>::n=7;template __attribute__((used)) int R<3>::n;"},
       {"directive-declarator-attribute", "template<int N>struct R{inline static int n=N;};extern template int R<3>::n __attribute__((used));"},
-      {"class-explicit-floating", "template<class T>struct R{inline static int n=int(1.0);};template struct R<int>;"},
-      {"member-explicit-floating", "template<class T>struct R{inline static int n=int(1.0);};template int R<int>::n;"},
+      {"class-explicit-floating", "template<class T>struct R{inline static int n=int(1.0L);};template struct R<int>;"},
+      {"member-explicit-floating", "template<class T>struct R{inline static int n=int(1.0L);};template int R<int>::n;"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -11472,22 +11688,22 @@ TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesAcceptConcreteOperators) {
 
 TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesRetainSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"selected-floating-body", "struct R{int n;};template<class T>int operator+(R,T){return int(1.0);}int f(){return R{3}+4;}"},
-      {"selected-floating-result", "struct R{int n;};template<class T>T operator+(R r,T n){return n;}int f(){return int(R{3}+1.0);}"},
-      {"selected-floating-parameter", "struct R{int n;};template<class T>int operator+(R r,T n){return 3;}int f(){return R{3}+1.0;}"},
-      {"folded-constexpr", "struct R{int n;};template<class T>constexpr int operator+(R r,T n){return int(1.0);}static_assert(R{3}+4==1);"},
-      {"query-body", "struct R{int n;};template<class T>auto operator+(R,T){return int(1.0);}int f(){return sizeof(R{3}+4);}"},
-      {"selected-noexcept", "struct R{int n;};template<class T>int operator+(R,T)noexcept(sizeof(double)>0){return 3;}int f(){return R{3}+4;}"},
-      {"materialized-specialization", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return int(1.0);}"},
-      {"materialized-explicit", "struct R{int n;};template<class T>int operator+(R,T){return int(1.0);}template int operator+<int>(R,int);"},
-      {"directive-value-source", "struct R{int n;};template<int N>int operator+(R r,R s){return r.n+s.n+N;}template int operator+<int(1.0)>(R,R);"},
-      {"directive-extern-source", "struct R{int n;};template<int N>int operator+(R r,R s){return r.n+s.n+N;}extern template int operator+<int(1.0)>(R,R);"},
-      {"directive-return-source", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template decltype(int(1.0)) operator+<int>(const R&,int);"},
-      {"directive-param-source", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template int operator+<int>(const R&,decltype(int(1.0)));"},
-      {"directive-noexcept-source", "struct R{int n;};template<class T>int operator+(R,T)noexcept{return 3;}template int operator+<int>(R,int)noexcept(sizeof(double)>0);"},
+      {"selected-floating-body", "struct R{int n;};template<class T>int operator+(R,T){return int(1.0L);}int f(){return R{3}+4;}"},
+      {"selected-floating-result", "struct R{int n;};template<class T>T operator+(R r,T n){return n;}int f(){return int(R{3}+1.0L);}"},
+      {"selected-floating-parameter", "struct R{int n;};template<class T>int operator+(R r,T n){return 3;}int f(){return R{3}+1.0L;}"},
+      {"folded-constexpr", "struct R{int n;};template<class T>constexpr int operator+(R r,T n){return int(1.0L);}static_assert(R{3}+4==1);"},
+      {"query-body", "struct R{int n;};template<class T>auto operator+(R,T){return int(1.0L);}int f(){return sizeof(R{3}+4);}"},
+      {"selected-noexcept", "struct R{int n;};template<class T>int operator+(R,T)noexcept(sizeof(long double)>0){return 3;}int f(){return R{3}+4;}"},
+      {"materialized-specialization", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template<>int operator+<int>(const R&r,int n){return int(1.0L);}"},
+      {"materialized-explicit", "struct R{int n;};template<class T>int operator+(R,T){return int(1.0L);}template int operator+<int>(R,int);"},
+      {"directive-value-source", "struct R{int n;};template<int N>int operator+(R r,R s){return r.n+s.n+N;}template int operator+<int(1.0L)>(R,R);"},
+      {"directive-extern-source", "struct R{int n;};template<int N>int operator+(R r,R s){return r.n+s.n+N;}extern template int operator+<int(1.0L)>(R,R);"},
+      {"directive-return-source", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template decltype(int(1.0L)) operator+<int>(const R&,int);"},
+      {"directive-param-source", "struct R{int n;};template<class T>int operator+(const R&r,T v){return r.n+v;}template int operator+<int>(const R&,decltype(int(1.0L)));"},
+      {"directive-noexcept-source", "struct R{int n;};template<class T>int operator+(R,T)noexcept{return 3;}template int operator+<int>(R,int)noexcept(sizeof(long double)>0);"},
       {"allocation", "template<class T>void*operator new(decltype(sizeof(0)),T*p){return p;}"},
       {"literal", "template<char... C>int operator\"\"_number(){return 1;}"},
-      {"local-unused-body", "struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0);}};Local l;return r.n+n;}int f(){return R{3}+4;}"},
+      {"local-unused-body", "struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0L);}};Local l;return r.n+n;}int f(){return R{3}+4;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -11670,26 +11886,26 @@ TEST_F(TranslateTest, CoreV2TemplateSourceRepairsAcceptConcreteSource) {
 
 TEST_F(TranslateTest, CoreV2TemplateSourceRepairsRetainWrittenSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"local-selected-body", "template<class T>int f(){struct R{int get(){return int(1.0);}};R r;return r.get();}int g(){return f<int>();}"},
-      {"local-unused-body", "template<class T>int f(){struct R{int get(){return 3;}int unused(){return int(1.0);}};R r;return r.get();}int g(){return f<int>();}"},
-      {"local-noexcept-body", "template<class T>int f(){struct R{int get()noexcept(sizeof(double)>0){return 3;}};R r;return r.get();}int g(){return f<int>();}"},
-      {"local-field-type", "template<class T>int f(){struct R{double n;int get(){return 3;}};R r{};return r.get();}int g(){return f<int>();}"},
+      {"local-selected-body", "template<class T>int f(){struct R{int get(){return int(1.0L);}};R r;return r.get();}int g(){return f<int>();}"},
+      {"local-unused-body", "template<class T>int f(){struct R{int get(){return 3;}int unused(){return int(1.0L);}};R r;return r.get();}int g(){return f<int>();}"},
+      {"local-noexcept-body", "template<class T>int f(){struct R{int get()noexcept(sizeof(long double)>0){return 3;}};R r;return r.get();}int g(){return f<int>();}"},
+      {"local-field-type", "template<class T>int f(){struct R{long double n;int get(){return 3;}};R r{};return r.get();}int g(){return f<int>();}"},
       {"local-dynamic-static", "template<class T>int f(int x){struct R{int get(int n){static int value=n;return value;}};R r;return r.get(x);}int g(){return f<int>(3);}"},
       {"local-virtual", "template<class T>int f(){struct R{virtual int get(){return 3;}};R r;return r.get();}int g(){return f<int>();}"},
-      {"directive-floating-cast", "template<int N>int f(){return N;}template int f<static_cast<int>(1.0)>();"},
-      {"directive-floating-size", "template<int N>int f(){return N;}template int f<sizeof(double)>();"},
-      {"directive-floating-fold", "constexpr int n(){return int(1.0);}template<int N>int f(){return N;}template int f<n()>();"},
-      {"directive-floating-conditional", "template<int N>int f(){return N;}template int f<(true?3:int(1.0))>();"},
-      {"directive-extern-floating", "template<int N>int f(){return N;}extern template int f<int(1.0)>();"},
-      {"directive-after-use-floating", "template<int N>int f(){return N;}int g(){return f<1>();}template int f<int(1.0)>();"},
-      {"directive-after-specialization-floating", "template<int N>int f(){return N;}template<>int f<1>(){return 3;}template int f<int(1.0)>();"},
-      {"directive-first-bad-spelling", "template<int N>int f(){return N;}extern template int f<int(1.0)>();extern template int f<1>();template int f<1>();"},
-      {"directive-last-bad-spelling", "template<int N>int f(){return N;}extern template int f<1>();extern template int f<int(1.0)>();template int f<1>();"},
-      {"directive-return-type-source", "template<int N>int f(){return N;}template decltype(int(1.0)) f<3>();"},
-      {"directive-parameter-type-source", "template<class T>int f(T){return 3;}template int f<int>(decltype(int(1.0)));"},
-      {"directive-noexcept-source", "template<int N>int f()noexcept{return N;}template int f<3>()noexcept(sizeof(double)>0);"},
-      {"directive-member-qualifier-source", "template<int N>struct R{int f(){return N;}};template int R<int(1.0)>::f();"},
-      {"directive-conversion-name-source", "template<class T>struct R{operator T(){return T(3);}};template R<int>::operator decltype(int(1.0))();"},
+      {"directive-floating-cast", "template<int N>int f(){return N;}template int f<static_cast<int>(1.0L)>();"},
+      {"directive-floating-size", "template<int N>int f(){return N;}template int f<sizeof(long double)>();"},
+      {"directive-floating-fold", "constexpr int n(){return int(1.0L);}template<int N>int f(){return N;}template int f<n()>();"},
+      {"directive-floating-conditional", "template<int N>int f(){return N;}template int f<(true?3:int(1.0L))>();"},
+      {"directive-extern-floating", "template<int N>int f(){return N;}extern template int f<int(1.0L)>();"},
+      {"directive-after-use-floating", "template<int N>int f(){return N;}int g(){return f<1>();}template int f<int(1.0L)>();"},
+      {"directive-after-specialization-floating", "template<int N>int f(){return N;}template<>int f<1>(){return 3;}template int f<int(1.0L)>();"},
+      {"directive-first-bad-spelling", "template<int N>int f(){return N;}extern template int f<int(1.0L)>();extern template int f<1>();template int f<1>();"},
+      {"directive-last-bad-spelling", "template<int N>int f(){return N;}extern template int f<1>();extern template int f<int(1.0L)>();template int f<1>();"},
+      {"directive-return-type-source", "template<int N>int f(){return N;}template decltype(int(1.0L)) f<3>();"},
+      {"directive-parameter-type-source", "template<class T>int f(T){return 3;}template int f<int>(decltype(int(1.0L)));"},
+      {"directive-noexcept-source", "template<int N>int f()noexcept{return N;}template int f<3>()noexcept(sizeof(long double)>0);"},
+      {"directive-member-qualifier-source", "template<int N>struct R{int f(){return N;}};template int R<int(1.0L)>::f();"},
+      {"directive-conversion-name-source", "template<class T>struct R{operator T(){return T(3);}};template R<int>::operator decltype(int(1.0L))();"},
       {"directive-attribute-after-specialization", "template<int N>int f(){return N;}template<>int f<3>(){return 7;}template __attribute__((used)) int f<3>();"},
       {"directive-attribute-after-use", "template<int N>int f(){return N;}int g(){return f<3>();}extern template __attribute__((used)) int f<3>();"},
       {"directive-declarator-attribute", "template<int N>int f(){return N;}template int f<3>() __attribute__((used));"},
@@ -11933,24 +12149,24 @@ TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsAcceptSelectedOperations) {
 
 TEST_F(TranslateTest, CoreV2ClassTemplateOperatorsRetainSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"selected-operator-body", "template<class T>struct R{int operator()(){return int(1.0);}};int f(){R<int>r;return r();}"},
-      {"selected-conversion-body", "template<class T>struct R{operator int(){return int(1.0);}};int f(){R<int>r;return r;}"},
-      {"forced-operator-body", "template<class T>struct R{int operator()(){return int(1.0);}};template int R<int>::operator()();"},
-      {"forced-conversion-body", "template<class T>struct R{operator int(){return int(1.0);}};template R<int>::operator int();"},
-      {"forced-class-body", "template<class T>struct R{int operator()(){return int(1.0);}};template struct R<int>;"},
-      {"selected-default", "template<class T>struct R{int operator()(int x=int(1.0)){return x;}};int f(){R<int>r;return r();}"},
-      {"selected-dmi", "template<class T>struct R{T n=T(1.0);operator T(){return n;}};int f(){R<int>r;return r;}"},
-      {"folded-operator", "template<class T>struct R{constexpr int operator()()const{return int(1.0);}};static_assert(R<int>{}()==1);"},
-      {"folded-conversion", "template<class T>struct R{constexpr operator int()const{return int(1.0);}};static_assert(int(R<int>{})==1);"},
-      {"operator-noexcept", "template<class T>struct R{int operator()()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){r();return noexcept(r());}"},
-      {"conversion-noexcept", "template<class T>struct R{operator int()noexcept(sizeof(double)>0){return 1;}};bool f(R<int>&r){r.operator int();return noexcept(r.operator int());}"},
-      {"selected-floating-type", "template<class T>struct R{operator T(){return T();}};double f(R<double>&r){return r;}"},
-      {"outside-header", "template<decltype(sizeof(double)) N>struct R{int operator()();};template<decltype(sizeof(double)) N>int R<N>::operator()(){return N;}int f(){R<3>r;return r();}"},
+      {"selected-operator-body", "template<class T>struct R{int operator()(){return int(1.0L);}};int f(){R<int>r;return r();}"},
+      {"selected-conversion-body", "template<class T>struct R{operator int(){return int(1.0L);}};int f(){R<int>r;return r;}"},
+      {"forced-operator-body", "template<class T>struct R{int operator()(){return int(1.0L);}};template int R<int>::operator()();"},
+      {"forced-conversion-body", "template<class T>struct R{operator int(){return int(1.0L);}};template R<int>::operator int();"},
+      {"forced-class-body", "template<class T>struct R{int operator()(){return int(1.0L);}};template struct R<int>;"},
+      {"selected-default", "template<class T>struct R{int operator()(int x=int(1.0L)){return x;}};int f(){R<int>r;return r();}"},
+      {"selected-dmi", "template<class T>struct R{T n=T(1.0L);operator T(){return n;}};int f(){R<int>r;return r;}"},
+      {"folded-operator", "template<class T>struct R{constexpr int operator()()const{return int(1.0L);}};static_assert(R<int>{}()==1);"},
+      {"folded-conversion", "template<class T>struct R{constexpr operator int()const{return int(1.0L);}};static_assert(int(R<int>{})==1);"},
+      {"operator-noexcept", "template<class T>struct R{int operator()()noexcept(sizeof(long double)>0){return 1;}};bool f(R<int>&r){r();return noexcept(r());}"},
+      {"conversion-noexcept", "template<class T>struct R{operator int()noexcept(sizeof(long double)>0){return 1;}};bool f(R<int>&r){r.operator int();return noexcept(r.operator int());}"},
+      {"selected-floating-type", "template<class T>struct R{operator T(){return T();}};long double f(R<long double>&r){return r;}"},
+      {"outside-header", "template<decltype(sizeof(long double)) N>struct R{int operator()();};template<decltype(sizeof(long double)) N>int R<N>::operator()(){return N;}int f(){R<3>r;return r();}"},
       {"virtual-conversion", "template<class T>struct R{virtual operator int(){return 1;}};"},
       {"volatile-operator", "template<class T>struct R{int operator()()volatile{return 1;}};"},
       {"allocation", "template<class T>struct R{static void*operator new(decltype(sizeof(0))){return nullptr;}};"},
       {"conditional-explicit-conversion", "template<class T>struct R{explicit(true) operator bool(){return true;}};"},
-      {"conditional-explicit-constructor", "template<class T>struct R{explicit(sizeof(double)>0) R(){}};"},
+      {"conditional-explicit-constructor", "template<class T>struct R{explicit(sizeof(long double)>0) R(){}};"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -12223,19 +12439,19 @@ TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersAcceptSelectedOperation
 
 TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersRetainSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"selected-dmi", "template<class T>struct R{T n=static_cast<T>(1.0);R()=default;};void f(){R<int>r;}"},
-      {"forced-dmi", "template<class T>struct R{T n=static_cast<T>(1.0);R();};template<class T>R<T>::R()=default;template struct R<int>;"},
-      {"forced-member-dmi", "template<class T>struct R{T n=static_cast<T>(1.0);R();};template<class T>R<T>::R()=default;template R<int>::R();"},
-      {"forced-member-operation", "template<class T>struct I{T n;I(const I&s):n(s.n){double v=1.0;}};template<class T>struct R{I<T>i;R(const R&);};template<class T>R<T>::R(const R&)=default;template struct R<int>;"},
-      {"selected-member-destruction", "template<class T>struct I{T n;~I(){double v=1.0;}};template<class T>struct R{I<T>i;~R()=default;};void f(){R<int>r{{1}};}"},
-      {"query-default-spec", "template<class T>struct R{T n;R()noexcept(sizeof(T)==sizeof(double))=default;};bool f(){return noexcept(R<int>());}"},
-      {"query-copy-spec", "template<class T>struct R{T n;R(const R&)noexcept(sizeof(T)==sizeof(double))=default;};bool f(const R<int>&r){return noexcept(R<int>(r));}"},
-      {"query-assignment-spec", "template<class T>struct R{T n;R&operator=(const R&)noexcept(sizeof(T)==sizeof(double))=default;};bool f(R<int>&a,const R<int>&b){return noexcept(a=b);}"},
-      {"query-destructor-spec", "template<class T>struct R{T n;~R()noexcept(sizeof(this->n)==sizeof(double))=default;};bool f(){return noexcept(R<int>{1});}"},
+      {"selected-dmi", "template<class T>struct R{T n=static_cast<T>(1.0L);R()=default;};void f(){R<int>r;}"},
+      {"forced-dmi", "template<class T>struct R{T n=static_cast<T>(1.0L);R();};template<class T>R<T>::R()=default;template struct R<int>;"},
+      {"forced-member-dmi", "template<class T>struct R{T n=static_cast<T>(1.0L);R();};template<class T>R<T>::R()=default;template R<int>::R();"},
+      {"forced-member-operation", "template<class T>struct I{T n;I(const I&s):n(s.n){long double v=1.0L;}};template<class T>struct R{I<T>i;R(const R&);};template<class T>R<T>::R(const R&)=default;template struct R<int>;"},
+      {"selected-member-destruction", "template<class T>struct I{T n;~I(){long double v=1.0L;}};template<class T>struct R{I<T>i;~R()=default;};void f(){R<int>r{{1}};}"},
+      {"query-default-spec", "template<class T>struct R{T n;R()noexcept(sizeof(T)==sizeof(long double))=default;};bool f(){return noexcept(R<int>());}"},
+      {"query-copy-spec", "template<class T>struct R{T n;R(const R&)noexcept(sizeof(T)==sizeof(long double))=default;};bool f(const R<int>&r){return noexcept(R<int>(r));}"},
+      {"query-assignment-spec", "template<class T>struct R{T n;R&operator=(const R&)noexcept(sizeof(T)==sizeof(long double))=default;};bool f(R<int>&a,const R<int>&b){return noexcept(a=b);}"},
+      {"query-destructor-spec", "template<class T>struct R{T n;~R()noexcept(sizeof(this->n)==sizeof(long double))=default;};bool f(){return noexcept(R<int>{1});}"},
       {"attribute", "template<class T>struct R{[[deprecated]]R()=default;};"},
       {"virtual", "template<class T>struct R{virtual ~R()=default;};"},
       {"explicit-destruction", "template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}"},
-      {"outer-type", "template<int N>struct R{R();};template<decltype(static_cast<int>(1.0)) N>R<N>::R()=default;"},
+      {"outer-type", "template<int N>struct R{R();};template<decltype(static_cast<int>(1.0L)) N>R<N>::R()=default;"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -12413,23 +12629,23 @@ TEST_F(TranslateTest, CoreV2ClassTemplateDestructorsAcceptMaterializedDefinition
 
 TEST_F(TranslateTest, CoreV2ClassTemplateDestructorsRetainSourceAndDefinitionBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"TR0201-selected-floating", "template<class T>struct R{~R(){double n=1.0;}};void f(){R<int>r;}", "TR0201"},
-      {"TR0201-dead-floating", "template<class T>struct R{~R(){if(false){double n=1.0;}}};void f(){R<int>r;}", "TR0201"},
-      {"TR0201-folded-floating", "template<class T>struct R{~R(){int n=static_cast<int>(1.0);}};void f(){R<int>r;}", "TR0201"},
-      {"TR0201-forced-floating", "template<class T>struct R{~R(){double n=1.0;}};template struct R<int>;", "TR0201"},
-      {"TR0201-forced-member-floating", "template<class T>struct R{~R(){double n=1.0;}};template R<int>::~R();", "TR0201"},
-      {"TR0201-selected-noexcept", "template<class T>struct R{~R()noexcept(1.0>0.0){}};void f(){R<int>r;}", "TR0201"},
-      {"TR0201-queried-noexcept-floating", "template<class T>struct R{T n;~R()noexcept(1.0>0.0);};bool query(){return noexcept(R<int>{1});}", "TR0201"},
-      {"TR0201-queried-noexcept-type", "template<class T>struct R{T n;~R()noexcept(sizeof(double)>0);};bool query(){return noexcept(R<int>{1});}", "TR0201"},
-      {"TR0201-queried-dependent-noexcept-type", "template<class T>struct R{T n;~R()noexcept(sizeof(T)==sizeof(double));};bool query(){return noexcept(R<int>{1});}", "TR0201"},
-      {"TR0201-outer-parameter-type", "template<int N>struct R{~R();};template<decltype(static_cast<int>(1.0)) N>R<N>::~R(){}", "TR0201"},
+      {"TR0201-selected-floating", "template<class T>struct R{~R(){long double n=1.0L;}};void f(){R<int>r;}", "TR0201"},
+      {"TR0201-dead-floating", "template<class T>struct R{~R(){if(false){long double n=1.0L;}}};void f(){R<int>r;}", "TR0201"},
+      {"TR0201-folded-floating", "template<class T>struct R{~R(){int n=static_cast<int>(1.0L);}};void f(){R<int>r;}", "TR0201"},
+      {"TR0201-forced-floating", "template<class T>struct R{~R(){long double n=1.0L;}};template struct R<int>;", "TR0201"},
+      {"TR0201-forced-member-floating", "template<class T>struct R{~R(){long double n=1.0L;}};template R<int>::~R();", "TR0201"},
+      {"TR0201-selected-noexcept", "template<class T>struct R{~R()noexcept(1.0L>0.0L){}};void f(){R<int>r;}", "TR0201"},
+      {"TR0201-queried-noexcept-floating", "template<class T>struct R{T n;~R()noexcept(1.0L>0.0L);};bool query(){return noexcept(R<int>{1});}", "TR0201"},
+      {"TR0201-queried-noexcept-type", "template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0);};bool query(){return noexcept(R<int>{1});}", "TR0201"},
+      {"TR0201-queried-dependent-noexcept-type", "template<class T>struct R{T n;~R()noexcept(sizeof(T)==sizeof(long double));};bool query(){return noexcept(R<int>{1});}", "TR0201"},
+      {"TR0201-outer-parameter-type", "template<int N>struct R{~R();};template<decltype(static_cast<int>(1.0L)) N>R<N>::~R(){}", "TR0201"},
       {"TR0201-attribute", "template<class T>struct R{[[deprecated]]~R(){}};", "TR0201"},
       {"TR0201-virtual", "template<class T>struct R{virtual ~R(){}};", "TR0201"},
       {"TR0201-explicit-call", "template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}", "TR0201"},
       {"TR0201-dead-explicit-call", "template<class T>struct R{~R(){}};void f(R<int>&r){if(false)r.~R();}", "TR0201"},
       {"TR0201-global-lifetime", "template<class T>struct R{~R(){}};R<int>r;", "TR0201"},
       {"TR0201-static-lifetime", "template<class T>struct R{~R(){}};void f(){static R<int>r;}", "TR0201"},
-      {"TR0201-ordinary-unused-unsupported-member", "template<class T>struct R{~R(){double n=1.0;}};struct W{R<int>r;~W(){}};", "TR0201"},
+      {"TR0201-ordinary-unused-unsupported-member", "template<class T>struct R{~R(){long double n=1.0L;}};struct W{R<int>r;~W(){}};", "TR0201"},
       {"TR0202-selected-dependent", "template<class T>struct R{~R(){T::missing();}};void f(){R<int>r;}", "TR0202"},
       {"TR0202-forced-dependent", "template<class T>struct R{~R(){T::missing();}};template struct R<int>;", "TR0202"},
       {"TR0202-private", "template<class T>class R{~R(){}};void f(){R<int>r;}", "TR0202"},
@@ -12588,18 +12804,18 @@ TEST_F(TranslateTest, CoreV2ClassTemplateConstructorsAcceptSelectedInstances) {
 
 TEST_F(TranslateTest, CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"floating-initializer", "template<class T>struct R{T n;R():n(static_cast<int>(1.0)){}};int main(){R<int>r;return r.n;}", "TR0201"},
-      {"floating-body", "template<class T>struct R{T n;R():n(3){double v=1.0;}};int main(){R<int>r;return r.n;}", "TR0201"},
-      {"floating-default", "template<class T>struct R{T n;R(T v=static_cast<int>(1.0)):n(v){}};int main(){R<int>r;return r.n;}", "TR0201"},
-      {"floating-noexcept", "template<class T>struct R{T n;R()noexcept(1.0>0.0):n(3){}};int main(){R<int>r;return r.n;}", "TR0201"},
-      {"forced-initializer", "template<class T>struct R{T n;R():n(static_cast<int>(1.0)){}};template struct R<int>;", "TR0201"},
-      {"out-of-line-floating-type", "template<int N>struct R{int n;R();};template<decltype(static_cast<int>(1.0)) N>R<N>::R():n(N){}", "TR0201"},
-      {"out-of-line-floating-size", "template<decltype(sizeof(int)) N>struct R{int n;R();};template<decltype(sizeof(double)) N>R<N>::R():n(static_cast<int>(N)){}", "TR0201"},
+      {"floating-initializer", "template<class T>struct R{T n;R():n(static_cast<int>(1.0L)){}};int main(){R<int>r;return r.n;}", "TR0201"},
+      {"floating-body", "template<class T>struct R{T n;R():n(3){long double v=1.0L;}};int main(){R<int>r;return r.n;}", "TR0201"},
+      {"floating-default", "template<class T>struct R{T n;R(T v=static_cast<int>(1.0L)):n(v){}};int main(){R<int>r;return r.n;}", "TR0201"},
+      {"floating-noexcept", "template<class T>struct R{T n;R()noexcept(1.0L>0.0L):n(3){}};int main(){R<int>r;return r.n;}", "TR0201"},
+      {"forced-initializer", "template<class T>struct R{T n;R():n(static_cast<int>(1.0L)){}};template struct R<int>;", "TR0201"},
+      {"out-of-line-floating-type", "template<int N>struct R{int n;R();};template<decltype(static_cast<int>(1.0L)) N>R<N>::R():n(N){}", "TR0201"},
+      {"out-of-line-floating-size", "template<decltype(sizeof(int)) N>struct R{int n;R();};template<decltype(sizeof(long double)) N>R<N>::R():n(static_cast<int>(N)){}", "TR0201"},
       {"attribute", "template<class T>struct R{T n;[[deprecated]]R(T v):n(v){}};", "TR0201"},
       {"parameter-attribute", "template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};", "TR0201"},
       {"base", "struct I{int n;};template<class T>struct R:I{R(){}};", "TR0201"},
       {"reference-field", "template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}", "TR0201"},
-      {"floating-field", "template<class T>struct R{double n;R(T v):n(v){}};int main(){R<int>r(3);return 0;}", "TR0201"},
+      {"floating-field", "template<class T>struct R{long double n;R(T v):n(v){}};int main(){R<int>r(3);return 0;}", "TR0201"},
       {"mixed-access-layout", "template<class T>class R{T n;public:T m;R(T v):n(v),m(v){}T get(){return n;}};int main(){R<int>r(3);return r.get();}", "TR0201"},
       {"private", "template<class T>struct R{T n;private:R(T v):n(v){}};int main(){R<int>r(3);return r.n;}", "TR0202"},
       {"move-const", "template<class T>struct R{T n;R(T v):n(v){}R(R&&r):n(r.n){}};int main(){const R<int>a(3);R<int>b(static_cast<const R<int>&&>(a));return b.n;}", "TR0202"},
@@ -12765,13 +12981,13 @@ TEST_F(TranslateTest, CoreV2ClassTemplateMethodsAcceptSelectedInstances) {
 
 TEST_F(TranslateTest, CoreV2ClassTemplateMethodsRetainSourceAndDefinitionBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"used-floating-body", "template<class T>struct R{int f(){return static_cast<int>(1.0);}};int main(){R<int>r{};return r.f();}", "TR0201"},
-      {"floating-result", "template<class T>struct R{double f(){return 1.0;}};int main(){R<int>r{};return static_cast<int>(r.f());}", "TR0201"},
-      {"floating-default", "template<class T>struct R{int f(int v=static_cast<int>(1.0)){return v;}};int main(){R<int>r{};return r.f();}", "TR0201"},
-      {"floating-noexcept", "template<class T>struct R{int f()noexcept(1.0>0.0){return 1;}};int main(){R<int>r{};return r.f();}", "TR0201"},
-      {"forced-floating", "template<class T>struct R{int f(){return static_cast<int>(1.0);}};template struct R<int>;", "TR0201"},
-      {"out-of-line-floating-spelling", "template<int N>struct R{int f();};template<decltype(static_cast<int>(1.0)) N>int R<N>::f(){return N;}", "TR0201"},
-      {"out-of-line-floating-size", "template<decltype(sizeof(int)) N>struct R{int f();};template<decltype(sizeof(double)) N>int R<N>::f(){return static_cast<int>(N);}", "TR0201"},
+      {"used-floating-body", "template<class T>struct R{int f(){return static_cast<int>(1.0L);}};int main(){R<int>r{};return r.f();}", "TR0201"},
+      {"floating-result", "template<class T>struct R{long double f(){return 1.0L;}};int main(){R<int>r{};return static_cast<int>(r.f());}", "TR0201"},
+      {"floating-default", "template<class T>struct R{int f(int v=static_cast<int>(1.0L)){return v;}};int main(){R<int>r{};return r.f();}", "TR0201"},
+      {"floating-noexcept", "template<class T>struct R{int f()noexcept(1.0L>0.0L){return 1;}};int main(){R<int>r{};return r.f();}", "TR0201"},
+      {"forced-floating", "template<class T>struct R{int f(){return static_cast<int>(1.0L);}};template struct R<int>;", "TR0201"},
+      {"out-of-line-floating-spelling", "template<int N>struct R{int f();};template<decltype(static_cast<int>(1.0L)) N>int R<N>::f(){return N;}", "TR0201"},
+      {"out-of-line-floating-size", "template<decltype(sizeof(int)) N>struct R{int f();};template<decltype(sizeof(long double)) N>int R<N>::f(){return static_cast<int>(N);}", "TR0201"},
       {"method-attribute", "template<class T>struct R{[[nodiscard]] int f(){return 1;}};", "TR0201"},
       {"parameter-attribute", "template<class T>struct R{int f([[maybe_unused]]int v){return v;}};", "TR0201"},
       {"virtual", "template<class T>struct R{virtual int f(){return 1;}};", "TR0201"},
@@ -12936,8 +13152,8 @@ TEST_F(TranslateTest, CoreV2AggregateClassTemplatesAcceptConcreteRecords) {
 
 TEST_F(TranslateTest, CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"floating-field", "template<class T>struct R{T n;};int main(){R<double>r{1.0};return 0;}", "TR0201"},
-      {"floating-default", "template<class T>struct R{int n=static_cast<int>(1.0);};int main(){R<int>r{};return r.n;}", "TR0201"},
+      {"floating-field", "template<class T>struct R{T n;};int main(){R<long double>r{1.0L};return 0;}", "TR0201"},
+      {"floating-default", "template<class T>struct R{int n=static_cast<int>(1.0L);};int main(){R<int>r{};return r.n;}", "TR0201"},
       {"pointer-value", "int n;template<int*P>struct R{int n;};", "TR0201"},
       {"auto-pointer", "int n;template<auto P>struct R{int n;};int main(){R<&n>r{};return r.n;}", "TR0201"},
       {"auto-null", "template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}", "TR0201"},
@@ -12949,11 +13165,11 @@ TEST_F(TranslateTest, CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundari
       {"reference-field", "template<class T>struct R{T&n;};int main(){int n=3;R<int>r{n};return r.n;}", "TR0201"},
       {"zero-array", "template<int N>struct R{int n[N];};int main(){R<0>r;return 0;}", "TR0201"},
       {"oversized-array", "template<int N>struct R{int n[N];};int main(){R<65537>r{};return r.n[0];}", "TR0201"},
-      {"floating-argument", "template<int N>struct R{int n;};int main(){R<static_cast<int>(1.0)>r{};return r.n;}", "TR0201"},
-      {"floating-instantiation", "template<int N>struct R{int n;};template struct R<static_cast<int>(1.0)>;", "TR0201"},
-      {"floating-specialization", "template<int N>struct R{int n;};template<>struct R<static_cast<int>(1.0)>{int n;};", "TR0201"},
-      {"floating-parameter-type", "template<decltype(static_cast<int>(1.0)) N>struct R{int n;};", "TR0201"},
-      {"floating-default-type", "template<class T=decltype(static_cast<int>(1.0))>struct R{T n;};int main(){R<>r{1};return r.n;}", "TR0201"},
+      {"floating-argument", "template<int N>struct R{int n;};int main(){R<static_cast<int>(1.0L)>r{};return r.n;}", "TR0201"},
+      {"floating-instantiation", "template<int N>struct R{int n;};template struct R<static_cast<int>(1.0L)>;", "TR0201"},
+      {"floating-specialization", "template<int N>struct R{int n;};template<>struct R<static_cast<int>(1.0L)>{int n;};", "TR0201"},
+      {"floating-parameter-type", "template<decltype(static_cast<int>(1.0L)) N>struct R{int n;};", "TR0201"},
+      {"floating-default-type", "template<class T=decltype(static_cast<int>(1.0L))>struct R{T n;};int main(){R<>r{1};return r.n;}", "TR0201"},
       {"mixed-65", "template<class T0,int N1,class T2,int N3,class T4,int N5,class T6,int N7,class T8,int N9,class T10,int N11,class T12,int N13,class T14,int N15,class T16,int N17,class T18,int N19,class T20,int N21,class T22,int N23,class T24,int N25,class T26,int N27,class T28,int N29,class T30,int N31,class T32,int N33,class T34,int N35,class T36,int N37,class T38,int N39,class T40,int N41,class T42,int N43,class T44,int N45,class T46,int N47,class T48,int N49,class T50,int N51,class T52,int N53,class T54,int N55,class T56,int N57,class T58,int N59,class T60,int N61,class T62,int N63,class T64>struct R{int n=N1;};int main(){R<int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int>r{};return r.n-1;}", "TR0201"},
       {"missing-argument", "template<class T>struct R{T n;};int main(){R<>r{};return 0;}", "TR0202"},
       {"wrong-argument-kind", "template<class T>struct R{T n;};int main(){R<3>r{};return 0;}", "TR0202"},
@@ -13109,14 +13325,14 @@ TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesRetainSourceAndValueBoundari
       {"auto-pointer", "int n=3;template<auto N>int f(){return 1;}int main(){return f<&n>();}", "TR0201"},
       {"auto-null", "template<auto N>int f(){return 1;}int main(){return f<nullptr>();}", "TR0201"},
       {"dependent-pointer", "int n=3;template<class T,T N>int f(){return 1;}int main(){return f<int*,&n>();}", "TR0201"},
-      {"selected-floating-body", "template<int N>int f(){double d=N;return static_cast<int>(d);}int main(){return f<3>();}", "TR0201"},
-      {"selected-floating-default", "template<int N>int f(int n=static_cast<int>(1.0)+N){return n;}int main(){return f<3>();}", "TR0201"},
-      {"argument-floating-cast", "template<int N>int f(){return N;}int main(){return f<static_cast<int>(1.0)>();}", "TR0201"},
-      {"instantiation-floating-cast", "template<int N>int f(){return N;}template int f<static_cast<int>(1.0)>();", "TR0201"},
-      {"specialization-floating-cast", "template<int N>int f(){return N;}template<>int f<static_cast<int>(1.0)>(){return 1;}", "TR0201"},
-      {"parameter-decltype-float", "template<decltype(static_cast<int>(1.0)) N>int f(){return N;}int main(){return f<1>();}", "TR0201"},
-      {"parameter-decltype-sizeof-float", "template<decltype(sizeof(double)) N>int f(){return N;}int main(){return f<1>();}", "TR0201"},
-      {"argument-sizeof-float", "template<int N>int f(){return N;}int main(){return f<sizeof(double)>();}", "TR0201"},
+      {"selected-floating-body", "template<int N>int f(){long double d=N;return static_cast<int>(d);}int main(){return f<3>();}", "TR0201"},
+      {"selected-floating-default", "template<int N>int f(int n=static_cast<int>(1.0L)+N){return n;}int main(){return f<3>();}", "TR0201"},
+      {"argument-floating-cast", "template<int N>int f(){return N;}int main(){return f<static_cast<int>(1.0L)>();}", "TR0201"},
+      {"instantiation-floating-cast", "template<int N>int f(){return N;}template int f<static_cast<int>(1.0L)>();", "TR0201"},
+      {"specialization-floating-cast", "template<int N>int f(){return N;}template<>int f<static_cast<int>(1.0L)>(){return 1;}", "TR0201"},
+      {"parameter-decltype-float", "template<decltype(static_cast<int>(1.0L)) N>int f(){return N;}int main(){return f<1>();}", "TR0201"},
+      {"parameter-decltype-sizeof-float", "template<decltype(sizeof(long double)) N>int f(){return N;}int main(){return f<1>();}", "TR0201"},
+      {"argument-sizeof-float", "template<int N>int f(){return N;}int main(){return f<sizeof(long double)>();}", "TR0201"},
       {"oversized-array", "template<int N>int f(){int a[N]={};return a[0];}int main(){return f<65537>();}", "TR0201"},
       {"zero-array", "template<int N>int f(){int a[N];return 0;}int main(){return f<0>();}", "TR0201"},
       {"mixed-65", "template<class T0,int N1,class T2,int N3,class T4,int N5,class T6,int N7,class T8,int N9,class T10,int N11,class T12,int N13,class T14,int N15,class T16,int N17,class T18,int N19,class T20,int N21,class T22,int N23,class T24,int N25,class T26,int N27,class T28,int N29,class T30,int N31,class T32,int N33,class T34,int N35,class T36,int N37,class T38,int N39,class T40,int N41,class T42,int N43,class T44,int N45,class T46,int N47,class T48,int N49,class T50,int N51,class T52,int N53,class T54,int N55,class T56,int N57,class T58,int N59,class T60,int N61,class T62,int N63,class T64>int f(){return N1;}int main(){return f<int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int,1,int>()-1;}", "TR0201"},
@@ -13298,13 +13514,13 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesAcceptConcreteTypeInstances) {
 TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"template-template", "template<template<class>class T>int f(){return 1;}", "TR0201"},
-      {"float-argument", "template<class T>int f(){return 1;}int main(){return f<double>();}", "TR0201"},
-      {"float-signature", "template<class T>double f(T n){return n;}int main(){return static_cast<int>(f(1));}", "TR0201"},
-      {"float-body", "template<class T>int f(T n){double x=1.0;return n;}int main(){return f(1);}", "TR0201"},
-      {"floating-selected-default", "template<class T>int f(T n=static_cast<T>(1.0)){return n;}int main(){return f<int>();}", "TR0201"},
-      {"explicit-unsupported-body", "template<class T>int f(T n){double x=1.0;return n;}template int f<int>(int);", "TR0201"},
-      {"specialization-unsupported-body", "template<class T>int f(T n){return n;}template<>int f<int>(int n){double x=1.0;return n;}", "TR0201"},
-      {"runtime-dead-body", "template<class T>int f(T n){if(false){double x=1.0;}return n;}int main(){return f(1);}", "TR0201"},
+      {"float-argument", "template<class T>int f(){return 1;}int main(){return f<long double>();}", "TR0201"},
+      {"float-signature", "template<class T>long double f(T n){return n;}int main(){return static_cast<int>(f(1));}", "TR0201"},
+      {"float-body", "template<class T>int f(T n){long double x=1.0L;return n;}int main(){return f(1);}", "TR0201"},
+      {"floating-selected-default", "template<class T>int f(T n=static_cast<T>(1.0L)){return n;}int main(){return f<int>();}", "TR0201"},
+      {"explicit-unsupported-body", "template<class T>int f(T n){long double x=1.0L;return n;}template int f<int>(int);", "TR0201"},
+      {"specialization-unsupported-body", "template<class T>int f(T n){return n;}template<>int f<int>(int n){long double x=1.0L;return n;}", "TR0201"},
+      {"runtime-dead-body", "template<class T>int f(T n){if(false){long double x=1.0L;}return n;}int main(){return f(1);}", "TR0201"},
       {"allocation", "template<class T>T* f(){return new T{};}int main(){return *f<int>();}", "TR0201"},
       {"dynamic-static", "int value=1;template<class T>int f(){static int n=value;return n;}int main(){return f<int>();}", "TR0201"},
       {"constexpr-static", "template<class T>constexpr int f(){static int n=1;return n;}int main(){return f<int>();}", "TR0201"},
@@ -13313,7 +13529,7 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"parameter-attribute", "template<class T>T f([[maybe_unused]]T v){return v;}", "TR0201"},
       {"active-include", "#include <utility>\ntemplate<class T>T f(T v){return v;}", "TR0201"},
       {"inactive-include", "#if 0\n#include <utility>\n#endif\ntemplate<class T>T f(T v){return v;}", "TR0201"},
-      {"non-template-discarded", "int f(){if constexpr(true)return 1;else return static_cast<int>(1.0);}", "TR0201"},
+      {"non-template-discarded", "int f(){if constexpr(true)return 1;else return static_cast<int>(1.0L);}", "TR0201"},
       {"unused-consteval", "template<class T>int f(){if consteval{return 1;}else{return 2;}}", "TR0202"},
       {"discarded-consteval", "template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else{if consteval{return 2;}else{return 3;}}}int main(){return f<int>();}", "TR0202"},
       {"lambda-template-list", "template<class T>void f(){auto fn=[]<class U>(U v){return v;};}", "TR0201"},
@@ -13563,10 +13779,10 @@ TEST_F(TranslateTest, CoreV2DefaultArgumentsAcceptSelectedParameterDefaults) {
 
 TEST_F(TranslateTest, CoreV2DefaultArgumentsRetainSourceAndParameterBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"floating", "int f(int n=(static_cast<void>(1.0),1)){return n;}", "TR0201"},
-      {"overridden-floating", "int f(int n=(static_cast<void>(1.0),1)){return n;}int main(){return f(0);}", "TR0201"},
-      {"constexpr-floating", "constexpr int f(int n=(static_cast<void>(1.0),1)){return n;}static_assert(f()==1);", "TR0201"},
-      {"noexcept-floating", "void f(int n=(static_cast<void>(1.0),1))noexcept{}static_assert(noexcept(f()));", "TR0201"},
+      {"floating", "int f(int n=(static_cast<void>(1.0L),1)){return n;}", "TR0201"},
+      {"overridden-floating", "int f(int n=(static_cast<void>(1.0L),1)){return n;}int main(){return f(0);}", "TR0201"},
+      {"constexpr-floating", "constexpr int f(int n=(static_cast<void>(1.0L),1)){return n;}static_assert(f()==1);", "TR0201"},
+      {"noexcept-floating", "void f(int n=(static_cast<void>(1.0L),1))noexcept{}static_assert(noexcept(f()));", "TR0201"},
       {"volatile", "volatile int n=1;int f(int x=n){return x;}", "TR0201"},
       {"string", "int f(int n=(static_cast<void>(\"x\"),1)){return n;}", "TR0201"},
       {"lambda", "int f(int n=(static_cast<void>([]{}),1)){return n;}", "TR0201"},
@@ -13575,7 +13791,7 @@ TEST_F(TranslateTest, CoreV2DefaultArgumentsRetainSourceAndParameterBoundaries) 
       {"member-pointer", "struct R{int n;};void f(int R::*p=&R::n){}", "TR0201"},
       {"array-global", "int a[2]={1,2};int f(int*p=a){return *p;}", "TR0201"},
       {"fresh-reference-return", "int f(const int&r=1){return r;}const int&g(){return 1;}", "TR0201"},
-      {"unsupported-default-record", "struct R{double n;};int f(R r=R{1.0}){return 1;}", "TR0201"},
+      {"unsupported-default-record", "struct R{long double n;};int f(R r=R{1.0L}){return 1;}", "TR0201"},
       {"unsupported-unused-default", "int f(int n=(static_cast<void>(\"unused\"),1)){return n;}", "TR0201"},
       {"expanded-default-storage", "struct R{int values[32768];};int f(const R&r=R{}){return r.values[0];}int main(){return f();}", "TR0201"},
       {"nontrailing", "int f(int a=1,int b){return a+b;}", "TR0202"},
@@ -13770,17 +13986,17 @@ TEST_F(TranslateTest, CoreV2VoidExpressionsAcceptOrdinaryDiscardedValues) {
 
 TEST_F(TranslateTest, CoreV2VoidExpressionsRetainSourceAndTypeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"floating", "void f(){static_cast<void>(1.0);}", "TR0201"},
+      {"floating", "void f(){static_cast<void>(1.0L);}", "TR0201"},
       {"volatile", "void f(){volatile int n=1;static_cast<void>(n);}", "TR0201"},
       {"volatile-void-alias", "using V=volatile void;void f(){V();}", "TR0201"},
       {"string", "void f(){static_cast<void>(\"text\");}", "TR0201"},
       {"allocation", "void f(){static_cast<void>(new int(1));}", "TR0201"},
       {"lambda", "void f(){static_cast<void>([]{});}", "TR0201"},
-      {"dead-operand", "void f(){if(false){static_cast<void>(1.0);}}", "TR0201"},
-      {"constexpr-operand", "constexpr int f(){static_cast<void>(1.0);return 1;}static_assert(f()==1);", "TR0201"},
-      {"assertion-operand", "static_assert((static_cast<void>(1.0),true));", "TR0201"},
-      {"enum-operand", "enum E:int{one=(static_cast<void>(1.0),1)};", "TR0201"},
-      {"noexcept-operand", "bool f(){return noexcept(static_cast<void>(1.0));}", "TR0201"},
+      {"dead-operand", "void f(){if(false){static_cast<void>(1.0L);}}", "TR0201"},
+      {"constexpr-operand", "constexpr int f(){static_cast<void>(1.0L);return 1;}static_assert(f()==1);", "TR0201"},
+      {"assertion-operand", "static_assert((static_cast<void>(1.0L),true));", "TR0201"},
+      {"enum-operand", "enum E:int{one=(static_cast<void>(1.0L),1)};", "TR0201"},
+      {"noexcept-operand", "bool f(){return noexcept(static_cast<void>(1.0L));}", "TR0201"},
       {"untyped-assembly", "asm(\"\");void f(){void{};}", "TR0201"},
       {"nonempty-list", "void f(){void{1};}", "TR0202"},
       {"extra-arguments", "void f(){(void(1,2));}", "TR0202"},
@@ -14036,7 +14252,7 @@ TEST_F(TranslateTest, CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries) {
       {"static-reference", "struct E{};void f(){static const E&e=E{};}", "TR0201"},
       {"thread-reference", "struct E{};void f(){thread_local const E&e=E{};}", "TR0201"},
       {"escaping-reference", "struct E{};const E&f(){return E{};}", "TR0201"},
-      {"unevaluated-unsupported", "struct E{operator double()const{return 1.0;}};bool f(){E e;return noexcept(static_cast<double>(e));}", "TR0201"},
+      {"unevaluated-unsupported", "struct E{operator long double()const{return 1.0L;}};bool f(){E e;return noexcept(static_cast<long double>(e));}", "TR0201"},
       {"extent-limit", "struct E{};using A=E[65537];", "TR0201"},
       {"storage-limit", "struct E{};using A=E[512][512];", "TR0201"},
       {"global-destruction", "struct E{~E(){}};const E e{};", "TR0201"},
@@ -14230,7 +14446,7 @@ TEST_F(TranslateTest, CoreV2ArrayTemporariesRetainTypeAndLifetimeBoundaries) {
       {"fresh-element-return", "using A=int[2];const int&f(){return A{1,2}[0];}", "TR0201"},
       {"pointer-offset-reference", "using A=int[2];int f(){const int&r=*(A{1,2}+1);return r;}", "TR0201"},
       {"dereference-reference", "using A=int[2];int f(){const int&r=*A{1,2};return r;}", "TR0201"},
-      {"float-element", "void f(){const double(&r)[2]={1.0,2.0};}", "TR0201"},
+      {"float-element", "void f(){const long double(&r)[2]={1.0L,2.0L};}", "TR0201"},
       {"volatile-element", "void f(){const volatile int(&&r)[2]={1,2};}", "TR0201"},
       {"vla", "void f(int n){int a[n];}", "TR0201"},
       {"unknown-bound", "extern int a[];", "TR0201"},
@@ -14238,7 +14454,7 @@ TEST_F(TranslateTest, CoreV2ArrayTemporariesRetainTypeAndLifetimeBoundaries) {
       {"extent-limit", "using A=int[65537];void f(){const A&r={};}", "TR0201"},
       {"storage-limit", "using A=int[512][512];void f(){const A&r={};}", "TR0201"},
       {"expanded-storage-budget", "using A=int[32768];void f(){const A&r={};}", "TR0201"},
-      {"query-unsupported", "using A=double[2];bool f(){return noexcept(A{1.0,2.0}[0]);}", "TR0201"},
+      {"query-unsupported", "using A=long double[2];bool f(){return noexcept(A{1.0L,2.0L}[0]);}", "TR0201"},
       {"mutable-array-reference", "using A=int[2];void f(){A&r={1,2};}", "TR0202"},
       {"const-array-write", "using A=int[2];void f(){const A&r={1,2};r[0]=3;}", "TR0202"},
       {"array-assignment", "using A=int[2];void f(){A&&a={1,2};A&&b={3,4};a=b;}", "TR0202"},
@@ -14446,9 +14662,9 @@ TEST_F(TranslateTest, CoreV2AutomaticReferencesAcceptLocalExtensions) {
 
 TEST_F(TranslateTest, CoreV2AutomaticReferencesRetainLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"extended-unused-float-operand", "int f(){const int&r=static_cast<int>(1.0);return r;}", "TR0201"},
-      {"extended-dead-float-operand", "struct R{int n;};int f(){if(false){const R&r=R{static_cast<int>(1.0)};}return 0;}", "TR0201"},
-      {"extended-query-float-operand", "int f(){const bool&r=noexcept(static_cast<int>(1.0));return r;}", "TR0201"},
+      {"extended-unused-float-operand", "int f(){const int&r=static_cast<int>(1.0L);return r;}", "TR0201"},
+      {"extended-dead-float-operand", "struct R{int n;};int f(){if(false){const R&r=R{static_cast<int>(1.0L)};}return 0;}", "TR0201"},
+      {"extended-query-float-operand", "int f(){const bool&r=noexcept(static_cast<int>(1.0L));return r;}", "TR0201"},
       {"fresh-brace-scalar-return", "const int&f(){return {1};}", "TR0201"},
       {"fresh-equal-record-return", "struct R{int n;};const R&f(){return {R{1}};}", "TR0201"},
       {"fresh-brace-member-return", "struct R{int n;};const int&f(){return {R{1}.n};}", "TR0201"},
@@ -14459,7 +14675,7 @@ TEST_F(TranslateTest, CoreV2AutomaticReferencesRetainLifetimeBoundaries) {
       {"braced-offset", "struct R{int a[2];};int f(){const int&r{*(R{{1,2}}.a+1)};return r;}", "TR0201"},
       {"braced-arrow", "struct I{int n;};struct R{I a[2];};int f(){const int&r{(R{{{1},{2}}}.a+1)->n};return r;}", "TR0201"},
       {"unused-throw", "struct R{int n;~R(){throw 1;}};void f(){const R&r{R{1}};}", "TR0201"},
-      {"constexpr-unsupported", "constexpr int f(){const double&r{1.0};return 1;}constexpr int n=f();", "TR0201"},
+      {"constexpr-unsupported", "constexpr int f(){const long double&r{1.0L};return 1;}constexpr int n=f();", "TR0201"},
       {"volatile-owner", "void f(){const volatile int&&r=1;}", "TR0201"},
       {"mutable-scalar", "void f(){int&r{1};}", "TR0202"},
       {"mutable-record", "struct R{int n;};void f(){R&r={R{1}};}", "TR0202"},
@@ -14704,7 +14920,7 @@ TEST_F(TranslateTest, CoreV2TemporaryCallsRetainLifetimeExtensionBoundaries) {
       {"static-extension", "int f(){static const int&r=1;return r;}", "TR0201"},
       {"global-extension", "const int&r=1;", "TR0201"},
       {"unused-throw", "struct R{int get()const{throw 1;}};int f(){return R{}.get();}", "TR0201"},
-      {"query-float", "struct R{double get()const noexcept{return 1.0;}};bool f(){return noexcept(R{}.get());}", "TR0201"},
+      {"query-float", "struct R{long double get()const noexcept{return 1.0L;}};bool f(){return noexcept(R{}.get());}", "TR0201"},
       {"mutable-reference", "void take(int&){}void f(){take(1);}", "TR0202"},
       {"mutable-record-reference", "struct R{int n;};void take(R&){}void f(){take(R{1});}", "TR0202"},
       {"lvalue-qualified", "struct R{int get()&{return 1;}};int f(){return R{}.get();}", "TR0202"},
@@ -14897,15 +15113,15 @@ TEST_F(TranslateTest, CoreV2NoexceptAcceptsStandardSpecifications) {
 
 TEST_F(TranslateTest, CoreV2NoexceptInspectsUnevaluatedSource) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"query-size-double", "bool f(){return noexcept(sizeof(double));}", "TR0201"},
-      {"unused-query", "void f(){noexcept(sizeof(double));}", "TR0201"},
-      {"spec-size-double", "int f()noexcept(sizeof(double)>0){return 1;}", "TR0201"},
-      {"short-circuit-spec", "int f()noexcept(true || noexcept(sizeof(double))){return 1;}", "TR0201"},
-      {"nested-query", "bool f(){return noexcept(noexcept(sizeof(double)));}", "TR0201"},
-      {"defaulted-spec", "struct R{int n;R()noexcept(sizeof(double)>0)=default;};", "TR0201"},
-      {"out-of-line-spec", "struct R{int n;R()noexcept(sizeof(double)>0);};R::R()noexcept(true)=default;", "TR0201"},
-      {"redeclaration-spec", "int f()noexcept(sizeof(double)>0);int f()noexcept(true){return 1;}", "TR0201"},
-      {"default-field-query", "struct R{bool b=noexcept(sizeof(double));};", "TR0201"},
+      {"query-size-double", "bool f(){return noexcept(sizeof(long double));}", "TR0201"},
+      {"unused-query", "void f(){noexcept(sizeof(long double));}", "TR0201"},
+      {"spec-size-double", "int f()noexcept(sizeof(long double)>0){return 1;}", "TR0201"},
+      {"short-circuit-spec", "int f()noexcept(true || noexcept(sizeof(long double))){return 1;}", "TR0201"},
+      {"nested-query", "bool f(){return noexcept(noexcept(sizeof(long double)));}", "TR0201"},
+      {"defaulted-spec", "struct R{int n;R()noexcept(sizeof(long double)>0)=default;};", "TR0201"},
+      {"out-of-line-spec", "struct R{int n;R()noexcept(sizeof(long double)>0);};R::R()noexcept(true)=default;", "TR0201"},
+      {"redeclaration-spec", "int f()noexcept(sizeof(long double)>0);int f()noexcept(true){return 1;}", "TR0201"},
+      {"default-field-query", "struct R{bool b=noexcept(sizeof(long double));};", "TR0201"},
       {"throw-query", "bool f(){return noexcept(throw 1);}", "TR0201"},
       {"throw-body", "int f()noexcept{throw 1;}", "TR0201"},
       {"catch-body", "int f()noexcept(false){try{return 1;}catch(...){return 2;}}", "TR0201"},
@@ -15618,7 +15834,7 @@ TEST_F(TranslateTest, CoreV2DefaultMembersCheckWrittenAndSelectedExpressions) {
       {"bitfield", "struct R{int bits:2;int n=1;};"},
       {"base", "struct B{int n=1;};struct R:B{int next=2;};"},
       {"attribute", "struct R{[[maybe_unused]] int n=1;};"},
-      {"floating-default", "struct R{int n=static_cast<int>(1.5);};"},
+      {"floating-default", "struct R{int n=static_cast<int>(1.5L);};"},
       {"lambda-unused", "struct R{int n=[](){return 1;}();};"},
       {"lambda-overridden", "struct R{int n=[](){return 1;}();};void f(){R r{7};}"},
       {"throw-unused", "struct R{int n=(throw 1,2);};"},
@@ -16783,7 +16999,7 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"mutable-field", "struct R{mutable int n;R():n(1){}};"},
       {"union", "union R{int n;unsigned u;R():n(1){}};"},
       {"bitfield", "struct R{unsigned n:3;R():n(1){}};"},
-      {"folded-unsupported-initializer", "struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;"},
+      {"folded-unsupported-initializer", "struct R{int n;constexpr R():n(sizeof(long double)){}};constexpr R r;"},
       {"folded-throw-body", "struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);"},
       {"dynamic-global", "struct R{int n;R():n(1){}};R global;"},
       {"global-array", "struct R{int n;constexpr R(int v):n(v){}};constexpr R global[1]={{1}};"},
@@ -17077,7 +17293,7 @@ TEST_F(TranslateTest, CoreV2IntegerExpansionRejectsUnsupportedTypesAndSizeQuerie
       "int f(){return 0;} int main(){return sizeof(f);}",
       "int main(){int n=0; return __alignof__(n);}",
       "int main(){int n=0; return alignof(n);}",
-      "int main(){return sizeof(double);}",
+      "int main(){return sizeof(long double);}",
       "int main(){return sizeof(1.0);}"};
   for (size_t I = 0; I < Sources.size(); ++I) {
     SCOPED_TRACE(Sources[I]);
@@ -17271,10 +17487,10 @@ TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"pointer-alias", "using Hidden = float *;", "TR0201"},
+      {"pointer-alias", "using Hidden = long double *;", "TR0201"},
       {"volatile-alias", "using Hidden = volatile int;", "TR0201"},
       {"function-alias", "using Hidden = void();", "TR0201"},
-      {"floating-assertion", "static_assert(1.0 == 1.0, \"checked types\");",
+      {"floating-assertion", "static_assert(1.0L == 1.0L, \"checked types\");",
        "TR0201"},
       {"runtime-string",
        "static_assert(true, \"message\"); const char *value = \"runtime\";",

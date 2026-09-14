@@ -13,7 +13,8 @@
 namespace neverc::translate {
 
 enum class TypeKind {
-  Int, UInt, Bool, Void, Record, Double, Pointer, Array, FunctionPointer, NullPtr
+  Int, UInt, Bool, Void, Record, Double, Pointer, Array, FunctionPointer, NullPtr,
+  Float
 };
 struct Type {
   TypeKind Kind = TypeKind::Void;
@@ -37,8 +38,11 @@ struct Type {
   unsigned integerBits() const { return IntegerBits ? IntegerBits : 32; }
   bool isSignedInteger() const { return Kind == TypeKind::Int; }
   bool isPromotedInteger() const { return isInteger() && integerBits() >= 32; }
+  bool isFloating() const {
+    return Kind == TypeKind::Float || Kind == TypeKind::Double;
+  }
   bool isScalar() const {
-    return isInteger() || Kind == TypeKind::Bool || Kind == TypeKind::Double ||
+    return isInteger() || Kind == TypeKind::Bool || isFloating() ||
            Kind == TypeKind::Pointer || Kind == TypeKind::FunctionPointer ||
            Kind == TypeKind::NullPtr;
   }
@@ -74,6 +78,7 @@ struct Expr {
   SourceLocation Loc;
   std::string Name;
   std::string Integer;
+  // Also stores the zero-extended binary32 payload of a float literal.
   uint64_t Binary64Bits = 0;
   bool Boolean = false;
   UnaryOperator UnaryOp = UnaryOperator::Plus;
@@ -116,12 +121,13 @@ struct Field {
   Type ValueType;
 };
 // Ordered carrier slots are shared by protocol validation and NC guards.
-inline constexpr std::array<const char *, 10> CarrierNames{
+inline constexpr std::array<const char *, 12> CarrierNames{
     "bool", "i8", "u8", "i16", "u16", "int", "uint", "i64", "u64",
-    "default-pointer"};
-inline constexpr std::array<const char *, 10> CarrierSpellings{
+    "default-pointer", "float", "double"};
+inline constexpr std::array<const char *, 12> CarrierSpellings{
     "bool", "signed char", "unsigned char", "short", "unsigned short", "int",
-    "unsigned int", "long long", "unsigned long long", "void *"};
+    "unsigned int", "long long", "unsigned long long", "void *", "float", "double"};
+inline constexpr std::size_t PointerCarrierSlot = 9;
 struct StorageLayout {
   uint32_t SizeBits = 0, ABIAlignBits = 0;
   bool operator==(const StorageLayout &Other) const {

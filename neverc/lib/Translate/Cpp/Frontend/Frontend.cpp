@@ -78,6 +78,11 @@ static bool ordinaryFreeFunctionName(const FunctionDecl *F) {
          (F->getIdentifier() || ordinaryOperatorKind(F->getOverloadedOperator()));
 }
 
+static bool binaryFloatingType(QualType T) {
+  return T->isSpecificBuiltinType(BuiltinType::Float) ||
+         T->isSpecificBuiltinType(BuiltinType::Double);
+}
+
 // Shape only: Allowlist separately validates the primary, arguments and body.
 static bool concreteFreeFunctionTemplate(const FunctionDecl *F) {
   return ordinaryFreeFunctionName(F) &&
@@ -1568,8 +1573,12 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       }
       break;
     case BuiltinType::Double:
-      if (S.math())
+      if (S.math() || S.coreV2())
         return "double";
+      break;
+    case BuiltinType::Float:
+      if (S.coreV2())
+        return "float";
       break;
     case BuiltinType::Void:
       if (AllowVoid)
@@ -1630,6 +1639,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
   if (Kind == "double")
     return floatingLiteral(llvm::APFloat::getZero(llvm::APFloat::IEEEdouble()),
                            L);
+  if (Kind == "float")
+    return floatingLiteral(llvm::APFloat::getZero(llvm::APFloat::IEEEsingle()), L);
   if (T->isPointerType() || T->isNullPtrType())
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
@@ -1648,7 +1659,7 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
   auto Kind = type(T, L);
   if (V.isInt())
     return literal(V.getInt(), Kind, L);
-  if (V.isFloat() && S.math())
+  if (V.isFloat() && (S.math() || S.coreV2()))
     return floatingLiteral(V.getFloat(), L);
   if (S.coreV2() && T->isNullPtrType() && V.isLValue() && V.isNullPointer())
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
@@ -2209,7 +2220,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (T->isPointerType() || T->isReferenceType() || T->isArrayType() || T->isRecordType())
       return false;
     return T->isDependentType() || T->isUndeducedAutoType() || T->isNullPtrType() ||
-           T->isIntegralOrEnumerationType();
+           T->isIntegralOrEnumerationType() || binaryFloatingType(T);
   }
   bool memberVariableOwnerShape(const VarDecl *D) {
     const auto *Parent = D ? dyn_cast<CXXRecordDecl>(D->getDeclContext()) : nullptr;
@@ -2264,7 +2275,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Type->isArrayType() || Type->isRecordType())
       return false;
     return Type->isDependentType() || Type->isUndeducedAutoType() || Type->isNullPtrType() ||
-           Type->isIntegralOrEnumerationType();
+           Type->isIntegralOrEnumerationType() || binaryFloatingType(Type);
   }
   bool variableTemplateDeclarationShape(const VarTemplateDecl *D) {
     if (!D || !owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
@@ -7884,7 +7895,7 @@ public:
   }
   bool staticScalarType(QualType T) {
     return T->isIntegralOrEnumerationType() || T->isFunctionPointerType() ||
-           T->isNullPtrType();
+           T->isNullPtrType() || binaryFloatingType(T);
   }
   bool staticScalarValue(const APValue &Value, QualType T, SourceLocation L) {
     if (T->isFunctionPointerType() || T->isNullPtrType()) {
@@ -7894,7 +7905,7 @@ public:
       A.constant(Value, T, L);
       return true;
     }
-    return Value.isInt();
+    return Value.isInt() || (binaryFloatingType(T) && Value.isFloat());
   }
   bool checkScalarStaticData(VarDecl *D, bool TemplateInstance = false) {
     const auto ExpectedKind = TemplateInstance ? Decl::VarTemplateSpecialization : Decl::Var;
@@ -8280,6 +8291,10 @@ public:
           case CK_NoOp:
           case CK_IntegralCast:
           case CK_IntegralToBoolean:
+          case CK_IntegralToFloating:
+          case CK_FloatingToIntegral:
+          case CK_FloatingToBoolean:
+          case CK_FloatingCast:
           case CK_FunctionToPointerDecay:
           case CK_NullToPointer:
           case CK_PointerToBoolean:
@@ -8369,7 +8384,7 @@ public:
         defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) &&
         (isa<ArrayInitLoopExpr>(S) || (Opaque && ArraySources.count(Opaque)) ||
          (isa<ArrayInitIndexExpr>(S) && ArrayIndexDepth));
-    if (!GeneratedArrayNode && !(A.S.math() && isa<FloatingLiteral>(S)) &&
+    if (!GeneratedArrayNode && !((A.S.math() || A.S.coreV2()) && isa<FloatingLiteral>(S)) &&
         !(A.S.coreV2() &&
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
@@ -8802,12 +8817,13 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                            ? G->getAnyInitializer() : G->getInit();
     if (Init) {
       APValue Value;
-      if (!Init->isCXX11ConstantExpr(Context, &Value) || (Mutable && !Value.isInt() &&
+      if (!Init->isCXX11ConstantExpr(Context, &Value) || (Mutable && !Value.isInt() && !Value.isFloat() &&
           !G->getType()->isFunctionPointerType() && !G->getType()->isNullPtrType()))
         throw Failure{};
       Initializer = constant(Value, G->getType(), G->getLocation());
     } else {
       if (!Mutable || (!G->getType()->isIntegralOrEnumerationType() &&
+                       !G->getType()->isRealFloatingType() &&
                        !G->getType()->isNullPtrType() &&
                        !G->getType()->isFunctionPointerType()))
         throw Failure{};
@@ -8847,12 +8863,21 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       {"pointer_bits", Target.getPointerWidth(LangAS::Default)},
       {"little_endian", Target.isLittleEndian()}};
   if (S.coreV2()) {
+    if (Target.getFloatWidth() != 32 || Target.getDoubleWidth() != 64 ||
+        &Target.getFloatFormat() != &llvm::APFloat::IEEEsingle() ||
+        &Target.getDoubleFormat() != &llvm::APFloat::IEEEdouble()) {
+      S.diagnose("TR0204", "floating data model",
+                 "Core v2 requires IEEE binary32 float and binary64 double.",
+                 "Select an admitted native target.");
+      return;
+    }
     const std::pair<const char *, QualType> Carriers[] = {
         {"bool", Context.BoolTy}, {"i8", Context.SignedCharTy},
         {"u8", Context.UnsignedCharTy}, {"i16", Context.ShortTy},
         {"u16", Context.UnsignedShortTy}, {"int", Context.IntTy},
         {"uint", Context.UnsignedIntTy}, {"i64", Context.LongLongTy},
-        {"u64", Context.UnsignedLongLongTy}, {"default-pointer", Context.VoidPtrTy}};
+        {"u64", Context.UnsignedLongLongTy}, {"default-pointer", Context.VoidPtrTy},
+        {"float", Context.FloatTy}, {"double", Context.DoubleTy}};
     json::Object Layout{{"char_bits", Target.getCharWidth()}};
     for (const auto &[Name, T] : Carriers)
       Layout[Name] = json::Object{{"size_bits", Context.getTypeSize(T)},
@@ -9865,7 +9890,8 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
       Args.insert(Args.end(), {"-Wc++20-extensions", "-Wc++23-extensions",
                                "-Wc++26-extensions", "-fno-ms-compatibility",
                                "-fno-ms-extensions",
-                               "-fno-delayed-template-parsing"});
+                               "-fno-delayed-template-parsing",
+                               "-fno-fast-math", "-ffp-contract=off"});
     }
     if (S.math()) {
       Args.insert(Args.end(),

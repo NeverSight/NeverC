@@ -98,6 +98,8 @@ Core v2 支持普通、泛型及嵌套类中的 const 数据成员，类型可�
 
 Core v2 接受受支持的删除函数，以及默认生成后被删除的特殊成员，包括相应的模板和友元形式。Clang 保留重载选择与访问诊断；删除声明不生成可执行定义。仅可移动对象、选定的复制回退及 C++17 保证的复制消除沿用现有生命周期处理。须由实现版本的 CI 验证，完整 C++／STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deleted-function-declarations).
 
+Core v2 接受 IEEE `float` 和 `double`、算术与转换、引用、字段与数组、回调，以及零初始化或常量初始化的标量静态对象。精确的字面量位表示及独立目标布局检查保留数据表示；执行要求默认浮点环境，并禁用快速数学、额外精度和隐式乘加收缩。须由实现版本的 CI 验证；`long double`、标准头文件及完整 C++／STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#binary-floating-point-values).
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。
