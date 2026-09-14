@@ -7982,6 +7982,220 @@ TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainRequiredDefinitions) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NullPtrValuesPreserveStorageAndEffects) {
+  const auto Source = tmpFile("nullptr-runtime.cpp");
+  const auto Output = tmpFile("nullptr-runtime.nc");
+  writeFile(Source, R"cpp(using Null=decltype(nullptr);
+int effects=0;
+int destroyed=0;
+Null global;
+constexpr Null fixed=nullptr;
+Null make(int digit){effects=effects*10+digit;return nullptr;}
+Null&reference(int digit){effects=effects*10+digit;return global;}
+Null&slot(){static Null n;return n;}
+int choose(Null){return 1;}
+int choose(int*){return 2;}
+Null echo(Null n){return n;}
+bool defaulted(const Null&n=nullptr){return n==nullptr;}
+struct Carrier{Null value;Null items[2];};
+struct Convert{
+ int digit;
+ operator Null()const{effects=effects*10+digit;return nullptr;}
+ ~Convert(){destroyed+=digit;}
+};
+struct Tracked{Null value;int digit;~Tracked(){destroyed+=digit;}};
+struct Member{
+ Null value;
+ inline static Null shared;
+ inline static constexpr Null constant=nullptr;
+};
+Member&base(Member&m){effects=effects*10+1;return m;}
+template<class T>inline Null variable=nullptr;
+template<class T>struct Owner{template<class U>inline static Null value{};};
+int main(){
+ Null a=nullptr,b{};
+ a=b;
+ if(a!=b||a!=nullptr||!defaulted()||choose(a)!=1)return 1;
+ bool truth(a);
+ if(truth||a||static_cast<bool>(a)||!(!a))return 2;
+ Null*address=&a;*address=b;
+ if(address!=&a||&a==&b||&global==&fixed)return 3;
+ Null array[2]={a,b};
+ if(array[0]!=nullptr||array[1]!=nullptr||&array[0]==&array[1])return 4;
+ Carrier first{a,{b,nullptr}};
+ Carrier second=first;second=first;
+ Carrier moved=static_cast<Carrier&&>(second);
+ if(moved.value!=nullptr||moved.items[1]!=nullptr||&moved.value==&first.value)return 5;
+ const Null&temporary=nullptr;
+ Null&&rvalue=nullptr;rvalue=temporary;
+ if(temporary!=rvalue||&temporary==&rvalue)return 6;
+ slot()=a;
+ if(&slot()!=&slot()||&slot()==&global||slot()!=nullptr)return 7;
+ variable<int> = variable<bool>;
+ Owner<int>::value<bool> = nullptr;
+ if(&variable<int> == &variable<bool> || &variable<int> == &Owner<int>::value<bool>)return 8;
+ if(&Owner<int>::value<bool> == &Owner<bool>::value<bool>)return 9;
+ Null(*callback)(Null)=echo;
+ if(callback(nullptr)!=nullptr)return 10;
+ effects=0;
+ int*p=make(1);
+ if(p!=nullptr||effects!=1)return 11;
+ effects=0;
+ void(*empty)()=make(2);
+ if(empty!=nullptr||effects!=2)return 12;
+ effects=0;
+ p=(make(3),nullptr);
+ if(p!=nullptr||effects!=3)return 13;
+ effects=0;bool yes=true;
+ p=yes?make(4):make(5);
+ if(p!=nullptr||effects!=4)return 14;
+ effects=0;yes=false;
+ p=yes?make(4):make(5);
+ if(p!=nullptr||effects!=5)return 15;
+ effects=0;
+ p=reference(6);
+ if(p!=nullptr||effects!=6)return 16;
+ effects=0;destroyed=0;
+ p=Convert{7};
+ if(p!=nullptr||effects!=7||destroyed!=7)return 17;
+ effects=0;destroyed=0;
+ empty=Convert{8};
+ if(empty!=nullptr||effects!=8||destroyed!=8)return 18;
+ effects=0;Member member{};
+ p=base(member).value;
+ if(p!=nullptr||effects!=1)return 19;
+ effects=0;
+ p=base(member).shared;
+ if(p!=nullptr||effects!=1||Member::shared!=Member::constant)return 20;
+ effects=0;
+ auto producer=&make;
+ p=producer(9);
+ if(p!=nullptr||effects!=9)return 21;
+ effects=0;
+ bool converted(make(1));
+ if(converted||effects!=1)return 22;
+ effects=0;
+ a=(make(2),make(3));
+ if(a!=nullptr||effects!=23)return 23;
+ effects=0;
+ a=reference(4);
+ if(a!=nullptr||effects!=4)return 24;
+ effects=0;destroyed=0;
+ p=Tracked{nullptr,3}.value;
+ if(p!=nullptr||destroyed!=3)return 25;
+ effects=0;
+ p=(reference(1)=make(2));
+ if(p!=nullptr||effects!=21)return 26;
+ effects=0;yes=true;
+ p=yes?reference(3):reference(4);
+ if(p!=nullptr||effects!=3)return 27;
+ effects=0;yes=false;
+ p=yes?reference(3):reference(4);
+ if(p!=nullptr||effects!=4)return 28;
+ effects=0;destroyed=0;
+ Null from_record=Tracked{nullptr,5}.value;
+ if(from_record!=nullptr||destroyed!=5)return 29;
+ static_assert(sizeof(Null)==sizeof(void*));
+ static_assert(alignof(Null)==alignof(void*));
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("nullptr-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NullPtrValuesAcceptTypedUses) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"constant-record", "using N=decltype(nullptr);struct R{N n;};constexpr R r{nullptr};int main(){return r.n!=nullptr;}"},
+      {"null-result-cast", "using N=decltype(nullptr);N f(N n){return static_cast<N>(n);}"},
+      {"null-reference-return", "using N=decltype(nullptr);N global;int effects=0;N&f(){++effects;return global;}int main(){int*p=f();return p!=nullptr||effects!=1;}"},
+      {"standalone-null-type", "int main(){auto p=nullptr;}"},
+      {"alias-value", "using N=decltype(nullptr);N f(N n){N a{};a=n;return a;}"},
+      {"decltype-auto", "decltype(auto) f(){return nullptr;}int main(){auto n=f();return n!=nullptr;}"},
+      {"direct-bool", "using N=decltype(nullptr);bool f(N n){bool b(n);return b||static_cast<bool>(nullptr);}"},
+      {"equality-zero", "bool f(){return nullptr==0&&0==nullptr;}"},
+      {"contextual-bool", "int f(){if(nullptr)return 1;return !nullptr?0:2;}"},
+      {"pointers", "using N=decltype(nullptr);bool f(N*p,N&q){*p=nullptr;q=*p;return &q==p;}"},
+      {"const-reference", "using N=decltype(nullptr);bool f(const N&n=nullptr){return n==nullptr;}int main(){return !f();}"},
+      {"rvalue-reference", "using N=decltype(nullptr);void f(N&&n){n=nullptr;}int main(){N&&n=nullptr;f(static_cast<N&&>(n));}"},
+      {"arrays-records", "using N=decltype(nullptr);struct R{N n;N a[2];};int main(){R a{};R b=a;b=a;return b.a[1]!=nullptr;}"},
+      {"default-member", "using N=decltype(nullptr);struct R{N n=nullptr;N a[2]={nullptr,nullptr};};int main(){R r;return r.n!=nullptr;}"},
+      {"record-result", "using N=decltype(nullptr);struct R{N n;};R f(){return {nullptr};}int main(){return f().n!=nullptr;}"},
+      {"constant-global", "using N=decltype(nullptr);constexpr N n=nullptr;int main(){return n!=nullptr;}"},
+      {"mutable-global", "using N=decltype(nullptr);N n;N other=nullptr;int main(){n=other;return &n==&other;}"},
+      {"static-local", "using N=decltype(nullptr);N&f(){static N n{};return n;}int main(){f()=nullptr;return f()!=nullptr;}"},
+      {"static-member", "using N=decltype(nullptr);struct R{static N n;inline static constexpr N fixed=nullptr;};N R::n;int main(){return R::n!=R::fixed;}"},
+      {"variable-template", "using N=decltype(nullptr);template<class T>inline N n=nullptr;int main(){n<int> = n<bool>;return &n<int> == &n<bool>;}"},
+      {"deduced-variable-template", "template<class T>inline auto n=nullptr;int main(){return n<int> != nullptr;}"},
+      {"member-variable-template", "using N=decltype(nullptr);template<class T>struct R{template<class U>inline static N n{};};int main(){return R<int>::n<bool> != nullptr;}"},
+      {"function-template-type", "template<class T>T f(T n){return n;}int main(){return f(nullptr)!=nullptr;}"},
+      {"callback", "using N=decltype(nullptr);N f(N n){return n;}int main(){N(*p)(N)=f;return p(nullptr)!=nullptr;}"},
+      {"callback-reference", "using N=decltype(nullptr);N&f(N&n){return n;}int main(){N n{};auto p=f;return &p(n)!=&n;}"},
+      {"null-object-pointer", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}int main(){int*p=f();return count!=1||p!=nullptr;}"},
+      {"null-callback-pointer", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}int main(){void(*p)()=f();return count!=1||p!=nullptr;}"},
+      {"null-conversion", "using N=decltype(nullptr);int count=0;struct R{operator N()const{++count;return nullptr;}~R(){++count;}};int main(){int*p=R{};return p!=nullptr||count!=2;}"},
+      {"source-overload", "using N=decltype(nullptr);int f(N){return 1;}int f(int*){return 2;}int main(){auto n=nullptr;return f(n)-1;}"},
+      {"queries", "using N=decltype(nullptr);constexpr N f(){return nullptr;}static_assert(f()==nullptr);static_assert(sizeof(N)==sizeof(void*));static_assert(alignof(N)==alignof(void*));static_assert(noexcept(N{}));"},
+      {"conditional", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}int main(){int*p=true?f():nullptr;return count!=1||p!=nullptr;}"},
+      {"protocol-source", "using Null=decltype(nullptr);\nNull first;\nNull second=nullptr;\nconstexpr Null fixed=nullptr;\nstruct Record{Null value;Null items[2];};\nNull echo(Null value){return value;}\nNull&slot(){static Null value;return value;}\nNull invoke(Null(*callback)(Null),Null value){return callback(value);}\nNull*first_address(){return &first;}\nNull*second_address(){return &second;}\nconst Null*fixed_address(){return &fixed;}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nullptr-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("nullptr-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NullPtrValuesRetainSourceBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"volatile", "using N=decltype(nullptr);void f(){volatile N n=nullptr;}", "TR0201"},
+      {"tls", "using N=decltype(nullptr);thread_local N n;", "TR0201"},
+      {"dynamic-global", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N n=f();", "TR0201"},
+      {"dynamic-static", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N g(){static N n=f();return n;}", "TR0201"},
+      {"dynamic-member", "using N=decltype(nullptr);N f(){return nullptr;}struct R{inline static N n=f();};", "TR0201"},
+      {"dynamic-template", "using N=decltype(nullptr);N f(){return nullptr;}template<class T>inline N n=f();int main(){return n<int> != nullptr;}", "TR0201"},
+      {"hidden-decltype", "using N=decltype((sizeof(double),nullptr));", "TR0201"},
+      {"hidden-initializer", "constexpr auto n=(sizeof(double),nullptr);", "TR0201"},
+      {"hidden-noexcept", "bool f(){return noexcept((sizeof(double),nullptr));}", "TR0201"},
+      {"hidden-default", "void f(decltype(nullptr) n=(sizeof(double),nullptr)){}", "TR0201"},
+      {"null-template-argument", "template<auto N>int f(){return 0;}int main(){return f<nullptr>();}", "TR0201"},
+      {"arithmetic", "auto f(){return nullptr+1;}", "TR0202"},
+      {"ordering", "bool f(){return nullptr<nullptr;}", "TR0202"},
+      {"dereference", "auto f(){return *nullptr;}", "TR0202"},
+      {"implicit-bool", "bool f(){bool b=nullptr;return b;}", "TR0202"},
+      {"pointer-to-null", "using N=decltype(nullptr);N f(int*p){return static_cast<N>(p);}", "TR0202"},
+      {"missing-call", "using N=decltype(nullptr);N f();int main(){int*p=f();return p!=nullptr;}", "TR0203"},
+      {"missing-static", "using N=decltype(nullptr);struct R{static N n;};int main(){return R::n!=nullptr;}", "TR0203"},
+      {"missing-conversion", "using N=decltype(nullptr);struct R{operator N()const;};int main(){int*p=R{};return p!=nullptr;}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("nullptr-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("nullptr-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("nullptr-v1.cpp");
+  const auto Output = tmpFile("nullptr-v1.nc");
+  writeFile(Source, "int main(){auto p=nullptr;}");
+  auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2FunctionPointersPreserveObjectsAndStorage) {
   const auto Source = tmpFile("function-pointers-runtime.cpp");
   const auto Output = tmpFile("function-pointers-runtime.nc");

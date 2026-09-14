@@ -1520,6 +1520,16 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       return "uint";
     case BuiltinType::Bool:
       return "bool";
+    case BuiltinType::NullPtr:
+      if (S.coreV2()) {
+        if (Context.getTypeSize(T) != Context.getTypeSize(Context.VoidPtrTy) ||
+            Context.getTypeAlign(T) != Context.getTypeAlign(Context.VoidPtrTy)) {
+          reject(L, "nullptr layout", "Source nullptr and default carrier layouts differ.", "TR0204");
+          return {};
+        }
+        return "nullptr";
+      }
+      break;
     case BuiltinType::Double:
       if (S.math())
         return "double";
@@ -1583,7 +1593,7 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
   if (Kind == "double")
     return floatingLiteral(llvm::APFloat::getZero(llvm::APFloat::IEEEdouble()),
                            L);
-  if (T->isPointerType())
+  if (T->isPointerType() || T->isNullPtrType())
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
@@ -1603,6 +1613,8 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
     return literal(V.getInt(), Kind, L);
   if (V.isFloat() && S.math())
     return floatingLiteral(V.getFloat(), L);
+  if (S.coreV2() && T->isNullPtrType() && V.isLValue() && V.isNullPointer())
+    return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (S.coreV2() && T->isFunctionPointerType() && V.isLValue() &&
       V.getLValueOffset().isZero() && !V.isLValueOnePastTheEnd() &&
       !V.getLValueCallIndex() && !V.getLValueVersion() &&
@@ -2146,7 +2158,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return true; // Actual instances retain source, ABI and constant checks.
     if (T->isPointerType() || T->isReferenceType() || T->isArrayType() || T->isRecordType())
       return false;
-    return T->isDependentType() || T->isUndeducedAutoType() ||
+    return T->isDependentType() || T->isUndeducedAutoType() || T->isNullPtrType() ||
            T->isIntegralOrEnumerationType();
   }
   bool memberVariableOwnerShape(const VarDecl *D) {
@@ -2201,7 +2213,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (Type->isPointerType() || Type->isReferenceType() ||
         Type->isArrayType() || Type->isRecordType())
       return false;
-    return Type->isDependentType() || Type->isUndeducedAutoType() ||
+    return Type->isDependentType() || Type->isUndeducedAutoType() || Type->isNullPtrType() ||
            Type->isIntegralOrEnumerationType();
   }
   bool variableTemplateDeclarationShape(const VarTemplateDecl *D) {
@@ -7810,11 +7822,13 @@ public:
     return true;
   }
   bool staticScalarType(QualType T) {
-    return T->isIntegralOrEnumerationType() || T->isFunctionPointerType();
+    return T->isIntegralOrEnumerationType() || T->isFunctionPointerType() ||
+           T->isNullPtrType();
   }
   bool staticScalarValue(const APValue &Value, QualType T, SourceLocation L) {
-    if (T->isFunctionPointerType()) {
-      // Normalization checks a real null/symbolic address, offset and signature.
+    if (T->isFunctionPointerType() || T->isNullPtrType()) {
+      // Normalization checks a real null value or a symbolic callback address
+      // with its offset and signature.
       // The original initializer still undergoes the ordinary source walk.
       A.constant(Value, T, L);
       return true;
@@ -7897,7 +7911,7 @@ public:
       if (const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(D)) {
         if (Variable->getKind() != Decl::VarTemplateSpecialization ||
             !variablePatternType(Variable) || !staticScalarType(D->getType())) {
-          A.reject(D->getLocation(), "variable specialization storage", "Only concrete namespace or admitted member integer, boolean, enum or typed callback variables are admitted.");
+          A.reject(D->getLocation(), "variable specialization storage", "Only concrete namespace or admitted member integer, boolean, enum, nullptr or typed callback variables are admitted.");
           return true;
         }
         if (D->isStaticDataMember())
@@ -8725,11 +8739,12 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     if (Init) {
       APValue Value;
       if (!Init->isCXX11ConstantExpr(Context, &Value) || (Mutable && !Value.isInt() &&
-          !G->getType()->isFunctionPointerType()))
+          !G->getType()->isFunctionPointerType() && !G->getType()->isNullPtrType()))
         throw Failure{};
       Initializer = constant(Value, G->getType(), G->getLocation());
     } else {
       if (!Mutable || (!G->getType()->isIntegralOrEnumerationType() &&
+                       !G->getType()->isNullPtrType() &&
                        !G->getType()->isFunctionPointerType()))
         throw Failure{};
       Initializer = zero(G->getType(), G->getLocation());

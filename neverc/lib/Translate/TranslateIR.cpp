@@ -27,6 +27,8 @@ std::string typeName(const Type &T) {
     return T.RecordID;
   case TypeKind::Double:
     return "double";
+  case TypeKind::NullPtr:
+    return "nullptr";
   case TypeKind::Pointer:
     return std::string(T.PointeeConst ? "cptr:" : "ptr:") +
            (T.Elements.size() == 1 ? typeName(T.Elements[0]) : "?");
@@ -227,6 +229,8 @@ public:
       T.Kind = TypeKind::Void;
     else if (S == "double")
       T.Kind = TypeKind::Double;
+    else if (S == "nullptr")
+      T.Kind = TypeKind::NullPtr;
     else {
       T.Kind = TypeKind::Record;
       T.RecordID = S.str();
@@ -721,6 +725,9 @@ class Verifier {
     case TypeKind::Double:
       return (Math && T.RecordID.empty()) ||
              error(L, "Double requires the explicit math profile.");
+    case TypeKind::NullPtr:
+      return (M.Profile == "cpp-core-v2" && T.RecordID.empty()) ||
+             error(L, "Null pointer values require core v2 and no record identity.");
     case TypeKind::Int:
     case TypeKind::UInt:
     case TypeKind::Bool:
@@ -746,10 +753,12 @@ class Verifier {
       return false;
     const bool ConstantCallback = E.ValueType.Kind == TypeKind::FunctionPointer &&
         (E.Kind == ExprKind::FunctionAddress || E.Kind == ExprKind::Null);
+    const bool ConstantNull = E.ValueType.Kind == TypeKind::NullPtr &&
+                             E.Kind == ExprKind::Null;
     if (Folded && E.Kind != ExprKind::Literal && E.Kind != ExprKind::Aggregate &&
-        !ConstantCallback)
+        !ConstantCallback && !ConstantNull)
       return error(
-          E.Loc, "Global initializer must contain folded literals, aggregates or constant callbacks.");
+          E.Loc, "Global initializer must contain folded literals, aggregates, null values or constant callbacks.");
     for (const auto &A : E.Args)
       if (!expr(A, Storage, Depth + 1, Folded, E.Kind == ExprKind::Aggregate))
         return false;
@@ -787,9 +796,14 @@ class Verifier {
       return true;
     }
     case ExprKind::Null:
-      return (Arity(0) && (E.ValueType.Kind == TypeKind::Pointer ||
-                           E.ValueType.Kind == TypeKind::FunctionPointer)) ||
-             error(E.Loc, "Null requires a pointer type and no operands.");
+      return (Arity(0) && E.Name.empty() && E.Integer.empty() &&
+              !E.Binary64Bits && !E.Boolean &&
+              E.UnaryOp == UnaryOperator::Plus &&
+              E.BinaryOp == BinaryOperator::Add &&
+              (E.ValueType.Kind == TypeKind::Pointer ||
+               E.ValueType.Kind == TypeKind::FunctionPointer ||
+               E.ValueType.Kind == TypeKind::NullPtr)) ||
+             error(E.Loc, "Null requires a pointer or nullptr type and no payload or operands.");
     case ExprKind::Address:
       if (!Arity(1) || E.ValueType.Kind != TypeKind::Pointer ||
           E.ValueType.Elements[0] != E.Args[0].ValueType)
@@ -849,6 +863,11 @@ class Verifier {
       if (!Arity(2))
         return false;
       const Type &A = E.Args[0].ValueType, &B = E.Args[1].ValueType;
+      if (A.Kind == TypeKind::NullPtr || B.Kind == TypeKind::NullPtr)
+        return ((E.BinaryOp == BinaryOperator::Equal ||
+                 E.BinaryOp == BinaryOperator::NotEqual) &&
+                A == B && E.ValueType.Kind == TypeKind::Bool) ||
+               error(E.Loc, "Null pointer values permit only equality after source conversions.");
       if (A.Kind == TypeKind::FunctionPointer || B.Kind == TypeKind::FunctionPointer)
         return ((E.BinaryOp == BinaryOperator::Equal ||
                  E.BinaryOp == BinaryOperator::NotEqual) &&
@@ -932,6 +951,10 @@ class Verifier {
       if (!Arity(1))
         return false;
       const Type &From = E.Args[0].ValueType, &To = E.ValueType;
+      if (From.Kind == TypeKind::NullPtr || To.Kind == TypeKind::NullPtr)
+        return (From == To || (From.Kind == TypeKind::NullPtr &&
+                              To.Kind == TypeKind::Bool)) ||
+               error(E.Loc, "Null pointer values permit only identity or bool casts.");
       if (From.Kind == TypeKind::FunctionPointer || To.Kind == TypeKind::FunctionPointer)
         return (From == To || (From.Kind == TypeKind::FunctionPointer &&
                               To.Kind == TypeKind::Bool)) ||
@@ -1281,6 +1304,7 @@ class Verifier {
       return C[Slot + (T.Kind == TypeKind::UInt)];
     }
     case TypeKind::Pointer:
+    case TypeKind::NullPtr:
     case TypeKind::FunctionPointer: return C[9];
     case TypeKind::Record: {
       auto It = Records.find(T.RecordID);
@@ -1415,8 +1439,9 @@ public:
     for (const auto &G : M.Globals) {
       if (G.Mutable && (M.Profile != "cpp-core-v2" ||
                         (!G.ValueType.isInteger() && G.ValueType.Kind != TypeKind::Bool &&
+                         G.ValueType.Kind != TypeKind::NullPtr &&
                          G.ValueType.Kind != TypeKind::FunctionPointer)))
-        return error(G.Loc, "Mutable globals require core v2 integer, boolean or callback storage.");
+        return error(G.Loc, "Mutable globals require core v2 integer, boolean, nullptr or callback storage.");
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
           !type(G.ValueType, G.Loc) || G.ValueType.Kind == TypeKind::Pointer ||
           containsArray(G.ValueType) ||

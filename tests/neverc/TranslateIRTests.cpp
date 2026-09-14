@@ -1495,6 +1495,136 @@ Module callbackModule() {
 }
 }
 
+TEST(TranslateIR, CoreV2NullPtrWireRetainsDistinctScalarType) {
+  auto JSON = wireModule(true);
+  replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"nullptr\"");
+  replaceOnce(JSON, "\"kind\": \"literal\", \"type\": \"bool\", \"value\": true",
+              "\"kind\": \"null\", \"type\": \"nullptr\"");
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(JSON, M, D));
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  EXPECT_EQ(M.Functions[0].Result.Kind, TypeKind::NullPtr);
+  EXPECT_EQ(M.Exports[0].Result, "nullptr");
+  EXPECT_EQ(typeName(M.Functions[0].Result), "nullptr");
+  EXPECT_NE(M.Functions[0].Result, pointerType({TypeKind::Void, {}}));
+  EmittedSource Out;
+  ASSERT_TRUE(emitNC(M, context(M), Out, D));
+  EXPECT_NE(Out.Text.find("typeof(nullptr) sample(void)"), std::string::npos);
+  EXPECT_NE(Out.Text.find("return nullptr;"), std::string::npos);
+  EXPECT_NE(Out.Text.find("sizeof(typeof(nullptr)) * __CHAR_BIT__ == 64"), std::string::npos);
+  EXPECT_NE(Out.Text.find("alignof(typeof(nullptr)) * __CHAR_BIT__ == 64"), std::string::npos);
+  M.Profile = "cpp-core-v1";
+  M.Target.Carriers.reset();
+  invalid(M, "Null pointer values require core v2");
+}
+
+TEST(TranslateIR, CoreV2NullPtrStorageComposesWithDeclaratorsAndLayout) {
+  Type T{TypeKind::NullPtr, {}};
+  auto M = module(true);
+  M.Globals = {{"nct_fixed", T, pointerExpr(ExprKind::Null, T), InputLoc},
+               {"nct_mutable", T, pointerExpr(ExprKind::Null, T), InputLoc, true}};
+  Record R{"nct_record", {{"nct_value", T, InputLoc},
+                          {"nct_values", arrayType(T, 2), InputLoc}}, InputLoc,
+           RecordLayout{{192, 64}, {0, 64}}};
+  M.Records.push_back(R);
+  M.Functions[0].Locals = {{"nct_ref", pointerType(T, true), InputLoc},
+                           {"nct_array", arrayType(T, 2), InputLoc},
+                           {"nct_callback", functionPointerType(T, {T}), InputLoc},
+                           {"nct_object", {TypeKind::Record, R.ID}, InputLoc}};
+  EmittedSource Out;
+  Diagnostics D;
+  ASSERT_TRUE(emitNC(M, context(M), Out, D));
+  EXPECT_NE(Out.Text.find("static const typeof(nullptr) nct_fixed = nullptr;"), std::string::npos);
+  EXPECT_NE(Out.Text.find("static typeof(nullptr) nct_mutable = nullptr;"), std::string::npos);
+  EXPECT_NE(Out.Text.find("const typeof(nullptr) * nct_ref;"), std::string::npos);
+  EXPECT_NE(Out.Text.find("typeof(nullptr) nct_array[2];"), std::string::npos);
+  EXPECT_NE(Out.Text.find("typeof(nullptr) (* nct_callback)(typeof(nullptr));"), std::string::npos);
+  EXPECT_NE(Out.Text.find("typeof(nullptr) nct_values[2];"), std::string::npos);
+  M.Records[0].Layout->FieldOffsetsBits[1] = 32;
+  invalid(M, "field offset");
+}
+
+TEST(TranslateIR, CoreV2NullPtrEqualityAndBoolConversionRemainTyped) {
+  Type T{TypeKind::NullPtr, {}};
+  const auto Null = pointerExpr(ExprKind::Null, T);
+  auto Negated = pointerExpr(ExprKind::Unary, boolType(), {Null});
+  Negated.UnaryOp = UnaryOperator::LogicalNot;
+  for (auto E : {binary(BinaryOperator::Equal, Null, Null, boolType()),
+                 binary(BinaryOperator::NotEqual, Null, Null, boolType()),
+                 pointerExpr(ExprKind::Cast, boolType(), {Null}), Negated}) {
+    auto M = module(true);
+    M.Functions[0].Result = boolType();
+    M.Functions[0].Body.back() = ret(E);
+    Diagnostics D;
+    EmittedSource Out;
+    EXPECT_TRUE(emitNC(M, context(M), Out, D));
+  }
+  auto M = module(true);
+  M.Functions[0].Result = T;
+  M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Cast, T, {Null}));
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+}
+
+TEST(TranslateIR, CoreV2NullPtrRejectsForgedValueTypesAndPayloads) {
+  Type T{TypeKind::NullPtr, {}};
+  for (unsigned Case = 0; Case < 5; ++Case) {
+    auto Bad = T;
+    if (Case == 0) Bad.RecordID = "nct_record";
+    if (Case == 1) Bad.Elements = {intType()};
+    if (Case == 2) Bad.Count = 1;
+    if (Case == 3) Bad.PointeeConst = true;
+    if (Case == 4) Bad.IntegerBits = 64;
+    auto M = module(true);
+    M.Functions[0].Result = Bad;
+    M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Null, Bad));
+    invalid(M);
+  }
+  for (auto NullType : {T, pointerType(intType()), functionPointerType()}) {
+    for (unsigned Case = 0; Case < 7; ++Case) {
+      auto E = pointerExpr(ExprKind::Null, NullType);
+      if (Case == 0) E.Args = {literal("0")};
+      if (Case == 1) E.Integer = "0";
+      if (Case == 2) E.Name = "nct_hidden";
+      if (Case == 3) E.Boolean = true;
+      if (Case == 4) E.Binary64Bits = 1;
+      if (Case == 5) E.UnaryOp = UnaryOperator::Minus;
+      if (Case == 6) E.BinaryOp = BinaryOperator::Equal;
+      auto M = module(true);
+      M.Functions[0].Result = NullType;
+      M.Functions[0].Body.back() = ret(E);
+      invalid(M);
+    }
+  }
+  auto M = module(true);
+  M.Functions[0].Result = T;
+  M.Functions[0].Body.back() = ret(literal("0", T));
+  invalid(M, "Invalid scalar literal");
+  M = module(true);
+  M.Globals = {{"nct_null", T, pointerExpr(ExprKind::Null, T), InputLoc},
+               {"nct_alias", T, variable("nct_null", T), InputLoc}};
+  invalid(M, "Global initializer");
+}
+
+TEST(TranslateIR, CoreV2NullPtrRejectsInventedArithmeticAndCasts) {
+  Type T{TypeKind::NullPtr, {}};
+  const auto Null = pointerExpr(ExprKind::Null, T);
+  for (auto E : {binary(BinaryOperator::Add, Null, literal("1"), T),
+                 binary(BinaryOperator::Less, Null, Null, boolType()),
+                 binary(BinaryOperator::Equal, Null, literal("0"), boolType()),
+                 binary(BinaryOperator::Equal, Null, Null, intType()),
+                 pointerExpr(ExprKind::Cast, intType(), {Null}),
+                 pointerExpr(ExprKind::Cast, pointerType(intType()), {Null}),
+                 pointerExpr(ExprKind::Cast, T, {literal("0")}),
+                 pointerExpr(ExprKind::Cast, T, {pointerExpr(ExprKind::Null, pointerType(intType()))})}) {
+    auto M = module(true);
+    M.Functions[0].Result = E.ValueType;
+    M.Functions[0].Body.back() = ret(E);
+    invalid(M);
+  }
+}
+
 TEST(TranslateIR, CoreV2FunctionPointerWireGrammarRoundTripsNestedSignatures) {
   auto T = functionPointerType();
   EXPECT_EQ(typeName(T), "fnptr:0:3:int");

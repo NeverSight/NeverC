@@ -58,6 +58,51 @@ such as a floating literal or runtime string. A successful
 `static_assert(true, "message")` does not admit runtime string literals or
 `std::string`.
 
+## Null pointer values
+
+Core v2 admits the distinct C++ `decltype(nullptr)` type in aliases, deduced
+values, parameters/results, locals, references, object pointers, fixed arrays,
+record fields and supported callback signatures. Equality, source-selected
+overloads, contextual or explicit boolean conversion, and conversion to admitted
+object/function pointer types follow embedded Clang's C++17 rules. A null value
+always compares equal to another null value; separate objects still have their
+own storage and addresses.
+
+```cpp
+using Null = decltype(nullptr);
+int calls = 0;
+Null make_null() { ++calls; return nullptr; }
+
+int main() {
+  Null first{}, second = nullptr;
+  int *pointer = make_null();
+  return calls != 1 || pointer != nullptr || &first == &second;
+}
+```
+
+Null-to-pointer conversions evaluate the source expression before producing the
+typed null pointer. Calls, indirect calls, selected user conversions, comma and
+conditional expressions, receiver effects and temporary cleanup are retained.
+The lvalue-to-rvalue conversion of a null object evaluates the object expression
+and yields the null value, without loading its stored representation.
+
+Zero or checked constant initialization is supported for null globals, scalar
+static locals, static data members and admitted concrete variable templates.
+Equivalent template instances share their object; other instances remain distinct.
+Dynamic static initialization, thread-local/volatile storage and null-valued
+non-type template arguments remain unsupported. All written types, initializers,
+defaults and unevaluated expressions retain source checks; folding to null does
+not hide unsupported operations. Standard headers, including `<cstddef>`, are
+still outside this single-source profile; `using Null = decltype(nullptr)` needs
+no header. Complete C++/STL support remains unfinished.
+
+The IR uses the distinct scalar spelling `nullptr` and a payload-free `null`
+expression. Generated C23 uses `typeof(nullptr)` declarations and `nullptr`
+values. Source size/alignment are checked against the independent default-pointer
+carrier layout, including record field offsets, and generated code asserts the
+C23 carrier size/alignment. Paired source/protocol cases, forged-IR checks and
+O0/O2 execution fixtures require native CI from the implementing revision.
+
 ## Integer widths, characters and size queries
 
 Core v2 admits signed and unsigned 8-, 16-, 32- and 64-bit integer storage.

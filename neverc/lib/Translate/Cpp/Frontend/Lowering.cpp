@@ -691,6 +691,8 @@ class FunctionLowering {
     }
     if (const auto *I = dyn_cast<IntegerLiteral>(E))
       return A.literal(llvm::APSInt(I->getValue(), unsignedInteger(T)), T, L);
+    if (A.S.coreV2() && isa<CXXNullPtrLiteralExpr>(E))
+      return A.zero(E->getType(), L);
     if (const auto *C = dyn_cast<CharacterLiteral>(E); C && A.S.coreV2())
       return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), C->getValue()),
                                    unsignedInteger(T)), T, L);
@@ -769,8 +771,12 @@ class FunctionLowering {
           return materialize(C, L);
         [[fallthrough]];
       case CK_NullToPointer:
-        if (A.S.coreV2())
+        if (A.S.coreV2()) {
+          // A nullptr_t value can be produced by a call, conversion, comma or
+          // conditional expression. Its conversion must retain those effects.
+          discard(C->getSubExpr());
           return Expression{{"kind", "null"}, {"type", T}, {"loc", A.loc(L)}};
+        }
         [[fallthrough]];
       case CK_ArrayToPointerDecay:
         if (A.S.coreV2())
@@ -987,7 +993,7 @@ class FunctionLowering {
         discard(C->getSubExpr());
         return;
       }
-      // A discarded nullptr has no effects and needs no nullptr_t IR carrier.
+      // A discarded literal has no effects and needs no value carrier.
       if (isa<CXXNullPtrLiteralExpr>(E))
         return;
     }

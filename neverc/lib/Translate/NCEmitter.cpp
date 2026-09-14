@@ -55,8 +55,10 @@ std::string declaration(const Type &T, std::string Name, bool Const = false) {
   if (T.Kind == TypeKind::Array)
     return declaration(T.Elements[0],
                        Name + "[" + std::to_string(T.Count) + "]", Const);
-  return std::string(Const ? "const " : "") +
-         (T.isInteger() ? integerCarrier(T) : typeName(T)) +
+  const auto Base = T.isInteger() ? integerCarrier(T)
+                   : T.Kind == TypeKind::NullPtr ? "typeof(nullptr)"
+                                                 : typeName(T);
+  return std::string(Const ? "const " : "") + Base +
          (Name.empty() ? "" : " " + Name);
 }
 std::string cType(const Type &T) {
@@ -137,6 +139,7 @@ class Emitter {
   uint32_t Line = 1;
   std::set<unsigned> SignedConversions, ArithmeticShifts;
   std::map<std::string, Type> FunctionPointers;
+  bool HasNullPtr = false;
   struct PointerHelper {
     Type Left, Right, Result;
     BinaryOperator Op;
@@ -207,6 +210,8 @@ class Emitter {
     case ExprKind::FunctionAddress:
       return "(&" + E.Name + ")";
     case ExprKind::Null:
+      if (E.ValueType.Kind == TypeKind::NullPtr)
+        return "nullptr";
       return "((" + cType(E.ValueType) + ")0)";
     case ExprKind::Address:
       if (E.Args[0].Kind == ExprKind::Index) {
@@ -362,6 +367,15 @@ class Emitter {
       line("static_assert(((__typeof__((int *)0 - (int *)0))-1) < 0, "
            "\"translated ptrdiff must be signed\");");
     }
+    if (HasNullPtr) {
+      const auto &Layout = M.Target.Carriers->Carriers.back();
+      line("static_assert(sizeof(typeof(nullptr)) * __CHAR_BIT__ == " +
+           std::to_string(Layout.SizeBits) +
+           ", \"translated nullptr size mismatch\");");
+      line("static_assert(alignof(typeof(nullptr)) * __CHAR_BIT__ == " +
+           std::to_string(Layout.ABIAlignBits) +
+           ", \"translated nullptr alignment mismatch\");");
+    }
     if (M.Profile == "cpp-math-v1") {
       line("static_assert(sizeof(double) * __CHAR_BIT__ == 64, \"translated "
            "math requires binary64 storage\");");
@@ -454,6 +468,7 @@ class Emitter {
     }
   }
   void inspectType(const Type &T) {
+    HasNullPtr |= T.Kind == TypeKind::NullPtr;
     if (T.Kind == TypeKind::FunctionPointer)
       FunctionPointers.emplace(typeName(T), T);
     for (const auto &Element : T.Elements)

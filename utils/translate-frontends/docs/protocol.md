@@ -122,6 +122,25 @@ The consumer validates the entire module and all referenced symbols, types, fiel
 
 NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record frontend and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
 
+## Core v2 null values
+
+Core v2 adds the distinct scalar type spelling `nullptr`; it composes with `ptr:`,
+`cptr:`, `arr:` and length-delimited `fnptr:` types. A null value is
+`{kind: "null", type: "nullptr", loc: ...}` with no value, symbol or operands.
+It is accepted in folded global/aggregate initializers and in mutable scalar
+storage. Old profiles reject this type. Synthetic types with record identities,
+integer widths, child types, qualifiers or array counts are rejected too.
+
+The consumer accepts same-type null equality/inequality, boolean conversion and
+identity conversion, and rejects arithmetic, ordering, integer literals of null
+type and casts between null and pointer/integer representations. Source conversions
+to object/function pointers serialize an already typed pointer `null` after all
+source effects have been emitted as instructions. C++ lvalue conversion evaluates
+the null object's expression without requiring a load of its representation.
+All `null` expressions, including ordinary pointer nulls, reject extraneous
+payload fields. Independent carrier/layout verification and emitted C23
+`typeof(nullptr)` guards follow the [source contract](cpp-core-v2.md#null-pointer-values).
+
 ## Core v2 integral representations
 
 Core v2 adds canonical `i8`, `u8`, `i16`, `u16`, `i64` and `u64` type spellings;

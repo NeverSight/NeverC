@@ -9163,6 +9163,90 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == class_friends, "class target identity depends on the absolute root"
 
+    nullptr_positive = {
+        'constant-record': 'using N=decltype(nullptr);struct R{N n;};constexpr R r{nullptr};int main(){return r.n!=nullptr;}',
+        'null-result-cast': 'using N=decltype(nullptr);N f(N n){return static_cast<N>(n);}',
+        'null-reference-return': 'using N=decltype(nullptr);N global;int effects=0;N&f(){++effects;return global;}int main(){int*p=f();return p!=nullptr||effects!=1;}',
+        'standalone-null-type': 'int main(){auto p=nullptr;}',
+        'alias-value': 'using N=decltype(nullptr);N f(N n){N a{};a=n;return a;}',
+        'decltype-auto': 'decltype(auto) f(){return nullptr;}int main(){auto n=f();return n!=nullptr;}',
+        'direct-bool': 'using N=decltype(nullptr);bool f(N n){bool b(n);return b||static_cast<bool>(nullptr);}',
+        'equality-zero': 'bool f(){return nullptr==0&&0==nullptr;}',
+        'contextual-bool': 'int f(){if(nullptr)return 1;return !nullptr?0:2;}',
+        'pointers': 'using N=decltype(nullptr);bool f(N*p,N&q){*p=nullptr;q=*p;return &q==p;}',
+        'const-reference': 'using N=decltype(nullptr);bool f(const N&n=nullptr){return n==nullptr;}int main(){return !f();}',
+        'rvalue-reference': 'using N=decltype(nullptr);void f(N&&n){n=nullptr;}int main(){N&&n=nullptr;f(static_cast<N&&>(n));}',
+        'arrays-records': 'using N=decltype(nullptr);struct R{N n;N a[2];};int main(){R a{};R b=a;b=a;return b.a[1]!=nullptr;}',
+        'default-member': 'using N=decltype(nullptr);struct R{N n=nullptr;N a[2]={nullptr,nullptr};};int main(){R r;return r.n!=nullptr;}',
+        'record-result': 'using N=decltype(nullptr);struct R{N n;};R f(){return {nullptr};}int main(){return f().n!=nullptr;}',
+        'constant-global': 'using N=decltype(nullptr);constexpr N n=nullptr;int main(){return n!=nullptr;}',
+        'mutable-global': 'using N=decltype(nullptr);N n;N other=nullptr;int main(){n=other;return &n==&other;}',
+        'static-local': 'using N=decltype(nullptr);N&f(){static N n{};return n;}int main(){f()=nullptr;return f()!=nullptr;}',
+        'static-member': 'using N=decltype(nullptr);struct R{static N n;inline static constexpr N fixed=nullptr;};N R::n;int main(){return R::n!=R::fixed;}',
+        'variable-template': 'using N=decltype(nullptr);template<class T>inline N n=nullptr;int main(){n<int> = n<bool>;return &n<int> == &n<bool>;}',
+        'deduced-variable-template': 'template<class T>inline auto n=nullptr;int main(){return n<int> != nullptr;}',
+        'member-variable-template': 'using N=decltype(nullptr);template<class T>struct R{template<class U>inline static N n{};};int main(){return R<int>::n<bool> != nullptr;}',
+        'function-template-type': 'template<class T>T f(T n){return n;}int main(){return f(nullptr)!=nullptr;}',
+        'callback': 'using N=decltype(nullptr);N f(N n){return n;}int main(){N(*p)(N)=f;return p(nullptr)!=nullptr;}',
+        'callback-reference': 'using N=decltype(nullptr);N&f(N&n){return n;}int main(){N n{};auto p=f;return &p(n)!=&n;}',
+        'null-object-pointer': 'using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}int main(){int*p=f();return count!=1||p!=nullptr;}',
+        'null-callback-pointer': 'using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}int main(){void(*p)()=f();return count!=1||p!=nullptr;}',
+        'null-conversion': 'using N=decltype(nullptr);int count=0;struct R{operator N()const{++count;return nullptr;}~R(){++count;}};int main(){int*p=R{};return p!=nullptr||count!=2;}',
+        'source-overload': 'using N=decltype(nullptr);int f(N){return 1;}int f(int*){return 2;}int main(){auto n=nullptr;return f(n)-1;}',
+        'queries': 'using N=decltype(nullptr);constexpr N f(){return nullptr;}static_assert(f()==nullptr);static_assert(sizeof(N)==sizeof(void*));static_assert(alignof(N)==alignof(void*));static_assert(noexcept(N{}));',
+        'conditional': 'using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}int main(){int*p=true?f():nullptr;return count!=1||p!=nullptr;}',
+        'runtime': 'using Null=decltype(nullptr);\nint effects=0;\nint destroyed=0;\nNull global;\nconstexpr Null fixed=nullptr;\nNull make(int digit){effects=effects*10+digit;return nullptr;}\nNull&reference(int digit){effects=effects*10+digit;return global;}\nNull&slot(){static Null n;return n;}\nint choose(Null){return 1;}\nint choose(int*){return 2;}\nNull echo(Null n){return n;}\nbool defaulted(const Null&n=nullptr){return n==nullptr;}\nstruct Carrier{Null value;Null items[2];};\nstruct Convert{\n int digit;\n operator Null()const{effects=effects*10+digit;return nullptr;}\n ~Convert(){destroyed+=digit;}\n};\nstruct Tracked{Null value;int digit;~Tracked(){destroyed+=digit;}};\nstruct Member{\n Null value;\n inline static Null shared;\n inline static constexpr Null constant=nullptr;\n};\nMember&base(Member&m){effects=effects*10+1;return m;}\ntemplate<class T>inline Null variable=nullptr;\ntemplate<class T>struct Owner{template<class U>inline static Null value{};};\nint main(){\n Null a=nullptr,b{};\n a=b;\n if(a!=b||a!=nullptr||!defaulted()||choose(a)!=1)return 1;\n bool truth(a);\n if(truth||a||static_cast<bool>(a)||!(!a))return 2;\n Null*address=&a;*address=b;\n if(address!=&a||&a==&b||&global==&fixed)return 3;\n Null array[2]={a,b};\n if(array[0]!=nullptr||array[1]!=nullptr||&array[0]==&array[1])return 4;\n Carrier first{a,{b,nullptr}};\n Carrier second=first;second=first;\n Carrier moved=static_cast<Carrier&&>(second);\n if(moved.value!=nullptr||moved.items[1]!=nullptr||&moved.value==&first.value)return 5;\n const Null&temporary=nullptr;\n Null&&rvalue=nullptr;rvalue=temporary;\n if(temporary!=rvalue||&temporary==&rvalue)return 6;\n slot()=a;\n if(&slot()!=&slot()||&slot()==&global||slot()!=nullptr)return 7;\n variable<int> = variable<bool>;\n Owner<int>::value<bool> = nullptr;\n if(&variable<int> == &variable<bool> || &variable<int> == &Owner<int>::value<bool>)return 8;\n if(&Owner<int>::value<bool> == &Owner<bool>::value<bool>)return 9;\n Null(*callback)(Null)=echo;\n if(callback(nullptr)!=nullptr)return 10;\n effects=0;\n int*p=make(1);\n if(p!=nullptr||effects!=1)return 11;\n effects=0;\n void(*empty)()=make(2);\n if(empty!=nullptr||effects!=2)return 12;\n effects=0;\n p=(make(3),nullptr);\n if(p!=nullptr||effects!=3)return 13;\n effects=0;bool yes=true;\n p=yes?make(4):make(5);\n if(p!=nullptr||effects!=4)return 14;\n effects=0;yes=false;\n p=yes?make(4):make(5);\n if(p!=nullptr||effects!=5)return 15;\n effects=0;\n p=reference(6);\n if(p!=nullptr||effects!=6)return 16;\n effects=0;destroyed=0;\n p=Convert{7};\n if(p!=nullptr||effects!=7||destroyed!=7)return 17;\n effects=0;destroyed=0;\n empty=Convert{8};\n if(empty!=nullptr||effects!=8||destroyed!=8)return 18;\n effects=0;Member member{};\n p=base(member).value;\n if(p!=nullptr||effects!=1)return 19;\n effects=0;\n p=base(member).shared;\n if(p!=nullptr||effects!=1||Member::shared!=Member::constant)return 20;\n effects=0;\n auto producer=&make;\n p=producer(9);\n if(p!=nullptr||effects!=9)return 21;\n effects=0;\n bool converted(make(1));\n if(converted||effects!=1)return 22;\n effects=0;\n a=(make(2),make(3));\n if(a!=nullptr||effects!=23)return 23;\n effects=0;\n a=reference(4);\n if(a!=nullptr||effects!=4)return 24;\n effects=0;destroyed=0;\n p=Tracked{nullptr,3}.value;\n if(p!=nullptr||destroyed!=3)return 25;\n effects=0;\n p=(reference(1)=make(2));\n if(p!=nullptr||effects!=21)return 26;\n effects=0;yes=true;\n p=yes?reference(3):reference(4);\n if(p!=nullptr||effects!=3)return 27;\n effects=0;yes=false;\n p=yes?reference(3):reference(4);\n if(p!=nullptr||effects!=4)return 28;\n effects=0;destroyed=0;\n Null from_record=Tracked{nullptr,5}.value;\n if(from_record!=nullptr||destroyed!=5)return 29;\n static_assert(sizeof(Null)==sizeof(void*));\n static_assert(alignof(Null)==alignof(void*));\n return 0;\n}\n',
+        'protocol-source': 'using Null=decltype(nullptr);\nNull first;\nNull second=nullptr;\nconstexpr Null fixed=nullptr;\nstruct Record{Null value;Null items[2];};\nNull echo(Null value){return value;}\nNull&slot(){static Null value;return value;}\nNull invoke(Null(*callback)(Null),Null value){return callback(value);}\nNull*first_address(){return &first;}\nNull*second_address(){return &second;}\nconst Null*fixed_address(){return &fixed;}\n',
+    }
+    for name, source in nullptr_positive.items():
+        check("v2-nullptr-positive-" + name, source, profile="cpp-core-v2")
+
+    nullptr_negative = {
+        'volatile': ('using N=decltype(nullptr);void f(){volatile N n=nullptr;}', 'TR0201'),
+        'tls': ('using N=decltype(nullptr);thread_local N n;', 'TR0201'),
+        'dynamic-global': ('using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N n=f();', 'TR0201'),
+        'dynamic-static': ('using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N g(){static N n=f();return n;}', 'TR0201'),
+        'dynamic-member': ('using N=decltype(nullptr);N f(){return nullptr;}struct R{inline static N n=f();};', 'TR0201'),
+        'dynamic-template': ('using N=decltype(nullptr);N f(){return nullptr;}template<class T>inline N n=f();int main(){return n<int> != nullptr;}', 'TR0201'),
+        'hidden-decltype': ('using N=decltype((sizeof(double),nullptr));', 'TR0201'),
+        'hidden-initializer': ('constexpr auto n=(sizeof(double),nullptr);', 'TR0201'),
+        'hidden-noexcept': ('bool f(){return noexcept((sizeof(double),nullptr));}', 'TR0201'),
+        'hidden-default': ('void f(decltype(nullptr) n=(sizeof(double),nullptr)){}', 'TR0201'),
+        'null-template-argument': ('template<auto N>int f(){return 0;}int main(){return f<nullptr>();}', 'TR0201'),
+        'arithmetic': ('auto f(){return nullptr+1;}', 'TR0202'),
+        'ordering': ('bool f(){return nullptr<nullptr;}', 'TR0202'),
+        'dereference': ('auto f(){return *nullptr;}', 'TR0202'),
+        'implicit-bool': ('bool f(){bool b=nullptr;return b;}', 'TR0202'),
+        'pointer-to-null': ('using N=decltype(nullptr);N f(int*p){return static_cast<N>(p);}', 'TR0202'),
+        'missing-call': ('using N=decltype(nullptr);N f();int main(){int*p=f();return p!=nullptr;}', 'TR0203'),
+        'missing-static': ('using N=decltype(nullptr);struct R{static N n;};int main(){return R::n!=nullptr;}', 'TR0203'),
+        'missing-conversion': ('using N=decltype(nullptr);struct R{operator N()const;};int main(){int*p=R{};return p!=nullptr;}', 'TR0203'),
+    }
+    for name, (source, diagnostic) in nullptr_negative.items():
+        check("v2-nullptr-reject-" + name, source, diagnostic, profile="cpp-core-v2")
+    check("nullptr-v1", nullptr_positive["standalone-null-type"], "TR0201", profile="cpp-core-v1")
+
+    nulls = check("v2-nullptr-protocol", nullptr_positive["protocol-source"], profile="cpp-core-v2")
+    null_globals = {g["name"]: g for g in nulls["globals"]}
+    assert len(null_globals) == len(nulls["globals"]) == 4
+    assert sum(g.get("mutable", False) for g in null_globals.values()) == 3
+    assert all(g["type"] == "nullptr" and g["value"]["kind"] == "null" and
+               g["value"]["type"] == "nullptr" for g in null_globals.values())
+    assert [[field["type"] for field in r["fields"]] for r in nulls["records"]] == [["nullptr", "arr:2:nullptr"]]
+    null_functions = {f["name"]: f for f in nulls["functions"]}
+    indirect = [n for n in walk(nulls) if n.get("op") == "indirect_call"]
+    assert len(indirect) == 1
+    assert indirect[0]["callable"]["type"] == "fnptr:1:7:nullptr7:nullptr"
+    assert indirect[0]["args"][0]["type"] == indirect[0]["target"]["type"] == "nullptr"
+    assert sum(f["result"] == "nullptr" for f in null_functions.values()) == 2
+    addresses = [n["args"][0]["name"] for n in walk(nulls) if n.get("kind") == "address"
+                 and n["args"][0].get("name") in null_globals]
+    assert set(addresses) == set(null_globals), "distinct null objects must retain their addresses"
+    with tempfile.TemporaryDirectory(prefix="neverc-nullptr-relocated-") as temp:
+        relocated = check("v2-nullptr-relocated", nullptr_positive["protocol-source"],
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == nulls, "nullptr storage identity depends on the absolute root"
+
     function_pointers_positive = {
         'ordinary-decay': 'int add(int n){return n+1;}int main(){int(*p)(int)=add;return p(3);}',
         'unary-plus': 'int get(int n){return n;}int main(){auto p=+get;return (+p)(3);}',
@@ -14013,7 +14097,6 @@ int main() {
         "pointer-integer": "unsigned long long f(int*p){return (unsigned long long)p;}",
         "integer-pointer": "int*f(int x){return (int*)x;}",
         "unrelated-pointer-cast": "bool*f(int*p){return (bool*)p;}",
-        "standalone-null-type": "int main(){auto p=nullptr;}",
     })
     v2_rejections.update({
         "zero-array": "int f(){int a[0]; return 0;}",

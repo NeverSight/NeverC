@@ -13,7 +13,7 @@
 namespace neverc::translate {
 
 enum class TypeKind {
-  Int, UInt, Bool, Void, Record, Double, Pointer, Array, FunctionPointer
+  Int, UInt, Bool, Void, Record, Double, Pointer, Array, FunctionPointer, NullPtr
 };
 struct Type {
   TypeKind Kind = TypeKind::Void;
@@ -39,7 +39,8 @@ struct Type {
   bool isPromotedInteger() const { return isInteger() && integerBits() >= 32; }
   bool isScalar() const {
     return isInteger() || Kind == TypeKind::Bool || Kind == TypeKind::Double ||
-           Kind == TypeKind::Pointer || Kind == TypeKind::FunctionPointer;
+           Kind == TypeKind::Pointer || Kind == TypeKind::FunctionPointer ||
+           Kind == TypeKind::NullPtr;
   }
 };
 std::string typeName(const Type &T);
