@@ -1836,8 +1836,8 @@ TEST(TranslateIR, CoreV2NullPtrStorageComposesWithDeclaratorsAndLayout) {
   auto M = module(true);
   M.Globals = {{"nct_fixed", T, pointerExpr(ExprKind::Null, T), InputLoc},
                {"nct_mutable", T, pointerExpr(ExprKind::Null, T), InputLoc, true}};
-  Record R{"nct_record", {{"nct_value", T, InputLoc},
-                          {"nct_values", arrayType(T, 2), InputLoc}}, InputLoc,
+  Record R{"nct_record", {{"nct_value", T},
+                          {"nct_values", arrayType(T, 2)}}, InputLoc,
            RecordLayout{{192, 64}, {0, 64}}};
   M.Records.push_back(R);
   M.Functions[0].Locals = {{"nct_ref", pointerType(T, true), InputLoc},
