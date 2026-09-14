@@ -140,7 +140,26 @@ A dynamically bound local static reference uses the same readonly pointer
 carrier and guard operations. Its initialization assignment stores the result of
 binding the original glvalue; ordinary uses dereference the carrier. This grants
 no reassignment permission for the binding after publication and no new lifetime
-for its referent. No distinct reference opcode or new protocol field is needed.
+for an existing referent. No distinct reference opcode is needed.
+
+A permanent temporary constructed for a dynamic reference has a nonempty
+`initialization_owner` string naming that readonly dynamic pointer global. This
+optional field requires core v2. The child has a complete semantic-zero static
+initializer and cannot also have `dynamic_initialization`. Its owner must exist,
+have no owner of its own, be readonly and have a pointer to a complete object.
+The child type need not equal the pointed-to type: a reference may name a
+subobject of a larger temporary. These checks exclude missing owners, chains,
+self-ownership and cycles. Associations resolve after all globals are collected,
+so declaration order does not affect validity. Zero children can remain after
+unselected branches or dead-code pruning; every declared owner must still exist.
+
+The owner alone has guard operations. A CFG-proven grant for that owner permits
+direct-root construction of its declared children, including const children.
+Both tentative and initialized C definitions use writable physical storage for
+these children while ordinary accesses preserve source constness. Children never
+acquire independent guards or exception/destruction behavior. The verifier keeps
+resolved stable global identities; associations cannot override ordinary alias
+qualifiers, layout checks or protocol resource limits.
 
 Each present `static_init_begin` site uniquely owns its global module-wide.
 There is at most one `static_init_end`, in the same function. A pruned declaration
@@ -154,7 +173,8 @@ instruction order; the frontend prunes unreachable blocks before emission.
 
 The verifier computes these states once before expression checking, without
 recharging expression budgets during its worklist. Only the proven owner permits
-direct-root writes and mutable address formation for a const dynamic global.
+direct-root writes and mutable address formation for a const dynamic global or
+its declared initialization children.
 Pointer aliases use ordinary pointee qualifiers; the IR does not claim a lifetime
 or alias nonescape proof. Guard identities or extra semantic operands attached
 to other operations are rejected in both parsed and synthetic input.

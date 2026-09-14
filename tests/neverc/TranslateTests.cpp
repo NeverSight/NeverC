@@ -3965,7 +3965,8 @@ struct Record{
  Record(const Temporary&t):first(t.n),last(t.n+1),self(this){++constructions;}
 };
 const Record&value(){static const Record r{Temporary{41}};return r;}
-extern "C" int read_value(){const Record&r=value();return r.first==41&&r.last==42&&r.self==&r&&destructions==1?0:1;}
+const Record&extended(){static const Record&r=Record(Temporary{51});return r;}
+extern "C" int read_value(){const Record&r=value();const Record&t=extended();return r.first==41&&r.last==42&&r.self==&r&&t.first==51&&t.last==52&&t.self==&t&&destructions==2?0:1;}
 extern "C" int initialization_count(){return constructions;}
 )cpp");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
@@ -4020,7 +4021,7 @@ int main(void){
  }
  if(count!=16)return 21;
  for(int i=0;i<16;++i)if(results[i])return 22;
- return initialization_count()!=1;
+ return initialization_count()!=2;
 }
 )c");
   for (const std::string &Optimization : {"-O0", "-O2"}) {
@@ -4048,7 +4049,6 @@ TEST_F(TranslateTest, CoreV2DynamicStaticLocalsRetainSourceAndLifetimeBoundaries
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"throw", "int make(){throw 1;}int f(){static int n=make();return n;}", "TR0201"},
       {"destruction", "struct R{R(int){}~R(){}};void f(int n){static R r(n);}", "TR0201"},
-      {"dynamic-reference", "int seed(){return 3;}int f(){static const int&r=seed();return r;}", "TR0201"},
       {"hidden-source", "int seed(){return 3;}int f(){static int n=(static_cast<void>(sizeof(long double)),seed());return n;}", "TR0201"},
       {"unowned-call", "extern int seed();int f(){static int n=seed();return n;}", "TR0203"},
       {"const-write", "int f(int v){static const int n=v;return ++n;}", "TR0202"},
@@ -4093,11 +4093,6 @@ TEST_F(TranslateTest, CoreV2DynamicStaticReferencesAcceptExistingObjects) {
 
 TEST_F(TranslateTest, CoreV2DynamicStaticReferencesRetainTemporaryAndSourceBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"dynamic-scalar-temporary", "int seed(){return 3;}int f(){static const int&r=seed();return r;}", "TR0201"},
-      {"dynamic-record-temporary", "struct R{int n;R(int v):n(v){}};int f(int n){static const R&r=R(n);return r.n;}", "TR0201"},
-      {"dynamic-array-temporary", "int f(int n){static const int(&r)[2]={n,2};return r[0];}", "TR0201"},
-      {"discarded-constant-value", "int calls;int f(){static const int&r=(++calls,3);return r;}", "TR0201"},
-      {"conditional-temporary", "int f(bool b){static const int&r=b?3:4;return r;}", "TR0201"},
       {"hidden-reference-type", "int&f(int&n){static decltype((sizeof(long double),n))r=n;return r;}", "TR0201"},
       {"nonlocal-dynamic", "int n;int&get(){return n;}int&r=get();", "TR0201"},
   };
@@ -4165,6 +4160,147 @@ int main(){
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("dynamic-reference-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DynamicStaticTemporariesAcceptOwnedLifetimes) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"forward-member-reference", "struct S{static const int&a;static const int&b;};const int&S::a=S::b;const int&S::b=3;int main(){return &S::a!=&S::b||S::a!=3;}"},
+      {"forward-member-pointer", "struct S{static const int*p;static const int&r;};const int*S::p=&S::r;const int&S::r=3;int main(){return S::p!=&S::r||*S::p!=3;}"},
+      {"local-record-parameter", "struct R{int n;};int f(int n){static R r{n};return r.n;}"},
+      {"scalar-call", "int seed(){return 3;}int f(){static const int&r=seed();return r;}"},
+      {"record-call", "struct R{int n;R(int v):n(v){}};int f(int n){static const R&r=R(n);return r.n;}"},
+      {"array", "int f(int n){static const int(&r)[2]={n,2};return r[0];}"},
+      {"partial-value", "int calls;int f(){static const int&r=(++calls,3);return r;}"},
+      {"conditional-prvalue", "int f(bool b){static const int&r=b?3:4;return r;}"},
+      {"scalar-parameter", "const int&f(int n){static const int&r=n+1;return r;}"},
+      {"mutable-rvalue", "int&f(int n){static int&&r=n+1;return r;}"},
+      {"pointer", "int*const&f(int*p){static int*const&r=(p+1);return r;}"},
+      {"callback", "int seed(){return 3;}using F=int(*)();F make(){return seed;}F const&f(){static F const&r=make();return r;}"},
+      {"null", "using N=decltype(nullptr);int count;N make(){++count;return nullptr;}const N&f(){static const N&r=make();return r;}"},
+      {"float", "const float&f(float n){static const float&r=n+0.5f;return r;}"},
+      {"record-field", "struct R{int n;int tail;};const int&f(int n){static const int&r=R{n,n+1}.n;return r;}"},
+      {"array-field", "struct R{int n[2];};const int&f(int n){static const int&r=R{{n,n+1}}.n[1];return r;}"},
+      {"array-record", "struct R{int n;R(int n):n(n){}};using A=R[2];const R(&f(int n))[2]{static const A&r={R(n),R(n+1)};return r;}"},
+      {"matrix", "using A=int[2][2];const A&f(int n){static const A&r={{n,n+1},{n+2,n+3}};return r;}"},
+      {"comma", "int calls;const int&f(int n){static const int&r=(++calls,n+1);return r;}"},
+      {"conditional-glvalue", "struct R{int n;};const int&f(bool b,int n){static const int&r=b?R{n}.n:R{n+1}.n;return r;}"},
+      {"conditional-existing", "int value=7;struct R{int n;};const int&f(bool b,int n){static const int&r=b?static_cast<int&&>(value):R{n}.n;return r;}"},
+      {"array-glvalue", "using A=int[2];const int&f(bool b,int n){static const int&r=b?A{n,n+1}[0]:A{n+2,n+3}[1];return r;}"},
+      {"template", "template<class T>const T&f(T n){static const T&r=n+T(1);return r;}int main(){return f(2)+f(3u)-7;}"},
+      {"local-class", "template<class T>int f(int n){struct R{static const int&get(int n){static const int&r=n+1;return r;}};return R::get(n);}int g(){return f<int>(3);}"},
+      {"self", "struct R{int n;const R*self;R(int n):n(n),self(this){}};const R&f(int n){static const R&r=R(n);return r;}"},
+      {"dead", "void f(int n){if(false){static const int&r=n+1;}}"},
+      {"after-return", "int f(int n){return 0;static const int&r=n+1;}"},
+      {"nested", "const int&inner(int n){static const int&r=n+1;return r;}const int&outer(int n){static const int&r=inner(n)+1;return r;}"},
+      {"ordinary-argument-cleanup", "int drops;struct T{int n;~T(){++drops;}};int take(const T&t){return t.n;}const int&f(int n){static const int&r=take(T{n});return r;}"},
+      {"reference-call-does-not-extend", "const int&id(const int&r){return r;}const int&f(int n){static const int&r=id(n+1);return r;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dynamic-temporary-" + Name + ".cpp");
+    const auto Output = tmpFile("dynamic-temporary-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DynamicStaticTemporariesRetainSourceAndDestructionBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"static-destruction", "struct R{int n;~R(){}};const R&f(int n){static const R&r=R{n};return r;}", "TR0201"},
+      {"dead-static-destruction", "struct R{int n;~R(){}};void f(int n){if(false){static const R&r=R{n};}}", "TR0201"},
+      {"unselected-static-destruction", "struct R{int n;~R(){}};int value;void f(int n){static const int&r=true?static_cast<int&&>(value):R{n}.n;}", "TR0201"},
+      {"array-static-destruction", "struct R{int n;~R(){}};void f(int n){static const R(&r)[2]={{n},{n+1}};}", "TR0201"},
+      {"tls", "int f(int n){static thread_local const int&r=n+1;return r;}", "TR0201"},
+      {"nonlocal", "int make(){return 3;}const int&r=make();", "TR0201"},
+      {"hidden-type", "int f(int n){static const int&r=(static_cast<void>(sizeof(long double)),n+1);return r;}", "TR0201"},
+      {"unowned-call", "int make(int);const int&f(int n){static const int&r=make(n);return r;}", "TR0203"},
+      {"const-write", "void f(int n){static const int&r=n+1;r=4;}", "TR0202"},
+      {"array-const-write", "void f(int n){static const int(&r)[2]={n,n+1};r[1]=4;}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dynamic-temporary-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("dynamic-temporary-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DynamicStaticTemporariesPreserveIdentityAndEffects) {
+  const auto Source = tmpFile("dynamic-temporary-runtime.cpp");
+  const auto Output = tmpFile("dynamic-temporary-runtime.nc");
+  writeFile(Source, R"cpp(int calls=0,drops=0;
+int seed(int n){++calls;return n;}
+const int&scalar(int n){static const int&r=seed(n);return r;}
+int&mutableValue(int n){static int&&r=seed(n);return r;}
+struct R{int n;int a[2];const R*self;R(int n):n(seed(n)),a{n+1,n+2},self(this){}};
+R make(int n){return R(n);}
+const R&record(int n){static const R&r=make(n);return r;}
+const int&member(int n){static const int&r=make(n).a[1];return r;}
+const int(&array(int n))[2]{static const int(&r)[2]={seed(n),seed(n+1)};return r;}
+using Rows=int[2][2];
+const Rows&matrix(int n){static const Rows&r={{seed(n),n+1},{n+2,n+3}};return r;}
+const R(&records(int n))[2]{static const R(&r)[2]={R(n),R(n+2)};return r;}
+int*const&pointer(int*p){static int*const&r=p+1;return r;}
+int partial(){static const int&r=(++calls,3);return r;}
+const int&conditional(bool b,int n){static const int&r=b?make(n).n:make(n+1).n;return r;}
+const R&prvalue(bool b,int n){static const R&r=b?R(n):R(n+1);return r;}
+int existing=31;
+const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):make(n).n;return r;}
+using Pair=int[2];
+const int&arrayChoice(bool b,int n){static const int&r=b?Pair{seed(n),seed(n+1)}[0]:Pair{seed(n+2),seed(n+3)}[1];return r;}
+template<class T>const int&instance(int n){static const int&r=seed(n);return r;}
+struct Temp{int n;~Temp(){++drops;}};
+int take(const Temp&t){return seed(t.n);}
+const int&cleanup(int n){static const int&r=take(Temp{n});return r;}
+const int&nested(int n){static const int&r=scalar(n)+1;return r;}
+const int&skipped(bool b,int n){if(b){static const int&r=seed(n);return r;}return existing;}
+using Callback=int(*)(int);
+Callback choose(){++calls;return seed;}
+Callback const&callback(){static Callback const&r=choose();return r;}
+using Null=decltype(nullptr);
+Null nullFactory(){++calls;return nullptr;}
+const Null&nullValue(){static const Null&r=nullFactory();return r;}
+const float&floating(float n){static const float&r=n+0.5f;return r;}
+int main(){
+ if(calls||drops)return 1;
+ if(&skipped(false,9)!=&existing||calls)return 2;
+ const int*s=&scalar(3);if(*s!=3||&scalar(9)!=s||calls!=1)return 3;
+ calls=0;int&m=mutableValue(5);m=6;if(&mutableValue(9)!=&m||m!=6||calls!=1)return 4;
+ calls=0;const R&r=record(7);if(r.n!=7||r.self!=&r||r.a[1]!=9||&record(12)!=&r||calls!=1)return 5;
+ calls=0;const int*f=&member(10);if(*f!=12||&member(99)!=f||calls!=1)return 6;
+ calls=0;const int(&a)[2]=array(4);if(a[0]!=4||a[1]!=5||&array(9)!=&a||calls!=2)return 7;
+ calls=0;const Rows&rows=matrix(6);if(rows[1][1]!=9||&matrix(19)!=&rows||calls!=1)return 8;
+ calls=0;const R(&rr)[2]=records(3);if(rr[0].self!=&rr[0]||rr[1].self!=&rr[1]||rr[1].n!=5||&records(12)!=&rr||calls!=2)return 9;
+ int values[3]={2,3,4};int*const&p=pointer(values);if(p!=values+1||&pointer(values+1)!=&p)return 10;
+ calls=0;if(partial()!=3||partial()!=3||calls!=1)return 11;
+ calls=0;const int*c=&conditional(false,13);if(*c!=14||&conditional(true,9)!=c||calls!=1)return 12;
+ calls=0;const R&q=prvalue(true,8);if(q.n!=8||q.self!=&q||&prvalue(false,9)!=&q||calls!=1)return 13;
+ calls=0;if(&mixed(true,5)!=&existing||&mixed(false,9)!=&existing||calls)return 14;
+ calls=0;const int&ac=arrayChoice(false,3);if(ac!=6||&arrayChoice(true,9)!=&ac||calls!=2)return 15;
+ calls=0;if(instance<int>(3)!=3||instance<unsigned>(4)!=4||&instance<int>(9)==&instance<unsigned>(9)||calls!=2)return 16;
+ calls=0;const int&cl=cleanup(7);if(cl!=7||drops!=1||&cleanup(9)!=&cl||calls!=1||drops!=1)return 17;
+ calls=0;if(nested(9)!=4||nested(12)!=4||calls)return 18;
+ calls=0;if(skipped(true,17)!=17||skipped(true,23)!=17||calls!=1)return 19;
+ calls=0;Callback const&cb=callback();if(cb(7)!=7||&callback()!=&cb||calls!=2)return 20;
+ calls=0;const Null&nv=nullValue();if(nv!=nullptr||&nullValue()!=&nv||calls!=1)return 21;
+ const float&fv=floating(1.0f);if(fv!=1.5f||&floating(3.0f)!=&fv)return 22;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("dynamic-temporary-runtime" + Optimization);
     auto Build = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
     auto Run = exec(Executable.string(), {});
@@ -8553,7 +8689,6 @@ TEST_F(TranslateTest, CoreV2StaticRecordsRetainInitializationAndLifetimeRequirem
       {"dynamic-constructor", "struct R{int n;R():n(3){}};R r;", "TR0201"},
       {"dynamic-call", "int f(){return 3;}struct R{int n;};R r{f()};", "TR0201"},
       {"dynamic-read", "int n=3;struct R{int value;};R r{n};", "TR0201"},
-      {"local-parameter", "struct R{int n;};int f(int n){static R r{n};return r.n;}", "TR0201"},
       {"global-destruction", "struct R{int n;~R(){}};R r{3};", "TR0201"},
       {"local-destruction", "struct R{int n;~R(){}};int f(){static R r{3};return r.n;}", "TR0201"},
       {"member-destruction", "struct I{int n;~I(){}};struct R{inline static I i{3};};", "TR0201"},

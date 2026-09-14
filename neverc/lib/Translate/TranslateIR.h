@@ -163,6 +163,7 @@ struct Global {
   SourceLocation Loc;
   bool Mutable = false;
   bool DynamicInitialization = false;
+  std::string InitializationOwner;
 };
 struct Function {
   std::string Name;

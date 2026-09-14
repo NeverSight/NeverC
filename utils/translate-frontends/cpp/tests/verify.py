@@ -5192,7 +5192,6 @@ int*address(){return &state();}
     dynamic_static_reject = {
         'throw': ('int make(){throw 1;}int f(){static int n=make();return n;}', 'TR0201'),
         'destruction': ('struct R{R(int){}~R(){}};void f(int n){static R r(n);}', 'TR0201'),
-        'dynamic-reference': ('int seed(){return 3;}int f(){static const int&r=seed();return r;}', 'TR0201'),
         'hidden-source': ('int seed(){return 3;}int f(){static int n=(static_cast<void>(sizeof(long double)),seed());return n;}', 'TR0201'),
         'unowned-call': ('extern int seed();int f(){static int n=seed();return n;}', 'TR0203'),
         'const-write': ('int f(int v){static const int n=v;return ++n;}', 'TR0202'),
@@ -5219,11 +5218,6 @@ int*address(){return &state();}
     for name, source in dynamic_reference_positive.items():
         check("v2-dynamic-reference-" + name, source, profile="cpp-core-v2")
     dynamic_reference_negative = {
-        'dynamic-scalar-temporary': ('int seed(){return 3;}int f(){static const int&r=seed();return r;}', 'TR0201'),
-        'dynamic-record-temporary': ('struct R{int n;R(int v):n(v){}};int f(int n){static const R&r=R(n);return r.n;}', 'TR0201'),
-        'dynamic-array-temporary': ('int f(int n){static const int(&r)[2]={n,2};return r[0];}', 'TR0201'),
-        'discarded-constant-value': ('int calls;int f(){static const int&r=(++calls,3);return r;}', 'TR0201'),
-        'conditional-temporary': ('int f(bool b){static const int&r=b?3:4;return r;}', 'TR0201'),
         'hidden-reference-type': ('int&f(int&n){static decltype((sizeof(long double),n))r=n;return r;}', 'TR0201'),
         'nonlocal-dynamic': ('int n;int&get(){return n;}int&r=get();', 'TR0201'),
     }
@@ -5237,6 +5231,122 @@ int*address(){return &state();}
     assert not reference_global.get("mutable", False)
     reference_stores = [i for f in dynamic_reference["functions"] for i in f["body"] if i["op"] == "assign" and i["target"].get("name") == reference_global["name"]]
     assert len(reference_stores) == 1 and reference_stores[0]["value"]["type"] == "ptr:int"
+
+    dynamic_temporary_positive = {
+        'forward-member-reference': 'struct S{static const int&a;static const int&b;};const int&S::a=S::b;const int&S::b=3;int main(){return &S::a!=&S::b||S::a!=3;}',
+        'forward-member-pointer': 'struct S{static const int*p;static const int&r;};const int*S::p=&S::r;const int&S::r=3;int main(){return S::p!=&S::r||*S::p!=3;}',
+        'local-record-parameter': 'struct R{int n;};int f(int n){static R r{n};return r.n;}',
+        'scalar-call': 'int seed(){return 3;}int f(){static const int&r=seed();return r;}',
+        'record-call': 'struct R{int n;R(int v):n(v){}};int f(int n){static const R&r=R(n);return r.n;}',
+        'array': 'int f(int n){static const int(&r)[2]={n,2};return r[0];}',
+        'partial-value': 'int calls;int f(){static const int&r=(++calls,3);return r;}',
+        'conditional-prvalue': 'int f(bool b){static const int&r=b?3:4;return r;}',
+        'scalar-parameter': 'const int&f(int n){static const int&r=n+1;return r;}',
+        'mutable-rvalue': 'int&f(int n){static int&&r=n+1;return r;}',
+        'pointer': 'int*const&f(int*p){static int*const&r=(p+1);return r;}',
+        'callback': 'int seed(){return 3;}using F=int(*)();F make(){return seed;}F const&f(){static F const&r=make();return r;}',
+        'null': 'using N=decltype(nullptr);int count;N make(){++count;return nullptr;}const N&f(){static const N&r=make();return r;}',
+        'float': 'const float&f(float n){static const float&r=n+0.5f;return r;}',
+        'record-field': 'struct R{int n;int tail;};const int&f(int n){static const int&r=R{n,n+1}.n;return r;}',
+        'array-field': 'struct R{int n[2];};const int&f(int n){static const int&r=R{{n,n+1}}.n[1];return r;}',
+        'array-record': 'struct R{int n;R(int n):n(n){}};using A=R[2];const R(&f(int n))[2]{static const A&r={R(n),R(n+1)};return r;}',
+        'matrix': 'using A=int[2][2];const A&f(int n){static const A&r={{n,n+1},{n+2,n+3}};return r;}',
+        'comma': 'int calls;const int&f(int n){static const int&r=(++calls,n+1);return r;}',
+        'conditional-glvalue': 'struct R{int n;};const int&f(bool b,int n){static const int&r=b?R{n}.n:R{n+1}.n;return r;}',
+        'conditional-existing': 'int value=7;struct R{int n;};const int&f(bool b,int n){static const int&r=b?static_cast<int&&>(value):R{n}.n;return r;}',
+        'array-glvalue': 'using A=int[2];const int&f(bool b,int n){static const int&r=b?A{n,n+1}[0]:A{n+2,n+3}[1];return r;}',
+        'template': 'template<class T>const T&f(T n){static const T&r=n+T(1);return r;}int main(){return f(2)+f(3u)-7;}',
+        'local-class': 'template<class T>int f(int n){struct R{static const int&get(int n){static const int&r=n+1;return r;}};return R::get(n);}int g(){return f<int>(3);}',
+        'self': 'struct R{int n;const R*self;R(int n):n(n),self(this){}};const R&f(int n){static const R&r=R(n);return r;}',
+        'dead': 'void f(int n){if(false){static const int&r=n+1;}}',
+        'after-return': 'int f(int n){return 0;static const int&r=n+1;}',
+        'nested': 'const int&inner(int n){static const int&r=n+1;return r;}const int&outer(int n){static const int&r=inner(n)+1;return r;}',
+        'ordinary-argument-cleanup': 'int drops;struct T{int n;~T(){++drops;}};int take(const T&t){return t.n;}const int&f(int n){static const int&r=take(T{n});return r;}',
+        'reference-call-does-not-extend': 'const int&id(const int&r){return r;}const int&f(int n){static const int&r=id(n+1);return r;}',
+        'runtime-source': 'int calls=0,drops=0;\nint seed(int n){++calls;return n;}\nconst int&scalar(int n){static const int&r=seed(n);return r;}\nint&mutableValue(int n){static int&&r=seed(n);return r;}\nstruct R{int n;int a[2];const R*self;R(int n):n(seed(n)),a{n+1,n+2},self(this){}};\nR make(int n){return R(n);}\nconst R&record(int n){static const R&r=make(n);return r;}\nconst int&member(int n){static const int&r=make(n).a[1];return r;}\nconst int(&array(int n))[2]{static const int(&r)[2]={seed(n),seed(n+1)};return r;}\nusing Rows=int[2][2];\nconst Rows&matrix(int n){static const Rows&r={{seed(n),n+1},{n+2,n+3}};return r;}\nconst R(&records(int n))[2]{static const R(&r)[2]={R(n),R(n+2)};return r;}\nint*const&pointer(int*p){static int*const&r=p+1;return r;}\nint partial(){static const int&r=(++calls,3);return r;}\nconst int&conditional(bool b,int n){static const int&r=b?make(n).n:make(n+1).n;return r;}\nconst R&prvalue(bool b,int n){static const R&r=b?R(n):R(n+1);return r;}\nint existing=31;\nconst int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):make(n).n;return r;}\nusing Pair=int[2];\nconst int&arrayChoice(bool b,int n){static const int&r=b?Pair{seed(n),seed(n+1)}[0]:Pair{seed(n+2),seed(n+3)}[1];return r;}\ntemplate<class T>const int&instance(int n){static const int&r=seed(n);return r;}\nstruct Temp{int n;~Temp(){++drops;}};\nint take(const Temp&t){return seed(t.n);}\nconst int&cleanup(int n){static const int&r=take(Temp{n});return r;}\nconst int&nested(int n){static const int&r=scalar(n)+1;return r;}\nconst int&skipped(bool b,int n){if(b){static const int&r=seed(n);return r;}return existing;}\nusing Callback=int(*)(int);\nCallback choose(){++calls;return seed;}\nCallback const&callback(){static Callback const&r=choose();return r;}\nusing Null=decltype(nullptr);\nNull nullFactory(){++calls;return nullptr;}\nconst Null&nullValue(){static const Null&r=nullFactory();return r;}\nconst float&floating(float n){static const float&r=n+0.5f;return r;}\nint main(){\n if(calls||drops)return 1;\n if(&skipped(false,9)!=&existing||calls)return 2;\n const int*s=&scalar(3);if(*s!=3||&scalar(9)!=s||calls!=1)return 3;\n calls=0;int&m=mutableValue(5);m=6;if(&mutableValue(9)!=&m||m!=6||calls!=1)return 4;\n calls=0;const R&r=record(7);if(r.n!=7||r.self!=&r||r.a[1]!=9||&record(12)!=&r||calls!=1)return 5;\n calls=0;const int*f=&member(10);if(*f!=12||&member(99)!=f||calls!=1)return 6;\n calls=0;const int(&a)[2]=array(4);if(a[0]!=4||a[1]!=5||&array(9)!=&a||calls!=2)return 7;\n calls=0;const Rows&rows=matrix(6);if(rows[1][1]!=9||&matrix(19)!=&rows||calls!=1)return 8;\n calls=0;const R(&rr)[2]=records(3);if(rr[0].self!=&rr[0]||rr[1].self!=&rr[1]||rr[1].n!=5||&records(12)!=&rr||calls!=2)return 9;\n int values[3]={2,3,4};int*const&p=pointer(values);if(p!=values+1||&pointer(values+1)!=&p)return 10;\n calls=0;if(partial()!=3||partial()!=3||calls!=1)return 11;\n calls=0;const int*c=&conditional(false,13);if(*c!=14||&conditional(true,9)!=c||calls!=1)return 12;\n calls=0;const R&q=prvalue(true,8);if(q.n!=8||q.self!=&q||&prvalue(false,9)!=&q||calls!=1)return 13;\n calls=0;if(&mixed(true,5)!=&existing||&mixed(false,9)!=&existing||calls)return 14;\n calls=0;const int&ac=arrayChoice(false,3);if(ac!=6||&arrayChoice(true,9)!=&ac||calls!=2)return 15;\n calls=0;if(instance<int>(3)!=3||instance<unsigned>(4)!=4||&instance<int>(9)==&instance<unsigned>(9)||calls!=2)return 16;\n calls=0;const int&cl=cleanup(7);if(cl!=7||drops!=1||&cleanup(9)!=&cl||calls!=1||drops!=1)return 17;\n calls=0;if(nested(9)!=4||nested(12)!=4||calls)return 18;\n calls=0;if(skipped(true,17)!=17||skipped(true,23)!=17||calls!=1)return 19;\n calls=0;Callback const&cb=callback();if(cb(7)!=7||&callback()!=&cb||calls!=2)return 20;\n calls=0;const Null&nv=nullValue();if(nv!=nullptr||&nullValue()!=&nv||calls!=1)return 21;\n const float&fv=floating(1.0f);if(fv!=1.5f||&floating(3.0f)!=&fv)return 22;\n return 0;\n}\n',
+        'thread-source': 'int constructions=0,destructions=0;\nstruct Temporary{int n;~Temporary(){++destructions;}};\nstruct Record{\n int first,last;const Record*self;\n Record(const Temporary&t):first(t.n),last(t.n+1),self(this){++constructions;}\n};\nconst Record&value(){static const Record r{Temporary{41}};return r;}\nconst Record&extended(){static const Record&r=Record(Temporary{51});return r;}\nextern "C" int read_value(){const Record&r=value();const Record&t=extended();return r.first==41&&r.last==42&&r.self==&r&&t.first==51&&t.last==52&&t.self==&t&&destructions==2?0:1;}\nextern "C" int initialization_count(){return constructions;}\n',
+    }
+    for name, source in dynamic_temporary_positive.items():
+        check("v2-dynamic-temporary-" + name, source, profile="cpp-core-v2")
+    dynamic_temporary_negative = {
+        'static-destruction': ('struct R{int n;~R(){}};const R&f(int n){static const R&r=R{n};return r;}', 'TR0201'),
+        'dead-static-destruction': ('struct R{int n;~R(){}};void f(int n){if(false){static const R&r=R{n};}}', 'TR0201'),
+        'unselected-static-destruction': ('struct R{int n;~R(){}};int value;void f(int n){static const int&r=true?static_cast<int&&>(value):R{n}.n;}', 'TR0201'),
+        'array-static-destruction': ('struct R{int n;~R(){}};void f(int n){static const R(&r)[2]={{n},{n+1}};}', 'TR0201'),
+        'tls': ('int f(int n){static thread_local const int&r=n+1;return r;}', 'TR0201'),
+        'nonlocal': ('int make(){return 3;}const int&r=make();', 'TR0201'),
+        'hidden-type': ('int f(int n){static const int&r=(static_cast<void>(sizeof(long double)),n+1);return r;}', 'TR0201'),
+        'unowned-call': ('int make(int);const int&f(int n){static const int&r=make(n);return r;}', 'TR0203'),
+        'const-write': ('void f(int n){static const int&r=n+1;r=4;}', 'TR0202'),
+        'array-const-write': ('void f(int n){static const int(&r)[2]={n,n+1};r[1]=4;}', 'TR0202'),
+    }
+    for name, (source, diagnostic) in dynamic_temporary_negative.items():
+        check("v2-dynamic-temporary-reject-" + name, source, diagnostic, profile="cpp-core-v2")
+
+    dt_source = """int effects;
+int seed(int n){++effects;return n;}
+struct R{int n;int a[2];const R*self;R(int v):n(seed(v)),a{v+1,v+2},self(this){}};
+const int&scalar(int n){static const int&r=seed(n);return r;}
+const R&record(int n){static const R&r=R(n);return r;}
+const int&arms(bool b,int n){static const int&r=b?R(n).a[0]:R(n+1).a[1];return r;}
+const R&prvalue(bool b,int n){static const R&r=b?R(n):R(n+1);return r;}
+const int(&array(int n))[2]{static const int(&r)[2]={seed(n),seed(n+1)};return r;}
+int existing=7;
+const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):R(n).n;return r;}
+"""
+    dt_module = check("v2-dynamic-temporary-protocol", dt_source, profile="cpp-core-v2")
+    dt_globals = {g["name"]: g for g in dt_module["globals"]}
+    dt_children = {n:g for n,g in dt_globals.items() if g.get("initialization_owner")}
+    dt_owners = {n:g for n,g in dt_globals.items() if g.get("dynamic_initialization")}
+    assert len(dt_children) == 7 and len(dt_owners) == 6
+    def dt_zero(e):
+        if e["kind"] == "aggregate":
+            return all(dt_zero(a) for a in e["args"])
+        return e["kind"] == "null" or (e["kind"] == "literal" and e["value"] in ("0", False))
+    assert all(dt_zero(g["value"]) for g in dt_children.values())
+    assert all(not g.get("mutable", False) and g["value"]["kind"] == "null" for g in dt_owners.values())
+    assert all(not g.get("dynamic_initialization", False) and g["initialization_owner"] in dt_owners for g in dt_children.values())
+    dt_by_line = {g["loc"]["line"]:g for g in dt_owners.values()}
+    def dt_group(line):
+        return [g for g in dt_children.values() if g["initialization_owner"] == dt_by_line[line]["name"]]
+    assert len(dt_group(4)) == len(dt_group(5)) == len(dt_group(7)) == len(dt_group(8)) == len(dt_group(10)) == 1
+    assert len(dt_group(6)) == 2
+    assert dt_group(4)[0]["type"] == "int" and not dt_group(4)[0].get("mutable", False)
+    assert dt_group(8)[0]["type"] == "arr:2:int" and not dt_group(8)[0].get("mutable", False)
+    assert all(g.get("mutable", False) for g in dt_group(6))
+    dt_begins = [(f,i) for f in dt_module["functions"] for i in f["body"] if i["op"] == "static_init_begin"]
+    dt_ends = [(f,i) for f in dt_module["functions"] for i in f["body"] if i["op"] == "static_init_end"]
+    assert len(dt_begins) == len(dt_ends) == 6
+    assert {i["global"] for f,i in dt_begins} == set(dt_owners)
+    # Each conditional arm initializes its child in its own basic block.
+    arms_name = dt_by_line[6]["name"]
+    arms_fn = next(f for f,i in dt_begins if i["global"] == arms_name)
+    child_blocks = {}
+    current_block = None
+    for i in arms_fn["body"]:
+        if i["op"] == "label":
+            current_block = i["label"]
+        if i["op"] == "call":
+            for node in walk(i):
+                if node.get("kind") == "var" and node.get("name") in {g["name"] for g in dt_group(6)}:
+                    child_blocks.setdefault(node["name"], set()).add(current_block)
+    assert len(child_blocks) == 2 and all(len(v) == 1 for v in child_blocks.values())
+    assert len(set().union(*child_blocks.values())) == 2
+    cleanup_module = check("v2-dynamic-temporary-cleanup-protocol", dynamic_temporary_positive["ordinary-argument-cleanup"], profile="cpp-core-v2")
+    assert len([g for g in cleanup_module["globals"] if g.get("initialization_owner")]) == 1
+    cleanup_fn = next(f for f in cleanup_module["functions"] if any(i["op"] == "static_init_begin" for i in f["body"]))
+    cleanup_calls = gc_calls(cleanup_fn)
+    assert len(cleanup_calls) == 2
+    begin_index = next(n for n,i in enumerate(cleanup_fn["body"]) if i["op"] == "static_init_begin")
+    end_index = next(n for n,i in enumerate(cleanup_fn["body"]) if i["op"] == "static_init_end")
+    assert all(begin_index < cleanup_fn["body"].index(i) < end_index for i in cleanup_calls)
+    # Passing a temporary through a reference-returning call retains only its
+    # ordinary full-expression lifetime; the returned reference adds no child.
+    no_extension = check("v2-dynamic-temporary-call-lifetime", dynamic_temporary_positive["reference-call-does-not-extend"], profile="cpp-core-v2")
+    assert not any(g.get("initialization_owner") for g in no_extension["globals"])
+    with tempfile.TemporaryDirectory(prefix="neverc-dynamic-temporary-relocated-") as temp:
+        relocated = check("v2-dynamic-temporary-relocated", dt_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == dt_module
 
     static_locals_reject = {
         'folded-float': 'int f(){static int n=static_cast<int>(1.0L);return n;}',
@@ -9301,7 +9411,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'dynamic-constructor': ('struct R{int n;R():n(3){}};R r;', 'TR0201'),
         'dynamic-call': ('int f(){return 3;}struct R{int n;};R r{f()};', 'TR0201'),
         'dynamic-read': ('int n=3;struct R{int value;};R r{n};', 'TR0201'),
-        'local-parameter': ('struct R{int n;};int f(int n){static R r{n};return r.n;}', 'TR0201'),
         'global-destruction': ('struct R{int n;~R(){}};R r{3};', 'TR0201'),
         'local-destruction': ('struct R{int n;~R(){}};int f(){static R r{3};return r.n;}', 'TR0201'),
         'member-destruction': ('struct I{int n;~I(){}};struct R{inline static I i{3};};', 'TR0201'),

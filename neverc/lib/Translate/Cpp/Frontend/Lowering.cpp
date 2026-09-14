@@ -37,6 +37,7 @@ class FunctionLowering {
     std::size_t ScopeIndex;
   };
   std::optional<ReferenceInitializer> ActiveReferenceInitializer;
+  const VarDecl *ActiveDynamicReferenceOwner = nullptr;
   std::map<const Decl *, Expression> Storage;
   std::map<const OpaqueValueExpr *, Expression> ArraySources;
   struct ArrayIndex {
@@ -1235,6 +1236,16 @@ class FunctionLowering {
       checkTemporary(M, L);
       return materialize(M->getSubExpr(), L);
     }
+    if (M->getStorageDuration() == SD_Static) {
+      if (!ActiveDynamicReferenceOwner ||
+          A.staticTemporaryOwner(M) != ActiveDynamicReferenceOwner)
+        reject(L, "static temporary lifetime", "The exact dynamic static reference initializer is required.");
+      auto Place = A.dynamicStaticTemporaryObject(M, ActiveDynamicReferenceOwner);
+      // Cache storage identity only. Each branch occurrence still constructs
+      // its actual destination, without registering automatic destruction.
+      initialize(Place, M->getSubExpr(), L);
+      return Place;
+    }
     const auto *Owner = A.temporaryOwner(M);
     if (!Owner || !ActiveReferenceInitializer ||
         Owner != ActiveReferenceInitializer->Variable ||
@@ -1621,10 +1632,13 @@ class FunctionLowering {
         Open = false;
         label(Initialize, L);
         beginFullExpression();
-        if (V->getType()->isReferenceType())
+        if (V->getType()->isReferenceType()) {
+          auto Previous = ActiveDynamicReferenceOwner;
+          auto Restore = llvm::make_scope_exit([&] { ActiveDynamicReferenceOwner = Previous; });
+          ActiveDynamicReferenceOwner = V->getCanonicalDecl();
           assign(variable(Global, type(V->getType(), L), L),
                  bind(V->getInit(), V->getType()), L);
-        else
+        } else
           initialize(std::move(Place), V->getInit(), L);
         endFullExpression();
         Body.push_back(json::Object{{"op", "static_init_end"},

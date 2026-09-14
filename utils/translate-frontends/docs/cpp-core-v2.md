@@ -136,9 +136,10 @@ the first-use region assigns the selected address, not a value into the referent
 Later calls reuse that binding. Const pointees, arrays, callback slots and
 template instances retain their normal types and identity. The binding does not
 extend the lifetime of an existing object. Temporary call arguments retain
-ordinary full-expression cleanup. A lifetime-extended temporary owned by a
-dynamic reference remains rejected, even if failed Clang evaluation retained a
-partial constant value; that value cannot erase runtime initializer effects.
+ordinary full-expression cleanup. A temporary whose lifetime extends to that
+reference is constructed in permanent storage inside the same first-use region;
+see [dynamic temporary lifetimes](#dynamic-local-static-temporaries). A partial
+value retained by failed constant evaluation never replaces runtime effects.
 
 ```cpp
 int constructions = 0;
@@ -192,7 +193,7 @@ Generated assertions check atomic capability and storage layout. Protocol/IR
 checks, O0/O2 execution, sixteen-thread visibility tests and assembly checks for
 runtime helper dependencies require native validation at the implementing CI head.
 
-Nonlocal dynamic reference bindings and dynamic lifetime-extended static temporaries, nontrivial
+Nonlocal dynamic reference bindings, nontrivial
 static destruction, TLS, nonlocal dynamic initialization and exception
 propagation/retry still require implementation. Unsupported throwing source and
 unowned callees remain diagnosed; there is no substitute termination or fake
@@ -357,8 +358,8 @@ Automatic objects, runtime pointer loads/calls, TLS, null/one-past addresses,
 integer-derived pointers and unsupported source types cannot provide these
 constant bindings. Constant-initialized static temporaries follow the contract
 below. Function references, nonstatic reference members, reference non-type
-template arguments, nonlocal dynamic bindings and dynamic lifetime-extended
-static temporaries still require further work. Local runtime bindings use the
+template arguments and nonlocal dynamic bindings still require further work.
+Local runtime bindings and their lifetime-extended temporaries use the
 [first-use contract](#dynamic-local-static-initialization). Actual standard-library
 headers/runtime remain unfinished. Native validation of the paired
 source/protocol cases, const-carrier IR checks, relocation and O0/O2 fixtures
@@ -368,8 +369,9 @@ requires implementing CI. Complete C++/STL remains an active goal.
 
 Core v2 supports temporary objects whose lifetimes C++17 extends to a namespace,
 function-local static or class static reference, including admitted concrete
-class and variable templates. The reference must have a fully defined constant
-initializer and the temporary must have trivial destruction. Scalars, fixed
+class and variable templates. Namespace and class references require a fully
+defined constant initializer; local static references also support the dynamic
+initialization below. The temporary must have trivial destruction. Scalars, fixed
 arrays and admitted records retain their complete storage, including when the
 reference names only a field, array element or multidimensional row.
 
@@ -407,14 +409,49 @@ template instances have distinct addresses. Aliases share the same temporary,
 and function reentry does not reinitialize local static storage. Pointer and
 reference paths retain the existing subobject, const and byte-offset validation.
 
-This support introduces no runtime initializer, guard or destructor registration.
-Dynamic initialization, nontrivial static destruction and TLS still require
-further work. Binding through a function call or pointer arithmetic does not
+Constant initialization introduces no runtime initializer or guard.
+Nontrivial static destruction and TLS still require further work.
+Binding through a function call or pointer arithmetic does not
 invent lifetime extension; unsupported source remains checked even when folded
 or unused. Paired source/protocol tests cover admission and rejection, retained
 self addresses, const permissions and relocation. O0/O2 tests cover persistent
 state and object identity; native acceptance requires CI of this implementation.
 Complete C++/STL remains unfinished.
+
+### Dynamic local static temporaries
+
+A local declaration such as `static const R &r = make(argument);` constructs
+its complete temporary in permanent storage under the reference's first-use
+guard. Scalar, pointer, callback, null, record and fixed-array temporaries retain
+their admitted source types and must have trivial static destruction. The exact
+Clang materialization descriptor, canonical extending declaration and static
+storage duration establish ownership. References to fields and array elements
+retain the complete temporary, following [C++17 temporary lifetime rules](https://timsong-cpp.github.io/cppwp/n4659/class.temporary).
+
+The binding and its temporary children start with semantic zero. Runtime lowering
+initializes each actual child from its original operand; a failed constant
+evaluation's retained partial APValue is never consumed. Constructors receive the
+final destination, preserving self pointers. One outer materialization around a
+prvalue conditional shares one destination; materializations inside glvalue arms
+have separate destinations and initialize only on their selected branch. An
+unselected child may remain zero, including when the binding selects an existing
+object. Storage caching never suppresses a lowered initialization occurrence.
+
+IR children name the readonly dynamic binding through `initialization_owner`.
+One guard publishes the whole group after binding and ordinary full-expression
+cleanup. The verifier grants direct-root construction access only within that
+owner's proven region; pointer aliases retain their ordinary const checks. Static
+children never acquire lexical or full-expression destruction. Binding through
+a reference-returning call does not extend its argument temporary's lifetime.
+
+Constant temporary serialization separately requires successful evaluation of
+the exact owner, including Clang's positive constant-initialization evidence for
+later static member definitions. Merely retaining an APValue grants no access.
+Nontrivial destruction remains diagnosed even in dead or unselected source.
+Paired source/protocol, malformed IR, relocation, O0/O2 and concurrent-reader
+fixtures require native validation at the implementing CI revision. Static
+destruction, exceptions/retry, TLS, nonlocal dynamic startup, allocation and real
+standard-library support remain unfinished parts of the full C++/STL goal.
 
 ## Static record objects
 

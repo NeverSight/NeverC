@@ -1350,6 +1350,218 @@ TEST(TranslateIR, CoreV2DynamicStaticReferenceCarriersKeepBindingReadonly) {
   EXPECT_TRUE(verifyModule(M, context(M), D));
 }
 
+namespace {
+Module dynamicTemporaryModule() {
+  auto M = dynamicStaticModule();
+  const auto Pointer = pointerType(intType(), true);
+  M.Globals[0].ValueType = Pointer;
+  M.Globals[0].Value = pointerExpr(ExprKind::Null, Pointer);
+  M.Globals.push_back({"nct_child", intType(), literal("0"), InputLoc,
+                       false, false, "nct_static"});
+  auto &F = M.Functions[0];
+  F.Result = Pointer;
+  F.Body[3].Target = variable("nct_static", Pointer);
+  F.Body[3].Value = pointerExpr(ExprKind::Address, Pointer, {variable("nct_child")});
+  F.Body.back() = ret(variable("nct_static", Pointer));
+  Instruction Construct;
+  Construct.Op = InstructionKind::Assign;
+  Construct.Loc = InputLoc;
+  Construct.Target = variable("nct_child");
+  Construct.Value = variable("nct_argument");
+  F.Body.insert(F.Body.begin() + 3, Construct);
+  return M;
+}
+} // namespace
+
+TEST(TranslateIR, CoreV2DynamicTemporaryGroupsRestrictInitializationAuthority) {
+  auto M = dynamicTemporaryModule();
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static int nct_child = (0);"), std::string::npos);
+  EXPECT_EQ(Output.Text.find("static const int nct_child"), std::string::npos);
+  const auto Guard = Output.Text.find("static _Atomic(unsigned int)");
+  ASSERT_NE(Guard, std::string::npos);
+  EXPECT_EQ(Output.Text.find("static _Atomic(unsigned int)", Guard + 1), std::string::npos);
+  // Readonly addresses can name the child even before its source owner runs.
+  // This also forces the emitter's tentative declaration path.
+  const auto Pointer = pointerType(intType(), true);
+  M.Globals.push_back({"nct_address", Pointer,
+                       pointerExpr(ExprKind::Address, Pointer, {variable("nct_child")}), InputLoc});
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static int nct_child;"), std::string::npos);
+  EXPECT_EQ(Output.Text.find("static const int nct_child"), std::string::npos);
+  for (unsigned At : {1u, 8u}) {
+    auto Bad = M;
+    auto Store = Bad.Functions[0].Body[3];
+    Bad.Functions[0].Body.insert(Bad.Functions[0].Body.begin() + At, Store);
+    invalid(Bad, "not writable");
+  }
+  auto Bad = M;
+  Bad.Globals[1].InitializationOwner.clear();
+  invalid(Bad, "not writable");
+  Bad = M;
+  auto Other = Bad.Globals[0];
+  Other.Name = "nct_other";
+  Bad.Globals.push_back(Other);
+  Bad.Globals[1].InitializationOwner = "nct_other";
+  invalid(Bad, "not writable");
+  Bad = M;
+  Bad.Functions[0].Body[1].GlobalName = "nct_child";
+  invalid(Bad, "dynamic global");
+  Bad = M;
+  Bad.Functions[0].Body[5].GlobalName = "nct_child";
+  invalid(Bad, "dynamic global");
+  // A const pointer alias never acquires the direct-root grant.
+  Bad = M;
+  Bad.Functions[0].Body[3].Target = pointerExpr(
+      ExprKind::Dereference, intType(), {variable("nct_address", Pointer)});
+  invalid(Bad, "not writable");
+  // Mutable addresses can be formed for construction only in the owned region.
+  Bad = M;
+  Bad.Functions[0].Result = pointerType(intType());
+  Bad.Functions[0].Body.back() = ret(pointerExpr(
+      ExprKind::Address, pointerType(intType()), {variable("nct_child")}));
+  invalid(Bad, "not writable");
+  // Unselected or pruned branches need not initialize every child.
+  M.Functions[0].Body = {label(), ret(pointerExpr(ExprKind::Null, Pointer))};
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+}
+
+TEST(TranslateIR, CoreV2DynamicTemporaryGroupsValidateFlatOwnersAndZeroStorage) {
+  auto M = dynamicTemporaryModule();
+  for (const std::string &Owner : {"nct_missing", "nct_child"}) {
+    auto Bad = M;
+    Bad.Globals[1].InitializationOwner = Owner;
+    invalid(Bad, "object-pointer owner");
+  }
+  auto Bad = M;
+  Bad.Globals[0].Mutable = true;
+  invalid(Bad, "object-pointer owner");
+  Bad = M;
+  Bad.Globals[1].DynamicInitialization = true;
+  invalid(Bad, "object-pointer owner");
+  Bad = M;
+  Bad.Globals[0].InitializationOwner = "nct_child";
+  invalid(Bad, "object-pointer owner");
+  Bad = M;
+  Bad.Globals[0].ValueType = intType();
+  Bad.Globals[0].Value = literal("0");
+  invalid(Bad, "object-pointer owner");
+  Bad = M;
+  Bad.Globals[0].ValueType = pointerType({TypeKind::Void, {}});
+  Bad.Globals[0].Value = pointerExpr(ExprKind::Null, Bad.Globals[0].ValueType);
+  invalid(Bad, "object-pointer owner");
+  Bad = M;
+  Bad.Globals[1].Value = literal("1");
+  invalid(Bad, "initializer");
+  Bad = M;
+  Bad.Profile = "cpp-core-v1";
+  Bad.Target.Carriers.reset();
+  invalid(Bad, "core v2");
+  M.Functions[0].Body = {label(), ret(pointerExpr(ExprKind::Null, M.Functions[0].Result))};
+  const Type Record{TypeKind::Record, "nct_record"};
+  M.Records.push_back({"nct_record", {{"nct_first", intType()}, {"nct_second", intType()}},
+                       InputLoc, RecordLayout{{64, 32}, {0, 32}}});
+  Diagnostics D;
+  for (bool Single : {false, true}) {
+    auto T = Type{Single ? TypeKind::Float : TypeKind::Double, {}};
+    M.Globals[1].ValueType = T;
+    M.Globals[1].Value = literal({}, T);
+    EXPECT_TRUE(verifyModule(M, context(M), D));
+    Bad = M;
+    Bad.Globals[1].Value.Binary64Bits = Single ? UINT64_C(0x80000000)
+                                            : UINT64_C(0x8000000000000000);
+    invalid(Bad, "initializer");
+  }
+  for (const auto &T : {arrayType(intType(), 2), Record}) {
+    M.Globals[1].ValueType = T;
+    M.Globals[1].Value = pointerExpr(ExprKind::Aggregate, T, {literal("0"), literal("0")});
+    EXPECT_TRUE(verifyModule(M, context(M), D));
+    Bad = M;
+    Bad.Globals[1].Value.Args[1] = literal("1");
+    invalid(Bad, "initializer");
+    // A child can precede its owner, and its complete type can differ from
+    // the bound subobject type. Association resolution is independent of order.
+    std::swap(M.Globals[0], M.Globals[1]);
+    EXPECT_TRUE(verifyModule(M, context(M), D));
+    std::swap(M.Globals[0], M.Globals[1]);
+  }
+}
+
+TEST(TranslateIR, CoreV2DynamicTemporaryArrayConstructionKeepsConstDecayChecks) {
+  auto M = dynamicTemporaryModule();
+  const auto Array = arrayType(intType(), 2);
+  M.Globals[1].ValueType = Array;
+  M.Globals[1].Value = pointerExpr(ExprKind::Aggregate, Array, {literal("0"), literal("0")});
+  const auto MutableDecay = pointerExpr(ExprKind::ArrayDecay, pointerType(intType()),
+                                         {variable("nct_child", Array)});
+  auto &F = M.Functions[0];
+  F.Body[3].Target = pointerExpr(ExprKind::Index, intType(), {MutableDecay, literal("1")});
+  F.Body[4].Value = pointerExpr(ExprKind::ArrayDecay, pointerType(intType(), true),
+                                {variable("nct_child", Array)});
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  auto Bad = M;
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.begin() + 8, F.Body[3]);
+  invalid(Bad, "not writable");
+  Bad = M;
+  Bad.Functions[0].Body[3].Target->Args[0].ValueType.PointeeConst = true;
+  invalid(Bad, "not writable");
+}
+
+TEST(TranslateIR, CoreV2DynamicTemporaryRecordConstructionKeepsMemberAndAddressChecks) {
+  auto M = dynamicTemporaryModule();
+  const Type Record{TypeKind::Record, "nct_record"};
+  M.Records.push_back({"nct_record", {{"nct_value", intType()}}, InputLoc,
+                       RecordLayout{{32, 32}, {0}}});
+  M.Globals[1].ValueType = Record;
+  M.Globals[1].Value = pointerExpr(ExprKind::Aggregate, Record, {literal("0")});
+  auto Member = pointerExpr(ExprKind::Member, intType(), {variable("nct_child", Record)});
+  Member.Name = "nct_value";
+  auto &F = M.Functions[0];
+  F.Body[3].Target = Member;
+  F.Body[4].Value = pointerExpr(ExprKind::Address, pointerType(intType(), true), {Member});
+  F.Locals.push_back({"nct_constructor", pointerType(Record), InputLoc});
+  Instruction Address;
+  Address.Op = InstructionKind::Assign;
+  Address.Loc = InputLoc;
+  Address.Target = variable("nct_constructor", pointerType(Record));
+  Address.Value = pointerExpr(ExprKind::Address, pointerType(Record),
+                              {variable("nct_child", Record)});
+  F.Body.insert(F.Body.begin() + 3, Address);
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  auto Bad = M;
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.end() - 1, Address);
+  invalid(Bad, "not writable");
+  Bad = M;
+  auto Store = F.Body[4];
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.end() - 1, Store);
+  invalid(Bad, "not writable");
+}
+
+TEST(TranslateIR, CoreV2DynamicTemporaryProtocolRequiresExplicitOwnerIdentity) {
+  const auto Location = R"json({"file":"input.cpp","line":1,"column":1})json";
+  const auto Child = std::string(R"json({"name":"nct_child","type":"int","initialization_owner":"nct_static","loc":)json") +
+      Location + R"json(,"value":{"kind":"literal","type":"int","value":"0","loc":)json" + Location + "}}";
+  auto Wire = wireModule(true);
+  replaceOnce(Wire, "\"globals\": []", "\"globals\": [" + Child + "]");
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(Wire, M, D));
+  EXPECT_EQ(M.Globals[0].InitializationOwner, "nct_static");
+  EXPECT_FALSE(verifyModule(M, context(M), D));
+  for (const std::string &Value : {"false", "null", "17", "[]", "{}", "\"\""}) {
+    auto Bad = Wire;
+    replaceOnce(Bad, "\"initialization_owner\":\"nct_static\"", "\"initialization_owner\":" + Value);
+    EXPECT_FALSE(parseModule(Bad, M, D));
+  }
+  auto Old = wireModule();
+  replaceOnce(Old, "\"globals\": []", "\"globals\": [" + Child + "]");
+  EXPECT_FALSE(parseModule(Old, M, D));
+}
+
 TEST(TranslateIR, CoreV2DynamicStaticProtocolRejectsMissingOrForeignPayloads) {
   const auto Location = R"json({"file":"input.cpp","line":1,"column":1})json";
   const auto Global = std::string(R"json({"name":"nct_static","type":"int","dynamic_initialization":true,"loc":)json") +

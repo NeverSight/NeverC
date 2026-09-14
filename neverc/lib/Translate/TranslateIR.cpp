@@ -546,6 +546,11 @@ public:
                }) ||
         !array(O, "globals", M.Globals,
                [&](const auto &V, Global &G) {
+                 if (V.get("initialization_owner") &&
+                     (M.Profile != "cpp-core-v2" ||
+                      !string(V, "initialization_owner", G.InitializationOwner) ||
+                      G.InitializationOwner.empty()))
+                   return error("Initialization ownership requires a core v2 global identity.");
                  if (V.get("dynamic_initialization")) {
                    if (M.Profile != "cpp-core-v2" ||
                        !boolean(V, "dynamic_initialization", G.DynamicInitialization) ||
@@ -676,6 +681,7 @@ class Verifier {
   std::map<std::string, Type> Globals;
   std::set<std::string> MutableGlobals;
   std::map<std::string, const Global *> DynamicGlobals;
+  std::map<std::string, const Global *> InitializationGroups;
   std::set<std::string> StaticInitOwners;
   const Global *InitializingGlobal = nullptr;
   std::map<std::string, const Function *> Functions;
@@ -1145,7 +1151,8 @@ class Verifier {
       return Storage.count(E.Name) ||
              (Globals.count(E.Name) && (!Write || MutableGlobals.count(E.Name) ||
                                        (InitializingGlobal &&
-                                        E.Name == InitializingGlobal->Name))) ||
+                                        InitializationGroups.count(E.Name) &&
+                                        InitializationGroups.at(E.Name) == InitializingGlobal))) ||
              error(E.Loc, "Global constants are not writable.");
     if (E.Kind == ExprKind::Member && E.Args.size() == 1)
       return lvalue(E.Args[0], Storage, Write);
@@ -1684,7 +1691,20 @@ public:
         if (M.Profile != "cpp-core-v2" || !Context.HasLockFreeIntAtomics)
           return error(G.Loc, "Dynamic globals require core v2 zero initialization and native lock-free int atomics.");
         DynamicGlobals.emplace(G.Name, &G);
+        InitializationGroups.emplace(G.Name, &G);
       }
+    }
+    for (const auto &G : M.Globals) {
+      if (G.InitializationOwner.empty())
+        continue;
+      const auto Owner = DynamicGlobals.find(G.InitializationOwner);
+      if (M.Profile != "cpp-core-v2" || G.DynamicInitialization ||
+          Owner == DynamicGlobals.end() || Owner->second->Mutable ||
+          !Owner->second->InitializationOwner.empty() ||
+          Owner->second->ValueType.Kind != TypeKind::Pointer ||
+          !completeObject(Owner->second->ValueType.Elements[0]))
+        return error(G.Loc, "An initialization child requires an independent dynamic readonly object-pointer owner.");
+      InitializationGroups.emplace(G.Name, Owner->second);
     }
     for (const auto &G : GlobalDeclarations) {
       if (Globals.count(G.Name))
@@ -1728,7 +1748,8 @@ public:
     for (const auto &G : M.Globals)
       if (G.Value.ValueType != G.ValueType ||
           !expr(G.Value, Empty, 0, true, G.ValueType.Kind == TypeKind::Array) ||
-          (G.DynamicInitialization && !zeroInitializer(G.Value)))
+          ((G.DynamicInitialization || !G.InitializationOwner.empty()) &&
+           !zeroInitializer(G.Value)))
         return error(G.Loc, "Invalid folded global initializer.");
     for (const auto &F : FunctionDeclarations)
       if (!function(F, false))

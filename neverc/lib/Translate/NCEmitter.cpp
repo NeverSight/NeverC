@@ -698,13 +698,15 @@ public:
       // preserve internal linkage and are completed by the initialized definitions.
       for (const auto &G : M.Globals)
         line("static " + declaration(G.ValueType, G.Name,
-                                      !G.Mutable && !G.DynamicInitialization) + ";", &G.Loc);
+                                      !G.Mutable && !G.DynamicInitialization &&
+                                      G.InitializationOwner.empty()) + ";", &G.Loc);
       if (!M.Globals.empty())
         line("");
     }
     for (const auto &G : M.Globals) {
       line("static " + declaration(G.ValueType, G.Name,
-                                    !G.Mutable && !G.DynamicInitialization) + " = " +
+                                    !G.Mutable && !G.DynamicInitialization &&
+                                    G.InitializationOwner.empty()) + " = " +
                expression(G.Value, true) + ";",
            &G.Loc);
       if (G.DynamicInitialization)

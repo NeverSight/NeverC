@@ -281,6 +281,7 @@ public:
   std::vector<clang::VarDecl *> Globals;
   std::map<const clang::VarDecl *, json::Object> ConstantStaticObjectInitializers;
   std::map<const clang::VarDecl *, json::Object> StaticReferenceInitializers;
+  std::set<const clang::VarDecl *> ConstantStaticReferenceOwners;
   std::map<const clang::StringLiteral *, std::string> StringObjects;
   json::Array StringGlobals;
   std::map<const clang::MaterializeTemporaryExpr *, std::string> StaticTemporaryObjects;
@@ -321,6 +322,8 @@ public:
   json::Object stringObject(const clang::StringLiteral *Literal);
   const clang::VarDecl *staticTemporaryOwner(const clang::MaterializeTemporaryExpr *Temporary) const;
   json::Object staticTemporaryObject(const clang::MaterializeTemporaryExpr *Temporary);
+  json::Object dynamicStaticTemporaryObject(const clang::MaterializeTemporaryExpr *Temporary,
+                                            const clang::VarDecl *Owner);
   json::Object constantPointer(const clang::APValue &Value, clang::QualType T,
                                clang::SourceLocation L, bool ReferenceBinding = false);
   std::string mapping(const clang::CallExpr *Call);

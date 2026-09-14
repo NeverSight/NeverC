@@ -946,14 +946,14 @@ const VarDecl *automaticTemporaryOwner(const MaterializeTemporaryExpr *M,
   return Owner->getCanonicalDecl();
 }
 const VarDecl *Adapter::staticTemporaryOwner(const MaterializeTemporaryExpr *M) const {
-  if (!S.coreV2() || !temporaryShape(M, Context) || M->getStorageDuration() != SD_Static)
+  if (!S.coreV2() || !temporaryShape(M, Context) || M->getStorageDuration() != SD_Static ||
+      M->getType().isVolatileQualified() || needsDestruction(M->getType()))
     return nullptr;
   const auto *Descriptor = M->getLifetimeExtendedTemporaryDecl();
   const auto *Owner = dyn_cast_or_null<VarDecl>(M->getExtendingDecl());
   if (!Descriptor || Descriptor->getTemporaryExpr() != M->getSubExpr() ||
       Descriptor->getExtendingDecl() != Owner || Descriptor->getStorageDuration() != SD_Static ||
       !Owner || Owner->isImplicit() || Owner->isInvalidDecl() ||
-      DynamicStaticLocals.count(Owner->getCanonicalDecl()) ||
       Owner->getDeclContext()->isDependentContext() || !Owner->getType()->isReferenceType() ||
       !Owner->hasGlobalStorage() || Owner->getTLSKind() != VarDecl::TLS_None ||
       !S.owns(Sources, M->getExprLoc()) || !S.owns(Sources, Owner->getLocation()))
@@ -1727,9 +1727,26 @@ json::Object Adapter::stringObject(const StringLiteral *Literal) {
 json::Object Adapter::staticTemporaryObject(const MaterializeTemporaryExpr *Temporary) {
   auto L = Temporary->getExprLoc();
   auto T = Temporary->getType();
-  if (!staticTemporaryOwner(Temporary) || T.isVolatileQualified() || needsDestruction(T)) {
+  const auto *Owner = staticTemporaryOwner(Temporary);
+  const VarDecl *InitializingDecl = nullptr;
+  if (Owner && !ConstantStaticReferenceOwners.count(Owner)) {
+    // A class member can refer to a later static reference definition before
+    // the source walk visits that owner. Clang's native flag is also positive
+    // evidence: it is set only by successful constant initialization with no
+    // diagnostics, not by the mere presence of a retained temporary APValue.
+    const auto *Init = Owner->getAnyInitializer(InitializingDecl);
+    if (Init && InitializingDecl && S.owns(Sources, InitializingDecl->getLocation()) &&
+        InitializingDecl->getCanonicalDecl() == Owner &&
+        InitializingDecl->getDeclContext()->getRedeclContext() ==
+            Owner->getDeclContext()->getRedeclContext() &&
+        Context.hasSameType(InitializingDecl->getType(), Owner->getType()) &&
+        InitializingDecl->hasConstantInitialization())
+      ConstantStaticReferenceOwners.insert(Owner);
+  }
+  if (!Owner || DynamicStaticLocals.count(Owner) ||
+      !ConstantStaticReferenceOwners.count(Owner)) {
     reject(L, "static temporary storage",
-           "A static temporary requires its exact reference owner and trivial destruction.");
+           "A constant static temporary requires successful evaluation of its exact reference owner.");
     throw Failure{};
   }
   auto Kind = type(T, L);
@@ -1753,6 +1770,36 @@ json::Object Adapter::staticTemporaryObject(const MaterializeTemporaryExpr *Temp
     Found = StaticTemporaryObjects.emplace(Temporary, Name).first;
     json::Object Global{{"name", Name}, {"type", Kind},
                         {"value", constant(*Value, T, L)}, {"loc", loc(L)}};
+    if (!T.isConstQualified())
+      Global["mutable"] = true;
+    StaticTemporaryGlobals.push_back(std::move(Global));
+  }
+  return json::Object{{"kind", "var"}, {"type", Kind},
+                      {"name", Found->second}, {"loc", loc(L)}};
+}
+
+json::Object Adapter::dynamicStaticTemporaryObject(const MaterializeTemporaryExpr *Temporary,
+                                                  const VarDecl *Owner) {
+  auto L = Temporary->getExprLoc();
+  auto T = Temporary->getType();
+  if (!Owner || staticTemporaryOwner(Temporary) != Owner ||
+      !Owner->isStaticLocal() || !DynamicStaticLocals.count(Owner)) {
+    reject(L, "static temporary initialization",
+           "A runtime static temporary requires its exact dynamic local reference owner.");
+    throw Failure{};
+  }
+  auto Kind = type(T, L);
+  if (Kind.empty())
+    throw Failure{};
+  auto Found = StaticTemporaryObjects.find(Temporary);
+  if (Found == StaticTemporaryObjects.end()) {
+    chargeExpansion(storageUnits(T) + 1, L);
+    auto Name = "nct_static_temporary_" + std::to_string(StaticTemporaryObjects.size());
+    Found = StaticTemporaryObjects.emplace(Temporary, Name).first;
+    // Failed constant evaluation can retain partial values. Runtime children
+    // always begin with semantic zero and execute the original initializer.
+    json::Object Global{{"name", Name}, {"type", Kind}, {"value", zero(T, L)},
+                        {"initialization_owner", name(Owner)}, {"loc", loc(L)}};
     if (!T.isConstQualified())
       Global["mutable"] = true;
     StaticTemporaryGlobals.push_back(std::move(Global));
@@ -8372,14 +8419,14 @@ public:
                  "A nonlocal static reference requires a constant binding to permanent storage.");
         return false;
       }
-      // Only the binding carrier is initialized at first passage. A dynamic
-      // owner cannot use the constant static-temporary path to erase runtime
-      // effects or manufacture a lifetime extension (see staticTemporaryOwner).
+      // The binding and its lifetime-extended temporaries initialize together
+      // at first passage. Runtime allocation never consumes a partial APValue.
       A.DynamicStaticLocals.insert(Canonical);
       A.StaticReferenceInitializers.emplace(
           Canonical, A.zero(PointerType, Definition->getLocation()));
       return true;
     }
+    A.ConstantStaticReferenceOwners.insert(Canonical);
     auto Initializer = A.constantPointer(Value, PointerType, Definition->getLocation(), /*ReferenceBinding=*/true);
     A.StaticReferenceInitializers.emplace(Canonical, std::move(Initializer));
     return true;
