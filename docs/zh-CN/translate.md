@@ -106,7 +106,9 @@ Core v2 支持命名空间数组、函数内静态数组和类静态数组成员
 
 Core v2 支持静态对象指针的零初始化和常量初始化，保留全局对象、字符串、数组元素及字段的地址，以及有效的末尾后一位指针。命名空间、函数、类和模板存储均保留指针身份、可变性与 const 访问规则。前向地址直接输出为 C23 常量，无需运行时初始化。静态引用、动态分配和完整 STL 仍待完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
 
-静态引用现在可绑定已有静态对象、数组／记录子对象和字符串，并覆盖局部／类静态引用及已支持的模板实例。读写保持原对象身份和 const 权限。静态临时对象的生命周期延长及动态初始化尚未完成，原生验证仍需对应实现版本的 CI。参见[静态引用契约](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings)。
+静态引用现在可绑定已有静态对象、数组／记录子对象和字符串，并覆盖局部／类静态引用及已支持的模板实例。读写保持原对象身份和 const 权限。动态初始化及静态析构尚未完成，原生验证仍需对应实现版本的 CI。参见[静态引用契约](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings)。
+
+Core v2 支持常量初始化的静态引用临时对象，包括标量、数组和记录对象。完整对象、子对象引用、自指针、const 权限和模板实例身份均保留持久存储。当前要求平凡析构；动态初始化、静态析构、TLS 和完整 C++／STL 仍待完成，原生验证以实现版本的 CI 为准。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-temporary-lifetime-extension).
 
 静态记录对象现在支持常量初始化和共享可写状态，涵盖局部／类静态对象及已支持的模板实例。对象自身地址、constexpr 构造和静态零初始化保留原对象身份。动态初始化和静态析构尚未完成，原生验证仍需对应实现版本的 CI。参见[静态记录契约](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects)。
 

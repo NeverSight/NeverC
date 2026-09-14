@@ -275,12 +275,64 @@ referred object and introduces no destruction or block-entry initializer.
 
 Automatic objects, runtime pointer loads/calls, TLS, null/one-past addresses,
 integer-derived pointers and unsupported source types cannot provide these
-constant bindings. Static lifetime extension of temporary scalars, arrays or
-records remains unfinished, as do function references, nonstatic reference
-members, reference non-type template arguments, dynamic initialization/guards
+constant bindings. Constant-initialized static temporaries follow the contract
+below. Function references, nonstatic reference members, reference non-type
+template arguments, dynamic initialization/guards
 and actual standard-library headers/runtime. Native validation of the paired
 source/protocol cases, const-carrier IR checks, relocation and O0/O2 fixtures
 requires implementing CI. Complete C++/STL remains an active goal.
+
+## Static reference temporary lifetime extension
+
+Core v2 supports temporary objects whose lifetimes C++17 extends to a namespace,
+function-local static or class static reference, including admitted concrete
+class and variable templates. The reference must have a fully defined constant
+initializer and the temporary must have trivial destruction. Scalars, fixed
+arrays and admitted records retain their complete storage, including when the
+reference names only a field, array element or multidimensional row.
+
+```cpp
+struct State {
+  int value;
+  int* address;
+  constexpr State() : value(3), address(&value) {}
+};
+State&& state = State();
+const int (&values)[3] = {4, 5};
+int& local() {
+  static int&& value = 6;
+  return value;
+}
+int main() {
+  *state.address = 7;
+  local() = 8;
+  return state.value != 7 || local() != 8 || values[2] != 0;
+}
+```
+
+The materialization descriptor must identify the exact reference declaration,
+initializer operand and static storage duration. Constant evaluation occurs in
+that reference's initialization context; the translator reads Clang's retained
+complete-object value instead of reevaluating its operand independently. Each
+materialization receives one internal static object. Its identity is registered
+before its fields are emitted so self pointers name the same object. Copying a
+record keeps stored pointer values; it does not retarget them to the copy.
+
+The temporary's actual type determines mutability independently of the reference
+carrier, which remains immutable. Rvalue-reference objects can remain writable;
+const temporary objects remain read-only. Distinct materializations and distinct
+template instances have distinct addresses. Aliases share the same temporary,
+and function reentry does not reinitialize local static storage. Pointer and
+reference paths retain the existing subobject, const and byte-offset validation.
+
+This support introduces no runtime initializer, guard or destructor registration.
+Dynamic initialization, nontrivial static destruction and TLS still require
+further work. Binding through a function call or pointer arithmetic does not
+invent lifetime extension; unsupported source remains checked even when folded
+or unused. Paired source/protocol tests cover admission and rejection, retained
+self addresses, const permissions and relocation. O0/O2 tests cover persistent
+state and object identity; native acceptance requires CI of this implementation.
+Complete C++/STL remains unfinished.
 
 ## Static record objects
 
@@ -330,8 +382,8 @@ forward declarations needed for self addresses.
 
 Nonconstant constructor calls or initializer reads, TLS, volatile objects,
 nontrivial static destruction, unsupported layouts/fields and allocation remain
-outside this increment. Static temporary lifetime extension, dynamic guards,
-exception unwinding and actual standard-library headers/runtime still require
+outside this increment. Dynamic guards, exception unwinding and actual
+standard-library headers/runtime still require
 further work. Paired source/protocol cases, mutable/self-address IR cases,
 relocation and O0/O2 fixtures require native validation in implementing CI;
 complete C++/STL remains unfinished.

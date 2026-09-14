@@ -106,7 +106,9 @@ Core v2 支援命名空間陣列、函式內靜態陣列及類別靜態陣列成
 
 Core v2 支援靜態物件指標的零初始化與常數初始化，保留全域物件、字串、陣列元素及欄位的位址，以及有效的末尾後一位指標。命名空間、函式、類別及範本儲存空間皆保留指標身分、可變性與 const 存取規則。前向位址直接輸出為 C23 常數，無須執行期初始化。靜態參考、動態配置及完整 STL 仍待完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
 
-靜態參考現在可繫結既有靜態物件、陣列／記錄子物件及字串，涵蓋區域／類別靜態參考及已支援的範本實例。讀寫保留原物件身分與 const 權限。靜態暫存物件的生命週期延長及動態初始化尚未完成，原生驗證仍需對應實作版本的 CI。請參閱[靜態參考契約](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings)。
+靜態參考現在可繫結既有靜態物件、陣列／記錄子物件及字串，涵蓋區域／類別靜態參考及已支援的範本實例。讀寫保留原物件身分與 const 權限。動態初始化及靜態解構尚未完成，原生驗證仍需對應實作版本的 CI。請參閱[靜態參考契約](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings)。
+
+Core v2 支援常數初始化的靜態參考暫存物件，包括純量、陣列及記錄物件。完整物件、子物件別名、自身指標、const 權限及範本實例身分均保留持久儲存空間。目前要求平凡解構；動態初始化、靜態解構、TLS 和完整 C++／STL 仍待完成，原生驗證以此實作版本的 CI 為準。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-temporary-lifetime-extension).
 
 靜態記錄物件現在支援常量初始化與共用可寫狀態，涵蓋區域／類別靜態物件及已支援的範本實例。物件自身位址、constexpr 建構與靜態零初始化保留原物件身分。動態初始化及靜態解構尚未完成，原生驗證仍需對應實作版本的 CI。請參閱[靜態記錄契約](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects)。
 

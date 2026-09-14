@@ -8177,6 +8177,145 @@ TEST_F(TranslateTest, CoreV2StaticRecordsRetainInitializationAndLifetimeRequirem
   expectNoArtifacts(Output);
 }
 
+TEST_F(TranslateTest, CoreV2StaticTemporariesPreserveStorageAndIdentity) {
+  const auto Source = tmpFile("static-temporary-runtime.cpp");
+  const auto Output = tmpFile("static-temporary-runtime.nc");
+  writeFile(Source, R"cpp(struct R{int n;int data[2];};
+const int&fixed=3;
+const int&other=3;
+const int&alias=fixed;
+const int*address=&alias;
+int&&state=4;
+R&&record=R{5,{6,7}};
+const R&readonly=R{8,{9,10}};
+const int&member=R{11,{12,13}}.data[1];
+const int(&array)[3]={14,15};
+using Matrix=int[2][2];
+const int(&row)[2]=Matrix{{16,17},{18,19}}[1];
+struct Self{int n;int*p;constexpr Self():n(20),p(&n){}};
+Self&&self=Self();
+int&local(){static int&&r=21;return r;}
+const R&localRecord(){static const R&r=R{22,{23,24}};return r;}
+template<int N>int&slot(){static int&&r=N;return r;}
+template<int N>struct Store{inline static int&&r=N;};
+template<int N>inline int&&value=N;
+struct Member{template<int N>inline static int&&r=N;};
+struct E{};
+const E&empty=E{};
+const E&emptyOther=E{};
+int main(){
+ Self copied=self;
+ if(fixed!=3||other!=3||&fixed==&other||address!=&fixed)return 1;
+ state=25;if(state!=25)return 2;
+ record.n=26;record.data[1]=27;if(record.n!=26||record.data[1]!=27)return 3;
+ if(readonly.n!=8||readonly.data[1]!=10||member!=13)return 4;
+ if(array[0]!=14||array[1]!=15||array[2]!=0||row[1]!=19)return 5;
+ if(self.p!=&self.n||*self.p!=20||copied.p!=self.p||copied.p==&copied.n)return 6;
+ *self.p=28;if(self.n!=28||copied.n!=20||*copied.p!=28)return 7;
+ int*p=&local();local()=29;if(&local()!=p||local()!=29)return 8;
+ const R*q=&localRecord();if(&localRecord()!=q||q->data[1]!=24)return 9;
+ slot<3>()=30;if(slot<3>()!=30||slot<4>()!=4||&slot<3>()==&slot<4>())return 10;
+ Store<3>::r=31;if(Store<3>::r!=31||Store<4>::r!=4)return 11;
+ value<3> =32;if(value<3> !=32||value<4> !=4)return 12;
+ Member::r<3> =33;if(Member::r<3> !=33||Member::r<4> !=4)return 13;
+ if(&empty==&emptyOther||sizeof(empty)!=1)return 14;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("static-temporary-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticTemporariesAcceptSourceComposition) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"global-scalar", "const int&r=3;int f(){return r;}"},
+      {"local-scalar", "int f(){static const int&r=3;return r;}"},
+      {"global-array", "const int(&r)[2]={1,2};int f(){return r[1];}"},
+      {"empty-record", "struct E{};void f(){static const E&e=E{};}"},
+      {"rvalue-scalar", "int&&r=3;int f(){return ++r;}"},
+      {"braced-scalar", "const int&r{3};const int&s={4};int f(){return r+s;}"},
+      {"scalar-conversion", "const long long&r=3;long long f(){return r;}"},
+      {"float", "const float&r=1.25f;float&&s=2.5f;float f(){s+=r;return s;}"},
+      {"enum", "enum class E:unsigned char{v=3};const E&r=E::v;int f(){return static_cast<int>(r);}"},
+      {"nullptr", "using N=decltype(nullptr);const N&r=nullptr;bool f(){return r==nullptr;}"},
+      {"pointer", "int n=3;int*const&r=&n;int f(){return ++*r;}"},
+      {"callback", "int f(){return 3;}using F=int(*)();F&&r=&f;int g(){return r();}"},
+      {"record", "struct R{int n;};const R&r=R{3};int f(){return r.n;}"},
+      {"mutable-record", "struct R{int n;};R&&r=R{3};int f(){return ++r.n;}"},
+      {"member", "struct R{int n;};int&&r=R{3}.n;int f(){return ++r;}"},
+      {"array-member", "struct R{int n[2];};const int(&r)[2]=R{{3,4}}.n;int f(){return r[1];}"},
+      {"array-element", "struct R{int n[2];};int&&r=R{{3,4}}.n[1];int f(){return ++r;}"},
+      {"nested", "struct I{int n;};struct R{I i;};const int&r=R{{3}}.i.n;int f(){return r;}"},
+      {"multidimensional", "using A=int[2][2];const int(&r)[2]=A{{1,2},{3,4}}[1];int f(){return r[1];}"},
+      {"record-array", "struct R{int n;};using A=R[2];const R&r=A{{3},{4}}[1];int f(){return r.n;}"},
+      {"constructor", "struct R{int n;constexpr R(int v):n(v){}};const R&r=R(3);int f(){return r.n;}"},
+      {"self-pointer", "struct R{int n;int*p;constexpr R():n(3),p(&n){}};R&&r=R();int f(){return r.p==&r.n?++*r.p:0;}"},
+      {"default-members", "struct R{int n=3;int*p=&n;};R&&r=R{};int f(){return r.p==&r.n?*r.p:0;}"},
+      {"constexpr-call", "struct R{int n;};constexpr R make(){return R{3};}const R&r=make();int f(){return r.n;}"},
+      {"constexpr-conversion", "struct R{constexpr operator int()const{return 3;}};const int&r=R{};int f(){return r;}"},
+      {"constexpr-query", "constexpr const int&r=3;static_assert(r==3);int f(){return r;}"},
+      {"conditional", "struct R{int n;};const R&r=true?R{3}:R{4};int f(){return r.n;}"},
+      {"comma", "const int&r=(static_cast<void>(1),3);int f(){return r;}"},
+      {"reference-chain", "const int&r=3;const int&s=r;const int*p=&s;bool f(){return p==&r;}"},
+      {"local-state", "int&f(){static int&&r=3;return r;}int g(){return ++f();}"},
+      {"local-conditional", "int&f(bool c){if(c){static int&&r=3;return r;}static int&&s=4;return s;}"},
+      {"class-member", "struct R{inline static const int&r=3;};int f(){return R::r;}"},
+      {"class-outline", "struct R{static const int&r;};const int&R::r=3;int f(){return R::r;}"},
+      {"template-local", "template<int N>int&f(){static int&&r=N;return r;}int g(){return ++f<3>()+f<4>();}"},
+      {"template-class", "template<int N>struct R{inline static int&&r=N;};int f(){return ++R<3>::r+R<4>::r;}"},
+      {"template-variable", "template<int N>inline int&&r=N;int f(){return ++r<3> +r<4>;}"},
+      {"template-member-variable", "struct R{template<int N>inline static int&&r=N;};int f(){return ++R::r<3> +R::r<4>;}"},
+      {"template-record", "template<class T>struct R{T n;};const R<int>&r=R<int>{3};int f(){return r.n;}"},
+      {"const-cast-mutable", "int&&r=3;const int&s=r;int f(){return ++const_cast<int&>(s);}"},
+      {"protocol-source", "const int&first=3;\nconst int&alias=first;\nint&&state=4;\nconst int(&array)[2]={5,6};\nstruct R{int n;int*p;constexpr R():n(7),p(&n){}};\nR&&self=R();\nconst int&field=R().n;\nint&local(){static int&&r=8;return r;}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static-temporary-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("static-temporary-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticTemporariesRetainInitializationAndLifetimeChecks) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"runtime-call", "int make(){return 3;}const int&r=make();", "TR0201"},
+      {"local-runtime-parameter", "int f(int n){static const int&r=n;return r;}", "TR0201"},
+      {"runtime-constructor", "struct R{int n;R():n(3){}};const R&r=R();", "TR0201"},
+      {"nontrivial-destructor", "struct R{int n;~R(){}};const R&r=R{3};", "TR0201"},
+      {"array-destructor", "struct R{int n;~R(){}};const R(&r)[2]={{3},{4}};", "TR0201"},
+      {"tls", "thread_local const int&r=3;", "TR0201"},
+      {"hidden-type", "const long double&r=3.0L;", "TR0201"},
+      {"hidden-comma", "const int&r=(static_cast<void>(1.0L),3);", "TR0201"},
+      {"hidden-constexpr-call", "constexpr int make(){return sizeof(long double);}const int&r=make();", "TR0201"},
+      {"reference-field", "struct R{const int&r;};const R&r=R{3};", "TR0201"},
+      {"dangling-through-call", "constexpr const int&id(const int&r){return r;}const int&r=id(3);", "TR0201"},
+      {"dangling-array-decay", "struct R{int n[2];};const int&r=*(R{{3,4}}.n+1);", "TR0201"},
+      {"const-write", "const int&r=3;void f(){r=4;}", "TR0202"},
+      {"const-array-write", "const int(&r)[2]={3,4};void f(){r[0]=5;}", "TR0202"},
+      {"lvalue-rvalue-binding", "int&r=3;", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static-temporary-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("static-temporary-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StaticReferencesPreserveAliasesAndIdentity) {
   const auto Source = tmpFile("static-reference-runtime.cpp");
   const auto Output = tmpFile("static-reference-runtime.nc");
@@ -8318,9 +8457,6 @@ TEST_F(TranslateTest, CoreV2StaticReferencesRetainBindingAndLifetimeRequirements
       {"local-parameter", "int&f(int&n){static int&r=n;return r;}", "TR0201"},
       {"local-automatic", "int&f(){int n=3;static int&r=n;return r;}", "TR0201"},
       {"local-runtime-choice", "int a,b;int&f(bool c){static int&r=c?a:b;return r;}", "TR0201"},
-      {"global-temporary", "const int&r=3;", "TR0201"},
-      {"local-temporary", "int f(){static const int&r=3;return r;}", "TR0201"},
-      {"global-array-temporary", "const int(&r)[2]={1,2};", "TR0201"},
       {"global-null", "int&r=*static_cast<int*>(nullptr);", "TR0201"},
       {"global-one-past", "int a[2];int&r=*(a+2);", "TR0201"},
       {"global-object-end", "int n;int&r=*(&n+1);", "TR0201"},
@@ -15216,7 +15352,6 @@ TEST_F(TranslateTest, CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries) {
       {"overaligned", "struct alignas(2) E{};", "TR0201"},
       {"attribute", "struct __attribute__((packed)) E{};", "TR0201"},
       {"reference-field", "struct E{int&r;};", "TR0201"},
-      {"static-reference", "struct E{};void f(){static const E&e=E{};}", "TR0201"},
       {"thread-reference", "struct E{};void f(){thread_local const E&e=E{};}", "TR0201"},
       {"escaping-reference", "struct E{};const E&f(){return E{};}", "TR0201"},
       {"unevaluated-unsupported", "struct E{operator long double()const{return 1.0L;}};bool f(){E e;return noexcept(static_cast<long double>(e));}", "TR0201"},

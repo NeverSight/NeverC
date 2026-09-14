@@ -106,7 +106,9 @@ Core v2는 네임스페이스 배열, 함수 내부 정적 배열, 클래스 정
 
 Core v2는 정적 객체 포인터의 0 초기화와 상수 초기화를 지원하며, 전역 객체·문자열·배열 요소·필드 주소와 유효한 끝 다음 포인터를 유지합니다. 네임스페이스·함수·클래스·템플릿 저장소에서도 동일성, 가변성, const 접근 규칙을 보존합니다. 나중에 정의되는 객체의 주소도 런타임 초기화 없이 C23 상수로 출력됩니다. 정적 참조, 동적 할당, 완전한 STL은 개발 중입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
 
-정적 참조는 기존 정적 객체, 배열／레코드 하위 객체와 문자열에 바인딩되며 지역／클래스 정적 참조와 지원되는 템플릿 인스턴스를 포함합니다. 읽기와 쓰기는 원래 객체와 const 권한을 유지합니다. 정적 임시 객체의 수명 연장과 동적 초기화는 미완성이며 네이티브 검증에는 구현 버전의 CI가 필요합니다. [정적 참조 계약](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings)을 참조하세요.
+정적 참조는 기존 정적 객체, 배열／레코드 하위 객체와 문자열에 바인딩되며 지역／클래스 정적 참조와 지원되는 템플릿 인스턴스를 포함합니다. 읽기와 쓰기는 원래 객체와 const 권한을 유지합니다. 동적 초기화와 정적 소멸은 미완성이며 네이티브 검증에는 구현 버전의 CI가 필요합니다. [정적 참조 계약](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-bindings)을 참조하세요.
+
+Core v2는 정적 참조로 수명이 연장되는 상수 초기화 스칼라·배열·레코드 임시 객체를 지원합니다. 전체 객체, 하위 객체 별칭, 자기 포인터, const 권한 및 템플릿 인스턴스 동일성을 유지합니다. trivial 소멸이 필요하며 동적 초기화, 정적 소멸, TLS 및 완전한 C++/STL은 아직 미완성입니다. 네이티브 검증에는 구현 버전의 CI가 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-reference-temporary-lifetime-extension).
 
 정적 레코드는 지역／클래스 정적 객체와 지원되는 템플릿 인스턴스에서 상수 초기화와 공유 변경 가능 상태를 지원합니다. 자체 주소, constexpr 생성과 정적 영 초기화는 객체 정체성을 유지합니다. 동적 초기화와 정적 소멸은 미완성이며 네이티브 검증에는 구현 버전의 CI가 필요합니다. [정적 레코드 계약](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects)을 참조하세요.
 

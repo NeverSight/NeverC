@@ -2953,7 +2953,6 @@ bool query(){return noexcept(C());}
         'overaligned': 'struct alignas(2) E{};',
         'attribute': 'struct __attribute__((packed)) E{};',
         'reference-field': 'struct E{int&r;};',
-        'static-reference': 'struct E{};void f(){static const E&e=E{};}',
         'thread-reference': 'struct E{};void f(){thread_local const E&e=E{};}',
         'escaping-reference': 'struct E{};const E&f(){return E{};}',
         'unevaluated-unsupported': 'struct E{operator long double()const{return 1.0L;}};bool f(){E e;return noexcept(static_cast<long double>(e));}',
@@ -9249,6 +9248,93 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         relocated=check("v2-static-record-relocated",static_record_positive["protocol-source"],root=Path(temp)/"project",profile="cpp-core-v2")
         assert relocated==static_record_ir, "static record storage depends on the source root"
 
+    static_temporary_positive = {
+        'global-scalar': 'const int&r=3;int f(){return r;}',
+        'local-scalar': 'int f(){static const int&r=3;return r;}',
+        'global-array': 'const int(&r)[2]={1,2};int f(){return r[1];}',
+        'empty-record': 'struct E{};void f(){static const E&e=E{};}',
+        'rvalue-scalar': 'int&&r=3;int f(){return ++r;}',
+        'braced-scalar': 'const int&r{3};const int&s={4};int f(){return r+s;}',
+        'scalar-conversion': 'const long long&r=3;long long f(){return r;}',
+        'float': 'const float&r=1.25f;float&&s=2.5f;float f(){s+=r;return s;}',
+        'enum': 'enum class E:unsigned char{v=3};const E&r=E::v;int f(){return static_cast<int>(r);}',
+        'nullptr': 'using N=decltype(nullptr);const N&r=nullptr;bool f(){return r==nullptr;}',
+        'pointer': 'int n=3;int*const&r=&n;int f(){return ++*r;}',
+        'callback': 'int f(){return 3;}using F=int(*)();F&&r=&f;int g(){return r();}',
+        'record': 'struct R{int n;};const R&r=R{3};int f(){return r.n;}',
+        'mutable-record': 'struct R{int n;};R&&r=R{3};int f(){return ++r.n;}',
+        'member': 'struct R{int n;};int&&r=R{3}.n;int f(){return ++r;}',
+        'array-member': 'struct R{int n[2];};const int(&r)[2]=R{{3,4}}.n;int f(){return r[1];}',
+        'array-element': 'struct R{int n[2];};int&&r=R{{3,4}}.n[1];int f(){return ++r;}',
+        'nested': 'struct I{int n;};struct R{I i;};const int&r=R{{3}}.i.n;int f(){return r;}',
+        'multidimensional': 'using A=int[2][2];const int(&r)[2]=A{{1,2},{3,4}}[1];int f(){return r[1];}',
+        'record-array': 'struct R{int n;};using A=R[2];const R&r=A{{3},{4}}[1];int f(){return r.n;}',
+        'constructor': 'struct R{int n;constexpr R(int v):n(v){}};const R&r=R(3);int f(){return r.n;}',
+        'self-pointer': 'struct R{int n;int*p;constexpr R():n(3),p(&n){}};R&&r=R();int f(){return r.p==&r.n?++*r.p:0;}',
+        'default-members': 'struct R{int n=3;int*p=&n;};R&&r=R{};int f(){return r.p==&r.n?*r.p:0;}',
+        'constexpr-call': 'struct R{int n;};constexpr R make(){return R{3};}const R&r=make();int f(){return r.n;}',
+        'constexpr-conversion': 'struct R{constexpr operator int()const{return 3;}};const int&r=R{};int f(){return r;}',
+        'constexpr-query': 'constexpr const int&r=3;static_assert(r==3);int f(){return r;}',
+        'conditional': 'struct R{int n;};const R&r=true?R{3}:R{4};int f(){return r.n;}',
+        'comma': 'const int&r=(static_cast<void>(1),3);int f(){return r;}',
+        'reference-chain': 'const int&r=3;const int&s=r;const int*p=&s;bool f(){return p==&r;}',
+        'local-state': 'int&f(){static int&&r=3;return r;}int g(){return ++f();}',
+        'local-conditional': 'int&f(bool c){if(c){static int&&r=3;return r;}static int&&s=4;return s;}',
+        'class-member': 'struct R{inline static const int&r=3;};int f(){return R::r;}',
+        'class-outline': 'struct R{static const int&r;};const int&R::r=3;int f(){return R::r;}',
+        'template-local': 'template<int N>int&f(){static int&&r=N;return r;}int g(){return ++f<3>()+f<4>();}',
+        'template-class': 'template<int N>struct R{inline static int&&r=N;};int f(){return ++R<3>::r+R<4>::r;}',
+        'template-variable': 'template<int N>inline int&&r=N;int f(){return ++r<3> +r<4>;}',
+        'template-member-variable': 'struct R{template<int N>inline static int&&r=N;};int f(){return ++R::r<3> +R::r<4>;}',
+        'template-record': 'template<class T>struct R{T n;};const R<int>&r=R<int>{3};int f(){return r.n;}',
+        'const-cast-mutable': 'int&&r=3;const int&s=r;int f(){return ++const_cast<int&>(s);}',
+        'runtime': 'struct R{int n;int data[2];};\nconst int&fixed=3;\nconst int&other=3;\nconst int&alias=fixed;\nconst int*address=&alias;\nint&&state=4;\nR&&record=R{5,{6,7}};\nconst R&readonly=R{8,{9,10}};\nconst int&member=R{11,{12,13}}.data[1];\nconst int(&array)[3]={14,15};\nusing Matrix=int[2][2];\nconst int(&row)[2]=Matrix{{16,17},{18,19}}[1];\nstruct Self{int n;int*p;constexpr Self():n(20),p(&n){}};\nSelf&&self=Self();\nint&local(){static int&&r=21;return r;}\nconst R&localRecord(){static const R&r=R{22,{23,24}};return r;}\ntemplate<int N>int&slot(){static int&&r=N;return r;}\ntemplate<int N>struct Store{inline static int&&r=N;};\ntemplate<int N>inline int&&value=N;\nstruct Member{template<int N>inline static int&&r=N;};\nstruct E{};\nconst E&empty=E{};\nconst E&emptyOther=E{};\nint main(){\n Self copied=self;\n if(fixed!=3||other!=3||&fixed==&other||address!=&fixed)return 1;\n state=25;if(state!=25)return 2;\n record.n=26;record.data[1]=27;if(record.n!=26||record.data[1]!=27)return 3;\n if(readonly.n!=8||readonly.data[1]!=10||member!=13)return 4;\n if(array[0]!=14||array[1]!=15||array[2]!=0||row[1]!=19)return 5;\n if(self.p!=&self.n||*self.p!=20||copied.p!=self.p||copied.p==&copied.n)return 6;\n *self.p=28;if(self.n!=28||copied.n!=20||*copied.p!=28)return 7;\n int*p=&local();local()=29;if(&local()!=p||local()!=29)return 8;\n const R*q=&localRecord();if(&localRecord()!=q||q->data[1]!=24)return 9;\n slot<3>()=30;if(slot<3>()!=30||slot<4>()!=4||&slot<3>()==&slot<4>())return 10;\n Store<3>::r=31;if(Store<3>::r!=31||Store<4>::r!=4)return 11;\n value<3> =32;if(value<3> !=32||value<4> !=4)return 12;\n Member::r<3> =33;if(Member::r<3> !=33||Member::r<4> !=4)return 13;\n if(&empty==&emptyOther||sizeof(empty)!=1)return 14;\n return 0;\n}\n',
+        'protocol-source': 'const int&first=3;\nconst int&alias=first;\nint&&state=4;\nconst int(&array)[2]={5,6};\nstruct R{int n;int*p;constexpr R():n(7),p(&n){}};\nR&&self=R();\nconst int&field=R().n;\nint&local(){static int&&r=8;return r;}\n',
+    }
+    for name, source in static_temporary_positive.items():
+        check("v2-static-temporary-positive-"+name, source, profile="cpp-core-v2")
+    static_temporary_negative = {
+        'runtime-call': ('int make(){return 3;}const int&r=make();', 'TR0201'),
+        'local-runtime-parameter': ('int f(int n){static const int&r=n;return r;}', 'TR0201'),
+        'runtime-constructor': ('struct R{int n;R():n(3){}};const R&r=R();', 'TR0201'),
+        'nontrivial-destructor': ('struct R{int n;~R(){}};const R&r=R{3};', 'TR0201'),
+        'array-destructor': ('struct R{int n;~R(){}};const R(&r)[2]={{3},{4}};', 'TR0201'),
+        'tls': ('thread_local const int&r=3;', 'TR0201'),
+        'hidden-type': ('const long double&r=3.0L;', 'TR0201'),
+        'hidden-comma': ('const int&r=(static_cast<void>(1.0L),3);', 'TR0201'),
+        'hidden-constexpr-call': ('constexpr int make(){return sizeof(long double);}const int&r=make();', 'TR0201'),
+        'reference-field': ('struct R{const int&r;};const R&r=R{3};', 'TR0201'),
+        'dangling-through-call': ('constexpr const int&id(const int&r){return r;}const int&r=id(3);', 'TR0201'),
+        'dangling-array-decay': ('struct R{int n[2];};const int&r=*(R{{3,4}}.n+1);', 'TR0201'),
+        'const-write': ('const int&r=3;void f(){r=4;}', 'TR0202'),
+        'const-array-write': ('const int(&r)[2]={3,4};void f(){r[0]=5;}', 'TR0202'),
+        'lvalue-rvalue-binding': ('int&r=3;', 'TR0202'),
+    }
+    for name, (source, diagnostic) in static_temporary_negative.items():
+        check("v2-static-temporary-reject-"+name, source, diagnostic, profile="cpp-core-v2")
+    static_temporary_ir = check("v2-static-temporary-protocol", static_temporary_positive["protocol-source"], profile="cpp-core-v2")
+    temporary_objects = {g["name"]: g for g in static_temporary_ir["globals"] if g["name"].startswith("nct_static_temporary_")}
+    references = {g["loc"]["line"]: g for g in static_temporary_ir["globals"] if g["name"] not in temporary_objects}
+    assert len(temporary_objects) == 6 and len(references) == 7
+    assert all(not g.get("mutable", False) for g in references.values())
+    def temporary_target(expr):
+        names = [node["name"] for node in walk(expr) if node.get("kind") == "var" and node.get("name") in temporary_objects]
+        assert len(names) == 1, expr
+        return names[0]
+    assert temporary_target(references[1]["value"]) == temporary_target(references[2]["value"])
+    assert not temporary_objects[temporary_target(references[1]["value"])].get("mutable", False)
+    assert temporary_objects[temporary_target(references[3]["value"])]["mutable"]
+    array = temporary_objects[temporary_target(references[4]["value"])]
+    assert array["type"] == "arr:2:int" and not array.get("mutable", False)
+    assert [x["value"] for x in array["value"]["args"]] == ["5", "6"]
+    self_object = temporary_objects[temporary_target(references[6]["value"])]
+    assert self_object["mutable"] and temporary_target(self_object["value"]["args"][1]) == self_object["name"]
+    assert temporary_target(references[7]["value"]) != self_object["name"]
+    assert temporary_objects[temporary_target(references[8]["value"])]["mutable"]
+    with tempfile.TemporaryDirectory(prefix="neverc-static-temporary-relocated-") as temp:
+        relocated = check("v2-static-temporary-relocated", static_temporary_positive["protocol-source"], root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == static_temporary_ir, "static temporary identity depends on the source root"
+
     static_reference_positive = {
         'global-lvalue': 'int n=3;int&r=n;int f(){return ++r;}',
         'global-const': 'const int n=3;const int&r=n;int f(){return r;}',
@@ -9316,9 +9402,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'local-parameter': ('int&f(int&n){static int&r=n;return r;}', 'TR0201'),
         'local-automatic': ('int&f(){int n=3;static int&r=n;return r;}', 'TR0201'),
         'local-runtime-choice': ('int a,b;int&f(bool c){static int&r=c?a:b;return r;}', 'TR0201'),
-        'global-temporary': ('const int&r=3;', 'TR0201'),
-        'local-temporary': ('int f(){static const int&r=3;return r;}', 'TR0201'),
-        'global-array-temporary': ('const int(&r)[2]={1,2};', 'TR0201'),
         'global-null': ('int&r=*static_cast<int*>(nullptr);', 'TR0201'),
         'global-one-past': ('int a[2];int&r=*(a+2);', 'TR0201'),
         'global-object-end': ('int n;int&r=*(&n+1);', 'TR0201'),

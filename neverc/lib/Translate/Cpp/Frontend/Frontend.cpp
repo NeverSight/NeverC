@@ -945,6 +945,25 @@ const VarDecl *automaticTemporaryOwner(const MaterializeTemporaryExpr *M,
     return nullptr;
   return Owner->getCanonicalDecl();
 }
+const VarDecl *Adapter::staticTemporaryOwner(const MaterializeTemporaryExpr *M) const {
+  if (!S.coreV2() || !temporaryShape(M, Context) || M->getStorageDuration() != SD_Static)
+    return nullptr;
+  const auto *Descriptor = M->getLifetimeExtendedTemporaryDecl();
+  const auto *Owner = dyn_cast_or_null<VarDecl>(M->getExtendingDecl());
+  if (!Descriptor || Descriptor->getTemporaryExpr() != M->getSubExpr() ||
+      Descriptor->getExtendingDecl() != Owner || Descriptor->getStorageDuration() != SD_Static ||
+      !Owner || Owner->isImplicit() || Owner->isInvalidDecl() ||
+      Owner->getDeclContext()->isDependentContext() || !Owner->getType()->isReferenceType() ||
+      !Owner->hasGlobalStorage() || Owner->getTLSKind() != VarDecl::TLS_None ||
+      !S.owns(Sources, M->getExprLoc()) || !S.owns(Sources, Owner->getLocation()))
+    return nullptr;
+  const auto *Definition = Owner->getDefinition();
+  if (!Definition || !S.owns(Sources, Definition->getLocation()) ||
+      Definition->getCanonicalDecl() != Owner->getCanonicalDecl() ||
+      !Context.hasSameType(Definition->getType(), Owner->getType()))
+    return nullptr;
+  return Owner->getCanonicalDecl();
+}
 std::optional<RangeForComponents> rangeForComponents(const CXXForRangeStmt *Loop) {
   auto Resolved = [](const Expr *E) {
     return E && !E->getType().isNull() && !E->isTypeDependent() &&
@@ -1704,6 +1723,43 @@ json::Object Adapter::stringObject(const StringLiteral *Literal) {
                       {"name", Found->second}, {"loc", loc(L)}};
 }
 
+json::Object Adapter::staticTemporaryObject(const MaterializeTemporaryExpr *Temporary) {
+  auto L = Temporary->getExprLoc();
+  auto T = Temporary->getType();
+  if (!staticTemporaryOwner(Temporary) || T.isVolatileQualified() || needsDestruction(T)) {
+    reject(L, "static temporary storage",
+           "A static temporary requires its exact reference owner and trivial destruction.");
+    throw Failure{};
+  }
+  auto Kind = type(T, L);
+  if (Kind.empty())
+    throw Failure{};
+  auto Found = StaticTemporaryObjects.find(Temporary);
+  if (Found == StaticTemporaryObjects.end()) {
+    // EvaluateAsInitializer of the owning reference retains this complete
+    // temporary's value in Clang. Never evaluate the operand a second time or
+    // fold it as an independent expression: self pointers belong to this object.
+    const auto *Value = Temporary->getOrCreateValue(false);
+    if (!Value || !Value->hasValue()) {
+      reject(L, "static temporary initializer",
+             "The owning reference must retain a fully defined constant temporary value.");
+      throw Failure{};
+    }
+    chargeExpansion(storageUnits(T) + 1, L);
+    auto Name = "nct_static_temporary_" + std::to_string(StaticTemporaryObjects.size());
+    // Register identity before serializing fields so self/cyclic addresses can
+    // name the actual object without recursively constructing another copy.
+    Found = StaticTemporaryObjects.emplace(Temporary, Name).first;
+    json::Object Global{{"name", Name}, {"type", Kind},
+                        {"value", constant(*Value, T, L)}, {"loc", loc(L)}};
+    if (!T.isConstQualified())
+      Global["mutable"] = true;
+    StaticTemporaryGlobals.push_back(std::move(Global));
+  }
+  return json::Object{{"kind", "var"}, {"type", Kind},
+                      {"name", Found->second}, {"loc", loc(L)}};
+}
+
 json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocation L,
                                       bool ReferenceBinding) {
   auto Reject = [&](llvm::StringRef Reason, llvm::StringRef Code = "TR0201") {
@@ -1743,8 +1799,11 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
   } else if (const auto *Literal = dyn_cast_or_null<StringLiteral>(Base.dyn_cast<const Expr *>())) {
     Current = Literal->getType();
     Place = stringObject(Literal);
+  } else if (const auto *Temporary = dyn_cast_or_null<MaterializeTemporaryExpr>(Base.dyn_cast<const Expr *>())) {
+    Current = Temporary->getType();
+    Place = staticTemporaryObject(Temporary);
   } else {
-    Reject("Only owned static variables and checked string literals provide permanent object addresses.");
+    Reject("Permanent addresses require owned static variables, string literals or checked static temporaries.");
   }
   int64_t Offset = 0;
   bool AtArrayEnd = false;
@@ -8797,9 +8856,10 @@ public:
       if (const auto *Literal = dyn_cast<StringLiteral>(S))
         A.checkStringLiteral(Literal);
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(S);
-          M && !fullExpressionTemporary(M, A.Context) && !A.temporaryOwner(M))
+          M && !fullExpressionTemporary(M, A.Context) && !A.temporaryOwner(M) &&
+          !A.staticTemporaryOwner(M))
         A.reject(L, "temporary lifetime",
-                 "A checked full-expression temporary or exact automatic reference owner is required.");
+                 "A checked full-expression temporary or exact automatic/static reference owner is required.");
       if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S)) {
         if (!Query->getOperand() || Query->isTypeDependent() ||
             Query->isValueDependent() || Query->isInstantiationDependent())
@@ -9289,6 +9349,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   // Literal lvalues discovered in any function or cleanup helper have static
   // storage. Publish their complete definitions before emitting function code.
   for (auto &Global : StringGlobals)
+    GlobalData.push_back(std::move(Global));
+  for (auto &Global : StaticTemporaryGlobals)
     GlobalData.push_back(std::move(Global));
   S.Module["globals"] = std::move(GlobalData);
   // The allowlist resolves every owned call, including unreachable source.

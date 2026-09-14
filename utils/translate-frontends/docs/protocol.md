@@ -893,7 +893,7 @@ function is introduced. See the [source contract](cpp-core-v2.md#static-object-p
 A statically bound object reference is an ordinary pointer-typed global with
 `mutable` absent/false and a checked constant object address. The producer
 requires an actual source-owned reference definition and constant initializer,
-rejecting null, one-past, automatic and lifetime-extended temporary targets.
+rejecting null, one-past, automatic and nonpermanent temporary targets.
 The existing pointer nodes encode the canonical target and full typed path;
 no protocol reference opcode or writable binding flag is added.
 
@@ -905,6 +905,18 @@ read-only storage. A local static reference creates no automatic binding shadow
 or block-entry initialization. Return snapshots and normal expression effects
 still use the ordinary lowering rules. See the
 [source contract](cpp-core-v2.md#static-reference-bindings).
+
+## Core v2 static temporary objects
+
+Constant-initialized lifetime-extended temporaries use ordinary typed globals,
+with scalar or complete aggregate values and the actual object's `mutable`
+permission. Their reference carriers remain immutable pointer globals. Checked
+addresses use the existing `var`, `member`, `index` and `address` nodes, including
+self pointers and references to array/record subobjects. The producer requires
+Clang's exact static owner descriptor and retained constant value, and registers
+the object's identity before serializing its fields. The shared verifier checks
+these globals and address paths with its existing rules; no new opcode or
+lifetime flag is added. See the [source contract](cpp-core-v2.md#static-reference-temporary-lifetime-extension).
 
 ## Core v2 static record storage
 
