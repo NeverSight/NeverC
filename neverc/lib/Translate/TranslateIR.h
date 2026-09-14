@@ -223,6 +223,9 @@ struct Module {
   // C++ storage reuse requires alias-permissive emitted object accesses. This
   // does not relax typed IR operations, layout evidence, or storage permissions.
   bool MemoryLifetimes = false;
+  // Hosted native startup calls this checked internal void() definition.
+  // Presence is distinct from an invalid empty function identifier.
+  std::optional<std::string> Startup;
   FrontendIdentity Frontend;
   TargetInfo Target;
   std::vector<Dependency> Dependencies;

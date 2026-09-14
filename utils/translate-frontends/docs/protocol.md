@@ -127,7 +127,7 @@ The consumer validates the entire module and all referenced symbols, types, fiel
 
 NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record frontend and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
 
-## Core v2 dynamic local static initialization
+## Core v2 dynamic static initialization
 
 The optional global field `dynamic_initialization` must be `true` and requires
 core v2. Its complete ordinary initializer must contain only semantic zero:
@@ -136,7 +136,7 @@ zero aggregates. Type, arity, payload and depth checks still apply. `mutable`
 retains its source-storage meaning; a const dynamic global has writable physical
 C storage only to implement initialization.
 
-A dynamically bound local static reference uses the same readonly pointer
+A dynamically bound static reference uses the same readonly pointer
 carrier and guard operations. Its initialization assignment stores the result of
 binding the original glvalue; ordinary uses dereference the carrier. This grants
 no reassignment permission for the binding after publication and no new lifetime
@@ -189,6 +189,29 @@ release publication after full-expression cleanup. On AArch64, per-function
 helper calls during normal downstream compilation. Atomics use compiler
 builtins without headers. No source atomic operation, guard address or exception
 retry permission is introduced. See the [source contract](cpp-core-v2.md#dynamic-local-static-initialization).
+
+## Core v2 nonlocal startup
+
+The optional module property `startup` must be a nonempty string in core v2.
+It names a function definition in the same module with internal linkage, no
+C export, a void result and zero parameters; `main`, declarations alone, missing
+names, invalid signatures and other profiles reject. Parsing checks presence,
+profile and wire type; independent semantic verification resolves the complete
+function table. Invalid input leaves output artifacts unchanged.
+
+Only the selected definition receives the native C23 `constructor` attribute,
+with a `__has_attribute(constructor)` guard. Ordinary native program/module startup
+owns invocation. Source initializers remain checked instructions using the same
+`dynamic_initialization`, `initialization_owner` and `static_init_begin/end`
+contracts. Startup grants no additional write, ownership or lifetime permissions.
+Zero/constant data is emitted normally. No user-callable startup wrapper, public
+export or new runtime ABI is introduced. The frontend orders admitted nonlocal
+initializers and cleans each full expression before publication and the next
+initializer. Local statics remain initialized at first passage.
+
+This describes ordinary hosted native linking/loading. DynCode's current
+`llvm.global_ctors` rejection is unchanged; manual loaders need their own contract.
+See the [source contract](cpp-core-v2.md#nonlocal-dynamic-initialization).
 
 ## Core v2 deleted declarations
 

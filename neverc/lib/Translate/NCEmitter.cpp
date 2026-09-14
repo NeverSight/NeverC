@@ -405,6 +405,11 @@ class Emitter {
       line("#error \"translated memory lifetimes require may_alias support\"");
       line("#endif");
     }
+    if (M.Startup) {
+      line("#if !__has_attribute(constructor)");
+      line("#error \"translated startup requires native constructor support\"");
+      line("#endif");
+    }
     const char *Arch = T.getArch() == llvm::Triple::aarch64  ? "__aarch64__"
                        : T.getArch() == llvm::Triple::x86_64 ? "__x86_64__"
                                                              : "__i386__";
@@ -665,6 +670,8 @@ class Emitter {
     }
   }
   void function(const Function &F) {
+    if (M.Startup && *M.Startup == F.Name)
+      line("__attribute__((constructor))", &F.Loc);
     line(signature(F) + " {", &F.Loc);
     for (const auto &L : F.Locals)
       line("  " + declaration(L.ValueType, L.Name) + ";", &L.Loc);

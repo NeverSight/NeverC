@@ -2279,9 +2279,6 @@ TEST_F(TranslateTest, CoreV2MutableScalarGlobalsAcceptOwnedStaticInitialization)
 
 TEST_F(TranslateTest, CoreV2MutableScalarGlobalsRetainTypeAndInitializationBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"dynamic-call", "int f(){return 1;}int value=f();", "TR0201"},
-      {"dynamic-read", "int a=1;int b=a;", "TR0201"},
-      {"dynamic-effect", "int a=1;int b=++a;", "TR0201"},
       {"float", "long double value=1.0L;", "TR0201"},
       {"volatile", "volatile int value;", "TR0201"},
       {"atomic", "_Atomic(int) value;", "TR0201"},
@@ -3490,7 +3487,6 @@ TEST_F(TranslateTest, CoreV2StaticMembersAcceptOwnedScalarDefinitions) {
 
 TEST_F(TranslateTest, CoreV2StaticMembersRetainStorageAndSourceBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"dynamic-call", "int value(){return 3;}struct R{inline static int n=value();};", "TR0201"},
       {"dynamic-write", "int n=0;struct R{inline static int value=++n;};", "TR0201"},
       {"floating", "struct R{inline static long double n=1.0L;};", "TR0201"},
       {"tls", "struct R{inline static thread_local int n=1;};", "TR0201"},
@@ -3837,6 +3833,127 @@ TEST_F(TranslateTest, CoreV2StaticLocalsAcceptConstantAndZeroInitialization) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NonlocalDynamicInitializationAcceptsOwnedSource) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"previous-extra-1", "int f(){return 1;}int value=f();"},
+      {"previous-extra-2", "int a=1;int b=a;"},
+      {"previous-extra-3", "int a=1;int b=++a;"},
+      {"previous-extra-4", "int value(){return 3;}struct R{inline static int n=value();};"},
+      {"previous-extra-5", "int f(){return 3;}struct R{template<class T>inline static int n=f();};int main(){return R::n<int>;}"},
+      {"previous-extra-6", "struct R{int n;R():n(3){}};R r;"},
+      {"previous-extra-7", "int f(){return 3;}struct R{int n;};R r{f()};"},
+      {"previous-extra-8", "int n=3;struct R{int value;};R r{n};"},
+      {"previous-extra-9", "int n;int*get(){return &n;}int*p=get();"},
+      {"previous-extra-10", "int value(){return 1;}struct R{inline static int a[2]={value(),2};};"},
+      {"previous-extra-11", "int value(){return 1;}template<class T>inline int a[2]={value(),2};int*f(){return a<int>;}"},
+      {"previous-extra-12", "int f(){return 1;}const int a[2]={f(),2};"},
+      {"previous-extra-13", "using N=decltype(nullptr);N f(){return nullptr;}struct R{inline static N n=f();};"},
+      {"previous-extra-14", "using N=decltype(nullptr);N f(){return nullptr;}template<class T>inline N n=f();int main(){return n<int> != nullptr;}"},
+      {"previous-extra-15", "int get(){return 3;}int(*make())(){return get;}template<class T>auto p=make();int main(){return p<int>();}"},
+      {"previous-extra-16", "int f(){return 3;}template<class T>int value=f();int main(){return value<int>;}"},
+      {"previous-extra-17", "int value(){return 3;}template<class T>struct R{inline static int n=value();};int f(){return R<int>::n;}"},
+      {"previous-extra-18", "int count=0;template<class T>struct R{inline static int n=++count;};int f(){return R<int>::n;}"},
+      {"previous-1", "int n;int&get(){return n;}int&r=get();"},
+      {"previous-2", "int make(){return 3;}const int&r=make();"},
+      {"previous-3", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int*p=new int(3);"},
+      {"previous-4", "int n=3;struct R{int&r;};struct S{static const R a;static const R b;};const R S::a=S::b;const R S::b{n};int f(){return ++S::a.r;}"},
+      {"previous-5", "int seed(){return 3;}struct R{const int&r;};R r{seed()};"},
+      {"previous-6", "int value(){return 1;}int a[2]={value(),2};"},
+      {"previous-7", "float seed(){return 1.5f;}float value=seed();"},
+      {"previous-8", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N n=f();"},
+      {"previous-9", "int get(){return 3;}using F=int(*)();F make(){return get;}F p=make();int main(){return p();}"},
+      {"previous-10", "struct R{int n;R():n(1){}};R global;"},
+      {"const-scalar", "int seed(){return 3;}const int n=seed();int f(){return n;}"},
+      {"self-zero", "int n=n+3;int f(){return n;}"},
+      {"unused", "int effects;int seed(){return ++effects;}const int unused=seed();int f(){return effects;}"},
+      {"namespace", "namespace N{int seed(){return 3;}int n=seed();}int f(){return N::n;}"},
+      {"inline-member", "int seed(){return 3;}struct R{inline static const int n=seed();};int f(){return R::n;}"},
+      {"outside-member", "int seed(){return 3;}struct R{static int n;};int R::n=seed();int f(){return R::n;}"},
+      {"class-template", "int seed(int n){return n;}template<int N>struct R{inline static int n=seed(N);};int f(){return R<3>::n+R<4>::n;}"},
+      {"member-template", "int seed(int n){return n;}struct R{template<int N>inline static int n=seed(N);};int f(){return R::n<3>+R::n<4>;}"},
+      {"variable-template", "int seed(int n){return n;}template<int N>int value=seed(N);int f(){return value<3>+value<4>;}"},
+      {"variable-specialization", "int seed(int n){return n;}template<int N>int value=seed(N);template<>int value<3> =seed(7);int f(){return value<3>;}"},
+      {"array-reference", "int seed(){return 3;}const int(&r)[2]={seed(),4};int f(){return r[0];}"},
+      {"record-reference", "struct R{int n;R(int n):n(n){}};const R&r=R(3);int f(){return r.n;}"},
+      {"record-conditional", "int seed(){return 3;}struct R{int n;R(int n):n(n){}};const R r=seed()?R(3):R(4);int f(){return r.n;}"},
+      {"temporary-cleanup", "int drops;struct T{int n;~T(){++drops;}};int take(const T&t){return t.n;}const int n=take(T{3});int f(){return n+drops;}"},
+      {"constructor-alias", "struct R;const R*alias;struct R{int n;R():n(3){alias=this;}};const R object;int f(){return alias==&object;}"},
+      {"reference-filler", "int seed(){return 3;}struct R{const int&r=seed();};const R a[2]{};int f(){return &a[0].r!=&a[1].r;}"},
+      {"macro-order", "int effects;int mark(int n){effects=effects*10+n;return n;}\n#define BOTH int z=mark(1); int a=mark(2);\nBOTH\nint f(){return effects;}"},
+      {"prior-extern-definition-order", "int mark(int n){return n;}extern int later;int first=mark(later);int later=mark(3);int f(){return first;}"},
+      {"inclass-constant-definition", "struct R{static const int n=3;};const int R::n;const int*p=&R::n;int f(){return *p;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("startup-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("startup-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NonlocalDynamicInitializationRetainsSourceBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"tls", "int seed(){return 3;}thread_local int n=seed();", "TR0201"},
+      {"volatile", "int seed(){return 3;}volatile int n=seed();", "TR0201"},
+      {"destruction", "struct R{R(){}~R(){}};R r;", "TR0201"},
+      {"extended-destruction", "struct R{int n;~R(){}};const int&r=R{3}.n;", "TR0201"},
+      {"array-destruction", "struct R{R(){}~R(){}};R a[2];", "TR0201"},
+      {"missing-function", "int seed();int n=seed();", "TR0203"},
+      {"missing-global", "extern int n;int f(){return n;}", "TR0203"},
+      {"hidden-type", "int seed(){return 3;}int n=(static_cast<void>(sizeof(long double)),seed());", "TR0201"},
+      {"throws", "int seed(){throw 1;}int n=seed();", "TR0201"},
+      {"constructor-attribute", "int n;__attribute__((constructor))void init(){n=3;}", "TR0201"},
+      {"const-write", "int seed(){return 3;}const int n=seed();void f(){n=4;}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("startup-negative-" + Name + ".cpp");
+    const auto Output = tmpFile("startup-negative-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NonlocalStartupRunsBeforeMainInDefinitionOrder) {
+  for (const std::string Name : {"startup-program", "startup-templates"}) {
+    SCOPED_TRACE(Name);
+    const auto Output = tmpFile(Name + ".nc");
+    auto Result = translate(fixture(Name + ".cpp"), {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_NE(readFile(Output).find("__attribute__((constructor))"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable = tmpFile(Name + Optimization);
+      auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline", "-fstrict-aliasing"});
+      ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NonlocalStartupRunsForASeparatelyLinkedCClient) {
+  const auto Output = tmpFile("startup-module.nc");
+  auto Result = translate(fixture("startup-module.cpp"), {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("int main("), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Object = tmpFile("startup-module" + Optimization + ".o");
+    auto Compile = compileGenerated(Output, Object, Optimization, {"-c", "-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Executable = tmpFile("startup-client" + Optimization);
+    auto Link = compileGenerated(fixture("startup-harness.c"), Executable, Optimization, {Object.string()});
+    ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DynamicStaticLocalsAcceptSourceComposition) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"const-cast-address", "int*f(int v){static const int n=v;return const_cast<int*>(&n);}"},
@@ -4092,7 +4209,6 @@ TEST_F(TranslateTest, CoreV2DynamicStaticReferencesAcceptExistingObjects) {
 TEST_F(TranslateTest, CoreV2DynamicStaticReferencesRetainTemporaryAndSourceBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"hidden-reference-type", "int&f(int&n){static decltype((sizeof(long double),n))r=n;return r;}", "TR0201"},
-      {"nonlocal-dynamic", "int n;int&get(){return n;}int&r=get();", "TR0201"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
     SCOPED_TRACE(Name);
@@ -4215,7 +4331,6 @@ TEST_F(TranslateTest, CoreV2DynamicStaticTemporariesRetainSourceAndDestructionBo
       {"unselected-static-destruction", "struct R{int n;~R(){}};int value;void f(int n){static const int&r=true?static_cast<int&&>(value):R{n}.n;}", "TR0201"},
       {"array-static-destruction", "struct R{int n;~R(){}};void f(int n){static const R(&r)[2]={{n},{n+1}};}", "TR0201"},
       {"tls", "int f(int n){static thread_local const int&r=n+1;return r;}", "TR0201"},
-      {"nonlocal", "int make(){return 3;}const int&r=make();", "TR0201"},
       {"hidden-type", "int f(int n){static const int&r=(static_cast<void>(sizeof(long double)),n+1);return r;}", "TR0201"},
       {"unowned-call", "int make(int);const int&f(int n){static const int&r=make(n);return r;}", "TR0203"},
       {"const-write", "void f(int n){static const int&r=n+1;r=4;}", "TR0202"},
@@ -4399,7 +4514,6 @@ TEST_F(TranslateTest, CoreV2AllocationRetainsSourceAndRuntimeBoundaries) {
       {"destructor-body", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};struct R{~R(){long double n=0;}};void f(R*p){delete p;}", "TR0201"},
       {"invalid-size-parameter", "void*operator new(int){return nullptr;}", "TR0202"},
       {"invalid-return-type", "using Size=decltype(sizeof(0));int*operator new(Size){return nullptr;}", "TR0202"},
-      {"nonlocal-dynamic", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[128];};Storage storage{};void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{};int*p=new int(3);", "TR0201"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
     SCOPED_TRACE(Name);
@@ -4878,7 +4992,6 @@ TEST_F(TranslateTest, CoreV2ReferenceMembersAcceptBindingsAndOwnedLifetimes) {
 
 TEST_F(TranslateTest, CoreV2ReferenceMembersRetainSourceAndLayoutBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"nonlocal-dynamic-copy", "int n=3;struct R{int&r;};struct S{static const R a;static const R b;};const R S::a=S::b;const R S::b{n};int f(){return ++S::a.r;}", "TR0201"},
       {"const-referent", "struct R{const int&r;};void f(R&r){r.r=3;}", "TR0202"},
       {"missing-binding", "struct R{int&r;};void f(){R r{};}", "TR0202"},
       {"deleted-assignment", "struct R{int&r;};void f(R&a,const R&b){a=b;}", "TR0202"},
@@ -4893,7 +5006,6 @@ TEST_F(TranslateTest, CoreV2ReferenceMembersRetainSourceAndLayoutBoundaries) {
       {"constructor-default-temporary", "struct R{const int&r=3;};void f(){R r;}", "TR0202"},
       {"static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){static R r{T{n}};}", "TR0201"},
       {"dead-static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){if(false){static R r{T{n}};}}", "TR0201"},
-      {"nonlocal-dynamic", "int seed(){return 3;}struct R{const int&r;};R r{seed()};", "TR0201"},
       {"unowned-reference", "int&get();struct R{int&r;};R f(){return R{get()};}", "TR0203"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
@@ -7178,7 +7290,6 @@ TEST_F(TranslateTest, CoreV2MemberVariablesAcceptConcreteInstances) {
 TEST_F(TranslateTest, CoreV2MemberVariablesRetainSourceAndBounds) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"full-auto-hidden-default-outer-copy", "template<class A>struct R{template<auto V,int N=(sizeof(long double),V)>inline static int n=1;template<>inline int n<3> = 7;};int main(){R<bool>r;return sizeof(r);}"},
-      {"dynamic", "int f(){return 3;}struct R{template<class T>inline static int n=f();};int main(){return R::n<int>;}"},
       {"floating-result", "struct R{template<class T>inline static long double n=3.0L;};int main(){return int(R::n<int>);}"},
       {"volatile", "struct R{template<class T>inline static volatile int n=3;};int main(){return R::n<int>;}"},
       {"thread-local", "struct R{template<class T>inline static thread_local int n=3;};int main(){return R::n<int>;}"},
@@ -9376,9 +9487,6 @@ TEST_F(TranslateTest, CoreV2StaticRecordsAcceptSourceComposition) {
 
 TEST_F(TranslateTest, CoreV2StaticRecordsRetainInitializationAndLifetimeRequirements) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"dynamic-constructor", "struct R{int n;R():n(3){}};R r;", "TR0201"},
-      {"dynamic-call", "int f(){return 3;}struct R{int n;};R r{f()};", "TR0201"},
-      {"dynamic-read", "int n=3;struct R{int value;};R r{n};", "TR0201"},
       {"global-destruction", "struct R{int n;~R(){}};R r{3};", "TR0201"},
       {"local-destruction", "struct R{int n;~R(){}};int f(){static R r{3};return r.n;}", "TR0201"},
       {"member-destruction", "struct I{int n;~I(){}};struct R{inline static I i{3};};", "TR0201"},
@@ -9552,7 +9660,6 @@ TEST_F(TranslateTest, CoreV2StaticTemporariesAcceptSourceComposition) {
 
 TEST_F(TranslateTest, CoreV2StaticTemporariesRetainInitializationAndLifetimeChecks) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"runtime-call", "int make(){return 3;}const int&r=make();", "TR0201"},
       {"runtime-constructor", "struct R{int n;R():n(3){}};const R&r=R();", "TR0201"},
       {"nontrivial-destructor", "struct R{int n;~R(){}};const R&r=R{3};", "TR0201"},
       {"array-destructor", "struct R{int n;~R(){}};const R(&r)[2]={{3},{4}};", "TR0201"},
@@ -9713,7 +9820,6 @@ TEST_F(TranslateTest, CoreV2StaticReferencesAcceptSourceComposition) {
 
 TEST_F(TranslateTest, CoreV2StaticReferencesRetainBindingAndLifetimeRequirements) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"global-runtime-call", "int n;int&get(){return n;}int&r=get();", "TR0201"},
       {"global-runtime-pointer", "int n;int*p=&n;int&r=*p;", "TR0201"},
       {"global-null", "int&r=*static_cast<int*>(nullptr);", "TR0201"},
       {"global-one-past", "int a[2];int&r=*(a+2);", "TR0201"},
@@ -9921,9 +10027,8 @@ TEST_F(TranslateTest, CoreV2StaticPointersAcceptSourceComposition) {
 
 TEST_F(TranslateTest, CoreV2StaticPointersRetainConstantAddressAndSourceRequirements) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"global-runtime-call", "int n;int*get(){return &n;}int*p=get();", "TR0201"},
       {"global-runtime-load", "int n;int*q=&n;int*p=q;", "TR0201"},
-      {"global-heap", "int*p=new int(3);", "TR0201"},
+      {"global-heap", "int*p=new int(3);", "TR0203"},
       {"global-integer-address", "int*p=reinterpret_cast<int*>(1);", "TR0201"},
       {"global-past-extent", "int a[2];int*p=a+3;", "TR0201"},
       {"global-before-array", "int a[2];int*p=a-1;", "TR0201"},
@@ -10103,9 +10208,6 @@ TEST_F(TranslateTest, CoreV2StaticArraysAcceptSourceComposition) {
 
 TEST_F(TranslateTest, CoreV2StaticArraysRetainInitializationAndSourceRequirements) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"dynamic-global", "int value(){return 1;}int a[2]={value(),2};", "TR0201"},
-      {"dynamic-member", "int value(){return 1;}struct R{inline static int a[2]={value(),2};};", "TR0201"},
-      {"dynamic-template", "int value(){return 1;}template<class T>inline int a[2]={value(),2};int*f(){return a<int>;}", "TR0201"},
       {"local-destructor", "struct R{int n;~R(){}};R*f(){static R a[2]={{1},{2}};return a;}", "TR0201"},
       {"member-destructor", "struct I{int n;~I(){}};struct R{inline static I a[2]={{1},{2}};};", "TR0201"},
       {"template-destructor", "struct R{int n;~R(){}};template<class T>inline T a[2]{};R*f(){return a<R>;}", "TR0201"},
@@ -10306,7 +10408,6 @@ TEST_F(TranslateTest, CoreV2StringsRetainSourceAndLifetimeRestrictions) {
       {"literal-nttp", "template<const char*p>int f(){return *p;}int g(){return f<\"abc\">();}", "TR0202"},
       {"literal-user-defined", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}int f(){return \"abc\"_n;}", "TR0201"},
       {"thread-local-array", "thread_local const char a[]=\"abc\";", "TR0201"},
-      {"global-array-dynamic", "int f(){return 1;}const int a[2]={f(),2};", "TR0201"},
       {"global-array-destructor", "struct R{int n;~R(){}};const R r[2]={{1},{2}};", "TR0201"},
       {"global-array-extended", "const long double a[2]={1.0L,2.0L};", "TR0201"},
       {"global-array-missing", "extern const int a[2];int f(){return a[0];}", "TR0203"},
@@ -10520,7 +10621,6 @@ TEST_F(TranslateTest, CoreV2FloatingValuesRetainSourceRestrictions) {
       {"extended-static-pattern", "template<class T>struct R{inline static long double n=1.0L;};", "TR0201"},
       {"extended-variable-pattern", "template<class T>inline long double n=1.0L;", "TR0201"},
       {"volatile", "float f(volatile float&n){return n;}", "TR0201"},
-      {"dynamic-global", "float seed(){return 1.5f;}float value=seed();", "TR0201"},
       {"complex", "_Complex double value;", "TR0201"},
       {"source-fp-pragma", "#pragma STDC FP_CONTRACT ON\nfloat f(float a,float b,float c){return a*b+c;}", "TR0201"},
       {"remainder", "float f(float a,float b){return a%b;}", "TR0202"},
@@ -11226,9 +11326,6 @@ TEST_F(TranslateTest, CoreV2NullPtrValuesRetainSourceBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"volatile", "using N=decltype(nullptr);void f(){volatile N n=nullptr;}", "TR0201"},
       {"tls", "using N=decltype(nullptr);thread_local N n;", "TR0201"},
-      {"dynamic-global", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N n=f();", "TR0201"},
-      {"dynamic-member", "using N=decltype(nullptr);N f(){return nullptr;}struct R{inline static N n=f();};", "TR0201"},
-      {"dynamic-template", "using N=decltype(nullptr);N f(){return nullptr;}template<class T>inline N n=f();int main(){return n<int> != nullptr;}", "TR0201"},
       {"hidden-decltype", "using N=decltype((sizeof(long double),nullptr));", "TR0201"},
       {"hidden-initializer", "constexpr auto n=(sizeof(long double),nullptr);", "TR0201"},
       {"hidden-noexcept", "bool f(){return noexcept((sizeof(long double),nullptr));}", "TR0201"},
@@ -11469,7 +11566,6 @@ TEST_F(TranslateTest, CoreV2FunctionPointersRetainSourceAndSignatureBoundaries) 
       {"object-to-function", "int main(){void*p=nullptr;auto f=reinterpret_cast<int(*)()>(p);return f!=nullptr;}"},
       {"function-to-integer", "int get(){return 3;}int main(){return int(reinterpret_cast<unsigned long long>(&get));}"},
       {"different-signature-cast", "int get(int n){return n;}int main(){auto p=reinterpret_cast<bool(*)(bool)>(&get);return p(true);}"},
-      {"dynamic-global", "int get(){return 3;}using F=int(*)();F make(){return get;}F p=make();int main(){return p();}"},
       {"thread-local", "int get(){return 3;}thread_local int(*p)()=get;int main(){return p();}"},
       {"volatile-storage", "int get(){return 3;}int main(){int(*volatile p)()=get;return p();}"},
       {"nondefault-pointee-address-space", "typedef int __attribute__((address_space(1))) A;int invoke(int(*p)(A*),A*v){return p(v);}"},
@@ -11932,7 +12028,6 @@ TEST_F(TranslateTest, CoreV2CallbackVariableTemplatesAcceptTypedCallbacks) {
 
 TEST_F(TranslateTest, CoreV2CallbackVariableTemplatesRetainSourceAndSignatureBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"dynamic-initializer", "int get(){return 3;}int(*make())(){return get;}template<class T>auto p=make();int main(){return p<int>();}"},
       {"thread-local", "int get(){return 3;}template<class T>thread_local auto p=&get;int main(){return p<int>();}"},
       {"volatile", "int get(){return 3;}template<class T>auto volatile p=&get;int main(){return p<int>();}"},
       {"nonstatic-member-pointer", "struct R{int get(){return 3;}};template<class T>auto p=&R::get;int main(){R r;return (r.*p<int>)();}"},
@@ -12380,7 +12475,6 @@ TEST_F(TranslateTest, CoreV2VariableTemplatesAcceptConcreteInstances) {
 TEST_F(TranslateTest, CoreV2VariableTemplatesRetainSourceAndResourceChecks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"floating-result", "template<class T>constexpr long double value=1.0L;int main(){return int(value<int>);}"},
-      {"dynamic-initializer", "int f(){return 3;}template<class T>int value=f();int main(){return value<int>;}"},
       {"thread-local", "template<class T>thread_local int value=3;int main(){return value<int>;}"},
       {"volatile-result", "template<class T>volatile int value=3;int main(){return value<int>;}"},
       {"template-template", "template<class T>struct R{};template<template<class>class C>constexpr int value=3;int main(){return value<R>;}"},
@@ -13836,8 +13930,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateStaticDataAcceptConcreteMembers) {
 
 TEST_F(TranslateTest, CoreV2ClassTemplateStaticDataRetainSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"dynamic-initializer", "int value(){return 3;}template<class T>struct R{inline static int n=value();};int f(){return R<int>::n;}"},
-      {"side-effect-initializer", "int count=0;template<class T>struct R{inline static int n=++count;};int f(){return R<int>::n;}"},
       {"floating-initializer", "template<class T>struct R{inline static int n=int(1.0L);};int f(){return R<int>::n;}"},
       {"eager-const-floating", "template<class T>struct R{static const int n=int(1.0L);};static_assert(sizeof(R<int>)==1);"},
       {"value-only-floating", "template<class T>struct R{static const int n=int(1.0L);};int f(){return R<int>::n;}"},
@@ -19364,7 +19456,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"bitfield", "struct R{unsigned n:3;R():n(1){}};"},
       {"folded-unsupported-initializer", "struct R{int n;constexpr R():n(sizeof(long double)){}};constexpr R r;"},
       {"folded-throw-body", "struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);"},
-      {"dynamic-global", "struct R{int n;R():n(1){}};R global;"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);

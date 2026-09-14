@@ -491,6 +491,12 @@ public:
         (!CoreV2 || !boolean(O, "memory_lifetimes", M.MemoryLifetimes) ||
          !M.MemoryLifetimes))
       return error("Memory lifetimes require true core v2 evidence.");
+    if (O.get("startup")) {
+      const auto Startup = O.getString("startup");
+      if (!CoreV2 || !Startup || Startup->empty())
+        return error("Startup requires a nonempty core v2 function identifier.");
+      M.Startup = Startup->str();
+    }
     const auto *F = O.getObject("frontend");
     const auto *T = O.getObject("target");
     if (!F || !T)
@@ -1608,6 +1614,8 @@ public:
                   "Unsupported or mismatched semantic profile.");
     if (M.MemoryLifetimes && M.Profile != "cpp-core-v2")
       return error(Anchor, "Memory lifetimes require core v2.");
+    if (M.Startup && (M.Profile != "cpp-core-v2" || M.Startup->empty()))
+      return error(Anchor, "Startup requires a nonempty core v2 function identifier.");
     llvm::Triple T(llvm::Triple::normalize(M.Target.Triple));
     llvm::Triple Requested(llvm::Triple::normalize(Context.TargetTriple));
     if (M.Target.Triple.empty() || Context.TargetTriple.empty() ||
@@ -1753,6 +1761,15 @@ public:
             return error(P.Loc, "C exports require scalar parameter types.");
       }
       Functions.emplace(F.Name, &F);
+    }
+    if (M.Startup) {
+      const auto Found = Functions.find(*M.Startup);
+      if (Found == Functions.end() || !DefinedFunctions.count(*M.Startup))
+        return error(Anchor, "Startup must name a function definition in this module.");
+      const auto &F = *Found->second;
+      if (!F.Internal || F.CExport || F.Name == "main" ||
+          F.Result.Kind != TypeKind::Void || !F.Params.empty())
+        return error(F.Loc, "Startup requires an internal, non-exported void() function.");
     }
     const std::map<std::string, Type> Empty;
     for (const auto &G : M.Globals)

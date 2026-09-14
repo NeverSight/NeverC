@@ -1218,6 +1218,112 @@ Module dynamicStaticModule() {
 }
 } // namespace
 
+namespace {
+Module startupModule() {
+  auto M = dynamicStaticModule();
+  auto &F = M.Functions[0];
+  F.Name = "nct_startup";
+  F.Internal = true;
+  F.CExport = false;
+  F.Result = {TypeKind::Void, {}};
+  F.Params.clear();
+  F.Body[3].Value = literal("7");
+  F.Body.back().Value.reset();
+  M.Startup = F.Name;
+  return M;
+}
+} // namespace
+
+TEST(TranslateIR, StartupRequiresARealInternalVoidFunctionInCoreV2) {
+  auto M = startupModule();
+  Diagnostics D;
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  for (const std::string Name : {"", "nct_missing", "../function"}) {
+    auto Bad = M;
+    Bad.Startup = Name;
+    invalid(Bad);
+  }
+  auto Bad = M;
+  Bad.Profile = "cpp-core-v1";
+  Bad.Target.Carriers.reset();
+  invalid(Bad, "Startup");
+  Bad = M;
+  Bad.Functions.clear();
+  invalid(Bad, "definition");
+  Bad = M;
+  Bad.Functions[0].Internal = false;
+  invalid(Bad, "Startup");
+  Bad = M;
+  Bad.Functions[0].Name = "exported_startup";
+  Bad.Functions[0].CExport = true;
+  Bad.Startup = Bad.Functions[0].Name;
+  invalid(Bad, "Startup");
+  Bad = M;
+  Bad.Functions[0].Result = intType();
+  Bad.Functions[0].Body.back() = ret(literal("0"));
+  invalid(Bad, "Startup");
+  Bad = M;
+  Bad.Functions[0].Params.push_back({"nct_argument", intType(), InputLoc});
+  invalid(Bad, "Startup");
+  Bad = M;
+  Bad.Functions[0].Name = "main";
+  Bad.Functions[0].Internal = false;
+  Bad.Functions[0].Result = intType();
+  Bad.Functions[0].Body.back() = ret(literal("0"));
+  Bad.Startup = "main";
+  invalid(Bad, "Startup");
+  Bad = M;
+  Bad.Functions[0].Body.clear();
+  invalid(Bad);
+}
+
+TEST(TranslateIR, StartupWireRequiresANonemptyStringAndCoreV2Profile) {
+  for (bool CoreV2 : {false, true}) {
+    for (const std::string Value : {"null", "true", "0", "[]", "{}", "\"\"", "\"nct_startup\""}) {
+      SCOPED_TRACE(Value);
+      auto JSON = wireModule(CoreV2);
+      JSON.insert(1, "\"startup\":" + Value + ",");
+      Module Parsed;
+      Parsed.Frontend.Build = "unchanged";
+      Diagnostics D;
+      const bool Valid = CoreV2 && Value == "\"nct_startup\"";
+      EXPECT_EQ(parseModule(JSON, Parsed, D), Valid);
+      if (Valid) {
+        ASSERT_TRUE(Parsed.Startup);
+        EXPECT_EQ(*Parsed.Startup, "nct_startup");
+        invalid(Parsed, "definition");
+      } else {
+        EXPECT_EQ(Parsed.Frontend.Build, "unchanged");
+      }
+    }
+  }
+}
+
+TEST(TranslateIR, StartupEmitsANativeConstructorWithoutGrantingStoragePrivileges) {
+  auto M = startupModule();
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("#if !__has_attribute(constructor)"), std::string::npos);
+  EXPECT_NE(Output.Text.find("__attribute__((constructor))\nstatic void nct_startup(void) {"), std::string::npos);
+  EXPECT_NE(Output.Text.find("static int nct_static = (0);"), std::string::npos);
+  auto Bad = M;
+  Bad.Functions[0].Body[1].FalseLabel = "nct_initialize";
+  invalid(Bad, "ownership");
+  Bad = M;
+  Bad.Functions[0].Body.erase(Bad.Functions[0].Body.begin() + 4);
+  invalid(Bad, "ownership");
+  Bad = M;
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.end() - 1, Bad.Functions[0].Body[3]);
+  invalid(Bad, "not writable");
+  Bad = M;
+  Bad.Globals[0].Value = literal("1");
+  invalid(Bad, "initializer");
+  M.Startup.reset();
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_EQ(Output.Text.find("__attribute__((constructor))"), std::string::npos);
+}
+
 TEST(TranslateIR, CoreV2DynamicStaticStorageRequiresIndependentAtomicEvidence) {
   auto M = dynamicStaticModule();
   Diagnostics D;

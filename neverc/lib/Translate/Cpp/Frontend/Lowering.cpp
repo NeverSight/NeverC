@@ -1651,7 +1651,7 @@ class FunctionLowering {
       const auto *Array = A.Context.getAsConstantArrayType(Loop->getType());
       const auto *Common = Loop->getCommonExpr();
       const auto *Source = Common ? Common->getSourceExpr() : nullptr;
-      if (!defaultedCopyOrMoveConstructor(dyn_cast<CXXConstructorDecl>(Function)) ||
+      if (!defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(Function)) ||
           !Array || !Source || !Source->isGLValue() ||
           Source->getValueKind() != Common->getValueKind() ||
           (llvm::cast<CXXConstructorDecl>(Function)->isCopyConstructor() && !Source->isLValue()) ||
@@ -1783,37 +1783,40 @@ class FunctionLowering {
                         ? dereference(Place, L) : Place);
     return Place;
   }
+  void initializeDynamicStatic(const VarDecl *V, const Expr *Init) {
+    auto L = V->getLocation();
+    if (!Init || !A.DynamicStaticObjects.count(V->getCanonicalDecl()))
+      reject(L, "static initializer", "Expected a checked dynamic static initializer.");
+    A.chargeExpansion(2, L);
+    const auto Initialize = labelName(), Ready = labelName();
+    const auto Global = A.name(V);
+    Body.push_back(json::Object{{"op", "static_init_begin"},
+                                {"global", Global},
+                                {"true", Initialize}, {"false", Ready},
+                                {"loc", A.loc(L)}});
+    Edges[Current].push_back(Initialize);
+    Edges[Current].push_back(Ready);
+    Open = false;
+    label(Initialize, L);
+    beginFullExpression();
+    auto Previous = ActiveDynamicInitializer;
+    auto Restore = llvm::make_scope_exit([&] { ActiveDynamicInitializer = Previous; });
+    ActiveDynamicInitializer = V->getCanonicalDecl();
+    if (V->getType()->isReferenceType())
+      assign(variable(Global, type(V->getType(), L), L), bind(Init, V->getType()), L);
+    else
+      initialize(storage(V, L), Init, L);
+    endFullExpression();
+    Body.push_back(json::Object{{"op", "static_init_end"},
+                                {"global", Global}, {"loc", A.loc(L)}});
+    jump(Ready, L);
+    label(Ready, L);
+  }
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
     if (A.S.coreV2() && V->isStaticLocal()) {
-      auto Place = storage(V, L);
-      if (A.DynamicStaticLocals.count(V->getCanonicalDecl())) {
-        A.chargeExpansion(2, L);
-        const auto Initialize = labelName(), Ready = labelName();
-        const auto Global = A.name(V);
-        Body.push_back(json::Object{{"op", "static_init_begin"},
-                                    {"global", Global},
-                                    {"true", Initialize}, {"false", Ready},
-                                    {"loc", A.loc(L)}});
-        Edges[Current].push_back(Initialize);
-        Edges[Current].push_back(Ready);
-        Open = false;
-        label(Initialize, L);
-        beginFullExpression();
-        auto Previous = ActiveDynamicInitializer;
-        auto Restore = llvm::make_scope_exit([&] { ActiveDynamicInitializer = Previous; });
-        ActiveDynamicInitializer = V->getCanonicalDecl();
-        if (V->getType()->isReferenceType()) {
-          assign(variable(Global, type(V->getType(), L), L),
-                 bind(V->getInit(), V->getType()), L);
-        } else
-          initialize(std::move(Place), V->getInit(), L);
-        endFullExpression();
-        Body.push_back(json::Object{{"op", "static_init_end"},
-                                    {"global", Global}, {"loc", A.loc(L)}});
-        jump(Ready, L);
-        label(Ready, L);
-      }
+      if (A.DynamicStaticObjects.count(V->getCanonicalDecl()))
+        initializeDynamicStatic(V, V->getInit());
       return;
     }
     auto Place = localStorage(V);
@@ -2253,6 +2256,36 @@ public:
       Open = false;
     }
     Scopes.pop_back();
+    return finish(Name, ResultType, L,
+                  DestroyedRecord || Function->getFormalLinkage() == Linkage::Internal,
+                  !DestroyedRecord && Function->isExternC() &&
+                      Function->getFormalLinkage() != Linkage::Internal);
+  }
+  explicit FunctionLowering(Adapter &A) : A(A), Function(nullptr) {
+    Prefix = "nct_f" + digest("startup:" + A.S.Relative).substr(0, 12) + "_";
+  }
+  json::Object runStartup(llvm::ArrayRef<const VarDecl *> Objects) {
+    const auto L = Objects.front()->getLocation();
+    const auto Name = "nct_startup_" + digest(A.S.Relative).substr(0, 16);
+    Entry = labelName();
+    label(Entry, L);
+    Scopes.emplace_back();
+    for (const auto *Object : Objects) {
+      const VarDecl *InitializingDecl = nullptr;
+      const auto *Init = Object->getAnyInitializer(InitializingDecl);
+      if (!InitializingDecl || InitializingDecl->getCanonicalDecl() != Object->getCanonicalDecl())
+        reject(Object->getLocation(), "startup initializer", "Missing checked source initializer.");
+      initializeDynamicStatic(Object, Init);
+    }
+    cleanupScopes(0);
+    Scopes.pop_back();
+    Body.push_back(json::Object{{"op", "return"}, {"loc", A.loc(L)}});
+    Open = false;
+    return finish(Name, "void", L, true, false);
+  }
+private:
+  json::Object finish(llvm::StringRef Name, llvm::StringRef ResultType,
+                      SourceLocation L, bool Internal, bool CExport) {
     // Flags discovered in later branches must be initialized before any path
     // can inspect them. Reset-on-cleanup makes the same source place reusable
     // on the next loop iteration, without branch-local uninitialized flags.
@@ -2285,9 +2318,8 @@ public:
     return json::Object{
         {"name", Name},
         {"result", ResultPlace ? "void" : ResultType},
-        {"internal", DestroyedRecord || Function->getFormalLinkage() == Linkage::Internal},
-        {"c_export", !DestroyedRecord && Function->isExternC() &&
-                         Function->getFormalLinkage() != Linkage::Internal},
+        {"internal", Internal},
+        {"c_export", CExport},
         {"params", std::move(Parameters)},
         {"locals", std::move(Locals)},
         {"body", std::move(Pruned)},
@@ -2297,6 +2329,9 @@ public:
 
 json::Object Adapter::lower(FunctionDecl *Function) {
   return FunctionLowering(*this, Function).run();
+}
+json::Object Adapter::lowerStartup(llvm::ArrayRef<const VarDecl *> Objects) {
+  return FunctionLowering(*this).runStartup(Objects);
 }
 json::Object Adapter::lowerDestruction(const CXXRecordDecl *Record) {
   return FunctionLowering(*this, Record).run();

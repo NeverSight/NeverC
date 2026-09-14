@@ -1887,7 +1887,7 @@ json::Object Adapter::staticTemporaryObject(const MaterializeTemporaryExpr *Temp
         InitializingDecl->hasConstantInitialization())
       ConstantStaticTemporaryOwners.insert(Owner);
   }
-  if (!Owner || DynamicStaticLocals.count(Owner) ||
+  if (!Owner || DynamicStaticObjects.count(Owner) ||
       !ConstantStaticTemporaryOwners.count(Owner)) {
     reject(L, "static temporary storage",
            "A constant static temporary requires successful evaluation of its exact extending owner.");
@@ -1928,9 +1928,9 @@ json::Object Adapter::dynamicStaticTemporaryObject(const MaterializeTemporaryExp
   auto L = Temporary->getExprLoc();
   auto T = Temporary->getType();
   if (!Owner || staticTemporaryOwner(Temporary) != Owner ||
-      !Owner->isStaticLocal() || !DynamicStaticLocals.count(Owner)) {
+      !DynamicStaticObjects.count(Owner)) {
     reject(L, "static temporary initialization",
-           "A runtime static temporary requires its exact dynamic local extending owner.");
+           "A runtime static temporary requires its exact dynamic extending owner.");
     throw Failure{};
   }
   auto Kind = type(T, L);
@@ -8482,7 +8482,7 @@ public:
   }
   bool cacheStaticObjectInitializer(VarDecl *Definition) {
     auto Canonical = Definition->getCanonicalDecl();
-    if (A.ConstantStaticObjectInitializers.count(Canonical))
+    if (A.ConstantStaticInitializers.count(Canonical))
       return true;
     auto T = Definition->getType();
     if (!staticObjectElementType(T) || needsDestruction(T) ||
@@ -8503,7 +8503,7 @@ public:
               Definition->getDeclContext()->getRedeclContext() ||
           !A.Context.hasSameType(InitializingDecl->getType(), T)) {
         A.reject(Definition->getLocation(), "static object initializer",
-                 "A static object requires fully defined source-owned constant initialization.");
+                 "A static object requires its exact source-owned initializer.");
         return false;
       }
       const auto *Construct = dyn_cast<CXXConstructExpr>(Init->IgnoreParenImpCasts());
@@ -8515,14 +8515,13 @@ public:
         // Evaluating that constructor alone would leave scalar fields indeterminate.
         Initializer = A.zero(T, Definition->getLocation());
       } else {
-        if (!Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
+        // The native point-of-definition flag prevents later definitions from
+        // retroactively promoting a nonlocal dynamic initializer to static data.
+        if ((!Definition->isStaticLocal() &&
+             !InitializingDecl->hasConstantInitialization()) ||
+            !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
             !Notes.empty()) {
-          if (!Definition->isStaticLocal()) {
-            A.reject(Definition->getLocation(), "static object initializer",
-                     "A nonlocal static object requires fully defined source-owned constant initialization.");
-            return false;
-          }
-          A.DynamicStaticLocals.insert(Canonical);
+          A.DynamicStaticObjects.insert(Canonical);
           Initializer = A.zero(T, Definition->getLocation());
         } else {
           A.ConstantStaticTemporaryOwners.insert(Canonical);
@@ -8537,7 +8536,7 @@ public:
       }
       Initializer = A.zero(T, Definition->getLocation());
     }
-    A.ConstantStaticObjectInitializers.emplace(Canonical, std::move(Initializer));
+    A.ConstantStaticInitializers.emplace(Canonical, std::move(Initializer));
     return true;
   }
   bool staticScalarValue(const APValue &Value, QualType T, SourceLocation L) {
@@ -8549,6 +8548,58 @@ public:
       return true;
     }
     return Value.isInt() || (binaryFloatingType(T) && Value.isFloat());
+  }
+  bool cacheStaticScalarInitializer(VarDecl *Definition) {
+    const auto *Canonical = Definition->getCanonicalDecl();
+    if (A.ConstantStaticInitializers.count(Canonical))
+      return true;
+    auto T = Definition->getType();
+    auto L = Definition->getLocation();
+    if (!staticScalarType(T) || Definition->getTLSKind() != VarDecl::TLS_None ||
+        T.isVolatileQualified()) {
+      A.reject(L, "static scalar storage",
+               "A static scalar requires an admitted non-volatile type without TLS.");
+      return false;
+    }
+    const VarDecl *InitializingDecl = nullptr;
+    const auto *Init = Definition->getAnyInitializer(InitializingDecl);
+    json::Object Initializer;
+    if (Init) {
+      if (!InitializingDecl || !owned(InitializingDecl) ||
+          InitializingDecl->getCanonicalDecl() != Canonical ||
+          InitializingDecl->getDeclContext()->getRedeclContext() !=
+              Definition->getDeclContext()->getRedeclContext() ||
+          !A.Context.hasSameType(InitializingDecl->getType(), T)) {
+        A.reject(L, "static scalar initializer",
+                 "A static scalar requires its exact source-owned initializer.");
+        return false;
+      }
+      APValue Value;
+      llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+      if ((!Definition->isStaticLocal() &&
+           !InitializingDecl->hasConstantInitialization()) ||
+          !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
+          !Notes.empty()) {
+        A.DynamicStaticObjects.insert(Canonical);
+        Initializer = A.zero(T, L);
+      } else {
+        if (!staticScalarValue(Value, T, L)) {
+          A.reject(L, "static scalar initializer",
+                   "A static scalar requires an admitted value representation.");
+          return false;
+        }
+        Initializer = A.constant(Value, T, L);
+      }
+    } else {
+      if (T.isConstQualified()) {
+        A.reject(L, "static scalar initializer",
+                 "A const static scalar requires an initializer in this unit.");
+        return false;
+      }
+      Initializer = A.zero(T, L);
+    }
+    A.ConstantStaticInitializers.emplace(Canonical, std::move(Initializer));
+    return true;
   }
   bool cacheStaticReferenceInitializer(VarDecl *Definition) {
     auto Canonical = Definition->getCanonicalDecl();
@@ -8576,16 +8627,13 @@ public:
       return false;
     }
     auto PointerType = A.Context.getPointerType(T->getPointeeType());
-    if (!Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
+    if ((!Definition->isStaticLocal() &&
+         !InitializingDecl->hasConstantInitialization()) ||
+        !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
         !Notes.empty()) {
-      if (!Definition->isStaticLocal()) {
-        A.reject(Definition->getLocation(), "static reference initializer",
-                 "A nonlocal static reference requires a constant binding to permanent storage.");
-        return false;
-      }
-      // The binding and its lifetime-extended temporaries initialize together
-      // at first passage. Runtime allocation never consumes a partial APValue.
-      A.DynamicStaticLocals.insert(Canonical);
+      // The binding and its lifetime-extended temporaries initialize together.
+      // Runtime allocation never consumes a partial APValue.
+      A.DynamicStaticObjects.insert(Canonical);
       A.StaticReferenceInitializers.emplace(
           Canonical, A.zero(PointerType, Definition->getLocation()));
       return true;
@@ -8651,24 +8699,17 @@ public:
         A.Globals.push_back(Definition);
       return true;
     }
-    const VarDecl *InitializingDecl = nullptr;
-    if (const auto *Init = Definition->getAnyInitializer(InitializingDecl)) {
-      APValue Value;
-      if (!InitializingDecl || !owned(InitializingDecl) ||
-          InitializingDecl->getCanonicalDecl() != D->getCanonicalDecl() ||
-          (TemplateInstance && InitializingDecl->getDeclContext() != D->getDeclContext()) ||
-          !A.Context.hasSameType(InitializingDecl->getType(), D->getType()) ||
-          !Init->isCXX11ConstantExpr(A.Context, &Value) ||
-          !staticScalarValue(Value, D->getType(), D->getLocation())) {
+    if (TemplateInstance) {
+      const VarDecl *InitializingDecl = nullptr;
+      if (Definition->getAnyInitializer(InitializingDecl) &&
+          (!InitializingDecl || InitializingDecl->getDeclContext() != D->getDeclContext())) {
         A.reject(D->getLocation(), "static data initializer",
-                 "A scalar static member requires a source-owned constant initializer.");
+                 "A member variable instance requires its own initializing context.");
         return true;
       }
-    } else if (D->getType().isConstQualified()) {
-      A.reject(D->getLocation(), "static data initializer",
-               "A const static member requires an initializer in this unit.");
-      return true;
     }
+    if (!cacheStaticScalarInitializer(Definition))
+      return true;
     if (CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
       A.Globals.push_back(Definition);
     // A non-inline const member's initializer can belong to its in-class
@@ -8714,17 +8755,8 @@ public:
             A.Globals.push_back(Definition);
           return true;
         }
-        if (const auto *Init = Definition->getInit()) {
-          APValue Value;
-          if (!Init->isCXX11ConstantExpr(A.Context, &Value) ||
-              !staticScalarValue(Value, D->getType(), D->getLocation())) {
-            A.reject(Definition->getLocation(), "variable template initializer", "Only zero or fully defined scalar constant initialization is supported.");
-            return true;
-          }
-        } else if (D->getType().isConstQualified()) {
-          A.reject(D->getLocation(), "variable template const initializer", "A const variable definition requires an initializer.");
+        if (!cacheStaticScalarInitializer(Definition))
           return true;
-        }
         if (CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
           A.Globals.push_back(Definition);
         return true;
@@ -8776,18 +8808,8 @@ public:
         }
         return true;
       }
-      if (const auto *Init = D->getInit()) {
-        APValue Value;
-        if (!Init->isCXX11ConstantExpr(A.Context, &Value))
-          A.DynamicStaticLocals.insert(D->getCanonicalDecl());
-        else if (!staticScalarValue(Value, D->getType(), D->getLocation()))
-          A.reject(D->getLocation(), "static local initializer",
-                   "A scalar static local requires an admitted value representation.");
-      } else if (D->getType().isConstQualified()) {
-        A.reject(D->getLocation(), "static local initializer",
-                 "A const scalar static local requires an initializer.");
+      if (!cacheStaticScalarInitializer(D))
         return true;
-      }
       if (A.StaticLocals.insert(D->getCanonicalDecl()).second) {
         A.chargeExpansion(1, D->getLocation());
         A.Globals.push_back(D);
@@ -8832,7 +8854,7 @@ public:
         return true;
       }
       auto Canonical = Definition->getCanonicalDecl();
-      if (A.ConstantStaticObjectInitializers.count(Canonical))
+      if (A.ConstantStaticInitializers.count(Canonical))
         return true;
       if (!cacheStaticObjectInitializer(Definition))
         return true;
@@ -8853,8 +8875,7 @@ public:
                "Static/thread-local locals and local extern declarations are "
                "unsupported.");
     if (!D->isLocalVarDeclOrParm()) {
-      if (A.S.coreV2() && (!D->getType().isConstQualified() || D->getType()->isPointerType()) &&
-          staticScalarType(D->getType())) {
+      if (A.S.coreV2() && staticScalarType(D->getType())) {
         auto *Definition = D->getDefinition();
         if (!Definition || !owned(Definition) || Definition->getKind() != Decl::Var ||
             Definition->isStaticDataMember() ||
@@ -8872,15 +8893,8 @@ public:
                    "Thread-local and volatile globals require separate storage semantics.");
           return true;
         }
-        if (const auto *Init = Definition->getInit()) {
-          APValue Value;
-          if (!Init->isCXX11ConstantExpr(A.Context, &Value) ||
-              !staticScalarValue(Value, D->getType(), D->getLocation())) {
-            A.reject(Definition->getLocation(), "global initializer",
-                     "A scalar global requires zero or fully defined constant initialization.");
-            return true;
-          }
-        }
+        if (!cacheStaticScalarInitializer(Definition))
+          return true;
         if (CheckedScalarGlobals.insert(Definition->getCanonicalDecl()).second)
           A.Globals.push_back(Definition);
         // RAV still visits each source declaration's initializer. Constant
@@ -9711,7 +9725,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     json::Object Initializer;
     const auto *Init = S.coreV2() && G->isStaticDataMember()
                            ? G->getAnyInitializer() : G->getInit();
-    const bool Dynamic = DynamicStaticLocals.count(G->getCanonicalDecl());
+    const bool Dynamic = DynamicStaticObjects.count(G->getCanonicalDecl());
     if (Dynamic) {
       auto StorageType = G->getType()->isReferenceType()
                              ? Context.getPointerType(G->getType()->getPointeeType())
@@ -9720,8 +9734,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     } else if (auto Found = StaticReferenceInitializers.find(G->getCanonicalDecl());
         Found != StaticReferenceInitializers.end()) {
       Initializer = json::Object(Found->second);
-    } else if (auto Found = ConstantStaticObjectInitializers.find(G->getCanonicalDecl());
-        Found != ConstantStaticObjectInitializers.end()) {
+    } else if (auto Found = ConstantStaticInitializers.find(G->getCanonicalDecl());
+        Found != ConstantStaticInitializers.end()) {
       Initializer = json::Object(Found->second);
     } else if (Init) {
       APValue Value;
@@ -9749,6 +9763,29 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   }
   for (auto *F : Functions)
     FunctionData.push_back(lower(F));
+  if (S.coreV2()) {
+    std::vector<const VarDecl *> StartupObjects;
+    std::set<const VarDecl *> StartupDefinitions;
+    for (const auto *G : Globals)
+      if (!G->isStaticLocal() && DynamicStaticObjects.count(G->getCanonicalDecl()) &&
+          StartupDefinitions.insert(G->getCanonicalDecl()).second)
+        StartupObjects.push_back(G);
+    // Original locations retain declaration order inside one macro expansion.
+    // Unordered template instances at identical locations use stable identities.
+    std::sort(StartupObjects.begin(), StartupObjects.end(), [&](const auto *A, const auto *B) {
+      auto AL = A->getLocation(), BL = B->getLocation();
+      if (Sources.isBeforeInTranslationUnit(AL, BL))
+        return true;
+      if (Sources.isBeforeInTranslationUnit(BL, AL))
+        return false;
+      return name(A) < name(B);
+    });
+    if (!StartupObjects.empty()) {
+      auto Startup = lowerStartup(StartupObjects);
+      S.Module["startup"] = Startup.getString("name")->str();
+      FunctionData.push_back(std::move(Startup));
+    }
+  }
   if (S.coreV2())
     // Lowering a helper can request additional member/array destruction.
     // Unused implicit helpers must not force lazy template destructor bodies.

@@ -282,7 +282,7 @@ public:
   std::vector<const clang::CXXRecordDecl *> Destructions;
   std::set<const clang::CXXRecordDecl *> RequiredDestructions;
   std::vector<clang::VarDecl *> Globals;
-  std::map<const clang::VarDecl *, json::Object> ConstantStaticObjectInitializers;
+  std::map<const clang::VarDecl *, json::Object> ConstantStaticInitializers;
   std::map<const clang::VarDecl *, json::Object> StaticReferenceInitializers;
   std::set<const clang::VarDecl *> ConstantStaticTemporaryOwners;
   std::set<const clang::VarDecl *> CheckedConstantTemporaryOccurrences;
@@ -293,7 +293,7 @@ public:
   std::size_t StaticTemporarySerial = 0;
   json::Array StaticTemporaryGlobals;
   std::set<const clang::VarDecl *> StaticLocals;
-  std::set<const clang::VarDecl *> DynamicStaticLocals;
+  std::set<const clang::VarDecl *> DynamicStaticObjects;
   std::map<const clang::VarDecl *, llvm::APSInt> StaticMemberValues;
   std::map<const clang::Decl *, clang::FunctionDecl *> FunctionDeclarations;
   std::map<const clang::Decl *, clang::VarDecl *> GlobalDeclarations;
@@ -343,6 +343,7 @@ public:
   const clang::CXXForRangeStmt *rangeForOwner(const clang::VarDecl *Variable) const;
   const clang::VarDecl *temporaryOwner(const clang::MaterializeTemporaryExpr *Temporary);
   json::Object lower(clang::FunctionDecl *Function);
+  json::Object lowerStartup(llvm::ArrayRef<const clang::VarDecl *> Objects);
   std::string destructionName(const clang::CXXRecordDecl *Record);
   void requireDestruction(const clang::CXXRecordDecl *Record,
                           clang::SourceLocation Location);

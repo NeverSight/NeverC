@@ -193,11 +193,57 @@ Generated assertions check atomic capability and storage layout. Protocol/IR
 checks, O0/O2 execution, sixteen-thread visibility tests and assembly checks for
 runtime helper dependencies require native validation at the implementing CI head.
 
-Nonlocal dynamic reference bindings, nontrivial
-static destruction, TLS, nonlocal dynamic initialization and exception
-propagation/retry still require implementation. Unsupported throwing source and
+Nontrivial static destruction, TLS and exception propagation/retry still require
+implementation. Nonlocal objects follow the [startup contract](#nonlocal-dynamic-initialization). Unsupported throwing source and
 unowned callees remain diagnosed; there is no substitute termination or fake
 success path. Actual standard headers and complete C++/STL remain unfinished.
+
+## Nonlocal dynamic initialization
+
+Core v2 initializes admitted nonlocal scalar, pointer, callback, record, fixed-array
+and reference objects before `main`, including const objects and materialized
+class/member/variable-template instances. Zero and required constant initialization
+precede all dynamic initialization. The frontend preserves Clang's native
+point-of-definition constant-initialization classification and requires a fully
+defined checked value; successful end-of-unit evaluation alone cannot promote a
+dynamic initializer. Trivial default construction retains static zero initialization.
+
+A single internal startup function runs checked dynamic initializers in definition
+order within the source unit. Original source locations preserve declaration order
+inside macro expansions. This selects a permitted order for unordered template
+instances and preserves required ordered/partially ordered relationships. Merely
+declaring a global earlier does not move its later defining initializer earlier.
+Unused nonlocal definitions still initialize; unused template instances remain lazy.
+Local static declarations keep their existing first-use behavior, including when
+called from startup. Every initialized object keeps its actual static address.
+
+```cpp
+int calls;
+int seed() { return ++calls; }
+const int first = seed();
+const int &second = seed();
+int main() { return first != 1 || second != 2 || calls != 2; }
+```
+
+Each full expression cleans its ordinary temporaries before publishing that
+object and starting the next initializer. Lifetime-extended temporaries are built
+in their existing permanent child storage. Source-defined single-object allocation
+can run in startup; missing default heap functions still require a runtime.
+Nontrivial static destruction, TLS, exceptions/unwind, actual standard headers and
+complete C++/STL remain unfinished.
+
+The optional core-v2 module `startup` identifier names an independently checked
+internal `void()` definition. Generated C23 gives only that function the native
+`constructor` attribute and checks attribute support. Existing NeverC native object
+startup executes it when a program starts or an ordinary hosted module is loaded,
+including when a separately compiled C client supplies `main`. This adds no public
+startup API. Manual loading and DynCode are separate boundaries: the current
+DynCode IR stage still rejects `llvm.global_ctors`. Normal source types, definition
+ownership, initialization CFG permissions and const rules remain checked.
+
+Paired source/protocol and forged-IR cases, O0/O2 program execution and a separate
+C-client link require native validation on the implementing CI revision. The
+ordinary NeverC source language remains C23; this is C++17 input translation.
 
 ## Fixed-array static storage
 
@@ -246,9 +292,8 @@ constant-initialized declarations emit no automatic shadow, runtime initializati
 repeated element stores. Arrays cannot be assigned as whole values.
 
 Dynamic local arrays follow the [first-use contract](#dynamic-local-static-initialization).
-Nonlocal dynamic initialization, TLS and volatile storage,
-nontrivial static destruction and static reference lifetime extension still need
-further support. Records follow their [static object contract](#static-record-objects). Object-pointer elements follow the
+Nonlocal arrays follow the [startup contract](#nonlocal-dynamic-initialization).
+TLS, volatile storage and nontrivial static destruction still need further support. Records follow their [static object contract](#static-record-objects). Object-pointer elements follow the
 [static address contract](#static-object-pointer-storage). Standard headers and full STL remain
 unfinished. Paired source/protocol cases, IR checks and O0/O2 fixtures cover
 shared state, initialization, nested elements, aliases, template identity,
@@ -306,7 +351,8 @@ Canonical static identity, receiver effects, temporary cleanup and separate
 template-instance state follow the existing storage contracts. Static reference
 bindings follow their [alias contract](#static-reference-bindings).
 Dynamic local pointers follow the [first-use contract](#dynamic-local-static-initialization).
-Nonlocal dynamic initialization, TLS, default heap runtime, static destruction,
+Nonlocal pointers follow the [startup contract](#nonlocal-dynamic-initialization).
+TLS, default heap runtime, static destruction,
 standard-library headers/runtime still require further work. Mutable records
 follow their [static object contract](#static-record-objects). Paired source/protocol cases, malformed-address IR cases,
 relocation and O0/O2 fixtures require native validation in implementing CI.
@@ -358,8 +404,8 @@ Automatic objects, runtime pointer loads/calls, TLS, null/one-past addresses,
 integer-derived pointers and unsupported source types cannot provide these
 constant bindings. Constant-initialized static temporaries follow the contract
 below. Nonstatic reference members follow their [binding contract](#reference-members).
-Function references, reference non-type template arguments and nonlocal dynamic
-bindings still require further work.
+Function references and reference non-type template arguments still require further work.
+Nonlocal dynamic bindings follow the [startup contract](#nonlocal-dynamic-initialization).
 Local runtime bindings and their lifetime-extended temporaries use the
 [first-use contract](#dynamic-local-static-initialization). Actual standard-library
 headers/runtime remain unfinished. Native validation of the paired
@@ -370,9 +416,9 @@ requires implementing CI. Complete C++/STL remains an active goal.
 
 Core v2 supports temporary objects whose lifetimes C++17 extends to a namespace,
 function-local static or class static reference, including admitted concrete
-class and variable templates. Namespace and class references require a fully
-defined constant initializer; local static references also support the dynamic
-initialization below. The temporary must have trivial destruction. Scalars, fixed
+class and variable templates. Namespace and class references support checked
+constant initialization or [dynamic startup](#nonlocal-dynamic-initialization);
+local static references support the dynamic initialization below. The temporary must have trivial destruction. Scalars, fixed
 arrays and admitted records retain their complete storage, including when the
 reference names only a field, array element or multidimensional row.
 
@@ -454,7 +500,7 @@ later static member definitions. Merely retaining an APValue grants no access.
 Nontrivial destruction remains diagnosed even in dead or unselected source.
 Paired source/protocol, malformed IR, relocation, O0/O2 and concurrent-reader
 fixtures require native validation at the implementing CI revision. Static
-destruction, exceptions/retry, TLS, nonlocal dynamic startup, default heap runtime and real
+destruction, exceptions/retry, TLS, default heap runtime and real
 standard-library support remain unfinished parts of the full C++/STL goal.
 
 ## Static record objects
@@ -504,8 +550,8 @@ mutability are checked before emitting internal C23 record objects and any
 forward declarations needed for self addresses.
 
 Local nonconstant constructor calls and initializer reads follow the
-[first-use contract](#dynamic-local-static-initialization). Nonlocal dynamic
-initialization, TLS, volatile objects,
+[first-use contract](#dynamic-local-static-initialization). Nonlocal objects use
+[dynamic startup](#nonlocal-dynamic-initialization). TLS, volatile objects,
 nontrivial static destruction, unsupported layouts/fields and default heap runtime remain
 outside this increment. Exception unwinding and actual
 standard-library headers/runtime still require
@@ -557,8 +603,8 @@ underflow, without FTZ/DAZ. Arithmetic evaluates in its declared type with no
 implicit fused multiply-add contraction. The embedded source frontend disables
 fast math and contraction; generated code disables contraction and rejects
 fast-math/finite-math-only or excess-precision settings. Source floating-
-environment pragmas/APIs, `long double`, complex types, dynamic static
-initialization and standard headers remain outside this increment. The existing
+environment pragmas/APIs, `long double`, complex types and standard headers remain
+outside this increment. Dynamic static values follow the first-use and startup contracts. The existing
 math v1 mapping contract is unchanged; core v2 does not inherit its SDK or calls.
 
 Paired source/protocol fixtures and independent IR cases cover representations,
@@ -599,7 +645,8 @@ Zero or checked constant initialization is supported for null globals, scalar
 static locals, static data members and admitted concrete variable templates.
 Equivalent template instances share their object; other instances remain distinct.
 Dynamic local null objects follow the [first-use contract](#dynamic-local-static-initialization).
-Nonlocal dynamic initialization, thread-local/volatile storage and null-valued
+Nonlocal null objects follow the [startup contract](#nonlocal-dynamic-initialization).
+Thread-local/volatile storage and null-valued
 non-type template arguments remain unsupported. All written types, initializers,
 defaults and unevaluated expressions retain source checks; folding to null does
 not hide unsupported operations. Standard headers, including `<cstddef>`, are
@@ -696,12 +743,12 @@ pointer aliasing behavior, not an arbitrary C compiler's alias rules.
 
 ## Reference members
 
-A nonlocal reference-member copy still requires actual constant initialization.
-A `const` record is not automatically usable as a `constexpr` source: copying
-`S::b` before its definition into `S::a` can require dynamic startup even when
-`S::b` itself later receives a constant initializer. Use of a preceding `constexpr`
-source is covered; nonlocal dynamic initialization remains unfinished. The
-translator does not silently promote such initialization or change source order.
+A `const` record is not automatically usable as a `constexpr` source. Copying
+`S::b` into `S::a` can require dynamic startup even when `S::b` receives a constant
+initializer. The copy now runs through [startup](#nonlocal-dynamic-initialization),
+after required constant initialization of `S::b`, preserving the original referent.
+A checked `constexpr` source can retain constant initialization; the translator
+does not silently promote a dynamic copy or change definition order.
 
 
 Core v2 supports nonstatic lvalue/rvalue reference members whose referents have
@@ -1108,8 +1155,8 @@ constructors and constructor templates follow their contracts below. Dynamic
 local statics follow their first-use contract above. Exception unwinding,
 default heap runtime, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
-constructor after source inspection; records requiring destruction and existing
-dynamic global forms remain rejected. Static pointer fields and arrays follow their
+constructor after source inspection; nonlocal dynamic construction follows the
+startup contract. Records requiring static destruction remain rejected. Static pointer fields and arrays follow their
 storage contract above. V1 profiles continue to reject user constructors.
 
 ## Deleted function declarations
@@ -1200,7 +1247,7 @@ operators can modify permitted non-const members while leaving const keys intact
 
 Volatile, mutable, reference and bitfield members remain outside this increment.
 Deleted declarations follow their separate contract below. Restrictions on
-dynamic static lifetime and unsupported element types remain. V1 profiles retain
+nontrivial static destruction and unsupported element types remain. V1 profiles retain
 their const-field rejection. Paired source/protocol tests, const-pointer signature
 and relocation checks, and O0/O2 fixtures require native CI of the implementing
 revision. Standard headers and complete C++/STL remain unfinished.
@@ -1236,7 +1283,7 @@ completed object receives its usual single destruction at the owning scope.
 Cycles, multiple initializers with delegation and invalid target selection retain
 C++ diagnostics. Missing selected definitions remain `TR0203`; unsupported types
 or operations remain `TR0201`, including folded arguments and checked dead bodies.
-Inheritance, variadics, nonlocal dynamic initialization and exception unwinding
+Inheritance, variadics and exception unwinding
 remain separate work. Old profiles continue to reject user-provided constructors.
 Paired source/protocol cases, receiver/call/relocation assertions and O0/O2 runtime
 fixtures require implementing-revision native CI. Complete C++/STL is unfinished.
@@ -1488,8 +1535,8 @@ This also applies in discarded or statically skipped expressions, and to
 reference defaults. Creating a new prvalue, such as `+R::value`, can instead
 bind its own temporary to a const reference. A mutable member or const member
 without a usable constant initializer retains the definition requirement.
-TLS, static locals, other static types, dynamic initialization and other template forms
-retain their separate restrictions. V1 profiles retain their previous behavior.
+TLS and unsupported template forms retain their separate restrictions. Admitted
+static storage follows the first-use and nonlocal startup contracts. V1 profiles retain their previous behavior.
 
 Paired native and protocol fixtures cover value widths, constant-expression
 contexts, selected branches, missing-definition diagnostics, receiver effects,
@@ -2606,7 +2653,7 @@ specializations and those in an ordinary or fully specialized outer class keep
 their own declaration source. Nested member accesses check argument source once
 and still evaluate each receiver once, with the existing 64-level source bound
 and total expansion budget. Other result types,
-thread-local or dynamic initialization, local/union owners, unsupported template owner chains, template-template parameters, inheritance, default heap runtime and full
+thread-local storage, local/union owners, unsupported template owner chains, template-template parameters, inheritance, default heap runtime and full
 C++/STL remain unfinished. Only C++ input is implemented; E Language, Python and
 other frontends are planned. Translation uses embedded Clang libraries and
 launches no external Clang executable.
@@ -2758,8 +2805,8 @@ list and pack has at most 64 entries. Member variable templates follow their
 separate contract above. Callback results follow the
 [callback storage contract](#callback-variable-templates). Fixed arrays follow
 their [static storage contract](#fixed-array-static-storage), and object pointers
-follow the [static address contract](#static-object-pointer-storage). Other result types,
-thread-local storage and dynamic initialization remain excluded.
+follow the [static address contract](#static-object-pointer-storage). Nonlocal dynamic
+initialization follows the startup contract; other result types and TLS remain excluded.
 
 ```cpp
 template<int N> int counter = N;
@@ -2946,8 +2993,8 @@ ordinary C++ source semantics. A dependent static type must resolve to a support
 scalar, a [fixed array](#fixed-array-static-storage) or an
 [object pointer](#static-object-pointer-storage) or a
 [static reference](#static-reference-bindings), or a
-[static record](#static-record-objects). Volatile/thread-local data and
-dynamic initialization remain excluded.
+[static record](#static-record-objects). Dynamic initialization follows the startup
+contract; volatile/thread-local data remain excluded.
 
 Each actual definition becomes one ordinary typed global. Equivalent class
 arguments, aliases and repeated instantiations share it; distinct values, types
@@ -3422,8 +3469,8 @@ internal generated names, without adding a public C data-export ABI.
 Const globals retain their existing read-only representation. Fixed arrays
 follow their [static storage contract](#fixed-array-static-storage), and references
 follow their [alias contract](#static-reference-bindings). Records follow their
-[static object contract](#static-record-objects). Volatile/atomic globals,
-dynamic initialization and thread-local storage remain outside current support.
+[static object contract](#static-record-objects). Dynamic initialization follows the
+startup contract. Volatile/atomic globals and TLS remain outside current support.
 Statically initialized scalar locals and defined scalar static data members
 follow their separate contracts above. Nontrivial global object destruction
 still requires separate lifetime support. Other profiles retain their prior
