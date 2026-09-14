@@ -7,6 +7,7 @@
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
@@ -96,6 +97,7 @@ public:
 };
 
 int main(int Argc, const char **Argv) {
+  llvm::sys::PrintStackTraceOnErrorSignal(Argv[0]);
   struct Fixture {
     const char *Name;
     const char *Source;
