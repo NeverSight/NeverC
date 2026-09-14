@@ -1562,6 +1562,42 @@ TEST(TranslateIR, CoreV2DynamicTemporaryProtocolRequiresExplicitOwnerIdentity) {
   EXPECT_FALSE(parseModule(Old, M, D));
 }
 
+TEST(TranslateIR, CoreV2AggregateInitializationOwnersConstructReferenceTemporaries) {
+  for (bool Mutable : {false, true}) {
+    auto M = dynamicTemporaryModule();
+    const Type Record{TypeKind::Record, "nct_reference_record"};
+    const auto Pointer = pointerType(intType(), true);
+    M.Records.push_back({Record.RecordID, {{"nct_binding", Pointer}}, InputLoc,
+                         RecordLayout{{64, 64}, {0}}});
+    M.Globals[0].ValueType = Record;
+    M.Globals[0].Value = pointerExpr(ExprKind::Aggregate, Record,
+                                     {pointerExpr(ExprKind::Null, Pointer)});
+    M.Globals[0].Mutable = Mutable;
+    auto Member = pointerExpr(ExprKind::Member, Pointer, {variable("nct_static", Record)});
+    Member.Name = "nct_binding";
+    M.Functions[0].Body[4].Target = Member;
+    M.Functions[0].Body.back() = ret(Member);
+    Diagnostics D;
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_EQ(Output.Text.find("static const int nct_child"), std::string::npos);
+    auto Bad = M;
+    auto Store = M.Functions[0].Body[3];
+    Bad.Functions[0].Body.insert(Bad.Functions[0].Body.end() - 1, Store);
+    invalid(Bad, "not writable");
+    // The aggregate can be an array and can remain orphaned after pruning.
+    auto Zero = M.Globals[0].Value;
+    const auto Array = arrayType(Record, 2);
+    M.Globals[0].ValueType = Array;
+    M.Globals[0].Value = pointerExpr(ExprKind::Aggregate, Array, {Zero, Zero});
+    M.Functions[0].Body = {label(), ret(pointerExpr(ExprKind::Null, Pointer))};
+    EXPECT_TRUE(verifyModule(M, context(M), D));
+    Bad = M;
+    Bad.Globals[0].InitializationOwner = "nct_child";
+    invalid(Bad, "independent dynamic");
+  }
+}
+
 TEST(TranslateIR, CoreV2DynamicStaticProtocolRejectsMissingOrForeignPayloads) {
   const auto Location = R"json({"file":"input.cpp","line":1,"column":1})json";
   const auto Global = std::string(R"json({"name":"nct_static","type":"int","dynamic_initialization":true,"loc":)json") +

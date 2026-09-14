@@ -1699,11 +1699,15 @@ public:
         continue;
       const auto Owner = DynamicGlobals.find(G.InitializationOwner);
       if (M.Profile != "cpp-core-v2" || G.DynamicInitialization ||
-          Owner == DynamicGlobals.end() || Owner->second->Mutable ||
-          !Owner->second->InitializationOwner.empty() ||
-          Owner->second->ValueType.Kind != TypeKind::Pointer ||
-          !completeObject(Owner->second->ValueType.Elements[0]))
-        return error(G.Loc, "An initialization child requires an independent dynamic readonly object-pointer owner.");
+          Owner == DynamicGlobals.end() || !Owner->second->InitializationOwner.empty())
+        return error(G.Loc, "An initialization child requires an independent dynamic object-pointer owner or aggregate owner.");
+      const auto &T = Owner->second->ValueType;
+      const bool ReferenceOwner = T.Kind == TypeKind::Pointer && !Owner->second->Mutable &&
+                                  completeObject(T.Elements[0]);
+      const bool AggregateOwner = (T.Kind == TypeKind::Record || T.Kind == TypeKind::Array) &&
+                                  completeObject(T);
+      if (!ReferenceOwner && !AggregateOwner)
+        return error(G.Loc, "An initialization child requires an independent dynamic object-pointer owner or aggregate owner.");
       InitializationGroups.emplace(G.Name, Owner->second);
     }
     for (const auto &G : GlobalDeclarations) {

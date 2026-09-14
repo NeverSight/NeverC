@@ -357,8 +357,9 @@ referred object and introduces no destruction or block-entry initializer.
 Automatic objects, runtime pointer loads/calls, TLS, null/one-past addresses,
 integer-derived pointers and unsupported source types cannot provide these
 constant bindings. Constant-initialized static temporaries follow the contract
-below. Function references, nonstatic reference members, reference non-type
-template arguments and nonlocal dynamic bindings still require further work.
+below. Nonstatic reference members follow their [binding contract](#reference-members).
+Function references, reference non-type template arguments and nonlocal dynamic
+bindings still require further work.
 Local runtime bindings and their lifetime-extended temporaries use the
 [first-use contract](#dynamic-local-static-initialization). Actual standard-library
 headers/runtime remain unfinished. Native validation of the paired
@@ -394,9 +395,9 @@ int main() {
 }
 ```
 
-The materialization descriptor must identify the exact reference declaration,
+The materialization descriptor must identify the exact extending declaration,
 initializer operand and static storage duration. Constant evaluation occurs in
-that reference's initialization context; the translator reads Clang's retained
+that owner's initialization context; the translator reads Clang's retained
 complete-object value instead of reevaluating its operand independently. Each
 materialization receives one internal static object. Its identity is registered
 before its fields are emitted so self pointers name the same object. Copying a
@@ -435,9 +436,12 @@ final destination, preserving self pointers. One outer materialization around a
 prvalue conditional shares one destination; materializations inside glvalue arms
 have separate destinations and initialize only on their selected branch. An
 unselected child may remain zero, including when the binding selects an existing
-object. Storage caching never suppresses a lowered initialization occurrence.
+object. Each lowered runtime occurrence receives distinct permanent storage,
+including shared array-filler ASTs evaluated for different elements.
 
-IR children name the readonly dynamic binding through `initialization_owner`.
+IR children name their independent dynamic owner through `initialization_owner`: a
+readonly reference-binding pointer, or an admitted record/fixed-array object
+containing reference members. Nested temporary children name the same root owner.
 One guard publishes the whole group after binding and ordinary full-expression
 cleanup. The verifier grants direct-root construction access only within that
 owner's proven region; pointer aliases retain their ordinary const checks. Static
@@ -682,13 +686,92 @@ int main() {
 Automatic local reference lifetime extension, including converted values and
 record subobjects, follows the dedicated contract below. Static pointers and
 references follow their storage contracts above. Nonstatic reference fields
-remain rejected.
+follow their [binding and lifetime contract](#reference-members).
 Unused/dead bindings are checked too. Standalone
 `nullptr_t` variables follow the [null-value contract](#null-pointer-values). The contract covers accesses to live
 objects; it does not define dangling/invalid pointer behavior or remove C++
 undefined behavior. In particular, casting away `const` does not make an
 originally const object writable. Generated `.nc` source targets NeverC's
 pointer aliasing behavior, not an arbitrary C compiler's alias rules.
+
+## Reference members
+
+Core v2 supports nonstatic lvalue/rvalue reference members whose referents have
+admitted object types, including scalars, records, fixed arrays, pointer objects
+and function-pointer objects. Each reference field has one checked pointer
+carrier in the record layout. Source records may be non-standard-layout because
+of reference fields or nested such records; they still require uniform field
+access, no bases, virtual dispatch, union storage, bitfields, mutable fields or
+unsupported attributes. The native Clang layout must match the carrier layout.
+
+Construction initializes the binding directly. Member reads, writes, address
+formation and reference returns access the referent. A const containing record
+does not make a mutable referent const. References to arrays preserve the full
+extent; references to pointers and callbacks permit reseating the referred-to
+pointer object. A reference binding itself is not reseated by assignment through
+the member. Ordinary source access and qualification errors remain Clang errors.
+
+```cpp
+struct Ref { int& value; };
+struct Owned { const int& value; };
+const Owned& local(int value) {
+  static const Owned object{value + 1};
+  return object;
+}
+int main() {
+  int value = 3;
+  const Ref first{value};
+  Ref copy = first;
+  copy.value = 7;
+  return value != 7 || &copy.value != &value || local(8).value != 9;
+}
+```
+
+Implicit or explicitly defaulted copy/move construction preserves reference
+bindings, including when other fields need selected nontrivial operations.
+Self-references remain directed at the source object after copying. Source-deleted
+assignment or copy operations remain deleted; an admitted user assignment can
+write through its reference members. These rules follow [C++17 special-member
+semantics](https://timsong-cpp.github.io/cppwp/n4659/class.copy).
+
+A reference member does not own an existing referent. Accessing it through a
+temporary containing object does not inherit the containing object's lifetime.
+Returning `Ref{existing}.value` retains the existing object's address and cleans
+up the containing temporary normally. This is not a general dangling-reference
+analysis.
+
+When C++17 aggregate initialization extends a temporary to an automatic record
+or array variable, its exact materialization descriptor must name that variable.
+The temporary registers lexical cleanup before its containing object, so the
+container is destroyed first and the extended temporaries follow in reverse
+construction order. Default member initializers use their selected construction
+receiver and rebuilt source expression. Each repeated array element gets its own
+temporary. A source FieldDecl-owned default expression authorizes source checking
+only; runtime storage still requires the actual full-expression or variable owner.
+Clang's constructor-initializer lifetime errors remain errors. See [C++17 temporary
+lifetimes](https://timsong-cpp.github.io/cppwp/n4659/class.temporary).
+
+Static aggregates with reference members can have constant initialization, or
+synchronized first-use local initialization under the existing guard contract.
+Constant bindings serialize their actual referent address; a reference-field
+layout offset cannot stand in for the referent. Dynamic aggregates and their
+extended temporary children use one flat initialization group and one guard.
+Children initialize at their final addresses and require trivial destruction.
+Repeated runtime array fillers allocate a separate child for each occurrence.
+
+One pinned-Clang limitation remains: repeated constant array fillers can share
+one static materialization AST and overwrite its retained APValue, losing the
+distinct temporary identities. Such initializers currently receive `TR0201`;
+explicit element initializers and runtime fillers retain separate identities.
+They are not silently shared or converted from constant to dynamic initialization.
+Separating those source identities remains work toward full C++/STL.
+
+Paired source/protocol fixtures cover binding, copied aliases, nested layouts,
+source diagnostics, zero children, owner graphs and relocation. O0/O2 and
+concurrent-reader fixtures cover identity, first-use state and destruction order;
+native acceptance requires the implementing CI revision. Actual standard-library
+headers/runtime, remaining templates, allocation, exceptions, static destruction,
+inheritance/virtual dispatch and multi-TU v2 remain unfinished.
 
 ## Live-object rvalue references
 
@@ -731,8 +814,9 @@ member/array access, casts, conditionals and comma expressions. Call-site
 bindings and receivers may use full-expression temporaries under the contract
 below. Automatic local extension follows its exact-owner contract below;
 fresh-reference returns remain rejected, including converted values and subobjects
-in dead code. Nonstatic reference fields, function references, volatile types,
-static lifetime extension and arbitrary dangling-reference analysis are not enabled. Invalid C++ category/qualification uses retain source diagnostics.
+in dead code. Reference fields and static lifetime extension follow their separate
+contracts. Function references, volatile types and arbitrary dangling-reference
+analysis are not enabled. Invalid C++ category/qualification uses retain source diagnostics.
 V1 profiles continue to reject rvalue references and methods.
 
 Fixtures exercise alias mutation, selected overloads, named-reference categories,
@@ -3828,7 +3912,8 @@ Core v2 admits ordinary user-provided destructors of the records described
 above, including out-of-line definitions and implicit destruction of containing
 records. Copy construction and assignment must be admitted independently; a user
 destructor does not by itself require nontrivial copying. The source still has no bases,
-virtual dispatch, unions, reference members or unsupported field layouts.
+virtual dispatch, unions or unsupported field layouts. Reference members retain
+their bindings and do not cause their referents to be destroyed.
 Deleted destructors and explicit destructor calls remain rejected, including in
 dead code. Ordinary and defaulted destructors accept implicit exception
 specifications and the resolved standard written forms described below. Every ordinary
@@ -4195,8 +4280,8 @@ bindings through non-extended temporary subobject paths remain rejected. An alia
 returned through a call has no general interprocedural dangling-use guarantee;
 storing it does not extend the temporary passed to that call.
 
-Static/global/thread-local reference lifetimes, reference fields, structured
-bindings, unsupported types, exception unwinding,
+Static reference lifetimes and reference fields follow their separate contracts.
+Thread-local storage, structured bindings, unsupported types, exception unwinding,
 remaining template forms and complete STL remain outside this increment. V1 is unchanged. O0/O2
 no-inline fixtures cover storage identity, braces, subobjects, nested lifetimes,
 copy/move/return ordering, conditional owners and loop exits. Protocol fixtures
@@ -4244,8 +4329,9 @@ A destructible array registers one complete owner after initialization and clean
 its elements in reverse dimension/element order. Conditional branches destroy
 only constructed arrays, loop evaluations recreate their lifetimes, and return,
 break and continue clean the appropriate scopes. Array construction needs no
-external helper or memory-copy call. Static/global/thread-local lifetimes,
-reference fields, fresh reference returns, non-extended pointer-derived bindings,
+external helper or memory-copy call. Static lifetimes and reference fields follow
+their separate contracts. Thread-local storage, fresh reference returns,
+non-extended pointer-derived bindings,
 unsupported element types, explicit destruction, allocation, unwinding, other template forms
 and complete STL remain outside this increment. V1 and protocol major 1 are unchanged.
 

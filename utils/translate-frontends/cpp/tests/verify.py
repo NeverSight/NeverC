@@ -1039,7 +1039,6 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
                           root=Path(temp) / "project", profile="cpp-core-v2")
         assert relocated == generated_copy, "generated copying depends on the absolute root"
     generated_copy_rejected = {
-        'reference-field': 'struct R{int &n;R(const R&)=default;};',
         'base-copy': 'struct B{int n;};struct R:B{int m;R(const R&)=default;};',
         'lambda-array-copy': 'int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}',
         'decomposed-array-copy': 'int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}',
@@ -1158,7 +1157,6 @@ void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
         assert relocated == generated_assignment, "generated assignment depends on the absolute root"
     generated_assignment_rejected = {
         'rvalue-receiver': 'struct R{int n;R&operator=(const R&)&&=default;};',
-        'reference-field': 'struct R{int&n;R&operator=(const R&)=default;};',
         'base-field': 'struct B{int n;};struct R:B{int m;R&operator=(const R&)=default;};',
         'raw-builtin': 'void f(int*a,int*b){__builtin_memcpy(a,b,4);}',
         'dead-builtin': 'void f(int*a,int*b){if(false)__builtin_memcpy(a,b,4);}',
@@ -1291,7 +1289,6 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
             assert [a["type"] for a in node["args"]] == [p["type"] for p in callee["params"]]
 
     default_member_rejected = {
-        'reference-field': 'struct R{int value;int&ref=value;};',
         'mutable-field': 'struct R{mutable int n=1;};',
         'bitfield': 'struct R{int bits:2;int n=1;};',
         'base': 'struct B{int n=1;};struct R:B{int next=2;};',
@@ -1409,7 +1406,6 @@ int ordered(R&r,int&trace){return receiver(r,trace).set(argument(trace));}
     rvalue_rejected = {
         'reference-return': 'int&&f(){return 1;}',
         'volatile-reference': 'int f(volatile int&&n){return n;}',
-        'reference-field': 'struct R{int&&n;};',
         'function-reference': 'int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}',
     }
     for name, source in rvalue_rejected.items():
@@ -1708,7 +1704,6 @@ void consume(Box&source){take(static_cast<Box&&>(source));}
 
     generated_move_rejected = {
         'attribute': 'struct R{int n;[[deprecated]] R(R&&)=default;};',
-        'reference-field': 'struct R{int&n;R(R&&)=default;};',
         'base': 'struct B{int n;};struct R:B{int value;R(R&&)=default;};',
         'source-builtin': 'struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}',
         'lambda-array': 'int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}',
@@ -2557,7 +2552,6 @@ int converted(){Source s{13};const int&r{s};mark();return r;}
         'fresh-equal-record-return': 'struct R{int n;};const R&f(){return {R{1}};}',
         'fresh-brace-member-return': 'struct R{int n;};const int&f(){return {R{1}.n};}',
         'tls-brace': 'int f(){thread_local const int&r{1};return r;}',
-        'reference-field': 'struct R{const int&r;};int f(){R r{1};return r.r;}',
         'braced-offset': 'struct R{int a[2];};int f(){const int&r{*(R{{1,2}}.a+1)};return r;}',
         'braced-arrow': 'struct I{int n;};struct R{I a[2];};int f(){const int&r{(R{{{1},{2}}}.a+1)->n};return r;}',
         'unused-throw': 'struct R{int n;~R(){throw 1;}};void f(){const R&r{R{1}};}',
@@ -2736,7 +2730,6 @@ bool query(){return noexcept(Items{R(1),R(2)});}
 
     array_temporary_rejected = {
         'tls-array': 'int f(){thread_local const int(&r)[2]={1,2};return r[0];}',
-        'reference-field': 'struct R{const int(&a)[2];};void f(){R r{{1,2}};}',
         'fresh-array-return': 'using A=int[2];const A&f(){return A{1,2};}',
         'fresh-element-return': 'using A=int[2];const int&f(){return A{1,2}[0];}',
         'pointer-offset-reference': 'using A=int[2];int f(){const int&r=*(A{1,2}+1);return r;}',
@@ -2958,7 +2951,6 @@ bool query(){return noexcept(C());}
         'virtual': 'struct E{virtual void f(){}};',
         'overaligned': 'struct alignas(2) E{};',
         'attribute': 'struct __attribute__((packed)) E{};',
-        'reference-field': 'struct E{int&r;};',
         'thread-reference': 'struct E{};void f(){thread_local const E&e=E{};}',
         'escaping-reference': 'struct E{};const E&f(){return E{};}',
         'unevaluated-unsupported': 'struct E{operator long double()const{return 1.0L;}};bool f(){E e;return noexcept(static_cast<long double>(e));}',
@@ -3782,7 +3774,6 @@ void boxes(){Box a;Box b=a;}
     nonpublic_reject = {
         'mixed-access': 'struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};',
         'inheritance': 'class R{protected:int n=1;};class D:public R{public:int get(){return n;}};',
-        'reference-field': 'class R{int&n;public:R(int&v):n(v){}};',
         'mutable-field': 'class R{mutable int n=1;public:int get()const{return ++n;}};',
         'bitfield': 'class R{unsigned int n:2;public:R():n(1){}};',
         'floating-field': 'class R{long double n=1.0L;};',
@@ -4449,7 +4440,6 @@ int main(){
         'virtual': 'struct R{struct I{virtual int get(){return 1;}};};',
         'float-field': 'struct R{struct I{long double n;};};',
         'bitfield': 'struct R{struct I{int n:2;};};',
-        'reference-field': 'struct R{struct I{int&n;};};',
         'mutable-field': 'struct R{struct I{mutable int n;};};',
         'unused-body': 'struct R{struct I{int get(){long double d=1.0L;return 1;}};};',
         'erased-alias': 'struct R{struct I{using Unsupported=long double;int n;};};',
@@ -5271,7 +5261,7 @@ int*address(){return &state();}
         'ordinary-argument-cleanup': 'int drops;struct T{int n;~T(){++drops;}};int take(const T&t){return t.n;}const int&f(int n){static const int&r=take(T{n});return r;}',
         'reference-call-does-not-extend': 'const int&id(const int&r){return r;}const int&f(int n){static const int&r=id(n+1);return r;}',
         'runtime-source': 'int calls=0,drops=0;\nint seed(int n){++calls;return n;}\nconst int&scalar(int n){static const int&r=seed(n);return r;}\nint&mutableValue(int n){static int&&r=seed(n);return r;}\nstruct R{int n;int a[2];const R*self;R(int n):n(seed(n)),a{n+1,n+2},self(this){}};\nR make(int n){return R(n);}\nconst R&record(int n){static const R&r=make(n);return r;}\nconst int&member(int n){static const int&r=make(n).a[1];return r;}\nconst int(&array(int n))[2]{static const int(&r)[2]={seed(n),seed(n+1)};return r;}\nusing Rows=int[2][2];\nconst Rows&matrix(int n){static const Rows&r={{seed(n),n+1},{n+2,n+3}};return r;}\nconst R(&records(int n))[2]{static const R(&r)[2]={R(n),R(n+2)};return r;}\nint*const&pointer(int*p){static int*const&r=p+1;return r;}\nint partial(){static const int&r=(++calls,3);return r;}\nconst int&conditional(bool b,int n){static const int&r=b?make(n).n:make(n+1).n;return r;}\nconst R&prvalue(bool b,int n){static const R&r=b?R(n):R(n+1);return r;}\nint existing=31;\nconst int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):make(n).n;return r;}\nusing Pair=int[2];\nconst int&arrayChoice(bool b,int n){static const int&r=b?Pair{seed(n),seed(n+1)}[0]:Pair{seed(n+2),seed(n+3)}[1];return r;}\ntemplate<class T>const int&instance(int n){static const int&r=seed(n);return r;}\nstruct Temp{int n;~Temp(){++drops;}};\nint take(const Temp&t){return seed(t.n);}\nconst int&cleanup(int n){static const int&r=take(Temp{n});return r;}\nconst int&nested(int n){static const int&r=scalar(n)+1;return r;}\nconst int&skipped(bool b,int n){if(b){static const int&r=seed(n);return r;}return existing;}\nusing Callback=int(*)(int);\nCallback choose(){++calls;return seed;}\nCallback const&callback(){static Callback const&r=choose();return r;}\nusing Null=decltype(nullptr);\nNull nullFactory(){++calls;return nullptr;}\nconst Null&nullValue(){static const Null&r=nullFactory();return r;}\nconst float&floating(float n){static const float&r=n+0.5f;return r;}\nint main(){\n if(calls||drops)return 1;\n if(&skipped(false,9)!=&existing||calls)return 2;\n const int*s=&scalar(3);if(*s!=3||&scalar(9)!=s||calls!=1)return 3;\n calls=0;int&m=mutableValue(5);m=6;if(&mutableValue(9)!=&m||m!=6||calls!=1)return 4;\n calls=0;const R&r=record(7);if(r.n!=7||r.self!=&r||r.a[1]!=9||&record(12)!=&r||calls!=1)return 5;\n calls=0;const int*f=&member(10);if(*f!=12||&member(99)!=f||calls!=1)return 6;\n calls=0;const int(&a)[2]=array(4);if(a[0]!=4||a[1]!=5||&array(9)!=&a||calls!=2)return 7;\n calls=0;const Rows&rows=matrix(6);if(rows[1][1]!=9||&matrix(19)!=&rows||calls!=1)return 8;\n calls=0;const R(&rr)[2]=records(3);if(rr[0].self!=&rr[0]||rr[1].self!=&rr[1]||rr[1].n!=5||&records(12)!=&rr||calls!=2)return 9;\n int values[3]={2,3,4};int*const&p=pointer(values);if(p!=values+1||&pointer(values+1)!=&p)return 10;\n calls=0;if(partial()!=3||partial()!=3||calls!=1)return 11;\n calls=0;const int*c=&conditional(false,13);if(*c!=14||&conditional(true,9)!=c||calls!=1)return 12;\n calls=0;const R&q=prvalue(true,8);if(q.n!=8||q.self!=&q||&prvalue(false,9)!=&q||calls!=1)return 13;\n calls=0;if(&mixed(true,5)!=&existing||&mixed(false,9)!=&existing||calls)return 14;\n calls=0;const int&ac=arrayChoice(false,3);if(ac!=6||&arrayChoice(true,9)!=&ac||calls!=2)return 15;\n calls=0;if(instance<int>(3)!=3||instance<unsigned>(4)!=4||&instance<int>(9)==&instance<unsigned>(9)||calls!=2)return 16;\n calls=0;const int&cl=cleanup(7);if(cl!=7||drops!=1||&cleanup(9)!=&cl||calls!=1||drops!=1)return 17;\n calls=0;if(nested(9)!=4||nested(12)!=4||calls)return 18;\n calls=0;if(skipped(true,17)!=17||skipped(true,23)!=17||calls!=1)return 19;\n calls=0;Callback const&cb=callback();if(cb(7)!=7||&callback()!=&cb||calls!=2)return 20;\n calls=0;const Null&nv=nullValue();if(nv!=nullptr||&nullValue()!=&nv||calls!=1)return 21;\n const float&fv=floating(1.0f);if(fv!=1.5f||&floating(3.0f)!=&fv)return 22;\n return 0;\n}\n',
-        'thread-source': 'int constructions=0,destructions=0;\nstruct Temporary{int n;~Temporary(){++destructions;}};\nstruct Record{\n int first,last;const Record*self;\n Record(const Temporary&t):first(t.n),last(t.n+1),self(this){++constructions;}\n};\nconst Record&value(){static const Record r{Temporary{41}};return r;}\nconst Record&extended(){static const Record&r=Record(Temporary{51});return r;}\nextern "C" int read_value(){const Record&r=value();const Record&t=extended();return r.first==41&&r.last==42&&r.self==&r&&t.first==51&&t.last==52&&t.self==&t&&destructions==2?0:1;}\nextern "C" int initialization_count(){return constructions;}\n',
+        'thread-source': 'int constructions=0,destructions=0;\nstruct Temporary{int n;~Temporary(){++destructions;}};\nstruct Record{\n int first,last;const Record*self;\n Record(const Temporary&t):first(t.n),last(t.n+1),self(this){++constructions;}\n};\nconst Record&value(){static const Record r{Temporary{41}};return r;}\nconst Record&extended(){static const Record&r=Record(Temporary{51});return r;}\nstruct Binding{const Record&record;const int&number;};\nconst Binding&binding(){static const Binding r{extended(),61};return r;}\nextern "C" int read_value(){const Record&r=value();const Record&t=extended();const Binding&b=binding();return r.first==41&&r.last==42&&r.self==&r&&t.first==51&&t.last==52&&t.self==&t&&&b.record==&t&&b.number==61&&destructions==2?0:1;}\nextern "C" int initialization_count(){return constructions;}\n',
     }
     for name, source in dynamic_temporary_positive.items():
         check("v2-dynamic-temporary-" + name, source, profile="cpp-core-v2")
@@ -5354,6 +5344,145 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     with tempfile.TemporaryDirectory(prefix="neverc-dynamic-temporary-relocated-") as temp:
         relocated = check("v2-dynamic-temporary-relocated", dt_source, root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == dt_module
+
+    reference_member_positive = {
+        'declaration-only': 'struct R{int&r;};',
+        'thread-source': 'int constructions=0,destructions=0;\nstruct Temporary{int n;~Temporary(){++destructions;}};\nstruct Record{\n int first,last;const Record*self;\n Record(const Temporary&t):first(t.n),last(t.n+1),self(this){++constructions;}\n};\nconst Record&value(){static const Record r{Temporary{41}};return r;}\nconst Record&extended(){static const Record&r=Record(Temporary{51});return r;}\nstruct Binding{const Record&record;const int&number;};\nconst Binding&binding(){static const Binding r{extended(),61};return r;}\nextern "C" int read_value(){const Record&r=value();const Record&t=extended();const Binding&b=binding();return r.first==41&&r.last==42&&r.self==&r&&t.first==51&&t.last==52&&t.self==&t&&&b.record==&t&&b.number==61&&destructions==2?0:1;}\nextern "C" int initialization_count(){return constructions;}\n',
+        'runtime-source': 'int calls=0,events=0;\nint seed(int n){++calls;return n;}\nvoid mark(int n){events=events*10+n;}\nstruct Ref{int&r;};\nstruct Pair{int&a;int&b;};\nstruct Self{int n=3;int&r=n;};\nstruct Tracked{int n;Tracked(int n):n(n){mark(n);}~Tracked(){mark(n+4);}};\nstruct Owner{const Tracked&r;~Owner(){mark(3);}};\nstruct Defaults{const Tracked&r=Tracked(1);};\nstruct OwnArray{const int(&r)[2];};\nstruct Record{int n;};\nstruct RecordRef{Record&r;};\nstruct ArrayRef{int(&r)[2];};\nstruct PointerRef{int*&r;};\nusing Callback=int(*)(int);\nstruct FunctionRef{Callback&r;};\nint add(int n){return n+1;}\nint twice(int n){return n*2;}\nclass Method{int&r;public:Method(int&n):r(n){}int&get()const{return r;}};\nstruct Assignment{int&r;Assignment&operator=(const Assignment&s){r=s.r;return *this;}};\nstruct Counted{int n;Counted(int n):n(n){}Counted(const Counted&s):n(s.n+1){++calls;}Counted(Counted&&s):n(s.n){s.n=0;++calls;}};\nstruct Copy{int&r;Counted n;Copy(const Copy&)=default;};\nstruct Move{int&&r;Counted n;Move(Move&&)=default;};\nstruct DeadContainer{int&r;~DeadContainer(){mark(2);}};\nint&fromTemporary(int&n){return DeadContainer{n}.r;}\nstruct DeadArrayContainer{int(&r)[2];~DeadArrayContainer(){mark(2);}};\nint&fromArrayTemporary(int(&a)[2]){return DeadArrayContainer{a}.r[1];}\nRef pass(Ref r){++r.r;return r;}\nint global=17;\nconst Ref permanent{global};\nstruct ConstSelf{int n;int&r;constexpr ConstSelf():n(3),r(n){}};\nConstSelf self;\nRef&bound(int&n){static Ref r{n};return r;}\nstruct Owned{const int&r;};\nconst Owned&owned(int n){static const Owned r{seed(n)};return r;}\nconst Owned*ownedArray(int n){static const Owned r[2]={{seed(n)},{seed(n+1)}};return r;}\nconst Owned&nested(int n){static const Owned&r=Owned{seed(n)};return r;}\nstruct Filler{const int&r=seed(5);};\nconst Filler*fillers(){static const Filler r[3]{};return r;}\nconst Filler(*matrix())[2]{static const Filler r[2][2]{};return r;}\nstruct TSelf{const TSelf*self;TSelf():self(this){++calls;}};\nstruct OwnSelf{const TSelf&r;};\nconst OwnSelf&ownedSelf(){static const OwnSelf r{TSelf()};return r;}\nconst Owned fixed[2]={{11},{12}};\ntemplate<class A,class B>struct GenericPair{A a;B b;};\ntemplate<class T>struct Store{T&r;static Store&get(T&n){static Store value{n};return value;}};\nint main(){\n int a=3,b=4;const Ref r{a};r.r=5;if(a!=5||&r.r!=&a)return 1;\n Pair p{a,b};Pair q=p;q.a=7;if(a!=7||&q.a!=&a||&q.b!=&b)return 2;\n Self first{};Self second=first;second.r=9;if(first.n!=9||second.n!=3||&second.r!=&first.n)return 3;\n int values[2]={1,2};const ArrayRef ar{values};ar.r[1]=8;if(values[1]!=8||&ar.r!=&values)return 4;\n int*pointer=&a;const PointerRef pr{pointer};pr.r=&b;if(pointer!=&b||&pr.r!=&pointer)return 5;\n Callback callback=add;const FunctionRef fr{callback};fr.r=twice;if(fr.r(3)!=6||callback!=twice)return 6;\n Record record{3};const RecordRef rr{record};rr.r.n=4;if(record.n!=4||&rr.r!=&record)return 7;\n const Method method(a);method.get()=11;if(a!=11||&method.get()!=&a)return 8;\n Assignment x{a},y{b};x=y;if(a!=4||&x.r!=&a||&y.r!=&b)return 9;\n calls=0;Copy c{a,Counted(3)};Copy d(c);if(calls!=1||d.n.n!=4||&d.r!=&a)return 10;\n calls=0;Move m{static_cast<int&&>(b),Counted(7)};Move n(static_cast<Move&&>(m));if(calls!=1||n.n.n!=7||m.n.n||&n.r!=&b)return 11;\n events=0;int&escaped=fromTemporary(a);if(events!=2||&escaped!=&a)return 12;\n events=0;if(&fromArrayTemporary(values)!=&values[1]||events!=2)return 13;\n if(&pass(Ref{a}).r!=&a||a!=5)return 14;\n permanent.r=19;if(global!=19||&permanent.r!=&global)return 15;\n self.r=6;if(self.n!=6||&self.r!=&self.n)return 16;\n if(&bound(a).r!=&a||&bound(b).r!=&a)return 17;\n events=0;{Owner owner{Tracked(1)};if(events!=1||owner.r.n!=1)return 18;mark(2);}if(events!=1235)return 19;\n events=0;{Defaults d{};if(events!=1||d.r.n!=1)return 20;mark(2);}if(events!=125)return 21;\n events=0;{Defaults d[2]{};if(events!=11||&d[0].r==&d[1].r)return 22;}if(events!=1155)return 23;\n OwnArray oa{{seed(3),4}};if(oa.r[0]!=3||oa.r[1]!=4)return 24;\n calls=0;const Owned&o=owned(7);if(o.r!=7||&owned(9)!=&o||&owned(9).r!=&o.r||calls!=1)return 25;\n calls=0;const Owned*os=ownedArray(8);if(os[0].r!=8||os[1].r!=9||&os[0].r==&os[1].r||ownedArray(17)!=os||calls!=2)return 26;\n calls=0;const Owned&on=nested(9);if(on.r!=9||&nested(19)!=&on||calls!=1)return 27;\n calls=0;const Filler*fs=fillers();if(calls!=3||fs[0].r!=5||&fs[0].r==&fs[1].r||&fs[1].r==&fs[2].r||fillers()!=fs||calls!=3)return 28;\n calls=0;const Filler(*mat)[2]=matrix();if(calls!=4||&mat[0][0].r==&mat[1][0].r||&mat[0][1].r==&mat[1][1].r||matrix()!=mat||calls!=4)return 29;\n calls=0;const OwnSelf&sr=ownedSelf();if(sr.r.self!=&sr.r||&ownedSelf()!=&sr||calls!=1)return 30;\n if(fixed[0].r!=11||fixed[1].r!=12||&fixed[0].r==&fixed[1].r)return 31;\n GenericPair<int&,int&>gp{a,b};auto gq=gp;if(&gq.a!=&a||&gq.b!=&b)return 32;\n unsigned u=3,v=4;if(&Store<int>::get(a).r!=&a||&Store<int>::get(b).r!=&a||&Store<unsigned>::get(u).r!=&u||&Store<unsigned>::get(v).r!=&u)return 33;\n events=0;{Owner one{Tracked(1)},two{Tracked(2)};if(events!=12)return 34;}if(events!=123635)return 35;\n return 0;\n}\n',
+        'aggregate': 'struct R{int&r;};int f(int&n){R r{n};return ++r.r;}',
+        'const-container': 'struct R{int&r;};int f(int&n){const R r{n};r.r+=2;return n;}',
+        'pointer-slot': 'struct R{int*&p;};void f(int*&a,int*b){const R r{a};r.p=b;}',
+        'callback-slot': 'using F=int(*)(int);struct R{F&f;};int call(const R&r,int n){return r.f(n);}',
+        'array-alias': 'struct R{int(&a)[2];};void f(int(&a)[2]){const R r{a};r.a[1]=7;}',
+        'record-alias': 'struct A{int n;};struct R{A&r;};int f(A&a){const R r{a};return ++r.r.n;}',
+        'arrow': 'struct R{int&r;};int&f(R*p){return p->r;}',
+        'conditional': 'struct R{int&r;};int&f(bool b,R&a,R&c){return (b?a:c).r;}',
+        'comma': 'struct R{int&r;};int count;int&f(R&r){return (++count,r).r;}',
+        'const-method': 'class R{int&r;public:R(int&n):r(n){}int&get()const{return r;}};int&f(int&n){R r(n);return r.get();}',
+        'default-member': 'struct R{int n=3;int&r=n;};int f(){R r{};r.r=7;return r.n;}',
+        'user-copy': 'struct R{int&r;R(int&n):r(n){}R(const R&s):r(s.r){++r;}};int f(int&n){R a(n),b(a);return b.r;}',
+        'generated-copy': 'struct X{int n;X(int n):n(n){}X(const X&x):n(x.n+1){}};struct R{int&r;X x;R(const R&)=default;};int f(int&n){R a{n,X(3)},b(a);return b.r+b.x.n;}',
+        'generated-move': 'struct X{int n;X(int n):n(n){}X(X&&x):n(x.n){x.n=0;}};struct R{int&&r;X x;R(R&&)=default;};int f(int&n){R a{static_cast<int&&>(n),X(3)},b(static_cast<R&&>(a));return b.r+b.x.n+a.x.n;}',
+        'user-assignment': 'struct R{int&r;R&operator=(const R&s){r=s.r;return *this;}};void f(int&a,int&b){R x{a},y{b};x=y;}',
+        'by-value': 'struct R{int&r;};R pass(R r){++r.r;return r;}int f(int&n){return pass(R{n}).r;}',
+        'return-reference-from-temporary': 'struct R{int&r;~R(){}};int&f(int&n){return R{n}.r;}',
+        'array-reference-from-temporary': 'struct R{int(&r)[2];~R(){}};int&f(int(&n)[2]){return R{n}.r[1];}',
+        'nested-layout': 'struct A{int&r;};struct R{int n;A a[2];};int f(int&n){R r{1,{{n},{n}}};return ++r.a[1].r;}',
+        'static-constant': 'int n=3;struct R{int&r;};const R r{n};int f(){return ++r.r;}',
+        'static-self': 'struct R{int n;int&r;constexpr R():n(3),r(n){}};R r;int f(){r.r=7;return r.n;}',
+        'static-dynamic': 'struct R{int&r;};R&f(int&n){static R r{n};return r;}',
+        'static-array-dynamic': 'struct R{int&r;};const R*f(int&a,int&b){static const R r[2]={{a},{b}};return r;}',
+        'owned-scalar': 'struct R{const int&r;};int f(int n){R r{n+1};return r.r;}',
+        'owned-destructor': 'int sum;struct T{int n;~T(){sum+=n;}};struct R{const T&r;~R(){sum+=r.n*10;}};int f(int n){{R r{T{n}};}return sum;}',
+        'owned-array': 'struct R{const int(&r)[2];};int f(int n){R r{{n,n+1}};return r.r[1];}',
+        'owned-default': 'int sum;struct T{int n;~T(){sum+=n;}};struct R{const T&r=T{3};};int f(){{R r{};if(sum)return 1;}return sum;}',
+        'owned-static': 'struct R{const int&r;};const R&f(int n){static const R r{n+1};return r;}',
+        'owned-static-array': 'struct R{const int&r;};const R*f(int n){static const R r[2]={{n+1},{n+2}};return r;}',
+        'owned-static-default': 'int calls;int next(){return ++calls;}struct R{const int&r=next();};const R&f(){static const R r{};return r;}',
+        'owned-static-fillers': 'int calls;int next(){return ++calls;}struct R{const int&r=next();};const R*f(){static const R r[3]{};return r;}',
+        'owned-static-nested-fillers': 'int calls;int next(){return ++calls;}struct R{const int&r=next();};const R(*f())[2]{static const R r[2][2]{};return r;}',
+        'owned-static-explicit-constant': 'struct R{const int&r;};const R r[2]={{3},{4}};int f(){return &r[0].r==&r[1].r;}',
+        'owned-nested-static-reference': 'struct R{const int&r;};const R&f(int n){static const R&r=R{n+1};return r;}',
+        'owned-conditional': 'struct T{int n;~T(){}};struct R{const int&r;};int f(bool b,int n){R r{b?T{n}.n:T{n+1}.n};return r.r;}',
+        'aggregate-default-array': 'int count;struct T{int n;~T(){count+=n;}};struct R{const T&r=T{3};};int f(){{R r[2]{};if(count)return 1;}return count;}',
+        'static-forward-member': 'int n=3;struct R{int&r;};struct S{static const R a;static const R b;};const R S::a=S::b;const R S::b{n};int f(){return ++S::a.r;}',
+        'pair-template': 'template<class A,class B>struct Pair{A first;B second;};int f(int&a,int&b){Pair<int&,int&>p{a,b};auto q=p;++q.first;return &q.first==&a&&&q.second==&b;}',
+        'promoted-CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries': 'struct R{int&n;int get()const{return n;}};',
+        'promoted-CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries': 'struct R{int &n;R(int &v):n(v){}};',
+        'promoted-CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries': 'struct R{int &n;R(const R&)=default;};',
+        'promoted-CoreV2GeneratedAssignmentKeepsBuiltinAndReferenceBoundaries': 'struct R{int&n;R&operator=(const R&)=default;};',
+        'promoted-CoreV2DefaultMembersCheckWrittenAndSelectedExpressions': 'struct R{int value;int&ref=value;};',
+        'promoted-CoreV2LiveRvalueReferencesRetainTemporaryAndMoveBoundaries': 'struct R{int&&n;};',
+        'promoted-CoreV2GeneratedMovesRetainSourceAndLifetimeBoundaries': 'struct R{int&n;R(R&&)=default;};',
+        'promoted-CoreV2AutomaticReferencesRetainLifetimeBoundaries': 'struct R{const int&r;};int f(){R r{1};return r.r;}',
+        'promoted-CoreV2ArrayTemporariesRetainTypeAndLifetimeBoundaries': 'struct R{const int(&a)[2];};void f(){R r{{1,2}};}',
+        'promoted-CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries': 'struct E{int&r;};',
+        'promoted-CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundaries': 'template<class T>struct R{T&n;};int main(){int n=3;R<int>r{n};return r.n;}',
+        'promoted-CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBoundaries': 'template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}',
+        'promoted-CoreV2StaticTemporariesRetainInitializationAndLifetimeChecks': 'struct R{const int&r;};const R&r=R{3};',
+        'promoted-CoreV2StaticRecordsRetainInitializationAndLifetimeRequirements': 'int n;struct R{int&r;};R r{n};',
+        'promoted-CoreV2OrdinaryNestedClassesRetainSourceAndOwnerBoundaries': 'template<class T>struct O{struct R{T&n;};};int f(){int n=3;O<int>::R v{n};return v.n;}',
+        'promoted-CoreV2CopiedFullClassesRetainSourceAndOwnerBoundaries': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}',
+        'promoted-CoreV2DependentMemberClassesRetainSourceAndOwnerBoundaries': 'template<class T>struct O{template<class U>struct I{U&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}',
+        'promoted-CoreV2MemberClassesRetainSourceAndOwnerBoundaries': 'struct R{template<class T>struct I{T&n;};};int f(){int n=3;R::I<int>r{n};return r.n;}',
+        'promoted-CoreV2NestedRecordsRetainAccessAndSourceBoundaries': 'struct R{struct I{int&n;};};',
+        'promoted-CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries': 'class R{int&n;public:R(int&v):n(v){}};',
+        'promoted-CoreV2PointerScopeDiagnosesUnsupportedBindings': 'struct R{int &value;};',
+    }
+    for name, source in reference_member_positive.items():
+        check("v2-reference-member-" + name, source, profile="cpp-core-v2")
+    reference_member_negative = {
+        'const-referent': ('struct R{const int&r;};void f(R&r){r.r=3;}', 'TR0202'),
+        'missing-binding': ('struct R{int&r;};void f(){R r{};}', 'TR0202'),
+        'deleted-assignment': ('struct R{int&r;};void f(R&a,const R&b){a=b;}', 'TR0202'),
+        'deleted-rvalue-copy': ('struct R{int&&r;};void f(const R&r){R copy(r);}', 'TR0202'),
+        'mixed-access': ('class R{int&r;public:int n;R(int&v):r(v),n(3){}};', 'TR0201'),
+        'virtual': ('struct R{int&r;virtual int f(){return r;}};', 'TR0201'),
+        'base': ('struct B{int n;};struct R:B{int&r;};', 'TR0201'),
+        'function-reference': ('struct R{int(&f)();};', 'TR0201'),
+        'volatile-referent': ('struct R{volatile int&r;};', 'TR0201'),
+        'member-pointer': ('struct R{int n;};struct H{int R::*&r;};', 'TR0201'),
+        'meminitializer-temporary': ('struct R{const int&r;R():r(3){}};', 'TR0202'),
+        'constructor-default-temporary': ('struct R{const int&r=3;};void f(){R r;}', 'TR0202'),
+        'static-temporary-destruction': ('struct T{int n;~T(){}};struct R{const T&r;};void f(int n){static R r{T{n}};}', 'TR0201'),
+        'dead-static-temporary-destruction': ('struct T{int n;~T(){}};struct R{const T&r;};void f(int n){if(false){static R r{T{n}};}}', 'TR0201'),
+        'static-constant-shared-filler': ('struct R{const int&r=3;};const R r[2]{};', 'TR0201'),
+        'static-constant-shared-self': ('struct H;struct T{const H*owner;};struct H{const T&r=T{this};};const H h[2]{};', 'TR0201'),
+        'nonlocal-dynamic': ('int seed(){return 3;}struct R{const int&r;};R r{seed()};', 'TR0201'),
+        'unowned-reference': ('int&get();struct R{int&r;};R f(){return R{get()};}', 'TR0203'),
+    }
+    for name, (source, diagnostic) in reference_member_negative.items():
+        check("v2-reference-member-reject-" + name, source, diagnostic, profile="cpp-core-v2")
+
+    rm_source = """int calls;
+int next(){return ++calls;}
+struct Ref{int&r;};
+struct ConstRef{const int&r;};
+struct Default{const int&r=next();};
+int read(const Ref&r){return r.r;}
+void write(const Ref&r,int n){r.r=n;}
+Ref make(int&n){return Ref{n};}
+const Ref&existing(int&n){static const Ref r{n};return r;}
+const ConstRef&owned(int n){static const ConstRef r{n+1};return r;}
+const Default*array(){static const Default r[3]{};return r;}
+"""
+    rm = check("v2-reference-member-protocol", rm_source, profile="cpp-core-v2")
+    rm_records = {r["loc"]["line"]:r for r in rm["records"]}
+    assert [f["type"] for f in rm_records[3]["fields"]] == ["ptr:int"]
+    assert [f["type"] for f in rm_records[4]["fields"]] == ["cptr:int"]
+    assert [f["type"] for f in rm_records[5]["fields"]] == ["cptr:int"]
+    for record in rm_records.values():
+        assert record["layout"]["size_bits"] == rm["target"]["pointer_bits"]
+        assert record["layout"]["field_offsets_bits"] == [0]
+    rm_functions = {f["loc"]["line"]:f for f in rm["functions"]}
+    read_result = next(i["value"] for i in rm_functions[6]["body"] if i["op"] == "return")
+    # Scalar reads and returns are captured in locals before cleanup. Follow
+    # those captures to inspect the actual reference-member load.
+    read_definitions = {i["target"]["name"]:i["value"] for i in rm_functions[6]["body"]
+                        if i["op"] == "assign" and i["target"]["kind"] == "var"}
+    read_seen = set()
+    while read_result["kind"] == "var" and read_result["name"] in read_definitions:
+        assert read_result["name"] not in read_seen
+        read_seen.add(read_result["name"])
+        read_result = read_definitions[read_result["name"]]
+    assert read_result["kind"] == "dereference" and read_result["args"][0]["kind"] == "member"
+    writes = [i for i in rm_functions[7]["body"] if i["op"] == "assign"]
+    assert any(i["target"]["kind"] == "dereference" and any(n.get("kind") == "member" and n.get("type") == "ptr:int" for n in walk(i["target"])) for i in writes)
+    make_stores = [i for i in rm_functions[8]["body"] if i["op"] == "assign" and i["target"]["kind"] == "member"]
+    assert len(make_stores) == 1 and make_stores[0]["target"]["type"] == make_stores[0]["value"]["type"] == "ptr:int"
+    rm_owners = {g["loc"]["line"]:g for g in rm["globals"] if g.get("dynamic_initialization")}
+    rm_children = [g for g in rm["globals"] if g.get("initialization_owner")]
+    assert len(rm_owners) == 3 and len(rm_children) == 4
+    assert not any(g["initialization_owner"] == rm_owners[9]["name"] for g in rm_children)
+    assert sum(g["initialization_owner"] == rm_owners[10]["name"] for g in rm_children) == 1
+    assert sum(g["initialization_owner"] == rm_owners[11]["name"] for g in rm_children) == 3
+    assert len({g["name"] for g in rm_children}) == 4
+    assert all(g["type"] == "int" and g["value"]["value"] == "0" for g in rm_children)
+    assert len([i for f in rm["functions"] for i in f["body"] if i["op"] == "static_init_begin"]) == 3
+    assert len(gc_calls(rm_functions[11])) == 3
+    with tempfile.TemporaryDirectory(prefix="neverc-reference-member-relocated-") as temp:
+        relocated = check("v2-reference-member-relocated", rm_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == rm
 
     static_locals_reject = {
         'folded-float': 'int f(){static int n=static_cast<int>(1.0L);return n;}',
@@ -7693,7 +7822,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'base': 'struct B{int n;};struct R{template<class T>struct I:B{T m;};};int f(){R::I<int>r;return 1;}',
         'virtual-method': 'struct R{template<class T>struct I{virtual int f(){return 1;}};};',
         'floating-field': 'struct R{template<class T>struct I{T n;};};int f(){R::I<long double>r{1.0L};return 1;}',
-        'reference-field': 'struct R{template<class T>struct I{T&n;};};int f(){int n=3;R::I<int>r{n};return r.n;}',
         'mutable-field': 'struct R{template<class T>struct I{mutable T n;};};int f(){R::I<int>r{3};return r.n;}',
         'bitfield': 'struct R{template<class T>struct I{unsigned int n:2;};};int f(){R::I<int>r{1};return r.n;}',
         'unused-hidden-default': 'struct R{template<class T=decltype((sizeof(long double),1))>struct I{int n;};};',
@@ -8068,7 +8196,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'default-hidden': 'template<class T>struct O{template<class U=decltype((sizeof(long double),1))>struct I{int n;};};',
         'argument-hidden': 'template<class T>struct O{template<class U>struct I{int n;};};int f(){O<int>::I<decltype((sizeof(long double),1))>v{3};return v.n;}',
         'inner-pack-65': 'template<int N>struct O{template<int...M>struct I{int n=N+sizeof...(M);};};int f(){O<1>::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}',
-        'inner-reference-field': 'template<class T>struct O{template<class U>struct I{U&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}',
         'inner-virtual': 'template<class T>struct O{template<class U>struct I{virtual int get(){return 3;}};};',
         'selected-hidden-method': 'template<class T>struct O{template<class U>struct I{int get(){long double n=1.0L;return 3;}};};int f(){O<int>::I<int>v;return v.get();}',
         'hidden-static-init': 'template<class T>struct O{template<class U>struct I{inline static int n=static_cast<int>(1.0L);};};int*f(){return &O<int>::I<int>::n;}',
@@ -8280,7 +8407,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'full-argument-hidden-used': 'template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(long double)>{};};int f(){O<int>::I<4>v;return sizeof(v);}',
         'copied-float-field': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{long double n;};};int f(){O<int>v;return sizeof(v);}',
         'selected-hidden-method': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int get(){long double d=1.0L;return 3;}};};int f(){O<int>::I<int>v;return v.get();}',
-        'reference-field': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}',
         'default-hidden-generic': 'template<class T>struct O{template<int N=sizeof(long double)>struct I{};template<>struct I<>{};};',
         'default-hidden-unused': 'template<class T>struct O{template<int N=sizeof(long double)>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}',
         'copied-default-hidden-unused': 'template<class T>struct O{template<int N=(sizeof(long double),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}',
@@ -8473,7 +8599,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'explicit-selected-body': 'template<class T>struct O{struct R{int get(){long double n=1.0L;return 3;}};};template struct O<int>::R;',
         'explicit-own-hidden-no-effect': 'template<int N>struct O{struct R{int n;};};template<>struct O<8>::R{int n;};template struct O<sizeof(long double)>::R;',
         'repeated-extern-hidden': 'template<int N>struct O{struct R{int n;};};extern template struct O<8>::R;extern template struct O<sizeof(long double)>::R;',
-        'reference-field': 'template<class T>struct O{struct R{T&n;};};int f(){int n=3;O<int>::R v{n};return v.n;}',
         'inheritance': 'struct B{int n;};template<class T>struct O{struct R:B{T m;};};int f(){O<int>::R v;return sizeof(v);}',
         'own-hidden-qualifier': 'template<int N>struct O{struct R{int n;};};template<>struct O<sizeof(long double)>::R{int n;};',
         'own-body-field': 'template<class T>struct O{struct R{int n;};};template<>struct O<int>::R{long double n;};',
@@ -9426,7 +9551,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'unsupported-field': ('struct R{long double n;};R r{};', 'TR0201'),
         'hidden-initializer': ('struct R{int n;};R r{static_cast<int>(1.0L)};', 'TR0201'),
         'hidden-template': ('template<class T>using I=int;struct R{int n;};template<class T>R r{sizeof(I<decltype(T{}+1.0L)>)};int f(){return r<int>.n;}', 'TR0201'),
-        'reference-field': ('int n;struct R{int&r;};R r{n};', 'TR0201'),
         'mutable-field': ('struct R{mutable int n;};R r{3};', 'TR0201'),
         'bitfield': ('struct R{int n:3;};R r{2};', 'TR0201'),
         'union': ('union R{int n;};R r{3};', 'TR0201'),
@@ -9516,7 +9640,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'hidden-type': ('const long double&r=3.0L;', 'TR0201'),
         'hidden-comma': ('const int&r=(static_cast<void>(1.0L),3);', 'TR0201'),
         'hidden-constexpr-call': ('constexpr int make(){return sizeof(long double);}const int&r=make();', 'TR0201'),
-        'reference-field': ('struct R{const int&r;};const R&r=R{3};', 'TR0201'),
         'dangling-through-call': ('constexpr const int&id(const int&r){return r;}const int&r=id(3);', 'TR0201'),
         'dangling-array-decay': ('struct R{int n[2];};const int&r=*(R{{3,4}}.n+1);', 'TR0201'),
         'const-write': ('const int&r=3;void f(){r=4;}', 'TR0202'),
@@ -9622,7 +9745,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'hidden-type': ('long double n;long double&r=n;', 'TR0201'),
         'hidden-initializer': ('int n;int&r=(static_cast<void>(1.0L),n);', 'TR0201'),
         'hidden-template': ('template<class T>using I=int;int n;template<class T>I<decltype(T{}+1.0L)>&r=n;int f(){return r<int>;}', 'TR0201'),
-        'reference-member': ('struct R{int&r;};', 'TR0201'),
         'reference-nontype': ('int n;template<int&R>int f(){return R;}int g(){return f<n>();}', 'TR0201'),
         'function-reference': ('int f(){return 3;}int(&r)()=f;', 'TR0201'),
         'global-missing-target': ('extern int n;int&r=n;', 'TR0203'),
@@ -13923,7 +14045,6 @@ int privateRead(const Private<int>&v){return v.get();}
         'attribute': 'template<class T>struct R{T n;[[deprecated]]R(T v):n(v){}};',
         'parameter-attribute': 'template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};',
         'base': 'struct I{int n;};template<class T>struct R:I{R(){}};',
-        'reference-field': 'template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}',
         'floating-field': 'template<class T>struct R{long double n;R(T v):n(v){}};int main(){R<int>r(3);return 0;}',
         'mixed-access-layout': 'template<class T>class R{T n;public:T m;R(T v):n(v),m(v){}T get(){return n;}};int main(){R<int>r(3);return r.get();}',
     }
@@ -14429,7 +14550,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'base': 'struct B{int n;};template<class T>struct R:B{T m;};',
         'bitfield': 'template<class T>struct R{unsigned int n:3;};int main(){R<int>r{};return r.n;}',
         'mutable-field': 'template<class T>struct R{mutable T n;};int main(){R<int>r{3};return r.n;}',
-        'reference-field': 'template<class T>struct R{T&n;};int main(){int n=3;R<int>r{n};return r.n;}',
         'zero-array': 'template<int N>struct R{int n[N];};int main(){R<0>r;return 0;}',
         'oversized-array': 'template<int N>struct R{int n[N];};int main(){R<65537>r{};return r.n[0];}',
         'floating-argument': 'template<int N>struct R{int n;};int main(){R<static_cast<int>(1.0L)>r{};return r.n;}',
@@ -15365,7 +15485,6 @@ int main() {
         "folded-assert-type": 'static_assert(1.0L==1.0L,"condition"); int main(){}',
     }
     v2_rejections.update({
-        "reference-field": "struct R{int&r;};",
         "pointer-integer": "unsigned long long f(int*p){return (unsigned long long)p;}",
         "integer-pointer": "int*f(int x){return (int*)x;}",
         "unrelated-pointer-cast": "bool*f(int*p){return (bool*)p;}",
@@ -15407,14 +15526,12 @@ int main() {
         'method-base-class': 'struct B{int n;};struct R:B{int get(){return n;}};',
         'method-volatile-method': 'struct R{int n;int get()volatile{return n;}};',
         'method-mutable-field': 'struct R{mutable int n;int get()const{return n;}};',
-        'method-reference-field': 'struct R{int&n;int get()const{return n;}};',
     })
     v2_rejections.update({
         'constructor-base-initializer': 'struct B{int n;B(int v):n(v){}};struct R:B{R():B(1){}};',
         'constructor-inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};',
         'constructor-virtual-method': 'struct R{int n;R():n(1){} virtual int get(){return n;}};',
         'constructor-variadic-constructor': 'struct R{int n;R(int v,...):n(v){}};',
-        'constructor-reference-field': 'struct R{int &n;R(int &v):n(v){}};',
         'constructor-mutable-field': 'struct R{mutable int n;R():n(1){}};',
         'constructor-union': 'union R{int n;unsigned u;R():n(1){}};',
         'constructor-bitfield': 'struct R{unsigned n:3;R():n(1){}};',

@@ -1540,7 +1540,6 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"reference-field", "struct R{int &value;};", "TR0201"},
       {"unsupported-pointee", "long double *f(long double *p){return p;}", "TR0201"},
       {"const-write", "void f(const int *p){*p=1;}", "TR0202"}};
   for (const auto &Case : Cases) {
@@ -2705,7 +2704,6 @@ TEST_F(TranslateTest, CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"mixed-access", "struct R{int a;private:int b;public:R():a(1),b(2){}int get(){return a+b;}};", "TR0201"},
       {"inheritance", "class R{protected:int n=1;};class D:public R{public:int get(){return n;}};", "TR0201"},
-      {"reference-field", "class R{int&n;public:R(int&v):n(v){}};", "TR0201"},
       {"mutable-field", "class R{mutable int n=1;public:int get()const{return ++n;}};", "TR0201"},
       {"bitfield", "class R{unsigned int n:2;public:R():n(1){}};", "TR0201"},
       {"floating-field", "class R{long double n=1.0L;};", "TR0201"},
@@ -3266,7 +3264,6 @@ TEST_F(TranslateTest, CoreV2NestedRecordsRetainAccessAndSourceBoundaries) {
       {"virtual", "struct R{struct I{virtual int get(){return 1;}};};", "TR0201"},
       {"float-field", "struct R{struct I{long double n;};};", "TR0201"},
       {"bitfield", "struct R{struct I{int n:2;};};", "TR0201"},
-      {"reference-field", "struct R{struct I{int&n;};};", "TR0201"},
       {"mutable-field", "struct R{struct I{mutable int n;};};", "TR0201"},
       {"unused-body", "struct R{struct I{int get(){long double d=1.0L;return 1;}};};", "TR0201"},
       {"erased-alias", "struct R{struct I{using Unsupported=long double;int n;};};", "TR0201"},
@@ -3966,7 +3963,9 @@ struct Record{
 };
 const Record&value(){static const Record r{Temporary{41}};return r;}
 const Record&extended(){static const Record&r=Record(Temporary{51});return r;}
-extern "C" int read_value(){const Record&r=value();const Record&t=extended();return r.first==41&&r.last==42&&r.self==&r&&t.first==51&&t.last==52&&t.self==&t&&destructions==2?0:1;}
+struct Binding{const Record&record;const int&number;};
+const Binding&binding(){static const Binding r{extended(),61};return r;}
+extern "C" int read_value(){const Record&r=value();const Record&t=extended();const Binding&b=binding();return r.first==41&&r.last==42&&r.self==&r&&t.first==51&&t.last==52&&t.self==&t&&&b.record==&t&&b.number==61&&destructions==2?0:1;}
 extern "C" int initialization_count(){return constructions;}
 )cpp");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
@@ -4301,6 +4300,207 @@ int main(){
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("dynamic-temporary-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceMembersAcceptBindingsAndOwnedLifetimes) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"declaration-only", "struct R{int&r;};"},
+      {"aggregate", "struct R{int&r;};int f(int&n){R r{n};return ++r.r;}"},
+      {"const-container", "struct R{int&r;};int f(int&n){const R r{n};r.r+=2;return n;}"},
+      {"pointer-slot", "struct R{int*&p;};void f(int*&a,int*b){const R r{a};r.p=b;}"},
+      {"callback-slot", "using F=int(*)(int);struct R{F&f;};int call(const R&r,int n){return r.f(n);}"},
+      {"array-alias", "struct R{int(&a)[2];};void f(int(&a)[2]){const R r{a};r.a[1]=7;}"},
+      {"record-alias", "struct A{int n;};struct R{A&r;};int f(A&a){const R r{a};return ++r.r.n;}"},
+      {"arrow", "struct R{int&r;};int&f(R*p){return p->r;}"},
+      {"conditional", "struct R{int&r;};int&f(bool b,R&a,R&c){return (b?a:c).r;}"},
+      {"comma", "struct R{int&r;};int count;int&f(R&r){return (++count,r).r;}"},
+      {"const-method", "class R{int&r;public:R(int&n):r(n){}int&get()const{return r;}};int&f(int&n){R r(n);return r.get();}"},
+      {"default-member", "struct R{int n=3;int&r=n;};int f(){R r{};r.r=7;return r.n;}"},
+      {"user-copy", "struct R{int&r;R(int&n):r(n){}R(const R&s):r(s.r){++r;}};int f(int&n){R a(n),b(a);return b.r;}"},
+      {"generated-copy", "struct X{int n;X(int n):n(n){}X(const X&x):n(x.n+1){}};struct R{int&r;X x;R(const R&)=default;};int f(int&n){R a{n,X(3)},b(a);return b.r+b.x.n;}"},
+      {"generated-move", "struct X{int n;X(int n):n(n){}X(X&&x):n(x.n){x.n=0;}};struct R{int&&r;X x;R(R&&)=default;};int f(int&n){R a{static_cast<int&&>(n),X(3)},b(static_cast<R&&>(a));return b.r+b.x.n+a.x.n;}"},
+      {"user-assignment", "struct R{int&r;R&operator=(const R&s){r=s.r;return *this;}};void f(int&a,int&b){R x{a},y{b};x=y;}"},
+      {"by-value", "struct R{int&r;};R pass(R r){++r.r;return r;}int f(int&n){return pass(R{n}).r;}"},
+      {"return-reference-from-temporary", "struct R{int&r;~R(){}};int&f(int&n){return R{n}.r;}"},
+      {"array-reference-from-temporary", "struct R{int(&r)[2];~R(){}};int&f(int(&n)[2]){return R{n}.r[1];}"},
+      {"nested-layout", "struct A{int&r;};struct R{int n;A a[2];};int f(int&n){R r{1,{{n},{n}}};return ++r.a[1].r;}"},
+      {"static-constant", "int n=3;struct R{int&r;};const R r{n};int f(){return ++r.r;}"},
+      {"static-self", "struct R{int n;int&r;constexpr R():n(3),r(n){}};R r;int f(){r.r=7;return r.n;}"},
+      {"static-dynamic", "struct R{int&r;};R&f(int&n){static R r{n};return r;}"},
+      {"static-array-dynamic", "struct R{int&r;};const R*f(int&a,int&b){static const R r[2]={{a},{b}};return r;}"},
+      {"owned-scalar", "struct R{const int&r;};int f(int n){R r{n+1};return r.r;}"},
+      {"owned-destructor", "int sum;struct T{int n;~T(){sum+=n;}};struct R{const T&r;~R(){sum+=r.n*10;}};int f(int n){{R r{T{n}};}return sum;}"},
+      {"owned-array", "struct R{const int(&r)[2];};int f(int n){R r{{n,n+1}};return r.r[1];}"},
+      {"owned-default", "int sum;struct T{int n;~T(){sum+=n;}};struct R{const T&r=T{3};};int f(){{R r{};if(sum)return 1;}return sum;}"},
+      {"owned-static", "struct R{const int&r;};const R&f(int n){static const R r{n+1};return r;}"},
+      {"owned-static-array", "struct R{const int&r;};const R*f(int n){static const R r[2]={{n+1},{n+2}};return r;}"},
+      {"owned-static-default", "int calls;int next(){return ++calls;}struct R{const int&r=next();};const R&f(){static const R r{};return r;}"},
+      {"owned-static-fillers", "int calls;int next(){return ++calls;}struct R{const int&r=next();};const R*f(){static const R r[3]{};return r;}"},
+      {"owned-static-nested-fillers", "int calls;int next(){return ++calls;}struct R{const int&r=next();};const R(*f())[2]{static const R r[2][2]{};return r;}"},
+      {"owned-static-explicit-constant", "struct R{const int&r;};const R r[2]={{3},{4}};int f(){return &r[0].r==&r[1].r;}"},
+      {"owned-nested-static-reference", "struct R{const int&r;};const R&f(int n){static const R&r=R{n+1};return r;}"},
+      {"owned-conditional", "struct T{int n;~T(){}};struct R{const int&r;};int f(bool b,int n){R r{b?T{n}.n:T{n+1}.n};return r.r;}"},
+      {"aggregate-default-array", "int count;struct T{int n;~T(){count+=n;}};struct R{const T&r=T{3};};int f(){{R r[2]{};if(count)return 1;}return count;}"},
+      {"static-forward-member", "int n=3;struct R{int&r;};struct S{static const R a;static const R b;};const R S::a=S::b;const R S::b{n};int f(){return ++S::a.r;}"},
+      {"pair-template", "template<class A,class B>struct Pair{A first;B second;};int f(int&a,int&b){Pair<int&,int&>p{a,b};auto q=p;++q.first;return &q.first==&a&&&q.second==&b;}"},
+      {"promoted-CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries", "struct R{int&n;int get()const{return n;}};"},
+      {"promoted-CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries", "struct R{int &n;R(int &v):n(v){}};"},
+      {"promoted-CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries", "struct R{int &n;R(const R&)=default;};"},
+      {"promoted-CoreV2GeneratedAssignmentKeepsBuiltinAndReferenceBoundaries", "struct R{int&n;R&operator=(const R&)=default;};"},
+      {"promoted-CoreV2DefaultMembersCheckWrittenAndSelectedExpressions", "struct R{int value;int&ref=value;};"},
+      {"promoted-CoreV2LiveRvalueReferencesRetainTemporaryAndMoveBoundaries", "struct R{int&&n;};"},
+      {"promoted-CoreV2GeneratedMovesRetainSourceAndLifetimeBoundaries", "struct R{int&n;R(R&&)=default;};"},
+      {"promoted-CoreV2AutomaticReferencesRetainLifetimeBoundaries", "struct R{const int&r;};int f(){R r{1};return r.r;}"},
+      {"promoted-CoreV2ArrayTemporariesRetainTypeAndLifetimeBoundaries", "struct R{const int(&a)[2];};void f(){R r{{1,2}};}"},
+      {"promoted-CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries", "struct E{int&r;};"},
+      {"promoted-CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundaries", "template<class T>struct R{T&n;};int main(){int n=3;R<int>r{n};return r.n;}"},
+      {"promoted-CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBoundaries", "template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}"},
+      {"promoted-CoreV2StaticTemporariesRetainInitializationAndLifetimeChecks", "struct R{const int&r;};const R&r=R{3};"},
+      {"promoted-CoreV2StaticRecordsRetainInitializationAndLifetimeRequirements", "int n;struct R{int&r;};R r{n};"},
+      {"promoted-CoreV2OrdinaryNestedClassesRetainSourceAndOwnerBoundaries", "template<class T>struct O{struct R{T&n;};};int f(){int n=3;O<int>::R v{n};return v.n;}"},
+      {"promoted-CoreV2CopiedFullClassesRetainSourceAndOwnerBoundaries", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}"},
+      {"promoted-CoreV2DependentMemberClassesRetainSourceAndOwnerBoundaries", "template<class T>struct O{template<class U>struct I{U&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}"},
+      {"promoted-CoreV2MemberClassesRetainSourceAndOwnerBoundaries", "struct R{template<class T>struct I{T&n;};};int f(){int n=3;R::I<int>r{n};return r.n;}"},
+      {"promoted-CoreV2NestedRecordsRetainAccessAndSourceBoundaries", "struct R{struct I{int&n;};};"},
+      {"promoted-CoreV2NonpublicFieldsRetainAccessAndLayoutBoundaries", "class R{int&n;public:R(int&v):n(v){}};"},
+      {"promoted-CoreV2PointerScopeDiagnosesUnsupportedBindings", "struct R{int &value;};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("reference-member-" + Name + ".cpp");
+    const auto Output = tmpFile("reference-member-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceMembersRetainSourceAndLayoutBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"const-referent", "struct R{const int&r;};void f(R&r){r.r=3;}", "TR0202"},
+      {"missing-binding", "struct R{int&r;};void f(){R r{};}", "TR0202"},
+      {"deleted-assignment", "struct R{int&r;};void f(R&a,const R&b){a=b;}", "TR0202"},
+      {"deleted-rvalue-copy", "struct R{int&&r;};void f(const R&r){R copy(r);}", "TR0202"},
+      {"mixed-access", "class R{int&r;public:int n;R(int&v):r(v),n(3){}};", "TR0201"},
+      {"virtual", "struct R{int&r;virtual int f(){return r;}};", "TR0201"},
+      {"base", "struct B{int n;};struct R:B{int&r;};", "TR0201"},
+      {"function-reference", "struct R{int(&f)();};", "TR0201"},
+      {"volatile-referent", "struct R{volatile int&r;};", "TR0201"},
+      {"member-pointer", "struct R{int n;};struct H{int R::*&r;};", "TR0201"},
+      {"meminitializer-temporary", "struct R{const int&r;R():r(3){}};", "TR0202"},
+      {"constructor-default-temporary", "struct R{const int&r=3;};void f(){R r;}", "TR0202"},
+      {"static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){static R r{T{n}};}", "TR0201"},
+      {"dead-static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){if(false){static R r{T{n}};}}", "TR0201"},
+      {"static-constant-shared-filler", "struct R{const int&r=3;};const R r[2]{};", "TR0201"},
+      {"static-constant-shared-self", "struct H;struct T{const H*owner;};struct H{const T&r=T{this};};const H h[2]{};", "TR0201"},
+      {"nonlocal-dynamic", "int seed(){return 3;}struct R{const int&r;};R r{seed()};", "TR0201"},
+      {"unowned-reference", "int&get();struct R{int&r;};R f(){return R{get()};}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("reference-member-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("reference-member-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ReferenceMembersPreserveAliasesAndDestructionOrder) {
+  const auto Source = tmpFile("reference-member-runtime.cpp");
+  const auto Output = tmpFile("reference-member-runtime.nc");
+  writeFile(Source, R"cpp(int calls=0,events=0;
+int seed(int n){++calls;return n;}
+void mark(int n){events=events*10+n;}
+struct Ref{int&r;};
+struct Pair{int&a;int&b;};
+struct Self{int n=3;int&r=n;};
+struct Tracked{int n;Tracked(int n):n(n){mark(n);}~Tracked(){mark(n+4);}};
+struct Owner{const Tracked&r;~Owner(){mark(3);}};
+struct Defaults{const Tracked&r=Tracked(1);};
+struct OwnArray{const int(&r)[2];};
+struct Record{int n;};
+struct RecordRef{Record&r;};
+struct ArrayRef{int(&r)[2];};
+struct PointerRef{int*&r;};
+using Callback=int(*)(int);
+struct FunctionRef{Callback&r;};
+int add(int n){return n+1;}
+int twice(int n){return n*2;}
+class Method{int&r;public:Method(int&n):r(n){}int&get()const{return r;}};
+struct Assignment{int&r;Assignment&operator=(const Assignment&s){r=s.r;return *this;}};
+struct Counted{int n;Counted(int n):n(n){}Counted(const Counted&s):n(s.n+1){++calls;}Counted(Counted&&s):n(s.n){s.n=0;++calls;}};
+struct Copy{int&r;Counted n;Copy(const Copy&)=default;};
+struct Move{int&&r;Counted n;Move(Move&&)=default;};
+struct DeadContainer{int&r;~DeadContainer(){mark(2);}};
+int&fromTemporary(int&n){return DeadContainer{n}.r;}
+struct DeadArrayContainer{int(&r)[2];~DeadArrayContainer(){mark(2);}};
+int&fromArrayTemporary(int(&a)[2]){return DeadArrayContainer{a}.r[1];}
+Ref pass(Ref r){++r.r;return r;}
+int global=17;
+const Ref permanent{global};
+struct ConstSelf{int n;int&r;constexpr ConstSelf():n(3),r(n){}};
+ConstSelf self;
+Ref&bound(int&n){static Ref r{n};return r;}
+struct Owned{const int&r;};
+const Owned&owned(int n){static const Owned r{seed(n)};return r;}
+const Owned*ownedArray(int n){static const Owned r[2]={{seed(n)},{seed(n+1)}};return r;}
+const Owned&nested(int n){static const Owned&r=Owned{seed(n)};return r;}
+struct Filler{const int&r=seed(5);};
+const Filler*fillers(){static const Filler r[3]{};return r;}
+const Filler(*matrix())[2]{static const Filler r[2][2]{};return r;}
+struct TSelf{const TSelf*self;TSelf():self(this){++calls;}};
+struct OwnSelf{const TSelf&r;};
+const OwnSelf&ownedSelf(){static const OwnSelf r{TSelf()};return r;}
+const Owned fixed[2]={{11},{12}};
+template<class A,class B>struct GenericPair{A a;B b;};
+template<class T>struct Store{T&r;static Store&get(T&n){static Store value{n};return value;}};
+int main(){
+ int a=3,b=4;const Ref r{a};r.r=5;if(a!=5||&r.r!=&a)return 1;
+ Pair p{a,b};Pair q=p;q.a=7;if(a!=7||&q.a!=&a||&q.b!=&b)return 2;
+ Self first{};Self second=first;second.r=9;if(first.n!=9||second.n!=3||&second.r!=&first.n)return 3;
+ int values[2]={1,2};const ArrayRef ar{values};ar.r[1]=8;if(values[1]!=8||&ar.r!=&values)return 4;
+ int*pointer=&a;const PointerRef pr{pointer};pr.r=&b;if(pointer!=&b||&pr.r!=&pointer)return 5;
+ Callback callback=add;const FunctionRef fr{callback};fr.r=twice;if(fr.r(3)!=6||callback!=twice)return 6;
+ Record record{3};const RecordRef rr{record};rr.r.n=4;if(record.n!=4||&rr.r!=&record)return 7;
+ const Method method(a);method.get()=11;if(a!=11||&method.get()!=&a)return 8;
+ Assignment x{a},y{b};x=y;if(a!=4||&x.r!=&a||&y.r!=&b)return 9;
+ calls=0;Copy c{a,Counted(3)};Copy d(c);if(calls!=1||d.n.n!=4||&d.r!=&a)return 10;
+ calls=0;Move m{static_cast<int&&>(b),Counted(7)};Move n(static_cast<Move&&>(m));if(calls!=1||n.n.n!=7||m.n.n||&n.r!=&b)return 11;
+ events=0;int&escaped=fromTemporary(a);if(events!=2||&escaped!=&a)return 12;
+ events=0;if(&fromArrayTemporary(values)!=&values[1]||events!=2)return 13;
+ if(&pass(Ref{a}).r!=&a||a!=5)return 14;
+ permanent.r=19;if(global!=19||&permanent.r!=&global)return 15;
+ self.r=6;if(self.n!=6||&self.r!=&self.n)return 16;
+ if(&bound(a).r!=&a||&bound(b).r!=&a)return 17;
+ events=0;{Owner owner{Tracked(1)};if(events!=1||owner.r.n!=1)return 18;mark(2);}if(events!=1235)return 19;
+ events=0;{Defaults d{};if(events!=1||d.r.n!=1)return 20;mark(2);}if(events!=125)return 21;
+ events=0;{Defaults d[2]{};if(events!=11||&d[0].r==&d[1].r)return 22;}if(events!=1155)return 23;
+ OwnArray oa{{seed(3),4}};if(oa.r[0]!=3||oa.r[1]!=4)return 24;
+ calls=0;const Owned&o=owned(7);if(o.r!=7||&owned(9)!=&o||&owned(9).r!=&o.r||calls!=1)return 25;
+ calls=0;const Owned*os=ownedArray(8);if(os[0].r!=8||os[1].r!=9||&os[0].r==&os[1].r||ownedArray(17)!=os||calls!=2)return 26;
+ calls=0;const Owned&on=nested(9);if(on.r!=9||&nested(19)!=&on||calls!=1)return 27;
+ calls=0;const Filler*fs=fillers();if(calls!=3||fs[0].r!=5||&fs[0].r==&fs[1].r||&fs[1].r==&fs[2].r||fillers()!=fs||calls!=3)return 28;
+ calls=0;const Filler(*mat)[2]=matrix();if(calls!=4||&mat[0][0].r==&mat[1][0].r||&mat[0][1].r==&mat[1][1].r||matrix()!=mat||calls!=4)return 29;
+ calls=0;const OwnSelf&sr=ownedSelf();if(sr.r.self!=&sr.r||&ownedSelf()!=&sr||calls!=1)return 30;
+ if(fixed[0].r!=11||fixed[1].r!=12||&fixed[0].r==&fixed[1].r)return 31;
+ GenericPair<int&,int&>gp{a,b};auto gq=gp;if(&gq.a!=&a||&gq.b!=&b)return 32;
+ unsigned u=3,v=4;if(&Store<int>::get(a).r!=&a||&Store<int>::get(b).r!=&a||&Store<unsigned>::get(u).r!=&u||&Store<unsigned>::get(v).r!=&u)return 33;
+ events=0;{Owner one{Tracked(1)},two{Tracked(2)};if(events!=12)return 34;}if(events!=123635)return 35;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("reference-member-runtime" + Optimization);
     auto Build = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
     auto Run = exec(Executable.string(), {});
@@ -6791,7 +6991,6 @@ TEST_F(TranslateTest, CoreV2MemberClassesRetainSourceAndOwnerBoundaries) {
       {"base", "struct B{int n;};struct R{template<class T>struct I:B{T m;};};int f(){R::I<int>r;return 1;}"},
       {"virtual-method", "struct R{template<class T>struct I{virtual int f(){return 1;}};};"},
       {"floating-field", "struct R{template<class T>struct I{T n;};};int f(){R::I<long double>r{1.0L};return 1;}"},
-      {"reference-field", "struct R{template<class T>struct I{T&n;};};int f(){int n=3;R::I<int>r{n};return r.n;}"},
       {"mutable-field", "struct R{template<class T>struct I{mutable T n;};};int f(){R::I<int>r{3};return r.n;}"},
       {"bitfield", "struct R{template<class T>struct I{unsigned int n:2;};};int f(){R::I<int>r{1};return r.n;}"},
       {"unused-hidden-default", "struct R{template<class T=decltype((sizeof(long double),1))>struct I{int n;};};"},
@@ -7297,7 +7496,6 @@ TEST_F(TranslateTest, CoreV2DependentMemberClassesRetainSourceAndOwnerBoundaries
       {"default-hidden", "template<class T>struct O{template<class U=decltype((sizeof(long double),1))>struct I{int n;};};"},
       {"argument-hidden", "template<class T>struct O{template<class U>struct I{int n;};};int f(){O<int>::I<decltype((sizeof(long double),1))>v{3};return v.n;}"},
       {"inner-pack-65", "template<int N>struct O{template<int...M>struct I{int n=N+sizeof...(M);};};int f(){O<1>::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}"},
-      {"inner-reference-field", "template<class T>struct O{template<class U>struct I{U&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}"},
       {"inner-virtual", "template<class T>struct O{template<class U>struct I{virtual int get(){return 3;}};};"},
       {"selected-hidden-method", "template<class T>struct O{template<class U>struct I{int get(){long double n=1.0L;return 3;}};};int f(){O<int>::I<int>v;return v.get();}"},
       {"hidden-static-init", "template<class T>struct O{template<class U>struct I{inline static int n=static_cast<int>(1.0L);};};int*f(){return &O<int>::I<int>::n;}"},
@@ -7537,7 +7735,6 @@ TEST_F(TranslateTest, CoreV2CopiedFullClassesRetainSourceAndOwnerBoundaries) {
       {"full-argument-hidden-used", "template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(long double)>{};};int f(){O<int>::I<4>v;return sizeof(v);}"},
       {"copied-float-field", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{long double n;};};int f(){O<int>v;return sizeof(v);}"},
       {"selected-hidden-method", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int get(){long double d=1.0L;return 3;}};};int f(){O<int>::I<int>v;return v.get();}"},
-      {"reference-field", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}"},
       {"default-hidden-generic", "template<class T>struct O{template<int N=sizeof(long double)>struct I{};template<>struct I<>{};};"},
       {"default-hidden-unused", "template<class T>struct O{template<int N=sizeof(long double)>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}"},
       {"copied-default-hidden-unused", "template<class T>struct O{template<int N=(sizeof(long double),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}"},
@@ -7760,7 +7957,6 @@ TEST_F(TranslateTest, CoreV2OrdinaryNestedClassesRetainSourceAndOwnerBoundaries)
       {"explicit-selected-body", "template<class T>struct O{struct R{int get(){long double n=1.0L;return 3;}};};template struct O<int>::R;"},
       {"explicit-own-hidden-no-effect", "template<int N>struct O{struct R{int n;};};template<>struct O<8>::R{int n;};template struct O<sizeof(long double)>::R;"},
       {"repeated-extern-hidden", "template<int N>struct O{struct R{int n;};};extern template struct O<8>::R;extern template struct O<sizeof(long double)>::R;"},
-      {"reference-field", "template<class T>struct O{struct R{T&n;};};int f(){int n=3;O<int>::R v{n};return v.n;}"},
       {"inheritance", "struct B{int n;};template<class T>struct O{struct R:B{T m;};};int f(){O<int>::R v;return sizeof(v);}"},
       {"own-hidden-qualifier", "template<int N>struct O{struct R{int n;};};template<>struct O<sizeof(long double)>::R{int n;};"},
       {"own-body-field", "template<class T>struct O{struct R{int n;};};template<>struct O<int>::R{long double n;};"},
@@ -8697,7 +8893,6 @@ TEST_F(TranslateTest, CoreV2StaticRecordsRetainInitializationAndLifetimeRequirem
       {"unsupported-field", "struct R{long double n;};R r{};", "TR0201"},
       {"hidden-initializer", "struct R{int n;};R r{static_cast<int>(1.0L)};", "TR0201"},
       {"hidden-template", "template<class T>using I=int;struct R{int n;};template<class T>R r{sizeof(I<decltype(T{}+1.0L)>)};int f(){return r<int>.n;}", "TR0201"},
-      {"reference-field", "int n;struct R{int&r;};R r{n};", "TR0201"},
       {"mutable-field", "struct R{mutable int n;};R r{3};", "TR0201"},
       {"bitfield", "struct R{int n:3;};R r{2};", "TR0201"},
       {"union", "union R{int n;};R r{3};", "TR0201"},
@@ -8871,7 +9066,6 @@ TEST_F(TranslateTest, CoreV2StaticTemporariesRetainInitializationAndLifetimeChec
       {"hidden-type", "const long double&r=3.0L;", "TR0201"},
       {"hidden-comma", "const int&r=(static_cast<void>(1.0L),3);", "TR0201"},
       {"hidden-constexpr-call", "constexpr int make(){return sizeof(long double);}const int&r=make();", "TR0201"},
-      {"reference-field", "struct R{const int&r;};const R&r=R{3};", "TR0201"},
       {"dangling-through-call", "constexpr const int&id(const int&r){return r;}const int&r=id(3);", "TR0201"},
       {"dangling-array-decay", "struct R{int n[2];};const int&r=*(R{{3,4}}.n+1);", "TR0201"},
       {"const-write", "const int&r=3;void f(){r=4;}", "TR0202"},
@@ -9037,7 +9231,6 @@ TEST_F(TranslateTest, CoreV2StaticReferencesRetainBindingAndLifetimeRequirements
       {"hidden-type", "long double n;long double&r=n;", "TR0201"},
       {"hidden-initializer", "int n;int&r=(static_cast<void>(1.0L),n);", "TR0201"},
       {"hidden-template", "template<class T>using I=int;int n;template<class T>I<decltype(T{}+1.0L)>&r=n;int f(){return r<int>;}", "TR0201"},
-      {"reference-member", "struct R{int&r;};", "TR0201"},
       {"reference-nontype", "int n;template<int&R>int f(){return R;}int g(){return f<n>();}", "TR0201"},
       {"function-reference", "int f(){return 3;}int(&r)()=f;", "TR0201"},
       {"global-missing-target", "extern int n;int&r=n;", "TR0203"},
@@ -14533,7 +14726,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBo
       {"attribute", "template<class T>struct R{T n;[[deprecated]]R(T v):n(v){}};", "TR0201"},
       {"parameter-attribute", "template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};", "TR0201"},
       {"base", "struct I{int n;};template<class T>struct R:I{R(){}};", "TR0201"},
-      {"reference-field", "template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}", "TR0201"},
       {"floating-field", "template<class T>struct R{long double n;R(T v):n(v){}};int main(){R<int>r(3);return 0;}", "TR0201"},
       {"mixed-access-layout", "template<class T>class R{T n;public:T m;R(T v):n(v),m(v){}T get(){return n;}};int main(){R<int>r(3);return r.get();}", "TR0201"},
       {"private", "template<class T>struct R{T n;private:R(T v):n(v){}};int main(){R<int>r(3);return r.n;}", "TR0202"},
@@ -14880,7 +15072,6 @@ TEST_F(TranslateTest, CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundari
       {"base", "struct B{int n;};template<class T>struct R:B{T m;};", "TR0201"},
       {"bitfield", "template<class T>struct R{unsigned int n:3;};int main(){R<int>r{};return r.n;}", "TR0201"},
       {"mutable-field", "template<class T>struct R{mutable T n;};int main(){R<int>r{3};return r.n;}", "TR0201"},
-      {"reference-field", "template<class T>struct R{T&n;};int main(){int n=3;R<int>r{n};return r.n;}", "TR0201"},
       {"zero-array", "template<int N>struct R{int n[N];};int main(){R<0>r;return 0;}", "TR0201"},
       {"oversized-array", "template<int N>struct R{int n[N];};int main(){R<65537>r{};return r.n[0];}", "TR0201"},
       {"floating-argument", "template<int N>struct R{int n;};int main(){R<static_cast<int>(1.0L)>r{};return r.n;}", "TR0201"},
@@ -15959,7 +16150,6 @@ TEST_F(TranslateTest, CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries) {
       {"virtual", "struct E{virtual void f(){}};", "TR0201"},
       {"overaligned", "struct alignas(2) E{};", "TR0201"},
       {"attribute", "struct __attribute__((packed)) E{};", "TR0201"},
-      {"reference-field", "struct E{int&r;};", "TR0201"},
       {"thread-reference", "struct E{};void f(){thread_local const E&e=E{};}", "TR0201"},
       {"escaping-reference", "struct E{};const E&f(){return E{};}", "TR0201"},
       {"unevaluated-unsupported", "struct E{operator long double()const{return 1.0L;}};bool f(){E e;return noexcept(static_cast<long double>(e));}", "TR0201"},
@@ -16149,7 +16339,6 @@ TEST_F(TranslateTest, CoreV2ArrayTemporariesAcceptBoundedLifetimes) {
 TEST_F(TranslateTest, CoreV2ArrayTemporariesRetainTypeAndLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"tls-array", "int f(){thread_local const int(&r)[2]={1,2};return r[0];}", "TR0201"},
-      {"reference-field", "struct R{const int(&a)[2];};void f(){R r{{1,2}};}", "TR0201"},
       {"fresh-array-return", "using A=int[2];const A&f(){return A{1,2};}", "TR0201"},
       {"fresh-element-return", "using A=int[2];const int&f(){return A{1,2}[0];}", "TR0201"},
       {"pointer-offset-reference", "using A=int[2];int f(){const int&r=*(A{1,2}+1);return r;}", "TR0201"},
@@ -16377,7 +16566,6 @@ TEST_F(TranslateTest, CoreV2AutomaticReferencesRetainLifetimeBoundaries) {
       {"fresh-equal-record-return", "struct R{int n;};const R&f(){return {R{1}};}", "TR0201"},
       {"fresh-brace-member-return", "struct R{int n;};const int&f(){return {R{1}.n};}", "TR0201"},
       {"tls-brace", "int f(){thread_local const int&r{1};return r;}", "TR0201"},
-      {"reference-field", "struct R{const int&r;};int f(){R r{1};return r.r;}", "TR0201"},
       {"braced-offset", "struct R{int a[2];};int f(){const int&r{*(R{{1,2}}.a+1)};return r;}", "TR0201"},
       {"braced-arrow", "struct I{int n;};struct R{I a[2];};int f(){const int&r{(R{{{1},{2}}}.a+1)->n};return r;}", "TR0201"},
       {"unused-throw", "struct R{int n;~R(){throw 1;}};void f(){const R&r{R{1}};}", "TR0201"},
@@ -17042,7 +17230,6 @@ int main(){
 TEST_F(TranslateTest, CoreV2GeneratedMovesRetainSourceAndLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"attribute", "struct R{int n;[[deprecated]] R(R&&)=default;};", "TR0201"},
-      {"reference-field", "struct R{int&n;R(R&&)=default;};", "TR0201"},
       {"base", "struct B{int n;};struct R:B{int value;R(R&&)=default;};", "TR0201"},
       {"source-builtin", "struct R{int n[2];};void f(R&a,R&b){__builtin_memcpy(&a,&b,sizeof(R));}", "TR0201"},
       {"lambda-array", "int f(){int a[2]={1,2};auto capture=[a](){return a[0];};return capture();}", "TR0201"},
@@ -17362,7 +17549,6 @@ TEST_F(TranslateTest, CoreV2LiveRvalueReferencesRetainTemporaryAndMoveBoundaries
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"reference-return", "int&&f(){return 1;}", "TR0201"},
       {"volatile-reference", "int f(volatile int&&n){return n;}", "TR0201"},
-      {"reference-field", "struct R{int&&n;};", "TR0201"},
       {"function-reference", "int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}", "TR0201"},
       {"direct-lvalue-binding", "void f(){int n=1;int&&r=n;}", "TR0202"},
       {"lvalue-method-on-xvalue", "struct R{int n;int get()&{return n;}};int f(R&r){return static_cast<R&&>(r).get();}", "TR0202"},
@@ -17532,7 +17718,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2DefaultMembersCheckWrittenAndSelectedExpressions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"reference-field", "struct R{int value;int&ref=value;};"},
       {"mutable-field", "struct R{mutable int n=1;};"},
       {"bitfield", "struct R{int bits:2;int n=1;};"},
       {"base", "struct B{int n=1;};struct R:B{int next=2;};"},
@@ -17721,7 +17906,6 @@ int main(){
 TEST_F(TranslateTest, CoreV2GeneratedAssignmentKeepsBuiltinAndReferenceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"rvalue-receiver", "struct R{int n;R&operator=(const R&)&&=default;};"},
-      {"reference-field", "struct R{int&n;R&operator=(const R&)=default;};"},
       {"base-field", "struct B{int n;};struct R:B{int m;R&operator=(const R&)=default;};"},
       {"raw-builtin", "void f(int*a,int*b){__builtin_memcpy(a,b,4);}"},
       {"dead-builtin", "void f(int*a,int*b){if(false)__builtin_memcpy(a,b,4);}"},
@@ -17915,7 +18099,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"reference-field", "struct R{int &n;R(const R&)=default;};"},
       {"base-copy", "struct B{int n;};struct R:B{int m;R(const R&)=default;};"},
       {"lambda-array-copy", "int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}"},
       {"decomposed-array-copy", "int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}"},
@@ -18698,7 +18881,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};"},
       {"virtual-method", "struct R{int n;R():n(1){} virtual int get(){return n;}};"},
       {"variadic-constructor", "struct R{int n;R(int v,...):n(v){}};"},
-      {"reference-field", "struct R{int &n;R(int &v):n(v){}};"},
       {"mutable-field", "struct R{mutable int n;R():n(1){}};"},
       {"union", "union R{int n;unsigned u;R():n(1){}};"},
       {"bitfield", "struct R{unsigned n:3;R():n(1){}};"},
@@ -18837,7 +19019,6 @@ TEST_F(TranslateTest, CoreV2RecordMethodsRetainLifetimeAndCalleeBoundaries) {
       {"base-class", "struct B{int n;};struct R:B{int get(){return n;}};"},
       {"volatile-method", "struct R{int n;int get()volatile{return n;}};"},
       {"mutable-field", "struct R{mutable int n;int get()const{return n;}};"},
-      {"reference-field", "struct R{int&n;int get()const{return n;}};"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.first);

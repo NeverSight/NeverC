@@ -939,9 +939,13 @@ const VarDecl *automaticTemporaryOwner(const MaterializeTemporaryExpr *M,
   if (!temporaryShape(M, Context) || M->getStorageDuration() != SD_Automatic)
     return nullptr;
   const auto *Owner = dyn_cast_or_null<VarDecl>(M->getExtendingDecl());
+  const auto *Descriptor = M->getLifetimeExtendedTemporaryDecl();
   if (!Owner || Owner->getKind() != Decl::Var || Owner->isImplicit() ||
       !Owner->isLocalVarDecl() || !Owner->hasLocalStorage() ||
-      !Owner->getType()->isReferenceType())
+      (!Owner->getType()->isReferenceType() && !Owner->getType()->isRecordType() &&
+       !Context.getAsConstantArrayType(Owner->getType())) ||
+      !Descriptor || Descriptor->getTemporaryExpr() != M->getSubExpr() ||
+      Descriptor->getExtendingDecl() != Owner || Descriptor->getStorageDuration() != SD_Automatic)
     return nullptr;
   return Owner->getCanonicalDecl();
 }
@@ -954,7 +958,9 @@ const VarDecl *Adapter::staticTemporaryOwner(const MaterializeTemporaryExpr *M) 
   if (!Descriptor || Descriptor->getTemporaryExpr() != M->getSubExpr() ||
       Descriptor->getExtendingDecl() != Owner || Descriptor->getStorageDuration() != SD_Static ||
       !Owner || Owner->isImplicit() || Owner->isInvalidDecl() ||
-      Owner->getDeclContext()->isDependentContext() || !Owner->getType()->isReferenceType() ||
+      Owner->getDeclContext()->isDependentContext() ||
+      (!Owner->getType()->isReferenceType() && !Owner->getType()->isRecordType() &&
+       !Context.getAsConstantArrayType(Owner->getType())) ||
       !Owner->hasGlobalStorage() || Owner->getTLSKind() != VarDecl::TLS_None ||
       !S.owns(Sources, M->getExprLoc()) || !S.owns(Sources, Owner->getLocation()))
     return nullptr;
@@ -1662,7 +1668,7 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
                            L);
   if (Kind == "float")
     return floatingLiteral(llvm::APFloat::getZero(llvm::APFloat::IEEEsingle()), L);
-  if (T->isPointerType() || T->isNullPtrType())
+  if (T->isPointerType() || T->isReferenceType() || T->isNullPtrType())
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
@@ -1724,12 +1730,58 @@ json::Object Adapter::stringObject(const StringLiteral *Literal) {
                       {"name", Found->second}, {"loc", loc(L)}};
 }
 
+void Adapter::checkConstantTemporaryOccurrences(const VarDecl *Owner) {
+  if (!CheckedConstantTemporaryOccurrences.insert(Owner).second)
+    return;
+  std::map<const MaterializeTemporaryExpr *, unsigned> Occurrences;
+  auto Walk = [&](auto &&Self, const Stmt *Node, unsigned Repeats, unsigned Depth) -> void {
+    if (!Node || !Repeats)
+      return;
+    chargeExpansion(1, Owner->getLocation());
+    if (Depth > 64) {
+      reject(Owner->getLocation(), "constant temporary depth", "Static initialization exceeds the bounded source depth.");
+      throw Failure{};
+    }
+    if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(Node);
+        M && M->getStorageDuration() == SD_Static &&
+        staticTemporaryOwner(M) == Owner && (Occurrences[M] += Repeats) > 1) {
+      // Clang retains one APValue per static MTE. A shared array filler can
+      // overwrite that value for distinct elements, losing their identities.
+      // Runtime lowering allocates per occurrence; constant emission must not
+      // silently reuse the last retained value until these ASTs are separated.
+      reject(M->getExprLoc(), "shared constant temporary",
+             "Repeated constant array fillers require distinct temporary identities from the source frontend.");
+      throw Failure{};
+    }
+    if (const auto *D = dyn_cast<CXXDefaultInitExpr>(Node)) {
+      Self(Self, D->getExpr(), Repeats, Depth + 1);
+      return;
+    }
+    if (const auto *I = dyn_cast<InitListExpr>(Node)) {
+      if (I->isSyntacticForm() && I->getSemanticForm())
+        I = I->getSemanticForm();
+      for (const auto *Init : I->inits())
+        Self(Self, Init, Repeats, Depth + 1);
+      if (const auto *Array = Context.getAsConstantArrayType(I->getType())) {
+        auto Count = Array->getSize().getLimitedValue(65537);
+        if (Count > I->getNumInits())
+          Self(Self, I->getArrayFiller(),
+               Repeats > 1 || Count - I->getNumInits() > 1 ? 2u : 1u, Depth + 1);
+      }
+      return;
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child, Repeats, Depth + 1);
+  };
+  Walk(Walk, Owner->getAnyInitializer(), 1, 0);
+}
+
 json::Object Adapter::staticTemporaryObject(const MaterializeTemporaryExpr *Temporary) {
   auto L = Temporary->getExprLoc();
   auto T = Temporary->getType();
   const auto *Owner = staticTemporaryOwner(Temporary);
   const VarDecl *InitializingDecl = nullptr;
-  if (Owner && !ConstantStaticReferenceOwners.count(Owner)) {
+  if (Owner && !ConstantStaticTemporaryOwners.count(Owner)) {
     // A class member can refer to a later static reference definition before
     // the source walk visits that owner. Clang's native flag is also positive
     // evidence: it is set only by successful constant initialization with no
@@ -1741,14 +1793,15 @@ json::Object Adapter::staticTemporaryObject(const MaterializeTemporaryExpr *Temp
             Owner->getDeclContext()->getRedeclContext() &&
         Context.hasSameType(InitializingDecl->getType(), Owner->getType()) &&
         InitializingDecl->hasConstantInitialization())
-      ConstantStaticReferenceOwners.insert(Owner);
+      ConstantStaticTemporaryOwners.insert(Owner);
   }
   if (!Owner || DynamicStaticLocals.count(Owner) ||
-      !ConstantStaticReferenceOwners.count(Owner)) {
+      !ConstantStaticTemporaryOwners.count(Owner)) {
     reject(L, "static temporary storage",
-           "A constant static temporary requires successful evaluation of its exact reference owner.");
+           "A constant static temporary requires successful evaluation of its exact extending owner.");
     throw Failure{};
   }
+  checkConstantTemporaryOccurrences(Owner);
   auto Kind = type(T, L);
   if (Kind.empty())
     throw Failure{};
@@ -1764,7 +1817,7 @@ json::Object Adapter::staticTemporaryObject(const MaterializeTemporaryExpr *Temp
       throw Failure{};
     }
     chargeExpansion(storageUnits(T) + 1, L);
-    auto Name = "nct_static_temporary_" + std::to_string(StaticTemporaryObjects.size());
+    auto Name = "nct_static_temporary_" + std::to_string(StaticTemporarySerial++);
     // Register identity before serializing fields so self/cyclic addresses can
     // name the actual object without recursively constructing another copy.
     Found = StaticTemporaryObjects.emplace(Temporary, Name).first;
@@ -1785,27 +1838,24 @@ json::Object Adapter::dynamicStaticTemporaryObject(const MaterializeTemporaryExp
   if (!Owner || staticTemporaryOwner(Temporary) != Owner ||
       !Owner->isStaticLocal() || !DynamicStaticLocals.count(Owner)) {
     reject(L, "static temporary initialization",
-           "A runtime static temporary requires its exact dynamic local reference owner.");
+           "A runtime static temporary requires its exact dynamic local extending owner.");
     throw Failure{};
   }
   auto Kind = type(T, L);
   if (Kind.empty())
     throw Failure{};
-  auto Found = StaticTemporaryObjects.find(Temporary);
-  if (Found == StaticTemporaryObjects.end()) {
-    chargeExpansion(storageUnits(T) + 1, L);
-    auto Name = "nct_static_temporary_" + std::to_string(StaticTemporaryObjects.size());
-    Found = StaticTemporaryObjects.emplace(Temporary, Name).first;
-    // Failed constant evaluation can retain partial values. Runtime children
-    // always begin with semantic zero and execute the original initializer.
-    json::Object Global{{"name", Name}, {"type", Kind}, {"value", zero(T, L)},
-                        {"initialization_owner", name(Owner)}, {"loc", loc(L)}};
-    if (!T.isConstQualified())
-      Global["mutable"] = true;
-    StaticTemporaryGlobals.push_back(std::move(Global));
-  }
+  chargeExpansion(storageUnits(T) + 1, L);
+  auto Name = "nct_static_temporary_" + std::to_string(StaticTemporarySerial++);
+  // Shared array filler ASTs can evaluate the same materialization for several
+  // distinct elements. Each lowered occurrence needs its own permanent object.
+  // Failed constant evaluation's partial APValues are never consumed here.
+  json::Object Global{{"name", Name}, {"type", Kind}, {"value", zero(T, L)},
+                      {"initialization_owner", name(Owner)}, {"loc", loc(L)}};
+  if (!T.isConstQualified())
+    Global["mutable"] = true;
+  StaticTemporaryGlobals.push_back(std::move(Global));
   return json::Object{{"kind", "var"}, {"type", Kind},
-                      {"name", Found->second}, {"loc", loc(L)}};
+                      {"name", Name}, {"loc", loc(L)}};
 }
 
 json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocation L,
@@ -1892,6 +1942,7 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
       auto Entry = Path[I].getAsBaseOrMember();
       const auto *Field = dyn_cast_or_null<FieldDecl>(Entry.getPointer());
       if (!Field || Entry.getInt() || Field->isBitField() || Field->isMutable() ||
+          Field->getType()->isReferenceType() ||
           !S.owns(Sources, Field->getLocation()) || !Record->getDefinition() ||
           Field->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
         Reject("A constant record path requires its actual supported field, without a base-class adjustment.");
@@ -1927,6 +1978,9 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
 
 json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
   auto Kind = type(T, L);
+  if (S.coreV2() && T->isReferenceType())
+    return constantPointer(V, Context.getPointerType(T->getPointeeType()), L,
+                           /*ReferenceBinding=*/true);
   if (V.isInt())
     return literal(V.getInt(), Kind, L);
   if (V.isFloat() && (S.math() || S.coreV2()))
@@ -1982,6 +2036,7 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::map<const CXXRecordDecl *, bool> HasArray;
+  std::map<const CXXRecordDecl *, bool> FlatReferenceLayouts;
   std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees, FunctionValueDesignators;
   std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
@@ -4123,6 +4178,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
       return temporaryBinding(W->getSubExpr(), AllowFullExpression, ExpectedExtender);
     if (const auto *M = dyn_cast<MemberExpr>(E)) {
+      if (A.S.coreV2())
+        if (const auto *Field = dyn_cast<FieldDecl>(M->getMemberDecl());
+            Field && Field->getType()->isReferenceType())
+          return false; // The binding does not inherit its container's lifetime.
       if (A.S.coreV2())
         if (const auto *V = dyn_cast<VarDecl>(M->getMemberDecl());
             V && V->isStaticDataMember())
@@ -7844,7 +7903,7 @@ public:
       return false;
     if (!A.S.coreV2() || !Field || !owned(Field) || !Field->hasInClassInitializer() ||
         !isa<CXXRecordDecl>(Field->getParent()) || !Default->getExpr() ||
-        !A.Context.hasSameUnqualifiedType(Field->getType(), Default->getType()) ||
+        !A.Context.hasSameUnqualifiedType(Field->getType().getNonReferenceType(), Default->getType()) ||
         !A.Context.hasSameUnqualifiedType(Default->getExpr()->getType(), Default->getType())) {
       A.reject(L, "default member initializer", "Expected a selected source-owned field initializer.");
       return true;
@@ -8304,6 +8363,8 @@ public:
   bool staticObjectElementType(QualType T, unsigned Depth = 0) {
     if (Depth > 64)
       return false;
+    if (T->isReferenceType())
+      return T->getPointeeType()->isObjectType();
     if (staticScalarType(T))
       return true;
     if (const auto *Array = A.Context.getAsConstantArrayType(T))
@@ -8362,6 +8423,7 @@ public:
           A.DynamicStaticLocals.insert(Canonical);
           Initializer = A.zero(T, Definition->getLocation());
         } else {
+          A.ConstantStaticTemporaryOwners.insert(Canonical);
           Initializer = A.constant(Value, T, Definition->getLocation());
         }
       }
@@ -8426,7 +8488,7 @@ public:
           Canonical, A.zero(PointerType, Definition->getLocation()));
       return true;
     }
-    A.ConstantStaticReferenceOwners.insert(Canonical);
+    A.ConstantStaticTemporaryOwners.insert(Canonical);
     auto Initializer = A.constantPointer(Value, PointerType, Definition->getLocation(), /*ReferenceBinding=*/true);
     A.StaticReferenceInitializers.emplace(Canonical, std::move(Initializer));
     return true;
@@ -8746,6 +8808,40 @@ public:
     }
     return true;
   }
+  bool admittedRecordLayout(const CXXRecordDecl *D, unsigned Depth = 0) {
+    if (!D || Depth > 64 || !D->getDefinition())
+      return false;
+    D = D->getDefinition();
+    if (D->isStandardLayout())
+      return true;
+    auto Found = FlatReferenceLayouts.find(D);
+    if (Found != FlatReferenceLayouts.end())
+      return Found->second;
+    FlatReferenceLayouts.emplace(D, false);
+    if (D->isUnion() || D->getNumBases() || D->isDynamicClass() || D->hasAttrs())
+      return false;
+    bool HasReference = false;
+    std::optional<AccessSpecifier> Access;
+    for (const auto *Field : D->fields()) {
+      A.chargeExpansion(1, Field->getLocation());
+      if (Field->isBitField() || Field->isMutable() || Field->hasAttrs() ||
+          (Access && *Access != Field->getAccess()))
+        return false;
+      Access = Field->getAccess();
+      auto T = A.Context.getBaseElementType(Field->getType());
+      if (T->isReferenceType()) {
+        if (!T->getPointeeType()->isObjectType())
+          return false;
+        HasReference = true;
+      } else if (const auto *Member = T->getAsCXXRecordDecl()) {
+        if (!admittedRecordLayout(Member, Depth + 1))
+          return false;
+        HasReference |= !Member->isStandardLayout();
+      }
+    }
+    FlatReferenceLayouts[D] = HasReference;
+    return HasReference;
+  }
   bool VisitCXXRecordDecl(CXXRecordDecl *D) {
     if (!owned(D))
       return true;
@@ -8761,9 +8857,9 @@ public:
         const auto *Pattern = classTemplatePattern(Specialization);
         if (Specialization->getKind() != Decl::ClassTemplateSpecialization ||
             D->isDependentContext() || !classTemplateShape(Primary) || !classPatternShape(Pattern) ||
-            !D->isStandardLayout() || !classTemplateMembers(D)) {
+            !admittedRecordLayout(D) || !classTemplateMembers(D)) {
           A.reject(D->getLocation(), "class template specialization",
-                   "A concrete standard-layout specialization of an admitted owned primary is required.");
+                   "A concrete specialization with admitted flat layout and an owned primary is required.");
           return true;
         }
         checkTemplateArguments(templateSourceParameters(Primary),
@@ -8775,15 +8871,15 @@ public:
     // Special-member behavior is checked at each selected operation. A record
     // containing a user-copyable field can be aggregate-initialized without
     // selecting its unsupported implicit nontrivial copy constructor.
-    const bool ConstructedRecord = A.S.coreV2() && D->isStandardLayout();
+    const bool ConstructedRecord = A.S.coreV2() && admittedRecordLayout(D);
     if (D->isUnion() || (!D->isAggregate() && !ConstructedRecord) ||
-        (A.S.coreV2() && !D->isStandardLayout()) ||
+        (A.S.coreV2() && !ConstructedRecord) ||
         (!A.S.coreV2() && D->field_empty()) ||
         D->getNumBases() || D->getDescribedClassTemplate() ||
         (D->getDeclContext()->isRecord() &&
          (!A.S.coreV2() || !D->getIdentifier())))
       A.reject(D->getLocation(), "record",
-               "Only standard-layout records with supported selected special "
+               "Only admitted flat records with supported selected special "
                "members and no bases are admitted; empty and named nested "
                "records require core v2.");
     A.Records.push_back(D);
@@ -8797,11 +8893,21 @@ public:
     // Clang checks source writes; addresses/references retain source qualifiers.
     if (D->isBitField() ||
         (!A.S.coreV2() && (D->hasInClassInitializer() || D->getType().isConstQualified())) ||
-        D->isMutable() || D->getType()->isReferenceType())
+        D->isMutable() || (!A.S.coreV2() && D->getType()->isReferenceType()))
       A.reject(D->getLocation(), "field",
-               "Bitfield and mutable/reference fields are unsupported; "
-               "const fields and default field initializers require core v2.");
+               "Bitfield and mutable fields are unsupported; "
+               "reference/const fields and default field initializers require core v2.");
     return true;
+  }
+  bool defaultFieldTemporary(const MaterializeTemporaryExpr *M) {
+    const auto *Descriptor = M->getLifetimeExtendedTemporaryDecl();
+    return CurrentDefaultField && CurrentDefaultField->hasInClassInitializer() &&
+           owned(CurrentDefaultField) && temporaryShape(M, A.Context) &&
+           M->getStorageDuration() == SD_Automatic &&
+           M->getExtendingDecl() == CurrentDefaultField && Descriptor &&
+           Descriptor->getExtendingDecl() == CurrentDefaultField &&
+           Descriptor->getTemporaryExpr() == M->getSubExpr() &&
+           Descriptor->getStorageDuration() == SD_Automatic;
   }
   bool VisitStmt(Stmt *S) {
     if (!S || (!ImplicitInitializerOwner.isValid() &&
@@ -9010,9 +9116,9 @@ public:
         A.checkStringLiteral(Literal);
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(S);
           M && !fullExpressionTemporary(M, A.Context) && !A.temporaryOwner(M) &&
-          !A.staticTemporaryOwner(M))
+          !A.staticTemporaryOwner(M) && !defaultFieldTemporary(M))
         A.reject(L, "temporary lifetime",
-                 "A checked full-expression temporary or exact automatic/static reference owner is required.");
+                 "A checked full-expression temporary, source field initializer or exact automatic/static extending owner is required.");
       if (const auto *Query = dyn_cast<CXXNoexceptExpr>(S)) {
         if (!Query->getOperand() || Query->isTypeDependent() ||
             Query->isValueDependent() || Query->isInstantiationDependent())

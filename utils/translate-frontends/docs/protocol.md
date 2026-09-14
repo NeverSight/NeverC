@@ -142,13 +142,15 @@ binding the original glvalue; ordinary uses dereference the carrier. This grants
 no reassignment permission for the binding after publication and no new lifetime
 for an existing referent. No distinct reference opcode is needed.
 
-A permanent temporary constructed for a dynamic reference has a nonempty
-`initialization_owner` string naming that readonly dynamic pointer global. This
+A permanent temporary constructed for a dynamic extending declaration has a
+nonempty `initialization_owner` string naming its dynamic root global. This
 optional field requires core v2. The child has a complete semantic-zero static
-initializer and cannot also have `dynamic_initialization`. Its owner must exist,
-have no owner of its own, be readonly and have a pointer to a complete object.
-The child type need not equal the pointed-to type: a reference may name a
-subobject of a larger temporary. These checks exclude missing owners, chains,
+initializer and cannot also have `dynamic_initialization`. Its owner must exist
+and have no owner of its own. An owner is either a readonly pointer to a complete
+object, or a complete record/fixed array with ordinary mutable/const storage.
+The child type need not equal the owner's type or pointed-to type: a reference
+can bind a larger temporary's subobject, and aggregate reference members can
+extend several different temporaries. These checks exclude missing owners, chains,
 self-ownership and cycles. Associations resolve after all globals are collected,
 so declaration order does not affect validity. Zero children can remain after
 unselected branches or dead-code pruning; every declared owner must still exist.
@@ -1281,3 +1283,21 @@ the variable identity; loading and calling the value uses `indirect_call`.
 Actual declaration/type/initializer source checks remain frontend obligations;
 normal global and callback signature/definition validation remains unchanged.
 See the [callback variable-template contract](cpp-core-v2.md#callback-variable-templates).
+
+## Core v2 reference-member carriers
+
+An admitted source reference field is represented by its object-pointer carrier
+in the checked record layout. No new reference opcode or wire type is introduced.
+Construction writes the carrier; ordinary member access dereferences it. The
+referent's qualifiers and extent remain in the pointer type. Constness of the
+containing record restricts its stored carrier, not a mutable referenced object.
+Copying carrier fields preserves their addresses, including self-references to
+the original object. Source-deleted special members are rejected before lowering.
+
+Constant fields serialize the checked actual referent address. Runtime aggregate
+initializers may have zero pointer carriers before guarded construction, and
+extended static temporaries name that aggregate's root initialization group.
+Nested temporary groups remain flat; children do not acquire their own guards.
+Each lowered repeated runtime filler gets distinct storage. Unsupported shared
+constant temporary identities are diagnosed by the source frontend. See the
+[source contract](cpp-core-v2.md#reference-members).

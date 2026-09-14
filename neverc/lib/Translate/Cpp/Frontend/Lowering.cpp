@@ -32,12 +32,12 @@ class FunctionLowering {
     Expression Pointer;
   };
   std::optional<InitializationReceiver> DefaultReceiver;
-  struct ReferenceInitializer {
+  struct AutomaticInitializer {
     const VarDecl *Variable;
     std::size_t ScopeIndex;
   };
-  std::optional<ReferenceInitializer> ActiveReferenceInitializer;
-  const VarDecl *ActiveDynamicReferenceOwner = nullptr;
+  std::optional<AutomaticInitializer> ActiveAutomaticInitializer;
+  const VarDecl *ActiveDynamicInitializer = nullptr;
   std::map<const Decl *, Expression> Storage;
   std::map<const OpaqueValueExpr *, Expression> ArraySources;
   struct ArrayIndex {
@@ -121,8 +121,25 @@ class FunctionLowering {
   }
   Expression bind(const Expr *E, QualType ReferenceType) {
     auto L = E->getExprLoc();
+    if (const auto *W = dyn_cast<ExprWithCleanups>(E))
+      return bind(W->getSubExpr(), ReferenceType);
+    if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(E)) {
+      if (!DefaultReceiver ||
+          Default->getField()->getParent()->getCanonicalDecl() != DefaultReceiver->Record ||
+          !A.Context.hasSameType(Default->getField()->getType(), ReferenceType))
+        reject(L, "default reference member", "The selected binding requires its actual construction receiver.");
+      auto SavedThis = ThisPointer;
+      ThisPointer = DefaultReceiver->Pointer;
+      auto RestoreThis = llvm::make_scope_exit([&] { ThisPointer = std::move(SavedThis); });
+      return bind(Default->getExpr(), ReferenceType);
+    }
     auto Pointer = address(lvalue(E), E->getType(), L);
     return cast(std::move(Pointer), type(ReferenceType, L), L);
+  }
+  Expression fieldStorage(Expression Base, const FieldDecl *Field, SourceLocation L) {
+    return Expression{{"kind", "member"}, {"type", type(Field->getType(), L)},
+                      {"name", A.name(Field)}, {"args", json::Array{std::move(Base)}},
+                      {"loc", A.loc(L)}};
   }
   Expression decay(Expression Place, llvm::StringRef PointerType,
                    SourceLocation L) {
@@ -309,14 +326,14 @@ class FunctionLowering {
           return storage(V, L);
         }
       // Never snapshot a whole base record just to access one of its fields.
-      return Expression{{"kind", "member"},
-                        {"type", type(M->getType(), M->getExprLoc())},
-                        {"name", A.name(M->getMemberDecl())},
-                        {"args", json::Array{
-                             M->isArrow()
-                                 ? dereference(expression(M->getBase()), L)
-                                 : lvalue(M->getBase())}},
-                        {"loc", A.loc(M->getExprLoc())}};
+      const auto *Field = llvm::cast<FieldDecl>(M->getMemberDecl());
+      auto Place = fieldStorage(M->isArrow()
+                                    ? dereference(expression(M->getBase()), L)
+                                    : lvalue(M->getBase()), Field, L);
+      // A member expression denotes the referent, independent of the
+      // containing object's cv qualifiers. Only construction writes its binding.
+      return Field->getType()->isReferenceType() ? dereference(std::move(Place), L)
+                                                : std::move(Place);
     }
     if (const auto *C = dyn_cast<CastExpr>(E);
         C && C->getCastKind() == CK_NoOp) {
@@ -420,12 +437,11 @@ class FunctionLowering {
       return project(B->getRHS(), std::move(Fields), ResultType, L);
     }
     auto Value = expression(Base);
-    for (const auto *Field : Fields)
-      Value = Expression{{"kind", "member"},
-                         {"type", type(Field->getType(), L)},
-                         {"name", A.name(Field)},
-                         {"args", json::Array{std::move(Value)}},
-                         {"loc", A.loc(L)}};
+    for (const auto *Field : Fields) {
+      Value = fieldStorage(std::move(Value), Field, L);
+      if (Field->getType()->isReferenceType())
+        Value = dereference(std::move(Value), L);
+    }
     return Value;
   }
   void copyAssignedArray(Expression To, Expression From, QualType T,
@@ -1237,21 +1253,21 @@ class FunctionLowering {
       return materialize(M->getSubExpr(), L);
     }
     if (M->getStorageDuration() == SD_Static) {
-      if (!ActiveDynamicReferenceOwner ||
-          A.staticTemporaryOwner(M) != ActiveDynamicReferenceOwner)
-        reject(L, "static temporary lifetime", "The exact dynamic static reference initializer is required.");
-      auto Place = A.dynamicStaticTemporaryObject(M, ActiveDynamicReferenceOwner);
-      // Cache storage identity only. Each branch occurrence still constructs
-      // its actual destination, without registering automatic destruction.
+      if (!ActiveDynamicInitializer ||
+          A.staticTemporaryOwner(M) != ActiveDynamicInitializer)
+        reject(L, "static temporary lifetime", "The exact dynamic static extending initializer is required.");
+      auto Place = A.dynamicStaticTemporaryObject(M, ActiveDynamicInitializer);
+      // Each lowered occurrence constructs its own permanent destination,
+      // including repeated array fillers, without automatic destruction.
       initialize(Place, M->getSubExpr(), L);
       return Place;
     }
     const auto *Owner = A.temporaryOwner(M);
-    if (!Owner || !ActiveReferenceInitializer ||
-        Owner != ActiveReferenceInitializer->Variable ||
-        ActiveReferenceInitializer->ScopeIndex >= Scopes.size())
-      reject(L, "temporary lifetime", "The exact automatic reference initializer and scope are required.");
-    return materialize(M->getSubExpr(), L, ActiveReferenceInitializer->ScopeIndex);
+    if (!Owner || !ActiveAutomaticInitializer ||
+        Owner != ActiveAutomaticInitializer->Variable ||
+        ActiveAutomaticInitializer->ScopeIndex >= Scopes.size())
+      reject(L, "temporary lifetime", "The exact automatic extending initializer and scope are required.");
+    return materialize(M->getSubExpr(), L, ActiveAutomaticInitializer->ScopeIndex);
   }
   Expression materialize(const Expr *Init, SourceLocation L,
                          std::optional<std::size_t> ScopeIndex = std::nullopt) {
@@ -1392,7 +1408,10 @@ class FunctionLowering {
                         {"args", json::Array{dereference(*ThisPointer, L)}},
                         {"loc", A.loc(L)}};
       beginFullExpression();
-      initialize(std::move(Member), Found->second, L);
+      if (Field->getType()->isReferenceType())
+        assign(std::move(Member), bind(Found->second, Field->getType()), L);
+      else
+        initialize(std::move(Member), Found->second, L);
       endFullExpression();
     }
   }
@@ -1591,7 +1610,11 @@ class FunctionLowering {
                           {"name", A.name(Field)},
                           {"args", json::Array{json::Object(Place)}},
                           {"loc", A.loc(L)}};
-        initialize(std::move(Member), I->getInit(Index++), L);
+        const auto *Value = I->getInit(Index++);
+        if (Field->getType()->isReferenceType())
+          assign(std::move(Member), bind(Value, Field->getType()), L);
+        else
+          initialize(std::move(Member), Value, L);
       }
       return;
     }
@@ -1632,10 +1655,10 @@ class FunctionLowering {
         Open = false;
         label(Initialize, L);
         beginFullExpression();
+        auto Previous = ActiveDynamicInitializer;
+        auto Restore = llvm::make_scope_exit([&] { ActiveDynamicInitializer = Previous; });
+        ActiveDynamicInitializer = V->getCanonicalDecl();
         if (V->getType()->isReferenceType()) {
-          auto Previous = ActiveDynamicReferenceOwner;
-          auto Restore = llvm::make_scope_exit([&] { ActiveDynamicReferenceOwner = Previous; });
-          ActiveDynamicReferenceOwner = V->getCanonicalDecl();
           assign(variable(Global, type(V->getType(), L), L),
                  bind(V->getInit(), V->getType()), L);
         } else
@@ -1650,31 +1673,34 @@ class FunctionLowering {
     }
     auto Place = localStorage(V);
     beginFullExpression();
-    if (V->getType()->isReferenceType()) {
-      auto Previous = ActiveReferenceInitializer;
-      auto Restore = llvm::make_scope_exit([&] { ActiveReferenceInitializer = Previous; });
-      ActiveReferenceInitializer.reset();
+    {
+      auto Previous = ActiveAutomaticInitializer;
+      auto Restore = llvm::make_scope_exit([&] { ActiveAutomaticInitializer = Previous; });
+      ActiveAutomaticInitializer.reset();
       const auto Range = rangeForComponents(A.rangeForOwner(V));
       const bool RangeReference = Range &&
           Range->Range->getCanonicalDecl() == V->getCanonicalDecl();
       if (A.S.coreV2() && V->getKind() == Decl::Var &&
           (!V->isImplicit() || RangeReference) &&
-          V->isLocalVarDecl() && V->hasLocalStorage()) {
+          V->isLocalVarDecl() && V->hasLocalStorage() &&
+          (V->getType()->isReferenceType() || aggregateValue(V->getType()))) {
         if (Scopes.empty())
-          reject(L, "reference lifetime", "An automatic reference requires a lexical scope.");
-        ActiveReferenceInitializer = ReferenceInitializer{V->getCanonicalDecl(), Scopes.size() - 1};
+          reject(L, "temporary lifetime", "An automatic extending declaration requires a lexical scope.");
+        ActiveAutomaticInitializer = AutomaticInitializer{V->getCanonicalDecl(), Scopes.size() - 1};
       }
-      assign(Place, bind(V->getInit(), V->getType()), L);
-    } else {
-      bool DefaultOnly = false;
-      if (const auto *C = dyn_cast_or_null<CXXConstructExpr>(V->getInit()))
-        DefaultOnly = C->getConstructor()->isDefaultConstructor() &&
-                      C->getConstructor()->isTrivial() && !C->getNumArgs() &&
-                      !C->requiresZeroInitialization();
-      if (V->getInit() && !DefaultOnly)
-        initialize(Place, V->getInit(), L);
-      if (A.S.coreV2() && needsDestruction(V->getType()))
-        own(Place, V->getType(), L, Scopes.back());
+      if (V->getType()->isReferenceType())
+        assign(Place, bind(V->getInit(), V->getType()), L);
+      else {
+        bool DefaultOnly = false;
+        if (const auto *C = dyn_cast_or_null<CXXConstructExpr>(V->getInit()))
+          DefaultOnly = C->getConstructor()->isDefaultConstructor() &&
+                        C->getConstructor()->isTrivial() && !C->getNumArgs() &&
+                        !C->requiresZeroInitialization();
+        if (V->getInit() && !DefaultOnly)
+          initialize(Place, V->getInit(), L);
+        if (A.S.coreV2() && needsDestruction(V->getType()))
+          own(Place, V->getType(), L, Scopes.back());
+      }
     }
     endFullExpression();
   }
