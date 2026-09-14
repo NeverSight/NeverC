@@ -646,7 +646,47 @@ public:
         original_default_header = ("// Before header sentinel.\n"
                                    "  NamedDecl *getTargetDecl() const { return Underlying; }\n"
                                    "// After header sentinel.\n")
-        original_default_source = ("// Before source sentinel.\n"
+        # Independent LLVM 20.1.8 class-body lookup spans. Both primary and
+        # partial walks must stop before leaving their own specialization.
+        member_pattern_original = '''    if (auto *CTD = dyn_cast_if_present<ClassTemplateDecl *>(From)) {
+      while (auto *NewCTD = CTD->getInstantiatedFromMemberTemplate()) {
+        if (NewCTD->isMemberSpecialization())
+          break;
+        CTD = NewCTD;
+      }
+      return GetDefinitionOrSelf(CTD->getTemplatedDecl());
+    }
+    if (auto *CTPSD =
+            dyn_cast_if_present<ClassTemplatePartialSpecializationDecl *>(
+                From)) {
+      while (auto *NewCTPSD = CTPSD->getInstantiatedFromMember()) {
+        if (NewCTPSD->isMemberSpecialization())
+          break;
+        CTPSD = NewCTPSD;
+      }
+      return GetDefinitionOrSelf(CTPSD);
+    }'''
+        member_pattern_expected = '''    // NeverC member class body lookup stops at the current specialization.
+    if (auto *CTD = dyn_cast_if_present<ClassTemplateDecl *>(From)) {
+      while (auto *NewCTD = CTD->getInstantiatedFromMemberTemplate()) {
+        if (CTD->isMemberSpecialization())
+          break;
+        CTD = NewCTD;
+      }
+      return GetDefinitionOrSelf(CTD->getTemplatedDecl());
+    }
+    if (auto *CTPSD =
+            dyn_cast_if_present<ClassTemplatePartialSpecializationDecl *>(
+                From)) {
+      while (auto *NewCTPSD = CTPSD->getInstantiatedFromMember()) {
+        if (CTPSD->isMemberSpecialization())
+          break;
+        CTPSD = NewCTPSD;
+      }
+      return GetDefinitionOrSelf(CTPSD);
+    }'''
+        original_default_source = ("// Before source sentinel.\n" +
+                                   member_pattern_original + "\n" +
                                    "void UsingShadowDecl::anchor() {}\n\n"
                                    "UsingShadowDecl::UsingShadowDecl(Kind K) {}\n"
                                    "// After source sentinel.\n")
@@ -886,6 +926,8 @@ public:
                 "  NamedDecl *getTargetDecl() const;"))
             self.assertEqual(rewritten_default_source.count("UsingShadowDecl::getTargetDecl() const"), 1)
             self.assertEqual(rewritten_default_source.count("NeverC C++17 imported defaults"), 1)
+            self.assertEqual(rewritten_default_source.count(member_pattern_expected), 1)
+            self.assertNotIn(member_pattern_original, rewritten_default_source)
             self.assertTrue(rewritten_default_source.startswith("// Before source sentinel.\n"))
             self.assertTrue(rewritten_default_source.endswith(
                 "UsingShadowDecl::UsingShadowDecl(Kind K) {}\n// After source sentinel.\n"))
@@ -1649,6 +1691,33 @@ public:
                 self.assertEqual(snapshot_all_files(), untouched)
             default_header.write_text(original_default_header, encoding="utf-8")
             default_source.write_text(original_default_source, encoding="utf-8")
+            run_script(True)
+            for path, contents in stable.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+
+            member_pattern_states = {
+                "missing block": "",
+                "duplicate original": member_pattern_original * 2,
+                "duplicate rewritten": member_pattern_expected * 2,
+                "mixed blocks": member_pattern_original + member_pattern_expected,
+                "primary still uses origin": member_pattern_expected.replace(
+                    "if (CTD->isMemberSpecialization())", "if (NewCTD->isMemberSpecialization())", 1),
+                "partial still uses origin": member_pattern_expected.replace(
+                    "if (CTPSD->isMemberSpecialization())", "if (NewCTPSD->isMemberSpecialization())", 1),
+                "primary origin lost": member_pattern_expected.replace("CTD = NewCTD;", "", 1),
+                "partial origin lost": member_pattern_expected.replace("CTPSD = NewCTPSD;", "", 1),
+                "orphan marker": member_pattern_original + "\n// NeverC member class body lookup\n",
+            }
+            for state, contents in member_pattern_states.items():
+                with self.subTest(member_class_pattern_state=state):
+                    default_source.write_text(rewritten_default_source.replace(
+                        member_pattern_expected, contents, 1), encoding="utf-8")
+                    untouched = snapshot_all_files()
+                    run_script(False, "Unexpected pinned Clang member class pattern source in " +
+                               str(default_source))
+                    self.assertEqual(snapshot_all_files(), untouched, state)
+            default_source.write_text(rewritten_default_source.replace(
+                member_pattern_expected, member_pattern_original, 1), encoding="utf-8")
             run_script(True)
             for path, contents in stable.items():
                 self.assertEqual(path.read_bytes(), contents, str(path))

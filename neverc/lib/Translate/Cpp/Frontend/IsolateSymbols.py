@@ -353,6 +353,51 @@ def fix_copied_full_initializers(path):
         path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
 
+def fix_member_class_instantiation_patterns(path):
+    before = '''    if (auto *CTD = dyn_cast_if_present<ClassTemplateDecl *>(From)) {
+      while (auto *NewCTD = CTD->getInstantiatedFromMemberTemplate()) {
+        if (NewCTD->isMemberSpecialization())
+          break;
+        CTD = NewCTD;
+      }
+      return GetDefinitionOrSelf(CTD->getTemplatedDecl());
+    }
+    if (auto *CTPSD =
+            dyn_cast_if_present<ClassTemplatePartialSpecializationDecl *>(
+                From)) {
+      while (auto *NewCTPSD = CTPSD->getInstantiatedFromMember()) {
+        if (NewCTPSD->isMemberSpecialization())
+          break;
+        CTPSD = NewCTPSD;
+      }
+      return GetDefinitionOrSelf(CTPSD);
+    }'''
+    # The current member specialization owns its body. Checking the next
+    # origin skips that body and can lose its default member initializers.
+    after = ("    // NeverC member class body lookup stops at the current specialization.\n" +
+             before.replace("if (NewCTD->isMemberSpecialization())",
+                            "if (CTD->isMemberSpecialization())", 1)
+                   .replace("if (NewCTPSD->isMemberSpecialization())",
+                            "if (CTPSD->isMemberSpecialization())", 1))
+    error_message = "Unexpected pinned Clang member class pattern source in " + str(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(error_message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if "NeverC member class body lookup" in remainder:
+        raise SystemExit(error_message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def fix_deduced_variable_instantiations(path):
     before = '''      if (UsableInConstantExpr) {
         // Do not defer instantiations of variables that could be used in a
@@ -820,6 +865,7 @@ preserve_explicit_function_instantiation_source(args.source)
 fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
 fix_nested_friend_declaration_access(args.source)
 fix_imported_namespace_defaults(args.source)
+fix_member_class_instantiation_patterns(args.source / "clang/lib/AST/DeclCXX.cpp")
 fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
 fix_deduced_reference_arguments(args.source / "clang/lib/Sema/SemaOverload.cpp")
 fix_copied_full_initializers(args.source / "clang/lib/Sema/SemaExpr.cpp")
