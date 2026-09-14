@@ -3843,14 +3843,230 @@ TEST_F(TranslateTest, CoreV2StaticLocalsAcceptConstantAndZeroInitialization) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2DynamicStaticLocalsAcceptSourceComposition) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"promoted-1", "int seed(){return 3;}int f(){static int n=seed();return n;}"},
+      {"promoted-2", "int f(int p){static int n=p;return n;}"},
+      {"promoted-3", "int value=3;int f(){static int n=value;return n;}"},
+      {"promoted-4", "int f(){static int n=n;return n;}"},
+      {"promoted-5", "int seed(){return 3;}void f(){static int unused=seed();}"},
+      {"promoted-6", "int seed(){return 3;}void f(){if(false){static int unused=seed();}}"},
+      {"promoted-7", "int*f(int n){static int a[2]={n,2};return a;}"},
+      {"promoted-8", "float f(float n){static float value=n;return value;}"},
+      {"promoted-9", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N g(){static N n=f();return n;}"},
+      {"promoted-10", "template<class T>int f(int x){struct R{int get(int n){static int value=n;return value;}};R r;return r.get(x);}int g(){return f<int>(3);}"},
+      {"promoted-11", "template<class T>struct R{static int f(int v){static int n=v;return n;}};int main(){return R<int>::f(3);}"},
+      {"promoted-12", "int value=1;template<class T>int f(){static int n=value;return n;}int main(){return f<int>();}"},
+      {"promoted-13", "int*f(int*n){static int*p=n;return p;}"},
+      {"promoted-14", "int*f(){int n=3;static int*p=&n;return p;}"},
+      {"promoted-15", "int*f(){static int n=3;static int a[2]={n,0};return a;}"},
+      {"dead-after-return", "int seed(){return 3;}int f(){return 0;static const int unused=seed();}"},
+      {"dead-constexpr-arm", "int seed(){return 3;}int f(){if constexpr(false){static int n=seed();}return 0;}"},
+      {"parameter-address", "int*f(int&n){static int*p=&n;return p;}"},
+      {"conditional-record", "struct R{int n;R(int x):n(x){}};const R&f(bool b,int n){static const R r=b?R(n):R(n+1);return r;}"},
+      {"array-records", "struct R{int n;R(int x):n(x){}};const R*f(int n){static const R a[2]={R(n),R(n+1)};return a;}"},
+      {"nested-arrays", "const int(*f(int n))[2]{static const int a[2][2]={{n,n+1},{n+2,n+3}};return a;}"},
+      {"switch", "int f(int n){switch(n){case 0:static const int value=n+2;return value;default:return 0;}}"},
+      {"nonterminating-initializer", "int forever(){for(;;){}}int f(){static int n=forever();return n;}"},
+      {"const-callback", "int add(int n){return n+1;}using F=int(*)(int);F select(){return add;}int f(int n){static F const callback=select();return callback(n);}"},
+      {"constructor-escape", "struct R;R*alias;struct R{int n;R(int v):n(v){alias=this;}};const R&f(int n){static const R r(n);return r;}"},
+      {"runtime-source", "int calls=0,drops=0;\nint seed(int n){++calls;return n;}\nint&scalar(int n){static int value=seed(n);return value;}\nint capture(bool first){int n;if(first)n=9;static const int value=seed(n);return value;}\nint zero(){static int n=n+4;return n;}\nconst int*array(int n){static const int values[3]={seed(n),values[0]+1,0};return values;}\nstruct Record{int n;const Record*self;Record(int v):n(seed(v)),self(this){}};\nRecord make(int n){return Record(n);}\nconst Record&record(int n){static const Record value=make(n);return value;}\nstruct Temp{int n;~Temp(){++drops;}};\nint take(const Temp&t){return seed(t.n);}\nint temporary(int n){static int value=take(Temp{n});return value;}\ntemplate<class T>int instance(int n){static int value=seed(n);return value;}\nstruct Method{int n;int get(){static int value=seed(n);return value;}};\nint inner(int n){static int value=seed(n);return value;}\nint outer(int n){static int value=inner(n)+1;return value;}\nusing Callback=int(*)(int);\nCallback choose(){++calls;return seed;}\nint callback(int n){static Callback const f=choose();return f(n);}\nusing Null=decltype(nullptr);\nNull nullFactory(){++calls;return nullptr;}\nNull nullValue(){static Null n=nullFactory();return n;}\nfloat floating(float n){static const float value=n;return value;}\nint branch(bool b){if(b){static int n=seed(8);return n;}return 0;}\nint loop(){int sum=0;for(int i=0;i<3;++i){static int n=seed(i+2);sum+=n;}return sum;}\nint main(){\n if(calls||drops)return 1;\n if(branch(false)||calls)return 2;\n if(scalar(3)!=3||scalar(9)!=3||calls!=1)return 3;\n scalar(8)=4;if(scalar(7)!=4||calls!=1)return 4;\n calls=0;\n if(capture(true)!=9||capture(false)!=9||calls!=1)return 5;\n if(zero()!=4||zero()!=4)return 6;\n calls=0;\n const int*a=array(5);if(a[0]!=5||a[1]!=6||a[2]||array(9)!=a||calls!=1)return 7;\n calls=0;\n const Record&r=record(7);if(r.n!=7||r.self!=&r||&record(9)!=&r||calls!=1)return 8;\n calls=0;\n if(temporary(6)!=6||drops!=1||temporary(9)!=6||drops!=1||calls!=1)return 9;\n calls=0;\n if(instance<int>(3)!=3||instance<unsigned>(4)!=4||instance<int>(9)!=3||calls!=2)return 10;\n calls=0;\n Method one{3},two{4};if(one.get()!=3||two.get()!=3||calls!=1)return 11;\n calls=0;\n if(outer(5)!=6||outer(9)!=6||inner(8)!=5||calls!=1)return 12;\n calls=0;\n if(callback(3)!=3||calls!=2||callback(4)!=4||calls!=3)return 13;\n calls=0;\n if(nullValue()!=nullptr||nullValue()!=nullptr||calls!=1)return 14;\n if(floating(1.5f)!=1.5f||floating(2.5f)!=1.5f)return 15;\n calls=0;\n if(branch(true)!=8||branch(true)!=8||calls!=1)return 16;\n calls=0;\n if(loop()!=6||loop()!=6||calls!=1)return 17;\n return 0;\n}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dynamic-static-" + Name + ".cpp");
+    const auto Output = tmpFile("dynamic-static-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DynamicStaticLocalsPreserveInitializationAndCleanup) {
+  const auto Source = tmpFile("dynamic-static-runtime.cpp");
+  const auto Output = tmpFile("dynamic-static-runtime.nc");
+  writeFile(Source, R"cpp(int calls=0,drops=0;
+int seed(int n){++calls;return n;}
+int&scalar(int n){static int value=seed(n);return value;}
+int capture(bool first){int n;if(first)n=9;static const int value=seed(n);return value;}
+int zero(){static int n=n+4;return n;}
+const int*array(int n){static const int values[3]={seed(n),values[0]+1,0};return values;}
+struct Record{int n;const Record*self;Record(int v):n(seed(v)),self(this){}};
+Record make(int n){return Record(n);}
+const Record&record(int n){static const Record value=make(n);return value;}
+struct Temp{int n;~Temp(){++drops;}};
+int take(const Temp&t){return seed(t.n);}
+int temporary(int n){static int value=take(Temp{n});return value;}
+template<class T>int instance(int n){static int value=seed(n);return value;}
+struct Method{int n;int get(){static int value=seed(n);return value;}};
+int inner(int n){static int value=seed(n);return value;}
+int outer(int n){static int value=inner(n)+1;return value;}
+using Callback=int(*)(int);
+Callback choose(){++calls;return seed;}
+int callback(int n){static Callback const f=choose();return f(n);}
+using Null=decltype(nullptr);
+Null nullFactory(){++calls;return nullptr;}
+Null nullValue(){static Null n=nullFactory();return n;}
+float floating(float n){static const float value=n;return value;}
+int branch(bool b){if(b){static int n=seed(8);return n;}return 0;}
+int loop(){int sum=0;for(int i=0;i<3;++i){static int n=seed(i+2);sum+=n;}return sum;}
+int main(){
+ if(calls||drops)return 1;
+ if(branch(false)||calls)return 2;
+ if(scalar(3)!=3||scalar(9)!=3||calls!=1)return 3;
+ scalar(8)=4;if(scalar(7)!=4||calls!=1)return 4;
+ calls=0;
+ if(capture(true)!=9||capture(false)!=9||calls!=1)return 5;
+ if(zero()!=4||zero()!=4)return 6;
+ calls=0;
+ const int*a=array(5);if(a[0]!=5||a[1]!=6||a[2]||array(9)!=a||calls!=1)return 7;
+ calls=0;
+ const Record&r=record(7);if(r.n!=7||r.self!=&r||&record(9)!=&r||calls!=1)return 8;
+ calls=0;
+ if(temporary(6)!=6||drops!=1||temporary(9)!=6||drops!=1||calls!=1)return 9;
+ calls=0;
+ if(instance<int>(3)!=3||instance<unsigned>(4)!=4||instance<int>(9)!=3||calls!=2)return 10;
+ calls=0;
+ Method one{3},two{4};if(one.get()!=3||two.get()!=3||calls!=1)return 11;
+ calls=0;
+ if(outer(5)!=6||outer(9)!=6||inner(8)!=5||calls!=1)return 12;
+ calls=0;
+ if(callback(3)!=3||calls!=2||callback(4)!=4||calls!=3)return 13;
+ calls=0;
+ if(nullValue()!=nullptr||nullValue()!=nullptr||calls!=1)return 14;
+ if(floating(1.5f)!=1.5f||floating(2.5f)!=1.5f)return 15;
+ calls=0;
+ if(branch(true)!=8||branch(true)!=8||calls!=1)return 16;
+ calls=0;
+ if(loop()!=6||loop()!=6||calls!=1)return 17;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_NE(readFile(Output).find("nct_emit_static_enter"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("dynamic-static-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DynamicStaticLocalsSynchronizeConcurrentReaders) {
+  const auto Source = tmpFile("dynamic-static-threads.cpp");
+  const auto Output = tmpFile("dynamic-static-threads.nc");
+  writeFile(Source, R"cpp(int constructions=0,destructions=0;
+struct Temporary{int n;~Temporary(){++destructions;}};
+struct Record{
+ int first,last;const Record*self;
+ Record(const Temporary&t):first(t.n),last(t.n+1),self(this){++constructions;}
+};
+const Record&value(){static const Record r{Temporary{41}};return r;}
+extern "C" int read_value(){const Record&r=value();return r.first==41&&r.last==42&&r.self==&r&&destructions==1?0:1;}
+extern "C" int initialization_count(){return constructions;}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  // The harness is ordinary C23; C++ translation never consumes platform headers.
+  const auto Harness = tmpFile("dynamic-static-threads.c");
+  writeFile(Harness, R"c(#ifdef _WIN32
+#include <windows.h>
+typedef HANDLE Thread;
+#define WORKER_RESULT DWORD WINAPI
+#define WORKER_ARGUMENT LPVOID
+#else
+#include <pthread.h>
+#include <unistd.h>
+typedef pthread_t Thread;
+#define WORKER_RESULT void *
+#define WORKER_ARGUMENT void *
+#endif
+int read_value(void);
+int initialization_count(void);
+static _Atomic(unsigned int) ready;
+static int results[16];
+static WORKER_RESULT worker(WORKER_ARGUMENT argument){
+ int *result=argument;
+ while(!__c11_atomic_load(&ready,__ATOMIC_ACQUIRE)){}
+ *result=0;
+ for(int i=0;i<2000;++i)*result|=read_value();
+ return 0;
+}
+int main(void){
+ Thread threads[16];int count=0;
+#ifndef _WIN32
+ alarm(30);
+#endif
+ if(initialization_count())return 23;
+ for(;count<16;++count){
+#ifdef _WIN32
+  threads[count]=CreateThread(0,0,worker,&results[count],0,0);
+  if(!threads[count])break;
+#else
+  if(pthread_create(&threads[count],0,worker,&results[count]))break;
+#endif
+ }
+ __c11_atomic_store(&ready,1u,__ATOMIC_RELEASE);
+ for(int i=0;i<count;++i){
+#ifdef _WIN32
+  if(WaitForSingleObject(threads[i],30000)!=WAIT_OBJECT_0)return 20;
+  CloseHandle(threads[i]);
+#else
+  if(pthread_join(threads[i],0))return 20;
+#endif
+ }
+ if(count!=16)return 21;
+ for(int i=0;i<16;++i)if(results[i])return 22;
+ return initialization_count()!=1;
+}
+)c");
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("dynamic-static-threads" + Optimization);
+    std::vector<std::string> Extra{Harness.string()};
+    if (!isWindows())
+      Extra.push_back("-pthread");
+    auto Build = compileGenerated(Output, Executable, Optimization, Extra);
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    // Inspect machine assembly: outlining is introduced after LLVM IR emission.
+    const auto Assembly = tmpFile("dynamic-static-threads" + Optimization + ".s");
+    auto Emit = compileGenerated(Output, Assembly, Optimization, {"-S"});
+    ASSERT_EQ(Emit.exitCode, 0) << Emit.out << Emit.err;
+    const auto Text = readFile(Assembly);
+    EXPECT_EQ(Text.find("__aarch64_cas"), std::string::npos);
+    EXPECT_EQ(Text.find("__atomic_"), std::string::npos);
+    EXPECT_EQ(Text.find("__cxa_guard"), std::string::npos);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DynamicStaticLocalsRetainSourceAndLifetimeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"throw", "int make(){throw 1;}int f(){static int n=make();return n;}", "TR0201"},
+      {"destruction", "struct R{R(int){}~R(){}};void f(int n){static R r(n);}", "TR0201"},
+      {"dynamic-reference", "int seed(){return 3;}int f(){static const int&r=seed();return r;}", "TR0201"},
+      {"hidden-source", "int seed(){return 3;}int f(){static int n=(static_cast<void>(sizeof(long double)),seed());return n;}", "TR0201"},
+      {"unowned-call", "extern int seed();int f(){static int n=seed();return n;}", "TR0203"},
+      {"const-write", "int f(int v){static const int n=v;return ++n;}", "TR0202"},
+      {"const-cast", "int*f(int v){static const int n=v;return const_cast<int*>(&n);}", "TR0201"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("dynamic-static-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("dynamic-static-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StaticLocalsRetainInitializationAndLanguageBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"dynamic-call", "int seed(){return 3;}int f(){static int n=seed();return n;}", "TR0201"},
-      {"dynamic-parameter", "int f(int p){static int n=p;return n;}", "TR0201"},
-      {"dynamic-global", "int value=3;int f(){static int n=value;return n;}", "TR0201"},
-      {"dynamic-self", "int f(){static int n=n;return n;}", "TR0201"},
-      {"unused-dynamic", "int seed(){return 3;}void f(){static int unused=seed();}", "TR0201"},
-      {"skipped-dynamic", "int seed(){return 3;}void f(){if(false){static int unused=seed();}}", "TR0201"},
       {"folded-float", "int f(){static int n=static_cast<int>(1.0L);return n;}", "TR0201"},
       {"folded-body", "constexpr int seed(){return static_cast<int>(1.0L);}int f(){static int n=seed();return n;}", "TR0201"},
       {"tls", "int f(){thread_local int n=3;return n;}", "TR0201"},
@@ -8761,9 +8977,6 @@ TEST_F(TranslateTest, CoreV2StaticPointersRetainConstantAddressAndSourceRequirem
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"global-runtime-call", "int n;int*get(){return &n;}int*p=get();", "TR0201"},
       {"global-runtime-load", "int n;int*q=&n;int*p=q;", "TR0201"},
-      {"local-parameter", "int*f(int*n){static int*p=n;return p;}", "TR0201"},
-      {"local-automatic-address", "int*f(){int n=3;static int*p=&n;return p;}", "TR0201"},
-      {"local-static-runtime-read", "int*f(){static int n=3;static int a[2]={n,0};return a;}", "TR0201"},
       {"global-heap", "int*p=new int(3);", "TR0201"},
       {"global-integer-address", "int*p=reinterpret_cast<int*>(1);", "TR0201"},
       {"global-past-extent", "int a[2];int*p=a+3;", "TR0201"},
@@ -8945,7 +9158,6 @@ TEST_F(TranslateTest, CoreV2StaticArraysAcceptSourceComposition) {
 TEST_F(TranslateTest, CoreV2StaticArraysRetainInitializationAndSourceRequirements) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"dynamic-global", "int value(){return 1;}int a[2]={value(),2};", "TR0201"},
-      {"dynamic-local", "int*f(int n){static int a[2]={n,2};return a;}", "TR0201"},
       {"dynamic-member", "int value(){return 1;}struct R{inline static int a[2]={value(),2};};", "TR0201"},
       {"dynamic-template", "int value(){return 1;}template<class T>inline int a[2]={value(),2};int*f(){return a<int>;}", "TR0201"},
       {"local-destructor", "struct R{int n;~R(){}};R*f(){static R a[2]={{1},{2}};return a;}", "TR0201"},
@@ -9362,7 +9574,6 @@ TEST_F(TranslateTest, CoreV2FloatingValuesRetainSourceRestrictions) {
       {"extended-static-pattern", "template<class T>struct R{inline static long double n=1.0L;};", "TR0201"},
       {"extended-variable-pattern", "template<class T>inline long double n=1.0L;", "TR0201"},
       {"volatile", "float f(volatile float&n){return n;}", "TR0201"},
-      {"dynamic-static", "float f(float n){static float value=n;return value;}", "TR0201"},
       {"dynamic-global", "float seed(){return 1.5f;}float value=seed();", "TR0201"},
       {"complex", "_Complex double value;", "TR0201"},
       {"source-fp-pragma", "#pragma STDC FP_CONTRACT ON\nfloat f(float a,float b,float c){return a*b+c;}", "TR0201"},
@@ -10070,7 +10281,6 @@ TEST_F(TranslateTest, CoreV2NullPtrValuesRetainSourceBoundaries) {
       {"volatile", "using N=decltype(nullptr);void f(){volatile N n=nullptr;}", "TR0201"},
       {"tls", "using N=decltype(nullptr);thread_local N n;", "TR0201"},
       {"dynamic-global", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N n=f();", "TR0201"},
-      {"dynamic-static", "using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N g(){static N n=f();return n;}", "TR0201"},
       {"dynamic-member", "using N=decltype(nullptr);N f(){return nullptr;}struct R{inline static N n=f();};", "TR0201"},
       {"dynamic-template", "using N=decltype(nullptr);N f(){return nullptr;}template<class T>inline N n=f();int main(){return n<int> != nullptr;}", "TR0201"},
       {"hidden-decltype", "using N=decltype((sizeof(long double),nullptr));", "TR0201"},
@@ -13143,7 +13353,6 @@ TEST_F(TranslateTest, CoreV2TemplateSourceRepairsRetainWrittenSourceBoundaries) 
       {"local-unused-body", "template<class T>int f(){struct R{int get(){return 3;}int unused(){return int(1.0L);}};R r;return r.get();}int g(){return f<int>();}"},
       {"local-noexcept-body", "template<class T>int f(){struct R{int get()noexcept(sizeof(long double)>0){return 3;}};R r;return r.get();}int g(){return f<int>();}"},
       {"local-field-type", "template<class T>int f(){struct R{long double n;int get(){return 3;}};R r{};return r.get();}int g(){return f<int>();}"},
-      {"local-dynamic-static", "template<class T>int f(int x){struct R{int get(int n){static int value=n;return value;}};R r;return r.get(x);}int g(){return f<int>(3);}"},
       {"local-virtual", "template<class T>int f(){struct R{virtual int get(){return 3;}};R r;return r.get();}int g(){return f<int>();}"},
       {"directive-floating-cast", "template<int N>int f(){return N;}template int f<static_cast<int>(1.0L)>();"},
       {"directive-floating-size", "template<int N>int f(){return N;}template int f<sizeof(long double)>();"},
@@ -14247,7 +14456,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateMethodsRetainSourceAndDefinitionBoundar
       {"variadic", "template<class T>struct R{int f(int v,...){return v;}};", "TR0201"},
       {"volatile", "template<class T>struct R{int f()volatile{return 1;}};", "TR0201"},
       {"bases", "struct B{int n;};template<class T>struct R:B{int f(){return n;}};", "TR0201"},
-      {"dynamic-static", "template<class T>struct R{static int f(int v){static int n=v;return n;}};int main(){return R<int>::f(3);}", "TR0201"},
       {"private-call", "template<class T>struct R{T n;private:T f(){return n;}};int main(){R<int>r{3};return r.f();}", "TR0202"},
       {"const-mutation", "template<class T>struct R{T n;void f()const{++n;}};int main(){R<int>r{3};r.f();}", "TR0202"},
       {"wrong-ref-qualifier", "template<class T>struct R{T n;T f()&{return n;}};int main(){return R<int>{3}.f();}", "TR0202"},
@@ -14775,7 +14983,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"specialization-unsupported-body", "template<class T>int f(T n){return n;}template<>int f<int>(int n){long double x=1.0L;return n;}", "TR0201"},
       {"runtime-dead-body", "template<class T>int f(T n){if(false){long double x=1.0L;}return n;}int main(){return f(1);}", "TR0201"},
       {"allocation", "template<class T>T* f(){return new T{};}int main(){return *f<int>();}", "TR0201"},
-      {"dynamic-static", "int value=1;template<class T>int f(){static int n=value;return n;}int main(){return f<int>();}", "TR0201"},
       {"constexpr-static", "template<class T>constexpr int f(){static int n=1;return n;}int main(){return f<int>();}", "TR0201"},
       {"attribute", "template<class T>[[nodiscard]]T f(T v){return v;}", "TR0201"},
       {"parameter-attribute", "template<class T>T f([[maybe_unused]]T v){return v;}", "TR0201"},

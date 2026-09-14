@@ -112,6 +112,8 @@ bool expectedCarrierLayout(VerificationContext &Context, Diagnostics &D,
       Context.ExpectedUIntPtrBits = Target->getTypeWidth(UIntPtr);
   }
   Context.LittleEndian = Target->isLittleEndian();
+  Context.HasLockFreeIntAtomics = Target->getIntWidth() == 32 &&
+      Target->hasBuiltinAtomic(32, Target->getIntAlign());
   Context.ExpectedCarrierLayout = Layout;
   return true;
 }

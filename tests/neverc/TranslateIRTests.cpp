@@ -107,6 +107,7 @@ VerificationContext context(const Module &M) {
     C.ExpectedCarrierLayout = x64CarrierLayout();
     C.ExpectedPtrDiffBits = 64;
     C.ExpectedUIntPtrBits = 64;
+    C.HasLockFreeIntAtomics = true;
   }
   return C;
 }
@@ -1189,6 +1190,166 @@ TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
     M.Functions[0].Result = Value.ValueType;
     M.Functions[0].Body.back() = ret(Value);
     invalid(M);
+  }
+}
+
+namespace {
+Module dynamicStaticModule() {
+  auto M = module(true);
+  M.Globals.push_back({"nct_static", intType(), literal("0"), InputLoc, false, true});
+  auto &F = M.Functions[0];
+  F.Params.push_back({"nct_argument", intType(), InputLoc});
+  Instruction Begin, Store, End, Jump;
+  Begin.Op = InstructionKind::StaticInitBegin;
+  Begin.GlobalName = "nct_static";
+  Begin.TrueLabel = "nct_initialize";
+  Begin.FalseLabel = "nct_ready";
+  Store.Op = InstructionKind::Assign;
+  Store.Target = variable("nct_static");
+  Store.Value = variable("nct_argument");
+  End.Op = InstructionKind::StaticInitEnd;
+  End.GlobalName = "nct_static";
+  Jump.Op = InstructionKind::Jump;
+  Jump.Label = "nct_ready";
+  Begin.Loc = Store.Loc = End.Loc = Jump.Loc = InputLoc;
+  F.Body = {label(), Begin, label("nct_initialize"), Store, End, Jump,
+            label("nct_ready"), ret(variable("nct_static"))};
+  return M;
+}
+} // namespace
+
+TEST(TranslateIR, CoreV2DynamicStaticStorageRequiresIndependentAtomicEvidence) {
+  auto M = dynamicStaticModule();
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static int nct_static = (0);"), std::string::npos);
+  EXPECT_EQ(Output.Text.find("static const int nct_static"), std::string::npos);
+  EXPECT_NE(Output.Text.find("__NEVERC_ATOMIC_INT_LOCK_FREE == 2"), std::string::npos);
+  EXPECT_NE(Output.Text.find("target(\"no-outline-atomics\"), noinline"), std::string::npos);
+  EXPECT_NE(Output.Text.find("1u, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE"), std::string::npos);
+  EXPECT_NE(Output.Text.find(", 2u, __ATOMIC_RELEASE)"), std::string::npos);
+  auto C = context(M);
+  C.HasLockFreeIntAtomics = false;
+  EXPECT_FALSE(verifyModule(M, C, D));
+  Output.Text = "unchanged";
+  EXPECT_FALSE(emitNC(M, C, Output, D));
+  EXPECT_EQ(Output.Text, "unchanged");
+  auto Bad = M;
+  Bad.Globals[0].Value = literal("1");
+  invalid(Bad, "initializer");
+  Bad = M;
+  Bad.Profile = "cpp-core-v1";
+  Bad.Target.Carriers.reset();
+  invalid(Bad, "core v2");
+  // A declaration eliminated as dead code can still retain its zero storage.
+  M.Functions[0].Body = {label(), ret(literal("0"))};
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  for (bool Single : {false, true}) {
+    auto T = Type{Single ? TypeKind::Float : TypeKind::Double, {}};
+    M.Globals[0].ValueType = T;
+    M.Globals[0].Value = literal({}, T);
+    EXPECT_TRUE(verifyModule(M, context(M), D));
+    M.Globals[0].Value.Binary64Bits = Single ? UINT64_C(0x80000000)
+                                           : UINT64_C(0x8000000000000000);
+    invalid(M, "initializer");
+  }
+}
+
+TEST(TranslateIR, CoreV2DynamicStaticOwnershipRejectsForgedControlFlowAndWrites) {
+  auto M = dynamicStaticModule();
+  auto Bad = M;
+  Bad.Functions[0].Body[1].FalseLabel = "nct_initialize";
+  invalid(Bad, "ownership");
+  Bad = M;
+  Bad.Functions[0].Body[1].TrueLabel = "nct_ready";
+  invalid(Bad, "ownership");
+  Bad = M;
+  Bad.Functions[0].Body[1].GlobalName = "nct_missing";
+  invalid(Bad, "dynamic global");
+  Bad = M;
+  Bad.Functions[0].Body.erase(Bad.Functions[0].Body.begin() + 4);
+  invalid(Bad, "ownership");
+  Bad = M;
+  Bad.Functions[0].Body[4] = ret(literal("0"));
+  invalid(Bad, "unfinished");
+  Bad = M;
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.begin() + 7,
+                               Bad.Functions[0].Body[3]);
+  invalid(Bad, "not writable");
+  Bad = M;
+  Bad.Functions[0].Result = pointerType(intType());
+  Bad.Functions[0].Body.back() = ret(pointerExpr(
+      ExprKind::Address, pointerType(intType()), {variable("nct_static")}));
+  invalid(Bad, "not writable");
+  Bad.Functions[0].Result.PointeeConst = true;
+  Bad.Functions[0].Body.back().Value->ValueType.PointeeConst = true;
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(Bad, context(Bad), D));
+  Bad = M;
+  Bad.Functions.push_back(Bad.Functions[0]);
+  Bad.Functions.back().Name = "second";
+  invalid(Bad, "more than one initialization site");
+  Bad = M;
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.begin() + 5,
+                               Bad.Functions[0].Body[4]);
+  invalid(Bad, "more than one publication site");
+  Bad = M;
+  Bad.Functions[0].Body.back().GlobalName = "nct_static";
+  invalid(Bad, "guard identity");
+  Bad = M;
+  Bad.Functions[0].Body[1].Value = literal("1");
+  invalid(Bad, "exact operands");
+  Bad = M;
+  Bad.Functions[0].Body[4].TrueLabel = "nct_ready";
+  invalid(Bad, "exact operands");
+  Bad = M;
+  Bad.Globals.push_back({"nct_other", intType(), literal("0"), InputLoc, false, true});
+  Bad.Functions[0].Body[4].GlobalName = "nct_other";
+  invalid(Bad, "declaring function");
+  Bad = M;
+  Bad.Globals.push_back({"nct_other", intType(), literal("0"), InputLoc, false, true});
+  auto Nested = Bad.Functions[0].Body[1];
+  Nested.GlobalName = "nct_other";
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.begin() + 3, Nested);
+  invalid(Bad, "cannot nest");
+  // Permanent nontermination retains ownership; it never falsely publishes.
+  auto Loop = M.Functions[0].Body[5];
+  Loop.Label = "nct_initialize";
+  M.Functions[0].Body.erase(M.Functions[0].Body.begin() + 4);
+  M.Functions[0].Body[4] = Loop;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+}
+
+TEST(TranslateIR, CoreV2DynamicStaticProtocolRejectsMissingOrForeignPayloads) {
+  const auto Location = R"json({"file":"input.cpp","line":1,"column":1})json";
+  const auto Global = std::string(R"json({"name":"nct_static","type":"int","dynamic_initialization":true,"loc":)json") +
+      Location + R"json(,"value":{"kind":"literal","type":"int","value":"0","loc":)json" + Location + "}}";
+  for (const auto &Op : {
+       R"json({"op":"static_init_begin","global":"nct_static","true":"nct_entry","false":"nct_entry",)json",
+       R"json({"op":"static_init_end","global":"nct_static",)json"}) {
+    auto Wire = wireModule(true);
+    replaceOnce(Wire, "\"globals\": []", "\"globals\": [" + Global + "]");
+    auto At = Wire.find("\"body\": [") + std::string("\"body\": [").size();
+    const auto Instruction = std::string(Op) + "\"loc\":" + Location + "},";
+    Wire.insert(At, Instruction);
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(Wire, M, D));
+    EXPECT_TRUE(M.Globals[0].DynamicInitialization);
+    EXPECT_EQ(M.Functions[0].Body[0].GlobalName, "nct_static");
+    for (const auto &Extra : {"\"value\":{},", "\"target\":{},", "\"args\":[],",
+                              "\"callee\":\"nct_other\","}) {
+      auto Bad = Wire;
+      Bad.insert(At + 1, Extra);
+      EXPECT_FALSE(parseModule(Bad, M, D));
+    }
+    auto Bad = Wire;
+    replaceOnce(Bad, "\"global\":\"nct_static\",", "");
+    EXPECT_FALSE(parseModule(Bad, M, D));
+    Bad = Wire;
+    replaceOnce(Bad, "\"dynamic_initialization\":true", "\"dynamic_initialization\":false");
+    EXPECT_FALSE(parseModule(Bad, M, D));
   }
 }
 

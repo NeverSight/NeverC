@@ -5141,13 +5141,67 @@ int*address(){return &state();}
     }
     for name, source in static_locals_positive.items():
         check("v2-static-locals-positive-" + name, source, profile="cpp-core-v2")
+    dynamic_static_positive = {
+        'promoted-1': 'int seed(){return 3;}int f(){static int n=seed();return n;}',
+        'promoted-2': 'int f(int p){static int n=p;return n;}',
+        'promoted-3': 'int value=3;int f(){static int n=value;return n;}',
+        'promoted-4': 'int f(){static int n=n;return n;}',
+        'promoted-5': 'int seed(){return 3;}void f(){static int unused=seed();}',
+        'promoted-6': 'int seed(){return 3;}void f(){if(false){static int unused=seed();}}',
+        'promoted-7': 'int*f(int n){static int a[2]={n,2};return a;}',
+        'promoted-8': 'float f(float n){static float value=n;return value;}',
+        'promoted-9': 'using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N g(){static N n=f();return n;}',
+        'promoted-10': 'template<class T>int f(int x){struct R{int get(int n){static int value=n;return value;}};R r;return r.get(x);}int g(){return f<int>(3);}',
+        'promoted-11': 'template<class T>struct R{static int f(int v){static int n=v;return n;}};int main(){return R<int>::f(3);}',
+        'promoted-12': 'int value=1;template<class T>int f(){static int n=value;return n;}int main(){return f<int>();}',
+        'promoted-13': 'int*f(int*n){static int*p=n;return p;}',
+        'promoted-14': 'int*f(){int n=3;static int*p=&n;return p;}',
+        'promoted-15': 'int*f(){static int n=3;static int a[2]={n,0};return a;}',
+        'dead-after-return': 'int seed(){return 3;}int f(){return 0;static const int unused=seed();}',
+        'dead-constexpr-arm': 'int seed(){return 3;}int f(){if constexpr(false){static int n=seed();}return 0;}',
+        'parameter-address': 'int*f(int&n){static int*p=&n;return p;}',
+        'conditional-record': 'struct R{int n;R(int x):n(x){}};const R&f(bool b,int n){static const R r=b?R(n):R(n+1);return r;}',
+        'array-records': 'struct R{int n;R(int x):n(x){}};const R*f(int n){static const R a[2]={R(n),R(n+1)};return a;}',
+        'nested-arrays': 'const int(*f(int n))[2]{static const int a[2][2]={{n,n+1},{n+2,n+3}};return a;}',
+        'switch': 'int f(int n){switch(n){case 0:static const int value=n+2;return value;default:return 0;}}',
+        'nonterminating-initializer': 'int forever(){for(;;){}}int f(){static int n=forever();return n;}',
+        'const-callback': 'int add(int n){return n+1;}using F=int(*)(int);F select(){return add;}int f(int n){static F const callback=select();return callback(n);}',
+        'constructor-escape': 'struct R;R*alias;struct R{int n;R(int v):n(v){alias=this;}};const R&f(int n){static const R r(n);return r;}',
+        'runtime-source': 'int calls=0,drops=0;\nint seed(int n){++calls;return n;}\nint&scalar(int n){static int value=seed(n);return value;}\nint capture(bool first){int n;if(first)n=9;static const int value=seed(n);return value;}\nint zero(){static int n=n+4;return n;}\nconst int*array(int n){static const int values[3]={seed(n),values[0]+1,0};return values;}\nstruct Record{int n;const Record*self;Record(int v):n(seed(v)),self(this){}};\nRecord make(int n){return Record(n);}\nconst Record&record(int n){static const Record value=make(n);return value;}\nstruct Temp{int n;~Temp(){++drops;}};\nint take(const Temp&t){return seed(t.n);}\nint temporary(int n){static int value=take(Temp{n});return value;}\ntemplate<class T>int instance(int n){static int value=seed(n);return value;}\nstruct Method{int n;int get(){static int value=seed(n);return value;}};\nint inner(int n){static int value=seed(n);return value;}\nint outer(int n){static int value=inner(n)+1;return value;}\nusing Callback=int(*)(int);\nCallback choose(){++calls;return seed;}\nint callback(int n){static Callback const f=choose();return f(n);}\nusing Null=decltype(nullptr);\nNull nullFactory(){++calls;return nullptr;}\nNull nullValue(){static Null n=nullFactory();return n;}\nfloat floating(float n){static const float value=n;return value;}\nint branch(bool b){if(b){static int n=seed(8);return n;}return 0;}\nint loop(){int sum=0;for(int i=0;i<3;++i){static int n=seed(i+2);sum+=n;}return sum;}\nint main(){\n if(calls||drops)return 1;\n if(branch(false)||calls)return 2;\n if(scalar(3)!=3||scalar(9)!=3||calls!=1)return 3;\n scalar(8)=4;if(scalar(7)!=4||calls!=1)return 4;\n calls=0;\n if(capture(true)!=9||capture(false)!=9||calls!=1)return 5;\n if(zero()!=4||zero()!=4)return 6;\n calls=0;\n const int*a=array(5);if(a[0]!=5||a[1]!=6||a[2]||array(9)!=a||calls!=1)return 7;\n calls=0;\n const Record&r=record(7);if(r.n!=7||r.self!=&r||&record(9)!=&r||calls!=1)return 8;\n calls=0;\n if(temporary(6)!=6||drops!=1||temporary(9)!=6||drops!=1||calls!=1)return 9;\n calls=0;\n if(instance<int>(3)!=3||instance<unsigned>(4)!=4||instance<int>(9)!=3||calls!=2)return 10;\n calls=0;\n Method one{3},two{4};if(one.get()!=3||two.get()!=3||calls!=1)return 11;\n calls=0;\n if(outer(5)!=6||outer(9)!=6||inner(8)!=5||calls!=1)return 12;\n calls=0;\n if(callback(3)!=3||calls!=2||callback(4)!=4||calls!=3)return 13;\n calls=0;\n if(nullValue()!=nullptr||nullValue()!=nullptr||calls!=1)return 14;\n if(floating(1.5f)!=1.5f||floating(2.5f)!=1.5f)return 15;\n calls=0;\n if(branch(true)!=8||branch(true)!=8||calls!=1)return 16;\n calls=0;\n if(loop()!=6||loop()!=6||calls!=1)return 17;\n return 0;\n}\n',
+    }
+    for name, source in dynamic_static_positive.items():
+        check("v2-dynamic-static-" + name, source, profile="cpp-core-v2")
+    dynamic_source = "int seed(int n){return n+1;}int f(int n){static const int value=seed(n);return value;}"
+    dynamic_module = check("v2-dynamic-static-protocol", dynamic_source, profile="cpp-core-v2")
+    dynamic_globals = [g for g in dynamic_module["globals"] if g.get("dynamic_initialization")]
+    assert len(dynamic_globals) == 1 and dynamic_globals[0]["value"]["value"] == "0"
+    assert not dynamic_globals[0].get("mutable", False)
+    dynamic_name = dynamic_globals[0]["name"]
+    begins = [(f, i) for f in dynamic_module["functions"] for i in f["body"] if i["op"] == "static_init_begin"]
+    ends = [(f, i) for f in dynamic_module["functions"] for i in f["body"] if i["op"] == "static_init_end"]
+    assert len(begins) == len(ends) == 1 and begins[0][0] is ends[0][0]
+    owner, begin = begins[0]
+    assert begin["global"] == ends[0][1]["global"] == dynamic_name
+    assert begin["true"] != begin["false"]
+    body = owner["body"]
+    assert body.index(begin) < next(n for n,i in enumerate(body) if i["op"] == "call") < body.index(ends[0][1])
+    with tempfile.TemporaryDirectory(prefix="neverc-dynamic-static-relocated-") as temp:
+        relocated = check("v2-dynamic-static-relocated", dynamic_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == dynamic_module
+
+    dynamic_static_reject = {
+        'throw': ('int make(){throw 1;}int f(){static int n=make();return n;}', 'TR0201'),
+        'destruction': ('struct R{R(int){}~R(){}};void f(int n){static R r(n);}', 'TR0201'),
+        'dynamic-reference': ('int seed(){return 3;}int f(){static const int&r=seed();return r;}', 'TR0201'),
+        'hidden-source': ('int seed(){return 3;}int f(){static int n=(static_cast<void>(sizeof(long double)),seed());return n;}', 'TR0201'),
+        'unowned-call': ('extern int seed();int f(){static int n=seed();return n;}', 'TR0203'),
+        'const-write': ('int f(int v){static const int n=v;return ++n;}', 'TR0202'),
+        'const-cast': ('int*f(int v){static const int n=v;return const_cast<int*>(&n);}', 'TR0201'),
+    }
+    for name, (source, diagnostic) in dynamic_static_reject.items():
+        check("v2-dynamic-static-reject-" + name, source, diagnostic, profile="cpp-core-v2")
+
     static_locals_reject = {
-        'dynamic-call': 'int seed(){return 3;}int f(){static int n=seed();return n;}',
-        'dynamic-parameter': 'int f(int p){static int n=p;return n;}',
-        'dynamic-global': 'int value=3;int f(){static int n=value;return n;}',
-        'dynamic-self': 'int f(){static int n=n;return n;}',
-        'unused-dynamic': 'int seed(){return 3;}void f(){static int unused=seed();}',
-        'skipped-dynamic': 'int seed(){return 3;}void f(){if(false){static int unused=seed();}}',
         'folded-float': 'int f(){static int n=static_cast<int>(1.0L);return n;}',
         'folded-body': 'constexpr int seed(){return static_cast<int>(1.0L);}int f(){static int n=seed();return n;}',
         'tls': 'int f(){thread_local int n=3;return n;}',
@@ -9545,9 +9599,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     static_pointer_negative = {
         'global-runtime-call': ('int n;int*get(){return &n;}int*p=get();', 'TR0201'),
         'global-runtime-load': ('int n;int*q=&n;int*p=q;', 'TR0201'),
-        'local-parameter': ('int*f(int*n){static int*p=n;return p;}', 'TR0201'),
-        'local-automatic-address': ('int*f(){int n=3;static int*p=&n;return p;}', 'TR0201'),
-        'local-static-runtime-read': ('int*f(){static int n=3;static int a[2]={n,0};return a;}', 'TR0201'),
         'global-heap': ('int*p=new int(3);', 'TR0201'),
         'global-integer-address': ('int*p=reinterpret_cast<int*>(1);', 'TR0201'),
         'global-past-extent': ('int a[2];int*p=a+3;', 'TR0201'),
@@ -9668,7 +9719,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-static-array-positive-"+name, source, profile="cpp-core-v2")
     static_array_negative = {
         'dynamic-global': ('int value(){return 1;}int a[2]={value(),2};', 'TR0201'),
-        'dynamic-local': ('int*f(int n){static int a[2]={n,2};return a;}', 'TR0201'),
         'dynamic-member': ('int value(){return 1;}struct R{inline static int a[2]={value(),2};};', 'TR0201'),
         'dynamic-template': ('int value(){return 1;}template<class T>inline int a[2]={value(),2};int*f(){return a<int>;}', 'TR0201'),
         'local-destructor': ('struct R{int n;~R(){}};R*f(){static R a[2]={{1},{2}};return a;}', 'TR0201'),
@@ -9926,7 +9976,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'extended-static-pattern': ('template<class T>struct R{inline static long double n=1.0L;};', 'TR0201'),
         'extended-variable-pattern': ('template<class T>inline long double n=1.0L;', 'TR0201'),
         'volatile': ('float f(volatile float&n){return n;}', 'TR0201'),
-        'dynamic-static': ('float f(float n){static float value=n;return value;}', 'TR0201'),
         'dynamic-global': ('float seed(){return 1.5f;}float value=seed();', 'TR0201'),
         'complex': ('_Complex double value;', 'TR0201'),
         'source-fp-pragma': ('#pragma STDC FP_CONTRACT ON\nfloat f(float a,float b,float c){return a*b+c;}', 'TR0201'),
@@ -10253,7 +10302,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'volatile': ('using N=decltype(nullptr);void f(){volatile N n=nullptr;}', 'TR0201'),
         'tls': ('using N=decltype(nullptr);thread_local N n;', 'TR0201'),
         'dynamic-global': ('using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N n=f();', 'TR0201'),
-        'dynamic-static': ('using N=decltype(nullptr);int count=0;N f(){++count;return nullptr;}N g(){static N n=f();return n;}', 'TR0201'),
         'dynamic-member': ('using N=decltype(nullptr);N f(){return nullptr;}struct R{inline static N n=f();};', 'TR0201'),
         'dynamic-template': ('using N=decltype(nullptr);N f(){return nullptr;}template<class T>inline N n=f();int main(){return n<int> != nullptr;}', 'TR0201'),
         'hidden-decltype': ('using N=decltype((sizeof(long double),nullptr));', 'TR0201'),
@@ -12757,7 +12805,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'local-unused-body': 'template<class T>int f(){struct R{int get(){return 3;}int unused(){return int(1.0L);}};R r;return r.get();}int g(){return f<int>();}',
         'local-noexcept-body': 'template<class T>int f(){struct R{int get()noexcept(sizeof(long double)>0){return 3;}};R r;return r.get();}int g(){return f<int>();}',
         'local-field-type': 'template<class T>int f(){struct R{long double n;int get(){return 3;}};R r{};return r.get();}int g(){return f<int>();}',
-        'local-dynamic-static': 'template<class T>int f(int x){struct R{int get(int n){static int value=n;return value;}};R r;return r.get(x);}int g(){return f<int>(3);}',
         'local-virtual': 'template<class T>int f(){struct R{virtual int get(){return 3;}};R r;return r.get();}int g(){return f<int>();}',
         'directive-floating-cast': 'template<int N>int f(){return N;}template int f<static_cast<int>(1.0L)>();',
         'directive-floating-size': 'template<int N>int f(){return N;}template int f<sizeof(long double)>();',
@@ -13996,7 +14043,6 @@ int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;r
         'variadic': 'template<class T>struct R{int f(int v,...){return v;}};',
         'volatile': 'template<class T>struct R{int f()volatile{return 1;}};',
         'bases': 'struct B{int n;};template<class T>struct R:B{int f(){return n;}};',
-        'dynamic-static': 'template<class T>struct R{static int f(int v){static int n=v;return n;}};int main(){return R<int>::f(3);}',
     }
     for name, source in class_methods_reject.items():
         check("v2-class-methods-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
@@ -14541,7 +14587,6 @@ Plain chosenRecord(){return choose<false>();}
         'specialization-unsupported-body': 'template<class T>int f(T n){return n;}template<>int f<int>(int n){long double x=1.0L;return n;}',
         'runtime-dead-body': 'template<class T>int f(T n){if(false){long double x=1.0L;}return n;}int main(){return f(1);}',
         'allocation': 'template<class T>T* f(){return new T{};}int main(){return *f<int>();}',
-        'dynamic-static': 'int value=1;template<class T>int f(){static int n=value;return n;}int main(){return f<int>();}',
         'constexpr-static': 'template<class T>constexpr int f(){static int n=1;return n;}int main(){return f<int>();}',
         'attribute': 'template<class T>[[nodiscard]]T f(T v){return v;}',
         'parameter-attribute': 'template<class T>T f([[maybe_unused]]T v){return v;}',

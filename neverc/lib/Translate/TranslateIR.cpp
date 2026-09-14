@@ -385,6 +385,18 @@ public:
     std::string Op;
     if (!string(O, "op", Op) || !location(O, I.Loc))
       return false;
+    if (Op == "static_init_begin" || Op == "static_init_end") {
+      const bool Begin = Op == "static_init_begin";
+      I.Op = Begin ? InstructionKind::StaticInitBegin
+                   : InstructionKind::StaticInitEnd;
+      return (O.size() == (Begin ? 5u : 3u) &&
+              string(O, "global", I.GlobalName) &&
+              (!Begin || (string(O, "true", I.TrueLabel) &&
+                          string(O, "false", I.FalseLabel)))) ||
+             error("Static initialization requires only its object and branch destinations.");
+    }
+    if (O.get("global"))
+      return error("Global guard operands require static initialization operations.");
     if (Op != "indirect_call" && O.get("callable"))
       return error("Callable operands require an indirect call.");
     if (Op == "indirect_call") {
@@ -534,6 +546,12 @@ public:
                }) ||
         !array(O, "globals", M.Globals,
                [&](const auto &V, Global &G) {
+                 if (V.get("dynamic_initialization")) {
+                   if (M.Profile != "cpp-core-v2" ||
+                       !boolean(V, "dynamic_initialization", G.DynamicInitialization) ||
+                       !G.DynamicInitialization)
+                     return error("Dynamic initialization requires true core v2 evidence.");
+                 }
                  if (V.get("mutable")) {
                    if (M.Profile != "cpp-core-v2")
                      return error("Global mutability evidence requires core v2.");
@@ -657,6 +675,9 @@ class Verifier {
   std::map<std::string, bool> RecordHasArray;
   std::map<std::string, Type> Globals;
   std::set<std::string> MutableGlobals;
+  std::map<std::string, const Global *> DynamicGlobals;
+  std::set<std::string> StaticInitOwners;
+  const Global *InitializingGlobal = nullptr;
   std::map<std::string, const Function *> Functions;
   std::set<std::string> Symbols;
   std::set<std::string> Paths;
@@ -1122,7 +1143,9 @@ class Verifier {
               bool Write = true) {
     if (E.Kind == ExprKind::Var)
       return Storage.count(E.Name) ||
-             (Globals.count(E.Name) && (!Write || MutableGlobals.count(E.Name))) ||
+             (Globals.count(E.Name) && (!Write || MutableGlobals.count(E.Name) ||
+                                       (InitializingGlobal &&
+                                        E.Name == InitializingGlobal->Name))) ||
              error(E.Loc, "Global constants are not writable.");
     if (E.Kind == ExprKind::Member && E.Args.size() == 1)
       return lvalue(E.Args[0], Storage, Write);
@@ -1134,6 +1157,104 @@ class Verifier {
     return error(
         E.Loc,
         "Assignment target must be rooted in admitted mutable storage.");
+  }
+  // A grant is a CFG property, never a producer-supplied write permission.
+  // Mutable constructor pointers may escape; ordinary pointer qualifiers still
+  // govern their uses. This pass proves direct storage-root access only.
+  bool staticInitializerRegions(const Function &F,
+                                std::vector<const Global *> &Owners) {
+    std::map<std::string, std::size_t> Labels;
+    std::set<std::string> Begins, Ends;
+    for (std::size_t N = 0; N < F.Body.size(); ++N) {
+      const auto &I = F.Body[N];
+      if (I.Op == InstructionKind::Label)
+        Labels.emplace(I.Label, N);
+      const bool Begin = I.Op == InstructionKind::StaticInitBegin;
+      const bool End = I.Op == InstructionKind::StaticInitEnd;
+      if (!Begin && !End) {
+        if (!I.GlobalName.empty())
+          return error(I.Loc, "Global guard identity requires a static initialization operation.");
+        continue;
+      }
+      if (M.Profile != "cpp-core-v2" || !Context.HasLockFreeIntAtomics ||
+          !DynamicGlobals.count(I.GlobalName) || I.Target || I.Value ||
+          I.Condition || I.Callable || !I.Args.empty() || !I.Callee.empty() ||
+          !I.MappingID.empty() || !I.Label.empty() ||
+          (!Begin && (!I.TrueLabel.empty() || !I.FalseLabel.empty())))
+        return error(I.Loc, "Static initialization requires a dynamic global, native lock-free int atomics and exact operands.");
+      if (Begin) {
+        if (!Begins.insert(I.GlobalName).second ||
+            !StaticInitOwners.insert(I.GlobalName).second)
+          return error(I.Loc, "A dynamic global has more than one initialization site.");
+      } else if (!Ends.insert(I.GlobalName).second)
+        return error(I.Loc, "A dynamic global has more than one publication site.");
+    }
+    for (const auto &G : Ends)
+      if (!Begins.count(G))
+        return error(F.Loc, "Static initialization must be published by its declaring function.");
+    Owners.resize(F.Body.size());
+    if (Begins.empty())
+      return true;
+    std::vector<bool> Seen(F.Body.size());
+    std::vector<std::size_t> Work;
+    auto Enqueue = [&](std::size_t N, const Global *Owner,
+                       const SourceLocation &L) {
+      if (N == F.Body.size())
+        return !Owner || error(L, "Static initialization escapes without publication.");
+      if (Seen[N])
+        return Owners[N] == Owner ||
+               error(L, "Control-flow edges disagree about static initialization ownership.");
+      Seen[N] = true;
+      Owners[N] = Owner;
+      Work.push_back(N);
+      return true;
+    };
+    // Validate unreachable components from an empty ownership state as well.
+    // Source lowering removes unreachable blocks before producing this IR.
+    for (std::size_t Seed = 0; Seed < F.Body.size(); ++Seed) {
+      if (Seen[Seed])
+        continue;
+      Enqueue(Seed, nullptr, F.Body[Seed].Loc);
+      while (!Work.empty()) {
+        auto N = Work.back();
+        Work.pop_back();
+        const auto &I = F.Body[N];
+        auto Owner = Owners[N];
+        auto Edge = [&](const std::string &Label, const Global *State) {
+          auto Found = Labels.find(Label);
+          return Found != Labels.end()
+                     ? Enqueue(Found->second, State, I.Loc)
+                     : error(I.Loc, "Static initialization flow has an unknown destination.");
+        };
+        if (I.Op == InstructionKind::StaticInitBegin) {
+          if (Owner)
+            return error(I.Loc, "Static initialization sites cannot nest in one function.");
+          if (!Edge(I.TrueLabel, DynamicGlobals.at(I.GlobalName)) ||
+              !Edge(I.FalseLabel, nullptr))
+            return false;
+          continue;
+        }
+        if (I.Op == InstructionKind::StaticInitEnd) {
+          if (Owner != DynamicGlobals.at(I.GlobalName))
+            return error(I.Loc, "Static initialization publication lacks matching ownership.");
+          Owner = nullptr;
+        }
+        if (I.Op == InstructionKind::Return) {
+          if (Owner)
+            return error(I.Loc, "Return escapes an unfinished static initialization.");
+          continue;
+        }
+        if (I.Op == InstructionKind::Jump) {
+          if (!Edge(I.Label, Owner))
+            return false;
+        } else if (I.Op == InstructionKind::Branch) {
+          if (!Edge(I.TrueLabel, Owner) || !Edge(I.FalseLabel, Owner))
+            return false;
+        } else if (!Enqueue(N + 1, Owner, I.Loc))
+          return false;
+      }
+    }
+    return true;
   }
   bool function(const Function &F, bool Definition = true) {
     std::map<std::string, Type> Storage;
@@ -1164,8 +1285,13 @@ class Verifier {
     }
     if (F.Body.empty() || F.Body.front().Op != InstructionKind::Label)
       return error(F.Loc, "Function body must begin with a label.");
+    std::vector<const Global *> InitializationOwners;
+    if (!staticInitializerRegions(F, InitializationOwners))
+      return false;
     bool Terminated = true;
-    for (const auto &I : F.Body) {
+    for (std::size_t N = 0; N < F.Body.size(); ++N) {
+      const auto &I = F.Body[N];
+      InitializingGlobal = InitializationOwners[N];
       if (!loc(I.Loc))
         return false;
       if (I.Op != InstructionKind::MappedCall && !I.MappingID.empty())
@@ -1192,6 +1318,11 @@ class Verifier {
         if (!expr(A, Storage))
           return false;
       switch (I.Op) {
+      case InstructionKind::StaticInitBegin:
+        Terminated = true;
+        break;
+      case InstructionKind::StaticInitEnd:
+        break;
       case InstructionKind::Assign:
         if (!I.Target || !I.Value || I.Condition || !I.Args.empty() ||
             I.Target->ValueType != I.Value->ValueType ||
@@ -1282,7 +1413,25 @@ class Verifier {
         return error(I.Loc, "Unknown instruction operation.");
       }
     }
+    InitializingGlobal = nullptr;
     return Terminated || error(F.Loc, "Final basic block lacks a terminator.");
+  }
+
+  bool zeroInitializer(const Expr &E) const {
+    if (E.Kind == ExprKind::Null)
+      return true;
+    if (E.Kind == ExprKind::Literal) {
+      if (E.ValueType.isInteger())
+        return E.Integer == "0";
+      if (E.ValueType.Kind == TypeKind::Bool)
+        return !E.Boolean;
+      if (E.ValueType.isFloating())
+        return E.Binary64Bits == 0;
+      return false;
+    }
+    return E.Kind == ExprKind::Aggregate &&
+           std::all_of(E.Args.begin(), E.Args.end(),
+                       [&](const Expr &A) { return zeroInitializer(A); });
   }
 
   bool mathMetadata(const SourceLocation &L, const llvm::Triple &T) {
@@ -1531,6 +1680,11 @@ public:
       Globals.emplace(G.Name, G.ValueType);
       if (G.Mutable)
         MutableGlobals.insert(G.Name);
+      if (G.DynamicInitialization) {
+        if (M.Profile != "cpp-core-v2" || !Context.HasLockFreeIntAtomics)
+          return error(G.Loc, "Dynamic globals require core v2 zero initialization and native lock-free int atomics.");
+        DynamicGlobals.emplace(G.Name, &G);
+      }
     }
     for (const auto &G : GlobalDeclarations) {
       if (Globals.count(G.Name))
@@ -1573,7 +1727,8 @@ public:
     const std::map<std::string, Type> Empty;
     for (const auto &G : M.Globals)
       if (G.Value.ValueType != G.ValueType ||
-          !expr(G.Value, Empty, 0, true, G.ValueType.Kind == TypeKind::Array))
+          !expr(G.Value, Empty, 0, true, G.ValueType.Kind == TypeKind::Array) ||
+          (G.DynamicInitialization && !zeroInitializer(G.Value)))
         return error(G.Loc, "Invalid folded global initializer.");
     for (const auto &F : FunctionDeclarations)
       if (!function(F, false))

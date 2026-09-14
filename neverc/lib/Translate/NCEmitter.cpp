@@ -170,6 +170,7 @@ class Emitter {
   std::vector<PointerHelper> PointerHelpers;
   std::map<std::string, size_t> PointerHelperIndices;
   bool HasPointerDifference = false, HasPointerOrdering = false;
+  std::map<std::string, std::string> StaticGuards;
 
   static bool pointerOrdering(const Expr &E) {
     return E.Kind == ExprKind::Binary &&
@@ -411,6 +412,13 @@ class Emitter {
       line("static_assert(((__UINTPTR_TYPE__)-1) > 0, "
            "\"translated pointer ordering requires an unsigned carrier\");");
     }
+    if (!StaticGuards.empty()) {
+      line("static_assert(__NEVERC_ATOMIC_INT_LOCK_FREE == 2, "
+           "\"translated static initialization requires lock-free int atomics\");");
+      line("static_assert(sizeof(_Atomic(unsigned int)) == sizeof(unsigned int) && "
+           "alignof(_Atomic(unsigned int)) == alignof(unsigned int), "
+           "\"translated static guard layout mismatch\");");
+    }
     if (HasPointerDifference) {
       line("static_assert(sizeof(__typeof__((int *)0 - (int *)0)) * "
            "__CHAR_BIT__ == " +
@@ -458,6 +466,23 @@ class Emitter {
     line("");
   }
   void helpers() {
+    if (!StaticGuards.empty()) {
+      line("/* Acquire initialization ownership or wait for release publication. */");
+      line("#if defined(__aarch64__) || defined(_M_ARM64)");
+      line("/* Keep AArch64 CAS inline even when the surrounding TU outlines atomics. */");
+      line("__attribute__((target(\"no-outline-atomics\"), noinline))");
+      line("#endif");
+      line("static bool nct_emit_static_enter(_Atomic(unsigned int) *nct_emit_guard) {");
+      line("  for (;;) {");
+      line("    unsigned int nct_emit_state = __c11_atomic_load(nct_emit_guard, __ATOMIC_ACQUIRE);");
+      line("    if (nct_emit_state == 2u) return false;");
+      line("    if (nct_emit_state == 0u && __c11_atomic_compare_exchange_strong(");
+      line("        nct_emit_guard, &nct_emit_state, 1u, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE))");
+      line("      return true;");
+      line("  }");
+      line("}");
+      line("");
+    }
     for (unsigned Bits : SignedConversions) {
       const auto Signed = signedCarrier(Bits), Unsigned = unsignedCarrier(Bits);
       const uint64_t Max = Bits == 64 ? UINT64_MAX : (UINT64_C(1) << Bits) - 1;
@@ -566,6 +591,9 @@ class Emitter {
       for (const auto &Field : R.Fields)
         inspectType(Field.ValueType);
     for (const auto &G : M.Globals) {
+      if (G.DynamicInitialization)
+        StaticGuards.emplace(G.Name, "nct_emit_static_guard_" +
+                                        std::to_string(StaticGuards.size()));
       inspectType(G.ValueType);
       inspect(G.Value);
       HasStaticObjectAddresses |= containsObjectAddress(G.Value);
@@ -624,6 +652,14 @@ class Emitter {
         Text = "  if (" + expression(*I.Condition) + ") goto " + I.TrueLabel +
                "; else goto " + I.FalseLabel + ";";
         break;
+      case InstructionKind::StaticInitBegin:
+        Text = "  if (nct_emit_static_enter(&" + StaticGuards.at(I.GlobalName) +
+               ")) goto " + I.TrueLabel + "; else goto " + I.FalseLabel + ";";
+        break;
+      case InstructionKind::StaticInitEnd:
+        Text = "  __c11_atomic_store(&" + StaticGuards.at(I.GlobalName) +
+               ", 2u, __ATOMIC_RELEASE);";
+        break;
       case InstructionKind::Return:
         Text = I.Value ? "  return " + expression(*I.Value) + ";" : "  return;";
         break;
@@ -661,14 +697,19 @@ public:
       // arrays discovered during function lowering. These tentative declarations
       // preserve internal linkage and are completed by the initialized definitions.
       for (const auto &G : M.Globals)
-        line("static " + declaration(G.ValueType, G.Name, !G.Mutable) + ";", &G.Loc);
+        line("static " + declaration(G.ValueType, G.Name,
+                                      !G.Mutable && !G.DynamicInitialization) + ";", &G.Loc);
       if (!M.Globals.empty())
         line("");
     }
-    for (const auto &G : M.Globals)
-      line("static " + declaration(G.ValueType, G.Name, !G.Mutable) + " = " +
+    for (const auto &G : M.Globals) {
+      line("static " + declaration(G.ValueType, G.Name,
+                                    !G.Mutable && !G.DynamicInitialization) + " = " +
                expression(G.Value, true) + ";",
            &G.Loc);
+      if (G.DynamicInitialization)
+        line("static _Atomic(unsigned int) " + StaticGuards.at(G.Name) + " = 0u;", &G.Loc);
+    }
     if (!M.Globals.empty())
       line("");
     if (FunctionPointers.empty())

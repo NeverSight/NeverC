@@ -94,7 +94,9 @@ enum class InstructionKind {
   Branch,
   Return,
   MappedCall,
-  IndirectCall
+  IndirectCall,
+  StaticInitBegin,
+  StaticInitEnd
 };
 struct Instruction {
   InstructionKind Op = InstructionKind::Return;
@@ -109,6 +111,7 @@ struct Instruction {
   std::string Label;
   std::string TrueLabel;
   std::string FalseLabel;
+  std::string GlobalName;
 };
 
 struct Variable {
@@ -159,6 +162,7 @@ struct Global {
   Expr Value;
   SourceLocation Loc;
   bool Mutable = false;
+  bool DynamicInitialization = false;
 };
 struct Function {
   std::string Name;
@@ -241,6 +245,8 @@ struct VerificationContext {
   uint32_t ExpectedPtrDiffBits = 0;
   // Zero unless the native target has a checked flat object-address carrier.
   uint32_t ExpectedUIntPtrBits = 0;
+  // Independent native capability; guard operations must never call libatomic.
+  bool HasLockFreeIntAtomics = false;
 };
 struct SourceMapEntry {
   uint32_t BeginLine = 1;

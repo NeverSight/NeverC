@@ -1607,7 +1607,27 @@ class FunctionLowering {
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
     if (A.S.coreV2() && V->isStaticLocal()) {
-      (void)storage(V, L); // Static initialization was emitted with the global.
+      auto Place = storage(V, L);
+      if (A.DynamicStaticLocals.count(V->getCanonicalDecl())) {
+        A.chargeExpansion(2, L);
+        const auto Initialize = labelName(), Ready = labelName();
+        const auto Global = A.name(V);
+        Body.push_back(json::Object{{"op", "static_init_begin"},
+                                    {"global", Global},
+                                    {"true", Initialize}, {"false", Ready},
+                                    {"loc", A.loc(L)}});
+        Edges[Current].push_back(Initialize);
+        Edges[Current].push_back(Ready);
+        Open = false;
+        label(Initialize, L);
+        beginFullExpression();
+        initialize(std::move(Place), V->getInit(), L);
+        endFullExpression();
+        Body.push_back(json::Object{{"op", "static_init_end"},
+                                    {"global", Global}, {"loc", A.loc(L)}});
+        jump(Ready, L);
+        label(Ready, L);
+      }
       return;
     }
     auto Place = localStorage(V);

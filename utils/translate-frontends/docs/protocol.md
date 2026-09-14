@@ -107,20 +107,60 @@ The core profile pins Clang's 32-bit two's-complement integer behavior. Conversi
 
 Each instruction has `op` and `loc`:
 
-- `assign`: `target` is a var/member expression recursively rooted in mutable local/parameter storage, or an explicitly mutable core-v2 scalar global. Const globals and temporary aggregates are not writable. `value` has the same type. Assigning an aggregate copies its value.
+- `assign`: `target` is a var/member expression recursively rooted in mutable local/parameter storage, or an explicitly mutable core-v2 scalar global. Const globals are writable only while CFG-proven dynamic initialization owns their direct storage root; temporary aggregates are not writable. `value` has the same type. Assigning an aggregate copies its value.
 - `call`: `callee` refers to a defined function; `args` match its parameters. `target` is a `var` expression naming a local of the result type and is absent only for void results. Calls are standalone and ordered.
 - `label`: a unique function-local `label` identifier.
 - `jump`: a known destination `label`.
 - `branch`: bool `condition`, destination strings `true` and `false`.
+- Core-v2 `static_init_begin`: only `global`, `true`, `false`, `op` and `loc`;
+  acquires initialization ownership of the named dynamic global and terminates
+  the block, selecting initialize (`true`) or already published (`false`).
+- Core-v2 `static_init_end`: only `global`, `op` and `loc`; publishes initialization
+  with release semantics and continues in the current block.
 - `return`: `value` matches the result type, or is absent for void.
 
-The body starts with a label. Each basic block ends with jump, branch or return; there is no implicit fallthrough, unreachable instruction after a terminator, or unknown label. Loops and break/continue use explicit labels, allowing the adapter to preserve condition, increment, and branch-local effects. Every nonvoid function must return on each reachable terminating path; an infinite loop is allowed. Default return 0 is emitted for the fallthrough of main only, following C++ semantics.
+The body starts with a label. Each basic block ends with jump, branch, static initialization begin or return; there is no implicit fallthrough, unreachable instruction after a terminator, or unknown label. Loops and break/continue use explicit labels, allowing the adapter to preserve condition, increment, and branch-local effects. Every nonvoid function must return on each reachable terminating path; an infinite loop is allowed. Default return 0 is emitted for the fallthrough of main only, following C++ semantics.
 
 The consumer validates the entire module and all referenced symbols, types, fields, operator contracts, result/parameter types, globals, and block structure before NC emission. Calls outside the selected definition closure require a separately validated mapping; core has no mappings. Literal values never bypass expression validation as raw C text.
 
 ## Emission, validation and metadata
 
 NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record frontend and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
+
+## Core v2 dynamic local static initialization
+
+The optional global field `dynamic_initialization` must be `true` and requires
+core v2. Its complete ordinary initializer must contain only semantic zero:
+integer zero, false, positive floating zero, null pointers/callbacks and recursive
+zero aggregates. Type, arity, payload and depth checks still apply. `mutable`
+retains its source-storage meaning; a const dynamic global has writable physical
+C storage only to implement initialization.
+
+Each present `static_init_begin` site uniquely owns its global module-wide.
+There is at most one `static_init_end`, in the same function. A pruned declaration
+may leave zero storage without a site. A nonterminating initializer may have no
+end if no finite path escapes its ownership. The begin's initialize edge grants
+the global, its ready edge grants nothing, and a matching end clears the grant.
+Nested acquisition in one function, incompatible incoming grants, cross-object
+publication, returns or fallthrough while owned are rejected. Stable CFG cycles
+are allowed. Disconnected components are conservatively seeded with no grant in
+instruction order; the frontend prunes unreachable blocks before emission.
+
+The verifier computes these states once before expression checking, without
+recharging expression budgets during its worklist. Only the proven owner permits
+direct-root writes and mutable address formation for a const dynamic global.
+Pointer aliases use ordinary pointee qualifiers; the IR does not claim a lifetime
+or alias nonescape proof. Guard identities or extra semantic operands attached
+to other operations are rejected in both parsed and synthetic input.
+
+The consumer independently establishes always-lock-free native 32-bit int
+atomics; frontend metadata cannot grant the capability. Generated C23 uses
+`_Atomic(unsigned int)` states 0/1/2, acquire reads and compare-exchange, and
+release publication after full-expression cleanup. On AArch64, per-function
+`target("no-outline-atomics")` together with `noinline` prevents foreign CAS
+helper calls during normal downstream compilation. Atomics use compiler
+builtins without headers. No source atomic operation, guard address or exception
+retry permission is introduced. See the [source contract](cpp-core-v2.md#dynamic-local-static-initialization).
 
 ## Core v2 deleted declarations
 

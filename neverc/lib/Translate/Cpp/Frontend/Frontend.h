@@ -286,6 +286,7 @@ public:
   std::map<const clang::MaterializeTemporaryExpr *, std::string> StaticTemporaryObjects;
   json::Array StaticTemporaryGlobals;
   std::set<const clang::VarDecl *> StaticLocals;
+  std::set<const clang::VarDecl *> DynamicStaticLocals;
   std::map<const clang::VarDecl *, llvm::APSInt> StaticMemberValues;
   std::map<const clang::Decl *, clang::FunctionDecl *> FunctionDeclarations;
   std::map<const clang::Decl *, clang::VarDecl *> GlobalDeclarations;

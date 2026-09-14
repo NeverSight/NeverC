@@ -8277,7 +8277,7 @@ public:
     if (!staticObjectElementType(T) || needsDestruction(T) ||
         Definition->getTLSKind() != VarDecl::TLS_None || T.isVolatileQualified()) {
       A.reject(Definition->getLocation(), "static object storage",
-               "Static arrays and records require admitted constant elements without TLS, volatile storage or destruction.");
+               "Static arrays and records require admitted elements without TLS, volatile storage or destruction.");
       return false;
     }
     const VarDecl *InitializingDecl = nullptr;
@@ -8306,11 +8306,16 @@ public:
       } else {
         if (!Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
             !Notes.empty()) {
-          A.reject(Definition->getLocation(), "static object initializer",
-                   "A static object requires fully defined source-owned constant initialization.");
-          return false;
+          if (!Definition->isStaticLocal()) {
+            A.reject(Definition->getLocation(), "static object initializer",
+                     "A nonlocal static object requires fully defined source-owned constant initialization.");
+            return false;
+          }
+          A.DynamicStaticLocals.insert(Canonical);
+          Initializer = A.zero(T, Definition->getLocation());
+        } else {
+          Initializer = A.constant(Value, T, Definition->getLocation());
         }
-        Initializer = A.constant(Value, T, Definition->getLocation());
       }
     } else {
       if (T.isConstQualified() && !T->isRecordType()) {
@@ -8548,23 +8553,21 @@ public:
       }
       if (const auto *Init = D->getInit()) {
         APValue Value;
-        if (!Init->isCXX11ConstantExpr(A.Context, &Value) ||
-            !staticScalarValue(Value, D->getType(), D->getLocation())) {
+        if (!Init->isCXX11ConstantExpr(A.Context, &Value))
+          A.DynamicStaticLocals.insert(D->getCanonicalDecl());
+        else if (!staticScalarValue(Value, D->getType(), D->getLocation()))
           A.reject(D->getLocation(), "static local initializer",
-                   "A scalar static local requires zero or fully defined constant initialization.");
-          return true;
-        }
+                   "A scalar static local requires an admitted value representation.");
       } else if (D->getType().isConstQualified()) {
         A.reject(D->getLocation(), "static local initializer",
-                 "A const static local requires a constant initializer.");
+                 "A const scalar static local requires an initializer.");
         return true;
       }
       if (A.StaticLocals.insert(D->getCanonicalDecl()).second) {
         A.chargeExpansion(1, D->getLocation());
         A.Globals.push_back(D);
       }
-      // The declaration allocates static storage, not a block-entry action.
-      // RAV still checks every written initializer, including folded operations.
+      // RAV checks the original initializer for both initialization categories.
       return true;
     }
     if (A.S.coreV2() && !D->isLocalVarDeclOrParm() && D->getType()->isReferenceType()) {
@@ -9359,7 +9362,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     json::Object Initializer;
     const auto *Init = S.coreV2() && G->isStaticDataMember()
                            ? G->getAnyInitializer() : G->getInit();
-    if (auto Found = StaticReferenceInitializers.find(G->getCanonicalDecl());
+    const bool Dynamic = DynamicStaticLocals.count(G->getCanonicalDecl());
+    if (Dynamic) {
+      Initializer = zero(G->getType(), G->getLocation());
+    } else if (auto Found = StaticReferenceInitializers.find(G->getCanonicalDecl());
         Found != StaticReferenceInitializers.end()) {
       Initializer = json::Object(Found->second);
     } else if (auto Found = ConstantStaticObjectInitializers.find(G->getCanonicalDecl());
@@ -9385,6 +9391,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                         {"loc", loc(G->getLocation())}};
     if (Mutable)
       Global["mutable"] = true;
+    if (Dynamic)
+      Global["dynamic_initialization"] = true;
     GlobalData.push_back(std::move(Global));
   }
   for (auto *F : Functions)

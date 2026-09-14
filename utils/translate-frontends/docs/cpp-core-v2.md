@@ -120,6 +120,73 @@ encoding, zero fill, aliases, persistent addresses, source effects, copying,
 lifetimes, canonical globals and relocation. Native results require CI of the
 implementing revision; this increment does not establish complete C++/STL.
 
+## Dynamic local static initialization
+
+Admitted non-constexpr functions can dynamically initialize local static numeric,
+boolean, enum, null, object-pointer, callback, record and fixed-array objects,
+including const objects. Records and array elements must have trivial static
+destruction. The original initializer stays in the declaring function and may
+use parameters, automatic locals and its actual `this`. Constant initialization
+keeps its existing eager, guard-free representation.
+
+```cpp
+int constructions = 0;
+struct Value {
+  int number;
+  const Value *self;
+  Value(int n) : number(n), self(this) { ++constructions; }
+};
+const Value &value(int n) {
+  static const Value object(n);
+  return object;
+}
+int main() {
+  const Value &a = value(7);
+  return a.number != 7 || a.self != &a || &value(9) != &a || constructions != 1;
+}
+```
+
+Storage is zero-initialized before any first-use evaluation. First passage through
+the declaration runs initialization in that actual storage and completes its
+full-expression temporary cleanup before publication. Later passages skip the
+entire initializer, including reads of automatic locals. Concurrent entrants wait
+and acquire the completed object's effects. Recursive entry into the same object
+while it is initializing has undefined source behavior; calling a function that
+initializes a different object is supported. These first-use, concurrency and
+recursive-entry rules follow [C++17 declaration statements](https://timsong-cpp.github.io/cppwp/n4659/stmt.dcl#4).
+
+Each canonical declaration has one object and one guard, also across template
+aliases and repeated calls; distinct instances retain distinct storage. An
+unreachable declaration may retain zero storage without an emitted initialization
+site. No automatic shadow or lexical destructor is introduced for the static
+itself. Array and record initialization uses existing field/element sequencing,
+constructor destination and normal full-expression cleanup rules.
+
+Core-v2 IR marks the zero global with `dynamic_initialization: true`. Explicit
+`static_init_begin` and `static_init_end` instructions acquire and publish its
+initialization. The consumer proves initialization ownership over the CFG before
+checking expression permissions. Only the granted region can directly write or
+form a mutable address of a const dynamic global. Physical C23 storage is mutable
+during construction; source const accesses and ordinary pointer qualifiers remain
+checked. This is a direct-root permission check, not an alias nonescape proof:
+constructor `this` may escape, and later mutation of a source-const object through
+such an alias retains undefined C++ behavior.
+
+The independently constructed NeverC target must support always-lock-free 32-bit
+unsigned int atomics. Generated guards use `__c11_atomic_*` with acquire reads/CAS
+and release publication, without headers or foreign runtime functions. On AArch64
+the enter helper carries `target("no-outline-atomics")` and `noinline`, preventing
+outlined CAS dependencies even when subsequent compilation enables outlining.
+Generated assertions check atomic capability and storage layout. Protocol/IR
+checks, O0/O2 execution, sixteen-thread visibility tests and assembly checks for
+runtime helper dependencies require native validation at the implementing CI head.
+
+Dynamic reference bindings and lifetime-extended static temporaries, nontrivial
+static destruction, TLS, nonlocal dynamic initialization and exception
+propagation/retry still require implementation. Unsupported throwing source and
+unowned callees remain diagnosed; there is no substitute termination or fake
+success path. Actual standard headers and complete C++/STL remain unfinished.
+
 ## Fixed-array static storage
 
 Core v2 admits complete fixed arrays with static storage at namespace scope,
@@ -163,10 +230,11 @@ including const array members that cannot use scalar declaration-only values.
 The frontend evaluates each actual initialized object once and serializes all
 elements, including static zero fill. Mutable arrays use the existing global
 `mutable` permission; const arrays and literal objects remain read-only. Local
-static declarations emit no automatic shadow, runtime initialization guard or
+constant-initialized declarations emit no automatic shadow, runtime initialization guard or
 repeated element stores. Arrays cannot be assigned as whole values.
 
-Dynamic initialization and synchronized guards, TLS and volatile storage,
+Dynamic local arrays follow the [first-use contract](#dynamic-local-static-initialization).
+Nonlocal dynamic initialization, TLS and volatile storage,
 nontrivial static destruction and static reference lifetime extension still need
 further support. Records follow their [static object contract](#static-record-objects). Object-pointer elements follow the
 [static address contract](#static-object-pointer-storage). Standard headers and full STL remain
@@ -225,7 +293,8 @@ operations continue to use their existing sequencing and arithmetic rules.
 Canonical static identity, receiver effects, temporary cleanup and separate
 template-instance state follow the existing storage contracts. Static reference
 bindings follow their [alias contract](#static-reference-bindings).
-Dynamic initialization/guards, TLS, allocation, static destruction,
+Dynamic local pointers follow the [first-use contract](#dynamic-local-static-initialization).
+Nonlocal dynamic initialization, TLS, allocation, static destruction,
 standard-library headers/runtime still require further work. Mutable records
 follow their [static object contract](#static-record-objects). Paired source/protocol cases, malformed-address IR cases,
 relocation and O0/O2 fixtures require native validation in implementing CI.
@@ -380,9 +449,11 @@ continue to access the same object. IR layout, field types, folded leaves and
 mutability are checked before emitting internal C23 record objects and any
 forward declarations needed for self addresses.
 
-Nonconstant constructor calls or initializer reads, TLS, volatile objects,
+Local nonconstant constructor calls and initializer reads follow the
+[first-use contract](#dynamic-local-static-initialization). Nonlocal dynamic
+initialization, TLS, volatile objects,
 nontrivial static destruction, unsupported layouts/fields and allocation remain
-outside this increment. Dynamic guards, exception unwinding and actual
+outside this increment. Exception unwinding and actual
 standard-library headers/runtime still require
 further work. Paired source/protocol cases, mutable/self-address IR cases,
 relocation and O0/O2 fixtures require native validation in implementing CI;
@@ -473,7 +544,8 @@ and yields the null value, without loading its stored representation.
 Zero or checked constant initialization is supported for null globals, scalar
 static locals, static data members and admitted concrete variable templates.
 Equivalent template instances share their object; other instances remain distinct.
-Dynamic static initialization, thread-local/volatile storage and null-valued
+Dynamic local null objects follow the [first-use contract](#dynamic-local-static-initialization).
+Nonlocal dynamic initialization, thread-local/volatile storage and null-valued
 non-type template arguments remain unsupported. All written types, initializers,
 defaults and unevaluated expressions retain source checks; folding to null does
 not hide unsupported operations. Standard headers, including `<cstddef>`, are
@@ -869,8 +941,9 @@ local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
 Deleted, inherited and variadic constructors remain rejected. Delegating
-constructors and constructor templates follow their contracts below. Exception unwinding, allocation, static
-guards, inheritance, virtual dispatch and STL are still outside this increment.
+constructors and constructor templates follow their contracts below. Dynamic
+local statics follow their first-use contract above. Exception unwinding,
+allocation, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic global forms remain rejected. Static pointer fields and arrays follow their
@@ -1000,7 +1073,7 @@ completed object receives its usual single destruction at the owning scope.
 Cycles, multiple initializers with delegation and invalid target selection retain
 C++ diagnostics. Missing selected definitions remain `TR0203`; unsupported types
 or operations remain `TR0201`, including folded arguments and checked dead bodies.
-Inheritance, variadics, dynamic static initialization and exception unwinding
+Inheritance, variadics, nonlocal dynamic initialization and exception unwinding
 remain separate work. Old profiles continue to reject user-provided constructors.
 Paired source/protocol cases, receiver/call/relocation assertions and O0/O2 runtime
 fixtures require implementing-revision native CI. Complete C++/STL is unfinished.
@@ -3149,7 +3222,7 @@ earlier constant locals, static class constants and unevaluated size queries;
 it creates no runtime call. The entire owned initializer and function source
 is still inspected, including unused declarations and statically skipped code.
 
-Dynamic initialization, initialization guards and their synchronization, TLS,
+Dynamic initialization follows the [first-use contract](#dynamic-local-static-initialization). TLS,
 volatile storage, local extern declarations, static types outside scalars and
 [fixed arrays](#fixed-array-static-storage), and
 other template forms retain separate restrictions. This stage adds no static record
