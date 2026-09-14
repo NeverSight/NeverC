@@ -8233,7 +8233,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'promoted-class_templates_reject-nested-record': 'template<class T>struct R{struct I{T n;};};',
         'promoted-copied_full_classes_reject-generic-ordinary-record': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{struct J{T n;};};};',
         'renamed-record-header': 'template<class T>struct O{struct R;};template<class U>struct O<U>::R{U n;};int f(){O<int>::R v{3};return v.n;}',
-        'own-forward-definition': 'template<class T>struct O{struct R{T n;};};template<>struct O<int>::R;struct O<int>::R{long long n;};long long f(){O<int>::R v{3};return v.n;}',
+        'own-forward-definition': 'template<class T>struct O{struct R{T n;};};template<>struct O<int>::R;template<>struct O<int>::R{long long n;};long long f(){O<int>::R v{3};return v.n;}',
         'own-new-method': 'template<class T>struct O{struct R{int get(){return 1;}};};template<>struct O<int>::R{long long n;long long get(){return n+2;}};long long f(){O<int>::R v{3};return v.get();}',
         'own-member-template': 'template<class T>struct O{struct R{int n;};};template<>struct O<int>::R{template<class U>struct I{U n;};};long long f(){O<int>::R::I<long long>v{3};return v.n;}',
         'member-variable-partial': 'template<int N>struct O{struct R{template<class T>inline static int n=1;template<class T>inline static int n<T*> =N;};};int*f(){return &O<3>::R::n<int*>;}',
@@ -8269,7 +8269,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'own-used-body': 'template<class T>struct O{struct R{int get(){return 1;}};};template<>struct O<int>::R{int get(){long double n=1.0L;return 2;}};int f(){O<int>::R v;return v.get();}',
         'ordinary-union': 'template<class T>struct O{union R{T n;int m;};};',
         'ordinary-anonymous': 'template<class T>struct O{struct{T n;}r;};',
-        'explicit-attribute': 'template<class T>struct O{struct R{T n;};};template struct [[deprecated]] O<int>::R;',
         'explicit-hidden-after-use': 'template<int N>struct O{struct R{int n;};};int before(){O<8>::R v{3};return v.n;}extern template struct O<sizeof(long double)>::R;',
         'ordinary-member-pack-65': 'template<int N>struct O{struct R{template<int...M>struct I{int n=N+sizeof...(M);};};};int f(){O<1>::R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}',
     }
@@ -8277,6 +8276,7 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-ordinary-nested-classes-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
 
     ordinary_classes_invalid = {
+        'explicit-attribute': 'template<class T>struct O{struct R{T n;};};template struct [[deprecated]] O<int>::R;',
         'private-nested': 'template<class T>class O{struct R{T n;};};O<int>::R v;',
         'incomplete-used': 'template<class T>struct O{struct R;};O<int>::R v;',
         'late-own': 'template<class T>struct O{struct R{T n;};};O<int>::R v;template<>struct O<int>::R{int n;};',
@@ -9026,11 +9026,9 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'template-template-parameter': 'template<class T>struct R{template<template<class>class U>friend struct A;};',
         'pointer-value-parameter': 'template<class T>struct R{template<int*P>friend struct A;};',
         'float-value-parameter': 'template<class T>struct R{template<decltype((sizeof(long double),0)) N>friend struct A;};',
-        'hidden-parameter-type': 'using Hidden=long double;template<class T>struct R{template<Hidden N>friend struct A;};',
         'hidden-folded-parameter-type': 'template<class T>using Ignore=int;template<class T>struct R{template<Ignore<long double> N>friend struct A;};',
         'hidden-dependent-parameter-copy': 'template<class T>using Ignore=int;template<class T>struct R{template<Ignore<T> N>friend struct A;};R<long double>r;',
         'hidden-inherited-default': 'template<class T>using Ignore=int;template<class U=Ignore<long double>>struct A;template<class T>struct R{template<class U>friend struct A;};R<int>r;',
-        'hidden-qualifier': 'template<class T>struct Q{template<class U>struct A;};template<class T>struct R{template<class U>friend struct Q<long double>::A;};',
         'target-union': 'template<class T>union A;class R{template<class U>friend union A;};',
         'friend-attribute': 'template<class T>struct R{template<class U>friend struct __attribute__((deprecated)) A;};',
     }
@@ -9038,6 +9036,8 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-friend-class-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
 
     friend_class_templates_invalid = {
+        'hidden-parameter-type': 'using Hidden=long double;template<class T>struct R{template<Hidden N>friend struct A;};',
+        'hidden-qualifier': 'template<class T>struct Q{template<class U>struct A;};template<class T>struct R{template<class U>friend struct Q<long double>::A;};',
         'written-type-default-unused': 'template<class T>struct R{template<class U=int>friend struct A;};',
         'written-type-default-copy': 'template<class T>struct R{template<class U=int>friend struct A;};R<int>r;',
         'written-value-default-unused': 'template<class T>struct R{template<int N=1>friend struct A;};',
@@ -9122,6 +9122,27 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         relocated = check("v2-class-friends-relocated", class_friend_source,
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == class_friends, "class target identity depends on the absolute root"
+
+    previously_restricted_values_positive = {
+        'ArrayScopeRejectsUnsupportedStorage-global-array': 'const int a[2]={1,2};',
+        'ArrayScopeRejectsUnsupportedStorage-global-array-field': 'struct R{int a[2];}; constexpr R r{{1,2}};',
+        'PointerScopeDiagnosesUnsupportedBindings-pointer-global': 'int *const value=nullptr;',
+        'PointerScopeDiagnosesUnsupportedBindings-reference-global': 'const int value=1; const int &alias=value;',
+        'PointerScopeDiagnosesUnsupportedBindings-function-pointer': 'int f(int (*call)()){return call();}',
+        'ParameterPacksRetainSourceAndResourceChecks-friend-template-pack': 'struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};',
+        'FunctionTemplatesRetainInstanceAndLanguageBoundaries-function-value': 'template<class T>T f(T n){return n;}int main(){auto p=&f<int>;return p(1);}',
+        'RecordConstructorsRetainLifetimeAndSourceBoundaries-global-array': 'struct R{int n;constexpr R(int v):n(v){}};constexpr R global[1]={{1}};',
+        'RejectsUnsupportedErasedDeclarations-function-alias': 'using Hidden = void();\nint main() { return 0; }\n',
+        'IntegerExpansion-size-value': 'int main(){return sizeof(1.0);}',
+        'Protocol-unused-function-alias': 'using Hidden=void(); int main(){}',
+        'Protocol-pointer-global': 'int*const p=nullptr;',
+        'Protocol-reference-global': 'const int x=1; const int&r=x;',
+        'Protocol-floating-size-type': 'int main(){return sizeof(double);}',
+        'Protocol-constructor-folded-unsupported-initializer': 'struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;',
+        'Protocol-constructor-global-pointer': 'struct R{int n;constexpr R(int v):n(v){}};constexpr R global(1);constexpr const R *pointer=&global;',
+    }
+    for name, source in previously_restricted_values_positive.items():
+        check("v2-admitted-values-" + name, source, profile="cpp-core-v2")
 
     static_record_positive = {
         'namespace-zero': 'struct R{int n;int*p;};R r;int f(){return r.n+(r.p!=nullptr);}',
@@ -9660,6 +9681,9 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     for name, source in string_positive.items():
         check("v2-string-positive-"+name, source, profile="cpp-core-v2")
     string_negative = {
+        'literal-unused-declaration': ('unsigned operator""_n(const char*,decltype(sizeof(0))){return 1;}', 'TR0201'),
+        'literal-cooked-integer': ('unsigned long long operator""_n(unsigned long long n){return n;}auto f(){return 3_n;}', 'TR0201'),
+        'literal-dead-call': ('unsigned operator""_n(const char*,decltype(sizeof(0))){return 1;}int f(){if(false)return "abc"_n;return 0;}', 'TR0201'),
         'literal-write': ('void f(){"abc"[0]=\'x\';}', 'TR0202'),
         'drop-literal-const': ('char*f(){return "abc";}', 'TR0202'),
         'mutable-reference': ('void f(){char(&a)[4]="abc";}', 'TR0202'),
@@ -11696,7 +11720,6 @@ Token record(){return pp_record(2,3);}
         'floating-selected-default': 'template<class...T,int N=(sizeof(long double)+sizeof...(T))>int f(T...v){return N;}int main(){return f(1);}',
         'floating-explicit-instantiation': 'template<int...N>int f(){return sizeof...(N);}template int f<int(1.0L)>();',
         'template-template-pack': 'template<template<class>class...T>struct R{int n;};',
-        'friend-template-pack': 'struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};',
         'c-varargs': 'template<class...T>int f(T...v,...){return sizeof...(v);}int main(){return f(1);}',
         'zero-array': 'template<class...T>int f(){int a[sizeof...(T)];return 0;}int main(){return f<>();}',
     }
@@ -14396,7 +14419,6 @@ Plain chosenRecord(){return choose<false>();}
         'allocation': 'template<class T>T* f(){return new T{};}int main(){return *f<int>();}',
         'dynamic-static': 'int value=1;template<class T>int f(){static int n=value;return n;}int main(){return f<int>();}',
         'constexpr-static': 'template<class T>constexpr int f(){static int n=1;return n;}int main(){return f<int>();}',
-        'function-value': 'template<class T>T f(T n){return n;}int main(){auto p=&f<int>;return p(1);}',
         'attribute': 'template<class T>[[nodiscard]]T f(T v){return v;}',
         'parameter-attribute': 'template<class T>T f([[maybe_unused]]T v){return v;}',
         'active-include': '#include <utility>\ntemplate<class T>T f(T v){return v;}',
@@ -14985,13 +15007,10 @@ int main() {
         "untyped-assembly-string": 'asm(""); int main(){}',
         "unsupported-pointer-alias": 'using Hidden=long double*; int main(){}',
         "unused-volatile-alias": "using Hidden=volatile int; int main(){}",
-        "unused-function-alias": "using Hidden=void(); int main(){}",
         "folded-assert-type": 'static_assert(1.0L==1.0L,"condition"); int main(){}',
     }
     v2_rejections.update({
         "reference-field": "struct R{int&r;};",
-        "pointer-global": "int*const p=nullptr;",
-        "reference-global": "const int x=1; const int&r=x;",
         "pointer-ordering": "bool f(int*a,int*b){return a<b;}",
         "pointer-integer": "unsigned long long f(int*p){return (unsigned long long)p;}",
         "integer-pointer": "int*f(int x){return (int*)x;}",
@@ -15001,8 +15020,6 @@ int main() {
         "zero-array": "int f(){int a[0]; return 0;}",
         "variable-array": "int f(int n){int a[n]; return 0;}",
         "dead-variable-array": "int f(int n){if(false){int a[n];} return 0;}",
-        "global-array": "const int a[2]={1,2};",
-        "global-array-field": "struct R{int a[2];}; constexpr R r{{1,2}};",
         "array-bound": "using Large=int[65537]; int main(){}",
         "array-product": "using Large=int[65536][65536]; int main(){}",
         "array-initialization-budget": "int f(){int a[65536]={}; return a[0];}",
@@ -15018,8 +15035,6 @@ int main() {
         "function-size": "int f(){return 0;} int main(){return sizeof(f);}",
         "preferred-alignment": "int main(){int n=0; return __alignof__(n);}",
         "expression-alignment": "int main(){int n=0; return alignof(n);}",
-        "floating-size-type": "int main(){return sizeof(double);}",
-        "floating-size-value": "int main(){return sizeof(1.0);}",
     })
     v2_rejections.update({
         "pointer-order-less": "bool f(int*a,int*b){return a<b;}",
@@ -15054,11 +15069,13 @@ int main() {
         'constructor-mutable-field': 'struct R{mutable int n;R():n(1){}};',
         'constructor-union': 'union R{int n;unsigned u;R():n(1){}};',
         'constructor-bitfield': 'struct R{unsigned n:3;R():n(1){}};',
-        'constructor-folded-unsupported-initializer': 'struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;',
         'constructor-folded-throw-body': 'struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);',
         'constructor-dynamic-global': 'struct R{int n;R():n(1){}};R global;',
-        'constructor-global-array': 'struct R{int n;constexpr R(int v):n(v){}};constexpr R global[1]={{1}};',
-        'constructor-global-pointer': 'struct R{int n;constexpr R(int v):n(v){}};constexpr R global(1);constexpr const R *pointer=&global;',
+    })
+    v2_rejections.update({
+        "extended-size-type": "int main(){return sizeof(long double);}",
+        "extended-size-value": "int main(){return sizeof(1.0L);}",
+        "constructor-folded-extended-initializer": "struct R{int n;constexpr R():n(sizeof(long double)){}};constexpr R r;",
     })
     for name, source in v2_rejections.items():
         check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")

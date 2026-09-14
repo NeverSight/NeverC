@@ -281,6 +281,9 @@ TEST_F(TranslateProjectTest, FunctionPointerValuesRemainOutsideProjectV1) {
       writeFile(Root / "src" / "first.cpp", Code);
       auto Args = args(Root);
       *std::find(Args.begin(), Args.end(), "cpp-project-v1") = Profile;
+      if (Profile == "cpp-math-v1")
+        *(std::find(Args.begin(), Args.end(), "--target") + 1) =
+            "x86_64-apple-macosx15.0.0";
       Args.insert(Args.end(), {"--out-dir", Output.string()});
       rejects(ncc(Args), Output, "TR0201");
     }

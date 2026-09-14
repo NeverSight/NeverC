@@ -2443,7 +2443,7 @@ std::string callbackWire() {
                            "loc":{"file":"input.cpp","line":2,"column":1}}},
   )json");
   JSON.insert(JSON.rfind(']'), R"json(,{
-    "name":"nct_target","result":"int","internal":true,"params":[],"locals":[],
+    "name":"nct_target","result":"int","internal":true,"c_export":false,"params":[],"locals":[],
     "loc":{"file":"input.cpp","line":3,"column":1},"body":[
       {"op":"label","label":"nct_entry","loc":{"file":"input.cpp","line":3,"column":1}},
       {"op":"return","loc":{"file":"input.cpp","line":3,"column":1},

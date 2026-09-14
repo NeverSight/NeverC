@@ -5121,7 +5121,9 @@ public:
     std::set<const DeclContext *> Seen;
     while (const auto *Record = dyn_cast_or_null<CXXRecordDecl>(Context)) {
       A.chargeExpansion(1, Record->getLocation());
-      if (Seen.size() >= 64 || !Seen.insert(Context).second) {
+      // The starting record has depth zero: 64 enclosing edges contain 65
+      // records, matching record layout and type dependency validation.
+      if (Seen.size() > 64 || !Seen.insert(Context).second) {
         A.reject(Record->getLocation(), "class full owner source depth",
                  "Enclosing full declaration sources must be bounded and acyclic.");
         return true;
@@ -7967,6 +7969,9 @@ public:
   bool VisitFunctionDecl(FunctionDecl *D) {
     if (!owned(D))
       return true;
+    if (D->getDeclName().getNameKind() == DeclarationName::CXXLiteralOperatorName)
+      A.reject(D->getLocation(), "literal operator declaration",
+               "User-defined literal operators are outside the selected profile.");
     const bool Template = A.S.coreV2() && concreteFunctionTemplate(D);
     const bool InstantiatedMember = A.S.coreV2() && concreteMemberFunction(D);
     const bool InstantiatedFriend = A.S.coreV2() && concreteFriendFunction(D) &&
@@ -8755,6 +8760,9 @@ public:
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
+      if (isa<UserDefinedLiteral>(S))
+        A.reject(L, "user-defined literal",
+                 "User-defined literal calls require their own checked source contract.");
       if (const auto *Literal = dyn_cast<StringLiteral>(S))
         A.checkStringLiteral(Literal);
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(S);

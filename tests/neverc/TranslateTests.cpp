@@ -1109,6 +1109,35 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2PreviouslyRestrictedValuesRemainAccepted) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"ArrayScopeRejectsUnsupportedStorage-global-array", "const int a[2]={1,2};"},
+      {"ArrayScopeRejectsUnsupportedStorage-global-array-field", "struct R{int a[2];}; constexpr R r{{1,2}};"},
+      {"PointerScopeDiagnosesUnsupportedBindings-pointer-global", "int *const value=nullptr;"},
+      {"PointerScopeDiagnosesUnsupportedBindings-reference-global", "const int value=1; const int &alias=value;"},
+      {"PointerScopeDiagnosesUnsupportedBindings-function-pointer", "int f(int (*call)()){return call();}"},
+      {"ParameterPacksRetainSourceAndResourceChecks-friend-template-pack", "struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};"},
+      {"FunctionTemplatesRetainInstanceAndLanguageBoundaries-function-value", "template<class T>T f(T n){return n;}int main(){auto p=&f<int>;return p(1);}"},
+      {"RecordConstructorsRetainLifetimeAndSourceBoundaries-global-array", "struct R{int n;constexpr R(int v):n(v){}};constexpr R global[1]={{1}};"},
+      {"RejectsUnsupportedErasedDeclarations-function-alias", "using Hidden = void();\nint main() { return 0; }\n"},
+      {"IntegerExpansion-size-value", "int main(){return sizeof(1.0);}"},
+      {"Protocol-unused-function-alias", "using Hidden=void(); int main(){}"},
+      {"Protocol-pointer-global", "int*const p=nullptr;"},
+      {"Protocol-reference-global", "const int x=1; const int&r=x;"},
+      {"Protocol-floating-size-type", "int main(){return sizeof(double);}"},
+      {"Protocol-constructor-folded-unsupported-initializer", "struct R{int n;constexpr R():n(sizeof(float)){}};constexpr R r;"},
+      {"Protocol-constructor-global-pointer", "struct R{int n;constexpr R(int v):n(v){}};constexpr R global(1);constexpr const R *pointer=&global;"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("admitted-values-" + Name + ".cpp");
+    const auto Output = tmpFile("admitted-values-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayScopeRejectsUnsupportedStorage) {
   struct Rejection {
     const char *Name;
@@ -1124,10 +1153,6 @@ TEST_F(TranslateTest, CoreV2ArrayScopeRejectsUnsupportedStorage) {
        "int f(int n){if(false){int a[n];} return 0;}", "TR0201"},
       {"unsupported-element",
        "int f(){long double a[2]; return 0;}", "TR0201"},
-      {"global-array",
-       "const int a[2]={1,2};", "TR0201"},
-      {"global-array-field",
-       "struct R{int a[2];}; constexpr R r{{1,2}};", "TR0201"},
       {"array-alias-bound",
        "using TooLarge=int[65537]; int main(){}", "TR0201"},
       {"nested-array-expansion",
@@ -1428,11 +1453,7 @@ TEST_F(TranslateTest, CoreV2PointerScopeDiagnosesUnsupportedBindings) {
   };
   const Rejection Cases[] = {
       {"reference-field", "struct R{int &value;};", "TR0201"},
-      {"pointer-global", "int *const value=nullptr;", "TR0201"},
-      {"reference-global", "const int value=1; const int &alias=value;",
-       "TR0201"},
       {"pointer-ordering", "bool f(int *a,int *b){return a<b;}", "TR0201"},
-      {"function-pointer", "int f(int (*call)()){return call();}", "TR0201"},
       {"unsupported-pointee", "long double *f(long double *p){return p;}", "TR0201"},
       {"const-write", "void f(const int *p){*p=1;}", "TR0202"}};
   for (const auto &Case : Cases) {
@@ -7117,7 +7138,7 @@ TEST_F(TranslateTest, CoreV2OrdinaryNestedClassesAcceptConcreteInstances) {
       {"promoted-class_templates_reject-nested-record", "template<class T>struct R{struct I{T n;};};"},
       {"promoted-copied_full_classes_reject-generic-ordinary-record", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{struct J{T n;};};};"},
       {"renamed-record-header", "template<class T>struct O{struct R;};template<class U>struct O<U>::R{U n;};int f(){O<int>::R v{3};return v.n;}"},
-      {"own-forward-definition", "template<class T>struct O{struct R{T n;};};template<>struct O<int>::R;struct O<int>::R{long long n;};long long f(){O<int>::R v{3};return v.n;}"},
+      {"own-forward-definition", "template<class T>struct O{struct R{T n;};};template<>struct O<int>::R;template<>struct O<int>::R{long long n;};long long f(){O<int>::R v{3};return v.n;}"},
       {"own-new-method", "template<class T>struct O{struct R{int get(){return 1;}};};template<>struct O<int>::R{long long n;long long get(){return n+2;}};long long f(){O<int>::R v{3};return v.get();}"},
       {"own-member-template", "template<class T>struct O{struct R{int n;};};template<>struct O<int>::R{template<class U>struct I{U n;};};long long f(){O<int>::R::I<long long>v{3};return v.n;}"},
       {"member-variable-partial", "template<int N>struct O{struct R{template<class T>inline static int n=1;template<class T>inline static int n<T*> =N;};};int*f(){return &O<3>::R::n<int*>;}"},
@@ -7161,7 +7182,6 @@ TEST_F(TranslateTest, CoreV2OrdinaryNestedClassesRetainSourceAndOwnerBoundaries)
       {"own-used-body", "template<class T>struct O{struct R{int get(){return 1;}};};template<>struct O<int>::R{int get(){long double n=1.0L;return 2;}};int f(){O<int>::R v;return v.get();}"},
       {"ordinary-union", "template<class T>struct O{union R{T n;int m;};};"},
       {"ordinary-anonymous", "template<class T>struct O{struct{T n;}r;};"},
-      {"explicit-attribute", "template<class T>struct O{struct R{T n;};};template struct [[deprecated]] O<int>::R;"},
       {"explicit-hidden-after-use", "template<int N>struct O{struct R{int n;};};int before(){O<8>::R v{3};return v.n;}extern template struct O<sizeof(long double)>::R;"},
       {"ordinary-member-pack-65", "template<int N>struct O{struct R{template<int...M>struct I{int n=N+sizeof...(M);};};};int f(){O<1>::R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}"},
   };
@@ -7178,6 +7198,7 @@ TEST_F(TranslateTest, CoreV2OrdinaryNestedClassesRetainSourceAndOwnerBoundaries)
 
 TEST_F(TranslateTest, CoreV2OrdinaryNestedClassesRetainLanguageDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"explicit-attribute", "template<class T>struct O{struct R{T n;};};template struct [[deprecated]] O<int>::R;"},
       {"private-nested", "template<class T>class O{struct R{T n;};};O<int>::R v;"},
       {"incomplete-used", "template<class T>struct O{struct R;};O<int>::R v;"},
       {"late-own", "template<class T>struct O{struct R{T n;};};O<int>::R v;template<>struct O<int>::R{int n;};"},
@@ -7899,11 +7920,9 @@ TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainSourceAndOwnerBoundaries) 
       {"template-template-parameter", "template<class T>struct R{template<template<class>class U>friend struct A;};"},
       {"pointer-value-parameter", "template<class T>struct R{template<int*P>friend struct A;};"},
       {"float-value-parameter", "template<class T>struct R{template<decltype((sizeof(long double),0)) N>friend struct A;};"},
-      {"hidden-parameter-type", "using Hidden=long double;template<class T>struct R{template<Hidden N>friend struct A;};"},
       {"hidden-folded-parameter-type", "template<class T>using Ignore=int;template<class T>struct R{template<Ignore<long double> N>friend struct A;};"},
       {"hidden-dependent-parameter-copy", "template<class T>using Ignore=int;template<class T>struct R{template<Ignore<T> N>friend struct A;};R<long double>r;"},
       {"hidden-inherited-default", "template<class T>using Ignore=int;template<class U=Ignore<long double>>struct A;template<class T>struct R{template<class U>friend struct A;};R<int>r;"},
-      {"hidden-qualifier", "template<class T>struct Q{template<class U>struct A;};template<class T>struct R{template<class U>friend struct Q<long double>::A;};"},
       {"target-union", "template<class T>union A;class R{template<class U>friend union A;};"},
       {"friend-attribute", "template<class T>struct R{template<class U>friend struct __attribute__((deprecated)) A;};"},
   };
@@ -7920,6 +7939,8 @@ TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainSourceAndOwnerBoundaries) 
 
 TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainLanguageDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"hidden-parameter-type", "using Hidden=long double;template<class T>struct R{template<Hidden N>friend struct A;};"},
+      {"hidden-qualifier", "template<class T>struct Q{template<class U>struct A;};template<class T>struct R{template<class U>friend struct Q<long double>::A;};"},
       {"written-type-default-unused", "template<class T>struct R{template<class U=int>friend struct A;};"},
       {"written-type-default-copy", "template<class T>struct R{template<class U=int>friend struct A;};R<int>r;"},
       {"written-value-default-unused", "template<class T>struct R{template<int N=1>friend struct A;};"},
@@ -8845,6 +8866,9 @@ TEST_F(TranslateTest, CoreV2StringsAcceptSourceComposition) {
 
 TEST_F(TranslateTest, CoreV2StringsRetainSourceAndLifetimeRestrictions) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"literal-unused-declaration", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}", "TR0201"},
+      {"literal-cooked-integer", "unsigned long long operator\"\"_n(unsigned long long n){return n;}auto f(){return 3_n;}", "TR0201"},
+      {"literal-dead-call", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}int f(){if(false)return \"abc\"_n;return 0;}", "TR0201"},
       {"literal-write", "void f(){\"abc\"[0]='x';}", "TR0202"},
       {"drop-literal-const", "char*f(){return \"abc\";}", "TR0202"},
       {"mutable-reference", "void f(){char(&a)[4]=\"abc\";}", "TR0202"},
@@ -11741,7 +11765,6 @@ TEST_F(TranslateTest, CoreV2ParameterPacksRetainSourceAndResourceChecks) {
       {"floating-selected-default", "template<class...T,int N=(sizeof(long double)+sizeof...(T))>int f(T...v){return N;}int main(){return f(1);}"},
       {"floating-explicit-instantiation", "template<int...N>int f(){return sizeof...(N);}template int f<int(1.0L)>();"},
       {"template-template-pack", "template<template<class>class...T>struct R{int n;};"},
-      {"friend-template-pack", "struct R{template<class...T>friend int f(R,T...v){return sizeof...(v);}};"},
       {"c-varargs", "template<class...T>int f(T...v,...){return sizeof...(v);}int main(){return f(1);}"},
       {"zero-array", "template<class...T>int f(){int a[sizeof...(T)];return 0;}int main(){return f<>();}"},
   };
@@ -14416,7 +14439,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"allocation", "template<class T>T* f(){return new T{};}int main(){return *f<int>();}", "TR0201"},
       {"dynamic-static", "int value=1;template<class T>int f(){static int n=value;return n;}int main(){return f<int>();}", "TR0201"},
       {"constexpr-static", "template<class T>constexpr int f(){static int n=1;return n;}int main(){return f<int>();}", "TR0201"},
-      {"function-value", "template<class T>T f(T n){return n;}int main(){auto p=&f<int>;return p(1);}", "TR0201"},
       {"attribute", "template<class T>[[nodiscard]]T f(T v){return v;}", "TR0201"},
       {"parameter-attribute", "template<class T>T f([[maybe_unused]]T v){return v;}", "TR0201"},
       {"active-include", "#include <utility>\ntemplate<class T>T f(T v){return v;}", "TR0201"},
@@ -17889,8 +17911,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"folded-unsupported-initializer", "struct R{int n;constexpr R():n(sizeof(long double)){}};constexpr R r;"},
       {"folded-throw-body", "struct R{int n;constexpr R(int v):n(v){if(v)throw 1;}};constexpr R r(0);"},
       {"dynamic-global", "struct R{int n;R():n(1){}};R global;"},
-      {"global-array", "struct R{int n;constexpr R(int v):n(v){}};constexpr R global[1]={{1}};"},
-      {"global-pointer", "struct R{int n;constexpr R(int v):n(v){}};constexpr R global(1);constexpr const R *pointer=&global;"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -18181,7 +18201,7 @@ TEST_F(TranslateTest, CoreV2IntegerExpansionRejectsUnsupportedTypesAndSizeQuerie
       "int main(){int n=0; return __alignof__(n);}",
       "int main(){int n=0; return alignof(n);}",
       "int main(){return sizeof(long double);}",
-      "int main(){return sizeof(1.0);}"};
+      "int main(){return sizeof(1.0L);}"};
   for (size_t I = 0; I < Sources.size(); ++I) {
     SCOPED_TRACE(Sources[I]);
     const auto Source = tmpFile("integer-reject" + std::to_string(I) + ".cpp");
@@ -18236,7 +18256,21 @@ int main() {
   ASSERT_NE(Target, nullptr);
   const auto *Carriers = Target->getObject("carrier_layout");
   ASSERT_NE(Carriers, nullptr);
-  EXPECT_EQ(Carriers->size(), 11u);
+  EXPECT_EQ(Carriers->size(), 13u);
+  int64_t CharBits = 0;
+  ASSERT_TRUE(Carriers->getInteger("char_bits", CharBits));
+  EXPECT_EQ(CharBits, 8);
+  for (const auto *Name : {"bool", "i8", "u8", "i16", "u16", "int", "uint",
+                          "i64", "u64", "default-pointer", "float", "double"}) {
+    SCOPED_TRACE(Name);
+    const auto *Carrier = Carriers->getObject(Name);
+    ASSERT_NE(Carrier, nullptr);
+    int64_t Size = 0, Align = 0;
+    ASSERT_TRUE(Carrier->getInteger("size_bits", Size));
+    ASSERT_TRUE(Carrier->getInteger("abi_align_bits", Align));
+    EXPECT_GT(Size, 0);
+    EXPECT_GT(Align, 0);
+  }
   const auto *Records = Object->getArray("record_layouts");
   ASSERT_NE(Records, nullptr);
   ASSERT_EQ(Records->size(), 2u);
@@ -18376,7 +18410,6 @@ TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
   const Rejection Cases[] = {
       {"pointer-alias", "using Hidden = long double *;", "TR0201"},
       {"volatile-alias", "using Hidden = volatile int;", "TR0201"},
-      {"function-alias", "using Hidden = void();", "TR0201"},
       {"floating-assertion", "static_assert(1.0L == 1.0L, \"checked types\");",
        "TR0201"},
       {"failed-assertion", "static_assert(false, \"must fail\");", "TR0202"}};
