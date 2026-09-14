@@ -102,6 +102,8 @@ Core v2 accepte les types IEEE `float` et `double`, leur arithmétique et conver
 
 Core v2 accepte les littéraux étroits, UTF-8, UTF-16, UTF-32 et larges avec leurs unités exactes et un stockage statique en lecture seule, l’initialisation des tableaux de caractères avec remplissage nul et les tableaux constants d’espace de noms. Alias, copies et durées de vie utilisent les opérations typées existantes. CI de la révision requise ; les en-têtes standard et les allocations/opérations de `std::string` restent inachevés. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-literals-and-constant-arrays).
 
+Core v2 prend en charge les tableaux modifiables et constants initialisés à zéro ou par une constante, dans les espaces de noms, les variables statiques locales et les membres statiques de classe, y compris les instances de modèles admises. État et adresses persistent entre les appels ; les instances distinctes conservent un stockage séparé. L’initialisation dynamique, la destruction statique et la STL complète restent en développement. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).
@@ -119,7 +121,7 @@ Core v2 ajoute les tableaux locaux de taille fixe et les champs tableau, l’ind
 
 Core v2 prend en charge `switch`/`case`/`default`, les instructions d’initialisation C++17, le passage au cas suivant et les annotations `[[fallthrough]]` validées. Le sélecteur est évalué une seule fois ; les switch et boucles imbriqués conservent les cibles de `break`/`continue`. Les plages case GNU et les autres attributs d’instruction restent exclus.
 
-Core v2 prend désormais en charge les entiers signés et non signés de 8, 16, 32 et 64 bits, les types et littéraux caractères, ainsi que les requêtes constantes `sizeof`/`alignof`. Les promotions et la résolution des surcharges précèdent la normalisation ; `long`, `wchar_t` et le type de taille suivent la cible. Les types sous-jacents des enums peuvent aussi être plus étroits ou plus larges. Les chaînes à l’exécution et la STL restent en développement.
+Core v2 prend désormais en charge les entiers signés et non signés de 8, 16, 32 et 64 bits, les types et littéraux caractères, ainsi que les requêtes constantes `sizeof`/`alignof`. Les promotions et la résolution des surcharges précèdent la normalisation ; `long`, `wchar_t` et le type de taille suivent la cible. Les types sous-jacents des enums peuvent aussi être plus étroits ou plus larges. La bibliothèque standard reste en développement.
 
 Core v2 prend aussi en charge les décalages et différences de pointeurs sur objets, leur incrémentation/décrémentation et les affectations composées, avec parcours des tableaux et pas multidimensionnels. Les fonctions auxiliaires générées préservent les règles C++17 pour un pointeur nul plus ou moins zéro et la différence de deux pointeurs nuls. Les comparaisons d’ordre entre pointeurs, les conversions pointeur/entier et les conteneurs et algorithmes STL restent exclus.
 

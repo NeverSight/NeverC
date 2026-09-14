@@ -85,7 +85,7 @@ Types are strings: `int`, `uint`, `bool`, `void`, or the identifier of a record.
 
 Identifiers are ASCII C identifiers. Non-C-export declarations use an `nct_` prefix and a deterministic digest of their semantic identity. Internal-linkage identities include the normalized relative source path. Native C exports retain their explicit source name and must use scalar signatures; `main` retains its spelling, int return, and empty argument list. All emitted identifiers reject NC keywords and reserved runtime/compiler spellings, including the emitter-private `nct_emit_` prefix. Record typedefs, globals and functions occupy one disjoint ordinary-identifier namespace; parameters and locals are mutually distinct and cannot shadow module declarations. Field names are distinct within each record. Source C exports may not use the generated `nct_` namespace. Identifiers never depend on AST addresses or absolute roots.
 
-Globals are `{name,type,value,loc}`. Their values must be fully folded literal/aggregate trees: the frontend resolves constant references, operators and conversions before serialization. The v1 profiles represent only checked compile-time constants and never permit global writes. Core v2 additionally accepts an optional boolean `mutable` field, defaulting to `false`: only supported numeric, boolean, null and callback scalar globals may set it to `true`, with a folded constant or static-zero initializer. The consumer permits writes and mutable addresses only for those exact global identities. Other profiles reject the field, and const globals remain read-only. Mutable records, arrays and object-pointer globals are not admitted. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. The v1 profiles restrict this representation to their admitted trivial value types. Core v2 represents source aliases, addressable storage and lifetimes through explicit operations described below; declarations at entry do not perform initialization or start object lifetimes.
+Globals are `{name,type,value,loc}`. Their values must be fully folded literal/aggregate trees: the frontend resolves constant references, operators and conversions before serialization. The v1 profiles represent only checked compile-time constants and never permit global writes. Core v2 additionally accepts an optional boolean `mutable` field, defaulting to `false`: supported numeric, boolean, null and callback scalar globals and complete fixed arrays may set it to `true`, with a folded constant or static-zero initializer. The consumer permits writes and mutable addresses only for those exact global identities. Other profiles reject the field, and const globals remain read-only. Mutable record and object-pointer globals are not admitted. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. The v1 profiles restrict this representation to their admitted trivial value types. Core v2 represents source aliases, addressable storage and lifetimes through explicit operations described below; declarations at entry do not perform initialization or start object lifetimes.
 
 ## Pure expressions
 
@@ -832,14 +832,15 @@ guess or opaque string opcode is involved. Literal-object names use the reserved
 `nct_string_` prefix with deterministic discovery ordinals. These names identify
 storage, not a promise that different source occurrences share an object.
 
-Core v2 accepts folded array globals and records containing arrays when `mutable`
-is absent or false. The consumer verifies every extent, element type, initializer
+Core v2 accepts folded array globals with either mutability and const records
+containing arrays. The consumer verifies every extent, element type, initializer
 arity and folded leaf, together with normal carrier/record layout checks. Array
 aggregates remain initializer-only; this does not admit runtime array assignment,
 array value parameters/results or arbitrary constant pointer relocations.
-Array decay and addresses require const-qualified pointers when rooted in these
-globals; writes retain ordinary const-storage rejection. The emitter declares
-complete `static const` arrays before functions.
+Array decay and addresses require const-qualified pointers when rooted in
+read-only globals; writes retain ordinary const-storage rejection. The emitter
+declares complete `static` or `static const` arrays before functions according
+to each object's mutability.
 
 Source character-array initializers lower to typed element stores into their
 own destination, including zero-filled trailing elements. Evaluated literal
@@ -849,6 +850,17 @@ No dynamic allocation, initialization call or string runtime mapping is added.
 Source const arrays use initialization of the actual declaration for constant
 evaluation; the initializer expression's lvalue address is not an array value.
 See the [string and array contract](cpp-core-v2.md#string-literals-and-constant-arrays).
+
+The same array globals represent namespace objects, function-local statics and
+defined static data members, including admitted concrete template instances.
+Their source owner and canonical identity determine the generated name; no
+automatic local or block-entry initialization represents them. Constant
+initialization evaluates the actual source-owned definition and retains its
+complete typed object value. A mutable array may contain record/array subtrees;
+the verifier checks every folded leaf, extent, element type and layout. Runtime
+whole-array assignment remains invalid, and constant object-pointer relocations
+remain outside the folded expression set. Literal objects always retain their
+read-only permission. See [static arrays](cpp-core-v2.md#fixed-array-static-storage).
 
 ## Core v2 binary floating-point values
 

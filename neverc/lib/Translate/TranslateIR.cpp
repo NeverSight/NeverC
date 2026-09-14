@@ -1465,11 +1465,12 @@ public:
                         (!G.ValueType.isInteger() && !G.ValueType.isFloating() &&
                          G.ValueType.Kind != TypeKind::Bool &&
                          G.ValueType.Kind != TypeKind::NullPtr &&
+                         G.ValueType.Kind != TypeKind::Array &&
                          G.ValueType.Kind != TypeKind::FunctionPointer)))
-        return error(G.Loc, "Mutable globals require core v2 numeric, boolean, nullptr or callback storage.");
+        return error(G.Loc, "Mutable globals require core v2 numeric, boolean, nullptr, callback or fixed-array storage.");
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
           !type(G.ValueType, G.Loc) || G.ValueType.Kind == TypeKind::Pointer ||
-          (containsArray(G.ValueType) && (M.Profile != "cpp-core-v2" || G.Mutable)) ||
+          (containsArray(G.ValueType) && M.Profile != "cpp-core-v2") ||
           !Symbols.insert(G.Name).second)
         return error(G.Loc, "Invalid or duplicate global identifier/type.");
       Globals.emplace(G.Name, G.ValueType);

@@ -102,6 +102,8 @@ Core v2 admits IEEE `float` and `double`, arithmetic and conversions, references
 
 Core v2 admits narrow, UTF-8, UTF-16, UTF-32 and wide string literals with exact code units and static read-only storage, character-array initialization with zero fill, and fully constant namespace arrays. Aliases, field copies and source lifetimes use existing typed operations. Implementing-revision CI is required; standard headers and `std::string` allocation and operations remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#string-literals-and-constant-arrays).
 
+Core v2 supports zero or constant initialization of mutable and const arrays at namespace scope, in function-local statics and in class static members, including admitted template instances. Canonical arrays retain shared state and addresses across calls; different instances keep separate storage. Dynamic initialization, static destruction and full STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).
@@ -119,7 +121,7 @@ Core v2 also adds fixed-size local arrays and array fields, multidimensional ind
 
 Core v2 supports `switch`/`case`/`default`, including C++17 init-statements, fallthrough and validated `[[fallthrough]]` annotations. Selector evaluation occurs once; nested switches and loops retain their own `break` and `continue` targets. GNU case ranges and other statement attributes remain rejected.
 
-Core v2 now supports signed and unsigned 8-, 16-, 32- and 64-bit integers, character types and literals, and constant `sizeof`/`alignof` queries. Source promotions and overload resolution precede width normalization; `long`, `wchar_t` and the size type follow the selected target. This includes narrow and wide enum underlying types. Runtime strings and STL are still being developed.
+Core v2 now supports signed and unsigned 8-, 16-, 32- and 64-bit integers, character types and literals, and constant `sizeof`/`alignof` queries. Source promotions and overload resolution precede width normalization; `long`, `wchar_t` and the size type follow the selected target. This includes narrow and wide enum underlying types. The standard library is still being developed.
 
 Core v2 also supports object-pointer offsets, differences, increment/decrement and compound assignments, including array iteration and multidimensional strides. Generated helpers preserve C++17 null-pointer plus/minus zero and null-pointer difference. Pointer ordering and pointer/integer casts remain unsupported; this does not yet provide STL containers or algorithms.
 

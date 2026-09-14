@@ -234,7 +234,7 @@ class FunctionLowering {
     if (const auto *V = dyn_cast<VarDecl>(D);
         A.S.coreV2() && V && V->isStaticLocal()) {
       if (!A.StaticLocals.count(V->getCanonicalDecl()))
-        reject(L, "static local storage", "No checked scalar static definition exists.");
+        reject(L, "static local storage", "No checked static definition exists.");
       return variable(A.name(V), type(V->getType(), L), L);
     }
     auto I = Storage.find(D->getCanonicalDecl());

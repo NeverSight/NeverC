@@ -878,10 +878,10 @@ TEST(TranslateIR, MutableGlobalsRetainProfileTypeAndInitializerBoundaries) {
   Old.Globals.push_back({"nct_mutable", intType(), literal("0"), InputLoc, true});
   invalid(Old, "Mutable globals require core v2");
   for (const auto &T : {Type{TypeKind::Record, "nct_record"}, pointerType(intType()),
-                        arrayType(intType(), 2), Type{TypeKind::Void, {}}}) {
+                        Type{TypeKind::Void, {}}}) {
     auto M = module(true);
     M.Globals.push_back({"nct_mutable", T, literal("0", T), InputLoc, true});
-    invalid(M, "Mutable globals require core v2 numeric, boolean, nullptr or callback storage");
+    invalid(M, "Mutable globals require core v2 numeric, boolean, nullptr, callback or fixed-array storage");
   }
   auto M = module(true);
   M.Globals.push_back({"nct_mutable", integerType(8, true), literal("256", integerType(8, true)), InputLoc, true});
@@ -1150,6 +1150,85 @@ TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
   }
 }
 
+TEST(TranslateIR, CoreV2MutableStaticArraysPreserveStoresAndReadonlyAliases) {
+  auto M = module(true);
+  const auto Array = arrayType(intType(), 2);
+  const auto Pointer = pointerType(intType());
+  auto Values = pointerExpr(ExprKind::Aggregate, Array, {literal("1"), literal("0")});
+  M.Globals.push_back({"nct_array", Array, Values, InputLoc, true});
+  auto Decay = pointerExpr(ExprKind::ArrayDecay, Pointer, {variable("nct_array", Array)});
+  auto Element = pointerExpr(ExprKind::Index, intType(), {Decay, literal("1")});
+  Instruction Assign;
+  Assign.Op = InstructionKind::Assign;
+  Assign.Loc = InputLoc;
+  Assign.Target = Element;
+  Assign.Value = literal("3");
+  M.Functions[0].Body = {label(), Assign, ret(Element)};
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static int nct_array[2] = {"), std::string::npos);
+  auto Bad = M;
+  Bad.Globals[0].Mutable = false;
+  invalid(Bad, "Global constants");
+  Bad = M;
+  Bad.Functions[0].Body[1].Target->Args[0].ValueType = pointerType(intType(), true);
+  invalid(Bad, "Const pointee");
+  Bad = M;
+  Bad.Globals[0].Value = literal("0", Array);
+  invalid(Bad, "literal");
+  Bad = M;
+  Bad.Globals[0].Value.Args.pop_back();
+  invalid(Bad, "operand count");
+  Bad = M;
+  Bad.Globals[0].Value.Args[0] = binary(BinaryOperator::Add, literal("1"), literal("2"));
+  invalid(Bad, "folded");
+  Bad = M;
+  Bad.Functions[0].Body[1].Target = variable("nct_array", Array);
+  Bad.Functions[0].Body[1].Value = Values;
+  invalid(Bad, "Array aggregate");
+  M.Functions[0].Result = pointerType(intType(), true);
+  Decay.ValueType = M.Functions[0].Result;
+  M.Functions[0].Body = {label(), ret(Decay)};
+  D.clear();
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+}
+
+TEST(TranslateIR, CoreV2MutableStaticArrayTreesRetainNestedStorage) {
+  auto M = module(true);
+  const auto Row = arrayType(intType(), 2);
+  const Type Record{TypeKind::Record, "nct_record"};
+  M.Records.push_back({"nct_record", {{"values", Row}}, InputLoc,
+                       RecordLayout{{64, 32}, {0}}});
+  const auto Array = arrayType(Record, 2);
+  auto RecordValue = pointerExpr(ExprKind::Aggregate, Record, {
+      pointerExpr(ExprKind::Aggregate, Row, {literal("1"), literal("0")})});
+  auto Values = pointerExpr(ExprKind::Aggregate, Array, {RecordValue, RecordValue});
+  M.Globals.push_back({"nct_array", Array, Values, InputLoc, true});
+  auto Element = pointerExpr(ExprKind::Index, Record, {
+      pointerExpr(ExprKind::ArrayDecay, pointerType(Record), {variable("nct_array", Array)}),
+      literal("1")});
+  auto Member = pointerExpr(ExprKind::Member, Row, {Element});
+  Member.Name = "values";
+  M.Functions[0].Result = pointerType(intType());
+  M.Functions[0].Body.back() = ret(pointerExpr(
+      ExprKind::ArrayDecay, M.Functions[0].Result, {Member}));
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static nct_record nct_array[2] = {"), std::string::npos);
+  auto Bad = M;
+  Bad.Globals[0].Value.Args[1].Args[0].Args.pop_back();
+  invalid(Bad, "operand count");
+  Bad = M;
+  Bad.Globals[0].Value.Args[0].Args[0].Args[1] = literal("1", uintType());
+  invalid(Bad, "Array element initializer type mismatch");
+  Bad = M;
+  Bad.Profile = "cpp-core-v1";
+  Bad.Target.Carriers.reset();
+  invalid(Bad, "Array types require core v2");
+}
+
 TEST(TranslateIR, CoreV2ConstantArraysHaveStaticConstStorageAndCheckedAddresses) {
   auto M = module(true);
   const auto Byte = integerType(8);
@@ -1171,9 +1250,6 @@ TEST(TranslateIR, CoreV2ConstantArraysHaveStaticConstStorageAndCheckedAddresses)
   Bad.Functions[0].Result = pointerType(Byte);
   Bad.Functions[0].Body.back().Value->ValueType = pointerType(Byte);
   invalid(Bad, "Global constants");
-  Bad = M;
-  Bad.Globals[0].Mutable = true;
-  invalid(Bad, "Mutable globals");
   Bad = M;
   Bad.Globals[0].Value.Args.pop_back();
   invalid(Bad, "operand count");

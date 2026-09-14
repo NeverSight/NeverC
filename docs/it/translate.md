@@ -102,6 +102,8 @@ Core v2 ammette IEEE `float` e `double`, aritmetica e conversioni, riferimenti, 
 
 Core v2 ammette letterali stretti, UTF-8, UTF-16, UTF-32 e larghi con unità esatte e memoria statica di sola lettura, inizializzazione degli array di caratteri con riempimento a zero e array costanti di namespace. Alias, copie dei campi e durata usano le operazioni tipizzate esistenti. È richiesta la CI della revisione; header standard, allocazione e operazioni di `std::string` restano incompleti. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-literals-and-constant-arrays).
 
+Core v2 supporta array modificabili e costanti con inizializzazione a zero o costante negli spazi dei nomi, nelle variabili statiche locali e nei membri statici di classe, comprese le istanze di template ammesse. Stato e indirizzi persistono tra le chiamate; istanze diverse mantengono memoria separata. Inizializzazione dinamica, distruzione statica e STL completa restano in sviluppo. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).
@@ -119,7 +121,7 @@ Core v2 aggiunge array locali di dimensione fissa e campi array, indicizzazione 
 
 Core v2 supporta `switch`/`case`/`default`, con istruzioni di inizializzazione C++17, passaggio al caso successivo e annotazioni `[[fallthrough]]` convalidate. Il selettore viene valutato una sola volta; switch e cicli annidati mantengono le destinazioni di `break`/`continue`. Restano esclusi gli intervalli case GNU e altri attributi di istruzione.
 
-Core v2 supporta interi con e senza segno a 8, 16, 32 e 64 bit, tipi e letterali carattere e interrogazioni costanti `sizeof`/`alignof`. Promozioni e risoluzione degli overload precedono la normalizzazione; `long`, `wchar_t` e il tipo delle dimensioni seguono la piattaforma. Anche le enumerazioni ammettono tipi sottostanti più stretti o più ampi. Stringhe a runtime e STL sono ancora in sviluppo.
+Core v2 supporta interi con e senza segno a 8, 16, 32 e 64 bit, tipi e letterali carattere e interrogazioni costanti `sizeof`/`alignof`. Promozioni e risoluzione degli overload precedono la normalizzazione; `long`, `wchar_t` e il tipo delle dimensioni seguono la piattaforma. Anche le enumerazioni ammettono tipi sottostanti più stretti o più ampi. La libreria standard è ancora in sviluppo.
 
 Core v2 supporta anche spostamenti e differenze tra puntatori a oggetti, incrementi/decrementi e assegnazioni composte, inclusi attraversamenti di array e passi multidimensionali. Le funzioni ausiliarie generate preservano le regole C++17 per un puntatore nullo più o meno zero e per la differenza tra due puntatori nulli. Restano esclusi i confronti d’ordine tra puntatori, le conversioni puntatore/intero e i contenitori e algoritmi STL.
 

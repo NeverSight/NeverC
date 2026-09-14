@@ -102,6 +102,8 @@ Core v2 unterstützt IEEE `float` und `double`, Arithmetik und Konvertierungen, 
 
 Core v2 unterstützt schmale, UTF-8-, UTF-16-, UTF-32- und breite Stringliterale mit exakten Codeeinheiten und statischem schreibgeschütztem Speicher, Zeichenarray-Initialisierung mit Nullauffüllung und konstant initialisierte Namespace-Arrays. Aliase, Feldkopien und Lebensdauern nutzen die vorhandenen typisierten Operationen. CI der Implementierungsrevision ist erforderlich; Standardheader sowie Speicherverwaltung und Operationen von `std::string` stehen noch aus. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-literals-and-constant-arrays).
 
+Core v2 unterstützt null- oder konstantinitialisierte veränderliche und konstante Arrays auf Namespace-Ebene, als lokale statische Variablen und als statische Klassenmember, einschließlich zugelassener Template-Instanzen. Zustand und Adressen bleiben über Aufrufe hinweg erhalten; verschiedene Instanzen haben getrennten Speicher. Dynamische Initialisierung, statische Destruktion und die vollständige STL bleiben in Entwicklung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).
@@ -119,7 +121,7 @@ Core v2 ergänzt lokale Arrays fester Länge und Array-Felder, mehrdimensionale 
 
 Core v2 unterstützt `switch`/`case`/`default` mit C++17-Initialisierungsanweisungen, Fallthrough und geprüften `[[fallthrough]]`-Annotationen. Der Selektor wird einmal ausgewertet; verschachtelte Switches und Schleifen behalten ihre `break`-/`continue`-Ziele. GNU-Case-Bereiche und andere Anweisungsattribute bleiben ausgeschlossen.
 
-Core v2 unterstützt jetzt vorzeichenbehaftete und vorzeichenlose Ganzzahlen mit 8, 16, 32 und 64 Bit, Zeichentypen und Zeichenliterale sowie konstante `sizeof`-/`alignof`-Abfragen. Integer-Promotions und Überladungsauflösung erfolgen vor der Normalisierung; `long`, `wchar_t` und der Größentyp folgen der Zielplattform. Auch Enum-Basistypen dürfen schmaler oder breiter sein. Laufzeitzeichenketten und STL sind noch in Entwicklung.
+Core v2 unterstützt jetzt vorzeichenbehaftete und vorzeichenlose Ganzzahlen mit 8, 16, 32 und 64 Bit, Zeichentypen und Zeichenliterale sowie konstante `sizeof`-/`alignof`-Abfragen. Integer-Promotions und Überladungsauflösung erfolgen vor der Normalisierung; `long`, `wchar_t` und der Größentyp folgen der Zielplattform. Auch Enum-Basistypen dürfen schmaler oder breiter sein. Die Standardbibliothek ist noch in Entwicklung.
 
 Core v2 unterstützt außerdem Objektzeiger-Offsets, Zeigerdifferenzen, Inkrement/Dekrement und zusammengesetzte Zuweisungen, einschließlich Array-Durchläufen und mehrdimensionaler Schrittweiten. Generierte Hilfsfunktionen erhalten die C++17-Regeln für Nullzeiger plus/minus null und die Differenz zweier Nullzeiger. Zeigerordnung, Zeiger/Ganzzahl-Konvertierungen sowie STL-Container und -Algorithmen bleiben ausgenommen.
 

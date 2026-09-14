@@ -105,9 +105,11 @@ Supported numeric, null, callback and trivial record elements use their existing
 typed constant representations. No global constructor, destructor or runtime
 initialization is invented. All written initializer source remains checked.
 
-Mutable global arrays, static local/member arrays, pointer/reference globals,
-dynamic initialization, global destruction, user-defined literal operators,
-standard headers and `std::string` allocation/operations remain unfinished.
+Namespace and local/member static arrays also follow the
+[fixed-array static storage contract](#fixed-array-static-storage).
+Pointer/reference globals, dynamic initialization, global destruction,
+user-defined literal operators, standard headers and `std::string`
+allocation/operations remain unfinished.
 Existing array extent and generated-node budgets apply; no runtime bounds checks
 are added. V1 profiles retain their previous accepted inputs.
 
@@ -115,6 +117,59 @@ Paired source/protocol cases, const/array IR verification and O0/O2 fixtures cov
 encoding, zero fill, aliases, persistent addresses, source effects, copying,
 lifetimes, canonical globals and relocation. Native results require CI of the
 implementing revision; this increment does not establish complete C++/STL.
+
+## Fixed-array static storage
+
+Core v2 admits complete fixed arrays with static storage at namespace scope,
+inside ordinary supported functions, and as defined class static data members.
+Mutable and const arrays retain their source access rules. Definitions may use
+zero initialization or fully defined constant initialization, including nested
+arrays, character strings, numeric/null/callback values and admitted record
+elements that require no destruction. Source qualifiers, record layout, array
+extents and initializer operations retain their normal checks.
+
+```cpp
+int counters[2];
+struct Labels {
+  inline static constexpr char title[8] = "counter";
+};
+template<int N> int* state() {
+  static int values[2] = {N, 0};
+  return values;
+}
+int main() {
+  ++counters[0];
+  state<3>()[1] = counters[0];
+  return state<3>()[1] != 1 || state<5>()[1] != 0;
+}
+```
+
+Each canonical declaration or admitted concrete template instance has one
+permanent array. Re-entering a function, branch, loop or switch does not allocate
+or initialize it again. Array references and pointers retain that storage after
+the declaring function returns. Static class members add no instance fields;
+access through a receiver retains its evaluated effects and temporary cleanup.
+Destruction of a receiver does not destroy a static array.
+
+Class static arrays and namespace/member variable templates retain the existing
+source ownership, specialization, instantiation and lazy-initializer checks.
+Equivalent template arguments share storage; distinct instances keep separate
+arrays. Ordinary explicit-bound redeclarations and out-of-line definitions must
+resolve to the same owned definition. A required missing definition is `TR0203`,
+including const array members that cannot use scalar declaration-only values.
+
+The frontend evaluates each actual initialized object once and serializes all
+elements, including static zero fill. Mutable arrays use the existing global
+`mutable` permission; const arrays and literal objects remain read-only. Local
+static declarations emit no automatic shadow, runtime initialization guard or
+repeated element stores. Arrays cannot be assigned as whole values.
+
+Dynamic initialization and synchronized guards, TLS and volatile storage,
+nontrivial static destruction, object-pointer/reference elements and mutable
+record globals still need further support. Standard headers and full STL remain
+unfinished. Paired source/protocol cases, IR checks and O0/O2 fixtures cover
+shared state, initialization, nested elements, aliases, template identity,
+receiver effects and relocation; native results require the implementing CI.
 
 ## Binary floating-point values
 
@@ -931,8 +986,9 @@ members used only for their checked values follow the
 [declaration-only constant contract](#declaration-only-static-constant-values).
 They need no invented storage definition.
 
-Dynamic initialization, static pointer/reference/array/record objects, TLS,
-static locals and class templates retain their restrictions. There is no startup or
+Fixed arrays follow the [static array contract](#fixed-array-static-storage).
+Dynamic initialization, static pointer/reference/record objects and TLS
+retain their restrictions. There is no startup or
 static-destruction function in this representation. Older profiles retain their
 existing behavior. Native O0/O2 fixtures and protocol checks cover shared state,
 canonical definitions, initializer ownership, receiver effects, actual addresses,
@@ -2002,7 +2058,8 @@ Admitted ordinary records, including nested records, and concrete class-template
 and full instances support scalar static member variable templates. Results are
 integer, boolean, enum, float or double values, including scalar deduced `auto`, with zero or
 constant initialization. Callback results additionally follow the
-[callback variable-template contract](#callback-variable-templates). Inner
+[callback variable-template contract](#callback-variable-templates), and fixed
+arrays follow their [static storage contract](#fixed-array-static-storage). Inner
 type/scalar arguments, defaults, partial/full
 specializations and bounded packs retain the existing 64-entry limits. Ordinary
 C++ access, specialization ordering and required definitions still apply.
@@ -2219,7 +2276,8 @@ plain or constexpr variables, C++17 inline variables, deduced `auto` and
 full specializations, type/scalar defaults and concrete packs. Each parameter
 list and pack has at most 64 entries. Member variable templates follow their
 separate contract above. Callback results follow the
-[callback storage contract](#callback-variable-templates). Other result types,
+[callback storage contract](#callback-variable-templates). Fixed arrays follow
+their [static storage contract](#fixed-array-static-storage). Other result types,
 thread-local storage and dynamic initialization remain excluded.
 
 ```cpp
@@ -2404,7 +2462,8 @@ members with checked zero or constant initialization. C++17 inline/constexpr,
 out-of-line definitions, scalar auto/decltype(auto), private/protected access,
 explicit member instantiation/specialization and full class specialization retain
 ordinary C++ source semantics. A dependent static type must resolve to a supported
-scalar. Static pointers, references, arrays, records, volatile/thread-local data,
+scalar or a [fixed array](#fixed-array-static-storage). Static pointers, references,
+records, volatile/thread-local data,
 dynamic initialization remain excluded.
 
 Each actual definition becomes one ordinary typed global. Equivalent class
@@ -2846,7 +2905,8 @@ it creates no runtime call. The entire owned initializer and function source
 is still inspected, including unused declarations and statically skipped code.
 
 Dynamic initialization, initialization guards and their synchronization, TLS,
-volatile storage, local extern declarations, other static local types and
+volatile storage, local extern declarations, static types outside scalars and
+[fixed arrays](#fixed-array-static-storage), and
 other template forms retain separate restrictions. This stage adds no static record
 destruction or exception machinery. V1 profiles retain their previous behavior.
 The static storage rule does not change automatic uninitialized scalar locals.
@@ -2876,8 +2936,9 @@ single translation unit; it is emitted once. Namespace, internal-linkage and
 C++17 inline definitions retain their source identity. Globals are emitted with
 internal generated names, without adding a public C data-export ABI.
 
-Const globals retain their existing read-only representation. Mutable record,
-array, object-pointer and reference globals, volatile/atomic globals,
+Const globals retain their existing read-only representation. Fixed arrays
+follow their [static storage contract](#fixed-array-static-storage). Mutable record,
+object-pointer and reference globals, volatile/atomic globals,
 dynamic initialization and thread-local storage remain outside current support.
 Statically initialized scalar locals and defined scalar static data members
 follow their separate contracts above. Nontrivial global object destruction
@@ -2885,7 +2946,7 @@ still requires separate lifetime support. Other profiles retain their prior
 constant-global contract.
 
 The optional global IR field `mutable` defaults to `false`. Only core v2 accepts
-this field, and only supported numeric, boolean, null and callback carriers can
+this field, and supported numeric, boolean, null, callback and fixed-array carriers can
 set it to `true`.
 The consumer checks the folded scalar initializer and grants writes or mutable
 addresses only to that exact global. Emission uses `static` for mutable storage
@@ -3947,7 +4008,8 @@ int main() {
 ```
 
 Const global arrays and const records containing arrays follow the static storage
-contract above. Mutable global arrays, zero-length and variable-length
+contract above. Mutable globals and static local/member arrays follow the
+[static storage contract](#fixed-array-static-storage). Zero-length and variable-length
 arrays and unsupported element types remain rejected, including in unused or
 dead code. Admitted record elements follow the normal destruction rules above. Indexing requires the same
 valid storage and in-bounds accesses as the source program; the translator does
