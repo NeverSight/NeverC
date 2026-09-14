@@ -1550,9 +1550,9 @@ class FunctionLowering {
                  A.Context.hasSameUnqualifiedType(C->getType(), C->getSubExpr()->getType())) {
         Init = C->getSubExpr();
       } else {
-        const auto *C = dyn_cast<CXXConstructExpr>(Init);
-        return C && C->getConstructor()->isDefaultConstructor() &&
-               C->getConstructor()->getParent()->getCanonicalDecl() ==
+        const auto *Construct = dyn_cast<CXXConstructExpr>(Init);
+        return Construct && Construct->getConstructor()->isDefaultConstructor() &&
+               Construct->getConstructor()->getParent()->getCanonicalDecl() ==
                    Record->getCanonicalDecl();
       }
     }
