@@ -10371,6 +10371,39 @@ int main(){
   }
 }
 
+TEST_F(TranslateTest, CoreV2TemplateCallbackArraysPreserveSelectionAndCopies) {
+  const auto Source = tmpFile("template-callback-array-runtime.cpp");
+  const auto Output = tmpFile("template-callback-array-runtime.nc");
+  writeFile(Source, R"cpp(using F=int(*)(int);
+int trace=0;
+namespace N{template<int N>int add(int n){trace=trace*10+N;return n+N;}}
+using N::add;
+namespace A=N;
+template<class T>T identity(T n){return n;}
+struct Holder{F p[4];};
+int main(){
+ Holder h{{add<1>,(A::add<2>),&(N::add<3>),identity}};
+ Holder copy=h;
+ if(copy.p[0]!=&add<1>||copy.p[1]!=&add<2>||copy.p[2]!=&add<3>)return 1;
+ if(copy.p[0](3)!=4||copy.p[1](3)!=5||copy.p[2](3)!=6||trace!=123)return 2;
+ if(copy.p[3](7)!=7)return 3;
+ copy.p[0]=copy.p[2];trace=0;
+ if(copy.p[0](1)!=4||trace!=3||h.p[0]==copy.p[0])return 4;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("template-callback-array-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TemplateFunctionPointersAcceptTypedCallbacks) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"explicit-address", "template<class T>T get(T n){return n;}int main(){auto p=&get<int>;return p(3);}"},
@@ -10405,6 +10438,15 @@ TEST_F(TranslateTest, CoreV2TemplateFunctionPointersAcceptTypedCallbacks) {
       {"callback-argument", "using F=int(*)(int);template<class T>T get(T n){return n;}int use(F p){return p(3);}int main(){return use(get<int>);}"},
       {"returned-callback", "using F=int(*)(int);template<class T>T get(T n){return n;}F make(){return get<int>;}int main(){return make()(3);}"},
       {"nested-factory-target", "using F=int(*)(int);template<class T>T get(T n){return n;}template<class T>F make(){return get<int>;}int main(){auto p=&make<bool>;return p()(3);}"},
+      {"callback-array-deduction", "template<class T>T get(T n){return n;}int main(){int(*p[2])(int)={get,get};return p[1](3);}"},
+      {"callback-array-parentheses", "template<int N>int get(){return N;}struct R{int(*p[2])();};int main(){R r{{(get<2>),((get<3>))}};return r.p[1]();}"},
+      {"callback-array-address", "template<int N>int get(){return N;}struct R{int(*p[2])();};int main(){R r{{&get<2>,&(get<3>)}};return r.p[1]();}"},
+      {"callback-array-qualified", "namespace N{template<int N>int get(){return N;}}namespace A=N;struct R{int(*p[2])();};int main(){R r{{N::get<2>,A::get<3>}};return r.p[1]();}"},
+      {"callback-array-using", "namespace N{template<int N>int get(){return N;}}using N::get;struct R{int(*p[2])();};int main(){R r{{get<2>,get<3>}};return r.p[1]();}"},
+      {"callback-array-overloaded", "template<class T>T get(T n){return n;}template<class T>T get(T*n){return *n;}int main(){int(*p[2])(int)={get,get};return p[1](3);}"},
+      {"callback-array-static-member", "struct R{template<int N>static int get(){return N;}};struct A{int(*p[2])();};int main(){A a{{R::get<2>,R::get<3>}};return a.p[1]();}"},
+      {"callback-array-empty-arguments", "template<int N=3>int get(){return N;}struct R{int(*p[2])();};int main(){R r{{get<>,get<>}};return r.p[1]();}"},
+      {"callback-array-runtime", "using F=int(*)(int);\nint trace=0;\nnamespace N{template<int N>int add(int n){trace=trace*10+N;return n+N;}}\nusing N::add;\nnamespace A=N;\ntemplate<class T>T identity(T n){return n;}\nstruct Holder{F p[4];};\nint main(){\n Holder h{{add<1>,(A::add<2>),&(N::add<3>),identity}};\n Holder copy=h;\n if(copy.p[0]!=&add<1>||copy.p[1]!=&add<2>||copy.p[2]!=&add<3>)return 1;\n if(copy.p[0](3)!=4||copy.p[1](3)!=5||copy.p[2](3)!=6||trace!=123)return 2;\n if(copy.p[3](7)!=7)return 3;\n copy.p[0]=copy.p[2];trace=0;\n if(copy.p[0](1)!=4||trace!=3||h.p[0]==copy.p[0])return 4;\n return 0;\n}\n"},
       {"callback-array-field", "template<int N>int get(){return N;}struct R{int(*p[2])();};int main(){R r{{get<2>,get<3>}};return r.p[1]();}"},
       {"reference-result", "template<class T>T&get(T&n){return n;}int main(){auto p=&get<int>;int n=2;p(n)=3;return n;}"},
       {"array-reference-result", "template<class T>T(&get(T(&a)[2]))[2]{return a;}int main(){auto p=&get<int>;int a[2]={2,3};return p(a)[1];}"},
@@ -10431,6 +10473,12 @@ TEST_F(TranslateTest, CoreV2TemplateFunctionPointersAcceptTypedCallbacks) {
 
 TEST_F(TranslateTest, CoreV2TemplateFunctionPointersRetainSourceAndSignatureBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"callback-array-hidden-type", "template<class T>int get(){return 3;}struct R{int(*p[2])();};int main(){R r{{get<int>,get<decltype((sizeof(long double),1))>}};return r.p[1]();}"},
+      {"callback-array-hidden-value", "template<int N>int get(){return 3;}struct R{int(*p[2])();};int main(){R r{{get<1>,get<(sizeof(long double),1)>}};return r.p[1]();}"},
+      {"callback-array-hidden-parenthesized", "template<int N>int get(){return 3;}struct R{int(*p[2])();};int main(){R r{{get<1>,(&(get<(sizeof(long double),1)>))}};return r.p[1]();}"},
+      {"callback-array-hidden-default", "template<class T,int N=(sizeof(long double),1)>T get(T n){return n;}struct R{int(*p[2])(int);};int main(){R r{{get,get}};return r.p[1](3);}"},
+      {"callback-array-hidden-body", "template<int N>int get(){long double n=1.0L;return 3;}struct R{int(*p[2])();};int main(){R r{{get<1>,get<2>}};return r.p[1]();}"},
+      {"callback-array-hidden-cast", "template<int N>int get(){return 3;}struct R{int(*p[2])();};int main(){R r{{get<1>,(int(*)())(void*)&get<2>}};return r.p[1]();}"},
       {"parenthesized-template-hidden-argument", "template<class T>int get(int n){return n;}int main(){return ((get<decltype((sizeof(long double),1))>))(3);}"},
       {"parenthesized-template-second-source", "template<int N>int get(int n){return n+N;}int main(){return (get<8>)(3)+((get<sizeof(long double)>))(5);}"},
       {"object-pointer-unary-plus", "int main(){int n=1;int*p=&n;return *+p;}"},

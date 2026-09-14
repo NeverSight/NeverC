@@ -5,6 +5,8 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Frontend/ASTUnit.h"
+#include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/FrontendAction.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Signals.h"
@@ -158,6 +160,44 @@ public:
   }
 };
 
+// Controlled upstream experiment: make the compatible friend owner visible to
+// FindInstantiatedDecl's existing lexical-context walk. Production source must
+// retain the actual declaration context and repair that walk instead.
+class FriendContextConsumer : public ASTConsumer {
+public:
+  void HandleCXXImplicitFunctionInstantiation(FunctionDecl *Function) override {
+    const auto *Primary = Function->getPrimaryTemplate();
+    if (!Primary || !Function->getLexicalDeclContext()->isFileContext())
+      return;
+    for (const auto *Redecl : Primary->redecls()) {
+      const auto *Template = cast<FunctionTemplateDecl>(Redecl);
+      if (!Template->isCompatibleWithDefinition())
+        continue;
+      auto *Owner = Template->getTemplatedDecl()->getLexicalDeclContext();
+      if (Template->getFriendObjectKind() && isa<CXXRecordDecl>(Owner) &&
+          !Owner->isDependentContext()) {
+        llvm::outs() << "experiment: expose compatible friend owner for "
+                     << Function->getNameAsString() << "\n";
+        Function->setLexicalDeclContext(Owner);
+        Function->setObjectOfFriendDecl();
+      }
+      break;
+    }
+  }
+  void HandleTranslationUnit(ASTContext &Context) override {
+    Context.getTranslationUnitDecl()->dump(llvm::outs());
+    Inspect Visitor(Context);
+    Visitor.TraverseDecl(Context.getTranslationUnitDecl());
+  }
+};
+
+class FriendContextAction : public ASTFrontendAction {
+  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &,
+                                                llvm::StringRef) override {
+    return std::make_unique<FriendContextConsumer>();
+  }
+};
+
 int main(int Argc, const char **Argv) {
   llvm::sys::PrintStackTraceOnErrorSignal(Argv[0]);
   struct Fixture {
@@ -209,12 +249,21 @@ int main(int Argc, const char **Argv) {
   };
   bool Found = false;
   bool Failed = false;
+  const bool FriendContext = Argc > 1 &&
+      llvm::StringRef(Argv[1]) == "visible-copied-friend-context";
   for (const auto &Input : Sources) {
-    if (Argc > 1 && llvm::StringRef(Argv[1]) != Input.Name)
+    if (Argc > 1 && (FriendContext ? llvm::StringRef("visible-copied-friend")
+                                 : llvm::StringRef(Argv[1])) != Input.Name)
       continue;
     Found = true;
     llvm::outs() << "fixture " << Input.Name << "\n";
     llvm::outs().flush();
+    if (FriendContext) {
+      Failed |= !tooling::runToolOnCodeWithArgs(
+          std::make_unique<FriendContextAction>(), Input.Source,
+          {"-std=c++17"}, "input.cpp");
+      continue;
+    }
     auto Unit = tooling::buildASTFromCodeWithArgs(Input.Source, {"-std=c++17"}, "input.cpp");
     if (!Unit) {
       Failed = true;

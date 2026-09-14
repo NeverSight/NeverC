@@ -2015,6 +2015,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const VarDecl *> ActiveVariablePartials, ActiveVariableDeclarations;
   std::vector<const TemplateUseSource *> ActiveTemplateUses;
   std::set<const Expr *> CheckedSemanticInitializers;
+  std::map<const UnresolvedLookupExpr *, const DeclRefExpr *> InitializerLookups;
+  std::set<const Stmt *> InitializerLookupWrappers;
   std::set<const InitListExpr *> EmptyVoidLists;
   std::set<const CXXConstructExpr *> CheckedConstructions;
   std::set<const VarDecl *> CheckedScalarGlobals;
@@ -3056,7 +3058,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
              isa<TranslationUnitDecl, NamespaceDecl>(Source.Context) &&
              Template == Template->getCanonicalDecl();
     if (!owned(Previous) || Previous->isInvalidDecl() || !owned(LinkedPrevious) ||
-        Previous->getDeclContext()->getRedeclContext() != Source.Context->getRedeclContext() ||
+        !Previous->getDeclContext()->getRedeclContext()->Equals(Source.Context->getRedeclContext()) ||
         Previous->getCanonicalDecl() != Template->getCanonicalDecl() ||
         Previous->getDeclName() != Template->getDeclName() ||
         Template->getTemplatedDecl()->getPreviousDecl() != LinkedPrevious->getTemplatedDecl())
@@ -4211,6 +4213,70 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                "default/copy construction are supported.");
     }
   }
+  void retainInitializerLookup(const Expr *Written, const Expr *Selected) {
+    if (!Written || !Selected || Written == Selected)
+      return;
+    // Sema replaces an overloaded name in the semantic clause while retaining
+    // the unresolved node in the written list. Pair only the same explicit
+    // clause and the source components copied by FixOverloadedFunctionReference.
+    std::vector<const Expr *> Wrappers;
+    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Selected);
+        Cast && Cast->getCastKind() == CK_FunctionToPointerDecay)
+      Selected = Cast->getSubExpr();
+    while (true) {
+      A.chargeExpansion(1, Written->getBeginLoc());
+      if (const auto *Paren = dyn_cast<ParenExpr>(Written)) {
+        const auto *Resolved = dyn_cast<ParenExpr>(Selected);
+        if (!Resolved || Paren->getLParen() != Resolved->getLParen() ||
+            Paren->getRParen() != Resolved->getRParen())
+          return;
+        Wrappers.push_back(Written);
+        Written = Paren->getSubExpr();
+        Selected = Resolved->getSubExpr();
+      } else if (const auto *Address = dyn_cast<UnaryOperator>(Written);
+                 Address && Address->getOpcode() == UO_AddrOf) {
+        const auto *Resolved = dyn_cast<UnaryOperator>(Selected);
+        if (!Resolved || Resolved->getOpcode() != UO_AddrOf ||
+            Address->getOperatorLoc() != Resolved->getOperatorLoc())
+          return;
+        Wrappers.push_back(Written);
+        Written = Address->getSubExpr();
+        Selected = Resolved->getSubExpr();
+      } else {
+        break;
+      }
+    }
+    const auto *Lookup = dyn_cast<UnresolvedLookupExpr>(Written);
+    const auto *Reference = dyn_cast<DeclRefExpr>(Selected);
+    const auto *Function = Reference ? dyn_cast<FunctionDecl>(Reference->getDecl()) : nullptr;
+    if (!Lookup || !Function || !owned(Function) ||
+        !A.S.owns(A.Sources, Lookup->getNameLoc()) ||
+        Lookup->getName() != Reference->getDecl()->getDeclName() ||
+        Lookup->getNameLoc() != Reference->getLocation() ||
+        Lookup->getSourceRange() != Reference->getSourceRange() ||
+        !(Lookup->getQualifierLoc() == Reference->getQualifierLoc()) ||
+        Lookup->getTemplateKeywordLoc() != Reference->getTemplateKeywordLoc() ||
+        Lookup->getLAngleLoc() != Reference->getLAngleLoc() ||
+        Lookup->getRAngleLoc() != Reference->getRAngleLoc() ||
+        Lookup->getNumTemplateArgs() != Reference->getNumTemplateArgs())
+      return;
+    bool Found = false;
+    for (const auto *Candidate : Lookup->decls()) {
+      A.chargeExpansion(1, Lookup->getNameLoc());
+      Found |= Candidate == Reference->getFoundDecl();
+    }
+    if (!Found)
+      return;
+    for (unsigned I = 0; I < Lookup->getNumTemplateArgs(); ++I)
+      if (!sameArgumentSource(Lookup->template_arguments()[I],
+                              Reference->template_arguments()[I]))
+        return;
+    auto Inserted = InitializerLookups.emplace(Lookup, Reference);
+    if (!Inserted.second && Inserted.first->second != Reference)
+      A.reject(Lookup->getNameLoc(), "initializer lookup source",
+               "One written callback clause must have one selected reference.");
+    InitializerLookupWrappers.insert(Wrappers.begin(), Wrappers.end());
+  }
   void checkSemanticInitializers(const InitListExpr *List, SourceLocation Owner) {
     // RAV visits only the written form of a braced initializer by default.
     // Follow its semantic elements and shared array filler once for admission;
@@ -4224,6 +4290,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           I = I->getSemanticForm();
         if (!CheckedSemanticInitializers.insert(I).second)
           continue;
+        if (const auto *Written = I->getSyntacticForm();
+            Written && Written->getNumInits() == I->getNumInits())
+          for (unsigned Index = 0; Index < I->getNumInits(); ++Index)
+            retainInitializerLookup(Written->getInit(Index), I->getInit(Index));
         if (I->isGLValue() && !referenceListInitializer(I, A.Context))
           A.reject(Owner, "reference initializer", "A transparent single-element reference list is required.");
         for (const auto *Init : I->inits())
@@ -6803,6 +6873,15 @@ public:
            (!shouldWalkTypesOfTypeLocs() ||
             WalkUpFromSubstTemplateTypeParmType(const_cast<SubstTemplateTypeParmType *>(Type)));
   }
+  bool TraverseUnresolvedLookupExpr(UnresolvedLookupExpr *Lookup) {
+    auto Found = InitializerLookups.find(Lookup);
+    if (!A.S.coreV2() || Found == InitializerLookups.end())
+      return RecursiveASTVisitor<Allowlist>::TraverseUnresolvedLookupExpr(Lookup);
+    // The selected semantic clause was traversed before the written list.
+    // Its declaration, qualifier and complete template source remain checked;
+    // the stale overload pseudo-type is not a second runtime expression.
+    return true;
+  }
   bool TraverseDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()) ||
         (!isa<VarTemplateSpecializationDecl>(Reference->getDecl()) &&
@@ -8664,6 +8743,8 @@ public:
     if (!S || (!ImplicitInitializerOwner.isValid() &&
                !A.S.owns(A.Sources, S->getBeginLoc())))
       return true;
+    if (A.S.coreV2() && InitializerLookupWrappers.count(S))
+      return true; // Exact source wrappers of an already checked callback clause.
     auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
                                         : ImplicitInitializerOwner;
     if (A.S.coreV2()) {

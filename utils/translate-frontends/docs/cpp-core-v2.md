@@ -2090,6 +2090,11 @@ actual body definition. Existing retained parameter pointers must belong to the
 real target chain and supported slots. No additional substitution or lookup is
 used to fabricate missing evidence.
 
+Qualified friend lookup can resolve an earlier namespace block while its previous
+target was declared in a reopened block. These contexts must identify the same
+primary namespace; the exact lookup result and preceding target chain are still
+checked independently.
+
 Each original and actual header checks supported type/integer/boolean/enum
 parameters, packs, nondependent type source and qualifiers. Pending dependent
 syntax stays lazy until a successful copy or use. Written defaults on the original
@@ -2220,6 +2225,15 @@ share one emitted definition and its static-local objects. Different template
 instances remain distinct even when their normalized signatures are identical.
 Friend outer/inner instance identity follows the same source-owner rules as direct
 calls. The postfix callback is captured before argument evaluation.
+
+Braced callback arrays retain the written clause alongside Clang's selected
+semantic initializer. A stale unresolved name is admitted only when the same
+explicit clause proves the selected lookup declaration, name, qualifier,
+template-argument source objects and source locations. Parentheses and address
+operators must also match their selected wrappers. The semantic expression checks
+the function body, signature and complete template source before the written
+overload pseudo-type is skipped. Unsupported syntax in a second clause remains
+diagnosed even when it selects the same canonical specialization.
 
 The ordinary callback contract still excludes record-by-value signatures, function
 references, nonstatic member pointers, constructor/conversion-template addresses,
