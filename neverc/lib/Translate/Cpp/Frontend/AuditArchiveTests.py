@@ -1165,7 +1165,9 @@ public:
                     if state in ("original header only", "original source only"):
                         error = "Unexpected partial pinned Clang explicit-instantiation source"
                     else:
-                        index = 0 if state in ("missing forward anchor", "missing callback anchor", "duplicate header", "partial forward declarations", "partial signature", "extra callback", "missing static header anchor", "partial static signature", "extra static callback") else 1
+                        # Derive the damaged file from its contents, so adding
+                        # a header case cannot silently default to a source error.
+                        index = 0 if header_text not in (explicit_header_original, explicit_header_expected) else 1
                         error = "Unexpected pinned Clang explicit-instantiation source in " + str(explicit_paths[index])
                     run_script(False, error)
                     self.assertEqual(snapshot_all_files(), untouched, state)
