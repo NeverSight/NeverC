@@ -1469,7 +1469,7 @@ public:
         return error(G.Loc, "Mutable globals require core v2 numeric, boolean, nullptr or callback storage.");
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
           !type(G.ValueType, G.Loc) || G.ValueType.Kind == TypeKind::Pointer ||
-          containsArray(G.ValueType) ||
+          (containsArray(G.ValueType) && (M.Profile != "cpp-core-v2" || G.Mutable)) ||
           !Symbols.insert(G.Name).second)
         return error(G.Loc, "Invalid or duplicate global identifier/type.");
       Globals.emplace(G.Name, G.ValueType);
@@ -1516,7 +1516,8 @@ public:
     }
     const std::map<std::string, Type> Empty;
     for (const auto &G : M.Globals)
-      if (G.Value.ValueType != G.ValueType || !expr(G.Value, Empty, 0, true))
+      if (G.Value.ValueType != G.ValueType ||
+          !expr(G.Value, Empty, 0, true, G.ValueType.Kind == TypeKind::Array))
         return error(G.Loc, "Invalid folded global initializer.");
     for (const auto &F : FunctionDeclarations)
       if (!function(F, false))

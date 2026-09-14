@@ -100,6 +100,8 @@ Core v2 admits supported deleted functions and defaulted special members defined
 
 Core v2 admits IEEE `float` and `double`, arithmetic and conversions, references, fields/arrays, callbacks and scalar static objects with zero or constant initialization. Exact literal bits and independent target/layout checks preserve representation; execution requires the default floating environment, with fast math, excess precision and implicit contraction disabled. Implementing-revision CI is required; `long double`, standard headers and complete C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#binary-floating-point-values).
 
+Core v2 admits narrow, UTF-8, UTF-16, UTF-32 and wide string literals with exact code units and static read-only storage, character-array initialization with zero fill, and fully constant namespace arrays. Aliases, field copies and source lifetimes use existing typed operations. Implementing-revision CI is required; standard headers and `std::string` allocation and operations remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#string-literals-and-constant-arrays).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

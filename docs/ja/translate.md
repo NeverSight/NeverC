@@ -100,6 +100,8 @@ Core v2 は対応する削除関数と、削除されるデフォルト特殊メ
 
 Core v2 は IEEE `float` と `double`、算術と変換、参照、フィールドと配列、コールバック、ゼロまたは定数初期化のスカラー静的オブジェクトに対応します。正確なリテラルのビット列と独立した対象レイアウト検査で表現を保持します。実行には既定の浮動小数点環境を必要とし、高速演算、過剰精度、暗黙の積和融合を無効にします。実装リビジョンの CI が必要です。`long double`、標準ヘッダー、完全な C++/STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#binary-floating-point-values).
 
+Core v2 はナロー、UTF-8、UTF-16、UTF-32、ワイド文字列リテラルの正確なコード単位と静的読み取り専用ストレージ、ゼロ埋めを含む文字配列初期化、定数初期化された名前空間配列に対応します。別名、フィールドのコピー、寿命には既存の型付き操作を使います。実装リビジョンの CI が必要で、標準ヘッダーと `std::string` の割り当て・操作は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-literals-and-constant-arrays).
+
 ## 準備とスカラー変換
 
 通常の NeverC と標準リソースをインストールすれば利用できます。C++ フロントエンドと承認済み SDK ヘッダーは内蔵されており、Clang の別途インストールは不要です。ビルドの詳細は[フロントエンドの説明](../../utils/translate-frontends/cpp/README.md)を参照してください。

@@ -10,6 +10,7 @@
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticIDs.h"
+#include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -1655,12 +1656,75 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
   return literal(llvm::APSInt(integerBits(Kind), unsignedInteger(Kind)), Kind, L);
 }
 
+void Adapter::checkStringLiteral(const StringLiteral *Literal) {
+  auto L = Literal->getExprLoc();
+  const auto *Array = Context.getAsConstantArrayType(Literal->getType());
+  if (!S.coreV2() || !Array || Literal->isUnevaluated() || Literal->isPascal() ||
+      !Array->getElementType()->isAnyCharacterType() ||
+      Context.getTypeSize(Array->getElementType()) != Literal->getCharByteWidth() * 8 ||
+      Array->getSize().getLimitedValue() < uint64_t(Literal->getLength()) + 1) {
+    reject(L, "string literal", "A checked C++ character array with its terminating zero is required.");
+    throw Failure{};
+  }
+  // Sema adjusts an initializing literal's array type to the destination bound
+  // and character type, including signed/unsigned char and trailing zero fill.
+  if (type(Literal->getType(), L).empty())
+    throw Failure{};
+}
+
+json::Object Adapter::stringInitializer(const StringLiteral *Literal) {
+  checkStringLiteral(Literal);
+  auto L = Literal->getExprLoc();
+  const auto *Array = Context.getAsConstantArrayType(Literal->getType());
+  auto Count = Array->getSize().getZExtValue();
+  auto Element = type(Array->getElementType(), L);
+  chargeExpansion(Count + 1, L);
+  json::Array Values;
+  for (uint64_t I = 0; I < Count; ++I) {
+    uint32_t Unit = I < Literal->getLength() ? Literal->getCodeUnit(I) : 0;
+    Values.push_back(literal(
+        llvm::APSInt(llvm::APInt(integerBits(Element), Unit), unsignedInteger(Element)), Element, L));
+  }
+  return json::Object{{"kind", "aggregate"}, {"type", type(Literal->getType(), L)},
+                      {"args", std::move(Values)}, {"loc", loc(L)}};
+}
+
+json::Object Adapter::stringObject(const StringLiteral *Literal) {
+  checkStringLiteral(Literal);
+  auto L = Literal->getExprLoc();
+  auto Found = StringObjects.find(Literal);
+  if (Found == StringObjects.end()) {
+    auto Name = "nct_string_" + std::to_string(StringObjects.size());
+    Found = StringObjects.emplace(Literal, Name).first;
+    StringGlobals.push_back(json::Object{
+        {"name", Name}, {"type", type(Literal->getType(), L)},
+        {"value", stringInitializer(Literal)}, {"loc", loc(L)}});
+  }
+  return json::Object{{"kind", "var"}, {"type", type(Literal->getType(), L)},
+                      {"name", Found->second}, {"loc", loc(L)}};
+}
+
 json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
   auto Kind = type(T, L);
   if (V.isInt())
     return literal(V.getInt(), Kind, L);
   if (V.isFloat() && (S.math() || S.coreV2()))
     return floatingLiteral(V.getFloat(), L);
+  if (V.isArray() && S.coreV2()) {
+    const auto *Array = Context.getAsConstantArrayType(T);
+    if (!Array || V.getArraySize() != Array->getSize().getZExtValue()) {
+      reject(L, "constant array", "The folded value must retain its complete array extent.");
+      throw Failure{};
+    }
+    chargeExpansion(V.getArraySize() + 1, L);
+    json::Array Values;
+    for (unsigned I = 0; I < V.getArraySize(); ++I)
+      Values.push_back(constant(I < V.getArrayInitializedElts()
+                                   ? V.getArrayInitializedElt(I) : V.getArrayFiller(),
+                               Array->getElementType(), L));
+    return json::Object{{"kind", "aggregate"}, {"type", Kind},
+                        {"args", std::move(Values)}, {"loc", loc(L)}};
+  }
   if (S.coreV2() && T->isNullPtrType() && V.isLValue() && V.isNullPointer())
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (S.coreV2() && T->isFunctionPointerType() && V.isLValue() &&
@@ -8079,6 +8143,37 @@ public:
                "Global records requiring destruction need static lifetime lowering.");
       return true;
     }
+    if (A.S.coreV2() && !D->isLocalVarDeclOrParm() &&
+        D->getType().isConstQualified() && containsArray(D->getType())) {
+      auto *Definition = D->getDefinition();
+      if (!Definition || !owned(Definition) || Definition->getKind() != Decl::Var ||
+          !Definition->getDeclContext()->getRedeclContext()->isFileContext() ||
+          Definition->getCanonicalDecl() != D->getCanonicalDecl() ||
+          !A.Context.hasSameType(Definition->getType(), D->getType())) {
+        A.reject(D->getLocation(), "constant array definition",
+                 "A constant array object requires its owned definition in this unit.", "TR0203");
+        return true;
+      }
+      auto Canonical = Definition->getCanonicalDecl();
+      if (A.ConstantArrayInitializers.count(Canonical))
+        return true;
+      APValue Value;
+      llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+      const auto *Init = Definition->getInit();
+      if (Definition->getTLSKind() != VarDecl::TLS_None || !Init ||
+          !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
+          !Notes.empty()) {
+        A.reject(D->getLocation(), "constant array initializer",
+                 "A constant array object requires fully defined constant initialization without TLS.");
+        return true;
+      }
+      // Evaluate the actual object, not the initializer's expression value:
+      // a string expression is an lvalue, while its initialized object is an array.
+      A.ConstantArrayInitializers.emplace(
+          Canonical, A.constant(Value, Definition->getType(), Definition->getLocation()));
+      A.Globals.push_back(Definition);
+      return true;
+    }
     if (!D->isLocalVarDeclOrParm() &&
         ((D->getType()->isPointerType() &&
           !(A.S.coreV2() && D->getType()->isFunctionPointerType())) ||
@@ -8388,7 +8483,7 @@ public:
         !(A.S.coreV2() &&
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
-              DefaultStmt, AttributedStmt, CharacterLiteral,
+              DefaultStmt, AttributedStmt, CharacterLiteral, StringLiteral,
               UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
               CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt,
               SubstNonTypeTemplateParmExpr, SizeOfPackExpr>(S)) &&
@@ -8403,6 +8498,8 @@ public:
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
+      if (const auto *Literal = dyn_cast<StringLiteral>(S))
+        A.checkStringLiteral(Literal);
       if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(S);
           M && !fullExpressionTemporary(M, A.Context) && !A.temporaryOwner(M))
         A.reject(L, "temporary lifetime",
@@ -8815,7 +8912,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     json::Object Initializer;
     const auto *Init = S.coreV2() && G->isStaticDataMember()
                            ? G->getAnyInitializer() : G->getInit();
-    if (Init) {
+    if (auto Found = ConstantArrayInitializers.find(G->getCanonicalDecl());
+        Found != ConstantArrayInitializers.end()) {
+      Initializer = json::Object(Found->second);
+    } else if (Init) {
       APValue Value;
       if (!Init->isCXX11ConstantExpr(Context, &Value) || (Mutable && !Value.isInt() && !Value.isFloat() &&
           !G->getType()->isFunctionPointerType() && !G->getType()->isNullPtrType()))
@@ -8886,6 +8986,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   }
   S.Module["target"] = std::move(TargetData);
   S.Module["records"] = std::move(RecordData);
+  // Literal lvalues discovered in any function or cleanup helper have static
+  // storage. Publish their complete definitions before emitting function code.
+  for (auto &Global : StringGlobals)
+    GlobalData.push_back(std::move(Global));
   S.Module["globals"] = std::move(GlobalData);
   // The allowlist resolves every owned call, including unreachable source.
   // Lowering may prune its instruction, so publish evidence only for mappings
@@ -9888,7 +9992,8 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
       // Keep standard template parsing and diagnostics independent of the
       // target's default Microsoft compatibility options.
       Args.insert(Args.end(), {"-Wc++20-extensions", "-Wc++23-extensions",
-                               "-Wc++26-extensions", "-fno-ms-compatibility",
+                               "-Wc++26-extensions", "-Werror=writable-strings",
+                               "-fno-ms-compatibility",
                                "-fno-ms-extensions",
                                "-fno-delayed-template-parsing",
                                "-fno-fast-math", "-ffp-contract=off"});

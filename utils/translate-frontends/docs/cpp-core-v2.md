@@ -54,9 +54,67 @@ binary ABI or foreign-object identity.
 
 Unsupported operations remain errors even inside constant-evaluated assertions
 and enumerator initializers. A cast to `void` cannot hide an unsupported operand
-such as a `long double` literal or runtime string. A successful
-`static_assert(true, "message")` does not admit runtime string literals or
-`std::string`.
+such as a `long double` expression or allocation. Diagnostic assertion messages
+remain separate from runtime string objects. String literals follow the storage
+contract below; `std::string` requires further library and lifetime support.
+
+## String literals and constant arrays
+
+Core v2 admits ordinary, UTF-8, UTF-16, UTF-32 and wide C++17 string literals,
+including escapes, raw spelling, adjacent concatenation and embedded zero
+characters. Embedded Clang decodes the source. The translator preserves its
+character type, exact code units, array bound and terminating zero; target
+character widths and alignments must match their existing integer carriers.
+It does not convert byte strings into NeverC's UTF-8 `string` type.
+
+An evaluated literal lvalue has static, read-only array storage. Pointer decay,
+array references, address formation, offsets, subscripts, source-selected calls,
+defaults and templates retain that storage across calls and scope exits. A
+literal needs no automatic cleanup or allocation. Separate literal occurrences
+may have separate objects; equality between different occurrences is not a
+portable pooling guarantee. Discarded and unevaluated literals are still checked
+but need no emitted storage when their value/address is unused.
+
+```cpp
+const char* message() { return "hello"; }
+constexpr char fixed[8] = "world";
+int main() {
+  char local[8] = {"hello"};
+  local[0] = 'H';
+  return message()[0] != 'h' || local[0] != 'H'
+      || local[7] != 0 || fixed[7] != 0;
+}
+```
+
+Character-array initialization creates the destination's own elements in order,
+including its trailing zero fill. This includes ordinary/braced/parenthesized
+initializers, nested arrays, record fields, default member initializers,
+constructors and existing record copy/return operations. The source destination
+retains its mutability and identity. Implicit conversion of a literal to a
+mutable character pointer is rejected as invalid C++17, including the extension
+that Clang otherwise diagnoses only with a warning. Explicit casts retain the
+existing defined-source-execution contract; they do not make writes to literal
+objects defined.
+
+Source-owned const/constexpr namespace arrays, and const records containing
+arrays, can use fully defined constant initialization. The frontend evaluates
+the actual initialized object, retains every nested array element/filler and
+emits one canonical static const object per declaration. Ordinary explicit-bound
+redeclarations share its owned definition; missing definitions retain `TR0203`.
+Supported numeric, null, callback and trivial record elements use their existing
+typed constant representations. No global constructor, destructor or runtime
+initialization is invented. All written initializer source remains checked.
+
+Mutable global arrays, static local/member arrays, pointer/reference globals,
+dynamic initialization, global destruction, user-defined literal operators,
+standard headers and `std::string` allocation/operations remain unfinished.
+Existing array extent and generated-node budgets apply; no runtime bounds checks
+are added. V1 profiles retain their previous accepted inputs.
+
+Paired source/protocol cases, const/array IR verification and O0/O2 fixtures cover
+encoding, zero fill, aliases, persistent addresses, source effects, copying,
+lifetimes, canonical globals and relocation. Native results require CI of the
+implementing revision; this increment does not establish complete C++/STL.
 
 ## Binary floating-point values
 
@@ -165,8 +223,8 @@ This covers `char`, `signed char`, `unsigned char`, `short`, `int`, `long`,
 `bool` keeps its distinct boolean representation. Enums may use any admitted
 integral underlying type, including `bool`; opaque fixed-underlying enums are
 checked before erasure. Ordinary and wide/UTF character literals use the values
-resolved by the pinned Clang frontend. Runtime string literals remain outside
-this increment.
+resolved by the pinned Clang frontend. String literals use the permanent
+constant-array storage described in [String literals and constant arrays](#string-literals-and-constant-arrays).
 
 Clang resolves the source types, promotions and overloads first. The typed IR
 then records signedness and width using canonical `int`, `uint`, `i8`, `u8`,
@@ -382,7 +440,7 @@ continues to own its elements and destroys them in reverse order.
 In non-template declarations, both declared defaults and selected call-site
 semantic expressions are fully inspected, even when unused, explicitly overridden, folded in constexpr code or
 inside a noexcept query. Queries create no runtime default effects. Unsupported
-operand types, volatile objects, strings, function/member pointers, unsupported template forms,
+operand types, volatile objects, member pointers, unsupported template forms,
 allocation and throwing remain diagnosed under their existing boundaries.
 Invalid C++ defaults or calls remain Clang diagnostics; missing required owned
 definitions remain definition errors. Only core v2 gains this support.
@@ -543,7 +601,8 @@ constructors and constructor templates follow their contracts below. Exception u
 guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
-dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
+dynamic and pointer global forms remain rejected. Const arrays follow their
+storage contract above. V1 profiles continue to reject user constructors.
 
 ## Deleted function declarations
 
@@ -3887,7 +3946,8 @@ int main() {
 }
 ```
 
-Global arrays and global records containing arrays, zero-length and variable-length
+Const global arrays and const records containing arrays follow the static storage
+contract above. Mutable global arrays, zero-length and variable-length
 arrays and unsupported element types remain rejected, including in unused or
 dead code. Admitted record elements follow the normal destruction rules above. Indexing requires the same
 valid storage and in-bounds accesses as the source program; the translator does

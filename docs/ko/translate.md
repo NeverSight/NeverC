@@ -100,6 +100,8 @@ Core v2는 지원되는 삭제 함수와 삭제된 기본 특수 멤버를 템�
 
 Core v2는 IEEE `float`와 `double`, 산술과 변환, 참조, 필드와 배열, 콜백, 0 또는 상수로 초기화된 스칼라 정적 객체를 지원합니다. 정확한 리터럴 비트와 독립적인 대상 레이아웃 검사로 표현을 유지합니다. 실행에는 기본 부동소수점 환경이 필요하며 빠른 수학, 초과 정밀도, 암시적 곱셈·덧셈 융합을 비활성화합니다. 구현 리비전의 CI가 필요합니다. `long double`, 표준 헤더, 완전한 C++/STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#binary-floating-point-values).
 
+Core v2는 좁은 문자, UTF-8, UTF-16, UTF-32 및 와이드 문자열 리터럴의 정확한 코드 단위와 정적 읽기 전용 저장소, 0 채우기를 포함한 문자 배열 초기화, 상수로 초기화된 네임스페이스 배열을 지원합니다. 별칭, 필드 복사와 수명은 기존 타입 연산을 따릅니다. 구현 리비전의 CI가 필요하며 표준 헤더와 `std::string` 할당 및 연산은 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-literals-and-constant-arrays).
+
 ## 설치와 스칼라 변환
 
 일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.

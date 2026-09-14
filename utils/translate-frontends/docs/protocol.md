@@ -822,6 +822,34 @@ check these values during NC compilation. Manifests retain the carrier table
 and `record_layouts`. See the [exact core v2 fields and compatibility rules](cpp-core-v2.md#verified-target-and-record-layout).
 Older v1 profiles exclude this evidence.
 
+## Core v2 string and constant-array storage
+
+String literal lvalues use ordinary read-only globals with `arr:<count>:<integer>`
+types and complete `aggregate` initializer trees. Every decoded code unit,
+embedded zero and final terminator is an exact typed integer literal. UTF-16 and
+UTF-32 retain their source code units; no host JSON string conversion, encoding
+guess or opaque string opcode is involved. Literal-object names use the reserved
+`nct_string_` prefix with deterministic discovery ordinals. These names identify
+storage, not a promise that different source occurrences share an object.
+
+Core v2 accepts folded array globals and records containing arrays when `mutable`
+is absent or false. The consumer verifies every extent, element type, initializer
+arity and folded leaf, together with normal carrier/record layout checks. Array
+aggregates remain initializer-only; this does not admit runtime array assignment,
+array value parameters/results or arbitrary constant pointer relocations.
+Array decay and addresses require const-qualified pointers when rooted in these
+globals; writes retain ordinary const-storage rejection. The emitter declares
+complete `static const` arrays before functions.
+
+Source character-array initializers lower to typed element stores into their
+own destination, including zero-filled trailing elements. Evaluated literal
+addresses use static globals instead. Literal definitions discovered while
+lowering functions or cleanup helpers are included before final serialization.
+No dynamic allocation, initialization call or string runtime mapping is added.
+Source const arrays use initialization of the actual declaration for constant
+evaluation; the initializer expression's lvalue address is not an array value.
+See the [string and array contract](cpp-core-v2.md#string-literals-and-constant-arrays).
+
 ## Core v2 binary floating-point values
 
 Core v2 accepts `float` (IEEE binary32) and `double` (IEEE binary64). A literal is

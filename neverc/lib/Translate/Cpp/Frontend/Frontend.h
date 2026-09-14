@@ -27,6 +27,7 @@ class MaterializeTemporaryExpr;
 class SubstNonTypeTemplateParmExpr;
 class SizeOfPackExpr;
 class InitListExpr;
+class StringLiteral;
 class Expr;
 struct ASTTemplateArgumentListInfo;
 class DeclContext;
@@ -278,6 +279,9 @@ public:
   std::vector<const clang::CXXRecordDecl *> Destructions;
   std::set<const clang::CXXRecordDecl *> RequiredDestructions;
   std::vector<clang::VarDecl *> Globals;
+  std::map<const clang::VarDecl *, json::Object> ConstantArrayInitializers;
+  std::map<const clang::StringLiteral *, std::string> StringObjects;
+  json::Array StringGlobals;
   std::set<const clang::VarDecl *> StaticLocals;
   std::map<const clang::VarDecl *, llvm::APSInt> StaticMemberValues;
   std::map<const clang::Decl *, clang::FunctionDecl *> FunctionDeclarations;
@@ -308,6 +312,9 @@ public:
                        clang::SourceLocation L);
   json::Object floatingLiteral(const llvm::APFloat &Value,
                                clang::SourceLocation L);
+  void checkStringLiteral(const clang::StringLiteral *Literal);
+  json::Object stringInitializer(const clang::StringLiteral *Literal);
+  json::Object stringObject(const clang::StringLiteral *Literal);
   std::string mapping(const clang::CallExpr *Call);
   json::Object zero(clang::QualType T, clang::SourceLocation L);
   json::Object constant(const clang::APValue &V, clang::QualType T,

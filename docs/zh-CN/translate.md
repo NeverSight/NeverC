@@ -100,6 +100,8 @@ Core v2 接受受支持的删除函数，以及默认生成后被删除的特殊
 
 Core v2 接受 IEEE `float` 和 `double`、算术与转换、引用、字段与数组、回调，以及零初始化或常量初始化的标量静态对象。精确的字面量位表示及独立目标布局检查保留数据表示；执行要求默认浮点环境，并禁用快速数学、额外精度和隐式乘加收缩。须由实现版本的 CI 验证；`long double`、标准头文件及完整 C++／STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#binary-floating-point-values).
 
+Core v2 接受窄字符、UTF-8、UTF-16、UTF-32 和宽字符字符串字面量，保留精确字符单元与静态只读存储，并支持字符数组初始化及补零、完全常量初始化的命名空间数组。别名、字段复制与源代码生命周期沿用现有类型化操作。须由实现版本的 CI 验证；标准头文件以及 `std::string` 的分配与操作仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-literals-and-constant-arrays).
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

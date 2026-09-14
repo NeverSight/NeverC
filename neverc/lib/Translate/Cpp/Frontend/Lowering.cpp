@@ -275,6 +275,8 @@ class FunctionLowering {
   Expression lvalue(const Expr *E) {
     E = E->IgnoreParens();
     auto L = E->getExprLoc();
+    if (const auto *Literal = dyn_cast<StringLiteral>(E); Literal && A.S.coreV2())
+      return A.stringObject(Literal);
     if (auto Value = staticMemberValue(E)) {
       // A glvalue conditional read may need an internal address. Source ODR-use
       // was rejected before lowering; this fresh scalar is only a value carrier.
@@ -717,6 +719,8 @@ class FunctionLowering {
     }
     if (const auto *F = dyn_cast<FloatingLiteral>(E))
       return A.floatingLiteral(F->getValue(), L);
+    if (const auto *Literal = dyn_cast<StringLiteral>(E); Literal && A.S.coreV2())
+      return A.stringObject(Literal);
     if (const auto *B = dyn_cast<CXXBoolLiteralExpr>(E))
       return boolean(B->getValue(), L);
     if (const auto *P = dyn_cast<ParenExpr>(E))
@@ -999,7 +1003,7 @@ class FunctionLowering {
         return;
       }
       // A discarded literal has no effects and needs no value carrier.
-      if (isa<CXXNullPtrLiteralExpr>(E))
+      if (isa<CXXNullPtrLiteralExpr, StringLiteral>(E))
         return;
     }
     if (const auto *P = dyn_cast<ParenExpr>(E)) {
@@ -1499,6 +1503,16 @@ class FunctionLowering {
     }
     if (A.S.coreV2())
       if (const auto *Array = A.Context.getAsConstantArrayType(Init->getType())) {
+        if (const auto *Literal = dyn_cast<StringLiteral>(Init->IgnoreParens())) {
+          auto Value = A.stringInitializer(Literal);
+          if (Place.getString("type") != Value.getString("type"))
+            reject(L, "string initialization", "The checked literal must match its destination array.");
+          unsigned N = 0;
+          for (auto &Unit : *Value.getArray("args"))
+            assign(initialElement(Place, Array->getElementType(), N++, L),
+                   std::move(*Unit.getAsObject()), L);
+          return;
+        }
         const auto *I = dyn_cast<InitListExpr>(Init);
         if (!I) {
           if (isa<ImplicitValueInitExpr>(Init)) {
@@ -1509,6 +1523,10 @@ class FunctionLowering {
         }
         if (I->isSyntacticForm() && I->getSemanticForm())
           I = I->getSemanticForm();
+        if (I->isStringLiteralInit()) {
+          initialize(std::move(Place), I->getInit(0), L);
+          return;
+        }
         auto Element = Array->getElementType();
         auto Count = Array->getSize().getLimitedValue(65537);
         if (I->getNumInits() > Count)

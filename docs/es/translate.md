@@ -100,6 +100,8 @@ Core v2 admite funciones eliminadas y miembros especiales predeterminados defini
 
 Core v2 admite IEEE `float` y `double`, aritmética y conversiones, referencias, campos y matrices, callbacks y objetos escalares estáticos inicializados a cero o con constantes. Los bits exactos de los literales y la comprobación independiente de la disposición conservan la representación. La ejecución requiere el entorno flotante predeterminado, sin matemática rápida, precisión adicional ni contracción implícita. Se requiere CI de la revisión; `long double`, cabeceras estándar y C++/STL completo siguen pendientes. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#binary-floating-point-values).
 
+Core v2 admite literales estrechos, UTF-8, UTF-16, UTF-32 y anchos con unidades exactas y almacenamiento estático de solo lectura, inicialización de matrices de caracteres con ceros y matrices constantes de espacio de nombres. Alias, copias y duración usan las operaciones tipadas existentes. Se requiere CI de la revisión; las cabeceras estándar y las asignaciones y operaciones de `std::string` siguen pendientes. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#string-literals-and-constant-arrays).
+
 ## Instalación y traducción escalar
 
 Use una instalación normal de NeverC con sus recursos estándar. El frontend C++ y las cabeceras SDK aprobadas están integrados; no hace falta instalar Clang por separado. Consulte las [notas de compilación del frontend](../../utils/translate-frontends/cpp/README.md).

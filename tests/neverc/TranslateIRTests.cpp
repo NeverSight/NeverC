@@ -1150,6 +1150,106 @@ TEST(TranslateIR, PointerNodesCannotBypassProfileOrPointeeChecks) {
   }
 }
 
+TEST(TranslateIR, CoreV2ConstantArraysHaveStaticConstStorageAndCheckedAddresses) {
+  auto M = module(true);
+  const auto Byte = integerType(8);
+  const auto Array = arrayType(Byte, 4);
+  const auto Pointer = pointerType(Byte, true);
+  auto Value = pointerExpr(ExprKind::Aggregate, Array,
+                           {literal("-1", Byte), literal("0", Byte),
+                            literal("97", Byte), literal("0", Byte)});
+  M.Globals.push_back({"nct_string", Array, Value, InputLoc});
+  M.Functions[0].Result = Pointer;
+  M.Functions[0].Body.back() = ret(pointerExpr(
+      ExprKind::ArrayDecay, Pointer, {variable("nct_string", Array)}));
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static const signed char nct_string[4] = {"),
+            std::string::npos);
+  auto Bad = M;
+  Bad.Functions[0].Result = pointerType(Byte);
+  Bad.Functions[0].Body.back().Value->ValueType = pointerType(Byte);
+  invalid(Bad, "Global constants");
+  Bad = M;
+  Bad.Globals[0].Mutable = true;
+  invalid(Bad, "Mutable globals");
+  Bad = M;
+  Bad.Globals[0].Value.Args.pop_back();
+  invalid(Bad, "operand count");
+  Bad = M;
+  Bad.Globals[0].Value.Args[0] = binary(BinaryOperator::Add, literal("1"), literal("2"));
+  invalid(Bad, "folded");
+  Bad = M;
+  Bad.Globals[0].Value.Args[0] = literal("1");
+  invalid(Bad, "Array element initializer type mismatch");
+  Bad = M;
+  Bad.Profile = "cpp-core-v1";
+  Bad.Target.Carriers.reset();
+  invalid(Bad, "Array types require core v2");
+}
+
+TEST(TranslateIR, CoreV2ConstantArrayTreesRetainLayoutAndConstSubobjects) {
+  auto M = module(true);
+  const auto Row = arrayType(intType(), 2);
+  const auto Array = arrayType(Row, 2);
+  const Type Record{TypeKind::Record, "nct_record"};
+  auto Values = pointerExpr(ExprKind::Aggregate, Array, {
+      pointerExpr(ExprKind::Aggregate, Row, {literal("1"), literal("0")}),
+      pointerExpr(ExprKind::Aggregate, Row, {literal("2"), literal("3")})});
+  M.Records.push_back({"nct_record", {{"values", Array}}, InputLoc,
+                       RecordLayout{{128, 32}, {0}}});
+  M.Globals.push_back({"nct_constant", Record,
+      pointerExpr(ExprKind::Aggregate, Record, {Values}), InputLoc});
+  auto Member = pointerExpr(ExprKind::Member, Array, {variable("nct_constant", Record)});
+  Member.Name = "values";
+  M.Functions[0].Result = pointerType(Row, true);
+  M.Functions[0].Body.back() = ret(pointerExpr(
+      ExprKind::ArrayDecay, M.Functions[0].Result, {Member}));
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static const nct_record nct_constant = {"), std::string::npos);
+  EXPECT_NE(Output.Text.find("sizeof(nct_record) * __CHAR_BIT__ == 128"), std::string::npos);
+  auto Bad = M;
+  Bad.Functions[0].Result = pointerType(Row);
+  Bad.Functions[0].Body.back().Value->ValueType = pointerType(Row);
+  invalid(Bad, "Global constants");
+  Bad = M;
+  Bad.Records[0].Layout->Storage.SizeBits = 96;
+  invalid(Bad, "target layout");
+  Bad = M;
+  Bad.Globals[0].Value.Args[0].Args[1].Args.pop_back();
+  invalid(Bad, "operand count");
+}
+
+TEST(TranslateIR, CoreV2ConstantArrayWireRejectsIncompleteAndRuntimeValues) {
+  const std::string Global = R"json({"name":"nct_string","type":"arr:2:i8",
+    "value":{"kind":"aggregate","type":"arr:2:i8","args":[
+      {"kind":"literal","type":"i8","value":"97","loc":{"file":"input.cpp","line":1,"column":1}},
+      {"kind":"literal","type":"i8","value":"0","loc":{"file":"input.cpp","line":1,"column":1}}
+    ],"loc":{"file":"input.cpp","line":1,"column":1}},
+    "loc":{"file":"input.cpp","line":1,"column":1}})json";
+  auto Wire = [&](const std::string &G) {
+    auto JSON = wireModule(true);
+    replaceOnce(JSON, "\"globals\": []", "\"globals\": [" + G + "]");
+    return JSON;
+  };
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(Wire(Global), M, D));
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  auto Bad = Global;
+  replaceOnce(Bad, "\"value\":\"97\"", "\"value\":\"256\"");
+  ASSERT_TRUE(parseModule(Wire(Bad), M, D));
+  invalid(M, "literal value or range");
+  Bad = Global;
+  replaceOnce(Bad, "\"kind\":\"literal\",\"type\":\"i8\",\"value\":\"97\"",
+              "\"kind\":\"var\",\"type\":\"i8\",\"name\":\"nct_external\"");
+  ASSERT_TRUE(parseModule(Wire(Bad), M, D));
+  invalid(M, "Global initializer");
+}
+
 TEST(TranslateIR, CoreV2FloatingLiteralsPreserveExactBitsAndGuards) {
   struct Case { TypeKind Kind; uint64_t Bits; const char *Text; };
   for (const auto &C : std::vector<Case>{

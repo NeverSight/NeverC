@@ -2228,7 +2228,6 @@ bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
 
     conversion_rejected = {
         'float': 'struct R{operator long double()const{return 1.0L;}};',
-        'string': 'struct R{operator const char*()const{return "x";}};',
         'volatile': 'struct R{operator int()volatile{return 1;}};',
         'restrict': 'struct R{operator int()__restrict{return 1;}};',
         'member-address': 'struct R{operator int()const{return 1;}};auto f(){return &R::operator int;}',
@@ -3134,7 +3133,6 @@ static_assert((static_cast<void>(0),true));
         'floating': 'void f(){static_cast<void>(1.0L);}',
         'volatile': 'void f(){volatile int n=1;static_cast<void>(n);}',
         'volatile-void-alias': 'using V=volatile void;void f(){V();}',
-        'string': 'void f(){static_cast<void>("text");}',
         'allocation': 'void f(){static_cast<void>(new int(1));}',
         'lambda': 'void f(){static_cast<void>([]{});}',
         'dead-operand': 'void f(){if(false){static_cast<void>(1.0L);}}',
@@ -9144,6 +9142,113 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == class_friends, "class target identity depends on the absolute root"
 
+    string_positive = {
+        'literal-pointer': 'const char*f(){return "hello";}',
+        'literal-reference': 'const char(&f())[6]{return "hello";}',
+        'literal-address': 'const char(*f())[6]{return &"hello";}',
+        'literal-subscript': 'char f(){return "hello"[1];}',
+        'literal-offset': 'const char*f(){return "hello"+2;}',
+        'empty': 'int f(){const char*p="";return *p;}',
+        'embedded-zero': 'int f(){char a[]="a\\0b";return sizeof(a)!=4||a[2]!=98;}',
+        'adjacent': 'int f(){char a[]="a" "b";return sizeof(a)!=3||a[1]!=98;}',
+        'raw': 'int f(){char a[]=R"tag(a\\nb)tag";return sizeof(a)!=5||a[1]!=92;}',
+        'zero-fill': 'int f(){char a[8]="hi";return a[7];}',
+        'braced': 'int f(){char a[8]={"hi"};return a[7];}',
+        'parenthesized': 'int f(){char a[8]=("hi");return a[7];}',
+        'signed-character': 'int f(){signed char a[]="\\xff";return a[0]!=-1;}',
+        'unsigned-character': 'int f(){unsigned char a[]="\\xff";return a[0]!=255;}',
+        'utf8': 'int f(){auto&p=u8"\\u00e9";return sizeof(p)!=3||static_cast<unsigned char>(p[0])!=195;}',
+        'utf16': 'int f(){char16_t a[]=u"\\U0001f600";return sizeof(a)!=6||a[0]!=0xd83d;}',
+        'utf32': 'int f(){char32_t a[]=U"\\U0001f600";return sizeof(a)!=8||a[0]!=0x1f600;}',
+        'wide': 'int f(){wchar_t a[]=L"abc";return a[2]!=L\'c\';}',
+        'range': 'int f(){int n=0;for(char c:"ab")n+=c;return n-195;}',
+        'range-reference': 'int f(){const char*p="ab";for(const char&c:"ab"){if(c)return c;}return *p;}',
+        'conditional': 'const char*f(bool b){return b?"yes":"no";}',
+        'conditional-array': 'const char(&f(bool b))[4]{return b?"yes":"nah";}',
+        'comma': 'int n;const char*f(){return (++n,"hello");}',
+        'default': 'const char*f(const char*p="default"){return p;}',
+        'template': 'template<class T>const char*f(){return "template";}const char*g(){return f<int>();}',
+        'template-array-deduction': 'template<unsigned long long N>unsigned long long length(const char(&a)[N]){return N;}int f(){return length("abc");}',
+        'constructor-array': 'struct R{char a[6];R():a("hello"){}};int f(){R r;return r.a[1];}',
+        'field-default': 'struct R{char a[6]="hello";};int f(){R r;return r.a[1];}',
+        'braced-field-default': 'struct R{char a[6]={"hello"};};int f(){R r;return r.a[1];}',
+        'nested-array': 'int f(){char a[2][4]={"hi","ok"};return a[1][1];}',
+        'aggregate-copy': 'struct R{char a[4];};int f(){R r{"cat"};R s(r);s.a[0]=\'b\';return r.a[0]!=\'c\';}',
+        'record-return': 'struct R{char a[4];};R f(){return {"cat"};}int g(){return f().a[2];}',
+        'literal-conversion': 'struct R{operator const char*()const{return "x";}};',
+        'discarded': 'void f(){static_cast<void>("text");}',
+        'default-discarded': 'int f(int n=(static_cast<void>("x"),1)){return n;}',
+        'unused-default-discarded': 'int f(int n=(static_cast<void>("unused"),1)){return n;}',
+        'assertion': 'static_assert("abc"[1]==\'b\');static_assert(sizeof("abc")==4);',
+        'noexcept': 'static_assert(noexcept("abc"[1]));',
+        'enum': 'enum E:int{value="a"[0]};int f(){return value;}',
+        'constexpr-function': 'constexpr int f(){return "abc"[2];}static_assert(f()==\'c\');',
+        'const-global-string': 'const char a[]="global";const char*f(){return a;}',
+        'constexpr-global-string': 'constexpr char a[8]="global";static_assert(a[7]==0);',
+        'const-global-array': 'const int a[2][3]={{1,2},{3,4,5}};int f(){return a[1][2];}',
+        'const-global-record': 'struct R{char a[4];int n[2];};constexpr R r{"cat",{1,2}};int f(){return r.a[2]+r.n[1];}',
+        'const-global-record-array': 'struct R{int n;};const R r[2]={{1},{2}};int f(){return r[1].n;}',
+        'const-global-floating': 'constexpr float a[2]={1.5f,2.5f};float f(){return a[1];}',
+        'const-global-null': 'using N=decltype(nullptr);constexpr N a[2]={nullptr,nullptr};bool f(){return a[1]==nullptr;}',
+        'const-global-callback': 'int f(){return 1;}using F=int(*)();F const a[2]={f,nullptr};int g(){return a[0]();}',
+        'const-global-redeclaration': 'extern const char a[4];const char a[4]="cat";extern const char a[4];const char*f(){return a;}',
+        'const-global-default': 'constexpr char a[]="x";char f(const char*p=a){return *p;}',
+        'const-global-array-reference': 'constexpr int a[2]={1,2};const int(&f())[2]{return a;}',
+        'utf16-global': 'constexpr char16_t a[]=u"\\U0001f600";char16_t f(){return a[1];}',
+        'erased-literal-default': 'template<int N=sizeof("abc")>int f(){return N;}int g(){return f();}',
+        'runtime': 'int calls=0,drops=0;\nconst char table[6]="ab\\0c";\nconstexpr int numbers[2][3]={{1,2},{3,4,5}};\nstruct Readonly{char name[4];int values[2];};\nconstexpr Readonly record{"key",{7,8}};\nconstexpr float fractions[2]={1.5f,2.5f};\nconstexpr char16_t utf16[]=u"\\U0001f600";\nconstexpr char32_t utf32[]=U"\\U0001f600";\nconst char*literal(){return "alive";}\nconst char(&reference())[6]{return "alive";}\nconst char*select(bool left){return left?(++calls,"left"):(calls+=2,"right");}\nconst char*defaulted(const char*p="default"){return p;}\ntemplate<class T>const char*templated(){return "template";}\nint length(const char*p){int n=0;while(*p){++p;++n;}return n;}\nstruct Fields{char a[6]="field";char b[5]={"x"};};\nstruct Constructed{char a[4];Constructed():a("hey"){}};\nstruct Result{char a[4];};\nResult make(){return {"cat"};}\nstruct Owner{char name[5]="drop";~Owner(){if(name[0]==\'d\')++drops;}};\nstruct Conversion{operator const char*()const{return "converted";}};\nint answer(){return 17;}\nusing Callback=int(*)();\nCallback const callbacks[2]={answer,nullptr};\nint main(){\n const char*p=literal();\n if(p!=literal()||length(p)!=5||p[5]!=0)return 1;\n const char(&r)[6]=reference();\n if(&r!=&reference()||r[4]!=\'e\')return 2;\n if(select(true)[0]!=\'l\'||calls!=1||select(false)[0]!=\'r\'||calls!=3)return 3;\n if(defaulted()!=defaulted()||length(defaulted())!=7)return 4;\n if(templated<int>()!=templated<int>()||templated<bool>()[0]!=\'t\')return 5;\n char local[8]="hello";local[0]=\'H\';\n if(local[0]!=\'H\'||local[5]!=0||local[7]!=0||literal()[0]!=\'a\')return 6;\n char braced[8]={"hi"};char parenthesized[8]=("ok");\n if(braced[1]!=\'i\'||braced[7]!=0||parenthesized[1]!=\'k\'||parenthesized[7]!=0)return 7;\n char embedded[]="a\\0b";\n if(sizeof(embedded)!=4||embedded[1]!=0||embedded[2]!=\'b\'||embedded[3]!=0)return 8;\n char adjacent[]="a" "b";char raw[]=R"tag(a\\nb)tag";\n if(sizeof(adjacent)!=3||adjacent[1]!=\'b\'||sizeof(raw)!=5||raw[1]!=\'\\\\\'||raw[2]!=\'n\')return 9;\n signed char signedBytes[]="\\xff";unsigned char unsignedBytes[]="\\xff";\n if(signedBytes[0]!=-1||unsignedBytes[0]!=255||signedBytes[1]!=0)return 10;\n const char*encoded=u8"\\u00e9\\U0001f600";\n if(static_cast<unsigned char>(encoded[0])!=0xc3||static_cast<unsigned char>(encoded[1])!=0xa9||static_cast<unsigned char>(encoded[2])!=0xf0||static_cast<unsigned char>(encoded[5])!=0x80||encoded[6]!=0)return 11;\n if(sizeof(utf16)!=6||utf16[0]!=0xd83d||utf16[1]!=0xde00||utf16[2]!=0)return 12;\n if(sizeof(utf32)!=8||utf32[0]!=0x1f600||utf32[1]!=0)return 13;\n wchar_t wide[]=L"\\U0001f600";\n if(sizeof(wchar_t)==2){if(wide[0]!=0xd83d||wide[1]!=0xde00)return 14;}\n else{if(wide[0]!=0x1f600||wide[1]!=0)return 15;}\n int sum=0;for(char c:"ab")sum+=c;\n if(sum!=\'a\'+\'b\')return 16;\n Fields fields;Constructed constructed;\n if(fields.a[4]!=\'d\'||fields.a[5]!=0||fields.b[1]!=0||fields.b[4]!=0||constructed.a[2]!=\'y\')return 17;\n char matrix[2][4]={"hi","ok"};matrix[0][0]=\'H\';\n if(matrix[0][0]!=\'H\'||matrix[0][3]!=0||matrix[1][1]!=\'k\'||matrix[1][3]!=0)return 18;\n Result first=make();Result second(first);second.a[0]=\'b\';\n if(first.a[0]!=\'c\'||second.a[0]!=\'b\'||&first.a[0]==&second.a[0])return 19;\n {Owner firstOwner;Owner secondOwner;}\n if(drops!=2)return 20;\n if(table[2]!=0||table[3]!=\'c\'||table[4]!=0||table[5]!=0)return 21;\n if(numbers[0][2]!=0||numbers[1][2]!=5||record.name[2]!=\'y\'||record.values[1]!=8)return 22;\n if(fractions[0]+fractions[1]!=4.0f)return 23;\n if(callbacks[0]()!=17||callbacks[1]!=nullptr)return 24;\n Conversion conversion;const char*converted=conversion;\n if(length(converted)!=9||converted[8]!=\'d\')return 25;\n const char(&chosen)[4]=true?"yes":"nah";\n if(chosen[0]!=\'y\'||chosen[3]!=0)return 26;\n return 0;\n}\n',
+        'protocol-source': 'const char global[6]="ab\\0c";\nconst char*first(){return "same";}\nconst char(&reference())[5]{return "wide";}\nconst char16_t*wide(){return u"\\U0001f600";}\nint local(){char a[8]={"x"};return a[7];}\nint query(){return sizeof("query");}\nvoid discarded(){void("discarded");}\nconst int values[2][2]={{1},{2,3}};\n',
+    }
+    for name, source in string_positive.items():
+        check("v2-string-positive-"+name, source, profile="cpp-core-v2")
+    string_negative = {
+        'literal-write': ('void f(){"abc"[0]=\'x\';}', 'TR0202'),
+        'drop-literal-const': ('char*f(){return "abc";}', 'TR0202'),
+        'mutable-reference': ('void f(){char(&a)[4]="abc";}', 'TR0202'),
+        'array-too-short': ('void f(){char a[3]="abc";}', 'TR0202'),
+        'mixed-width': ('void f(){char a[]=u"abc";}', 'TR0202'),
+        'literal-nttp': ('template<const char*p>int f(){return *p;}int g(){return f<"abc">();}', 'TR0202'),
+        'literal-user-defined': ('unsigned operator""_n(const char*,decltype(sizeof(0))){return 1;}int f(){return "abc"_n;}', 'TR0201'),
+        'mutable-global-array': ('char a[]="abc";', 'TR0201'),
+        'global-pointer': ('const char*p="abc";', 'TR0201'),
+        'static-array': ('const char*f(){static const char a[]="abc";return a;}', 'TR0201'),
+        'member-static-array': ('struct R{inline static constexpr char a[]="abc";};', 'TR0201'),
+        'thread-local-array': ('thread_local const char a[]="abc";', 'TR0201'),
+        'global-array-dynamic': ('int f(){return 1;}const int a[2]={f(),2};', 'TR0201'),
+        'global-array-destructor': ('struct R{int n;~R(){}};const R r[2]={{1},{2}};', 'TR0201'),
+        'global-array-extended': ('const long double a[2]={1.0L,2.0L};', 'TR0201'),
+        'global-array-missing': ('extern const int a[2];int f(){return a[0];}', 'TR0203'),
+        'global-array-write': ('constexpr char a[]="abc";void f(){a[0]=\'x\';}', 'TR0202'),
+        'global-array-drop-const': ('constexpr int a[2]={1,2};int*f(){return a;}', 'TR0202'),
+        'hidden-long-double': ('static_assert((void("abc"),sizeof(long double))>0);', 'TR0201'),
+        'array-extent': ('const char a[65537]="abc";', 'TR0201'),
+    }
+    for name, (source, diagnostic) in string_negative.items():
+        check("v2-string-reject-"+name, source, diagnostic, profile="cpp-core-v2")
+    check("string-v1", 'const char*f(){return "x";}', "TR0201", profile="cpp-core-v1")
+    string_ir = check("v2-string-protocol", string_positive["protocol-source"], profile="cpp-core-v2")
+    literal_globals = [g for g in string_ir["globals"] if g["name"].startswith("nct_string_")]
+    assert len(literal_globals) == 3
+    assert all(not g.get("mutable", False) for g in string_ir["globals"])
+    by_line = {g["loc"]["line"]:g for g in string_ir["globals"]}
+    def string_units(g):
+        return [int(a["value"]) for a in g["value"]["args"]]
+    assert string_units(by_line[1]) == [97,98,0,99,0,0]
+    assert string_units(by_line[2]) == [115,97,109,101,0]
+    assert string_units(by_line[3]) == [119,105,100,101,0]
+    assert string_units(by_line[4]) == [0xd83d,0xde00,0]
+    assert by_line[4]["type"] == "arr:3:u16"
+    assert [[int(x["value"]) for x in a["args"]] for a in by_line[8]["value"]["args"]] == [[1,0],[2,3]]
+    functions_by_line = {f["loc"]["line"]:f for f in string_ir["functions"]}
+    assert functions_by_line[3]["result"].startswith("cptr:arr:5:")
+    assert functions_by_line[4]["result"] == "cptr:u16"
+    assert all(not local["type"].startswith("arr:") for local in functions_by_line[6]["locals"])
+    assert not functions_by_line[7]["locals"]
+    with tempfile.TemporaryDirectory(prefix="neverc-string-relocated-") as temp:
+        relocated = check("v2-string-relocated", string_positive["protocol-source"],
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == string_ir, "string identities depend on the source root"
+
     floating_positive = {
         'float-arithmetic': 'float f(float a,float b){return (a+b)*(a-b)/2.0f;}',
         'double-arithmetic': 'double f(double a,double b){return (a+b)*(a-b)/2.0;}',
@@ -14053,7 +14158,6 @@ bool noisyQuery(){return noexcept(noisy());}
         'constexpr-floating': 'constexpr int f(int n=(static_cast<void>(1.0L),1)){return n;}static_assert(f()==1);',
         'noexcept-floating': 'void f(int n=(static_cast<void>(1.0L),1))noexcept{}static_assert(noexcept(f()));',
         'volatile': 'volatile int n=1;int f(int x=n){return x;}',
-        'string': 'int f(int n=(static_cast<void>("x"),1)){return n;}',
         'lambda': 'int f(int n=(static_cast<void>([]{}),1)){return n;}',
         'allocation': 'int f(int*p=new int(1)){return *p;}',
         'throw': 'int f(int n=(throw 1,2)){return n;}',
@@ -14061,7 +14165,6 @@ bool noisyQuery(){return noexcept(noisy());}
         'array-global': 'int a[2]={1,2};int f(int*p=a){return *p;}',
         'fresh-reference-return': 'int f(const int&r=1){return r;}const int&g(){return 1;}',
         'unsupported-default-record': 'struct R{long double n;};int f(R r=R{1.0L}){return 1;}',
-        'unsupported-unused-default': 'int f(int n=(static_cast<void>("unused"),1)){return n;}',
         'expanded-default-storage': 'struct R{int values[32768];};int f(const R&r=R{}){return r.values[0];}int main(){return f();}',
     }
     for name, source in default_argument_rejected.items():
