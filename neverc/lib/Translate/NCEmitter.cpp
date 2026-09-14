@@ -161,7 +161,7 @@ class Emitter {
   uint32_t Line = 1;
   std::set<unsigned> SignedConversions, ArithmeticShifts;
   std::map<std::string, Type> FunctionPointers;
-  bool HasNullPtr = false, HasFloating = false;
+  bool HasNullPtr = false, HasFloating = false, HasStaticObjectAddresses = false;
   struct PointerHelper {
     Type Left, Right, Result;
     BinaryOperator Op;
@@ -238,19 +238,23 @@ class Emitter {
     case ExprKind::Address:
       if (E.Args[0].Kind == ExprKind::Index) {
         const auto &Index = E.Args[0];
+        if (Initializer)
+          return "((" + expression(Index.Args[0], true) + ") + (" +
+                 expression(Index.Args[1], true) + "))";
         return pointerCall(BinaryOperator::Add, Index.Args[0], Index.Args[1],
                            E.ValueType);
       }
       if (E.Args[0].Kind == ExprKind::Dereference)
         return "((" + cType(E.ValueType) + ")(" +
-               expression(E.Args[0].Args[0]) + "))";
-      return "(&(" + expression(E.Args[0]) + "))";
+               expression(E.Args[0].Args[0], Initializer) + "))";
+      return "(&(" + expression(E.Args[0], Initializer) + "))";
     case ExprKind::Dereference:
-      return "(*(" + expression(E.Args[0]) + "))";
+      return "(*(" + expression(E.Args[0], Initializer) + "))";
     case ExprKind::ArrayDecay:
-      return "(&((" + expression(E.Args[0]) + ")[0]))";
+      return "(&((" + expression(E.Args[0], Initializer) + ")[0]))";
     case ExprKind::Index:
-      return "((" + expression(E.Args[0]) + ")[" + expression(E.Args[1]) + "])";
+      return "((" + expression(E.Args[0], Initializer) + ")[" +
+             expression(E.Args[1], Initializer) + "])";
     case ExprKind::Literal:
       if (E.ValueType.Kind == TypeKind::Bool)
         return E.Boolean ? "true" : "false";
@@ -306,9 +310,9 @@ class Emitter {
       if (needsSignedConversion(E.Args[0].ValueType, E.ValueType))
         return conversionHelper(E.ValueType.integerBits()) + "(" +
                expression(E.Args[0]) + ")";
-      return "((" + cType(E.ValueType) + ")(" + expression(E.Args[0]) + "))";
+      return "((" + cType(E.ValueType) + ")(" + expression(E.Args[0], Initializer) + "))";
     case ExprKind::Member:
-      return "((" + expression(E.Args[0]) + ")." + E.Name + ")";
+      return "((" + expression(E.Args[0], Initializer) + ")." + E.Name + ")";
     case ExprKind::Aggregate: {
       Initializer |= E.ValueType.Kind == TypeKind::Array;
       std::string Text = Initializer ? "{" : "(" + cType(E.ValueType) + "){";
@@ -525,6 +529,14 @@ class Emitter {
     }
     line("");
   }
+  bool containsObjectAddress(const Expr &E) {
+    if (E.Kind == ExprKind::Address && E.ValueType.Kind == TypeKind::Pointer)
+      return true;
+    for (const auto &A : E.Args)
+      if (containsObjectAddress(A))
+        return true;
+    return false;
+  }
   void inspectModule() {
     for (const auto &R : M.Records)
       for (const auto &Field : R.Fields)
@@ -532,6 +544,7 @@ class Emitter {
     for (const auto &G : M.Globals) {
       inspectType(G.ValueType);
       inspect(G.Value);
+      HasStaticObjectAddresses |= containsObjectAddress(G.Value);
     }
     for (const auto &F : M.Functions) {
       inspectType(F.Result);
@@ -619,6 +632,15 @@ public:
     // Constant code addresses require a prior declaration of their target.
     if (!FunctionPointers.empty())
       Prototypes();
+    if (HasStaticObjectAddresses) {
+      // Constant pointers may name later objects, themselves, or literal
+      // arrays discovered during function lowering. These tentative declarations
+      // preserve internal linkage and are completed by the initialized definitions.
+      for (const auto &G : M.Globals)
+        line("static " + declaration(G.ValueType, G.Name, !G.Mutable) + ";", &G.Loc);
+      if (!M.Globals.empty())
+        line("");
+    }
     for (const auto &G : M.Globals)
       line("static " + declaration(G.ValueType, G.Name, !G.Mutable) + " = " +
                expression(G.Value, true) + ";",

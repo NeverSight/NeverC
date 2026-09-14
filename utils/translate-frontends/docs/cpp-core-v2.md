@@ -107,7 +107,8 @@ initialization is invented. All written initializer source remains checked.
 
 Namespace and local/member static arrays also follow the
 [fixed-array static storage contract](#fixed-array-static-storage).
-Pointer/reference globals, dynamic initialization, global destruction,
+Object pointers follow their [static address contract](#static-object-pointer-storage).
+Reference globals, dynamic initialization, global destruction,
 user-defined literal operators, standard headers and `std::string`
 allocation/operations remain unfinished.
 Existing array extent and generated-node budgets apply; no runtime bounds checks
@@ -165,11 +166,68 @@ static declarations emit no automatic shadow, runtime initialization guard or
 repeated element stores. Arrays cannot be assigned as whole values.
 
 Dynamic initialization and synchronized guards, TLS and volatile storage,
-nontrivial static destruction, object-pointer/reference elements and mutable
-record globals still need further support. Standard headers and full STL remain
+nontrivial static destruction, reference storage and mutable
+record globals still need further support. Object-pointer elements follow the
+[static address contract](#static-object-pointer-storage). Standard headers and full STL remain
 unfinished. Paired source/protocol cases, IR checks and O0/O2 fixtures cover
 shared state, initialization, nested elements, aliases, template identity,
 receiver effects and relocation; native results require the implementing CI.
+
+## Static object-pointer storage
+
+Core v2 supports zero or fully constant initialization of object pointers at
+namespace scope, in function-local statics, and in defined class static members,
+including admitted concrete class and variable templates. Pointers may designate
+null, source-owned static objects, string literals, array elements or record
+fields. Const pointer objects retain their fixed value; mutable pointers can be
+reseated. Pointee constness and source-selected conversions remain distinct from
+the mutability of the pointer object itself.
+
+```cpp
+extern int value;
+int* pointer = &value;
+int value = 3;
+int values[3] = {4, 5, 6};
+int* end = values + 3;
+const char* message = "ready";
+int main() {
+  *pointer = 7;
+  return value != 7 || end[-1] != 6 || message[4] != 'y';
+}
+```
+
+The frontend retains the constant evaluator's actual target declaration or
+literal, typed field/array path and exact byte offset. Array indices must be in
+range, with a final one-past address permitted. The separate one-past state of
+a complete object is preserved too. Intermediate one-past subobjects, arbitrary
+integer addresses and automatic or thread-local storage are not admitted as
+constant targets. Selected definitions must exist in this unit; missing owned
+targets or required pointer definitions report `TR0203`.
+
+Constant pointer expressions can refer to later definitions, to the pointer
+object itself through an admitted type conversion, or to another static
+pointer's address. A constexpr pointer value or constexpr function can supply
+the address, but loading a mutable pointer at startup still requires dynamic
+initialization and remains unsupported. Nested pointer arrays, const record
+values and statically initialized arrays of records may contain these symbolic
+addresses. The existing source checks cover all written expressions and types,
+including folded, unused and instantiated source.
+
+The IR uses checked `address`, `member`, `index`, `array_decay`, pointer `cast`
+and `null` nodes. Constant address validation is separate from runtime value
+loads. The emitter introduces internal storage declarations when needed for
+forward addresses and emits ordinary C23 address constants; no runtime pointer
+helper is called from a global initializer. Array and field paths retain their
+typed layout instead of becoming unchecked byte offsets. Runtime pointer
+operations continue to use their existing sequencing and arithmetic rules.
+
+Canonical static identity, receiver effects, temporary cleanup and separate
+template-instance state follow the existing storage contracts. Static reference
+bindings, dynamic initialization/guards, TLS, allocation, static destruction,
+mutable record globals and standard-library headers/runtime still require
+further work. Paired source/protocol cases, malformed-address IR cases,
+relocation and O0/O2 fixtures require native validation in implementing CI.
+This increment does not establish complete C++/STL.
 
 ## Binary floating-point values
 
@@ -656,7 +714,7 @@ constructors and constructor templates follow their contracts below. Exception u
 guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
-dynamic and pointer global forms remain rejected. Const arrays follow their
+dynamic global forms remain rejected. Static pointer fields and arrays follow their
 storage contract above. V1 profiles continue to reject user constructors.
 
 ## Deleted function declarations
@@ -987,7 +1045,7 @@ members used only for their checked values follow the
 They need no invented storage definition.
 
 Fixed arrays follow the [static array contract](#fixed-array-static-storage).
-Dynamic initialization, static pointer/reference/record objects and TLS
+Dynamic initialization, static reference/record objects and TLS
 retain their restrictions. There is no startup or
 static-destruction function in this representation. Older profiles retain their
 existing behavior. Native O0/O2 fixtures and protocol checks cover shared state,
@@ -1933,8 +1991,9 @@ ordinary static data members, including non-template members of admitted concret
 class instances. Initial values must be null or checked symbolic function addresses
 from constant evaluation; zero initialization and mutable reseating are supported.
 Dynamic initialization and thread-local storage
-and ordinary object-pointer globals retain their separate restrictions. Constant
+retain their separate restrictions. Constant
 record aggregates may contain callback fields under their existing rules.
+Object-pointer storage follows the [static address contract](#static-object-pointer-storage).
 
 The actual Clang FunctionProtoType must use default ExtInfo and parameter ABI
 metadata, method/ref qualifiers, SME attributes, function effects and address
@@ -2043,7 +2102,7 @@ change another. References/pointers to the stored callback and static-member
 receiver effects use ordinary typed lowering. Declaration-only integral constant
 metadata remains separate and does not invent callback storage.
 
-Dynamic initialization, thread-local/volatile storage, object or record variable
+Dynamic initialization, thread-local/volatile storage and record variable
 results, function-pointer non-type template arguments, unsupported callback
 signatures and cross-unit callback linking remain unfinished. The existing
 `fnptr`/`function_address`/`indirect_call` protocol is unchanged. Previous profiles
@@ -2059,8 +2118,9 @@ and full instances support scalar static member variable templates. Results are
 integer, boolean, enum, float or double values, including scalar deduced `auto`, with zero or
 constant initialization. Callback results additionally follow the
 [callback variable-template contract](#callback-variable-templates), and fixed
-arrays follow their [static storage contract](#fixed-array-static-storage). Inner
-type/scalar arguments, defaults, partial/full
+arrays follow their [static storage contract](#fixed-array-static-storage).
+Object-pointer results follow the [static address contract](#static-object-pointer-storage).
+Inner type/scalar arguments, defaults, partial/full
 specializations and bounded packs retain the existing 64-entry limits. Ordinary
 C++ access, specialization ordering and required definitions still apply.
 
@@ -2277,7 +2337,8 @@ full specializations, type/scalar defaults and concrete packs. Each parameter
 list and pack has at most 64 entries. Member variable templates follow their
 separate contract above. Callback results follow the
 [callback storage contract](#callback-variable-templates). Fixed arrays follow
-their [static storage contract](#fixed-array-static-storage). Other result types,
+their [static storage contract](#fixed-array-static-storage), and object pointers
+follow the [static address contract](#static-object-pointer-storage). Other result types,
 thread-local storage and dynamic initialization remain excluded.
 
 ```cpp
@@ -2462,7 +2523,8 @@ members with checked zero or constant initialization. C++17 inline/constexpr,
 out-of-line definitions, scalar auto/decltype(auto), private/protected access,
 explicit member instantiation/specialization and full class specialization retain
 ordinary C++ source semantics. A dependent static type must resolve to a supported
-scalar or a [fixed array](#fixed-array-static-storage). Static pointers, references,
+scalar, a [fixed array](#fixed-array-static-storage) or an
+[object pointer](#static-object-pointer-storage). Static references,
 records, volatile/thread-local data,
 dynamic initialization remain excluded.
 
@@ -2938,7 +3000,7 @@ internal generated names, without adding a public C data-export ABI.
 
 Const globals retain their existing read-only representation. Fixed arrays
 follow their [static storage contract](#fixed-array-static-storage). Mutable record,
-object-pointer and reference globals, volatile/atomic globals,
+reference globals, volatile/atomic globals,
 dynamic initialization and thread-local storage remain outside current support.
 Statically initialized scalar locals and defined scalar static data members
 follow their separate contracts above. Nontrivial global object destruction
@@ -2946,7 +3008,7 @@ still requires separate lifetime support. Other profiles retain their prior
 constant-global contract.
 
 The optional global IR field `mutable` defaults to `false`. Only core v2 accepts
-this field, and supported numeric, boolean, null, callback and fixed-array carriers can
+this field, and supported numeric, boolean, null, pointer, callback and fixed-array carriers can
 set it to `true`.
 The consumer checks the folded scalar initializer and grants writes or mutable
 addresses only to that exact global. Emission uses `static` for mutable storage

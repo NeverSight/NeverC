@@ -1704,12 +1704,117 @@ json::Object Adapter::stringObject(const StringLiteral *Literal) {
                       {"name", Found->second}, {"loc", loc(L)}};
 }
 
+json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocation L) {
+  auto Reject = [&](llvm::StringRef Reason, llvm::StringRef Code = "TR0201") {
+    reject(L, "constant object address", Reason, Code);
+    throw Failure{};
+  };
+  auto ResultType = type(T, L);
+  if (ResultType.empty() || !S.coreV2() || !T->isPointerType() || T->isFunctionPointerType() ||
+      !V.isLValue() || V.getLValueCallIndex() || V.getLValueVersion())
+    Reject("A constant pointer must identify null or permanent source-owned object storage.");
+  if (V.isNullPointer()) {
+    if (!V.getLValueOffset().isZero() || V.isLValueOnePastTheEnd() ||
+        (V.hasLValuePath() && !V.getLValuePath().empty()))
+      Reject("A null object pointer cannot carry a subobject path or offset.");
+    return json::Object{{"kind", "null"}, {"type", ResultType}, {"loc", loc(L)}};
+  }
+  if (!V.hasLValuePath())
+    Reject("A nonnull constant pointer requires its typed source subobject path.");
+  const auto Base = V.getLValueBase();
+  QualType Current;
+  json::Object Place;
+  if (const auto *Variable = dyn_cast_or_null<VarDecl>(Base.dyn_cast<const ValueDecl *>())) {
+    const auto *Definition = Variable->getDefinition();
+    if (!Definition || !S.owns(Sources, Definition->getLocation()))
+      Reject("The addressed variable requires its source-owned definition in this unit.", "TR0203");
+    if (!Definition->hasGlobalStorage() || Definition->getTLSKind() != VarDecl::TLS_None ||
+        Definition->getType()->isReferenceType() ||
+        Definition->getCanonicalDecl() != Variable->getCanonicalDecl())
+      Reject("The addressed variable requires a source-owned static definition without TLS.");
+    Current = Definition->getType();
+    if (type(Current, L).empty())
+      Reject("The addressed object must retain a supported complete storage type.");
+    Place = json::Object{{"kind", "var"}, {"name", name(Definition)},
+                         {"type", type(Current, L)}, {"loc", loc(L)}};
+  } else if (const auto *Literal = dyn_cast_or_null<StringLiteral>(Base.dyn_cast<const Expr *>())) {
+    Current = Literal->getType();
+    Place = stringObject(Literal);
+  } else {
+    Reject("Only owned static variables and checked string literals provide permanent object addresses.");
+  }
+  int64_t Offset = 0;
+  bool AtArrayEnd = false;
+  auto Address = [&](json::Object Object, QualType ObjectType) {
+    return json::Object{{"kind", "address"},
+                        {"type", type(Context.getPointerType(ObjectType), L)},
+                        {"args", json::Array{std::move(Object)}}, {"loc", loc(L)}};
+  };
+  auto Index = [&](json::Object Pointer, QualType Element, uint64_t N) {
+    return json::Object{{"kind", "index"}, {"type", type(Element, L)},
+                        {"args", json::Array{std::move(Pointer),
+                            literal(llvm::APSInt(llvm::APInt(64, N), true), "u64", L)}},
+                        {"loc", loc(L)}};
+  };
+  const auto Path = V.getLValuePath();
+  chargeExpansion(Path.size() * 4 + 3, L);
+  for (unsigned I = 0; I < Path.size(); ++I) {
+    if (const auto *Array = Context.getAsConstantArrayType(Current)) {
+      auto N = Path[I].getAsArrayIndex();
+      auto Count = Array->getSize().getLimitedValue(65537);
+      if (N > Count || (N == Count && I + 1 != Path.size()))
+        Reject("A constant array path must stay within its extent; only the final address may be one-past.");
+      auto Element = Array->getElementType();
+      json::Object Decay{{"kind", "array_decay"},
+                         {"type", type(Context.getPointerType(Element), L)},
+                         {"args", json::Array{std::move(Place)}}, {"loc", loc(L)}};
+      Place = Index(std::move(Decay), Element, N);
+      Offset += int64_t(N) * Context.getTypeSizeInChars(Element).getQuantity();
+      Current = Element;
+      AtArrayEnd = N == Count;
+    } else if (const auto *Record = Current->getAsCXXRecordDecl()) {
+      auto Entry = Path[I].getAsBaseOrMember();
+      const auto *Field = dyn_cast_or_null<FieldDecl>(Entry.getPointer());
+      if (!Field || Entry.getInt() || Field->isBitField() || Field->isMutable() ||
+          !S.owns(Sources, Field->getLocation()) || !Record->getDefinition() ||
+          Field->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+        Reject("A constant record path requires its actual supported field, without a base-class adjustment.");
+      Offset += Context.getASTRecordLayout(Record->getDefinition())
+                    .getFieldOffset(Field->getFieldIndex()) / Context.getCharWidth();
+      auto FieldType = Field->getType();
+      if (Current.isConstQualified())
+        FieldType = FieldType.withConst();
+      Place = json::Object{{"kind", "member"}, {"name", name(Field)},
+                           {"type", type(FieldType, L)},
+                           {"args", json::Array{std::move(Place)}}, {"loc", loc(L)}};
+      Current = FieldType;
+    } else {
+      Reject("A constant address path can traverse only complete arrays and record fields.");
+    }
+  }
+  if (V.isLValueOnePastTheEnd()) {
+    if (AtArrayEnd)
+      Reject("A constant address cannot advance beyond an array's one-past position.");
+    Place = Index(Address(std::move(Place), Current), Current, 1);
+    Offset += Context.getTypeSizeInChars(Current).getQuantity();
+  }
+  if (V.getLValueOffset().getQuantity() != Offset)
+    Reject("The typed subobject path must reproduce the frontend's exact constant byte offset.");
+  auto Result = Address(std::move(Place), Current);
+  if (Result.getString("type") != ResultType)
+    Result = json::Object{{"kind", "cast"}, {"type", ResultType},
+                          {"args", json::Array{std::move(Result)}}, {"loc", loc(L)}};
+  return Result;
+}
+
 json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
   auto Kind = type(T, L);
   if (V.isInt())
     return literal(V.getInt(), Kind, L);
   if (V.isFloat() && (S.math() || S.coreV2()))
     return floatingLiteral(V.getFloat(), L);
+  if (S.coreV2() && T->isPointerType() && !T->isFunctionPointerType())
+    return constantPointer(V, T, L);
   if (V.isArray() && S.coreV2()) {
     const auto *Array = Context.getAsConstantArrayType(T);
     if (!Array || V.getArraySize() != Array->getSize().getZExtValue()) {
@@ -2279,11 +2384,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         V->getType().isRestrictQualified())
       return false;
     auto T = V->getType();
-    if (T->isFunctionPointerType())
+    if (T->isPointerType())
       return true; // Actual instances retain source, ABI and constant checks.
     if (T->isArrayType())
       return true; // Bound, element type and initializer are checked on use.
-    if (T->isPointerType() || T->isReferenceType() || T->isRecordType())
+    if (T->isReferenceType() || T->isRecordType())
       return false;
     return T->isDependentType() || T->isUndeducedAutoType() || T->isNullPtrType() ||
            T->isIntegralOrEnumerationType() || binaryFloatingType(T);
@@ -2335,11 +2440,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     }
     auto Type = D->getType();
-    if (Type->isFunctionPointerType())
+    if (Type->isPointerType())
       return true; // Concrete source, signature and initializer checks follow.
     if (Type->isArrayType())
       return true; // Concrete instances retain their complete written type.
-    if (Type->isPointerType() || Type->isReferenceType() || Type->isRecordType())
+    if (Type->isReferenceType() || Type->isRecordType())
       return false;
     return Type->isDependentType() || Type->isUndeducedAutoType() || Type->isNullPtrType() ||
            Type->isIntegralOrEnumerationType() || binaryFloatingType(Type);
@@ -7961,7 +8066,7 @@ public:
     return true;
   }
   bool staticScalarType(QualType T) {
-    return T->isIntegralOrEnumerationType() || T->isFunctionPointerType() ||
+    return T->isIntegralOrEnumerationType() || T->isPointerType() ||
            T->isNullPtrType() || binaryFloatingType(T);
   }
   bool staticStorageType(QualType T) {
@@ -8024,9 +8129,9 @@ public:
     return true;
   }
   bool staticScalarValue(const APValue &Value, QualType T, SourceLocation L) {
-    if (T->isFunctionPointerType() || T->isNullPtrType()) {
-      // Normalization checks a real null value or a symbolic callback address
-      // with its offset and signature.
+    if (T->isPointerType() || T->isNullPtrType()) {
+      // Normalization checks null, a callback signature, or an object's typed
+      // static subobject path and exact offset.
       // The original initializer still undergoes the ordinary source walk.
       A.constant(Value, T, L);
       return true;
@@ -8246,8 +8351,7 @@ public:
       return true;
     }
     if (!D->isLocalVarDeclOrParm() &&
-        ((D->getType()->isPointerType() &&
-          !(A.S.coreV2() && D->getType()->isFunctionPointerType())) ||
+        ((D->getType()->isPointerType() && !A.S.coreV2()) ||
          D->getType()->isReferenceType() ||
          (A.S.coreV2() && containsArray(D->getType())))) {
       A.reject(D->getLocation(), "global variable",
@@ -8260,7 +8364,7 @@ public:
                "Static/thread-local locals and local extern declarations are "
                "unsupported.");
     if (!D->isLocalVarDeclOrParm()) {
-      if (A.S.coreV2() && !D->getType().isConstQualified() &&
+      if (A.S.coreV2() && (!D->getType().isConstQualified() || D->getType()->isPointerType()) &&
           staticScalarType(D->getType())) {
         auto *Definition = D->getDefinition();
         if (!Definition || !owned(Definition) || Definition->getKind() != Decl::Var ||
@@ -8989,14 +9093,14 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     } else if (Init) {
       APValue Value;
       if (!Init->isCXX11ConstantExpr(Context, &Value) || (Mutable && !Value.isInt() && !Value.isFloat() &&
-          !G->getType()->isFunctionPointerType() && !G->getType()->isNullPtrType()))
+          !G->getType()->isPointerType() && !G->getType()->isNullPtrType()))
         throw Failure{};
       Initializer = constant(Value, G->getType(), G->getLocation());
     } else {
       if (!Mutable || (!G->getType()->isIntegralOrEnumerationType() &&
                        !G->getType()->isRealFloatingType() &&
                        !G->getType()->isNullPtrType() &&
-                       !G->getType()->isFunctionPointerType()))
+                       !G->getType()->isPointerType()))
         throw Failure{};
       Initializer = zero(G->getType(), G->getLocation());
     }

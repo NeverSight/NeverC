@@ -104,6 +104,8 @@ Core v2 admits narrow, UTF-8, UTF-16, UTF-32 and wide string literals with exact
 
 Core v2 supports zero or constant initialization of mutable and const arrays at namespace scope, in function-local statics and in class static members, including admitted template instances. Canonical arrays retain shared state and addresses across calls; different instances keep separate storage. Dynamic initialization, static destruction and full STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
 
+Core v2 supports zero or constant initialization of static object pointers, including global/literal addresses, array and field paths, and valid one-past pointers. Namespace, local, class and template storage preserve pointer identity, mutability and const access. Forward addresses become C23 constants without runtime initialization. Static references, allocation and complete STL remain in development. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

@@ -104,6 +104,8 @@ Core v2 accepte les littéraux étroits, UTF-8, UTF-16, UTF-32 et larges avec le
 
 Core v2 prend en charge les tableaux modifiables et constants initialisés à zéro ou par une constante, dans les espaces de noms, les variables statiques locales et les membres statiques de classe, y compris les instances de modèles admises. État et adresses persistent entre les appels ; les instances distinctes conservent un stockage séparé. L’initialisation dynamique, la destruction statique et la STL complète restent en développement. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
 
+Core v2 prend en charge l’initialisation nulle ou constante des pointeurs statiques vers des objets globaux, des littéraux, des éléments de tableau et des champs, y compris les adresses valides juste après la fin. Identité, mutabilité et accès const restent distincts pour les espaces de noms, fonctions, classes et modèles. Les adresses déclarées plus loin deviennent des constantes C23 sans initialisation à l’exécution. Références statiques, allocation et STL complète restent en développement. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).

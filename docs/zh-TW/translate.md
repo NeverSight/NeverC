@@ -104,6 +104,8 @@ Core v2 接受窄字元、UTF-8、UTF-16、UTF-32 和寬字元字串字面值，
 
 Core v2 支援命名空間陣列、函式內靜態陣列及類別靜態陣列成員的零初始化或常數初始化，包含已支援的範本實體，並保留可變與 const 規則。同一陣列跨呼叫保留狀態及位址，不同範本實體使用獨立儲存空間。動態初始化、靜態解構及完整 STL 仍待完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
 
+Core v2 支援靜態物件指標的零初始化與常數初始化，保留全域物件、字串、陣列元素及欄位的位址，以及有效的末尾後一位指標。命名空間、函式、類別及範本儲存空間皆保留指標身分、可變性與 const 存取規則。前向位址直接輸出為 C23 常數，無須執行期初始化。靜態參考、動態配置及完整 STL 仍待完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
+
 ## 安裝與純量轉譯
 
 使用正常安裝的 NeverC 及其標準資源即可。C++ 前端與核准的 SDK 標頭均已內建，無需另行安裝 Clang。建置細節見[前端說明](../../utils/translate-frontends/cpp/README.md)。

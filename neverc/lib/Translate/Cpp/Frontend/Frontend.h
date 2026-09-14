@@ -315,6 +315,8 @@ public:
   void checkStringLiteral(const clang::StringLiteral *Literal);
   json::Object stringInitializer(const clang::StringLiteral *Literal);
   json::Object stringObject(const clang::StringLiteral *Literal);
+  json::Object constantPointer(const clang::APValue &Value, clang::QualType T,
+                               clang::SourceLocation L);
   std::string mapping(const clang::CallExpr *Call);
   json::Object zero(clang::QualType T, clang::SourceLocation L);
   json::Object constant(const clang::APValue &V, clang::QualType T,

@@ -104,6 +104,8 @@ Core v2는 좁은 문자, UTF-8, UTF-16, UTF-32 및 와이드 문자열 리터�
 
 Core v2는 네임스페이스 배열, 함수 내부 정적 배열, 클래스 정적 배열 멤버의 0 초기화 또는 상수 초기화를 지원하며, 허용된 템플릿 인스턴스와 가변·const 규칙을 유지합니다. 같은 배열은 호출 후에도 상태와 주소를 보존하고 다른 인스턴스는 별도 저장소를 사용합니다. 동적 초기화, 정적 객체 소멸, 완전한 STL은 개발 중입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
 
+Core v2는 정적 객체 포인터의 0 초기화와 상수 초기화를 지원하며, 전역 객체·문자열·배열 요소·필드 주소와 유효한 끝 다음 포인터를 유지합니다. 네임스페이스·함수·클래스·템플릿 저장소에서도 동일성, 가변성, const 접근 규칙을 보존합니다. 나중에 정의되는 객체의 주소도 런타임 초기화 없이 C23 상수로 출력됩니다. 정적 참조, 동적 할당, 완전한 STL은 개발 중입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
+
 ## 설치와 스칼라 변환
 
 일반 NeverC 설치와 표준 리소스를 사용하면 됩니다. C++ 프런트엔드와 승인된 SDK 헤더가 내장되어 있어 Clang을 별도로 설치할 필요가 없습니다. 빌드 세부 사항은 [프런트엔드 안내](../../utils/translate-frontends/cpp/README.md)를 참고하세요.

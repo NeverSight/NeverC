@@ -755,6 +755,49 @@ class Verifier {
     }
     return error(L, "Unknown type kind.");
   }
+  bool staticPlace(const Expr &E, bool Final, std::size_t Depth) {
+    if (Depth > MaxProtocolDepth)
+      return error(E.Loc, "Constant address path exceeds the depth limit.");
+    if (E.Kind == ExprKind::Var && E.Args.empty()) {
+      auto Found = Globals.find(E.Name);
+      return (Found != Globals.end() && Found->second == E.ValueType) ||
+             error(E.Loc, "Constant address requires a defined global object.");
+    }
+    if (E.Kind == ExprKind::Member && E.Args.size() == 1)
+      return staticPlace(E.Args[0], false, Depth + 1);
+    if (E.Kind == ExprKind::Index && E.Args.size() == 2) {
+      const auto &Pointer = E.Args[0], &Index = E.Args[1];
+      uint64_t N = 0;
+      if (Index.Kind != ExprKind::Literal || !Index.Args.empty() ||
+          !Index.ValueType.isPromotedInteger() ||
+          !canonicalInteger(Index.Integer, Index.ValueType) ||
+          llvm::StringRef(Index.Integer).getAsInteger(10, N) || Pointer.Args.size() != 1)
+        return error(E.Loc, "Constant array addresses require an exact nonnegative integer index.");
+      uint64_t Count = 0;
+      if (Pointer.Kind == ExprKind::ArrayDecay &&
+          Pointer.Args[0].ValueType.Kind == TypeKind::Array)
+        Count = Pointer.Args[0].ValueType.Count;
+      else if (Pointer.Kind == ExprKind::Address)
+        Count = 1; // A complete non-array object also permits its one-past address.
+      else
+        return error(E.Loc, "Constant indexing requires an addressed object, not a stored pointer load.");
+      if (!Count || N > Count || (!Final && N == Count))
+        return error(E.Loc, "Constant address index exceeds its object or selects a subobject of one-past storage.");
+      return staticPlace(Pointer.Args[0], false, Depth + 1);
+    }
+    return error(E.Loc, "Constant address path must use global objects, fields and bounded array elements.");
+  }
+  bool constantAddress(const Expr &E, std::size_t Depth) {
+    if (Depth > MaxProtocolDepth || E.ValueType.Kind != TypeKind::Pointer)
+      return error(E.Loc, "Constant object address requires a bounded pointer expression.");
+    if (E.Kind == ExprKind::Null)
+      return E.Args.empty();
+    if (E.Kind == ExprKind::Address && E.Args.size() == 1)
+      return staticPlace(E.Args[0], true, Depth + 1);
+    if (E.Kind == ExprKind::Cast && E.Args.size() == 1)
+      return constantAddress(E.Args[0], Depth + 1);
+    return error(E.Loc, "A constant pointer initializer cannot load storage or execute an operation.");
+  }
   bool expr(const Expr &E, const std::map<std::string, Type> &Storage,
             std::size_t Depth = 0, bool Folded = false,
             bool InitializerElement = false) {
@@ -762,6 +805,10 @@ class Verifier {
       return error(E.Loc, "IR expression/node limit exceeded.");
     if (!loc(E.Loc) || !type(E.ValueType, E.Loc))
       return false;
+    if (Folded && M.Profile == "cpp-core-v2" && E.ValueType.Kind == TypeKind::Pointer)
+      // An addressed object is distinct from loading its value. Validate the
+      // constant path, then apply ordinary type and const-address checks.
+      return constantAddress(E, Depth) && expr(E, Storage, Depth, false);
     const bool ConstantCallback = E.ValueType.Kind == TypeKind::FunctionPointer &&
         (E.Kind == ExprKind::FunctionAddress || E.Kind == ExprKind::Null);
     const bool ConstantNull = E.ValueType.Kind == TypeKind::NullPtr &&
@@ -769,7 +816,7 @@ class Verifier {
     if (Folded && E.Kind != ExprKind::Literal && E.Kind != ExprKind::Aggregate &&
         !ConstantCallback && !ConstantNull)
       return error(
-          E.Loc, "Global initializer must contain folded literals, aggregates, null values or constant callbacks.");
+          E.Loc, "Global initializer must contain folded literals, aggregates, null values, constant callbacks or checked object addresses.");
     for (const auto &A : E.Args)
       if (!expr(A, Storage, Depth + 1, Folded, E.Kind == ExprKind::Aggregate))
         return false;
@@ -1466,10 +1513,12 @@ public:
                          G.ValueType.Kind != TypeKind::Bool &&
                          G.ValueType.Kind != TypeKind::NullPtr &&
                          G.ValueType.Kind != TypeKind::Array &&
+                         G.ValueType.Kind != TypeKind::Pointer &&
                          G.ValueType.Kind != TypeKind::FunctionPointer)))
-        return error(G.Loc, "Mutable globals require core v2 numeric, boolean, nullptr, callback or fixed-array storage.");
+        return error(G.Loc, "Mutable globals require core v2 numeric, boolean, nullptr, pointer, callback or fixed-array storage.");
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
-          !type(G.ValueType, G.Loc) || G.ValueType.Kind == TypeKind::Pointer ||
+          !type(G.ValueType, G.Loc) ||
+          (G.ValueType.Kind == TypeKind::Pointer && M.Profile != "cpp-core-v2") ||
           (containsArray(G.ValueType) && M.Profile != "cpp-core-v2") ||
           !Symbols.insert(G.Name).second)
         return error(G.Loc, "Invalid or duplicate global identifier/type.");

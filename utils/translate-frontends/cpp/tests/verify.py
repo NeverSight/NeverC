@@ -3295,7 +3295,6 @@ int main(){return read();}
         'dynamic-call': 'int f(){return 1;}int value=f();',
         'dynamic-read': 'int a=1;int b=a;',
         'dynamic-effect': 'int a=1;int b=++a;',
-        'pointer': 'int*value=nullptr;',
         'reference': 'int n;int&value=n;',
         'record': 'struct R{int n;};R value{1};',
         'float': 'long double value=1.0L;',
@@ -4723,7 +4722,6 @@ int unevaluated(){return sizeof(make().shared);}
         'dynamic-call': 'int value(){return 3;}struct R{inline static int n=value();};',
         'dynamic-write': 'int n=0;struct R{inline static int value=++n;};',
         'floating': 'struct R{inline static long double n=1.0L;};',
-        'pointer': 'struct R{inline static int*n=nullptr;};',
         'reference': 'int n=0;struct R{inline static int&value=n;};',
         'record': 'struct I{int n;};struct R{inline static I i{1};};',
         'tls': 'struct R{inline static thread_local int n=1;};',
@@ -4949,7 +4947,6 @@ bool pure(){return noexcept(Values::first);}
         'floating': 'struct R{static const long double n;};const long double R::n=1.0L;',
         'folded-float': 'struct R{static const int n=static_cast<int>(1.0L);};',
         'folded-body': 'constexpr int f(){return static_cast<int>(1.0L);}struct R{static const int n=f();};',
-        'pointer': 'struct R{static const int*n;};',
         'volatile-storage': 'struct R{static const volatile int n;};const volatile int R::n=3;',
         'tls': 'struct R{static thread_local const int n=3;};',
     }
@@ -5164,7 +5161,6 @@ int*address(){return &state();}
         'static-tls': 'int f(){static thread_local int n=3;return n;}',
         'volatile': 'int f(){static volatile int n=3;return n;}',
         'floating': 'long double f(){static long double n=3.0L;return n;}',
-        'pointer': 'int*f(){static int*n=nullptr;return n;}',
         'reference': 'int value=3;int&f(){static int&n=value;return n;}',
         'record': 'struct R{int n;};int f(){static R r{3};return r.n;}',
         'record-destruction': 'struct R{int n;~R(){}};int f(){static R r{3};return r.n;}',
@@ -7245,7 +7241,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     member_variables_reject = {
         'dynamic': 'int f(){return 3;}struct R{template<class T>inline static int n=f();};int main(){return R::n<int>;}',
         'floating-result': 'struct R{template<class T>inline static long double n=3.0L;};int main(){return int(R::n<int>);}',
-        'pointer-result': 'struct R{template<class T>inline static T*n=nullptr;};int main(){return R::n<int> == nullptr;}',
         'reference-result': 'int value=3;struct R{template<class T>inline static int&n=value;};int main(){return R::n<int>;}',
         'record-result': 'struct V{int n;};struct R{template<class T>inline static V n{3};};int main(){return R::n<int>.n;}',
         'volatile': 'struct R{template<class T>inline static volatile int n=3;};int main(){return R::n<int>;}',
@@ -9137,6 +9132,151 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == class_friends, "class target identity depends on the absolute root"
 
+    static_pointer_positive = {
+        'global-null-zero': 'int*p;bool f(){return p==nullptr;}',
+        'global-null-explicit': 'int*p=nullptr;int*q=0;bool f(){return p==q;}',
+        'global-address': 'int n=3;int*p=&n;int f(){return ++*p;}',
+        'global-const-pointer': 'int n=3;int*const p=&n;int f(){return ++*p;}',
+        'global-const-pointee': 'const int n=3;const int*p=&n;int f(){return *p;}',
+        'global-string': 'const char*p="hello";int f(){return p[1];}',
+        'global-string-end': 'const char*p="abc"+4;char f(){return p[-2];}',
+        'global-string-reference-address': 'const char(*p)[4]=&"abc";char f(){return (*p)[1];}',
+        'global-array-decay': 'int a[3]={1,2,3};int*p=a;int f(){return p[2];}',
+        'global-array-offset': 'int a[3]={1,2,3};int*p=a+1;int f(){return p[-1];}',
+        'global-array-end': 'int a[3]={1,2,3};int*p=a+3;int f(){return p[-1];}',
+        'global-object-end': 'int n=3;int*p=&n+1;int f(){return p[-1];}',
+        'global-array-object-end': 'int a[3]={1,2,3};int(*p)[3]=&a+1;int f(){return p[-1][2];}',
+        'global-nested-array': 'int a[2][3]={{1,2,3},{4,5,6}};int*p=&a[1][2];int f(){return *p;}',
+        'global-row': 'int a[2][3]={{1,2,3},{4,5,6}};int(*p)[3]=a+1;int f(){return (*p)[1];}',
+        'global-const-record-field': 'struct R{int n;};constexpr R r{3};const int*p=&r.n;int f(){return *p;}',
+        'global-mutable-record-array-field': 'struct R{int n;};R a[2]={{1},{2}};int*p=&a[1].n;int f(){return ++*p;}',
+        'global-record-field-array': 'struct R{char label[4];int a[2];};constexpr R r{"cat",{3,4}};const int*p=r.a+1;int f(){return *p;}',
+        'global-const-member': 'struct R{const int key;int n;};R a[2]={{1,2},{3,4}};const int*p=&a[1].key;int f(){return *p;}',
+        'global-pointer-address': 'int n;int*p=&n;int**q=&p;int f(){return **q;}',
+        'global-pointer-self': 'void*p=&p;bool f(){return p==&p;}',
+        'global-void-conversion': 'int n=3;void*p=&n;int f(){return *static_cast<int*>(p);}',
+        'global-cv-conversion': 'int n=3;constexpr const int*q=&n;int*p=const_cast<int*>(q);int f(){return ++*p;}',
+        'global-constexpr-pointer-load': 'int a[2]={1,2};constexpr int*q=a;int*p=q+1;int f(){return *p;}',
+        'global-constexpr-function': 'int n=3;constexpr int*get(){return &n;}int*p=get();int f(){return *p;}',
+        'global-forward': 'extern int n;int*p=&n;int n=3;int f(){return *p;}',
+        'global-redeclaration': 'int n=3;extern int*p;int*p=&n;extern int*p;int f(){return *p;}',
+        'global-const-redeclaration': 'int n=3;extern int*const p;int*const p=&n;int f(){return *p;}',
+        'global-pointer-array': 'int n=3;int*p[3]={&n,nullptr};int f(){return *p[0];}',
+        'global-string-table': 'const char*text[3]={"one","two",nullptr};char f(){return text[1][0];}',
+        'global-record-pointer-array': 'int n=3;struct R{int*p;};R a[2]={{&n},{nullptr}};int f(){return *a[0].p;}',
+        'global-const-record-pointer': 'int n=3;struct R{int*p;};const R r{&n};int f(){return ++*r.p;}',
+        'global-utf16': 'const char16_t*p=u"\\U0001f600";char16_t f(){return p[1];}',
+        'global-float-pointer': 'float a[2]={1.25f,2.5f};float*p=a+1;float f(){return *p;}',
+        'global-nullptr-address': 'using N=decltype(nullptr);N n;N*p=&n;bool f(){return *p==nullptr;}',
+        'global-callback-address': 'int f(){return 3;}using F=int(*)();F target=f;F*p=&target;int g(){return (*p)();}',
+        'local-static-null': 'int*f(){static int*p;return p;}',
+        'local-static-address': 'int n=3;int*f(){static int*p=&n;return p;}',
+        'local-static-string': 'const char*f(){static const char*p="hello";return p;}',
+        'local-static-const': 'int n=3;int*f(){static int*const p=&n;return p;}',
+        'local-static-to-static': 'int*f(){static int a[3]={1,2,3};static int*p=a+1;return p;}',
+        'local-static-pointer-array': 'int n=3;int**f(){static int*p[2]={&n,nullptr};return p;}',
+        'local-static-template': 'template<int N>int*f(){static int a[2]={N,0};static int*p=a;return p;}int*g(){return f<3>();}',
+        'member-inline': 'int n=3;struct R{inline static int*p=&n;};int f(){return *R::p;}',
+        'member-outline': 'int n=3;struct R{static int*p;};int*R::p=&n;int f(){return *R::p;}',
+        'member-own-array': 'struct R{inline static int a[2]={1,2};inline static int*p=a+1;};int f(){return *R::p;}',
+        'member-constexpr-string': 'struct R{inline static constexpr const char*p="cat";};char f(){return R::p[1];}',
+        'member-temporary': 'int n=3,drops;struct R{inline static int*p=&n;~R(){++drops;}};int*f(){return R{}.p;}',
+        'member-class-template': 'template<int N>struct R{inline static int a[2]={N,0};inline static int*p=a;};int*f(){return R<3>::p;}',
+        'member-class-outline': 'int n=3;template<class T>struct R{static T*p;};template<class T>T*R<T>::p=&n;int*f(){return R<int>::p;}',
+        'variable-template': 'int n=3;template<class T>inline T*p=&n;int*f(){return p<int>;}',
+        'variable-template-auto': 'int n=3;template<class T>inline auto p=&n;int*f(){return p<int>;}',
+        'variable-template-partial': 'int a=3,b=4;template<class T>inline int*p=&a;template<class T>inline int*p<T*> =&b;int*f(){return p<int*>;}',
+        'variable-template-full': 'int a=3,b=4;template<class T>inline int*p=&a;template<>inline int*p<int> =&b;int*f(){return p<int>;}',
+        'variable-template-own-array': 'template<int N>inline int a[2]={N,0};template<int N>inline int*p=a<N>;int*f(){return p<3>;}',
+        'member-variable-template': 'int n=3;struct R{template<class T>inline static T*p=&n;};int*f(){return R::p<int>;}',
+        'member-variable-outline': 'int n=3;struct R{template<class T>static T*p;};template<class T>T*R::p=&n;int*f(){return R::p<int>;}',
+        'promoted-1': 'int*value=nullptr;',
+        'promoted-2': 'struct R{inline static int*n=nullptr;};',
+        'promoted-3': 'int*f(){static int*n=nullptr;return n;}',
+        'promoted-4': 'struct R{template<class T>inline static T*n=nullptr;};int main(){return R::n<int> == nullptr;}',
+        'promoted-5': 'int*a[2]={nullptr,nullptr};',
+        'promoted-6': 'int**f(){static int*a[2];return a;}',
+        'promoted-7': 'struct R{int*p;};R a[2]{};',
+        'promoted-8': 'const char*p="abc";',
+        'promoted-9': 'int n=3;int*p=&n;int main(){return *p;}',
+        'promoted-10': 'int n=3;template<class T>int*p=&n;int main(){return *p<int>;}',
+        'promoted-11': 'template<class T>constexpr T*value=nullptr;int main(){return value<int> == nullptr;}',
+        'promoted-12': 'template<class T>struct R{inline static T*p=nullptr;};',
+        'promoted-13': 'template<class T>struct R{static T n;};static_assert(sizeof(R<int*>)==1);',
+        'promoted-14': 'static_assert(true,"message"); const char *s="runtime"; int main(){}',
+        'promoted-native-string': 'static_assert(true, "message"); const char *value = "runtime";',
+        'runtime': 'int scalar=3;\nint array[3]={4,5,6};\nint*zero;\nint*pointer=&scalar;\nint*const fixed=&scalar;\nint*end=array+3;\nint*scalarEnd=&scalar+1;\nint(*arrayEnd)[3]=&array+1;\nint**pointerAddress=&pointer;\nvoid*self=&self;\nvoid*erased=&scalar;\nconstexpr int*constant=array;\nint*folded=constant+1;\nconst char*text="alive";\nconst char*textEnd="abc"+4;\nconst char(*wholeText)[4]=&"cat";\nint matrix[2][3]={{1,2,3},{4,5,6}};\nint(*row)[3]=matrix+1;\nint*element=&matrix[1][2];\nstruct Item{const int key;int value;int data[2];};\nItem items[2]={{1,2,{3,4}},{5,6,{7,8}}};\nconst int*key=&items[1].key;\nint*value=&items[1].value;\nint*nested=&items[1].data[1];\nint*table[3]={&scalar,array+1,nullptr};\nstruct Link{int*p;};\nLink links[2]={{&scalar},{array+2}};\nconst Link readonly{&scalar};\nextern int later;\nint*forward=&later;\nint later=9;\nint*local(){static int storage[2]={10,11};static int*p=storage;return p;}\nint effects=0,drops=0;\nstruct Holder{inline static int*p=&scalar;~Holder(){++drops;}};\nHolder&receiver(Holder&h){++effects;return h;}\nint*temporary(){return Holder{}.p;}\ntemplate<int N>int*slot(){static int data[2]={N,0};static int*p=data;return p;}\ntemplate<int N>struct Store{inline static int data[2]={N,0};inline static int*p=data;};\ntemplate<int N>inline int data[2]={N,0};\ntemplate<int N>inline int*selected=data<N>;\nint main(){\n if(zero!=nullptr||*pointer!=3||pointer!=fixed)return 1;\n *pointer=12;if(scalar!=12||*fixed!=12||*readonly.p!=12)return 2;\n pointer=array;if(*pointer!=4||**pointerAddress!=4)return 3;\n if(end-array!=3||end[-1]!=6||scalarEnd[-1]!=12)return 4;\n if(arrayEnd[-1][2]!=6)return 5;\n if(self!=&self||*static_cast<int*>(erased)!=12)return 6;\n if(folded!=array+1||*folded!=5)return 7;\n if(text[0]!=\'a\'||text[4]!=\'e\'||text[5]!=0)return 8;\n if(textEnd[-2]!=\'c\'||(*wholeText)[1]!=\'a\')return 9;\n if((*row)[1]!=5||*element!=6||element!=&matrix[1][2])return 10;\n *value=13;*nested=14;if(*key!=5||items[1].value!=13||items[1].data[1]!=14)return 11;\n if(*table[0]!=12||*table[1]!=5||table[2]!=nullptr)return 12;\n table[2]=array+2;if(*table[2]!=6||*links[1].p!=6)return 13;\n if(*forward!=9||forward!=&later)return 14;\n int*p=local();*p=15;if(local()!=p||*local()!=15||local()[1]!=11)return 15;\n {Holder h;receiver(h).p=array+1;if(effects!=1||*Holder::p!=5)return 16;}\n if(drops!=1)return 17;\n if(temporary()!=array+1||drops!=2)return 18;\n int*s=slot<3>();s[1]=16;if(slot<3>()!=s||slot<3>()[1]!=16||slot<5>()[1]!=0)return 19;\n Store<3>::p[1]=17;if(Store<3>::data[1]!=17||Store<5>::data[1]!=0)return 20;\n selected<3>[1]=18;if(data<3>[1]!=18||data<5>[1]!=0||selected<3> == selected<5>)return 21;\n selected<3> =&scalar;if(*selected<3> !=12||selected<5> !=data<5>)return 22;\n return 0;\n}\n',
+        'protocol-source': 'extern int target;\nint*forward=&target;\nint target=3;\nint values[3]={1,2,3};\nint*end=values+3;\nconst char*literal="cat";\nstruct Row{int values[2];};\nRow rows[2]={{{4,5}},{{6,7}}};\nint*nested=&rows[1].values[1];\nint**address=&forward;\nint*zero;\nint*local(){static int*p=&target;return p;}\n',
+    }
+    for name, source in static_pointer_positive.items():
+        check("v2-static-pointer-positive-"+name, source, profile="cpp-core-v2")
+    static_pointer_negative = {
+        'global-runtime-call': ('int n;int*get(){return &n;}int*p=get();', 'TR0201'),
+        'global-runtime-load': ('int n;int*q=&n;int*p=q;', 'TR0201'),
+        'local-parameter': ('int*f(int*n){static int*p=n;return p;}', 'TR0201'),
+        'local-automatic-address': ('int*f(){int n=3;static int*p=&n;return p;}', 'TR0201'),
+        'local-static-runtime-read': ('int*f(){static int n=3;static int a[2]={n,0};return a;}', 'TR0201'),
+        'global-heap': ('int*p=new int(3);', 'TR0201'),
+        'global-integer-address': ('int*p=reinterpret_cast<int*>(1);', 'TR0201'),
+        'global-past-extent': ('int a[2];int*p=a+3;', 'TR0201'),
+        'global-before-array': ('int a[2];int*p=a-1;', 'TR0201'),
+        'global-past-object': ('int n;int*p=&n+2;', 'TR0201'),
+        'global-null-offset': ('int*p=static_cast<int*>(nullptr)+1;', 'TR0201'),
+        'global-tls': ('int n;thread_local int*p=&n;', 'TR0201'),
+        'local-tls-target': ('int*f(){thread_local int n;static int*p=&n;return p;}', 'TR0201'),
+        'member-volatile': ('struct R{inline static int*volatile p=nullptr;};', 'TR0201'),
+        'unsupported-pointee': ('long double*p=nullptr;', 'TR0201'),
+        'hidden-bound': ('int a[2];int(*p)[(sizeof(long double),2)]=&a;', 'TR0201'),
+        'hidden-initializer': ('int n;int*p=(static_cast<void>(1.0L),&n);', 'TR0201'),
+        'hidden-template-type': ('template<class T>using I=int;int n;template<class T>I<decltype(T{}+1.0L)>*p=&n;int*f(){return p<int>;}', 'TR0201'),
+        'global-reference': ('int n;int&r=n;', 'TR0201'),
+        'static-reference': ('int n;int&f(){static int&r=n;return r;}', 'TR0201'),
+        'pointer-nontype': ('int n;template<int*P>int f(){return *P;}int g(){return f<&n>();}', 'TR0201'),
+        'global-missing-pointee': ('extern int n;int*p=&n;', 'TR0203'),
+        'global-missing-pointer': ('extern int*p;int*f(){return p;}', 'TR0203'),
+        'global-missing-const-pointer': ('extern int*const p;int*f(){return p;}', 'TR0203'),
+        'member-missing-pointer': ('struct R{static const int*n;};', 'TR0203'),
+        'global-const-write': ('const int n=3;const int*p=&n;void f(){*p=4;}', 'TR0202'),
+        'global-const-reseat': ('int n;int*const p=&n;void f(){p=nullptr;}', 'TR0202'),
+        'global-drop-const': ('const int n=3;int*p=&n;', 'TR0202'),
+        'global-string-drop-const': ('char*p="hello";', 'TR0202'),
+    }
+    for name, (source, diagnostic) in static_pointer_negative.items():
+        check("v2-static-pointer-reject-"+name, source, diagnostic, profile="cpp-core-v2")
+    check("static-pointer-v1", "int n=3;int*p=&n;", "TR0201", profile="cpp-core-v1")
+    static_pointer_ir = check("v2-static-pointer-protocol", static_pointer_positive["protocol-source"], profile="cpp-core-v2")
+    by_line = {g["loc"]["line"]:g for g in static_pointer_ir["globals"]
+               if not g["name"].startswith("nct_string_")}
+    strings = [g for g in static_pointer_ir["globals"] if g["name"].startswith("nct_string_")]
+    assert len(strings)==1 and len(by_line)==10
+    assert not strings[0].get("mutable",False)
+    assert [int(x["value"]) for x in strings[0]["value"]["args"]]==[99,97,116,0]
+    assert by_line[2]["value"]["kind"]=="address"
+    assert by_line[2]["value"]["args"][0]["name"]==by_line[3]["name"]
+    end_place=by_line[5]["value"]["args"][0]
+    assert end_place["kind"]=="index" and end_place["args"][1]["value"]=="3"
+    assert end_place["args"][0]["args"][0]["name"]==by_line[4]["name"]
+    literal_place=by_line[6]["value"]["args"][0]
+    assert literal_place["args"][0]["args"][0]["name"]==strings[0]["name"]
+    nested_place=by_line[9]["value"]["args"][0]
+    assert nested_place["kind"]=="index" and nested_place["args"][1]["value"]=="1"
+    field=nested_place["args"][0]["args"][0]
+    assert field["kind"]=="member" and field["type"]=="arr:2:int"
+    row=field["args"][0]
+    assert row["kind"]=="index" and row["args"][1]["value"]=="1"
+    assert row["args"][0]["args"][0]["name"]==by_line[8]["name"]
+    assert by_line[10]["type"]=="ptr:ptr:int"
+    assert by_line[10]["value"]["args"][0]["name"]==by_line[2]["name"]
+    assert by_line[11]["value"]["kind"]=="null"
+    assert by_line[12]["value"]["args"][0]["name"]==by_line[3]["name"]
+    assert all(g.get("mutable",False) for g in by_line.values())
+    assert not [local for f in static_pointer_ir["functions"] for local in f["locals"]
+                if local["type"].startswith("arr:")]
+    with tempfile.TemporaryDirectory(prefix="neverc-static-pointer-relocated-") as temp:
+        relocated=check("v2-static-pointer-relocated",static_pointer_positive["protocol-source"],
+                        root=Path(temp)/"project",profile="cpp-core-v2")
+        assert relocated==static_pointer_ir, "constant addresses depend on the source root"
+
     static_array_positive = {
         'namespace-zero': 'int a[3];int f(){return a[2];}',
         'namespace-initialized': 'int a[3]={1,2};int f(){a[0]+=a[1];return a[0];}',
@@ -9204,9 +9344,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'local-destructor': ('struct R{int n;~R(){}};R*f(){static R a[2]={{1},{2}};return a;}', 'TR0201'),
         'member-destructor': ('struct I{int n;~I(){}};struct R{inline static I a[2]={{1},{2}};};', 'TR0201'),
         'template-destructor': ('struct R{int n;~R(){}};template<class T>inline T a[2]{};R*f(){return a<R>;}', 'TR0201'),
-        'global-pointer-elements': ('int*a[2]={nullptr,nullptr};', 'TR0201'),
-        'local-pointer-elements': ('int**f(){static int*a[2];return a;}', 'TR0201'),
-        'pointer-record-elements': ('struct R{int*p;};R a[2]{};', 'TR0201'),
         'mutable-record-root': ('struct R{int a[2];};R r{{1,2}};', 'TR0201'),
         'volatile-array': ('volatile int a[2];', 'TR0201'),
         'tls-local': ('int*f(){thread_local int a[2];return a;}', 'TR0201'),
@@ -9318,7 +9455,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'mixed-width': ('void f(){char a[]=u"abc";}', 'TR0202'),
         'literal-nttp': ('template<const char*p>int f(){return *p;}int g(){return f<"abc">();}', 'TR0202'),
         'literal-user-defined': ('unsigned operator""_n(const char*,decltype(sizeof(0))){return 1;}int f(){return "abc"_n;}', 'TR0201'),
-        'global-pointer': ('const char*p="abc";', 'TR0201'),
         'thread-local-array': ('thread_local const char a[]="abc";', 'TR0201'),
         'global-array-dynamic': ('int f(){return 1;}const int a[2]={f(),2};', 'TR0201'),
         'global-array-destructor': ('struct R{int n;~R(){}};const R r[2]={{1},{2}};', 'TR0201'),
@@ -9921,7 +10057,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'dynamic-global': 'int get(){return 3;}using F=int(*)();F make(){return get;}F p=make();int main(){return p();}',
         'thread-local': 'int get(){return 3;}thread_local int(*p)()=get;int main(){return p();}',
         'volatile-storage': 'int get(){return 3;}int main(){int(*volatile p)()=get;return p();}',
-        'global-object-pointer-retained': 'int n=3;int*p=&n;int main(){return *p;}',
         'nondefault-pointee-address-space': 'typedef int __attribute__((address_space(1))) A;int invoke(int(*p)(A*),A*v){return p(v);}',
         'written-noreturn': 'typedef void F() __attribute__((noreturn));void invoke(F*p){p();}',
         'written-noescape': 'typedef void F(int*p __attribute__((noescape)));void invoke(F*p,int*v){p(v);}',
@@ -10248,7 +10383,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'dynamic-initializer': 'int get(){return 3;}int(*make())(){return get;}template<class T>auto p=make();int main(){return p<int>();}',
         'thread-local': 'int get(){return 3;}template<class T>thread_local auto p=&get;int main(){return p<int>();}',
         'volatile': 'int get(){return 3;}template<class T>auto volatile p=&get;int main(){return p<int>();}',
-        'object-pointer': 'int n=3;template<class T>int*p=&n;int main(){return *p<int>;}',
         'record-storage': 'struct R{int n;};template<class T>R p{3};int main(){return p<int>.n;}',
         'nonstatic-member-pointer': 'struct R{int get(){return 3;}};template<class T>auto p=&R::get;int main(){R r;return (r.*p<int>)();}',
         'record-callback-signature': 'struct R{int n;};int get(R r){return r.n;}template<class T>auto p=&get;int main(){return p<int>(R{3});}',
@@ -10500,7 +10634,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
 
     variable_templates_reject = {
         'floating-result': 'template<class T>constexpr long double value=1.0L;int main(){return int(value<int>);}',
-        'pointer-result': 'template<class T>constexpr T*value=nullptr;int main(){return value<int> == nullptr;}',
         'reference-result': 'int n=3;template<class T>int&value=n;int main(){return value<int>;}',
         'class-result': 'struct R{int n;};template<class T>constexpr R value{3};int main(){return value<int>.n;}',
         'dynamic-initializer': 'int f(){return 3;}template<class T>int value=f();int main(){return value<int>;}',
@@ -11864,10 +11997,8 @@ int&outsideValue(Outside<int>&r){return r;}
         'discard-floating': 'template<class T>struct R{static const int n=int(1.0L);};int f(){(void)R<int>::n;return 0;}',
         'hidden-definition-floating': 'template<class T>struct R{static int n;};template<class T>int R<T>::n=int(1.0L);int f(){return R<int>::n;}',
         'floating-type': 'template<class T>struct R{inline static long double n=1.0L;};',
-        'pointer-type': 'template<class T>struct R{inline static T*p=nullptr;};',
         'reference-type': 'int n=3;template<class T>struct R{inline static int&r=n;};',
         'record-type': 'struct I{int n;};template<class T>struct R{inline static I n{3};};',
-        'selected-dependent-type': 'template<class T>struct R{static T n;};static_assert(sizeof(R<int*>)==1);',
         'volatile': 'template<class T>struct R{inline static volatile T n=3;};',
         'thread-local': 'template<class T>struct R{inline static thread_local T n=3;};',
         'outside-parameter-source': 'template<int N>struct R{static int n;};template<decltype(int(1.0L)) N>int R<N>::n=N;',
@@ -14648,7 +14779,6 @@ int main() {
         "unused-volatile-alias": "using Hidden=volatile int; int main(){}",
         "unused-function-alias": "using Hidden=void(); int main(){}",
         "folded-assert-type": 'static_assert(1.0L==1.0L,"condition"); int main(){}',
-        "runtime-string": "static_assert(true,\"message\"); const char *s=\"runtime\"; int main(){}",
     }
     v2_rejections.update({
         "reference-field": "struct R{int&r;};",

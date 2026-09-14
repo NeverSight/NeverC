@@ -85,7 +85,7 @@ Types are strings: `int`, `uint`, `bool`, `void`, or the identifier of a record.
 
 Identifiers are ASCII C identifiers. Non-C-export declarations use an `nct_` prefix and a deterministic digest of their semantic identity. Internal-linkage identities include the normalized relative source path. Native C exports retain their explicit source name and must use scalar signatures; `main` retains its spelling, int return, and empty argument list. All emitted identifiers reject NC keywords and reserved runtime/compiler spellings, including the emitter-private `nct_emit_` prefix. Record typedefs, globals and functions occupy one disjoint ordinary-identifier namespace; parameters and locals are mutually distinct and cannot shadow module declarations. Field names are distinct within each record. Source C exports may not use the generated `nct_` namespace. Identifiers never depend on AST addresses or absolute roots.
 
-Globals are `{name,type,value,loc}`. Their values must be fully folded literal/aggregate trees: the frontend resolves constant references, operators and conversions before serialization. The v1 profiles represent only checked compile-time constants and never permit global writes. Core v2 additionally accepts an optional boolean `mutable` field, defaulting to `false`: supported numeric, boolean, null and callback scalar globals and complete fixed arrays may set it to `true`, with a folded constant or static-zero initializer. The consumer permits writes and mutable addresses only for those exact global identities. Other profiles reject the field, and const globals remain read-only. Mutable record and object-pointer globals are not admitted. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. The v1 profiles restrict this representation to their admitted trivial value types. Core v2 represents source aliases, addressable storage and lifetimes through explicit operations described below; declarations at entry do not perform initialization or start object lifetimes.
+Globals are `{name,type,value,loc}`. Their values must be fully folded constant trees: literals, aggregates, and the profile-specific null or address constants described below. The frontend resolves constant references, operators and conversions before serialization. The v1 profiles represent only checked compile-time constants and never permit global writes. Core v2 additionally accepts an optional boolean `mutable` field, defaulting to `false`: supported numeric, boolean, null, object-pointer and callback scalar globals and complete fixed arrays may set it to `true`, with a folded constant or static-zero initializer. The consumer permits writes and mutable addresses only for those exact global identities. Other profiles reject the field, and const globals remain read-only. Mutable record globals are not admitted. Functions contain `name`, `result`, boolean `internal`, boolean `c_export`, `params`, `locals`, `body`, and `loc`. Parameters/locals are `{name,type,loc}`. Each function has distinct local names; all storage declarations are emitted once at function entry, and initialization instructions remain in source execution order. The v1 profiles restrict this representation to their admitted trivial value types. Core v2 represents source aliases, addressable storage and lifetimes through explicit operations described below; declarations at entry do not perform initialization or start object lifetimes.
 
 ## Pure expressions
 
@@ -836,7 +836,8 @@ Core v2 accepts folded array globals with either mutability and const records
 containing arrays. The consumer verifies every extent, element type, initializer
 arity and folded leaf, together with normal carrier/record layout checks. Array
 aggregates remain initializer-only; this does not admit runtime array assignment,
-array value parameters/results or arbitrary constant pointer relocations.
+array value parameters/results. Constant pointer relocations follow the checked
+static-address contract below.
 Array decay and addresses require const-qualified pointers when rooted in
 read-only globals; writes retain ordinary const-storage rejection. The emitter
 declares complete `static` or `static const` arrays before functions according
@@ -858,9 +859,34 @@ automatic local or block-entry initialization represents them. Constant
 initialization evaluates the actual source-owned definition and retains its
 complete typed object value. A mutable array may contain record/array subtrees;
 the verifier checks every folded leaf, extent, element type and layout. Runtime
-whole-array assignment remains invalid, and constant object-pointer relocations
-remain outside the folded expression set. Literal objects always retain their
+whole-array assignment remains invalid. Literal objects always retain their
 read-only permission. See [static arrays](cpp-core-v2.md#fixed-array-static-storage).
+
+## Core v2 constant object addresses
+
+Pointer-valued folded initializers can use `null` or `address` with a checked
+global-object path, optionally wrapped in admitted pointer `cast` nodes. The
+addressed path uses existing typed `var`, `member` and `index` expressions.
+An indexed address must start from `array_decay` of an actual array or `address`
+of one complete object and use an exact nonnegative promoted integer literal.
+The final index may equal the extent; intermediate subobjects must be within
+the object. All ordinary type, member and const-address checks still apply.
+
+This path validation does not allow loading another pointer global, dereferencing
+a stored pointer, executing a call, converting an integer address or calculating
+an arbitrary runtime expression as a global initializer. The producer folds
+source constant pointer values to their actual global/literal target and checks
+the retained APValue subobject path against its byte offset. Missing source
+definitions retain `TR0203`; malformed protocol paths are rejected by the consumer.
+
+Mutable and const object-pointer globals use the existing `mutable` permission,
+independently from pointer qualifiers. Complete aggregate initializers can
+contain these pointer constants. Static storage declarations precede initialized
+definitions when an address can name a later object; generated identifiers retain
+internal linkage. Addressed array elements emit C23 constant pointer arithmetic
+without a runtime helper call. Runtime pointer arithmetic retains its existing
+helpers. No new opcode, arbitrary byte relocation, allocator or initializer
+function is introduced. See the [source contract](cpp-core-v2.md#static-object-pointer-storage).
 
 ## Core v2 binary floating-point values
 

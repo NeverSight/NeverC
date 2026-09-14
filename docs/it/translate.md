@@ -104,6 +104,8 @@ Core v2 ammette letterali stretti, UTF-8, UTF-16, UTF-32 e larghi con unità esa
 
 Core v2 supporta array modificabili e costanti con inizializzazione a zero o costante negli spazi dei nomi, nelle variabili statiche locali e nei membri statici di classe, comprese le istanze di template ammesse. Stato e indirizzi persistono tra le chiamate; istanze diverse mantengono memoria separata. Inizializzazione dinamica, distruzione statica e STL completa restano in sviluppo. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
 
+Core v2 supporta l’inizializzazione a zero o costante dei puntatori statici a oggetti globali, letterali, elementi di array e campi, inclusi i puntatori validi subito dopo la fine. Memoria di namespace, funzioni, classi e template conserva identità, modificabilità e accesso const. Gli indirizzi definiti più avanti diventano costanti C23 senza inizializzazione a runtime. Riferimenti statici, allocazione e STL completa restano in sviluppo. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
+
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

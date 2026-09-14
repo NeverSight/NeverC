@@ -104,6 +104,8 @@ Core v2 unterstützt schmale, UTF-8-, UTF-16-, UTF-32- und breite Stringliterale
 
 Core v2 unterstützt null- oder konstantinitialisierte veränderliche und konstante Arrays auf Namespace-Ebene, als lokale statische Variablen und als statische Klassenmember, einschließlich zugelassener Template-Instanzen. Zustand und Adressen bleiben über Aufrufe hinweg erhalten; verschiedene Instanzen haben getrennten Speicher. Dynamische Initialisierung, statische Destruktion und die vollständige STL bleiben in Entwicklung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-array-static-storage).
 
+Core v2 unterstützt null- oder konstantinitialisierte statische Objektzeiger auf globale Objekte, Literale, Arrayelemente und Felder sowie gültige Zeiger hinter dem letzten Element. Namespace-, lokale, Klassen- und Template-Speicher behalten Identität, Veränderlichkeit und const-Zugriff. Vorwärtsadressen werden C23-Konstanten ohne Laufzeitinitialisierung. Statische Referenzen, Allokation und die vollständige STL bleiben in Entwicklung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-object-pointer-storage).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).
