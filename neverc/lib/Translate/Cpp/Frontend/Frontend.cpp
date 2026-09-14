@@ -537,6 +537,44 @@ static bool defaultedSpecialMember(const CXXMethodDecl *M) {
          M->isMoveAssignmentOperator();
 }
 
+// Deleted declarations take part in Sema's overload resolution, but never have
+// an executable definition. Keep their source signature checks separate from
+// the predicates that admit callable functions and generated special members.
+static bool deletedFunctionDeclaration(const FunctionDecl *F) {
+  const auto *M = dyn_cast_or_null<CXXMethodDecl>(F);
+  if (!F || F->isImplicit() || F->isInvalidDecl() || !F->isDeleted() ||
+      (!F->getCanonicalDecl()->isDeletedAsWritten() && !defaultedSpecialMember(M)) ||
+      F->hasBody() || F->isVariadic() || F->isConsteval())
+    return false;
+  if (M) {
+    if (M->isVirtual() || M->isExplicitObjectMemberFunction() ||
+        M->getMethodQualifiers().hasVolatile() ||
+        M->getMethodQualifiers().hasRestrict())
+      return false;
+    if (const auto *C = dyn_cast<CXXConstructorDecl>(M)) {
+      if (C->isInheritingConstructor())
+        return false;
+    } else if (!isa<CXXDestructorDecl, CXXConversionDecl>(M) &&
+               !M->getIdentifier() &&
+               !ordinaryOperatorKind(M->getOverloadedOperator())) {
+      return false;
+    }
+  } else if (!F->getIdentifier() &&
+             !ordinaryOperatorKind(F->getOverloadedOperator())) {
+    return false;
+  }
+  for (const auto *D : F->redecls()) {
+    const auto *Info = D->getTypeSourceInfo();
+    if (D->isInvalidDecl() || !Info)
+      return false;
+    auto Location = Info->getTypeLoc().getAs<FunctionProtoTypeLoc>();
+    if (!Location || (Location.getExceptionSpecRange().isValid() &&
+        !standardExceptionSpecification(D->getType()->getAs<FunctionProtoType>())))
+      return false;
+  }
+  return true;
+}
+
 bool ordinaryMethod(const CXXMethodDecl *M) {
   if (!M || M->isImplicit() || !M->getIdentifier() || M->isVirtual() ||
       M->isExplicitObjectMemberFunction() || M->isVariadic() ||
@@ -2035,7 +2073,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *M = dyn_cast<CXXMethodDecl>(D->getTemplatedDecl());
     if (!ordinaryMemberTemplateName(M) || !owned(M) || M->isInvalidDecl() ||
         M->hasAttrs() || M->getFriendObjectKind() || M->isVirtual() ||
-        M->isVariadic() || M->isDeletedAsWritten() || M->isDefaulted() ||
+        M->isVariadic() || M->isDefaulted() ||
         M->isConsteval() || M->isExplicitObjectMemberFunction() ||
         M->getTrailingRequiresClause() ||
         M->getDescribedFunctionTemplate() != D ||
@@ -2072,15 +2110,17 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         !outerTemplateListsShape(M))
       return false;
     if (const auto *C = dyn_cast<CXXConstructorDecl>(M)) {
-      if (!C->isUserProvided() || C->isStatic() ||
+      if ((!C->isUserProvided() && !C->isDeletedAsWritten()) || C->isStatic() ||
           C->isInheritingConstructor() || C->getMethodQualifiers().getCVRQualifiers())
         return false;
       if (!writtenConstructorInitializersShape(C))
         return false;
     } else if (const auto *C = dyn_cast<CXXConversionDecl>(M)) {
-      if (!C->isUserProvided() || C->isStatic() || C->getNumParams())
+      if ((!C->isUserProvided() && !C->isDeletedAsWritten()) ||
+          C->isStatic() || C->getNumParams())
         return false;
-    } else if (M->isOverloadedOperator() && (!M->isUserProvided() || M->isStatic())) {
+    } else if (M->isOverloadedOperator() &&
+               ((!M->isUserProvided() && !M->isDeletedAsWritten()) || M->isStatic())) {
       return false;
     }
     for (const auto *Parameter : M->parameters()) {
@@ -2114,35 +2154,36 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!M || !owned(M) || M->isInvalidDecl() || M->hasAttrs() ||
         M->getFriendObjectKind() || M->getDescribedFunctionTemplate() ||
         M->getPrimaryTemplate() || M->isVirtual() || M->isVariadic() ||
-        M->isDeletedAsWritten() || M->isConsteval() ||
+        M->isConsteval() ||
         M->isExplicitObjectMemberFunction() || M->getTrailingRequiresClause() ||
         M->getMethodQualifiers().hasVolatile() ||
         M->getMethodQualifiers().hasRestrict())
       return false;
     const bool Defaulted = defaultedSpecialMember(M);
+    const bool Deleted = M->isDeletedAsWritten();
     if (const auto *Defaulting = defaultedDeclaration(M))
       if (!Defaulted || !owned(Defaulting))
         return false;
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(M)) {
-      if ((!Defaulted && !Constructor->isUserProvided()) ||
+      if ((!Defaulted && !Deleted && !Constructor->isUserProvided()) ||
           Constructor->isInheritingConstructor() || Constructor->isStatic() ||
           Constructor->getMethodQualifiers().getCVRQualifiers())
         return false;
       if (!writtenConstructorInitializersShape(Constructor))
         return false;
     } else if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(M)) {
-      if ((!Defaulted && !Destructor->isUserProvided()) || Destructor->isStatic() ||
+      if ((!Defaulted && !Deleted && !Destructor->isUserProvided()) || Destructor->isStatic() ||
           Destructor->getNumParams() ||
           Destructor->getMethodQualifiers().getCVRQualifiers())
         return false;
     } else if (const auto *Conversion = dyn_cast<CXXConversionDecl>(M)) {
-      if (!Conversion->isUserProvided() || Conversion->isStatic() ||
+      if ((!Deleted && !Conversion->isUserProvided()) || Conversion->isStatic() ||
           Conversion->getNumParams())
         return false;
     } else if (M->getKind() != Decl::CXXMethod) {
       return false;
     } else if (!M->getIdentifier() && !Defaulted) {
-      if (!M->isUserProvided() || M->isStatic() ||
+      if ((!Deleted && !M->isUserProvided()) || M->isStatic() ||
           !ordinaryOperatorKind(M->getOverloadedOperator()))
         return false;
     }
@@ -2412,7 +2453,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         !F->getDeclContext()->getRedeclContext()->isFileContext() ||
         F->getDescribedFunctionTemplate() || F->getPrimaryTemplate() ||
         F->getNumTemplateParameterLists() || F->isVariadic() ||
-        F->isDeletedAsWritten() || F->isExplicitlyDefaulted() || F->isConsteval() ||
+        F->isExplicitlyDefaulted() || F->isConsteval() ||
         F->getTrailingRequiresClause() || !F->getTypeSourceInfo() || F->getType().isNull())
       return false;
     for (const auto *Parameter : F->parameters()) {
@@ -2459,7 +2500,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Function->getLexicalDeclContext() != Parent ||
         Function->getDeclContext() != D->getDeclContext() ||
         Function->getPrimaryTemplate() || Function->getNumTemplateParameterLists() ||
-        Function->isVariadic() || Function->isDeletedAsWritten() ||
+        Function->isVariadic() ||
         Function->isDefaulted() || Function->isConsteval() ||
         Function->getTrailingRequiresClause() || !Function->getTypeSourceInfo() ||
         Function->getType().isNull() ||
@@ -3182,7 +3223,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!templateParametersShape(Parameters) || D->isAbbreviated() ||
         !owned(Pattern) || Pattern->isInvalidDecl() ||
         !ordinaryFreeFunctionName(Pattern) ||
-        Pattern->isVariadic() || Pattern->isDeletedAsWritten() ||
+        Pattern->isVariadic() ||
         Pattern->isDefaulted() || Pattern->isConsteval() ||
         Pattern->getTrailingRequiresClause() || Pattern->hasAttrs())
       return false;
@@ -7066,7 +7107,8 @@ public:
             if (!Method->isReferenced())
               return true; // Preserve lazy deletion and unresolved specifications.
             if (!defaultedLifecycle(Method) && !defaultedAssignment(Method) &&
-                !defaultedCopyOrMoveConstructor(dyn_cast<CXXConstructorDecl>(Method))) {
+                !defaultedCopyOrMoveConstructor(dyn_cast<CXXConstructorDecl>(Method)) &&
+                !deletedFunctionDeclaration(Method)) {
               A.reject(Method->getLocation(), "defaulted member specification",
                        "An admitted concrete defaulted special member is required.");
               return true;
@@ -7096,7 +7138,7 @@ public:
               if (Destructor->isReferenced()) {
                 // Unevaluated references resolve noexcept without requiring a
                 // body. Check its written/resolved source with method context.
-                if (!ordinaryDestructor(Destructor)) {
+                if (!ordinaryDestructor(Destructor) && !deletedFunctionDeclaration(Destructor)) {
                   A.reject(Destructor->getLocation(), "destructor specification",
                            "An admitted resolved destructor specification is required.");
                   return true;
@@ -7758,28 +7800,32 @@ public:
     }
     A.type(D->getReturnType(), D->getLocation(), true);
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
+    const bool Deleted = A.S.coreV2() && deletedFunctionDeclaration(D);
     const bool Defaulted = A.S.coreV2() &&
-        (defaultedLifecycle(Method) || defaultedAssignment(Method) ||
+        ((Deleted && defaultedSpecialMember(Method)) ||
+         defaultedLifecycle(Method) || defaultedAssignment(Method) ||
          defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(Method)));
     if ((Method && (!A.S.coreV2() ||
                     (!callableMethod(Method) &&
                      !supportedConstructor(dyn_cast<CXXConstructorDecl>(Method)) &&
-                     !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(Method)) && !Defaulted))) ||
+                     !ordinaryDestructor(dyn_cast<CXXDestructorDecl>(Method)) &&
+                     !Defaulted && !Deleted))) ||
         D->isVariadic() ||
         D->getDescribedFunctionTemplate() ||
         (D->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
          !Template && !InstantiatedMember && !InstantiatedFriend) ||
-        D->isDeletedAsWritten() || (D->isExplicitlyDefaulted() && !Defaulted) ||
+        (D->isDeleted() && !Deleted) ||
+        (D->isExplicitlyDefaulted() && !Defaulted) ||
         D->isConsteval())
       A.reject(D->getLocation(), "function",
                "This member, template, variadic or special function form is "
                "outside the selected profile.");
-    if (A.S.coreV2() && D->isOverloadedOperator() &&
+    if (A.S.coreV2() && D->isOverloadedOperator() && !Deleted &&
         !ordinaryOperator(D) && !supportedAssignment(Method))
       A.reject(D->getLocation(), "operator declaration",
                "This operator function is outside the selected profile.");
     const auto *Prototype = D->getType()->getAs<FunctionProtoType>();
-    if (Prototype && Prototype->hasExceptionSpec() && !Defaulted &&
+    if (Prototype && Prototype->hasExceptionSpec() && !Defaulted && !Deleted &&
         !(A.S.coreV2() && (standardExceptionSpecification(Prototype) ||
                            ordinaryDestructor(dyn_cast<CXXDestructorDecl>(D)))))
       A.reject(D->getLocation(), "exception specification",
@@ -7802,7 +7848,7 @@ public:
           A.reject(P->getLocation(), "C export",
                    "C ABI exports require scalar results and parameters.");
     }
-    if (!D->hasBody() && !Defaulted &&
+    if (!D->hasBody() && !Defaulted && !Deleted &&
         (!A.S.project() || D->getFormalLinkage() == Linkage::Internal))
       A.reject(
           D->getLocation(), "function declaration",
@@ -7826,7 +7872,7 @@ public:
     }
     // Materialized user destructor bodies retain source-unit checks even if
     // uncalled. Their helpers include the member destruction epilogue.
-    if (D->doesThisDeclarationHaveABody() && !D->isImplicit() && !Defaulted) {
+    if (D->doesThisDeclarationHaveABody() && !D->isImplicit() && !Defaulted && !Deleted) {
       if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(D);
           A.S.coreV2() && Destructor)
         A.requireDestruction(Destructor->getParent(), Destructor->getLocation());

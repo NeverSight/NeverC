@@ -845,8 +845,6 @@ int main(){
         assert relocated == user_copy, "user copy identities depend on the absolute root"
 
     user_copy_rejected = {
-        'deleted-constructor': 'struct R{int n;R(const R&)=delete;};',
-        'deleted-assignment': 'struct R{int n;R&operator=(const R&)=delete;};',
         'volatile-constructor': 'struct R{int n;R(const volatile R&r):n(r.n){}};',
         'volatile-assignment': 'struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};',
     }
@@ -1040,8 +1038,6 @@ int query(const Lazy&s){return sizeof(Lazy(s));}
                           root=Path(temp) / "project", profile="cpp-core-v2")
         assert relocated == generated_copy, "generated copying depends on the absolute root"
     generated_copy_rejected = {
-        'deleted-copy': 'struct R{int n;R(const R&)=delete;};',
-        'defaulted-deleted-copy': 'struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};',
         'reference-field': 'struct R{int &n;R(const R&)=default;};',
         'base-copy': 'struct B{int n;};struct R:B{int m;R(const R&)=default;};',
         'lambda-array-copy': 'int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}',
@@ -1160,10 +1156,7 @@ void memberOrdered(Box&a,const Box&b){left(a).operator=(right(b));}
                           root=Path(temp) / "project", profile="cpp-core-v2")
         assert relocated == generated_assignment, "generated assignment depends on the absolute root"
     generated_assignment_rejected = {
-        'deleted': 'struct R{int n;R&operator=(const R&)=delete;};',
-        'defaulted-deleted': 'struct I{int n;I&operator=(const I&)=delete;};struct R{I i;R&operator=(const R&)=default;};',
         'rvalue-receiver': 'struct R{int n;R&operator=(const R&)&&=default;};',
-        'const-field': 'struct R{const int n;R&operator=(const R&)=default;};',
         'reference-field': 'struct R{int&n;R&operator=(const R&)=default;};',
         'base-field': 'struct B{int n;};struct R:B{int m;R&operator=(const R&)=default;};',
         'raw-builtin': 'void f(int*a,int*b){__builtin_memcpy(a,b,4);}',
@@ -1538,10 +1531,8 @@ R parameterResult(R source){return source;}
         assert relocated == user_moves, "user move identities depend on the absolute root"
 
     user_move_rejected = {
-        'deleted-constructor': 'struct R{int n;R(R&&)=delete;};',
         'volatile-constructor': 'struct R{int n;R(volatile R&&r):n(r.n){}};',
         'const-volatile-constructor': 'struct R{int n;R(const volatile R&&r):n(r.n){}};',
-        'deleted-assignment': 'struct R{int n;R&operator=(R&&)=delete;};',
         'volatile-assignment-source': 'struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};',
         'volatile-assignment-receiver': 'struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};',
         'attribute': 'struct R{int n;[[deprecated]] R(R&&r):n(r.n){}};',
@@ -1716,10 +1707,6 @@ void consume(Box&source){take(static_cast<Box&&>(source));}
         assert relocated == generated_moves, "generated move identities depend on the absolute root"
 
     generated_move_rejected = {
-        'deleted-constructor': 'struct R{int n;R(R&&)=delete;};',
-        'deleted-assignment': 'struct R{int n;R&operator=(R&&)=delete;};',
-        'defaulted-deleted-constructor': 'struct I{int n;I(I&&)=delete;};struct R{I i;R(R&&)=default;};',
-        'defaulted-deleted-assignment': 'struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};',
         'attribute': 'struct R{int n;[[deprecated]] R(R&&)=default;};',
         'reference-field': 'struct R{int&n;R(R&&)=default;};',
         'base': 'struct B{int n;};struct R:B{int value;R(R&&)=default;};',
@@ -2033,7 +2020,6 @@ P explicitValue(P&a,P&b){return operator-=(a,b);}
         assert relocated == operators, "operator identities depend on the absolute root"
 
     operator_rejected = {
-        'deleted': 'struct R{int n;int operator+(int)const=delete;};',
         'volatile-receiver': 'struct R{int n;int operator()()volatile{return n;}};',
         'volatile-argument': 'struct R{int n;int operator+(volatile R&r)const{return r.n;}};',
         'member-pointer': 'struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}',
@@ -9157,6 +9143,97 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == class_friends, "class target identity depends on the absolute root"
 
+    deleted_positive = {
+        'function-specialization-replaces-deletion': 'template<class T>int get(T)=delete;template<>int get<int>(int n){return n;}int main(){return get(3)-3;}',
+        'member-specialization-replaces-deletion': 'template<class T>struct R{int get(T)=delete;};template<>int R<int>::get(int n){return n;}int main(){R<int>r;return r.get(3)-3;}',
+        'former-1-deleted-copy': 'struct R{int n;R(const R&)=delete;};',
+        'former-2-deleted': 'struct R{int n;R&operator=(const R&)=delete;};',
+        'former-3-deleted': 'struct R{int n;int operator+(int)const=delete;};',
+        'former-4-deleted-written': 'template<class T>struct R{R()=delete;};',
+        'former-5-TR0201-deleted-shape': 'template<class T>struct R{~R()=delete;};',
+        'former-6-deleted-constructor': 'struct R{int n;R(R&&)=delete;};',
+        'former-7-deleted-assignment': 'struct R{int n;R&operator=(R&&)=delete;};',
+        'former-8-defaulted-deleted-constructor': 'struct I{int n;I(I&&)=delete;};struct R{I i;R(R&&)=default;};',
+        'former-9-defaulted-deleted-assignment': 'struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};',
+        'former-10-defaulted-deleted': 'struct I{int n;I&operator=(const I&)=delete;};struct R{I i;R&operator=(const R&)=default;};',
+        'former-11-const-field': 'struct R{const int n;R&operator=(const R&)=default;};',
+        'former-12-defaulted-deleted-copy': 'struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};',
+        'former-13-deleted-constructor': 'struct R{int n;R()=delete;};',
+        'former-14-explicit-deleted': 'struct R{int n;~R()=delete;};',
+        'former-15-defaulted-deleted-constructor': 'struct I{int n;I()=delete;};struct R{I i;R()=default;};',
+        'former-16-defaulted-deleted-destructor': 'struct I{int n;~I()=delete;};struct R{I i;~R()=default;};',
+        'former-17-deleted-method-template': 'template<class T>struct R{int f()=delete;};',
+        'free-overload': 'int choose(bool)=delete;int choose(int n){return n;}int main(){return choose(3)-3;}',
+        'free-redeclaration': 'int denied(int)=delete;int denied(int);int main(){return 0;}',
+        'default-argument': 'int denied(int n=3)=delete;int main(){return 0;}',
+        'constexpr-deleted': 'constexpr int denied(int) noexcept=delete;int main(){return 0;}',
+        'private-copy': 'class R{int n;R(const R&)=delete;public:R(int v):n(v){}int get()const{return n;}};int main(){R r(3);return r.get()-3;}',
+        'ordinary-method': 'struct R{int n;int get()&&=delete;int get()const&{return n;}};int main(){R r{3};return r.get()-3;}',
+        'static-method': 'struct R{static int get(bool)=delete;static int get(int n){return n;}};int main(){return R::get(3)-3;}',
+        'conversion': 'struct R{int n;operator bool()const=delete;operator int()const{return n;}};int main(){return static_cast<int>(R{3})-3;}',
+        'operator-overload': 'struct R{int n;int operator+(bool)const=delete;int operator+(int v)const{return n+v;}};int main(){return R{3}+4-7;}',
+        'friend-overload': 'struct R{int n;friend int get(R,bool)=delete;friend int get(R r,int){return r.n;}};int main(){return get(R{3},1)-3;}',
+        'free-template': 'template<class T>int get(T)=delete;int get(int n){return n;}int main(){return get(3)-3;}',
+        'member-template': 'struct R{template<class T>int get(T)=delete;int get(int n){return n;}};int main(){R r;return r.get(3)-3;}',
+        'constructor-template': 'struct R{int n;template<class T>R(T)=delete;R(int v):n(v){}};int main(){R r(3);return r.n-3;}',
+        'conversion-template': 'struct R{int n;template<class T>operator T()const=delete;operator int()const{return n;}};int main(){return static_cast<int>(R{3})-3;}',
+        'friend-template': 'struct R{int n;template<class T>friend int get(R,T)=delete;friend int get(R r,int){return r.n;}};int main(){return get(R{3},1)-3;}',
+        'class-template': 'template<class T>struct R{T n;R(T v):n(v){}R(const R&)=delete;};int main(){R<int>r(3);return r.n-3;}',
+        'class-friend-template': 'template<class T>struct R{T n;template<class U>friend int get(R,U)=delete;friend T get(R r,int){return r.n;}};int main(){return get(R<int>{3},1)-3;}',
+        'class-friend': 'template<class T>struct R{T n;friend int get(R,bool)=delete;friend T get(R r,int){return r.n;}};int main(){return get(R<int>{3},1)-3;}',
+        'partial': 'template<class T>struct R;template<class T>struct R<T*>{T n;R(T v):n(v){}R(const R&)=delete;};int main(){R<int*>r(3);return r.n-3;}',
+        'full': 'template<class T>struct R;template<>struct R<int>{int n;R(int v):n(v){}R(const R&)=delete;};int main(){R<int>r(3);return r.n-3;}',
+        'nested': 'template<class T>struct Outer{struct Inner{T n;Inner(T v):n(v){}Inner(const Inner&)=delete;};};int main(){Outer<int>::Inner r(3);return r.n-3;}',
+        'function-full': 'template<class T>int get(T n){return n;}template<>int get<bool>(bool)=delete;int main(){return get(3)-3;}',
+        'explicit-free-definition': 'template<class T>int denied(T)=delete;template int denied<int>(int);int main(){return 0;}',
+        'explicit-free-extern': 'template<class T>int denied(T)=delete;extern template int denied<int>(int);int main(){return 0;}',
+        'explicit-class': 'template<class T>struct R{T n;R()=delete;R(T v):n(v){}R(const R&)=delete;};template struct R<int>;int main(){R<int>r(3);return r.n-3;}',
+        'const-key-assignment': 'struct R{const int key;int value;R&operator=(const R&)=default;};int main(){R r{3,4};r.value=5;return r.key+r.value-8;}',
+        'runtime': 'int moves=0,copies=0,assignments=0,destroyed=0;\nstruct MoveOnly{\n int n;\n MoveOnly(int v):n(v){}\n MoveOnly(const MoveOnly&)=delete;\n MoveOnly&operator=(const MoveOnly&)=delete;\n MoveOnly(MoveOnly&&r):n(r.n){r.n=-1;++moves;}\n MoveOnly&operator=(MoveOnly&&r){n=r.n;r.n=-1;++moves;return *this;}\n ~MoveOnly(){++destroyed;}\n};\nstruct CopyOnly{\n int n;\n CopyOnly(int v):n(v){}\n CopyOnly(const CopyOnly&r):n(r.n){++copies;}\n CopyOnly(CopyOnly&&)=delete;\n CopyOnly&operator=(const CopyOnly&r){n=r.n;++assignments;return *this;}\n CopyOnly&operator=(CopyOnly&&)=delete;\n};\nstruct Wrapper{\n CopyOnly value;\n Wrapper(int n):value(n){}\n Wrapper(const Wrapper&)=default;\n Wrapper(Wrapper&&)=default;\n Wrapper&operator=(const Wrapper&)=default;\n Wrapper&operator=(Wrapper&&)=default;\n};\nstruct Immobile{int n;Immobile(int v):n(v){}Immobile(const Immobile&)=delete;Immobile(Immobile&&)=delete;};\nImmobile make(){return Immobile(7);}\nint choose(bool)=delete;\nint choose(int n){return n;}\ntemplate<class T>int route(T)=delete;\nint route(int n){return n;}\nstruct KeyValue{const int key;int value;KeyValue&operator=(const KeyValue&)=default;};\ntemplate<class T>struct Holder{T value;Holder(T v):value(static_cast<T&&>(v)){}Holder(const Holder&)=delete;Holder(Holder&&)=default;};\nint main(){\n {\n  MoveOnly a(3);MoveOnly b(static_cast<MoveOnly&&>(a));\n  if(a.n!=-1||b.n!=3||moves!=1)return 1;\n  a=static_cast<MoveOnly&&>(b);\n  if(a.n!=3||b.n!=-1||moves!=2)return 2;\n }\n if(destroyed!=2)return 3;\n Wrapper a(4);Wrapper b(static_cast<Wrapper&&>(a));\n if(a.value.n!=4||b.value.n!=4||copies!=1)return 4;\n Wrapper c(5);c=static_cast<Wrapper&&>(b);\n if(c.value.n!=4||b.value.n!=4||assignments!=1)return 5;\n Immobile object=make();\n if(object.n!=7)return 6;\n if(choose(8)!=8||route(9)!=9)return 7;\n KeyValue pair{3,4};pair.value=5;KeyValue duplicate(pair);\n if(pair.key!=3||duplicate.key!=3||duplicate.value!=5)return 8;\n moves=destroyed=0;\n {\n  Holder<MoveOnly> one(MoveOnly(11));\n  if(one.value.n!=11||moves!=1||destroyed!=1)return 9;\n  Holder<MoveOnly> two(static_cast<Holder<MoveOnly>&&>(one));\n  if(one.value.n!=-1||two.value.n!=11||moves!=2)return 10;\n }\n if(destroyed!=3)return 11;\n return 0;\n}\n',
+        'protocol-source': 'int denied(int)=delete;\nstruct Item{int n;Item(const Item&)=delete;Item(Item&&)=delete;int blocked()const=delete;};\ntemplate<class T>int generic(T)=delete;\nstruct Key{const int n;Key&operator=(const Key&)=default;};\nint value(){return 3;}\n',
+    }
+    for name, source in deleted_positive.items():
+        check("v2-deleted-positive-" + name, source, profile="cpp-core-v2")
+    deleted_negative = {
+        'free-call': ('int denied(int)=delete;int main(){return denied(3);}', 'TR0202'),
+        'free-address': ('int denied(int)=delete;int main(){auto p=&denied;return 0;}', 'TR0202'),
+        'copy': ('struct R{int n;R(int v):n(v){}R(const R&)=delete;};int main(){R r(3);R copy(r);return copy.n;}', 'TR0202'),
+        'move': ('struct R{int n;R(int v):n(v){}R(const R&)=default;R(R&&)=delete;};int main(){R r(3);R copy(static_cast<R&&>(r));return copy.n;}', 'TR0202'),
+        'default-constructor': ('struct R{R()=delete;};int main(){R r;return 0;}', 'TR0202'),
+        'destructor': ('struct R{~R()=delete;};int main(){R r;return 0;}', 'TR0202'),
+        'defaulted-assignment': ('struct R{const int n;R&operator=(const R&)=default;};void f(R&a,const R&b){a=b;}', 'TR0202'),
+        'method': ('struct R{int get()=delete;};int main(){R r;return r.get();}', 'TR0202'),
+        'conversion': ('struct R{operator int()const=delete;};int main(){return static_cast<int>(R{});}', 'TR0202'),
+        'operator': ('struct R{int operator+(int)const=delete;};int main(){return R{}+3;}', 'TR0202'),
+        'friend': ('struct R{friend int get(R)=delete;};int main(){return get(R{});}', 'TR0202'),
+        'free-template': ('template<class T>int denied(T)=delete;int main(){return denied(3);}', 'TR0202'),
+        'member-template': ('struct R{template<class T>int denied(T)=delete;};int main(){R r;return r.denied(3);}', 'TR0202'),
+        'friend-template': ('struct R{template<class T>friend int get(R,T)=delete;};int main(){return get(R{},3);}', 'TR0202'),
+        'function-full': ('template<class T>int get(T n){return n;}template<>int get<bool>(bool)=delete;int main(){return get(true);}', 'TR0202'),
+        'float-signature': ('double denied(int)=delete;', 'TR0201'),
+        'float-parameter': ('int denied(double)=delete;', 'TR0201'),
+        'hidden-default': ('int denied(int n=sizeof(double))=delete;', 'TR0201'),
+        'hidden-noexcept': ('int denied()noexcept(sizeof(double)>0)=delete;', 'TR0201'),
+        'volatile-method': ('struct R{int denied()volatile=delete;};', 'TR0201'),
+        'virtual-method': ('struct R{virtual int denied()=delete;};', 'TR0201'),
+        'variadic': ('int denied(...)=delete;', 'TR0201'),
+        'missing-default': ('int missing();int denied(int n=missing())=delete;', 'TR0203'),
+        'missing-other-definition': ('int denied(int)=delete;int needed(int);', 'TR0203'),
+    }
+    for name, (source, diagnostic) in deleted_negative.items():
+        check("v2-deleted-reject-" + name, source, diagnostic, profile="cpp-core-v2")
+    check("deleted-v1", "int denied(int)=delete;int main(){return 0;}", "TR0201", profile="cpp-core-v1")
+    deleted_ir = check("v2-deleted-protocol", deleted_positive["protocol-source"], profile="cpp-core-v2")
+    assert len(deleted_ir["functions"]) == 1
+    assert deleted_ir["functions"][0]["loc"]["line"] == 5
+    assert deleted_ir["functions"][0]["result"] == "int"
+    assert len(deleted_ir["records"]) == 2
+    assert not deleted_ir["globals"]
+    with tempfile.TemporaryDirectory(prefix="neverc-deleted-relocated-") as temp:
+        relocated = check("v2-deleted-relocated", deleted_positive["protocol-source"],
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == deleted_ir, "deleted declarations change identity across source roots"
+
     const_fields_positive = {
         'private-default': 'class R{const int n=1;public:int get()const{return n;}};',
         'nested-unused': 'struct R{struct I{const int n;};};',
@@ -12315,7 +12392,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'query-assignment-spec': 'template<class T>struct R{T n;R&operator=(const R&)noexcept(sizeof(T)==sizeof(double))=default;};bool f(R<int>&a,const R<int>&b){return noexcept(a=b);}',
         'query-destructor-spec': 'template<class T>struct R{T n;~R()noexcept(sizeof(this->n)==sizeof(double))=default;};bool f(){return noexcept(R<int>{1});}',
         'attribute': 'template<class T>struct R{[[deprecated]]R()=default;};',
-        'deleted-written': 'template<class T>struct R{R()=delete;};',
         'virtual': 'template<class T>struct R{virtual ~R()=default;};',
         'explicit-destruction': 'template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}',
         'outer-type': 'template<int N>struct R{R();};template<decltype(static_cast<int>(1.0)) N>R<N>::R()=default;',
@@ -12546,7 +12622,6 @@ bool query(){return noexcept(Lazy<int>{1});}
         'queried-dependent-noexcept-type': 'template<class T>struct R{T n;~R()noexcept(sizeof(T)==sizeof(double));};bool query(){return noexcept(R<int>{1});}',
         'outer-parameter-type': 'template<int N>struct R{~R();};template<decltype(static_cast<int>(1.0)) N>R<N>::~R(){}',
         'attribute': 'template<class T>struct R{[[deprecated]]~R(){}};',
-        'deleted-shape': 'template<class T>struct R{~R()=delete;};',
         'virtual': 'template<class T>struct R{virtual ~R(){}};',
         'explicit-call': 'template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}',
         'dead-explicit-call': 'template<class T>struct R{~R(){}};void f(R<int>&r){if(false)r.~R();}',
@@ -13091,7 +13166,6 @@ int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;r
         'virtual': 'template<class T>struct R{virtual int f(){return 1;}};',
         'variadic': 'template<class T>struct R{int f(int v,...){return v;}};',
         'volatile': 'template<class T>struct R{int f()volatile{return 1;}};',
-        'deleted': 'template<class T>struct R{int f()=delete;};',
         'bases': 'struct B{int n;};template<class T>struct R:B{int f(){return n;}};',
         'dynamic-static': 'template<class T>struct R{static int f(int v){static int n=v;return n;}};int main(){return R<int>::f(3);}',
     }
@@ -13951,10 +14025,6 @@ int query(){return sizeof(Lazy{});}
                           root=Path(temp) / "project", profile="cpp-core-v2")
         assert relocated == defaulted, "defaulted lifecycle identities depend on the absolute root"
     defaulted_rejected = {
-        'deleted-constructor': 'struct R{int n;R()=delete;};',
-        'deleted-destructor': 'struct R{int n;~R()=delete;};',
-        'defaulted-deleted-constructor': 'struct I{int n;I()=delete;};struct R{I i;R()=default;};',
-        'defaulted-deleted-destructor': 'struct I{int n;~I()=delete;};struct R{I i;~R()=default;};',
         'virtual-destructor': 'struct R{int n;virtual ~R()=default;};',
         'explicit-destruction': 'struct R{int n;~R()=default;};void f(){R r{1};r.~R();}',
         'throwing-member-constructor': 'struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};',
@@ -14064,7 +14134,6 @@ int main(){int value=0;R result=make(&value);return consume(R(&value,6));}
         assert relocated == destruction, "destructor identities depend on the absolute root"
 
     destruction_rejected = {
-        'explicit-deleted': 'struct R{int n;~R()=delete;};',
         'virtual': 'struct R{int n;virtual ~R(){}};',
         'explicit-call': 'struct R{int n;~R(){}};void f(R&r){r.~R();}',
         'explicit-dead-call': 'struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}',
@@ -14303,7 +14372,6 @@ int main() {
         'constructor-inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};',
         'constructor-virtual-method': 'struct R{int n;R():n(1){} virtual int get(){return n;}};',
         'constructor-variadic-constructor': 'struct R{int n;R(int v,...):n(v){}};',
-        'constructor-deleted-constructor': 'struct R{int n;R()=delete;};',
         'constructor-reference-field': 'struct R{int &n;R(int &v):n(v){}};',
         'constructor-mutable-field': 'struct R{mutable int n;R():n(1){}};',
         'constructor-union': 'union R{int n;unsigned u;R():n(1){}};',

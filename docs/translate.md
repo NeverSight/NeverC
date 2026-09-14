@@ -96,6 +96,8 @@ Core v2 supports delegating constructors in admitted ordinary and generic classe
 
 Core v2 supports const data members with admitted scalar, record, pointer, callback and array types, including generic and nested classes. Initialization targets final storage; source-selected copying/moving, distinct member addresses and const reference/pointer types are preserved. Clang rejects invalid writes and deleted assignments. This supports source-defined const-key/value classes; standard headers and full STL remain unfinished. Native validation requires implementing-revision CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#const-data-members).
 
+Core v2 admits supported deleted functions and defaulted special members defined as deleted, including their admitted template and friend forms. Clang retains overload/access diagnostics; deleted declarations emit no executable definitions. Move-only objects, selected copy fallbacks and C++17 guaranteed elision preserve existing lifetime handling. Implementing-revision CI is required; complete C++/STL remains unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#deleted-function-declarations).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

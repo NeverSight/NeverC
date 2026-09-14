@@ -122,6 +122,16 @@ The consumer validates the entire module and all referenced symbols, types, fiel
 
 NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record frontend and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
 
+## Core v2 deleted declarations
+
+Deleted functions participate in source semantic checking and produce no IR
+function or generated lifetime/assignment helper. This adds no protocol opcode
+or callable type. A valid use of a different overload emits only the selected
+function; a use of a deleted function is a source diagnostic. Defaulted moves
+that are defined as deleted preserve Clang's selected copy fallback. Written
+signatures and eagerly visited default/noexcept expressions remain checked before
+erasure. See the [deleted-declaration contract](cpp-core-v2.md#deleted-function-declarations).
+
 ## Core v2 const member storage
 
 Const data members use the ordinary unqualified field carrier, as const local

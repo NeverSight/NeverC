@@ -96,6 +96,8 @@ Core v2 prend en charge les constructeurs délégués des classes ordinaires et 
 
 Core v2 admet les membres const de types scalaires, enregistrements, pointeurs, rappels et tableaux pris en charge, y compris dans les classes génériques et imbriquées. Il conserve le stockage final, les copies/déplacements sélectionnés, les adresses distinctes et les références/pointeurs const. Clang rejette les écritures invalides et affectations supprimées. Les classes à clé constante définies dans le source sont possibles ; les en-têtes standard et le STL complet restent à réaliser. Validation native : CI de la révision concernée. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#const-data-members).
 
+Core v2 accepte les fonctions supprimées et les membres spéciaux par défaut définis comme supprimés, dans les formes de templates et d’amis admises. Clang conserve la résolution des surcharges et les diagnostics d’accès ; aucune définition exécutable n’est émise pour ces déclarations. Objets uniquement déplaçables, repli sur une copie sélectionnée et élision garantie de C++17 conservent la gestion de durée de vie. CI de la révision requise ; C++/STL complet reste inachevé. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deleted-function-declarations).
+
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).

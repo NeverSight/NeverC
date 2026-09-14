@@ -1589,8 +1589,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2UserCopyingDiagnosesUnsupportedSelectedSpecialMembers) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"deleted-constructor", "struct R{int n;R(const R&)=delete;};"},
-      {"deleted-assignment", "struct R{int n;R&operator=(const R&)=delete;};"},
       {"volatile-constructor", "struct R{int n;R(const volatile R&r):n(r.n){}};"},
       {"volatile-assignment", "struct R{int n;R&operator=(const volatile R&r){n=r.n;return *this;}};"},
   };
@@ -1816,7 +1814,6 @@ TEST_F(TranslateTest, CoreV2OperatorsAcceptOrdinaryAssignmentSignatures) {
 
 TEST_F(TranslateTest, CoreV2OperatorsRetainSourceAndLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"deleted", "struct R{int n;int operator+(int)const=delete;};", "TR0201"},
       {"volatile-receiver", "struct R{int n;int operator()()volatile{return n;}};", "TR0201"},
       {"volatile-argument", "struct R{int n;int operator+(volatile R&r)const{return r.n;}};", "TR0201"},
       {"member-pointer", "struct R{int n;int operator+(int v)const{return n+v;}};void f(){auto p=&R::operator+;}", "TR0201"},
@@ -7979,6 +7976,186 @@ TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainRequiredDefinitions) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2DeletedDeclarationsPreserveSelectedConstruction) {
+  const auto Source = tmpFile("deleted-runtime.cpp");
+  const auto Output = tmpFile("deleted-runtime.nc");
+  writeFile(Source, R"cpp(int moves=0,copies=0,assignments=0,destroyed=0;
+struct MoveOnly{
+ int n;
+ MoveOnly(int v):n(v){}
+ MoveOnly(const MoveOnly&)=delete;
+ MoveOnly&operator=(const MoveOnly&)=delete;
+ MoveOnly(MoveOnly&&r):n(r.n){r.n=-1;++moves;}
+ MoveOnly&operator=(MoveOnly&&r){n=r.n;r.n=-1;++moves;return *this;}
+ ~MoveOnly(){++destroyed;}
+};
+struct CopyOnly{
+ int n;
+ CopyOnly(int v):n(v){}
+ CopyOnly(const CopyOnly&r):n(r.n){++copies;}
+ CopyOnly(CopyOnly&&)=delete;
+ CopyOnly&operator=(const CopyOnly&r){n=r.n;++assignments;return *this;}
+ CopyOnly&operator=(CopyOnly&&)=delete;
+};
+struct Wrapper{
+ CopyOnly value;
+ Wrapper(int n):value(n){}
+ Wrapper(const Wrapper&)=default;
+ Wrapper(Wrapper&&)=default;
+ Wrapper&operator=(const Wrapper&)=default;
+ Wrapper&operator=(Wrapper&&)=default;
+};
+struct Immobile{int n;Immobile(int v):n(v){}Immobile(const Immobile&)=delete;Immobile(Immobile&&)=delete;};
+Immobile make(){return Immobile(7);}
+int choose(bool)=delete;
+int choose(int n){return n;}
+template<class T>int route(T)=delete;
+int route(int n){return n;}
+struct KeyValue{const int key;int value;KeyValue&operator=(const KeyValue&)=default;};
+template<class T>struct Holder{T value;Holder(T v):value(static_cast<T&&>(v)){}Holder(const Holder&)=delete;Holder(Holder&&)=default;};
+int main(){
+ {
+  MoveOnly a(3);MoveOnly b(static_cast<MoveOnly&&>(a));
+  if(a.n!=-1||b.n!=3||moves!=1)return 1;
+  a=static_cast<MoveOnly&&>(b);
+  if(a.n!=3||b.n!=-1||moves!=2)return 2;
+ }
+ if(destroyed!=2)return 3;
+ Wrapper a(4);Wrapper b(static_cast<Wrapper&&>(a));
+ if(a.value.n!=4||b.value.n!=4||copies!=1)return 4;
+ Wrapper c(5);c=static_cast<Wrapper&&>(b);
+ if(c.value.n!=4||b.value.n!=4||assignments!=1)return 5;
+ Immobile object=make();
+ if(object.n!=7)return 6;
+ if(choose(8)!=8||route(9)!=9)return 7;
+ KeyValue pair{3,4};pair.value=5;KeyValue duplicate(pair);
+ if(pair.key!=3||duplicate.key!=3||duplicate.value!=5)return 8;
+ moves=destroyed=0;
+ {
+  Holder<MoveOnly> one(MoveOnly(11));
+  if(one.value.n!=11||moves!=1||destroyed!=1)return 9;
+  Holder<MoveOnly> two(static_cast<Holder<MoveOnly>&&>(one));
+  if(one.value.n!=-1||two.value.n!=11||moves!=2)return 10;
+ }
+ if(destroyed!=3)return 11;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("deleted-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DeletedDeclarationsAcceptUnusedOverloads) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"function-specialization-replaces-deletion", "template<class T>int get(T)=delete;template<>int get<int>(int n){return n;}int main(){return get(3)-3;}"},
+      {"member-specialization-replaces-deletion", "template<class T>struct R{int get(T)=delete;};template<>int R<int>::get(int n){return n;}int main(){R<int>r;return r.get(3)-3;}"},
+      {"former-1-deleted-copy", "struct R{int n;R(const R&)=delete;};"},
+      {"former-2-deleted", "struct R{int n;R&operator=(const R&)=delete;};"},
+      {"former-3-deleted", "struct R{int n;int operator+(int)const=delete;};"},
+      {"former-4-deleted-written", "template<class T>struct R{R()=delete;};"},
+      {"former-5-TR0201-deleted-shape", "template<class T>struct R{~R()=delete;};"},
+      {"former-6-deleted-constructor", "struct R{int n;R(R&&)=delete;};"},
+      {"former-7-deleted-assignment", "struct R{int n;R&operator=(R&&)=delete;};"},
+      {"former-8-defaulted-deleted-constructor", "struct I{int n;I(I&&)=delete;};struct R{I i;R(R&&)=default;};"},
+      {"former-9-defaulted-deleted-assignment", "struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};"},
+      {"former-10-defaulted-deleted", "struct I{int n;I&operator=(const I&)=delete;};struct R{I i;R&operator=(const R&)=default;};"},
+      {"former-11-const-field", "struct R{const int n;R&operator=(const R&)=default;};"},
+      {"former-12-defaulted-deleted-copy", "struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};"},
+      {"former-13-deleted-constructor", "struct R{int n;R()=delete;};"},
+      {"former-14-explicit-deleted", "struct R{int n;~R()=delete;};"},
+      {"former-15-defaulted-deleted-constructor", "struct I{int n;I()=delete;};struct R{I i;R()=default;};"},
+      {"former-16-defaulted-deleted-destructor", "struct I{int n;~I()=delete;};struct R{I i;~R()=default;};"},
+      {"former-17-deleted-method-template", "template<class T>struct R{int f()=delete;};"},
+      {"free-overload", "int choose(bool)=delete;int choose(int n){return n;}int main(){return choose(3)-3;}"},
+      {"free-redeclaration", "int denied(int)=delete;int denied(int);int main(){return 0;}"},
+      {"default-argument", "int denied(int n=3)=delete;int main(){return 0;}"},
+      {"constexpr-deleted", "constexpr int denied(int) noexcept=delete;int main(){return 0;}"},
+      {"private-copy", "class R{int n;R(const R&)=delete;public:R(int v):n(v){}int get()const{return n;}};int main(){R r(3);return r.get()-3;}"},
+      {"ordinary-method", "struct R{int n;int get()&&=delete;int get()const&{return n;}};int main(){R r{3};return r.get()-3;}"},
+      {"static-method", "struct R{static int get(bool)=delete;static int get(int n){return n;}};int main(){return R::get(3)-3;}"},
+      {"conversion", "struct R{int n;operator bool()const=delete;operator int()const{return n;}};int main(){return static_cast<int>(R{3})-3;}"},
+      {"operator-overload", "struct R{int n;int operator+(bool)const=delete;int operator+(int v)const{return n+v;}};int main(){return R{3}+4-7;}"},
+      {"friend-overload", "struct R{int n;friend int get(R,bool)=delete;friend int get(R r,int){return r.n;}};int main(){return get(R{3},1)-3;}"},
+      {"free-template", "template<class T>int get(T)=delete;int get(int n){return n;}int main(){return get(3)-3;}"},
+      {"member-template", "struct R{template<class T>int get(T)=delete;int get(int n){return n;}};int main(){R r;return r.get(3)-3;}"},
+      {"constructor-template", "struct R{int n;template<class T>R(T)=delete;R(int v):n(v){}};int main(){R r(3);return r.n-3;}"},
+      {"conversion-template", "struct R{int n;template<class T>operator T()const=delete;operator int()const{return n;}};int main(){return static_cast<int>(R{3})-3;}"},
+      {"friend-template", "struct R{int n;template<class T>friend int get(R,T)=delete;friend int get(R r,int){return r.n;}};int main(){return get(R{3},1)-3;}"},
+      {"class-template", "template<class T>struct R{T n;R(T v):n(v){}R(const R&)=delete;};int main(){R<int>r(3);return r.n-3;}"},
+      {"class-friend-template", "template<class T>struct R{T n;template<class U>friend int get(R,U)=delete;friend T get(R r,int){return r.n;}};int main(){return get(R<int>{3},1)-3;}"},
+      {"class-friend", "template<class T>struct R{T n;friend int get(R,bool)=delete;friend T get(R r,int){return r.n;}};int main(){return get(R<int>{3},1)-3;}"},
+      {"partial", "template<class T>struct R;template<class T>struct R<T*>{T n;R(T v):n(v){}R(const R&)=delete;};int main(){R<int*>r(3);return r.n-3;}"},
+      {"full", "template<class T>struct R;template<>struct R<int>{int n;R(int v):n(v){}R(const R&)=delete;};int main(){R<int>r(3);return r.n-3;}"},
+      {"nested", "template<class T>struct Outer{struct Inner{T n;Inner(T v):n(v){}Inner(const Inner&)=delete;};};int main(){Outer<int>::Inner r(3);return r.n-3;}"},
+      {"function-full", "template<class T>int get(T n){return n;}template<>int get<bool>(bool)=delete;int main(){return get(3)-3;}"},
+      {"explicit-free-definition", "template<class T>int denied(T)=delete;template int denied<int>(int);int main(){return 0;}"},
+      {"explicit-free-extern", "template<class T>int denied(T)=delete;extern template int denied<int>(int);int main(){return 0;}"},
+      {"explicit-class", "template<class T>struct R{T n;R()=delete;R(T v):n(v){}R(const R&)=delete;};template struct R<int>;int main(){R<int>r(3);return r.n-3;}"},
+      {"const-key-assignment", "struct R{const int key;int value;R&operator=(const R&)=default;};int main(){R r{3,4};r.value=5;return r.key+r.value-8;}"},
+      {"protocol-source", "int denied(int)=delete;\nstruct Item{int n;Item(const Item&)=delete;Item(Item&&)=delete;int blocked()const=delete;};\ntemplate<class T>int generic(T)=delete;\nstruct Key{const int n;Key&operator=(const Key&)=default;};\nint value(){return 3;}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("deleted-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("deleted-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DeletedDeclarationsRetainSourceDiagnostics) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"free-call", "int denied(int)=delete;int main(){return denied(3);}", "TR0202"},
+      {"free-address", "int denied(int)=delete;int main(){auto p=&denied;return 0;}", "TR0202"},
+      {"copy", "struct R{int n;R(int v):n(v){}R(const R&)=delete;};int main(){R r(3);R copy(r);return copy.n;}", "TR0202"},
+      {"move", "struct R{int n;R(int v):n(v){}R(const R&)=default;R(R&&)=delete;};int main(){R r(3);R copy(static_cast<R&&>(r));return copy.n;}", "TR0202"},
+      {"default-constructor", "struct R{R()=delete;};int main(){R r;return 0;}", "TR0202"},
+      {"destructor", "struct R{~R()=delete;};int main(){R r;return 0;}", "TR0202"},
+      {"defaulted-assignment", "struct R{const int n;R&operator=(const R&)=default;};void f(R&a,const R&b){a=b;}", "TR0202"},
+      {"method", "struct R{int get()=delete;};int main(){R r;return r.get();}", "TR0202"},
+      {"conversion", "struct R{operator int()const=delete;};int main(){return static_cast<int>(R{});}", "TR0202"},
+      {"operator", "struct R{int operator+(int)const=delete;};int main(){return R{}+3;}", "TR0202"},
+      {"friend", "struct R{friend int get(R)=delete;};int main(){return get(R{});}", "TR0202"},
+      {"free-template", "template<class T>int denied(T)=delete;int main(){return denied(3);}", "TR0202"},
+      {"member-template", "struct R{template<class T>int denied(T)=delete;};int main(){R r;return r.denied(3);}", "TR0202"},
+      {"friend-template", "struct R{template<class T>friend int get(R,T)=delete;};int main(){return get(R{},3);}", "TR0202"},
+      {"function-full", "template<class T>int get(T n){return n;}template<>int get<bool>(bool)=delete;int main(){return get(true);}", "TR0202"},
+      {"float-signature", "double denied(int)=delete;", "TR0201"},
+      {"float-parameter", "int denied(double)=delete;", "TR0201"},
+      {"hidden-default", "int denied(int n=sizeof(double))=delete;", "TR0201"},
+      {"hidden-noexcept", "int denied()noexcept(sizeof(double)>0)=delete;", "TR0201"},
+      {"volatile-method", "struct R{int denied()volatile=delete;};", "TR0201"},
+      {"virtual-method", "struct R{virtual int denied()=delete;};", "TR0201"},
+      {"variadic", "int denied(...)=delete;", "TR0201"},
+      {"missing-default", "int missing();int denied(int n=missing())=delete;", "TR0203"},
+      {"missing-other-definition", "int denied(int)=delete;int needed(int);", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("deleted-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("deleted-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("deleted-v1.cpp");
+  const auto Output = tmpFile("deleted-v1.nc");
+  writeFile(Source, "int denied(int)=delete;int main(){return 0;}");
+  auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2ConstFieldsRetainValuesAliasesAndCopySelection) {
   const auto Source = tmpFile("const-fields-runtime.cpp");
   const auto Output = tmpFile("const-fields-runtime.nc");
@@ -12056,7 +12233,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersRetainSourceBoundaries)
       {"query-assignment-spec", "template<class T>struct R{T n;R&operator=(const R&)noexcept(sizeof(T)==sizeof(double))=default;};bool f(R<int>&a,const R<int>&b){return noexcept(a=b);}"},
       {"query-destructor-spec", "template<class T>struct R{T n;~R()noexcept(sizeof(this->n)==sizeof(double))=default;};bool f(){return noexcept(R<int>{1});}"},
       {"attribute", "template<class T>struct R{[[deprecated]]R()=default;};"},
-      {"deleted-written", "template<class T>struct R{R()=delete;};"},
       {"virtual", "template<class T>struct R{virtual ~R()=default;};"},
       {"explicit-destruction", "template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}"},
       {"outer-type", "template<int N>struct R{R();};template<decltype(static_cast<int>(1.0)) N>R<N>::R()=default;"},
@@ -12248,7 +12424,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateDestructorsRetainSourceAndDefinitionBou
       {"TR0201-queried-dependent-noexcept-type", "template<class T>struct R{T n;~R()noexcept(sizeof(T)==sizeof(double));};bool query(){return noexcept(R<int>{1});}", "TR0201"},
       {"TR0201-outer-parameter-type", "template<int N>struct R{~R();};template<decltype(static_cast<int>(1.0)) N>R<N>::~R(){}", "TR0201"},
       {"TR0201-attribute", "template<class T>struct R{[[deprecated]]~R(){}};", "TR0201"},
-      {"TR0201-deleted-shape", "template<class T>struct R{~R()=delete;};", "TR0201"},
       {"TR0201-virtual", "template<class T>struct R{virtual ~R(){}};", "TR0201"},
       {"TR0201-explicit-call", "template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}", "TR0201"},
       {"TR0201-dead-explicit-call", "template<class T>struct R{~R(){}};void f(R<int>&r){if(false)r.~R();}", "TR0201"},
@@ -12602,7 +12777,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateMethodsRetainSourceAndDefinitionBoundar
       {"virtual", "template<class T>struct R{virtual int f(){return 1;}};", "TR0201"},
       {"variadic", "template<class T>struct R{int f(int v,...){return v;}};", "TR0201"},
       {"volatile", "template<class T>struct R{int f()volatile{return 1;}};", "TR0201"},
-      {"deleted", "template<class T>struct R{int f()=delete;};", "TR0201"},
       {"bases", "struct B{int n;};template<class T>struct R:B{int f(){return n;}};", "TR0201"},
       {"dynamic-static", "template<class T>struct R{static int f(int v){static int n=v;return n;}};int main(){return R<int>::f(3);}", "TR0201"},
       {"private-call", "template<class T>struct R{T n;private:T f(){return n;}};int main(){R<int>r{3};return r.f();}", "TR0202"},
@@ -14947,10 +15121,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2GeneratedMovesRetainSourceAndLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"deleted-constructor", "struct R{int n;R(R&&)=delete;};", "TR0201"},
-      {"deleted-assignment", "struct R{int n;R&operator=(R&&)=delete;};", "TR0201"},
-      {"defaulted-deleted-constructor", "struct I{int n;I(I&&)=delete;};struct R{I i;R(R&&)=default;};", "TR0201"},
-      {"defaulted-deleted-assignment", "struct I{int n;I&operator=(I&&)=delete;};struct R{I i;R&operator=(R&&)=default;};", "TR0201"},
       {"attribute", "struct R{int n;[[deprecated]] R(R&&)=default;};", "TR0201"},
       {"reference-field", "struct R{int&n;R(R&&)=default;};", "TR0201"},
       {"base", "struct B{int n;};struct R:B{int value;R(R&&)=default;};", "TR0201"},
@@ -15124,10 +15294,8 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2UserMovesRetainSourceLifetimeAndGeneratedBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"deleted-constructor", "struct R{int n;R(R&&)=delete;};", "TR0201"},
       {"volatile-constructor", "struct R{int n;R(volatile R&&r):n(r.n){}};", "TR0201"},
       {"const-volatile-constructor", "struct R{int n;R(const volatile R&&r):n(r.n){}};", "TR0201"},
-      {"deleted-assignment", "struct R{int n;R&operator=(R&&)=delete;};", "TR0201"},
       {"volatile-assignment-source", "struct R{int n;R&operator=(volatile R&&r){n=r.n;return *this;}};", "TR0201"},
       {"volatile-assignment-receiver", "struct R{int n;R&operator=(R&&)volatile{return const_cast<R&>(*this);}};", "TR0201"},
       {"attribute", "struct R{int n;[[deprecated]] R(R&&r):n(r.n){}};", "TR0201"},
@@ -15633,10 +15801,7 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2GeneratedAssignmentKeepsBuiltinAndReferenceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"deleted", "struct R{int n;R&operator=(const R&)=delete;};"},
-      {"defaulted-deleted", "struct I{int n;I&operator=(const I&)=delete;};struct R{I i;R&operator=(const R&)=default;};"},
       {"rvalue-receiver", "struct R{int n;R&operator=(const R&)&&=default;};"},
-      {"const-field", "struct R{const int n;R&operator=(const R&)=default;};"},
       {"reference-field", "struct R{int&n;R&operator=(const R&)=default;};"},
       {"base-field", "struct B{int n;};struct R:B{int m;R&operator=(const R&)=default;};"},
       {"raw-builtin", "void f(int*a,int*b){__builtin_memcpy(a,b,4);}"},
@@ -15831,8 +15996,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"deleted-copy", "struct R{int n;R(const R&)=delete;};"},
-      {"defaulted-deleted-copy", "struct I{int n;I(const I&)=delete;};struct R{I i;R(const R&)=default;};"},
       {"reference-field", "struct R{int &n;R(const R&)=default;};"},
       {"base-copy", "struct B{int n;};struct R:B{int m;R(const R&)=default;};"},
       {"lambda-array-copy", "int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}"},
@@ -15963,10 +16126,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"deleted-constructor", "struct R{int n;R()=delete;};"},
-      {"deleted-destructor", "struct R{int n;~R()=delete;};"},
-      {"defaulted-deleted-constructor", "struct I{int n;I()=delete;};struct R{I i;R()=default;};"},
-      {"defaulted-deleted-destructor", "struct I{int n;~I()=delete;};struct R{I i;~R()=default;};"},
       {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
       {"explicit-destruction", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},
       {"throwing-member-constructor", "struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};"},
@@ -16293,7 +16452,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2RecordDestructionRetainsUnsupportedLifetimeDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"explicit-deleted", "struct R{int n;~R()=delete;};"},
       {"virtual", "struct R{int n;virtual ~R(){}};"},
       {"explicit-call", "struct R{int n;~R(){}};void f(R&r){r.~R();}"},
       {"explicit-dead-call", "struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}"},
@@ -16621,7 +16779,6 @@ TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries)
       {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};"},
       {"virtual-method", "struct R{int n;R():n(1){} virtual int get(){return n;}};"},
       {"variadic-constructor", "struct R{int n;R(int v,...):n(v){}};"},
-      {"deleted-constructor", "struct R{int n;R()=delete;};"},
       {"reference-field", "struct R{int &n;R(int &v):n(v){}};"},
       {"mutable-field", "struct R{mutable int n;R():n(1){}};"},
       {"union", "union R{int n;unsigned u;R():n(1){}};"},

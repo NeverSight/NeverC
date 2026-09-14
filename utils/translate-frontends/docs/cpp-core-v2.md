@@ -491,6 +491,56 @@ Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
 
+## Deleted function declarations
+
+Core v2 accepts supported source-owned function declarations defined with
+`= delete`, and explicitly defaulted special members that Clang determines are
+deleted. This includes ordinary functions, constructors, destructors, named and
+static methods, conversions, admitted operators, friends and their admitted
+template forms. These declarations remain available to Clang for overload
+resolution and access checking. They require no executable definition and emit
+no function, callback, cleanup or assignment helper of their own.
+
+```cpp
+struct Item {
+  int value;
+  Item(int n) : value(n) {}
+  Item(const Item&) = delete;
+  Item(Item&& other) : value(other.value) { other.value = 0; }
+};
+
+int main() {
+  Item first(7);
+  Item second(static_cast<Item&&>(first));
+  return second.value - 7;
+}
+```
+
+The frontend preserves the distinction between an explicitly deleted move,
+which can make an expression ill-formed, and a defaulted move defined as deleted,
+which C++ excludes from overload resolution. A containing class can therefore
+copy from an rvalue when its deleted defaulted move is ignored. C++17 guaranteed
+copy elision can construct a noncopyable, nonmovable result directly in its final
+storage. These behaviors use the constructors/assignments selected by Clang and
+the existing destination and lifetime lowering.
+
+Calling or taking the address of a selected deleted function, constructing an
+object through a deleted constructor or requiring a deleted destructor retains
+`TR0202`. Ordinary nondeleted functions still require their actual definitions
+(`TR0203`). All eagerly visited signatures, written defaults and `noexcept`
+expressions retain their source checks; deletion cannot hide unsupported numeric
+types or operations. Template patterns and unused dependent defaults keep their
+existing instantiation laziness. Virtual/variadic functions, unsupported operators
+and unsupported signature types retain the selected profile's restrictions.
+V1 profiles retain their deletion rejection.
+
+Paired source/protocol regressions cover deletion, overload selection, retained
+source diagnostics, explicit instantiation, specialization and emitted-symbol
+absence. O0/O2 fixtures exercise move-only objects, copied rvalue fallbacks,
+nonmovable elision, const keys and destruction counts. Native behavior requires
+CI of the implementing revision. Standard headers and complete STL remain
+unfinished.
+
 ## Const data members
 
 Core v2 admits const-qualified nonstatic data members with supported scalar,
@@ -528,7 +578,7 @@ offsets are independently verified using the same carriers. User-written assignm
 operators can modify permitted non-const members while leaving const keys intact.
 
 Volatile, mutable, reference and bitfield members remain outside this increment.
-Existing restrictions on explicitly deleted or deleted defaulted declarations,
+Deleted declarations follow their separate contract below. Restrictions on
 dynamic static lifetime and unsupported element types remain. V1 profiles retain
 their const-field rejection. Paired source/protocol tests, const-pointer signature
 and relocation checks, and O0/O2 fixtures require native CI of the implementing
@@ -888,8 +938,9 @@ Each method declaration's shape is checked even when its body remains lazy.
 Written outer template parameter types on separate out-of-line definitions receive
 the same source checks as the primary parameter list before metadata is erased.
 Selected default/noexcept expressions and materialized signatures/bodies must pass
-the ordinary profile checks. Attributes, virtual/variadic/deleted methods,
-volatile/restrict qualifiers are excluded. The class
+the ordinary profile checks. Deleted declarations use the separate declaration
+contract; attributes, virtual/variadic methods and volatile/restrict qualifiers
+are excluded. The class
 must remain an admitted standard-layout record. Static data, friend,
 Member class templates follow the ordinary-owner contract below; bases remain unsupported. Namespace partial
 specializations follow their separate contract below. Operators and
@@ -2775,13 +2826,15 @@ int main() {
 
 Defaulted nonvirtual destructors, both in-class and out-of-line, use the normal
 reverse member/array cleanup without a user body. Trivial defaulted destructors
-need no call. Deleted/defaulted-deleted functions remain rejected. Exception unwinding and STL remain later
-milestones. Actual execution evidence must come from the implementing revision's CI.
+need no call. Deleted declarations need no emitted definition; selecting a
+deleted operation retains the C++ diagnostic. Exception unwinding and STL remain
+later milestones. Actual execution evidence must come from the implementing revision's CI.
 
 ## Default member initializers
 
 Core v2 admits brace-or-equal initializers on the supported non-mutable,
-non-const, non-reference and non-bitfield record fields. Scalar and pointer
+non-reference and non-bitfield record fields. Const fields follow their
+initialization contract above. Scalar and pointer
 initializers, earlier-field references, ordinary calls, nested records and bounded
 arrays use the same checked expression and layout rules as explicit initialization.
 Written defaults are checked even when unused or always overridden. A selected
@@ -3160,7 +3213,8 @@ Core v2 admits implicit and explicitly defaulted copy assignment for the same
 checked records. The source parameter is exactly one `R&` or `const R&`, and the
 result is mutable `R&`. The receiver may be unqualified or lvalue-qualified with
 `&`. In-class and out-of-line defaulting preserve their selected operations;
-deleted functions remain rejected. Standard resolved exception specifications
+deleted declarations are retained for source checking without an executable
+assignment definition. Standard resolved exception specifications
 follow the noexcept rules below.
 
 A nontrivial generated assignment becomes a checked

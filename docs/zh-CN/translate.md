@@ -96,6 +96,8 @@ Core v2 支持普通类与泛型类中的委托构造，包括构造链和选定
 
 Core v2 支持普通、泛型及嵌套类中的 const 数据成员，类型可为受支持的标量、记录、指针、回调或数组。初始化写入最终存储，保留源代码选定的复制／移动、独立成员地址及 const 引用／指针类型；非法写入和已删除的赋值由 Clang 拒绝。这可用于自定义的常量键值类，标准头文件与完整 STL 仍未完成。原生验证须以实现版本的 CI 为准。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#const-data-members).
 
+Core v2 接受受支持的删除函数，以及默认生成后被删除的特殊成员，包括相应的模板和友元形式。Clang 保留重载选择与访问诊断；删除声明不生成可执行定义。仅可移动对象、选定的复制回退及 C++17 保证的复制消除沿用现有生命周期处理。须由实现版本的 CI 验证，完整 C++／STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deleted-function-declarations).
+
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

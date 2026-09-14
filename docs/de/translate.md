@@ -96,6 +96,8 @@ Core v2 unterstützt delegierende Konstruktoren in zulässigen gewöhnlichen und
 
 Core v2 unterstützt const-Datenmitglieder mit zulässigen Skalar-, Record-, Zeiger-, Callback- und Arraytypen, auch in generischen und verschachtelten Klassen. Initialisierung im endgültigen Speicher, ausgewählte Kopier-/Move-Operationen, eigene Adressen und const-Referenzen/-Zeiger bleiben erhalten. Clang weist ungültige Schreibzugriffe und gelöschte Zuweisungen zurück. Eigene Klassen mit konstantem Schlüssel sind möglich; Standard-Header und vollständige STL stehen noch aus. Native Prüfung erfordert die CI der Implementierungsrevision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#const-data-members).
 
+Core v2 akzeptiert unterstützte gelöschte Funktionen und als gelöscht definierte Standard-Spezialfunktionen, einschließlich zulässiger Template- und Friend-Formen. Clang prüft Überladung und Zugriff; für gelöschte Deklarationen entsteht keine ausführbare Definition. Nur verschiebbare Objekte, ausgewählte Kopieroperationen als Ersatz und garantierte C++17-Kopierelision behalten die bestehende Lebensdauerbehandlung. Die Implementierungsrevision benötigt CI; vollständiges C++/STL steht noch aus. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#deleted-function-declarations).
+
 ## Einrichtung und skalare Übersetzung
 
 Verwenden Sie eine normale NeverC-Installation mit den Standardressourcen. Das C++-Frontend und die freigegebenen SDK-Header sind integriert; eine separate Clang-Installation ist nicht erforderlich. Einzelheiten enthält die [Frontend-Bauanleitung](../../utils/translate-frontends/cpp/README.md).
