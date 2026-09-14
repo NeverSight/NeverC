@@ -1326,6 +1326,22 @@ class FunctionLowering {
     auto SavedReceiver = DefaultReceiver;
     DefaultReceiver = InitializationReceiver{C->getParent()->getCanonicalDecl(), *ThisPointer};
     auto RestoreReceiver = llvm::make_scope_exit([&] { DefaultReceiver = std::move(SavedReceiver); });
+    if (C->isDelegatingConstructor()) {
+      const auto *Init = *C->init_begin();
+      const auto *Target = C->getTargetConstructor();
+      if (!Init->isWritten() || Init->isPackExpansion() || !Init->getInit() ||
+          !Target || Target->getParent()->getCanonicalDecl() !=
+                         C->getParent()->getCanonicalDecl())
+        reject(C->getLocation(), "delegating initializer",
+               "Delegation requires one written target in the same class.");
+      // The target initializes this complete object. Its members must not be
+      // initialized a second time before the delegating constructor's body.
+      beginFullExpression();
+      initialize(dereference(*ThisPointer, C->getLocation()), Init->getInit(),
+                 C->getLocation());
+      endFullExpression();
+      return;
+    }
     std::map<const Decl *, const Expr *> Initializers;
     auto L = C->getLocation();
     for (const auto *I : C->inits()) {

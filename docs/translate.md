@@ -64,7 +64,7 @@ Core v2 supports concrete namespace standard-layout class templates with up to 6
 
 These standard-layout class templates also support ordinary named member functions, including const and ref-qualified overloads, static factories, member ranges and per-instance scalar static locals. Unused generic bodies and defaults stay lazy; selected calls and every materialized body receive the existing type, definition and lifetime checks. Written outer parameter types on out-of-line definitions are checked too. Methods use the ordinary receiver and result ABI, without runtime template parameters.
 
-User-provided constructors are supported for these class templates, including default/parameter, explicit/converting, copy and move constructors, out-of-line definitions and explicit instantiation/specialization. Unused bodies, initializers and defaults stay lazy; selected construction requires a checked definition. Copy defaults are evaluated only when omitted. Initialization uses destination storage in member declaration order, with existing temporary, field and array lifetimes. Delegating/inherited constructors remain excluded. Native validation requires the implementing CI revision.
+User-provided constructors are supported for these class templates, including default/parameter, explicit/converting, copy and move constructors, out-of-line definitions and explicit instantiation/specialization. Unused bodies, initializers and defaults stay lazy; selected construction requires a checked definition. Copy defaults are evaluated only when omitted. Initialization uses destination storage in member declaration order, with existing temporary, field and array lifetimes. Inherited constructors remain excluded. Native validation requires the implementing CI revision.
 
 These class templates also support user-provided nonvirtual destructors, including out-of-line definitions and explicit instantiation/specialization. Definitions are required when Clang marks the destructor used, including direct object returns. Type-only and unevaluated queries keep unused bodies lazy while checking selected exception specifications. Destruction functions use explicit receiver storage, run the user body first, then destroy members and array elements in reverse order. Full-expression, extended-reference and by-value lifetimes retain their existing rules. Explicit destructor calls and complete C++/STL remain unfinished; native validation requires the implementing CI revision.
 
@@ -92,6 +92,8 @@ Core v2 also supports owned namespace class-template partial specializations. Th
 
 Core v2 supports the distinct `decltype(nullptr)` value type, including aliases, references, fields/arrays, callback signatures and zero or constant scalar static and variable-template storage. Pointer conversions retain source effects and temporary cleanup; separate null objects retain separate addresses. Dynamic static initialization, null-valued template arguments and standard headers remain unfinished. Native validation requires CI of the implementing revision. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#null-pointer-values).
 
+Core v2 supports delegating constructors in admitted ordinary and generic classes, including chains and selected constructor templates. The target and delegating body use the same final object; member initialization runs once, and argument temporaries are destroyed before the delegating body executes. Source selection and definition checks remain in force. Native validation requires CI of the implementing revision. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#delegating-constructors).
+
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).
@@ -117,7 +119,7 @@ Core v2 verifies source sizes and ABI alignments against NeverC’s own target m
 
 Core v2 supports named nonvirtual member functions of the admitted records, including const overloads, lvalue-qualified methods, static methods and `this`. Calls preserve the original object and evaluate the receiver before arguments.
 
-Core v2 also supports ordinary user-provided constructors for standard-layout records with admitted copy operations. Locals, record fields and array elements are constructed directly in their final storage; fields initialize in declaration order. Delegating constructors and exceptions remain unsupported.
+Core v2 also supports ordinary user-provided constructors for standard-layout records with admitted copy operations. Locals, record fields and array elements are constructed directly in their final storage; fields initialize in declaration order. Exception unwinding remains unsupported.
 
 Core v2 gives each by-value record parameter a separate object and writes record results directly into the caller’s destination. Constructors and methods use the same rules; source-required copies and reference aliases remain intact. For eligible trivial records, other C++17 implementations may introduce additional argument/result copies.
 

@@ -92,8 +92,8 @@ def main():
         'single-static-definition': ('template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;int main(){return R<int>::n-3;}', None),
         'matching-noexcept': ('int f()noexcept;int f()noexcept{return 1;}int main(){return f()-1;}', None),
         'unused-dependent-body': ('template<class T>int f(){return T::missing;}int main(){return 0;}', None),
-        'dependent-delegating': ('template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};', 'TR0201'),
-        'outside-delegating': ('template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}', 'TR0201'),
+        'dependent-delegating': ('template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};', None),
+        'outside-delegating': ('template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}', None),
         'duplicate-function-definition': ('template<int N>int f(){return N;}template int f<3>();template int f<1+2>();', 'TR0202'),
         'duplicate-static-definition': ('template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;template int R<int>::n;', 'TR0202'),
         'function-extern-after-definition': ('template<class T>T f(T n){return n;}template int f<int>(int);extern template int f<int>(int);', 'TR0202'),
@@ -9163,6 +9163,93 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == class_friends, "class target identity depends on the absolute root"
 
+    delegating_positive = {
+        'alias-template': 'template<class T,int N>using Alias=T;struct R{int n;R():Alias<R,3>(3){}R(int v):n(v){}};int main(){R r;return r.n-3;}',
+        "protocol-source": 'struct Record {\n int n;\n Record(int v):n(v){}\n Record():Record(3){}\n Record(bool):Record(){}\n};\nint probe(){Record value(true);return value.n;}\n',
+        'ordinary-unused': 'struct R{int n;R():R(1){} R(int v):n(v){}};',
+        'dependent-unused': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};',
+        'outside-unused': 'template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}',
+        'dependent-selected': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};int f(){R<int>r;return r.n;}',
+        'ordinary': 'struct R{int n;R():R(3){++n;}R(int v):n(v){}};int main(){R r;return r.n-4;}',
+        'braces': 'struct R{int n;R():R{3}{}R(int v):n(v){}};int main(){R r;return r.n-3;}',
+        'alias': 'struct R{using Self=R;int n;R():Self(3){}R(int v):n(v){}};int main(){R r;return r.n-3;}',
+        'outside': 'struct R{int n;R();R(int v);};R::R():R(3){}R::R(int v):n(v){}int main(){R r;return r.n-3;}',
+        'chain': 'struct R{int n;R():R(true){++n;}R(bool):R(3){++n;}R(int v):n(v){}};int main(){R r;return r.n-5;}',
+        'copy-delegates': 'struct R{int n;R(int v):n(v){}R(const R&r):R(r.n){}};int main(){R a(3);R b(a);return b.n-3;}',
+        'move-delegates': 'struct R{int n;R(int v):n(v){}R(R&&r):R(r.n){r.n=0;}};int main(){R a(3);R b(static_cast<R&&>(a));return b.n-3+a.n;}',
+        'defaulted-target': 'struct R{int n;R()=default;R(int):R(){}};int main(){R r(1);return r.n;}',
+        'default-argument': 'int calls=0;int next(){return ++calls;}struct R{int n;R():R(3){}R(int v,int k=next()):n(v+k){}};int main(){R r;return r.n-4+calls-1;}',
+        'default-member': 'int calls=0;struct R{int n=++calls;R():R(3){}R(int){}};int main(){R r;return r.n-1+calls-1;}',
+        'constexpr': 'struct R{int n;constexpr R():R(3){}constexpr R(int v):n(v){}};constexpr R r;static_assert(r.n==3);',
+        'constexpr-template': 'template<class T>struct R{T n;constexpr R():R(T(3)){}constexpr R(T v):n(v){}};constexpr R<int>r;static_assert(r.n==3);',
+        'partial': 'template<class T>struct R;template<class T>struct R<T*>{T n;R():R(T(3)){}R(T v):n(v){}};int main(){R<int*>r;return r.n-3;}',
+        'full': 'template<class T>struct R;template<>struct R<int>{int n;R():R(3){}R(int v):n(v){}};int main(){R<int>r;return r.n-3;}',
+        'nested': 'template<class T>struct Outer{struct R{T n;R():R(T(3)){}R(T v):n(v){}};};int main(){Outer<int>::R r;return r.n-3;}',
+        'member-template-target': 'struct R{int n;R():R(3){}template<class T>R(T v):n(static_cast<int>(v)){}};int main(){R r;return r.n-3;}',
+        'member-template-delegates': 'struct R{int n;R(int v):n(v){}template<class T>R(T):R(3){}};int main(){R r(true);return r.n-3;}',
+        'generic-member-template': 'template<class T>struct R{T n;R():R(3){}template<class U>R(U v):n(static_cast<T>(v)){}};int main(){R<int>r;return r.n-3;}',
+        'private-target': 'class R{int n;R(int v):n(v){}public:R():R(3){}int get(){return n;}};int main(){R r;return r.get()-3;}',
+        'reference-argument': 'struct R{int*n;R(int&v):n(&v){}R(bool,int&v):R(v){}};int main(){int n=3;R r(true,n);*r.n=4;return n-4;}',
+        'empty': 'struct R{R():R(3){}R(int){}};int main(){R r;}',
+        'null-fields': 'using N=decltype(nullptr);struct R{N n;R():R(nullptr){}R(N v):n(v){}};int main(){R r;return r.n!=nullptr;}',
+        'callback-fields': 'int f(){return 3;}using F=int(*)();struct R{F p;R():R(f){}R(F v):p(v){}};int main(){R r;return r.p()-3;}',
+        'lazy-body': 'template<class T>struct R{int n;R():R(T::missing){}R(int v):n(v){}};int main(){R<int>r(3);return r.n-3;}',
+        'explicit-instance': 'template<class T>struct R{T n;R():R(T(3)){}R(T v):n(v){}};template R<int>::R();int main(){R<int>r;return r.n-3;}',
+        'runtime': 'int trace=0;\nint built=0;\nint destroyed=0;\nint mark(int n){trace=trace*10+n;return n;}\nstruct Leaf{int n;Leaf(int v):n(v){++built;mark(3);}~Leaf(){++destroyed;mark(8);}};\nstruct Object{\n Leaf leaf;int*self;\n Object(int v):leaf(v),self(&leaf.n){mark(4);}\n Object():Object(mark(1)){mark(5);}\n Object(bool):Object(){mark(6);}\n ~Object(){mark(7);}\n};\nstruct Argument{int n;Argument(int v):n(v){mark(1);}operator int()const{mark(2);return n;}~Argument(){mark(4);}};\nstruct Converted{int n;Converted(int v):n(v){mark(3);}Converted():Converted(Argument{7}){mark(5);}};\nstruct Referenced{int n;Referenced(const Argument&a):n(a.n){mark(3);}Referenced():Referenced(Argument{9}){mark(5);}};\nstruct Zero{int n;Zero()=default;Zero(int):Zero(){}};\nint defaults=0;\nint next(){return ++defaults;}\nstruct Default{int n;Default():Default(3){}Default(int v,int extra=next()):n(v+extra){}};\nstruct MemberDefault{int n=next();MemberDefault():MemberDefault(3){}MemberDefault(int){}};\nstruct Copy{\n int n;int*self;\n Copy(int v):n(v),self(&n){}\n Copy(const Copy&r):Copy(r.n){}\n Copy(Copy&&r):Copy(r.n){r.n=0;}\n};\ntemplate<class T>struct Generic{T n;T*self;Generic():Generic(T(3)){}Generic(T v):n(v),self(&n){}};\ntemplate<class T>struct Outer{struct Inner{T n;Inner():Inner(T(4)){}Inner(T v):n(v){}};};\nstruct TemplateTarget{int n;TemplateTarget():TemplateTarget(5){}template<class T>TemplateTarget(T v):n(static_cast<int>(v)){}};\nint main(){\n trace=0;built=0;destroyed=0;\n {Object value;if(trace!=1345||built!=1||destroyed!=0||value.self!=&value.leaf.n||value.leaf.n!=1)return 1;trace=0;}\n if(trace!=78||destroyed!=1)return 2;\n trace=0;\n {Object value(true);if(trace!=13456||built!=2||value.self!=&value.leaf.n)return 3;trace=0;}\n if(trace!=78||destroyed!=2)return 4;\n trace=0;\n Converted converted;\n if(converted.n!=7||trace!=12345)return 5;\n trace=0;\n Referenced referenced;\n if(referenced.n!=9||trace!=1345)return 6;\n Zero zero(1);\n if(zero.n!=0)return 7;\n defaults=0;Default first;\n if(first.n!=4||defaults!=1)return 8;\n MemberDefault member;\n if(member.n!=2||defaults!=2)return 9;\n Copy source(7);Copy copy(source);\n if(copy.n!=7||copy.self!=&copy.n||source.self!=&source.n)return 10;\n Copy moved(static_cast<Copy&&>(copy));\n if(moved.n!=7||copy.n!=0||moved.self!=&moved.n)return 11;\n Generic<int>generic;\n if(generic.n!=3||generic.self!=&generic.n)return 12;\n Outer<int>::Inner nested;\n if(nested.n!=4)return 13;\n TemplateTarget target;\n if(target.n!=5)return 14;\n return 0;\n}\n',
+    }
+    for name, source in delegating_positive.items():
+        check("v2-delegating-positive-" + name, source, profile="cpp-core-v2")
+    delegating_negative = {
+        'hidden-target-type': ('template<class T,int N>using Alias=T;struct R{int n;R():Alias<R,sizeof(double)>(3){}R(int v):n(v){}};', 'TR0201'),
+        'hidden-dependent-target-type': ('template<class T,int N>using Alias=T;template<class T>struct R{T n;R():Alias<R<T>,sizeof(double)>(3){}R(T v):n(v){}};int main(){R<int>r;return r.n;}', 'TR0201'),
+        'floating-argument': ('struct R{int n;R():R(sizeof(double)){}R(int v):n(v){}};', 'TR0201'),
+        'constant-hidden-argument': ('struct R{int n;constexpr R():R(sizeof(double)){}constexpr R(int v):n(v){}};constexpr R r;', 'TR0201'),
+        'dead-body': ('struct R{int n;R():R(3){if(false)(void)1.0;}R(int v):n(v){}};', 'TR0201'),
+        'base': ('struct B{B(int){}};struct R:B{R():R(3){}R(int n):B(n){}};', 'TR0201'),
+        'virtual': ('struct R{R():R(3){}R(int){}virtual void f(){}};', 'TR0201'),
+        'variadic': ('struct R{R():R(3){}R(int,...){}};', 'TR0201'),
+        'global-lifetime': ('struct R{int n;R():R(3){}R(int v):n(v){}};R r;', 'TR0201'),
+        'exception-body': ('struct R{R():R(3){throw 1;}R(int){}};', 'TR0201'),
+        'cycle': ('struct R{R():R(3){}R(int):R(){}};', 'TR0202'),
+        'self-cycle': ('struct R{R():R(){}};', 'TR0202'),
+        'multiple-initializers': ('struct R{int n;R():R(3),n(4){}R(int v):n(v){}};', 'TR0202'),
+        'deleted-target': ('struct R{R():R(3){}R(int)=delete;};', 'TR0202'),
+        'no-matching-target': ('struct R{R():R(3){}};', 'TR0202'),
+        'private-source': ('class R{R():R(3){}R(int){}};int main(){R r;}', 'TR0202'),
+        'missing-target': ('struct R{R():R(3){}R(int);};int main(){R r;}', 'TR0203'),
+        'missing-generic-target': ('template<class T>struct R{R():R(T(3)){}R(T);};int main(){R<int>r;}', 'TR0203'),
+    }
+    for name, (source, diagnostic) in delegating_negative.items():
+        check("v2-delegating-reject-" + name, source, diagnostic, profile="cpp-core-v2")
+    check("delegating-v1", "struct R{int n;R():R(3){}R(int v):n(v){}};", "TR0201", profile="cpp-core-v1")
+
+    delegated = check("v2-delegating-protocol", delegating_positive["protocol-source"], profile="cpp-core-v2")
+    assert len(delegated["records"]) == 1
+    dg_record = delegated["records"][0]["id"]
+    dg_functions = {f["name"]: f for f in delegated["functions"]}
+    assert len(dg_functions) == len(delegated["functions"]) == 4
+    dg_constructors = {}
+    for prefix in (" Record(int", " Record()", " Record(bool"):
+        lines = [i for i, line in enumerate(delegating_positive["protocol-source"].splitlines(), 1)
+                 if line.startswith(prefix)]
+        assert len(lines) == 1
+        matches = [f for f in dg_functions.values() if f["loc"]["line"] == lines[0]]
+        assert len(matches) == 1 and matches[0]["result"] == "void"
+        assert matches[0]["params"][0]["type"] == "ptr:" + dg_record
+        dg_constructors[prefix] = matches[0]
+    for caller_prefix, target_prefix in ((" Record()", " Record(int"), (" Record(bool", " Record()")):
+        caller, target = dg_constructors[caller_prefix], dg_constructors[target_prefix]
+        calls = [n for n in caller["body"] if n["op"] == "call"]
+        assert len(calls) == 1 and calls[0]["callee"] == target["name"]
+        assert [a["type"] for a in calls[0]["args"]] == [p["type"] for p in target["params"]]
+        assert np_pointer(caller, calls[0]["args"][0]) == ("parameter", caller["params"][0]["name"])
+        assert not any(n["op"] == "assign" and n["target"]["kind"] == "member" for n in caller["body"])
+        assert not any(v["type"] == dg_record for v in caller["locals"]), "delegation invented an object copy"
+    with tempfile.TemporaryDirectory(prefix="neverc-delegating-relocated-") as temp:
+        relocated = check("v2-delegating-relocated", delegating_positive["protocol-source"],
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == delegated, "delegating targets depend on the absolute root"
+
     nullptr_positive = {
         'constant-record': 'using N=decltype(nullptr);struct R{N n;};constexpr R r{nullptr};int main(){return r.n!=nullptr;}',
         'null-result-cast': 'using N=decltype(nullptr);N f(N n){return static_cast<N>(n);}',
@@ -11689,9 +11776,6 @@ int&outsideValue(Outside<int>&r){return r;}
     for name, source in template_source_positive.items():
         check("v2-template-source-positive-" + name, source, profile="cpp-core-v2")
     template_source_reject = {
-        'dependent-delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};',
-        'outside-delegating': 'template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}',
-        'selected-delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};int f(){R<int>r;return r.n;}',
         'local-selected-body': 'template<class T>int f(){struct R{int get(){return int(1.0);}};R r;return r.get();}int g(){return f<int>();}',
         'local-unused-body': 'template<class T>int f(){struct R{int get(){return 3;}int unused(){return int(1.0);}};R r;return r.get();}int g(){return f<int>();}',
         'local-noexcept-body': 'template<class T>int f(){struct R{int get()noexcept(sizeof(double)>0){return 3;}};R r;return r.get();}int g(){return f<int>();}',
@@ -12669,7 +12753,6 @@ int privateRead(const Private<int>&v){return v.get();}
         'out-of-line-floating-size': 'template<decltype(sizeof(int)) N>struct R{int n;R();};template<decltype(sizeof(double)) N>R<N>::R():n(static_cast<int>(N)){}',
         'attribute': 'template<class T>struct R{T n;[[deprecated]]R(T v):n(v){}};',
         'parameter-attribute': 'template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};',
-        'delegating': 'template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};',
         'base': 'struct I{int n;};template<class T>struct R:I{R(){}};',
         'reference-field': 'template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}',
         'const-field': 'template<class T>struct R{const T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}',
@@ -14147,7 +14230,6 @@ int main() {
         'method-reference-field': 'struct R{int&n;int get()const{return n;}};',
     })
     v2_rejections.update({
-        'constructor-delegating': 'struct R{int n;R():R(1){} R(int v):n(v){}};',
         'constructor-base-initializer': 'struct B{int n;B(int v):n(v){}};struct R:B{R():B(1){}};',
         'constructor-inherited-constructor': 'struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};',
         'constructor-virtual-method': 'struct R{int n;R():n(1){} virtual int get(){return n;}};',

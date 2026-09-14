@@ -585,7 +585,6 @@ bool ordinaryConstructor(const CXXConstructorDecl *C) {
       (C->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
        !concreteMemberFunction(C)) ||
       C->isDeletedAsWritten() || C->isExplicitlyDefaulted() || C->isConsteval() ||
-      C->isDelegatingConstructor() ||
       C->isInheritingConstructor())
     return false;
   if (C->isCopyOrMoveConstructor()) {
@@ -2013,6 +2012,21 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto Qualifier = Record->getQualifierLoc();
     return !Qualifier || A.S.owns(A.Sources, Qualifier.getBeginLoc());
   }
+  bool writtenConstructorInitializersShape(const CXXConstructorDecl *C) {
+    for (const auto *Init : C->inits()) {
+      if (!Init->isWritten() || Init->isAnyMemberInitializer())
+        continue;
+      // Sema keeps a dependent delegation as a type/base initializer until
+      // substitution. These owners have no bases; only one such initializer
+      // can become a delegating constructor in a concrete instance.
+      if (C->getNumCtorInitializers() != 1 || Init->isPackExpansion() ||
+          !Init->getTypeSourceInfo() || !Init->getInit() ||
+          (!Init->isDelegatingInitializer() &&
+           !(C->getParent()->isDependentContext() && Init->isBaseInitializer())))
+        return false;
+    }
+    return true;
+  }
   bool memberTemplateDeclarationShape(const FunctionTemplateDecl *D) {
     if (!D || !owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
         D->isAbbreviated() || D->getFriendObjectKind() ||
@@ -2058,12 +2072,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         !outerTemplateListsShape(M))
       return false;
     if (const auto *C = dyn_cast<CXXConstructorDecl>(M)) {
-      if (!C->isUserProvided() || C->isStatic() || C->isDelegatingConstructor() ||
+      if (!C->isUserProvided() || C->isStatic() ||
           C->isInheritingConstructor() || C->getMethodQualifiers().getCVRQualifiers())
         return false;
-      for (const auto *Init : C->inits())
-        if (Init->isWritten() && !Init->isAnyMemberInitializer())
-          return false;
+      if (!writtenConstructorInitializersShape(C))
+        return false;
     } else if (const auto *C = dyn_cast<CXXConversionDecl>(M)) {
       if (!C->isUserProvided() || C->isStatic() || C->getNumParams())
         return false;
@@ -2112,15 +2125,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return false;
     if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(M)) {
       if ((!Defaulted && !Constructor->isUserProvided()) ||
-          Constructor->isDelegatingConstructor() ||
           Constructor->isInheritingConstructor() || Constructor->isStatic() ||
           Constructor->getMethodQualifiers().getCVRQualifiers())
         return false;
-      // In a dependent primary, Sema represents delegation as a type/base
-      // initializer until instantiation. These class templates admit no bases.
-      for (const auto *Init : Constructor->inits())
-        if (Init->isWritten() && !Init->isAnyMemberInitializer())
-          return false;
+      if (!writtenConstructorInitializersShape(Constructor))
+        return false;
     } else if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(M)) {
       if ((!Defaulted && !Destructor->isUserProvided()) || Destructor->isStatic() ||
           Destructor->getNumParams() ||
@@ -7185,12 +7194,18 @@ public:
       // explicitly; written expressions were already visited by RAV.
       std::set<const Decl *> Initialized;
       for (const auto *I : C->inits()) {
+        if (I->isDelegatingInitializer() && C->isDelegatingConstructor() &&
+            I->isWritten() && !I->isPackExpansion() && I->getTypeSourceInfo() &&
+            I->getInit() && C->getTargetConstructor() &&
+            C->getTargetConstructor()->getParent()->getCanonicalDecl() ==
+                C->getParent()->getCanonicalDecl())
+          continue; // RAV visited the written type, arguments and selected call.
         if (!I->isMemberInitializer() || I->isPackExpansion() ||
             I->getMember()->getParent() != C->getParent() ||
             !Initialized.insert(I->getMember()->getCanonicalDecl()).second ||
             !I->getInit()) {
           A.reject(C->getLocation(), "constructor initializer",
-                   "Only unique direct field initializers are supported.");
+                   "Expected unique direct fields or one checked delegating initializer.");
           continue;
         }
         if (!I->isWritten()) {

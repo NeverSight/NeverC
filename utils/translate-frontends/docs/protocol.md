@@ -122,6 +122,17 @@ The consumer validates the entire module and all referenced symbols, types, fiel
 
 NC output declares records/prototypes before definitions, emits guarded native target/data-model requirements, and retains explicit sequencing statements. Maps contain generated line ranges and original source locations plus the generated-source hash. Manifests and reports each have schema major 1 and are separately documented in the design contract. Artifacts record frontend and NeverC build identity, target, normalized options and dependency hashes. Object validation uses the same target as source analysis. Generated programs are not run by translation.
 
+## Core v2 delegating construction
+
+A delegating constructor uses an ordinary void function and the same typed
+receiver pointer as its selected target. Its body calls the target with that
+pointer and source-normalized arguments, then performs the delegation's
+full-expression cleanup before executing its own source body. No record
+intermediate, second member initialization, new opcode or raw source is emitted.
+Target identity, complete signatures, receiver provenance and relocation are
+checked by the source/protocol fixtures. See [delegating constructors](cpp-core-v2.md#delegating-constructors)
+for source admission and lifetime boundaries.
+
 ## Core v2 null values
 
 Core v2 adds the distinct scalar type spelling `nullptr`; it composes with `ptr:`,

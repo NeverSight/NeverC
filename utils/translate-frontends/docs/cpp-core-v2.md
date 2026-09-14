@@ -484,12 +484,48 @@ reference returns remain excluded. Const
 local destinations are constructed once; subsequent accesses keep source const
 qualifications.
 
-Deleted, delegating, inherited, template and variadic constructors
-remain rejected. Exception unwinding, allocation, static
+Deleted, inherited and variadic constructors remain rejected. Delegating
+constructors and constructor templates follow their contracts below. Exception unwinding, allocation, static
 guards, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; records requiring destruction and existing
 dynamic, pointer and array global forms remain rejected. V1 profiles continue to reject user constructors.
+
+## Delegating constructors
+
+Core v2 supports user-provided delegating constructors in admitted ordinary and
+concrete generic classes, including chains, braced targets, aliases, out-of-line
+definitions, copy/move delegation and selected member constructor templates.
+The target must be an admitted constructor of the same canonical class with a
+checked definition. Clang resolves overloads, access, defaults and template
+selection. A single written type initializer in a dependent no-base class remains
+lazy until substitution determines the target; its written type and arguments
+retain the existing source checks.
+
+```cpp
+struct Value {
+  int number;
+  int *self;
+  Value(int n) : number(n), self(&number) {}
+  Value() : Value(3) { ++number; }
+};
+```
+
+The target initializes the final object through the existing receiver pointer.
+Delegation creates no intermediate object and performs no additional member
+initialization. After the target returns, temporaries in the delegation's full
+expression are destroyed, then the delegating constructor's body executes.
+Member defaults, parameter defaults, reference arguments, member/array lifetimes
+and Clang-selected zero initialization retain their ordinary behavior. The
+completed object receives its usual single destruction at the owning scope.
+
+Cycles, multiple initializers with delegation and invalid target selection retain
+C++ diagnostics. Missing selected definitions remain `TR0203`; unsupported types
+or operations remain `TR0201`, including folded arguments and checked dead bodies.
+Inheritance, variadics, dynamic static initialization and exception unwinding
+remain separate work. Old profiles continue to reject user-provided constructors.
+Paired source/protocol cases, receiver/call/relocation assertions and O0/O2 runtime
+fixtures require implementing-revision native CI. Complete C++/STL is unfinished.
 
 ## Named nested records
 
@@ -857,7 +893,8 @@ temporary lifetime extension, by-value arguments and return storage use existing
 operations. Constructor-local records and scalar static locals retain concrete
 class-instance identities. No template argument becomes a runtime parameter.
 
-Delegating/inherited constructors are not included. Member function templates
+Inherited constructors are not included. Delegating constructors follow their
+contract below. Member function templates
 follow their separate contract below. Operators and conversions follow their separate contract below. Defaulted special members follow the rules below. User-provided template destructors and
 member/array cleanup follow the destructor rules below.
 Native O0/O2 and protocol fixtures cover calls, defaults, copy/move storage,
@@ -2244,10 +2281,10 @@ a limit of 200000 source units. Each directive/default charges one unit plus eac
 copied explicit function template argument before retention; ordinary source
 expansion limits still apply during validation. All
 written type and expression checks run before emission through the same visitor.
-Dependent constructor patterns in the supported no-base class templates may only
-have written member initializers; a type/base initializer cannot hide delegation
-until instantiation. Member initializer expressions otherwise keep their normal
-lazy behavior. Source-invalid C++ retains Clang diagnostics; unsupported admitted
+Dependent constructor patterns in supported no-base class templates may have
+written member initializers or one type initializer that resolves to delegation
+in a concrete instance. Packs and mixed type/member initialization remain
+unsupported. Initializer expressions retain their normal lazy behavior. Source-invalid C++ retains Clang diagnostics; unsupported admitted
 source is rejected without publishing partial artifacts.
 
 Paired regressions cover these source paths, canonical instance identities,

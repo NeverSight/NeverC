@@ -7982,6 +7982,164 @@ TEST_F(TranslateTest, CoreV2FriendClassTemplatesRetainRequiredDefinitions) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2DelegatingConstructorsReuseDestinationAndLifetime) {
+  const auto Source = tmpFile("delegating-runtime.cpp");
+  const auto Output = tmpFile("delegating-runtime.nc");
+  writeFile(Source, R"cpp(int trace=0;
+int built=0;
+int destroyed=0;
+int mark(int n){trace=trace*10+n;return n;}
+struct Leaf{int n;Leaf(int v):n(v){++built;mark(3);}~Leaf(){++destroyed;mark(8);}};
+struct Object{
+ Leaf leaf;int*self;
+ Object(int v):leaf(v),self(&leaf.n){mark(4);}
+ Object():Object(mark(1)){mark(5);}
+ Object(bool):Object(){mark(6);}
+ ~Object(){mark(7);}
+};
+struct Argument{int n;Argument(int v):n(v){mark(1);}operator int()const{mark(2);return n;}~Argument(){mark(4);}};
+struct Converted{int n;Converted(int v):n(v){mark(3);}Converted():Converted(Argument{7}){mark(5);}};
+struct Referenced{int n;Referenced(const Argument&a):n(a.n){mark(3);}Referenced():Referenced(Argument{9}){mark(5);}};
+struct Zero{int n;Zero()=default;Zero(int):Zero(){}};
+int defaults=0;
+int next(){return ++defaults;}
+struct Default{int n;Default():Default(3){}Default(int v,int extra=next()):n(v+extra){}};
+struct MemberDefault{int n=next();MemberDefault():MemberDefault(3){}MemberDefault(int){}};
+struct Copy{
+ int n;int*self;
+ Copy(int v):n(v),self(&n){}
+ Copy(const Copy&r):Copy(r.n){}
+ Copy(Copy&&r):Copy(r.n){r.n=0;}
+};
+template<class T>struct Generic{T n;T*self;Generic():Generic(T(3)){}Generic(T v):n(v),self(&n){}};
+template<class T>struct Outer{struct Inner{T n;Inner():Inner(T(4)){}Inner(T v):n(v){}};};
+struct TemplateTarget{int n;TemplateTarget():TemplateTarget(5){}template<class T>TemplateTarget(T v):n(static_cast<int>(v)){}};
+int main(){
+ trace=0;built=0;destroyed=0;
+ {Object value;if(trace!=1345||built!=1||destroyed!=0||value.self!=&value.leaf.n||value.leaf.n!=1)return 1;trace=0;}
+ if(trace!=78||destroyed!=1)return 2;
+ trace=0;
+ {Object value(true);if(trace!=13456||built!=2||value.self!=&value.leaf.n)return 3;trace=0;}
+ if(trace!=78||destroyed!=2)return 4;
+ trace=0;
+ Converted converted;
+ if(converted.n!=7||trace!=12345)return 5;
+ trace=0;
+ Referenced referenced;
+ if(referenced.n!=9||trace!=1345)return 6;
+ Zero zero(1);
+ if(zero.n!=0)return 7;
+ defaults=0;Default first;
+ if(first.n!=4||defaults!=1)return 8;
+ MemberDefault member;
+ if(member.n!=2||defaults!=2)return 9;
+ Copy source(7);Copy copy(source);
+ if(copy.n!=7||copy.self!=&copy.n||source.self!=&source.n)return 10;
+ Copy moved(static_cast<Copy&&>(copy));
+ if(moved.n!=7||copy.n!=0||moved.self!=&moved.n)return 11;
+ Generic<int>generic;
+ if(generic.n!=3||generic.self!=&generic.n)return 12;
+ Outer<int>::Inner nested;
+ if(nested.n!=4)return 13;
+ TemplateTarget target;
+ if(target.n!=5)return 14;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("delegating-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DelegatingConstructorsAcceptSelectedTargets) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"protocol-source", "struct Record {\n int n;\n Record(int v):n(v){}\n Record():Record(3){}\n Record(bool):Record(){}\n};\nint probe(){Record value(true);return value.n;}\n"},
+      {"alias-template", "template<class T,int N>using Alias=T;struct R{int n;R():Alias<R,3>(3){}R(int v):n(v){}};int main(){R r;return r.n-3;}"},
+      {"ordinary-unused", "struct R{int n;R():R(1){} R(int v):n(v){}};"},
+      {"dependent-unused", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};"},
+      {"outside-unused", "template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}"},
+      {"dependent-selected", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};int f(){R<int>r;return r.n;}"},
+      {"ordinary", "struct R{int n;R():R(3){++n;}R(int v):n(v){}};int main(){R r;return r.n-4;}"},
+      {"braces", "struct R{int n;R():R{3}{}R(int v):n(v){}};int main(){R r;return r.n-3;}"},
+      {"alias", "struct R{using Self=R;int n;R():Self(3){}R(int v):n(v){}};int main(){R r;return r.n-3;}"},
+      {"outside", "struct R{int n;R();R(int v);};R::R():R(3){}R::R(int v):n(v){}int main(){R r;return r.n-3;}"},
+      {"chain", "struct R{int n;R():R(true){++n;}R(bool):R(3){++n;}R(int v):n(v){}};int main(){R r;return r.n-5;}"},
+      {"copy-delegates", "struct R{int n;R(int v):n(v){}R(const R&r):R(r.n){}};int main(){R a(3);R b(a);return b.n-3;}"},
+      {"move-delegates", "struct R{int n;R(int v):n(v){}R(R&&r):R(r.n){r.n=0;}};int main(){R a(3);R b(static_cast<R&&>(a));return b.n-3+a.n;}"},
+      {"defaulted-target", "struct R{int n;R()=default;R(int):R(){}};int main(){R r(1);return r.n;}"},
+      {"default-argument", "int calls=0;int next(){return ++calls;}struct R{int n;R():R(3){}R(int v,int k=next()):n(v+k){}};int main(){R r;return r.n-4+calls-1;}"},
+      {"default-member", "int calls=0;struct R{int n=++calls;R():R(3){}R(int){}};int main(){R r;return r.n-1+calls-1;}"},
+      {"constexpr", "struct R{int n;constexpr R():R(3){}constexpr R(int v):n(v){}};constexpr R r;static_assert(r.n==3);"},
+      {"constexpr-template", "template<class T>struct R{T n;constexpr R():R(T(3)){}constexpr R(T v):n(v){}};constexpr R<int>r;static_assert(r.n==3);"},
+      {"partial", "template<class T>struct R;template<class T>struct R<T*>{T n;R():R(T(3)){}R(T v):n(v){}};int main(){R<int*>r;return r.n-3;}"},
+      {"full", "template<class T>struct R;template<>struct R<int>{int n;R():R(3){}R(int v):n(v){}};int main(){R<int>r;return r.n-3;}"},
+      {"nested", "template<class T>struct Outer{struct R{T n;R():R(T(3)){}R(T v):n(v){}};};int main(){Outer<int>::R r;return r.n-3;}"},
+      {"member-template-target", "struct R{int n;R():R(3){}template<class T>R(T v):n(static_cast<int>(v)){}};int main(){R r;return r.n-3;}"},
+      {"member-template-delegates", "struct R{int n;R(int v):n(v){}template<class T>R(T):R(3){}};int main(){R r(true);return r.n-3;}"},
+      {"generic-member-template", "template<class T>struct R{T n;R():R(3){}template<class U>R(U v):n(static_cast<T>(v)){}};int main(){R<int>r;return r.n-3;}"},
+      {"private-target", "class R{int n;R(int v):n(v){}public:R():R(3){}int get(){return n;}};int main(){R r;return r.get()-3;}"},
+      {"reference-argument", "struct R{int*n;R(int&v):n(&v){}R(bool,int&v):R(v){}};int main(){int n=3;R r(true,n);*r.n=4;return n-4;}"},
+      {"empty", "struct R{R():R(3){}R(int){}};int main(){R r;}"},
+      {"null-fields", "using N=decltype(nullptr);struct R{N n;R():R(nullptr){}R(N v):n(v){}};int main(){R r;return r.n!=nullptr;}"},
+      {"callback-fields", "int f(){return 3;}using F=int(*)();struct R{F p;R():R(f){}R(F v):p(v){}};int main(){R r;return r.p()-3;}"},
+      {"lazy-body", "template<class T>struct R{int n;R():R(T::missing){}R(int v):n(v){}};int main(){R<int>r(3);return r.n-3;}"},
+      {"explicit-instance", "template<class T>struct R{T n;R():R(T(3)){}R(T v):n(v){}};template R<int>::R();int main(){R<int>r;return r.n-3;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("delegating-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("delegating-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DelegatingConstructorsRetainSourceBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"hidden-target-type", "template<class T,int N>using Alias=T;struct R{int n;R():Alias<R,sizeof(double)>(3){}R(int v):n(v){}};", "TR0201"},
+      {"hidden-dependent-target-type", "template<class T,int N>using Alias=T;template<class T>struct R{T n;R():Alias<R<T>,sizeof(double)>(3){}R(T v):n(v){}};int main(){R<int>r;return r.n;}", "TR0201"},
+      {"floating-argument", "struct R{int n;R():R(sizeof(double)){}R(int v):n(v){}};", "TR0201"},
+      {"constant-hidden-argument", "struct R{int n;constexpr R():R(sizeof(double)){}constexpr R(int v):n(v){}};constexpr R r;", "TR0201"},
+      {"dead-body", "struct R{int n;R():R(3){if(false)(void)1.0;}R(int v):n(v){}};", "TR0201"},
+      {"base", "struct B{B(int){}};struct R:B{R():R(3){}R(int n):B(n){}};", "TR0201"},
+      {"virtual", "struct R{R():R(3){}R(int){}virtual void f(){}};", "TR0201"},
+      {"variadic", "struct R{R():R(3){}R(int,...){}};", "TR0201"},
+      {"global-lifetime", "struct R{int n;R():R(3){}R(int v):n(v){}};R r;", "TR0201"},
+      {"exception-body", "struct R{R():R(3){throw 1;}R(int){}};", "TR0201"},
+      {"cycle", "struct R{R():R(3){}R(int):R(){}};", "TR0202"},
+      {"self-cycle", "struct R{R():R(){}};", "TR0202"},
+      {"multiple-initializers", "struct R{int n;R():R(3),n(4){}R(int v):n(v){}};", "TR0202"},
+      {"deleted-target", "struct R{R():R(3){}R(int)=delete;};", "TR0202"},
+      {"no-matching-target", "struct R{R():R(3){}};", "TR0202"},
+      {"private-source", "class R{R():R(3){}R(int){}};int main(){R r;}", "TR0202"},
+      {"missing-target", "struct R{R():R(3){}R(int);};int main(){R r;}", "TR0203"},
+      {"missing-generic-target", "template<class T>struct R{R():R(T(3)){}R(T);};int main(){R<int>r;}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("delegating-reject-" + Name + ".cpp");
+    const auto Output = tmpFile("delegating-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  const auto Source = tmpFile("delegating-v1.cpp");
+  const auto Output = tmpFile("delegating-v1.nc");
+  writeFile(Source, "struct R{int n;R():R(3){}R(int v):n(v){}};");
+  auto Result = translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()});
+  expectCode(Result, "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2NullPtrValuesPreserveStorageAndEffects) {
   const auto Source = tmpFile("nullptr-runtime.cpp");
   const auto Output = tmpFile("nullptr-runtime.nc");
@@ -10201,8 +10359,8 @@ TEST_F(TranslateTest, CoreV2UsesStandardTemplateParsing) {
       {"single-static-definition", "template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;int main(){return R<int>::n-3;}", ""},
       {"matching-noexcept", "int f()noexcept;int f()noexcept{return 1;}int main(){return f()-1;}", ""},
       {"unused-dependent-body", "template<class T>int f(){return T::missing;}int main(){return 0;}", ""},
-      {"dependent-delegating", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};", "TR0201"},
-      {"outside-delegating", "template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}", "TR0201"},
+      {"dependent-delegating", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};", ""},
+      {"outside-delegating", "template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}", ""},
       {"duplicate-function-definition", "template<int N>int f(){return N;}template int f<3>();template int f<1+2>();", "TR0202"},
       {"duplicate-static-definition", "template<class T>struct R{static T n;};template<class T>T R<T>::n=T(3);template int R<int>::n;template int R<int>::n;", "TR0202"},
       {"function-extern-after-definition", "template<class T>T f(T n){return n;}template int f<int>(int);extern template int f<int>(int);", "TR0202"},
@@ -11176,9 +11334,6 @@ TEST_F(TranslateTest, CoreV2TemplateSourceRepairsAcceptConcreteSource) {
 
 TEST_F(TranslateTest, CoreV2TemplateSourceRepairsRetainWrittenSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"dependent-delegating", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};"},
-      {"outside-delegating", "template<class T>struct R{T n;R();R(T v):n(v){}};template<class T>R<T>::R():R(3){}"},
-      {"selected-delegating", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};int f(){R<int>r;return r.n;}"},
       {"local-selected-body", "template<class T>int f(){struct R{int get(){return int(1.0);}};R r;return r.get();}int g(){return f<int>();}"},
       {"local-unused-body", "template<class T>int f(){struct R{int get(){return 3;}int unused(){return int(1.0);}};R r;return r.get();}int g(){return f<int>();}"},
       {"local-noexcept-body", "template<class T>int f(){struct R{int get()noexcept(sizeof(double)>0){return 3;}};R r;return r.get();}int g(){return f<int>();}"},
@@ -12108,7 +12263,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateConstructorsRetainSourceAndDefinitionBo
       {"out-of-line-floating-size", "template<decltype(sizeof(int)) N>struct R{int n;R();};template<decltype(sizeof(double)) N>R<N>::R():n(static_cast<int>(N)){}", "TR0201"},
       {"attribute", "template<class T>struct R{T n;[[deprecated]]R(T v):n(v){}};", "TR0201"},
       {"parameter-attribute", "template<class T>struct R{T n;R([[maybe_unused]]T v):n(v){}};", "TR0201"},
-      {"delegating", "template<class T>struct R{T n;R():R(3){}R(T v):n(v){}};", "TR0201"},
       {"base", "struct I{int n;};template<class T>struct R:I{R(){}};", "TR0201"},
       {"reference-field", "template<class T>struct R{T&n;R(T&v):n(v){}};int main(){int n=3;R<int>r(n);return r.n;}", "TR0201"},
       {"const-field", "template<class T>struct R{const T n;R(T v):n(v){}};int main(){R<int>r(3);return r.n;}", "TR0201"},
@@ -16309,7 +16463,6 @@ int main() {
 
 TEST_F(TranslateTest, CoreV2RecordConstructorsRetainLifetimeAndSourceBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"delegating", "struct R{int n;R():R(1){} R(int v):n(v){}};"},
       {"base-initializer", "struct B{int n;B(int v):n(v){}};struct R:B{R():B(1){}};"},
       {"inherited-constructor", "struct B{int n;B(int v):n(v){}};struct R:B{using B::B;};"},
       {"virtual-method", "struct R{int n;R():n(1){} virtual int get(){return n;}};"},
