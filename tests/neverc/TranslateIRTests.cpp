@@ -2965,3 +2965,205 @@ TEST(TranslateIR, CoreV2CallbackWireRejectsMissingAndStrayPayloads) {
     EXPECT_FALSE(parseModule(JSON, M, D)) << Change.second;
   }
 }
+
+TEST(TranslateIR, MemoryLifetimesRequireExplicitTrueCoreV2Evidence) {
+  for (bool CoreV2 : {false, true}) {
+    auto M = module(CoreV2);
+    EXPECT_FALSE(M.MemoryLifetimes);
+    M.MemoryLifetimes = true;
+    if (!CoreV2)
+      invalid(M, "Memory lifetimes require core v2");
+    for (const std::string Value : {"true", "false", "0", "null", "\"true\"", "{}"}) {
+      auto JSON = wireModule(CoreV2);
+      JSON.insert(1, "\"memory_lifetimes\":" + Value + ",");
+      Module Parsed;
+      Parsed.Frontend.Build = "unchanged";
+      Diagnostics D;
+      bool Valid = CoreV2 && Value == "true";
+      EXPECT_EQ(parseModule(JSON, Parsed, D), Valid);
+      if (Valid) {
+        EXPECT_TRUE(Parsed.MemoryLifetimes);
+        EXPECT_TRUE(verifyModule(Parsed, context(Parsed), D));
+      } else {
+        EXPECT_EQ(Parsed.Frontend.Build, "unchanged");
+      }
+    }
+  }
+}
+
+TEST(TranslateIR, MemoryLifetimeAliasesPreserveRecursiveDeclaratorsAndLayout) {
+  auto M = module(true);
+  M.MemoryLifetimes = true;
+  Type Item{TypeKind::Record, "nct_item"}, Holder{TypeKind::Record, "nct_holder"};
+  auto Array = arrayType(Item, 2);
+  auto Callback = functionPointerType(pointerType(intType(), true),
+                                      {pointerType(Array, true), pointerType(pointerType(intType()), true)});
+  M.Records = {{"nct_item", {{"value", intType()}}, InputLoc, RecordLayout{{32, 32}, {0}}},
+               {"nct_holder", {{"next", pointerType(Holder)}, {"items", Array},
+                                {"callback", Callback}},
+                InputLoc, RecordLayout{{192, 64}, {0, 64, 128}}}};
+  EmittedSource Out;
+  Diagnostics D;
+  ASSERT_TRUE(emitNC(M, context(M), Out, D));
+  EXPECT_NE(Out.Text.find("#if !__has_attribute(may_alias)"), std::string::npos);
+  EXPECT_NE(Out.Text.find("typedef struct __attribute__((may_alias)) nct_holder nct_holder;"), std::string::npos);
+  const auto ItemDefinition = Out.Text.find("struct __attribute__((may_alias)) nct_item {");
+  const auto ArrayAlias = Out.Text.find("typedef nct_item nct_emit_lifetime_type_");
+  const auto HolderDefinition = Out.Text.find("struct __attribute__((may_alias)) nct_holder {");
+  EXPECT_LT(ItemDefinition, ArrayAlias);
+  EXPECT_LT(ArrayAlias, HolderDefinition);
+  EXPECT_NE(Out.Text.find("typedef const nct_emit_lifetime_type_"), std::string::npos);
+  EXPECT_NE(Out.Text.find("[2] __attribute__((may_alias));"), std::string::npos);
+  EXPECT_NE(Out.Text.find("translated function pointer alignment mismatch"), std::string::npos);
+  M.Records[1].Layout->Storage.SizeBits += 64;
+  invalid(M, "size or alignment disagrees");
+  M.Records[1].Layout->Storage.SizeBits -= 64;
+  std::swap(M.Records[0], M.Records[1]);
+  invalid(M, "Unknown or forward/cyclic record");
+}
+
+TEST(TranslateIR, MemoryLifetimeAliasesDoNotGrantConstWritesOrCasts) {
+  auto M = module(true);
+  M.MemoryLifetimes = true;
+  M.Globals = {{"nct_constant", intType(), literal("1"), InputLoc}};
+  Instruction Store;
+  Store.Op = InstructionKind::Assign;
+  Store.Loc = InputLoc;
+  Store.Target = variable("nct_constant");
+  Store.Value = literal("2");
+  M.Functions[0].Body.insert(M.Functions[0].Body.begin() + 1, Store);
+  invalid(M);
+  M.Functions[0].Body.erase(M.Functions[0].Body.begin() + 1);
+  M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Cast, intType(),
+      {pointerExpr(ExprKind::Address, pointerType(intType(), true), {variable("nct_constant")})}));
+  invalid(M);
+}
+
+namespace {
+// These test the emitted C may_alias extension itself, independently of which
+// source lifetime operations produce the verified stores. They are not C++
+// programs claiming that reads outside a source object's lifetime are valid.
+Module lifetimeAccessModule() {
+  auto M = module(true);
+  M.MemoryLifetimes = true;
+  M.Functions.clear();
+  Type Float{TypeKind::Float, {}};
+  auto PInt = pointerType(intType()), PFloat = pointerType(Float);
+  auto Load = [](Expr P) {
+    auto T = P.ValueType.Elements[0];
+    return pointerExpr(ExprKind::Dereference, T, {std::move(P)});
+  };
+  auto Store = [](Expr To, Expr From) {
+    Instruction I;
+    I.Op = InstructionKind::Assign;
+    I.Loc = InputLoc;
+    I.Target = std::move(To);
+    I.Value = std::move(From);
+    return I;
+  };
+  auto Add = [&](std::string Name, std::vector<Variable> Params,
+                 std::vector<Instruction> Body) {
+    Function F;
+    F.Name = std::move(Name);
+    F.Result = intType();
+    F.Internal = true;
+    F.Loc = InputLoc;
+    F.Params = std::move(Params);
+    F.Body = {label()};
+    F.Body.insert(F.Body.end(), Body.begin(), Body.end());
+    M.Functions.push_back(std::move(F));
+  };
+  auto ZeroFloat = literal({}, Float);
+  auto A = Load(variable("nct_a", PInt)), B = Load(variable("nct_b", PFloat));
+  Add("nct_scalar", {{"nct_a", PInt, InputLoc}, {"nct_b", PFloat, InputLoc}},
+      {Store(A, literal("1")), Store(B, ZeroFloat), ret(A)});
+  A = Load(variable("nct_a", pointerType(PInt)));
+  B = Load(variable("nct_b", pointerType(PFloat)));
+  auto IsNull = binary(BinaryOperator::Equal, A, pointerExpr(ExprKind::Null, PInt), boolType());
+  Add("nct_pointer_object", {{"nct_a", pointerType(PInt), InputLoc},
+                             {"nct_b", pointerType(PFloat), InputLoc},
+                             {"nct_value", PInt, InputLoc}},
+      {Store(A, variable("nct_value", PInt)), Store(B, pointerExpr(ExprKind::Null, PFloat)),
+       ret(pointerExpr(ExprKind::Cast, intType(), {IsNull}))});
+  Type First{TypeKind::Record, "nct_first"}, Second{TypeKind::Record, "nct_second"};
+  M.Records = {{"nct_first", {{"value", intType()}}, InputLoc, RecordLayout{{32, 32}, {0}}},
+               {"nct_second", {{"value", intType()}}, InputLoc, RecordLayout{{32, 32}, {0}}}};
+  auto Field = [&](const char *Name, Type T) {
+    auto E = pointerExpr(ExprKind::Member, intType(), {Load(variable(Name, pointerType(T)))});
+    E.Name = "value";
+    return E;
+  };
+  A = Field("nct_a", First);
+  B = Field("nct_b", Second);
+  Add("nct_record", {{"nct_a", pointerType(First), InputLoc}, {"nct_b", pointerType(Second), InputLoc}},
+      {Store(A, literal("11")), Store(B, literal("22")), ret(A)});
+  auto Element = [&](const char *Name, Type T) {
+    auto Decay = pointerExpr(ExprKind::ArrayDecay, pointerType(T),
+                            {Load(variable(Name, pointerType(arrayType(T, 2))))});
+    return pointerExpr(ExprKind::Index, T, {std::move(Decay), literal("1")});
+  };
+  A = Element("nct_a", intType());
+  B = Element("nct_b", Float);
+  Add("nct_array", {{"nct_a", pointerType(arrayType(intType(), 2)), InputLoc},
+                    {"nct_b", pointerType(arrayType(Float, 2)), InputLoc}},
+      {Store(A, literal("17")), Store(B, ZeroFloat), ret(A)});
+  auto Callback = functionPointerType(intType(), {PInt, PFloat});
+  Instruction Call;
+  Call.Op = InstructionKind::IndirectCall;
+  Call.Loc = InputLoc;
+  Call.Callable = variable("nct_callback", Callback);
+  Call.Args = {variable("nct_a", PInt), variable("nct_b", PFloat)};
+  Call.Target = variable("nct_result");
+  Add("nct_callback_access", {{"nct_callback", Callback, InputLoc},
+                              {"nct_a", PInt, InputLoc}, {"nct_b", PFloat, InputLoc}},
+      {Call, ret(variable("nct_result"))});
+  M.Functions.back().Locals = {{"nct_result", intType(), InputLoc}};
+  // Compile the complete recursive declarator graph as well: a self pointer,
+  // record array, and callback whose arguments include const array/pointer
+  // objects. These aliases must follow complete records and precede fields.
+  Type Holder{TypeKind::Record, "nct_holder"};
+  auto NestedCallback = functionPointerType(pointerType(intType(), true),
+      {pointerType(arrayType(First, 2), true), pointerType(PInt, true)});
+  M.Records.push_back({"nct_holder", {{"next", pointerType(Holder)},
+                                     {"items", arrayType(First, 2)},
+                                     {"callback", NestedCallback}},
+                       InputLoc, RecordLayout{{192, 64}, {0, 64, 128}}});
+  return M;
+}
+class TranslateLifetimeIRTest : public NeverCTest {};
+} // namespace
+
+TEST_F(TranslateLifetimeIRTest, SavedNCUsesAliasPermissiveStorageAcrossFunctions) {
+  auto M = lifetimeAccessModule();
+  M.Target.Triple = hostTriple();
+  EmittedSource Out;
+  Diagnostics D;
+  ASSERT_TRUE(emitNC(M, context(M), Out, D));
+  auto Source = tmpFile("lifetime-access.nc");
+  writeFile(Source, Out.Text + R"nc(
+int main(void) {
+  int scalar = 9;
+  if (nct_scalar(&scalar, (float *)(void *)&scalar) != 0) return 1;
+  int *pointer = &scalar;
+  if (nct_pointer_object(&pointer, (float **)(void *)&pointer, &scalar) != 1) return 2;
+  nct_first record = {3};
+  if (nct_record(&record, (nct_second *)(void *)&record) != 22) return 3;
+  int array[2] = {4, 5};
+  if (nct_array(&array, (float (*)[2])(void *)&array) != 0) return 4;
+  if (nct_callback_access(nct_scalar, &scalar, (float *)(void *)&scalar) != 0) return 5;
+  return 0;
+}
+)nc");
+  for (const std::vector<std::string> Flags :
+       {std::vector<std::string>{"-O0"}, {"-O2"}, {"-O2", "-fstrict-aliasing"}}) {
+    SCOPED_TRACE(::testing::PrintToString(Flags));
+    auto Executable = tmpFile("lifetime-access");
+    std::vector<std::string> Args = {Source.string(), "-fno-inline", "-fno-lto",
+        "-fno-builtin-mimalloc", "-o", Executable.string()};
+    Args.insert(Args.end(), Flags.begin(), Flags.end());
+    auto Compile = ncc(Args);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}

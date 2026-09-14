@@ -4,6 +4,8 @@
 
 # C++ を NeverC に変換する
 
+Core v2 は非仮想レコードの明示的デストラクター呼び出しとスカラーの擬似デストラクター呼び出しに対応し、レシーバーの評価と既存の自動破棄を保持します。未評価のテンプレート照会は未使用の本体を実体化しません。生成する C23 は検証済みの別名参照可能なオブジェクト型を使用します。ネイティブ検証には実装版の CI が必要です。割り当て、placement による再構築、例外、標準ヘッダー、完全な C++/STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+
 実験的な `neverc translate` は `cpp-core-v1`、`cpp-core-v2`、`cpp-project-v1`、`cpp-math-v1` でレビュー可能な `.nc` ソースを生成します。
 
 **現在、入力言語として実装されているのは C++ のみです。** E Language（易言語、`.e`）、Python、Go、Rust、TypeScript、JavaScript への対応は今後の計画であり、これらの変換機能はまだ利用できません。

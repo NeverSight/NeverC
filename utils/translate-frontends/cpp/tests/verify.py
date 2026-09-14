@@ -1849,7 +1849,6 @@ Leaf&selectedAssignment(Leaf&a,Leaf&b){return a=static_cast<Leaf&&>(b);}
         'throw-body': 'int f()noexcept{throw 1;}',
         'catch-body': 'int f()noexcept(false){try{return 1;}catch(...){return 2;}}',
         'vendor-nothrow': '__attribute__((nothrow)) int f(){return 1;}',
-        'explicit-destruction-query': 'struct R{int n;~R()noexcept{}};bool f(R&r){return noexcept(r.~R());}',
     }
     for name, source in noexcept_rejected.items():
         check("v2-" + 'noexcept_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
@@ -5344,6 +5343,96 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     with tempfile.TemporaryDirectory(prefix="neverc-dynamic-temporary-relocated-") as temp:
         relocated = check("v2-dynamic-temporary-relocated", dt_source, root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == dt_module
+
+    explicit_destruction_positive = {
+        'class-defaulted': 'template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}',
+        'class-body': 'template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}',
+        'class-dead': 'template<class T>struct R{~R(){}};void f(R<int>&r){if(false)r.~R();}',
+        'query': 'struct R{int n;~R()noexcept{}};bool f(R&r){return noexcept(r.~R());}',
+        'defaulted-local': 'struct R{int n;~R()=default;};void f(){R r{1};r.~R();}',
+        'record-body': 'struct R{int n;~R(){}};void f(R&r){r.~R();}',
+        'record-dead': 'struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}',
+        'record-alias': 'struct R{int n;~R(){}};using T=R;void f(R&r){r.~T();}',
+        'arrow': 'struct R{int n;~R(){++n;}};void f(R*p){p->~R();}',
+        'const': 'struct R{int*p;~R(){++*p;}};void f(const R&r){r.~R();}',
+        'qualified': 'namespace N{struct R{int n;~R(){}};}void f(N::R*p){p->N::R::~R();}',
+        'outside': 'struct R{int n;~R();};R::~R(){++n;}void f(R*p){p->~R();}',
+        'implicit-trivial': 'struct R{int n;};void f(R*p){p->~R();}',
+        'implicit-members': 'struct I{int n;~I(){++n;}};struct R{I values[2];};void f(R*p){p->~R();}',
+        'defaulted-members': 'struct I{int n;~I(){++n;}};struct R{I values[2];~R()=default;};void f(R*p){p->~R();}',
+        'receiver-effects': 'struct R{int n;~R(){++n;}};R*next(R*p,int&n){++n;return p;}void f(R*p,int&n){next(p,n)->~R();}',
+        'conditional-receiver': 'struct R{int n;~R(){++n;}};void f(bool b,R&a,R&c){(b?a:c).~R();}',
+        'template-record': 'template<class T>void destroy(T*p){p->~T();}struct R{int n;~R(){++n;}};void f(R*p){destroy(p);}',
+        'template-scalar': 'template<class T>void destroy(T*p){p->~T();}void f(int*p){destroy(p);}',
+        'template-qualified-scalar': 'template<class T>void destroy(T*p){p->T::~T();}void f(int*p){destroy(p);}',
+        'dependent-record-alias': 'template<class T>struct R{using Self=R;int n;~R(){++n;}void destroy(){this->~Self();}};void f(R<int>*p){p->destroy();}',
+        'template-outside': 'template<class T>struct R{T n;~R();};template<class T>R<T>::~R(){++n;}void f(R<int>*p){p->~R();}',
+        'query-declared-template': 'template<class T>struct R{T n;~R()noexcept;};bool f(R<int>&r){return noexcept(r.~R());}',
+        'query-lazy-body': 'template<class T>struct R{T n;~R()noexcept{T::missing();}};bool f(R<int>&r){return noexcept(r.~R());}',
+        'query-sizeof': 'struct R{int n;~R(){++n;}};unsigned long long f(R&r){return sizeof((r.~R(),1));}',
+        'scalar-uninitialized': 'using I=int;void f(){I n;n.~I();}',
+        'scalar-arrow': 'using I=int;void f(I*p){p->~I();}',
+        'scalar-qualified': 'using I=int;void f(I*p){p->I::~I();}',
+        'scalar-const': 'using I=int;void f(const I&v){v.~I();}',
+        'scalar-float': 'using F=float;void f(F&v){v.~F();}',
+        'scalar-enum': 'enum E{a,b};void f(E&v){v.~E();}',
+        'scalar-pointer': 'using P=int*;void f(){P p;p.~P();}',
+        'scalar-callback': 'using F=int(*)(int);void f(){F p;p.~F();}',
+        'scalar-nullptr': 'using N=decltype(nullptr);void f(){N p;p.~N();}',
+        'scalar-comma': 'using I=int;void f(I&v,int&calls){(++calls,v).~I();}',
+        'scalar-index': 'using I=int;void f(I*p,int&i){p[i++].~I();}',
+        'scalar-temporary-base': 'using I=int;struct R{I n;~R(){}};void f(){R{1}.n.~I();}',
+        'protocol-source': 'int effects=0;\nint calls=0;\nstruct Leaf{int tag;~Leaf(){effects=effects*10+tag;}};\nstruct Box{Leaf items[2];~Box(){effects+=3;}};\nvoid destroy(Box*p){p->~Box();}\nvoid destroyConst(const Box&p){p.~Box();}\nvoid keepAutomatic(){Box box{{{1},{2}}};if(false)box.~Box();}\nusing I=int;\nI*next(I*p){++calls;return p;}\nvoid pseudo(I*p){next(p)->~I();}\nvoid uninitialized(){I value;value.~I();}\nbool query(Box&p){return noexcept(p.~Box());}\n',
+        'runtime-source': 'int calls=0;\nint constructions=0;\nusing I=int;\nusing P=int*;\nusing F=int(*)(int);\nusing N=decltype(nullptr);\nI*next(I*p){++calls;return p;}\nstruct R{int n;R(int value):n(value){++constructions;}~R()=default;};\nR*nextRecord(R*p){++calls;return p;}\ntemplate<class T>void destroy(T*p){p->T::~T();}\nstruct Counter{~Counter(){++calls;}};\nint main(){\n I value;value.~I();if(calls)return 1;\n I second;next(&second)->~I();if(calls!=1)return 2;\n I third;destroy(&third);if(calls!=1)return 3;\n I array[2];int index=0;array[index++].~I();if(index!=1)return 4;\n I fourth;(++calls,fourth).~I();if(calls!=2)return 5;\n P pointer;pointer.~P();F callback;callback.~F();N nullValue;nullValue.~N();\n {R record(3);nextRecord(&record)->~R();}if(calls!=3||constructions!=1)return 6;\n {const R record(4);record.~R();}if(constructions!=2)return 7;\n {R record(5);destroy(&record);}if(constructions!=3)return 8;\n {Counter counter;if(false)counter.~Counter();}if(calls!=4)return 9;\n I fifth;bool quiet=noexcept(next(&fifth)->~I());if(quiet||calls!=4)return 10;\n return 0;\n}\n',
+    }
+    for name, source in explicit_destruction_positive.items():
+        result = check("v2-explicit-destruction-"+name, source, profile="cpp-core-v2")
+        assert result.get("memory_lifetimes") is True
+    explicit_destruction_negative = {
+        'virtual': ('struct R{virtual ~R(){}};void f(R*p){p->~R();}', 'TR0201'),
+        'deleted': ('struct R{~R()=delete;};void f(R*p){p->~R();}', 'TR0202'),
+        'private': ('class R{~R(){}};void f(R*p){p->~R();}', 'TR0202'),
+        'missing': ('struct R{int n;~R();};void f(R*p){p->~R();}', 'TR0203'),
+        'missing-template': ('template<class T>struct R{T n;~R();};void f(R<int>*p){p->~R();}', 'TR0203'),
+        'body-source': ('struct R{int n;~R(){long double bad=1;}};void f(R*p){p->~R();}', 'TR0201'),
+        'spec-source': ('template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0);};bool f(R<int>&r){return noexcept(r.~R());}', 'TR0201'),
+        'scalar-type': ('using T=long double;void f(T&p){p.~T();}', 'TR0201'),
+        'scalar-source-erasure': ('using I=int;void f(I&n){(sizeof(long double),n).~I();}', 'TR0201'),
+        'scalar-volatile': ('using I=int;void f(volatile I&n){n.~I();}', 'TR0201'),
+        'scalar-wrong-type': ('using I=int;using F=float;void f(I&p){p.~F();}', 'TR0202'),
+        'scalar-argument': ('using I=int;void f(I&p){p.~I(1);}', 'TR0202'),
+        'runtime-template-body': ('template<class T>struct R{T n;~R(){T::missing();}};void f(R<int>&r){r.~R();}', 'TR0202'),
+    }
+    for name, (source, code) in explicit_destruction_negative.items():
+        check("v2-explicit-destruction-reject-"+name, source, code, profile="cpp-core-v2")
+    for name, source in {
+        "scalar": "using I=int;void f(I&n){n.~I();}",
+        "record": "struct R{int n;};void f(R&r){r.~R();}",
+    }.items():
+        check("v1-explicit-destruction-"+name, source, "TR0201")
+    ed = check("v2-explicit-destruction-protocol", explicit_destruction_positive["protocol-source"], profile="cpp-core-v2")
+    by_line = {f["loc"]["line"]: f for f in ed["functions"] if not f["name"].endswith("_destroy")}
+    box = next(r for r in ed["records"] if r["loc"]["line"] == 4)
+    helper = next(f for f in ed["functions"] if f["name"].endswith("_destroy") and f["params"][0]["type"] == "ptr:"+box["id"])
+    for line in (5, 6):
+        calls = [i for i in by_line[line]["body"] if i["op"] == "call"]
+        assert len(calls) == 1 and calls[0]["callee"] == helper["name"], calls
+        assert calls[0]["args"][0]["type"] == "ptr:"+box["id"]
+    assert by_line[6]["params"][0]["type"] == "cptr:"+box["id"]
+    assert any(n.get("kind") == "cast" and n["type"] == "ptr:"+box["id"] for n in walk(by_line[6]))
+    # Pruned explicit destruction does not cancel the automatic cleanup.
+    assert len([i for i in by_line[7]["body"] if i["op"] == "call" and i["callee"] == helper["name"]]) == 1
+    calls = [i for i in by_line[10]["body"] if i["op"] == "call"]
+    assert len(calls) == 1 and calls[0]["callee"] == by_line[9]["name"]
+    assert not any(i["op"] in ("assign", "call") for i in by_line[11]["body"])
+    assert not any(i["op"] == "call" for i in by_line[12]["body"])
+    for name in ("query-declared-template", "query-lazy-body"):
+        query = check("v2-explicit-destruction-lazy-"+name, explicit_destruction_positive[name], profile="cpp-core-v2")
+        assert len(query["functions"]) == 1
+        assert not any(i["op"] == "call" for i in query["functions"][0]["body"])
+    with tempfile.TemporaryDirectory(prefix="neverc-explicit-destruction-relocated-") as temp:
+        relocated = check("v2-explicit-destruction-relocated", explicit_destruction_positive["protocol-source"], root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == ed
 
     array_filler_positive = {
         'scalar': 'struct R{const int&r=3;};const R r[2]{};',
@@ -13627,7 +13716,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'query-destructor-spec': 'template<class T>struct R{T n;~R()noexcept(sizeof(this->n)==sizeof(long double))=default;};bool f(){return noexcept(R<int>{1});}',
         'attribute': 'template<class T>struct R{[[deprecated]]R()=default;};',
         'virtual': 'template<class T>struct R{virtual ~R()=default;};',
-        'explicit-destruction': 'template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}',
         'outer-type': 'template<int N>struct R{R();};template<decltype(static_cast<int>(1.0L)) N>R<N>::R()=default;',
     }
     for name, source in class_defaulted_reject.items():
@@ -13857,8 +13945,6 @@ bool query(){return noexcept(Lazy<int>{1});}
         'outer-parameter-type': 'template<int N>struct R{~R();};template<decltype(static_cast<int>(1.0L)) N>R<N>::~R(){}',
         'attribute': 'template<class T>struct R{[[deprecated]]~R(){}};',
         'virtual': 'template<class T>struct R{virtual ~R(){}};',
-        'explicit-call': 'template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}',
-        'dead-explicit-call': 'template<class T>struct R{~R(){}};void f(R<int>&r){if(false)r.~R();}',
         'global-lifetime': 'template<class T>struct R{~R(){}};R<int>r;',
         'static-lifetime': 'template<class T>struct R{~R(){}};void f(){static R<int>r;}',
         'ordinary-unused-unsupported-member': 'template<class T>struct R{~R(){long double n=1.0L;}};struct W{R<int>r;~W(){}};',
@@ -15252,7 +15338,6 @@ int query(){return sizeof(Lazy{});}
         assert relocated == defaulted, "defaulted lifecycle identities depend on the absolute root"
     defaulted_rejected = {
         'virtual-destructor': 'struct R{int n;virtual ~R()=default;};',
-        'explicit-destruction': 'struct R{int n;~R()=default;};void f(){R r{1};r.~R();}',
         'throwing-member-constructor': 'struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};',
     }
     for name, source in defaulted_rejected.items():
@@ -15361,9 +15446,6 @@ int main(){int value=0;R result=make(&value);return consume(R(&value,6));}
 
     destruction_rejected = {
         'virtual': 'struct R{int n;virtual ~R(){}};',
-        'explicit-call': 'struct R{int n;~R(){}};void f(R&r){r.~R();}',
-        'explicit-dead-call': 'struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}',
-        'explicit-alias-call': 'struct R{int n;~R(){}};using T=R;void f(R&r){r.~T();}',
         'global': 'struct R{int n;~R(){}};const R r{1};',
         'global-containing': 'struct R{int n;~R(){}};struct Box{R r;};const Box box{{1}};',
         'static-local': 'struct R{int n;~R(){}};int f(){static R r{1};return r.n;}',

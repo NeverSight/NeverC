@@ -699,6 +699,8 @@ bool supportedAssignment(const CXXMethodDecl *M) {
 }
 
 bool callableMethod(const CXXMethodDecl *M) {
+  if (const auto *D = dyn_cast_or_null<CXXDestructorDecl>(M))
+    return ordinaryDestructor(D) || defaultedLifecycle(D);
   return ordinaryMethod(M) || ordinaryOperator(M) ||
          ordinaryConversion(dyn_cast_or_null<CXXConversionDecl>(M)) || supportedAssignment(M);
 }
@@ -1229,6 +1231,27 @@ bool needsDestruction(QualType T) {
     T = Array->getElementType();
   const auto *Record = T->getAsCXXRecordDecl();
   return Record && !Record->hasTrivialDestructor();
+}
+
+const CXXPseudoDestructorExpr *scalarDestruction(const CallExpr *Call,
+                                                ASTContext &Context) {
+  if (!Call || Call->getNumArgs() || !Call->getType()->isVoidType() ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return nullptr;
+  const auto *D = dyn_cast<CXXPseudoDestructorExpr>(Call->getCallee()->IgnoreParens());
+  if (!D || !D->getBase() || !D->getDestroyedTypeInfo())
+    return nullptr;
+  auto Object = D->getBase()->getType();
+  if (D->isArrow()) {
+    if (!Object->isPointerType())
+      return nullptr;
+    Object = Object->getPointeeType();
+  }
+  auto Destroyed = D->getDestroyedType();
+  return !Destroyed.isNull() && Destroyed->isScalarType() &&
+                 Context.hasSameUnqualifiedType(Object, Destroyed)
+             ? D : nullptr;
 }
 
 std::string Adapter::destructionName(const CXXRecordDecl *Record) {
@@ -8956,8 +8979,11 @@ public:
     // The visitor is preorder. Mark only the direct callee path before its
     // children are inspected, including Clang's BoundMemberTy expressions.
     if (A.S.coreV2())
-      if (const auto *Call = dyn_cast<CallExpr>(S))
-        if (const auto *Leaf = directFunctionReference(Call)) {
+      if (const auto *Call = dyn_cast<CallExpr>(S)) {
+        const Expr *Leaf = directFunctionReference(Call);
+        if (!Leaf)
+          Leaf = scalarDestruction(Call, A.Context);
+        if (Leaf) {
           // BuildOverloadedCallExpr ranks candidates at the complete callee's
           // expression location, which can be a parenthesis before the name.
           DirectTemplateCallLocations.emplace(Leaf, Call->getCallee()->getExprLoc());
@@ -8972,6 +8998,7 @@ public:
               E = cast<ImplicitCastExpr>(E)->getSubExpr();
           }
         }
+      }
     if (const auto *E = dyn_cast<Expr>(S)) {
       // Clang's unevaluated diagnostic strings have no QualType. They can
       // appear below an already rejected declaration (for example a v1
@@ -9096,7 +9123,8 @@ public:
               DefaultStmt, AttributedStmt, CharacterLiteral, StringLiteral,
               UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
               CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt,
-              SubstNonTypeTemplateParmExpr, SizeOfPackExpr>(S)) &&
+              SubstNonTypeTemplateParmExpr, SizeOfPackExpr,
+              CXXPseudoDestructorExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -9108,6 +9136,9 @@ public:
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
+      if (const auto *D = dyn_cast<CXXPseudoDestructorExpr>(S);
+          D && !DirectFunctionCallees.count(D))
+        A.reject(L, "scalar destruction", "A checked zero-argument pseudo-destructor call is required.");
       if (isa<UserDefinedLiteral>(S))
         A.reject(L, "user-defined literal",
                  "User-defined literal calls require their own checked source contract.");
@@ -9154,6 +9185,14 @@ public:
     if (const auto *C = dyn_cast<CallExpr>(S)) {
       if (GeneratedArrayAssignments.count(C))
         return true; // Its typed argument subtrees are still visited by RAV.
+      if (A.S.coreV2())
+        if (const auto *D = scalarDestruction(C, A.Context)) {
+          A.type(D->getDestroyedType(), L);
+          if (const auto *Scope = D->getScopeTypeInfo())
+            A.type(Scope->getType(), L);
+          A.S.Module["memory_lifetimes"] = true;
+          return true; // RAV still checks the base, qualifier and written types.
+        }
       if (A.S.coreV2() && !directFunctionReference(C) &&
           C->getCallee()->getType()->isFunctionPointerType()) {
         if (A.functionPointerType(C->getCallee()->getType(), L).empty())
@@ -9174,9 +9213,26 @@ public:
         if (Reference && Reference->getMemberLoc().isInvalid())
           checkSelectedTemplateCall(C, F, L);
       }
-      if (A.S.coreV2() && isa_and_nonnull<CXXDestructorDecl>(F))
-        A.reject(S->getBeginLoc(), "explicit destructor call",
-                 "Explicit destruction requires separate lifetime restart rules.");
+      if (A.S.coreV2())
+        if (const auto *D = dyn_cast_or_null<CXXDestructorDecl>(F)) {
+          const auto *Reference = dyn_cast_or_null<MemberExpr>(directMethodReference(C));
+          const auto *Record = D->getParent()->getDefinition();
+          if (C->getNumArgs() || !Reference || !callableMethod(D) ||
+              !Record || !owned(Record)) {
+            A.reject(L, "explicit destructor call", "A direct nonvirtual destructor of an admitted owned record is required.");
+          } else {
+            auto Object = A.Context.getRecordType(Record);
+            A.type(Object, L);
+            const auto *Base = Reference->getBase();
+            if (Reference->isArrow() ? temporaryArrayBase(Base, true)
+                                      : temporaryBinding(Base, true))
+              A.reject(L, "destructor receiver", "A supported live or full-expression temporary receiver is required.");
+            // Unevaluated uses do not instantiate a lazy destructor body.
+            // Actual runtime lowering queues the required destruction helper.
+            A.S.Module["memory_lifetimes"] = true;
+          }
+          return true; // A trivial defaulted destructor need not have a body.
+        }
       const auto *Operator = dyn_cast<CXXOperatorCallExpr>(C);
       unsigned ArgumentOffset = Operator && Method && !Method->isStatic() ? 1 : 0;
       // This inline operator form already supports materialized temporaries.

@@ -487,6 +487,10 @@ public:
       return error("Incompatible frontend protocol major version.");
     Math = M.Profile == "cpp-math-v1";
     CoreV2 = M.Profile == "cpp-core-v2";
+    if (O.get("memory_lifetimes") &&
+        (!CoreV2 || !boolean(O, "memory_lifetimes", M.MemoryLifetimes) ||
+         !M.MemoryLifetimes))
+      return error("Memory lifetimes require true core v2 evidence.");
     const auto *F = O.getObject("frontend");
     const auto *T = O.getObject("target");
     if (!F || !T)
@@ -1602,6 +1606,8 @@ public:
     if (!SupportedProfile || M.Profile != Context.Profile)
       return fail(D, "TR0003", Anchor, "translation profile",
                   "Unsupported or mismatched semantic profile.");
+    if (M.MemoryLifetimes && M.Profile != "cpp-core-v2")
+      return error(Anchor, "Memory lifetimes require core v2.");
     llvm::Triple T(llvm::Triple::normalize(M.Target.Triple));
     llvm::Triple Requested(llvm::Triple::normalize(Context.TargetTriple));
     if (M.Target.Triple.empty() || Context.TargetTriple.empty() ||

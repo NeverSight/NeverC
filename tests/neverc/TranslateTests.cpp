@@ -4307,6 +4307,137 @@ int main(){
   }
 }
 
+
+TEST_F(TranslateTest, CoreV2ExplicitDestructionAcceptsSourceLifetimes) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"class-defaulted", "template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}"},
+      {"class-body", "template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}"},
+      {"class-dead", "template<class T>struct R{~R(){}};void f(R<int>&r){if(false)r.~R();}"},
+      {"query", "struct R{int n;~R()noexcept{}};bool f(R&r){return noexcept(r.~R());}"},
+      {"defaulted-local", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},
+      {"record-body", "struct R{int n;~R(){}};void f(R&r){r.~R();}"},
+      {"record-dead", "struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}"},
+      {"record-alias", "struct R{int n;~R(){}};using T=R;void f(R&r){r.~T();}"},
+      {"arrow", "struct R{int n;~R(){++n;}};void f(R*p){p->~R();}"},
+      {"const", "struct R{int*p;~R(){++*p;}};void f(const R&r){r.~R();}"},
+      {"qualified", "namespace N{struct R{int n;~R(){}};}void f(N::R*p){p->N::R::~R();}"},
+      {"outside", "struct R{int n;~R();};R::~R(){++n;}void f(R*p){p->~R();}"},
+      {"implicit-trivial", "struct R{int n;};void f(R*p){p->~R();}"},
+      {"implicit-members", "struct I{int n;~I(){++n;}};struct R{I values[2];};void f(R*p){p->~R();}"},
+      {"defaulted-members", "struct I{int n;~I(){++n;}};struct R{I values[2];~R()=default;};void f(R*p){p->~R();}"},
+      {"receiver-effects", "struct R{int n;~R(){++n;}};R*next(R*p,int&n){++n;return p;}void f(R*p,int&n){next(p,n)->~R();}"},
+      {"conditional-receiver", "struct R{int n;~R(){++n;}};void f(bool b,R&a,R&c){(b?a:c).~R();}"},
+      {"template-record", "template<class T>void destroy(T*p){p->~T();}struct R{int n;~R(){++n;}};void f(R*p){destroy(p);}"},
+      {"template-scalar", "template<class T>void destroy(T*p){p->~T();}void f(int*p){destroy(p);}"},
+      {"template-qualified-scalar", "template<class T>void destroy(T*p){p->T::~T();}void f(int*p){destroy(p);}"},
+      {"dependent-record-alias", "template<class T>struct R{using Self=R;int n;~R(){++n;}void destroy(){this->~Self();}};void f(R<int>*p){p->destroy();}"},
+      {"template-outside", "template<class T>struct R{T n;~R();};template<class T>R<T>::~R(){++n;}void f(R<int>*p){p->~R();}"},
+      {"query-declared-template", "template<class T>struct R{T n;~R()noexcept;};bool f(R<int>&r){return noexcept(r.~R());}"},
+      {"query-lazy-body", "template<class T>struct R{T n;~R()noexcept{T::missing();}};bool f(R<int>&r){return noexcept(r.~R());}"},
+      {"query-sizeof", "struct R{int n;~R(){++n;}};unsigned long long f(R&r){return sizeof((r.~R(),1));}"},
+      {"scalar-uninitialized", "using I=int;void f(){I n;n.~I();}"},
+      {"scalar-arrow", "using I=int;void f(I*p){p->~I();}"},
+      {"scalar-qualified", "using I=int;void f(I*p){p->I::~I();}"},
+      {"scalar-const", "using I=int;void f(const I&v){v.~I();}"},
+      {"scalar-float", "using F=float;void f(F&v){v.~F();}"},
+      {"scalar-enum", "enum E{a,b};void f(E&v){v.~E();}"},
+      {"scalar-pointer", "using P=int*;void f(){P p;p.~P();}"},
+      {"scalar-callback", "using F=int(*)(int);void f(){F p;p.~F();}"},
+      {"scalar-nullptr", "using N=decltype(nullptr);void f(){N p;p.~N();}"},
+      {"scalar-comma", "using I=int;void f(I&v,int&calls){(++calls,v).~I();}"},
+      {"scalar-index", "using I=int;void f(I*p,int&i){p[i++].~I();}"},
+      {"scalar-temporary-base", "using I=int;struct R{I n;~R(){}};void f(){R{1}.n.~I();}"},
+      {"protocol-source", "int effects=0;\nint calls=0;\nstruct Leaf{int tag;~Leaf(){effects=effects*10+tag;}};\nstruct Box{Leaf items[2];~Box(){effects+=3;}};\nvoid destroy(Box*p){p->~Box();}\nvoid destroyConst(const Box&p){p.~Box();}\nvoid keepAutomatic(){Box box{{{1},{2}}};if(false)box.~Box();}\nusing I=int;\nI*next(I*p){++calls;return p;}\nvoid pseudo(I*p){next(p)->~I();}\nvoid uninitialized(){I value;value.~I();}\nbool query(Box&p){return noexcept(p.~Box());}\n"},
+      {"runtime-source", "int calls=0;\nint constructions=0;\nusing I=int;\nusing P=int*;\nusing F=int(*)(int);\nusing N=decltype(nullptr);\nI*next(I*p){++calls;return p;}\nstruct R{int n;R(int value):n(value){++constructions;}~R()=default;};\nR*nextRecord(R*p){++calls;return p;}\ntemplate<class T>void destroy(T*p){p->T::~T();}\nstruct Counter{~Counter(){++calls;}};\nint main(){\n I value;value.~I();if(calls)return 1;\n I second;next(&second)->~I();if(calls!=1)return 2;\n I third;destroy(&third);if(calls!=1)return 3;\n I array[2];int index=0;array[index++].~I();if(index!=1)return 4;\n I fourth;(++calls,fourth).~I();if(calls!=2)return 5;\n P pointer;pointer.~P();F callback;callback.~F();N nullValue;nullValue.~N();\n {R record(3);nextRecord(&record)->~R();}if(calls!=3||constructions!=1)return 6;\n {const R record(4);record.~R();}if(constructions!=2)return 7;\n {R record(5);destroy(&record);}if(constructions!=3)return 8;\n {Counter counter;if(false)counter.~Counter();}if(calls!=4)return 9;\n I fifth;bool quiet=noexcept(next(&fifth)->~I());if(quiet||calls!=4)return 10;\n return 0;\n}\n"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("explicit-destruction-" + Name + ".cpp");
+    auto Output = tmpFile("explicit-destruction-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_NE(readFile(Output).find("__has_attribute(may_alias)"), std::string::npos);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExplicitDestructionRetainsSourceBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"virtual", "struct R{virtual ~R(){}};void f(R*p){p->~R();}", "TR0201"},
+      {"deleted", "struct R{~R()=delete;};void f(R*p){p->~R();}", "TR0202"},
+      {"private", "class R{~R(){}};void f(R*p){p->~R();}", "TR0202"},
+      {"missing", "struct R{int n;~R();};void f(R*p){p->~R();}", "TR0203"},
+      {"missing-template", "template<class T>struct R{T n;~R();};void f(R<int>*p){p->~R();}", "TR0203"},
+      {"body-source", "struct R{int n;~R(){long double bad=1;}};void f(R*p){p->~R();}", "TR0201"},
+      {"spec-source", "template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0);};bool f(R<int>&r){return noexcept(r.~R());}", "TR0201"},
+      {"scalar-type", "using T=long double;void f(T&p){p.~T();}", "TR0201"},
+      {"scalar-source-erasure", "using I=int;void f(I&n){(sizeof(long double),n).~I();}", "TR0201"},
+      {"scalar-volatile", "using I=int;void f(volatile I&n){n.~I();}", "TR0201"},
+      {"scalar-wrong-type", "using I=int;using F=float;void f(I&p){p.~F();}", "TR0202"},
+      {"scalar-argument", "using I=int;void f(I&p){p.~I(1);}", "TR0202"},
+      {"runtime-template-body", "template<class T>struct R{T n;~R(){T::missing();}};void f(R<int>&r){r.~R();}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("explicit-destruction-reject-" + Name + ".cpp");
+    auto Output = tmpFile("explicit-destruction-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+  for (const auto &Code : {"using I=int;void f(I&n){n.~I();}",
+                           "struct R{int n;};void f(R&r){r.~R();}"}) {
+    auto Source = tmpFile("explicit-destruction-v1.cpp");
+    auto Output = tmpFile("explicit-destruction-v1.nc");
+    writeFile(Source, Code);
+    expectCode(translate(Source, {"-o", Output.string()}), "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ExplicitDestructionPreservesReceiverEffectsAndCleanup) {
+  auto Source = tmpFile("explicit-destruction-runtime.cpp");
+  auto Output = tmpFile("explicit-destruction-runtime.nc");
+  writeFile(Source, R"cpp(int calls=0;
+int constructions=0;
+using I=int;
+using P=int*;
+using F=int(*)(int);
+using N=decltype(nullptr);
+I*next(I*p){++calls;return p;}
+struct R{int n;R(int value):n(value){++constructions;}~R()=default;};
+R*nextRecord(R*p){++calls;return p;}
+template<class T>void destroy(T*p){p->T::~T();}
+struct Counter{~Counter(){++calls;}};
+int main(){
+ I value;value.~I();if(calls)return 1;
+ I second;next(&second)->~I();if(calls!=1)return 2;
+ I third;destroy(&third);if(calls!=1)return 3;
+ I array[2];int index=0;array[index++].~I();if(index!=1)return 4;
+ I fourth;(++calls,fourth).~I();if(calls!=2)return 5;
+ P pointer;pointer.~P();F callback;callback.~F();N nullValue;nullValue.~N();
+ {R record(3);nextRecord(&record)->~R();}if(calls!=3||constructions!=1)return 6;
+ {const R record(4);record.~R();}if(constructions!=2)return 7;
+ {R record(5);destroy(&record);}if(constructions!=3)return 8;
+ {Counter counter;if(false)counter.~Counter();}if(calls!=4)return 9;
+ I fifth;bool quiet=noexcept(next(&fifth)->~I());if(quiet||calls!=4)return 10;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const auto &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile(std::string("explicit-destruction-runtime") + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization,
+                                     {"-fno-inline", "-fstrict-aliasing"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayFillersAcceptDistinctTemporarySources) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"scalar", "struct R{const int&r=3;};const R r[2]{};"},
@@ -14514,7 +14645,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateDefaultedMembersRetainSourceBoundaries)
       {"query-destructor-spec", "template<class T>struct R{T n;~R()noexcept(sizeof(this->n)==sizeof(long double))=default;};bool f(){return noexcept(R<int>{1});}"},
       {"attribute", "template<class T>struct R{[[deprecated]]R()=default;};"},
       {"virtual", "template<class T>struct R{virtual ~R()=default;};"},
-      {"explicit-destruction", "template<class T>struct R{~R()=default;};void f(R<int>&r){r.~R();}"},
       {"outer-type", "template<int N>struct R{R();};template<decltype(static_cast<int>(1.0L)) N>R<N>::R()=default;"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -14705,8 +14835,6 @@ TEST_F(TranslateTest, CoreV2ClassTemplateDestructorsRetainSourceAndDefinitionBou
       {"TR0201-outer-parameter-type", "template<int N>struct R{~R();};template<decltype(static_cast<int>(1.0L)) N>R<N>::~R(){}", "TR0201"},
       {"TR0201-attribute", "template<class T>struct R{[[deprecated]]~R(){}};", "TR0201"},
       {"TR0201-virtual", "template<class T>struct R{virtual ~R(){}};", "TR0201"},
-      {"TR0201-explicit-call", "template<class T>struct R{~R(){}};void f(R<int>&r){r.~R();}", "TR0201"},
-      {"TR0201-dead-explicit-call", "template<class T>struct R{~R(){}};void f(R<int>&r){if(false)r.~R();}", "TR0201"},
       {"TR0201-global-lifetime", "template<class T>struct R{~R(){}};R<int>r;", "TR0201"},
       {"TR0201-static-lifetime", "template<class T>struct R{~R(){}};void f(){static R<int>r;}", "TR0201"},
       {"TR0201-ordinary-unused-unsupported-member", "template<class T>struct R{~R(){long double n=1.0L;}};struct W{R<int>r;~W(){}};", "TR0201"},
@@ -17170,7 +17298,6 @@ TEST_F(TranslateTest, CoreV2NoexceptInspectsUnevaluatedSource) {
       {"throw-body", "int f()noexcept{throw 1;}", "TR0201"},
       {"catch-body", "int f()noexcept(false){try{return 1;}catch(...){return 2;}}", "TR0201"},
       {"vendor-nothrow", "__attribute__((nothrow)) int f(){return 1;}", "TR0201"},
-      {"explicit-destruction-query", "struct R{int n;~R()noexcept{}};bool f(R&r){return noexcept(r.~R());}", "TR0201"},
       {"nonconstant-spec", "void f(int n)noexcept(n){}", "TR0202"},
       {"incompatible-redeclaration", "int f()noexcept;int f()noexcept(false){return 1;}", "TR0202"},
       {"typed-dynamic-spec", "int f()throw(int){return 1;}", "TR0202"},
@@ -18381,7 +18508,6 @@ int main(){
 TEST_F(TranslateTest, CoreV2DefaultedLifecycleKeepsSourceAndCopyBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"virtual-destructor", "struct R{int n;virtual ~R()=default;};"},
-      {"explicit-destruction", "struct R{int n;~R()=default;};void f(){R r{1};r.~R();}"},
       {"throwing-member-constructor", "struct I{int n;I(){throw 1;}};struct R{I i;R()=default;};"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -18707,9 +18833,6 @@ int main(){
 TEST_F(TranslateTest, CoreV2RecordDestructionRetainsUnsupportedLifetimeDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"virtual", "struct R{int n;virtual ~R(){}};"},
-      {"explicit-call", "struct R{int n;~R(){}};void f(R&r){r.~R();}"},
-      {"explicit-dead-call", "struct R{int n;~R(){}};void f(R&r){if(false)r.~R();}"},
-      {"explicit-alias-call", "struct R{int n;~R(){}};using T=R;void f(R&r){r.~T();}"},
       {"global", "struct R{int n;~R(){}};const R r{1};"},
       {"global-containing", "struct R{int n;~R(){}};struct Box{R r;};const Box box{{1}};"},
       {"static-local", "struct R{int n;~R(){}};int f(){static R r{1};return r.n;}"},

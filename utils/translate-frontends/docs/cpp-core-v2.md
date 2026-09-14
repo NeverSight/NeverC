@@ -1643,7 +1643,7 @@ queue. Unused implicit/defaulted wrappers do not force an unused template member
 destructor body. Ordinary materialized user bodies remain checked and emitted.
 There is no opaque source or binary fallback and no external Clang process.
 
-Explicit destructor calls and lifetime restart, virtual dispatch/bases,
+Explicit destructor calls follow their separate contract below. Lifetime restart, virtual dispatch/bases,
 static-duration destruction and the other unsupported
 template forms remain unfinished. Native O0/O2 fixtures check body/member/array
 order, control-flow exits, temporary/reference/parameter/result storage, copy/move,
@@ -3927,6 +3927,50 @@ mutable sources, returned aliases, self/chained assignment, pointer capture and
 value-read sequencing, destruction counts, lazy definitions and deterministic
 relocation. Native results require the implementing revision's CI.
 
+## Explicit destruction
+
+Core v2 admits direct nonvirtual destructor calls on the complete owned records
+already supported by this profile. Dot, arrow, qualified names and aliases retain
+the selected destructor, including admitted class and function template instances.
+A nontrivial call evaluates its receiver once, passes its actual address to the
+existing destruction helper, executes the body and then destroys members in
+reverse order. Const receivers use the destructor's unqualified internal `this`.
+Trivial implicit/defaulted destructors evaluate the receiver without requiring a
+body or reading the complete object.
+
+Scalar pseudo-destructor calls require an exact resolved scalar type and an empty
+argument list. Dot operands designate storage without loading an uninitialized
+scalar; arrow operands evaluate the pointer. Original bases, qualifiers, scope
+types and destroyed-type spellings remain inspected. These operations follow
+[C++17 pseudo-destructor semantics](https://timsong-cpp.github.io/cppwp/n4659/expr.pseudo).
+
+An explicit call does not cancel a registered automatic or temporary cleanup.
+Defined source must satisfy the original object's later lifetime obligations;
+the translator does not detect every lifetime violation or reconstruct an object
+implicitly. `noexcept` and other unevaluated uses emit no destruction and do not
+force an otherwise unused template destructor body. Written specifications and
+materialized bodies retain source checks. See
+[C++17 object lifetime](https://timsong-cpp.github.io/cppwp/n4659/basic.life).
+
+The module records `memory_lifetimes: true` when these source operations are
+admitted, including unevaluated occurrences. The C23 emitter then marks every
+source object carrier with `may_alias`: scalar typedefs, pointer objects and
+pointees, nested arrays, callback signatures, and record tags/fields. Functions,
+globals, locals, casts and helper pointer signatures use these types consistently
+across calls. Target/layout and callback guards remain mandatory. This policy
+preserves permissive memory accesses under ordinary optimization; it grants no
+new typed IR operations, const writes or ownership authority. Private pure
+arithmetic helpers and atomic initialization guards expose no source storage and
+retain their existing declarations. Unflagged modules keep their existing output.
+
+Paired source/diagnostic cases, lazy-body and relocation protocol checks, and
+O0/O2 receiver/cleanup fixtures accompany this change. Independent generated-NC
+fixtures cover scalar, pointer-object, array, record and callback alias accesses
+at O0, O2 and explicit strict aliasing, with inlining disabled. Native validation
+requires implementing CI. Allocation, placement restart, default heap runtime,
+array cookies, exceptions/unwinding, standard headers and full C++/STL remain
+unfinished.
+
 ## Record destruction and normal lifetimes
 
 Core v2 admits ordinary user-provided destructors of the records described
@@ -3935,8 +3979,8 @@ records. Copy construction and assignment must be admitted independently; a user
 destructor does not by itself require nontrivial copying. The source still has no bases,
 virtual dispatch, unions or unsupported field layouts. Reference members retain
 their bindings and do not cause their referents to be destroyed.
-Deleted destructors and explicit destructor calls remain rejected, including in
-dead code. Ordinary and defaulted destructors accept implicit exception
+Selecting a deleted destructor remains a C++ diagnostic, including in dead code.
+Explicit calls follow the contract below. Ordinary and defaulted destructors accept implicit exception
 specifications and the resolved standard written forms described below. Every ordinary
 user destructor needs an owned body; a supported `= default` destructor uses the
 member cleanup described below without requiring a materialized body.
@@ -4353,7 +4397,7 @@ break and continue clean the appropriate scopes. Array construction needs no
 external helper or memory-copy call. Static lifetimes and reference fields follow
 their separate contracts. Thread-local storage, fresh reference returns,
 non-extended pointer-derived bindings,
-unsupported element types, explicit destruction, allocation, unwinding, other template forms
+unsupported element types, allocation, unwinding, other template forms
 and complete STL remain outside this increment. V1 and protocol major 1 are unchanged.
 
 O0/O2 no-inline fixtures cover real element addresses, reference calls, decay,
@@ -4397,7 +4441,8 @@ Every written specification and query operand is still inspected, including
 unused, nested and short-circuited expressions. Unsupported types and operations
 remain rejected; unevaluated source still rejects signature-only template calls without definitions,
 unsupported callback forms,
-unsupported lifetime extension or explicit destruction. Missing ordinary owned
+unsupported lifetime extension. Explicit destructor queries inspect the selected
+signature and written source without forcing an otherwise unused template body. Missing ordinary owned
 definitions remain diagnostics. Dependent/unresolved written specifications,
 vendor forms and C++17-invalid typed dynamic specifications are not accepted.
 V1 profiles retain their original specification/query boundaries.

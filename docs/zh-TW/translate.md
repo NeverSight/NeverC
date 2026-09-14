@@ -4,6 +4,8 @@
 
 # 將 C++ 轉譯為 NeverC
 
+Core v2 支援顯式非虛記錄解構與純量偽解構呼叫，保留接收者求值副作用及原有自動清理義務。未求值的範本查詢不會強制具現化未使用的函式本體。產生的 C23 使用經過檢查的可別名物件型別處理這些生命週期。原生驗證需要實作版本的 CI；配置、placement 重建、例外、標準標頭及完整 C++/STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+
 實驗性命令 `neverc translate` 透過 `cpp-core-v1`、`cpp-core-v2`、`cpp-project-v1` 和 `cpp-math-v1` 產生可審查的 `.nc` 原始碼。
 
 **目前僅實作了 C++ 輸入轉譯。** 易語言（E Language，`.e`）、Python、Go、Rust、TypeScript 和 JavaScript 均為未來計畫，目前尚無可用的轉譯器。

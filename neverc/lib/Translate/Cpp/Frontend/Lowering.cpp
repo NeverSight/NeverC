@@ -554,6 +554,36 @@ class FunctionLowering {
     auto T = type(Call->getType(), L, true);
     auto *Callee = Call->getDirectCallee();
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Callee);
+    if (A.S.coreV2()) {
+      if (const auto *D = scalarDestruction(Call, A.Context)) {
+        // Evaluate the base without reading an indeterminate destroyed scalar.
+        // Arrow bases evaluate their pointer; dot bases designate storage only.
+        if (D->isArrow())
+          expression(D->getBase());
+        else if (D->getBase()->isGLValue())
+          lvalue(D->getBase());
+        else
+          discard(D->getBase());
+        return {};
+      }
+      if (const auto *D = dyn_cast_or_null<CXXDestructorDecl>(Method)) {
+        const auto *Member = dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
+        if (!Member || Call->getNumArgs())
+          reject(L, "explicit destructor call", "A checked direct destructor receiver is required.");
+        const auto *Base = Member->getBase();
+        auto Receiver = Member->isArrow()
+                            ? expression(Base)
+                            : address(lvalue(Base), Base->getType(), L);
+        if (auto Object = A.Context.getRecordType(D->getParent());
+            needsDestruction(Object)) {
+          // Destructors receive an unqualified this even for a const object.
+          Receiver = snapshot(cast(std::move(Receiver), "ptr:" + type(Object, L), L), L);
+          destroy(dereference(std::move(Receiver), L), Object, L);
+        }
+        // Explicit destruction never cancels an eventual automatic cleanup.
+        return {};
+      }
+    }
     auto Mapping = A.mapping(Call);
     if (!Mapping.empty()) {
       json::Array Args;

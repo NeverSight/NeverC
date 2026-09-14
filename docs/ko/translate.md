@@ -4,6 +4,8 @@
 
 # C++를 NeverC로 변환
 
+Core v2는 비가상 레코드의 명시적 소멸자 호출과 스칼라 의사 소멸자 호출을 지원하며 수신자 평가 효과와 기존 자동 정리 의무를 유지합니다. 평가되지 않는 템플릿 질의는 사용하지 않는 본문을 인스턴스화하지 않습니다. 생성된 C23은 검증된 별칭 접근 허용 객체 타입을 사용합니다. 네이티브 검증에는 구현 버전의 CI가 필요합니다. 할당, placement 재구성, 예외, 표준 헤더 및 완전한 C++/STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+
 실험적인 `neverc translate`는 `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1`, `cpp-math-v1`으로 검토 가능한 `.nc` 소스를 생성합니다.
 
 **현재 입력 언어로 C++만 구현되어 있습니다.** E Language(易语言, `.e`), Python, Go, Rust, TypeScript, JavaScript 지원은 향후 계획이며, 해당 언어의 변환기는 아직 제공되지 않습니다.

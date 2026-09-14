@@ -4,6 +4,8 @@
 
 # Tradurre C++ in NeverC
 
+Core v2 supporta chiamate esplicite a distruttori non virtuali e pseudo-distruttori scalari, mantenendo gli effetti del ricevitore e gli obblighi di pulizia automatica. Le interrogazioni di template non valutate non istanziano corpi inutilizzati. Il C23 generato usa tipi di oggetto verificati che consentono alias. La verifica nativa richiede la CI di questa implementazione; allocazione, ricostruzione placement, eccezioni, header standard e C++/STL completo restano incompleti. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+
 Il comando sperimentale `neverc translate` genera sorgenti `.nc` verificabili con `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1` e `cpp-math-v1`.
 
 **Attualmente è implementata solo la traduzione di codice C++.** Il supporto per E Language (易语言, `.e`), Python, Go, Rust, TypeScript e JavaScript è previsto per il futuro; i relativi traduttori non sono ancora disponibili.

@@ -23,6 +23,7 @@ class CastExpr;
 class CXXConstructExpr;
 class CXXDefaultArgExpr;
 class CXXForRangeStmt;
+class CXXPseudoDestructorExpr;
 class MaterializeTemporaryExpr;
 class SubstNonTypeTemplateParmExpr;
 class SizeOfPackExpr;
@@ -249,6 +250,8 @@ bool defaultedMoveConstructor(const clang::CXXConstructorDecl *Constructor);
 bool defaultedCopyOrMoveConstructor(const clang::CXXConstructorDecl *Constructor);
 bool supportedConstructor(const clang::CXXConstructorDecl *Constructor);
 bool needsDestruction(clang::QualType Type);
+const clang::CXXPseudoDestructorExpr *scalarDestruction(
+    const clang::CallExpr *Call, clang::ASTContext &Context);
 const clang::Expr *directMethodReference(const clang::CallExpr *Call);
 const clang::Expr *directFunctionReference(const clang::CallExpr *Call);
 

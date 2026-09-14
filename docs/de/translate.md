@@ -4,6 +4,8 @@
 
 # C++ nach NeverC übersetzen
 
+Core v2 unterstützt explizite nichtvirtuelle Destruktoraufrufe und skalare Pseudodestruktoren. Effekte der Empfängerauswertung und bestehende automatische Bereinigung bleiben erhalten. Nicht ausgewertete Template-Abfragen instanziieren keine ungenutzten Funktionskörper. Der erzeugte C23-Code verwendet geprüfte Objekttypen mit erlaubten Aliaszugriffen. Native Prüfung erfordert die CI dieser Implementierung; Allokation, Placement-Neukonstruktion, Ausnahmen, Standardheader und vollständiges C++/STL sind noch offen. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+
 Das experimentelle `neverc translate` erzeugt prüfbaren `.nc`-Quelltext mit `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1` und `cpp-math-v1`.
 
 **Derzeit ist nur die Übersetzung von C++-Quelltext implementiert.** Unterstützung für E Language (易语言, `.e`), Python, Go, Rust, TypeScript und JavaScript ist geplant; entsprechende Übersetzer sind noch nicht verfügbar.

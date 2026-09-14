@@ -220,6 +220,9 @@ const MappingSpec *findMappingSpec(llvm::StringRef ID);
 struct Module {
   uint32_t Protocol = FrontendProtocolMajor;
   std::string Profile;
+  // C++ storage reuse requires alias-permissive emitted object accesses. This
+  // does not relax typed IR operations, layout evidence, or storage permissions.
+  bool MemoryLifetimes = false;
   FrontendIdentity Frontend;
   TargetInfo Target;
   std::vector<Dependency> Dependencies;

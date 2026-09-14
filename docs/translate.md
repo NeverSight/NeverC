@@ -4,6 +4,8 @@
 
 # Translate C++ to NeverC
 
+Core v2 supports explicit nonvirtual record destruction and scalar pseudo-destructor calls, preserving receiver effects and automatic cleanup obligations. Unevaluated template queries keep unused bodies lazy. Generated C23 uses checked alias-permissive object types for these lifetimes. Native validation requires implementing CI; allocation, placement restart, exceptions, standard headers and full C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#explicit-destruction).
+
 Experimental `neverc translate` emits reviewable `.nc` source through `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1` and `cpp-math-v1`.
 
 **Only C++ input translation is currently implemented.** Support for E Language (易语言, `.e`), Python, Go, Rust, TypeScript and JavaScript is planned; their translators are not yet available.

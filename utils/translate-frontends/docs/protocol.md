@@ -864,6 +864,34 @@ A defaulted destructor uses the same `Record_destroy` helper as implicit member
 cleanup, with no user body. No new opcode, lifecycle field, profile version or
 opaque operation is introduced. See the [defaulted lifecycle contract](cpp-core-v2.md#default-construction-and-defaulted-destruction).
 
+## Core v2 explicit lifetimes and memory aliases
+
+The optional module property `memory_lifetimes` must be boolean `true` and requires
+`cpp-core-v2`. Absence defaults to false; an explicitly false/nonboolean property
+is rejected. The verifier independently rejects this flag in other profiles.
+It changes only the emitted aliasing contract. Existing operation/type validation,
+layout/callback checks, const storage permissions and initialization ownership
+remain authoritative; it supplies no runtime provenance proof.
+
+The emitter uses deterministic private `may_alias` typedefs for every nonvoid,
+nonrecord object carrier. Recursive pointer, array and callback declarations use
+child aliases; record forward declarations and definitions mark the record tag,
+and fields use the corresponding aliases. Types appear before use, with complete
+record dependencies ordered before array aliases. All source globals, locals,
+parameters/results, casts, compound literals and pointer helpers share those
+types. A compiler attribute-support guard accompanies the existing ABI guards.
+Private arithmetic helper values and atomic guard storage remain unchanged.
+
+Source explicit nontrivial record destruction lowers to the existing
+`void(ptr:Record)` helper and retains the actual captured receiver. Trivial
+record destruction and scalar pseudo-destruction preserve only source receiver
+effects. Scalar dot operands do not acquire a load; arrow operands evaluate the
+pointer. Calls in unevaluated expressions introduce no runtime destruction or
+otherwise unused template-body instantiation. Automatic cleanup flags remain
+registered after explicit calls. No new destruction opcode, allocation capability,
+foreign ABI or exception behavior is added. See the
+[source contract](cpp-core-v2.md#explicit-destruction).
+
 ## Core v2 destruction
 
 A record requiring destruction emits one deterministic internal function named
