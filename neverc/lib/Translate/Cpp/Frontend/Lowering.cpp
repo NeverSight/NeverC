@@ -449,6 +449,77 @@ class FunctionLowering {
     return F && !isa<CXXMethodDecl>(F) && F->isOverloadedOperator() &&
            CXXOperatorCallExpr::isAssignmentOp(F->getOverloadedOperator());
   }
+  Expression functionValue(const Expr *E) {
+    auto L = E->getExprLoc();
+    if (const auto *P = dyn_cast<ParenExpr>(E))
+      return functionValue(P->getSubExpr());
+    if (const auto *C = dyn_cast<ConstantExpr>(E))
+      return functionValue(C->getSubExpr());
+    if (const auto *W = dyn_cast<ExprWithCleanups>(E))
+      return functionValue(W->getSubExpr());
+    if (const auto *R = dyn_cast<DeclRefExpr>(E))
+      return A.functionAddress(dyn_cast<FunctionDecl>(R->getDecl()), L);
+    if (const auto *M = dyn_cast<MemberExpr>(E)) {
+      // Static member access evaluates the source base, including its cleanup.
+      discard(M->getBase());
+      return A.functionAddress(dyn_cast<FunctionDecl>(M->getMemberDecl()), L);
+    }
+    if (const auto *U = dyn_cast<UnaryOperator>(E);
+        U && U->getOpcode() == UO_Deref &&
+        U->getSubExpr()->getType()->isFunctionPointerType())
+      return snapshot(expression(U->getSubExpr()), L);
+    if (const auto *B = dyn_cast<BinaryOperator>(E);
+        B && B->getOpcode() == BO_Comma) {
+      discard(B->getLHS());
+      return functionValue(B->getRHS());
+    }
+    if (const auto *C = dyn_cast<ConditionalOperator>(E)) {
+      auto T = type(A.Context.getPointerType(C->getType()), L);
+      auto Result = temporary(T, L);
+      auto Condition = expression(C->getCond());
+      auto Yes = labelName(), No = labelName(), End = labelName();
+      branch(std::move(Condition), Yes, No, L, C->getCond());
+      label(Yes, L);
+      assign(Result, functionValue(C->getTrueExpr()), L);
+      jump(End, L);
+      label(No, L);
+      assign(Result, functionValue(C->getFalseExpr()), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
+    reject(L, "function designator", "Function values require a checked named target or stored callback.");
+  }
+  Expression indirectCall(const CallExpr *Call) {
+    auto L = Call->getExprLoc();
+    auto Pointer = Call->getCallee()->getType();
+    if (A.functionPointerType(Pointer, L).empty())
+      throw Failure{};
+    const auto *Prototype = Pointer->getPointeeType()->getAs<FunctionProtoType>();
+    if (Call->getNumArgs() != Prototype->getNumParams())
+      reject(L, "indirect call", "Callable and parameter counts differ.");
+    // Snapshot the whole postfix before any explicit argument can reseat its
+    // source storage. This also preserves compound direct-target expressions.
+    auto Callable = snapshot(expression(Call->getCallee()), L);
+    json::Array Args;
+    for (unsigned I = 0; I < Call->getNumArgs(); ++I)
+      Args.push_back(argument(Call->getArg(I), Prototype->getParamType(I)));
+    chargeCall(Args, L);
+    json::Object Instruction{{"op", "indirect_call"},
+                             {"callable", std::move(Callable)},
+                             {"args", std::move(Args)}, {"loc", A.loc(L)}};
+    auto ResultType = type(Prototype->getReturnType(), L, true);
+    Expression Result;
+    if (ResultType != "void") {
+      Result = temporary(ResultType, L);
+      Instruction["target"] = json::Object(Result);
+    }
+    Body.push_back(std::move(Instruction));
+    if (Prototype->getReturnType()->isReferenceType())
+      return dereference(std::move(Result), L);
+    return Result;
+  }
+
   Expression call(const CallExpr *Call,
                   std::optional<Expression> Destination = std::nullopt) {
     auto L = Call->getExprLoc();
@@ -477,6 +548,12 @@ class FunctionLowering {
                           Copy->Type, Copy->Source->getType(), L);
         return cast(std::move(To), type(Call->getType(), L), L);
       }
+    if (A.S.coreV2() && !directFunctionReference(Call) &&
+        Call->getCallee()->getType()->isFunctionPointerType()) {
+      if (Destination)
+        reject(L, "indirect record result", "By-value record callbacks require separate ownership lowering.");
+      return indirectCall(Call);
+    }
     const bool TrivialAssignment = A.S.coreV2() && defaultedAssignment(Method) &&
                                    Method->isTrivial();
     if (!Callee ||
@@ -579,6 +656,8 @@ class FunctionLowering {
     return Result;
   }
   Expression expression(const Expr *E) {
+    if (A.S.coreV2() && E->getType()->isFunctionType())
+      return functionValue(E);
     auto L = E->getExprLoc();
     auto T = type(E->getType(), L, true);
     if (auto Value = staticMemberValue(E))
@@ -663,6 +742,10 @@ class FunctionLowering {
           discard(C->getSubExpr());
         }
         return {};
+      case CK_FunctionToPointerDecay:
+        if (!A.S.coreV2())
+          reject(L, "function value", "Function pointer values require core v2.");
+        return cast(functionValue(C->getSubExpr()), T, L);
       case CK_LValueToRValue:
         return snapshot(cast(expression(C->getSubExpr()), T, L), L);
       case CK_NoOp:
@@ -791,8 +874,14 @@ class FunctionLowering {
       return Call->isPRValue() && recordValue(Call->getType())
                  ? materialize(Call, L) : call(Call);
     if (const auto *U = dyn_cast<UnaryOperator>(E)) {
-      if (A.S.coreV2() && U->getOpcode() == UO_AddrOf)
+      if (A.S.coreV2() && U->getOpcode() == UO_Plus &&
+          U->getSubExpr()->getType()->isFunctionPointerType())
+        return cast(expression(U->getSubExpr()), T, L);
+      if (A.S.coreV2() && U->getOpcode() == UO_AddrOf) {
+        if (U->getSubExpr()->getType()->isFunctionType())
+          return cast(functionValue(U->getSubExpr()), T, L);
         return address(lvalue(U->getSubExpr()), U->getSubExpr()->getType(), L);
+      }
       if (A.S.coreV2() && U->getOpcode() == UO_Deref)
         return lvalue(U);
       if (U->isIncrementDecrementOp()) {

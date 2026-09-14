@@ -29,6 +29,8 @@ class SizeOfPackExpr;
 class InitListExpr;
 class Expr;
 struct ASTTemplateArgumentListInfo;
+class DeclContext;
+class FriendDecl;
 class TemplateDecl;
 class TemplateArgumentList;
 class NonTypeTemplateParmDecl;
@@ -55,11 +57,51 @@ struct ExplicitFunctionInstantiationSource {
   bool HasAttributes;
 };
 
+// Exact friend spelling is distinct from the selected substitution source.
+struct FriendFunctionSource {
+  clang::FunctionDecl *Function, *Incoming, *Selected;
+  clang::CXXRecordDecl *GrantingClass;
+};
+// The copied primary and its original spelling are separate from inner uses.
+struct FriendFunctionTemplateSource {
+  clang::FunctionTemplateDecl *Template;
+  clang::FunctionDecl *Incoming, *Selected;
+  clang::CXXRecordDecl *GrantingClass;
+};
+// A canonical primary can have a different lexical owner from its actual body.
+struct FunctionTemplateBodySource {
+  clang::FunctionDecl *Function;
+  clang::FunctionTemplateDecl *Compatible;
+  clang::FunctionDecl *Pattern;
+  clang::DeclContext *LexicalContext;
+};
+
+// A class-friend copy joins a semantic target independently of its granting source.
+struct FriendClassTemplateSource {
+  clang::ClassTemplateDecl *Template, *Written;
+  clang::CXXRecordDecl *GrantingClass;
+  clang::DeclContext *Context;
+  clang::ClassTemplateDecl *Previous;
+};
+
+struct FriendDeclarationSource {
+  clang::FriendDecl *Declaration, *Written;
+};
+
 struct ExplicitStaticDataInstantiationSource {
   clang::VarDecl *Variable;
   clang::TypeSourceInfo *Type;
   clang::NestedNameSpecifierLoc Qualifier;
   clang::SourceLocation Location;
+  bool HasAttributes;
+};
+
+// Explicit ordinary member-class directives have no separate AST declaration.
+// Keep every written occurrence, including a successful no-effect directive.
+struct ExplicitMemberClassInstantiationSource {
+  clang::CXXRecordDecl *Record, *Origin;
+  clang::NestedNameSpecifierLoc Qualifier;
+  clang::SourceLocation Location, TemplateLocation, ExternLocation;
   bool HasAttributes;
 };
 
@@ -75,7 +117,7 @@ struct NonTypeParameterSource {
   unsigned PackIndex; // Forward index, or ~0u for a deduced empty pack's type.
 };
 enum class TemplateSourceKind {
-  Type, Function, ClassDeclaration, PartialDeclaration, PartialDeduction, PartialPattern,
+  Type, Function, ClassDeclaration, ClassFullDeclaration, PartialDeclaration, PartialDeduction, PartialPattern,
   VariableUse, VariableDeclaration, VariablePartialDeduction, VariablePartialPattern
 };
 struct TemplateUseSource {
@@ -95,7 +137,7 @@ struct TemplateUseSource {
   // Argument values alone do not identify the successful candidate.
   const clang::TemplateArgumentList *Selection;
   bool WrittenStorageClass;
-  const clang::NamedDecl *Origin = nullptr; // Exact copied partial; null for a written event.
+  const clang::NamedDecl *Origin = nullptr; // Exact copied partial/full class source; null for a written event.
 };
 // Retain each type substitution already performed by Sema. The final
 // VarDecl may keep its first declaration's TypeSourceInfo after completion.
@@ -207,6 +249,7 @@ bool defaultedCopyOrMoveConstructor(const clang::CXXConstructorDecl *Constructor
 bool supportedConstructor(const clang::CXXConstructorDecl *Constructor);
 bool needsDestruction(clang::QualType Type);
 const clang::Expr *directMethodReference(const clang::CallExpr *Call);
+const clang::Expr *directFunctionReference(const clang::CallExpr *Call);
 
 // Canonical integral carrier spellings after Clang resolves source types.
 inline unsigned integerBits(llvm::StringRef T) {
@@ -228,6 +271,8 @@ public:
   clang::SourceManager &Sources;
   std::map<const clang::Decl *, std::string> Names;
   std::map<const clang::FunctionTemplateDecl *, std::size_t> TemplateOrdinals;
+  std::map<const clang::FunctionTemplateDecl *, const clang::CXXRecordDecl *>
+      FriendTemplateIdentityOwners;
   std::vector<clang::FunctionDecl *> Functions;
   std::vector<clang::CXXRecordDecl *> Records;
   std::vector<const clang::CXXRecordDecl *> Destructions;
@@ -253,6 +298,10 @@ public:
   void addProjectMetadata();
   std::string type(clang::QualType T, clang::SourceLocation L,
                    bool AllowVoid = false, unsigned Depth = 0);
+  std::string functionPointerType(clang::QualType T, clang::SourceLocation L,
+                                  unsigned Depth = 0);
+  bool functionAddressTarget(const clang::FunctionDecl *F, clang::SourceLocation L);
+  json::Object functionAddress(const clang::FunctionDecl *F, clang::SourceLocation L);
   std::size_t storageUnits(clang::QualType T, unsigned Depth = 0);
   void chargeExpansion(std::size_t Nodes, clang::SourceLocation L);
   json::Object literal(const llvm::APSInt &Value, llvm::StringRef Type,
@@ -276,7 +325,13 @@ public:
            llvm::ArrayRef<TemplateUseSource> TemplateUses = {},
            llvm::ArrayRef<FunctionSpecializationSource> Specializations = {},
            llvm::ArrayRef<VariableTypeSource> VariableTypes = {},
-           llvm::ArrayRef<SelectedTemplateCallSource> SelectedCalls = {});
+           llvm::ArrayRef<SelectedTemplateCallSource> SelectedCalls = {},
+           llvm::ArrayRef<ExplicitMemberClassInstantiationSource> MemberClassDirectives = {},
+           llvm::ArrayRef<FriendFunctionSource> FriendFunctions = {},
+           llvm::ArrayRef<FriendDeclarationSource> FriendDeclarations = {},
+           llvm::ArrayRef<FriendFunctionTemplateSource> FriendTemplates = {},
+           llvm::ArrayRef<FunctionTemplateBodySource> TemplateBodies = {},
+           llvm::ArrayRef<FriendClassTemplateSource> FriendClasses = {});
 };
 } // namespace nct
 #endif

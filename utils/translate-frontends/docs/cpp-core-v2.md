@@ -307,7 +307,8 @@ Direct discarded nonvolatile lvalues do not load their stored values. Thus
 `(void)uninitialized_int` does not invent a value read, while receiver, pointer
 and index expressions retain their effects. Existing array and unambiguous free
 function designators can be discarded without a decay or call; this does not
-admit function pointers, method values or unresolved overload sets. Discarded
+admit unresolved overload sets or nonstatic method values. Ordinary callback
+values follow the function-pointer contract below. Discarded
 `nullptr` needs no general nullptr_t value carrier. Unsupported declared types
 and volatile objects remain rejected, including behind a void cast.
 
@@ -485,7 +486,9 @@ Anonymous nested structs, including typedef-named anonymous nested definitions,
 remain rejected; a named tag with a typedef alias is supported. Existing
 non-nested anonymous-record behavior is unchanged. Unions, unsupported member class templates, inheritance,
 virtual dispatch and unsupported field/body operations retain their restrictions,
-including unused nested definitions. Older profiles continue to reject nested
+including ordinary nongeneric nested definitions. Generic ordinary member bodies
+follow the separate lazy [member-body contract](#ordinary-nested-classes-in-generic-owners).
+Older profiles continue to reject nested
 records. Full C++ and STL remain unfinished.
 
 Native O0/O2 fixtures cover access, scope identity, layouts, aliases, factories,
@@ -519,7 +522,7 @@ declarations retain one canonical function identity.
 
 The allowlist still traverses each written friend type, owned forward tag,
 function signature, default and body. Unused, dead and folded operations are
-not exempt. Template/dependent/pack friend forms and any friend marked unsupported
+not exempt. Friend template/type-pack forms and any friend marked unsupported
 by the embedded frontend are rejected. Existing class, field, storage and type
 restrictions remain, as do older profiles' friend rejection. Other template forms and full
 STL support require further work.
@@ -552,7 +555,7 @@ all supported fields with their existing canonical identities, types and target
 layout, and authorized operations use those same fields. No access flag, new IR
 instruction or runtime wrapper is needed. Generated source remains reviewable.
 
-Mixed-access non-standard-layout classes, friend templates, inheritance,
+Mixed-access non-standard-layout classes, unsupported dependent friend class-template forms, inheritance,
 anonymous nested records and unsupported member class templates remain outside current support. Bitfields and
 mutable, const, reference or unsupported numeric fields retain their existing
 restrictions. A getter returning a field's ordinary `T*` address does not admit
@@ -710,8 +713,8 @@ enums, static assertions, access labels, ordinary named methods and user-provide
 constructors, destructors, operators and conversions as described below. Aggregates and constructed instances must be
 complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
-remain checked when selected. Friends, nested
-records/templates and bases remain outside this class-template increment.
+remain checked when selected. Nested records/templates and instantiated free
+friends follow their separate contracts below; bases remain unsupported.
 Namespace partial specializations follow their separate contract below. Template-template parameters and non-scalar value arguments remain excluded.
 
 The producer traverses materialized records without enabling unrestricted
@@ -1182,9 +1185,10 @@ also covers qualified namespaces and selected partials. The exception does not
 apply to parameter, body, initializer or unrelated type source. Those sources
 retain ordinary checks, including unsupported types hidden by constant folding.
 
-Copied class-scope full member class declarations written in a dependent outer
-class still require a separate producer contract and remain rejected. Ordinary
-nested records inside generic classes, local/union owners, inheritance, virtual
+Copied class-scope full declarations follow the separate
+[full declaration contract](#copied-class-scope-full-specializations) below.
+Ordinary nested records follow the [ordinary member contract](#ordinary-nested-classes-in-generic-owners).
+Local/union owners, inheritance, virtual
 dispatch, unsupported fields and allocation retain separate restrictions. Limits
 remain 64 parameters/elements, bounded declaration/owner depth and the total
 expansion budget. Full C++/STL remains unfinished. Paired source/protocol fixtures
@@ -1193,12 +1197,522 @@ revision. Only C++ input is implemented; E Language, Python and other frontends
 remain planned. Translation uses embedded Clang libraries without invoking an
 external Clang executable.
 
+## Copied class-scope full specializations
+
+A full member class specialization written inside an admitted dependent outer
+class retains its own body when that outer class is instantiated. For example:
+
+```cpp
+template<class T> struct Outer {
+  template<class U> struct Inner { int primary; };
+  template<> struct Inner<int> {
+    T value;
+    template<class V> T get(V) const { return value; }
+    inline static int count = sizeof(T);
+  };
+};
+int read() {
+  Outer<int>::Inner<int> value{3};
+  return value.get(0);
+}
+```
+
+The original full declaration and its concrete copy have separate exact source
+events. The embedded frontend retains the successful argument conversion at
+both creation points, including defaults, non-type parameter types and the
+actual copied declaration's written arguments and original full object. This
+also checks copies that are not subsequently selected as an inner object.
+Resolved source is checked immediately; original dependent values stay lazy.
+An original unknown-length expansion retains the same checked prefix and actual
+frontier ordering as the partial-declaration contract. A concrete copy requires
+complete arguments. No missing arguments or source edges are reconstructed.
+
+The specialized primary owns the inner arguments. The full record owns its body,
+and actual outer instances own substitutions in that body. A full record adds
+no template parameter level: in `Outer<T>::Inner<int>`, a member template's own
+parameter has depth one before substitution and depth zero in the concrete copy.
+Its fields, ordinary methods, constructors, conversions, defaulted special
+members, scalar statics and admitted member templates retain the existing
+layout, receiver, lifetime and storage rules. Equal inner arguments in different
+outer instances do not merge their scalar static objects. Missing required
+bodies/storage produce `TR0203`; invalid C++ produces `TR0202`; unsupported
+materialized source produces `TR0201` without output artifacts.
+
+Clang eagerly instantiates the full class declaration when copying it. NeverC
+checks that actual class definition, while ordinary uninstantiated method bodies
+retain their existing laziness. Default member initializers are substituted when
+needed, using the copied full's actual member-class origin and enclosing template
+arguments. A narrow embedded Clang correction recognizes this origin even though
+the copy retains an explicit-specialization kind. It preserves field order and
+per-object initialization; explicitly supplied aggregate initializers and copies
+do not rerun omitted defaults. Ordinary full declarations and nonrequesting
+consumers keep their existing behavior. Cyclic or unavailable initializers retain
+their diagnostics, and reached initializer expressions retain source checks. Source checks do not supply a fake parameter
+owner, substitute twice, call an external Clang executable or emit an opaque
+body. Limits remain 64 parameters/elements and bounded owner/source traversal.
+Ordinary nested records follow the [ordinary member contract](#ordinary-nested-classes-in-generic-owners).
+Inheritance, unsupported fields,
+allocation and complete C++/STL remain unfinished. Only C++ input is implemented;
+E Language and Python remain planned. Paired source/protocol fixtures and
+seventeen O0/O2 runtime checkpoints require native CI of the implementing
+revision; protocol counts remain subject to that verification.
+
+## Ordinary nested classes in generic owners
+
+Named ordinary nested classes in admitted generic classes use their actual
+concrete member copies. An own explicit member specialization supplies its own
+body, including a different layout or member set:
+
+```cpp
+template<class T> struct Outer {
+  struct Inner {
+    T value;
+    T get() const { return value; }
+    inline static int count = sizeof(T);
+  };
+};
+template<> struct Outer<bool>::Inner {
+  long long value;
+  long long get() const { return value + 1; }
+};
+long long read() {
+  Outer<bool>::Inner object{3};
+  return object.get();
+}
+```
+
+Ordinary nested classes add no template argument level. Existing function,
+alias, scalar variable and class member templates retain their actual enclosing
+parameter owners and substituted source. Primary, partial, copied class-scope
+full and ordinary nested scopes can be combined. Forward declarations,
+out-of-line definitions with renamed headers, own member specializations and
+bounded type/value/empty packs preserve exact declaration and body origins.
+Canonical specialization flags alone never establish a written own body.
+
+Nonlocal ordinary nested definitions are lazy. An unused concrete forward copy
+requires no invented definition; materialized records use only their actual
+fields and members. Uninstantiated ordinary method bodies stay lazy. Copied
+class-scope full declarations retain their separate eager instantiation rule.
+Already resolved declaration headers and concrete qualifiers are checked before
+erasure even when no ordinary nested object is used. Selected constructors,
+copy/move/assignment/destruction, receivers, by-value field layout and scalar
+static storage retain the existing typed representation. Equal scalar values
+in distinct outer instances do not merge their static objects; equivalent aliases
+share storage. An own specialization does not reuse the generic body's members.
+
+Explicit ordinary member-class instantiation directives have no separate Clang
+AST node. The embedded frontend retains the actual target and origin, qualifier,
+name/template/extern locations and parsed attribute presence at each successful
+Sema exit. This includes redundant extern and no-effect directives. Each written
+qualifier is checked independently even when directives reuse a canonical record.
+This event is internal; no public wire object or extra substitution is introduced.
+Windows' existing extern-template rules for enclosing-class instantiations remain
+those of the embedded frontend.
+
+Named nonlocal standard-layout records and existing field restrictions apply.
+Unsupported dependent friend class-template forms and friend-type expansions, unions, anonymous records, inheritance, allocation and complete
+C++/STL remain unfinished. Invalid C++ keeps `TR0202`; unsupported materialized
+source keeps `TR0201`; missing required function/storage definitions keep `TR0203`,
+without output artifacts. Source owner/redeclaration walks and packs remain
+bounded. Only C++ input is implemented; E Language and Python remain planned.
+Translation uses embedded Clang libraries without an external Clang executable.
+Paired source/protocol regressions and seventeen O0/O2 runtime checkpoints require
+native CI of the implementing revision; protocol counts remain provisional until
+that validation.
+
+## Instantiated non-template friend functions
+
+Non-template free friend functions can be instantiated from admitted class
+primary/partial templates, member class templates, copied class-scope full
+specializations and ordinary nested class bodies. Named hidden friends and
+supported free operators preserve ADL and embedded Sema access checks:
+
+```cpp
+template<int N> class Item {
+  int value = N;
+  friend int read(const Item &item) { return item.value; }
+};
+int result() { Item<3> item; return read(item); }
+```
+
+A friend keeps its actual explicit parameters, without an implicit receiver or
+an invented template level. Namespace redeclarations retain one canonical
+function identity. Different instance overloads and scalar static locals retain
+separate storage. Selected record arguments/results, local classes, copies,
+moves and cleanup use the existing typed storage rules. Friendship does not
+become transitive or change qualified lookup visibility.
+
+Two internal source events retain the written FriendDecl and the exact incoming,
+selected and actual function declarations plus the granting class. Selected
+signature/body source may differ from the original friend spelling. Canonical
+namespace merging does not replace actual declaration or member-origin checks.
+Owner and redeclaration walks are bounded; class packs keep their real owners.
+Every selected definition is inspected. Unused generic bodies, auto results and
+unselected dependent defaults retain ordinary instantiation laziness.
+
+When signature normalization chooses a different declaration, the incoming
+signature needs complete nondependent original source evidence. This checks its
+written return and parameter types, including adjusted-away array bounds,
+qualifier, its own parsed/instantiated/non-inherited defaults, and both written
+and resolved standard exception specifications. Each original default/noexcept
+operand is inspected directly. Pending or dependent original evidence yields
+`TR0201`; a selected declaration's defaults or resolved noexcept cannot stand in
+for that source. Ordinary source fixtures currently establish namespace merging,
+not AST-merge normalization. The latter boundary has static source review and
+producer identity checks, without a claim of native normalization coverage.
+
+Declaration-only friends retain the same source-unit definition policy as
+ordinary declarations. Missing required definitions yield `TR0203`. Invalid
+C++ lookup, access or conflicting definitions yield `TR0202`. Unsupported source
+produces `TR0201` without output artifacts. Unsupported dependent friend class-template forms, friend
+type expansions, inheritance, allocation and complete C++/STL
+remain unfinished; existing nondependent friend type/member rules are preserved.
+No wire schema or lowering ABI is added. Paired source/protocol fixtures and
+seventeen O0/O2 runtime checkpoints require implementing-revision native CI;
+protocol cardinalities remain provisional. Only C++ input is implemented;
+E Language, Python and other frontends remain planned. Translation uses embedded
+Clang libraries without an external Clang executable.
+
+## Instantiated non-template friend types
+
+Admitted generic class bodies support resolved type-form friends, including
+`friend T;`, type aliases, `friend typename T::Reader;` and concrete class
+template specializations. Primary/partial and member class templates, copied
+full specializations and ordinary nested class bodies retain their actual grants:
+
+```cpp
+class Reader;
+template<class T> class Cell {
+  int value = 3;
+  friend T;
+};
+class Reader {
+public:
+  static int read(const Cell<Reader> &cell) { return cell.value; }
+};
+```
+
+Embedded Sema decides access, including private types, construction and
+destruction. Friendship does not become reciprocal or transitive. A different
+class-template argument grants access to that actual type only. Legal nonclass
+friends, such as an integer or pointer alias, are ignored for access while their
+types still undergo the ordinary support and source checks.
+
+The successful ordinary type-substitution path retains the exact actual/written
+FriendDecl pair. The original declaration must be a lexical source root belonging
+to the actual granting class's selected original or own body. Missing pairs and
+unproved intermediate copy chains fail `TR0201`; matching names, canonical types
+or source locations alone cannot supply a lost origin. No second substitution
+or access lookup is performed. Original nondependent source and the complete
+actual substituted TypeLoc are checked, including elaborated owned tags. A still
+dependent type is deferred only in a dependent class context after source identity
+checks; a concrete granting class needs a resolved type. Folded aliases and type
+expressions retain their source checks.
+
+Friend type grants add no functions, implicit receivers, template levels or
+runtime storage. Existing concrete record and method/call lowering remains in
+use. Source and protocol fixtures, root relocation, and ten O0/O2 noinline runtime
+checkpoints require native CI of the implementing revision; exact protocol counts
+remain provisional. Invalid C++ or access yields `TR0202`; ordinary missing
+required function definitions remain `TR0203`.
+
+Unsupported dependent friend class-template forms, friend-type pack expansions, unsupported friend template
+headers and unproved chained copies remain separate work. Complete C++/STL is
+unfinished. Only C++ input is implemented; E Language, Python and other languages
+remain planned. Clang libraries are embedded with no external Clang executable.
+
+## Friend function templates
+
+Free friend function templates in admitted ordinary and generic classes support
+named functions and the existing free operators. ADL and access remain governed
+by embedded Sema. Outer class arguments and inner function deduction, defaults
+and concrete type/scalar packs retain their actual owners:
+
+```cpp
+template<int N> class Box {
+  int value = 3;
+  template<class T> friend int read(const Box &box, T extra) {
+    return box.value + int(extra) + N;
+  }
+};
+int main() { Box<2> box; return read(box, 1) - 6; }
+```
+
+The same rules apply to admitted partial/full/member class templates, copied
+full specializations and ordinary nested records. Calls use existing concrete
+free-function lowering, without an implicit receiver. References, record results,
+construction/destruction, local classes and scalar static locals keep their
+ordinary storage and lifetime rules. Equivalent canonical calls share one
+instance; distinct outer instances, inner arguments and actual primaries retain
+separate identities. C++17 name visibility still applies: hidden friends are
+found through ADL, and explicit template syntax requires ordinary lookup rules.
+
+The embedded source bridge retains both the exact copied/written friend pair
+and the actual copied function-template primary with its incoming declaration,
+selected declaration and granting class. Original declarations must be lexical
+source roots. A normalized different original signature needs complete independent
+nondependent source evidence; unresolved normalization and unproved copy chains
+remain `TR0201`. No second substitution or lookup supplies missing proof.
+
+Template-origin metadata is shared across redeclarations. A declaration-only
+friend can therefore acquire an origin when a later definition joins its chain.
+Per-declaration events remain authoritative. Inner parameters and stable identity
+belong to the actual primary; the function body uses the compatible declaration
+and lexical context selected by Sema at its existing instantiation boundary.
+Those contexts may come from a different granting class or outer parameter depth.
+
+A copied canonical primary with no independent written namespace/friend identity
+includes its proven actual granting-class identity in the existing template key.
+A real canonical merge into an independently indexed declaration preserves that
+identity. Original source checks remain separate from canonical deduplication.
+No absolute root, pointer address or traversal allocation order is used as a key.
+
+Generic bodies remain lazy. Original nondependent signature/default source,
+actual substituted signatures, selected defaults and every materialized body
+are checked, including folded source and local method packs. Existing source,
+parameter and pack budgets remain in force. Invalid C++ and access yield `TR0202`;
+missing required definitions, including signature-only calls under unevaluated
+queries, retain `TR0203`. Unsupported syntax yields `TR0201` without artifacts.
+
+Paired source/protocol fixtures cover ADL, access, owner variants, independent
+inner/outer arguments, declaration-only/namespace merges and compatible bodies
+from different classes/depths. Ten O0/O2 noinline runtime checkpoints exercise
+values, receivers, lifetimes, local classes, packs and static identity. Protocol
+fixtures check typed free calls, canonical reuse, separate storage, reference
+closure and root relocation. All native behavior and exact output counts require
+CI of the implementing revision; source fixtures alone do not prove every Sema
+normalization path.
+
+Unsupported dependent friend class-template forms, unsupported friend headers/copy chains, function
+pointers and complete C++/STL remain unfinished. Only C++ input is implemented;
+E Language and Python remain planned. Clang libraries are embedded and no
+external Clang executable is installed or called for translation.
+
+## Friend class templates
+
+Ordinary friend class-template declarations in admitted ordinary and generic
+classes support namespace introductions, existing targets and supported qualified
+namespace/member targets. Friendship grants access to the target template's
+specializations under the existing C++ rules; it is neither reciprocal nor
+transitive. The target's ordinary class definitions, partial/full specializations,
+fields, methods, constructors, destructors and static storage retain their normal
+profile checks.
+
+```cpp
+template<class T> class Vault {
+  int value = 3;
+  template<class U> friend struct Reader;
+};
+template<class U> struct Reader {
+  static int get(const Vault<int> &v) { return v.value; }
+};
+int main() { Vault<int> v; return Reader<bool>::get(v) - 3; }
+```
+
+Repeated grants from different outer instances share the same semantic target
+class and static storage. They do not create extra target instances, runtime
+access functions or a granting-class suffix in the target identity. A forward
+friend declaration never supplies a class body: the actual namespace or admitted
+member definition remains authoritative.
+
+The embedded source bridge records each successful copied class-template target,
+original declaration, actual granting record, resolved lookup context and selected
+previous target. The actual/written FriendDecl pair is retained independently.
+Dependent original friends are deliberately absent from the ordinary lookup and
+redeclaration chains in pinned Sema. Their lexical header is therefore separate
+from the copied target, the parameter/default header selected by lookup, and the
+actual body definition. Existing retained parameter pointers must belong to the
+real target chain and supported slots. No additional substitution or lookup is
+used to fabricate missing evidence.
+
+Each original and actual header checks supported type/integer/boolean/enum
+parameters, packs, nondependent type source and qualifiers. Pending dependent
+syntax stays lazy until a successful copy or use. Written defaults on the original
+friend class-template declaration produce `TR0202`, even for an unused generic
+granting class: pinned Sema omits this language diagnostic in dependent contexts.
+Defaults actually inherited from a previous target remain allowed and source
+checked. Hidden folded source remains subject to `TR0201`; invalid access and
+declarations yield `TR0202`; required missing definitions yield `TR0203`.
+
+Paired source/protocol fixtures exercise introductions before and after generic
+granting instances, existing and qualified targets, different header depths and
+names, inherited defaults, partial/full/member/nested granting bodies and shared
+target identities. Ten O0/O2 noinline runtime checkpoints cover private aliases,
+construction/destruction, references, repeated grants and static storage.
+Protocol fixtures check record fields, typed concrete calls, canonical reuse,
+distinct actual class specializations, closed references and root relocation.
+Native language validity and output counts require CI of the implementing revision.
+
+This increment admits exact ClassTemplateDecl friend targets. Dependent friend
+forms represented as unsupported FriendTemplateDecl or unsupported type/header
+nodes, template-template parameters and complete C++/STL remain unfinished. Only
+C++ input is implemented; E Language and Python are planned. Clang libraries are
+embedded, with no external Clang executable installed or called for translation.
+
+## Ordinary function pointers
+
+Standalone `cpp-core-v2` supports typed pointers to ordinary source-owned free
+functions and static member functions with definitions in the selected unit.
+Unambiguous decay, explicit address-taking, unary plus, selected ordinary overloads,
+parenthesized/dereferenced designators, null values, boolean conversion,
+same-signature equality, copying, assignment, comma and conditional expressions
+are supported. The source-selected callback is saved before argument evaluation,
+including compound postfix expressions whose final target Clang can determine.
+Static method access evaluates its object/pointer base exactly once. Discarded
+function designators without address-taking or decay retain their previous rules.
+
+```cpp
+using Callback = int (*)(int);
+int plus_one(int n) { return n + 1; }
+int apply(Callback callback, int n) { return callback(n); }
+int main() { return apply(plus_one, 2) - 3; }
+```
+
+Signatures have a result and at most 64 parameters, within the existing recursive
+source and protocol budgets. Results and parameters use admitted integer/boolean
+scalars, object pointers, nested function pointers or existing reference carriers;
+only results may be void. References to records or fixed arrays retain binding,
+constness and alias behavior. By-value record arguments/results and function
+references require separate lowering and remain unsupported. Function-type aliases
+are accepted as source spellings for these pointer signatures, without adding a
+bare function-value IR type. Nested factory callbacks may return callbacks. Record declarations are ordered
+before any callback signature that needs their complete array element types;
+plain references or pointers to records retain forward declarations.
+
+Callbacks may occupy parameters/results, local arrays, record fields and pointers
+or references to callback storage. This extends the earlier integer/boolean/enum
+static-storage contract with nonvolatile callback globals, static locals and
+ordinary static data members, including non-template members of admitted concrete
+class instances. Initial values must be null or checked symbolic function addresses
+from constant evaluation; zero initialization and mutable reseating are supported.
+Dynamic initialization and thread-local storage
+and ordinary object-pointer globals retain their separate restrictions. Constant
+record aggregates may contain callback fields under their existing rules.
+
+The actual Clang FunctionProtoType must use default ExtInfo and parameter ABI
+metadata, method/ref qualifiers, SME attributes, function effects and address
+spaces. Object pointer/reference components also retain default address spaces;
+source address-space qualifiers are not erased from callback signatures. Resolved ordinary exception specifications are checked separately. C++17
+noexcept-to-potentially-throwing pointer conversion preserves the same normalized
+signature; Clang still rejects the reverse conversion and checks noexcept queries.
+Code-pointer size and alignment are compared with the independently specified
+NeverC default pointer carrier. Each emitted function-pointer signature also gets
+its own sizeof/alignof guards. A source layout mismatch is `TR0204`.
+
+Emission uses actual typed C declarations, named function addresses and typed
+indirect calls. Target prototypes precede callback global initializers. There are
+no integer address tables, source-text wrappers or external compiler processes.
+Function definitions and call arguments/results must close under exact normalized
+signatures. Missing owned definitions produce `TR0203`, unsupported source forms
+produce `TR0201`, and invalid C++ remains `TR0202`.
+
+Exact direct calls, including parenthesized direct calls, retain existing record
+ownership and template-function behavior. Concrete template-function addresses
+follow the source-selection contract below. Nonstatic member pointers,
+lambda conversions, variadics, nondefault ABI metadata, function/object/integer
+pointer conversions, casts between different signatures, pointer arithmetic and
+ordering remain unsupported. Null or uninitialized callback invocation has no
+portable result and is not used as a defined-behavior test case.
+
+Paired native/protocol fixtures cover typed values, signature closure, storage,
+postfix order and root relocation. O0/O2 runtime checks with inlining disabled
+exercise callback reseating during argument evaluation, static-base effects,
+references, arrays, copied fields, nested factory results, temporary cleanup and
+static identity.
+Synthetic IR tests independently check canonical type grammar, address definitions,
+indirect operands and rejection before output. Native fixture validity, protocol
+counts and runtime behavior require CI of the implementing revision.
+
+This increment does not widen `cpp-core-v1`, `cpp-project-v1` or `cpp-math-v1`.
+Cross-translation-unit callbacks, project callback symbol remapping and owning-TU
+inline callback addresses remain separate work. Complete C++/STL is unfinished.
+Only C++ input is implemented; E Language and Python are planned. Clang libraries
+are embedded in NeverC; translation neither installs nor invokes external Clang.
+
+## Concrete function-template pointers
+
+Core v2 also admits callback values selecting concrete free-function and static
+member function-template instances. Explicit template-ids (`&get<int>` or
+`get<int>`), deduction from an expected pointer signature, supported overloads,
+qualified names, defaults, bounded packs, explicit specializations and owned
+instantiation definitions use the same target identity as direct calls. Admitted
+ordinary, generic and nested class owners and namespace-visible friend templates
+retain their existing access, lookup and source-origin requirements.
+
+A selected declaration is not sufficient by itself. The embedded frontend retains
+Clang's successful complete selection event, including the actual specialization,
+canonical and source arguments, selected defaults and parameter types. Each use
+checks its exact selected function and source location. Written arguments, alias
+sources and expressions under constant folding or `noexcept` still pass the normal
+bounded source checks. There is no second deduction, guessed source or fabricated
+function definition. The selected primary, owner and actual body must be supported;
+a named callback without an owned definition produces `TR0203`.
+
+The existing `fnptr` signature, `function_address` and `indirect_call` representation
+is reused. Repeated addresses and direct calls of the same canonical specialization
+share one emitted definition and its static-local objects. Different template
+instances remain distinct even when their normalized signatures are identical.
+Friend outer/inner instance identity follows the same source-owner rules as direct
+calls. The postfix callback is captured before argument evaluation.
+
+The ordinary callback contract still excludes record-by-value signatures, function
+references, nonstatic member pointers, constructor/conversion-template addresses,
+variadics, lambda conversions and nondefault ABI metadata. Function-pointer
+non-type template arguments and cross-unit callbacks remain unsupported.
+Variable-template callback storage follows its own contract below. Existing direct calls and discarded function
+designators keep their previous rules. No project profile is expanded.
+
+Paired source and protocol fixtures cover selection, source rejection, signature
+closure, canonical identity and relocation. O0/O2 runtime fixtures with inlining
+disabled check shared and distinct static storage, callback capture, references,
+arrays, copied fields, member/friend instances and temporary cleanup. Native
+acceptance requires CI for the implementing revision. Full C++/STL is unfinished;
+only C++ input is implemented, with E Language and Python planned. Translation uses
+embedded Clang libraries and does not invoke an external Clang executable.
+
+## Callback variable templates
+
+Core v2 supports callback storage in concrete namespace and static-member variable
+templates, with the existing admitted primary, partial/full specialization and
+owner forms. Fixed and supported dependent function-pointer types, directly
+written `auto`/`const auto`, defaults, bounded packs and explicit instantiation
+retain the variable-template source rules. Wrapped placeholder declarators such
+as `auto *` or `auto (*)()` remain outside the direct-auto source contract.
+
+Each materialized instance retains its own actual type substitution, first/previous
+and completion declaration relation, selected argument/default source and reached
+initializer. Final callback type equality cannot replace those source checks.
+Function-template address initializers retain the selected target's source and
+owned definition checks. Folding does not skip unsupported initializer syntax.
+Unused generic initializers remain lazy; auto deduction checks the initializer it
+needs. An evaluated use, storage address or reference requires a definition.
+
+Initializers must normalize to a checked symbolic defined function address or
+null; mutable definitions without an initializer are zero-initialized. `constexpr`
+callback variables preserve const storage. Equivalent template arguments and
+redeclarations share one global; different instances have separate storage even
+when initialized with the same function address. Reseating one instance does not
+change another. References/pointers to the stored callback and static-member
+receiver effects use ordinary typed lowering. Declaration-only integral constant
+metadata remains separate and does not invent callback storage.
+
+Dynamic initialization, thread-local/volatile storage, object or record variable
+results, function-pointer non-type template arguments, unsupported callback
+signatures and cross-unit callback linking remain unfinished. The existing
+`fnptr`/`function_address`/`indirect_call` protocol is unchanged. Previous profiles
+retain their restrictions. Paired source/protocol, relocation and O0/O2 noinline
+runtime fixtures require native CI for the implementing revision. This does not
+complete C++/STL. Input remains C++ only; E Language and Python are planned. Clang
+libraries are embedded and no external Clang executable is invoked.
+
 ## Concrete member variable templates
 
 Admitted ordinary records, including nested records, and concrete class-template primary, partial
 and full instances support scalar static member variable templates. Results are
 integer, boolean or enum values, including scalar deduced `auto`, with zero or
-constant initialization. Inner type/scalar arguments, defaults, partial/full
+constant initialization. Callback results additionally follow the
+[callback variable-template contract](#callback-variable-templates). Inner
+type/scalar arguments, defaults, partial/full
 specializations and bounded packs retain the existing 64-entry limits. Ordinary
 C++ access, specialization ordering and required definitions still apply.
 
@@ -1391,7 +1905,7 @@ scalar, pointer, reference or record destination and subsequent standard
 conversions. Access and invalid C++ diagnostics remain authoritative.
 
 Unsupported template owner chains,
-template-template parameters, friend templates, inheritance, virtual dispatch, unsupported layouts, allocation and
+template-template parameters, unsupported dependent friend class-template forms, inheritance, virtual dispatch, unsupported layouts, allocation and
 standard-library headers remain outside this increment. A constructor template
 cannot be explicitly defaulted under C++17; that remains a language error.
 Source depth is bounded at 64 with the shared 200000-unit budget. Unsupported
@@ -1412,8 +1926,10 @@ results with zero or fully checked scalar constant initialization. This includes
 plain or constexpr variables, C++17 inline variables, deduced `auto` and
 `decltype(auto)`, primary templates, selected partial specializations, explicit
 full specializations, type/scalar defaults and concrete packs. Each parameter
-list and pack has at most 64 entries. Member variable templates follow their separate contract above. Other result
-types, thread-local storage and dynamic initialization remain excluded.
+list and pack has at most 64 entries. Member variable templates follow their
+separate contract above. Callback results follow the
+[callback storage contract](#callback-variable-templates). Other result types,
+thread-local storage and dynamic initialization remain excluded.
 
 ```cpp
 template<int N> int counter = N;
@@ -1576,7 +2092,7 @@ identities stay unchanged. No runtime parameters, global initialization or opaqu
 representations are added.
 
 Final defaults must be supported scalar constants. Pointer/reference/record-valued
-arguments, friend templates, standard headers and remaining
+arguments, unsupported dependent friend class-template forms, standard headers and remaining
 C++17/STL features are still unfinished. Invalid C++ retains TR0202; unsupported
 profile source uses TR0201, and selected definitions missing from this source unit
 use TR0203 where ordinary rules require them.
@@ -1702,7 +2218,7 @@ ordinary C++17 operator set. This includes arithmetic, comparisons, logical/comm
 shifts, compound assignment, increment/decrement, dereference, address and
 arrow-star forms that C++ permits as non-members. Embedded Clang enforces arity,
 operand types, access and overload resolution. Allocation/deallocation, literal
-operators, friend templates and later-standard operators remain excluded.
+operators, unsupported dependent friend class-template forms and later-standard operators remain excluded.
 Member function templates follow their separate contract above.
 
 The existing function-template limits apply: up to 64 type or supported
@@ -1747,7 +2263,7 @@ at most 64 parameters; each concrete pack has at most 64 elements, including zer
 Every packed type or integer/bool/enum value is checked, even if the body uses only
 the count. Scalar auto packs may contain different admitted deduced scalar types.
 Pointer/reference/class-valued non-type arguments, template-template parameters,
-unsupported member class templates, friend templates and bases retain their
+unsupported member class templates, unsupported dependent friend class-template forms and bases retain their
 existing exclusions. Namespace class partial specializations use the contract above. C ellipsis varargs are separate and unsupported.
 
 Embedded Clang performs deduction, reference collapsing, explicit prefix handling
@@ -1812,7 +2328,7 @@ unconstrained parameters, mixing supported types with integer, boolean
 and enum values. Embedded Clang performs deduction, overload ordering,
 substitution and explicit specialization/instantiation. Type-parameter defaults,
 namespace imports, recursion and nested calls use ordinary typed functions.
-Friend templates, template-template parameters,
+Unsupported dependent friend class-template forms, template-template parameters,
 abbreviated/constrained templates and standard headers remain
 outside this stage.
 
@@ -2670,10 +3186,10 @@ Each selected overload becomes an ordinary typed call. Non-member operators have
 only their explicit parameters; member operators also receive the actual object
 pointer. Record results use the existing hidden destination before receiver and
 parameters. Reference results preserve their aliases, including subscript and
-increment results. Taking an overloaded operator's function/member address still
-requires later function-pointer support. Conversion functions follow their separate
+increment results. Addresses of ordinary free operators follow the callback signature contract;
+nonstatic member addresses and record-by-value callback signatures remain unsupported. Conversion functions follow their separate
 contract below. The operators of admitted class-template instances follow the contract above.
-Dependent friend declarations,
+Unsupported dependent friend class-template forms and friend-type expansions,
 virtual dispatch and allocation/deallocation operators remain excluded. Temporary call operands
 follow the separate full-expression contract below.
 
@@ -3045,7 +3561,7 @@ int main() {
 Every written specification and query operand is still inspected, including
 unused, nested and short-circuited expressions. Unsupported types and operations
 remain rejected; unevaluated source still rejects signature-only template calls without definitions,
-function pointers,
+unsupported callback forms,
 unsupported lifetime extension or explicit destruction. Missing ordinary owned
 definitions remain diagnostics. Dependent/unresolved written specifications,
 vendor forms and C++17-invalid typed dynamic specifications are not accepted.

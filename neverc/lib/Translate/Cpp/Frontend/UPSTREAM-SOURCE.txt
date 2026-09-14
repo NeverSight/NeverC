@@ -41,6 +41,18 @@ defaults and alias underlying source use checked parameter frames. Type sugar
 and written locations are distinct from canonical runtime identities. No external
 Clang executable or opaque translation fallback is introduced.
 
+A separate checked SemaExpr.cpp repair enables lazy default member initializer
+substitution for copied class-scope full specializations in requesting consumers.
+Their explicit specialization kind coexists with an implicit member-class origin;
+the existing initializer gate otherwise overlooks that origin. The repair requires
+a concrete class-scope full and the actual member instantiation metadata, then
+reuses the existing field pattern, outer argument collection and initializer
+instantiation. Ordinary full declarations, nonrequesting consumers, cycle checks
+and unparsed-initializer diagnostics retain their original behavior. Complete
+original/rewritten blocks are checked exactly; missing, duplicate, partial, drifted
+and orphan-marker states fail before this file changes. Independent setup fixtures
+cover first/repeated execution and rejected states.
+
 A checked SemaInit.cpp patch resolves potentially lvalue-reference placeholder
 conversion results before the reference-only candidate filter. It handles bare
 decltype(auto) and unqualified bare auto&&, preserving lazy value-returning
@@ -179,6 +191,33 @@ actual redeclaration chain. Repeated references to an out-of-line definition do
 not instantiate its in-class constant initializer a second time. This private
 pinned-source correction preserves the first instantiation and C++ diagnostics
 for genuinely repeated written initializers.
+Class-scope full member class copies retain the actual declaration, original
+full declaration and successful canonical/sugared/default/parameter-type source
+after the existing eager class instantiation completes. Original dependent full
+declarations retain the source from the existing successful declaration hook.
+No additional substitution or instantiation is requested.
+Explicit ordinary member-class instantiation directives retain the exact record,
+original member, written qualifier, name/template/extern locations and attributes.
+Both normal success and successful no-effect directives preserve their own source
+without adding an AST declaration or repeating instantiation.
+Instantiated non-template friends retain two exact source events: the incoming
+and selected function declarations plus the actual function and granting class,
+and the actual/written FriendDecl pair. The function event follows successful
+substitution without repeating normalization or lookup. Namespace redeclaration
+merging does not replace the written friend source with canonical flags.
+Ordinary instantiated friend types reuse the exact actual/written FriendDecl
+pair after successful type substitution. Unsupported, expanded and friend-type
+template-header paths are excluded; no substitution or access lookup is repeated.
+Original and actual TypeSourceInfo remain distinct from canonical type identity.
+Friend function-template primary copies retain exact actual primary, incoming
+and selected function declarations and granting class, paired with the actual
+and written FriendDecl. Concrete free template bodies also retain Sema's selected
+compatible declaration, pattern and lexical context after successful body creation.
+Shared member-template origin metadata is not per-declaration source evidence.
+Class-friend template copies retain their exact actual and original targets,
+granting record, resolved semantic context and selected previous target after
+successful parameter merging and visibility. Their FriendDecl pair is retained
+separately; these declarations have no ordinary member-template origin link.
 The exact scripts and compilation rules are part of the NeverC source tree at
 neverc/lib/Translate/Cpp/Frontend and neverc/cmake/modules/BuiltinCppFrontend.cmake.
 

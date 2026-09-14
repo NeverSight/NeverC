@@ -1457,3 +1457,336 @@ int main(void) {
                           << ": " << Run.exitCode << Run.err;
   }
 }
+
+namespace {
+Type functionPointerType(Type Result = intType(),
+                         std::vector<Type> Parameters = {}) {
+  Type T{TypeKind::FunctionPointer, {}, {std::move(Result)}};
+  T.Elements.insert(T.Elements.end(), Parameters.begin(), Parameters.end());
+  return T;
+}
+Expr functionAddress(std::string Name, Type T) {
+  auto E = pointerExpr(ExprKind::FunctionAddress, std::move(T));
+  E.Name = std::move(Name);
+  return E;
+}
+Module callbackModule() {
+  auto M = module(true);
+  auto T = functionPointerType(intType(), {intType()});
+  M.Functions[0].Params = {{"nct_x", intType(), InputLoc}};
+  M.Functions[0].Body.back() = ret(variable("nct_x"));
+  Function F;
+  F.Name = "nct_apply";
+  F.Result = intType();
+  F.Internal = true;
+  F.Loc = InputLoc;
+  F.Params = {{"nct_cb", T, InputLoc}};
+  F.Locals = {{"nct_result", intType(), InputLoc}};
+  Instruction I;
+  I.Op = InstructionKind::IndirectCall;
+  I.Loc = InputLoc;
+  I.Callable = variable("nct_cb", T);
+  I.Args = {literal("7")};
+  I.Target = variable("nct_result");
+  F.Body = {label(), I, ret(variable("nct_result"))};
+  M.Functions.push_back(std::move(F));
+  M.Globals = {{"nct_callback", T, functionAddress("sample", T), InputLoc}};
+  return M;
+}
+}
+
+TEST(TranslateIR, CoreV2FunctionPointerWireGrammarRoundTripsNestedSignatures) {
+  auto T = functionPointerType();
+  EXPECT_EQ(typeName(T), "fnptr:0:3:int");
+  EXPECT_EQ(typeName(functionPointerType({TypeKind::Void, {}})), "fnptr:0:4:void");
+  EXPECT_EQ(typeName(functionPointerType(intType(), {intType()})), "fnptr:1:3:int3:int");
+  for (auto Type : {T, functionPointerType(T, {pointerType(T, true)}),
+                    functionPointerType(intType(), std::vector<neverc::translate::Type>(64, T))}) {
+    auto JSON = wireModule(true);
+    auto Spelling = typeName(Type);
+    replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + Spelling + "\"");
+    replaceOnce(JSON, "\"kind\": \"literal\", \"type\": \"bool\", \"value\": true",
+                 "\"kind\": \"null\", \"type\": \"" + Spelling + "\"");
+    Module M;
+    Diagnostics D;
+    ASSERT_TRUE(parseModule(JSON, M, D)) << Spelling;
+    ASSERT_TRUE(verifyModule(M, context(M), D)) << Spelling;
+    EXPECT_EQ(M.Functions[0].Result, Type);
+    EXPECT_EQ(typeName(M.Functions[0].Result), Spelling);
+  }
+}
+
+TEST(TranslateIR, CoreV2FunctionPointerWireRejectsAmbiguousAndUnboundedTypes) {
+  std::vector<std::string> Bad = {
+      "fnptr:", "fnptr:00:3:int", "fnptr:+0:3:int", "fnptr:65:3:int",
+      "fnptr:4294967296:3:int", "fnptr:0:0:", "fnptr:0:03:int",
+      "fnptr:0:+3:int", "fnptr:0:4:int", "fnptr:0:3:intx",
+      "fnptr:1:3:int", "fnptr:0:3:int3:int", "fnptr:0:4294967296:int",
+      "fnptr:1:3:int6:ptr:", "fnptr:0:7:fnptr:?"};
+  std::string Deep = "int";
+  for (unsigned I = 0; I < 66; ++I)
+    Deep = "fnptr:0:" + std::to_string(Deep.size()) + ":" + Deep;
+  Bad.push_back(Deep);
+  for (const auto &Spelling : Bad) {
+    auto JSON = wireModule(true);
+    replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"" + Spelling + "\"");
+    Module M;
+    Diagnostics D;
+    EXPECT_FALSE(parseModule(JSON, M, D)) << Spelling;
+  }
+}
+
+TEST(TranslateIR, CoreV2FunctionPointerSyntheticTypesCannotBypassSignatureRules) {
+  auto Valid = functionPointerType();
+  std::vector<Type> Bad = {
+      {TypeKind::FunctionPointer, {}},
+      functionPointerType(intType(), std::vector<Type>(65, intType())),
+      functionPointerType(intType(), {{TypeKind::Void, {}}}),
+      functionPointerType(arrayType(intType(), 2)),
+      functionPointerType(intType(), {arrayType(intType(), 2)}),
+      functionPointerType({TypeKind::Record, "nct_record"}),
+      functionPointerType({TypeKind::Double, {}})};
+  for (unsigned Field = 0; Field < 4; ++Field) {
+    auto T = Valid;
+    if (Field == 0) T.RecordID = "nct_record";
+    if (Field == 1) T.Count = 1;
+    if (Field == 2) T.PointeeConst = true;
+    if (Field == 3) T.IntegerBits = 64;
+    Bad.push_back(T);
+  }
+  Type Deep = intType();
+  for (unsigned I = 0; I < 66; ++I)
+    Deep = functionPointerType(std::move(Deep));
+  Bad.push_back(std::move(Deep));
+  for (const auto &T : Bad) {
+    auto M = module(true);
+    M.Functions[0].Result = T;
+    M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Null, T));
+    invalid(M);
+  }
+}
+
+TEST(TranslateIR, CoreV2CallbackGlobalsHaveTypedDeclaratorsAndPriorPrototypes) {
+  auto M = callbackModule();
+  auto T = M.Globals[0].ValueType;
+  M.Globals.push_back({"nct_mutable_callback", T, pointerExpr(ExprKind::Null, T), InputLoc, true});
+  M.Functions[1].Locals.push_back({"nct_callbacks", arrayType(T, 2), InputLoc});
+  M.Functions[1].Locals.push_back({"nct_callback_ref", pointerType(T, true), InputLoc});
+  M.Functions[1].Locals.push_back({"nct_callback_factory", functionPointerType(T), InputLoc});
+  EmittedSource Out;
+  Diagnostics D;
+  ASSERT_TRUE(emitNC(M, context(M), Out, D));
+  auto Prototype = Out.Text.find("int sample(int nct_x);");
+  auto Initializer = Out.Text.find("static int (*const nct_callback)(int) = (&sample);");
+  ASSERT_NE(Prototype, std::string::npos);
+  ASSERT_NE(Initializer, std::string::npos);
+  EXPECT_LT(Prototype, Initializer);
+  EXPECT_NE(Out.Text.find("static int (* nct_mutable_callback)(int)"), std::string::npos);
+  EXPECT_NE(Out.Text.find("int (* nct_callbacks[2])(int);"), std::string::npos);
+  EXPECT_NE(Out.Text.find("int (*const * nct_callback_ref)(int);"), std::string::npos);
+  EXPECT_NE(Out.Text.find("int (* (* nct_callback_factory)(void))(int);"), std::string::npos);
+  EXPECT_NE(Out.Text.find("sizeof(int (*)(int)) * __CHAR_BIT__ == 64"), std::string::npos);
+  EXPECT_NE(Out.Text.find("alignof(int (*)(int)) * __CHAR_BIT__ == 64"), std::string::npos);
+  EXPECT_NE(Out.Text.find("nct_result = (nct_cb)((7));"), std::string::npos);
+  EXPECT_EQ(Out.Text.find("fnptr:"), std::string::npos);
+}
+
+TEST(TranslateIR, CoreV2FunctionAddressesRequireExactDefinedSignatures) {
+  for (unsigned Case = 0; Case < 8; ++Case) {
+    auto M = callbackModule();
+    auto &E = M.Globals[0].Value;
+    if (Case == 0) E.Name = "nct_missing";
+    if (Case == 1) M.Functions[0].Result = boolType();
+    if (Case == 2) M.Functions[0].Params.clear();
+    if (Case == 3) M.Functions[0].Params[0].ValueType = uintType();
+    if (Case == 4) E.Args = {literal("0")};
+    if (Case == 5) E.Integer = "0";
+    if (Case == 6) E.Boolean = true;
+    if (Case == 7) E.BinaryOp = BinaryOperator::Equal;
+    invalid(M);
+  }
+  auto M = callbackModule();
+  M.Globals[0].Value = variable("nct_callback", M.Globals[0].ValueType);
+  invalid(M, "Global initializer");
+}
+
+TEST(TranslateIR, CoreV2IndirectCallsCheckStorageArgumentsAndResult) {
+  for (unsigned Case = 0; Case < 13; ++Case) {
+    auto M = callbackModule();
+    auto &I = M.Functions[1].Body[1];
+    if (Case == 0) I.Callable.reset();
+    if (Case == 1) I.Callable = literal("0");
+    if (Case == 2) I.Callable->Name = "nct_missing";
+    if (Case == 3) I.Callable->ValueType = functionPointerType();
+    if (Case == 4) I.Args.clear();
+    if (Case == 5) I.Args[0] = literal("7", uintType());
+    if (Case == 6) I.Target.reset();
+    if (Case == 7) I.Target = variable("nct_cb", M.Functions[1].Params[0].ValueType);
+    if (Case == 8) I.Callee = "sample";
+    if (Case == 9) I.MappingID = "cpp.math.fabs.f64.v1";
+    if (Case == 10) I.Value = literal("0");
+    if (Case == 11) I.Condition = literal("0", boolType());
+    if (Case == 12) I.Label = "nct_entry";
+    invalid(M);
+  }
+  auto M = callbackModule();
+  M.Functions[1].Body[0].Callable = *M.Functions[1].Body[1].Callable;
+  invalid(M, "Callable operands");
+}
+
+TEST(TranslateIR, CoreV2CallbackVoidAndReferenceCarriersRetainCallContracts) {
+  for (auto Result : {Type{TypeKind::Void, {}}, pointerType(intType())}) {
+    auto M = module(true);
+    auto T = functionPointerType(Result, {pointerType(arrayType(intType(), 2), true)});
+    auto &F = M.Functions[0];
+    F.Result = Result;
+    F.Params = {{"nct_cb", T, InputLoc}, {"nct_array", T.Elements[1], InputLoc}};
+    Instruction I;
+    I.Op = InstructionKind::IndirectCall;
+    I.Loc = InputLoc;
+    I.Callable = variable("nct_cb", T);
+    I.Args = {variable("nct_array", T.Elements[1])};
+    Instruction Return;
+    Return.Op = InstructionKind::Return;
+    Return.Loc = InputLoc;
+    if (Result.Kind != TypeKind::Void) {
+      F.Locals = {{"nct_result", Result, InputLoc}};
+      I.Target = variable("nct_result", Result);
+      Return.Value = *I.Target;
+    }
+    F.Body = {label(), I, Return};
+    Diagnostics D;
+    EXPECT_TRUE(verifyModule(M, context(M), D));
+    if (Result.Kind == TypeKind::Void) {
+      F.Locals = {{"nct_result", intType(), InputLoc}};
+      F.Body[1].Target = variable("nct_result");
+      invalid(M, "Void indirect call");
+    }
+  }
+}
+
+TEST(TranslateIR, CoreV2FunctionPointersExcludeObjectOperationsAndSignatureCasts) {
+  auto T = functionPointerType();
+  auto P = pointerExpr(ExprKind::Null, T);
+  auto M = module(true);
+  M.Functions[0].Result = boolType();
+  for (auto Op : {BinaryOperator::Equal, BinaryOperator::NotEqual}) {
+    M.Functions[0].Body.back() = ret(binary(Op, P, P, boolType()));
+    Diagnostics D;
+    EXPECT_TRUE(verifyModule(M, context(M), D));
+  }
+  M.Functions[0].Body.back() = ret(pointerExpr(ExprKind::Cast, boolType(), {P}));
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  for (auto E : {binary(BinaryOperator::Less, P, P, boolType()),
+                 binary(BinaryOperator::Subtract, P, P, intType()),
+                 binary(BinaryOperator::Add, P, literal("1"), T),
+                 pointerExpr(ExprKind::Dereference, intType(), {P}),
+                 pointerExpr(ExprKind::Index, intType(), {P, literal("0")}),
+                 pointerExpr(ExprKind::Cast, intType(), {P}),
+                 pointerExpr(ExprKind::Cast, pointerType({TypeKind::Void, {}}), {P}),
+                 pointerExpr(ExprKind::Cast, functionPointerType(boolType()), {P}),
+                 pointerExpr(ExprKind::Cast, pointerType(functionPointerType(boolType())),
+                             {pointerExpr(ExprKind::Null, pointerType(T))})}) {
+    M.Functions[0].Result = E.ValueType;
+    M.Functions[0].Body.back() = ret(E);
+    invalid(M);
+  }
+}
+
+TEST(TranslateIR, OlderProfilesRejectFunctionPointerAdditionsAtomically) {
+  auto M = callbackModule();
+  M.Profile = "cpp-core-v1";
+  M.Target.Carriers.reset();
+  invalid(M, "core v2");
+}
+
+TEST(TranslateIR, CoreV2CallbackFieldsUseIndependentPointerLayout) {
+  auto Base = callbackModule();
+  auto T = Base.Globals[0].ValueType;
+  Base.Records = {{"nct_holder", {{"callback", T}}, InputLoc,
+                   RecordLayout{{64, 64}, {0}}}};
+  Diagnostics D;
+  ASSERT_TRUE(verifyModule(Base, context(Base), D));
+  for (const auto &Bad : {StorageLayout{32, 32}, StorageLayout{64, 32},
+                          StorageLayout{128, 64}}) {
+    auto M = Base;
+    M.Records[0].Layout->Storage = Bad;
+    invalid(M, "size or alignment disagrees");
+  }
+}
+
+TEST(TranslateIR, CoreV2CallbackArrayReferencesNeedPriorCompleteRecords) {
+  auto M = module(true);
+  Type Item{TypeKind::Record, "nct_item"};
+  auto T = functionPointerType(intType(), {pointerType(arrayType(Item, 2))});
+  M.Records = {{"nct_item", {{"value", intType()}}, InputLoc,
+                RecordLayout{{32, 32}, {0}}},
+               {"nct_holder", {{"callback", T}}, InputLoc,
+                RecordLayout{{64, 64}, {0}}}};
+  EmittedSource Out;
+  Diagnostics D;
+  ASSERT_TRUE(emitNC(M, context(M), Out, D));
+  EXPECT_NE(Out.Text.find("int (* callback)(nct_item (*)[2]);"), std::string::npos);
+  EXPECT_LT(Out.Text.find("struct nct_item {"),
+            Out.Text.find("struct nct_holder {"));
+  std::swap(M.Records[0], M.Records[1]);
+  invalid(M, "Unknown or forward/cyclic record");
+}
+
+namespace {
+std::string callbackWire() {
+  auto JSON = wireModule(true);
+  replaceOnce(JSON, "\"result\": \"bool\"", "\"result\": \"int\"");
+  replaceOnce(JSON, "\"locals\": []", R"json("locals": [
+    {"name":"nct_result","type":"int","loc":{"file":"input.cpp","line":2,"column":1}}])json");
+  replaceOnce(JSON, "\"kind\": \"literal\", \"type\": \"bool\", \"value\": true",
+               "\"kind\": \"var\", \"type\": \"int\", \"name\": \"nct_result\"");
+  auto Return = JSON.find("{\"op\": \"return\"");
+  JSON.insert(Return, R"json({"op":"indirect_call","loc":{"file":"input.cpp","line":2,"column":1},
+    "callable":{"kind":"function_address","type":"fnptr:0:3:int","name":"nct_target",
+                "loc":{"file":"input.cpp","line":2,"column":1}},
+    "args":[],"target":{"kind":"var","type":"int","name":"nct_result",
+                           "loc":{"file":"input.cpp","line":2,"column":1}}},
+  )json");
+  JSON.insert(JSON.rfind(']'), R"json(,{
+    "name":"nct_target","result":"int","internal":true,"params":[],"locals":[],
+    "loc":{"file":"input.cpp","line":3,"column":1},"body":[
+      {"op":"label","label":"nct_entry","loc":{"file":"input.cpp","line":3,"column":1}},
+      {"op":"return","loc":{"file":"input.cpp","line":3,"column":1},
+       "value":{"kind":"literal","type":"int","value":"7","loc":{"file":"input.cpp","line":3,"column":1}}}
+    ]})json");
+  return JSON;
+}
+}
+
+TEST(TranslateIR, CoreV2CallbackWireRetainsCallableAndDefinition) {
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(callbackWire(), M, D));
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  const auto &I = M.Functions[0].Body[1];
+  ASSERT_EQ(I.Op, InstructionKind::IndirectCall);
+  ASSERT_TRUE(I.Callable);
+  EXPECT_EQ(I.Callable->Kind, ExprKind::FunctionAddress);
+  EXPECT_EQ(I.Callable->Name, M.Functions[1].Name);
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("nct_result = ((&nct_target))();"), std::string::npos);
+}
+
+TEST(TranslateIR, CoreV2CallbackWireRejectsMissingAndStrayPayloads) {
+  for (const auto &Change : std::vector<std::pair<std::string, std::string>>{
+       {"\"callable\":", "\"value\":"},
+       {"\"callable\":", "\"callee\":\"nct_target\",\"callable\":"},
+       {"\"args\":[]", "\"args\":{},\"mapping\":\"unapproved\""},
+       {"\"kind\":\"function_address\",", "\"kind\":\"function_address\",\"args\":[],"},
+       {"\"kind\":\"function_address\",", "\"kind\":\"function_address\",\"value\":\"0\","},
+       {"\"op\":\"indirect_call\",", "\"op\":\"return\","}}) {
+    auto JSON = callbackWire();
+    replaceOnce(JSON, Change.first, Change.second);
+    Module M;
+    Diagnostics D;
+    EXPECT_FALSE(parseModule(JSON, M, D)) << Change.second;
+  }
+}

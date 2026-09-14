@@ -30,6 +30,16 @@ std::string typeName(const Type &T) {
   case TypeKind::Pointer:
     return std::string(T.PointeeConst ? "cptr:" : "ptr:") +
            (T.Elements.size() == 1 ? typeName(T.Elements[0]) : "?");
+  case TypeKind::FunctionPointer: {
+    if (T.Elements.empty())
+      return "fnptr:?";
+    std::string S = "fnptr:" + std::to_string(T.Elements.size() - 1) + ":";
+    for (const auto &Element : T.Elements) {
+      auto Part = typeName(Element);
+      S += std::to_string(Part.size()) + ":" + Part;
+    }
+    return S;
+  }
   case TypeKind::Array:
     return "arr:" + std::to_string(T.Count) + ":" +
            (T.Elements.size() == 1 ? typeName(T.Elements[0]) : "?");
@@ -142,7 +152,9 @@ public:
   bool typeSpelling(llvm::StringRef S, Type &T, std::size_t Depth = 0) {
     bool Pointer = S.starts_with("ptr:") || S.starts_with("cptr:");
     bool Array = S.starts_with("arr:");
-    if (Depth > MaxProtocolDepth || ((Depth || Pointer || Array) && !node()))
+    bool Callable = S.starts_with("fnptr:");
+    if (Depth > MaxProtocolDepth ||
+        ((Depth || Pointer || Array || Callable) && !node()))
       return error("Type depth or node limit exceeded.");
     if (Pointer) {
       T.Kind = TypeKind::Pointer;
@@ -161,6 +173,38 @@ public:
       T.Kind = TypeKind::Array;
       T.Elements.resize(1);
       return typeSpelling(Parts.second, T.Elements[0], Depth + 1);
+    }
+    if (Callable) {
+      S = S.drop_front(6);
+      auto Number = [&](uint32_t &N, bool Zero) {
+        auto Separator = S.find(':');
+        if (Separator == llvm::StringRef::npos)
+          return false;
+        auto Digits = S.take_front(Separator);
+        if (Digits.empty() || (Digits.front() == '0' &&
+                              (!Zero || Digits.size() != 1)) ||
+            !std::all_of(Digits.begin(), Digits.end(),
+                         [](char C) { return C >= '0' && C <= '9'; }) ||
+            Digits.getAsInteger(10, N))
+          return false;
+        S = S.drop_front(Separator + 1);
+        return true;
+      };
+      uint32_t Count = 0;
+      if (!Number(Count, true) || Count > 64)
+        return error("Function pointer parameter count must be canonical and bounded.");
+      T.Kind = TypeKind::FunctionPointer;
+      for (uint32_t I = 0; I <= Count; ++I) {
+        uint32_t Length = 0;
+        if (!Number(Length, false) || Length > S.size())
+          return error("Invalid function pointer component length.");
+        Type Element;
+        if (!typeSpelling(S.take_front(Length), Element, Depth + 1))
+          return false;
+        T.Elements.push_back(std::move(Element));
+        S = S.drop_front(Length);
+      }
+      return S.empty() || error("Trailing function pointer type bytes.");
     }
     if (S.empty() || S.contains(':'))
       return error("Invalid canonical type spelling.");
@@ -234,6 +278,11 @@ public:
         return true;
       }
       return string(O, "value", E.Integer);
+    }
+    if (K == "function_address") {
+      E.Kind = ExprKind::FunctionAddress;
+      return (O.size() == 4 && string(O, "name", E.Name)) ||
+             error("Function address requires only kind, type, name and location.");
     }
     if (K == "null") {
       E.Kind = ExprKind::Null;
@@ -325,6 +374,17 @@ public:
     std::string Op;
     if (!string(O, "op", Op) || !location(O, I.Loc))
       return false;
+    if (Op != "indirect_call" && O.get("callable"))
+      return error("Callable operands require an indirect call.");
+    if (Op == "indirect_call") {
+      I.Op = InstructionKind::IndirectCall;
+      if (O.size() != (O.get("target") ? 5u : 4u))
+        return error("Invalid indirect call fields.");
+      return expressionField(O, "callable", I.Callable) &&
+             expressionField(O, "target", I.Target, false) &&
+             array(O, "args", I.Args,
+                   [&](const auto &A, Expr &E) { return expr(A, E); });
+    }
     if (Op == "assign") {
       I.Op = InstructionKind::Assign;
       return expressionField(O, "target", I.Target) &&
@@ -610,7 +670,8 @@ class Verifier {
   bool type(const Type &T, const SourceLocation &L, bool Void = false,
             std::size_t Depth = 0, bool Indirect = false) {
     if (Depth > MaxProtocolDepth ||
-        ((Depth || T.Kind == TypeKind::Pointer || T.Kind == TypeKind::Array) &&
+        ((Depth || T.Kind == TypeKind::Pointer || T.Kind == TypeKind::Array ||
+          T.Kind == TypeKind::FunctionPointer) &&
          ++Nodes > MaxProtocolNodes))
       return error(L, "IR type depth/node limit exceeded.");
     if (T.IntegerBits &&
@@ -633,6 +694,24 @@ class Verifier {
       return storageUnits(T) <= MaxProtocolNodes ||
              error(L, "Array storage expansion exceeds the protocol limit.");
     }
+    if (T.Kind == TypeKind::FunctionPointer) {
+      if (M.Profile != "cpp-core-v2" || !T.RecordID.empty() || T.Count ||
+          T.PointeeConst || T.IntegerBits || T.Elements.empty() ||
+          T.Elements.size() > 65)
+        return error(L, "Function pointer requires a core v2 result and bounded parameters.");
+      std::size_t Bytes = 7 + std::to_string(T.Elements.size() - 1).size();
+      for (std::size_t I = 0; I < T.Elements.size(); ++I) {
+        const auto &E = T.Elements[I];
+        if (E.Kind == TypeKind::Record || E.Kind == TypeKind::Array ||
+            !type(E, L, I == 0, Depth + 1))
+          return error(L, "Function pointer signature requires scalar/reference carriers.");
+        auto Part = typeName(E);
+        Bytes += std::to_string(Part.size()).size() + 1 + Part.size();
+        if (Bytes > 4096)
+          return error(L, "Function pointer type spelling limit exceeded.");
+      }
+      return true;
+    }
     if (!T.Elements.empty() || T.PointeeConst || T.Count)
       return error(L, "Non-pointer type has pointer components/qualifiers.");
     switch (T.Kind) {
@@ -653,6 +732,7 @@ class Verifier {
              error(L, "Unknown or forward/cyclic record type: " + T.RecordID);
     case TypeKind::Pointer:
     case TypeKind::Array:
+    case TypeKind::FunctionPointer:
       break;
     }
     return error(L, "Unknown type kind.");
@@ -664,9 +744,12 @@ class Verifier {
       return error(E.Loc, "IR expression/node limit exceeded.");
     if (!loc(E.Loc) || !type(E.ValueType, E.Loc))
       return false;
-    if (Folded && E.Kind != ExprKind::Literal && E.Kind != ExprKind::Aggregate)
+    const bool ConstantCallback = E.ValueType.Kind == TypeKind::FunctionPointer &&
+        (E.Kind == ExprKind::FunctionAddress || E.Kind == ExprKind::Null);
+    if (Folded && E.Kind != ExprKind::Literal && E.Kind != ExprKind::Aggregate &&
+        !ConstantCallback)
       return error(
-          E.Loc, "Global initializer must be a folded literal/aggregate tree.");
+          E.Loc, "Global initializer must contain folded literals, aggregates or constant callbacks.");
     for (const auto &A : E.Args)
       if (!expr(A, Storage, Depth + 1, Folded, E.Kind == ExprKind::Aggregate))
         return false;
@@ -686,8 +769,26 @@ class Verifier {
               E.Args[1].ValueType.isPromotedInteger() &&
               E.ValueType == E.Args[0].ValueType.Elements[0]) ||
              error(E.Loc, "Index requires a nonvoid element pointer and promoted integer.");
+    case ExprKind::FunctionAddress: {
+      if (!Arity(0) || E.ValueType.Kind != TypeKind::FunctionPointer ||
+          !E.Integer.empty() || E.Binary64Bits || E.Boolean ||
+          E.UnaryOp != UnaryOperator::Plus || E.BinaryOp != BinaryOperator::Add)
+        return error(E.Loc, "Function address has invalid type or payload.");
+      auto Target = Functions.find(E.Name);
+      if (Target == Functions.end())
+        return error(E.Loc, "Function address has no selected definition.");
+      const auto &F = *Target->second;
+      if (E.ValueType.Elements.size() != F.Params.size() + 1 ||
+          E.ValueType.Elements[0] != F.Result)
+        return error(E.Loc, "Function address signature mismatch.");
+      for (std::size_t I = 0; I < F.Params.size(); ++I)
+        if (E.ValueType.Elements[I + 1] != F.Params[I].ValueType)
+          return error(E.Loc, "Function address parameter mismatch.");
+      return true;
+    }
     case ExprKind::Null:
-      return (Arity(0) && E.ValueType.Kind == TypeKind::Pointer) ||
+      return (Arity(0) && (E.ValueType.Kind == TypeKind::Pointer ||
+                           E.ValueType.Kind == TypeKind::FunctionPointer)) ||
              error(E.Loc, "Null requires a pointer type and no operands.");
     case ExprKind::Address:
       if (!Arity(1) || E.ValueType.Kind != TypeKind::Pointer ||
@@ -748,6 +849,11 @@ class Verifier {
       if (!Arity(2))
         return false;
       const Type &A = E.Args[0].ValueType, &B = E.Args[1].ValueType;
+      if (A.Kind == TypeKind::FunctionPointer || B.Kind == TypeKind::FunctionPointer)
+        return ((E.BinaryOp == BinaryOperator::Equal ||
+                 E.BinaryOp == BinaryOperator::NotEqual) &&
+                A == B && E.ValueType.Kind == TypeKind::Bool) ||
+               error(E.Loc, "Function pointers permit only same-signature equality.");
       if (A.Kind == TypeKind::Pointer || B.Kind == TypeKind::Pointer) {
         if (E.BinaryOp == BinaryOperator::Equal ||
             E.BinaryOp == BinaryOperator::NotEqual)
@@ -826,6 +932,10 @@ class Verifier {
       if (!Arity(1))
         return false;
       const Type &From = E.Args[0].ValueType, &To = E.ValueType;
+      if (From.Kind == TypeKind::FunctionPointer || To.Kind == TypeKind::FunctionPointer)
+        return (From == To || (From.Kind == TypeKind::FunctionPointer &&
+                              To.Kind == TypeKind::Bool)) ||
+               error(E.Loc, "Function pointers permit only exact signature or bool conversion.");
       if (From.Kind == TypeKind::Pointer || To.Kind == TypeKind::Pointer) {
         if (From.Kind == TypeKind::Pointer && To.Kind == TypeKind::Bool)
           return true;
@@ -876,6 +986,8 @@ class Verifier {
     return error(E.Loc, "Unknown expression kind.");
   }
   bool sameUnqualified(const Type &A, const Type &B) {
+    if (A.Kind == TypeKind::FunctionPointer || B.Kind == TypeKind::FunctionPointer)
+      return A == B;
     return A.Kind == B.Kind && A.RecordID == B.RecordID &&
            A.Count == B.Count && A.IntegerBits == B.IntegerBits &&
            ((A.Kind != TypeKind::Pointer && A.Kind != TypeKind::Array) ||
@@ -963,6 +1075,8 @@ class Verifier {
         return error(
             I.Loc,
             "Mapping identity is valid only on an explicit mapped call.");
+      if (I.Op != InstructionKind::IndirectCall && I.Callable)
+        return error(I.Loc, "Callable operands require an indirect call.");
       if (I.Op == InstructionKind::Label) {
         if (!Terminated)
           return error(I.Loc, "Basic block has implicit fallthrough.");
@@ -974,7 +1088,8 @@ class Verifier {
       auto Check = [&](const std::optional<Expr> &E) {
         return !E || expr(*E, Storage);
       };
-      if (!Check(I.Target) || !Check(I.Value) || !Check(I.Condition))
+      if (!Check(I.Target) || !Check(I.Value) || !Check(I.Condition) ||
+          !Check(I.Callable))
         return false;
       for (const auto &A : I.Args)
         if (!expr(A, Storage))
@@ -1020,6 +1135,27 @@ class Verifier {
                    I.Target->ValueType != CF.Result)
           return error(I.Loc,
                        "Nonvoid call requires matching local result storage.");
+        break;
+      }
+      case InstructionKind::IndirectCall: {
+        if (M.Profile != "cpp-core-v2" || !I.Callable ||
+            I.Callable->ValueType.Kind != TypeKind::FunctionPointer ||
+            !I.Callee.empty() || !I.MappingID.empty() || I.Value || I.Condition ||
+            !I.Label.empty() || !I.TrueLabel.empty() || !I.FalseLabel.empty())
+          return error(I.Loc, "Indirect call requires only a typed callable, arguments and result.");
+        const auto &Signature = I.Callable->ValueType.Elements;
+        if (I.Args.size() + 1 != Signature.size())
+          return error(I.Loc, "Indirect call argument count mismatch.");
+        for (std::size_t N = 0; N < I.Args.size(); ++N)
+          if (I.Args[N].ValueType != Signature[N + 1])
+            return error(I.Loc, "Indirect call argument type mismatch.");
+        if (Signature[0].Kind == TypeKind::Void) {
+          if (I.Target)
+            return error(I.Loc, "Void indirect call cannot have result storage.");
+        } else if (!I.Target || I.Target->Kind != ExprKind::Var ||
+                   !Locals.count(I.Target->Name) ||
+                   I.Target->ValueType != Signature[0])
+          return error(I.Loc, "Indirect call requires matching local result storage.");
         break;
       }
       case InstructionKind::Jump:
@@ -1144,7 +1280,8 @@ class Verifier {
       unsigned Slot = Bits == 8 ? 1 : Bits == 16 ? 3 : Bits == 32 ? 5 : 7;
       return C[Slot + (T.Kind == TypeKind::UInt)];
     }
-    case TypeKind::Pointer: return C[9];
+    case TypeKind::Pointer:
+    case TypeKind::FunctionPointer: return C[9];
     case TypeKind::Record: {
       auto It = Records.find(T.RecordID);
       if (It != Records.end() && It->second->Layout)
@@ -1277,8 +1414,9 @@ public:
     }
     for (const auto &G : M.Globals) {
       if (G.Mutable && (M.Profile != "cpp-core-v2" ||
-                        (!G.ValueType.isInteger() && G.ValueType.Kind != TypeKind::Bool)))
-        return error(G.Loc, "Mutable globals require core v2 integer or boolean storage.");
+                        (!G.ValueType.isInteger() && G.ValueType.Kind != TypeKind::Bool &&
+                         G.ValueType.Kind != TypeKind::FunctionPointer)))
+        return error(G.Loc, "Mutable globals require core v2 integer, boolean or callback storage.");
       if (!loc(G.Loc) || !name(G.Name, G.Loc, true) ||
           !type(G.ValueType, G.Loc) || G.ValueType.Kind == TypeKind::Pointer ||
           containsArray(G.ValueType) ||

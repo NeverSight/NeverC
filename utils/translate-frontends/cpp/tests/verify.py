@@ -2248,7 +2248,6 @@ bool recordQuery(Factory&r){return noexcept(static_cast<R>(r));}
         'volatile': 'struct R{operator int()volatile{return 1;}};',
         'restrict': 'struct R{operator int()__restrict{return 1;}};',
         'member-address': 'struct R{operator int()const{return 1;}};auto f(){return &R::operator int;}',
-        'function-pointer': 'using F=int(*)();int g(){return 1;}struct R{operator F()const{return g;}};',
         'unused-throw': 'struct R{operator int()const{throw 1;}};',
         'query-throw': 'struct R{operator int()const noexcept(false){throw 1;}};bool f(R&r){return noexcept(static_cast<int>(r));}',
         'folded-float': 'struct R{constexpr operator int()const{return static_cast<int>(1.0);}};constexpr R r{};static_assert(int(r)==1,"value");',
@@ -3152,7 +3151,6 @@ static_assert((static_cast<void>(0),true));
         'volatile': 'void f(){volatile int n=1;static_cast<void>(n);}',
         'volatile-void-alias': 'using V=volatile void;void f(){V();}',
         'string': 'void f(){static_cast<void>("text");}',
-        'function-pointer': 'void g(){}void f(){static_cast<void>(&g);}',
         'allocation': 'void f(){static_cast<void>(new int(1));}',
         'lambda': 'void f(){static_cast<void>([]{});}',
         'dead-operand': 'void f(){if(false){static_cast<void>(1.0);}}',
@@ -4055,9 +4053,6 @@ void members(){R r(3);Other other(4);Reader reader;Inspector inspector;tick(read
     for name, source in friends_positive.items():
         check("v2-friends-positive-" + name, source, profile="cpp-core-v2")
     friends_reject = {
-        'function-template': 'class R{int n=1;template<class T>friend int get(const R&r,T v){return r.n+v;}};',
-        'class-template': 'template<class T>class A{};class R{int n=1;template<class T>friend class A;};',
-        'dependent-friend': 'template<class T>class R{int n=1;friend T;};',
         'unsupported-friend-form': 'template<class T>class A{public:struct B{};};class R{int n=1;template<class T>friend class A<T>::B;};',
         'floating-body': 'class R{int n=1;friend int get(const R&r){double ignored=1.0;return r.n;}};',
         'floating-default': 'class R{int n=1;friend int get(const R&r,double v=1.0){return r.n;}};',
@@ -4467,7 +4462,6 @@ int main(){
     nested_records_reject = {
         'anonymous-field': 'struct R{struct{int n;} value;};',
         'anonymous-typedef': 'struct R{typedef struct{int n;} I;I i;};',
-        'dependent-type': 'template<class T>struct R{struct I{T n;};};',
         'union': 'struct R{union I{int n;unsigned int u;};};',
         'anonymous-union': 'struct R{union{int n;unsigned int u;};};',
         'inherited': 'struct R{struct B{int n;};struct I:B{};};',
@@ -6378,7 +6372,6 @@ int grantedCall(){return granted(6);}
     for name, source in friend_declarations_invalid.items():
         check("v2-friend-declarations-invalid-" + name, source, "TR0202", profile="cpp-core-v2")
     friend_declarations_reject = {
-        'nonfunction-template-friend': 'class R{template<class T>struct Hidden{};public:struct I{template<class T>friend struct R::Hidden;};};',
     }
     for name, source in friend_declarations_reject.items():
         check("v2-friend-declarations-reject-" + name, source, "TR0201", profile="cpp-core-v2")
@@ -6851,7 +6844,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'conversion-hidden-body': 'struct R{template<class T>operator T(){return T(int(1.0));}};int main(){R r;return static_cast<int>(r);}',
         'own-specialized-hidden-body': 'template<class C>struct R{template<class T>int f(T){return 3;}};template<>template<class T>int R<int>::f(T n){return int(1.0)+int(n);}int main(){R<int>r;return r.f(3);}',
         'member-function-pointer': 'struct R{template<class T>int f(T){return 3;}};int main(){auto p=&R::f<int>;R r;return (r.*p)(3);}',
-        'static-function-pointer': 'struct R{template<class T>static int f(T){return 3;}};int main(){auto p=&R::f<int>;return p(3);}',
         'volatile-member': 'struct R{template<class T>int f(T)volatile{return 3;}};int main(){R r;return r.f(3);}',
         'specialized-default-hidden': 'template<class T>struct R{template<class U>int f(int n=int(sizeof(double))+int(sizeof(T)));};template<>template<class U>int R<int>::f(int n){return n;}int main(){R<int>r;return r.f<bool>();}',
         'hidden-function-default': 'struct R{template<class T=int>int f(int n=int(sizeof(double))+int(sizeof(T))){return n;}};int main(){R r;return r.f<int>();}',
@@ -7058,7 +7050,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'hidden-outer-copied-unused': 'template<class T>struct R{template<class U>using I=decltype((sizeof(double),T{}));int n;};int main(){R<int> r{3};return r.n;}',
         'hidden-nttp-type': 'struct R{template<class T,decltype((sizeof(double),T{})) N=3>using I=int;};int main(){R::I<int> n=3;return n;}',
         'floating-argument': 'struct R{template<class T>using I=int;};int main(){R::I<double> n=3;return n;}',
-        'function-pointer': 'struct R{template<class T>using I=T(*)();};int f(){return 3;}int main(){R::I<int> p=&f;return p();}',
         'member-pointer': 'struct V{int n;};struct R{template<class T>using I=T V::*;};int main(){R::I<int> p=&V::n;V v{3};return v.*p;}',
         'volatile': 'struct R{template<class T>using I=volatile T;};int main(){R::I<int> n=3;return n;}',
         'union-owner': 'union R{template<class T>using I=T;int n;};int main(){R::I<int> n=3;return n;}',
@@ -7529,7 +7520,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'type-pack-65': 'struct R{template<class...T>struct I{int n=sizeof...(T);};};int f(){R::I<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r;return r.n;}',
         'value-pack-65': 'struct R{template<int...N>struct I{int n=sizeof...(N);};};int f(){R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return r.n;}',
         'parameters-65': 'struct R{template<int N0,int N1,int N2,int N3,int N4,int N5,int N6,int N7,int N8,int N9,int N10,int N11,int N12,int N13,int N14,int N15,int N16,int N17,int N18,int N19,int N20,int N21,int N22,int N23,int N24,int N25,int N26,int N27,int N28,int N29,int N30,int N31,int N32,int N33,int N34,int N35,int N36,int N37,int N38,int N39,int N40,int N41,int N42,int N43,int N44,int N45,int N46,int N47,int N48,int N49,int N50,int N51,int N52,int N53,int N54,int N55,int N56,int N57,int N58,int N59,int N60,int N61,int N62,int N63,int N64>struct I{int n=N0;};};int f(){R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return r.n;}',
-        'generic-nested-record': 'struct R{template<class T>struct I{struct J{T n;};};};',
         'template-template': 'struct R{template<template<class>class T>struct I{int n;};};',
         'union-owner': 'union R{template<class T>struct I{T n;};int n;};',
         'union-template': 'struct R{template<class T>union I{T n;int m;};};',
@@ -7898,8 +7888,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'default-hidden': 'template<class T>struct O{template<class U=decltype((sizeof(double),1))>struct I{int n;};};',
         'argument-hidden': 'template<class T>struct O{template<class U>struct I{int n;};};int f(){O<int>::I<decltype((sizeof(double),1))>v{3};return v.n;}',
         'inner-pack-65': 'template<int N>struct O{template<int...M>struct I{int n=N+sizeof...(M);};};int f(){O<1>::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}',
-        'copied-full-unused': 'template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};int f(){O<int>o;return sizeof(o);}',
-        'generic-nested-record': 'template<class T>struct O{struct R{template<class U>struct I{U n;};};};',
         'inner-reference-field': 'template<class T>struct O{template<class U>struct I{U&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}',
         'inner-virtual': 'template<class T>struct O{template<class U>struct I{virtual int get(){return 3;}};};',
         'selected-hidden-method': 'template<class T>struct O{template<class U>struct I{int get(){double n=1.0;return 3;}};};int f(){O<int>::I<int>v;return v.get();}',
@@ -7915,7 +7903,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-dependent-member-classes-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
 
     dependent_member_classes_invalid = {
-        'copied-full-used': 'template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};int f(){O<int>::I<int>v;return v.n;}',
         'distinct-outer': 'template<class T>struct O{template<class U>struct I{U n;};};void f(){O<int>::I<int>a{3};O<bool>::I<int>b=a;}',
         'distinct-inner': 'template<class T>struct O{template<class U>struct I{T n;};};void f(){O<int>::I<int>a{3};O<int>::I<bool>b=a;}',
         'partial-ambiguity': 'template<class T>struct O{template<class U,class V>struct I;template<class U>struct I<U,int>{};template<class V>struct I<int,V>{};};O<int>::I<int,int>v;',
@@ -8040,6 +8027,1695 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         relocated = check("v2-dependent-member-classes-relocated", dependent_member_class_source,
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == dependent_member_classes, "member class identities depend on the absolute root"
+
+    copied_full_classes_positive = {
+        'unused-generic': 'template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};',
+        'type-argument': 'template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<T>{T n;};};int f(){O<int>::I<int>v{3};return v.n;}',
+        'value-argument': 'template<int N>struct O{template<int M>struct I{int n=1;};template<>struct I<N>{int n=N;};};int f(){O<3>::I<3>v;return v.n;}',
+        'method': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{int n;int get()const{return n+N;}};};int f(){O<2>::I<int>v{3};return v.get();}',
+        'constructor': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{int n;I(int v):n(v+N){}};};int f(){O<2>::I<int>v(3);return v.n;}',
+        'static': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{inline static int n=N;};};int*f(){return &O<3>::I<int>::n;}',
+        'member-function': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{template<int M>int get(){return N+M;}};};int f(){O<2>::I<int>v;return v.get<3>();}',
+        'member-alias': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{template<class V>using A=T;};};O<int>::I<int>::A<bool>f(){return 3;}',
+        'member-variable': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{template<int M>inline static int n=N+M;};};int*f(){return &O<2>::I<int>::n<3>;}',
+        'member-variable-full': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{template<class V>inline static int n=1;template<>inline int n<int> =N;};};int*f(){return &O<3>::I<int>::n<int>;}',
+        'member-class': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{template<class V>struct J{T a;V b;};};};int f(){O<int>::I<int>::J<int>v{1,2};return v.a+v.b;}',
+        'nested-full': 'template<int N>struct O{template<int M>struct I{template<class U>struct J{};template<>struct J<int>{int n=N+M;};};};int f(){O<2>::I<3>::J<int>v;return v.n;}',
+        'outer-partial': 'template<class T>struct O;template<class T>struct O<T*>{template<class U>struct I{};template<>struct I<int>{T n;};};int f(){O<int*>::I<int>v{3};return v.n;}',
+        'precedence': 'template<class T>struct O{template<class U>struct I{int n=1;};template<class U>struct I<U*>{int n=2;};template<>struct I<int*>{int n=3;};};int f(){O<int>::I<int*>v;return v.n;}',
+        'defaulted-copy': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T n;I(const I&)=default;};};int f(){O<int>::I<int>a{3};O<int>::I<int>b=a;return b.n;}',
+        'defaulted-assignment': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T n;I&operator=(const I&)=default;};};int f(){O<int>::I<int>a{3};O<int>::I<int>b{2};b=a;return b.n;}',
+        'outer-pack-count': 'template<class...T>struct O{template<class U>struct I{};template<>struct I<int>{int n=sizeof...(T);};};int f(){O<int,bool>::I<int>v;return v.n;}',
+        'member-pack-count': 'template<class...T>struct O{template<class U>struct I{};template<>struct I<int>{template<class...V>int get(){return sizeof...(T)+sizeof...(V);}};};int f(){O<int,bool>::I<int>v;return v.get<int>();}',
+        'unused-method-body': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n;int get(){double d=1.0;return 3;}};};int f(){O<int>o;return sizeof(o);}',
+        'promoted-copied-full-unused': 'template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};int f(){O<int>o;return sizeof(o);}',
+        'resolved-parameter-safe-generic': 'template<class T>struct O{template<decltype((sizeof(int),1)) N>struct I{};template<>struct I<1>{};};',
+        'copied-parameter-safe-generic': 'template<class T>struct O{template<decltype((sizeof(int),T{})) N>struct I{};template<>struct I<1>{};};',
+        'resolved-parameter-safe-unused': 'template<class T>struct O{template<decltype((sizeof(int),1)) N>struct I{};template<>struct I<1>{};};int f(){O<int>o;return sizeof(o);}',
+        'copied-parameter-safe-unused': 'template<class T>struct O{template<decltype((sizeof(int),T{})) N>struct I{};template<>struct I<1>{};};int f(){O<int>o;return sizeof(o);}',
+        'resolved-parameter-safe-used': 'template<class T>struct O{template<decltype((sizeof(int),1)) N>struct I{};template<>struct I<1>{};};int f(){O<int>::I<1>v;return sizeof(v);}',
+        'copied-parameter-safe-used': 'template<class T>struct O{template<decltype((sizeof(int),T{})) N>struct I{};template<>struct I<1>{};};int f(){O<int>::I<1>v;return sizeof(v);}',
+        'full-argument-safe-unused': 'template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(int)>{};};int f(){O<int>o;return sizeof(o);}',
+        'full-argument-safe-used': 'template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(int)>{};};int f(){O<int>::I<4>v;return sizeof(v);}',
+        'copied-parameter-hidden-generic': 'template<class T>struct O{template<decltype((sizeof(double),T{})) N>struct I{};template<>struct I<1>{};};',
+        'type-fixed-frontier-unused': 'template<class...Ts>struct O{template<class A,class B>struct I{};template<>struct I<Ts...>{int n;};};',
+        'type-fixed-frontier-used': 'template<class...Ts>struct O{template<class A,class B>struct I{};template<>struct I<Ts...>{int n;};};int f(){O<int,bool>::I<int,bool>v{3};return v.n;}',
+        'value-fixed-frontier-unused': 'template<int...Ns>struct O{template<int A,int B>struct I{};template<>struct I<Ns...>{int n;};};',
+        'value-fixed-frontier-used': 'template<int...Ns>struct O{template<int A,int B>struct I{};template<>struct I<Ns...>{int n;};};int f(){O<1,2>::I<1,2>v{3};return v.n;}',
+        'expanded-primary-frontier': 'template<class...Ts>struct O{template<int...Ns>struct M{template<Ts...Vs>struct I{};template<>struct I<Ns...>{int n;};};};int f(){O<int,long long>::M<1,2>::I<1,2>v{3};return v.n;}',
+        'forward-full': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>;template<>struct I<int>{T n;};};int f(){O<int>::I<int>v{3};return v.n;}',
+        'outer-own-primary': 'template<class T>struct O{template<class U>struct I{};};template<>template<class U>struct O<int>::I{template<class V>struct J{};template<>struct J<int>{U n;};};int f(){O<int>::I<int>::J<int>v{3};return v.n;}',
+        'concrete-outer-full': 'template<class T>struct O{};template<>struct O<int>{template<class U>struct I{};template<>struct I<int>{int n;};};int f(){O<int>::I<int>v{3};return v.n;}',
+        'generic-resolved-default': 'template<class T>struct O{template<class U=int>struct I{};template<>struct I<>{T n;};};int f(){O<int>::I<>v{3};return v.n;}',
+        'generic-pending-default': 'template<class T>struct O{template<class U=T>struct I{};template<>struct I<>{T n;};};int f(){O<int>::I<>v{3};return v.n;}',
+        'method-default': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{int get(int v=N){return v;}};};int f(){O<3>::I<int>v;return v.get();}',
+        'conversion': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T n;operator int()const{return n;}};};int f(){O<int>::I<int>v{3};return static_cast<int>(v);}',
+        'type-pack-empty': 'template<class...T>struct O{template<class U>struct I{};template<>struct I<int>{template<class...V>int get(){return sizeof...(T)+sizeof...(V);}};};int f(){O<>::I<int>v;return v.get<>();}',
+        'value-pack': 'template<int...N>struct O{template<class U>struct I{};template<>struct I<int>{template<int...M>int get(){return (0+...+N)+(0+...+M);}};};int f(){O<1,2>::I<int>v;return v.get<3,4>();}',
+        'member-variable-partial': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{template<class V>inline static int n=1;template<class V>inline static int n<V*> =N;};};int*f(){return &O<3>::I<int>::n<int*>;}',
+        'default-safe-generic': 'template<class T>struct O{template<int N=sizeof(int)>struct I{};template<>struct I<>{};};',
+        'copied-default-safe-generic': 'template<class T>struct O{template<int N=(sizeof(int),sizeof(T))>struct I{};template<>struct I<>{};};',
+        'default-safe-unused': 'template<class T>struct O{template<int N=sizeof(int)>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}',
+        'copied-default-safe-unused': 'template<class T>struct O{template<int N=(sizeof(int),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}',
+        'default-safe-used': 'template<class T>struct O{template<int N=sizeof(int)>struct I{};template<>struct I<>{};};int f(){O<int>::I<>v;return sizeof(v);}',
+        'copied-default-safe-used': 'template<class T>struct O{template<int N=(sizeof(int),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>::I<>v;return sizeof(v);}',
+        'copied-default-hidden-generic': 'template<class T>struct O{template<int N=(sizeof(double),sizeof(T))>struct I{};template<>struct I<>{};};',
+        'outer-pack-64': 'template<class...T>struct O{template<class U>struct I{};template<>struct I<int>{int n=sizeof...(T);};};int f(){O<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>::I<int>v;return v.n;}',
+        'member-pack-64': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{template<class...V>int get(){return sizeof...(V);}};};int f(){O<int>::I<int>v;return v.get<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>();}',
+        'deep-full-member-pack': 'template<int N>struct O{template<int M>struct I{template<class T>struct J{};template<>struct J<int>{template<int...K>int get(){return N+M+(0+...+K);}};};};int f(){O<1>::I<2>::J<int>v;return v.get<3,4>();}',
+        'deep-full-empty-pack': 'template<int N>struct O{template<int M>struct I{template<class T>struct J{};template<>struct J<int>{template<class...K>int get(){return N+M+sizeof...(K);}};};};int f(){O<1>::I<2>::J<int>v;return v.get<>();}',
+        'runtime-source': 'int trace=0;\ntemplate<int N>struct Owner{\n template<int M>struct Item{};\n template<>struct Item<2>{\n  int n;\n  Item(int v):n(v){}\n  Item(const Item&v):n(v.n+1){}\n  Item(Item&&v):n(v.n){v.n=0;}\n  ~Item(){trace=trace*10+n;}\n  int get()const{return n+N+2;}\n };\n};\ntemplate<class T>struct Choices{\n template<class U>struct Item{int data[1];int tag(){return 1;}inline static int count=10;};\n template<class U>struct Item<U*>{int data[2];int tag(){return 2;}inline static int count=20;};\n template<>struct Item<int*>{int data[3];int tag(){return 3;}inline static int count=30;};\n};\ntemplate<int N>struct Levels{\n template<int M>struct Inner{\n  template<class T>struct Full{};\n  template<>struct Full<int>{\n   template<class T>using Alias=T;\n   template<class T>inline static int value=1;\n   template<>inline int value<int> =N+M;\n   template<int...K>int get(){return N+M+(0+...+K);}\n   inline static int count=N*10+M;\n   int read()const{return N+M;}\n  };\n };\n};\ntemplate<class T>struct Copies{\n template<class U>struct Item{};\n template<>struct Item<long long>{\n  T a;long long b;\n  Item()=default;\n  Item(const Item&)=default;\n  Item(Item&&)=default;\n  Item&operator=(const Item&)=default;\n  Item&operator=(Item&&)=default;\n  ~Item()=default;\n };\n};\nint main(){\n {Owner<1>::Item<2>a(1);if(a.get()!=4)return 1;}\n if(trace!=1)return 2;\n trace=0;\n {Owner<1>::Item<2>a(1);Owner<1>::Item<2>b=a;Owner<1>::Item<2>c=static_cast<Owner<1>::Item<2>&&>(a);\n  if(a.n!=0||b.n!=2||c.n!=1)return 3;\n  if(&a==&b||&b==&c||&a==&c)return 4;}\n if(trace!=120)return 5;\n Choices<int>::Item<int>a{{1}};Choices<int>::Item<char*>b{{1,2}};Choices<int>::Item<int*>c{{1,2,3}};\n Choices<bool>::Item<int*>d{{4,5,6}};\n if(a.tag()!=1||b.tag()!=2||c.tag()!=3||d.tag()!=3)return 6;\n if(sizeof(a)!=sizeof(int)||sizeof(b)!=2*sizeof(int)||sizeof(c)!=3*sizeof(int))return 7;\n using Same=Choices<int>::Item<int*>;\n if(&Same::count!=&Choices<int>::Item<int*>::count)return 8;\n if(&Choices<int>::Item<int*>::count==&Choices<bool>::Item<int*>::count)return 9;\n ++Same::count;\n if(Choices<int>::Item<int*>::count!=31||Choices<int>::Item<char*>::count!=20||Choices<bool>::Item<int*>::count!=30)return 10;\n Levels<1>::Inner<2>::Full<int>first;Levels<2>::Inner<1>::Full<int>second;\n Levels<1>::Inner<2>::Full<int>::Alias<int>n=6;\n if(first.get<3>()!=6||second.get<4>()!=7||n!=6)return 11;\n if(first.read()!=3||second.read()!=3)return 12;\n if(&Levels<1>::Inner<2>::Full<int>::value<int> == &Levels<2>::Inner<1>::Full<int>::value<int>)return 13;\n ++Levels<1>::Inner<2>::Full<int>::value<int>;\n if(Levels<1>::Inner<2>::Full<int>::value<int> !=4||Levels<2>::Inner<1>::Full<int>::value<int> !=3||Levels<1>::Inner<2>::Full<int>::value<bool> !=1)return 14;\n if(&Levels<1>::Inner<2>::Full<int>::count==&Levels<2>::Inner<1>::Full<int>::count)return 15;\n if(Levels<1>::Inner<2>::Full<int>::count!=12||Levels<2>::Inner<1>::Full<int>::count!=21)return 16;\n Copies<int>::Item<long long>x;x.a=2;x.b=3;\n Copies<int>::Item<long long>y=x;Copies<int>::Item<long long>z=static_cast<Copies<int>::Item<long long>&&>(y);\n Copies<int>::Item<long long>w;w=x;w=static_cast<Copies<int>::Item<long long>&&>(z);\n if(w.a!=2||w.b!=3||x.a!=2||x.b!=3)return 17;\n return 0;\n}\n',
+        'protocol-source': 'template<class T>struct Outer{\n template<class U>struct Inner{int primary;};\n template<>struct Inner<int>{T value;T get()const{return value;}inline static int count=sizeof(T);};\n};\nusing Same=Outer<int>::Inner<int>;\nstruct Holder{Outer<int>::Inner<int> item;};\nint readA(const Outer<int>::Inner<int>&value){return value.get();}\nlong long readWide(const Outer<long long>::Inner<int>&value){return value.get();}\nint*addressA(){return &Outer<int>::Inner<int>::count;}\nint*sameA(){return &Same::count;}\nint*addressB(){return &Outer<long long>::Inner<int>::count;}\nint field(const Holder&value){return value.item.value;}\n',
+    }
+    for name, source in copied_full_classes_positive.items():
+        check("v2-copied-full-classes-positive-" + name, source, None, profile="cpp-core-v2")
+
+    copied_full_classes_reject = {
+        'resolved-parameter-hidden-generic': 'template<class T>struct O{template<decltype((sizeof(double),1)) N>struct I{};template<>struct I<1>{};};',
+        'resolved-parameter-hidden-unused': 'template<class T>struct O{template<decltype((sizeof(double),1)) N>struct I{};template<>struct I<1>{};};int f(){O<int>o;return sizeof(o);}',
+        'copied-parameter-hidden-unused': 'template<class T>struct O{template<decltype((sizeof(double),T{})) N>struct I{};template<>struct I<1>{};};int f(){O<int>o;return sizeof(o);}',
+        'resolved-parameter-hidden-used': 'template<class T>struct O{template<decltype((sizeof(double),1)) N>struct I{};template<>struct I<1>{};};int f(){O<int>::I<1>v;return sizeof(v);}',
+        'copied-parameter-hidden-used': 'template<class T>struct O{template<decltype((sizeof(double),T{})) N>struct I{};template<>struct I<1>{};};int f(){O<int>::I<1>v;return sizeof(v);}',
+        'full-argument-hidden-unused': 'template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(double)>{};};int f(){O<int>o;return sizeof(o);}',
+        'full-argument-hidden-used': 'template<class T>struct O{template<int N>struct I{};template<>struct I<sizeof(double)>{};};int f(){O<int>::I<4>v;return sizeof(v);}',
+        'copied-float-field': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{double n;};};int f(){O<int>v;return sizeof(v);}',
+        'selected-hidden-method': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int get(){double d=1.0;return 3;}};};int f(){O<int>::I<int>v;return v.get();}',
+        'reference-field': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T&n;};};int f(){int n=3;O<int>::I<int>v{n};return v.n;}',
+        'default-hidden-generic': 'template<class T>struct O{template<int N=sizeof(double)>struct I{};template<>struct I<>{};};',
+        'default-hidden-unused': 'template<class T>struct O{template<int N=sizeof(double)>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}',
+        'copied-default-hidden-unused': 'template<class T>struct O{template<int N=(sizeof(double),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>v;return sizeof(v);}',
+        'default-hidden-used': 'template<class T>struct O{template<int N=sizeof(double)>struct I{};template<>struct I<>{};};int f(){O<int>::I<>v;return sizeof(v);}',
+        'copied-default-hidden-used': 'template<class T>struct O{template<int N=(sizeof(double),sizeof(T))>struct I{};template<>struct I<>{};};int f(){O<int>::I<>v;return sizeof(v);}',
+        'outer-pack-65': 'template<class...T>struct O{template<class U>struct I{};template<>struct I<int>{int n=sizeof...(T);};};int f(){O<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>::I<int>v;return v.n;}',
+        'member-pack-65': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{template<class...V>int get(){return sizeof...(V);}};};int f(){O<int>::I<int>v;return v.get<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>();}',
+    }
+    for name, source in copied_full_classes_reject.items():
+        check("v2-copied-full-classes-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    copied_full_classes_invalid = {
+        'type-fixed-frontier-wrong-outer': 'template<class...Ts>struct O{template<class A,class B>struct I{};template<>struct I<Ts...>{int n;};};int f(){O<int>v;return sizeof(v);}',
+        'colliding-full': 'template<class T,class U>struct O{template<class V>struct I{};template<>struct I<T>{};template<>struct I<U>{};};int f(){O<int,int>v;return sizeof(v);}',
+        'bad-full-arity': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int,bool>{};};',
+        'private-access': 'template<class T>class O{template<class U>struct I{};template<>struct I<int>{};};O<int>::I<int>v;',
+    }
+    for name, source in copied_full_classes_invalid.items():
+        check("v2-copied-full-classes-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    copied_full_classes_missing = {
+        'used-method': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int get();};};int f(){O<int>::I<int>v;return v.get();}',
+        'used-static': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{static int n;};};int*f(){return &O<int>::I<int>::n;}',
+    }
+    for name, source in copied_full_classes_missing.items():
+        check("v2-copied-full-classes-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    copied_full_class_source = copied_full_classes_positive["protocol-source"]
+    copied_full_classes = check("v2-copied-full-classes-protocol", copied_full_class_source, profile="cpp-core-v2")
+    fc_records = {r["id"]: r for r in copied_full_classes["records"]}
+    fc_functions = {f["name"]: f for f in copied_full_classes["functions"]}
+    fc_globals = {g["name"]: g for g in copied_full_classes["globals"]}
+    assert len(fc_records) == len(copied_full_classes["records"]) == 5
+    assert len(fc_functions) == len(copied_full_classes["functions"]) == 8
+    assert len(fc_globals) == len(copied_full_classes["globals"]) == 2
+
+    def fc_line(prefix):
+        found = [i for i, line in enumerate(copied_full_class_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    def fc_function(prefix):
+        found = [f for f in fc_functions.values() if f["loc"]["line"] == fc_line(prefix)]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    fc_outer = [r for r in fc_records.values() if r["loc"]["line"] == fc_line("struct Holder{")]
+    assert len(fc_outer) == 1 and len(fc_outer[0]["fields"]) == 1
+    fc_a = fc_outer[0]["fields"][0]["type"]
+    assert fc_a in fc_records
+    fc_readers = [("int readA(", "int"), ("long long readWide(", "i64")]
+    fc_inner_ids = []
+    for prefix, kind in fc_readers:
+        function = fc_function(prefix)
+        assert function["result"] == kind and len(function["params"]) == 1
+        param = function["params"][0]
+        assert param["type"].startswith("cptr:")
+        record_id = param["type"][5:]
+        assert record_id in fc_records
+        record = fc_records[record_id]
+        assert len(record["fields"]) == 1 and record["fields"][0]["type"] == kind
+        fc_inner_ids.append(record_id)
+        calls = [node for node in walk(function["body"]) if node.get("op") == "call"]
+        assert len(calls) == 1, function
+        call = calls[0]
+        assert call["callee"] in fc_functions
+        method = fc_functions[call["callee"]]
+        assert method["result"] == kind and len(method["params"]) == 1
+        assert method["params"][0]["type"] == param["type"]
+        assert [arg["type"] for arg in call["args"]] == [param["type"]]
+        assert np_pointer(function, call["args"][0]) == ("parameter", param["name"])
+    assert len(set(fc_inner_ids)) == 2 and fc_inner_ids[0] == fc_a
+    fc_order = {record["id"]: i for i, record in enumerate(copied_full_classes["records"])}
+    for record in fc_records.values():
+        for field in record["fields"]:
+            if field["type"] in fc_records:
+                assert fc_order[field["type"]] < fc_order[record["id"]]
+    assert sum(bool(r["fields"]) for r in fc_records.values()) == 3
+
+    def fc_global(value):
+        found = [g for g in fc_globals.values() if g["type"] == "int" and g["value"]["value"] == value]
+        assert len(found) == 1, (value, found)
+        g = found[0]
+        assert g.get("mutable", False) is True
+        assert g["value"] == {"kind": "literal", "type": "int", "value": value, "loc": g["loc"]}
+        return g["name"]
+
+    def fc_root(function, expression):
+        if expression["kind"] in ("cast", "address", "dereference"):
+            return fc_root(function, expression["args"][0])
+        assert expression["kind"] == "var", expression
+        if expression["name"] in fc_globals:
+            return expression["name"]
+        assigned = [n["value"] for n in function["body"] if n["op"] == "assign"
+                    and n["target"].get("kind") == "var" and n["target"]["name"] == expression["name"]]
+        assert len(assigned) == 1, (expression, assigned)
+        return fc_root(function, assigned[0])
+
+    fc_first, fc_second = fc_global("4"), fc_global("8")
+    assert len({fc_first, fc_second}) == 2
+    for prefix, target in (("int*addressA(", fc_first), ("int*sameA(", fc_first),
+                           ("int*addressB(", fc_second)):
+        function = fc_function(prefix)
+        assert function["result"] == "ptr:int" and not function["params"]
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and fc_root(function, returned[0]) == target
+    fc_field = fc_function("int field(")
+    assert fc_field["result"] == "int" and len(fc_field["params"]) == 1
+    assert fc_field["params"][0]["type"] == "cptr:" + fc_outer[0]["id"]
+    for function in fc_functions.values():
+        values = set(fc_globals) | {v["name"] for v in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in fc_functions, node
+                target = fc_functions[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in target["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-copied-full-classes-relocated-") as temp:
+        relocated = check("v2-copied-full-classes-relocated", copied_full_class_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == copied_full_classes, "member class identities depend on the absolute root"
+
+    ordinary_classes_positive = {
+        'plain-used': 'template<class T>struct O{struct R{T n;};};int f(){O<int>::R v{3};return v.n;}',
+        'two-plain-levels': 'template<class T>struct O{struct R{struct I{T n;};};};int f(){O<int>::R::I v{3};return v.n;}',
+        'outer-partial': 'template<class T>struct O;template<class T>struct O<T*>{struct R{T n;};};int f(){O<int*>::R v{3};return v.n;}',
+        'out-of-line-record': 'template<class T>struct O{struct R;};template<class T>struct O<T>::R{T n;};int f(){O<int>::R v{3};return v.n;}',
+        'own-record': 'template<class T>struct O{struct R{T n;};};template<>struct O<int>::R{long long n;};long long f(){O<int>::R v{3};return v.n;}',
+        'method': 'template<int N>struct O{struct R{int n;int get()const{return n+N;}};};int f(){O<2>::R v{3};return v.get();}',
+        'constructor': 'template<int N>struct O{struct R{int n;R(int v):n(N+v){}};};int f(){O<2>::R v(3);return v.n;}',
+        'static': 'template<int N>struct O{struct R{inline static int n=N;};};int*f(){return &O<3>::R::n;}',
+        'out-of-line-static': 'template<int N>struct O{struct R{static int n;};};template<int M>int O<M>::R::n=M;int*f(){return &O<3>::R::n;}',
+        'out-of-line-method': 'template<int N>struct O{struct R{int get()const;};};template<int M>int O<M>::R::get()const{return M;}int f(){O<3>::R v;return v.get();}',
+        'template-in-record': 'template<class T>struct O{struct R{template<class U>struct I{T a;U b;};};};int f(){O<int>::R::I<int>v{1,2};return v.a+v.b;}',
+        'record-in-member-template': 'template<class T>struct O{template<class U>struct I{struct R{T a;U b;};};};int f(){O<int>::I<int>::R v{1,2};return v.a+v.b;}',
+        'full-in-record': 'template<class T>struct O{struct R{template<class U>struct I{};template<>struct I<int>{T n;};};};int f(){O<int>::R::I<int>v{3};return v.n;}',
+        'record-in-full': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{struct R{T n;};};};int f(){O<int>::I<int>::R v{3};return v.n;}',
+        'member-function': 'template<int N>struct O{struct R{template<int M>int get(){return N+M;}};};int f(){O<2>::R v;return v.get<3>();}',
+        'member-alias': 'template<class T>struct O{struct R{template<class U>using A=T;};};O<int>::R::A<bool>f(){return 3;}',
+        'member-variable': 'template<int N>struct O{struct R{template<int M>inline static int n=N+M;};};int*f(){return &O<2>::R::n<3>;}',
+        'member-variable-full': 'template<int N>struct O{struct R{template<class T>inline static int n=1;template<>inline int n<int> =N;};};int*f(){return &O<3>::R::n<int>;}',
+        'full-with-member-variable': 'template<int N>struct O{struct R{template<class T>struct I{};template<>struct I<int>{template<int M>inline static int n=N+M;};};};int*f(){return &O<2>::R::I<int>::n<3>;}',
+        'defaulted-copy': 'template<class T>struct O{struct R{T n;R(const R&)=default;};};int f(){O<int>::R a{3};O<int>::R b=a;return b.n;}',
+        'defaulted-assignment': 'template<class T>struct O{struct R{T n;R&operator=(const R&)=default;};};int f(){O<int>::R a{3};O<int>::R b{2};b=a;return b.n;}',
+        'outer-pack': 'template<int...N>struct O{struct R{int n=(0+...+N);};};int f(){O<1,2>::R v;return v.n;}',
+        'member-type-pack': 'template<class...T>struct O{struct R{template<class...U>int get(){return sizeof...(T)+sizeof...(U);}};};int f(){O<int>::R v;return v.get<int,bool>();}',
+        'empty-packs': 'template<class...T>struct O{struct R{template<class...U>int get(){return sizeof...(T)+sizeof...(U);}};};int f(){O<>::R v;return v.get<>();}',
+        'deep-member-pack': 'template<int N>struct O{template<int M>struct I{struct R{template<int...K>int get(){return N+M+(0+...+K);}};};};int f(){O<1>::I<2>::R v;return v.get<3,4>();}',
+        'unused-lazy-field': 'template<class T>struct O{struct R{double n;};};int f(){O<int>v;return sizeof(v);}',
+        'unused-lazy-body': 'template<class T>struct O{struct R{int get(){double n=1.0;return 3;}};};int f(){O<int>::R v;return sizeof(v);}',
+        'explicit-definition': 'template<class T>struct O{struct R{T n;int get(){return n;}};};template struct O<int>::R;int f(){O<int>::R v{3};return v.get();}',
+        'explicit-declaration': 'template<class T>struct O{struct R{T n;};};extern template struct O<int>::R;int f(){O<int>::R v{3};return v.n;}',
+        'explicit-own-no-effect': 'template<int N>struct O{struct R{int n;};};template<>struct O<4>::R{int n;};template struct O<sizeof(int)>::R;int f(){O<4>::R v{3};return v.n;}',
+        'repeated-extern': 'template<int N>struct O{struct R{int n;};};extern template struct O<4>::R;extern template struct O<sizeof(int)>::R;',
+        'promoted-nested_records_reject-dependent-type': 'template<class T>struct R{struct I{T n;};};',
+        'promoted-member_classes_reject-generic-nested-record': 'struct R{template<class T>struct I{struct J{T n;};};};',
+        'promoted-dependent_member_classes_reject-generic-nested-record': 'template<class T>struct O{struct R{template<class U>struct I{U n;};};};',
+        'promoted-class_partials_reject-nested-record': 'template<class T>struct R;template<class T>struct R<T*>{struct Inner{int n;};};',
+        'promoted-class_methods_reject-nested-record': 'template<class T>struct R{struct I{int n;};int f(){return 1;}};',
+        'promoted-class_templates_reject-nested-record': 'template<class T>struct R{struct I{T n;};};',
+        'promoted-copied_full_classes_reject-generic-ordinary-record': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{struct J{T n;};};};',
+        'renamed-record-header': 'template<class T>struct O{struct R;};template<class U>struct O<U>::R{U n;};int f(){O<int>::R v{3};return v.n;}',
+        'own-forward-definition': 'template<class T>struct O{struct R{T n;};};template<>struct O<int>::R;struct O<int>::R{long long n;};long long f(){O<int>::R v{3};return v.n;}',
+        'own-new-method': 'template<class T>struct O{struct R{int get(){return 1;}};};template<>struct O<int>::R{long long n;long long get(){return n+2;}};long long f(){O<int>::R v{3};return v.get();}',
+        'own-member-template': 'template<class T>struct O{struct R{int n;};};template<>struct O<int>::R{template<class U>struct I{U n;};};long long f(){O<int>::R::I<long long>v{3};return v.n;}',
+        'member-variable-partial': 'template<int N>struct O{struct R{template<class T>inline static int n=1;template<class T>inline static int n<T*> =N;};};int*f(){return &O<3>::R::n<int*>;}',
+        'outer-explicit-definition': 'template<class T>struct O{struct R{T n;};};template struct O<int>;int f(){O<int>::R v{3};return v.n;}',
+        'outer-extern-declaration': 'template<class T>struct O{struct R{T n;};};extern template struct O<int>;int f(){O<int>::R v{3};return v.n;}',
+        'nested-static-separated': 'template<int N>struct O{struct R{struct I{inline static int n=N;};};};int*f(){return &O<3>::R::I::n;}',
+        'dependent-nested-forward-unused': 'template<class T>struct O{struct R;};int f(){O<int>v;return sizeof(v);}',
+        'concrete-nested-regression': 'struct O{struct R{int n;};};int f(){O::R v{3};return v.n;}',
+        'local-in-member-regression': 'template<int N>struct O{struct R{int get(){struct L{int n;int f(){return n+N;}};L v{3};return v.f();}};};int f(){O<2>::R v;return v.get();}',
+        'own-unused-forward': 'template<class T>struct O{struct R{T n;};};template<>struct O<int>::R;',
+        'own-class-key': 'template<class T>struct O{struct R{T n;};};template<>class O<int>::R{public:long long n;};long long f(){O<int>::R v{3};return v.n;}',
+        'own-forward-no-effect': 'template<class T>struct O{struct R{T n;};};template<>struct O<int>::R;extern template struct O<int>::R;',
+        'explicit-after-use-definition': 'template<int N>struct O{struct R{int n;};};int before(){O<4>::R v{3};return v.n;}template struct O<sizeof(int)>::R;',
+        'explicit-after-use-extern': 'template<int N>struct O{struct R{int n;};};int before(){O<4>::R v{3};return v.n;}extern template struct O<sizeof(int)>::R;',
+        'ordinary-member-pack-64': 'template<int N>struct O{struct R{template<int...M>struct I{int n=N+sizeof...(M);};};};int f(){O<1>::R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}',
+        'runtime-source': 'int trace=0;\ntemplate<int N>struct Owner{\n struct Item{\n  int n;\n  Item(int v):n(v){}\n  Item(const Item&v):n(v.n+1){}\n  Item(Item&&v):n(v.n){v.n=0;}\n  ~Item(){trace=trace*10+n;}\n  int get()const{return n+N+2;}\n };\n};\ntemplate<class T>struct Choices{\n struct Item{int data[1];int tag(){return 1;}inline static int count=10;};\n};\ntemplate<class T>struct Choices<T*>{\n struct Item{int data[2];int tag(){return 2;}inline static int count=20;};\n};\ntemplate<>struct Choices<int*>::Item{\n int data[3];int tag(){return 3;}inline static int count=30;\n};\ntemplate<int N>struct Levels{\n template<int M>struct Inner{\n  struct Record{\n   template<class T>using Alias=T;\n   template<class T>inline static int value=1;\n   template<>inline int value<int> =N+M;\n   template<int...K>int get(){return N+M+(0+...+K);}\n   inline static int count=N*10+M;\n   int read()const{return N+M;}\n  };\n };\n};\ntemplate<class T>struct Copies{\n struct Item{\n  T a;long long b;\n  Item()=default;\n  Item(const Item&)=default;\n  Item(Item&&)=default;\n  Item&operator=(const Item&)=default;\n  Item&operator=(Item&&)=default;\n  ~Item()=default;\n };\n};\nint main(){\n {Owner<1>::Item a(1);if(a.get()!=4)return 1;}\n if(trace!=1)return 2;\n trace=0;\n {Owner<1>::Item a(1);Owner<1>::Item b=a;Owner<1>::Item c=static_cast<Owner<1>::Item&&>(a);\n  if(a.n!=0||b.n!=2||c.n!=1)return 3;\n  if(&a==&b||&b==&c||&a==&c)return 4;}\n if(trace!=120)return 5;\n Choices<int>::Item a{{1}};Choices<char*>::Item b{{1,2}};Choices<int*>::Item c{{1,2,3}};\n Choices<bool>::Item d{{4}};\n if(a.tag()!=1||b.tag()!=2||c.tag()!=3||d.tag()!=1)return 6;\n if(sizeof(a)!=sizeof(int)||sizeof(b)!=2*sizeof(int)||sizeof(c)!=3*sizeof(int))return 7;\n using Same=Choices<int*>::Item;\n if(&Same::count!=&Choices<int*>::Item::count)return 8;\n if(&Choices<int*>::Item::count==&Choices<bool>::Item::count)return 9;\n ++Same::count;\n if(Choices<int*>::Item::count!=31||Choices<char*>::Item::count!=20||Choices<bool>::Item::count!=10)return 10;\n Levels<1>::Inner<2>::Record first;Levels<2>::Inner<1>::Record second;\n Levels<1>::Inner<2>::Record::Alias<int>n=6;\n if(first.get<3>()!=6||second.get<4>()!=7||n!=6)return 11;\n if(first.read()!=3||second.read()!=3)return 12;\n if(&Levels<1>::Inner<2>::Record::value<int> == &Levels<2>::Inner<1>::Record::value<int>)return 13;\n ++Levels<1>::Inner<2>::Record::value<int>;\n if(Levels<1>::Inner<2>::Record::value<int> !=4||Levels<2>::Inner<1>::Record::value<int> !=3||Levels<1>::Inner<2>::Record::value<bool> !=1)return 14;\n if(&Levels<1>::Inner<2>::Record::count==&Levels<2>::Inner<1>::Record::count)return 15;\n if(Levels<1>::Inner<2>::Record::count!=12||Levels<2>::Inner<1>::Record::count!=21)return 16;\n Copies<int>::Item x;x.a=2;x.b=3;\n Copies<int>::Item y=x;Copies<int>::Item z=static_cast<Copies<int>::Item&&>(y);\n Copies<int>::Item w;w=x;w=static_cast<Copies<int>::Item&&>(z);\n if(w.a!=2||w.b!=3||x.a!=2||x.b!=3)return 17;\n return 0;\n}\n',
+        'protocol-source': 'template<class T>struct Outer{\n struct Inner{\n  T value;\n  T get()const{return value;}\n  inline static int count=sizeof(T);\n };\n};\ntemplate<>struct Outer<bool>::Inner{\n int first;\n long long second;\n long long get()const{return second;}\n inline static int count=16;\n};\nstruct Holder{Outer<int>::Inner value;};\nint readA(Outer<int>::Inner*v){return v->get();}\nlong long readWide(Outer<long long>::Inner*v){return v->get();}\nlong long readOwn(Outer<bool>::Inner*v){return v->get();}\nint*addressA(){return &Outer<int>::Inner::count;}\nusing Same=Outer<int>::Inner;\nint*sameA(){return &Same::count;}\nint*addressB(){return &Outer<long long>::Inner::count;}\nint*addressOwn(){return &Outer<bool>::Inner::count;}\nint field(Holder*v){return v->value.value;}\n',
+    }
+    for name, source in ordinary_classes_positive.items():
+        check("v2-ordinary-nested-classes-positive-" + name, source, None, profile="cpp-core-v2")
+
+    ordinary_classes_reject = {
+        'materialized-field': 'template<class T>struct O{struct R{double n;};};int f(){O<int>::R v;return sizeof(v);}',
+        'selected-method': 'template<class T>struct O{struct R{int get(){double n=1.0;return 3;}};};int f(){O<int>::R v;return v.get();}',
+        'full-eager-field': 'template<class T>struct O{struct R{template<class U>struct I{};template<>struct I<int>{double n;};};};int f(){O<int>::R v;return sizeof(v);}',
+        'explicit-selected-body': 'template<class T>struct O{struct R{int get(){double n=1.0;return 3;}};};template struct O<int>::R;',
+        'explicit-own-hidden-no-effect': 'template<int N>struct O{struct R{int n;};};template<>struct O<8>::R{int n;};template struct O<sizeof(double)>::R;',
+        'repeated-extern-hidden': 'template<int N>struct O{struct R{int n;};};extern template struct O<8>::R;extern template struct O<sizeof(double)>::R;',
+        'reference-field': 'template<class T>struct O{struct R{T&n;};};int f(){int n=3;O<int>::R v{n};return v.n;}',
+        'inheritance': 'struct B{int n;};template<class T>struct O{struct R:B{T m;};};int f(){O<int>::R v;return sizeof(v);}',
+        'own-hidden-qualifier': 'template<int N>struct O{struct R{int n;};};template<>struct O<sizeof(double)>::R{int n;};',
+        'own-body-field': 'template<class T>struct O{struct R{int n;};};template<>struct O<int>::R{double n;};',
+        'own-used-body': 'template<class T>struct O{struct R{int get(){return 1;}};};template<>struct O<int>::R{int get(){double n=1.0;return 2;}};int f(){O<int>::R v;return v.get();}',
+        'ordinary-union': 'template<class T>struct O{union R{T n;int m;};};',
+        'ordinary-anonymous': 'template<class T>struct O{struct{T n;}r;};',
+        'explicit-attribute': 'template<class T>struct O{struct R{T n;};};template struct [[deprecated]] O<int>::R;',
+        'explicit-hidden-after-use': 'template<int N>struct O{struct R{int n;};};int before(){O<8>::R v{3};return v.n;}extern template struct O<sizeof(double)>::R;',
+        'ordinary-member-pack-65': 'template<int N>struct O{struct R{template<int...M>struct I{int n=N+sizeof...(M);};};};int f(){O<1>::R::I<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>v;return v.n;}',
+    }
+    for name, source in ordinary_classes_reject.items():
+        check("v2-ordinary-nested-classes-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    ordinary_classes_invalid = {
+        'private-nested': 'template<class T>class O{struct R{T n;};};O<int>::R v;',
+        'incomplete-used': 'template<class T>struct O{struct R;};O<int>::R v;',
+        'late-own': 'template<class T>struct O{struct R{T n;};};O<int>::R v;template<>struct O<int>::R{int n;};',
+        'explicit-non-member': 'struct R{int n;};template struct R;',
+        'explicit-undefined-member': 'template<class T>struct O{struct R;};template struct O<int>::R;',
+        'explicit-wrong-name': 'template<class T>struct O{struct R{T n;};};template struct O<int>::Missing;',
+        'explicit-wrong-scope': 'namespace A{template<class T>struct O{struct R{T n;};};}namespace B{template struct A::O<int>::R;}',
+    }
+    for name, source in ordinary_classes_invalid.items():
+        check("v2-ordinary-nested-classes-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    ordinary_classes_missing = {
+        'used-method': 'template<class T>struct O{struct R{int get();};};int f(){O<int>::R v;return v.get();}',
+        'used-static': 'template<class T>struct O{struct R{static int n;};};int*f(){return &O<int>::R::n;}',
+    }
+    for name, source in ordinary_classes_missing.items():
+        check("v2-ordinary-nested-classes-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    ordinary_class_source = ordinary_classes_positive["protocol-source"]
+    ordinary_classes = check("v2-ordinary-nested-classes-protocol", ordinary_class_source, profile="cpp-core-v2")
+    oc_records = {r["id"]: r for r in ordinary_classes["records"]}
+    oc_functions = {f["name"]: f for f in ordinary_classes["functions"]}
+    oc_globals = {g["name"]: g for g in ordinary_classes["globals"]}
+    assert len(oc_records) == len(ordinary_classes["records"]) == 7
+    assert len(oc_functions) == len(ordinary_classes["functions"]) == 11
+    assert len(oc_globals) == len(ordinary_classes["globals"]) == 3
+
+    def oc_line(prefix):
+        found = [i for i, line in enumerate(ordinary_class_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    def oc_function(prefix):
+        found = [f for f in oc_functions.values() if f["loc"]["line"] == oc_line(prefix)]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    oc_outer = [r for r in oc_records.values() if r["loc"]["line"] == oc_line("struct Holder{")]
+    assert len(oc_outer) == 1 and len(oc_outer[0]["fields"]) == 1
+    oc_a = oc_outer[0]["fields"][0]["type"]
+    assert oc_a in oc_records
+    oc_readers = [("int readA(", "int"), ("long long readWide(", "i64")]
+    oc_inner_ids = []
+    for prefix, kind in oc_readers:
+        function = oc_function(prefix)
+        assert function["result"] == kind and len(function["params"]) == 1
+        param = function["params"][0]
+        assert param["type"].startswith("ptr:")
+        record_id = param["type"][4:]
+        assert record_id in oc_records
+        record = oc_records[record_id]
+        assert len(record["fields"]) == 1 and record["fields"][0]["type"] == kind
+        oc_inner_ids.append(record_id)
+        calls = [node for node in walk(function["body"]) if node.get("op") == "call"]
+        assert len(calls) == 1, function
+        call = calls[0]
+        assert call["callee"] in oc_functions
+        method = oc_functions[call["callee"]]
+        assert method["result"] == kind and len(method["params"]) == 1
+        assert method["params"][0]["type"] == "cptr:" + record_id
+        assert [arg["type"] for arg in call["args"]] == ["cptr:" + record_id]
+        assert np_pointer(function, call["args"][0]) == ("parameter", param["name"])
+    assert len(set(oc_inner_ids)) == 2 and oc_inner_ids[0] == oc_a
+    oc_order = {record["id"]: i for i, record in enumerate(ordinary_classes["records"])}
+    for record in oc_records.values():
+        for field in record["fields"]:
+            if field["type"] in oc_records:
+                assert oc_order[field["type"]] < oc_order[record["id"]]
+    assert sum(bool(r["fields"]) for r in oc_records.values()) == 4
+    own_reader = oc_function("long long readOwn(")
+    assert own_reader["result"] == "i64" and len(own_reader["params"]) == 1
+    own_param = own_reader["params"][0]
+    own_id = own_param["type"][4:]
+    assert own_param["type"].startswith("ptr:") and own_id not in oc_inner_ids
+    own_record = oc_records[own_id]
+    assert own_record["loc"]["line"] == oc_line("template<>struct Outer<bool>::Inner{")
+    assert [f["type"] for f in own_record["fields"]] == ["int", "i64"]
+    own_calls = [node for node in walk(own_reader["body"]) if node.get("op") == "call"]
+    assert len(own_calls) == 1
+    own_call = own_calls[0]
+    own_method = oc_functions[own_call["callee"]]
+    assert own_method["result"] == "i64"
+    assert [p["type"] for p in own_method["params"]] == ["cptr:" + own_id]
+    assert [a["type"] for a in own_call["args"]] == ["cptr:" + own_id]
+    assert np_pointer(own_reader, own_call["args"][0]) == ("parameter", own_param["name"])
+
+
+    def oc_global(value):
+        found = [g for g in oc_globals.values() if g["type"] == "int" and g["value"]["value"] == value]
+        assert len(found) == 1, (value, found)
+        g = found[0]
+        assert g.get("mutable", False) is True
+        assert g["value"] == {"kind": "literal", "type": "int", "value": value, "loc": g["loc"]}
+        return g["name"]
+
+    def oc_root(function, expression):
+        if expression["kind"] in ("cast", "address", "dereference"):
+            return oc_root(function, expression["args"][0])
+        assert expression["kind"] == "var", expression
+        if expression["name"] in oc_globals:
+            return expression["name"]
+        assigned = [n["value"] for n in function["body"] if n["op"] == "assign"
+                    and n["target"].get("kind") == "var" and n["target"]["name"] == expression["name"]]
+        assert len(assigned) == 1, (expression, assigned)
+        return oc_root(function, assigned[0])
+
+    oc_first, oc_second = oc_global("4"), oc_global("8")
+    oc_own = oc_global("16")
+    assert len({oc_first, oc_second, oc_own}) == 3
+    assert len({oc_first, oc_second}) == 2
+    for prefix, target in (("int*addressA(", oc_first), ("int*sameA(", oc_first),
+                           ("int*addressB(", oc_second), ("int*addressOwn(", oc_own)):
+        function = oc_function(prefix)
+        assert function["result"] == "ptr:int" and not function["params"]
+        returned = [n["value"] for n in function["body"] if n["op"] == "return"]
+        assert len(returned) == 1 and oc_root(function, returned[0]) == target
+    oc_field = oc_function("int field(")
+    assert oc_field["result"] == "int" and len(oc_field["params"]) == 1
+    assert oc_field["params"][0]["type"] == "ptr:" + oc_outer[0]["id"]
+    for function in oc_functions.values():
+        values = set(oc_globals) | {v["name"] for v in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in oc_functions, node
+                target = oc_functions[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in target["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-ordinary-nested-classes-relocated-") as temp:
+        relocated = check("v2-ordinary-nested-classes-relocated", ordinary_class_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == ordinary_classes, "member class identities depend on the absolute root"
+
+    instantiated_friends_positive = {
+        'primary-private': 'template<int N>class R{int n=N;friend int get(const R&r){return r.n;}};int main(){R<3>r;return get(r)-3;}',
+        'partial-private': 'template<class T>class R;template<class T>class R<T*>{T n=3;friend int get(const R&r){return r.n;}};int main(){R<int*>r;return get(r)-3;}',
+        'ordinary-nested': 'template<class T>struct O{struct R{T n;friend int get(const R&r){return r.n;}};};int main(){O<int>::R r{3};return get(r)-3;}',
+        'member-primary': 'template<int N>struct O{template<int M>struct R{int n=N+M;friend int get(const R&r){return r.n;}};};int main(){O<1>::R<2>r;return get(r)-3;}',
+        'member-partial': 'template<class T>struct O{template<class U>struct R;template<class U>struct R<U*>{T n=3;friend int get(const R&r){return r.n;}};};int main(){O<int>::R<int*>r;return get(r)-3;}',
+        'copied-full': 'template<class T>struct O{template<class U>struct R{};template<>struct R<int>{T n=3;friend int get(const R&r){return r.n;}};};int main(){O<int>::R<int>r;return get(r)-3;}',
+        'own-member-primary': 'template<class T>struct O{template<class U>struct R{};};template<>template<class U>struct O<int>::R{U n=3;friend int get(const R&r){return r.n;}};int main(){O<int>::R<int>r;return get(r)-3;}',
+        'own-ordinary': 'template<class T>struct O{struct R{T n;};};template<>struct O<int>::R{int n=3;friend int get(const R&r){return r.n;}};int main(){O<int>::R r;return get(r)-3;}',
+        'operator-plus': 'template<int N>struct R{int n;friend int operator+(const R&r,int v){return r.n+v+N;}};int main(){R<1>r{2};return (r+3)-6;}',
+        'operator-equal': 'template<class T>struct R{T n;friend bool operator==(const R&a,const R&b){return a.n==b.n;}};int main(){R<int>a{3},b{3};return !(a==b);}',
+        'namespace-adl': 'namespace N{template<class T>struct R{T n;friend int get(const R&r){return r.n;}};}int main(){N::R<int>r{3};return get(r)-3;}',
+        'inline-namespace-adl': 'namespace N{inline namespace V{template<class T>struct R{T n;friend int get(const R&r){return r.n;}};}}int main(){N::R<int>r{3};return get(r)-3;}',
+        'declaration-later-definition': 'template<class T>class R{T n=3;friend int get(const R&);};int get(const R<int>&r){return r.n;}int main(){R<int>r;return get(r)-3;}',
+        'prior-namespace-definition': 'int get(int n){return n+1;}template<class T>struct R{friend int get(int);};int main(){R<int>r;return get(2)-3;}',
+        'prior-equivalent-signature': 'using I=int;int get(I n){return n+1;}template<class T>struct R{friend int get(decltype(0));};int main(){R<int>r;return get(2)-3;}',
+        'qualified-namespace-friend': 'namespace N{int get(int);}template<class T>struct R{friend int N::get(int);};int N::get(int n){return n+1;}int main(){R<int>r;return N::get(2)-3;}',
+        'canonical-merge-declarations': 'int get(int n){return n;}template<class T>struct R{friend int get(int);};int main(){R<int>a;R<bool>b;return get(3)-3;}',
+        'overloads-distinct': 'template<int N>struct R{friend int get(R){return N;}};int main(){R<2>a;R<3>b;return get(a)+get(b)-5;}',
+        'static-locals': 'template<int N>struct R{friend int next(R){static int n=N;return ++n;}};int main(){R<1>a;R<2>b;return next(a)+next(a)+next(b)-8;}',
+        'local-record': 'template<int N>struct R{friend int get(R){struct L{int n;L(int v):n(v){}int read(){return n+N;}};L x(2);return x.read();}};int main(){R<1>r;return get(r)-3;}',
+        'local-type-pack': 'template<class...T>struct R{friend int get(R){struct L{int read(){return sizeof...(T);}};L x;return x.read();}};int main(){R<int,bool>r;return get(r)-2;}',
+        'local-value-pack': 'template<int...N>struct R{friend int get(R){struct L{int read(){return (0+...+N);}};L x;return x.read();}};int main(){R<1,2>r;return get(r)-3;}',
+        'local-empty-pack': 'template<class...T>struct R{friend int get(R){struct L{int read(){return sizeof...(T);}};L x;return x.read();}};int main(){R<>r;return get(r);}',
+        'function-parameter-pack': 'template<class...T>struct R{friend int get(R,T...v){return sizeof...(v);}};int main(){R<int,bool>r;return get(r,3,true)-2;}',
+        'outer-value-pack': 'template<int...N>struct R{friend int get(R){return (0+...+N);}};int main(){R<1,2>r;return get(r)-3;}',
+        'deep-pack': 'template<int N>struct O{template<class...T>struct R{friend int get(R){return N+sizeof...(T);}};};int main(){O<1>::R<int,bool>r;return get(r)-3;}',
+        'copied-full-pack': 'template<class...T>struct O{template<class U>struct R{};template<>struct R<int>{friend int get(R){return sizeof...(T);}};};int main(){O<int,bool>::R<int>r;return get(r)-2;}',
+        'default-constant': 'template<class T>struct R{friend int get(R,int n=3){return n;}};int main(){R<int>r;return get(r)-3;}',
+        'default-dependent': 'template<class T>struct R{friend int get(R,int n=sizeof(T)){return n;}};int main(){R<int>r;return get(r)-sizeof(int);}',
+        'default-unused-hidden-body': 'template<class T>struct R{friend int get(R,int n=sizeof(T)){double d=1.0;return n;}};int main(){R<int>r;return sizeof(r)-1;}',
+        'noexcept-dependent': 'template<class T>struct R{friend int get(R)noexcept(sizeof(T)>0){return 3;}};int main(){R<int>r;return get(r)-3;}',
+        'noexcept-safe': 'template<class T>struct R{friend int get(R)noexcept(sizeof(int)>0){return 3;}};int main(){R<int>r;return get(r)-3;}',
+        'constexpr': 'template<int N>struct R{friend constexpr int get(R){return N;}};static_assert(get(R<3>{})==3);',
+        'auto-result': 'template<int N>struct R{friend auto get(R){return N;}};int main(){R<3>r;return get(r)-3;}',
+        'unused-auto-hidden-body': 'template<class T>struct R{friend auto get(R){return 1.0;}};int main(){R<int>r;return sizeof(r)-1;}',
+        'folded-source-safe': 'template<class T>struct R{friend constexpr int get(R){return sizeof(int);}};static_assert(get(R<int>{})==sizeof(int));',
+        'by-value-result': 'template<int N>struct R{int n;friend R make(R v){return R{v.n+N};}};int main(){R<1>r{2};R<1>x=make(r);return x.n-3;}',
+        'mutual-namespace-recursion': 'int f(int);int g(int);template<class T>struct R{friend int f(int);friend int g(int);};int f(int n){return n?g(n-1):0;}int g(int n){return n?f(n-1):0;}int main(){R<int>r;return f(3);}',
+        'recursive-hidden-friend': 'template<int N>struct R{friend int get(R r,int n){return n?get(r,n-1):N;}};int main(){R<3>r;return get(r,2)-3;}',
+        'outer-pack-64': 'template<class...T>struct R{friend int get(R){return sizeof...(T);}};int main(){R<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r;return get(r)-64;}',
+        'local-pack-64': 'template<int...N>struct R{friend int get(R){struct L{int read(){return sizeof...(N);}};L x;return x.read();}};int main(){R<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return get(r)-64;}',
+        'promoted-ordinary_classes_reject-ordinary-friend': 'template<class T>struct O{struct R{friend int f(R v){return 1;}};};',
+        'promoted-class_partials_reject-friend-function': 'template<class T>struct R;template<class T>struct R<T*>{friend int f(R){return 3;}};',
+        'promoted-class_methods_reject-friend': 'template<class T>struct R{friend int f(R r){return 1;}};',
+        'promoted-class_templates_reject-friend': 'template<class T>struct R{T n;friend int get(R r){return r.n;}};',
+        'runtime-source': 'int live=0,copies=0,moves=0,drops=0;\ntemplate<int N>class Box{\n int value;\npublic:\n Box(int n):value(n){++live;}\n Box(const Box&x):value(x.value){++live;++copies;}\n Box(Box&&x):value(x.value){x.value=0;++live;++moves;}\n ~Box(){--live;++drops;}\n friend int read(const Box&x){return x.value+N;}\n friend int operator+(const Box&x,int n){return read(x)+n;}\n friend Box make(const Box&x){return Box(x.value+N);}\n friend Box copy(const Box&x){return x;}\n friend int byvalue(Box x){return read(x);}\n friend int tick(const Box&){static int n=N;return ++n;}\n friend int local(const Box&x){struct L{int n;L(int v):n(v){}int get(){return n+N;}};L v(x.value);return v.get();}\n};\ntemplate<class...T>struct Packs{\n friend int count(Packs){struct L{int get(){return sizeof...(T);}};L v;return v.get();}\n};\ntemplate<class T>struct Outer{\n struct Node{T n;friend int get(const Node&v){return v.n;}};\n template<class U>struct Full{};\n template<>struct Full<int>{T n;friend int full(const Full&v){return v.n;}};\n};\ntemplate<class T>struct Partial;\ntemplate<class T>struct Partial<T*>{T n;friend int partial(const Partial&v){return v.n;}};\nint common(int n){return n+1;}\ntemplate<class T>struct Grant{friend int common(int);};\ntemplate<int N>struct Defaults{\n friend constexpr int get(Defaults,int n=N)noexcept(N>0){return n;}\n};\nint main(){\n {\n  Box<2>a(3);Box<3>b(4);\n  if(read(a)!=5||read(b)!=7)return 1;\n  if(a+4!=9)return 2;\n  if(tick(a)!=3||tick(a)!=4||tick(b)!=4)return 3;\n  using Same=Box<2>;const Same&alias=a;\n  if(tick(alias)!=5)return 4;\n  Box<2>c=make(a);\n  if(read(c)!=7||copies!=0||moves!=0)return 5;\n  Box<2>d=copy(a);\n  if(read(d)!=5||copies!=1)return 6;\n  Box<2>e=static_cast<Box<2>&&>(c);\n  if(read(e)!=7||read(c)!=2||moves!=1)return 7;\n  if(byvalue(a)!=5||copies!=2||drops!=1)return 8;\n  if(local(a)!=5||live!=5)return 9;\n }\n if(live!=0||drops!=6)return 10;\n Packs<int,bool,long long>p;Packs<>empty;\n if(count(p)!=3||count(empty)!=0)return 11;\n Outer<int>::Node n{7};Outer<bool>::Node b{true};\n if(get(n)!=7||get(b)!=1)return 12;\n Outer<int>::Full<int>f{8};\n if(full(f)!=8)return 13;\n Partial<int*>q{9};\n if(partial(q)!=9)return 14;\n Grant<int>g1;Grant<bool>g2;\n if(common(2)!=3)return 15;\n Defaults<3>defaults;\n if(get(defaults)!=3||get(defaults,4)!=4)return 16;\n static_assert(get(Defaults<2>{})==2);\n if(sizeof(Outer<int>::Node)!=sizeof(int))return 17;\n return 0;\n}\n',
+        'protocol-source': 'template<int N>class Token{\n int value;\n friend int read(const Token&t){return t.value+N;}\n friend int tick(const Token&){static int value=N;return ++value;}\n friend int operator+(const Token&t,int n){return read(t)+n;}\n};\nint read2(Token<2>*t){return read(*t);}\nint read3(Token<3>*t){return read(*t);}\nint tick2(Token<2>*t){return tick(*t);}\nint tick3(Token<3>*t){return tick(*t);}\nint add2(Token<2>*t){return *t+4;}\n',
+        'protocol-local-source': 'template<class...T>struct Pack{\n friend int count(const Pack&){\n  struct Local{\n   int value;\n   Local(int n):value(n){}\n   int read(){return value+sizeof...(T);}\n  };\n  Local local(3);return local.read();\n }\n};\nint pair(const Pack<int,bool>*p){return count(*p);}\nint same(const Pack<int,bool>*p){return count(*p);}\nint empty(const Pack<>*p){return count(*p);}\n',
+    }
+    for name, source in instantiated_friends_positive.items():
+        check("v2-instantiated-friends-positive-" + name, source, None, profile="cpp-core-v2")
+
+    instantiated_friends_reject = {
+        'floating-signature': 'template<class T>struct R{friend double get(R){return 1.0;}};int main(){R<int>r;return get(r);}',
+        'hidden-signature-source': 'template<class T>struct R{friend decltype((sizeof(double),0))get(R){return 3;}};int main(){R<int>r;return get(r)-3;}',
+        'hidden-body-used': 'template<class T>struct R{friend int get(R){double d=1.0;return 3;}};int main(){R<int>r;return get(r)-3;}',
+        'folded-hidden-source': 'template<class T>struct R{friend constexpr int get(R){return sizeof(double);}};static_assert(get(R<int>{})>0);',
+        'noexcept-hidden': 'template<class T>struct R{friend int get(R)noexcept(sizeof(double)>0){return 3;}};int main(){R<int>r;return get(r)-3;}',
+        'noexcept-dependent-hidden': 'template<class T>struct R{friend int get(R)noexcept((sizeof(double),sizeof(T))>0){return 3;}};int main(){R<int>r;return get(r)-3;}',
+        'default-hidden': 'template<class T>struct R{friend int get(R,int n=sizeof(double)){return n;}};int main(){R<int>r;return get(r);}',
+        'default-dependent-hidden': 'template<class T>struct R{friend int get(R,int n=(sizeof(double),sizeof(T))){return n;}};int main(){R<int>r;return get(r);}',
+        'local-hidden': 'template<class T>struct R{friend int get(R){struct L{int read(){return sizeof(double);}};L x;return x.read();}};int main(){R<int>r;return get(r);}',
+        'friend-attribute': 'template<class T>struct R{friend __attribute__((noinline)) int get(R){return 3;}};',
+        'outer-pack-65': 'template<class...T>struct R{friend int get(R){return sizeof...(T);}};int main(){R<int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int>r;return get(r)-65;}',
+        'local-pack-65': 'template<int...N>struct R{friend int get(R){struct L{int read(){return sizeof...(N);}};L x;return x.read();}};int main(){R<1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1>r;return get(r)-65;}',
+        'friend-address': 'template<class T>struct R{friend int get(R){return 3;}};int get(R<int>);int main(){R<int>r;int(*p)(R<int>)=&get;return p(r)-3;}',
+    }
+    for name, source in instantiated_friends_reject.items():
+        check("v2-instantiated-friends-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    instantiated_friends_invalid = {
+        'nonfriend-private': 'template<class T>class R{T n=3;friend int get(const R&r){return r.n;}};int other(const R<int>&r){return r.n;}',
+        'hidden-qualified-lookup': 'namespace N{template<class T>struct R{friend int get(R){return 3;}};}int main(){N::R<int>r;return N::get(r);}',
+        'hidden-import': 'namespace N{template<class T>struct R{friend int get(R){return 3;}};}using N::get;',
+        'conflicting-definitions': 'template<class T>struct R{friend int get(){return sizeof(T);}};int main(){R<int>a;R<bool>b;return 0;}',
+        'friend-no-this': 'template<class T>struct R{T n=3;friend int get(R){return this->n;}};',
+        'wrong-overload-access': 'template<class T>class R{T n=3;friend int get(const R&);};int get(const R<int>&r,int){return r.n;}',
+        'no-transitive-access': 'template<class T>class R{T n=3;public:struct I{friend int get(const R&r){return r.n;}};};int main(){R<int>r;R<int>::I i;return get(r);}',
+    }
+    for name, source in instantiated_friends_invalid.items():
+        check("v2-instantiated-friends-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    instantiated_friends_missing = {
+        'declaration-only-unused': 'template<class T>struct R{friend int get(const R&);};int main(){R<int>r;return sizeof(r)-1;}',
+        'declaration-only-used': 'template<class T>struct R{friend int get(const R&);};int main(){R<int>r;return get(r);}',
+        'prior-declaration-only': 'int get(int);template<class T>struct R{friend int get(int);};int main(){R<int>r;return get(3);}',
+    }
+    for name, source in instantiated_friends_missing.items():
+        check("v2-instantiated-friends-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    instantiated_friend_source = instantiated_friends_positive["protocol-source"]
+    instantiated_friends = check("v2-instantiated-friends-protocol", instantiated_friend_source, profile="cpp-core-v2")
+    if_records = {r["id"]: r for r in instantiated_friends["records"]}
+    if_functions = {f["name"]: f for f in instantiated_friends["functions"]}
+    if_globals = {g["name"]: g for g in instantiated_friends["globals"]}
+    assert len(if_records) == len(instantiated_friends["records"]) == 2
+    assert len(if_functions) == len(instantiated_friends["functions"]) == 10
+    assert len(if_globals) == len(instantiated_friends["globals"]) == 2
+
+    def if_line(prefix):
+        found = [i for i, line in enumerate(instantiated_friend_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    def if_function(prefix):
+        found = [f for f in if_functions.values() if f["loc"]["line"] == if_line(prefix)]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    if_targets = {}
+    for prefix in ("int read2(", "int read3(", "int tick2(", "int tick3(", "int add2("):
+        wrapper = if_function(prefix)
+        assert wrapper["result"] == "int" and len(wrapper["params"]) == 1
+        parameter = wrapper["params"][0]
+        assert parameter["type"].startswith("ptr:")
+        record_id = parameter["type"][4:]
+        assert record_id in if_records
+        assert [f["type"] for f in if_records[record_id]["fields"]] == ["int"]
+        calls = [node for node in walk(wrapper["body"]) if node.get("op") == "call"]
+        assert len(calls) == 1, wrapper
+        call = calls[0]
+        target = if_functions[call["callee"]]
+        expected_types = ["cptr:" + record_id] + (["int"] if prefix == "int add2(" else [])
+        assert target["result"] == "int"
+        assert [p["type"] for p in target["params"]] == expected_types
+        assert [a["type"] for a in call["args"]] == expected_types
+        assert np_pointer(wrapper, call["args"][0]) == ("parameter", parameter["name"])
+        if_targets[prefix] = target["name"]
+    assert len(set(if_targets.values())) == 5
+    assert if_function("int read2(")["params"][0]["type"] == if_function("int tick2(")["params"][0]["type"]
+    assert if_function("int read2(")["params"][0]["type"] != if_function("int read3(")["params"][0]["type"]
+    add = if_functions[if_targets["int add2("]]
+    calls = [node for node in walk(add["body"]) if node.get("op") == "call"]
+    assert len(calls) == 1 and calls[0]["callee"] == if_targets["int read2("]
+    assert len(calls[0]["args"]) == 1
+    assert np_pointer(add, calls[0]["args"][0]) == ("parameter", add["params"][0]["name"])
+    states = {}
+    for value in ("2", "3"):
+        found = [g for g in if_globals.values() if g["type"] == "int" and g["value"]["value"] == value]
+        assert len(found) == 1 and found[0].get("mutable", False) is True
+        states[value] = found[0]["name"]
+    assert states["2"] != states["3"]
+    for prefix, value in (("int tick2(", "2"), ("int tick3(", "3")):
+        target = if_functions[if_targets[prefix]]
+        used = {n["name"] for n in walk(target["body"]) if n.get("kind") == "var" and n["name"] in if_globals}
+        assert used == {states[value]}
+    for function in if_functions.values():
+        values = set(if_globals) | {v["name"] for v in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in if_functions, node
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in if_functions[node["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-instantiated-friends-relocated-") as temp:
+        relocated = check("v2-instantiated-friends-relocated", instantiated_friend_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == instantiated_friends, "friend identity depends on the absolute root"
+
+    friend_local_source = instantiated_friends_positive["protocol-local-source"]
+    friend_local = check("v2-instantiated-friends-local-protocol", friend_local_source, profile="cpp-core-v2")
+    fl_records = {r["id"]: r for r in friend_local["records"]}
+    fl_functions = {f["name"]: f for f in friend_local["functions"]}
+    assert len(fl_records) == len(friend_local["records"]) == 4
+    assert len(fl_functions) == len(friend_local["functions"]) == 9
+    assert friend_local["globals"] == []
+
+    def fl_wrapper(prefix):
+        lines = [i for i, line in enumerate(friend_local_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1
+        found = [f for f in fl_functions.values() if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1
+        return found[0]
+
+    fl_targets = {}
+    fl_locals = []
+    for prefix, count in (("int pair(", 2), ("int same(", 2), ("int empty(", 0)):
+        wrapper = fl_wrapper(prefix)
+        assert wrapper["result"] == "int" and len(wrapper["params"]) == 1
+        source_parameter = wrapper["params"][0]
+        assert source_parameter["type"].startswith("cptr:")
+        assert fl_records[source_parameter["type"][5:]]["fields"] == []
+        outer_calls = gc_calls(wrapper)
+        assert len(outer_calls) == 1
+        friend = fl_functions[outer_calls[0]["callee"]]
+        assert friend["result"] == "int"
+        assert [p["type"] for p in friend["params"]] == [source_parameter["type"]]
+        assert np_pointer(wrapper, outer_calls[0]["args"][0]) == ("parameter", source_parameter["name"])
+        fl_targets[prefix] = friend["name"]
+        calls = gc_calls(friend)
+        assert len(calls) == 2
+        constructor, reader = [fl_functions[c["callee"]] for c in calls]
+        local_ids = {v["type"] for v in friend["locals"] if v["type"] in fl_records}
+        assert len(local_ids) == 1
+        local_id = next(iter(local_ids))
+        local = fl_records[local_id]
+        assert [f["type"] for f in local["fields"]] == ["int"]
+        assert constructor["result"] == "void" and reader["result"] == "int"
+        assert [p["type"] for p in constructor["params"]] == ["ptr:" + local_id, "int"]
+        assert [p["type"] for p in reader["params"]] == ["ptr:" + local_id]
+        assert np_pointer(friend, calls[0]["args"][0]) == np_pointer(friend, calls[1]["args"][0])
+        assert gc_identity(friend, calls[0]["args"][1]) == 3
+        assignments = [n for n in constructor["body"] if n["op"] == "assign" and n["target"].get("kind") == "member"]
+        assert len(assignments) == 1 and assignments[0]["target"]["name"] == local["fields"][0]["name"]
+        assert gc_identity(constructor, assignments[0]["value"]) == ("parameter", constructor["params"][1]["name"])
+        additions = [n for n in walk(reader["body"]) if n.get("kind") == "binary" and n.get("operator") == "+"]
+        assert len(additions) == 1
+        assert gc_identity(reader, additions[0]["args"][1]) == count
+        fl_locals.append(local)
+    assert fl_targets["int pair("] == fl_targets["int same("] != fl_targets["int empty("]
+    assert fl_locals[0]["id"] == fl_locals[1]["id"] != fl_locals[2]["id"]
+    assert fl_locals[0]["fields"][0]["name"] != fl_locals[2]["fields"][0]["name"]
+    for function in fl_functions.values():
+        values = {v["name"] for v in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in fl_functions, node
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in fl_functions[node["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-instantiated-friend-local-relocated-") as temp:
+        relocated = check("v2-instantiated-friends-local-relocated", friend_local_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == friend_local, "friend-local identity depends on the absolute root"
+
+    instantiated_friend_types_positive = {
+        'type-parameter': 'class A;template<class T>class R{int n=3;friend T;};class A{public:static int get(const R<A>&r){return r.n;}};int main(){R<A>r;return A::get(r)-3;}',
+        'unused-type-parameter': 'template<class T>class R{int n=3;friend T;};',
+        'ignored-int': 'template<class T>struct R{friend T;int n=3;};int main(){R<int>r;return r.n-3;}',
+        'ignored-pointer-alias': 'using P=int*;template<class T>struct R{friend T;int n=3;};int main(){R<P>r;return r.n-3;}',
+        'default-argument': 'class A;template<class T=A>class R{int n=3;friend T;};class A{public:static int get(const R<>&r){return r.n;}};int main(){R<>r;return A::get(r)-3;}',
+        'alias-source': 'class A;using Alias=A;template<class T>class R{int n=3;using F=T;friend F;};class A{public:static int get(const R<Alias>&r){return r.n;}};int main(){R<Alias>r;return A::get(r)-3;}',
+        'dependent-typename': 'class A;struct Config{using Reader=A;};template<class T>class R{int n=3;friend typename T::Reader;};class A{public:static int get(const R<Config>&r){return r.n;}};int main(){R<Config>r;return A::get(r)-3;}',
+        'class-specialization': 'template<class T>struct A;template<class T>class R{int n=3;friend class A<T>;};template<class T>struct A{static int get(const R<T>&r){return r.n;}};int main(){R<int>r;return A<int>::get(r)-3;}',
+        'namespace-qualified': 'namespace N{class A;}template<class T>class R{int n=3;friend class N::A;};namespace N{class A{public:static int get(const R<int>&r){return r.n;}};}int main(){R<int>r;return N::A::get(r)-3;}',
+        'partial': 'class A;template<class T>class R;template<class T>class R<T*>{int n=3;friend T;};class A{public:static int get(const R<A*>&r){return r.n;}};int main(){R<A*>r;return A::get(r)-3;}',
+        'ordinary-nested': 'class A;template<class T>struct O{class R{int n=3;friend T;};};class A{public:static int get(const O<A>::R&r){return r.n;}};int main(){O<A>::R r;return A::get(r)-3;}',
+        'member-primary': 'class A;template<class T>struct O{template<class U>class R{int n=3;friend T;friend U;};};class A{public:static int get(const O<A>::R<int>&r){return r.n;}};int main(){O<A>::R<int>r;return A::get(r)-3;}',
+        'copied-full': 'class A;template<class T>struct O{template<class U>struct R{};template<>class R<int>{int n=3;friend T;};};class A{public:static int get(const O<A>::R<int>&r){return r.n;}};int main(){O<A>::R<int>r;return A::get(r)-3;}',
+        'own-member-primary': 'class A;template<class T>struct O{template<class U>struct R{};};template<>template<class U>class O<int>::R{int n=3;friend U;};class A{public:static int get(const O<int>::R<A>&r){return r.n;}};int main(){O<int>::R<A>r;return A::get(r)-3;}',
+        'own-ordinary': 'class A;template<class T>struct O{struct R{};};template<>class O<int>::R{int n=3;friend A;};class A{public:static int get(const O<int>::R&r){return r.n;}};int main(){O<int>::R r;return A::get(r)-3;}',
+        'duplicate-grant': 'class A;template<class T>class R{int n=3;friend T;friend T;};class A{public:static int get(const R<A>&r){return r.n;}};int main(){R<A>r;return A::get(r)-3;}',
+        'source-decltype-safe': 'template<class T>struct R{friend decltype((sizeof(int),T{}));};int main(){R<int>r;return sizeof(r)-1;}',
+        'alias-erasure-safe': 'template<class T>using Ignore=int;template<class T>struct R{friend Ignore<T>;};int main(){R<bool>r;return sizeof(r)-1;}',
+        'unused-dependent-hidden': 'template<class T>struct R{friend decltype((sizeof(double),T{}));};',
+        'nondependent-ignored-type': 'template<class T>struct R{friend int;};int main(){R<bool>r;return sizeof(r)-1;}',
+        'forward-introduced-tag': 'template<class T>class R{int n=3;friend class A;};class A{public:static int get(const R<int>&r){return r.n;}};int main(){R<int>r;return A::get(r)-3;}',
+        'promoted-friends_reject-dependent-friend': 'template<class T>class R{int n=1;friend T;};',
+        'promoted-instantiated_friends_reject-friend-type': 'template<class T>struct R{friend T;};',
+        'runtime-source': 'int constructed=0,destroyed=0;\nclass First;\nclass Second;\ntemplate<class T,int N>class Vault{\n using Value=int;\n Value n;\n Vault(int v):n(v){++constructed;}\n ~Vault(){++destroyed;}\n friend T;\n};\nclass First{\npublic:\n static int nested();\n static int run(){Vault<First,2>v(3);Vault<First,2>::Value n=v.n;return n+2;}\n};\nclass Second{\npublic:\n static int run(){Vault<Second,4>v(5);return v.n+4;}\n};\nstruct Config{using Reader=First;};\ntemplate<class T>class NestedGrant{\n int n=7;\n friend typename T::Reader;\npublic:\n NestedGrant()=default;\n};\nint First::nested(){NestedGrant<Config>n;return n.n;}\ntemplate<class T>struct Access;\ntemplate<class T>class Box{\n int n=11;\n friend struct Access<T>;\n};\ntemplate<class T>struct Access{\n static int get(const Box<T>&b){return b.n;}\n};\nclass OuterReader;\ntemplate<class T>struct Outer{\n class Node{int n=13;friend T;};\n template<class U>class Member{int n=17;friend T;friend U;};\n template<>class Member<int>{int n=19;friend T;};\n};\nclass OuterReader{\npublic:\n static int node(){Outer<OuterReader>::Node n;return n.n;}\n static int member(){Outer<OuterReader>::Member<bool>n;return n.n;}\n static int full(){Outer<OuterReader>::Member<int>n;return n.n;}\n};\nint main(){\n if(First::run()!=5)return 1;\n if(constructed!=1||destroyed!=1)return 2;\n if(Second::run()!=9)return 3;\n if(constructed!=2||destroyed!=2)return 4;\n Box<int>i;Box<bool>b;\n if(Access<int>::get(i)!=11||Access<bool>::get(b)!=11)return 5;\n if(OuterReader::node()!=13)return 6;\n if(OuterReader::member()!=17)return 7;\n if(OuterReader::full()!=19)return 8;\n if(First::run()!=5||constructed!=3||destroyed!=3)return 9;\n if(First::nested()!=7)return 10;\n return 0;\n}\n',
+        'protocol-source': 'class Access;\ntemplate<class T>class Cell{\n int value;\n friend T;\n};\nclass Access{\npublic:\n static int read(const Cell<Access>&c){return c.value;}\n static void write(Cell<Access>&c,int n){c.value=n;}\n};\nint read(const Cell<Access>*c){return Access::read(*c);}\nvoid write(Cell<Access>*c,int n){Access::write(*c,n);}\n',
+    }
+    for name, source in instantiated_friend_types_positive.items():
+        check("v2-instantiated-friend-types-positive-" + name, source, None, profile="cpp-core-v2")
+
+    instantiated_friend_types_reject = {
+        'selected-floating-type': 'template<class T>struct R{friend T;};int main(){R<double>r;return sizeof(r);}',
+        'nondependent-floating-type': 'template<class T>struct R{friend double;};',
+        'folded-hidden-type': 'template<class T>struct R{friend decltype((sizeof(double),T{}));};int main(){R<int>r;return sizeof(r);}',
+        'alias-hidden-source': 'template<class T>using Ignore=int;template<class T>struct R{friend Ignore<decltype((sizeof(double),T{}))>;};int main(){R<int>r;return sizeof(r);}',
+        'unsupported-header': 'template<class T>struct A{struct B{};};template<class U>struct R{template<class T>friend class A<T>::B;};',
+        'nondependent-hidden-type': 'template<class T>struct R{friend decltype((sizeof(double),0));};',
+        'friend-type-pack': 'template<class...T>struct R{friend T...;};',
+    }
+    for name, source in instantiated_friend_types_reject.items():
+        check("v2-instantiated-friend-types-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    instantiated_friend_types_invalid = {
+        'foreign-access': 'class A;template<class T>class R{int n=3;friend T;};class A{};int get(const R<A>&r){return r.n;}',
+        'wrong-instance': 'class A;class B;template<class T>class R{int n=3;friend T;};class B{};class A{public:static int get(const R<B>&r){return r.n;}};',
+        'not-reciprocal': 'class A;template<class T>class R{int n=3;friend T;public:int get(const T&t){return t.n;}};class A{int n=4;};int main(){R<A>r;A a;return r.get(a);}',
+        'not-transitive': 'class A;class B;template<class T>class R{int n=3;friend T;};class A{friend B;};class B{public:static int get(const R<A>&r){return r.n;}};',
+        'missing-dependent-type': 'struct A{};template<class T>struct R{friend typename T::Missing;};int main(){R<A>r;return sizeof(r);}',
+        'direct-qualified-type': 'template<class T>struct R{friend const T;};',
+        'pack-without-expansion': 'template<class...T>struct R{friend T;};',
+    }
+    for name, source in instantiated_friend_types_invalid.items():
+        check("v2-instantiated-friend-types-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    instantiated_friend_types_missing = {
+        'friend-method-definition': 'class A;template<class T>class R{int n=3;friend T;};class A{public:static int get(const R<A>&);};int main(){R<A>r;return A::get(r);}',
+    }
+    for name, source in instantiated_friend_types_missing.items():
+        check("v2-instantiated-friend-types-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    friend_type_source = instantiated_friend_types_positive["protocol-source"]
+    friend_types = check("v2-instantiated-friend-types-protocol", friend_type_source, profile="cpp-core-v2")
+    ft_records = {r["id"]: r for r in friend_types["records"]}
+    ft_functions = {f["name"]: f for f in friend_types["functions"]}
+    assert len(ft_records) == len(friend_types["records"]) == 2
+    assert len(ft_functions) == len(friend_types["functions"]) == 4
+    assert friend_types["globals"] == []
+
+    def ft_function(prefix):
+        lines = [i for i, line in enumerate(friend_type_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1
+        found = [f for f in ft_functions.values() if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1
+        return found[0]
+
+    reader = ft_function("int read(")
+    writer = ft_function("void write(")
+    rid = reader["params"][0]["type"].removeprefix("cptr:")
+    assert rid in ft_records and reader["params"][0]["type"] == "cptr:" + rid
+    assert [p["type"] for p in writer["params"]] == ["ptr:" + rid, "int"]
+    record = ft_records[rid]
+    assert [f["type"] for f in record["fields"]] == ["int"]
+    assert [r["fields"] for r in ft_records.values() if r["id"] != rid] == [[]]
+    member = record["fields"][0]["name"]
+    selected = []
+    for wrapper, prefix in ((reader, " static int read("), (writer, " static void write(")):
+        calls = gc_calls(wrapper)
+        assert len(calls) == 1
+        target = ft_function(prefix)
+        assert calls[0]["callee"] == target["name"]
+        assert target["result"] == wrapper["result"]
+        assert [p["type"] for p in target["params"]] == [p["type"] for p in wrapper["params"]]
+        assert np_pointer(wrapper, calls[0]["args"][0]) == ("parameter", wrapper["params"][0]["name"])
+        if len(wrapper["params"]) == 2:
+            assert gc_identity(wrapper, calls[0]["args"][1]) == ("parameter", wrapper["params"][1]["name"])
+        selected.append(target)
+    values = [n["value"] for n in selected[0]["body"] if n["op"] == "return"]
+    assert len(values) == 1
+    assert gc_identity(selected[0], values[0]) == ("member", ("parameter", selected[0]["params"][0]["name"]), member)
+    assignments = [n for n in selected[1]["body"] if n["op"] == "assign" and n["target"].get("kind") == "member"]
+    assert len(assignments) == 1 and assignments[0]["target"]["name"] == member
+    assert gc_identity(selected[1], assignments[0]["value"]) == ("parameter", selected[1]["params"][1]["name"])
+    for function in ft_functions.values():
+        values = {v["name"] for v in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in ft_functions, node
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in ft_functions[node["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-instantiated-friend-types-relocated-") as temp:
+        relocated = check("v2-instantiated-friend-types-relocated", friend_type_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == friend_types, "friend type identities depend on the absolute root"
+
+    friend_function_templates_positive = {
+        'ordinary-adl': 'class R{int n=3;template<class U>friend int get(const R&r,U v){return r.n+int(v);}};int main(){R r;return get(r,2);}',
+        'ordinary-operator': 'struct R{int n;template<class U>friend int operator+(const R&r,U v){return r.n+int(v);}};int main(){R r{3};return r+2;}',
+        'generic-owner': 'template<class T>class R{T n=3;template<class U>friend int get(const R&r,U v){return int(r.n)+int(v);}};int main(){R<int>r;return get(r,2);}',
+        'partial-owner': 'template<class T>struct R;template<class T>struct R<T*>{T n;template<class U>friend int get(const R&r,U v){return int(r.n)+int(v);}};int main(){R<int*>r{3};return get(r,2);}',
+        'full-owner': 'template<class T>struct R;template<>struct R<int>{int n;template<class U>friend int get(const R&r,U v){return r.n+int(v);}};int main(){R<int>r{3};return get(r,2);}',
+        'member-owner': 'template<class T>struct Outer{template<class U>struct R{T n;template<class V>friend int get(const R&r,V v){return int(r.n)+int(v)+sizeof(U);}};};int main(){Outer<int>::R<bool>r{3};return get(r,2);}',
+        'ordinary-nested-owner': 'template<class T>struct Outer{struct R{T n;template<class U>friend int get(const R&r,U v){return int(r.n)+int(v);}};};int main(){Outer<int>::R r{3};return get(r,2);}',
+        'copied-full-owner': 'template<class T>struct Outer{template<class U>struct R;template<>struct R<int>{T n;template<class U>friend int get(const R&r,U v){return int(r.n)+int(v);}};};int main(){Outer<int>::R<int>r{3};return get(r,2);}',
+        'own-nested-body': 'template<class T>struct Outer{struct R;};template<>struct Outer<int>::R{int n;template<class U>friend int get(const R&r,U v){return r.n+int(v);}};int main(){Outer<int>::R r{3};return get(r,2);}',
+        'default-type': 'struct R{template<class U=int>friend U get(R,int n=3){return U(n);}};int main(){R r;return get(r);}',
+        'default-value': 'template<int N>struct R{template<int M=N>friend int get(R){return M;}};int main(){R<3>r;return get(r);}',
+        'deduced-value': 'template<int N>struct Number{};struct R{template<int N>friend int get(R,Number<N>){return N;}};int main(){R r;return get(r,Number<3>{});}',
+        'auto-default': 'struct R{template<auto N=3>friend int get(R){return int(N);}};int main(){R r;return get(r);}',
+        'inner-pack': 'struct R{template<class...U>friend int count(const R&,U...){return sizeof...(U);}};int main(){R r;return count(r)+count(r,1,true,2LL);}',
+        'outer-pack': 'template<class...T>struct R{template<class U>friend int count(R,U){return sizeof...(T)+sizeof(U);}};int main(){R<int,bool>r;R<>empty;return count(r,1)+count(empty,true);}',
+        'outer-value-pack': 'template<int...N>struct R{template<class...U>friend int count(const R&,U...){return sizeof...(N)+sizeof...(U);}};int main(){R<1,2>r;return count(r,1,true);}',
+        'private-alias': 'template<class T>class R{using I=T;I n=3;template<class U>friend I get(const R&r,U){return r.n;}};int main(){R<int>r;return get(r,true);}',
+        'reference-result': 'template<class T>struct R{T n;template<class U>friend T&get(R&r,U){return r.n;}};int main(){R<int>r{3};get(r,true)=7;return r.n;}',
+        'const-reference-result': 'struct R{int n;template<class U>friend const int&get(const R&r,U){return r.n;}};int main(){R r{3};return get(r,true);}',
+        'pointer-result': 'struct R{int n;template<class U>friend int*get(R&r,U){return &r.n;}};int main(){R r{3};return *get(r,true);}',
+        'unused-body': 'template<class T>struct R{template<class U>friend int get(R,U){return U::missing;}};int main(){R<int>r;return 0;}',
+        'unused-floating-body': 'struct R{template<class U>friend int get(R,U){return int(1.0);}};int main(){R r;return 0;}',
+        'unused-auto-body': 'template<class T>struct R{template<class U>friend auto get(R,U){return U::missing;}};int main(){R<int>r;return 0;}',
+        'auto-result': 'template<int N>struct R{template<class U>friend auto get(R,U n){return n+N;}};int main(){R<3>r;return get(r,2);}',
+        'noexcept': 'template<int N>struct R{template<class U>friend int get(R,U n)noexcept(sizeof(U)>0){return int(n)+N;}};int main(){R<3>r;static_assert(noexcept(get(r,2)));return get(r,2);}',
+        'constexpr': 'template<int N>struct R{template<class U>friend constexpr int get(R,U n){return int(n)+N;}};static_assert(get(R<3>{},2)==5);',
+        'recursive-adl': 'struct R{template<class U>friend int get(const R&r,U n){return n?1+get(r,n-1):0;}};int main(){R r;return get(r,3);}',
+        'ordinary-namespace-merge': 'class R;template<class U>int get(const R&,U);class R{int n=3;template<class U>friend int get(const R&,U);};template<class U>int get(const R&r,U n){return r.n+int(n);}int main(){R r;return get(r,2);}',
+        'later-namespace-definition': 'template<class T>struct Grant{template<class U>friend int shared(U);};static_assert(sizeof(Grant<int>)>0);template<class U>int shared(U n){return int(n);}int main(){return shared(3);}',
+        'different-granting-body': 'template<class T>struct A{template<class U>friend int shared(U);};static_assert(sizeof(A<int>)>0);template<class T>struct B{template<class U>friend int shared(U n){return int(n)+sizeof(T);}};static_assert(sizeof(B<long long>)>0);template<class U>int shared(U);int main(){return shared(3);}',
+        'different-granting-depth': 'template<class T>struct A{template<class U>friend int shared(U);};static_assert(sizeof(A<int>)>0);template<class T>struct B{template<class V>struct Inner{template<class U>friend int shared(U n){return int(n)+sizeof(T)+sizeof(V);}};};static_assert(sizeof(B<int>::Inner<bool>)>0);template<class U>int shared(U);int main(){return shared(3);}',
+        'unused-declaration': 'struct R{template<class U>friend int get(R,U);};',
+        'promoted-1': 'class R{int n=1;template<class T>friend int get(const R&r,T v){return r.n+v;}};',
+        'promoted-2': 'template<class T>struct R{template<class U>friend U get(R,U v){return v;}};',
+        'promoted-3': 'template<class T>struct R{template<class U>friend U get(R,U n){return n;}};',
+        'promoted-4': 'struct R{int n;template<class T>friend int operator+(const R&r,T n){return r.n+n;}};',
+        'promoted-5': 'struct R{template<class T>friend T f(T v){return v;}};',
+        'runtime-source': 'int destroyed=0;\nstruct Value {\n int n;\n Value(int v):n(v){}\n Value(const Value&v):n(v.n){}\n ~Value(){++destroyed;}\n};\ntemplate<int N>class Box {\n int n;\npublic:\n Box(int v):n(v){}\n template<class U>friend int read(const Box&r,U v){return r.n+int(v)+N;}\n template<class U>friend int&state(const Box&,U){static int value=N;return value;}\n template<class U>friend Value echo(const Box&r,U v){return Value(r.n+int(v)+N);}\n template<class U>friend int local(const Box&r,U){\n  struct Local{int n;Local(int v):n(v){}int get(){return n+sizeof(U)+N;}};\n  Local value(r.n);return value.get();\n }\n template<class U>friend int operator+(const Box&r,U v){return read(r,v);}\n};\ntemplate<class...T>struct Pack {\n template<class...U>friend int count(const Pack&,U...){return sizeof...(T)+sizeof...(U);}\n template<class...U>friend int localCount(const Pack&,U...){\n  struct Local{int get(){return sizeof...(T)+sizeof...(U);}};\n  Local value;return value.get();\n }\n};\ntemplate<class T>struct Outer {\n struct Inner{T n;template<class U>friend int inner(const Inner&r,U v){return int(r.n)+int(v);}};\n};\ntemplate<class T>struct Part;\ntemplate<class T>struct Part<T*>{T n;template<class U>friend int partial(const Part&r,U v){return int(r.n)+int(v);}};\nint main(){\n Box<3>a(4),same(9);Box<4>b(5);\n if(read(a,2)!=9||read(b,2)!=11)return 1;\n if(read(a,true)!=8||a+2!=9)return 2;\n int&first=state(a,0);int&again=state(same,0);int&innerState=state(a,false);int&outerState=state(b,0);\n if(&first!=&again||&first==&innerState||&first==&outerState)return 3;\n first=19;\n if(again!=19||innerState!=3||outerState!=4)return 4;\n {Value value=echo(a,2);if(value.n!=9)return 5;}\n if(destroyed!=1)return 6;\n if(local(a,0)!=7+sizeof(int)||local(b,true)!=9+sizeof(bool))return 7;\n Pack<int,bool>pack;Pack<>empty;\n if(count(pack,1,2LL,true)!=5||count(pack)!=2||count(empty)!=0)return 8;\n if(localCount(pack,1,true)!=4||localCount(empty)!=0)return 9;\n Outer<int>::Inner nested{6};Part<int*>part{7};\n if(inner(nested,2)!=8||partial(part,3)!=10)return 10;\n return 0;\n}\n',
+        'protocol-source': 'template<int N>class Box {\n int n;\n template<class U>friend int read(const Box&r,U v){return r.n+int(v)+N;}\n template<class U>friend int&state(const Box&,U){static int value=N;return value;}\n};\nint first(const Box<3>&r,int n){return read(r,n);}\nint again(const Box<3>&r,int n){return read(r,n);}\nint inner(const Box<3>&r,bool n){return read(r,n);}\nint outer(const Box<4>&r,int n){return read(r,n);}\nint&firstState(const Box<3>&r,int n){return state(r,n);}\nint&sameState(const Box<3>&r,int n){return state(r,n);}\nint&innerState(const Box<3>&r,bool n){return state(r,n);}\nint&outerState(const Box<4>&r,int n){return state(r,n);}\n',
+        'identity-source': 'struct Q{\n template<int N>static auto value(){if constexpr(N==1)return 1;else return true;}\n};\ntemplate<int N>struct H{\n template<class U>friend decltype(U::template value<N>()) pick(U){\n  static int s=N;return s++;\n }\n};\nstatic_assert(sizeof(H<1>)+sizeof(H<2>)>0);\ntemplate<class U>decltype(U::template value<1>()) pick(U);\ntemplate<class U>decltype(U::template value<2>()) pick(U);\ntemplate int pick<Q>(Q);\ntemplate bool pick<Q>(Q);\n',
+        'protocol-local-source': 'template<class...T>struct Pack{\n template<class...U>friend int count(const Pack&,U...){\n  struct Local{\n   int value;\n   Local(int n):value(n){}\n   int read(){return value+sizeof...(U);}\n  };\n  Local local(sizeof...(T));return local.read();\n }\n};\nint pair(const Pack<int,bool>*p){return count(*p,1,true);}\nint same(const Pack<int,bool>*p){return count(*p,2,false);}\nint inner(const Pack<int,bool>*p){return count(*p,true);}\nint empty(const Pack<>*p){return count(*p);}\n',
+    }
+    for name, source in friend_function_templates_positive.items():
+        check("v2-friend-function-templates-positive-" + name, source, None, profile="cpp-core-v2")
+
+    friend_function_templates_reject = {
+        'hidden-written-type': 'template<class>using I=int;struct R{template<class U>friend int get(R,U){return 3;}};int main(){R r;I<double> n=1;return get(r,n);}',
+        'hidden-return-alias': 'template<class>using I=int;struct R{template<class U>friend I<double> get(R,U){return 3;}};',
+        'hidden-folded-constexpr': 'struct R{template<class U>friend constexpr int get(R,U){return int(sizeof(double));}};static_assert(get(R{},1)>0);',
+        'hidden-noexcept': 'struct R{template<class U>friend int get(R,U)noexcept((sizeof(double),sizeof(U)>0)){return 3;}};int main(){return get(R{},1);}',
+        'hidden-default': 'struct R{template<class U=int>friend int get(R,int n=int(sizeof(double))){return n;}};int main(){return get(R{});}',
+        'hidden-template-default': 'template<class>using I=int;struct R{template<class U=I<double>>friend int get(R){return 3;}};int main(){return get(R{});}',
+        'used-floating-body': 'struct R{template<class U>friend int get(R,U){return int(1.0);}};int main(){return get(R{},1);}',
+        'template-template-parameter': 'struct R{template<template<class>class U>friend int get(R){return 3;}};',
+        'ellipsis': 'struct R{template<class U>friend int get(R,U,...){return 3;}};',
+        'attribute': 'struct R{template<class U>friend __attribute__((noinline)) int get(R,U){return 3;}};',
+    }
+    for name, source in friend_function_templates_reject.items():
+        check("v2-friend-function-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    friend_function_templates_invalid = {
+        'redefinition': 'template<class T>struct R{template<class U>friend int get(U){return 3;}};static_assert(sizeof(R<int>)+sizeof(R<bool>)>0);',
+        'wrong-private-owner': 'class B{int n=3;};struct A{template<class U>friend int get(A,const B&b,U){return b.n;}};int main(){A a;B b;return get(a,b,1);}',
+        'unselected-invalid-body': 'struct R{template<class U>friend int get(R,U){return U::missing;}};int main(){return get(R{},1);}',
+        'not-visible-without-adl': 'struct R{template<class U>friend int get(U){return 3;}};int main(){return get(1);}',
+        'conflicting-default': 'struct R{template<class U=int>friend int get(R){return 3;}};template<class U=bool>int get(R);',
+        'deleted-selected': 'struct R{template<class U>friend int get(R,U)=delete;};int main(){return get(R{},1);}',
+    }
+    for name, source in friend_function_templates_invalid.items():
+        check("v2-friend-function-templates-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    friend_function_templates_missing = {
+        'definition': 'struct R{template<class U>friend int get(R,U);};int main(){return get(R{},1);}',
+        'signature-only-use': 'struct R{template<class U>friend int get(R,U);};int main(){return sizeof(get(R{},3));}',
+    }
+    for name, source in friend_function_templates_missing.items():
+        check("v2-friend-function-templates-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    friend_template_source = friend_function_templates_positive["protocol-source"]
+    friend_templates = check("v2-friend-function-templates-protocol", friend_template_source, profile="cpp-core-v2")
+    ft_records = {r["id"]: r for r in friend_templates["records"]}
+    ft_functions = {f["name"]: f for f in friend_templates["functions"]}
+    ft_globals = {g["name"]: g for g in friend_templates["globals"]}
+    assert len(ft_records) == len(friend_templates["records"]) == 2
+    assert len(ft_functions) == len(friend_templates["functions"]) == 14
+    assert len(ft_globals) == len(friend_templates["globals"]) == 3
+
+    def ft_function(prefix):
+        lines = [i for i, line in enumerate(friend_template_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, prefix
+        found = [f for f in ft_functions.values() if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    ft_targets = {}
+    for prefix, inner, result in (("int first(", "int", "int"), ("int again(", "int", "int"),
+                                   ("int inner(", "bool", "int"), ("int outer(", "int", "int"),
+                                   ("int&firstState(", "int", "ptr:int"), ("int&sameState(", "int", "ptr:int"),
+                                   ("int&innerState(", "bool", "ptr:int"), ("int&outerState(", "int", "ptr:int")):
+        wrapper = ft_function(prefix)
+        assert wrapper["result"] == result and len(wrapper["params"]) == 2
+        record_type = wrapper["params"][0]["type"]
+        assert record_type.startswith("cptr:") and record_type[5:] in ft_records
+        assert [field["type"] for field in ft_records[record_type[5:]]["fields"]] == ["int"]
+        calls = [node for node in walk(wrapper["body"]) if node.get("op") == "call"]
+        assert len(calls) == 1, wrapper
+        target = ft_functions[calls[0]["callee"]]
+        expected = [record_type, inner]
+        assert target["result"] == result
+        assert [p["type"] for p in target["params"]] == expected
+        assert [a["type"] for a in calls[0]["args"]] == expected
+        assert np_pointer(wrapper, calls[0]["args"][0]) == ("parameter", wrapper["params"][0]["name"])
+        ft_targets[prefix] = target["name"]
+    assert ft_targets["int first("] == ft_targets["int again("]
+    assert len({ft_targets[p] for p in ("int first(", "int inner(", "int outer(")}) == 3
+    assert ft_targets["int&firstState("] == ft_targets["int&sameState("]
+    assert len({ft_targets[p] for p in ("int&firstState(", "int&innerState(", "int&outerState(")}) == 3
+    assert len(set(ft_targets.values())) == 6
+    ft_states = {}
+    for prefix, value in (("int&firstState(", "3"), ("int&innerState(", "3"), ("int&outerState(", "4")):
+        target = ft_functions[ft_targets[prefix]]
+        used = {node["name"] for node in walk(target["body"]) if node.get("kind") == "var" and node["name"] in ft_globals}
+        assert len(used) == 1
+        name = next(iter(used)); ft_states[prefix] = name
+        assert ft_globals[name]["type"] == "int" and ft_globals[name]["value"]["value"] == value
+        assert ft_globals[name].get("mutable", False) is True
+    assert len(set(ft_states.values())) == 3
+    for function in ft_functions.values():
+        values = set(ft_globals) | {p["name"] for p in function["params"]} | {p["name"] for p in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in ft_functions, node
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in ft_functions[node["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-friend-templates-relocated-") as temp:
+        relocated = check("v2-friend-templates-relocated", friend_template_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == friend_templates, "friend template identity depends on the absolute root"
+
+    # Explicit instantiations distinguish semantically different dependent
+    # return types. Native CI must confirm this source and both concrete bodies.
+    ft_identity_source = friend_function_templates_positive["identity-source"]
+    ft_identity = check("v2-friend-template-return-identities", ft_identity_source, profile="cpp-core-v2")
+    ft_identity_line = next(i for i, line in enumerate(ft_identity_source.splitlines(), 1) if "friend decltype" in line)
+    ft_picks = [f for f in ft_identity["functions"] if f["loc"]["line"] == ft_identity_line]
+    assert len(ft_picks) == 2 and {f["result"] for f in ft_picks} == {"int", "bool"}
+    assert len({f["name"] for f in ft_picks}) == 2
+    ft_identity_globals = {g["name"]: g for g in ft_identity["globals"]}
+    ft_pick_states = []
+    for function in ft_picks:
+        used = {n["name"] for n in walk(function["body"]) if n.get("kind") == "var" and n["name"] in ft_identity_globals}
+        assert len(used) == 1
+        ft_pick_states.append(next(iter(used)))
+    assert len(set(ft_pick_states)) == 2
+    assert {ft_identity_globals[name]["value"]["value"] for name in ft_pick_states} == {"1", "2"}
+    with tempfile.TemporaryDirectory(prefix="neverc-friend-return-identities-relocated-") as temp:
+        relocated = check("v2-friend-return-identities-relocated", ft_identity_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == ft_identity
+
+    ft_local_source = friend_function_templates_positive["protocol-local-source"]
+    ft_local = check("v2-friend-templates-local-protocol", ft_local_source, profile="cpp-core-v2")
+    ftl_records = {r["id"]: r for r in ft_local["records"]}
+    ftl_functions = {f["name"]: f for f in ft_local["functions"]}
+    assert len(ftl_records) == len(ft_local["records"]) == 5
+    assert len(ftl_functions) == len(ft_local["functions"]) == 13
+    assert ft_local["globals"] == []
+
+    def ftl_wrapper(prefix):
+        lines = [i for i, line in enumerate(ft_local_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1
+        found = [f for f in ftl_functions.values() if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1
+        return found[0]
+
+    ftl_targets = {}
+    ftl_locals = []
+    for prefix, outer, inner in (("int pair(", 2, ["int", "bool"]), ("int same(", 2, ["int", "bool"]), ("int inner(", 2, ["bool"]), ("int empty(", 0, [])):
+        wrapper = ftl_wrapper(prefix)
+        assert wrapper["result"] == "int" and len(wrapper["params"]) == 1
+        source_parameter = wrapper["params"][0]
+        assert source_parameter["type"].startswith("cptr:")
+        assert ftl_records[source_parameter["type"][5:]]["fields"] == []
+        outer_calls = gc_calls(wrapper)
+        assert len(outer_calls) == 1
+        friend = ftl_functions[outer_calls[0]["callee"]]
+        assert friend["result"] == "int"
+        assert [p["type"] for p in friend["params"]] == [source_parameter["type"], *inner]
+        assert np_pointer(wrapper, outer_calls[0]["args"][0]) == ("parameter", source_parameter["name"])
+        ftl_targets[prefix] = friend["name"]
+        calls = gc_calls(friend)
+        assert len(calls) == 2
+        constructor, reader = [ftl_functions[c["callee"]] for c in calls]
+        local_ids = {v["type"] for v in friend["locals"] if v["type"] in ftl_records}
+        assert len(local_ids) == 1
+        local_id = next(iter(local_ids))
+        local = ftl_records[local_id]
+        assert [f["type"] for f in local["fields"]] == ["int"]
+        assert constructor["result"] == "void" and reader["result"] == "int"
+        assert [p["type"] for p in constructor["params"]] == ["ptr:" + local_id, "int"]
+        assert [p["type"] for p in reader["params"]] == ["ptr:" + local_id]
+        assert np_pointer(friend, calls[0]["args"][0]) == np_pointer(friend, calls[1]["args"][0])
+        assert gc_identity(friend, calls[0]["args"][1]) == outer
+        assignments = [n for n in constructor["body"] if n["op"] == "assign" and n["target"].get("kind") == "member"]
+        assert len(assignments) == 1 and assignments[0]["target"]["name"] == local["fields"][0]["name"]
+        assert gc_identity(constructor, assignments[0]["value"]) == ("parameter", constructor["params"][1]["name"])
+        additions = [n for n in walk(reader["body"]) if n.get("kind") == "binary" and n.get("operator") == "+"]
+        assert len(additions) == 1
+        assert gc_identity(reader, additions[0]["args"][1]) == len(inner)
+        ftl_locals.append(local)
+    assert ftl_targets["int pair("] == ftl_targets["int same("]
+    assert len({ftl_targets[p] for p in ("int pair(", "int inner(", "int empty(")}) == 3
+    assert ftl_locals[0]["id"] == ftl_locals[1]["id"]
+    assert len({ftl_locals[i]["id"] for i in (0, 2, 3)}) == 3
+    assert len({ftl_locals[i]["fields"][0]["name"] for i in (0, 2, 3)}) == 3
+    for function in ftl_functions.values():
+        values = {v["name"] for v in function["params"]} | {v["name"] for v in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in ftl_functions, node
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in ftl_functions[node["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-friend-template-local-relocated-") as temp:
+        relocated = check("v2-friend-templates-local-relocated", ft_local_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == ft_local, "friend-local identity depends on the absolute root"
+
+    friend_class_templates_positive = {
+        'ordinary-unused': 'class R{template<class T>friend struct A;};',
+        'ordinary-introduction': 'class R{int n=3;template<class T>friend struct A;};template<class T>struct A{static int get(const R&r){return r.n;}};int main(){R r;return A<int>::get(r)-3;}',
+        'generic-unused': 'template<class T>class R{template<class U>friend struct A;};',
+        'generic-introduction': 'template<class T>class R{int n=3;template<class U>friend struct A;};static_assert(sizeof(R<int>)>0);template<class U>struct A{static int get(const R<int>&r){return r.n;}};int main(){R<int>r;return A<int>::get(r)-3;}',
+        'generic-later-target': 'template<class T>class R{int n=3;template<class U>friend struct A;};template<class V>struct A{static int get(const R<int>&r){return r.n;}};int main(){R<int>r;return A<bool>::get(r)-3;}',
+        'generic-existing-target': 'template<class V>struct A;template<class T>class R{int n=3;template<class U>friend struct A;};template<class V>struct A{static int get(const R<int>&r){return r.n;}};int main(){R<int>r;return A<bool>::get(r)-3;}',
+        'repeat-outer-grants': 'template<class T>class R{int n=3;template<class U>friend struct A;};static_assert(sizeof(R<int>)>0&&sizeof(R<bool>)>0);template<class V>struct A{static int get(const R<int>&r){return r.n;}static int other(const R<bool>&r){return r.n;}};int main(){R<int>i;R<bool>b;return A<int>::get(i)+A<int>::other(b)-6;}',
+        'all-specializations': 'template<class T>struct A;class R{int n=3;template<class T>friend struct A;};template<class T>struct A{static int get(const R&r){return r.n;}};template<class T>struct A<T*>{static int get(const R&r){return r.n+1;}};template<>struct A<bool>{static int get(const R&r){return r.n+2;}};int main(){R r;return A<int>::get(r)+A<int*>::get(r)+A<bool>::get(r)-12;}',
+        'granting-partial': 'template<class T>class R;template<class T>class R<T*>{int n=3;template<class U>friend struct A;};template<class U>struct A{static int get(const R<int*>&r){return r.n;}};int main(){R<int*>r;return A<int>::get(r)-3;}',
+        'granting-full': 'template<class T>class R;template<>class R<int>{int n=3;template<class U>friend struct A;};template<class U>struct A{static int get(const R<int>&r){return r.n;}};int main(){R<int>r;return A<int>::get(r)-3;}',
+        'namespace-qualified': 'namespace N{template<class T>struct A;}template<class T>class R{int n=3;template<class U>friend struct N::A;};namespace N{template<class T>struct A{static int get(const R<int>&r){return r.n;}};}int main(){R<int>r;return N::A<int>::get(r)-3;}',
+        'namespace-alias-qualified': 'namespace N{template<class T>struct A;}namespace Q=N;template<class T>class R{int n=3;template<class U>friend struct Q::A;};namespace N{template<class T>struct A{static int get(const R<int>&r){return r.n;}};}int main(){R<int>r;return Q::A<bool>::get(r)-3;}',
+        'qualified-member': 'struct Outer{template<class U>struct A;};template<class T>class R{int n=3;template<class U>friend struct Outer::A;};template<class U>struct Outer::A{static int get(const R<int>&r){return r.n;}};int main(){R<int>r;return Outer::A<int>::get(r)-3;}',
+        'member-granting': 'template<class T>struct Outer{template<class U>class R{int n=3;template<class V>friend struct A;};};template<class V>struct A{static int get(const Outer<int>::R<bool>&r){return r.n;}};int main(){Outer<int>::R<bool>r;return A<int>::get(r)-3;}',
+        'ordinary-nested-granting': 'template<class T>struct Outer{class R{int n=3;template<class V>friend struct A;};};template<class V>struct A{static int get(const Outer<int>::R&r){return r.n;}};int main(){Outer<int>::R r;return A<bool>::get(r)-3;}',
+        'copied-full-granting': 'template<class T>struct Outer{template<class U>class R;template<>class R<int>{int n=3;template<class V>friend struct A;};};template<class V>struct A{static int get(const Outer<bool>::R<int>&r){return r.n;}};int main(){Outer<bool>::R<int>r;return A<int>::get(r)-3;}',
+        'own-nested-granting': 'template<class T>struct Outer{class R{int n=1;};};template<>class Outer<int>::R{int n=3;template<class U>friend struct A;};template<class U>struct A{static int get(const Outer<int>::R&r){return r.n;}};int main(){Outer<int>::R r;return A<int>::get(r)-3;}',
+        'value-header': 'template<class T>class R{int n=3;template<int N>friend struct A;};template<int N>struct A{static int get(const R<int>&r){return r.n+N;}};int main(){R<int>r;return A<2>::get(r)-5;}',
+        'dependent-value-header': 'template<class T>class R{int n=3;template<T N>friend struct A;};static_assert(sizeof(R<int>)>0);template<int N>struct A{static int get(const R<int>&r){return r.n+N;}};int main(){R<int>r;return A<2>::get(r)-5;}',
+        'auto-value-header': 'template<class T>class R{int n=3;template<auto N>friend struct A;};template<auto N>struct A{static int get(const R<int>&r){return r.n+N;}};int main(){R<int>r;return A<2>::get(r)-5;}',
+        'type-pack-header': 'template<class T>class R{int n=3;template<class... U>friend struct A;};template<class... U>struct A{static int get(const R<int>&r){return r.n+sizeof...(U);}};int main(){R<int>r;return A<int,bool>::get(r)+A<>::get(r)-8;}',
+        'value-pack-header': 'template<class T>class R{int n=3;template<int... N>friend struct A;};template<int... N>struct A{static int get(const R<int>&r){return r.n+sizeof...(N);}};int main(){R<int>r;return A<1,2>::get(r)-5;}',
+        'outer-pack-header': 'template<class... T>class R{int n=3;template<class... U>friend struct A;};static_assert(sizeof(R<int,bool>)>0);template<class... U>struct A{static int get(const R<int,bool>&r){return r.n+sizeof...(U);}};int main(){R<int,bool>r;return A<int,bool>::get(r)-5;}',
+        'inherited-type-default': 'template<class V=int>struct A;template<class T>class R{int n=3;template<class U>friend struct A;};static_assert(sizeof(R<int>)>0);template<class V>struct A{static int get(const R<int>&r){return r.n;}};int main(){R<int>r;return A<>::get(r)-3;}',
+        'inherited-value-default': 'template<int N=2>struct A;template<class T>class R{int n=3;template<int V>friend struct A;};static_assert(sizeof(R<int>)>0);template<int N>struct A{static int get(const R<int>&r){return r.n+N;}};int main(){R<int>r;return A<>::get(r)-5;}',
+        'later-default': 'template<class T>class R{int n=3;template<class U>friend struct A;};static_assert(sizeof(R<int>)>0);template<class V=int>struct A{static int get(const R<int>&r){return r.n;}};int main(){R<int>r;return A<>::get(r)-3;}',
+        'private-alias': 'template<class T>class R{using Value=int;int n=3;template<class U>friend struct A;};template<class U>struct A{static int get(const R<int>&r){R<int>::Value v=r.n;return v;}};int main(){R<int>r;return A<bool>::get(r)-3;}',
+        'private-static': 'template<class T>class R{inline static int n=3;template<class U>friend struct A;};template<class U>struct A{static int get(){return ++R<int>::n;}};int main(){return A<int>::get()+A<bool>::get()-9;}',
+        'unused-target-body': 'class R{template<class T>friend struct A;};template<class T>struct A{double value;T get(){return T::missing;}};',
+        'friends_reject-class-template': 'template<class T>class A{};class R{int n=1;template<class T>friend class A;};',
+        'friend_declarations_reject-nonfunction-template-friend': 'class R{template<class T>struct Hidden{};public:struct I{template<class T>friend struct R::Hidden;};};',
+        'instantiated_friend_types_reject-friend-class-template': 'template<class T>struct A{};template<class U>struct R{template<class T>friend class A;};',
+        'friend_function_templates_reject-class-friend-template': 'template<class T>struct R{template<class U>friend struct Friend;};',
+        'runtime-source': 'int made=0,dropped=0;\ntemplate<class U>struct Reader;\ntemplate<int N>class Vault{\n using Value=int;\n Value n;\n Vault(int v):n(v){++made;}\n ~Vault(){++dropped;}\n template<class U>friend struct Reader;\n};\ntemplate<class U>struct Reader{\n template<int N>static int run(int n){\n  Vault<N>v(n);\n  typename Vault<N>::Value value=v.n;\n  return value+N;\n }\n template<int N>static int &ref(Vault<N>&v){return v.n;}\n static int &state(){static int n=0;return n;}\n static int lifetime(){\n  Vault<3>v(5);\n  int &n=ref(v);\n  ++n;\n  return v.n;\n }\n};\ntemplate<class T>class Grant{\n int n=7;\n template<class U>friend struct Shared;\n};\nstatic_assert(sizeof(Grant<int>)>0&&sizeof(Grant<bool>)>0);\ntemplate<class U>struct Shared{\n static int get(const Grant<int>&g){return g.n;}\n static int &state(){static int n=0;return n;}\n};\ntemplate<class T>struct Outer{\n class Node{int n=11;template<class U>friend struct NestedReader;};\n template<class V>class Inner{int n=13;template<class U>friend struct NestedReader;};\n template<>class Inner<int>{int n=17;template<class U>friend struct NestedReader;};\n};\ntemplate<class U>struct NestedReader{\n static int node(){Outer<int>::Node n;return n.n;}\n static int inner(){Outer<int>::Inner<bool>n;return n.n;}\n static int full(){Outer<int>::Inner<int>n;return n.n;}\n};\nint main(){\n if(Reader<int>::run<2>(3)!=5||made!=1||dropped!=1)return 1;\n if(Reader<bool>::run<4>(5)!=9||made!=2||dropped!=2)return 2;\n if(Reader<int>::lifetime()!=6||made!=3||dropped!=3)return 3;\n if(Reader<int>::state()++!=0||Reader<int>::state()!=1)return 4;\n if(Reader<bool>::state()!=0)return 5;\n Grant<int>g;\n if(Shared<int>::get(g)!=7)return 6;\n if(Shared<int>::state()++!=0||Shared<int>::state()!=1||Shared<bool>::state()!=0)return 7;\n if(NestedReader<int>::node()!=11)return 8;\n if(NestedReader<int>::inner()!=13)return 9;\n if(NestedReader<bool>::full()!=17)return 10;\n return 0;\n}\n',
+        'protocol-source': 'template<class U>struct Reader;\ntemplate<class T>class Vault{\n int n=3;\n template<class U>friend struct Reader;\n};\ntemplate<class U>struct Reader{\n static int get(const Vault<int>&v){return v.n;}\n static int other(const Vault<bool>&v){return v.n;}\n static int &state(){static int n=0;return n;}\n};\nint from_int(const Vault<int>&v){return Reader<int>::get(v);}\nint from_bool(const Vault<bool>&v){return Reader<int>::other(v);}\nint different(const Vault<int>&v){return Reader<bool>::get(v);}\nint repeated(const Vault<int>&v){return Reader<int>::get(v);}\nint bump_int(){return ++Reader<int>::state();}\nint bump_bool(){return ++Reader<bool>::state();}\n',
+    }
+    for name, source in friend_class_templates_positive.items():
+        check("v2-friend-class-templates-positive-" + name, source, None, profile="cpp-core-v2")
+
+    friend_class_templates_reject = {
+        'unsupported-header': 'template<class T>struct A{struct B{};};template<class U>struct R{template<class T>friend class A<T>::B;};',
+        'template-template-parameter': 'template<class T>struct R{template<template<class>class U>friend struct A;};',
+        'pointer-value-parameter': 'template<class T>struct R{template<int*P>friend struct A;};',
+        'float-value-parameter': 'template<class T>struct R{template<double N>friend struct A;};',
+        'hidden-parameter-type': 'using Hidden=double;template<class T>struct R{template<Hidden N>friend struct A;};',
+        'hidden-folded-parameter-type': 'template<class T>using Ignore=int;template<class T>struct R{template<Ignore<double> N>friend struct A;};',
+        'hidden-dependent-parameter-copy': 'template<class T>using Ignore=int;template<class T>struct R{template<Ignore<T> N>friend struct A;};R<double>r;',
+        'hidden-inherited-default': 'template<class T>using Ignore=int;template<class U=Ignore<double>>struct A;template<class T>struct R{template<class U>friend struct A;};R<int>r;',
+        'hidden-qualifier': 'template<class T>struct Q{template<class U>struct A;};template<class T>struct R{template<class U>friend struct Q<double>::A;};',
+        'target-union': 'template<class T>union A;class R{template<class U>friend union A;};',
+        'friend-attribute': 'template<class T>struct R{template<class U>friend struct __attribute__((deprecated)) A;};',
+    }
+    for name, source in friend_class_templates_reject.items():
+        check("v2-friend-class-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    friend_class_templates_invalid = {
+        'written-type-default-unused': 'template<class T>struct R{template<class U=int>friend struct A;};',
+        'written-type-default-copy': 'template<class T>struct R{template<class U=int>friend struct A;};R<int>r;',
+        'written-value-default-unused': 'template<class T>struct R{template<int N=1>friend struct A;};',
+        'written-value-default-copy': 'template<class T>struct R{template<int N=1>friend struct A;};R<int>r;',
+        'unknown-qualified': 'namespace Q{}template<class T>struct R{template<class U>friend struct Q::Missing;};R<int>r;',
+        'wrong-target-kind': 'namespace Q{struct A{};}template<class T>struct R{template<class U>friend struct Q::A;};R<int>r;',
+        'parameter-mismatch': 'template<int N>struct A;template<class T>struct R{template<class U>friend struct A;};R<int>r;',
+        'no-reciprocal': 'template<class T>struct A;class R{template<class U>friend struct A;int get(const A<int>&);};template<class T>class A{int n=3;};int R::get(const A<int>&a){return a.n;}',
+        'no-transitive': 'template<class T>struct A;template<class T>struct B;class R{int n=3;template<class U>friend struct A;};template<class T>struct A{template<class U>friend struct B;};template<class T>struct B{static int get(const R&r){return r.n;}};int main(){R r;return B<int>::get(r);}',
+        'no-other-grant': 'template<class T>class R{int n=3;};template<>class R<int>{int n=3;template<class U>friend struct A;};template<class T>struct A{static int get(const R<bool>&r){return r.n;}};int main(){R<bool>r;return A<int>::get(r);}',
+    }
+    for name, source in friend_class_templates_invalid.items():
+        check("v2-friend-class-templates-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    friend_class_templates_missing = {
+        'selected-definition': 'class R{int n=3;template<class U>friend struct A;};template<class U>struct A{static int get(const R&);};int main(){R r;return A<int>::get(r);}',
+    }
+    for name, source in friend_class_templates_missing.items():
+        check("v2-friend-class-templates-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    class_friend_source = friend_class_templates_positive["protocol-source"]
+    class_friends = check("v2-friend-class-templates-protocol", class_friend_source, profile="cpp-core-v2")
+    cf_records = {r["id"]: r for r in class_friends["records"]}
+    cf_functions = {f["name"]: f for f in class_friends["functions"]}
+    cf_globals = {g["name"]: g for g in class_friends["globals"]}
+    assert len(cf_records) == len(class_friends["records"]) == 4
+    assert len(cf_functions) == len(class_friends["functions"]) == 11
+    assert len(cf_globals) == len(class_friends["globals"]) == 2
+    assert sorted(len(r["fields"]) for r in cf_records.values()) == [0, 0, 1, 1]
+
+    def cf_function(prefix):
+        lines = [i for i, line in enumerate(class_friend_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, prefix
+        found = [f for f in cf_functions.values() if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    cf_targets = {}
+    cf_vaults = {}
+    for prefix in ("int from_int(", "int from_bool(", "int different(", "int repeated("):
+        wrapper = cf_function(prefix)
+        assert wrapper["result"] == "int" and len(wrapper["params"]) == 1
+        record_type = wrapper["params"][0]["type"]
+        assert record_type.startswith("cptr:") and record_type[5:] in cf_records
+        assert [field["type"] for field in cf_records[record_type[5:]]["fields"]] == ["int"]
+        calls = [node for node in walk(wrapper["body"]) if node.get("op") == "call"]
+        assert len(calls) == 1
+        target = cf_functions[calls[0]["callee"]]
+        assert target["result"] == "int"
+        assert [p["type"] for p in target["params"]] == [record_type]
+        assert [a["type"] for a in calls[0]["args"]] == [record_type]
+        assert np_pointer(wrapper, calls[0]["args"][0]) == ("parameter", wrapper["params"][0]["name"])
+        cf_targets[prefix] = target["name"]
+        cf_vaults[prefix] = record_type
+    assert cf_targets["int from_int("] == cf_targets["int repeated("]
+    assert len(set(cf_targets.values())) == 3
+    assert cf_vaults["int from_int("] == cf_vaults["int different("] == cf_vaults["int repeated("]
+    assert cf_vaults["int from_int("] != cf_vaults["int from_bool("]
+    cf_states = []
+    for prefix in ("int bump_int(", "int bump_bool("):
+        wrapper = cf_function(prefix)
+        calls = [n for n in walk(wrapper["body"]) if n.get("op") == "call"]
+        assert len(calls) == 1 and calls[0]["args"] == []
+        target = cf_functions[calls[0]["callee"]]
+        assert target["params"] == [] and target["result"] == "ptr:int"
+        used = {n["name"] for n in walk(target["body"]) if n.get("kind") == "var" and n["name"] in cf_globals}
+        assert len(used) == 1
+        name = next(iter(used))
+        assert cf_globals[name]["type"] == "int" and cf_globals[name]["value"]["value"] == "0"
+        assert cf_globals[name].get("mutable", False) is True
+        cf_states.append(name)
+    assert len(set(cf_states)) == 2
+    for function in cf_functions.values():
+        values = set(cf_globals) | {p["name"] for p in function["params"]} | {p["name"] for p in function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in values, node
+            if node.get("op") == "call":
+                assert node["callee"] in cf_functions, node
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in cf_functions[node["callee"]]["params"]]
+    with tempfile.TemporaryDirectory(prefix="neverc-class-friends-relocated-") as temp:
+        relocated = check("v2-class-friends-relocated", class_friend_source,
+                          root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == class_friends, "class target identity depends on the absolute root"
+
+    function_pointers_positive = {
+        'ordinary-decay': 'int add(int n){return n+1;}int main(){int(*p)(int)=add;return p(3);}',
+        'unary-plus': 'int get(int n){return n;}int main(){auto p=+get;return (+p)(3);}',
+        'ordinary-address': 'int add(int n){return n+1;}int main(){auto p=&add;return (*p)(3);}',
+        'parenthesized-designator': 'int add(int n){return n+1;}int main(){auto p=&add;return (&*p)(3)+((p))(2);}',
+        'typedef-pointer': 'typedef int(*F)(int);int add(int n){return n+1;}int use(F p){return p(2);}',
+        'typedef-function': 'typedef int F(int);int add(int n){return n+1;}int use(F*p){return p(2);}',
+        'alias-function': 'using F=int(int);int add(int n){return n+1;}int main(){F*p=add;return p(2);}',
+        'overload-selected': 'int get(int n){return n;}bool get(bool n){return !n;}int main(){int(*p)(int)=get;return p(3);}',
+        'namespace-alias': 'namespace N{int get(int n){return n;}}namespace A=N;int main(){auto p=&A::get;return p(3);}',
+        'using-declaration': 'namespace N{int get(int n){return n;}}using N::get;int main(){auto p=get;return p(3);}',
+        'null-bool-equality': 'using F=int(*)();int get(){return 3;}int main(){F p=nullptr;F q=0;if(p||p!=q)return 1;p=get;return p&&p==get?p():2;}',
+        'copy-assign': 'using F=int(*)();int a(){return 2;}int b(){return 3;}int main(){F p=a;F q=p;q=b;p=q;return p();}',
+        'conditional-pointers': 'int a(int n){return n;}int b(int n){return n+1;}int use(bool c){auto p=c?&a:&b;return p(3);}',
+        'conditional-designators': 'int a(int n){return n;}int b(int n){return n+1;}int use(bool c){return (c?a:b)(3);}',
+        'comma-postfix': 'int state=0;int get(int n){return state+n;}int main(){return (++state,get)(2);}',
+        'void-callback': 'using F=void(*)(void);int state=0;void set(){state=3;}int main(){F p=set;p();return state;}',
+        'narrow-signature': 'signed char get(short n){return static_cast<signed char>(n);}int main(){auto p=&get;return p(3);}',
+        'wide-signature': 'long long get(unsigned long long n){return static_cast<long long>(n);}int main(){auto p=&get;return static_cast<int>(p(3ull));}',
+        'bool-signature': 'bool get(bool n){return !n;}int main(){auto p=get;return p(false)?3:1;}',
+        'returned-callback': 'using F=int(*)(int);int get(int n){return n;}F make(){return get;}int main(){return make()(3);}',
+        'factory-callback': 'using F=int(*)(int);using Factory=F(*)();int get(int n){return n;}F make(){return get;}int main(){Factory p=make;return p()(3);}',
+        'callback-parameter': 'using F=int(*)(int);int get(int n){return n;}int use(F p,int n){return p(n);}int main(){return use(get,3);}',
+        'callback-reference': 'using F=int(*)();int a(){return 2;}int b(){return 3;}void set(F&p){p=b;}int main(){F p=a;set(p);return p();}',
+        'const-callback-reference': 'using F=int(*)();int get(){return 3;}int use(const F&p){return p();}int main(){return use(get);}',
+        'callback-storage-pointer': 'using F=int(*)();int get(){return 3;}int main(){F p=get;F*q=&p;return (*q)();}',
+        'callback-array': 'using F=int(*)();int a(){return 2;}int b(){return 3;}int main(){F p[2]={a,b};return p[1]();}',
+        'callback-array-reference': 'using F=int(*)();int a(){return 2;}int b(){return 3;}int use(F(&p)[2]){return p[1]();}int main(){F p[2]={a,b};return use(p);}',
+        'record-field': 'using F=int(*)(int);int get(int n){return n;}struct R{F p;};int use(const R&r){return r.p(3);}int main(){R r{get};return use(r);}',
+        'record-default-field': 'int get(){return 3;}struct R{int(*p)()=get;};int main(){R r;return r.p();}',
+        'record-copy-field': 'int get(){return 3;}struct R{int(*p)();};int main(){R a{get};R b=a;return b.p();}',
+        'global-constant': 'int get(){return 3;}int(*const p)()=get;int main(){return p();}',
+        'global-mutable': 'int a(){return 2;}int b(){return 3;}int(*p)()=a;int main(){p=b;return p();}',
+        'global-null': 'int get(){return 3;}int(*p)();int main(){if(p)return 1;p=get;return p();}',
+        'global-redeclaration': 'int get(){return 3;}extern int(*p)();int(*p)()=get;int main(){return p();}',
+        'static-local': 'int a(){return 2;}int b(){return 3;}int f(){static int(*p)()=a;p=b;return p();}',
+        'static-data': 'int get(){return 3;}struct R{static int(*p)();};int(*R::p)()=get;int main(){return R::p();}',
+        'inline-static-data': 'int get(){return 3;}struct R{inline static int(*p)()=get;};int main(){return R::p();}',
+        'generic-static-data': 'int get(){return 3;}template<class T>struct R{inline static int(*p)()=get;};int main(){return R<int>::p();}',
+        'static-member-address': 'struct R{static int get(int n){return n;}};int main(){auto p=&R::get;return p(3);}',
+        'static-member-object': 'struct R{static int get(int n){return n;}};int main(){R r;auto p=r.get;return p(3);}',
+        'static-member-pointer-base': 'struct R{static int get(int n){return n;}};int use(R*r){auto p=r->get;return p(3);}',
+        'generic-static-member': 'template<class T>struct R{static int get(int n){return n;}};int main(){auto p=&R<int>::get;return p(3);}',
+        'reference-argument': 'int get(int&n){return ++n;}int main(){auto p=&get;int n=2;return p(n);}',
+        'record-reference-argument': 'struct R{int n;};int get(const R&r){return r.n;}int main(){auto p=&get;R r{3};return p(r);}',
+        'reference-result': 'int&get(int&n){return n;}int main(){auto p=&get;int n=2;p(n)=3;return n;}',
+        'const-reference-result': 'const int&get(const int&n){return n;}int use(const int&n){auto p=&get;return p(n);}',
+        'array-reference-result': 'int(&get(int(&a)[2]))[2]{return a;}int main(){auto p=&get;int a[2]={2,3};return p(a)[1];}',
+        'noexcept-conversion': 'using F=int(*)();int get()noexcept{return 3;}int main(){F p=get;auto q=&get;return p()+q();}',
+        'noexcept-query': 'int get()noexcept{return 3;}int main(){auto p=&get;static_assert(noexcept(p()));return p();}',
+        'sizeof-alignment': 'using F=int(*)();int get(){return 3;}static_assert(sizeof(F)==sizeof(void*));static_assert(alignof(F)==alignof(void*));int main(){F p=get;return p();}',
+        'generic-argument': 'template<class F>int invoke(F p,int n){return p(n);}int get(int n){return n;}int main(){return invoke(get,3);}',
+        'generic-field': 'template<class T>struct R{T p;};int get(){return 3;}int main(){R<decltype(&get)>r{get};return r.p();}',
+        'generic-type-alias': 'template<class T>using F=T(*)(T);int get(int n){return n;}int main(){F<int>p=get;return p(3);}',
+        'nested-record-array-field': 'struct R{struct I{int n;};int(*p)(I(&)[2]);};int get(R::I(&a)[2]){return a[1].n;}int main(){R r{get};R::I a[2]={{2},{3}};return r.p(a);}',
+        'nested-record-array-result-field': 'struct R{struct I{int n;};I(&(*p)(I(&)[2]))[2];};R::I(&get(R::I(&a)[2]))[2]{return a;}int main(){R r{get};R::I a[2]={{2},{3}};return r.p(a)[1].n;}',
+        'nested-record-forward-field': 'struct R{int(*p)(const R&);int n;};int get(const R&r){return r.n;}int main(){R r{get,3};return r.p(r);}',
+        'ordinary-free-operator': 'struct R{int n;};int operator+(const R&r,int n){return r.n+n;}int main(){int(*p)(const R&,int)=&operator+;R r{1};return p(r,2);}',
+        'const-record-callback-global': 'int get(){return 3;}struct R{int(*p)();};constexpr R r{get};int main(){return r.p();}',
+        'discarded-record-function-designator': 'struct R{int n;};int get(R r){return r.n;}int main(){(void)get;static_cast<void>((get));get;return 3;}',
+        'discarded-comma-left-designator': 'struct R{int n;};int get(R r){return r.n;}int good(int n){return n;}int main(){return (get,good)(3);}',
+        'direct-record-compatibility': 'struct R{int n;};int get(R r){return r.n;}int main(){return get(R{2})+(get)(R{3});}',
+        'direct-template-compatibility': 'template<class T>T get(T n){return n;}int main(){return get<int>(2)+(get<int>)(3);}',
+        'promoted-conversion_rejected-function-pointer': 'using F=int(*)();int g(){return 1;}struct R{operator F()const{return g;}};',
+        'promoted-void_expression_rejected-function-pointer': 'void g(){}void f(){static_cast<void>(&g);}',
+        'promoted-member_aliases_reject-function-pointer': 'struct R{template<class T>using I=T(*)();};int f(){return 3;}int main(){R::I<int> p=&f;return p();}',
+        'promoted-default_argument_rejected-function-pointer': 'void g(){}void f(void(*p)()=g){}',
+        'promoted-v2_rejections-method-folded-static-function-value': 'struct R{int n;static int get(){return 1;}};static_assert((R::get,true));',
+        'promoted-v2_rejections-method-folded-parenthesized-static-value': 'struct R{int n;static int get(){return 1;}};static_assert(((R::get),true));',
+        'promoted-v2_rejections-method-static-function-pointer': 'struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}',
+        'promoted-v2_rejections-method-method-comma-callee': 'struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}',
+        'runtime-source': 'using F=int(*)(int);\nint trace=0;\nint first(int n){trace=trace*10+3;return n+10;}\nint second(int n){trace=trace*10+4;return n+20;}\nF selected=first;\nF empty;\nF const fixed=first;\nF choose(){trace=trace*10+1;return selected;}\nint argument(){trace=trace*10+2;selected=second;return 5;}\nvoid reseat(F&p){p=second;}\nF&slot(){static F p=first;return p;}\nF factory(){return first;}\nint&reference(int&n){return n;}\nconst int&constantReference(const int&n){return n;}\nint(&arrayReference(int(&a)[2]))[2]{return a;}\nvoid mark(){trace=7;}\nstruct Record{F p;int n;};\nint readRecord(const Record&r){return r.n;}\nstruct Static{\n static int call(int n){trace=trace*10+3;return n+30;}\n inline static F callback=first;\n};\nStatic&base(Static&r){trace=trace*10+1;return r;}\ntemplate<class Callback>int invoke(Callback p,int n){return p(n);}\nint quiet(int n)noexcept{return n+1;}\nstruct Nested{struct Item{int n;};int(*read)(Item(&)[2]);};\nint readItems(Nested::Item(&items)[2]){return items[1].n;}\nstruct Tracked{int n;~Tracked(){trace=trace*10+4;}};\nint readTracked(const Tracked&r){trace=trace*10+3;return r.n;}\nstruct ScopedStatic{static int get(int n){trace=trace*10+3;return n;}~ScopedStatic(){trace=trace*10+4;}};\nint main(){\n Static object;\n trace=0;selected=first;\n int value=choose()(argument());\n if(value!=15||trace!=123||selected!=second)return 1;\n trace=0;selected=first;\n value=(++trace,first)(argument());\n if(value!=15||trace!=123||selected!=second)return 2;\n trace=0;selected=first;\n value=base(object).call(argument());\n if(value!=35||trace!=123)return 3;\n trace=0;auto method=base(object).call;\n if(trace!=1)return 4;\n value=method(2);\n if(value!=32||trace!=13)return 5;\n F p=first;F q=p;\n reseat(p);\n if(p!=second||q!=first||!p||empty||fixed!=first)return 6;\n trace=0;\n if((*p)(1)!=21||(&*q)(2)!=12||trace!=43)return 7;\n F a[2]={first,second};\n Record r{a[1],9};Record copy=r;\n trace=0;\n if(a[0](1)!=11||copy.p(2)!=22||trace!=34)return 8;\n auto reader=&readRecord;\n if(reader(copy)!=9)return 9;\n auto ref=&reference;int n=2;ref(n)=7;\n auto cref=&constantReference;\n if(n!=7||&ref(n)!=&n||&cref(n)!=&n)return 10;\n int values[2]={3,4};auto array=&arrayReference;array(values)[1]=6;\n if(values[1]!=6||&array(values)[0]!=&values[0])return 11;\n using Factory=F(*)();Factory make=&factory;\n trace=0;\n if(make()(3)!=13||trace!=3)return 12;\n slot()=second;trace=0;\n if(slot()(4)!=24||trace!=4||&slot()!=&slot())return 13;\n Static::callback=second;trace=0;\n if(Static::callback(2)!=22||trace!=4)return 14;\n trace=0;\n if(invoke(first,3)!=13||trace!=3)return 15;\n F normal=quiet;auto nonthrowing=&quiet;\n static_assert(noexcept(nonthrowing(1)));\n if(normal(2)!=3||nonthrowing(3)!=4)return 16;\n void(*action)()=mark;action();\n if(trace!=7)return 17;\n const F&alias=p;trace=0;\n if(alias(2)!=22||trace!=4)return 18;\n F*storage=&p;*storage=first;trace=0;\n if((*storage)(3)!=13||trace!=3)return 19;\n Nested nested{readItems};Nested::Item items[2]={{2},{3}};\n if(nested.read(items)!=3)return 20;\n trace=0;auto tracked=&readTracked;value=tracked(Tracked{3});\n if(value!=3||trace!=34)return 21;\n trace=0;auto scoped=ScopedStatic{}.get;\n if(trace!=4)return 22;\n value=scoped(2);\n if(value!=2||trace!=43)return 23;\n return 0;\n}\n',
+        'protocol-source': 'using F=int(*)(int);\nint plus(int n){return n+1;}\nint minus(int n){return n-1;}\nF selected=plus;\nF empty;\nF const fixed=plus;\nint consume(F p,int n){return p(n);}\nF choose(bool flag){return flag?plus:minus;}\nint from_global(int n){return selected(n);}\nint sequence(int n){return choose(true)(consume(minus,n));}\nF&slot(){static F p=plus;return p;}\nstruct Holder{F callback;};\nint field(const Holder&h,int n){return h.callback(n);}\nint&identity(int&n){return n;}\nint&reference(int&n){auto p=&identity;return p(n);}\n',
+    }
+    for name, source in function_pointers_positive.items():
+        check("v2-function-pointers-positive-" + name, source, None, profile="cpp-core-v2")
+
+    function_pointers_reject = {
+        'record-by-value-argument': 'struct R{int n;};int get(R r){return r.n;}int main(){auto p=&get;return p(R{3});}',
+        'record-by-value-result': 'struct R{int n;};R get(){return R{3};}int main(){auto p=&get;return p().n;}',
+        'function-reference': 'int get(){return 3;}int main(){int(&r)()=get;return r();}',
+        'nonstatic-member': 'struct R{int get(){return 3;}};int main(){auto p=&R::get;R r;return (r.*p)();}',
+        'variadic': 'int get(int,...){return 3;}int main(){auto p=&get;return p(1,2);}',
+        'lambda-conversion': 'int main(){int(*p)(int)=[](int n){return n;};return p(3);}',
+        'double-signature': 'double get(double n){return n;}int main(){auto p=&get;return int(p(3.0));}',
+        'hidden-signature': 'using I=decltype((sizeof(double),1));int get(I n){return n;}int main(){auto p=&get;return p(3);}',
+        'hidden-erased-alias': 'template<class T>using F=int(*)();using P=F<decltype((sizeof(double),1))>;int get(){return 3;}P p=get;',
+        'function-to-object': 'int get(){return 3;}int main(){void*p=reinterpret_cast<void*>(&get);return p!=nullptr;}',
+        'object-to-function': 'int main(){void*p=nullptr;auto f=reinterpret_cast<int(*)()>(p);return f!=nullptr;}',
+        'function-to-integer': 'int get(){return 3;}int main(){return int(reinterpret_cast<unsigned long long>(&get));}',
+        'different-signature-cast': 'int get(int n){return n;}int main(){auto p=reinterpret_cast<bool(*)(bool)>(&get);return p(true);}',
+        'dynamic-global': 'int get(){return 3;}using F=int(*)();F make(){return get;}F p=make();int main(){return p();}',
+        'thread-local': 'int get(){return 3;}thread_local int(*p)()=get;int main(){return p();}',
+        'volatile-storage': 'int get(){return 3;}int main(){int(*volatile p)()=get;return p();}',
+        'global-object-pointer-retained': 'int n=3;int*p=&n;int main(){return *p;}',
+        'nondefault-pointee-address-space': 'typedef int __attribute__((address_space(1))) A;int invoke(int(*p)(A*),A*v){return p(v);}',
+        'written-noreturn': 'typedef void F() __attribute__((noreturn));void invoke(F*p){p();}',
+        'written-noescape': 'typedef void F(int*p __attribute__((noescape)));void invoke(F*p,int*v){p(v);}',
+    }
+    for name, source in function_pointers_reject.items():
+        check("v2-function-pointers-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    function_pointers_invalid = {
+        'wrong-argument': 'int get(int n){return n;}int main(){auto p=&get;return p();}',
+        'wrong-result-signature': 'int get(int n){return n;}bool(*p)(bool)=get;',
+        'discard-noexcept': 'int get(){return 3;}int(*p)()noexcept=get;',
+        'const-storage-write': 'int get(){return 3;}int main(){int(*const p)()=get;p=nullptr;return 0;}',
+        'private-static': 'class R{static int get(){return 3;}};int main(){auto p=&R::get;return p();}',
+    }
+    for name, source in function_pointers_invalid.items():
+        check("v2-function-pointers-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    function_pointers_missing = {
+        'named-definition': 'int get(int);int main(){auto p=&get;return p(3);}',
+        'static-definition': 'struct R{static int get();};int main(){auto p=&R::get;return p();}',
+    }
+    for name, source in function_pointers_missing.items():
+        check("v2-function-pointers-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    check("function-pointers-core-v1", "int apply(int(*p)(int),int n){return p(n);}", "TR0201", profile="cpp-core-v1")
+
+    callback_source = function_pointers_positive["protocol-source"]
+    callbacks = check("v2-function-pointers-protocol", callback_source, profile="cpp-core-v2")
+    cb_functions = {f["name"]: f for f in callbacks["functions"]}
+    cb_globals = {g["name"]: g for g in callbacks["globals"]}
+    cb_records = {r["id"]: r for r in callbacks["records"]}
+    assert len(cb_functions) == len(callbacks["functions"]) == 10
+    assert len(cb_globals) == len(callbacks["globals"]) == 4
+    assert len(cb_records) == len(callbacks["records"]) == 1
+    cb_type = "fnptr:1:3:int3:int"
+
+    def cb_function(prefix):
+        lines = [i for i, line in enumerate(callback_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, prefix
+        found = [f for f in cb_functions.values() if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    def cb_signature(function):
+        parts = [function["result"]] + [p["type"] for p in function["params"]]
+        return "fnptr:" + str(len(parts)-1) + ":" + "".join(str(len(t.encode()))+":"+t for t in parts)
+
+    plus, minus = cb_function("int plus("), cb_function("int minus(")
+    assert plus["name"] != minus["name"]
+    assert cb_signature(plus) == cb_signature(minus) == cb_type
+    assert [field["type"] for record in cb_records.values() for field in record["fields"]] == [cb_type]
+    assert all(g["type"] == cb_type for g in cb_globals.values())
+    assert sum(g.get("mutable", False) for g in cb_globals.values()) == 3
+    assert sum(g["value"]["kind"] == "null" for g in cb_globals.values()) == 1
+    assert {g["value"]["name"] for g in cb_globals.values() if g["value"]["kind"] == "function_address"} == {plus["name"]}
+    assert cb_function("F choose(")["result"] == cb_type
+    assert cb_function("F&slot(")["result"] == "ptr:" + cb_type
+    count = 0
+    addresses = []
+    for node in walk(callbacks):
+        if node.get("kind") == "function_address":
+            assert set(node) == {"kind", "type", "name", "loc"}
+            assert node["name"] in cb_functions
+            assert node["type"] == cb_signature(cb_functions[node["name"]])
+            addresses.append(node["name"])
+    assert set(addresses) == {plus["name"], minus["name"], cb_function("int&identity(")["name"]}
+    for function in cb_functions.values():
+        declared = set(cb_globals) | {v["name"] for v in function["params"] + function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in declared
+            if node.get("op") == "indirect_call":
+                count += 1
+                assert "callee" not in node and "mapping" not in node
+                callable_value = node["callable"]
+                assert callable_value["kind"] == "var"
+                captures = [i for i in function["body"] if i["op"] == "assign" and i["target"].get("name") == callable_value["name"]]
+                assert len(captures) == 1 and function["body"].index(captures[0]) < function["body"].index(node)
+                signature = "fnptr:" + str(len(node["args"])) + ":"
+                parts = [node["target"]["type"] if "target" in node else "void"] + [a["type"] for a in node["args"]]
+                signature += "".join(str(len(t.encode()))+":"+t for t in parts)
+                assert callable_value["type"] == signature
+            if node.get("op") == "call":
+                target = cb_functions[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in target["params"]]
+    assert count == 5
+    sequence = cb_function("int sequence(")
+    calls = [n for n in sequence["body"] if n["op"] in ("call", "indirect_call")]
+    assert [n["op"] for n in calls] == ["call", "call", "indirect_call"]
+    assert calls[0]["callee"] == cb_function("F choose(")["name"]
+    assert calls[1]["callee"] == cb_function("int consume(")["name"]
+    capture = next(n for n in sequence["body"] if n["op"] == "assign" and n["target"].get("name") == calls[2]["callable"]["name"])
+    assert sequence["body"].index(calls[0]) < sequence["body"].index(capture) < sequence["body"].index(calls[1])
+    with tempfile.TemporaryDirectory(prefix="neverc-function-pointers-relocated-") as temp:
+        relocated = check("v2-function-pointers-relocated", callback_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == callbacks, "callback identities depend on the absolute root"
+
+    template_function_pointers_positive = {
+        'explicit-address': 'template<class T>T get(T n){return n;}int main(){auto p=&get<int>;return p(3);}',
+        'explicit-decay': 'template<class T>T get(T n){return n;}int main(){auto p=get<int>;return p(3);}',
+        'parenthesized-address': 'template<class T>T get(T n){return n;}int main(){auto p=&(get<int>);return (*p)(3);}',
+        'ordinary-unary-plus': 'int get(int n){return n;}int main(){auto p=+get;return (+p)(3);}',
+        'unary-plus': 'template<class T>T get(T n){return n;}int main(){auto p=+get<int>;return (+p)(3);}',
+        'target-deduction': 'template<class T>T get(T n){return n;}int main(){int(*p)(int)=get;return p(3);}',
+        'qualified-deduction': 'namespace N{template<class T>T get(T n){return n;}}int main(){int(*p)(int)=N::get;return p(3);}',
+        'qualified-explicit': 'namespace N{template<class T>T get(T n){return n;}}namespace A=N;int main(){auto p=&A::get<int>;return p(3);}',
+        'using-declaration': 'namespace N{template<class T>T get(T n){return n;}}using N::get;int main(){auto p=&get<int>;return p(3);}',
+        'overloaded-selection': 'template<class T>T get(T n){return n;}template<class T>T get(T*n){return *n;}int main(){int(*p)(int)=get;return p(3);}',
+        'scalar-default': 'template<class T,int N=2>T get(T n){return n+N;}int main(){int(*p)(int)=get;return p(1);}',
+        'empty-template-id': 'template<int N=3>int get(){return N;}int main(){auto p=&get<>;return p();}',
+        'type-default': 'template<class T=int>int get(int n){return n+sizeof(T);}int main(){auto p=&get<>;return p(1);}',
+        'parameter-pack': 'template<class...T>int count(T...n){return sizeof...(T);}int main(){auto p=&count<int,bool>;return p(1,true);}',
+        'explicit-specialization': 'template<class T>T get(T n){return n;}template<>int get<int>(int n){return n+1;}int main(){auto p=&get<int>;return p(2);}',
+        'instantiation-definition': 'template<class T>T get(T n){return n;}template int get<int>(int);int main(){auto p=&get<int>;return p(3);}',
+        'extern-and-definition': 'template<class T>T get(T n){return n;}extern template int get<int>(int);template int get<int>(int);int main(){auto p=&get<int>;return p(3);}',
+        'static-member-deduced': 'struct R{template<class T>static T get(T n){return n;}};int main(){int(*p)(int)=R::get;return p(3);}',
+        'static-member-object': 'struct R{template<class T>static T get(T n){return n;}};int main(){R r;auto p=r.get<int>;return p(3);}',
+        'static-member-pointer-base': 'struct R{template<class T>static T get(T n){return n;}};int use(R*r){auto p=r->get<int>;return p(3);}',
+        'generic-static-member': 'template<class T>struct R{template<class U>static int get(U n){return n+sizeof(T);}};int main(){auto p=&R<bool>::get<int>;return p(2);}',
+        'generic-qualified-dependent': 'template<class T>struct R{template<class U>static U get(U n){return n;}};template<class T>auto make(){return &R<T>::template get<int>;}int main(){return make<bool>()(3);}',
+        'partial-owner': 'template<class T>struct R;template<class T>struct R<T*>{template<class U>static U get(U n){return n;}};int main(){auto p=&R<int*>::get<int>;return p(3);}',
+        'full-owner': 'template<class T>struct R;template<>struct R<int>{template<class U>static U get(U n){return n;}};int main(){auto p=&R<int>::get<int>;return p(3);}',
+        'nested-owner': 'struct Outer{struct R{template<class T>static T get(T n){return n;}};};int main(){auto p=&Outer::R::get<int>;return p(3);}',
+        'copied-nested-owner': 'template<class T>struct Outer{struct R{template<class U>static U get(U n){return n;}};};int main(){auto p=&Outer<bool>::R::get<int>;return p(3);}',
+        'visible-copied-friend': 'template<class T>struct R{T n;template<class U>friend int get(const R&r,U n){return r.n+n;}};template<class U>int get(const R<int>&,U);int main(){R<int>r{1};auto p=&get<int>;return p(r,2);}',
+        'global-callback': 'template<class T>T get(T n){return n;}int(*p)(int)=get<int>;int main(){return p(3);}',
+        'global-constexpr': 'using F=int(*)(int);template<class T>T get(T n){return n;}constexpr F make(){return get<int>;}constexpr F p=make();int main(){return p(3);}',
+        'callback-argument': 'using F=int(*)(int);template<class T>T get(T n){return n;}int use(F p){return p(3);}int main(){return use(get<int>);}',
+        'returned-callback': 'using F=int(*)(int);template<class T>T get(T n){return n;}F make(){return get<int>;}int main(){return make()(3);}',
+        'nested-factory-target': 'using F=int(*)(int);template<class T>T get(T n){return n;}template<class T>F make(){return get<int>;}int main(){auto p=&make<bool>;return p()(3);}',
+        'callback-array-field': 'template<int N>int get(){return N;}struct R{int(*p[2])();};int main(){R r{{get<2>,get<3>}};return r.p[1]();}',
+        'reference-result': 'template<class T>T&get(T&n){return n;}int main(){auto p=&get<int>;int n=2;p(n)=3;return n;}',
+        'array-reference-result': 'template<class T>T(&get(T(&a)[2]))[2]{return a;}int main(){auto p=&get<int>;int a[2]={2,3};return p(a)[1];}',
+        'resolved-noexcept': 'template<class T>T get(T n)noexcept(sizeof(T)>0){return n;}int main(){auto p=&get<int>;static_assert(noexcept(p(3)));int(*q)(int)=p;return q(3);}',
+        'conversion-result': 'using F=int(*)(int);template<class T>T get(T n){return n;}struct R{operator F()const{return get<int>;}};int main(){R r;F p=r;return p(3);}',
+        'ordinary-direct-compatibility': 'struct R{int n;};template<class T>int get(T r){return r.n;}int main(){return get(R{3});}',
+        'discarded-record-template': 'struct R{int n;};template<class T>int get(T r){return r.n;}int main(){(void)get<R>;return 3;}',
+        'promoted-member_templates_reject-static-function-pointer': 'struct R{template<class T>static int f(T){return 3;}};int main(){auto p=&R::f<int>;return p(3);}',
+        'promoted-friend_function_templates_reject-function-pointer': 'struct R{template<class U>friend U get(U);};template<class U>U get(U n){return n;}int main(){auto p=&get<int>;return p(3);}',
+        'promoted-function_pointers_reject-template-address': 'template<class T>T get(T n){return n;}int main(){auto p=&get<int>;return p(3);}',
+        'promoted-function_pointers_reject-template-address-deduction': 'template<class T>T get(T n){return n;}int main(){int(*p)(int)=get;return p(3);}',
+        'runtime-source': 'using F=int(*)(int);\nint trace=0;\ntemplate<int N>int adjust(int n){trace=trace*10+N;return n+N;}\nF selected=adjust<3>;\nF choose(){trace=trace*10+1;return selected;}\nint argument(){trace=trace*10+2;selected=adjust<4>;return 5;}\ntemplate<class T>T identity(T n){return n;}\ntemplate<class T>T&reference(T&n){return n;}\ntemplate<class T>T(&arrayReference(T(&a)[2]))[2]{return a;}\ntemplate<class T>int&counter(){static int n=0;return n;}\ntemplate<class T>F factory(){return adjust<3>;}\ntemplate<class T,int N=2>T offset(T n){return n+N;}\ntemplate<class...T>int count(T...n){return sizeof...(T);}\nstruct Static{template<class T>static T get(T n){return n+1;}};\nStatic&base(Static&r){trace=trace*10+1;return r;}\ntemplate<class T>struct Outer{struct Nested{template<class U>static U get(U n){return n+sizeof(T);}};};\ntemplate<class T>T special(T n){return n;}\ntemplate<>int special<int>(int n){return n+2;}\ntemplate<class T>struct Friend{T n;template<class U>friend int read(const Friend&r,U n){return r.n+n;}};\ntemplate<class U>int read(const Friend<int>&,U);\ntemplate<class U>int read(const Friend<bool>&,U);\nstruct Tracked{int n;~Tracked(){trace=trace*10+4;}};\ntemplate<class T>int readTracked(const T&r){trace=trace*10+3;return r.n;}\ntemplate<class T>T quiet(T n)noexcept(sizeof(T)>0){return n;}\nint main(){\n auto p=&identity<int>;int(*deduced)(int)=identity;F copy=p;\n if(p!=deduced||copy!=p||(+p)(3)!=3||(+identity<int>)(4)!=4)return 1;\n auto a=&adjust<3>;auto b=&adjust<4>;\n if(a==b||a!=&adjust<3>)return 2;\n trace=0;selected=a;\n int value=choose()(argument());\n if(value!=8||trace!=123||selected!=b)return 3;\n trace=0;F callbacks[2]={a,b};\n if(callbacks[0](1)!=4||callbacks[1](2)!=6||trace!=34)return 4;\n auto ci=&counter<int>;auto cb=&counter<bool>;\n ci()=7;cb()=9;\n if(ci==cb||&ci()!=&counter<int>()||&cb()!=&counter<bool>()||&ci()==&cb())return 5;\n counter<int>()+=2;\n if(ci()!=9||cb()!=9)return 6;\n auto ref=&reference<int>;int n=2;ref(n)=5;\n if(n!=5||&ref(n)!=&n)return 7;\n int values[2]={1,2};auto ar=&arrayReference<int>;ar(values)[1]=7;\n if(values[1]!=7||&ar(values)[0]!=&values[0])return 8;\n auto make=&factory<bool>;trace=0;\n if(make()(2)!=5||trace!=3)return 9;\n auto defaults=&offset<int>;int(*dd)(int)=offset;\n if(defaults!=dd||dd(1)!=3)return 10;\n auto pack=&count<int,bool>;\n if(pack(1,true)!=2)return 11;\n auto sp=&special<int>;\n if(sp(2)!=4||sp!=&special<int>||special(2)!=4)return 12;\n int(*sm)(int)=Static::get;Static object;trace=0;\n auto member=base(object).get<int>;\n if(trace!=1||sm!=member||member(2)!=3)return 13;\n auto nested=&Outer<bool>::Nested::get<int>;\n if(nested(2)!=3)return 14;\n Friend<int> fi{2};Friend<bool> fb{true};\n int(*fri)(const Friend<int>&,int)=read;int(*frb)(const Friend<bool>&,int)=read;\n if(fri(fi,1)!=3||read(fi,2)!=4||frb(fb,2)!=3)return 15;\n auto tracked=&readTracked<Tracked>;trace=0;value=tracked(Tracked{3});\n if(value!=3||trace!=34)return 16;\n auto nq=&quiet<int>;static_assert(noexcept(nq(3)));F q=nq;\n if(q(3)!=3)return 17;\n struct Holder{F p;};Holder holder{identity<int>};Holder other=holder;\n if(other.p!=p||other.p(3)!=3)return 18;\n return 0;\n}\n',
+        'protocol-source': 'using F=int(*)(int);\ntemplate<class T>int value(int n){return n;}\ntemplate<class T>int&counter(){static int n=0;return n;}\nF first=value<int>;\nF same=&value<int>;\nF different=&value<bool>;\nint through(int n){return first(n);}\nint directly(int n){return value<int>(n);}\nint state(){auto a=&counter<int>;auto b=&counter<bool>;a()=3;b()=4;return counter<int>()+a()+b();}\nstruct Static{template<class T>static T apply(T n){return n;}};\nint method(int n){int(*p)(int)=Static::apply;return p(n);}\n',
+    }
+    for name, source in template_function_pointers_positive.items():
+        check("v2-template-function-pointers-positive-" + name, source, None, profile="cpp-core-v2")
+
+    template_function_pointers_reject = {
+        'object-pointer-unary-plus': 'int main(){int n=1;int*p=&n;return *+p;}',
+        'record-value-argument': 'struct R{int n;};template<class T>int get(T r){return r.n;}int main(){auto p=&get<R>;return p(R{3});}',
+        'record-value-result': 'struct R{int n;};template<class T>T get(){return T{3};}int main(){auto p=&get<R>;return p().n;}',
+        'function-reference': 'template<class T>T get(T n){return n;}int main(){int(&p)(int)=get<int>;return p(3);}',
+        'nonstatic-member': 'struct R{template<class T>T get(T n){return n;}};int main(){auto p=&R::get<int>;R r;return (r.*p)(3);}',
+        'variadic': 'template<class T>int get(T n,...){return 3;}int main(){auto p=&get<int>;return p(1,2);}',
+        'hidden-explicit-type': 'template<class T>int get(int n){return n;}int main(){auto p=&get<decltype((sizeof(double),1))>;return p(3);}',
+        'hidden-explicit-value': 'template<int N>int get(int n){return n;}int main(){auto p=&get<(sizeof(double),1)>;return p(3);}',
+        'hidden-type-default': 'template<class T=decltype((sizeof(double),1))>int get(int n){return n;}int main(){auto p=&get<>;return p(3);}',
+        'hidden-scalar-default': 'template<class T,int N=(sizeof(double),1)>T get(T n){return n;}int main(){int(*p)(int)=get;return p(3);}',
+        'hidden-alias-argument': 'template<class T>using I=int;template<class T>int get(int n){return n;}int main(){auto p=&get<I<decltype((sizeof(double),1))>>;return p(3);}',
+        'folded-address-source': 'template<class T>int get(int n){return n;}static_assert((&get<decltype((sizeof(double),1))>,true));',
+        'noexcept-address-source': 'template<class T>int get(int n){return n;}int main(){return noexcept(&get<decltype((sizeof(double),1))>);}',
+        'unsupported-selected-body': 'template<class T>int get(int n){double x=1.0;return n;}int main(){auto p=&get<int>;return p(3);}',
+        'pointer-nontype-argument': 'int get(){return 3;}template<int(*P)()>int invoke(){return P();}int main(){auto p=&invoke<get>;return p();}',
+        'nondefault-pointee-address-space': 'typedef int __attribute__((address_space(1))) A;template<class T>int get(T*p){return 3;}int main(){auto p=&get<A>;return 0;}',
+    }
+    for name, source in template_function_pointers_reject.items():
+        check("v2-template-function-pointers-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    template_function_pointers_invalid = {
+        'ambiguous-template-id': 'template<class T>int get(T){return 1;}template<class T>int get(T*){return 2;}int main(){auto p=&get<int>;}',
+        'wrong-signature': 'template<class T>T get(T n){return n;}bool(*p)(int)=get<int>;',
+        'private-static': 'class R{template<class T>static T get(T n){return n;}};int main(){auto p=&R::get<int>;return p(3);}',
+        'nonstatic-as-function': 'struct R{template<class T>T get(T n){return n;}};int(*p)(int)=&R::get<int>;',
+        'missing-template-arguments': 'template<class T>T get(T n){return n;}int main(){auto p=&get;}',
+        'reverse-noexcept': 'template<class T>T get(T n){return n;}int(*p)(int)noexcept=get<int>;',
+        'hidden-friend-lookup': 'struct R{template<class T>friend int hidden(T n){return n;}};int main(){auto p=&hidden<int>;return p(3);}',
+    }
+    for name, source in template_function_pointers_invalid.items():
+        check("v2-template-function-pointers-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    template_function_pointers_missing = {
+        'primary-definition': 'template<class T>T get(T);int main(){auto p=&get<int>;return p(3);}',
+        'extern-only-instance': 'template<class T>T get(T n){return n;}extern template int get<int>(int);int main(){auto p=&get<int>;return p(3);}',
+        'static-template-definition': 'struct R{template<class T>static T get(T);};int main(){auto p=&R::get<int>;return p(3);}',
+    }
+    for name, source in template_function_pointers_missing.items():
+        check("v2-template-function-pointers-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    check("template-function-pointers-core-v1", "template<class T>T get(T n){return n;}int main(){auto p=&get<int>;return p(3);}", "TR0201", profile="cpp-core-v1")
+
+    template_callback_source = template_function_pointers_positive["protocol-source"]
+    template_callbacks = check("v2-template-function-pointers-protocol", template_callback_source, profile="cpp-core-v2")
+    tc_functions = {f["name"]: f for f in template_callbacks["functions"]}
+    tc_globals = {g["name"]: g for g in template_callbacks["globals"]}
+    assert len(tc_functions) == len(template_callbacks["functions"]) == 9
+    assert len(tc_globals) == len(template_callbacks["globals"]) == 5
+
+    def tc_line(prefix):
+        lines = [i for i, line in enumerate(template_callback_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, prefix
+        return lines[0]
+
+    def tc_at(items, prefix):
+        return [item for item in items.values() if item["loc"]["line"] == tc_line(prefix)]
+
+    def tc_one(items, prefix):
+        found = tc_at(items, prefix)
+        assert len(found) == 1, prefix
+        return found[0]
+
+    def tc_signature(function):
+        parts = [function["result"]] + [p["type"] for p in function["params"]]
+        return "fnptr:" + str(len(parts)-1) + ":" + "".join(str(len(t.encode()))+":"+t for t in parts)
+
+    first = tc_one(tc_globals, "F first=")["value"]
+    same = tc_one(tc_globals, "F same=")["value"]
+    different = tc_one(tc_globals, "F different=")["value"]
+    assert first["kind"] == same["kind"] == different["kind"] == "function_address"
+    assert first["name"] == same["name"] != different["name"]
+    assert first["type"] == same["type"] == different["type"] == "fnptr:1:3:int3:int"
+    values = tc_at(tc_functions, "template<class T>int value(")
+    assert len(values) == 2 and {f["name"] for f in values} == {first["name"], different["name"]}
+    directly = tc_one(tc_functions, "int directly(")
+    assert [n["callee"] for n in directly["body"] if n["op"] == "call"] == [first["name"]]
+    counters = tc_at(tc_functions, "template<class T>int&counter(")
+    statics = tc_at(tc_globals, "template<class T>int&counter(")
+    assert len(counters) == len(statics) == 2
+    assert all(g["type"] == "int" and g.get("mutable", False) for g in statics)
+    counter_storage = []
+    for function in counters:
+        assert function["result"] == "ptr:int" and not function["params"]
+        used = {n["name"] for n in walk(function["body"]) if n.get("kind") == "var" and n["name"] in tc_globals}
+        assert len(used) == 1
+        counter_storage.extend(used)
+    assert set(counter_storage) == {g["name"] for g in statics}
+    state = tc_one(tc_functions, "int state(")
+    counter_targets = {f["name"] for f in counters}
+    assert {n["name"] for n in walk(state["body"]) if n.get("kind") == "function_address"} == counter_targets
+    direct_counters = [n["callee"] for n in state["body"] if n["op"] == "call"]
+    assert len(direct_counters) == 1 and set(direct_counters) < counter_targets
+    method = tc_one(tc_functions, "int method(")
+    member = tc_one(tc_functions, "struct Static{")
+    assert tc_signature(member) == first["type"]
+    assert {n["name"] for n in walk(method["body"]) if n.get("kind") == "function_address"} == {member["name"]}
+    addresses = []
+    for node in walk(template_callbacks):
+        if node.get("kind") == "function_address":
+            assert set(node) == {"kind", "type", "name", "loc"}
+            assert node["name"] in tc_functions
+            assert node["type"] == tc_signature(tc_functions[node["name"]])
+            addresses.append(node["name"])
+    assert set(addresses) == {first["name"], different["name"], member["name"]} | counter_targets
+    indirect = 0
+    for function in tc_functions.values():
+        declared = set(tc_globals) | {v["name"] for v in function["params"] + function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in declared
+            if node.get("op") == "call":
+                target = tc_functions[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in target["params"]]
+            if node.get("op") == "indirect_call":
+                indirect += 1
+                assert "callee" not in node and "mapping" not in node
+                callable_value = node["callable"]
+                assert callable_value["kind"] == "var"
+                captures = [i for i in function["body"] if i["op"] == "assign" and i["target"].get("name") == callable_value["name"]]
+                assert len(captures) == 1 and function["body"].index(captures[0]) < function["body"].index(node)
+                parts = [node["target"]["type"] if "target" in node else "void"] + [a["type"] for a in node["args"]]
+                signature = "fnptr:" + str(len(node["args"])) + ":" + "".join(str(len(t.encode()))+":"+t for t in parts)
+                assert callable_value["type"] == signature
+    assert indirect == 6
+    with tempfile.TemporaryDirectory(prefix="neverc-template-function-pointers-relocated-") as temp:
+        relocated = check("v2-template-function-pointers-relocated", template_callback_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == template_callbacks, "template callback identities depend on the absolute root"
+
+    callback_variable_templates_positive = {
+        'fixed-ordinary': 'int get(int n){return n;}template<class T>int(*p)(int)=get;int main(){return p<int>(3);}',
+        'auto-ordinary': 'int get(int n){return n;}template<class T>inline auto p=&get;int main(){return p<int>(3);}',
+        'auto-template-target': 'template<class T>T get(T n){return n;}template<class T>inline auto p=&get<T>;int main(){return p<int>(3);}',
+        'dependent-signature': 'template<class T>T get(T n){return n;}template<class T>T(*p)(T)=get<T>;int main(){return p<int>(3);}',
+        'alias-signature': 'template<class T>using F=T(*)(T);template<class T>T get(T n){return n;}template<class T>F<T>p=get<T>;int main(){return p<int>(3);}',
+        'constexpr-identity': 'template<class T>constexpr T get(T n){return n;}template<class T>constexpr auto p=&get<T>;static_assert(p<int>(3)==3);int main(){return p<int>(3);}',
+        'null': 'template<class T>int(*p)()=nullptr;int main(){return p<int> ==nullptr;}',
+        'zero': 'template<class T>int(*p)();int main(){return !p<int>;}',
+        'default-type': 'int get(){return 3;}template<class T=int>int(*p)()=get;int main(){return p<>();}',
+        'default-scalar': 'template<int N>int get(){return N;}template<int N=3>auto p=get<N>;int main(){return p<>();}',
+        'pack-arguments': 'int get(){return 3;}template<class...T>int(*p)()=get;int main(){return p<int,bool>();}',
+        'partial-specialization': 'int a(){return 1;}int b(){return 3;}template<class T>int(*p)()=a;template<class T>int(*p<T*>)()=b;int main(){return p<int*>();}',
+        'full-specialization': 'int a(){return 1;}int b(){return 3;}template<class T>int(*p)()=a;template<>int(*p<bool>)()=b;int main(){return p<bool>();}',
+        'own-auto-full': 'int a(int n){return n;}bool b(bool n){return n;}template<class T>inline auto p=&a;template<>inline auto p<bool> = &b;int main(){return p<int>(3)+p<bool>(true);}',
+        'explicit-instantiation': 'int get(){return 3;}template<class T>int(*p)()=get;template int(*p<int>)();int main(){return p<int>();}',
+        'extern-and-definition': 'int get(){return 3;}template<class T>int(*p)()=get;extern template int(*p<int>)();template int(*p<int>)();int main(){return p<int>();}',
+        'redeclared': 'int get(){return 3;}template<class T>extern int(*p)();template<class T>int(*p)()=get;int main(){return p<int>();}',
+        'namespace': 'namespace N{int get(){return 3;}template<class T>int(*p)()=get;}namespace A=N;using N::p;int main(){return A::p<int>()+p<bool>();}',
+        'storage-pointer': 'int get(){return 3;}template<class T>int(*p)()=get;int main(){auto slot=&p<int>;*slot=nullptr;return !p<int>;}',
+        'storage-reference': 'int get(){return 3;}template<class T>int(*p)()=get;auto&slot(){return p<int>;}int main(){slot()=nullptr;return !p<int>;}',
+        'equivalent-value-arguments': 'int get(){return 3;}template<int N>int(*p)()=get;int main(){return &p<3> ==&p<1+2>;}',
+        'noexcept-signature': 'template<class T>T get(T n)noexcept{return n;}template<class T>inline auto p=&get<T>;int main(){static_assert(noexcept(p<int>(3)));return p<int>(3);}',
+        'fixed-unevaluated': 'template<class T>extern int(*p)();static_assert(sizeof(p<int>)==sizeof(void*));',
+        'lazy-unused': 'template<class T>inline auto p=T::missing;int main(){return 3;}',
+        'member-ordinary': 'int get(){return 3;}struct R{template<class T>inline static int(*p)()=get;};int main(){return R::p<int>();}',
+        'member-out-of-line': 'int get(){return 3;}struct R{template<class T>static int(*p)();};template<class T>int(*R::p)()=get;int main(){return R::p<int>();}',
+        'member-generic': 'template<class T>T get(T n){return n;}template<class T>struct R{template<class U>inline static auto p=&get<U>;};int main(){return R<bool>::p<int>(3);}',
+        'member-nested': 'int get(){return 3;}struct Outer{struct R{template<class T>inline static auto p=&get;};};int main(){return Outer::R::p<int>();}',
+        'member-copied-nested': 'int get(){return 3;}template<class T>struct Outer{struct R{template<class U>inline static auto p=&get;};};int main(){return Outer<bool>::R::p<int>();}',
+        'member-partial-owner': 'int get(){return 3;}template<class T>struct R;template<class T>struct R<T*>{template<class U>inline static auto p=&get;};int main(){return R<int*>::p<bool>();}',
+        'member-full-owner': 'int get(){return 3;}template<class T>struct R;template<>struct R<int>{template<class U>inline static auto p=&get;};int main(){return R<int>::p<bool>();}',
+        'member-full-specialization': 'int a(){return 1;}int b(){return 3;}struct R{template<class T>inline static auto p=&a;};template<>inline auto R::p<bool> = &b;int main(){return R::p<bool>();}',
+        'member-copied-full': 'int a(){return 1;}int b(){return 3;}template<class T>struct R{template<class U>inline static auto p=&a;template<>inline static auto p<int> = &b;};int main(){return R<bool>::p<int>();}',
+        'member-receiver': 'int get(){return 3;}struct R{template<class T>inline static auto p=&get;};int use(R&r){return r.p<int>();}',
+        'reference-callback': 'template<class T>T&get(T&n){return n;}template<class T>inline auto p=&get<T>;int main(){int n=2;p<int>(n)=3;return n;}',
+        'promoted-variable-template-callback-retained': 'int get(){return 3;}template<class T>inline int(*p)()=get;int main(){return p<int>();}',
+        'promoted-variable-template-storage': 'template<class T>T get(T n){return n;}template<class T>inline int(*p)(int)=get<int>;int main(){return p<bool>(3);}',
+        'runtime-source': 'using F=int(*)(int);\nint trace=0;\nint add(int n){trace=trace*10+3;return n+1;}\nint subtract(int n){trace=trace*10+4;return n-1;}\ntemplate<int N>F callback=add;\ntemplate<>F callback<3> = subtract;\ntemplate<class T>F partial=add;\ntemplate<class T>F partial<T*> = subtract;\ntemplate<class T>F empty;\ntemplate<class T>constexpr auto fixed=&add;\ntemplate<class T>T identity(T n){return n;}\ntemplate<class T>inline auto generic=&identity<T>;\nF&slot(){return callback<1>;}\nF choose(){trace=trace*10+1;return callback<1>;}\nint argument(){trace=trace*10+2;callback<1> = subtract;return 5;}\nstruct Holder{template<class T>inline static F member=add;};\nHolder&base(Holder&r){trace=trace*10+1;return r;}\ntemplate<class T>struct Outer{template<class U>inline static auto member=&identity<U>;};\nstruct External{template<class T>static F member;};\ntemplate<class T>F External::member=add;\nstruct Scoped{template<class T>inline static F member=add;~Scoped(){trace=trace*10+4;}};\nint main(){\n if(&callback<1> !=&callback<1+0>||&callback<1> ==&callback<2>||callback<1> !=callback<2>)return 1;\n callback<1> = subtract;\n if(callback<1> !=subtract||callback<2> !=add||callback<3> !=subtract)return 2;\n callback<1> = add;trace=0;int n=choose()(argument());\n if(n!=6||trace!=123||callback<1> !=subtract)return 3;\n auto storage=&callback<2>;*storage=nullptr;\n if(callback<2>||&slot()!=&callback<1>)return 4;\n slot()=add;trace=0;\n if(slot()(2)!=3||trace!=3)return 5;\n if(empty<int>||fixed<int> !=fixed<bool>||&fixed<int> ==&fixed<bool>)return 6;\n if(partial<int> !=add||partial<int*> !=subtract)return 7;\n trace=0;\n if(generic<int>(3)!=3||generic<bool>(true)!=true||generic<int> !=&identity<int>)return 8;\n Holder object;trace=0;auto&member=base(object).member<int>;\n if(trace!=1||&member!=&Holder::member<int>||&member==&Holder::member<bool>)return 9;\n member=subtract;trace=0;\n if(Holder::member<int>(3)!=2||Holder::member<bool>(3)!=4||trace!=43)return 10;\n auto outer=&Outer<int>::member<int>;auto other=&Outer<bool>::member<int>;\n if(outer==other||*outer!=*other||*outer!=&identity<int>)return 11;\n *outer=nullptr;\n if(Outer<int>::member<int>||Outer<bool>::member<int> ==nullptr)return 12;\n External::member<int> = subtract;trace=0;\n if(External::member<int>(3)!=2||External::member<bool>(3)!=4||trace!=43)return 13;\n trace=0;F copied=Scoped{}.member<int>;\n if(trace!=4||copied!=add)return 14;\n trace=0;\n if(copied(2)!=3||trace!=3)return 15;\n return 0;\n}\n',
+        'protocol-source': 'using F=int(*)(int);\nint add(int n){return n+1;}\nint subtract(int n){return n-1;}\ntemplate<int N>F callback=add;\ntemplate<>F callback<3> = subtract;\nF&first(){return callback<1>;}\nF&again(){return callback<1+0>;}\nF&second(){return callback<2>;}\nF&special(){return callback<3>;}\nstruct Holder{template<class T>inline static F member=add;};\nF&memberFirst(){return Holder::member<int>;}\nF&memberOther(){return Holder::member<bool>;}\nint invoke(int n){return first()(n);}\n',
+    }
+    for name, source in callback_variable_templates_positive.items():
+        check("v2-callback-variable-templates-positive-" + name, source, None, profile="cpp-core-v2")
+
+    callback_variable_templates_reject = {
+        'wrapped-auto-pointer': 'int get(){return 3;}template<class T>auto*p=&get;int main(){return p<int>();}',
+        'wrapped-auto-result': 'int get(){return 3;}template<class T>auto(*p)()=&get;int main(){return p<int>();}',
+        'dynamic-initializer': 'int get(){return 3;}int(*make())(){return get;}template<class T>auto p=make();int main(){return p<int>();}',
+        'thread-local': 'int get(){return 3;}template<class T>thread_local auto p=&get;int main(){return p<int>();}',
+        'volatile': 'int get(){return 3;}template<class T>auto volatile p=&get;int main(){return p<int>();}',
+        'object-pointer': 'int n=3;template<class T>int*p=&n;int main(){return *p<int>;}',
+        'record-storage': 'struct R{int n;};template<class T>R p{3};int main(){return p<int>.n;}',
+        'nonstatic-member-pointer': 'struct R{int get(){return 3;}};template<class T>auto p=&R::get;int main(){R r;return (r.*p<int>)();}',
+        'record-callback-signature': 'struct R{int n;};int get(R r){return r.n;}template<class T>auto p=&get;int main(){return p<int>(R{3});}',
+        'pointer-nontype-argument': 'int get(){return 3;}template<int(*P)()>auto p=P;int main(){return p<get>();}',
+        'hidden-written-argument': 'int get(){return 3;}template<class T>auto p=&get;int main(){return p<decltype((sizeof(double),1))>();}',
+        'hidden-default-argument': 'int get(){return 3;}template<class T=decltype((sizeof(double),1))>auto p=&get;int main(){return p<>();}',
+        'hidden-initializer': 'int get(){return 3;}template<class T>auto p=(sizeof(double),&get);int main(){return p<int>();}',
+        'hidden-target-argument': 'template<class T>int get(){return 3;}template<class T>auto p=&get<decltype((sizeof(double),1))>;int main(){return p<int>();}',
+        'hidden-type-alias': 'template<class T>using F=int(*)();int get(){return 3;}template<class T>F<decltype((sizeof(double),1))>p=&get;int main(){return p<int>();}',
+        'folded-address-source': 'int get(){return 3;}template<class T>auto p=&get;static_assert((&p<decltype((sizeof(double),1))>,true));',
+        'noexcept-source': 'int get(){return 3;}template<class T>auto p=&get;int main(){return noexcept(p<decltype((sizeof(double),1))>());}',
+    }
+    for name, source in callback_variable_templates_reject.items():
+        check("v2-callback-variable-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    callback_variable_templates_invalid = {
+        'nonconstant-target': 'template<class T>T get(T n){return n;}template<class T>constexpr auto p=&get<T>;static_assert(p<int>(3)==3);',
+        'wrong-initializer': 'bool get(bool n){return n;}template<class T>int(*p)(int)=get;int main(){return p<int>(3);}',
+        'const-reseat': 'int get(){return 3;}template<class T>constexpr auto p=&get;int main(){p<int> = nullptr;}',
+        'private-member': 'int get(){return 3;}class R{template<class T>inline static auto p=&get;};int main(){return R::p<int>();}',
+        'missing-deduction': 'template<class T>T get(T n){return n;}template<class T>inline auto p=&get;int main(){return p<int>(3);}',
+        'conflicting-redeclaration': 'int get(){return 3;}template<class T>int(*p)()=get;template<class T>bool(*p)();',
+    }
+    for name, source in callback_variable_templates_invalid.items():
+        check("v2-callback-variable-templates-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    callback_variable_templates_missing = {
+        'namespace-storage': 'template<class T>extern int(*p)();int main(){return p<int>();}',
+        'extern-instance': 'int get(){return 3;}template<class T>int(*p)()=get;extern template int(*p<int>)();int main(){return p<int>();}',
+        'member-storage': 'struct R{template<class T>static int(*p)();};int main(){return R::p<int>();}',
+        'callback-target': 'int get();template<class T>int(*p)()=get;int main(){return p<int>();}',
+    }
+    for name, source in callback_variable_templates_missing.items():
+        check("v2-callback-variable-templates-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    check("callback-variable-templates-core-v1", "int get(){return 3;}template<class T>auto p=&get;int main(){return p<int>();}", "TR0201", profile="cpp-core-v1")
+
+    variable_callback_source = callback_variable_templates_positive["protocol-source"]
+    variable_callbacks = check("v2-callback-variable-templates-protocol", variable_callback_source, profile="cpp-core-v2")
+    cv_functions = {f["name"]: f for f in variable_callbacks["functions"]}
+    cv_globals = {g["name"]: g for g in variable_callbacks["globals"]}
+    assert len(cv_functions) == len(variable_callbacks["functions"]) == 9
+    assert len(cv_globals) == len(variable_callbacks["globals"]) == 5
+    cv_type = "fnptr:1:3:int3:int"
+
+    def cv_function(prefix):
+        lines = [i for i, line in enumerate(variable_callback_source.splitlines(), 1) if line.startswith(prefix)]
+        assert len(lines) == 1, prefix
+        found = [f for f in cv_functions.values() if f["loc"]["line"] == lines[0]]
+        assert len(found) == 1, prefix
+        return found[0]
+
+    def cv_storage(prefix):
+        function = cv_function(prefix)
+        assert function["result"] == "ptr:" + cv_type and not function["params"]
+        used = {n["name"] for n in walk(function["body"]) if n.get("kind") == "var" and n["name"] in cv_globals}
+        assert len(used) == 1
+        return cv_globals[next(iter(used))]
+
+    first, again = cv_storage("F&first("), cv_storage("F&again(")
+    second, special = cv_storage("F&second("), cv_storage("F&special(")
+    member_first, member_other = cv_storage("F&memberFirst("), cv_storage("F&memberOther(")
+    assert first == again
+    assert {g["name"] for g in [first, second, special, member_first, member_other]} == set(cv_globals)
+    add, subtract = cv_function("int add("), cv_function("int subtract(")
+    assert add["name"] != subtract["name"]
+    for global_value in cv_globals.values():
+        assert global_value["type"] == cv_type and global_value.get("mutable", False)
+        value = global_value["value"]
+        assert value["kind"] == "function_address" and value["type"] == cv_type
+        assert value["name"] == (subtract["name"] if global_value == special else add["name"])
+    for node in walk(variable_callbacks):
+        if node.get("kind") == "function_address":
+            assert set(node) == {"kind", "type", "name", "loc"}
+            target = cv_functions[node["name"]]
+            assert target["result"] == "int" and [p["type"] for p in target["params"]] == ["int"]
+            assert node["type"] == cv_type
+    indirect = 0
+    for function in cv_functions.values():
+        declared = set(cv_globals) | {v["name"] for v in function["params"] + function["locals"]}
+        for node in walk(function["body"]):
+            if node.get("kind") == "var":
+                assert node["name"] in declared
+            if node.get("op") == "call":
+                target = cv_functions[node["callee"]]
+                assert [a["type"] for a in node["args"]] == [p["type"] for p in target["params"]]
+            if node.get("op") == "indirect_call":
+                indirect += 1
+                assert node["callable"]["type"] == cv_type
+                assert [a["type"] for a in node["args"]] == ["int"] and node["target"]["type"] == "int"
+    assert indirect == 1
+    invoke = cv_function("int invoke(")
+    calls = [n for n in invoke["body"] if n["op"] in ("call", "indirect_call")]
+    assert [n["op"] for n in calls] == ["call", "indirect_call"]
+    assert calls[0]["callee"] == cv_function("F&first(")["name"]
+    callable_value = calls[1]["callable"]
+    assert callable_value["kind"] == "var"
+    captures = [n for n in invoke["body"] if n["op"] == "assign" and n["target"].get("name") == callable_value["name"]]
+    assert len(captures) == 1
+    assert invoke["body"].index(calls[0]) < invoke["body"].index(captures[0]) < invoke["body"].index(calls[1])
+    with tempfile.TemporaryDirectory(prefix="neverc-callback-variable-templates-relocated-") as temp:
+        relocated = check("v2-callback-variable-templates-relocated", variable_callback_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == variable_callbacks, "callback variable-template storage depends on the absolute root"
+
+    copied_full_initializers_positive = {
+        'literal': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=2;};};int f(){O<int>::I<int>v;return v.n;}',
+        'outer-value': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{int n=N+1;};};int f(){O<3>::I<int>v;return v.n;}',
+        'outer-type': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{T n=T(3);};};int f(){O<int>::I<int>v;return v.n;}',
+        'field-order': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{int a=N;int b=a+1;};};int f(){O<3>::I<int>v;return v.a+v.b;}',
+        'braces': 'template<int N>struct O{template<class U>struct I{};template<>struct I<int>{int n{N+1};};};int f(){O<3>::I<int>v;return v.n;}',
+        'outer-partial': 'template<class T>struct O;template<class T>struct O<T*>{template<class U>struct I{};template<>struct I<int>{int n=sizeof(T);};};int f(){O<int*>::I<int>v;return v.n;}',
+        'supplied-initializer': 'int count=0;template<int N>struct O{template<class U>struct I{};template<>struct I<int>{int n=++count;};};int f(){O<3>::I<int>v{7};return v.n+count;}',
+        'direct-full-control': 'template<class T>struct O{template<class U>struct I{};};template<>template<>struct O<int>::I<int>{int n=3;};int f(){O<int>::I<int>v;return v.n;}',
+        'promoted-copied-full-used': 'template<class T>struct O{template<class U>struct I{int n=1;};template<>struct I<int>{int n=2;};};int f(){O<int>::I<int>v;return v.n;}',
+        'runtime-source': 'int count=0;\ntemplate<int N>struct O{\n template<class T>struct I{};\n template<>struct I<int>{int a=N;int b=a+1;int stamp=++count;};\n};\ntemplate<int...N>struct Packs{\n template<class T>struct I{};\n template<>struct I<int>{int n=(0+...+N);};\n};\ntemplate<int N>struct Outer{\n template<int M>struct Inner{\n  template<class T>struct Full{};\n  template<>struct Full<int>{int n=N*10+M;};\n };\n};\nint main(){\n O<2>::I<int>a;O<5>::I<int>b;\n if(a.a!=2||a.b!=3||b.a!=5||b.b!=6)return 1;\n if(a.stamp!=1||b.stamp!=2||count!=2)return 2;\n O<2>::I<int>supplied{9,10,11};\n if(supplied.a!=9||supplied.b!=10||supplied.stamp!=11||count!=2)return 3;\n O<2>::I<int>copied=a;\n if(copied.a!=2||copied.b!=3||copied.stamp!=1||count!=2)return 4;\n Packs<>::I<int>empty;Packs<1,2,3>::I<int>full;\n if(empty.n!=0||full.n!=6)return 5;\n Outer<1>::Inner<2>::Full<int>first;Outer<2>::Inner<1>::Full<int>second;\n if(first.n!=12||second.n!=21)return 6;\n first.n=7;\n if(first.n!=7||second.n!=21)return 7;\n return 0;\n}\n',
+    }
+    for name, source in copied_full_initializers_positive.items():
+        check("v2-copied-full-initializers-positive-" + name, source, None, profile="cpp-core-v2")
+
+    copied_full_initializers_reject = {
+        'hidden-default-source': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=static_cast<int>(1.0);};};int f(){O<int>::I<int>v;return v.n;}',
+        'hidden-outer-source': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=sizeof(T);};};int f(){O<double>::I<int>v;return v.n;}',
+    }
+    for name, source in copied_full_initializers_reject.items():
+        check("v2-copied-full-initializers-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
+
+    copied_full_initializers_invalid = {
+        'cyclic-copied-default': 'template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=I{}.n;};};int f(){O<int>::I<int>v;return v.n;}',
+        'cyclic-ordinary-control': 'struct R{int n=R{}.n;};int f(){R v;return v.n;}',
+    }
+    for name, source in copied_full_initializers_invalid.items():
+        check("v2-copied-full-initializers-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    copied_full_initializers_missing = {
+        'initializer-function': 'int missing();template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n=missing();};};int f(){O<int>::I<int>v;return v.n;}',
+    }
+    for name, source in copied_full_initializers_missing.items():
+        check("v2-copied-full-initializers-missing-" + name, source, 'TR0203', profile="cpp-core-v2")
+
+    check("copied-full-initializers-core-v1", "template<class T>struct O{template<class U>struct I{};template<>struct I<int>{int n;};};int f(){O<int>::I<int>v{3};return v.n;}", "TR0201", profile="cpp-core-v1")
 
     variable_pack_counts_positive = {
         'value-pack-empty': 'template<int...N>constexpr int count=sizeof...(N);static_assert(count<> == 0);',
@@ -8380,8 +10056,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'selected-floating-default': 'template<class T>struct R;template<class T>struct R<T*>{int f(int n=static_cast<int>(1.0)){return n;}};int main(){return R<int*>{}.f();}',
         'selected-floating-static': 'template<class T>struct R;template<class T>struct R<T*>{inline static int n=static_cast<int>(1.0);};int main(){return R<int*>::n;}',
         'base': 'struct B{int n;};template<class T>struct R;template<class T>struct R<T*>:B{int m;};',
-        'friend-function': 'template<class T>struct R;template<class T>struct R<T*>{friend int f(R){return 3;}};',
-        'nested-record': 'template<class T>struct R;template<class T>struct R<T*>{struct Inner{int n;};};',
         'volatile-pointee': 'template<class T>struct R;template<class T>struct R<T*>{T*n;};int main(){volatile int n=3;R<volatile int*>r{&n};return 0;}',
         'pointer-nontype': 'int n;template<int*P,class T>struct R;template<int*P,class T>struct R<P,T*>{int n;};',
         'template-template': 'template<template<class>class C,class T>struct R;template<template<class>class C,class T>struct R<C,T*>{int n;};',
@@ -9758,7 +11432,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'directive-noexcept-source': 'struct R{int n;};template<class T>int operator+(R,T)noexcept{return 3;}template int operator+<int>(R,int)noexcept(sizeof(double)>0);',
         'allocation': 'template<class T>void*operator new(decltype(sizeof(0)),T*p){return p;}',
         'literal': 'template<char... C>int operator""_number(){return 1;}',
-        'friend-template': 'struct R{int n;template<class T>friend int operator+(const R&r,T n){return r.n+n;}};',
         'local-unused-body': 'struct R{int n;};template<class T>int operator+(R r,T n){struct Local{int unused(){return int(1.0);}};Local l;return r.n+n;}int f(){return R{3}+4;}',
     }
     for name, source in free_operators_reject.items():
@@ -11173,8 +12846,6 @@ int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;r
         'variadic': 'template<class T>struct R{int f(int v,...){return v;}};',
         'volatile': 'template<class T>struct R{int f()volatile{return 1;}};',
         'deleted': 'template<class T>struct R{int f()=delete;};',
-        'friend': 'template<class T>struct R{friend int f(R r){return 1;}};',
-        'nested-record': 'template<class T>struct R{struct I{int n;};int f(){return 1;}};',
         'bases': 'struct B{int n;};template<class T>struct R:B{int f(){return n;}};',
         'dynamic-static': 'template<class T>struct R{static int f(int v){static int n=v;return n;}};int main(){return R<int>::f(3);}',
     }
@@ -11412,8 +13083,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'auto-pointer': 'int n;template<auto P>struct R{int n;};int main(){R<&n>r{};return r.n;}',
         'auto-null': 'template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}',
         'template-template': 'template<template<class>class T>struct R{int n;};',
-        'friend': 'template<class T>struct R{T n;friend int get(R r){return r.n;}};',
-        'nested-record': 'template<class T>struct R{struct I{T n;};};',
         'union': 'template<class T>union R{T n;int m;};',
         'base': 'struct B{int n;};template<class T>struct R:B{T m;};',
         'bitfield': 'template<class T>struct R{unsigned int n:3;};int main(){R<int>r{};return r.n;}',
@@ -11715,7 +13384,6 @@ Plain chosenRecord(){return choose<false>();}
     for name, source in function_templates_positive.items():
         check("v2-function-templates-positive-" + name, source, profile="cpp-core-v2")
     function_templates_reject = {
-        'friend': 'struct R{template<class T>friend T f(T v){return v;}};',
         'template-template': 'template<template<class>class T>int f(){return 1;}',
         'float-argument': 'template<class T>int f(){return 1;}int main(){return f<double>();}',
         'float-signature': 'template<class T>double f(T n){return n;}int main(){return static_cast<int>(f(1));}',
@@ -11936,7 +13604,6 @@ bool noisyQuery(){return noexcept(noisy());}
         'lambda': 'int f(int n=(static_cast<void>([]{}),1)){return n;}',
         'allocation': 'int f(int*p=new int(1)){return *p;}',
         'throw': 'int f(int n=(throw 1,2)){return n;}',
-        'function-pointer': 'void g(){}void f(void(*p)()=g){}',
         'member-pointer': 'struct R{int n;};void f(int R::*p=&R::n){}',
         'array-global': 'int a[2]={1,2};int f(int*p=a){return *p;}',
         'fresh-reference-return': 'int f(const int&r=1){return r;}const int&g(){return 1;}',
@@ -12380,16 +14047,12 @@ int main() {
         "dead-temporary-offset-reference": "struct R{int a[2];};int f(){if(false){const int&r=*(R{{1,2}}.a+0);}return 0;}",
     })
     v2_rejections.update({
-        'method-folded-static-function-value': 'struct R{int n;static int get(){return 1;}};static_assert((R::get,true));',
-        'method-folded-parenthesized-static-value': 'struct R{int n;static int get(){return 1;}};static_assert(((R::get),true));',
         'method-method-pointer': 'struct R{int n;int get(){return n;}};auto f(){return &R::get;}',
-        'method-static-function-pointer': 'struct R{int n;static int get(){return 1;}};int f(){auto p=&R::get;return p();}',
         'method-virtual-method': 'struct R{int n;virtual int get(){return n;}};',
         'method-base-class': 'struct B{int n;};struct R:B{int get(){return n;}};',
         'method-volatile-method': 'struct R{int n;int get()volatile{return n;}};',
         'method-mutable-field': 'struct R{mutable int n;int get()const{return n;}};',
         'method-reference-field': 'struct R{int&n;int get()const{return n;}};',
-        'method-method-comma-callee': 'struct R{int n;static int get(){return 1;}};int f(){return (0,R::get)();}',
     })
     v2_rejections.update({
         'constructor-delegating': 'struct R{int n;R():R(1){} R(int v):n(v){}};',

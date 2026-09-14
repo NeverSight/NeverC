@@ -194,12 +194,198 @@ static const CXXRecordDecl *classDefinitionRecord(const NamedDecl *Owner) {
   return classPatternRecord(classDefinitionPattern(Owner));
 }
 
+// A class-scope full specialization owns a body, but no template parameter
+// level. Its specialized primary remains the argument-list owner.
+static bool classScopeFullIdentity(const CXXRecordDecl *Record) {
+  const auto *Full = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  return Full && Full->getKind() == Decl::ClassTemplateSpecialization &&
+         Full->isClassScopeExplicitSpecialization() && !Full->isInvalidDecl() &&
+         !Full->isUnion() && !Full->isLocalClass() && !Full->isLambda() &&
+         Full->getLexicalDeclContext() == Full->getDeclContext() &&
+         Full->getSpecializedTemplate()->getDeclContext() == Full->getDeclContext();
+}
+
+static bool genericClassFullIdentity(const CXXRecordDecl *Record) {
+  return classScopeFullIdentity(Record) && Record->isDependentContext() &&
+         Record->getDeclContext()->isDependentContext() &&
+         !Record->getInstantiatedFromMemberClass();
+}
+
+// Ordinary named members add a body scope, never a template argument level.
+static bool ordinaryMemberClassIdentity(const CXXRecordDecl *Record) {
+  return Record && Record->getKind() == Decl::CXXRecord &&
+         !Record->getDescribedClassTemplate() && Record->getIdentifier() &&
+         !Record->isInvalidDecl() && !Record->isInjectedClassName() &&
+         !Record->isUnion() && !Record->isLambda() && !Record->isLocalClass() &&
+         isa<CXXRecordDecl>(Record->getDeclContext());
+}
+
+static bool ordinaryMemberClassScope(const CXXRecordDecl *Record) {
+  return ordinaryMemberClassIdentity(Record) &&
+         (Record->isDependentContext() || Record->getInstantiatedFromMemberClass());
+}
+
+// Pinned Sema mutates an earlier implicit canonical declaration's kind and
+// location. Only an actual out-of-line redeclaration spells the own header.
+// The allowlist independently verifies this source against lexical inventory.
+static const CXXRecordDecl *writtenOwnMemberClass(const CXXRecordDecl *Record) {
+  if (!ordinaryMemberClassScope(Record))
+    return nullptr;
+  const CXXRecordDecl *Written = nullptr;
+  unsigned Count = 0;
+  for (const auto *Tag : Record->redecls()) {
+    if (++Count > 64)
+      return nullptr;
+    const auto *D = dyn_cast<CXXRecordDecl>(Tag);
+    if (!ordinaryMemberClassIdentity(D) || !D->getInstantiatedFromMemberClass() ||
+        D->getTemplateSpecializationKind() != TSK_ExplicitSpecialization ||
+        !D->getNumTemplateParameterLists() || !D->getQualifier() ||
+        !isa<TranslationUnitDecl, NamespaceDecl>(D->getLexicalDeclContext()))
+      continue;
+    if (D->isCompleteDefinition())
+      return D;
+    Written = D;
+  }
+  return Written;
+}
+
+static bool ordinaryCopiedBody(const CXXRecordDecl *Record) {
+  return ordinaryMemberClassScope(Record) &&
+         Record->getInstantiatedFromMemberClass() && !writtenOwnMemberClass(Record);
+}
+
+// Body identity only. Source/structural validation must independently admit
+// the actual declaration and each copy edge before any member is emitted.
+static const CXXRecordDecl *classBodyRecord(const CXXRecordDecl *Record) {
+  if (ordinaryMemberClassIdentity(Record)) {
+    std::set<const CXXRecordDecl *> Seen;
+    while (ordinaryMemberClassIdentity(Record)) {
+      if (Seen.size() >= 64 || !Seen.insert(Record->getCanonicalDecl()).second)
+        return nullptr;
+      if (const auto *Own = writtenOwnMemberClass(Record))
+        return Own;
+      const auto *Origin = Record->getInstantiatedFromMemberClass();
+      if (!Origin)
+        return Record;
+      if (Record->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+        return nullptr; // A mutated canonical bit is not its own written body.
+      Record = Origin;
+    }
+    return nullptr;
+  }
+  const auto *Full = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  if (!Full || Full->getKind() != Decl::ClassTemplateSpecialization ||
+      !Full->isExplicitSpecialization())
+    return classDefinitionRecord(classTemplatePattern(Record));
+  std::set<const CXXRecordDecl *> Seen;
+  while (Record) {
+    if (Seen.size() >= 64 || !Seen.insert(Record->getCanonicalDecl()).second)
+      return nullptr;
+    const auto *Origin = Record->getInstantiatedFromMemberClass();
+    if (!Origin)
+      return Record;
+    if (!classScopeFullIdentity(Record) || !classScopeFullIdentity(Origin))
+      return nullptr;
+    Record = Origin;
+  }
+  return nullptr;
+}
+
+// Source packs in a full body still belong to a real enclosing parameter
+// level. This helper is only used for pack indexing, never argument lookup.
+static const NamedDecl *classBodyPackOwner(const CXXRecordDecl *Record) {
+  std::set<const CXXRecordDecl *> Seen;
+  while (classScopeFullIdentity(Record) || ordinaryMemberClassIdentity(Record)) {
+    if (Seen.size() >= 64 || !Seen.insert(Record->getCanonicalDecl()).second)
+      return nullptr;
+    Record = dyn_cast<CXXRecordDecl>(Record->getDeclContext());
+  }
+  return classTemplatePattern(Record);
+}
+
+// Keep this classification separate from classFunctionPattern: a full body
+// must never be returned as a synthetic template parameter owner.
+static const ClassTemplateSpecializationDecl *copiedFullClassFunction(
+    const FunctionDecl *Function) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (!Method || Method->getDescribedFunctionTemplate() ||
+      Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
+      !Method->getMemberSpecializationInfo())
+    return nullptr;
+  const auto *Full = dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
+  const auto *Pattern = dyn_cast_or_null<CXXMethodDecl>(Method->getInstantiatedFromMemberFunction());
+  const auto *Body = classBodyRecord(Full);
+  return classScopeFullIdentity(Full) && !Full->isDependentContext() &&
+         Full->getInstantiatedFromMemberClass() && Pattern && Body &&
+         Pattern->getKind() == Method->getKind() &&
+         Pattern->getParent()->getCanonicalDecl() == Body->getCanonicalDecl()
+             ? Full : nullptr;
+}
+
+static const ClassTemplateSpecializationDecl *copiedFullClassStatic(const VarDecl *Variable) {
+  if (!Variable || Variable->getKind() != Decl::Var ||
+      !Variable->isStaticDataMember() || Variable->getDescribedVarTemplate() ||
+      !Variable->getMemberSpecializationInfo())
+    return nullptr;
+  const auto *Full = dyn_cast<ClassTemplateSpecializationDecl>(Variable->getDeclContext());
+  const auto *Pattern = Variable->getInstantiatedFromStaticDataMember();
+  const auto *Parent = Pattern ? dyn_cast<CXXRecordDecl>(Pattern->getDeclContext()) : nullptr;
+  const auto *Body = classBodyRecord(Full);
+  return classScopeFullIdentity(Full) && !Full->isDependentContext() &&
+         Full->getInstantiatedFromMemberClass() && Pattern && Parent && Body &&
+         Pattern->getKind() == Decl::Var && Pattern->isStaticDataMember() &&
+         !Pattern->getDescribedVarTemplate() &&
+         Parent->getCanonicalDecl() == Body->getCanonicalDecl() ? Full : nullptr;
+}
+
+// Ordinary copied methods/statics have no synthetic primary of their own.
+static const CXXRecordDecl *copiedOrdinaryClassFunction(const FunctionDecl *Function) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (!Method || Method->getDescribedFunctionTemplate() ||
+      Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
+      !Method->getMemberSpecializationInfo())
+    return nullptr;
+  const auto *Record = Method->getParent();
+  const auto *Pattern = dyn_cast_or_null<CXXMethodDecl>(Method->getInstantiatedFromMemberFunction());
+  const auto *Body = classBodyRecord(Record);
+  return ordinaryMemberClassScope(Record) && !Record->isDependentContext() &&
+         Record->getInstantiatedFromMemberClass() && Pattern && Body &&
+         Pattern->getKind() == Method->getKind() &&
+         Pattern->getParent()->getCanonicalDecl() == Body->getCanonicalDecl()
+             ? Record : nullptr;
+}
+
+static const CXXRecordDecl *copiedOrdinaryClassStatic(const VarDecl *Variable) {
+  if (!Variable || Variable->getKind() != Decl::Var ||
+      !Variable->isStaticDataMember() || Variable->getDescribedVarTemplate() ||
+      !Variable->getMemberSpecializationInfo())
+    return nullptr;
+  const auto *Record = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
+  const auto *Pattern = Variable->getInstantiatedFromStaticDataMember();
+  const auto *Parent = Pattern ? dyn_cast<CXXRecordDecl>(Pattern->getDeclContext()) : nullptr;
+  const auto *Body = classBodyRecord(Record);
+  return ordinaryMemberClassScope(Record) && !Record->isDependentContext() &&
+         Record->getInstantiatedFromMemberClass() && Pattern && Parent && Body &&
+         Pattern->getKind() == Decl::Var && Pattern->isStaticDataMember() &&
+         !Pattern->getDescribedVarTemplate() &&
+         Parent->getCanonicalDecl() == Body->getCanonicalDecl() ? Record : nullptr;
+}
+
 // Derive depth from actual enclosing owners, independently of the parameter
 // being checked. Clang removes substituted outer levels from copied primaries.
 static std::optional<unsigned> templateSourceParameterDepth(const NamedDecl *Owner) {
   if (!Owner || !templateSourceParameters(Owner))
     return std::nullopt;
   const auto *Context = Owner->getDeclContext();
+  if (const auto *Function = dyn_cast<FunctionTemplateDecl>(Owner);
+      Function && ordinaryFreeFunctionName(Function->getTemplatedDecl()) &&
+      Function->getTemplatedDecl()->getFriendObjectKind() &&
+      isa<CXXRecordDecl>(Function->getLexicalDeclContext()))
+    Context = Function->getLexicalDeclContext();
+  if (const auto *Class = dyn_cast<ClassTemplateDecl>(Owner);
+      Class && Class->getFriendObjectKind() &&
+      isa<CXXRecordDecl>(Class->getLexicalDeclContext()))
+    Context = Class->getLexicalDeclContext();
   std::set<const DeclContext *> Seen;
   unsigned Depth = 0;
   while (Context && !isa<TranslationUnitDecl, NamespaceDecl>(Context)) {
@@ -208,7 +394,8 @@ static std::optional<unsigned> templateSourceParameterDepth(const NamedDecl *Own
         Record->isLambda() || Record->isLocalClass() ||
         Seen.size() >= 64 || !Seen.insert(Context).second)
       return std::nullopt;
-    if (Record->isDependentContext()) {
+    if (Record->isDependentContext() && !genericClassFullIdentity(Record) &&
+        !ordinaryMemberClassIdentity(Record)) {
       if (!isa<ClassTemplatePartialSpecializationDecl>(Record) &&
           !(Record->getKind() == Decl::CXXRecord && Record->getDescribedClassTemplate()))
         return std::nullopt;
@@ -231,14 +418,30 @@ static const NamedDecl *classFunctionPattern(const FunctionDecl *F) {
     return nullptr;
   const auto *Record = dyn_cast<ClassTemplateSpecializationDecl>(M->getParent());
   if (!Record || Record->getKind() != Decl::ClassTemplateSpecialization ||
-      Record->isDependentContext())
+      Record->isDependentContext() || Record->getInstantiatedFromMemberClass())
     return nullptr;
   return classTemplatePattern(Record);
 }
 
 static bool concreteClassFunction(const FunctionDecl *F) {
-  return classFunctionPattern(F) && !F->isDependentContext() &&
+  return (classFunctionPattern(F) || copiedFullClassFunction(F) ||
+          copiedOrdinaryClassFunction(F)) && !F->isDependentContext() &&
          !F->getType().isNull() && !F->getType()->isDependentType();
+}
+
+// Structural function category only. The allowlist separately requires both
+// exact friend source events before traversing or emitting this declaration.
+static bool concreteFriendFunction(const FunctionDecl *F) {
+  if (!F || F->getKind() != Decl::Function || !F->getFriendObjectKind() ||
+      F->getDescribedFunctionTemplate() || F->getPrimaryTemplate() ||
+      F->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
+      !F->getMemberSpecializationInfo() || !F->getInstantiatedFromMemberFunction() ||
+      !F->getDeclContext()->getRedeclContext()->isFileContext() ||
+      F->isDependentContext() || F->getType().isNull() || F->getType()->isDependentType())
+    return false;
+  const auto *Parent = dyn_cast<CXXRecordDecl>(F->getLexicalDeclContext());
+  return Parent && !Parent->isDependentContext() && !Parent->isLocalClass() &&
+         classBodyRecord(Parent);
 }
 
 // Local classes are instantiated with their enclosing function. They have
@@ -264,7 +467,8 @@ static bool concreteLocalClassFunction(const FunctionDecl *F) {
         !Owner || !Origin || !Pattern || Pattern->getKind() != M->getKind() ||
         Origin->getCanonicalDecl() != Pattern->getParent()->getCanonicalDecl())
       return false;
-    if (concreteFunctionTemplate(Owner) || concreteClassFunction(Owner))
+    if (concreteFunctionTemplate(Owner) || concreteClassFunction(Owner) ||
+        concreteFriendFunction(Owner))
       return true;
     F = Owner; // A local class can itself be declared in a local-class method.
   }
@@ -284,14 +488,15 @@ static const NamedDecl *classStaticDataPattern(const VarDecl *V) {
   const auto *Record = dyn_cast<ClassTemplateSpecializationDecl>(V->getDeclContext());
   const auto *Origin = V->getInstantiatedFromStaticDataMember();
   if (!Record || Record->getKind() != Decl::ClassTemplateSpecialization ||
-      Record->isDependentContext() || !Origin || Origin->getKind() != Decl::Var ||
+      Record->isDependentContext() || Record->getInstantiatedFromMemberClass() ||
+      !Origin || Origin->getKind() != Decl::Var ||
       !Origin->isStaticDataMember() || Origin->getDescribedVarTemplate())
     return nullptr;
   const auto *Primary = classTemplatePattern(Record);
   const auto *Parent = dyn_cast<CXXRecordDecl>(Origin->getDeclContext());
-  return Primary && Parent &&
-                 classDefinitionRecord(Primary) &&
-                 Parent->getCanonicalDecl() == classDefinitionRecord(Primary)->getCanonicalDecl()
+  const auto *Body = classBodyRecord(Record);
+  return Primary && Parent && Body &&
+                 Parent->getCanonicalDecl() == Body->getCanonicalDecl()
              ? Primary : nullptr;
 }
 
@@ -308,14 +513,14 @@ static const FunctionDecl *defaultedDeclaration(const CXXMethodDecl *M) {
     if (D->isDefaulted() &&
         (!Specialization || D->getNumTemplateParameterLists()))
       return D;
-  const auto *Primary = classFunctionPattern(M);
-  if (!Primary || Specialization)
+  if ((!classFunctionPattern(M) && !copiedFullClassFunction(M) &&
+       !copiedOrdinaryClassFunction(M)) || Specialization)
     return nullptr;
   const auto *Pattern =
       dyn_cast_or_null<CXXMethodDecl>(M->getInstantiatedFromMemberFunction());
-  if (!Pattern || !classDefinitionRecord(Primary) || Pattern->getKind() != M->getKind() ||
-      Pattern->getParent()->getCanonicalDecl() !=
-          classDefinitionRecord(Primary)->getCanonicalDecl())
+  const auto *Body = classBodyRecord(M->getParent());
+  if (!Pattern || !Body || Pattern->getKind() != M->getKind() ||
+      Pattern->getParent()->getCanonicalDecl() != Body->getCanonicalDecl())
     return nullptr;
   for (const auto *D : Pattern->redecls())
     if (D->isDefaulted())
@@ -348,7 +553,8 @@ bool ordinaryMethod(const CXXMethodDecl *M) {
 bool ordinaryOperator(const FunctionDecl *F) {
   if (!F || !F->isOverloadedOperator() || F->isImplicit() || F->isVariadic() ||
       (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       !concreteFreeFunctionTemplate(F) && !concreteMemberFunction(F)) ||
+       !concreteFreeFunctionTemplate(F) && !concreteMemberFunction(F) &&
+       !concreteFriendFunction(F)) ||
       F->isDeletedAsWritten() || F->isDefaulted() || F->isConsteval())
     return false;
   if (!ordinaryOperatorKind(F->getOverloadedOperator()))
@@ -891,7 +1097,8 @@ static bool lazyTemplateDefault(const ParmVarDecl *P) {
       !P->hasUninstantiatedDefaultArg())
     return false;
   const auto *Function = dyn_cast<FunctionDecl>(P->getDeclContext());
-  return concreteFreeFunctionTemplate(Function) || concreteMemberFunction(Function);
+  return concreteFreeFunctionTemplate(Function) || concreteMemberFunction(Function) ||
+         concreteFriendFunction(Function);
 }
 
 const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context) {
@@ -901,7 +1108,8 @@ const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context
     return nullptr;
   const auto *F = dyn_cast<FunctionDecl>(P->getDeclContext());
   if (!F || (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-             !concreteFreeFunctionTemplate(F) && !concreteMemberFunction(F)) ||
+             !concreteFreeFunctionTemplate(F) && !concreteMemberFunction(F) &&
+             !concreteFriendFunction(F)) ||
       P->getFunctionScopeIndex() >= F->getNumParams() ||
       F->getParamDecl(P->getFunctionScopeIndex()) != P)
     return nullptr;
@@ -996,6 +1204,29 @@ const Expr *directMethodReference(const CallExpr *Call) {
                           (ordinaryOperator(M) || supportedAssignment(M)))))
     D = Reference->getDecl();
   return D && D->getCanonicalDecl() == M->getCanonicalDecl() ? E : nullptr;
+}
+
+// Only these existing direct-call syntax roles bypass callback-value rules.
+// A compound postfix expression must use value lowering even when Sema can
+// determine a direct target, otherwise its side effects would disappear.
+const Expr *directFunctionReference(const CallExpr *Call) {
+  const auto *F = Call->getDirectCallee();
+  if (!F)
+    return nullptr;
+  if (isa<CXXMethodDecl>(F))
+    return directMethodReference(Call);
+  const Expr *E = Call->getCallee();
+  while (true) {
+    if (const auto *P = dyn_cast<ParenExpr>(E))
+      E = P->getSubExpr();
+    else if (const auto *C = dyn_cast<ImplicitCastExpr>(E);
+             C && C->getCastKind() == CK_FunctionToPointerDecay)
+      E = C->getSubExpr();
+    else
+      break;
+  }
+  const auto *R = dyn_cast<DeclRefExpr>(E);
+  return R && R->getDecl()->getCanonicalDecl() == F->getCanonicalDecl() ? E : nullptr;
 }
 
 std::string digest(llvm::StringRef Text) {
@@ -1121,6 +1352,97 @@ void Adapter::chargeExpansion(std::size_t Nodes, SourceLocation L) {
   ExpandedNodes += Nodes;
 }
 
+// The source prototype must describe exactly the default emitted function ABI.
+static bool ordinaryCallbackPrototype(const FunctionProtoType *P) {
+  if (!P || P->isVariadic() || P->getNumParams() > 64 ||
+      !standardExceptionSpecification(P) ||
+      P->getExtInfo() != FunctionType::ExtInfo() ||
+      !P->getMethodQuals().empty() || P->getRefQualifier() != RQ_None ||
+      P->getAArch64SMEAttributes() != FunctionType::SME_NormalFunction ||
+      !P->getFunctionEffects().empty())
+    return false;
+  for (unsigned I = 0; I < P->getNumParams(); ++I)
+    if (P->getExtParameterInfo(I) != FunctionType::ExtParameterInfo())
+      return false;
+  return true;
+}
+
+std::string Adapter::functionPointerType(QualType T, SourceLocation L,
+                                         unsigned Depth) {
+  const auto *P = T->isFunctionPointerType()
+                      ? T->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
+  if (!S.coreV2() || !P || Depth > 64 || T.getAddressSpace() != LangAS::Default ||
+      T->getPointeeType().getAddressSpace() != LangAS::Default ||
+      !ordinaryCallbackPrototype(P)) {
+    reject(L, "function pointer type", "A bounded ordinary default-ABI function prototype is required.");
+    return {};
+  }
+  auto Carrier = Context.VoidPtrTy;
+  if (Context.getTypeSize(T) != Context.getTypeSize(Carrier) ||
+      Context.getTypeAlign(T) != Context.getTypeAlign(Carrier)) {
+    reject(L, "function pointer layout", "Source code-pointer and default carrier layouts differ.", "TR0204");
+    return {};
+  }
+  chargeExpansion(P->getNumParams() + 1, L);
+  std::string Result = "fnptr:" + std::to_string(P->getNumParams()) + ":";
+  auto Component = [&](QualType C, bool Void) {
+    if (C->isRecordType() || C->isArrayType()) {
+      reject(L, "callback signature", "Record and array values need a separate callback ownership contract.");
+      return false;
+    }
+    auto Spelling = type(C, L, Void, Depth + 1);
+    if (Spelling.empty())
+      return false;
+    Result += std::to_string(Spelling.size()) + ":" + Spelling;
+    if (Result.size() > 4096) {
+      reject(L, "function pointer type", "Callable type spelling exceeds the protocol limit.");
+      return false;
+    }
+    return true;
+  };
+  if (!Component(P->getReturnType(), true))
+    return {};
+  for (auto Parameter : P->param_types())
+    if (!Component(Parameter, false))
+      return {};
+  return Result;
+}
+
+bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(F);
+  // Classification alone does not admit a template source use: Allowlist still
+  // checks the selected declaration, deduction source, primary and actual body.
+  const bool ConcreteTemplate = concreteFunctionTemplate(F);
+  if (!S.coreV2() || !F || F->isInvalidDecl() || F->hasAttrs() ||
+      F->isImplicit() || F->isMain() || F->getBuiltinID() ||
+      !S.owns(Sources, F->getLocation()) || F->isDeletedAsWritten() ||
+      F->isDefaulted() || F->isConsteval() ||
+      F->getDescribedFunctionTemplate() ||
+      (F->getPrimaryTemplate() && !ConcreteTemplate) ||
+      (F->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       !ConcreteTemplate && !concreteMemberFunction(F) &&
+       !concreteFriendFunction(F)) ||
+      (Method && (!Method->isStatic() || !ordinaryMethod(Method)))) {
+    reject(L, "function address", "An ordinary source-owned free function or static method is required.");
+    return false;
+  }
+  if (functionPointerType(Context.getPointerType(F->getType()), L).empty())
+    return false;
+  const auto *Definition = F->getDefinition();
+  if (!Definition || !S.owns(Sources, Definition->getLocation())) {
+    reject(L, "function address definition", "A named callback requires its definition in this source unit.", "TR0203");
+    return false;
+  }
+  return true;
+}
+
+json::Object Adapter::functionAddress(const FunctionDecl *F, SourceLocation L) {
+  if (!functionAddressTarget(F, L))
+    throw Failure{};
+  return json::Object{{"kind", "function_address"},
+                      {"type", functionPointerType(Context.getPointerType(F->getType()), L)},
+                      {"name", name(F)}, {"loc", loc(L)}};
+}
 std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                           unsigned Depth) {
   if (Depth > 64) {
@@ -1145,8 +1467,15 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
         return {};
       return "arr:" + std::to_string(Count) + ":" + Element;
     }
+  if (S.coreV2() && C->isFunctionPointerType())
+    return functionPointerType(T, L, Depth);
   if (S.coreV2() && (C->isPointerType() || C->isReferenceType())) {
     QualType Pointee = C->getPointeeType();
+    if (T.getAddressSpace() != LangAS::Default ||
+        Pointee.getAddressSpace() != LangAS::Default) {
+      reject(L, "pointer address space", "Pointers and reference carriers require the default address space.");
+      return {};
+    }
     auto Element = type(Pointee, L, C->isPointerType(), Depth + 1);
     if (Element.empty())
       return {};
@@ -1274,6 +1603,20 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
     return literal(V.getInt(), Kind, L);
   if (V.isFloat() && S.math())
     return floatingLiteral(V.getFloat(), L);
+  if (S.coreV2() && T->isFunctionPointerType() && V.isLValue() &&
+      V.getLValueOffset().isZero() && !V.isLValueOnePastTheEnd() &&
+      !V.getLValueCallIndex() && !V.getLValueVersion() &&
+      (!V.hasLValuePath() || V.getLValuePath().empty())) {
+    if (V.isNullPointer())
+      return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
+    const auto *Target = dyn_cast_or_null<FunctionDecl>(
+        V.getLValueBase().dyn_cast<const ValueDecl *>());
+    if (Target) {
+      auto Address = functionAddress(Target, L);
+      if (Address.getString("type") == Kind)
+        return Address;
+    }
+  }
   if (V.isStruct()) {
     json::Array Args;
     unsigned I = 0;
@@ -1292,7 +1635,7 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::map<const CXXRecordDecl *, bool> HasArray;
-  std::set<const Expr *> DirectMethodCallees, GeneratedBuiltinCallees;
+  std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees, FunctionValueDesignators;
   std::set<const CallExpr *> GeneratedArrayAssignments;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
@@ -1302,6 +1645,25 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   const FieldDecl *CurrentDefaultField = nullptr;
   SourceLocation ImplicitInitializerOwner;
   const TemplateParameterList *TemplateParameterTypeSource = nullptr;
+  std::map<const FunctionDecl *, const FriendFunctionSource *> FriendFunctionSources;
+  std::map<const FriendDecl *, const FriendDeclarationSource *> FriendDeclarationSources;
+  std::map<const FunctionDecl *, const FriendDecl *> FriendFunctionDeclarations;
+  std::map<const FunctionDecl *, const FriendDecl *> WrittenFriendFunctions;
+  std::set<const FriendDecl *> WrittenFriendDeclarations, CheckedFriendDeclarations;
+  std::map<const FunctionTemplateDecl *, const FriendFunctionTemplateSource *> FriendTemplateSources;
+  std::map<const FunctionTemplateDecl *, const FriendDecl *>
+      FriendTemplateDeclarations, WrittenFriendTemplates;
+  std::map<const FunctionTemplateDecl *, std::vector<const FriendFunctionTemplateSource *>>
+      FriendTemplateFamilies;
+  std::map<const FunctionDecl *, const FunctionTemplateBodySource *> TemplateBodySources;
+  std::set<const FunctionTemplateDecl *> IndependentTemplateIdentities, FriendTemplateCanonicals;
+  std::set<const FunctionDecl *> CheckedFriendTemplateFunctions;
+  std::map<const ClassTemplateDecl *, const FriendClassTemplateSource *> FriendClassSources;
+  std::map<const ClassTemplateDecl *, const FriendDecl *>
+      FriendClassDeclarations, WrittenFriendClasses;
+  std::set<const ClassTemplateDecl *> FriendClassCanonicals;
+  std::set<const FunctionDecl *> CheckedFriendFunctions, FriendCanonicalFunctions,
+      EmittedFriendDefinitions;
   std::map<const NamedDecl *, const NamedDecl *> PackOwners;
   std::map<const NamedDecl *, std::pair<const Decl *, unsigned>> OuterPackDeclarations;
   using TypeSourceKey = std::pair<const Type *, unsigned>;
@@ -1311,6 +1673,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<FunctionSourceKey, std::vector<const TemplateUseSource *>> FunctionSources;
   std::map<const Expr *, std::vector<const SelectedTemplateCallSource *>> SelectedCallSources;
   std::map<const Decl *, std::vector<const TemplateUseSource *>> ClassSources;
+  std::map<const Decl *, std::vector<const TemplateUseSource *>> ClassFullDeclarations;
+  std::set<const Decl *> WrittenClassFullDeclarations, CheckedClassFullDeclarations,
+      ActiveClassFullDeclarations;
   std::map<const FunctionDecl *, std::vector<const FunctionSpecializationSource *>> SpecializationSources;
   std::map<VariableSourceKey, std::vector<const TemplateUseSource *>> VariableSources;
   std::map<const Decl *, std::vector<const TemplateUseSource *>> PartialDeclarations;
@@ -1321,6 +1686,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const VarTemplatePartialSpecializationDecl *> WrittenVariablePartials;
   std::set<const ClassTemplateDecl *> WrittenClassTemplates;
   std::set<const NamedDecl *> ActiveClassShapes;
+  std::set<const CXXRecordDecl *> WrittenOrdinaryClasses, CheckedOrdinaryClasses,
+      ActiveOrdinaryClasses, TraversedOrdinaryClasses;
   std::set<const Decl *> ActiveClassTemplateSources, CheckedClassTemplateSources;
   struct PartialSource {
     const TemplateUseSource *Deduction = nullptr, *Pattern = nullptr;
@@ -1390,6 +1757,117 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return true;
   }
+  // Structural copy edges only: member enumeration runs in a separate helper.
+  bool ordinaryClassIdentityShape(const CXXRecordDecl *Record) {
+    std::set<const CXXRecordDecl *> Seen;
+    for (const auto *Current = Record; Current;) {
+      if (!ordinaryMemberClassIdentity(Current) || !owned(Current) ||
+          Current->hasAttrs() || Current->getFriendObjectKind() ||
+          (Current->getLexicalDeclContext() != Current->getDeclContext() &&
+           !isa<TranslationUnitDecl, NamespaceDecl>(Current->getLexicalDeclContext())) ||
+          !outerTemplateListsShape(Current) || Seen.size() >= 64 ||
+          !Seen.insert(Current->getCanonicalDecl()).second)
+        return false;
+      A.chargeExpansion(1, Current->getLocation());
+      const auto Qualifier = Current->getQualifierLoc();
+      if (Qualifier && !A.S.owns(A.Sources, Qualifier.getBeginLoc()))
+        return false;
+      const auto *Origin = Current->getInstantiatedFromMemberClass();
+      if (!Origin)
+        return WrittenOrdinaryClasses.count(Current);
+      const auto *Own = writtenOwnMemberClass(Current);
+      if (Own && (!WrittenOrdinaryClasses.count(Own) || !owned(Own) ||
+                  Own->isInvalidDecl() || Own->hasAttrs() ||
+                  Own->getFriendObjectKind() || !outerTemplateListsShape(Own)))
+        return false;
+      if (!Own && Current->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+        return false;
+      if (!ordinaryMemberClassIdentity(Origin) || !owned(Origin) ||
+          Current->getDeclName() != Origin->getDeclName() ||
+          (!Own && Current->getTagKind() != Origin->getTagKind()))
+        return false;
+      const auto *Parent = cast<CXXRecordDecl>(Current->getDeclContext());
+      const auto *OriginParent = cast<CXXRecordDecl>(Origin->getDeclContext());
+      const auto *Body = classBodyRecord(Parent);
+      if (!Body || Body->getCanonicalDecl() != OriginParent->getCanonicalDecl())
+        return false;
+      // Keep the origin relation even when the source supplies a new own body.
+      Current = Origin;
+    }
+    return false;
+  }
+  bool ordinaryClassDeclarationShape(const CXXRecordDecl *Record) {
+    return ordinaryClassIdentityShape(Record) &&
+           classOwnerScope(Record->getDeclContext());
+  }
+  bool ordinaryClassBodyShape(const CXXRecordDecl *Record) {
+    if (!ordinaryClassDeclarationShape(Record))
+      return false;
+    const auto *Definition = Record->getDefinition();
+    if (!Definition)
+      return true; // Nonlocal ordinary nested definitions are instantiated lazily.
+    if (ActiveClassShapes.size() >= 64 || !ActiveClassShapes.insert(Record).second)
+      return false;
+    auto Restore = llvm::make_scope_exit([&] { ActiveClassShapes.erase(Record); });
+    return owned(Definition) && !Definition->isInvalidDecl() &&
+           !Definition->hasAttrs() && !Definition->getNumBases() &&
+           classTemplateMembers(Definition);
+  }
+  bool zeroParameterClassBodyShape(const CXXRecordDecl *Record) {
+    if (ordinaryMemberClassScope(Record))
+      return ordinaryClassBodyShape(Record);
+    return classFullBodyShape(dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record));
+  }
+  // Local structural edges only: never enumerate a parent's members here.
+  bool classFullIdentityShape(const CXXRecordDecl *Record) {
+    if (!classScopeFullIdentity(Record) || !owned(Record) || Record->hasAttrs() ||
+        !Record->getIdentifier() || Record->getFriendObjectKind())
+      return false;
+    const auto *D = cast<ClassTemplateSpecializationDecl>(Record);
+    const auto *Primary = D->getSpecializedTemplate();
+    if (!owned(Primary) || Primary->isInvalidDecl() || Primary->hasAttrs() ||
+        !D->getTemplateArgsAsWritten() || !outerTemplateListsShape(D, true))
+      return false;
+    const auto *Origin = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        D->getInstantiatedFromMemberClass());
+    if (!Origin)
+      return genericClassFullIdentity(D) && WrittenClassFullDeclarations.count(D);
+    // The successful copy producer supplies a final full object and the exact
+    // written full object, independently of the primary's redeclaration chain.
+    if (D->isDependentContext() || !genericClassFullIdentity(Origin) ||
+        !owned(Origin) || Origin->hasAttrs() || Origin->getFriendObjectKind() ||
+        !WrittenClassFullDeclarations.count(Origin))
+      return false;
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    if (!Parent || (!isa<ClassTemplateSpecializationDecl>(Parent) &&
+                    !ordinaryClassIdentityShape(Parent)))
+      return false;
+    const auto *OriginParent = dyn_cast<CXXRecordDecl>(Origin->getDeclContext());
+    const auto *Body = classBodyRecord(Parent);
+    const auto *PrimaryOrigin = Primary->getInstantiatedFromMemberTemplate();
+    return owned(Parent) && !Parent->isDependentContext() && OriginParent && Body &&
+           Body->getCanonicalDecl() == OriginParent->getCanonicalDecl() &&
+           PrimaryOrigin && PrimaryOrigin->getCanonicalDecl() ==
+                                Origin->getSpecializedTemplate()->getCanonicalDecl();
+  }
+  bool classFullDeclarationShape(const ClassTemplateSpecializationDecl *D) {
+    return classFullIdentityShape(D) && classOwnerScope(D->getDeclContext()) &&
+           classTemplateDeclarationShape(D->getSpecializedTemplate()) &&
+           classPatternOriginShape(D->getSpecializedTemplate());
+  }
+  bool classFullBodyShape(const ClassTemplateSpecializationDecl *D) {
+    if (!classFullDeclarationShape(D))
+      return false;
+    const auto *Definition = D->getDefinition();
+    if (!Definition)
+      return true;
+    if (ActiveClassShapes.size() >= 64 || !ActiveClassShapes.insert(D).second)
+      return false;
+    auto Restore = llvm::make_scope_exit([&] { ActiveClassShapes.erase(D); });
+    return owned(Definition) && !Definition->isInvalidDecl() &&
+           !Definition->hasAttrs() && !Definition->getNumBases() &&
+           classTemplateMembers(Definition);
+  }
   // Structural ancestors only. A child declaration must not recursively ask
   // its parent to enumerate that same child through classTemplateMembers.
   bool classOwnerScope(const DeclContext *Context) {
@@ -1398,24 +1876,30 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       const auto *Record = dyn_cast<CXXRecordDecl>(Context);
       if (!owned(Record) || Record->isInvalidDecl() || Record->hasAttrs() ||
           !Record->getIdentifier() || Record->isUnion() || Record->isLambda() ||
-          Record->isLocalClass() || Record->getInstantiatedFromMemberClass())
+          Record->isLocalClass())
+        return false;
+      const bool OrdinaryBody = ordinaryMemberClassScope(Record);
+      const bool FullBody = genericClassFullIdentity(Record) ||
+          (classScopeFullIdentity(Record) && Record->getInstantiatedFromMemberClass());
+      if ((FullBody && !classFullIdentityShape(Record)) ||
+          (OrdinaryBody && !ordinaryClassIdentityShape(Record)))
         return false;
       A.chargeExpansion(1, Record->getLocation());
       if (Seen.size() >= 64 || !Seen.insert(Record->getCanonicalDecl()).second)
         return false;
       const auto *Pattern = classTemplatePattern(Record);
-      if (Record->isDependentContext() &&
+      if (Record->isDependentContext() && !FullBody && !OrdinaryBody &&
           (!owned(Pattern) ||
            !templateParametersShape(templateSourceParameters(Pattern),
                                     templateSourceParameterDepth(Pattern))))
         return false;
-      if (!Pattern && (Record->getKind() != Decl::CXXRecord ||
+      if (!Pattern && !FullBody && !OrdinaryBody && (Record->getKind() != Decl::CXXRecord ||
                        Record->getMemberSpecializationInfo() ||
                        Record->getNumTemplateParameterLists()))
         return false;
       const auto *Definition = Record->getDefinition();
       if (!Definition && Pattern) {
-        const auto *Body = classDefinitionRecord(Pattern);
+        const auto *Body = classBodyRecord(Record);
         Definition = Body ? Body->getDefinition() : nullptr;
       }
       if (!owned(Definition) || Definition->isInvalidDecl() ||
@@ -1448,9 +1932,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         break;
       const auto *Owner = classTemplatePattern(Record);
       if (Record->isDependentContext()) {
-        if (!Owner)
+        if (Owner)
+          Owners.push_back(Owner);
+        else if (!ordinaryMemberClassIdentity(Record) && !genericClassFullIdentity(Record))
           return false;
-        Owners.push_back(Owner);
       } else if (Spec) {
         Owners.push_back(nullptr);
       }
@@ -1499,6 +1984,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     return true;
   }
   bool memberClassDeclarationShape(const CXXRecordDecl *Record, bool Full = false) {
+    if (Full && (genericClassFullIdentity(Record) ||
+                 (Record && Record->getInstantiatedFromMemberClass())))
+      return classFullDeclarationShape(dyn_cast<ClassTemplateSpecializationDecl>(Record));
     if (!owned(Record) || !isa<CXXRecordDecl>(Record->getDeclContext()) ||
         !classOwnerScope(Record->getDeclContext()) || Record->isInvalidDecl() ||
         Record->hasAttrs() || Record->getFriendObjectKind() ||
@@ -1540,7 +2028,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                        Definition->hasAttrs() || Definition->getNumBases()))
       return false;
     const auto *Outer = classTemplatePattern(Parent);
-    if (Parent->isDependentContext() &&
+    const bool OrdinaryBody = ordinaryMemberClassScope(Parent);
+    const bool FullBody = genericClassFullIdentity(Parent) ||
+        (classScopeFullIdentity(Parent) && Parent->getInstantiatedFromMemberClass());
+    if ((FullBody && !classFullDeclarationShape(dyn_cast<ClassTemplateSpecializationDecl>(Parent))) ||
+        (OrdinaryBody && !ordinaryClassDeclarationShape(Parent)))
+      return false;
+    if (Parent->isDependentContext() && !FullBody && !OrdinaryBody &&
         (!owned(Outer) || !templateParametersShape(templateSourceParameters(Outer), templateSourceParameterDepth(Outer)) ||
          !isa<ClassTemplateDecl, ClassTemplatePartialSpecializationDecl>(Outer)))
       return false;
@@ -1645,6 +2139,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         V->getType().isRestrictQualified())
       return false;
     auto T = V->getType();
+    if (T->isFunctionPointerType())
+      return true; // Actual instances retain source, ABI and constant checks.
     if (T->isPointerType() || T->isReferenceType() || T->isArrayType() || T->isRecordType())
       return false;
     return T->isDependentType() || T->isUndeducedAutoType() ||
@@ -1665,7 +2161,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Definition->hasAttrs() || Definition->getNumBases())
       return false;
     const auto *Outer = classTemplatePattern(Parent);
-    if (Parent->isDependentContext() &&
+    const bool OrdinaryBody = ordinaryMemberClassScope(Parent);
+    const bool FullBody = genericClassFullIdentity(Parent) ||
+        (classScopeFullIdentity(Parent) && Parent->getInstantiatedFromMemberClass());
+    if ((FullBody && !classFullDeclarationShape(dyn_cast<ClassTemplateSpecializationDecl>(Parent))) ||
+        (OrdinaryBody && !ordinaryClassDeclarationShape(Parent)))
+      return false;
+    if (Parent->isDependentContext() && !FullBody && !OrdinaryBody &&
         (!owned(Outer) ||
          !isa<ClassTemplateDecl, ClassTemplatePartialSpecializationDecl>(Outer) ||
          !templateParametersShape(templateSourceParameters(Outer), templateSourceParameterDepth(Outer))))
@@ -1691,6 +2193,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     }
     auto Type = D->getType();
+    if (Type->isFunctionPointerType())
+      return true; // Concrete source, signature and initializer checks follow.
     if (Type->isPointerType() || Type->isReferenceType() ||
         Type->isArrayType() || Type->isRecordType())
       return false;
@@ -1725,6 +2229,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       const auto *Parent = cast<CXXRecordDecl>(Current->getDeclContext());
       const auto *Next = Current->getInstantiatedFromMemberTemplate();
       if (!Next) {
+        if (ordinaryCopiedBody(Parent))
+          return false;
         const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Parent);
         return !Instance || Instance->getKind() == Decl::ClassTemplatePartialSpecialization ||
                Instance->isExplicitSpecialization();
@@ -1734,7 +2240,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Current->getTemplateParameters()->size() != Next->getTemplateParameters()->size())
         return false;
       const auto *NextParent = dyn_cast<CXXRecordDecl>(Next->getDeclContext());
-      const auto *Selected = classDefinitionRecord(classTemplatePattern(Parent));
+      const auto *Selected = classBodyRecord(Parent);
       if (!NextParent || (Parent->getCanonicalDecl() != NextParent->getCanonicalDecl() &&
           (!Selected || Selected->getCanonicalDecl() != NextParent->getCanonicalDecl())))
         return false;
@@ -1776,6 +2282,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       const auto *Parent = cast<CXXRecordDecl>(Current->getDeclContext());
       const auto *Next = Current->getInstantiatedFromMember();
       if (!Next) {
+        if (ordinaryCopiedBody(Parent))
+          return WrittenVariablePartials.count(Current);
         const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Parent);
         // A new partial written for a concrete outer instance owns its pattern;
         // hidden copies must instead retain the producer's member-origin link.
@@ -1787,7 +2295,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Current->getTemplateParameters()->size() != Next->getTemplateParameters()->size())
         return false;
       const auto *NextParent = dyn_cast<CXXRecordDecl>(Next->getDeclContext());
-      const auto *Selected = classDefinitionRecord(classTemplatePattern(Parent));
+      const auto *Selected = classBodyRecord(Parent);
       const auto *PrimaryOrigin = Current->getSpecializedTemplate()->getInstantiatedFromMemberTemplate();
       if (!NextParent || !PrimaryOrigin ||
           PrimaryOrigin->getCanonicalDecl() != Next->getSpecializedTemplate()->getCanonicalDecl() ||
@@ -1826,7 +2334,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // Check the outer structural owner without recursively enumerating this
     // alias through classTemplateMembers again.
     const auto *Outer = classTemplatePattern(Parent);
-    if (Parent->isDependentContext() &&
+    const bool OrdinaryBody = ordinaryMemberClassScope(Parent);
+    const bool FullBody = genericClassFullIdentity(Parent) ||
+        (classScopeFullIdentity(Parent) && Parent->getInstantiatedFromMemberClass());
+    if ((FullBody && !classFullDeclarationShape(dyn_cast<ClassTemplateSpecializationDecl>(Parent))) ||
+        (OrdinaryBody && !ordinaryClassDeclarationShape(Parent)))
+      return false;
+    if (Parent->isDependentContext() && !FullBody && !OrdinaryBody &&
         (!owned(Outer) ||
          !isa<ClassTemplateDecl, ClassTemplatePartialSpecializationDecl>(Outer) ||
          !templateParametersShape(templateSourceParameters(Outer), templateSourceParameterDepth(Outer))))
@@ -1846,6 +2360,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       const auto *Parent = cast<CXXRecordDecl>(Current->getDeclContext());
       const auto *Next = Current->getInstantiatedFromMemberTemplate();
       if (!Next) {
+        if (ordinaryCopiedBody(Parent))
+          return false;
         const auto *Instance = dyn_cast<ClassTemplateSpecializationDecl>(Parent);
         // An alias written in a full class specialization owns its definition.
         // Every implicitly copied alias must retain its actual written origin.
@@ -1857,7 +2373,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Current->getTemplateParameters()->size() != Next->getTemplateParameters()->size())
         return false;
       const auto *NextParent = cast<CXXRecordDecl>(Next->getDeclContext());
-      const auto *Selected = classDefinitionRecord(classTemplatePattern(Parent));
+      const auto *Selected = classBodyRecord(Parent);
       if (Parent->getCanonicalDecl() != NextParent->getCanonicalDecl() &&
           (!Selected || Selected->getCanonicalDecl() != NextParent->getCanonicalDecl()))
         return false;
@@ -1865,6 +2381,571 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     }
     return false;
   }
+  bool friendFunctionSourceShape(const FunctionDecl *F) {
+    if (!owned(F) || F->getKind() != Decl::Function || F->isInvalidDecl() ||
+        F->hasAttrs() || (!F->getIdentifier() &&
+                         !ordinaryOperatorKind(F->getOverloadedOperator())) ||
+        !F->getDeclContext()->getRedeclContext()->isFileContext() ||
+        F->getDescribedFunctionTemplate() || F->getPrimaryTemplate() ||
+        F->getNumTemplateParameterLists() || F->isVariadic() ||
+        F->isDeletedAsWritten() || F->isExplicitlyDefaulted() || F->isConsteval() ||
+        F->getTrailingRequiresClause() || !F->getTypeSourceInfo() || F->getType().isNull())
+      return false;
+    for (const auto *Parameter : F->parameters()) {
+      A.chargeExpansion(1, Parameter->getLocation());
+      if (!owned(Parameter) || Parameter->isInvalidDecl() || Parameter->hasAttrs() ||
+          Parameter->hasUnparsedDefaultArg())
+        return false;
+    }
+    return true;
+  }
+  bool genericFriendFunctionShape(const FriendDecl *D) {
+    if (!owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
+        D->isUnsupportedFriend() || D->getFriendType() || D->isPackExpansion() ||
+        D->getFriendTypeNumTemplateParameterLists())
+      return false;
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    const auto *Function = dyn_cast_or_null<FunctionDecl>(D->getFriendDecl());
+    if (!owned(Parent) || Parent->isInvalidDecl() || Parent->hasAttrs() ||
+        !Parent->getIdentifier() || Parent->isUnion() || Parent->isLambda() ||
+        Parent->isLocalClass() || !classOwnerScope(Parent->getDeclContext()) ||
+        !friendFunctionSourceShape(Function) || !Function->getFriendObjectKind() ||
+        Function->getLexicalDeclContext() != Parent)
+      return false;
+    return Function->getTemplatedKind() == FunctionDecl::TK_NonTemplate ||
+           (Function->getTemplatedKind() == FunctionDecl::TK_MemberSpecialization &&
+            Function->getMemberSpecializationInfo() &&
+            Function->getInstantiatedFromMemberFunction());
+  }
+
+  bool friendFunctionTemplateDeclarationShape(const FunctionTemplateDecl *D) {
+    if (!owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
+        D->isAbbreviated() || D->hasAssociatedConstraints())
+      return false;
+    const auto *Function = D->getTemplatedDecl();
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getLexicalDeclContext());
+    if (!owned(Parent) || Parent->isInvalidDecl() || Parent->hasAttrs() ||
+        !Parent->getIdentifier() || Parent->isUnion() || Parent->isLambda() ||
+        Parent->isLocalClass() || !classOwnerScope(Parent->getDeclContext()) ||
+        !D->getDeclContext()->getRedeclContext()->isFileContext() ||
+        !ordinaryFreeFunctionName(Function) || !owned(Function) ||
+        Function->isInvalidDecl() || Function->hasAttrs() ||
+        !Function->getFriendObjectKind() ||
+        Function->getDescribedFunctionTemplate() != D ||
+        Function->getLexicalDeclContext() != Parent ||
+        Function->getDeclContext() != D->getDeclContext() ||
+        Function->getPrimaryTemplate() || Function->getNumTemplateParameterLists() ||
+        Function->isVariadic() || Function->isDeletedAsWritten() ||
+        Function->isDefaulted() || Function->isConsteval() ||
+        Function->getTrailingRequiresClause() || !Function->getTypeSourceInfo() ||
+        Function->getType().isNull() ||
+        !templateParametersShape(D->getTemplateParameters(), templateSourceParameterDepth(D)))
+      return false;
+    for (const auto *Parameter : Function->parameters()) {
+      A.chargeExpansion(1, Parameter->getLocation());
+      if (!owned(Parameter) || Parameter->isInvalidDecl() || Parameter->hasAttrs() ||
+          Parameter->hasUnparsedDefaultArg())
+        return false;
+    }
+    return true;
+  }
+  bool genericFriendTemplateShape(const FriendDecl *D) {
+    if (!owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
+        D->isUnsupportedFriend() || D->getFriendType() || D->isPackExpansion() ||
+        D->getFriendTypeNumTemplateParameterLists())
+      return false;
+    const auto *Template = dyn_cast_or_null<FunctionTemplateDecl>(D->getFriendDecl());
+    return friendFunctionTemplateDeclarationShape(Template) &&
+           Template->getLexicalDeclContext() == D->getDeclContext();
+  }
+  bool friendTemplateSourceIdentity(const FriendDecl *D) {
+    auto Found = FriendDeclarationSources.find(D);
+    const auto *Template = D ? dyn_cast_or_null<FunctionTemplateDecl>(D->getFriendDecl()) : nullptr;
+    auto Event = FriendTemplateSources.find(Template);
+    if (Found == FriendDeclarationSources.end() || Event == FriendTemplateSources.end() ||
+        !genericFriendTemplateShape(D))
+      return false;
+    const auto *Written = Found->second->Written;
+    const auto &Source = *Event->second;
+    const auto *IncomingTemplate = Source.Incoming->getDescribedFunctionTemplate();
+    const auto *SelectedTemplate = Source.Selected->getDescribedFunctionTemplate();
+    const auto *Parent = cast<CXXRecordDecl>(D->getDeclContext());
+    const auto *Body = classBodyRecord(Parent);
+    if (!genericFriendTemplateShape(Written) || !WrittenFriendDeclarations.count(Written) ||
+        Found->second->Declaration != D || Source.Template != Template ||
+        Source.GrantingClass != Parent || IncomingTemplate != Written->getFriendDecl() ||
+        !owned(Source.Incoming) || !owned(Source.Selected) || !owned(SelectedTemplate) ||
+        Source.Incoming->isInvalidDecl() || Source.Selected->isInvalidDecl() ||
+        !owned(Body) || Body->getCanonicalDecl() !=
+            cast<CXXRecordDecl>(Written->getDeclContext())->getCanonicalDecl() ||
+        D->getFriendLoc() != Written->getFriendLoc() ||
+        Template->getDeclName() != Source.Incoming->getDeclName() ||
+        (Source.Selected != Source.Incoming && !normalizedFriendSourceReady(Source.Incoming)))
+      return false;
+    bool Selected = false;
+    unsigned Count = 0;
+    for (const auto *Declaration : Source.Incoming->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (++Count > 64)
+        return false;
+      Selected |= Declaration == Source.Selected;
+    }
+    // FT origin metadata is shared across redeclarations. A declaration-only
+    // friend can acquire it later, so this exact event is the source authority.
+    return Selected && SelectedTemplate->getCanonicalDecl() == IncomingTemplate->getCanonicalDecl();
+  }
+  void indexFriendTemplateIdentities() {
+    for (const auto &[Template, Source] : FriendTemplateSources) {
+      auto Declaration = FriendTemplateDeclarations.find(Template);
+      if (Declaration == FriendTemplateDeclarations.end() ||
+          !friendTemplateSourceIdentity(Declaration->second)) {
+        A.reject(Template->getLocation(), "friend template source",
+                 "Each copied primary requires its exact written friend and class substitution.");
+        return;
+      }
+      indexTemplatePackSources(Template);
+      const auto *Canonical = Template->getCanonicalDecl();
+      // A genuinely written namespace/friend declaration can share this
+      // canonical template. Preserve that independently indexed identity.
+      if (IndependentTemplateIdentities.count(Canonical))
+        continue;
+      auto CanonicalEvent = FriendTemplateSources.find(Canonical);
+      if (CanonicalEvent == FriendTemplateSources.end()) {
+        A.reject(Template->getLocation(), "friend template canonical source",
+                 "The canonical copied primary must retain its own substitution event.");
+        return;
+      }
+      const auto *Origin = CanonicalEvent->second->Incoming->getDescribedFunctionTemplate();
+      auto Ordinal = Origin ? A.TemplateOrdinals.find(Origin->getCanonicalDecl())
+                            : A.TemplateOrdinals.end();
+      if (Ordinal == A.TemplateOrdinals.end()) {
+        A.reject(Template->getLocation(), "friend template source ordinal",
+                 "The actual canonical copy requires a previously indexed written primary.");
+        return;
+      }
+      const auto *Owner = CanonicalEvent->second->GrantingClass->getCanonicalDecl();
+      auto Inserted = A.TemplateOrdinals.emplace(Canonical, Ordinal->second);
+      auto Identity = A.FriendTemplateIdentityOwners.emplace(Canonical, Owner);
+      if ((!Inserted.second && Inserted.first->second != Ordinal->second) ||
+          (!Identity.second && Identity.first->second != Owner)) {
+        A.reject(Template->getLocation(), "friend template identity conflict",
+                 "A copied canonical primary must keep its proven source ordinal and outer class.");
+        return;
+      }
+    }
+    // Corroborate a shared origin against the whole exact-event family, never
+    // against a declaration-only friend's final null/non-null state.
+    for (const auto &[Template, Source] : FriendTemplateSources) {
+      const auto *Origin = Template->getInstantiatedFromMemberTemplate();
+      if (!Origin)
+        continue;
+      bool Related = false;
+      auto Family = FriendTemplateFamilies.find(Template->getCanonicalDecl());
+      if (Family != FriendTemplateFamilies.end())
+        for (const auto *Other : Family->second) {
+          A.chargeExpansion(1, Other->Template->getLocation());
+          for (const auto *Function : {Other->Incoming, Other->Selected})
+            if (const auto *Pattern = Function->getDescribedFunctionTemplate())
+              Related |= Pattern->getCanonicalDecl() == Origin->getCanonicalDecl();
+        }
+      if (!Related) {
+        A.reject(Template->getLocation(), "friend template shared origin",
+                 "Shared origin metadata requires a matching actual declaration event.");
+        return;
+      }
+    }
+  }
+  bool friendTemplateBodyIdentity(const FunctionTemplateBodySource &Source) {
+    const auto *Function = Source.Function;
+    const auto *Compatible = Source.Compatible;
+    const auto *Primary = Function->getPrimaryTemplate();
+    if (!concreteFreeFunctionTemplate(Function) || !owned(Function) ||
+        Function->isInvalidDecl() || !Function->doesThisDeclarationHaveABody() ||
+        !owned(Compatible) || Compatible->isInvalidDecl() || !owned(Source.Pattern) ||
+        Source.Pattern->isInvalidDecl() || !Source.Pattern->doesThisDeclarationHaveABody() ||
+        !Primary || Compatible->getCanonicalDecl() != Primary->getCanonicalDecl() ||
+        !Compatible->isCompatibleWithDefinition())
+      return false;
+    const auto *Definition = Compatible->getTemplatedDecl()->getDefinition();
+    const auto *Context = Definition ? Definition->getLexicalDeclContext()
+                                     : Compatible->getLexicalDeclContext();
+    if (Source.LexicalContext != Context)
+      return false;
+    // Follow only real origin edges to the selected body. The compatible
+    // declaration's actual lexical context is retained independently above.
+    std::set<const FunctionTemplateDecl *> Seen;
+    auto *Pattern = Primary;
+    while (Pattern && !Pattern->isMemberSpecialization()) {
+      A.chargeExpansion(1, Pattern->getLocation());
+      if (Seen.size() >= 64 || !Seen.insert(Pattern->getCanonicalDecl()).second || !owned(Pattern))
+        return false;
+      const auto *Next = Pattern->getInstantiatedFromMemberTemplate();
+      if (!Next)
+        break;
+      Pattern = Next;
+    }
+    if (!Pattern)
+      return false;
+    const auto *Selected = Pattern->getTemplatedDecl()->getDefinition();
+    return Selected == Source.Pattern;
+  }
+
+  bool copiedFriendTemplate(const FriendDecl *D) {
+    if (!D || !isa_and_nonnull<FunctionTemplateDecl>(D->getFriendDecl()))
+      return false;
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    const auto *Body = classBodyRecord(Parent);
+    return Parent && Body && Parent->getCanonicalDecl() != Body->getCanonicalDecl();
+  }
+  bool checkFriendTemplateFunction(const FunctionDecl *Function) {
+    const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+    if (!concreteFreeFunctionTemplate(Function) || !Primary ||
+        !FriendTemplateCanonicals.count(Primary->getCanonicalDecl()))
+      return true;
+    if (!CheckedFriendTemplateFunctions.insert(Function).second)
+      return true;
+    unsigned Count = 0;
+    for (const auto *Declaration : Primary->redecls()) {
+      const auto *Template = cast<FunctionTemplateDecl>(Declaration);
+      A.chargeExpansion(1, Template->getLocation());
+      if (++Count > 64) {
+        A.reject(Function->getLocation(), "friend template declaration depth",
+                 "A selected friend template needs bounded source declarations.");
+        return true;
+      }
+      if (auto Source = FriendTemplateDeclarations.find(Template);
+          Source != FriendTemplateDeclarations.end()) {
+        if (!friendTemplateSourceIdentity(Source->second)) {
+          A.reject(Function->getLocation(), "selected friend template source",
+                   "Each selected copied primary must retain its actual source declaration.");
+          return true;
+        }
+        const auto *Written = FriendDeclarationSources.find(Source->second)->second->Written;
+        if (!traverseWrittenFriendSignature(Written) ||
+            !traverseWrittenFriendSignature(Source->second))
+          return false;
+      } else if (auto Written = WrittenFriendTemplates.find(Template);
+                 Written != WrittenFriendTemplates.end()) {
+        if (!traverseWrittenFriendSignature(Written->second))
+          return false;
+      } else if (isa<CXXRecordDecl>(Template->getLexicalDeclContext())) {
+        A.reject(Function->getLocation(), "missing friend template declaration",
+                 "A friend primary requires its written or exact copied declaration.");
+        return true;
+      }
+    }
+    if (!Function->doesThisDeclarationHaveABody() ||
+        Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+      return true;
+    auto Body = TemplateBodySources.find(Function);
+    if (Body == TemplateBodySources.end() || !friendTemplateBodyIdentity(*Body->second)) {
+      A.reject(Function->getLocation(), "friend template body source",
+               "The selected body requires its exact compatible declaration, pattern and lexical context.");
+      return true;
+    }
+    if (const auto *Parent = dyn_cast<CXXRecordDecl>(Body->second->LexicalContext))
+      if (!owned(Parent) || Parent->isInvalidDecl() || Parent->hasAttrs() ||
+          !Parent->getIdentifier() || Parent->isUnion() || Parent->isLocalClass() ||
+          Parent->isLambda() || !classOwnerScope(Parent->getDeclContext()) ||
+          !checkClassFullOwnerSources(Parent)) {
+        A.reject(Function->getLocation(), "friend template body owner",
+                 "The instantiated body needs its actual supported granting-class source.");
+        return true;
+      }
+    return true;
+  }
+
+  bool friendClassTemplateDeclarationShape(const ClassTemplateDecl *D) {
+    if (!owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
+        !D->getFriendObjectKind() || D->hasAssociatedConstraints() ||
+        !classOwnerScope(D->getDeclContext()) ||
+        !templateParametersShape(D->getTemplateParameters(), templateSourceParameterDepth(D)))
+      return false;
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getLexicalDeclContext());
+    const auto *Pattern = D->getTemplatedDecl();
+    return owned(Parent) && !Parent->isInvalidDecl() && !Parent->hasAttrs() &&
+           Parent->getIdentifier() && !Parent->isUnion() && !Parent->isLocalClass() &&
+           !Parent->isLambda() && classOwnerScope(Parent->getDeclContext()) &&
+           owned(Pattern) && !Pattern->isInvalidDecl() && !Pattern->hasAttrs() &&
+           Pattern->getKind() == Decl::CXXRecord && Pattern->getIdentifier() &&
+           !Pattern->isUnion() && !Pattern->isLocalClass() && !Pattern->isLambda() &&
+           !Pattern->isCompleteDefinition() && !Pattern->getNumTemplateParameterLists() &&
+           Pattern->getDescribedClassTemplate() == D &&
+           Pattern->getLexicalDeclContext() == Parent &&
+           Pattern->getDeclContext() == D->getDeclContext() &&
+           (!Pattern->getQualifierLoc() ||
+            A.S.owns(A.Sources, Pattern->getQualifierLoc().getBeginLoc()));
+  }
+  bool genericFriendClassTemplateShape(const FriendDecl *D) {
+    if (!owned(D) || D->isInvalidDecl() || D->hasAttrs() || D->isUnsupportedFriend() ||
+        D->isPackExpansion() || D->getFriendType() ||
+        D->getFriendTypeNumTemplateParameterLists())
+      return false;
+    const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(D->getFriendDecl());
+    return friendClassTemplateDeclarationShape(Template) &&
+           Template->getLexicalDeclContext() == D->getDeclContext();
+  }
+  bool copiedFriendClassTemplate(const FriendDecl *D) {
+    if (!D || !isa_and_nonnull<ClassTemplateDecl>(D->getFriendDecl()))
+      return false;
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    const auto *Body = classBodyRecord(Parent);
+    return Parent && Body && Parent->getCanonicalDecl() != Body->getCanonicalDecl();
+  }
+  // Pinned Sema skips this language check in dependent granting contexts.
+  // Run on the exact lexical original before any dependent-source deferral.
+  bool checkWrittenFriendClassDefaults(const ClassTemplateDecl *Template) {
+    if (!Template || !Template->getTemplateParameters() ||
+        Template->getTemplateParameters()->size() > 64)
+      return false;
+    for (const auto *Parameter : *Template->getTemplateParameters()) {
+      A.chargeExpansion(1, Parameter->getLocation());
+      const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
+      const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(Parameter);
+      if ((Type && Type->hasDefaultArgument() && !Type->defaultArgumentWasInherited()) ||
+          (Value && Value->hasDefaultArgument() && !Value->defaultArgumentWasInherited())) {
+        A.reject(Parameter->getLocation(), "friend class template default",
+                 "A friend class-template declaration cannot introduce default template arguments.",
+                 "TR0202");
+        return false;
+      }
+    }
+    return true;
+  }
+  bool friendClassSourceIdentity(const FriendDecl *D) {
+    auto Pair = FriendDeclarationSources.find(D);
+    const auto *Template = D ? dyn_cast_or_null<ClassTemplateDecl>(D->getFriendDecl()) : nullptr;
+    auto Event = FriendClassSources.find(Template);
+    if (Pair == FriendDeclarationSources.end() || Event == FriendClassSources.end() ||
+        !genericFriendClassTemplateShape(D))
+      return false;
+    const auto &Source = *Event->second;
+    const auto *Written = Pair->second->Written;
+    const auto *Parent = cast<CXXRecordDecl>(D->getDeclContext());
+    const auto *Body = classBodyRecord(Parent);
+    if (Pair->second->Declaration != D || !genericFriendClassTemplateShape(Written) ||
+        !WrittenFriendDeclarations.count(Written) || Source.Template != Template ||
+        Source.Written != Written->getFriendDecl() || Source.GrantingClass != Parent ||
+        Parent->isDependentContext() || !owned(Body) ||
+        Body->getCanonicalDecl() !=
+            cast<CXXRecordDecl>(Written->getDeclContext())->getCanonicalDecl() ||
+        D->getFriendLoc() != Written->getFriendLoc() ||
+        Template->getDeclName() != Source.Written->getDeclName() ||
+        Template->getDeclContext() != Source.Context ||
+        Template->getPreviousDecl() != Source.Previous ||
+        Template->getTemplateParameters()->size() != Source.Written->getTemplateParameters()->size())
+      return false;
+    const auto *Previous = Source.Previous;
+    if (!Previous)
+      return !Template->getTemplatedDecl()->getQualifier() &&
+             isa<TranslationUnitDecl, NamespaceDecl>(Source.Context) &&
+             Template == Template->getCanonicalDecl();
+    return owned(Previous) && !Previous->isInvalidDecl() &&
+           Previous->getDeclContext()->getRedeclContext() == Source.Context->getRedeclContext() &&
+           Previous->getCanonicalDecl() == Template->getCanonicalDecl() &&
+           Previous->getDeclName() == Template->getDeclName() &&
+           Template->getTemplatedDecl()->getPreviousDecl() == Previous->getTemplatedDecl();
+  }
+  bool admittedFriendClassDeclaration(const ClassTemplateDecl *Template) {
+    if (!friendClassTemplateDeclarationShape(Template))
+      return false;
+    if (auto Original = WrittenFriendClasses.find(Template); Original != WrittenFriendClasses.end())
+      return !copiedFriendClassTemplate(Original->second) &&
+             checkWrittenFriendClassDefaults(Template);
+    auto Copy = FriendClassDeclarations.find(Template);
+    return Copy != FriendClassDeclarations.end() && friendClassSourceIdentity(Copy->second);
+  }
+  void indexFriendClassSources() {
+    for (const auto &[Template, Source] : FriendClassSources) {
+      auto Pair = FriendClassDeclarations.find(Template);
+      if (Pair == FriendClassDeclarations.end() || !friendClassSourceIdentity(Pair->second)) {
+        A.reject(Template->getLocation(), "friend class template source",
+                 "A copied class target requires its exact written friend, grant and lookup result.");
+        return;
+      }
+      if (!checkWrittenFriendClassDefaults(Source->Written))
+        return;
+      indexTemplatePackSources(Template);
+    }
+  }
+  bool friendClassDefinitionShape(const ClassTemplateDecl *Template) {
+    if (!Template || !FriendClassCanonicals.count(Template->getCanonicalDecl()))
+      return true;
+    // A forward friend never owns the target's body. Check the real definition
+    // on the shared target chain without importing the granting source's slots.
+    const auto *Record = Template->getTemplatedDecl()->getDefinition();
+    if (!Record)
+      return true;
+    const auto *Definition = Record->getDescribedClassTemplate();
+    return owned(Definition) && !Definition->getFriendObjectKind() &&
+           Definition->getCanonicalDecl() == Template->getCanonicalDecl() &&
+           classTemplateDeclarationShape(Definition) && WrittenClassTemplates.count(Definition);
+  }
+  bool traverseFriendClassTemplateSource(const FriendDecl *D) {
+    if (!genericFriendClassTemplateShape(D)) {
+      A.reject(D->getFriendLoc(), "friend class template",
+               "An owned class-template target in an admitted granting class is required.");
+      return true;
+    }
+    if (!CheckedFriendDeclarations.insert(D).second)
+      return true;
+    const auto *Template = cast<ClassTemplateDecl>(D->getFriendDecl());
+    auto Pair = FriendDeclarationSources.find(D);
+    if (Pair != FriendDeclarationSources.end()) {
+      if (!friendClassSourceIdentity(D)) {
+        A.reject(D->getFriendLoc(), "copied friend class template",
+                 "Each substituted grant requires its exact written and target events.");
+        return true;
+      }
+      if (!traverseFriendClassTemplateSource(Pair->second->Written))
+        return false;
+    } else if (!WrittenFriendClasses.count(Template) || copiedFriendClassTemplate(D)) {
+      A.reject(D->getFriendLoc(), "missing friend class template source",
+               "A class friend requires its written declaration or exact copied event.");
+      return true;
+    } else if (!checkWrittenFriendClassDefaults(Template)) {
+      return true;
+    }
+    if (!A.S.Diagnostics.empty())
+      return true;
+    if (DefinitionFrames.size() >= 64) {
+      A.reject(D->getFriendLoc(), "friend class source depth",
+               "Friend class-template headers require a bounded source context.");
+      return true;
+    }
+    auto *SavedFunction = CurrentFunction;
+    auto *SavedMethod = CurrentMethod;
+    auto *SavedField = CurrentDefaultField;
+    auto SavedOwner = ImplicitInitializerOwner;
+    auto *SavedParameterSource = TemplateParameterTypeSource;
+    CurrentFunction = nullptr;
+    CurrentMethod = nullptr;
+    CurrentDefaultField = nullptr;
+    TemplateParameterTypeSource = nullptr;
+    ImplicitInitializerOwner = D->getFriendLoc();
+    DefinitionFrames.push_back({D, nullptr, nullptr, TemplateFrames.size()});
+    auto Restore = llvm::make_scope_exit([&] {
+      DefinitionFrames.pop_back();
+      CurrentFunction = SavedFunction;
+      CurrentMethod = SavedMethod;
+      CurrentDefaultField = SavedField;
+      ImplicitInitializerOwner = SavedOwner;
+      TemplateParameterTypeSource = SavedParameterSource;
+    });
+    // The actual copy has already substituted outer levels. Its own inner
+    // parameters stay lazy, while every nondependent written type is checked.
+    return traverseTemplateParameterSource(Template->getTemplateParameters(), true) &&
+           (!Template->getTemplatedDecl()->getQualifier() ||
+            Template->getTemplatedDecl()->getQualifier()->isDependent() ||
+            TraverseNestedNameSpecifierLoc(Template->getTemplatedDecl()->getQualifierLoc()));
+  }
+
+  bool genericFriendTypeShape(const FriendDecl *D) {
+    if (!owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
+        D->isUnsupportedFriend() || D->isPackExpansion() ||
+        D->getFriendTypeNumTemplateParameterLists() || D->getFriendDecl())
+      return false;
+    const auto *Type = D->getFriendType();
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    return Type && !Type->getType().isNull() &&
+           A.S.owns(A.Sources, Type->getTypeLoc().getBeginLoc()) &&
+           owned(Parent) && !Parent->isInvalidDecl() && !Parent->hasAttrs() &&
+           Parent->getIdentifier() && !Parent->isUnion() && !Parent->isLambda() &&
+           !Parent->isLocalClass() && classOwnerScope(Parent->getDeclContext());
+  }
+  bool copiedFriendType(const FriendDecl *D) {
+    if (!D || !D->getFriendType())
+      return false;
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    const auto *Body = classBodyRecord(Parent);
+    return Parent && Body && Body->getCanonicalDecl() != Parent->getCanonicalDecl();
+  }
+  bool genericFriendDeclarationShape(const FriendDecl *D) {
+    return genericFriendFunctionShape(D) || genericFriendTypeShape(D) ||
+           genericFriendTemplateShape(D) || genericFriendClassTemplateShape(D);
+  }
+  bool friendTypeSourceIdentity(const FriendDecl *D) {
+    auto Found = FriendDeclarationSources.find(D);
+    if (Found == FriendDeclarationSources.end() || !genericFriendTypeShape(D))
+      return false;
+    const auto *Written = Found->second->Written;
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    const auto *Body = classBodyRecord(Parent);
+    return Found->second->Declaration == D && genericFriendTypeShape(Written) &&
+           WrittenFriendDeclarations.count(Written) && owned(Body) &&
+           D->getFriendLoc() == Written->getFriendLoc() &&
+           Body->getCanonicalDecl() ==
+               cast<CXXRecordDecl>(Written->getDeclContext())->getCanonicalDecl();
+  }
+  bool traverseFriendTypeSource(const FriendDecl *D) {
+    if (!genericFriendTypeShape(D)) {
+      A.reject(D->getFriendLoc(), "friend type source",
+               "An ordinary source-owned friend type and granting class are required.");
+      return true;
+    }
+    auto Found = FriendDeclarationSources.find(D);
+    if (Found != FriendDeclarationSources.end()) {
+      if (!friendTypeSourceIdentity(D)) {
+        A.reject(D->getFriendLoc(), "copied friend type source",
+                 "A substituted friend type requires its exact written declaration and selected class body.");
+        return true;
+      }
+    } else if (copiedFriendType(D) || !WrittenFriendDeclarations.count(D)) {
+      // Types have no member-specialization function metadata to catch a lost
+      // event. The copied granting body must not fall through ordinary friends.
+      A.reject(D->getFriendLoc(), "missing friend type source",
+               "A copied type friend requires its retained declaration event.");
+      return true;
+    }
+    if (!CheckedFriendDeclarations.insert(D).second)
+      return true;
+    if (Found != FriendDeclarationSources.end() &&
+        !traverseFriendTypeSource(Found->second->Written))
+      return false;
+    if (!A.S.Diagnostics.empty())
+      return true;
+    const auto *Info = D->getFriendType();
+    const auto Type = Info->getType();
+    if (Type->isDependentType() || Type->isInstantiationDependentType()) {
+      if (!D->getDeclContext()->isDependentContext())
+        A.reject(D->getFriendLoc(), "unresolved friend type",
+                 "A concrete granting class requires its actual resolved friend type.");
+      return true;
+    }
+    if (DefinitionFrames.size() >= 64) {
+      A.reject(D->getFriendLoc(), "friend type depth", "Friend type source exceeds the bounded context depth.");
+      return true;
+    }
+    auto *SavedFunction = CurrentFunction;
+    auto *SavedMethod = CurrentMethod;
+    auto *SavedField = CurrentDefaultField;
+    auto SavedOwner = ImplicitInitializerOwner;
+    auto *SavedParameterSource = TemplateParameterTypeSource;
+    CurrentFunction = nullptr;
+    CurrentMethod = nullptr;
+    CurrentDefaultField = nullptr;
+    TemplateParameterTypeSource = nullptr;
+    ImplicitInitializerOwner = D->getFriendLoc();
+    DefinitionFrames.push_back({D, nullptr, nullptr, TemplateFrames.size()});
+    auto Restore = llvm::make_scope_exit([&] {
+      DefinitionFrames.pop_back();
+      CurrentFunction = SavedFunction;
+      CurrentMethod = SavedMethod;
+      CurrentDefaultField = SavedField;
+      ImplicitInitializerOwner = SavedOwner;
+      TemplateParameterTypeSource = SavedParameterSource;
+    });
+    A.type(Type, D->getFriendLoc(), true);
+    if (!A.S.Diagnostics.empty())
+      return true;
+    if (!TraverseTypeLoc(Info->getTypeLoc()))
+      return false;
+    // RAV also visits an elaborated friend type's owned namespace tag.
+    if (const auto *Elaborated = Type->getAs<ElaboratedType>())
+      return TraverseDecl(Elaborated->getOwnedTagDecl());
+    return true;
+  }
+
   bool classTemplateMembers(const CXXRecordDecl *D) {
     for (const auto *Member : D->decls()) {
       A.chargeExpansion(1, Member->getLocation());
@@ -1875,10 +2956,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                 StaticAssertDecl, AccessSpecDecl>(Member) &&
            !classTemplateStaticDataShape(dyn_cast<VarDecl>(Member)) &&
            !classTemplateFunctionShape(dyn_cast<CXXMethodDecl>(Member)) &&
+           !genericFriendDeclarationShape(dyn_cast<FriendDecl>(Member)) &&
            !memberTemplateShape(dyn_cast<FunctionTemplateDecl>(Member)) &&
            !memberAliasShape(dyn_cast<TypeAliasTemplateDecl>(Member)) &&
            !classTemplateShape(dyn_cast<ClassTemplateDecl>(Member)) &&
            !classPartialShape(dyn_cast<ClassTemplatePartialSpecializationDecl>(Member)) &&
+           !classFullBodyShape(dyn_cast<ClassTemplateSpecializationDecl>(Member)) &&
+           !ordinaryClassBodyShape(dyn_cast<CXXRecordDecl>(Member)) &&
            !(isa<ClassTemplateSpecializationDecl>(Member) &&
              !isa<ClassTemplatePartialSpecializationDecl>(Member) &&
              cast<ClassTemplateSpecializationDecl>(Member)->isExplicitSpecialization() &&
@@ -1895,6 +2979,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     return true;
   }
   bool classTemplateDeclarationShape(const ClassTemplateDecl *D) {
+    if (D && D->getFriendObjectKind() && isa<CXXRecordDecl>(D->getLexicalDeclContext()))
+      return admittedFriendClassDeclaration(D);
     if (!D || !owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
         D->getFriendObjectKind() || D->hasAssociatedConstraints() ||
         !classOwnerScope(D->getDeclContext()) ||
@@ -1983,6 +3069,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return writtenOwnClassPattern(Current);
       const auto *Parent = dyn_cast<CXXRecordDecl>(Current->getDeclContext());
       if (!Next) {
+        if (ordinaryCopiedBody(Parent))
+          return writtenOwnClassPattern(Current);
         const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Parent);
         return !Instance || isa<ClassTemplatePartialSpecializationDecl>(Instance) ||
                Instance->isExplicitSpecialization() || writtenOwnClassPattern(Current);
@@ -1992,7 +3080,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           templateSourceParameters(Current)->size() != templateSourceParameters(Next)->size())
         return false;
       const auto *NextParent = dyn_cast<CXXRecordDecl>(Next->getDeclContext());
-      const auto *Selected = classDefinitionRecord(classTemplatePattern(Parent));
+      const auto *Selected = classBodyRecord(Parent);
       if (!NextParent || (Parent->getCanonicalDecl() != NextParent->getCanonicalDecl() &&
           (!Selected || Selected->getCanonicalDecl() != NextParent->getCanonicalDecl())))
         return false;
@@ -2025,7 +3113,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   bool classTemplateShape(const ClassTemplateDecl *D) {
     return classTemplateDeclarationShape(D) && classPatternOriginShape(D) &&
-           classPatternBodyShape(D);
+           friendClassDefinitionShape(D) && classPatternBodyShape(D);
   }
   bool classPartialShape(const ClassTemplatePartialSpecializationDecl *D) {
     // The primary is checked structurally here: enumerating its members would
@@ -2052,6 +3140,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   bool functionTemplateShape(const FunctionTemplateDecl *D) {
     if (D && isa<CXXMethodDecl>(D->getTemplatedDecl()))
       return memberTemplateShape(D);
+    if (D && isa<CXXRecordDecl>(D->getLexicalDeclContext())) {
+      if (!friendFunctionTemplateDeclarationShape(D) ||
+          !A.TemplateOrdinals.count(D->getCanonicalDecl()))
+        return false;
+      if (WrittenFriendTemplates.count(D))
+        return true;
+      auto Source = FriendTemplateDeclarations.find(D);
+      return Source != FriendTemplateDeclarations.end() && friendTemplateSourceIdentity(Source->second);
+    }
     if (!D || !owned(D) || D->isInvalidDecl() ||
         !isa<TranslationUnitDecl, NamespaceDecl>(D->getDeclContext()) ||
         !isa<TranslationUnitDecl, NamespaceDecl>(D->getLexicalDeclContext()))
@@ -2218,7 +3315,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // Function parameter packs belong to the inner member template, while
         // written outer class parameter lists retain their separate owner.
         FunctionOwner = Template;
-        OuterOwner = classTemplatePattern(Method->getParent());
+        OuterOwner = classBodyPackOwner(Method->getParent());
       }
     }
     A.chargeExpansion(1 + Function->getNumParams(), Function->getLocation());
@@ -2235,7 +3332,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       recordFunctionPacks(Function->getTemplatedDecl(), Template);
     } else if (const auto *Variable = variablePatternDecl(Template)) {
       const auto *Parent = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
-      const auto *Outer = Parent ? classTemplatePattern(Parent) : Template;
+      const auto *Outer = Parent ? classBodyPackOwner(Parent) : Template;
       if (Outer)
         recordOuterPacks(Variable, Outer);
     } else if (const auto *Pattern = classPatternRecord(Template)) {
@@ -2266,10 +3363,37 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         break;
       if (concreteFunctionTemplate(Owner)) {
         Primary = Owner->getPrimaryTemplate();
+        if (FriendTemplateCanonicals.count(Owner->getPrimaryTemplate()->getCanonicalDecl())) {
+          auto Body = TemplateBodySources.find(Owner);
+          if (Body == TemplateBodySources.end() || !friendTemplateBodyIdentity(*Body->second)) {
+            Primary = nullptr;
+            break;
+          }
+          Primary = Body->second->Pattern->getDescribedFunctionTemplate();
+        }
         break;
       }
       if ((Primary = classFunctionPattern(Owner)))
         break;
+      if (const auto *Full = copiedFullClassFunction(Owner)) {
+        Primary = classBodyPackOwner(Full);
+        break;
+      }
+      if (concreteFriendFunction(Owner)) {
+        auto Source = FriendFunctionSources.find(Owner);
+        if (Source == FriendFunctionSources.end())
+          break;
+        const auto *Selected = Source->second->Selected;
+        const auto *Parent = dyn_cast<CXXRecordDecl>(Selected->getLexicalDeclContext());
+        if (!Parent)
+          return; // A selected namespace body has no class pack level.
+        Primary = classBodyPackOwner(Parent);
+        break;
+      }
+      if (const auto *Ordinary = copiedOrdinaryClassFunction(Owner)) {
+        Primary = classBodyPackOwner(Ordinary);
+        break;
+      }
       Function = Owner;
     }
     const auto *Pattern = Method->getInstantiatedFromMemberFunction();
@@ -2794,6 +3918,193 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
+  void indexFriendSources(llvm::ArrayRef<FriendFunctionSource> Functions,
+                          llvm::ArrayRef<FriendDeclarationSource> Declarations,
+                          llvm::ArrayRef<FriendFunctionTemplateSource> Templates,
+                          llvm::ArrayRef<FunctionTemplateBodySource> Bodies,
+                          llvm::ArrayRef<FriendClassTemplateSource> Classes) {
+    for (const auto &Source : Functions) {
+      A.chargeExpansion(1, Source.Function->getLocation());
+      auto Inserted = FriendFunctionSources.emplace(Source.Function, &Source);
+      if (!Inserted.second) {
+        const auto &Previous = *Inserted.first->second;
+        if (Previous.Incoming != Source.Incoming || Previous.Selected != Source.Selected ||
+            Previous.GrantingClass != Source.GrantingClass)
+          A.reject(Source.Function->getLocation(), "friend source conflict",
+                   "A friend function needs one exact incoming, selected and granting identity.");
+      }
+      FriendCanonicalFunctions.insert(Source.Function->getCanonicalDecl());
+    }
+    for (const auto &Source : Templates) {
+      A.chargeExpansion(1, Source.Template->getLocation());
+      FriendTemplateCanonicals.insert(Source.Template->getCanonicalDecl());
+      auto Inserted = FriendTemplateSources.emplace(Source.Template, &Source);
+      if (!Inserted.second) {
+        const auto &Previous = *Inserted.first->second;
+        if (Previous.Incoming != Source.Incoming || Previous.Selected != Source.Selected ||
+            Previous.GrantingClass != Source.GrantingClass)
+          A.reject(Source.Template->getLocation(), "friend template source conflict",
+                   "Each actual primary requires one exact substitution identity.");
+      } else {
+        FriendTemplateFamilies[Source.Template->getCanonicalDecl()].push_back(&Source);
+      }
+    }
+    for (const auto &Source : Bodies) {
+      A.chargeExpansion(1, Source.Function->getLocation());
+      auto Inserted = TemplateBodySources.emplace(Source.Function, &Source);
+      if (!Inserted.second) {
+        const auto &Previous = *Inserted.first->second;
+        if (Previous.Compatible != Source.Compatible || Previous.Pattern != Source.Pattern ||
+            Previous.LexicalContext != Source.LexicalContext)
+          A.reject(Source.Function->getLocation(), "function template body source conflict",
+                   "Each actual body requires one compatible declaration and lexical context.");
+      }
+    }
+    for (const auto &Source : Classes) {
+      A.chargeExpansion(1, Source.Template->getLocation());
+      FriendClassCanonicals.insert(Source.Template->getCanonicalDecl());
+      auto Inserted = FriendClassSources.emplace(Source.Template, &Source);
+      if (!Inserted.second) {
+        const auto &Previous = *Inserted.first->second;
+        if (Previous.Written != Source.Written || Previous.GrantingClass != Source.GrantingClass ||
+            Previous.Context != Source.Context || Previous.Previous != Source.Previous)
+          A.reject(Source.Template->getLocation(), "friend class source conflict",
+                   "Each copied target requires one exact granting source and lookup result.");
+      }
+    }
+    for (const auto &Source : Declarations) {
+      A.chargeExpansion(1, Source.Declaration->getFriendLoc());
+      auto Inserted = FriendDeclarationSources.emplace(Source.Declaration, &Source);
+      if (!Inserted.second && Inserted.first->second->Written != Source.Written)
+        A.reject(Source.Declaration->getFriendLoc(), "friend declaration conflict",
+                 "Each copied friend needs its exact written declaration.");
+      if (const auto *Template = dyn_cast_or_null<FunctionTemplateDecl>(Source.Declaration->getFriendDecl())) {
+        auto Target = FriendTemplateDeclarations.emplace(Template, Source.Declaration);
+        if (!Target.second && Target.first->second != Source.Declaration)
+          A.reject(Source.Declaration->getFriendLoc(), "friend template target conflict",
+                   "The copied primary must pair with its exact friend declaration.");
+      }
+      if (const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Source.Declaration->getFriendDecl())) {
+        auto Target = FriendClassDeclarations.emplace(Template, Source.Declaration);
+        if (!Target.second && Target.first->second != Source.Declaration)
+          A.reject(Source.Declaration->getFriendLoc(), "friend class target conflict",
+                   "The copied class template must pair with its exact friend declaration.");
+      }
+      const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration->getFriendDecl());
+      if (Function) {
+        auto Target = FriendFunctionDeclarations.emplace(Function, Source.Declaration);
+        if (!Target.second && Target.first->second != Source.Declaration)
+          A.reject(Source.Declaration->getFriendLoc(), "friend target conflict",
+                   "The function event must pair with the exact copied friend target.");
+      }
+    }
+  }
+  bool normalizedFriendSourceReady(const FunctionDecl *Incoming) {
+    const auto *Info = Incoming->getTypeSourceInfo();
+    const auto Prototype = Info ? Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>()
+                                : FunctionProtoTypeLoc();
+    if (!Prototype || Incoming->getType()->isInstantiationDependentType() ||
+        Info->getType()->isInstantiationDependentType() ||
+        !standardExceptionSpecification(Prototype.getTypePtr()) ||
+        !standardExceptionSpecification(Incoming->getType()->getAs<FunctionProtoType>()))
+      return false;
+    auto ResolvedExpression = [&](const Expr *Expression) {
+      return Expression && A.S.owns(A.Sources, Expression->getBeginLoc()) &&
+             !Expression->isTypeDependent() && !Expression->isValueDependent() &&
+             !Expression->isInstantiationDependent();
+    };
+    if (const auto *Exception = Prototype.getTypePtr()->getNoexceptExpr())
+      if (!ResolvedExpression(Exception))
+        return false;
+    for (const auto *Parameter : Incoming->parameters()) {
+      const auto *Type = Parameter->getTypeSourceInfo();
+      if (!Type || Type->getType()->isInstantiationDependentType())
+        return false; // Array parameter adjustment must not hide its written bound.
+      if (Parameter->hasDefaultArg() &&
+          (Parameter->hasUnparsedDefaultArg() || Parameter->hasUninstantiatedDefaultArg() ||
+           Parameter->hasInheritedDefaultArg() || !ResolvedExpression(Parameter->getDefaultArg())))
+        return false;
+    }
+    if (Incoming->getQualifier() && Incoming->getQualifier()->isDependent())
+      return false;
+    return true;
+  }
+  bool friendSourceIdentity(const FriendDecl *D) {
+    if (D && D->getFriendType())
+      return friendTypeSourceIdentity(D);
+    if (D && isa_and_nonnull<FunctionTemplateDecl>(D->getFriendDecl()))
+      return friendTemplateSourceIdentity(D);
+    auto Found = FriendDeclarationSources.find(D);
+    const auto *Function = D ? dyn_cast_or_null<FunctionDecl>(D->getFriendDecl()) : nullptr;
+    auto Event = FriendFunctionSources.find(Function);
+    if (Found == FriendDeclarationSources.end() || Event == FriendFunctionSources.end() ||
+        !genericFriendFunctionShape(D))
+      return false;
+    const auto &Source = *Found->second;
+    const auto &Substitution = *Event->second;
+    const auto *Written = Source.Written;
+    const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    const auto *Body = classBodyRecord(Parent);
+    if (!genericFriendFunctionShape(Written) ||
+        !WrittenFriendDeclarations.count(Written) || !owned(Body) ||
+        !friendFunctionSourceShape(Substitution.Incoming) ||
+        !friendFunctionSourceShape(Substitution.Selected) ||
+        Source.Declaration != D || Substitution.Function != Function ||
+        Substitution.Incoming != Written->getFriendDecl() ||
+        Substitution.GrantingClass != Parent ||
+        Function->getLexicalDeclContext() != Parent ||
+        Body->getCanonicalDecl() !=
+            cast<CXXRecordDecl>(Written->getDeclContext())->getCanonicalDecl() ||
+        D->getFriendLoc() != Written->getFriendLoc() ||
+        Function->getDeclName() != Substitution.Incoming->getDeclName())
+      return false;
+    // Canonical namespace merging is allowed only after retaining this exact
+    // actual declaration; the canonical first declaration can have no MSI.
+    bool Selected = false;
+    unsigned Count = 0;
+    for (const auto *Declaration : Substitution.Incoming->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (++Count > 64)
+        return false;
+      Selected |= Declaration == Substitution.Selected;
+    }
+    if (!Selected)
+      return false;
+    // The selected signature was substituted by Sema. A different dependent
+    // incoming spelling has no corresponding substituted type event here;
+    // retain the evidence and reject instead of treating it as checked.
+    if (Substitution.Selected != Substitution.Incoming &&
+        !normalizedFriendSourceReady(Substitution.Incoming))
+      return false;
+    if (Substitution.Selected->isThisDeclarationADefinition()) {
+      if (Function->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
+          !Function->getMemberSpecializationInfo() ||
+          Function->getInstantiatedFromMemberFunction() != Substitution.Selected)
+        return false;
+    } else if (Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+               Function->getMemberSpecializationInfo()) {
+      return false;
+    }
+    return true;
+  }
+  void checkFriendSourceIdentities() {
+    for (const auto &[Declaration, Source] : FriendDeclarationSources)
+      if (!friendSourceIdentity(Declaration))
+        A.reject(Declaration->getFriendLoc(), "copied friend source",
+                 "The actual friend requires its exact written source and granting-class identity.");
+    if (!A.S.Diagnostics.empty())
+      return;
+    for (const auto &[Function, Source] : FriendFunctionSources)
+      for (const auto *Pattern : {Source->Incoming, Source->Selected})
+        if (const auto *Parent = dyn_cast<CXXRecordDecl>(Pattern->getLexicalDeclContext()))
+          if (const auto *Owner = classBodyPackOwner(Parent))
+            recordFunctionPacks(Pattern, Owner);
+    for (const auto &[Function, Source] : FriendFunctionSources)
+      if (!FriendFunctionDeclarations.count(Function))
+        A.reject(Function->getLocation(), "friend function source",
+                 "A substituted friend function requires its exact copied friend declaration event.");
+  }
+
   void checkExplicitFunctionInstantiation(
       const ExplicitFunctionInstantiationSource &Source) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Source.Location))
@@ -2857,14 +4168,20 @@ public:
       TraverseVarTemplateSpecializationDecl(const_cast<VarTemplateSpecializationDecl *>(Variable));
       return;
     }
+    const auto *FullStatic = copiedFullClassStatic(Source.Variable);
+    const auto *OrdinaryStatic = copiedOrdinaryClassStatic(Source.Variable);
+    const auto *Body = OrdinaryStatic ? OrdinaryStatic : FullStatic;
     if (!owned(Source.Variable) || !Source.Type || Source.HasAttributes ||
-        !classPatternShape(classStaticDataPattern(Source.Variable)) ||
+        !(Body ? zeroParameterClassBodyShape(Body)
+               : classPatternShape(classStaticDataPattern(Source.Variable))) ||
         !classTemplateStaticDataShape(Source.Variable) ||
         !A.Context.hasSameType(Source.Type->getType(), Source.Variable->getType())) {
       A.reject(Source.Location, "explicit static instantiation",
                "An owned scalar member and matching attribute-free source type are required.");
       return;
     }
+    if (Body && (!checkClassFullOwnerSources(Body) || !A.S.Diagnostics.empty()))
+      return;
     auto *SavedFunction = CurrentFunction;
     auto *SavedMethod = CurrentMethod;
     auto SavedOwner = ImplicitInitializerOwner;
@@ -2879,6 +4196,45 @@ public:
     A.type(Source.Type->getType(), Source.Location);
     if (TraverseNestedNameSpecifierLoc(Source.Qualifier))
       TraverseTypeLoc(Source.Type->getTypeLoc());
+  }
+  void checkExplicitMemberClassInstantiation(
+      const ExplicitMemberClassInstantiationSource &Source) {
+    if (!A.S.coreV2() || !A.S.owns(A.Sources, Source.Location))
+      return;
+    A.chargeExpansion(1, Source.Location);
+    const auto *Qualifier = Source.Qualifier.getNestedNameSpecifier();
+    const auto *Type = Qualifier ? Qualifier->getAsType() : nullptr;
+    const auto *Parent = Type ? Type->getAsCXXRecordDecl() : nullptr;
+    if (!ordinaryMemberClassScope(Source.Record) || Source.Record->isDependentContext() ||
+        !ordinaryClassDeclarationShape(Source.Record) || !owned(Source.Origin) ||
+        Source.Record->getInstantiatedFromMemberClass() != Source.Origin ||
+        Source.HasAttributes || !Qualifier || Qualifier->isDependent() || !Parent ||
+        Parent->getCanonicalDecl() !=
+            cast<CXXRecordDecl>(Source.Record->getDeclContext())->getCanonicalDecl() ||
+        !A.S.owns(A.Sources, Source.Qualifier.getBeginLoc()) ||
+        !A.S.owns(A.Sources, Source.Qualifier.getEndLoc()) ||
+        !A.S.owns(A.Sources, Source.TemplateLocation) ||
+        (Source.ExternLocation.isValid() && !A.S.owns(A.Sources, Source.ExternLocation))) {
+      A.reject(Source.Location, "explicit ordinary member class instantiation",
+               "Each directive needs its exact member/origin and an attribute-free owned qualifier.");
+      return;
+    }
+    const auto Kind = Source.Record->getTemplateSpecializationKind();
+    // If the class definition already exists, pinned Sema only instantiates
+    // its members and can leave the record's earlier implicit kind unchanged.
+    if (Kind != TSK_ExplicitInstantiationDeclaration &&
+        Kind != TSK_ExplicitInstantiationDefinition && Kind != TSK_ExplicitSpecialization &&
+        !(Kind == TSK_ImplicitInstantiation && Source.Record->getDefinition())) {
+      A.reject(Source.Location, "explicit ordinary member class state",
+               "The actual member needs a valid state for its successful explicit directive.");
+      return;
+    }
+    if (!checkClassFullOwnerSources(Source.Record->getDeclContext()) ||
+        !checkOrdinaryClassSource(Source.Record) || !A.S.Diagnostics.empty())
+      return;
+    // Later directives may share and mutate Record. Every written occurrence,
+    // including extern/no-effect directives, still checks its own source.
+    TraverseNestedNameSpecifierLoc(Source.Qualifier);
   }
   bool templateSourceShape(const NamedDecl *D) {
     return functionTemplateShape(dyn_cast_or_null<FunctionTemplateDecl>(D)) ||
@@ -3351,20 +4707,217 @@ public:
     CheckedPartialDeclarations.insert(D);
     return true;
   }
+  bool classFullDeclarationIdentity(const TemplateUseSource &Source) {
+    const auto *D = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Source.Declaration);
+    if (!classFullDeclarationShape(D) || Source.Kind != TemplateSourceKind::ClassFullDeclaration ||
+        Source.Template != D->getSpecializedTemplate() || Source.Location != D->getLocation() ||
+        Source.Type || Source.Underlying || Source.Selection || Source.Instantiation ||
+        Source.WrittenStorageClass || !sameArguments(Source.Canonical, &D->getTemplateArgs()))
+      return false;
+    const auto *Origin = D->getInstantiatedFromMemberClass();
+    if (Source.Origin != Origin || (!Origin && !genericClassFullIdentity(D)))
+      return false;
+    const auto *Written = D->getTemplateArgsAsWritten();
+    if (!Written || !Source.Written ||
+        Source.Written->getLAngleLoc() != Written->getLAngleLoc() ||
+        Source.Written->getRAngleLoc() != Written->getRAngleLoc() ||
+        Source.Written->getNumTemplateArgs() != Written->getNumTemplateArgs())
+      return false;
+    for (unsigned I = 0; I < Written->getNumTemplateArgs(); ++I)
+      if (!sameArgumentSource(Source.Written->arguments()[I], Written->arguments()[I]))
+        return false;
+    return true;
+  }
+  bool checkClassFullDeclarationSource(const ClassTemplateSpecializationDecl *D) {
+    if (CheckedClassFullDeclarations.count(D))
+      return true;
+    if (!classFullDeclarationShape(D)) {
+      A.reject(D->getLocation(), "class full declaration owner",
+               "A class-scope full requires its exact written or copied body and primary owners.");
+      return true;
+    }
+    auto Found = ClassFullDeclarations.find(D);
+    if (Found == ClassFullDeclarations.end() || Found->second.empty()) {
+      A.reject(D->getLocation(), "class full declaration source",
+               "Each original or copied full requires its successful primary argument source.");
+      return true;
+    }
+    if (DefinitionFrames.size() >= 64 || !ActiveClassFullDeclarations.insert(D).second) {
+      A.reject(D->getLocation(), "class full declaration source depth",
+               "Full declaration source checking must be bounded and acyclic.");
+      return true;
+    }
+    auto RestoreActive = llvm::make_scope_exit([&] { ActiveClassFullDeclarations.erase(D); });
+    if (const auto *Origin = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+            D->getInstantiatedFromMemberClass())) {
+      if (!checkClassFullDeclarationSource(Origin))
+        return false;
+      if (!A.S.Diagnostics.empty())
+        return true;
+    }
+    auto *SavedFunction = CurrentFunction;
+    auto *SavedMethod = CurrentMethod;
+    auto *SavedField = CurrentDefaultField;
+    auto SavedInitializer = ImplicitInitializerOwner;
+    CurrentFunction = nullptr;
+    CurrentMethod = nullptr;
+    CurrentDefaultField = nullptr;
+    ImplicitInitializerOwner = D->getLocation();
+    // A full has no parameter level. Only the exact primary-use frame below
+    // provides checked inner arguments; actual outer substitutions keep theirs.
+    DefinitionFrames.push_back({D, nullptr, nullptr, TemplateFrames.size()});
+    auto Restore = llvm::make_scope_exit([&] {
+      DefinitionFrames.pop_back();
+      CurrentFunction = SavedFunction;
+      CurrentMethod = SavedMethod;
+      CurrentDefaultField = SavedField;
+      ImplicitInitializerOwner = SavedInitializer;
+    });
+    const TemplateUseSource *First = nullptr;
+    for (const auto *Source : Found->second) {
+      if (!classFullDeclarationIdentity(*Source) ||
+          (First && (First->Origin != Source->Origin || !equivalentUse(*First, *Source)))) {
+        A.reject(D->getLocation(), "class full declaration source identity",
+                 "The full declaration, primary, arguments and exact copy origin must agree.");
+        return true;
+      }
+      First = Source;
+      if (!checkTemplateUse(*Source, Source->Written->arguments(), genericClassFullIdentity(D)))
+        return false;
+      if (!A.S.Diagnostics.empty())
+        return true;
+    }
+    CheckedClassFullDeclarations.insert(D);
+    return true;
+  }
+  bool checkOrdinaryClassSource(const CXXRecordDecl *D) {
+    if (CheckedOrdinaryClasses.count(D))
+      return true;
+    if (!ordinaryClassDeclarationShape(D)) {
+      A.reject(D->getLocation(), "ordinary member class source owner",
+               "A named member requires its exact written declaration and checked copy edges.");
+      return true;
+    }
+    if (ActiveOrdinaryClasses.size() >= 64 || !ActiveOrdinaryClasses.insert(D).second) {
+      A.reject(D->getLocation(), "ordinary member class source depth",
+               "Ordinary member declaration sources must be bounded and acyclic.");
+      return true;
+    }
+    auto RestoreActive = llvm::make_scope_exit([&] { ActiveOrdinaryClasses.erase(D); });
+    if (const auto *Origin = D->getInstantiatedFromMemberClass()) {
+      if (!checkOrdinaryClassSource(Origin))
+        return false;
+      if (!A.S.Diagnostics.empty())
+        return true;
+    }
+    // A declaration's written headers/qualifier are checked without walking
+    // lazy fields or methods. An ordinary body adds no argument-list owner.
+    if (DefinitionFrames.size() >= 64) {
+      A.reject(D->getLocation(), "ordinary member class definition depth",
+               "Member declaration sources require a bounded definition context.");
+      return true;
+    }
+    auto *SavedFunction = CurrentFunction;
+    auto *SavedMethod = CurrentMethod;
+    auto *SavedField = CurrentDefaultField;
+    auto SavedInitializer = ImplicitInitializerOwner;
+    CurrentFunction = nullptr;
+    CurrentMethod = nullptr;
+    CurrentDefaultField = nullptr;
+    ImplicitInitializerOwner = D->getLocation();
+    DefinitionFrames.push_back({D, nullptr, nullptr, TemplateFrames.size()});
+    auto RestoreDefinition = llvm::make_scope_exit([&] {
+      DefinitionFrames.pop_back();
+      CurrentFunction = SavedFunction;
+      CurrentMethod = SavedMethod;
+      CurrentDefaultField = SavedField;
+      ImplicitInitializerOwner = SavedInitializer;
+    });
+    auto CheckWritten = [&](const CXXRecordDecl *Written) {
+      if (!outerTemplateListsShape(Written)) {
+        A.reject(Written->getLocation(), "ordinary member class outer headers",
+                 "Each header must match its actual enclosing parameter owner.");
+        return true;
+      }
+      for (unsigned I = 0; I < Written->getNumTemplateParameterLists(); ++I) {
+        const auto *Parameters = Written->getTemplateParameterList(I);
+        A.chargeExpansion(1, Written->getLocation());
+        if (Parameters->size() && !traverseTemplateParameterSource(Parameters, true))
+          return false;
+      }
+      return !Written->getQualifier() || Written->getQualifier()->isDependent() ||
+             TraverseNestedNameSpecifierLoc(Written->getQualifierLoc());
+    };
+    unsigned Count = 0;
+    for (const auto *Tag : D->redecls()) {
+      if (++Count > 64) {
+        A.reject(D->getLocation(), "ordinary member class redeclaration depth",
+                 "Each member record requires a bounded redeclaration chain.");
+        return true;
+      }
+      const auto *Written = dyn_cast<CXXRecordDecl>(Tag);
+      if (Written && WrittenOrdinaryClasses.count(Written) && !CheckWritten(Written))
+        return false;
+      if (!A.S.Diagnostics.empty())
+        return true;
+    }
+    // A concrete copied qualifier can retain substituted source of its own.
+    if (!WrittenOrdinaryClasses.count(D) && !CheckWritten(D))
+      return false;
+    if (A.S.Diagnostics.empty())
+      CheckedOrdinaryClasses.insert(D);
+    return true;
+  }
+  bool checkClassFullOwnerSources(const DeclContext *Context) {
+    std::set<const DeclContext *> Seen;
+    while (const auto *Record = dyn_cast_or_null<CXXRecordDecl>(Context)) {
+      A.chargeExpansion(1, Record->getLocation());
+      if (Seen.size() >= 64 || !Seen.insert(Context).second) {
+        A.reject(Record->getLocation(), "class full owner source depth",
+                 "Enclosing full declaration sources must be bounded and acyclic.");
+        return true;
+      }
+      if (ordinaryMemberClassScope(Record)) {
+        if (!checkOrdinaryClassSource(Record))
+          return false;
+        if (!A.S.Diagnostics.empty())
+          return true;
+      }
+      if (genericClassFullIdentity(Record) ||
+          (classScopeFullIdentity(Record) && Record->getInstantiatedFromMemberClass())) {
+        const auto *Full = dyn_cast<ClassTemplateSpecializationDecl>(Record);
+        if (!Full || !classFullDeclarationShape(Full)) {
+          A.reject(Record->getLocation(), "class full owner source",
+                   "An enclosing copied class must have an admitted full declaration source.");
+          return true;
+        }
+        if (!checkClassFullDeclarationSource(Full))
+          return false;
+        if (!A.S.Diagnostics.empty())
+          return true;
+      }
+      Context = Record->getDeclContext();
+    }
+    return true;
+  }
   bool checkTemplateUse(const TemplateUseSource &Source,
                         llvm::ArrayRef<TemplateArgumentLoc> Written,
                         bool DeferredDeclaration = false) {
     const auto L = Source.Location;
     A.chargeExpansion(1, L);
     const bool PartialDeclaration = Source.Kind == TemplateSourceKind::PartialDeclaration;
-    if (DeferredDeclaration && !(PartialDeclaration ? partialDeclarationIdentity(Source)
+    const bool OriginalClassFull = Source.Kind == TemplateSourceKind::ClassFullDeclaration &&
+        !Source.Origin && classFullDeclarationIdentity(Source) &&
+        genericClassFullIdentity(dyn_cast_or_null<CXXRecordDecl>(Source.Declaration));
+    if (DeferredDeclaration && !(OriginalClassFull ||
+        (PartialDeclaration ? partialDeclarationIdentity(Source)
         : Source.Kind == TemplateSourceKind::VariableDeclaration && genericMemberVariableFullShape(
-            dyn_cast_or_null<VarTemplateSpecializationDecl>(Source.Declaration)))) {
+            dyn_cast_or_null<VarTemplateSpecializationDecl>(Source.Declaration))))) {
       A.reject(L, "generic template source mode", "Only an exact partial or original class-scope full declaration may retain pending source.");
       return true;
     }
     const auto *SourceParameters = templateSourceParameters(Source.Template);
-    const auto Frontier = PartialDeclaration && SourceParameters
+    const auto Frontier = (PartialDeclaration || OriginalClassFull) && SourceParameters
         ? partialArgumentFrontier(SourceParameters, Written) : PartialArgumentFrontier{};
     if (!templateSourceShape(Source.Template) || !Source.Canonical || !Source.Sugared ||
         Source.DefaultsOverflow || Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
@@ -3388,6 +4941,11 @@ public:
       }
     ActiveTemplateUses.push_back(&Source);
     auto RestoreActive = llvm::make_scope_exit([&] { ActiveTemplateUses.pop_back(); });
+    if (Source.Kind == TemplateSourceKind::ClassFullDeclaration &&
+        !classFullDeclarationIdentity(Source)) {
+      A.reject(L, "class full declaration source", "A checked exact full declaration source is required.");
+      return true;
+    }
     if (Source.Kind == TemplateSourceKind::ClassDeclaration) {
       const auto *Declaration = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Source.Declaration);
       const auto *Primary = Declaration ? Declaration->getSpecializedTemplate() : nullptr;
@@ -3855,7 +5413,7 @@ public:
     const auto *Parent = dyn_cast<ClassTemplateSpecializationDecl>(Variable->getDeclContext());
     const auto *Primary = Variable->getSpecializedTemplate();
     const auto *Origin = Primary->getInstantiatedFromMemberTemplate();
-    const auto *Selected = Parent ? classDefinitionRecord(classTemplatePattern(Parent)) : nullptr;
+    const auto *Selected = Parent ? classBodyRecord(Parent) : nullptr;
     if (TypeSource.Variable != Variable || !Variable->isExplicitSpecialization() ||
         !genericMemberVariableFullShape(Pattern) || !owned(Parent) ||
         Parent->getKind() != Decl::ClassTemplateSpecialization || Parent->isDependentContext() ||
@@ -4091,6 +5649,9 @@ public:
         if (const auto *Function = dyn_cast_or_null<FunctionDecl>(Source.Declaration))
           FunctionSources[{Function, Source.Location.getRawEncoding()}].push_back(&Source);
         break;
+      case TemplateSourceKind::ClassFullDeclaration:
+        ClassFullDeclarations[Source.Declaration].push_back(&Source);
+        break;
       case TemplateSourceKind::ClassDeclaration:
         ClassSources[Source.Declaration].push_back(&Source);
         break;
@@ -4190,6 +5751,37 @@ public:
         if (!Seen.insert(D).second ||
             (!isa<TranslationUnitDecl>(D) && !owned(D)))
           continue;
+        if (!HiddenInstances && ordinaryMemberClassIdentity(dyn_cast<CXXRecordDecl>(D)))
+          WrittenOrdinaryClasses.insert(cast<CXXRecordDecl>(D));
+        if (!HiddenInstances && genericClassFullIdentity(dyn_cast<CXXRecordDecl>(D)))
+          WrittenClassFullDeclarations.insert(D);
+        if (!HiddenInstances)
+          if (const auto *Friend = dyn_cast<FriendDecl>(D);
+              Friend && !FriendDeclarationSources.count(Friend) && !copiedFriendTemplate(Friend) &&
+              !copiedFriendClassTemplate(Friend)) {
+            WrittenFriendDeclarations.insert(Friend);
+            if (const auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Friend->getFriendDecl())) {
+              WrittenFriendClasses.emplace(Template, Friend);
+              FriendClassCanonicals.insert(Template->getCanonicalDecl());
+              if (!checkWrittenFriendClassDefaults(Template))
+                return;
+              indexTemplatePackSources(Template);
+            }
+            if (const auto *Function = dyn_cast_or_null<FunctionDecl>(Friend->getFriendDecl()))
+              WrittenFriendFunctions.emplace(Function, Friend);
+            if (const auto *Template = dyn_cast_or_null<FunctionTemplateDecl>(Friend->getFriendDecl())) {
+              WrittenFriendTemplates.emplace(Template, Friend);
+              FriendTemplateCanonicals.insert(Template->getCanonicalDecl());
+              indexTemplatePackSources(Template);
+              const auto *Canonical = Template->getCanonicalDecl();
+              IndependentTemplateIdentities.insert(Canonical);
+              if (!A.TemplateOrdinals.count(Canonical))
+                A.TemplateOrdinals.emplace(Canonical, A.TemplateOrdinals.size());
+            }
+          }
+        if (auto *Friend = dyn_cast<FriendDecl>(D))
+          if (auto *Template = dyn_cast_or_null<ClassTemplateDecl>(Friend->getFriendDecl()))
+            Queue(Template, Depth);
         if (!HiddenInstances &&
             isa<ClassTemplatePartialSpecializationDecl, VarTemplatePartialSpecializationDecl>(D))
           WrittenPartialDeclarations.insert(D);
@@ -4267,6 +5859,20 @@ public:
         }
         if (const auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(D))
           indexTemplatePackSources(Partial);
+        if (const auto *Full = dyn_cast<CXXRecordDecl>(D);
+            classScopeFullIdentity(Full) || ordinaryMemberClassScope(Full)) {
+          recordClassOuterPacks(Full);
+          const auto *Owner = classBodyPackOwner(Full);
+          if (owned(Owner))
+            for (const auto *Member : Full->decls()) {
+              A.chargeExpansion(1, Member->getLocation());
+              if (const auto *Method = dyn_cast<CXXMethodDecl>(Member))
+                recordFunctionPacks(Method, Owner);
+              else if (const auto *Variable = dyn_cast<VarDecl>(Member);
+                       Variable && Variable->isStaticDataMember())
+                recordOuterPacks(Variable, Owner);
+            }
+        }
         const DeclContext *Context = nullptr;
         if (auto *Unit = dyn_cast<TranslationUnitDecl>(D))
           Context = Unit;
@@ -4306,8 +5912,7 @@ public:
         }
         const auto *Method = dyn_cast<CXXMethodDecl>(Origin->getTemplatedDecl());
         const auto *Pattern = dyn_cast<CXXMethodDecl>(Next->getTemplatedDecl());
-        const auto *Owner = Method ? classTemplatePattern(Method->getParent()) : nullptr;
-        const auto *Record = classDefinitionRecord(Owner);
+        const auto *Record = Method ? classBodyRecord(Method->getParent()) : nullptr;
         if (!Method || !Pattern || Method->getKind() != Pattern->getKind() ||
             (Method->getParent()->getCanonicalDecl() != Pattern->getParent()->getCanonicalDecl() &&
              (!Record || Record->getCanonicalDecl() != Pattern->getParent()->getCanonicalDecl()))) {
@@ -4341,8 +5946,10 @@ public:
       Work.pop_back();
       if (auto *Template = dyn_cast<FunctionTemplateDecl>(D);
           Template && owned(Template) &&
-          ordinaryFreeFunctionName(Template->getTemplatedDecl())) {
+          ordinaryFreeFunctionName(Template->getTemplatedDecl()) &&
+          Template->getLexicalDeclContext()->getRedeclContext()->isFileContext()) {
         auto *Canonical = Template->getCanonicalDecl();
+        IndependentTemplateIdentities.insert(Canonical);
         if (!A.TemplateOrdinals.count(Canonical))
           A.TemplateOrdinals.emplace(Canonical, A.TemplateOrdinals.size());
       }
@@ -4370,12 +5977,12 @@ public:
       }
       // Out-of-line member definitions are separate lexical namespace entries.
       if (const auto *Method = dyn_cast<CXXMethodDecl>(D)) {
-        if (const auto *Primary = classTemplatePattern(Method->getParent()))
+        if (const auto *Primary = classBodyPackOwner(Method->getParent()))
           recordFunctionPacks(Method, Primary);
       } else if (const auto *Variable = dyn_cast<VarDecl>(D);
                  Variable && Variable->isStaticDataMember()) {
         const auto *Parent = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
-        if (const auto *Primary = classTemplatePattern(Parent))
+        if (const auto *Primary = classBodyPackOwner(Parent))
           recordOuterPacks(Variable, Primary);
       }
       const DeclContext *Context = nullptr;
@@ -4395,6 +6002,10 @@ public:
       std::reverse(Work.begin() + Begin, Work.end());
     }
     indexMemberTemplates();
+    if (A.S.Diagnostics.empty())
+      indexFriendClassSources();
+    if (A.S.Diagnostics.empty())
+      indexFriendTemplateIdentities();
   }
   bool variableWrittenTypeSource(const VarTemplateSpecializationDecl *Variable,
                                  TypeSourceInfo *Info, SourceLocation L) {
@@ -4411,7 +6022,7 @@ public:
                                .getAs<AutoTypeLoc>().isNull();
     if ((!AutoToken && (Type->isDependentType() || Type->isInstantiationDependentType() ||
                        !A.Context.hasSameType(Type, Variable->getType()))) ||
-        (AutoToken && !Variable->getType()->isIntegralOrEnumerationType())) {
+        (AutoToken && !staticScalarType(Variable->getType()))) {
       A.reject(L, "variable written type", "The retained source must match the concrete scalar type or its actual deduced auto token.");
       return true;
     }
@@ -4456,6 +6067,10 @@ public:
   bool TraverseVarTemplateDecl(VarTemplateDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseVarTemplateDecl(D);
+    if (!checkClassFullOwnerSources(D->getDeclContext()))
+      return false;
+    if (!A.S.Diagnostics.empty())
+      return true;
     if (!WalkUpFromVarTemplateDecl(D))
       return false;
     if (!variableTemplateShape(D)) {
@@ -4488,6 +6103,10 @@ public:
   bool TraverseVarTemplatePartialSpecializationDecl(VarTemplatePartialSpecializationDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseVarTemplatePartialSpecializationDecl(D);
+    if (!checkClassFullOwnerSources(D->getDeclContext()))
+      return false;
+    if (!A.S.Diagnostics.empty())
+      return true;
     if (!VisitDecl(D))
       return false;
     if (!variablePartialShape(D)) {
@@ -4621,6 +6240,10 @@ public:
   bool TraverseTypeAliasTemplateDecl(TypeAliasTemplateDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseTypeAliasTemplateDecl(D);
+    if (!checkClassFullOwnerSources(D->getDeclContext()))
+      return false;
+    if (!A.S.Diagnostics.empty())
+      return true;
     if (!WalkUpFromTypeAliasTemplateDecl(D))
       return false;
     if (!aliasTemplateShape(D)) {
@@ -4862,6 +6485,15 @@ public:
         return true;
       return TraverseVarTemplateSpecializationDecl(Variable);
     }
+    if (auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
+        Function && FriendCanonicalFunctions.count(Function->getCanonicalDecl())) {
+      if (FriendFunctionSources.count(Function) && !TraverseDecl(Function))
+        return false;
+      if (auto *Definition = Function->getDefinition(); Definition && Definition != CurrentFunction &&
+          !CheckedFriendFunctions.count(Definition))
+        if (!TraverseDecl(Definition))
+          return false;
+    }
     if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
         concreteFunctionTemplate(Function))
       checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments(),
@@ -4899,6 +6531,10 @@ public:
   bool TraverseFunctionTemplateDecl(FunctionTemplateDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseFunctionTemplateDecl(D);
+    if (!checkClassFullOwnerSources(D->getDeclContext()))
+      return false;
+    if (!A.S.Diagnostics.empty())
+      return true;
     if (!WalkUpFromFunctionTemplateDecl(D))
       return false;
     if (!functionTemplateShape(D)) {
@@ -4908,7 +6544,9 @@ public:
     }
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
     const auto *Method = dyn_cast<CXXMethodDecl>(D->getTemplatedDecl());
-    const bool DependentClass = Method && Method->getParent()->isDependentContext();
+    const auto *FriendClass = !Method ? dyn_cast<CXXRecordDecl>(D->getLexicalDeclContext()) : nullptr;
+    const bool DependentClass = Method ? Method->getParent()->isDependentContext()
+                                      : FriendClass && FriendClass->isDependentContext();
     // Generic outer class substitutions are deferred to the actual copied
     // member primary. Nondependent written defaults remain checked here.
     if (!traverseTemplateParameterSource(D->getTemplateParameters(), DependentClass))
@@ -4950,7 +6588,10 @@ public:
       return true;
     for (auto *Member : Definition->decls()) {
       A.chargeExpansion(1, Member->getLocation());
-      if (auto *Template = dyn_cast<FunctionTemplateDecl>(Member)) {
+      if (auto *Friend = dyn_cast<FriendDecl>(Member)) {
+        if (!TraverseFriendDecl(Friend))
+          return false;
+      } else if (auto *Template = dyn_cast<FunctionTemplateDecl>(Member)) {
         if (!TraverseFunctionTemplateDecl(Template))
           return false;
       } else if (auto *Class = dyn_cast<ClassTemplateDecl>(Member)) {
@@ -4958,6 +6599,13 @@ public:
           return false;
       } else if (auto *Partial = dyn_cast<ClassTemplatePartialSpecializationDecl>(Member)) {
         if (!TraverseClassTemplatePartialSpecializationDecl(Partial))
+          return false;
+      } else if (auto *Full = dyn_cast<ClassTemplateSpecializationDecl>(Member)) {
+        if (!TraverseDecl(Full))
+          return false;
+      } else if (auto *Nested = dyn_cast<CXXRecordDecl>(Member);
+                 ordinaryMemberClassScope(Nested)) {
+        if (!TraverseDecl(Nested))
           return false;
       } else if (auto *Alias = dyn_cast<TypeAliasTemplateDecl>(Member)) {
         if (!TraverseTypeAliasTemplateDecl(Alias))
@@ -4991,6 +6639,25 @@ public:
   bool TraverseClassTemplateDecl(ClassTemplateDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseClassTemplateDecl(D);
+    if (D->getFriendObjectKind()) {
+      const FriendDecl *Friend = nullptr;
+      if (auto Copy = FriendClassDeclarations.find(D); Copy != FriendClassDeclarations.end())
+        Friend = Copy->second;
+      else if (auto Written = WrittenFriendClasses.find(D); Written != WrittenFriendClasses.end())
+        Friend = Written->second;
+      if (!Friend) {
+        A.reject(D->getLocation(), "class friend declaration source",
+                 "The actual target header must retain its exact friend declaration.");
+        return true;
+      }
+      if (!checkClassFullOwnerSources(Friend->getDeclContext()) ||
+          !traverseFriendClassTemplateSource(Friend))
+        return false;
+    }
+    if (!checkClassFullOwnerSources(D->getDeclContext()))
+      return false;
+    if (!A.S.Diagnostics.empty())
+      return true;
     if (CheckedClassTemplateSources.count(D))
       return true;
     if (ActiveClassTemplateSources.size() >= 64 || !ActiveClassTemplateSources.insert(D).second) {
@@ -5008,7 +6675,7 @@ public:
     }
     A.chargeExpansion(1 + D->getTemplateParameters()->size(), D->getLocation());
     const auto *Pattern = D->getTemplatedDecl();
-    if (!traverseClassTemplateParameterSource(D, Pattern) ||
+    if ((!D->getFriendObjectKind() && !traverseClassTemplateParameterSource(D, Pattern)) ||
         !traverseClassMemberTemplateSources(D->getTemplatedDecl()))
       return false;
     if (D != D->getCanonicalDecl()) {
@@ -5043,10 +6710,49 @@ public:
       CheckedClassTemplateSources.insert(D);
     return true;
   }
+  bool TraverseCXXRecordDecl(CXXRecordDecl *D) {
+    if (!A.S.coreV2() || !owned(D) || !ordinaryMemberClassScope(D))
+      return RecursiveASTVisitor<Allowlist>::TraverseCXXRecordDecl(D);
+    if (!TraversedOrdinaryClasses.insert(D).second)
+      return true;
+    if (!ordinaryClassBodyShape(D)) {
+      A.reject(D->getLocation(), "ordinary member class body",
+               "A named ordinary nested record needs a checked source and actual body owner.");
+      return true;
+    }
+    if (!checkOrdinaryClassSource(D) || !VisitDecl(D))
+      return false;
+    if (!A.S.Diagnostics.empty())
+      return true;
+    if (D->isDependentContext())
+      return traverseClassMemberTemplateSources(D);
+    // VisitCXXRecordDecl handles real definitions. An unused ordinary member
+    // copy is only a declaration; its generic source is never a runtime body.
+    if (!D->getDefinition())
+      return true;
+    return RecursiveASTVisitor<Allowlist>::TraverseCXXRecordDecl(D);
+  }
   bool TraverseClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseClassTemplateSpecializationDecl(D);
-    if (D->isExplicitSpecialization() && isa<CXXRecordDecl>(D->getDeclContext())) {
+    const bool FullSource = genericClassFullIdentity(D) || D->getInstantiatedFromMemberClass();
+    if (FullSource) {
+      if (!classFullBodyShape(D)) {
+        A.reject(D->getLocation(), "class-scope full body",
+                 "An owned full body with its exact original and actual outer owner is required.");
+        return true;
+      }
+      if (!checkClassFullDeclarationSource(D) || !VisitDecl(D))
+        return false;
+      if (!A.S.Diagnostics.empty())
+        return true;
+      if (D->getQualifier() && !D->getQualifier()->isDependent() &&
+          !TraverseNestedNameSpecifierLoc(D->getQualifierLoc()))
+        return false;
+      if (genericClassFullIdentity(D))
+        return traverseClassMemberTemplateSources(D);
+    }
+    if (!FullSource && D->isExplicitSpecialization() && isa<CXXRecordDecl>(D->getDeclContext())) {
       const auto *Written = D->getTemplateArgsAsWritten();
       auto Found = ClassSources.find(D);
       if (!memberClassDeclarationShape(D, true) || D->isDependentContext() ||
@@ -5079,7 +6785,7 @@ public:
       for (const auto *Source : Found->second)
         if (!checkTemplateUse(*Source, Source->Written->arguments()))
           return false;
-    if (const auto *Written = D->getTemplateArgsAsWritten())
+    if (const auto *Written = D->getTemplateArgsAsWritten(); Written && !FullSource)
       for (const auto &Argument : Written->arguments()) {
         A.chargeExpansion(1, D->getLocation());
         if (!TraverseTemplateArgumentLoc(Argument))
@@ -5095,6 +6801,10 @@ public:
   bool TraverseClassTemplatePartialSpecializationDecl(ClassTemplatePartialSpecializationDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseClassTemplatePartialSpecializationDecl(D);
+    if (!checkClassFullOwnerSources(D->getDeclContext()))
+      return false;
+    if (!A.S.Diagnostics.empty())
+      return true;
     if (CheckedClassTemplateSources.count(D))
       return true;
     if (ActiveClassTemplateSources.size() >= 64 || !ActiveClassTemplateSources.insert(D).second) {
@@ -5149,7 +6859,7 @@ public:
     };
     if (!A.S.coreV2() ||
         (!concreteFreeFunctionTemplate(CurrentFunction) &&
-         !concreteMemberFunction(CurrentFunction)))
+         !concreteMemberFunction(CurrentFunction) && !concreteFriendFunction(CurrentFunction)))
       return Normal();
     const auto *Info = CurrentFunction->getTypeSourceInfo();
     auto Outer = Info ? Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>()
@@ -5195,14 +6905,64 @@ public:
     return !Expression || TraverseStmt(Expression);
   }
   bool TraverseDecl(Decl *D) {
+    if (A.S.coreV2() && owned(D))
+      if (auto *Function = dyn_cast<FunctionDecl>(D)) {
+        if (!checkFriendTemplateFunction(Function))
+          return false;
+        if (!A.S.Diagnostics.empty())
+          return true;
+        auto Source = FriendFunctionSources.find(Function);
+        if (Source != FriendFunctionSources.end()) {
+          auto Declaration = FriendFunctionDeclarations.find(Function);
+          if (Declaration == FriendFunctionDeclarations.end() ||
+              !friendSourceIdentity(Declaration->second)) {
+            A.reject(Function->getLocation(), "friend function source",
+                     "A concrete friend function needs its exact checked source events.");
+            return true;
+          }
+          if (!CheckedFriendFunctions.insert(Function).second)
+            return true;
+          const auto *Written = FriendDeclarationSources.find(Declaration->second)->second->Written;
+          if (!traverseWrittenFriendSignature(Written))
+            return false;
+          if (!A.S.Diagnostics.empty())
+            return true;
+          if (!Function->hasBody() && Source->second->Selected->isThisDeclarationADefinition()) {
+            if (Function->isUsed(/*CheckUsedAttr=*/false))
+              A.reject(Function->getLocation(), "friend definition",
+                       "A required friend definition must be materialized in this source unit.", "TR0203");
+            return true; // Keep unused ordinary bodies and undeduced auto lazy.
+          }
+        } else if (concreteFriendFunction(Function)) {
+          A.reject(Function->getLocation(), "friend function source",
+                   "A member-specialized free friend requires paired substitution evidence.");
+          return true;
+        } else if (auto Written = WrittenFriendFunctions.find(Function);
+                   Written != WrittenFriendFunctions.end() &&
+                   Function->getLexicalDeclContext()->isDependentContext()) {
+          return traverseWrittenFriendSignature(Written->second);
+        } else if (FriendCanonicalFunctions.count(Function->getCanonicalDecl()) &&
+                   !CheckedFriendFunctions.insert(Function).second) {
+          return true; // Merged namespace definitions can be mutually recursive.
+        }
+      }
+    if (A.S.coreV2() && owned(D)) {
+      if (!checkClassFullOwnerSources(D->getDeclContext()))
+        return false;
+      if (!A.S.Diagnostics.empty())
+        return true;
+    }
     if (A.S.coreV2()) {
       if (auto *Variable = dyn_cast_or_null<VarDecl>(D);
           Variable && Variable->isStaticDataMember() && owned(Variable) &&
           !Variable->getDescribedVarTemplate() && !isa<VarTemplateSpecializationDecl>(Variable)) {
         const auto *Parent = dyn_cast<CXXRecordDecl>(Variable->getDeclContext());
         if (const auto *Primary = classTemplatePattern(Parent);
-            Primary && Parent->isDependentContext()) {
-          if (!classPatternShape(Primary) || !classTemplateStaticDataShape(Variable) ||
+            Parent && Parent->isDependentContext() &&
+            (Primary || genericClassFullIdentity(Parent) || ordinaryMemberClassScope(Parent))) {
+          const bool Shape = genericClassFullIdentity(Parent) || ordinaryMemberClassScope(Parent)
+              ? zeroParameterClassBodyShape(Parent) : classPatternShape(Primary);
+          if (!Shape || !classTemplateStaticDataShape(Variable) ||
               !outerTemplateListsShape(Variable)) {
             A.reject(Variable->getLocation(), "class static member pattern",
                      "An admitted scalar static member of an owned class template is required.");
@@ -5216,8 +6976,12 @@ public:
           }
           return true; // The member type and initializer retain normal laziness.
         }
-        if (const auto *Primary = classStaticDataPattern(Variable)) {
-          if (!classPatternShape(Primary) || !classTemplateStaticDataShape(Variable) ||
+        const auto *FullStatic = copiedFullClassStatic(Variable);
+        const auto *OrdinaryStatic = copiedOrdinaryClassStatic(Variable);
+        if (const auto *Primary = classStaticDataPattern(Variable); Primary || FullStatic || OrdinaryStatic) {
+          const auto *Body = OrdinaryStatic ? OrdinaryStatic : FullStatic;
+          if (!(Body ? zeroParameterClassBodyShape(Body) : classPatternShape(Primary)) ||
+              !classTemplateStaticDataShape(Variable) ||
               !owned(Variable->getInstantiatedFromStaticDataMember())) {
             A.reject(Variable->getLocation(), "class static member instance",
                      "An owned scalar static member with matching template origin is required.");
@@ -5236,10 +7000,15 @@ public:
       if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(D);
           Method && owned(Method)) {
         if (const auto *Primary = classTemplatePattern(Method->getParent());
-            Primary && Method->getParent()->isDependentContext()) {
+            Method->getParent()->isDependentContext() &&
+            (Primary || genericClassFullIdentity(Method->getParent()) ||
+             ordinaryMemberClassScope(Method->getParent()))) {
           // Out-of-line definitions are separate declarations in the namespace.
           // Their own outer parameter spelling must be checked before erasure.
-          if (!classPatternShape(Primary) || !classTemplateFunctionShape(Method) ||
+          const bool Shape = genericClassFullIdentity(Method->getParent()) ||
+                             ordinaryMemberClassScope(Method->getParent())
+              ? zeroParameterClassBodyShape(Method->getParent()) : classPatternShape(Primary);
+          if (!Shape || !classTemplateFunctionShape(Method) ||
               !outerTemplateListsShape(Method)) {
             A.reject(Method->getLocation(), "class template function pattern",
                      "An admitted member function of an owned class template is required.");
@@ -5253,8 +7022,12 @@ public:
           }
           return true; // No uninstantiated body, qualifier or function default.
         }
-        if (const auto *Primary = classFunctionPattern(Method)) {
-          if (!classPatternShape(Primary) || !classTemplateFunctionShape(Method)) {
+        const auto *FullMethod = copiedFullClassFunction(Method);
+        const auto *OrdinaryMethod = copiedOrdinaryClassFunction(Method);
+        if (const auto *Primary = classFunctionPattern(Method); Primary || FullMethod || OrdinaryMethod) {
+          const auto *Body = OrdinaryMethod ? OrdinaryMethod : FullMethod;
+          if (!(Body ? zeroParameterClassBodyShape(Body) : classPatternShape(Primary)) ||
+              !classTemplateFunctionShape(Method)) {
             A.reject(Method->getLocation(), "class template function",
                      "An admitted member-function instance of an owned class pattern is required.");
             return true;
@@ -5355,6 +7128,16 @@ public:
           return true;
         DefinitionFrames.push_back({Function, Primary, Arguments, TemplateFrames.size()});
       }
+    if (A.S.coreV2())
+      if (const auto *Function = dyn_cast_or_null<FunctionDecl>(D);
+          Function && FriendCanonicalFunctions.count(Function->getCanonicalDecl())) {
+        if (DefinitionDepth >= 64) {
+          A.reject(Function->getLocation(), "friend definition depth",
+                   "Friend definition source exceeds the bounded context depth.");
+          return true;
+        }
+        DefinitionFrames.push_back({Function, nullptr, nullptr, TemplateFrames.size()});
+      }
     auto RestoreDefinition = llvm::make_scope_exit([&] { DefinitionFrames.resize(DefinitionDepth); });
     auto *SavedFunction = CurrentFunction;
     if (auto *Function = dyn_cast_or_null<FunctionDecl>(D))
@@ -5410,7 +7193,9 @@ public:
     // Out-of-line template definitions can be hidden namespace declarations.
     // Source checking must follow the actual initializer owner, not only the use.
     if (auto *Variable = dyn_cast_or_null<VarDecl>(D);
-        Result && A.S.coreV2() && classStaticDataPattern(Variable))
+        Result && A.S.coreV2() &&
+        (classStaticDataPattern(Variable) || copiedFullClassStatic(Variable) ||
+         copiedOrdinaryClassStatic(Variable)))
       if (auto *Definition = Variable->getDefinition(); Definition && Definition != Variable)
         Result = TraverseDecl(Definition);
     return Result;
@@ -5540,6 +7325,10 @@ public:
     }
     A.chargeExpansion(1, L);
     if (concreteFunctionTemplate(Function)) {
+      if (!checkFriendTemplateFunction(Function))
+        return false;
+      if (!A.S.Diagnostics.empty())
+        return true;
       const auto *Primary = Function->getPrimaryTemplate();
       const auto *Arguments = Function->getTemplateSpecializationArgs();
       if (DefinitionDepth >= 64 || !functionTemplateShape(Primary) || !Arguments ||
@@ -5551,6 +7340,13 @@ public:
       if (!A.S.Diagnostics.empty())
         return true;
       DefinitionFrames.push_back({Function, Primary, Arguments, TemplateFrames.size()});
+    }
+    if (Function && FriendCanonicalFunctions.count(Function->getCanonicalDecl())) {
+      if (DefinitionDepth >= 64) {
+        A.reject(L, "friend default depth", "The selected friend default needs a bounded source context.");
+        return true;
+      }
+      DefinitionFrames.push_back({Function, nullptr, nullptr, TemplateFrames.size()});
     }
     // This AST node has no children. Traverse its selected expression now,
     // without borrowing a caller's this or caching a per-use runtime value.
@@ -5702,10 +7498,169 @@ public:
       usingTarget(D);
     return true;
   }
+  bool traverseWrittenFriendSignature(const FriendDecl *D) {
+    if (!genericFriendFunctionShape(D) && !genericFriendTemplateShape(D)) {
+      A.reject(D->getFriendLoc(), "friend source declaration",
+               "The original friend must remain an admitted free function declaration.");
+      return true;
+    }
+    if (!CheckedFriendDeclarations.insert(D).second)
+      return true;
+    const auto *Template = dyn_cast<FunctionTemplateDecl>(D->getFriendDecl());
+    const auto *Function = Template ? Template->getTemplatedDecl()
+                                    : cast<FunctionDecl>(D->getFriendDecl());
+    if (DefinitionFrames.size() >= 64) {
+      A.reject(D->getFriendLoc(), "friend source depth",
+               "Friend declaration source exceeds the bounded context depth.");
+      return true;
+    }
+    auto *SavedFunction = CurrentFunction;
+    auto *SavedMethod = CurrentMethod;
+    auto *SavedField = CurrentDefaultField;
+    auto SavedOwner = ImplicitInitializerOwner;
+    auto *SavedParameterSource = TemplateParameterTypeSource;
+    TemplateParameterTypeSource = nullptr;
+    CurrentFunction = Function;
+    CurrentMethod = nullptr;
+    CurrentDefaultField = nullptr;
+    ImplicitInitializerOwner = D->getFriendLoc();
+    DefinitionFrames.push_back({Function, nullptr, nullptr, TemplateFrames.size()});
+    auto Restore = llvm::make_scope_exit([&] {
+      DefinitionFrames.pop_back();
+      CurrentFunction = SavedFunction;
+      CurrentMethod = SavedMethod;
+      CurrentDefaultField = SavedField;
+      ImplicitInitializerOwner = SavedOwner;
+      TemplateParameterTypeSource = SavedParameterSource;
+    });
+    auto CheckType = [&](TypeLoc Location) {
+      auto Type = Location.getType();
+      if (Type.isNull()) {
+        A.reject(D->getFriendLoc(), "friend signature source", "An owned written type is required.");
+        return true;
+      }
+      if (Type->isDependentType() || Type->isInstantiationDependentType() ||
+          Type->isUndeducedAutoType())
+        return true; // Its actual selected substitution retains the later check.
+      A.type(Type, Location.getBeginLoc(), true);
+      return TraverseTypeLoc(Location);
+    };
+    const auto Prototype = Function->getTypeSourceInfo()->getTypeLoc()
+        .IgnoreParens().getAs<FunctionProtoTypeLoc>();
+    if (!Prototype) {
+      A.reject(D->getFriendLoc(), "friend prototype source", "The complete original prototype must be retained.");
+      return true;
+    }
+    if (!CheckType(Prototype.getReturnLoc()))
+      return false;
+    for (const auto *Parameter : Function->parameters()) {
+      const auto *Info = Parameter->getTypeSourceInfo();
+      if (!Info) {
+        A.reject(Parameter->getLocation(), "friend parameter source", "Each original parameter needs its written type.");
+        return true;
+      }
+      if (!CheckType(Info->getTypeLoc()))
+        return false;
+      if (Parameter->hasDefaultArg() && !Parameter->hasUninstantiatedDefaultArg()) {
+        auto *Default = Parameter->getDefaultArg();
+        if (Default && !Default->isTypeDependent() && !Default->isValueDependent() &&
+            !Default->isInstantiationDependent() && !TraverseStmt(const_cast<Expr *>(Default)))
+          return false;
+      }
+    }
+    const auto *Exception = Prototype.getTypePtr()->getNoexceptExpr();
+    if (Exception && !Exception->isTypeDependent() && !Exception->isValueDependent() &&
+        !Exception->isInstantiationDependent() && !TraverseStmt(const_cast<Expr *>(Exception)))
+      return false;
+    if (Function->getQualifier() && !Function->getQualifier()->isDependent() &&
+        !TraverseNestedNameSpecifierLoc(Function->getQualifierLoc()))
+      return false;
+    return TraverseDeclarationNameInfo(Function->getNameInfo());
+  }
+  bool TraverseFriendDecl(FriendDecl *D) {
+    if (A.S.coreV2() && owned(D))
+      if (auto *Template = dyn_cast_or_null<ClassTemplateDecl>(D->getFriendDecl())) {
+        if (!WalkUpFromFriendDecl(D))
+          return false;
+        if (!A.S.Diagnostics.empty())
+          return true;
+        if (!checkClassFullOwnerSources(D->getDeclContext()) ||
+            !traverseFriendClassTemplateSource(D))
+          return false;
+        return !A.S.Diagnostics.empty() || TraverseClassTemplateDecl(Template);
+      }
+    if (A.S.coreV2() && owned(D))
+      if (auto *Template = dyn_cast_or_null<FunctionTemplateDecl>(D->getFriendDecl())) {
+        if (!WalkUpFromFriendDecl(D))
+          return false;
+        if (!A.S.Diagnostics.empty())
+          return true;
+        if (!checkClassFullOwnerSources(D->getDeclContext()))
+          return false;
+        if (auto Source = FriendDeclarationSources.find(D); Source != FriendDeclarationSources.end()) {
+          if (!friendTemplateSourceIdentity(D)) {
+            A.reject(D->getFriendLoc(), "copied friend template source",
+                     "The copied primary requires its exact original and granting-class event.");
+            return true;
+          }
+          if (!traverseWrittenFriendSignature(Source->second->Written))
+            return false;
+        } else if (copiedFriendTemplate(D) || !WrittenFriendTemplates.count(Template)) {
+          A.reject(D->getFriendLoc(), "missing friend template source",
+                   "An actual friend template requires its written or exact copied declaration.");
+          return true;
+        }
+        if (!traverseWrittenFriendSignature(D))
+          return false;
+        return !A.S.Diagnostics.empty() || TraverseFunctionTemplateDecl(Template);
+      }
+    const auto *Parent = D ? dyn_cast<CXXRecordDecl>(D->getDeclContext()) : nullptr;
+    if (!A.S.coreV2() || !owned(D) || !Parent ||
+        (!Parent->isDependentContext() && !FriendDeclarationSources.count(D) &&
+         !copiedFriendType(D)))
+      return RecursiveASTVisitor<Allowlist>::TraverseFriendDecl(D);
+    if (!WalkUpFromFriendDecl(D) || !A.S.Diagnostics.empty())
+      return A.S.Diagnostics.empty();
+    if (D->getFriendType())
+      return traverseFriendTypeSource(D);
+    if (auto Found = FriendDeclarationSources.find(D); Found != FriendDeclarationSources.end()) {
+      if (!friendSourceIdentity(D)) {
+        A.reject(D->getFriendLoc(), "copied friend source",
+                 "The actual friend requires its exact written, selected and granting-class source.");
+        return true;
+      }
+      if (!traverseWrittenFriendSignature(Found->second->Written))
+        return false;
+      if (!A.S.Diagnostics.empty())
+        return true;
+      return TraverseDecl(D->getFriendDecl());
+    }
+    return traverseWrittenFriendSignature(D);
+  }
+
   bool VisitFriendDecl(FriendDecl *D) {
     if (!owned(D) || !A.S.coreV2())
       return true;
+    if (isa_and_nonnull<ClassTemplateDecl>(D->getFriendDecl())) {
+      if (!genericFriendClassTemplateShape(D))
+        A.reject(D->getFriendLoc(), "friend class template",
+                 "A source-owned class-template target in an admitted granting class is required.");
+      return true;
+    }
+    if (isa_and_nonnull<FunctionTemplateDecl>(D->getFriendDecl())) {
+      if (!genericFriendTemplateShape(D))
+        A.reject(D->getFriendLoc(), "friend function template",
+                 "A source-owned free friend template in an admitted class is required.");
+      return true;
+    }
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
+    if ((Parent && Parent->isDependentContext()) || FriendDeclarationSources.count(D) ||
+        copiedFriendType(D)) {
+      if (!genericFriendDeclarationShape(D))
+        A.reject(D->getFriendLoc(), "generic friend declaration",
+                 "A source-owned non-template free function or ordinary type friend is required.");
+      return true;
+    }
     if (D->isInvalidDecl() || !Parent || !owned(Parent) ||
         Parent->isDependentContext() || D->isUnsupportedFriend() ||
         D->isPackExpansion() || D->getFriendTypeNumTemplateParameterLists()) {
@@ -5730,8 +7685,12 @@ public:
     return true;
   }
   bool VisitTypedefNameDecl(TypedefNameDecl *D) {
-    if (owned(D) && A.S.coreV2())
-      A.type(D->getUnderlyingType(), D->getLocation(), true);
+    if (owned(D) && A.S.coreV2()) {
+      if (D->getUnderlyingType()->isFunctionType())
+        A.functionPointerType(A.Context.getPointerType(D->getUnderlyingType()), D->getLocation());
+      else
+        A.type(D->getUnderlyingType(), D->getLocation(), true);
+    }
     return true;
   }
   bool VisitEnumDecl(EnumDecl *D) {
@@ -5754,6 +7713,8 @@ public:
       return true;
     const bool Template = A.S.coreV2() && concreteFunctionTemplate(D);
     const bool InstantiatedMember = A.S.coreV2() && concreteMemberFunction(D);
+    const bool InstantiatedFriend = A.S.coreV2() && concreteFriendFunction(D) &&
+                                    FriendFunctionDeclarations.count(D);
     if (Template) {
       const auto *Primary = D->getPrimaryTemplate();
       const auto *Arguments = D->getTemplateSpecializationArgs();
@@ -5777,7 +7738,7 @@ public:
         D->isVariadic() ||
         D->getDescribedFunctionTemplate() ||
         (D->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-         !Template && !InstantiatedMember) ||
+         !Template && !InstantiatedMember && !InstantiatedFriend) ||
         D->isDeletedAsWritten() || (D->isExplicitlyDefaulted() && !Defaulted) ||
         D->isConsteval())
       A.reject(D->getLocation(), "function",
@@ -5839,17 +7800,30 @@ public:
       if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(D);
           A.S.coreV2() && Destructor)
         A.requireDestruction(Destructor->getParent(), Destructor->getLocation());
-      else
+      else if (!FriendCanonicalFunctions.count(D->getCanonicalDecl()) ||
+               EmittedFriendDefinitions.insert(D->getCanonicalDecl()).second)
         A.Functions.push_back(D);
     }
     return true;
+  }
+  bool staticScalarType(QualType T) {
+    return T->isIntegralOrEnumerationType() || T->isFunctionPointerType();
+  }
+  bool staticScalarValue(const APValue &Value, QualType T, SourceLocation L) {
+    if (T->isFunctionPointerType()) {
+      // Normalization checks a real null/symbolic address, offset and signature.
+      // The original initializer still undergoes the ordinary source walk.
+      A.constant(Value, T, L);
+      return true;
+    }
+    return Value.isInt();
   }
   bool checkScalarStaticData(VarDecl *D, bool TemplateInstance = false) {
     const auto ExpectedKind = TemplateInstance ? Decl::VarTemplateSpecialization : Decl::Var;
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
     if (D->getKind() != ExpectedKind || !Parent || !owned(Parent) ||
         Parent->isDependentContext() ||
-        !D->getType()->isIntegralOrEnumerationType() ||
+        !staticScalarType(D->getType()) ||
         D->getTLSKind() != VarDecl::TLS_None ||
         D->getType().isVolatileQualified()) {
       A.reject(D->getLocation(), "static data member",
@@ -5895,7 +7869,8 @@ public:
           InitializingDecl->getCanonicalDecl() != D->getCanonicalDecl() ||
           (TemplateInstance && InitializingDecl->getDeclContext() != D->getDeclContext()) ||
           !A.Context.hasSameType(InitializingDecl->getType(), D->getType()) ||
-          !Init->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt()) {
+          !Init->isCXX11ConstantExpr(A.Context, &Value) ||
+          !staticScalarValue(Value, D->getType(), D->getLocation())) {
         A.reject(D->getLocation(), "static data initializer",
                  "A scalar static member requires a source-owned constant initializer.");
         return true;
@@ -5918,8 +7893,8 @@ public:
     if (A.S.coreV2())
       if (const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(D)) {
         if (Variable->getKind() != Decl::VarTemplateSpecialization ||
-            !variablePatternType(Variable) || !D->getType()->isIntegralOrEnumerationType()) {
-          A.reject(D->getLocation(), "variable specialization storage", "Only concrete namespace or admitted member integer, boolean or enum variables are admitted.");
+            !variablePatternType(Variable) || !staticScalarType(D->getType())) {
+          A.reject(D->getLocation(), "variable specialization storage", "Only concrete namespace or admitted member integer, boolean, enum or typed callback variables are admitted.");
           return true;
         }
         if (D->isStaticDataMember())
@@ -5940,7 +7915,8 @@ public:
         }
         if (const auto *Init = Definition->getInit()) {
           APValue Value;
-          if (!Init->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt()) {
+          if (!Init->isCXX11ConstantExpr(A.Context, &Value) ||
+              !staticScalarValue(Value, D->getType(), D->getLocation())) {
             A.reject(Definition->getLocation(), "variable template initializer", "Only zero or fully defined scalar constant initialization is supported.");
             return true;
           }
@@ -5974,17 +7950,19 @@ public:
           Parent->getCanonicalDecl() != LexicalParent->getCanonicalDecl() ||
           Parent->isDependentContext() || Parent->isConstexpr() ||
           (Parent->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-           !concreteFreeFunctionTemplate(Parent) && !concreteMemberFunction(Parent)) ||
+           !concreteFreeFunctionTemplate(Parent) && !concreteMemberFunction(Parent) &&
+           !concreteFriendFunction(Parent)) ||
           D->hasExternalStorage() || D->getTLSKind() != VarDecl::TLS_None ||
           D->getType().isVolatileQualified() ||
-          !D->getType()->isIntegralOrEnumerationType() || Definition != D) {
+          !staticScalarType(D->getType()) || Definition != D) {
         A.reject(D->getLocation(), "static local",
                  "Only owned non-volatile scalar static locals in non-constexpr functions are supported.");
         return true;
       }
       if (const auto *Init = D->getInit()) {
         APValue Value;
-        if (!Init->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt()) {
+        if (!Init->isCXX11ConstantExpr(A.Context, &Value) ||
+            !staticScalarValue(Value, D->getType(), D->getLocation())) {
           A.reject(D->getLocation(), "static local initializer",
                    "A scalar static local requires zero or fully defined constant initialization.");
           return true;
@@ -6013,7 +7991,9 @@ public:
       return true;
     }
     if (!D->isLocalVarDeclOrParm() &&
-        (D->getType()->isPointerType() || D->getType()->isReferenceType() ||
+        ((D->getType()->isPointerType() &&
+          !(A.S.coreV2() && D->getType()->isFunctionPointerType())) ||
+         D->getType()->isReferenceType() ||
          (A.S.coreV2() && containsArray(D->getType())))) {
       A.reject(D->getLocation(), "global variable",
                "Pointer/reference/array globals require global lifetime lowering.");
@@ -6026,7 +8006,7 @@ public:
                "unsupported.");
     if (!D->isLocalVarDeclOrParm()) {
       if (A.S.coreV2() && !D->getType().isConstQualified() &&
-          D->getType()->isIntegralOrEnumerationType()) {
+          staticScalarType(D->getType())) {
         auto *Definition = D->getDefinition();
         if (!Definition || !owned(Definition) || Definition->getKind() != Decl::Var ||
             Definition->isStaticDataMember() ||
@@ -6046,7 +8026,8 @@ public:
         }
         if (const auto *Init = Definition->getInit()) {
           APValue Value;
-          if (!Init->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt()) {
+          if (!Init->isCXX11ConstantExpr(A.Context, &Value) ||
+              !staticScalarValue(Value, D->getType(), D->getLocation())) {
             A.reject(Definition->getLocation(), "global initializer",
                      "A scalar global requires zero or fully defined constant initialization.");
             return true;
@@ -6182,10 +8163,10 @@ public:
     // children are inspected, including Clang's BoundMemberTy expressions.
     if (A.S.coreV2())
       if (const auto *Call = dyn_cast<CallExpr>(S))
-        if (const auto *Leaf = directMethodReference(Call)) {
+        if (const auto *Leaf = directFunctionReference(Call)) {
           const Expr *E = Call->getCallee();
           while (true) {
-            DirectMethodCallees.insert(E);
+            DirectFunctionCallees.insert(E);
             if (E == Leaf)
               break;
             if (const auto *P = dyn_cast<ParenExpr>(E))
@@ -6245,6 +8226,8 @@ public:
           case CK_BitCast:
             if (C->getType()->isPointerType() &&
                 C->getSubExpr()->getType()->isPointerType() &&
+                !C->getType()->isFunctionPointerType() &&
+                !C->getSubExpr()->getType()->isFunctionPointerType() &&
                 (C->getType()->getPointeeType()->isVoidType() ||
                  C->getSubExpr()->getType()->getPointeeType()->isVoidType()))
               break;
@@ -6254,14 +8237,50 @@ public:
                      "This cast operation is outside the core v2 profile.");
           }
         }
+      if (A.S.coreV2() && !DirectFunctionCallees.count(E)) {
+        if (const auto *C = dyn_cast<CastExpr>(E);
+            C && C->getCastKind() == CK_FunctionToPointerDecay)
+          FunctionValueDesignators.insert(C->getSubExpr());
+        if (const auto *U = dyn_cast<UnaryOperator>(E);
+            U && U->getOpcode() == UO_AddrOf &&
+            U->getSubExpr()->getType()->isFunctionType())
+          FunctionValueDesignators.insert(U->getSubExpr());
+        if (FunctionValueDesignators.count(E)) {
+          if (const auto *P = dyn_cast<ParenExpr>(E))
+            FunctionValueDesignators.insert(P->getSubExpr());
+          else if (const auto *C = dyn_cast<ConstantExpr>(E))
+            FunctionValueDesignators.insert(C->getSubExpr());
+          else if (const auto *W = dyn_cast<ExprWithCleanups>(E))
+            FunctionValueDesignators.insert(W->getSubExpr());
+          else if (const auto *B = dyn_cast<BinaryOperator>(E);
+                   B && B->getOpcode() == BO_Comma)
+            FunctionValueDesignators.insert(B->getRHS());
+          else if (const auto *C = dyn_cast<ConditionalOperator>(E)) {
+            FunctionValueDesignators.insert(C->getTrueExpr());
+            FunctionValueDesignators.insert(C->getFalseExpr());
+          }
+        }
+      }
       const auto *Cast = dyn_cast<ImplicitCastExpr>(E);
       bool FunctionDecay =
           Cast && Cast->getCastKind() == CK_FunctionToPointerDecay;
-      if (!DirectMethodCallees.count(E) && !GeneratedBuiltinCallees.count(E) && !FunctionDecay &&
-          !E->getType()->isFunctionType() &&
-          !(A.S.coreV2() &&
-            isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())))
-        A.type(E->getType(), E->getExprLoc(), true);
+      if (!DirectFunctionCallees.count(E) && !GeneratedBuiltinCallees.count(E)) {
+        if (A.S.coreV2() && E->getType()->isFunctionType() &&
+            FunctionValueDesignators.count(E)) {
+          A.functionPointerType(A.Context.getPointerType(E->getType()), E->getExprLoc());
+          const ValueDecl *Target = nullptr;
+          if (const auto *Reference = dyn_cast<DeclRefExpr>(E))
+            Target = Reference->getDecl();
+          else if (const auto *Member = dyn_cast<MemberExpr>(E))
+            Target = Member->getMemberDecl();
+          if (const auto *Function = dyn_cast_or_null<FunctionDecl>(Target))
+            A.functionAddressTarget(Function, E->getExprLoc());
+        } else if (!(A.S.coreV2() && isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())) &&
+                   !E->getType()->isFunctionType() &&
+                   (A.S.coreV2() || !FunctionDecay)) {
+          A.type(E->getType(), E->getExprLoc(), true);
+        }
+      }
     }
     const auto *Opaque = dyn_cast<OpaqueValueExpr>(S);
     const bool GeneratedArrayNode = A.S.coreV2() &&
@@ -6328,6 +8347,18 @@ public:
     if (const auto *C = dyn_cast<CallExpr>(S)) {
       if (GeneratedArrayAssignments.count(C))
         return true; // Its typed argument subtrees are still visited by RAV.
+      if (A.S.coreV2() && !directFunctionReference(C) &&
+          C->getCallee()->getType()->isFunctionPointerType()) {
+        if (A.functionPointerType(C->getCallee()->getType(), L).empty())
+          return true;
+        const auto *Prototype = C->getCallee()->getType()->getPointeeType()->getAs<FunctionProtoType>();
+        if (C->getNumArgs() != Prototype->getNumParams())
+          A.reject(L, "indirect call arguments", "Callable and argument counts differ.");
+        for (unsigned I = 0; I < C->getNumArgs() && I < Prototype->getNumParams(); ++I)
+          if (Prototype->getParamType(I)->isReferenceType())
+            checkBinding(C->getArg(I), true);
+        return true; // RAV still checks the complete postfix and argument sources.
+      }
       const auto *F = C->getDirectCallee();
       const auto *Method = dyn_cast_or_null<CXXMethodDecl>(F);
       if (A.S.coreV2() && concreteMemberFunctionTemplate(F) &&
@@ -6429,7 +8460,8 @@ public:
           (!A.S.coreV2() && U->isIncrementDecrementOp() &&
            U->getType()->isPointerType()) ||
           (U->getOpcode() == UO_Plus &&
-           U->getSubExpr()->getType()->isPointerType()) ||
+           U->getSubExpr()->getType()->isPointerType() &&
+           !(A.S.coreV2() && U->getSubExpr()->getType()->isFunctionPointerType())) ||
           U->getOpcode() == UO_Extension)
         A.reject(S->getBeginLoc(), "unary operator",
                  "This pointer operation or GNU extension is unsupported.");
@@ -6456,15 +8488,18 @@ public:
     }
     if (const auto *Reference = dyn_cast<DeclRefExpr>(S))
       if (const auto *Method = dyn_cast<CXXMethodDecl>(Reference->getDecl());
-          Method && !Method->isImplicit() && !DirectMethodCallees.count(Reference))
+          Method && !Method->isImplicit() && !DirectFunctionCallees.count(Reference) &&
+          !(A.S.coreV2() && Method->isStatic()))
         A.reject(Reference->getExprLoc(), "method value",
                  "A method name is supported only as a direct call target.");
     if (const auto *M = dyn_cast<MemberExpr>(S)) {
       const auto *V = dyn_cast<VarDecl>(M->getMemberDecl());
       const bool StaticData = A.S.coreV2() && V && V->isStaticDataMember();
+      const auto *Method = dyn_cast<CXXMethodDecl>(M->getMemberDecl());
+      const bool StaticMethod = A.S.coreV2() && Method && Method->isStatic();
       if ((!A.S.coreV2() && M->isArrow()) ||
-          (!isa<FieldDecl>(M->getMemberDecl()) && !StaticData &&
-           !DirectMethodCallees.count(M)))
+          (!isa<FieldDecl>(M->getMemberDecl()) && !StaticData && !StaticMethod &&
+           !DirectFunctionCallees.count(M)))
         A.reject(S->getBeginLoc(), "member access",
                  "Only fields, core-v2 scalar static data and direct method calls are supported.");
     }
@@ -6537,8 +8572,9 @@ public:
 };
 
 // RAV visits an enclosing record before its nested declarations. By-value
-// fields require complete definitions in both the protocol and emitted source;
-// pointer fields only require the existing forward declarations.
+// fields and array elements require complete definitions in the protocol and
+// emitted declarators, including arrays reached through callback signatures.
+// Ordinary pointers to records require only the existing forward declarations.
 static void orderCoreV2Records(Adapter &A) {
   llvm::DenseMap<const CXXRecordDecl *, std::size_t> Indices;
   for (std::size_t I = 0; I < A.Records.size(); ++I) {
@@ -6566,36 +8602,49 @@ static void orderCoreV2Records(Adapter &A) {
       return;
     State[I] = Visit::Active;
     for (const auto *F : R->fields()) {
-      A.chargeExpansion(1, F->getLocation());
-      QualType T = F->getType();
-      unsigned ArrayDepth = 0;
-      while (const auto *Array = A.Context.getAsConstantArrayType(T)) {
-        if (++ArrayDepth > 64) {
+      // A pointer to a record needs only its forward declaration, but an array
+      // element needs a complete definition even inside a callback signature.
+      auto RequireType = [&](auto &&Walk, QualType T, bool Complete,
+                             unsigned TypeDepth) -> void {
+        if (TypeDepth > 64) {
           A.reject(F->getLocation(), "record dependency",
-                   "Array field nesting exceeds the depth limit.");
+                   "Field declaration type nesting exceeds the depth limit.");
           throw Failure{};
         }
         A.chargeExpansion(1, F->getLocation());
-        T = Array->getElementType();
-      }
-      const auto *Dependency = T->getAsCXXRecordDecl();
-      if (!Dependency)
-        continue;
-      auto Found = Indices.find(Dependency->getCanonicalDecl());
-      if (Found == Indices.end()) {
-        A.reject(F->getLocation(), "record dependency",
-                 "A by-value field requires a checked source-owned record definition.");
-        throw Failure{};
-      }
-      Self(Self, Found->second, Depth + 1);
-      // Cache subtree height as well as visitation. A dependency emitted by an
-      // earlier root still contributes its full depth to the current record.
-      if (Heights[Found->second] >= 64) {
-        A.reject(F->getLocation(), "record dependency",
-                 "By-value record nesting exceeds the depth limit.");
-        throw Failure{};
-      }
-      Heights[I] = std::max(Heights[I], Heights[Found->second] + 1);
+        if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
+          Walk(Walk, Array->getElementType(), true, TypeDepth + 1);
+          return;
+        }
+        if (T->isPointerType() || T->isReferenceType()) {
+          Walk(Walk, T->getPointeeType(), false, TypeDepth + 1);
+          return;
+        }
+        if (const auto *Prototype = T->getAs<FunctionProtoType>()) {
+          Walk(Walk, Prototype->getReturnType(), true, TypeDepth + 1);
+          for (auto Parameter : Prototype->param_types())
+            Walk(Walk, Parameter, true, TypeDepth + 1);
+          return;
+        }
+        const auto *Dependency = T->getAsCXXRecordDecl();
+        if (!Complete || !Dependency)
+          return;
+        auto Found = Indices.find(Dependency->getCanonicalDecl());
+        if (Found == Indices.end()) {
+          A.reject(F->getLocation(), "record dependency",
+                   "A field declaration requires a checked complete record definition.");
+          throw Failure{};
+        }
+        Self(Self, Found->second, Depth + 1);
+        // Cached dependencies still contribute their whole declaration depth.
+        if (Heights[Found->second] >= 64) {
+          A.reject(F->getLocation(), "record dependency",
+                   "Record declaration nesting exceeds the depth limit.");
+          throw Failure{};
+        }
+        Heights[I] = std::max(Heights[I], Heights[Found->second] + 1);
+      };
+      RequireType(RequireType, F->getType(), true, 0);
     }
     State[I] = Visit::Done;
     Ordered.push_back(R);
@@ -6610,15 +8659,25 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                   llvm::ArrayRef<TemplateUseSource> TemplateUses,
                   llvm::ArrayRef<FunctionSpecializationSource> Specializations,
                   llvm::ArrayRef<VariableTypeSource> VariableTypes,
-                  llvm::ArrayRef<SelectedTemplateCallSource> SelectedCalls) {
+                  llvm::ArrayRef<SelectedTemplateCallSource> SelectedCalls,
+                  llvm::ArrayRef<ExplicitMemberClassInstantiationSource> MemberClassDirectives,
+                  llvm::ArrayRef<FriendFunctionSource> FriendFunctions,
+                  llvm::ArrayRef<FriendDeclarationSource> FriendDeclarations,
+                  llvm::ArrayRef<FriendFunctionTemplateSource> FriendTemplates,
+                  llvm::ArrayRef<FunctionTemplateBodySource> TemplateBodies,
+                  llvm::ArrayRef<FriendClassTemplateSource> FriendClasses) {
   Allowlist Check(*this);
+  Check.indexFriendSources(FriendFunctions, FriendDeclarations, FriendTemplates, TemplateBodies, FriendClasses);
   Check.indexTemplates();
   Check.indexTemplateSources(TemplateUses, Specializations, VariableTypes);
   Check.indexSelectedTemplateCalls(SelectedCalls);
+  Check.checkFriendSourceIdentities();
   for (const auto &Directive : Directives)
     Check.checkExplicitFunctionInstantiation(Directive);
   for (const auto &Directive : StaticDirectives)
     Check.checkExplicitStaticDataInstantiation(Directive);
+  for (const auto &Directive : MemberClassDirectives)
+    Check.checkExplicitMemberClassInstantiation(Directive);
   Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (!S.Diagnostics.empty())
     return;
@@ -6662,11 +8721,13 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                            ? G->getAnyInitializer() : G->getInit();
     if (Init) {
       APValue Value;
-      if (!Init->isCXX11ConstantExpr(Context, &Value) || (Mutable && !Value.isInt()))
+      if (!Init->isCXX11ConstantExpr(Context, &Value) || (Mutable && !Value.isInt() &&
+          !G->getType()->isFunctionPointerType()))
         throw Failure{};
       Initializer = constant(Value, G->getType(), G->getLocation());
     } else {
-      if (!Mutable || !G->getType()->isIntegralOrEnumerationType())
+      if (!Mutable || (!G->getType()->isIntegralOrEnumerationType() &&
+                       !G->getType()->isFunctionPointerType()))
         throw Failure{};
       Initializer = zero(G->getType(), G->getLocation());
     }
@@ -6944,10 +9005,16 @@ class Consumer : public ASTConsumer {
   State &S;
   std::vector<ExplicitFunctionInstantiationSource> Directives;
   std::vector<ExplicitStaticDataInstantiationSource> StaticDirectives;
+  std::vector<ExplicitMemberClassInstantiationSource> MemberClassDirectives;
   std::vector<TemplateUseSource> TemplateUses;
   std::vector<FunctionSpecializationSource> Specializations;
   std::vector<VariableTypeSource> VariableTypes;
   std::vector<SelectedTemplateCallSource> SelectedCalls;
+  std::vector<FriendFunctionSource> FriendFunctions;
+  std::vector<FriendDeclarationSource> FriendDeclarations;
+  std::vector<FriendFunctionTemplateSource> FriendTemplates;
+  std::vector<FunctionTemplateBodySource> TemplateBodies;
+  std::vector<FriendClassTemplateSource> FriendClasses;
   std::size_t DirectiveUnits = 0;
 
   bool reserveSourceUnits(SourceManager &Sources, SourceLocation Location,
@@ -7001,7 +9068,15 @@ class Consumer : public ASTConsumer {
       return;
     }
     const auto *Full = dyn_cast_or_null<VarTemplateSpecializationDecl>(Declaration);
+    const auto *ClassFull = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Declaration);
     const bool PendingDeclaration = Kind == TemplateSourceKind::PartialDeclaration ||
+        (Kind == TemplateSourceKind::ClassFullDeclaration && ClassFull && !Origin &&
+         ClassFull->getKind() == Decl::ClassTemplateSpecialization &&
+         ClassFull->isClassScopeExplicitSpecialization() &&
+         ClassFull->getDeclContext()->isDependentContext() &&
+         isa<CXXRecordDecl>(ClassFull->getDeclContext()) &&
+         ClassFull->getLexicalDeclContext() == ClassFull->getDeclContext() &&
+         !ClassFull->getInstantiatedFromMemberClass()) ||
         (Kind == TemplateSourceKind::VariableDeclaration && Full &&
          Full->getKind() == Decl::VarTemplateSpecialization && Full->isExplicitSpecialization() &&
          Full->getDeclContext()->isDependentContext() &&
@@ -7095,13 +9170,39 @@ public:
       NamedDecl *const *TypeParameters, TypeSourceInfo *const *ParameterTypes,
       const unsigned *PackIndices, unsigned TypeCount,
       bool Overflow, const SourceLocation &Location) override {
-    retainTemplateUse(TemplateSourceKind::ClassDeclaration,
+    const bool GenericFull = Declaration && !Instantiation &&
+        Declaration->getKind() == Decl::ClassTemplateSpecialization &&
+        Declaration->isClassScopeExplicitSpecialization() &&
+        Declaration->getDeclContext()->isDependentContext() &&
+        isa<CXXRecordDecl>(Declaration->getDeclContext()) &&
+        Declaration->getLexicalDeclContext() == Declaration->getDeclContext() &&
+        !Declaration->getInstantiatedFromMemberClass();
+    retainTemplateUse(GenericFull ? TemplateSourceKind::ClassFullDeclaration
+                                  : TemplateSourceKind::ClassDeclaration,
                       Declaration ? Declaration->getSpecializedTemplate() : nullptr,
                       Declaration, nullptr, nullptr, &Written,
                       Canonical, Sugared, Count, DefaultParameters,
                       OriginalDefaults, ConvertedDefaults, DefaultCount,
                       TypeParameters, ParameterTypes, PackIndices, TypeCount, Overflow,
                       Location, Instantiation);
+  }
+  void HandleNeverCClassFullDeclarationSource(
+      ClassTemplateSpecializationDecl *Declaration,
+      ClassTemplateSpecializationDecl *Origin,
+      const TemplateArgumentListInfo &Written,
+      const TemplateArgument *Canonical, const TemplateArgument *Sugared, unsigned Count,
+      NamedDecl *const *DefaultParameters, const TemplateArgumentLoc *OriginalDefaults,
+      const TemplateArgumentLoc *ConvertedDefaults, unsigned DefaultCount,
+      NamedDecl *const *TypeParameters, TypeSourceInfo *const *ParameterTypes,
+      const unsigned *PackIndices, unsigned TypeCount,
+      bool Overflow, const SourceLocation &Location) override {
+    retainTemplateUse(TemplateSourceKind::ClassFullDeclaration,
+                      Declaration ? Declaration->getSpecializedTemplate() : nullptr,
+                      Declaration, nullptr, nullptr, &Written,
+                      Canonical, Sugared, Count, DefaultParameters,
+                      OriginalDefaults, ConvertedDefaults, DefaultCount,
+                      TypeParameters, ParameterTypes, PackIndices, TypeCount, Overflow,
+                      Location, false, nullptr, false, Origin);
   }
   void HandleNeverCClassPartialSource(
       ClassTemplatePartialSpecializationDecl *Partial,
@@ -7241,13 +9342,83 @@ public:
       return;
     StaticDirectives.push_back({Variable, Type, Qualifier, Location, HasAttributes});
   }
+  void HandleNeverCExplicitMemberClassInstantiation(
+      CXXRecordDecl *Record, CXXRecordDecl *Origin,
+      const NestedNameSpecifierLoc &Qualifier, const SourceLocation &Location,
+      const SourceLocation &TemplateLocation, const SourceLocation &ExternLocation,
+      bool HasAttributes) override {
+    if (!S.coreV2() || !Record || !Origin || !S.Diagnostics.empty())
+      return;
+    auto &Sources = Record->getASTContext().getSourceManager();
+    if (!S.owns(Sources, Location) || !reserveSourceUnits(Sources, Location, 0))
+      return;
+    MemberClassDirectives.push_back({Record, Origin, Qualifier, Location,
+                                     TemplateLocation, ExternLocation, HasAttributes});
+  }
+  void HandleNeverCFriendFunctionSource(FunctionDecl *Function,
+      FunctionDecl *Incoming, FunctionDecl *Selected, CXXRecordDecl *GrantingClass) override {
+    if (!S.coreV2() || !Function || !Incoming || !Selected || !GrantingClass ||
+        !S.Diagnostics.empty())
+      return;
+    auto &Sources = Function->getASTContext().getSourceManager();
+    auto Location = Incoming->getLocation();
+    if (!S.owns(Sources, Location) || !reserveSourceUnits(Sources, Location, 0))
+      return;
+    FriendFunctions.push_back({Function, Incoming, Selected, GrantingClass});
+  }
+  void HandleNeverCFriendDeclarationSource(FriendDecl *Declaration,
+                                           FriendDecl *Written) override {
+    if (!S.coreV2() || !Declaration || !Written || !S.Diagnostics.empty())
+      return;
+    auto &Sources = Declaration->getASTContext().getSourceManager();
+    auto Location = Written->getFriendLoc();
+    if (!S.owns(Sources, Location) || !reserveSourceUnits(Sources, Location, 0))
+      return;
+    FriendDeclarations.push_back({Declaration, Written});
+  }
+  void HandleNeverCFriendFunctionTemplateSource(FunctionTemplateDecl *Template,
+      FunctionDecl *Incoming, FunctionDecl *Selected, CXXRecordDecl *GrantingClass) override {
+    if (!S.coreV2() || !Template || !Incoming || !Selected || !GrantingClass ||
+        !S.Diagnostics.empty())
+      return;
+    auto &Sources = Template->getASTContext().getSourceManager();
+    auto Location = Incoming->getLocation();
+    if (!S.owns(Sources, Location) || !reserveSourceUnits(Sources, Location, 0))
+      return;
+    FriendTemplates.push_back({Template, Incoming, Selected, GrantingClass});
+  }
+  void HandleNeverCFunctionTemplateBodySource(FunctionDecl *Function,
+      FunctionTemplateDecl *Compatible, FunctionDecl *Pattern,
+      DeclContext *LexicalContext) override {
+    if (!S.coreV2() || !Function || !Compatible || !Pattern || !LexicalContext ||
+        !S.Diagnostics.empty())
+      return;
+    auto &Sources = Function->getASTContext().getSourceManager();
+    auto Location = Pattern->getLocation();
+    if (!S.owns(Sources, Location) || !reserveSourceUnits(Sources, Location, 0))
+      return;
+    TemplateBodies.push_back({Function, Compatible, Pattern, LexicalContext});
+  }
+  void HandleNeverCFriendClassTemplateSource(ClassTemplateDecl *Template,
+      ClassTemplateDecl *Written, CXXRecordDecl *GrantingClass,
+      DeclContext *Context, ClassTemplateDecl *Previous) override {
+    if (!S.coreV2() || !Template || !Written || !GrantingClass || !Context ||
+        !S.Diagnostics.empty())
+      return;
+    auto &Sources = Template->getASTContext().getSourceManager();
+    auto Location = Written->getLocation();
+    if (!S.owns(Sources, Location) || !reserveSourceUnits(Sources, Location, 0))
+      return;
+    FriendClasses.push_back({Template, Written, GrantingClass, Context, Previous});
+  }
   void HandleTranslationUnit(ASTContext &C) override {
     if (!S.Diagnostics.empty() || C.getDiagnostics().hasErrorOccurred())
       return;
     Adapter A(S, C);
     try {
       A.run(Directives, StaticDirectives, TemplateUses, Specializations,
-            VariableTypes, SelectedCalls);
+            VariableTypes, SelectedCalls, MemberClassDirectives,
+            FriendFunctions, FriendDeclarations, FriendTemplates, TemplateBodies, FriendClasses);
     } catch (const Failure &) {
     }
   }

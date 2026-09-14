@@ -265,3 +265,24 @@ TEST_F(TranslateProjectTest, RelocationPreservesSourceMapsAndSemanticContext) {
   EXPECT_EQ(Contexts[0], Contexts[1]);
 }
 } // namespace
+
+TEST_F(TranslateProjectTest, FunctionPointerValuesRemainOutsideProjectV1) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"parameter", "int apply(int(*p)(int),int n){return p(n);}"},
+      {"address", "int get(int n){return n;}int apply(int n){auto p=get;return p(n);}"},
+      {"global", "int get(int n){return n;}int(*callback)(int)=get;"},
+      {"nested", "using F=int(*)(int);F factory(){return nullptr;}"}};
+  for (const std::string Profile : {"cpp-project-v1", "cpp-math-v1"}) {
+    SCOPED_TRACE(Profile);
+    for (const auto &[Name, Code] : Cases) {
+      SCOPED_TRACE(Name);
+      const auto Root = project("callback-project-" + Profile + "-" + Name);
+      const auto Output = Root / "generated";
+      writeFile(Root / "src" / "first.cpp", Code);
+      auto Args = args(Root);
+      *std::find(Args.begin(), Args.end(), "cpp-project-v1") = Profile;
+      Args.insert(Args.end(), {"--out-dir", Output.string()});
+      rejects(ncc(Args), Output, "TR0201");
+    }
+  }
+}

@@ -889,5 +889,132 @@ copied partial declaration checks reuse the existing source contract; no wire
 field, runtime template object or implicit enclosing receiver is added. Different
 outer arguments retain separate inner types and statics even when their final
 field types match. The paired protocol fixture checks receiver/call closure,
-shared equivalent storage and relocated-source equality. Copied class-scope full
-member class declarations from dependent outer templates remain unsupported.
+shared equivalent storage and relocated-source equality. Copied class-scope full declarations follow their separate exact source and
+body-origin contract. Ordinary nested records follow their own checked member-body contract.
+
+### Copied full member class source and body identity
+
+[Class-scope full copies](cpp-core-v2.md#copied-class-scope-full-specializations)
+use the existing typed record/function/global schema. The full body contributes
+no template parameter level; argument ownership remains with its actual primary
+and body substitutions remain associated with actual outer instances. Distinct
+outer instances keep distinct full-record and scalar static identities even
+when inner arguments agree. The embedded source event identifies the actual
+copy and its exact original full declaration; it is not a public wire object.
+
+Paired fixtures check actual method receivers and signatures, dependency-first
+record fields, closed value/call references, shared equivalent static addresses,
+distinct outer static addresses and byte-equivalent output after relocation.
+O0/O2 runtime checks cover full/partial selection, copies, moves, assignment and
+destruction. These fixtures require native CI from the implementing revision.
+
+### Ordinary nested member source and body identity
+
+[Ordinary nested member classes](cpp-core-v2.md#ordinary-nested-classes-in-generic-owners)
+use existing typed records, functions and globals. Their concrete copies retain
+actual source origins without a synthetic template argument level. Own written
+specializations supply their actual field order and method set; an unused
+ordinary member declaration does not create a generic runtime object or force
+its body. Existing copied full declarations keep their eager behavior.
+
+The internal explicit member-class event preserves every successful directive's
+actual target/origin, qualifier, locations and parsed attributes, including
+extern and no-effect exits. The event is not exported as a protocol record.
+Paired fixtures verify separate outer/nested identities, own specialization
+layout, dependency-first by-value fields, actual method receivers, closed calls
+and values, shared equivalent static storage, distinct instance storage and
+relocated-source equality. Runtime checks include copy/move/assignment and
+destruction at O0/O2. Native CI of the implementing revision must validate the
+protocol assertions and runtime behavior.
+
+Instantiated non-template friends use ordinary concrete free function entries,
+with their explicit parameters and no receiver or runtime template level. Actual
+namespace merging keeps one function identity; distinct overloads and static
+locals remain distinct. The paired fixture checks closed calls/references,
+receiver-free signatures, instance-local scalar storage, friend-local constructors/
+methods with real outer-pack counts, and root relocation.
+Original/selected/granting source events are internal to the embedded frontend.
+See [the friend contract](cpp-core-v2.md#instantiated-non-template-friend-functions)
+for lazy definitions, normalized source limitations and native evidence scope.
+
+Instantiated non-template friend types add no wire entries or implicit arguments.
+Their selected methods use existing concrete record/field types and ordinary
+calls. The protocol fixture checks private reads/writes, static method signatures,
+closed references and calls, and equality after root relocation. Exact original
+and substituted type sources remain internal to the embedded frontend; see the
+[type-friend contract](cpp-core-v2.md#instantiated-non-template-friend-types).
+
+Friend function templates use the existing concrete free-function protocol.
+Their primary and source events are internal and add no receiver or runtime
+template argument. The actual canonical primary prefixes concrete functions,
+static locals and local records; a copied primary without independent written
+identity also includes its proven granting class. Source declarations remain
+checked after canonical merging. Fixtures check typed arguments/results, shared
+and distinct targets/storage, closed calls/references and root relocation; the
+implementing revision must validate native counts. See the
+[friend function template contract](cpp-core-v2.md#friend-function-templates).
+
+Friend class-template grants use the existing class-instance protocol and add no
+runtime access declaration, receiver or storage. The semantic target class and
+its methods/statics are shared across equivalent repeated grants. Actual target
+specializations retain distinct ordinary identities; the granting source is never
+an extra identity component. Exact original/copied declarations and selected
+parameter/default headers stay internal and independently checked. Typed call,
+field, storage and relocation fixtures require implementing-revision native CI.
+See the [friend class template contract](cpp-core-v2.md#friend-class-templates).
+
+Ordinary callbacks in standalone `cpp-core-v2` use the canonical type spelling
+`fnptr:<parameter-count>:<byte-length>:<result><byte-length>:<parameter>...`.
+Each length covers exactly one complete nested type spelling, measured in bytes;
+counts and lengths are unsigned decimal without leading zeroes. Counts range from
+0 through 64; component lengths are positive. The complete spelling remains at
+most 4096 bytes and obeys the existing depth/node budgets. For example,
+`fnptr:1:3:int3:int` is `int (*)(int)` and `fnptr:0:4:void` is `void (*)(void)`.
+Result and parameters use admitted scalar/reference carriers, with void only as a
+result. Function pointers are distinct from object pointer types; `ptr:fnptr:...`
+is the address of callback storage, not the address of a function.
+
+A `function_address` expression contains exactly `kind`, `type`, `name` and `loc`.
+Its symbol must name a function definition with exactly the encoded result and
+parameter types. It never refers to data storage. Null callback expressions use
+`kind: null` with a function-pointer type. Globals may contain folded null or
+symbolic callbacks; runtime reads and calls are not constant initializers.
+
+An `indirect_call` instruction contains exactly `op`, `loc`, `callable`, `args`
+and, for a nonvoid result, `target`. It contains no direct `callee` or mapping ID.
+`callable` is an ordinary checked function-pointer expression; arguments match its
+signature exactly and a nonvoid target is matching local result storage. The
+source frontend captures the entire postfix value before lowering arguments.
+Synthetic IR independently validates the callable's declared storage and typed
+operands; it does not introduce a new definite-initialization analysis.
+
+The emitter uses recursive typed declarators, prior function prototypes and
+signature-specific layout guards. New enum values are appended, preserving old
+project fingerprints. The existing project and math profiles reject callback
+types before symbol merging, map publication or emission. Cross-TU remapping and
+project inline-address identity are not implied by this standalone addition.
+See the [ordinary function pointer contract](cpp-core-v2.md#ordinary-function-pointers).
+
+### Concrete template callback identity
+
+Supported concrete function-template callbacks reuse `fnptr`, `function_address`
+and `indirect_call`. Source admission requires the actual selected specialization,
+its successful complete source event and an owned definition. The address symbol
+is the same canonical emitted function used for a direct call. Repeated selections
+share one definition and its static-local storage; differing template arguments
+retain distinct functions and storage even when their normalized signatures match.
+No source-proof data or extra template identity is invented in the wire format.
+All ordinary callback validation and previous-profile exclusions remain in force.
+See the [template callback contract](cpp-core-v2.md#concrete-function-template-pointers).
+
+### Callback variable-template storage
+
+A concrete callback variable template emits the existing global declaration with
+its canonical variable name, `fnptr` type, mutability and null or `function_address`
+constant. Equivalent arguments/redeclarations reuse one global. Distinct variable
+instances retain separate globals even when their address constants name the same
+function. A storage address has `ptr:fnptr:...` or `cptr:fnptr:...` type and retains
+the variable identity; loading and calling the value uses `indirect_call`.
+Actual declaration/type/initializer source checks remain frontend obligations;
+normal global and callback signature/definition validation remains unchanged.
+See the [callback variable-template contract](cpp-core-v2.md#callback-variable-templates).

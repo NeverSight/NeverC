@@ -405,3 +405,39 @@ TEST_F(TranslateProjectEmissionTest,
     EXPECT_TRUE(Run.ok()) << Run.err << Run.exitCode;
   }
 }
+
+TEST(TranslateProjectIR, OldProfileRejectsCallbackTypesBeforeSymbolMerging) {
+  Type Callback{TypeKind::FunctionPointer, {}, {projectInt()}};
+  for (unsigned Case = 0; Case < 4; ++Case) {
+    auto U = unit("a.cpp");
+    auto F = function("sample", source("a.cpp"));
+    if (Case == 0)
+      F.Result = Callback;
+    if (Case == 1)
+      F.Params.push_back({"nct_cb", Callback, F.Loc});
+    if (Case == 2)
+      F.Locals.push_back({"nct_cb", Callback, F.Loc});
+    if (Case == 3) {
+      Expr Address;
+      Address.Kind = ExprKind::FunctionAddress;
+      Address.ValueType = Callback;
+      Address.Name = "nct_unknown";
+      Address.Loc = F.Loc;
+      Instruction Call;
+      Call.Op = InstructionKind::IndirectCall;
+      Call.Loc = F.Loc;
+      Call.Callable = Address;
+      F.Body.insert(F.Body.begin() + 1, Call);
+    }
+    addFunction(U, F, '1');
+    rejects({U}, "core v2");
+  }
+}
+
+TEST(TranslateProjectIR, OldProfileRejectsStrayCallableOnExistingInstructions) {
+  auto U = unit("a.cpp");
+  auto F = function("sample", source("a.cpp"));
+  F.Body[0].Callable = integer(0, F.Loc);
+  addFunction(U, F, '1');
+  rejects({U}, "Callable operands");
+}

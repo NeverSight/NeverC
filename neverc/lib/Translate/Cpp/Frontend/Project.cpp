@@ -134,6 +134,9 @@ std::string Adapter::identity(const NamedDecl *D) {
       }
       Identity = "template:" + std::to_string(Found->second) + ":" + S.Relative +
                  ":" + std::to_string(Sources.getFileOffset(L)) + ":" + Identity;
+      if (auto Outer = FriendTemplateIdentityOwners.find(Primary);
+          Outer != FriendTemplateIdentityOwners.end())
+        Identity += ":friend-outer:" + identity(Outer->second);
     } else {
       const FunctionDecl *Owner = dyn_cast<FunctionDecl>(D);
       if (!Owner || !Owner->getPrimaryTemplate()) {

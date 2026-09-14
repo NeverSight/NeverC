@@ -41,6 +41,17 @@ std::string declaration(const Type &T, std::string Name, bool Const = false) {
       Name = "(" + Name + ")";
     return declaration(T.Elements[0], std::move(Name), T.PointeeConst);
   }
+  if (T.Kind == TypeKind::FunctionPointer) {
+    std::string Parameters = T.Elements.size() == 1 ? "void" : "";
+    for (std::size_t I = 1; I < T.Elements.size(); ++I) {
+      if (I != 1)
+        Parameters += ", ";
+      Parameters += declaration(T.Elements[I], {});
+    }
+    Name = std::string(Const ? "(*const" : "(*") +
+           (Name.empty() ? "" : " " + Name) + ")(" + Parameters + ")";
+    return declaration(T.Elements[0], std::move(Name));
+  }
   if (T.Kind == TypeKind::Array)
     return declaration(T.Elements[0],
                        Name + "[" + std::to_string(T.Count) + "]", Const);
@@ -125,6 +136,7 @@ class Emitter {
   EmittedSource Output;
   uint32_t Line = 1;
   std::set<unsigned> SignedConversions, ArithmeticShifts;
+  std::map<std::string, Type> FunctionPointers;
   struct PointerHelper {
     Type Left, Right, Result;
     BinaryOperator Op;
@@ -166,6 +178,7 @@ class Emitter {
     ++Line;
   }
   void inspect(const Expr &E) {
+    inspectType(E.ValueType);
     if (E.Kind == ExprKind::Binary &&
         (E.BinaryOp == BinaryOperator::Add ||
          E.BinaryOp == BinaryOperator::Subtract) &&
@@ -191,6 +204,8 @@ class Emitter {
   }
   std::string expression(const Expr &E, bool Initializer = false) {
     switch (E.Kind) {
+    case ExprKind::FunctionAddress:
+      return "(&" + E.Name + ")";
     case ExprKind::Null:
       return "((" + cType(E.ValueType) + ")0)";
     case ExprKind::Address:
@@ -438,17 +453,48 @@ class Emitter {
       line("");
     }
   }
+  void inspectType(const Type &T) {
+    if (T.Kind == TypeKind::FunctionPointer)
+      FunctionPointers.emplace(typeName(T), T);
+    for (const auto &Element : T.Elements)
+      inspectType(Element);
+  }
+  void callableGuards() {
+    if (FunctionPointers.empty())
+      return;
+    const auto &Layout = M.Target.Carriers->Carriers.back();
+    for (const auto &Entry : FunctionPointers) {
+      auto Spelling = cType(Entry.second);
+      line("static_assert(sizeof(" + Spelling + ") * __CHAR_BIT__ == " +
+           std::to_string(Layout.SizeBits) +
+           ", \"translated function pointer size mismatch\");");
+      line("static_assert(alignof(" + Spelling + ") * __CHAR_BIT__ == " +
+           std::to_string(Layout.ABIAlignBits) +
+           ", \"translated function pointer alignment mismatch\");");
+    }
+    line("");
+  }
   void inspectModule() {
-    for (const auto &G : M.Globals)
+    for (const auto &R : M.Records)
+      for (const auto &Field : R.Fields)
+        inspectType(Field.ValueType);
+    for (const auto &G : M.Globals) {
+      inspectType(G.ValueType);
       inspect(G.Value);
-    for (const auto &F : M.Functions)
+    }
+    for (const auto &F : M.Functions) {
+      inspectType(F.Result);
+      for (const auto *Variables : {&F.Params, &F.Locals})
+        for (const auto &V : *Variables)
+          inspectType(V.ValueType);
       for (const auto &I : F.Body) {
-        for (const auto *E : {&I.Target, &I.Value, &I.Condition})
+        for (const auto *E : {&I.Target, &I.Value, &I.Condition, &I.Callable})
           if (*E)
             inspect(**E);
         for (const auto &A : I.Args)
           inspect(A);
       }
+    }
   }
   void function(const Function &F) {
     line(signature(F) + " {", &F.Loc);
@@ -463,12 +509,15 @@ class Emitter {
         break;
       case InstructionKind::Call:
       case InstructionKind::MappedCall:
+      case InstructionKind::IndirectCall:
         Text = "  ";
         if (I.Target)
           Text += expression(*I.Target) + " = ";
         Text += (I.Op == InstructionKind::MappedCall
                      ? findMappingSpec(I.MappingID)->RuntimeSymbol
-                     : I.Callee) +
+                     : I.Op == InstructionKind::IndirectCall
+                           ? "(" + expression(*I.Callable) + ")"
+                           : I.Callee) +
                 std::string("(");
         for (std::size_t N = 0; N < I.Args.size(); ++N) {
           if (N)
@@ -508,18 +557,25 @@ public:
         line("typedef struct " + R.ID + " " + R.ID + ";", &R.Loc);
     for (const auto &R : M.Records)
       record(R);
+    callableGuards();
     pointerHelpers();
+    auto Prototypes = [&] {
+      for (const auto &F : M.Functions)
+        line(signature(F) + ";", &F.Loc);
+      if (!M.Functions.empty())
+        line("");
+    };
+    // Constant code addresses require a prior declaration of their target.
+    if (!FunctionPointers.empty())
+      Prototypes();
     for (const auto &G : M.Globals)
-      line(std::string(G.Mutable ? "static " : "static const ") +
-               cType(G.ValueType) + " " + G.Name + " = " +
+      line("static " + declaration(G.ValueType, G.Name, !G.Mutable) + " = " +
                expression(G.Value, true) + ";",
            &G.Loc);
     if (!M.Globals.empty())
       line("");
-    for (const auto &F : M.Functions)
-      line(signature(F) + ";", &F.Loc);
-    if (!M.Functions.empty())
-      line("");
+    if (FunctionPointers.empty())
+      Prototypes();
     for (const auto &F : M.Functions)
       function(F);
     return std::move(Output);

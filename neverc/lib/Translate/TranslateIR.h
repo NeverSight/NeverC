@@ -12,12 +12,14 @@
 
 namespace neverc::translate {
 
-enum class TypeKind { Int, UInt, Bool, Void, Record, Double, Pointer, Array };
+enum class TypeKind {
+  Int, UInt, Bool, Void, Record, Double, Pointer, Array, FunctionPointer
+};
 struct Type {
   TypeKind Kind = TypeKind::Void;
   std::string RecordID;
-  // A pointer owns exactly one component; other types have none. Keeping the
-  // tree value-owned prevents recursive record pointers from forming cycles.
+  // Pointers/arrays own one component; function pointers own a result followed
+  // by parameters. The value-owned tree cannot contain recursive type cycles.
   std::vector<Type> Elements;
   bool PointeeConst = false;
   uint32_t Count = 0;
@@ -37,14 +39,14 @@ struct Type {
   bool isPromotedInteger() const { return isInteger() && integerBits() >= 32; }
   bool isScalar() const {
     return isInteger() || Kind == TypeKind::Bool || Kind == TypeKind::Double ||
-           Kind == TypeKind::Pointer;
+           Kind == TypeKind::Pointer || Kind == TypeKind::FunctionPointer;
   }
 };
 std::string typeName(const Type &T);
 
 enum class ExprKind {
   Literal, Var, Unary, Binary, Cast, Member, Aggregate, Null, Address, Dereference,
-  ArrayDecay, Index
+  ArrayDecay, Index, FunctionAddress
 };
 enum class UnaryOperator { Plus, Minus, BitNot, LogicalNot };
 enum class BinaryOperator {
@@ -85,7 +87,8 @@ enum class InstructionKind {
   Jump,
   Branch,
   Return,
-  MappedCall
+  MappedCall,
+  IndirectCall
 };
 struct Instruction {
   InstructionKind Op = InstructionKind::Return;
@@ -93,6 +96,7 @@ struct Instruction {
   std::optional<Expr> Target;
   std::optional<Expr> Value;
   std::optional<Expr> Condition;
+  std::optional<Expr> Callable;
   std::string Callee;
   std::string MappingID;
   std::vector<Expr> Args;
