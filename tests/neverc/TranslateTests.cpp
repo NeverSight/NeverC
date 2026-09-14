@@ -6477,6 +6477,53 @@ TEST_F(TranslateTest, CoreV2PartialDeclarationSourcesRetainLanguageDiagnostics) 
   }
 }
 
+TEST_F(TranslateTest, CoreV2DependentQualifiersPreserveOwnersAndStorage) {
+  const auto Source = tmpFile("dependent-qualifier-runtime.cpp");
+  const auto Output = tmpFile("dependent-qualifier-runtime.nc");
+  writeFile(Source, R"cpp(namespace Q{
+template<int N>struct O{
+ template<int M>struct I{static int n;int get()const;};
+};
+}
+template<int X>template<int Y>int Q::O<X>::I<Y>::n=X*10+Y;
+template<int X>template<int Y>int Q::O<X>::I<Y>::get()const{return n;}
+template<class T>struct P{
+ template<class U>struct I;
+ template<class U>struct I<U*>{T a;U b;int get()const;};
+};
+template<class X>template<class Y>int P<X>::I<Y*>::get()const{return a+b;}
+template<int...N>struct Packs{
+ template<int...M>struct I{static int n;int get()const;};
+};
+template<int...X>template<int...Y>int Packs<X...>::I<Y...>::n=(0+...+X)*10+(0+...+Y);
+template<int...X>template<int...Y>int Packs<X...>::I<Y...>::get()const{return n;}
+int main(){
+ Q::O<1>::I<2>a;Q::O<2>::I<1>b;
+ if(a.get()!=12||b.get()!=21)return 1;
+ if(&Q::O<1>::I<2>::n==&Q::O<2>::I<1>::n)return 2;
+ Q::O<1>::I<2>::n=7;
+ if(a.get()!=7||b.get()!=21)return 3;
+ P<int>::I<int*>p{2,3};P<long long>::I<int*>q{4,5};
+ if(p.get()!=5||q.get()!=9)return 4;
+ Packs<>::I<>empty;Packs<1,2>::I<3,4>full;
+ if(empty.get()!=0||full.get()!=37)return 5;
+ Packs<>::I<>::n=8;
+ if(empty.get()!=8||full.get()!=37)return 6;
+ return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("dependent-qualifier-runtime" + Optimization);
+    auto Build = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2DependentMemberClassesPreserveObjectsAndStorage) {
   const auto Source = tmpFile("dependent-member-classes-runtime.cpp");
   const auto Output = tmpFile("dependent-member-classes-runtime.nc");
@@ -6567,6 +6614,15 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2DependentMemberClassesAcceptConcreteInstances) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"qualifier-namespaces", "namespace A{template<class T>struct O{template<class U>struct I{int get();};};}template<class X>template<class Y>int A::O<X>::I<Y>::get(){return sizeof(X)+sizeof(Y);}int f(){A::O<int>::I<bool>v;return v.get();}"},
+      {"qualifier-inner-partial", "template<class T>struct O{template<class U>struct I;template<class U>struct I<U*>{T a;U b;int get();};};template<class X>template<class Y>int O<X>::I<Y*>::get(){return a+b;}int f(){O<int>::I<int*>v{2,3};return v.get();}"},
+      {"qualifier-outer-partial", "template<class T>struct O;template<class T>struct O<T*>{template<class U>struct I{T a;U b;int get();};};template<class X>template<class Y>int O<X*>::I<Y>::get(){return a+b;}int f(){O<int*>::I<int>v{2,3};return v.get();}"},
+      {"qualifier-empty-packs", "template<int...N>struct O{template<int...M>struct I{static int n;int get();};};template<int...X>template<int...Y>int O<X...>::I<Y...>::n=sizeof...(X)*10+sizeof...(Y);template<int...X>template<int...Y>int O<X...>::I<Y...>::get(){return n;}int f(){O<>::I<>v;return v.get();}"},
+      {"qualifier-mixed-arguments", "template<class T,int N>struct O{template<int M,class U>struct I{int get();};};template<class X,int A>template<int B,class Y>int O<X,A>::I<B,Y>::get(){return sizeof(X)+A+B+sizeof(Y);}int f(){O<int,2>::I<3,bool>v;return v.get();}"},
+      {"qualifier-constructor", "template<int N>struct O{template<int M>struct I{int n;I(int v);};};template<int X>template<int Y>O<X>::I<Y>::I(int v):n(X+Y+v){}int f(){O<1>::I<2>v(3);return v.n;}"},
+      {"qualifier-destructor", "int n=0;template<int N>struct O{template<int M>struct I{~I();};};template<int X>template<int Y>O<X>::I<Y>::~I(){n=X+Y;}int f(){{O<1>::I<2>v;}return n;}"},
+      {"qualifier-same-named-owners", "namespace A{template<int N>struct O{template<int M>struct I{int get();};};}namespace B{template<int N>struct O{template<int M>struct I{int get();};};}template<int X>template<int Y>int A::O<X>::I<Y>::get(){return X+Y;}template<int X>template<int Y>int B::O<X>::I<Y>::get(){return X*10+Y;}int f(){A::O<1>::I<2>a;B::O<1>::I<2>b;return a.get()+b.get();}"},
+      {"qualifier-runtime-source", "namespace Q{\ntemplate<int N>struct O{\n template<int M>struct I{static int n;int get()const;};\n};\n}\ntemplate<int X>template<int Y>int Q::O<X>::I<Y>::n=X*10+Y;\ntemplate<int X>template<int Y>int Q::O<X>::I<Y>::get()const{return n;}\ntemplate<class T>struct P{\n template<class U>struct I;\n template<class U>struct I<U*>{T a;U b;int get()const;};\n};\ntemplate<class X>template<class Y>int P<X>::I<Y*>::get()const{return a+b;}\ntemplate<int...N>struct Packs{\n template<int...M>struct I{static int n;int get()const;};\n};\ntemplate<int...X>template<int...Y>int Packs<X...>::I<Y...>::n=(0+...+X)*10+(0+...+Y);\ntemplate<int...X>template<int...Y>int Packs<X...>::I<Y...>::get()const{return n;}\nint main(){\n Q::O<1>::I<2>a;Q::O<2>::I<1>b;\n if(a.get()!=12||b.get()!=21)return 1;\n if(&Q::O<1>::I<2>::n==&Q::O<2>::I<1>::n)return 2;\n Q::O<1>::I<2>::n=7;\n if(a.get()!=7||b.get()!=21)return 3;\n P<int>::I<int*>p{2,3};P<long long>::I<int*>q{4,5};\n if(p.get()!=5||q.get()!=9)return 4;\n Packs<>::I<>empty;Packs<1,2>::I<3,4>full;\n if(empty.get()!=0||full.get()!=37)return 5;\n Packs<>::I<>::n=8;\n if(empty.get()!=8||full.get()!=37)return 6;\n return 0;\n}\n"},
       {"two-level-types", "template<class T>struct O{template<class U>struct I{T a;U b;};};int f(){O<int>::I<long long>v{3,4};return v.a+v.b;}"},
       {"three-level-types", "template<class T>struct O{template<class U>struct M{template<class V>struct I{T a;U b;V c;};};};int f(){O<int>::M<int>::I<int>v{1,2,3};return v.a+v.b+v.c;}"},
       {"outer-and-inner-values", "template<int N>struct O{template<int M>struct I{int n=N+M;};};int f(){O<2>::I<3>v;return v.n;}"},
@@ -6648,6 +6704,13 @@ TEST_F(TranslateTest, CoreV2DependentMemberClassesAcceptConcreteInstances) {
 
 TEST_F(TranslateTest, CoreV2DependentMemberClassesRetainSourceAndOwnerBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"qualifier-hidden-body", "template<class T>struct O{template<class U>struct I{int get();};};template<class X>template<class Y>int O<X>::I<Y>::get(){return sizeof(double);}int f(){O<int>::I<int>v;return v.get();}"},
+      {"qualifier-hidden-parameter", "template<class T>struct O{template<class U>struct I{int get(decltype((sizeof(double),0)));};};template<class X>template<class Y>int O<X>::I<Y>::get(decltype((sizeof(double),0))v){return v;}int f(){O<int>::I<int>v;return v.get(3);}"},
+      {"qualifier-hidden-noexcept", "template<class T>struct O{template<class U>struct I{int get()noexcept(sizeof(double)>0);};};template<class X>template<class Y>int O<X>::I<Y>::get()noexcept(sizeof(double)>0){return 3;}int f(){O<int>::I<int>v;return v.get();}"},
+      {"qualifier-hidden-static-init", "template<int N>struct O{template<int M>struct I{static int n;};};template<int X>template<int Y>int O<X>::I<Y>::n=X+Y+static_cast<int>(1.0);int*f(){return &O<1>::I<2>::n;}"},
+      {"qualifier-hidden-inner-argument", "template<class T>struct O{template<class U>struct I{int get();};};template<class X>template<class Y>int O<X>::I<Y>::get(){return 3;}int f(){O<int>::I<decltype((sizeof(double),1))>v;return v.get();}"},
+      {"qualifier-hidden-pack-argument", "template<int...N>struct O{template<int...M>struct I{int get();};};template<int...X>template<int...Y>int O<X...>::I<Y...>::get(){return sizeof...(X)+sizeof...(Y);}int f(){O<1>::I<(sizeof(double),2)>v;return v.get();}"},
+      {"qualifier-hidden-same-named-owner", "namespace A{template<class T>struct O{template<class U>struct I{int get();};};}namespace B{template<class T>struct O{template<class U>struct I{int get();};};}template<class X>template<class Y>int A::O<X>::I<Y>::get(){return 3;}template<class X>template<class Y>int B::O<X>::I<Y>::get(){return sizeof(double);}int f(){A::O<int>::I<int>a;B::O<int>::I<int>b;return a.get()+b.get();}"},
       {"partial-parameter-hidden-unused", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>o;return sizeof(o);}"},
       {"partial-parameter-hidden-used", "template<class U>using K=decltype((sizeof(double),U{}));template<class T>struct O{template<class U,K<U> N>struct I{};template<int N>struct I<int,N>{};};int f(){O<int>::I<int,1>v;return sizeof(v);}"},
       {"default-hidden", "template<class T>struct O{template<class U=decltype((sizeof(double),1))>struct I{int n;};};"},

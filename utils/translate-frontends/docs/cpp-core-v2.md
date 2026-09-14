@@ -1174,6 +1174,14 @@ variable templates can refer to these distinct outer and inner levels. Different
 outer instances do not share a static object merely because the final field or
 function types happen to agree.
 
+Clang can retain dependent type sugar in an instantiated out-of-line member's
+qualifier even when its semantic class owner is concrete. That exact declaration
+qualifier is checked against the actual enclosing record chain, selected template
+origins and every written type/scalar argument, including expanded packs. This
+also covers qualified namespaces and selected partials. The exception does not
+apply to parameter, body, initializer or unrelated type source. Those sources
+retain ordinary checks, including unsupported types hidden by constant folding.
+
 Copied class-scope full member class declarations written in a dependent outer
 class still require a separate producer contract and remain rejected. Ordinary
 nested records inside generic classes, local/union owners, inheritance, virtual

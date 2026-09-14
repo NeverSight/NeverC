@@ -1298,6 +1298,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   unsigned ArrayIndexDepth = 0;
   const CXXMethodDecl *CurrentMethod = nullptr;
   const FunctionDecl *CurrentFunction = nullptr;
+  const DeclaratorDecl *CurrentDeclarator = nullptr;
   const FieldDecl *CurrentDefaultField = nullptr;
   SourceLocation ImplicitInitializerOwner;
   const TemplateParameterList *TemplateParameterTypeSource = nullptr;
@@ -4640,6 +4641,103 @@ public:
     // erased canonical type such as Ignore<T> is still instantiation-dependent.
     return TraverseDecl(Pattern);
   }
+  bool qualifierTemplateMatches(TemplateSpecializationTypeLoc TL,
+                                const ClassTemplateSpecializationDecl *Record) {
+    if (!Record || Record->getKind() != Decl::ClassTemplateSpecialization ||
+        !owned(Record) || Record->isDependentContext() || Record->isInvalidDecl())
+      return false;
+    const auto *Actual = Record->getSpecializedTemplate();
+    const auto *Written = dyn_cast_or_null<ClassTemplateDecl>(
+        TL.getTypePtr()->getTemplateName().getAsTemplateDecl());
+    if (!Written || !owned(Written) || !classTemplateShape(Actual) ||
+        Actual->getDeclName() != Written->getDeclName())
+      return false;
+    // Sema can retain the original member primary in an otherwise substituted
+    // qualifier. Only the actual selected primary's verified origin chain fits.
+    std::set<const ClassTemplateDecl *> Seen;
+    bool Matched = false;
+    for (auto *Primary = Actual; Primary;) {
+      A.chargeExpansion(1, TL.getBeginLoc());
+      Primary = Primary->getCanonicalDecl();
+      if (Seen.size() >= 64 || !Seen.insert(Primary).second)
+        return false;
+      if (Primary == Written->getCanonicalDecl()) {
+        Matched = true;
+        break;
+      }
+      if (Primary->isMemberSpecialization())
+        break;
+      Primary = Primary->getInstantiatedFromMemberTemplate();
+    }
+    if (!Matched || !checkClassPartialSource(Record, TL.getBeginLoc()) ||
+        !A.S.Diagnostics.empty())
+      return false;
+    std::vector<const TemplateArgument *> Arguments;
+    for (const auto &Argument : Record->getTemplateArgs().asArray()) {
+      if (Argument.getKind() == TemplateArgument::Pack) {
+        if (Argument.pack_size() > 64)
+          return false;
+        for (const auto &Element : Argument.pack_elements())
+          Arguments.push_back(&Element);
+      } else {
+        Arguments.push_back(&Argument);
+      }
+      if (Arguments.size() > 64)
+        return false;
+    }
+    if (Arguments.size() != TL.getNumArgs())
+      return false;
+    for (unsigned I = 0; I < TL.getNumArgs(); ++I) {
+      A.chargeExpansion(1, TL.getArgLoc(I).getLocation());
+      if (!sourceMatchesArgument(TL.getArgLoc(I), *Arguments[I]))
+        return false;
+    }
+    return true;
+  }
+  bool concreteDeclarationQualifier(TemplateSpecializationTypeLoc TL) {
+    if (!CurrentDeclarator || !owned(CurrentDeclarator) ||
+        CurrentDeclarator->getDeclContext()->isDependentContext())
+      return false;
+    const auto *Method = dyn_cast<CXXMethodDecl>(CurrentDeclarator);
+    const auto *Variable = dyn_cast<VarDecl>(CurrentDeclarator);
+    if (!(Method && concreteMemberFunction(Method)) &&
+        !(Variable && classStaticDataPattern(Variable)))
+      return false;
+    auto Qualifier = CurrentDeclarator->getQualifierLoc();
+    bool Found = false;
+    unsigned Components = 0;
+    for (auto Q = Qualifier; Q; Q = Q.getPrefix()) {
+      if (++Components > 64)
+        return false;
+      auto Type = Q.getTypeLoc();
+      Found |= Type && Type.getType() == TL.getType() &&
+               Type.getOpaqueData() == TL.getOpaqueData();
+    }
+    if (!Found)
+      return false; // No parameter, body or unrelated type can borrow this scope.
+    const auto *Context = CurrentDeclarator->getDeclContext();
+    for (auto Q = Qualifier; Q; Q = Q.getPrefix()) {
+      auto Type = Q.getTypeLoc();
+      if (!Type)
+        continue; // Namespace/global prefixes retain normal source traversal.
+      const auto *Record = dyn_cast<CXXRecordDecl>(Context);
+      if (!Record || !owned(Record) || Record->isDependentContext())
+        return false;
+      A.chargeExpansion(1, Type.getBeginLoc());
+      if (Type.getType()->isDependentType() ||
+          Type.getType()->isInstantiationDependentType()) {
+        auto Template = Type.getAs<TemplateSpecializationTypeLoc>();
+        if (!Template || !qualifierTemplateMatches(
+                Template, dyn_cast<ClassTemplateSpecializationDecl>(Record)))
+          return false;
+      } else if (!A.Context.hasSameType(Type.getType(),
+                                        A.Context.getTypeDeclType(Record))) {
+        return false;
+      }
+      Context = Record->getDeclContext();
+    }
+    return true;
+  }
   bool TraverseTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc TL) {
     auto Normal = [&] {
       return RecursiveASTVisitor<Allowlist>::TraverseTemplateSpecializationTypeLoc(TL);
@@ -4650,6 +4748,18 @@ public:
     if (Type->isDependentType() || Type->isInstantiationDependentType()) {
       if (TemplateParameterTypeSource)
         return Normal();
+      // Clang 20 retains dependent member-primary sugar in instantiated
+      // out-of-line qualifiers even when the selected owner/arguments are real.
+      if (concreteDeclarationQualifier(TL)) {
+        if (!WalkUpFromTemplateSpecializationTypeLoc(TL) ||
+            (shouldWalkTypesOfTypeLocs() &&
+             !WalkUpFromTemplateSpecializationType(const_cast<TemplateSpecializationType *>(Type))))
+          return false;
+        for (unsigned I = 0; I < TL.getNumArgs(); ++I)
+          if (!TraverseTemplateArgumentLoc(TL.getArgLoc(I)))
+            return false;
+        return true;
+      }
       A.reject(TL.getTemplateNameLoc(), "dependent template source", "A materialized source type must have concrete arguments.");
       return true;
     }
@@ -5264,6 +5374,9 @@ public:
           for (const auto *Source : Found->second)
             checkFunctionTemplateUse(Source->Selected, Source->Location,
                 Source->Written ? Source->Written->arguments() : llvm::ArrayRef<TemplateArgumentLoc>{});
+    const auto *SavedDeclarator = CurrentDeclarator;
+    CurrentDeclarator = dyn_cast_or_null<DeclaratorDecl>(D);
+    auto RestoreDeclarator = llvm::make_scope_exit([&] { CurrentDeclarator = SavedDeclarator; });
     bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecl(D);
     if (const auto *C = dyn_cast_or_null<CXXConstructorDecl>(D);
         Result && A.S.coreV2() && C && owned(C) &&
