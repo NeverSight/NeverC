@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 169 accepted, 102 unsupported-source, eleven missing-definition and eight invalid-C++ cases cover
+The paired 195 accepted, 149 unsupported-source, eleven missing-definition and eight invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1118,6 +1118,33 @@ default member initializers. Ordinary user definitions include their written
 signature checks; inferred user-destructor specifications also retain recursive
 source checks for all owning subobject destructors. An unselected destructor does
 not need new exception resolution solely because its object is constructed.
+
+Each consumed written noexcept expression has its own completed source node in
+the bounded dependency graph. Normal Type, TypeLoc, concrete-template and friend
+signature traversal collect its implicit operations, destruction and further
+exception expressions. Calls, function references and address-taking can consume
+callee specifications; nested selected defaults and cached semantic initializers
+retain their edges. The graph is checked for ordinary operations as well, because
+referencing a selected function can resolve its specification independently of a
+nothrow predicate. Completed function definitions cannot substitute for completed
+expression source. Independent function declarations use separate collection
+frames, so their unused defaults and bodies do not become caller dependencies.
+Missing or unfinished graph nodes remain unsupported; the adapter does not replay
+source traversal or request resolution to fill them.
+
+Constant values also retain source dependencies: variable and enum initializers,
+cached variable-template initializers, and already materialized user-provided
+constexpr bodies and constructor initializers have independent completion nodes.
+An implicit enum value follows the nearest preceding explicit initializer without
+recomputing its value. Parameter references do not select their defaults; actual
+default-argument expressions retain that selection. The proof conservatively
+checks an already materialized constexpr body even for an unevaluated reference,
+but never materializes a missing body. Implicit special members keep their
+existing family proof. Semantic visit-once state is separate from graph-node
+creation, so value initializers cannot hide cached semantic children.
+Type metadata that carries earlier constant expressions, such as an array bound
+behind a typedef used by `sizeof`, still needs additional dependency evidence.
+These value-source nodes do not establish complete C++ constant-source coverage.
 
 Clang's expression exception check can stop after a throwing callee. If a later
 callee remains unresolved, this bounded proof rejects the query conservatively.

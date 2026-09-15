@@ -778,18 +778,25 @@ operand domain and remaining exclusions in the
 [classification contract](cpp-core-v2.md#builtin-type-classification).
 
 Operation predicates also emit ordinary checked boolean literals. Construction,
-assignment, implicit conversion and nothrow destruction require non-record operands after
-removing references and array extents; pointers to admitted records qualify.
+assignment, implicit conversion and nothrow destruction accept admitted non-record
+operands after removing references and array extents; pointers to admitted records qualify.
 Construction retains one destination and at most 64 hypothetical argument type
 sources. The frontend checks every written operand and returns pinned Clang's
 result without emitting hypothetical calls or treating C pointer carriers as
-C++ reference identity. The remaining record operation queries await retained selection source;
-folding a false result does not bypass that restriction. See the
+C++ reference identity. Record construction, assignment and conversion require
+complete retained selection and checked source, or a checked pre-operation result;
+folding a false result does not bypass those checks. Record-value nothrow destruction
+still requires further selection evidence. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).
 Ordinary constructor defaults use exact completed parameter/initializer source
 proofs before erasure, including unchanged full-expression envelopes and implicit
 destruction dependencies. Nothrow defaults also check actual resolved callee
-exception specifications before preserving the existing boolean. The frontend
+exception specifications before preserving the existing boolean. Consumed
+noexcept expressions retain independent completed nodes and transitive source
+dependencies, including selected defaults and function references. A completed
+function declaration or definition alone cannot prove those expression dependencies.
+Variable/enum initializers and already materialized constexpr value source retain
+their own completion nodes. None of this evidence enters the protocol. The frontend
 retains these identities internally;
 neither default expressions nor hypothetical calls are added to transport IR.
 

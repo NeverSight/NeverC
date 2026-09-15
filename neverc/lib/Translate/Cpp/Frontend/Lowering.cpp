@@ -676,13 +676,15 @@ class FunctionLowering {
     }
     const bool TrivialAssignment = A.S.coreV2() && defaultedAssignment(Method) &&
                                    Method->isTrivial();
-    if (!Callee ||
-        (!TrivialAssignment && !Callee->hasBody() &&
-         (!A.S.project() ||
-          Callee->getFormalLinkage() == Linkage::Internal)) ||
-        (Method && (!A.S.coreV2() || !callableMethod(Method))))
+    if (!Callee || (Method && (!A.S.coreV2() || !callableMethod(Method))))
       reject(L, "call",
              "Call target is not a supported defined function.");
+    if (!TrivialAssignment && !Callee->hasBody() &&
+        (!A.S.project() || Callee->getFormalLinkage() == Linkage::Internal)) {
+      A.reject(L, "call", "Call target has no definition in this translation unit.",
+               "TR0203");
+      throw Failure{};
+    }
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     if (Operator && (!A.S.coreV2() ||
         !((ordinaryOperator(Callee) && Callee->getOverloadedOperator() == Operator->getOperator()) ||

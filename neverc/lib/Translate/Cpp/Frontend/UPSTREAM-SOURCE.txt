@@ -298,6 +298,19 @@ defaults and initializers first checked outside a parameter collector without
 replaying source traversal. Graph nodes, edges and frames remain bounded by the
 shared budget and depth limit. Lazy template destructor prvalues still need
 separate signature proof.
+The same graph retains exact noexcept expression completion from normal Type,
+TypeLoc, concrete-template and friend-signature traversal. Calls and function
+references keep edges to actual and selected declaration exception expressions;
+independent function declarations isolate unused defaults and bodies. Selected
+operation/default/destruction source consumes the complete transitive graph,
+including ordinary non-nothrow queries, without replay or extra Sema work.
+Variable and enum references retain actual initializer dependencies, including
+implicit-enumerator predecessors and previously cached variable templates.
+Already materialized user-provided constexpr bodies and constructor initializers
+are checked through their original synchronous RAV roots. Parameter references
+do not select defaults; implicit methods retain their existing family proof.
+No body is materialized for source checking, and semantic visit-once state stays
+separate from completion records for these value roots.
 Implicit family checks also apply to non-nothrow queries because marking the
 selected function referenced can resolve its inferred exception specification.
 Nothrow defaults additionally check already-resolved actual callee prototypes,

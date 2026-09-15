@@ -1382,18 +1382,18 @@ const Expr *selectedDefaultArgument(const CXXDefaultArgExpr *Default,
   return Init;
 }
 
-struct OperationDefaultDependencies {
+struct OperationSourceDependencies {
   std::set<const CXXMethodDecl *> Families;
   std::set<const CXXRecordDecl *> Destructions;
-  std::set<const Expr *> SemanticInitializers;
+  std::set<const Stmt *> Expressions;
 };
-struct OperationSemanticSource {
-  OperationDefaultDependencies Dependencies;
+struct OperationExpressionSource {
+  OperationSourceDependencies Dependencies;
   bool Complete = false;
 };
-using OperationSemanticSources = std::map<const Expr *, OperationSemanticSource>;
+using OperationExpressionSources = std::map<const Stmt *, OperationExpressionSource>;
 using OperationDefaultSources =
-    std::map<std::pair<const ParmVarDecl *, const Expr *>, const OperationDefaultDependencies *>;
+    std::map<std::pair<const ParmVarDecl *, const Expr *>, const OperationSourceDependencies *>;
 
 static const Expr *operationDefaultInitializer(Adapter &A, const ParmVarDecl *P) {
   const auto *Init = defaultArgumentInitializer(P, A.Context);
@@ -1790,6 +1790,23 @@ static bool implicitSpecialMemberSource(Adapter &A, const CXXMethodDecl *Method,
                                        CheckDestruction);
 }
 
+static const FunctionProtoType *operationCalleePrototype(const CallExpr *Call) {
+  auto T = Call->getCallee()->getType();
+  if (T.isNull())
+    return nullptr;
+  // C++17 canCalleeThrow reads the actual expression type. Reconstruct the
+  // prototype of a bound member exactly as that routine does.
+  if (T->isSpecificPlaceholderType(BuiltinType::BoundMember)) {
+    const auto *Reference = dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
+    if (!Reference)
+      return nullptr;
+    T = Reference->getMemberDecl()->getType();
+  }
+  if (T->isPointerType() || T->isReferenceType())
+    T = T->getPointeeType();
+  return T->getAs<FunctionProtoType>();
+}
+
 // A hypothetical operation needs source admission, but no runtime owner or
 // helper. User operations require exact definitions that have completed normal
 // source traversal. Do not reuse runtime construction/default caches or infer
@@ -1798,22 +1815,39 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const std::set<const FunctionDecl *> *Definitions = nullptr,
     bool RequiresExceptionSource = false,
     const OperationDefaultSources *Defaults = nullptr,
-    const OperationSemanticSources *Semantics = nullptr) {
+    const OperationExpressionSources *Expressions = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
     return false;
+  std::vector<const OperationSourceDependencies *> Work;
+  auto RequireExpression = [&](const Stmt *Expression) {
+    if (!Expression)
+      return true;
+    if (!Expressions)
+      return false;
+    auto Found = Expressions->find(Expression);
+    if (Found == Expressions->end() || !Found->second.Complete)
+      return false;
+    Work.push_back(&Found->second.Dependencies);
+    return true;
+  };
+  auto PrototypeSource = [&](const FunctionProtoType *Prototype) {
+    return RequireExpression(Prototype ? Prototype->getNoexceptExpr() : nullptr);
+  };
   auto ExceptionSource = [&](const FunctionDecl *Function) {
     // Sema applies canThrow to this retained root. Read its resolved selected
     // signatures; never resolve a later callee skipped by canThrow's early exit.
-    return !RequiresExceptionSource || (Function &&
-        standardExceptionSpecification(Function->getType()->getAs<FunctionProtoType>()));
+    const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+    return PrototypeSource(Prototype) &&
+           (!RequiresExceptionSource || standardExceptionSpecification(Prototype));
   };
   auto Defined = [&](const FunctionDecl *Function) {
     const auto *Definition = Function ? Function->getDefinition() : nullptr;
     return Definitions && Definition && Definitions->count(Definition) &&
            Function->getTemplatedKind() == FunctionDecl::TK_NonTemplate &&
-           A.S.owns(A.Sources, Function->getLocation());
+           A.S.owns(A.Sources, Function->getLocation()) &&
+           PrototypeSource(Function->getType()->getAs<FunctionProtoType>());
   };
   // A written destructor body omits implicit field/base destruction. Check
   // those owning subobjects separately, including when Sema's root has no bind.
@@ -1840,20 +1874,13 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     return true;
   };
   auto CallExceptionSource = [&](const CallExpr *Call) {
-    if (!RequiresExceptionSource || scalarDestruction(Call, A.Context))
+    if (scalarDestruction(Call, A.Context))
       return true;
-    auto T = Call->getCallee()->getType();
     // C++17 canCalleeThrow reads the actual callee expression type, even for a
     // direct call. A pointer conversion can erase noexcept from its declaration.
-    if (T->isSpecificPlaceholderType(BuiltinType::BoundMember)) {
-      const auto *Reference = dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
-      if (!Reference)
-        return false;
-      T = Reference->getMemberDecl()->getType();
-    }
-    if (T->isPointerType() || T->isReferenceType())
-      T = T->getPointeeType();
-    return standardExceptionSpecification(T->getAs<FunctionProtoType>()) &&
+    const auto *Prototype = operationCalleePrototype(Call);
+    return PrototypeSource(Prototype) &&
+           (!RequiresExceptionSource || standardExceptionSpecification(Prototype)) &&
            (!Call->getDirectCallee() || ExceptionSource(Call->getDirectCallee()));
   };
   // Normal parameter traversal proves the unchanged initializer's written
@@ -2010,29 +2037,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           auto Proof = Defaults->find({P, Init});
           if (Proof == Defaults->end())
             return false;
-          std::vector<const OperationDefaultDependencies *> Work{Proof->second};
-          std::set<const OperationDefaultDependencies *> Seen;
-          while (!Work.empty()) {
-            const auto *Dependencies = Work.back();
-            Work.pop_back();
-            if (!Dependencies || !Seen.insert(Dependencies).second)
-              continue;
-            A.chargeExpansion(1, Default->getUsedLocation());
-            for (const auto *Method : Dependencies->Families)
-              if (!implicitSpecialMemberSource(A, Method, false))
-                return false;
-            for (const auto *Record : Dependencies->Destructions)
-              if (!Destruction(Destruction, Record, 0))
-                return false;
-            for (const auto *Initializer : Dependencies->SemanticInitializers) {
-              if (!Semantics)
-                return false;
-              auto Source = Semantics->find(Initializer);
-              if (Source == Semantics->end() || !Source->second.Complete)
-                return false;
-              Work.push_back(&Source->second.Dependencies);
-            }
-          }
+          Work.push_back(Proof->second);
           if (!DefaultDependencies(DefaultDependencies, Init, 0))
             return false;
         } else if (!Self(Self, Argument, Depth + 1)) {
@@ -2098,7 +2103,26 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     return isa<ImplicitValueInitExpr>(E) &&
            !A.Context.getBaseElementType(E->getType())->isRecordType();
   };
-  return Check(Check, Source.Root, 0);
+  if (!Check(Check, Source.Root, 0))
+    return false;
+  std::set<const OperationSourceDependencies *> Seen;
+  while (!Work.empty()) {
+    const auto *Dependencies = Work.back();
+    Work.pop_back();
+    if (!Dependencies || !Seen.insert(Dependencies).second)
+      continue;
+    A.chargeExpansion(1, Source.Root->getExprLoc());
+    for (const auto *Method : Dependencies->Families)
+      if (!implicitSpecialMemberSource(A, Method, false))
+        return false;
+    for (const auto *Record : Dependencies->Destructions)
+      if (!Destruction(Destruction, Record, 0))
+        return false;
+    for (const auto *Expression : Dependencies->Expressions)
+      if (!RequireExpression(Expression))
+        return false;
+  }
+  return true;
 }
 
 static bool operationTraitNeedsExceptionSource(TypeTrait Trait) {
@@ -3384,8 +3408,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
   OperationDefaultSources CompletedOperationDefaults;
-  std::map<const Expr *, OperationDefaultDependencies> SharedOperationDefaults;
-  std::vector<OperationDefaultDependencies *> ActiveOperationDefaults;
+  std::map<const Expr *, OperationSourceDependencies> SharedOperationDefaults;
+  std::vector<OperationSourceDependencies *> ActiveOperationSources;
+  unsigned OperationSourceDepth = 0;
   std::map<const CXXRecordDecl *, bool> HasArray;
   std::map<const CXXRecordDecl *, bool> FlatReferenceLayouts;
   std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees, FunctionValueDesignators;
@@ -3468,7 +3493,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const VarDecl *> CheckedVariablePartials, CheckedVariableDeclarations;
   std::vector<const VarDecl *> ActiveVariablePartials, ActiveVariableDeclarations;
   std::vector<const TemplateUseSource *> ActiveTemplateUses;
-  OperationSemanticSources SemanticInitializerSources;
+  OperationExpressionSources CheckedOperationExpressions;
+  std::set<const Stmt *> OperationValueRoots;
+  std::set<const Expr *> CheckedSemanticInitializers;
   std::map<const UnresolvedLookupExpr *, const DeclRefExpr *> InitializerLookups;
   std::set<const Stmt *> InitializerLookupWrappers;
   std::set<const InitListExpr *> EmptyVoidLists;
@@ -5782,32 +5809,117 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                "One written callback clause must have one selected reference.");
     InitializerLookupWrappers.insert(Wrappers.begin(), Wrappers.end());
   }
-  void collectOperationDefaultSource(const Stmt *S) {
+  void registerOperationValueRoots(const Decl *D) {
+    if (!A.S.coreV2() || !owned(D))
+      return;
+    auto Register = [&](const Stmt *Root) {
+      if (Root && OperationValueRoots.insert(Root).second)
+        A.chargeExpansion(1, D->getLocation());
+    };
+    if (const auto *Variable = dyn_cast<VarDecl>(D); Variable && !isa<ParmVarDecl>(D))
+      Register(Variable->getInit());
+    if (const auto *Constant = dyn_cast<EnumConstantDecl>(D))
+      Register(Constant->getInitExpr());
+    if (const auto *Function = dyn_cast<FunctionDecl>(D);
+        Function && Function->isConstexpr() && Function->isUserProvided() &&
+        Function->doesThisDeclarationHaveABody()) {
+      Register(Function->getBody());
+      if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Function))
+        for (const auto *Initializer : Constructor->inits())
+          Register(Initializer->getInit());
+    }
+  }
+  void collectOperationSource(const Stmt *S) {
     // Collect from the actual source traversal, including unevaluated operands
     // and expressions reached through TypeLoc or retained template source edges.
     // Capture before ownership/cache skips; only a query selecting this exact
     // completed default consumes the evidence. MaybeBindToTemporary can resolve
     // even a trivial destructor and then omit the binding expression entirely.
-    if (!ActiveOperationDefaults.empty()) {
+    if (!ActiveOperationSources.empty()) {
+      auto Dependency = [&](const Stmt *Source) {
+        if (Source)
+          for (auto *Dependencies : ActiveOperationSources)
+            if (Dependencies->Expressions.insert(Source).second)
+              A.chargeExpansion(1, Source->getBeginLoc());
+      };
+      auto Exception = [&](const FunctionProtoType *Prototype) {
+        Dependency(Prototype ? Prototype->getNoexceptExpr() : nullptr);
+      };
+      auto FunctionSource = [&](const FunctionDecl *Function) {
+        if (!Function)
+          return;
+        Exception(Function->getType()->getAs<FunctionProtoType>());
+        // Constant value calls can consume an already materialized body. Keep
+        // uninstantiated bodies lazy and implicit operations on their family proof.
+        const auto *Definition = Function->getDefinition();
+        if (Function->isConstexpr() && Function->isUserProvided() && Definition) {
+          Dependency(Definition->getBody());
+          if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Definition))
+            for (const auto *Initializer : Constructor->inits())
+              Dependency(Initializer->getInit());
+        }
+      };
+      auto ValueSource = [&](const ValueDecl *Declaration) {
+        if (const auto *Variable = dyn_cast<VarDecl>(Declaration);
+            Variable && !isa<ParmVarDecl>(Variable))
+          Dependency(Variable->getAnyInitializer());
+        if (const auto *Constant = dyn_cast<EnumConstantDecl>(Declaration)) {
+          // An implicit enumerator inherits the preceding value. Its nearest
+          // explicit initializer supplies source; do not recompute that value.
+          const Expr *Initializer = nullptr;
+          for (const auto *Entry : cast<EnumDecl>(Constant->getDeclContext())->enumerators()) {
+            A.chargeExpansion(1, Entry->getLocation());
+            if (Entry->getInitExpr())
+              Initializer = Entry->getInitExpr();
+            if (Entry == Constant)
+              break;
+          }
+          Dependency(Initializer);
+        }
+      };
+      if (const auto *Reference = dyn_cast<DeclRefExpr>(S)) {
+        FunctionSource(dyn_cast<FunctionDecl>(Reference->getDecl()));
+        ValueSource(Reference->getDecl());
+        Exception(Reference->getType()->getAs<FunctionProtoType>());
+      }
+      if (const auto *Reference = dyn_cast<MemberExpr>(S)) {
+        FunctionSource(dyn_cast<FunctionDecl>(Reference->getMemberDecl()));
+        ValueSource(Reference->getMemberDecl());
+        Exception(Reference->getType()->getAs<FunctionProtoType>());
+      }
       const CXXMethodDecl *Selected = nullptr;
       const CXXRecordDecl *Destroyed = nullptr;
       if (const auto *E = dyn_cast<Expr>(S);
           E && !E->getType().isNull() && E->isPRValue())
         Destroyed = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl();
-      if (const auto *Construction = dyn_cast<CXXConstructExpr>(S))
+      if (const auto *Construction = dyn_cast<CXXConstructExpr>(S)) {
         Selected = Construction->getConstructor();
-      else if (const auto *Call = dyn_cast<CallExpr>(S)) {
+        FunctionSource(Selected);
+      } else if (const auto *Call = dyn_cast<CallExpr>(S)) {
+        Exception(operationCalleePrototype(Call));
+        FunctionSource(Call->getDirectCallee());
         const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
         if (Method && (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()))
           Selected = Method;
         if (const auto *Destructor = dyn_cast_or_null<CXXDestructorDecl>(Method))
           Destroyed = Destructor->getParent();
       } else if (const auto *Delete = dyn_cast<CXXDeleteExpr>(S)) {
+        FunctionSource(Delete->getOperatorDelete());
         auto T = Delete->getDestroyedType();
         if (!T.isNull())
           Destroyed = A.Context.getBaseElementType(T)->getAsCXXRecordDecl();
       }
-      for (auto *Dependencies : ActiveOperationDefaults) {
+      if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(S))
+        FunctionSource(Temporary->getTemporary()->getDestructor());
+      if (const auto *New = dyn_cast<CXXNewExpr>(S)) {
+        FunctionSource(New->getOperatorNew());
+        // Building new also references its exception-cleanup deallocation
+        // function, although canThrow(new) does not use that function's result.
+        FunctionSource(New->getOperatorDelete());
+      }
+      if (Destroyed)
+        FunctionSource(Destroyed->getDestructor());
+      for (auto *Dependencies : ActiveOperationSources) {
         if (Selected && (Selected->isImplicit() || Selected->isDefaulted()) &&
             Dependencies->Families.insert(Selected).second)
           A.chargeExpansion(1, Selected->getLocation());
@@ -5815,6 +5927,33 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           A.chargeExpansion(1, Destroyed->getLocation());
       }
     }
+  }
+  bool traverseOperationException(Expr *Expression) {
+    if (!Expression)
+      return true;
+    const auto L = Expression->getExprLoc();
+    for (auto *Dependencies : ActiveOperationSources)
+      if (Dependencies->Expressions.insert(Expression).second)
+        A.chargeExpansion(1, L);
+    auto &Source = CheckedOperationExpressions[Expression];
+    const auto ActiveDepth = ActiveOperationSources.size();
+    if (OperationSourceDepth >= 64) {
+      A.reject(L, "exception source depth", "Nested exception source exceeds the depth limit.");
+      return false;
+    }
+    A.chargeExpansion(1, L);
+    ActiveOperationSources.push_back(&Source.Dependencies);
+    ++OperationSourceDepth;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActiveOperationSources.resize(ActiveDepth);
+      --OperationSourceDepth;
+    });
+    // This is the original source traversal, not a declaration-completion proxy.
+    // Repeated declarations keep their normal checks and merge exact-source facts.
+    const bool Result = TraverseStmt(Expression);
+    if (Result && A.S.Diagnostics.empty())
+      Source.Complete = true;
+    return Result;
   }
   bool checkSemanticInitializers(const InitListExpr *List, SourceLocation Owner) {
     // RAV visits only the written form of a braced initializer by default.
@@ -5828,22 +5967,26 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         E = I->getSemanticForm();
       // Record cached edges too: a nested default can reuse semantic source
       // first checked outside this parameter, or while another frame is active.
-      for (auto *Dependencies : ActiveOperationDefaults)
-        if (Dependencies->SemanticInitializers.insert(E).second)
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Expressions.insert(E).second)
           A.chargeExpansion(1, Owner);
-      auto [Entry, Inserted] = SemanticInitializerSources.try_emplace(E);
-      if (!Inserted)
+      if (!CheckedSemanticInitializers.insert(E).second)
         return true;
+      auto Entry = CheckedOperationExpressions.try_emplace(E).first;
       A.chargeExpansion(1, Owner);
-      const auto ActiveDepth = ActiveOperationDefaults.size();
-      if (Depth >= 64 || ActiveDepth >= 64) {
+      const auto ActiveDepth = ActiveOperationSources.size();
+      if (Depth >= 64 || OperationSourceDepth >= 64) {
         A.reject(Owner, "initializer source depth", "Nested initializer source exceeds the depth limit.");
         return false;
       }
-      ActiveOperationDefaults.push_back(&Entry->second.Dependencies);
-      auto RestoreDependencies = llvm::make_scope_exit([&] { ActiveOperationDefaults.resize(ActiveDepth); });
+      ActiveOperationSources.push_back(&Entry->second.Dependencies);
+      ++OperationSourceDepth;
+      auto RestoreDependencies = llvm::make_scope_exit([&] {
+        ActiveOperationSources.resize(ActiveDepth);
+        --OperationSourceDepth;
+      });
       // Manual semantic-list traversal has no VisitStmt for the list itself.
-      collectOperationDefaultSource(E);
+      collectOperationSource(E);
       if (const auto *I = dyn_cast<InitListExpr>(E)) {
         if (const auto *Written = I->getSyntacticForm();
             Written && Written->getNumInits() == I->getNumInits())
@@ -5874,6 +6017,32 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
+  bool TraverseStmt(Stmt *S, DataRecursionQueue *Queue = nullptr) {
+    if (!S || Queue || !OperationValueRoots.count(S))
+      return RecursiveASTVisitor<Allowlist>::TraverseStmt(S, Queue);
+    for (auto *Dependencies : ActiveOperationSources)
+      if (Dependencies->Expressions.insert(S).second)
+        A.chargeExpansion(1, S->getBeginLoc());
+    auto &Source = CheckedOperationExpressions[S];
+    const auto ActiveDepth = ActiveOperationSources.size();
+    if (OperationSourceDepth >= 64) {
+      A.reject(S->getBeginLoc(), "value source depth", "Nested value source exceeds the depth limit.");
+      return false;
+    }
+    A.chargeExpansion(1, S->getBeginLoc());
+    ActiveOperationSources.push_back(&Source.Dependencies);
+    ++OperationSourceDepth;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActiveOperationSources.resize(ActiveDepth);
+      --OperationSourceDepth;
+    });
+    // These declaration-owned roots enter synchronously. The base visitor
+    // drains its own statement queue before this completion frame is closed.
+    const bool Result = RecursiveASTVisitor<Allowlist>::TraverseStmt(S);
+    if (Result && A.S.Diagnostics.empty())
+      Source.Complete = true;
+    return Result;
+  }
   void indexFriendSources(llvm::ArrayRef<FriendFunctionSource> Functions,
                           llvm::ArrayRef<FriendDeclarationSource> Declarations,
                           llvm::ArrayRef<FriendFunctionTemplateSource> Templates,
@@ -8094,6 +8263,7 @@ public:
     return checkPartialDeclarationSource(D);
   }
   bool TraverseVarTemplateSpecializationDecl(VarTemplateSpecializationDecl *D) {
+    registerOperationValueRoots(D);
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseVarTemplateSpecializationDecl(D);
     if (CheckedVariableDeclarations.count(D))
@@ -8868,17 +9038,22 @@ public:
   bool TraverseParmVarDecl(ParmVarDecl *D) {
     if (!A.S.coreV2() || !lazyTemplateDefault(D)) {
       const auto *Init = A.S.coreV2() ? operationDefaultInitializer(A, D) : nullptr;
-      OperationDefaultDependencies Dependencies;
-      const auto ActiveDepth = ActiveOperationDefaults.size();
+      OperationSourceDependencies Dependencies;
+      const auto ActiveDepth = ActiveOperationSources.size();
       if (Init) {
-        if (ActiveDepth >= 64) {
+        if (OperationSourceDepth >= 64) {
           A.reject(D->getLocation(), "default source depth", "Nested default source exceeds the depth limit.");
           return false;
         }
         A.chargeExpansion(1, D->getLocation());
-        ActiveOperationDefaults.push_back(&Dependencies);
+        ActiveOperationSources.push_back(&Dependencies);
+        ++OperationSourceDepth;
       }
-      auto Restore = llvm::make_scope_exit([&] { ActiveOperationDefaults.resize(ActiveDepth); });
+      auto Restore = llvm::make_scope_exit([&] {
+        ActiveOperationSources.resize(ActiveDepth);
+        if (Init)
+          --OperationSourceDepth;
+      });
       const bool Result = RecursiveASTVisitor<Allowlist>::TraverseParmVarDecl(D);
       if (Result && Init && A.S.Diagnostics.empty()) {
         // Inherited parameters can share this exact initializer. Semantic source
@@ -8887,8 +9062,7 @@ public:
         auto &Shared = SharedOperationDefaults[Init];
         Shared.Families.insert(Dependencies.Families.begin(), Dependencies.Families.end());
         Shared.Destructions.insert(Dependencies.Destructions.begin(), Dependencies.Destructions.end());
-        Shared.SemanticInitializers.insert(Dependencies.SemanticInitializers.begin(),
-                                           Dependencies.SemanticInitializers.end());
+        Shared.Expressions.insert(Dependencies.Expressions.begin(), Dependencies.Expressions.end());
         CompletedOperationDefaults[{D, Init}] = &Shared;
       }
       return Result;
@@ -8900,8 +9074,44 @@ public:
     const auto *Info = D->getTypeSourceInfo();
     return !Info || TraverseTypeLoc(Info->getTypeLoc());
   }
+  bool TraverseFunctionProtoType(FunctionProtoType *T) {
+    if (!A.S.coreV2() || !T->getNoexceptExpr())
+      return RecursiveASTVisitor<Allowlist>::TraverseFunctionProtoType(T);
+    if (!WalkUpFromFunctionProtoType(T) || !TraverseType(T->getReturnType()))
+      return false;
+    for (auto Parameter : T->param_types())
+      if (!TraverseType(Parameter))
+        return false;
+    for (auto Exception : T->exceptions())
+      if (!TraverseType(Exception))
+        return false;
+    return traverseOperationException(T->getNoexceptExpr());
+  }
+  bool traverseFunctionPrototypeLoc(FunctionProtoTypeLoc TL, Expr *Expression) {
+    const auto *Written = TL.getTypePtr();
+    if (!WalkUpFromFunctionProtoTypeLoc(TL) ||
+        (shouldWalkTypesOfTypeLocs() &&
+         !WalkUpFromFunctionProtoType(const_cast<FunctionProtoType *>(Written))) ||
+        !TraverseTypeLoc(TL.getReturnLoc()))
+      return false;
+    for (unsigned I = 0; I < TL.getNumParams(); ++I) {
+      if (auto *Parameter = TL.getParam(I)) {
+        if (!TraverseDecl(Parameter))
+          return false;
+      } else if (I < Written->getNumParams() &&
+                 !TraverseType(Written->getParamType(I))) {
+        return false;
+      }
+    }
+    for (auto Exception : Written->exceptions())
+      if (!TraverseType(Exception))
+        return false;
+    return traverseOperationException(Expression);
+  }
   bool TraverseFunctionProtoTypeLoc(FunctionProtoTypeLoc TL) {
     auto Normal = [&] {
+      if (A.S.coreV2() && TL.getTypePtr()->getNoexceptExpr())
+        return traverseFunctionPrototypeLoc(TL, TL.getTypePtr()->getNoexceptExpr());
       return RecursiveASTVisitor<Allowlist>::TraverseFunctionProtoTypeLoc(TL);
     };
     if (!A.S.coreV2() ||
@@ -8932,26 +9142,21 @@ public:
     }
     // Instantiation can replace FunctionDecl's type while its TypeSourceInfo
     // retains the primary's dependent noexcept. Keep all other written source.
-    if (!WalkUpFromFunctionProtoTypeLoc(TL) ||
-        (shouldWalkTypesOfTypeLocs() &&
-         !WalkUpFromFunctionProtoType(const_cast<FunctionProtoType *>(Written))) ||
-        !TraverseTypeLoc(TL.getReturnLoc()))
-      return false;
-    for (unsigned I = 0; I < TL.getNumParams(); ++I) {
-      if (auto *Parameter = TL.getParam(I)) {
-        if (!TraverseDecl(Parameter))
-          return false;
-      } else if (I < Written->getNumParams() &&
-                 !TraverseType(Written->getParamType(I))) {
-        return false;
-      }
-    }
-    for (auto Exception : Written->exceptions())
-      if (!TraverseType(Exception))
-        return false;
-    return !Expression || TraverseStmt(Expression);
+    return traverseFunctionPrototypeLoc(TL, Expression);
   }
   bool TraverseDecl(Decl *D) {
+    registerOperationValueRoots(D);
+    // A referenced function's signature/body is checked in its own context.
+    // Actual default uses and selected exception expressions supply graph edges;
+    // an unrelated parameter default must not become the caller's dependency.
+    std::vector<OperationSourceDependencies *> SavedOperationSources;
+    const bool FunctionBoundary = isa_and_nonnull<FunctionDecl>(D);
+    if (FunctionBoundary)
+      SavedOperationSources.swap(ActiveOperationSources);
+    auto RestoreOperationSources = llvm::make_scope_exit([&] {
+      if (FunctionBoundary)
+        SavedOperationSources.swap(ActiveOperationSources);
+    });
     if (A.S.coreV2() && owned(D))
       if (auto *Function = dyn_cast<FunctionDecl>(D)) {
         if (!checkFriendTemplateFunction(Function))
@@ -9316,7 +9521,7 @@ public:
       if (Source == A.OperationTraits.end() ||
           !operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
                                 operationTraitNeedsExceptionSource(Query->getTrait()),
-                                &CompletedOperationDefaults, &SemanticInitializerSources)) {
+                                &CompletedOperationDefaults, &CheckedOperationExpressions)) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact ordinary definitions, arguments and destruction source.");
         return false;
@@ -9594,6 +9799,11 @@ public:
     return true;
   }
   bool traverseWrittenFriendSignature(const FriendDecl *D) {
+    std::vector<OperationSourceDependencies *> SavedOperationSources;
+    SavedOperationSources.swap(ActiveOperationSources);
+    auto RestoreOperationSources = llvm::make_scope_exit([&] {
+      SavedOperationSources.swap(ActiveOperationSources);
+    });
     if (!genericFriendFunctionShape(D) && !genericFriendTemplateShape(D)) {
       A.reject(D->getFriendLoc(), "friend source declaration",
                "The original friend must remain an admitted free function declaration.");
@@ -9665,7 +9875,7 @@ public:
     }
     const auto *Exception = Prototype.getTypePtr()->getNoexceptExpr();
     if (Exception && !Exception->isTypeDependent() && !Exception->isValueDependent() &&
-        !Exception->isInstantiationDependent() && !TraverseStmt(const_cast<Expr *>(Exception)))
+        !Exception->isInstantiationDependent() && !traverseOperationException(const_cast<Expr *>(Exception)))
       return false;
     if (Function->getQualifier() && !Function->getQualifier()->isDependent() &&
         !TraverseNestedNameSpecifierLoc(Function->getQualifierLoc()))
@@ -10522,7 +10732,7 @@ public:
   bool VisitStmt(Stmt *S) {
     if (!S)
       return true;
-    collectOperationDefaultSource(S);
+    collectOperationSource(S);
     if (!ImplicitInitializerOwner.isValid() && !A.S.owns(A.Sources, S->getBeginLoc()))
       return true;
     if (A.S.coreV2() && InitializerLookupWrappers.count(S))
