@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 555 accepted, 320 unsupported-source, seventeen missing-definition and twenty-one invalid-C++ cases cover
+The paired 573 accepted, 330 unsupported-source, seventeen missing-definition and twenty-three invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1187,9 +1187,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has one hundred and four O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has one hundred and eight O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. One hundred and twenty-two exported query
+default evaluation with full-expression temporary cleanup. One hundred and thirty-two exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1208,8 +1208,9 @@ The completed proof belongs to that expression, not every use of the constructor
 The bounded traversal follows only supported operation expressions and checked
 temporary/conversion envelopes; it never scans unvisited template-body queries.
 Copy/move constructor signatures and complete false trivial/nothrow results use
-the same checks. Explicit member function-template constructors, separate template
-definitions and missing ordinary definitions retain their existing requirements.
+the same checks. Member function-template constructors additionally need the exact
+selection-source proof below. Separate template definitions and missing ordinary
+definitions retain their existing requirements.
 
 A first signature check visits existing actual TypeSourceInfo and parameters in
 the concrete method context, including selected defaults and original/resolved
@@ -1268,8 +1269,9 @@ with an exact uncopied inline origin and already resolved standard specification
 A first check traverses only its existing concrete signature in the matching
 method context. Completed signatures register the exact call expression; final
 validation reaches that same expression from the current query's root and checks every
-actual redeclaration's source and current prototype. Separate template definitions,
-member function-templates and missing ordinary definitions retain their restrictions.
+actual redeclaration's source and current prototype. Member-template conversions
+additionally need the exact selection-source proof below. Separate template definitions
+and missing ordinary definitions retain their restrictions.
 
 The proof is limited to that exact selected expression. Synthetic operands are
 leaves, and selected default initializers keep their separate parameter/source
@@ -1283,6 +1285,34 @@ still instantiate and check bodies normally. The shared runtime fixture checks
 query-only poisoned specializations, real assignment reference identity, move
 effects, reference conversions, nested conversion counts, temporary destruction,
 standard post-conversions and zero query effects.
+
+### Lazy member-template constructor and conversion signatures
+
+An uncopied constructor or conversion function-template specialization can use the
+same exact expression proof while its inline body remains uninstantiated. Its
+actual selected expression must also have the retained successful member-template
+selection event and original deduction location. Each matching event checks the
+actual canonical template arguments, parameter types and consumed defaults.
+The first signature traversal uses the exact function/primary/argument context,
+fenced from the caller's template argument frames. Existing incomplete signature
+nodes cannot be replayed.
+
+Each expression keeps a separate completed selection-source dependency graph.
+A consumed template default can disappear from the final function signature, so
+signature completion alone is insufficient. The final operation checker closes
+these exact selection dependencies alongside the declaration/signature proof.
+The same requirement applies when the selected body already exists: a real call
+may deduce an argument that the query instead obtains from a default. Every
+underlying source-check failure prevents selection completion, including failures
+that return without adding a diagnostic.
+
+Selected function defaults and bounded packs retain their existing source checks;
+unused defaults and poisoned uninstantiated bodies remain lazy. Copied member-template
+primaries, split template definitions and explicit specializations retain their
+restrictions, and lazy assignment function-templates remain excluded. The proof
+does not register a body or runtime helper. Paired tests cover erased default
+source and existing-body selections; runtime checks use query-only integer
+specializations and real unsigned calls to verify defaults, conversions and aliases.
 
 ### Resolved exception source for operation queries
 

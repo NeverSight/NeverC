@@ -562,6 +562,48 @@ extern "C" bool defined_composed_temporary_nothrow() { return __is_nothrow_const
 extern "C" bool defined_composed_throwing_construct() { return __is_constructible(ComposedQueryValue<int>, LazyThrowingClassCall<int>); }
 extern "C" bool defined_composed_throwing_nothrow() { return __is_nothrow_constructible(ComposedQueryValue<int>, LazyThrowingClassCall<int>); }
 
+int member_query_defaults, member_query_constructions, member_query_conversions;
+int member_query_references, member_query_throwing_conversions;
+int memberQueryDefault(int n) noexcept { ++member_query_defaults; return n; }
+struct LazyMemberQueryValue {
+  unsigned value;
+  template<class T, int N = sizeof(T)>
+  LazyMemberQueryValue(T n, int extra = memberQueryDefault(N)) noexcept : value(n + extra) {
+    if constexpr (__is_same(T, int)) T::construct();
+    else ++member_query_constructions;
+  }
+  template<class T, int N = sizeof(T)> operator T() const noexcept {
+    if constexpr (__is_same(T, int)) T::convert();
+    else ++member_query_conversions;
+    return T(value + N);
+  }
+};
+struct LazyMemberQueryReference {
+  unsigned value;
+  template<class T> operator T&() noexcept {
+    if constexpr (__is_same(T, int)) T::reference();
+    else ++member_query_references;
+    return value;
+  }
+};
+struct LazyMemberQueryThrowing {
+  template<class T> operator T() const noexcept(false) {
+    if constexpr (__is_same(T, int)) T::convert();
+    else ++member_query_throwing_conversions;
+    return T(17);
+  }
+};
+extern "C" bool defined_member_lazy_construct() { return __is_constructible(LazyMemberQueryValue, int); }
+extern "C" bool defined_member_lazy_nothrow_construct() { return __is_nothrow_constructible(LazyMemberQueryValue, int); }
+extern "C" bool defined_member_lazy_trivial() { return __is_trivially_constructible(LazyMemberQueryValue, int); }
+extern "C" bool defined_member_lazy_explicit_default() { return __is_nothrow_constructible(LazyMemberQueryValue, int, int); }
+extern "C" bool defined_member_lazy_convert() { return __is_convertible(LazyMemberQueryValue, int); }
+extern "C" bool defined_member_lazy_nothrow_convert() { return __is_nothrow_convertible(LazyMemberQueryValue, int); }
+extern "C" bool defined_member_lazy_reference() { return __is_nothrow_convertible(LazyMemberQueryReference&, int&); }
+extern "C" bool defined_member_lazy_throwing() { return __is_nothrow_convertible(LazyMemberQueryThrowing, int); }
+extern "C" bool defined_member_materialized_conversion() { return __is_nothrow_convertible(unsigned, LazyMemberQueryValue); }
+extern "C" bool defined_member_materialized_construct() { return __is_nothrow_constructible(LazyMemberQueryValue, unsigned); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -1012,6 +1054,38 @@ int main() {
         composed_constructions != 3 || composed_assignments != 1 ||
         composed_temporary_constructions != 1 || composed_temporary_destructions != 1 ||
         composed_sink_constructions != 1 || lazy_call_throwing_conversions != 1) return 104;
+  }
+  if (!defined_member_lazy_construct() || !defined_member_lazy_nothrow_construct() ||
+      defined_member_lazy_trivial() || !defined_member_lazy_explicit_default() ||
+      !defined_member_lazy_convert() || !defined_member_lazy_nothrow_convert() ||
+      !defined_member_lazy_reference() || defined_member_lazy_throwing() ||
+      !defined_member_materialized_conversion() || !defined_member_materialized_construct() ||
+      member_query_defaults || member_query_constructions || member_query_conversions ||
+      member_query_references || member_query_throwing_conversions) return 105;
+  {
+    LazyMemberQueryValue first(5u);
+    LazyMemberQueryValue second(7u, 2);
+    if (first.value != 9 || second.value != 9 || &first.value == &second.value ||
+        member_query_defaults != 1 || member_query_constructions != 2 ||
+        member_query_conversions || member_query_references) return 106;
+    unsigned firstConverted = first;
+    const LazyMemberQueryValue& view = second;
+    unsigned secondConverted = view;
+    LazyMemberQueryReference reference{19};
+    unsigned& alias = reference;
+    alias = 23;
+    if (firstConverted != 13 || secondConverted != 13 || &alias != &reference.value ||
+        reference.value != 23 || first.value != 9 || member_query_conversions != 2 ||
+        member_query_references != 1) return 107;
+    LazyMemberQueryThrowing throwing;
+    unsigned convertedThrowing = throwing;
+    if (convertedThrowing != 17 || member_query_throwing_conversions != 1 ||
+        !defined_member_lazy_construct() || !defined_member_lazy_nothrow_convert() ||
+        !defined_member_lazy_reference() || defined_member_lazy_throwing() ||
+        !defined_member_materialized_conversion() || !defined_member_materialized_construct() ||
+        member_query_defaults != 1 || member_query_constructions != 2 ||
+        member_query_conversions != 2 || member_query_references != 1 ||
+        composed_conversions != 5 || composed_temporary_destructions != 1) return 108;
   }
   return 0;
 }

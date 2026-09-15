@@ -473,6 +473,19 @@ exits. Ordinary type/default source cannot borrow the call's completion; false
 results and owning destruction of nested record temporaries remain checked.
 Each BTE supplies its exact destructor; ordinary record-prvalue constructions/calls
 read only existing destructor declarations. No runtime helper or body is manufactured.
+Uncopied constructor and conversion function-template specializations can use this
+lazy signature proof with their existing exact SelectedCallSources/FunctionSources
+events. Every retained expression independently checks successful selection at its
+original deduction location, including when its method body already exists.
+Consumed template defaults can disappear from the signature, so a separate exact
+expression selection node collects completed type/value/generated dependencies.
+Both defined and lazy final branches require this node and close its source graph.
+Source-check booleans propagate through the selection chain; empty diagnostics do
+not imply successful traversal. First TSI checking uses the actual function/primary/
+argument DefinitionSourceFrame with the existing checked-argument and caller-fence
+rules. No body completion is implied by this source frame. Copied primaries, split
+definitions, explicit specialization origins and lazy assignment-function templates
+remain excluded; neither producer behavior nor the transport schema changes.
 Ordinary unused concrete class destructors can also retain their lazy inline bodies
 after exact authorized signature-queue completion. Their raw origin, absence of
 actual bodies, all actual redeclaration TSIs and current standard specifications

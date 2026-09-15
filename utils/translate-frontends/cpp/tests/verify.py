@@ -6394,6 +6394,24 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert not expected
 
     operation_trait_positive = {
+        'lazy-member-query-constructor': 'struct R{template<class T>R(T)noexcept{T::body();}};static_assert(__is_constructible(R,int)&&__is_nothrow_constructible(R,int)&&!__is_trivially_constructible(R,int));',
+        'lazy-member-query-default-argument': 'struct R{template<class T>R(T,int=sizeof(T))noexcept{T::body();}};static_assert(__is_nothrow_constructible(R,int));',
+        'lazy-member-query-default-template-value': 'struct R{template<class T,int N=sizeof(T)>R(T,int=N)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R,int));',
+        'lazy-member-query-constructor-pack': 'struct R{template<class...T>R(T...)noexcept{static_assert(sizeof...(T)==0);}};static_assert(__is_nothrow_constructible(R,int,unsigned));',
+        'lazy-member-query-constructor-conversion': 'struct R{template<class T>R(T)noexcept{T::body();}};static_assert(__is_convertible(int,R)&&__is_nothrow_convertible(unsigned,R));',
+        'lazy-member-query-conversion': 'struct R{template<class T>operator T()const noexcept{return T::body();}};static_assert(__is_convertible(R,int)&&__is_nothrow_convertible(R,unsigned));',
+        'lazy-member-query-reference-conversion': 'struct R{int value;template<class T>operator T&()noexcept{T::body();return value;}};static_assert(__is_nothrow_convertible(R&,int&));',
+        'lazy-member-query-composed-conversion': 'struct S{template<class T>operator T()const noexcept{return T::body();}};struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S)&&__is_nothrow_assignable(int&,S));',
+        'lazy-member-query-throwing-constructor': 'struct R{template<class T>R(T)noexcept(false){T::body();}};static_assert(__is_constructible(R,int)&&!__is_nothrow_constructible(R,int));',
+        'lazy-member-query-throwing-conversion': 'struct R{template<class T>operator T()const noexcept(false){return T::body();}};static_assert(__is_convertible(R,int)&&!__is_nothrow_convertible(R,int));',
+        'lazy-member-query-unselected-default': 'struct R{template<class T>R(T,int=T::missing)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R,int,int));',
+        'lazy-member-query-selected-overload': 'struct R{R(int)noexcept(false){}template<class T>R(T)noexcept{T::body();}};static_assert(!__is_nothrow_constructible(R,int)&&__is_nothrow_constructible(R,unsigned));',
+        'lazy-member-query-unvisited-event': 'struct R{template<class T>operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>bool unused(){return __is_nothrow_convertible(R,int);}static_assert(__is_class(R));',
+        'lazy-member-query-complete-default-source': 'struct Mid{int n;};struct R{template<class T,int N=noexcept(Mid())>R(T)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R,int));',
+        'lazy-member-query-materialized-complete-default': 'struct Mid{int n;};template<bool>struct Tag{};struct R{template<class T,bool B=noexcept(Mid())>R(T,Tag<B> = {})noexcept{}};void force(){R value(1,Tag<true>{});}static_assert(__is_nothrow_constructible(R,int));',
+        'user-constructor-template': 'struct R{template<class T>R(T){T::missing();}};bool f(){return __is_constructible(R,int);}',
+        'user-conversion-template': 'struct R{template<class T>operator T()const{return T::missing;}};bool f(){return __is_convertible(R,int);}',
+        'composed-query-member-template-nested-source': 'struct S{template<class T>operator T()const noexcept{T::body();}};struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S));',
         'composed-query-scalar-construction': 'template<class T>struct R{operator T()const noexcept{return T::body();}};static_assert(__is_constructible(int,R<int>)&&__is_nothrow_constructible(double,R<int>)&&!__is_trivially_constructible(int,R<int>));',
         'composed-query-converting-constructor': 'template<class T>struct R{R(T)noexcept{T::body();}};static_assert(__is_convertible(int,R<int>)&&__is_nothrow_convertible(int,R<int>));',
         'composed-query-lazy-constructor-argument': 'template<class T>struct S{operator T()const noexcept{return T::body();}};template<class T>struct R{R(T)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R<int>,S<int>));',
@@ -6953,12 +6971,24 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'lazy-member-query-hidden-constructor-spec': 'struct R{template<class T>R(T)noexcept(sizeof(long double)>0){T::body();}};static_assert(__is_nothrow_constructible(R,int));',
+        'lazy-member-query-hidden-conversion-spec': 'struct R{template<class T>operator T()const noexcept((sizeof(long double),false)){T::body();}};static_assert(!__is_nothrow_convertible(R,int));',
+        'lazy-member-query-hidden-template-default': 'struct R{template<class T,int N=sizeof(long double)>R(T)noexcept{T::body();}};static_assert(__is_constructible(R,int));',
+        'lazy-member-query-hidden-function-default': 'struct R{template<class T>R(T,int=sizeof(long double))noexcept{T::body();}};static_assert(__is_constructible(R,int));',
+        'lazy-member-query-split-constructor': 'struct R{template<class T>R(T)noexcept;};template<class T>R::R(T)noexcept{T::body();}static_assert(__is_constructible(R,int));',
+        'lazy-member-query-split-conversion': 'struct R{template<class T>operator T()const noexcept;};template<class T>R::operator T()const noexcept{T::body();}static_assert(__is_convertible(R,int));',
+        'lazy-member-query-copied-constructor': 'template<class T>struct R{template<class U>R(U)noexcept{U::body();}};static_assert(__is_constructible(R<int>,int));',
+        'lazy-member-query-copied-conversion': 'template<class T>struct R{template<class U>operator U()const noexcept{return U::body();}};static_assert(__is_convertible(R<int>,int));',
+        'lazy-member-query-assignment-unchanged': 'struct R{template<class T>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R&,int));',
+        'lazy-member-query-real-hidden-body': 'struct R{template<class T>R(T)noexcept{long double hidden=0;}};static_assert(__is_constructible(R,int));int main(){R value(3);}',
+        'lazy-member-query-erased-template-default-source': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{template<class T,int N=noexcept(Mid())>R(T)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R,int));',
+        'lazy-member-query-erased-conversion-default-source': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{template<class T,int N=noexcept(Mid())>operator T()const noexcept{T::body();}};static_assert(__is_nothrow_convertible(R,int));',
+        'lazy-member-query-materialized-erased-default': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<bool>struct Tag{};struct R{template<class T,bool B=noexcept(Mid())>R(T,Tag<B> = {})noexcept{}};void force(){R value(1,Tag<true>{});}static_assert(__is_nothrow_constructible(R,int));',
         'composed-query-hidden-nested-call-spec': 'template<class T>struct S{operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>struct R{R(T)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R<int>,S<int>));',
         'composed-query-hidden-nested-constructor-spec': 'template<class T>struct S{S(T)noexcept(sizeof(long double)>0){T::body();}};struct R{R(S<int>)noexcept{}};static_assert(__is_nothrow_constructible(R,int));',
         'composed-query-hidden-nested-destruction': 'template<class T>struct S{S(T)noexcept{T::construct();}~S()noexcept(sizeof(long double)>0){T::destroy();}};struct R{R(const S<int>&)noexcept{}};static_assert(__is_nothrow_constructible(R,int));',
         'composed-query-hidden-nested-constructor-default': 'template<class T>struct S{S(T,int=sizeof(long double))noexcept{T::body();}};struct R{R(S<int>)noexcept{}};static_assert(__is_nothrow_constructible(R,int));',
         'composed-query-split-nested-source': 'template<class T>struct S{operator T()const noexcept;};template<class T>S<T>::operator T()const noexcept{T::body();}struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S<int>));',
-        'composed-query-member-template-nested-source': 'struct S{template<class T>operator T()const noexcept{T::body();}};struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S));',
         'lazy-class-call-hidden-assignment-spec': 'template<class T>struct R{R&operator=(T)noexcept((sizeof(long double),false)){T::body();return *this;}};static_assert(!__is_nothrow_assignable(R<int>&,int));',
         'lazy-class-call-hidden-conversion-spec': 'template<class T>struct R{operator T()const noexcept((sizeof(long double),false)){T::body();}};static_assert(!__is_nothrow_convertible(R<int>,int));',
         'lazy-class-call-hidden-assignment-parameter': 'template<class T>using A=decltype((sizeof(long double),int{}));template<class T>struct R{R&operator=(A<T>)noexcept{T::body();return *this;}};static_assert(__is_assignable(R<int>&,int));',
@@ -7264,8 +7294,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'user-hidden-assignment': 'struct R{R&operator=(int){(void)sizeof(long double);return *this;}};bool f(){return __is_assignable(R&,int);}',
         'user-hidden-destructor': 'struct R{R(int){}~R(){(void)sizeof(long double);}};bool f(){return __is_constructible(R,int);}',
         'user-hidden-signature': 'struct R{R(int v[sizeof(long double)]){}};bool f(){return __is_constructible(R,int*);}',
-        'user-constructor-template': 'struct R{template<class T>R(T){T::missing();}};bool f(){return __is_constructible(R,int);}',
-        'user-conversion-template': 'struct R{template<class T>operator T()const{return T::missing;}};bool f(){return __is_convertible(R,int);}',
         'user-self-query-incomplete': 'struct R{R(int){static_assert(!__is_constructible(R));}};bool f(){return __is_constructible(R,int);}',
         'user-mutual-query-hidden': 'struct A{A(int);};struct B{B(int);};A::A(int){static_assert(__is_constructible(B,int));}B::B(int){(void)sizeof(long double);static_assert(__is_constructible(A,int));}',
         'nothrow-hidden-specification': 'struct R{R(int)noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}',
@@ -7298,6 +7326,8 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_missing.items():
         check("v2-operation_trait_missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     operation_trait_invalid = {
+        'lazy-member-query-real-constructor-body': 'struct R{template<class T>R(T)noexcept{T::body();}};static_assert(__is_constructible(R,int));int main(){R value(3);}',
+        'lazy-member-query-real-conversion-body': 'struct R{template<class T>operator T()const noexcept{return T::body();}};static_assert(__is_convertible(R,int));int f(R value){return value;}',
         'composed-query-real-nested-body': 'template<class T>struct S{operator T()const noexcept{return T::body();}};struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S<int>));R f(S<int>source){return R(source);}',
         'lazy-class-call-real-assignment-body-poison': 'template<class T>struct R{R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_nothrow_assignable(R<int>&,int));void f(R<int>&value){value=3;}',
         'lazy-class-call-real-conversion-body-poison': 'template<class T>struct R{operator T()const noexcept{return T::body();}};static_assert(__is_nothrow_convertible(R<int>,int));int f(const R<int>&value){return value;}',
@@ -7359,7 +7389,17 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
 
     defined_operation_source = (repository / "tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp").read_text()
     defined_operation_module = check("v2-defined-operation-traits", defined_operation_source, profile="cpp-core-v2")
-    defined_expected = {"defined_composed_construct": True,
+    defined_expected = {"defined_member_lazy_construct": True,
+                        "defined_member_lazy_nothrow_construct": True,
+                        "defined_member_lazy_trivial": False,
+                        "defined_member_lazy_explicit_default": True,
+                        "defined_member_lazy_convert": True,
+                        "defined_member_lazy_nothrow_convert": True,
+                        "defined_member_lazy_reference": True,
+                        "defined_member_lazy_throwing": False,
+                        "defined_member_materialized_conversion": True,
+                        "defined_member_materialized_construct": True,
+                        "defined_composed_construct": True,
                         "defined_composed_assign": True,
                         "defined_composed_scalar_construct": True,
                         "defined_composed_scalar_assign": True,

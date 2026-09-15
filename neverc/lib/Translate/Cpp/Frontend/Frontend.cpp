@@ -1400,6 +1400,7 @@ struct OperationExpressionSource {
 using OperationExpressionSources = std::map<const Stmt *, OperationExpressionSource>;
 using OperationTypeSources = std::map<OperationTypeSourceKey, OperationExpressionSource>;
 using GeneratedOperationSources = std::map<const CXXMethodDecl *, OperationExpressionSource>;
+using QueryTemplateSelectionSources = std::map<const Expr *, OperationExpressionSource>;
 using OperationDefaultSources =
     std::map<std::pair<const ParmVarDecl *, const Expr *>, const OperationSourceDependencies *>;
 
@@ -1851,7 +1852,8 @@ static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function
 
 static bool lazyQueryConstructorSignature(Adapter &A, const CXXConstructorDecl *Constructor) {
   return Constructor && ordinaryConstructor(Constructor) &&
-         concreteClassFunction(Constructor) && Constructor->isReferenced() &&
+         (concreteClassFunction(Constructor) || concreteMemberFunctionTemplate(Constructor)) &&
+         Constructor->isReferenced() &&
          !Constructor->isUsed(/*CheckUsedAttr=*/false) && !Constructor->hasBody() &&
          A.S.owns(A.Sources, Constructor->getLocation()) &&
          Constructor->getTypeSourceInfo() && operationDefinitionCategory(A, Constructor);
@@ -1873,10 +1875,20 @@ static bool lazyQueryCallSignature(Adapter &A, const CXXMethodDecl *Method) {
   return Method && !Method->isInvalidDecl() &&
          ((ordinaryOperator(Method) && Method->getOverloadedOperator() == OO_Equal) ||
           ordinaryConversion(dyn_cast<CXXConversionDecl>(Method))) &&
-         concreteClassFunction(Method) && Method->isReferenced() &&
+         (concreteClassFunction(Method) ||
+          (isa<CXXConversionDecl>(Method) && concreteMemberFunctionTemplate(Method))) &&
+         Method->isReferenced() &&
          !Method->isUsed(/*CheckUsedAttr=*/false) && !Method->hasBody() &&
          A.S.owns(A.Sources, Method->getLocation()) && Method->getTypeSourceInfo() &&
          standardExceptionSpecification(Method->getType()->getAs<FunctionProtoType>()) &&
+         operationDefinitionCategory(A, Method);
+}
+
+static bool queryMemberTemplateMethodSource(Adapter &A, const CXXMethodDecl *Method) {
+  return Method && concreteMemberFunctionTemplate(Method) &&
+         (ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method)) ||
+          ordinaryConversion(dyn_cast<CXXConversionDecl>(Method))) &&
+         A.S.owns(A.Sources, Method->getLocation()) && Method->getTypeSourceInfo() &&
          operationDefinitionCategory(A, Method);
 }
 
@@ -2240,7 +2252,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const GeneratedOperationSources *Generated = nullptr,
     const std::set<const CXXConstructExpr *> *QueryConstructions = nullptr,
     const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr,
-    const std::set<const CallExpr *> *QueryCalls = nullptr) {
+    const std::set<const CallExpr *> *QueryCalls = nullptr,
+    const QueryTemplateSelectionSources *TemplateSelections = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
@@ -2248,6 +2261,17 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
   OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated, QueryDestructors);
   auto QueryCallSource = [&](const CallExpr *Call, const CXXMethodDecl *Method) {
     return QueryCalls && QueryCalls->count(Call) && SourceCheck.queryCallSignature(Method);
+  };
+  auto TemplateSelectionSource = [&](const Expr *Expression, const CXXMethodDecl *Method) {
+    if (!concreteMemberFunctionTemplate(Method))
+      return true;
+    if (!TemplateSelections)
+      return false;
+    auto Found = TemplateSelections->find(Expression);
+    if (Found == TemplateSelections->end() || !Found->second.Complete)
+      return false;
+    SourceCheck.add(&Found->second.Dependencies);
+    return true;
   };
   auto PrototypeSource = [&](const FunctionProtoType *Prototype,
                              const FunctionDecl *Function) {
@@ -2419,6 +2443,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
       // and nontrivial destructors with completed source evidence.
       const bool Implicit = implicitSpecialMemberSource(A, Constructor, false);
       const bool UserSource = ordinaryConstructor(Constructor) &&
+          TemplateSelectionSource(Construction, Constructor) &&
           (Defined(Constructor) ||
            (QueryConstructions && QueryConstructions->count(Construction) &&
             SourceCheck.queryConstructorSignature(Constructor)));
@@ -2478,6 +2503,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     if (const auto *Call = dyn_cast<CXXMemberCallExpr>(E)) {
       const auto *Conversion = dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee());
       if (!ordinaryConversion(Conversion) ||
+          !TemplateSelectionSource(Call, Conversion) ||
           (!Defined(Conversion) && !QueryCallSource(Call, Conversion)) ||
           !ExceptionSource(Conversion) ||
           !directMethodReference(Call) || Call->getNumArgs() != 0 ||
@@ -3853,6 +3879,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const CallExpr *> ConsumedCallSignatures;
   std::set<const CallExpr *> QueuedCallSignatures;
   std::set<const CallExpr *> CompletedQueryCalls;
+  QueryTemplateSelectionSources CompletedQueryTemplateSelections;
   OperationDefaultSources CompletedOperationDefaults;
   std::map<const Expr *, OperationSourceDependencies> SharedOperationDefaults;
   std::vector<OperationSourceDependencies *> ActiveOperationSources;
@@ -6139,27 +6166,27 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       GeneratedMethods.push_back(cast<CXXMethodDecl>(Definition));
     }
   }
-  void checkSelectedTemplateCall(const Expr *Expression, const FunctionDecl *Function,
+  bool checkSelectedTemplateCall(const Expr *Expression, const FunctionDecl *Function,
                                   SourceLocation L) {
     if (!(isa<CXXNewExpr>(Expression) ? concreteFunctionTemplate(Function)
                                      : concreteMemberFunctionTemplate(Function)))
-      return;
+      return true;
     auto Found = SelectedCallSources.find(Expression);
     if (Found == SelectedCallSources.end() || Found->second.empty()) {
       A.reject(L, "selected member template source", "Construction, conversion or allocation needs its exact successful selection source.");
-      return;
+      return false;
     }
     for (const auto *Source : Found->second) {
       A.chargeExpansion(1, Source->Location);
       if (Source->Expression != Expression || Source->Function != Function ||
           !A.S.owns(A.Sources, Source->Location)) {
         A.reject(L, "selected member template identity", "Retained source must identify this actual expression and selected function.");
-        return;
+        return false;
       }
-      checkFunctionTemplateUse(Function, Source->Location, {});
-      if (!A.S.Diagnostics.empty())
-        return;
+      if (!checkFunctionTemplateUse(Function, Source->Location, {}) || !A.S.Diagnostics.empty())
+        return false;
     }
+    return true;
   }
   void checkConstruction(const CXXConstructExpr *C, SourceLocation L) {
     if (!CheckedConstructions.insert(C).second)
@@ -8067,12 +8094,12 @@ public:
     // nodes. Equivalent result types alone never exempt their written source.
     return true;
   }
-  void checkFunctionTemplateUse(const FunctionDecl *Function, SourceLocation Location,
+  bool checkFunctionTemplateUse(const FunctionDecl *Function, SourceLocation Location,
                                  llvm::ArrayRef<TemplateArgumentLoc> Written,
                                  SourceLocation QualifiedBegin = {},
                                  SourceLocation CallLocation = {}) {
     if (!concreteFunctionTemplate(Function))
-      return;
+      return true;
     const auto *Method = dyn_cast<CXXMethodDecl>(Function);
     if (QualifiedBegin == Location || (Method && !Method->isStatic()))
       QualifiedBegin = {};
@@ -8093,15 +8120,18 @@ public:
         if ((First && !equivalentUse(*First, *Source)) ||
             !sameArguments(Source->Canonical, Function->getTemplateSpecializationArgs())) {
           A.reject(Location, "selected template source conflict", "Repeated selected deductions must preserve equivalent complete source evidence.");
-          return;
+          return false;
         }
         First = Source;
-        if (!checkTemplateUse(*Source, Written))
-          return;
+        if (!checkTemplateUse(*Source, Written) || !A.S.Diagnostics.empty())
+          return false;
       }
     }
-    if (!First)
+    if (!First) {
       A.reject(Location, "selected function template source", "The selected function needs its exact successful deduction source.");
+      return false;
+    }
+    return true;
   }
   SourceLocation directTemplateCallLocation(const Expr *Reference) const {
     auto Found = DirectTemplateCallLocations.find(Reference);
@@ -10248,7 +10278,8 @@ public:
         queueOwningDestructorSignatures(Record, Record->getDestructor(), E->getExprLoc());
     };
     auto CallSignature = [&](const CallExpr *Call) {
-      if (lazyQueryCallSignature(A, dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())) &&
+      const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+      if ((lazyQueryCallSignature(A, Method) || queryMemberTemplateMethodSource(A, Method)) &&
           QueuedCallSignatures.insert(Call).second) {
         A.chargeExpansion(1, Call->getExprLoc());
         ConsumedCallSignatures.push_back(Call);
@@ -10305,7 +10336,8 @@ public:
             !A.Context.hasSameUnqualifiedType(A.Context.getBaseElementType(Construction->getType()),
                 A.Context.getRecordType(Constructor->getParent())))
           return;
-        if (lazyQueryConstructorSignature(A, Constructor) &&
+        if ((lazyQueryConstructorSignature(A, Constructor) ||
+             queryMemberTemplateMethodSource(A, Constructor)) &&
             QueuedConstructorSignatures.insert(Construction).second) {
           A.chargeExpansion(1, Construction->getExprLoc());
           ConsumedConstructorSignatures.push_back(Construction);
@@ -10369,6 +10401,32 @@ public:
     };
     Queue(Queue, Source.Root, 0);
   }
+  bool checkQueryTemplateSelection(const Expr *Expression, const CXXMethodDecl *Method) {
+    if (!concreteMemberFunctionTemplate(Method))
+      return true;
+    auto [Entry, Inserted] = CompletedQueryTemplateSelections.try_emplace(Expression);
+    if (!Inserted)
+      return Entry->second.Complete;
+    if (OperationSourceDepth >= 64) {
+      A.reject(Expression->getExprLoc(), "query selection source depth",
+               "Nested query template selection source exceeds the depth limit.");
+      return false;
+    }
+    A.chargeExpansion(1, Expression->getExprLoc());
+    std::vector<OperationSourceDependencies *> SavedSources;
+    SavedSources.swap(ActiveOperationSources);
+    ActiveOperationSources.push_back(&Entry->second.Dependencies);
+    ++OperationSourceDepth;
+    auto Restore = llvm::make_scope_exit([&] {
+      --OperationSourceDepth;
+      SavedSources.swap(ActiveOperationSources);
+    });
+    // A default template argument can disappear from the actual signature.
+    // Retain its own completed source graph, even when the body already exists.
+    const bool Result = checkSelectedTemplateCall(Expression, Method, Expression->getExprLoc());
+    Entry->second.Complete = Result && A.S.Diagnostics.empty();
+    return Entry->second.Complete;
+  }
   bool checkConsumedOperationSignature(const CXXMethodDecl *Method) {
     const auto Location = Method->getTypeSourceInfo()->getTypeLoc();
     // Only TraverseTypeLoc creates these entries. Even an incomplete existing
@@ -10380,6 +10438,7 @@ public:
     auto *SavedDeclarator = CurrentDeclarator;
     auto *SavedField = CurrentDefaultField;
     auto SavedOwner = ImplicitInitializerOwner;
+    const auto DefinitionDepth = DefinitionFrames.size();
     std::vector<OperationSourceDependencies *> SavedSources;
     SavedSources.swap(ActiveOperationSources);
     CurrentFunction = Method;
@@ -10393,8 +10452,23 @@ public:
       CurrentDeclarator = SavedDeclarator;
       CurrentDefaultField = SavedField;
       ImplicitInitializerOwner = SavedOwner;
+      DefinitionFrames.resize(DefinitionDepth);
       SavedSources.swap(ActiveOperationSources);
     });
+    if (concreteMemberFunctionTemplate(Method)) {
+      const auto *Primary = Method->getPrimaryTemplate();
+      const auto *Arguments = Method->getTemplateSpecializationArgs();
+      if (DefinitionDepth >= 64 || !functionTemplateShape(Primary) || !Arguments ||
+          Arguments->size() != templateSourceParameters(Primary)->size()) {
+        A.reject(Method->getLocation(), "query signature context",
+                 "A selected member-template signature needs its exact bounded argument context.");
+        return false;
+      }
+      checkTemplateArguments(templateSourceParameters(Primary), *Arguments, Method->getLocation());
+      if (!A.S.Diagnostics.empty())
+        return false;
+      DefinitionFrames.push_back({Method, Primary, Arguments, TemplateFrames.size()});
+    }
     // Every queued specification was already resolved. Check only its
     // existing written/resolved type source, with no body or Sema work.
     if (!TraverseTypeLoc(Location) || !A.S.Diagnostics.empty())
@@ -10419,6 +10493,8 @@ public:
     while (Index < ConsumedConstructorSignatures.size()) {
       const auto *Construction = ConsumedConstructorSignatures[Index++];
       const auto *Constructor = Construction->getConstructor();
+      if (!checkQueryTemplateSelection(Construction, Constructor))
+        return false;
       if (!lazyQueryConstructorSignature(A, Constructor))
         continue;
       if (!checkConsumedOperationSignature(Constructor))
@@ -10434,6 +10510,8 @@ public:
     while (Index < ConsumedCallSignatures.size()) {
       const auto *Call = ConsumedCallSignatures[Index++];
       const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+      if (!checkQueryTemplateSelection(Call, Method))
+        return false;
       if (!lazyQueryCallSignature(A, Method))
         continue;
       if (!checkConsumedOperationSignature(Method))
@@ -10542,7 +10620,7 @@ public:
                                    &CheckedOperationTypes, &CompletedGeneratedOperations,
                                    &CompletedQueryConstructions,
                                    &CompletedQueryDestructorSignatures,
-                                   &CompletedQueryCalls));
+                                   &CompletedQueryCalls, &CompletedQueryTemplateSelections));
       if (!Complete) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact callable source, arguments and destruction source.");
