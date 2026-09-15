@@ -561,6 +561,20 @@ returns. Nonempty derived layouts, inherited constructors and exceptional contro
 flow retain their exclusions. No pinned-source or transport-schema change is
 required for this lifecycle lowering.
 
+Source-only incomplete-array metadata follows pinned SemaExprCXX.cpp's
+EvaluateArrayTypeTrait: ArrayType dimensions count toward rank, while an unknown
+or missing dimension has extent zero. A bounded array/pointer/reference detector
+selects separate type-only validation at written/concrete template arguments,
+alias-template underlying sources, retained replacements and ordinary aliases.
+Classification and array queries explicitly admit this metadata; operation roots
+and actual expression/signature/storage types retain the ordinary carrier gate.
+Known inner extents, qualifiers, complete elements and exact source dependencies
+remain checked without asking for an incomplete array's size or inventing a count.
+The existing pointer/reference layout-source policy is unchanged. Pinned ordinary
+and trivial destructibility short-circuit incomplete arrays before destructor
+lookup; this neither instantiates a missing element definition nor resolves an
+unused exception specification. No producer or transport-schema patch is added.
+
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy
 notice. BLAKE3/LICENSE and NeverCCppThirdPartyNotices.txt retain the additional
 notices for the statically included Support sources. The separate cpp-sdk

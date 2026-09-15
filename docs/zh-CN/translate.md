@@ -8,7 +8,7 @@ Core v2 支持未求值调用中经过检查的命名空间模板声明签名，
 
 Core v2 支持默认 sized delete 转发：未被源码重声明的隐式全局 sized delete/delete[] 可调用对应的源码 unsized 定义。显式 sized 定义优先，数组仍使用原表达式的 cookie 布局。此项不提供默认分配器或异常运行时；原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
-Core v2 还支持经过检查的 `__array_rank` 和 `__array_extent`，维度索引为非负常量整数，也支持固定数组类型配合模板索引。折叠前仍检查类型和索引源码；不支持的数组类型与隐式类转换索引仍被拒绝。原生结果须由实现版本的 CI 验证。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
+Core v2 还支持经过检查的 `__array_rank` 和 `__array_extent`，维度索引为非负常量整数，也支持固定数组类型配合模板索引。折叠前仍检查类型和索引源码；不支持的数组类型与隐式类转换索引仍被拒绝。原生结果须由实现版本的 CI 验证。 未知长度数组（如 `int[][3]`）的类型元数据、别名和模板实参现可保留维数、为零的外层长度及已知内层边界。运行时类型和操作查询仍遵循各自限制；标准头文件及完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
 
 Core v2 新增经过检查的内置类型分类查询，包括 `__is_integral`、`__is_pointer` 和 `__is_same`。查询保留 C++ 类型身份，在生成布尔值前检查写出的操作数。不支持的操作数类型及其他类型特征仍受限制。O0／O2 与重定位验证须由实现版本的 CI 执行；标准头文件和完整 C++／STL 尚未完成。 记录类型查询还覆盖聚合、空类、标准布局、平凡性、平凡可复制性、POD、多态／抽象属性，以及已支持类型的 `__is_base_of` 基类关系。 同时支持标准 `final` 类，以及 `__is_final`、`__is_literal`、`__has_unique_object_representations` 查询。结果保留源码的填充、空类表示和 C++17 字面类型语义；其他属性与虚方法仍受现有限制。 可析构性和平凡析构查询也已覆盖受支持的类，保留私有／已删除析构函数、引用及模板函数体和异常规格的延迟处理语义。 具体类型分类和数组查询还会在输出前验证完整的类型／值来源依赖，包括别名边界、缓存及生成的常量；假值或越界结果也不能跳过检查。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
 

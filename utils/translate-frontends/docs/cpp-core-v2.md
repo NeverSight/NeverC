@@ -832,6 +832,16 @@ a user-provided default constructor can coexist with trivial copying.
 same class independently of cv-qualification, and does not require a pointer
 conversion to be accessible.
 
+Unknown-bound arrays such as `int[]` and `int[][3]` also have checked type-only
+metadata, including pointer/reference wrappers, aliases and template arguments.
+Their known inner dimensions and complete admitted element types remain checked;
+no unknown count or runtime carrier is invented. Direct array queries retain
+element layout-source dependencies; pointers/references keep the existing policy
+of checking type/bound source without consuming pointee record layout. Ordinary
+and trivial destructibility preserve the incomplete-value false and reference
+true results without selecting an element destructor. Nothrow destruction and
+other operation queries retain their separate complete-carrier restrictions.
+
 Core v2 accepts the standard class `final` keyword on otherwise admitted ordinary,
 nested and template record definitions, including partial/full specializations,
 copied nested types and final leaves of admitted empty-base chains. Clang checks
@@ -868,7 +878,7 @@ when they would fail if instantiated. Existing ordinary function-definition and
 record source restrictions still apply. `__is_nothrow_destructible` on record
 values and arrays uses the separate retained destructor and exception-source
 proof below. Record references use the unconditional reference result below.
-The shared classification fixture has 33 O0/O2 checkpoints and nineteen exported
+The shared classification fixture has 41 O0/O2 checkpoints and twenty-six exported
 boolean checks, including a real destruction outside the query; native results
 require the implementing revision's CI.
 
@@ -892,7 +902,7 @@ same source gate. This proof reuses the checked source rules below, without turn
 metadata classification into a hypothetical construction or destruction query.
 Pointer/reference spelling keeps unconsumed pointee layout lazy; declaration-only
 dependent parameter queries retain their existing path. The paired classification
-corpus has 140 accepted, 74 unsupported-source and fourteen invalid-C++ cases.
+corpus has 152 accepted, 85 unsupported-source and fourteen invalid-C++ cases.
 
 The builtin spelling does not expand the operand domain. Volatile types, member
 pointers, incomplete/union types, unknown-bound arrays and `long double` remain
@@ -1557,11 +1567,21 @@ Standard headers and complete C++/STL support remain unfinished.
 `__array_rank(T)` returns the number of array dimensions and
 `__array_extent(T, I)` returns the bound of dimension `I`, starting at zero.
 Both use the pinned Clang result type, native `size_t`. Extent returns zero when
-the dimension is outside the rank; both queries return zero for a supported
+the dimension has unknown bound or is outside the rank; both queries return zero for a supported
 non-array type. References and pointers to arrays remain non-array types for
 these queries. All queried types satisfy the same admitted operand domain as
-[builtin classification](#builtin-type-classification); unknown-bound arrays,
-volatile, incomplete, union and other unsupported types remain rejected.
+[builtin classification](#builtin-type-classification), including unknown-bound
+arrays with admitted complete elements. Known inner bounds remain exact:
+`__array_rank(int[][3])` is two, and extents zero and one are zero and three.
+Volatile, incomplete element, union and other unsupported types remain rejected.
+
+Type-only validation covers written and concrete template arguments, selected
+type defaults, alias underlying types and retained replacements. Each original
+TypeLoc and substitution source remains checked. Runtime declarations, signatures
+and expressions still require an admitted carrier; array parameter adjustment
+can produce an already supported pointer. `sizeof`/`alignof` cannot obtain an
+invented size for an unknown-bound array. Fixed dimensions keep the existing
+extent/storage limits, and metadata recursion has the same bounded depth.
 
 An extent dimension must be a resolved nonnegative constant of admitted integer,
 boolean or unscoped enum type. Scoped enum indices need an explicit admitted
@@ -1577,7 +1597,7 @@ The private frontend defers dependent dimension evaluation and substitutes the
 index even when its array type is unchanged. Both parsing and substitution use
 a constant-evaluated dimension context so required constexpr bodies are available
 inside `sizeof` and `noexcept`. Parameter-pack collection explicitly includes the
-dimension; the shared runtime fixture has fourteen checkpoints and three exported
+dimension; the shared runtime fixture has twenty-three checkpoints and nine exported
 native-size integer checks. Ordinary and pack substitutions,
 constant assertions, variable/alias/class defaults and `if constexpr` use the
 existing template source rules; unused dependent patterns remain lazy.
@@ -1586,7 +1606,7 @@ The final source graph covers both the original type and the exact dimension
 expression, including cached constant/default children and generated value source.
 Its synchronous dimension root completes independently of the folded index. Rank,
 non-array and out-of-range results cannot bypass applicable source dependencies.
-The paired corpus has 45 accepted, 33 unsupported-source and five invalid-C++ cases;
+The paired corpus has 65 accepted, 42 unsupported-source and ten invalid-C++ cases;
 no new array query kind or implicit conversion is admitted by this source proof.
 
 V1 remains unchanged. Paired source/protocol, fixed-type template-index regression,

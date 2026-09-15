@@ -8,7 +8,7 @@ Core v2 は未評価呼び出しで、定義のない名前空間テンプレー
 
 Core v2 は既定の sized delete 転送に対応します。ソースで再宣言されていない暗黙のグローバル sized delete/delete[] は、対応するソース定義の unsized 演算子を呼び出せます。明示的な sized 定義と元の配列 cookie レイアウトを保持します。既定のアロケーターや例外ランタイムは追加せず、ネイティブ検証には実装版の CI が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
-Core v2 は検証済みの `__array_rank` と `__array_extent` にも対応し、固定配列型に対するテンプレート引数を含む非負の定数整数インデックスを扱います。定数化の前に型とインデックスのソースを検査します。未対応の配列型と暗黙のクラス変換によるインデックスは対象外です。ネイティブ結果には実装リビジョンの CI が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
+Core v2 は検証済みの `__array_rank` と `__array_extent` にも対応し、固定配列型に対するテンプレート引数を含む非負の定数整数インデックスを扱います。定数化の前に型とインデックスのソースを検査します。未対応の配列型と暗黙のクラス変換によるインデックスは対象外です。ネイティブ結果には実装リビジョンの CI が必要です。 `int[][3]` などの長さ不明の配列も、型だけのメタデータ、別名、テンプレート引数で次元数、不明な外側の長さを示すゼロ、既知の内側の長さを保持します。実行時の型と操作クエリには各契約の制限が残り、標準ヘッダーと完全な C++／STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
 
 Core v2 は `__is_integral`、`__is_pointer`、`__is_same` などの検証済み組み込み型分類を追加します。C++ の型の同一性を保ち、真偽値を生成する前に記述された型を検査します。未対応の型とその他の型特性には引き続き制限があります。O0/O2 と再配置の検証には実装リビジョンの CI が必要です。標準ヘッダーと完全な C++/STL 対応は未完了です。 対応する型について、集成体、空のクラス、標準レイアウト、trivial、trivially-copyable、POD、多態性／抽象性、および `__is_base_of` の基底関係も照会できます。 標準の `final` クラスと `__is_final`、`__is_literal`、`__has_unique_object_representations` にも対応します。ソースのパディング、空クラスの表現、C++17 のリテラル型規則を保持し、他の属性と仮想メソッドには既存の制限が適用されます。 破棄可能性と自明な破棄のクエリは、private／削除されたデストラクターや参照を含む対応クラスにも適用され、テンプレート本体と例外仕様の遅延処理を維持します。 具体的な型分類と配列の問い合わせは、別名の境界やキャッシュ済み・生成済み定数を含む型と値のソース依存関係を出力前に検査します。偽や範囲外の結果でも検査は省略されません。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
 

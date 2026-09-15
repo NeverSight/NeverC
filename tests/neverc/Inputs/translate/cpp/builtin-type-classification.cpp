@@ -92,6 +92,17 @@ extern "C" bool classified_lazy_destructor() { return __is_destructible(LazyDest
 extern "C" bool classified_assignment_source() { return __is_array(AssignedArray); }
 extern "C" bool classified_construction_source() { return __is_array(ConstructedArray); }
 extern "C" bool classified_false_source() { return __is_integral(AssignedArray); }
+using Unknown = int[];
+using UnknownAssigned = int[][assignedBound()];
+template<class T> using UnknownOf = T[];
+template<class... T> constexpr bool all_arrays() { return (__is_array(T) && ...); }
+extern "C" bool classified_unknown_array() { return __is_array(Unknown); }
+extern "C" bool classified_unknown_scalar() { return __is_scalar(Unknown); }
+extern "C" bool classified_unknown_same() { return __is_same(Unknown, UnknownOf<int>); }
+extern "C" bool classified_unknown_destructor() { return __is_destructible(Unknown); }
+extern "C" bool classified_unknown_reference() { return __is_trivially_destructible(LazyDestruction<int>(&)[]); }
+extern "C" bool classified_unknown_const() { return __is_const(const Unknown); }
+extern "C" bool classified_unknown_source() { return __is_array(UnknownAssigned); }
 template<class Base, class Derived> inline constexpr bool base_of = __is_base_of(Base, Derived);
 template<class... T> constexpr bool all_empty() { return (__is_empty(T) && ...); }
 
@@ -203,5 +214,17 @@ int main() {
   if (owner.field.value != 5 || sizeof(AssignedArray) != 3 * sizeof(int) ||
       sizeof(ConstructedArray) != 5 * sizeof(int) || effects != 1 ||
       constructed != 1 || destroyed != 1) return 33;
+  if (!classified_unknown_array() || classified_unknown_scalar() ||
+      __is_array(Unknown&) || !__is_pointer(Unknown*)) return 34;
+  if (!classified_unknown_same() || __is_same(Unknown, int[3]) ||
+      __is_same(Unknown, const int[]) || !__is_same(Unknown&, int(&)[])) return 35;
+  if (!classified_unknown_const() || __is_const(Unknown) ||
+      !__is_lvalue_reference(Unknown&) || !__is_rvalue_reference(Unknown&&)) return 36;
+  if (classified_unknown_destructor() || __is_trivially_destructible(PlainRecord[]) ||
+      !classified_unknown_reference() || __is_destructible(LazyDestruction<int>[])) return 37;
+  if (!same<Unknown, UnknownOf<int>> || same<Unknown, int[3]> || integral<Unknown>) return 38;
+  if (!all_arrays<>() || !all_arrays<Unknown, const int[][3]>() || all_arrays<Unknown, int>()) return 39;
+  if (category<Unknown>() != 3 || category<Unknown*>() != 2 || category<Unknown&>() != 3) return 40;
+  if (!classified_unknown_source() || effects != 1 || constructed != 1 || destroyed != 1) return 41;
   return 0;
 }

@@ -934,6 +934,12 @@ dependent dimension is substituted by the private source frontend before its
 value is consumed. The exact dimension has its own completed expression root in
 the final type/value source graph, including cached children, defaults and generated
 value operations. The dimension never generates runtime side effects.
+Unknown-bound array metadata uses the same native-size literals: rank counts the
+unknown dimension, and its extent is zero. No array carrier, record, global or
+runtime helper is introduced for an operand that exists only in a query. Type-only
+alias/template checks retain exact source evidence; actual object and signature
+types continue through ordinary carrier validation. Known inner extents retain
+their size/storage limits, including when the queried result is zero.
 See the supported types, index domain and template behavior in the
 [array-query contract](cpp-core-v2.md#array-type-queries).
 

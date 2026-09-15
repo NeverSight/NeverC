@@ -39,6 +39,20 @@ using GeneratedArray = int[assignedIndex() + 1][constructedIndex() + 2];
 extern "C" Size query_assignment_dimension() { return __array_extent(Array, assignedIndex()); }
 extern "C" Size query_construction_dimension() { return __array_extent(Array, constructedIndex()); }
 extern "C" Size query_source_rank() { return __array_rank(GeneratedArray); }
+using Unknown = int[][3];
+using UnknownGenerated = int[][assignedIndex() + 2];
+template<class T> using UnknownOf = T[];
+template<class T> struct UnknownPartial { static constexpr Size value = 0; };
+template<class T> struct UnknownPartial<T[]> { static constexpr Size value = __array_rank(T) + 1; };
+template<class... T> constexpr Size unknownRanks() { return (__array_rank(T) + ... + 0); }
+template<unsigned... I> constexpr Size unknownExtents() { return (__array_extent(Unknown, I) + ... + 0); }
+template<class T> int adjusted(T values) { return values[0] + int(__array_extent(T, 0)); }
+extern "C" Size query_unknown_rank() { return __array_rank(Unknown); }
+extern "C" Size query_unknown_outer() { return __array_extent(Unknown, 0); }
+extern "C" Size query_unknown_inner() { return __array_extent(Unknown, 1); }
+extern "C" Size query_unknown_far() { return __array_extent(Unknown, 18446744073709551615ULL); }
+extern "C" Size query_unknown_pointer() { return __array_rank(Unknown*); }
+extern "C" Size query_unknown_source() { return __array_extent(UnknownGenerated, 1); }
 
 static_assert(fixed_extent<0>() == 2 && fixed_extent<1>() == 3 && fixed_extent<2>() == 0);
 static_assert(rank<Array>() == 2 && extent<Array, 1>() == 3);
@@ -81,5 +95,22 @@ int main() {
   if (first.value != 11 || second.value != 7 || &first == &second) return 13;
   SourceConstruction<SourceLeaf> owner;
   if (owner.field.value != 1 || sizeof(GeneratedArray) != sizeof(Array) || effects != 1) return 14;
+  if (query_unknown_rank() != 2 || query_unknown_outer() != 0 ||
+      query_unknown_inner() != 3 || query_unknown_far() != 0) return 15;
+  if (query_unknown_pointer() || __array_rank(Unknown&) || __array_rank(Unknown&&) ||
+      __array_extent(Unknown*, 1) || __array_extent(Unknown&, 0)) return 16;
+  if (rank<Unknown>() != 2 || extent<Unknown, 0>() != 0 || extent<Unknown, 1>() != 3) return 17;
+  if (extent_value<Unknown> != 0 || extent_value<Unknown, 1> != 3 ||
+      extent_value<Unknown, 7> != 0) return 18;
+  Bound<Unknown> unknown_bound;
+  Row<Unknown> unknown_row{};
+  if (unknown_bound.value || __array_extent(decltype(unknown_row), 0) != 3) return 19;
+  if (unknownRanks<>() != 0 || unknownRanks<int[], Unknown, int>() != 3 ||
+      unknownExtents<>() != 0 || unknownExtents<0, 1, 2>() != 3) return 20;
+  if (query_unknown_source() != 3 || __array_extent(Unknown, (sizeof(++effects), 0)) != 0 || effects != 1) return 21;
+  if (UnknownPartial<Unknown>::value != 2 || UnknownPartial<int[]>::value != 1 ||
+      UnknownPartial<int[2]>::value || __array_rank(UnknownOf<int[3]>) != 2) return 22;
+  int known[2] = {5, 6};
+  if (adjusted<int[]>(known) != 5 || adjusted<int[2]>(known) != 7 || known[0] != 5) return 23;
   return 0;
 }

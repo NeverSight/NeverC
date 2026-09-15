@@ -1737,10 +1737,71 @@ std::string Adapter::functionPointerType(QualType T, SourceLocation L,
   return Result;
 }
 
-void Adapter::checkQueryType(QualType T, SourceLocation L) {
+static bool incompleteArrayMetadataType(QualType T) {
+  // Arrays and pointer/reference wrappers have one type child. Records and
+  // function prototypes keep their separate source and signature contracts.
+  for (unsigned Depth = 0; Depth <= 64 && !T.isNull(); ++Depth) {
+    const auto *Raw = T.getCanonicalType().getTypePtr();
+    if (isa<IncompleteArrayType>(Raw))
+      return true;
+    if (const auto *Array = dyn_cast<ArrayType>(Raw))
+      T = Array->getElementType();
+    else if (Raw->isPointerType() || Raw->isReferenceType())
+      T = Raw->getPointeeType();
+    else
+      return false;
+  }
+  return false;
+}
+
+void Adapter::checkTypeOnly(QualType T, SourceLocation L) {
+  if (incompleteArrayMetadataType(T))
+    checkQueryType(T, L, true);
+  else
+    type(T, L, true);
+}
+
+void Adapter::checkQueryType(QualType T, SourceLocation L,
+                           bool AllowIncompleteArrays, unsigned Depth) {
   if (T.isNull() || T->isDependentType() || T->isInstantiationDependentType()) {
     reject(L, "query type source", "Every queried type requires a resolved written type source.");
     throw Failure{};
+  }
+  if (Depth > 64) {
+    reject(L, "query type depth", "Nested type metadata exceeds the depth limit.");
+    throw Failure{};
+  }
+  if (AllowIncompleteArrays && incompleteArrayMetadataType(T)) {
+    if (T.isVolatileQualified() || T->isAtomicType() || T.isRestrictQualified() ||
+        T.getAddressSpace() != LangAS::Default) {
+      reject(L, "array metadata qualifiers", "Array metadata requires admitted qualifiers and the default address space.");
+      throw Failure{};
+    }
+    chargeExpansion(1, L);
+    if (const auto *Array = Context.getAsArrayType(T)) {
+      if (const auto *Fixed = dyn_cast<ConstantArrayType>(Array)) {
+        auto Count = Fixed->getSize().getLimitedValue(65537);
+        if (!Count || Count > 65536 || storageUnits(T) > 200000) {
+          reject(L, "array metadata extent", "Known array dimensions exceed the extent/storage limit.");
+          throw Failure{};
+        }
+      } else if (!isa<IncompleteArrayType>(Array)) {
+        reject(L, "array metadata", "Only fixed or unknown-bound array dimensions are admitted.");
+        throw Failure{};
+      }
+      // Never manufacture a count, size or runtime carrier for this type.
+      checkQueryType(Array->getElementType(), L, true, Depth + 1);
+    } else if (T->isPointerType() || T->isReferenceType()) {
+      if (T->getPointeeType().getAddressSpace() != LangAS::Default) {
+        reject(L, "array metadata address space", "The pointee requires the default address space.");
+        throw Failure{};
+      }
+      checkQueryType(T->getPointeeType(), L, true, Depth + 1);
+    } else {
+      reject(L, "array metadata type", "An exact array, pointer or reference wrapper is required.");
+      throw Failure{};
+    }
+    return;
   }
   if (T->isFunctionType()) {
     // Bare function aliases already use this signature contract. Check the
@@ -1750,9 +1811,9 @@ void Adapter::checkQueryType(QualType T, SourceLocation L) {
       reject(L, "queried function type", "Type queries require an ordinary admitted callback signature.");
       throw Failure{};
     }
-    if (functionPointerType(Context.getPointerType(T), L).empty())
+    if (functionPointerType(Context.getPointerType(T), L, Depth).empty())
       throw Failure{};
-  } else if (type(T, L, true).empty()) {
+  } else if (type(T, L, true, Depth).empty()) {
     throw Failure{};
   }
 }
@@ -2725,7 +2786,7 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
       reject(L, "type classification source", "Every classified type requires its resolved written type source.");
       throw Failure{};
     }
-    checkQueryType(Argument->getType(), L);
+    checkQueryType(Argument->getType(), L, !OperationTrait);
     RecordOperand |= Context.getBaseElementType(
         Argument->getType().getNonReferenceType())->isRecordType();
   }
@@ -2788,7 +2849,7 @@ uint64_t Adapter::arrayTypeQueryValue(const ArrayTypeTraitExpr *Query) {
     throw Failure{};
   }
   chargeExpansion(2, L);
-  checkQueryType(Query->getQueriedType(), L);
+  checkQueryType(Query->getQueriedType(), L, true);
   if (Dimension) {
     APValue Value;
     if (Dimension->getType().isNull() ||
@@ -5632,7 +5693,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               Element.getAsType().isNull() || Element.getAsType()->isDependentType())
             A.reject(L, "template argument", "A resolved supported type argument is required.");
           else
-            A.type(Element.getAsType(), L, true);
+            A.checkTypeOnly(Element.getAsType(), L);
         } else if (scalarTemplateArgumentType(Element).isNull()) {
           A.reject(L, "template argument",
                    "A resolved integer, boolean, enum or nullptr_t value argument is required.");
@@ -5895,7 +5956,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!Info)
         return false;
       if (!Info->getType()->isInstantiationDependentType()) {
-        A.checkQueryType(Info->getType(), Query->getExprLoc());
+        A.checkQueryType(Info->getType(), Query->getExprLoc(), true);
         continue;
       }
       auto Written = Info->getTypeLoc().getUnqualifiedLoc().getAs<TemplateTypeParmTypeLoc>();
@@ -8159,7 +8220,7 @@ public:
         A.reject(L, "alias underlying source", "The alias requires its matching concrete substituted source type.");
         return true;
       }
-      A.type(Source.Underlying->getType(), L, true);
+      A.checkTypeOnly(Source.Underlying->getType(), L);
       return TraverseTypeLoc(Source.Underlying->getTypeLoc());
     }
     return true;
@@ -9418,7 +9479,7 @@ public:
     // the parameter's synthetic name location. Its source slot was checked
     // by the enclosing use; concrete function/class signatures keep their
     // existing canonical argument and ordinary written-source validation.
-    A.type(Type->getReplacementType(), L, true);
+    A.checkTypeOnly(Type->getReplacementType(), L);
     return WalkUpFromSubstTemplateTypeParmTypeLoc(TL) &&
            (!shouldWalkTypesOfTypeLocs() ||
             WalkUpFromSubstTemplateTypeParmType(const_cast<SubstTemplateTypeParmType *>(Type)));
@@ -9882,7 +9943,7 @@ public:
       // also covers nondependent defaults of otherwise unused templates.
       if (!Type.isNull() && !Type->isDependentType() &&
           !Type->isInstantiationDependentType())
-        A.type(Type, Argument.getLocation(), true);
+        A.checkTypeOnly(Type, Argument.getLocation());
     }
     if (A.S.coreV2() && Argument.getArgument().getKind() == TemplateArgument::Integral)
       if (auto *Written = Argument.getSourceIntegralExpression())
@@ -11313,7 +11374,7 @@ public:
       if (D->getUnderlyingType()->isFunctionType())
         A.functionPointerType(A.Context.getPointerType(D->getUnderlyingType()), D->getLocation());
       else
-        A.type(D->getUnderlyingType(), D->getLocation(), true);
+        A.checkTypeOnly(D->getUnderlyingType(), D->getLocation());
     }
     return true;
   }
