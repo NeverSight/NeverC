@@ -5404,6 +5404,21 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluat
 
 TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lazy-member-assignment-query-basic", "struct R{template<class T>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R&,int)&&__is_nothrow_assignable(R&,int)&&!__is_trivially_assignable(R&,int));"},
+      {"lazy-member-assignment-query-template-value", "struct R{template<class T,int N=sizeof(T)>R&operator=(T)noexcept(N==sizeof(T)){T::body();return *this;}};static_assert(__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-type-default", "struct R{template<class T,class U=T>U&operator=(T)noexcept{T::body();}};static_assert(__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-forwarding", "struct R{template<class T>R&operator=(T&&)noexcept{T::body();return *this;}};static_assert(__is_nothrow_assignable(R&,int)&&__is_nothrow_assignable(R&,int&));"},
+      {"lazy-member-assignment-query-const-reference", "struct R{template<class T>const R&operator=(const T&)const noexcept{T::body();return *this;}};static_assert(__is_nothrow_assignable(const R&,int));"},
+      {"lazy-member-assignment-query-rvalue-receiver", "struct R{template<class T>R&&operator=(T)&&noexcept{T::body();return static_cast<R&&>(*this);}};static_assert(__is_nothrow_assignable(R&&,int));"},
+      {"lazy-member-assignment-query-throwing", "struct R{template<class T>R&operator=(T)noexcept(false){T::body();return *this;}};static_assert(__is_assignable(R&,int)&&!__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-selected-overload", "struct R{R&operator=(int)noexcept(false){return *this;}template<class T>R&operator=(T)noexcept{T::body();return *this;}};static_assert(!__is_nothrow_assignable(R&,int)&&__is_nothrow_assignable(R&,unsigned));"},
+      {"lazy-member-assignment-query-ordinary-default", "struct Mid{int n;};struct R{template<class T,int N=noexcept(Mid())>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-materialized-default", "struct Mid{int n;};struct R{template<class T,bool B=noexcept(Mid())>R&operator=(T)noexcept{return *this;}};void force(R&r){r.operator=<int,true>(1);}static_assert(__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-composed-argument", "struct S{template<class U>operator U*()const noexcept{U::body();}};struct R{template<class T=int>R&operator=(int*)noexcept{T::body();return *this;}};static_assert(__is_nothrow_assignable(R&,S));"},
+      {"lazy-member-assignment-query-scalar-result", "struct R{template<class T>T operator=(T)noexcept{T::body();}};static_assert(__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-record-result", "template<class T>struct Out{T n;~Out()noexcept{T::body();}};struct R{template<class T>Out<T>operator=(T)noexcept{T::body();}};static_assert(__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-unvisited-event", "struct R{template<class T>R&operator=(T)noexcept(sizeof(long double)>0){T::body();return *this;}};template<class T>bool unused(){return __is_nothrow_assignable(R&,int);}static_assert(__is_class(R));"},
+      {"lazy-member-query-assignment", "struct R{template<class T>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R&,int));"},
       {"lazy-member-query-constructor", "struct R{template<class T>R(T)noexcept{T::body();}};static_assert(__is_constructible(R,int)&&__is_nothrow_constructible(R,int)&&!__is_trivially_constructible(R,int));"},
       {"lazy-member-query-default-argument", "struct R{template<class T>R(T,int=sizeof(T))noexcept{T::body();}};static_assert(__is_nothrow_constructible(R,int));"},
       {"lazy-member-query-default-template-value", "struct R{template<class T,int N=sizeof(T)>R(T,int=N)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R,int));"},
@@ -5990,6 +6005,16 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lazy-member-assignment-query-hidden-spec", "struct R{template<class T>R&operator=(T)noexcept(sizeof(long double)>0){T::body();return *this;}};static_assert(__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-hidden-false-spec", "struct R{template<class T>R&operator=(T)noexcept((sizeof(long double),false)){T::body();return *this;}};static_assert(!__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-hidden-template-default", "struct R{template<class T,int N=sizeof(long double)>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R&,int));"},
+      {"lazy-member-assignment-query-erased-default", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{template<class T,int N=noexcept(Mid())>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-materialized-erased-default", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{template<class T,bool B=noexcept(Mid())>R&operator=(T)noexcept{return *this;}};void force(R&r){r.operator=<int,true>(1);}static_assert(__is_nothrow_assignable(R&,int));"},
+      {"lazy-member-assignment-query-split", "struct R{template<class T>R&operator=(T)noexcept;};template<class T>R&R::operator=(T)noexcept{T::body();return *this;}static_assert(__is_assignable(R&,int));"},
+      {"lazy-member-assignment-query-copied", "template<class U>struct R{template<class T>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R<unsigned>&,int));"},
+      {"lazy-member-assignment-query-reference-template-default", "const int width=4;struct R{template<class T,const int& N=width>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R&,int));"},
+      {"lazy-member-assignment-query-result-destruction", "template<class T>struct Out{T n;~Out()noexcept(sizeof(long double)>0){T::body();}};struct R{template<class T>Out<T>operator=(T)noexcept{T::body();}};static_assert(__is_assignable(R&,int));"},
+      {"lazy-member-assignment-query-real-hidden-body", "struct R{template<class T>R&operator=(T)noexcept{long double hidden=0;return *this;}};static_assert(__is_assignable(R&,int));void force(R&r){r=1;}"},
       {"lazy-member-query-hidden-constructor-spec", "struct R{template<class T>R(T)noexcept(sizeof(long double)>0){T::body();}};static_assert(__is_nothrow_constructible(R,int));"},
       {"lazy-member-query-hidden-conversion-spec", "struct R{template<class T>operator T()const noexcept((sizeof(long double),false)){T::body();}};static_assert(!__is_nothrow_convertible(R,int));"},
       {"lazy-member-query-hidden-template-default", "struct R{template<class T,int N=sizeof(long double)>R(T)noexcept{T::body();}};static_assert(__is_constructible(R,int));"},
@@ -5998,7 +6023,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"lazy-member-query-split-conversion", "struct R{template<class T>operator T()const noexcept;};template<class T>R::operator T()const noexcept{T::body();}static_assert(__is_convertible(R,int));"},
       {"lazy-member-query-copied-constructor", "template<class T>struct R{template<class U>R(U)noexcept{U::body();}};static_assert(__is_constructible(R<int>,int));"},
       {"lazy-member-query-copied-conversion", "template<class T>struct R{template<class U>operator U()const noexcept{return U::body();}};static_assert(__is_convertible(R<int>,int));"},
-      {"lazy-member-query-assignment-unchanged", "struct R{template<class T>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R&,int));"},
       {"lazy-member-query-real-hidden-body", "struct R{template<class T>R(T)noexcept{long double hidden=0;}};static_assert(__is_constructible(R,int));int main(){R value(3);}"},
       {"lazy-member-query-erased-template-default-source", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{template<class T,int N=noexcept(Mid())>R(T)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R,int));"},
       {"lazy-member-query-erased-conversion-default-source", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{template<class T,int N=noexcept(Mid())>operator T()const noexcept{T::body();}};static_assert(__is_nothrow_convertible(R,int));"},
@@ -6365,6 +6389,8 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainRequiredDefinitions) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsKeepCppDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lazy-member-assignment-query-real-body", "struct R{template<class T>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R&,int));void force(R&r){r=1;}"},
+      {"lazy-member-assignment-query-real-result-body", "struct R{template<class T>T operator=(T)noexcept{T::body();}};static_assert(__is_assignable(R&,int));int force(R&r){return r=1;}"},
       {"lazy-member-query-real-constructor-body", "struct R{template<class T>R(T)noexcept{T::body();}};static_assert(__is_constructible(R,int));int main(){R value(3);}"},
       {"lazy-member-query-real-conversion-body", "struct R{template<class T>operator T()const noexcept{return T::body();}};static_assert(__is_convertible(R,int));int f(R value){return value;}"},
       {"composed-query-real-nested-body", "template<class T>struct S{operator T()const noexcept{return T::body();}};struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S<int>));R f(S<int>source){return R(source);}"},

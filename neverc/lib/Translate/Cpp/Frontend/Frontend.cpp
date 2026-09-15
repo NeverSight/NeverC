@@ -1875,8 +1875,7 @@ static bool lazyQueryCallSignature(Adapter &A, const CXXMethodDecl *Method) {
   return Method && !Method->isInvalidDecl() &&
          ((ordinaryOperator(Method) && Method->getOverloadedOperator() == OO_Equal) ||
           ordinaryConversion(dyn_cast<CXXConversionDecl>(Method))) &&
-         (concreteClassFunction(Method) ||
-          (isa<CXXConversionDecl>(Method) && concreteMemberFunctionTemplate(Method))) &&
+         (concreteClassFunction(Method) || concreteMemberFunctionTemplate(Method)) &&
          Method->isReferenced() &&
          !Method->isUsed(/*CheckUsedAttr=*/false) && !Method->hasBody() &&
          A.S.owns(A.Sources, Method->getLocation()) && Method->getTypeSourceInfo() &&
@@ -1887,7 +1886,8 @@ static bool lazyQueryCallSignature(Adapter &A, const CXXMethodDecl *Method) {
 static bool queryMemberTemplateMethodSource(Adapter &A, const CXXMethodDecl *Method) {
   return Method && concreteMemberFunctionTemplate(Method) &&
          (ordinaryConstructor(dyn_cast<CXXConstructorDecl>(Method)) ||
-          ordinaryConversion(dyn_cast<CXXConversionDecl>(Method))) &&
+          ordinaryConversion(dyn_cast<CXXConversionDecl>(Method)) ||
+          (ordinaryOperator(Method) && Method->getOverloadedOperator() == OO_Equal)) &&
          A.S.owns(A.Sources, Method->getLocation()) && Method->getTypeSourceInfo() &&
          operationDefinitionCategory(A, Method);
 }
@@ -2490,6 +2490,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
       const bool Implicit = implicitSpecialMemberSource(A, Method, true);
       if (!Implicit && !(directMethodReference(Call) &&
           (GeneratedOperation(Method) || (ordinaryOperator(Method) &&
+           TemplateSelectionSource(Call, Method) &&
            (Defined(Method) || QueryCallSource(Call, Method))))))
         return false;
       if (!ExceptionSource(Method))
@@ -10423,7 +10424,25 @@ public:
     });
     // A default template argument can disappear from the actual signature.
     // Retain its own completed source graph, even when the body already exists.
-    const bool Result = checkSelectedTemplateCall(Expression, Method, Expression->getExprLoc());
+    bool Result = false;
+    if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(Expression)) {
+      const auto *Reference = dyn_cast_or_null<DeclRefExpr>(directMethodReference(Call));
+      // Operator deduction and the selected direct function reference retain
+      // the same original operator location, including hypothetical calls.
+      if (Call->getOperator() != OO_Equal || Call->getNumArgs() != 2 ||
+          !ordinaryOperator(Method) || Method->getNumParams() != 1 ||
+          Method->getOverloadedOperator() != OO_Equal || !Reference ||
+          Reference->getDecl() != Method || Reference->hasExplicitTemplateArgs() ||
+          Reference->getLocation() != Call->getOperatorLoc() ||
+          !A.S.owns(A.Sources, Reference->getLocation())) {
+        A.reject(Expression->getExprLoc(), "query assignment selection source",
+                 "A template assignment needs its exact selected direct reference and original operator location.");
+      } else {
+        Result = checkFunctionTemplateUse(Method, Reference->getLocation(), {});
+      }
+    } else {
+      Result = checkSelectedTemplateCall(Expression, Method, Expression->getExprLoc());
+    }
     Entry->second.Complete = Result && A.S.Diagnostics.empty();
     return Entry->second.Complete;
   }

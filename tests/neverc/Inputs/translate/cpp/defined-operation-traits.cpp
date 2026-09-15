@@ -604,6 +604,52 @@ extern "C" bool defined_member_lazy_throwing() { return __is_nothrow_convertible
 extern "C" bool defined_member_materialized_conversion() { return __is_nothrow_convertible(unsigned, LazyMemberQueryValue); }
 extern "C" bool defined_member_materialized_construct() { return __is_nothrow_constructible(LazyMemberQueryValue, unsigned); }
 
+int member_query_assignments, member_query_forwarding_assignments;
+int member_query_ordinary_assignments, member_query_throwing_assignments;
+struct LazyMemberQueryAssignment {
+  unsigned value;
+  template<class T, int N = sizeof(T)>
+  LazyMemberQueryAssignment& operator=(T n) noexcept {
+    if constexpr (__is_same(T, int)) T::assign();
+    else ++member_query_assignments;
+    value = unsigned(n) + N;
+    return *this;
+  }
+  LazyMemberQueryAssignment& operator=(long n) noexcept(false) {
+    ++member_query_ordinary_assignments;
+    value = unsigned(n);
+    return *this;
+  }
+};
+struct LazyMemberQueryForwardingAssignment {
+  unsigned value;
+  template<class T> LazyMemberQueryForwardingAssignment& operator=(T&& n) noexcept {
+    if constexpr (__is_same(T, int) || __is_same(T, int&)) T::assign();
+    else ++member_query_forwarding_assignments;
+    value = n;
+    return *this;
+  }
+};
+struct LazyMemberQueryThrowingAssignment {
+  unsigned value;
+  template<class T> T operator=(T n) noexcept(false) {
+    if constexpr (__is_same(T, int)) T::assign();
+    else ++member_query_throwing_assignments;
+    value = n;
+    return n;
+  }
+};
+extern "C" bool defined_member_assign() { return __is_assignable(LazyMemberQueryAssignment&, int); }
+extern "C" bool defined_member_assign_nothrow() { return __is_nothrow_assignable(LazyMemberQueryAssignment&, int); }
+extern "C" bool defined_member_assign_trivial() { return __is_trivially_assignable(LazyMemberQueryAssignment&, int); }
+extern "C" bool defined_member_assign_forward() { return __is_nothrow_assignable(LazyMemberQueryForwardingAssignment&, int); }
+extern "C" bool defined_member_assign_reference() { return __is_nothrow_assignable(LazyMemberQueryForwardingAssignment&, int&); }
+extern "C" bool defined_member_assign_rvalue() { return __is_nothrow_assignable(LazyMemberQueryForwardingAssignment&&, int); }
+extern "C" bool defined_member_assign_ordinary() { return __is_nothrow_assignable(LazyMemberQueryAssignment&, long); }
+extern "C" bool defined_member_assign_throwing() { return __is_nothrow_assignable(LazyMemberQueryThrowingAssignment&, int); }
+extern "C" bool defined_member_assign_scalar() { return __is_assignable(LazyMemberQueryThrowingAssignment&, int); }
+extern "C" bool defined_member_assign_materialized() { return __is_nothrow_assignable(LazyMemberQueryAssignment&, unsigned); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -1086,6 +1132,40 @@ int main() {
         member_query_defaults != 1 || member_query_constructions != 2 ||
         member_query_conversions != 2 || member_query_references != 1 ||
         composed_conversions != 5 || composed_temporary_destructions != 1) return 108;
+  }
+  if (!defined_member_assign() || !defined_member_assign_nothrow() ||
+      defined_member_assign_trivial() || !defined_member_assign_forward() ||
+      !defined_member_assign_reference() || !defined_member_assign_rvalue() ||
+      defined_member_assign_ordinary() || defined_member_assign_throwing() ||
+      !defined_member_assign_scalar() || !defined_member_assign_materialized() ||
+      member_query_assignments || member_query_forwarding_assignments ||
+      member_query_ordinary_assignments || member_query_throwing_assignments) return 109;
+  {
+    LazyMemberQueryAssignment first{1}, second{2};
+    first = 5u;
+    second = 7u;
+    LazyMemberQueryAssignment& selected = (first = 13u);
+    if (first.value != 17 || second.value != 11 || &selected != &first ||
+        &first.value == &second.value || member_query_assignments != 3 ||
+        member_query_ordinary_assignments) return 110;
+    LazyMemberQueryForwardingAssignment forwarding{3};
+    unsigned source = 19;
+    LazyMemberQueryForwardingAssignment& forwarded = (forwarding = source);
+    bool firstForwarded = forwarding.value == 19;
+    forwarding = 23u;
+    first = 29L;
+    if (!firstForwarded || &forwarded != &forwarding || forwarding.value != 23 ||
+        source != 19 || member_query_forwarding_assignments != 2 ||
+        first.value != 29 || second.value != 11 || member_query_assignments != 3 ||
+        member_query_ordinary_assignments != 1) return 111;
+    LazyMemberQueryThrowingAssignment throwing{7};
+    unsigned scalar = (throwing = 31u);
+    if (scalar != 31 || throwing.value != 31 || member_query_throwing_assignments != 1 ||
+        !defined_member_assign_nothrow() || !defined_member_assign_reference() ||
+        !defined_member_assign_rvalue() || defined_member_assign_throwing() ||
+        !defined_member_assign_materialized() || member_query_assignments != 3 ||
+        member_query_forwarding_assignments != 2 || member_query_ordinary_assignments != 1 ||
+        member_query_constructions != 2 || member_query_conversions != 2) return 112;
   }
   return 0;
 }

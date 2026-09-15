@@ -873,15 +873,18 @@ retain their owning destructor signatures, even inside scalar/reference results.
 False results and actual runtime body requirements remain checked. All signature
 and generated-source queues drain before final checking, without introducing
 protocol functions, helpers or new values.
-Uncopied member-template constructors and conversions additionally require their
-exact retained successful selection and original deduction location. Each query
+Uncopied member-template constructors, assignments and conversions additionally
+require exact successful selection evidence at the original deduction location.
+Constructors/conversions use their retained selection events. An ordinary assignment
+uses its exact direct function reference, selected declaration and matching original
+operator location to consume the existing successful deduction source. Each query
 expression keeps a separate completed selection-source graph for canonical
 template arguments, parameter types and consumed defaults, including values that
 disappear from the actual signature. Both checked-body and lazy-signature paths
 must consume this proof. Signature traversal uses the matching actual function,
 primary and bounded argument frame, fenced from caller frames. Every source-check
 failure prevents completion; copied origins, split definitions, explicit
-specializations and lazy assignment templates retain their restrictions. These
+specializations and other operator categories retain their restrictions. These
 selection events and dependency graphs are private frontend evidence.
 The collector and evaluated-default scan classify the complete defaulted declaration
 family even when selection names a declaration preceding the `= default` definition.

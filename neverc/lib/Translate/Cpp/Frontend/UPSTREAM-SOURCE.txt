@@ -483,9 +483,18 @@ Both defined and lazy final branches require this node and close its source grap
 Source-check booleans propagate through the selection chain; empty diagnostics do
 not imply successful traversal. First TSI checking uses the actual function/primary/
 argument DefinitionSourceFrame with the existing checked-argument and caller-fence
-rules. No body completion is implied by this source frame. Copied primaries, split
-definitions, explicit specialization origins and lazy assignment-function templates
-remain excluded; neither producer behavior nor the transport schema changes.
+rules. No body completion is implied by this source frame.
+Ordinary member-template operator= queries use the same exact selection graph and
+signature proof. Pinned CreateOverloadedBinOp creates CandidateSet at OpLoc;
+AddMethodTemplateCandidate records deduction at CandidateSet.getLocation(), and
+CreateFunctionRefExpr builds the selected DeclRefExpr at the same OpLoc as the
+final CXXOperatorCallExpr. The adapter requires the actual direct reference to name
+the exact selected declaration and preserve that operator location before checking
+its existing FunctionSources. Both defined and lazy ordinary assignment branches
+consume the selection node, including template defaults erased from the signature.
+Copied primaries, split definitions, explicit specialization origins and other
+operator categories remain excluded; neither producer behavior nor the transport
+schema changes.
 Ordinary unused concrete class destructors can also retain their lazy inline bodies
 after exact authorized signature-queue completion. Their raw origin, absence of
 actual bodies, all actual redeclaration TSIs and current standard specifications
