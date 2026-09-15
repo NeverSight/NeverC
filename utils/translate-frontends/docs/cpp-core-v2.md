@@ -795,6 +795,46 @@ functions, unsupported or variable-length types, GNU preferred alignment,
 expression-form alignment are rejected. Resolved `sizeof...` follows the
 [parameter-pack contract](#concrete-parameter-packs).
 
+## Builtin type classification
+
+The pinned source frontend's resolved boolean classification queries are admitted
+for supported operand types. They preserve C++ type identity before translation
+to C carriers: an enum differs from its underlying integer, `long` differs from
+`long long` even at equal width, references differ from pointers, and `noexcept`
+function types differ from potentially throwing function types.
+
+| Classification | Builtin spellings |
+| --- | --- |
+| Arithmetic | `__is_arithmetic`, `__is_floating_point`, `__is_integral`, `__is_signed`, `__is_unsigned` |
+| Type categories | `__is_void`, `__is_fundamental`, `__is_object`, `__is_scalar`, `__is_compound`, `__is_enum`, `__is_class`, `__is_union` |
+| Arrays, pointers and functions | `__is_array`, `__is_pointer`, `__is_function`, `__is_member_pointer`, `__is_member_object_pointer`, `__is_member_function_pointer` |
+| References and qualifications | `__is_reference`, `__is_lvalue_reference`, `__is_rvalue_reference`, `__is_const`, `__is_volatile` |
+| Exact source type identity | `__is_same`, including its Clang alias `__is_same_as` |
+
+Each operand retains its written type source and must satisfy the existing type
+contract, including `void` for queries. Bare function types and function aliases
+use the admitted callback signature contract; normal parameter adjustments are
+preserved. Function-type template arguments and references to functions retain
+their existing restrictions. Querying a type does not request a new definition
+or force an otherwise unused dependent class body to instantiate.
+
+`decltype` operands, array bounds, exception specifications, template arguments
+and selected defaults are inspected even when the query is folded, discarded or
+inside `noexcept`. Their unevaluated side effects, construction and destruction
+are not executed. Existing template substitution sources and lazy uninstantiated
+patterns remain authoritative. Concrete queries can feed static assertions,
+constant initializers, `if constexpr`, defaults and bounded parameter packs.
+
+The builtin spelling does not expand the operand domain. Volatile types, member
+pointers, incomplete/union types, unknown-bound arrays and `long double` remain
+rejected, even for a query that would return false. Direct unknown-bound arrays
+are distinct from array parameters adjusted within an admitted function type.
+Construction, assignment, conversion, destruction, layout, inheritance and other
+builtin trait kinds require separate contracts and remain rejected. V1 admission
+is unchanged. Paired source/protocol tests, O0/O2 saved-NC execution, unevaluated
+effects and relocation require the implementing revision's CI; this does not
+establish standard-header or complete C++/STL support.
+
 ## Object pointers and lvalue references
 
 - Local variables and supported function parameters/results may use object pointers

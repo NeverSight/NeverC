@@ -4,6 +4,8 @@
 
 # C++ を NeverC に変換する
 
+Core v2 は `__is_integral`、`__is_pointer`、`__is_same` などの検証済み組み込み型分類を追加します。C++ の型の同一性を保ち、真偽値を生成する前に記述された型を検査します。未対応の型とその他の型特性には引き続き制限があります。O0/O2 と再配置の検証には実装リビジョンの CI が必要です。標準ヘッダーと完全な C++/STL 対応は未完了です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
+
 Core v2 は、ソース内の正確なグローバル C 宣言による `malloc/calloc/free` の直接呼び出しに対応します。ソース定義の C++ アロケーターがネイティブヒープを使い、独立した C 側とメモリーの確保・解放を共有できます。型幅、呼び出し規約、ソースと IR の検証は維持されます。O0/O2 の検証には実装版の CI が必要です。`realloc`、例外を送出する標準 C++ 確保処理、標準ヘッダー、完全な C++／STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
 
 Core v2 は、対応する静的レコード、配列、寿命延長された一時オブジェクトの構築完了時に、それぞれの破棄を登録します。定数初期化されたオブジェクトの値は保持し、ローカルでは宣言への初回到達時、非ローカルではネイティブ起動時に登録します。CRT が終了とモジュールのアンロード順序を管理します。O0／O2、アンロード、並行初回使用テストの検証には実装版の CI が必要です。TLS、例外の巻き戻し、既定ヒープ、標準ヘッダー、完全な C++／STL は未完成です。手動／DynCode ロードには対応しません。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-destruction).

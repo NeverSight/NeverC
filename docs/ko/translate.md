@@ -4,6 +4,8 @@
 
 # C++를 NeverC로 변환
 
+Core v2는 `__is_integral`, `__is_pointer`, `__is_same` 등의 검증된 내장 타입 분류를 추가합니다. C++ 타입의 동일성을 유지하고 불리언 값을 생성하기 전에 작성된 피연산자 타입을 검사합니다. 지원하지 않는 타입과 다른 타입 특성은 계속 제한됩니다. O0/O2 및 재배치 검증에는 구현 리비전의 CI가 필요하며 표준 헤더와 완전한 C++/STL 지원은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
+
 Core v2는 소스의 정확한 전역 C 선언을 통한 `malloc/calloc/free` 직접 호출을 지원합니다. 소스에서 정의한 C++ 할당자는 실제 네이티브 힙을 사용하며 독립된 C 호출자와 메모리를 할당하고 해제할 수 있습니다. 비트 폭, 호출 규약, 소스 및 IR 검사는 유지됩니다. O0/O2 검증은 구현 버전의 CI가 필요합니다. `realloc`, 예외를 던지는 기본 C++ 할당, 표준 헤더와 완전한 C++／STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
 
 Core v2는 지원되는 정적 레코드, 배열과 수명이 연장된 임시 객체가 완전히 구성된 직후 각각의 소멸을 등록합니다. 상수 초기화된 객체의 값은 유지하며 지역 객체는 선언에 처음 도달할 때, 비지역 객체는 네이티브 시작 시 등록합니다. CRT가 종료와 모듈 언로드 순서를 관리합니다. O0/O2, 라이브러리 언로드와 동시 최초 사용 테스트는 구현 버전의 CI 검증이 필요합니다. TLS, 예외 스택 풀기, 기본 힙, 표준 헤더와 완전한 C++/STL은 미완성이며 수동/DynCode 로딩은 지원하지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-destruction).

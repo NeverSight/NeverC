@@ -748,6 +748,22 @@ subset rejects throw/try/catch and unsupported foreign throwing calls; this wire
 convention does not implement exception propagation, catch, termination or stack
 unwinding. See the [source contract](cpp-core-v2.md#noexcept-declarations-and-queries).
 
+## Core v2 builtin type classification
+
+The admitted boolean type predicates reuse `literal` with type `bool`, a JSON
+boolean value and the query location. The source frontend checks the exact kind,
+arity, resolved boolean result and each retained written operand type before
+using Clang's source-level value. No new instruction, protocol field, runtime
+capability or recomputation from erased C carrier types is introduced. Enum versus
+integer, reference versus pointer and distinct function exception specifications
+therefore retain their source query results.
+
+Type source traversal checks nested `decltype`, array bounds, function
+specifications and selected template substitutions even in erased queries. No
+unevaluated operand effects are emitted. See the exact spellings, supported
+operand domain and remaining exclusions in the
+[classification contract](cpp-core-v2.md#builtin-type-classification).
+
 ## Core v2 pointer arithmetic
 
 Typed `binary` `+`/`-` nodes admit complete-object pointers and explicitly

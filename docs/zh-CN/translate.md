@@ -4,6 +4,8 @@
 
 # 将 C++ 转译为 NeverC
 
+Core v2 新增经过检查的内置类型分类查询，包括 `__is_integral`、`__is_pointer` 和 `__is_same`。查询保留 C++ 类型身份，在生成布尔值前检查写出的操作数。不支持的操作数类型及其他类型特征仍受限制。O0／O2 与重定位验证须由实现版本的 CI 执行；标准头文件和完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
+
 Core v2 新增通过源码中精确的全局 C 声明直接调用 `malloc/calloc/free`。源码定义的 C++ 分配器可使用真实本机堆，并与独立 C 调用方交换和释放内存；本机宽度、调用约定、源码和 IR 检查继续生效。O0/O2 验证须由实现版本的 CI 执行。`realloc`、默认可抛异常的 C++ 分配、标准头文件和完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
 
 Core v2 现已实现已接纳静态记录、数组和延长寿命临时对象的析构登记，每个完整对象构造完成后分别登记。常量根对象保留原值，局部对象在首次经过声明时登记，非局部对象通过原生启动登记。宿主 CRT 保留退出和模块卸载时的析构顺序。O0／O2、模块卸载和并发首次使用测试需由实现版本的 CI 验证。TLS、异常展开、默认堆与标准头文件以及完整 C++／STL 仍未完成；不支持手动／DynCode 加载。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-destruction).

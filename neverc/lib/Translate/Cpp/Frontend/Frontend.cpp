@@ -1667,6 +1667,63 @@ std::string Adapter::functionPointerType(QualType T, SourceLocation L,
   return Result;
 }
 
+bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
+  const auto L = Query->getExprLoc();
+  unsigned Arity = 0;
+  switch (Query->getTrait()) {
+  case UTT_IsArithmetic: case UTT_IsFloatingPoint: case UTT_IsIntegral:
+  case UTT_IsVoid: case UTT_IsArray: case UTT_IsFunction:
+  case UTT_IsReference: case UTT_IsLvalueReference: case UTT_IsRvalueReference:
+  case UTT_IsFundamental: case UTT_IsObject: case UTT_IsScalar:
+  case UTT_IsCompound: case UTT_IsPointer: case UTT_IsMemberObjectPointer:
+  case UTT_IsMemberFunctionPointer: case UTT_IsMemberPointer:
+  case UTT_IsConst: case UTT_IsVolatile: case UTT_IsSigned: case UTT_IsUnsigned:
+  case UTT_IsEnum: case UTT_IsClass: case UTT_IsUnion:
+    Arity = 1;
+    break;
+  case BTT_IsSame:
+    Arity = 2;
+    break;
+  default:
+    break;
+  }
+  if (!S.coreV2() || !Arity || Query->getNumArgs() != Arity ||
+      !Query->isPRValue() || Query->isTypeDependent() ||
+      Query->isValueDependent() || Query->isInstantiationDependent() ||
+      !Context.hasSameType(Query->getType(), Context.BoolTy)) {
+    reject(L, "type classification", "A resolved supported boolean type-classification query with its exact operands is required.");
+    throw Failure{};
+  }
+  chargeExpansion(Arity + 1, L);
+  for (const auto *Argument : Query->getArgs()) {
+    if (!Argument || Argument->getType().isNull() ||
+        Argument->getType()->isDependentType() ||
+        Argument->getType()->isInstantiationDependentType()) {
+      reject(L, "type classification source", "Every classified type requires its resolved written type source.");
+      throw Failure{};
+    }
+    const auto T = Argument->getType();
+    if (T->isFunctionType()) {
+      // Bare function aliases already use this signature contract. Check the
+      // prototype before forming a pointer to reject cv/ref-qualified functions.
+      if (T.hasQualifiers() ||
+          !ordinaryCallbackPrototype(T->getAs<FunctionProtoType>())) {
+        reject(L, "classified function type", "Function classification requires an ordinary admitted callback signature.");
+        throw Failure{};
+      }
+      if (functionPointerType(Context.getPointerType(T), L).empty())
+        throw Failure{};
+    } else if (type(T, L, true).empty()) {
+      throw Failure{};
+    }
+  }
+  // RAV separately visits every TypeSourceInfo, including decltype operands,
+  // array bounds, noexcept specifications and template substitution sources.
+  // Preserve Clang's source identity: enums/references/noexcept can share IR
+  // carriers while remaining different inputs to these predicates.
+  return Query->getValue();
+}
+
 bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
   if (F && allocationOperatorKind(F->getOverloadedOperator()))
     if (const auto *Definition = F->getDefinition())
@@ -9689,7 +9746,7 @@ public:
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
               DefaultStmt, AttributedStmt, CharacterLiteral, StringLiteral,
-              UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
+              UnaryExprOrTypeTraitExpr, TypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
               CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt,
               SubstNonTypeTemplateParmExpr, SizeOfPackExpr,
               CXXPseudoDestructorExpr, CXXNewExpr, CXXDeleteExpr>(S)) &&
@@ -9797,6 +9854,8 @@ public:
         // RAV visits the unevaluated operand and written specification
         // expressions. Unsupported source must not disappear behind a bool.
       }
+      if (const auto *Query = dyn_cast<TypeTraitExpr>(S))
+        A.typeClassificationValue(Query);
       if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S);
           Query && !parameterTypeQueryMetadata(Query)) {
         auto Operand = Query->getTypeOfArgument();

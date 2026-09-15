@@ -4,6 +4,8 @@
 
 # Translate C++ to NeverC
 
+Core v2 adds checked builtin type classification, including `__is_integral`, `__is_pointer` and `__is_same`. Queries preserve C++ type identity and inspect written operands before producing a boolean. Unsupported operand types and other trait kinds remain restricted. O0/O2 and relocation checks require the implementing revision’s CI; standard headers and complete C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
+
 Core v2 adds checked direct `malloc/calloc/free` calls through exact source-owned global C declarations. Source-defined C++ allocators can use the real native heap; allocation and release interoperate with an independent C client. Native width, calling convention, source and IR checks remain enforced. O0/O2 validation requires implementing CI. `realloc`, default throwing C++ allocation, standard headers and complete C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
 
 Core v2 now registers destruction of admitted static records, arrays and lifetime-extended temporaries when each complete object finishes construction. Constant roots retain their values; local registration occurs at first passage and nonlocal registration runs during native startup. Native CRT callbacks preserve exit and module-unload order. O0/O2, library-unload and concurrent-first-use fixtures require implementing CI. TLS, exception unwinding, default heap/standard headers and complete C++/STL remain unfinished; manual/DynCode loading is unsupported. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#static-destruction).

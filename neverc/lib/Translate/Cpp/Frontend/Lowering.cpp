@@ -1102,6 +1102,8 @@ class FunctionLowering {
       // The inspected operand creates no runtime calls, values or cleanup.
       return boolean(Query->getValue(), L);
     }
+    if (const auto *Query = dyn_cast<TypeTraitExpr>(E); Query && A.S.coreV2())
+      return boolean(A.typeClassificationValue(Query), L);
     if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(E); Query && A.S.coreV2()) {
       APValue Value;
       if (!Query->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt())

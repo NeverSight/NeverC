@@ -30,6 +30,7 @@ class SubstNonTypeTemplateParmExpr;
 class SizeOfPackExpr;
 class InitListExpr;
 class StringLiteral;
+class TypeTraitExpr;
 class Expr;
 struct ASTTemplateArgumentListInfo;
 class DeclContext;
@@ -337,6 +338,7 @@ public:
                    bool AllowVoid = false, unsigned Depth = 0);
   std::string functionPointerType(clang::QualType T, clang::SourceLocation L,
                                   unsigned Depth = 0);
+  bool typeClassificationValue(const clang::TypeTraitExpr *Query);
   bool functionAddressTarget(const clang::FunctionDecl *F, clang::SourceLocation L);
   const clang::FunctionDecl *allocationFunction(const clang::FunctionDecl *F,
                                                bool Allocate, clang::SourceLocation L,

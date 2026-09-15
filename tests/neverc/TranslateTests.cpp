@@ -4746,6 +4746,146 @@ TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErrorsAndTemporaryOrder)
   }
 }
 
+TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"arithmetic", "bool f(){return __is_arithmetic(int)&&__is_arithmetic(float)&&!__is_arithmetic(int*);}"},
+      {"floating-point", "bool f(){return __is_floating_point(float)&&__is_floating_point(double)&&!__is_floating_point(int);}"},
+      {"integral", "enum E:int{e};bool f(){return __is_integral(bool)&&__is_integral(char)&&__is_integral(unsigned long)&&!__is_integral(E);}"},
+      {"void", "bool f(){return __is_void(void)&&__is_void(const void)&&!__is_void(void*);}"},
+      {"array", "bool f(){return __is_array(int[2][3])&&!__is_array(int*)&&!__is_array(int);}"},
+      {"function", "using F=int(int);using N=int(int)noexcept;bool f(){return __is_function(F)&&__is_function(N)&&__is_function(void())&&!__is_function(F*);}"},
+      {"reference", "bool f(){return __is_reference(int&)&&__is_reference(int&&)&&!__is_reference(int*);}"},
+      {"lvalue-reference", "bool f(){return __is_lvalue_reference(const int&)&&!__is_lvalue_reference(int&&);}"},
+      {"rvalue-reference", "bool f(){return __is_rvalue_reference(int&&)&&!__is_rvalue_reference(int&);}"},
+      {"fundamental", "enum E{e};bool f(){return __is_fundamental(void)&&__is_fundamental(decltype(nullptr))&&!__is_fundamental(E);}"},
+      {"object", "struct R{};bool f(){return __is_object(R)&&__is_object(int[2])&&!__is_object(int&)&&!__is_object(void());}"},
+      {"scalar", "enum E{e};bool f(){return __is_scalar(E)&&__is_scalar(decltype(nullptr))&&__is_scalar(void*)&&!__is_scalar(int&);}"},
+      {"compound", "enum E{e};bool f(){return __is_compound(E)&&__is_compound(int&)&&!__is_compound(int);}"},
+      {"pointer", "bool f(){return __is_pointer(int*)&&__is_pointer(int(*)())&&!__is_pointer(int&);}"},
+      {"member-object-pointer", "bool f(){return !__is_member_object_pointer(int*)&&!__is_member_object_pointer(int);}"},
+      {"member-function-pointer", "bool f(){return !__is_member_function_pointer(int(*)())&&!__is_member_function_pointer(void);}"},
+      {"member-pointer", "bool f(){return !__is_member_pointer(int*)&&!__is_member_pointer(int(*)());}"},
+      {"const", "bool f(){return __is_const(const int)&&__is_const(int*const)&&!__is_const(const int*)&&!__is_const(const int&);}"},
+      {"volatile", "bool f(){return !__is_volatile(int)&&!__is_volatile(const int);}"},
+      {"signed", "bool f(){return __is_signed(int)&&__is_signed(float)&&__is_signed(double)&&!__is_signed(unsigned);}"},
+      {"unsigned", "bool f(){return __is_unsigned(bool)&&__is_unsigned(unsigned)&&!__is_unsigned(int)&&!__is_unsigned(float);}"},
+      {"enum", "enum E:int{e};enum class S:unsigned{s};bool f(){return __is_enum(E)&&__is_enum(S)&&!__is_enum(int);}"},
+      {"class", "struct R{};bool f(){return __is_class(R)&&!__is_class(int);}"},
+      {"union", "struct R{};bool f(){return !__is_union(R)&&!__is_union(int);}"},
+      {"same", "enum E:int{e};bool f(){return __is_same(int,int)&&!__is_same(E,int)&&!__is_same(long,long long)&&!__is_same(int&,int*);}"},
+      {"same-spelling-alias", "bool f(){return __is_same_as(int,int)&&!__is_same_as(int,unsigned);}"},
+      {"same-signature", "using F=int(int);using N=int(int)noexcept;bool f(){return __is_same(F,int(int))&&!__is_same(F,N)&&!__is_same(F*,N*);}"},
+      {"adjusted-function-parameter", "bool f(){return __is_same(int(int[2]),int(int*))&&__is_same(int(const int),int(int));}"},
+      {"aliases", "using I=const int;using A=I[2];using F=int(int)noexcept;bool f(){return __is_integral(I)&&__is_array(A)&&__is_function(F);}"},
+      {"function-template", "template<class T>bool f(){return __is_integral(T);}bool g(){return f<int>()&&!f<double>();}"},
+      {"variable-template", "template<class T>inline constexpr bool integral=__is_integral(T);static_assert(integral<int>&&!integral<double>);"},
+      {"class-default", "template<class T,bool B=__is_pointer(T)>struct R{static constexpr bool value=B;};static_assert(R<int*>::value&&!R<int>::value);"},
+      {"alias-default", "template<class T,bool B=__is_integral(T)>using A=T;bool f(){return __is_integral(A<int>);}"},
+      {"partial", "template<class T,bool B=__is_integral(T)>struct R{static constexpr int value=0;};template<class T>struct R<T,true>{static constexpr int value=1;};static_assert(R<int>::value==1&&R<float>::value==0);"},
+      {"pack-fold", "template<class...T>constexpr bool f(){return (__is_integral(T)&&...);}static_assert(f<>()&&f<int,bool>()&&!f<int,float>());"},
+      {"pack-trait-arguments", "template<class...T>constexpr bool f(){return __is_same(T...);}static_assert(f<int,int>()&&!f<int,float>());"},
+      {"constexpr-branch", "template<class T>int f(){if constexpr(__is_integral(T))return 3;else return 7;}int main(){return f<int>()+f<float>()-10;}"},
+      {"noexcept-specification", "template<class T>int f(T n)noexcept(__is_integral(T)){return int(n);}static_assert(noexcept(f(1))&&!noexcept(f(1.0)));"},
+      {"argument-identity", "template<bool B>int&slot(){static int n;return n;}bool f(){return &slot<__is_integral(int)>()==&slot<true>();}"},
+      {"unevaluated-expressions", "int n;int get(){return ++n;}bool f(){return __is_same(decltype(++n),int&)&&__is_integral(decltype(get()));}"},
+      {"constexpr-initializers", "enum E{e=__is_integral(int)};constexpr bool yes=__is_same(E,E);static_assert(e==1&&yes);"},
+      {"member-template", "template<class T>struct R{template<class U>bool f(){return __is_same(T,U);}};bool g(){R<int>r;return r.f<int>()&&!r.f<bool>();}"},
+      {"lazy-pattern", "template<class T>bool unused(){return __is_same(T,typename T::missing);}bool f(){return __is_integral(int);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("builtin-type-" + Name + ".cpp");
+    auto Output = tmpFile("builtin-type-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"long-double", "bool f(){return __is_floating_point(long double);}"},
+      {"unsupported-pointee", "bool f(){return __is_pointer(long double*);}"},
+      {"volatile", "bool f(){return __is_volatile(volatile int);}"},
+      {"volatile-pointee", "bool f(){return __is_pointer(volatile int*);}"},
+      {"incomplete", "struct R;bool f(){return __is_class(R);}"},
+      {"union", "union U{int n;};bool f(){return __is_union(U);}"},
+      {"unknown-bound", "bool f(){return __is_array(int[]);}"},
+      {"zero-bound", "bool f(){return __is_array(int[0]);}"},
+      {"member-pointer", "struct R{int n;};bool f(){return __is_member_pointer(int R::*);}"},
+      {"variadic-function", "bool f(){return __is_function(int(int,...));}"},
+      {"qualified-function", "bool f(){return __is_function(int()const);}"},
+      {"function-return", "bool f(){return __is_function(long double());}"},
+      {"function-parameter", "bool f(){return __is_function(int(long double));}"},
+      {"function-record-value", "struct R{int n;};bool f(){return __is_function(int(R));}"},
+      {"function-noexcept-source", "bool f(){return __is_function(int()noexcept(sizeof(long double)>0));}"},
+      {"adjusted-function-source", "bool f(){return __is_function(int(int[sizeof(long double)]));}"},
+      {"decltype-source", "bool f(){return __is_integral(decltype(sizeof(long double)));}"},
+      {"decltype-cast-source", "bool f(){return __is_integral(decltype((static_cast<long double>(0),1)));}"},
+      {"array-bound-source", "bool f(){return __is_array(int[sizeof(long double)]);}"},
+      {"short-circuit", "bool f(){return true||__is_integral(long double);}"},
+      {"noexcept-query", "bool f(){return noexcept(__is_integral(long double));}"},
+      {"folded-assertion", "static_assert(true||__is_integral(long double));"},
+      {"alias-default-source", "template<class T,int N=sizeof(long double)>using A=T;bool f(){return __is_integral(A<int>);}"},
+      {"template-argument-source", "template<class T,int N>using A=T;bool f(){return __is_integral(A<int,(sizeof(long double),1)>);}"},
+      {"non-type-default-source", "template<bool B=__is_same(decltype(sizeof(long double)),unsigned long)>int f(){return 1;}int g(){return f();}"},
+      {"constructible", "bool f(){return __is_constructible(int,int);}"},
+      {"assignable", "bool f(){return __is_assignable(int&,int);}"},
+      {"convertible", "bool f(){return __is_convertible(int,double);}"},
+      {"destructible", "bool f(){return __is_destructible(int);}"},
+      {"layout", "bool f(){return __is_standard_layout(int);}"},
+      {"inheritance", "struct R{};bool f(){return __is_base_of(R,R);}"},
+      {"newer-lifetime", "bool f(){return __is_trivially_relocatable(int);}"},
+      {"array-rank", "int f(){return __array_rank(int[2]);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("builtin-type-" + Name + ".cpp");
+    auto Output = tmpFile("builtin-type-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRejectsInvalidCpp) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"wrong-arity", "bool f(){return __is_same(int);}"},
+      {"missing-type", "bool f(){return __is_integral(Unknown);}"},
+      {"failed-assertion", "static_assert(__is_integral(double));"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("builtin-type-" + Name + ".cpp");
+    auto Output = tmpFile("builtin-type-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluatedEffects) {
+  auto Output = tmpFile("builtin-type-classification.nc");
+  auto Result = translate(fixture("builtin-type-classification.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("builtin-type-classification" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  auto Legacy = tmpFile("builtin-type-v1.cpp");
+  writeFile(Legacy, "bool f(){return __is_integral(int);}");
+  auto Rejected = translate(Legacy, {"--profile", "cpp-core-v1", "-o", tmpFile("builtin-type-v1.nc").string()});
+  expectCode(Rejected, "TR0201");
+  expectNoArtifacts(tmpFile("builtin-type-v1.nc"));
+}
+
 TEST_F(TranslateTest, CoreV2RuntimeAggregateArraysInitializeActualElements) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"plain-zero", "using Size=decltype(sizeof(0));struct R{int value;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
