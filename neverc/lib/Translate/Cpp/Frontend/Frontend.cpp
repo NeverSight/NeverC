@@ -10088,27 +10088,18 @@ public:
       CompletedOperationDefinitions.insert(Function);
     return Result;
   }
-  void queueConsumedDestructorSignature(const TypeTraitExpr *Query) {
-    if (Query->getTrait() != UTT_IsNothrowDestructible)
-      return;
-    auto Found = A.OperationTraits.find(Query);
-    if (Found == A.OperationTraits.end())
-      return;
-    bool CanDefer = false;
-    (void)nothrowDestructionSource(A, Query, Found->second, nullptr, &CanDefer);
-    if (!CanDefer)
-      return;
+  void queueOwningDestructorSignatures(const CXXRecordDecl *RootRecord,
+      const CXXDestructorDecl *RootDestructor, SourceLocation L) {
     // The consumed owning destruction graph requires these exact source nodes.
     // It supplies no child query event and never changes the retained root result.
-    const auto *RootDestructor = Found->second.Destructor;
-    const auto *RootRecord = RootDestructor->getParent()->getDefinition();
+    RootRecord = RootRecord ? RootRecord->getDefinition() : nullptr;
     std::set<const CXXRecordDecl *> Seen;
     auto Queue = [&](auto &&Self, const CXXRecordDecl *Record, unsigned Depth) -> void {
       Record = Record ? Record->getDefinition() : nullptr;
       if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()) ||
           !Seen.insert(Record).second)
         return;
-      A.chargeExpansion(1, Query->getExprLoc());
+      A.chargeExpansion(1, L);
       const auto *Destructor = Record == RootRecord ? RootDestructor : Record->getDestructor();
       // Explicit parent specifications need not resolve child specifications.
       // Only already resolved concrete class signatures can receive a first
@@ -10118,7 +10109,7 @@ public:
           concreteClassFunction(Destructor) && inlineTemplateDefaultingSource(A, Destructor) &&
           defaultedLifecycle(Destructor) && Destructor->getTypeSourceInfo() &&
           QueuedDestructorSignatures.insert(Destructor).second) {
-        A.chargeExpansion(1, Query->getExprLoc());
+        A.chargeExpansion(1, L);
         ConsumedDestructorSignatures.push_back(Destructor);
       }
       for (const auto &Base : Record->bases())
@@ -10128,6 +10119,34 @@ public:
           Self(Self, Member, Depth + 1);
     };
     Queue(Queue, RootRecord, 0);
+  }
+  void queueConsumedDestructorSignature(const TypeTraitExpr *Query) {
+    auto Found = A.OperationTraits.find(Query);
+    if (Found == A.OperationTraits.end())
+      return;
+    const auto &Source = Found->second;
+    if (Query->getTrait() == UTT_IsNothrowDestructible) {
+      bool CanDefer = false;
+      (void)nothrowDestructionSource(A, Query, Source, nullptr, &CanDefer);
+      if (CanDefer)
+        queueOwningDestructorSignatures(Source.Destructor->getParent(),
+                                       Source.Destructor, Query->getExprLoc());
+      return;
+    }
+    // A retained complete record prvalue consumes owning destruction too.
+    // Do not peel references or wrappers, select a destructor, or repair a
+    // missing operation. The final operation checker still proves the exact
+    // root shape, operands, calls, signatures and lifetime dependencies.
+    if (!isOperationTypeTrait(Query->getTrait()) || !Source.Attempted ||
+        !Source.Complete || !Source.Root || Source.Root->getType().isNull() ||
+        !Source.Root->isPRValue() ||
+        Source.Root->isTypeDependent() || Source.Root->isValueDependent() ||
+        Source.Root->isInstantiationDependent())
+      return;
+    const auto *Record = Source.Root->getType()->getAsCXXRecordDecl();
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (Record)
+      queueOwningDestructorSignatures(Record, Record->getDestructor(), Query->getExprLoc());
   }
   bool finishConsumedDestructorSignatures(std::size_t &Index) {
     while (Index < ConsumedDestructorSignatures.size()) {

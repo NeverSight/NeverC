@@ -413,10 +413,15 @@ node to complete. It never borrows defaulting from an uninstantiated template
 pattern. Already checked inline template defaulting uses the same raw-origin proof
 as generated operations. EvaluateUnaryTypeTrait's nothrow destructor lookup does not
 MarkFunctionReferenced; neither that lookup nor InstantiateClassMembers' handling of
-already-defaulted methods manufactures a completed concrete signature. Only an
+already-defaulted methods manufactures a completed concrete signature. An
 actual visited query with exact valid lookup/resolution/snapshot identity can
 enqueue the first TypeLoc traversal of an admitted inline defaulted class-template
 destructor. Exact TypeLoc map presence prevents replay, including incomplete nodes.
+Other actually visited operation queries can supply the same first owning-signature
+check through an attempted, complete, concrete record-prvalue root and its already
+declared destructor. No wrappers or references are peeled, and incomplete roots
+supply no signature work. Final operation shape, operand, definition, exception
+and lifetime checks remain mandatory even when the retained trait result is false.
 Normal method context and original/resolved exception checks remain; no body or
 Sema operation is requested. Signature and generated-body queues use independent
 forward indices and drain after each prior source context has exited. Unvisited

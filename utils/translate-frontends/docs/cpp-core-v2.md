@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 466 accepted, 298 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
+The paired 479 accepted, 304 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1186,9 +1186,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has eighty-six O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has eighty-nine O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Eighty-six exported query
+default evaluation with full-expression temporary cleanup. Ninety exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1371,6 +1371,14 @@ reference short circuits do not trigger this pass. Separate template
 defaulting and user destructors without the exact completed
 inline-definition proof still require further source evidence.
 Construction and assignment retain their separate operation source checks.
+An actually visited construction, conversion or assignment query can also supply
+this first owning-signature check when its retained operation is attempted,
+complete and has an exact concrete record-prvalue root. The adapter uses that
+root's already declared destructor without selecting or resolving another one.
+References, xvalues, pointers and incomplete operations do not trigger the queue.
+The unchanged final operation proof still checks root shape, operands, definitions,
+exceptions and all lifetime dependencies, including complete roots whose trait
+result is false. Nested argument/default temporaries require their existing proof.
 For retained implicit constructors, destruction is verified independently for the
 exact record prvalue. The same composition applies inside query-only defaults;
 the constructor expression must have the same base-element record type as its
@@ -1391,7 +1399,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared eighty-six-checkpoint user-operation fixture checks
+queries. The shared eighty-nine-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
 user/generated array destruction at O0/O2. Query-only nested owning signatures

@@ -390,6 +390,19 @@ extern "C" bool defined_inferred_false_nothrow() { return __is_nothrow_construct
 extern "C" bool defined_inferred_false_ordinary() { return __is_nothrow_destructible(InferredFalseOrdinary); }
 extern "C" bool defined_inferred_false_defaulted() { return __is_nothrow_destructible(InferredFalseDefaulted); }
 
+int query_result_destructions;
+struct QueryResultTracked { ~QueryResultTracked() noexcept { ++query_result_destructions; } };
+template<class T> struct QueryResultLeaf {
+  T value;
+  QueryResultTracked tracked;
+  ~QueryResultLeaf() = default;
+};
+template<class T> struct QueryResultOwner { QueryResultLeaf<T> fields[2]; };
+extern "C" bool defined_result_signature_construct() { return __is_constructible(QueryResultOwner<int>); }
+extern "C" bool defined_result_signature_nothrow() { return __is_nothrow_constructible(QueryResultOwner<int>); }
+extern "C" bool defined_result_signature_copy() { return __is_constructible(QueryResultOwner<int>, const QueryResultOwner<int>&); }
+extern "C" bool defined_result_signature_trivial() { return __is_trivially_constructible(QueryResultOwner<int>); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -723,5 +736,19 @@ int main() {
     InferredFalseDefaulted defaulted{};
   }
   if (inferred_false_destructions != 8 || inferred_false_owner_destructions != 1) return 86;
+  if (!defined_result_signature_construct() || !defined_result_signature_nothrow() ||
+      !defined_result_signature_copy() || defined_result_signature_trivial() ||
+      query_result_destructions) return 87;
+  {
+    QueryResultOwner<unsigned> first{};
+    first.fields[0].value = 3;
+    first.fields[1].value = 5;
+    QueryResultOwner<unsigned> second(first);
+    first.fields[0].value = 9;
+    if (second.fields[0].value != 3 || second.fields[1].value != 5 ||
+        &first.fields[0] == &second.fields[0] || query_result_destructions) return 88;
+  }
+  if (query_result_destructions != 4 || inferred_false_destructions != 8 ||
+      inferred_false_owner_destructions != 1) return 89;
   return 0;
 }
