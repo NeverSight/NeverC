@@ -70,6 +70,9 @@ public:
       Attribute->printPretty(llvm::outs(), Context.getPrintingPolicy());
       if (const auto *Builtin = dyn_cast<BuiltinAttr>(Attribute))
         llvm::outs() << " builtin-id=" << Builtin->getID();
+      if (const auto *Size = dyn_cast<AllocSizeAttr>(Attribute))
+        llvm::outs() << " size-index=" << Size->getElemSizeParam().getSourceIndex()
+                     << " has-count=" << Size->getNumElemsParam().isValid();
       llvm::outs() << "\n";
     }
     if (auto *Primary = D->getPrimaryTemplate()) {
@@ -249,6 +252,12 @@ int main(int Argc, const char **Argv) {
     const char *Source;
   };
   const Fixture Sources[] = {
+      {"global-allocation-attributes",
+      "using Size=decltype(sizeof(0));"
+      "struct Storage{unsigned long long align;unsigned char bytes[128];};Storage storage{};"
+      "void*operator new(Size){return storage.bytes;}void operator delete(void*)noexcept{}"
+      "void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}"
+      "int*p=new int(3);int f(){return *p;}"},
       {"native-heap-declarations",
       "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);"
       "extern \"C\" void*calloc(Size,Size);extern \"C\" void*realloc(void*,Size);"

@@ -44,7 +44,7 @@ jobs:
             aggregate-member-cleanup static-forward-reference-copy \
             static-prior-reference-copy static-constexpr-reference-copy \
             runtime-array-initializers native-heap-declarations \
-            native-heap-definitions; do
+            native-heap-definitions global-allocation-attributes; do
             if "$RUNNER_TEMP/template-source" "$fixture"; then
               echo "$fixture: success"
             else

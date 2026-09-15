@@ -2554,8 +2554,10 @@ private:
         Pruned.push_back(std::move(V));
     }
     return json::Object{
-        {"name", Name},
-        {"result", ResultPlace ? "void" : ResultType},
+        // The response is serialized after run() destroys its local strings.
+        // Upstream JSON borrows StringRef, so retain owned copies here.
+        {"name", Name.str()},
+        {"result", ResultPlace ? std::string("void") : ResultType.str()},
         {"internal", Internal},
         {"c_export", CExport},
         {"params", std::move(Parameters)},

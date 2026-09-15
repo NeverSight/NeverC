@@ -8272,9 +8272,16 @@ public:
   bool VisitDecl(Decl *D) {
     if (!owned(D))
       return true;
-    if (D->hasAttrs() && (!A.S.coreV2() || !supportedDeclarationAttributes(D)))
+    if (D->hasAttrs() && (!A.S.coreV2() || !supportedDeclarationAttributes(D))) {
+      std::string Detail;
+      llvm::raw_string_ostream OS(Detail);
+      for (const auto *Attribute : D->attrs()) {
+        OS << (Attribute->isImplicit() ? " implicit " : " written ");
+        Attribute->printPretty(OS, A.Context.getPrintingPolicy());
+      }
       A.reject(D->getLocation(), "attribute",
-               "Source declaration attributes are unsupported.");
+               "Source declaration attributes are unsupported:" + OS.str());
+    }
     const bool ExtendedDeclaration =
         A.S.coreV2() &&
         (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl, FriendDecl,
