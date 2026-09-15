@@ -318,6 +318,9 @@ public:
   std::vector<clang::CXXRecordDecl *> Records;
   std::vector<const clang::CXXRecordDecl *> Destructions;
   std::set<const clang::CXXRecordDecl *> RequiredDestructions;
+  std::set<const clang::CXXRecordDecl *> BaseConstructorRecords;
+  std::vector<const clang::CXXConstructorDecl *> BaseConstructors;
+  std::map<const clang::CXXConstructorDecl *, const clang::CXXConstructorDecl *> RequiredBaseConstructors;
   std::vector<StaticDestruction> StaticDestructions;
   std::vector<clang::VarDecl *> Globals;
   std::map<const clang::VarDecl *, json::Object> ConstantStaticInitializers;
@@ -363,6 +366,8 @@ public:
   uint64_t arrayTypeQueryValue(const clang::ArrayTypeTraitExpr *Query);
   bool emptyBaseChainShape(const clang::CXXRecordDecl *Record);
   const CheckedEmptyBase *emptyBase(const clang::CXXRecordDecl *Record);
+  const CheckedEmptyBase *emptyBaseInitializer(const clang::CXXConstructorDecl *Constructor,
+                                               const clang::CXXCtorInitializer *Initializer);
   std::vector<const CheckedEmptyBase *> emptyBaseCast(const clang::CastExpr *Cast);
   bool functionAddressTarget(const clang::FunctionDecl *F, clang::SourceLocation L);
   const clang::FunctionDecl *allocationFunction(const clang::FunctionDecl *F,
@@ -397,6 +402,12 @@ public:
   const clang::CXXForRangeStmt *rangeForOwner(const clang::VarDecl *Variable) const;
   const clang::VarDecl *temporaryOwner(const clang::MaterializeTemporaryExpr *Temporary);
   json::Object lower(clang::FunctionDecl *Function);
+  std::string baseConstructorName(const clang::CXXConstructorDecl *Constructor);
+  std::string requireBaseConstructor(const clang::CXXConstructorDecl *Constructor,
+                                     clang::SourceLocation Location);
+  json::Object lowerBaseConstructor(const clang::CXXConstructorDecl *Constructor);
+  json::Object lowerConstructorBody(const clang::CXXConstructorDecl *Constructor);
+  json::Object lowerCompleteConstructor(const clang::CXXConstructorDecl *Constructor);
   json::Object lowerStartup(llvm::ArrayRef<const clang::VarDecl *> Objects);
   std::string requireStaticDestruction(llvm::StringRef Global, clang::QualType Type,
                                        clang::SourceLocation Location);

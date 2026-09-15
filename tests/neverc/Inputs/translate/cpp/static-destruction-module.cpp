@@ -29,11 +29,28 @@ struct PlacementTag {};
 void *operator new(Size, PlacementTag, void *p) { return p; }
 void reuse() { static Item value(17); value.~Item(); new(PlacementTag{}, &value) Item(18); }
 template<int N> const Constant &templated() { static const Constant value{N}; return value; }
+struct EmptyToken { ~EmptyToken() { mark(27); } };
+struct EmptyBase {
+ EmptyBase() { static EmptyToken token; mark(21); }
+ ~EmptyBase() { mark(22); }
+};
+struct EmptyMiddle : EmptyBase {
+ EmptyMiddle() : EmptyBase() { mark(23); }
+ ~EmptyMiddle() { mark(24); return; }
+};
+struct EmptyLeaf : EmptyMiddle {
+ EmptyLeaf() : EmptyMiddle() { mark(25); }
+ ~EmptyLeaf() { mark(26); }
+};
+void empty_chain() { static const EmptyLeaf value; }
+void empty_reference() { static const EmptyBase &value = EmptyLeaf{}; }
 extern "C" void start_first() { first(); }
 extern "C" void start_rest() {
  second(); full_expression(); extended(); array_members(); constant();
  selected(true); selected(false); reentrant(); reuse();
  templated<19>(); templated<19>(); templated<20>();
+ { EmptyBase complete; }
+ empty_chain(); empty_chain(); empty_reference(); empty_reference();
 }
 extern "C" void event(int n) { mark(n); }
 extern "C" int event_count() { return count; }

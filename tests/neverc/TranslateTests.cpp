@@ -4846,6 +4846,35 @@ TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErrorsAndTemporaryOrder)
 
 TEST_F(TranslateTest, CoreV2EmptyBaseChainsRetainStorageAndTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"constructor", "struct B{B(){}};struct D:B{};"},
+      {"derived-constructor", "struct B{};struct D:B{D(){}};"},
+      {"destructor", "struct B{~B(){}};struct D:B{};"},
+      {"copy", "struct B{B()=default;B(const B&){}};struct D:B{};"},
+      {"assignment", "struct B{B&operator=(const B&){return *this;}};struct D:B{};"},
+      {"constructor-template-runtime", "struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};void f(){D d{1};}"},
+      {"constructor-template-constant", "struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};constexpr D d{1};"},
+      {"lifecycle-default", "int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};int main(){{D d;if(n!=1)return 1;}return n;}"},
+      {"lifecycle-written-base", "int n;struct B{B(int v){n=v;}};struct D:B{D():B(3){++n;}};int main(){D d;return n-4;}"},
+      {"lifecycle-copy-move", "int c,m;struct B{B()=default;B(const B&){++c;}B(B&&){++m;}};struct D:B{};int main(){D a;D b(a);D d(static_cast<D&&>(b));return c+m-2;}"},
+      {"lifecycle-assign", "int c,m;struct B{B&operator=(const B&){++c;return *this;}B&operator=(B&&){++m;return *this;}};struct D:B{};int main(){D a,b;a=b;b=static_cast<D&&>(a);return c+m-2;}"},
+      {"lifecycle-three-level", "int n;struct B{B(){n=n*10+1;}~B(){n=n*10+6;}};struct M:B{M(){n=n*10+2;}~M(){n=n*10+5;return;}};struct D:M{D(){n=n*10+3;}~D(){n=n*10+4;}};int main(){{D d;}return n!=123456;}"},
+      {"lifecycle-default-temporary", "int live,bad;struct V{V(){++live;}~V(){--live;}};struct B{B(const V& value=V()){if(live!=1)++bad;}};struct D:B{D(){if(live)++bad;}};int main(){D d;return bad+live;}"},
+      {"lifecycle-delegation", "int n;struct B{B()=default;B(int):B(){B local{};++n;}};struct D:B{D():B(1){}};int main(){B b(1);D d;return n-2;}"},
+      {"lifecycle-dependent-base", "int n;struct B{B(){++n;}~B(){--n;}};template<class T>struct D:T{D():T(){}};int main(){{D<B>d;if(n!=1)return 1;}return n;}"},
+      {"lifecycle-dependent-alias", "struct B{B(){}};template<class T>using Alias=T;template<class T>struct D:T{D():Alias<T>(){}};int main(){D<B>d;}"},
+      {"lifecycle-dependent-delegation", "int n;struct B{B(){++n;}};template<class T>struct D:T{D():D(1){}D(int):T(){++n;}};int main(){D<B>d;return n-2;}"},
+      {"lifecycle-copied-member-constructor", "template<class T>struct B{template<class U>B(U){}};template<class T>struct D:B<T>{D():B<T>(T(3)){}};int main(){D<unsigned>d;}"},
+      {"lifecycle-unused-template-default", "template<class T>struct B{B(int=T::missing){}};struct D:B<int>{D():B<int>(3){}};int main(){D d;}"},
+      {"lifecycle-by-value-wrapper", "int live,dead,used;struct V{int n;V(int v):n(v){++live;}~V(){--live;++dead;}};struct B{B(V v){used+=v.n;}B():B(V(3)){}};struct D:B{D():B(){}};int main(){B b;D d;return live||dead!=2||used!=6;}"},
+      {"lifecycle-template-by-value-wrapper", "int dead;struct V{int n;~V(){++dead;}};template<class T>struct B{B(T value){}};struct D:B<V>{D():B<V>(V{3}){}};int main(){B<V>b(V{1});D d;return dead-2;}"},
+      {"lifecycle-static-destructor-wrapper", "int count;struct Token{~Token(){++count;}};struct B{B(){static Token t;}};struct D:B{};int main(){B b;D d;return count;}"},
+      {"lifecycle-static-local", "int calls,last;int init(){++calls;return 3;}struct B{B(int){static int n=init();last=++n;}};struct D:B{D():B(1){}};int main(){B b(1);D d;return calls!=1||last!=5;}"},
+      {"lifecycle-local-static-object", "int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};D&get(){static D object;return object;}int main(){D&a=get();D&b=get();return &a!=&b||n!=1;}"},
+      {"lifecycle-global-object", "int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};D object;int main(){return n-1;}"},
+      {"lifecycle-array", "int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};int main(){{D a[3]{};if(n!=3)return 1;}return n;}"},
+      {"lifecycle-constexpr-base", "struct B{constexpr B(int){}};struct D:B{constexpr D():B(1){}};constexpr D d;static_assert(sizeof(d)==1);"},
+      {"lifecycle-temporary-base-reference", "int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};int main(){{const B&r=D{};if(n!=1||!&r)return 1;}return n;}"},
+      {"constructor-template-sizeof", "struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};static_assert(sizeof(D{1})==1);"},
       {"declarations", "struct E{};struct D:E{};"},
       {"chain", "struct B{};struct M:B{};struct D:M{};static_assert(sizeof(D)==1&&alignof(D)==1);"},
       {"static-value", "struct B{static constexpr int value=3;};struct D:B{};int f(){return D::value;}"},
@@ -4881,16 +4910,20 @@ TEST_F(TranslateTest, CoreV2EmptyBaseChainsRetainStorageAndTypes) {
 
 TEST_F(TranslateTest, CoreV2EmptyBaseChainsRejectUnrepresentedLayoutsAndLifetimes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lifecycle-hidden-constructor", "struct B{B(){long double n=0;}};struct D:B{};int main(){D d;}"},
+      {"lifecycle-hidden-destructor", "struct B{~B(){long double n=0;}};struct D:B{};int main(){D d;}"},
+      {"lifecycle-hidden-default", "template<class T>struct B{B(int=sizeof(long double)){}};struct D:B<int>{};int main(){D d;}"},
+      {"lifecycle-hidden-initializer", "struct B{B(int){}};struct D:B{D():B(sizeof(long double)){}};int main(){D d;}"},
+      {"lifecycle-hidden-assignment", "struct B{B&operator=(const B&){long double n=0;return *this;}};struct D:B{};int main(){D a,b;a=b;}"},
+      {"lifecycle-inheriting-constructor", "struct B{B(int){}};struct D:B{using B::B;};int main(){D d(1);}"},
+      {"lifecycle-nonempty-derived", "struct B{B(){}~B(){}};struct D:B{int n;};"},
+      {"lifecycle-nonempty-base", "struct B{int n;B(){}~B(){}};struct D:B{};"},
+      {"lifecycle-throwing-body", "struct B{B(){throw 1;}};struct D:B{};int main(){D d;}"},
       {"nonempty-base", "struct B{int n;};struct D:B{};"},
       {"nonempty-derived", "struct B{};struct D:B{int n;};"},
       {"multiple", "struct A{};struct B{};struct D:A,B{};"},
       {"virtual-base", "struct B{};struct D:virtual B{};"},
       {"dynamic", "struct B{virtual int f(){return 1;}};struct D:B{};"},
-      {"constructor", "struct B{B(){}};struct D:B{};"},
-      {"derived-constructor", "struct B{};struct D:B{D(){}};"},
-      {"destructor", "struct B{~B(){}};struct D:B{};"},
-      {"copy", "struct B{B()=default;B(const B&){}};struct D:B{};"},
-      {"assignment", "struct B{B&operator=(const B&){return *this;}};struct D:B{};"},
       {"overaligned", "struct alignas(2) B{};struct D:B{};"},
       {"pack", "template<class...T>struct D:T...{};"},
       {"hidden-base-argument", "template<int N>struct B{};struct D:B<sizeof(long double)>{};"},
@@ -4898,9 +4931,6 @@ TEST_F(TranslateTest, CoreV2EmptyBaseChainsRejectUnrepresentedLayoutsAndLifetime
       {"instantiated-nonempty", "struct B{int n;};template<class T>struct D:T{};D<B>d;"},
       {"query-nonempty", "struct B{int n;};struct D:B{};bool f(){return __is_class(D);}"},
       {"hidden-method", "struct B{long double get(){return 1.0L;}};struct D:B{};int f(){D d;return int(d.get());}"},
-      {"constructor-template-runtime", "struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};void f(){D d{1};}"},
-      {"constructor-template-constant", "struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};constexpr D d{1};"},
-      {"constructor-template-sizeof", "struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};static_assert(sizeof(D{1})==1);"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -4913,8 +4943,31 @@ TEST_F(TranslateTest, CoreV2EmptyBaseChainsRejectUnrepresentedLayoutsAndLifetime
   }
 }
 
+TEST_F(TranslateTest, CoreV2EmptyBaseChainsRequireSelectedDefinitions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lifecycle-missing-constructor", "struct B{B();};struct D:B{};int main(){D d;}"},
+      {"lifecycle-missing-destructor", "struct B{~B();};struct D:B{};int main(){D d;}"},
+      {"constructor-template-lazy-sizeof", "struct B{B()=default;template<class T>B(T){}};struct D:B{};static_assert(sizeof(D{1})==1);"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("empty-base-missing-" + Name + ".cpp");
+    auto Output = tmpFile("empty-base-missing-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2EmptyBaseChainsRetainLanguageDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lifecycle-private-constructor", "class B{B(){}};struct D:B{};int main(){D d;}"},
+      {"lifecycle-private-destructor", "class B{~B(){}};struct D:B{};int main(){D d;}"},
+      {"lifecycle-wrong-base", "struct B{};struct X{};struct D:B{D():X(){}};"},
+      {"lifecycle-duplicate-base", "struct B{B(){}};struct D:B{D():B(),B(){}};"},
+      {"lifecycle-no-base-elision", "struct B{B(){}B(B&&)=delete;};struct D:B{};int main(){D d{B{}};}"},
+      {"lifecycle-template-body", "template<class T>struct B{B(){T::body();}};struct D:B<int>{};int main(){D d;}"},
       {"private-upcast", "struct B{};class D:B{};B*f(D*p){return p;}"},
       {"private-downcast", "struct B{};class D:B{};D*f(B*p){return static_cast<D*>(p);}"},
       {"final-base", "struct B final{};struct D:B{};"},

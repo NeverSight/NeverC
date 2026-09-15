@@ -5858,6 +5858,35 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
               "TR0201" if abi == "msvc" else None, profile="cpp-core-v2", target=target)
 
     empty_base_positive = {
+        'constructor': 'struct B{B(){}};struct D:B{};',
+        'derived-constructor': 'struct B{};struct D:B{D(){}};',
+        'destructor': 'struct B{~B(){}};struct D:B{};',
+        'copy': 'struct B{B()=default;B(const B&){}};struct D:B{};',
+        'assignment': 'struct B{B&operator=(const B&){return *this;}};struct D:B{};',
+        'constructor-template-runtime': 'struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};void f(){D d{1};}',
+        'constructor-template-constant': 'struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};constexpr D d{1};',
+        'lifecycle-default': 'int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};int main(){{D d;if(n!=1)return 1;}return n;}',
+        'lifecycle-written-base': 'int n;struct B{B(int v){n=v;}};struct D:B{D():B(3){++n;}};int main(){D d;return n-4;}',
+        'lifecycle-copy-move': 'int c,m;struct B{B()=default;B(const B&){++c;}B(B&&){++m;}};struct D:B{};int main(){D a;D b(a);D d(static_cast<D&&>(b));return c+m-2;}',
+        'lifecycle-assign': 'int c,m;struct B{B&operator=(const B&){++c;return *this;}B&operator=(B&&){++m;return *this;}};struct D:B{};int main(){D a,b;a=b;b=static_cast<D&&>(a);return c+m-2;}',
+        'lifecycle-three-level': 'int n;struct B{B(){n=n*10+1;}~B(){n=n*10+6;}};struct M:B{M(){n=n*10+2;}~M(){n=n*10+5;return;}};struct D:M{D(){n=n*10+3;}~D(){n=n*10+4;}};int main(){{D d;}return n!=123456;}',
+        'lifecycle-default-temporary': 'int live,bad;struct V{V(){++live;}~V(){--live;}};struct B{B(const V& value=V()){if(live!=1)++bad;}};struct D:B{D(){if(live)++bad;}};int main(){D d;return bad+live;}',
+        'lifecycle-delegation': 'int n;struct B{B()=default;B(int):B(){B local{};++n;}};struct D:B{D():B(1){}};int main(){B b(1);D d;return n-2;}',
+        'lifecycle-dependent-base': 'int n;struct B{B(){++n;}~B(){--n;}};template<class T>struct D:T{D():T(){}};int main(){{D<B>d;if(n!=1)return 1;}return n;}',
+        'lifecycle-dependent-alias': 'struct B{B(){}};template<class T>using Alias=T;template<class T>struct D:T{D():Alias<T>(){}};int main(){D<B>d;}',
+        'lifecycle-dependent-delegation': 'int n;struct B{B(){++n;}};template<class T>struct D:T{D():D(1){}D(int):T(){++n;}};int main(){D<B>d;return n-2;}',
+        'lifecycle-copied-member-constructor': 'template<class T>struct B{template<class U>B(U){}};template<class T>struct D:B<T>{D():B<T>(T(3)){}};int main(){D<unsigned>d;}',
+        'lifecycle-unused-template-default': 'template<class T>struct B{B(int=T::missing){}};struct D:B<int>{D():B<int>(3){}};int main(){D d;}',
+        'lifecycle-by-value-wrapper': 'int live,dead,used;struct V{int n;V(int v):n(v){++live;}~V(){--live;++dead;}};struct B{B(V v){used+=v.n;}B():B(V(3)){}};struct D:B{D():B(){}};int main(){B b;D d;return live||dead!=2||used!=6;}',
+        'lifecycle-template-by-value-wrapper': 'int dead;struct V{int n;~V(){++dead;}};template<class T>struct B{B(T value){}};struct D:B<V>{D():B<V>(V{3}){}};int main(){B<V>b(V{1});D d;return dead-2;}',
+        'lifecycle-static-destructor-wrapper': 'int count;struct Token{~Token(){++count;}};struct B{B(){static Token t;}};struct D:B{};int main(){B b;D d;return count;}',
+        'lifecycle-static-local': 'int calls,last;int init(){++calls;return 3;}struct B{B(int){static int n=init();last=++n;}};struct D:B{D():B(1){}};int main(){B b(1);D d;return calls!=1||last!=5;}',
+        'lifecycle-local-static-object': 'int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};D&get(){static D object;return object;}int main(){D&a=get();D&b=get();return &a!=&b||n!=1;}',
+        'lifecycle-global-object': 'int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};D object;int main(){return n-1;}',
+        'lifecycle-array': 'int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};int main(){{D a[3]{};if(n!=3)return 1;}return n;}',
+        'lifecycle-constexpr-base': 'struct B{constexpr B(int){}};struct D:B{constexpr D():B(1){}};constexpr D d;static_assert(sizeof(d)==1);',
+        'lifecycle-temporary-base-reference': 'int n;struct B{B(){++n;}~B(){--n;}};struct D:B{};int main(){{const B&r=D{};if(n!=1||!&r)return 1;}return n;}',
+        'constructor-template-sizeof': 'struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};static_assert(sizeof(D{1})==1);',
         'declarations': 'struct E{};struct D:E{};',
         'chain': 'struct B{};struct M:B{};struct D:M{};static_assert(sizeof(D)==1&&alignof(D)==1);',
         'static-value': 'struct B{static constexpr int value=3;};struct D:B{};int f(){return D::value;}',
@@ -5884,16 +5913,20 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in empty_base_positive.items():
         check("v2-empty_base_positive-" + name, source, profile="cpp-core-v2")
     empty_base_negative = {
+        'lifecycle-hidden-constructor': 'struct B{B(){long double n=0;}};struct D:B{};int main(){D d;}',
+        'lifecycle-hidden-destructor': 'struct B{~B(){long double n=0;}};struct D:B{};int main(){D d;}',
+        'lifecycle-hidden-default': 'template<class T>struct B{B(int=sizeof(long double)){}};struct D:B<int>{};int main(){D d;}',
+        'lifecycle-hidden-initializer': 'struct B{B(int){}};struct D:B{D():B(sizeof(long double)){}};int main(){D d;}',
+        'lifecycle-hidden-assignment': 'struct B{B&operator=(const B&){long double n=0;return *this;}};struct D:B{};int main(){D a,b;a=b;}',
+        'lifecycle-inheriting-constructor': 'struct B{B(int){}};struct D:B{using B::B;};int main(){D d(1);}',
+        'lifecycle-nonempty-derived': 'struct B{B(){}~B(){}};struct D:B{int n;};',
+        'lifecycle-nonempty-base': 'struct B{int n;B(){}~B(){}};struct D:B{};',
+        'lifecycle-throwing-body': 'struct B{B(){throw 1;}};struct D:B{};int main(){D d;}',
         'nonempty-base': 'struct B{int n;};struct D:B{};',
         'nonempty-derived': 'struct B{};struct D:B{int n;};',
         'multiple': 'struct A{};struct B{};struct D:A,B{};',
         'virtual-base': 'struct B{};struct D:virtual B{};',
         'dynamic': 'struct B{virtual int f(){return 1;}};struct D:B{};',
-        'constructor': 'struct B{B(){}};struct D:B{};',
-        'derived-constructor': 'struct B{};struct D:B{D(){}};',
-        'destructor': 'struct B{~B(){}};struct D:B{};',
-        'copy': 'struct B{B()=default;B(const B&){}};struct D:B{};',
-        'assignment': 'struct B{B&operator=(const B&){return *this;}};struct D:B{};',
         'overaligned': 'struct alignas(2) B{};struct D:B{};',
         'pack': 'template<class...T>struct D:T...{};',
         'hidden-base-argument': 'template<int N>struct B{};struct D:B<sizeof(long double)>{};',
@@ -5901,13 +5934,23 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'instantiated-nonempty': 'struct B{int n;};template<class T>struct D:T{};D<B>d;',
         'query-nonempty': 'struct B{int n;};struct D:B{};bool f(){return __is_class(D);}',
         'hidden-method': 'struct B{long double get(){return 1.0L;}};struct D:B{};int f(){D d;return int(d.get());}',
-        'constructor-template-runtime': 'struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};void f(){D d{1};}',
-        'constructor-template-constant': 'struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};constexpr D d{1};',
-        'constructor-template-sizeof': 'struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};static_assert(sizeof(D{1})==1);',
     }
     for name, source in empty_base_negative.items():
         check("v2-empty_base_negative-" + name, source, 'TR0201', profile="cpp-core-v2")
+    empty_base_missing = {
+        'lifecycle-missing-constructor': 'struct B{B();};struct D:B{};int main(){D d;}',
+        'lifecycle-missing-destructor': 'struct B{~B();};struct D:B{};int main(){D d;}',
+        'constructor-template-lazy-sizeof': 'struct B{B()=default;template<class T>B(T){}};struct D:B{};static_assert(sizeof(D{1})==1);',
+    }
+    for name, source in empty_base_missing.items():
+        check("v2-empty-base-missing-" + name, source, "TR0203", profile="cpp-core-v2")
     empty_base_invalid = {
+        'lifecycle-private-constructor': 'class B{B(){}};struct D:B{};int main(){D d;}',
+        'lifecycle-private-destructor': 'class B{~B(){}};struct D:B{};int main(){D d;}',
+        'lifecycle-wrong-base': 'struct B{};struct X{};struct D:B{D():X(){}};',
+        'lifecycle-duplicate-base': 'struct B{B(){}};struct D:B{D():B(),B(){}};',
+        'lifecycle-no-base-elision': 'struct B{B(){}B(B&&)=delete;};struct D:B{};int main(){D d{B{}};}',
+        'lifecycle-template-body': 'template<class T>struct B{B(){T::body();}};struct D:B<int>{};int main(){D d;}',
         'private-upcast': 'struct B{};class D:B{};B*f(D*p){return p;}',
         'private-downcast': 'struct B{};class D:B{};D*f(B*p){return static_cast<D*>(p);}',
         'final-base': 'struct B final{};struct D:B{};',
@@ -5920,6 +5963,125 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     check("empty-base-v1", "struct B{};struct D:B{};", "TR0201")
     empty_base_source = (repository / "tests/neverc/Inputs/translate/cpp/empty-base-chains.cpp").read_text()
     empty_bases = check("v2-empty-base-chains", empty_base_source, profile="cpp-core-v2")
+    empty_base_functions = {function["name"]: function for function in empty_bases["functions"]}
+    def empty_base_shared_body(complete, base, functions):
+        assert base["internal"] and not base["c_export"]
+        assert base["result"] == complete["result"] == "void"
+        assert [p["type"] for p in base["params"]] == [p["type"] for p in complete["params"]]
+        assert base["loc"] == complete["loc"]
+        common = functions[complete["name"] + "_construction"]
+        assert common["internal"] and not common["c_export"] and common["result"] == "void"
+        assert common["loc"] == complete["loc"]
+        assert [p["type"] for p in common["params"]] == [p["type"] for p in complete["params"]] + ["bool"]
+        for wrapper, role in ((complete, False), (base, True)):
+            assert not wrapper["locals"]
+            assert [node["op"] for node in wrapper["body"]] == ["label", "call", "return"]
+            call = gc_calls(wrapper)[0]
+            assert call["callee"] == common["name"] and len(call["args"]) == len(common["params"])
+            assert call["args"][-1]["kind"] == "literal" and call["args"][-1]["type"] == "bool"
+            assert call["args"][-1]["value"] is role
+            assert [gc_identity(wrapper, arg) for arg in call["args"][:-1]] == [
+                ("parameter", p["name"]) for p in wrapper["params"]]
+        return common
+
+    empty_base_entries = [function for name, function in empty_base_functions.items() if name.endswith("_base")]
+    assert empty_base_entries
+    for function in empty_base_entries:
+        empty_base_shared_body(empty_base_functions[function["name"][:-5]], function, empty_base_functions)
+    empty_base_role_source = """int initial_calls, observed;
+int initial(){++initial_calls;return 3;}
+struct B {
+ B()=default;
+ B(int):B(){B local{};static int value=initial();observed=++value;}
+ B(long):B(1){}
+};
+struct D:B { D():B(1L){} };
+extern "C" void whole(){B object(1L);}
+extern "C" void subobject(){D object;}
+"""
+    empty_base_roles = check("v2-empty-base-constructor-roles", empty_base_role_source, profile="cpp-core-v2")
+    role_functions = {function["name"]: function for function in empty_base_roles["functions"]}
+    whole_calls = gc_calls(role_functions["whole"])
+    assert len(whole_calls) == 1
+    complete_constructor = role_functions[whole_calls[0]["callee"]]
+    base_constructor = role_functions[complete_constructor["name"] + "_base"]
+    common_constructor = empty_base_shared_body(complete_constructor, base_constructor, role_functions)
+    subobject_calls = gc_calls(role_functions["subobject"])
+    assert len(subobject_calls) == 1
+    derived_constructor = role_functions[subobject_calls[0]["callee"]]
+    base_calls = gc_calls(derived_constructor)
+    assert len(base_calls) == 1 and base_calls[0]["callee"] == base_constructor["name"]
+    assert gc_identity(derived_constructor, base_calls[0]["args"][0]) == (
+        "member", ("parameter", derived_constructor["params"][0]["name"]), "nct_base_storage")
+    delegation_calls = gc_calls(common_constructor)
+    assert len(delegation_calls) == 1
+    delegation = delegation_calls[0]
+    function = role_functions[delegation["callee"]]
+    assert function["name"].endswith("_construction") and function["internal"] and not function["c_export"]
+    assert [p["type"] for p in function["params"]] == [common_constructor["params"][0]["type"], "int", "bool"]
+    assert [gc_identity(common_constructor, arg) for arg in delegation["args"]] == [
+        ("parameter", common_constructor["params"][0]["name"]), 1,
+        ("parameter", common_constructor["params"][-1]["name"])]
+    record_type = function["params"][0]["type"].removeprefix("ptr:")
+    zero_writes = [node for node in function["body"] if node["op"] == "assign"
+                   and node["target"]["kind"] == "dereference" and node["target"]["type"] == record_type
+                   and gc_identity(function, node["target"]) == ("parameter", function["params"][0]["name"])]
+    assert len(zero_writes) == 1
+    assert zero_writes[0]["value"]["kind"] == "aggregate" and not zero_writes[0]["value"]["args"]
+    role_branches = [node for node in function["body"] if node["op"] == "branch"
+                     and gc_identity(function, node["condition"]) == ("parameter", function["params"][-1]["name"])]
+    assert len(role_branches) == 1
+    role_branch = role_branches[0]
+    blocks = {}
+    for node in function["body"]:
+        if node["op"] == "label":
+            block = blocks.setdefault(node["label"], [])
+        else:
+            block.append(node)
+    assert zero_writes[0] in blocks[role_branch["false"]]
+    assert blocks[role_branch["false"]][-1]["op"] == "jump"
+    assert blocks[role_branch["false"]][-1]["label"] == role_branch["true"]
+    # Local objects still use complete-object initialization in the shared body.
+    assert any(node["op"] == "assign" and node["target"]["kind"] == "var"
+               and node["target"]["type"] == record_type and node["value"]["kind"] == "aggregate"
+               for node in blocks[role_branch["true"]])
+    guards = [node["global"] for node in function["body"] if node["op"] == "static_init_begin"]
+    assert len(guards) == 1
+    assert len([global_ for global_ in empty_base_roles["globals"] if global_["name"] == guards[0]]) == 1
+    assert sum(node["op"] == "static_init_begin" for f in empty_base_roles["functions"] for node in f["body"]) == 1
+    with tempfile.TemporaryDirectory(prefix="neverc-empty-base-role-relocated-") as temporary:
+        relocated = check("v2-empty-base-role-relocated", empty_base_role_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == empty_base_roles
+    empty_base_order_source = """extern "C" void mark(int){}
+struct B { B(){mark(1);} ~B(){mark(6);} };
+struct M:B { M():B(){mark(3);} ~M(){mark(5);return;} };
+struct D:M { D():M(){mark(7);} ~D(){mark(8);} };
+extern "C" void run(){D value;}
+"""
+    empty_base_order = check("v2-empty-base-lifecycle-order", empty_base_order_source, profile="cpp-core-v2")
+    order_functions = {f["name"]: f for f in empty_base_order["functions"]}
+    run_calls = gc_calls(order_functions["run"])
+    assert len(run_calls) == 2
+    for root, digits, constructing in ((run_calls[0], (7, 3, 1), True),
+                                      (run_calls[1], (8, 5, 6), False)):
+        function = order_functions[root["callee"]]
+        for depth, digit in enumerate(digits):
+            calls = gc_calls(function)
+            marker = calls[-1] if constructing else calls[0]
+            assert marker["callee"] == "mark" and gc_identity(function, marker["args"][0]) == digit
+            assert len(calls) == (1 if depth == 2 else 2)
+            if depth == 2:
+                break
+            base_call = calls[0] if constructing else calls[-1]
+            assert gc_identity(function, base_call["args"][0]) == (
+                "member", ("parameter", function["params"][0]["name"]), "nct_base_storage")
+            function = order_functions[base_call["callee"]]
+            assert function["internal"] and not function["c_export"]
+            assert function["result"] == "void" and len(function["params"]) == 1
+            if constructing:
+                assert function["name"].endswith("_base")
+                function = empty_base_shared_body(order_functions[function["name"][:-5]], function, order_functions)
     with tempfile.TemporaryDirectory(prefix="neverc-empty-base-relocated-") as temporary:
         relocated = check("v2-empty-base-relocated", empty_base_source,
                           root=Path(temporary)/"project", profile="cpp-core-v2")

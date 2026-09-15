@@ -135,7 +135,7 @@ Core v2 支持常量初始化的静态引用临时对象，包括标量、数组
 静态记录对象现在支持常量初始化和共享可写状态，涵盖局部／类静态对象及已支持的模板实例。 对象自身地址、constexpr 构造和静态零初始化保留原对象身份。 参见[静态记录契约](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects)。
 
 
-Core v2 支持经过检查的平凡空基类链，包括受支持的模板、继承方法、转换函数和静态值。每个基类使用真实的 C 首成员存储并独立验证布局，保留空指针、引用身份、常量路径和源表达式副作用。非平凡基类生命周期及标准头文件仍未完成，原生验证需要对应实现版本的 CI。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#trivial-empty-base-chains).
+Core v2 支持经过检查的全空基类链，涵盖普通／模板构造、复制／移动、赋值和析构。每个基类使用真实的 C 首成员存储并独立验证布局。委托构造保留基类角色，与完整对象调用共享静态初始化，并保留参数清理及从派生类到基类的析构顺序。非空派生类存储、继承构造函数、标准头文件和完整 C++／STL 仍未完成。原生验证需要对应实现版本的 CI。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#empty-base-chains).
 ## 安装与标量转译
 
 使用正常安装的 NeverC 及其标准资源即可。C++ 前端和批准的 SDK 头文件均已内置，无需另行安装 Clang。构建细节见[前端说明](../../utils/translate-frontends/cpp/README.md)。

@@ -1947,7 +1947,7 @@ requires the implementing revision's CI; full C++/STL remains unfinished.
 
 Core v2 admits ordinary empty standard-layout records, including stateless
 functors and conversion objects, with the same method, constructor, destructor,
-source ownership and type checks as other records. The separate trivial empty
+source ownership and type checks as other records. The separate empty
 base-chain contract below extends the base-free storage case. No unions, nesting,
 virtual dispatch, unrestricted class templates, packing or custom alignment are added. Other
 profiles retain their nonempty-record boundary.
@@ -1988,14 +1988,14 @@ signatures and forged layout evidence. Successful manifests use an empty
 `field_offsets_bits` array as allowed by the manifest schema. Native verification
 requires CI for the implementing revision. Full C++/STL remains unfinished.
 
-## Trivial empty base chains
+## Empty base chains
 
 Core v2 admits source-owned standard-layout empty single-base chains. Every
 concrete node has no nonstatic fields, a one-byte size/alignment, at most one
-nonvirtual base at offset zero, trivial default construction and destruction,
-and trivial copying/moving. Non-deleted constructors must be trivial;
-constructor templates and nontrivial base lifecycles remain excluded from this
-increment. Ordinary methods, call operators, conversion functions and static
+nonvirtual base at offset zero. Checked ordinary and concrete template constructors,
+generated copy/move construction and assignment, and nonvirtual destructors can
+have effects. Every selected operation retains its own definition, signature and
+source checks. Ordinary methods, call operators, conversion functions and static
 members retain their existing source and effect checks.
 
 Each derived carrier contains its actual base carrier as a synthetic first
@@ -2019,7 +2019,9 @@ Ordinary, primary, partial, full and supported nested templates retain their
 actual base TypeLoc and selected substitution evidence. Nondependent written
 base types are checked even in unused patterns; concrete instances undergo the
 full layout/lifecycle check. Unsupported fields, erased template arguments,
-virtual/multiple bases, custom alignment and packing remain rejected.
+virtual/multiple bases, inherited constructors, custom alignment and packing remain
+rejected. Nonempty derived objects need a separate representation for overlapping
+base and member storage and remain outside this contract.
 
 Derived-to-base references designate real nested members. Pointer conversions
 capture source effects once and retain null without taking a member address
@@ -2029,20 +2031,32 @@ and actual nonvirtual base address path, including array element and temporary
 owners. Existing offset, one-past and lifetime checks continue to apply.
 
 Base aggregate initialization and selected trivial copies retain source effects
-without storing the synthetic byte or adding a complete-object owner. Normal
-complete-object zero initialization and static storage retain their existing
-rules. Nontrivial base construction, copy/move, assignment and destruction need
-the next lifecycle increment; they are not accepted by this storage increment.
-The fixture includes inherited members, temporary references, static pointers,
-null/effectful conversions, arrays and heap elements. Paired source/protocol,
-eight-target layout and saved-NC O0/O2 checks require implementing-revision CI.
+without storing the synthetic byte or adding a complete-object owner. Nontrivial
+construction calls an internal base entry for the actual checked definition. This
+entry preserves base-object initialization through delegation; ordinary complete
+objects, including locals inside either entry, retain complete-object zeroing.
+Both entries share the original local static storage, initialization guard and
+destructor registration. Generated implicit base initializers carry locationless
+type information: their actual type must match the checked direct base, whose
+original base-specifier source supplies the separate written-type proof.
+
+Base initialization finishes its default-argument temporaries before the derived
+constructor body. Copy/move construction and assignment retain the selected base
+operation and actual source/destination aliases. Destruction runs the derived
+body and its locals before recursively destroying the direct base, including
+after an early return. Static objects and lifetime-extended base references retain
+complete-object cleanup. The fixtures include these lifecycle effects, inherited
+members, temporary references, static pointers, null/effectful conversions, arrays
+and heap elements. Paired source/protocol, eight-target layout, native exit order
+and saved-NC O0/O2 checks require implementing-revision CI.
 Standard headers and complete C++/STL remain unfinished.
 
 ## Ordinary record constructors
 
 Core v2 admits ordinary user-provided default, converting and multi-argument
 constructors, including `explicit`, `constexpr` and out-of-line definitions.
-User-constructed records must be standard-layout with no bases; named non-template nested
+User-constructed records must be standard-layout with no bases or an admitted
+empty base chain; named non-template nested
 records follow the scope contract below. Empty records
 follow the storage contract above. Each
 selected construction, copy or assignment must follow its admitted operation
@@ -2508,7 +2522,7 @@ constructors, destructors, operators and conversions as described below. Aggrega
 complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
 remain checked when selected. Nested records/templates and instantiated free
-friends and trivial empty base chains follow their separate contracts; other bases remain unsupported.
+friends and empty base chains follow their separate contracts; other bases remain unsupported.
 Namespace partial specializations follow their separate contract below. Template-template parameters and non-scalar value arguments remain excluded.
 
 The producer traverses materialized records without enabling unrestricted
@@ -2562,7 +2576,7 @@ the ordinary profile checks. Deleted declarations use the separate declaration
 contract; attributes, virtual/variadic methods and volatile/restrict qualifiers
 are excluded. The class
 must remain an admitted standard-layout record. Static data, friend,
-Member class templates follow the ordinary-owner contract below; bases require the trivial empty-chain contract. Namespace partial
+Member class templates follow the ordinary-owner contract below; bases require the empty-chain contract. Namespace partial
 specializations follow their separate contract below. Operators and
 conversions follow their separate class-template contract below.
 
@@ -3825,7 +3839,8 @@ Owned namespace class-template partial specializations support the same admitted
 concrete type and integer/bool/enum/nullptr_t/auto arguments, fields, ordinary members,
 scalar static data, constructors, destructors and defaulted operations as primary
 class templates. Each parameter list and concrete pack has at most 64 entries.
-Records still require supported standard-layout storage with no bases; member
+Records still require supported standard-layout storage with no bases or an
+admitted empty base chain; member
 class templates, template-template parameters and full standard-library
 headers remain outside this increment.
 
@@ -5291,8 +5306,8 @@ unfinished.
 Core v2 admits ordinary user-provided destructors of the records described
 above, including out-of-line definitions and implicit destruction of containing
 records. Copy construction and assignment must be admitted independently; a user
-destructor does not by itself require nontrivial copying. The source still has no bases,
-virtual dispatch, unions or unsupported field layouts. Reference members retain
+destructor does not by itself require nontrivial copying. Bases follow the empty-chain
+contract; virtual dispatch, unions and unsupported field layouts remain excluded. Reference members retain
 their bindings and do not cause their referents to be destroyed.
 Selecting a deleted destructor remains a C++ diagnostic, including in dead code.
 Explicit calls follow the contract below. Ordinary and defaulted destructors accept implicit exception
@@ -5302,7 +5317,8 @@ member cleanup described below without requiring a materialized body.
 
 Each record needing destruction has one internal ordinary void function with a
 mutable pointer to its object. It runs the user body, destroys its body locals,
-and then destroys members in reverse declaration order. Arrays recurse in
+and then destroys members in reverse declaration order, followed by its admitted
+direct empty base. Arrays recurse in
 reverse index order. Early `return;` in a destructor still reaches member
 cleanup. Implicit containing-record destruction is synthesized from the checked
 record fields, independent of whether Clang has instantiated an implicit body.

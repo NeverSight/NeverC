@@ -2816,21 +2816,12 @@ bool Adapter::emptyBaseChainShape(const CXXRecordDecl *Record) {
         !S.owns(Sources, Record->getLocation()) || Record->isInvalidDecl() ||
         hasNonFinalAttributes(Record) || Record->isUnion() || !Record->field_empty() ||
         !Record->isStandardLayout() || Record->isDynamicClass() ||
-        Record->getNumBases() > 1 || !Record->isTriviallyCopyable() ||
-        !Record->hasTrivialDefaultConstructor() || !Record->hasTrivialDestructor() ||
+        Record->getNumBases() > 1 ||
         Seen.size() >= 64 || !Seen.insert(Record->getCanonicalDecl()).second)
       return false;
     chargeExpansion(1, Record->getLocation());
-    // The first increment has no nontrivial base lifecycle helpers. Ordinary
-    // methods/conversions may have effects; selected constructors may not.
-    for (const auto *Constructor : Record->ctors())
-      if (!Constructor->isDeleted() && !Constructor->isTrivial())
-        return false;
-    for (const auto *Declaration : Record->decls())
-      if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration))
-        if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Template->getTemplatedDecl());
-            Constructor && !Constructor->isDeleted())
-          return false; // Constructor templates are not included in ctors().
+    // This proves storage only. Actual lifecycle operations still need their
+    // selected source, definitions and base/complete-object lowering roles.
     const auto &Layout = Context.getASTRecordLayout(Record);
     if (Layout.getSize().getQuantity() != 1 ||
         Layout.getAlignment().getQuantity() != 1)
@@ -2854,7 +2845,7 @@ const CheckedEmptyBase *Adapter::emptyBase(const CXXRecordDecl *Record) {
     return nullptr;
   if (!emptyBaseChainShape(Record)) {
     reject(Record->getLocation(), "empty base storage",
-           "A base requires a source-owned, trivial, one-byte standard-layout empty single-base chain.");
+           "A base requires a source-owned, one-byte standard-layout empty single-base chain.");
     throw Failure{};
   }
   const auto &Base = *Record->bases_begin();
@@ -2863,6 +2854,54 @@ const CheckedEmptyBase *Adapter::emptyBase(const CXXRecordDecl *Record) {
       Canonical, Base.getType()->getAsCXXRecordDecl()->getCanonicalDecl(),
       &Base, Base.getTypeSourceInfo(), "nct_base_storage"});
   return &Inserted.first->second;
+}
+
+const CheckedEmptyBase *Adapter::emptyBaseInitializer(const CXXConstructorDecl *Constructor,
+                                                       const CXXCtorInitializer *Initializer) {
+  if (!Constructor || !Initializer || !Initializer->isBaseInitializer() ||
+      Initializer->isBaseVirtual() || Initializer->isPackExpansion() ||
+      !Initializer->getTypeSourceInfo() || !Initializer->getInit())
+    return nullptr;
+  const auto *Base = emptyBase(Constructor->getParent());
+  if (!Base)
+    return nullptr;
+  const auto T = Context.getRecordType(Base->Base);
+  // Implicit initializers have a locationless trivial TSI. It proves only the
+  // selected type; the original BaseSpecifier retains the written source.
+  return Context.hasSameUnqualifiedType(Initializer->getTypeSourceInfo()->getType(), T) &&
+                 Context.hasSameUnqualifiedType(Initializer->getInit()->getType(), T)
+             ? Base : nullptr;
+}
+
+std::string Adapter::baseConstructorName(const CXXConstructorDecl *Constructor) {
+  return name(Constructor) + "_base";
+}
+
+std::string Adapter::requireBaseConstructor(const CXXConstructorDecl *Constructor,
+                                             SourceLocation L) {
+  const FunctionDecl *BodyOwner = nullptr;
+  if (!S.coreV2() || !Constructor || !supportedConstructor(Constructor) ||
+      !Constructor->hasBody(BodyOwner) || !BodyOwner ||
+      !S.owns(Sources, BodyOwner->getLocation()) ||
+      !BaseConstructorRecords.count(Constructor->getParent()->getCanonicalDecl()) ||
+      !emptyBaseChainShape(Constructor->getParent()) ||
+      std::find(Functions.begin(), Functions.end(), BodyOwner) == Functions.end()) {
+    reject(L, "base constructor definition",
+           "A base entry requires the exact already checked constructor definition.");
+    throw Failure{};
+  }
+  const auto *Definition = cast<CXXConstructorDecl>(BodyOwner);
+  auto [Entry, Inserted] = RequiredBaseConstructors.emplace(
+      Constructor->getCanonicalDecl(), Definition);
+  if (!Inserted && Entry->second != Definition) {
+    reject(L, "base constructor identity", "A constructor cannot borrow another definition's base entry.");
+    throw Failure{};
+  }
+  if (Inserted) {
+    chargeExpansion(1, L);
+    BaseConstructors.push_back(Definition);
+  }
+  return baseConstructorName(Definition);
 }
 
 std::vector<const CheckedEmptyBase *> Adapter::emptyBaseCast(const CastExpr *Cast) {
@@ -4320,9 +4359,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     for (const auto *Init : C->inits()) {
       if (!Init->isWritten() || Init->isAnyMemberInitializer())
         continue;
-      // Sema keeps a dependent delegation as a type/base initializer until
-      // substitution. These owners have no bases; only one such initializer
-      // can become a delegating constructor in a concrete instance.
+      // Dependent aliases can name a direct base or this class. Keep their
+      // structural source until actual substitution determines the exact role.
+      if (Init->isBaseInitializer() && !Init->isBaseVirtual() &&
+          !Init->isPackExpansion() && Init->getTypeSourceInfo() && Init->getInit()) {
+        if (C->getParent()->isDependentContext() && C->getParent()->getNumBases())
+          continue;
+        if (!C->getParent()->isDependentContext() && A.emptyBaseInitializer(C, Init))
+          continue;
+      }
       if (C->getNumCtorInitializers() != 1 || Init->isPackExpansion() ||
           !Init->getTypeSourceInfo() || !Init->getInit() ||
           (!Init->isDelegatingInitializer() &&
@@ -4330,6 +4375,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return false;
     }
     return true;
+  }
+  bool constructorSubobject(const CXXConstructorDecl *C, const CXXCtorInitializer *I,
+                            std::set<const Decl *> &Initialized) {
+    if (const auto *Base = A.emptyBaseInitializer(C, I)) {
+      // Synthesized initializer TSIs have no source location. The exact written
+      // base type was checked in its owning class frame, independently of this
+      // constructor's semantic expression and any selected parameter defaults.
+      operationTypeDependency(Base->Source);
+      return Initialized.insert(Base->Base).second;
+    }
+    return I->isMemberInitializer() && !I->isPackExpansion() && I->getInit() &&
+           I->getMember()->getParent() == C->getParent() &&
+           Initialized.insert(I->getMember()->getCanonicalDecl()).second;
   }
   bool memberTemplateDeclarationShape(const FunctionTemplateDecl *D) {
     if (!D || !owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
@@ -10245,12 +10303,9 @@ public:
             C->getTargetConstructor()->getParent()->getCanonicalDecl() ==
                 C->getParent()->getCanonicalDecl())
           continue; // RAV visited the written type, arguments and selected call.
-        if (!I->isMemberInitializer() || I->isPackExpansion() ||
-            I->getMember()->getParent() != C->getParent() ||
-            !Initialized.insert(I->getMember()->getCanonicalDecl()).second ||
-            !I->getInit()) {
+        if (!constructorSubobject(C, I, Initialized)) {
           A.reject(C->getLocation(), "constructor initializer",
-                   "Expected unique direct fields or one checked delegating initializer.");
+                   "Expected unique direct fields, the exact empty base or one checked delegation.");
           continue;
         }
         if (!I->isWritten()) {
@@ -10264,6 +10319,9 @@ public:
             break;
         }
       }
+      if (!C->isDelegatingConstructor())
+        if (const auto *Base = A.emptyBase(C->getParent()); Base && !Initialized.count(Base->Base))
+          A.reject(C->getLocation(), "constructor base initializer", "The exact direct base initializer must be retained.");
     }
     // Out-of-line template definitions can be hidden namespace declarations.
     // Source checking must follow the actual initializer owner, not only the use.
@@ -10666,16 +10724,16 @@ public:
       if (C) {
         std::set<const Decl *> Initialized;
         for (const auto *I : C->inits()) {
-          if (!I->isMemberInitializer() || I->isPackExpansion() ||
-              I->getMember()->getParent() != C->getParent() || !I->getInit() ||
-              !Initialized.insert(I->getMember()->getCanonicalDecl()).second) {
+          if (!constructorSubobject(C, I, Initialized)) {
             A.reject(C->getLocation(), "generated constructor initializer",
-                     "Only unique direct field initializers are supported.");
+                     "Expected unique direct fields or the exact empty base initializer.");
             continue;
           }
           if (!TraverseStmt(I->getInit()))
             return false;
         }
+        if (const auto *Base = A.emptyBase(C->getParent()); Base && !Initialized.count(Base->Base))
+          A.reject(C->getLocation(), "generated base initializer", "The exact direct base initializer must be retained.");
       }
       if (!TraverseStmt(const_cast<CompoundStmt *>(Body)))
         return false;
@@ -12757,6 +12815,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     json::Array Fields;
     const auto *Base = S.coreV2() ? emptyBase(R) : nullptr;
     if (Base)
+      BaseConstructorRecords.insert(Base->Base);
+    if (Base)
       Fields.push_back(json::Object{{"name", Base->Member},
           {"type", type(Context.getRecordType(Base->Base), R->getLocation())}});
     for (const auto *F : R->fields())
@@ -12822,8 +12882,15 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       Global["destructor"] = requireStaticDestruction(name(G), G->getType(), G->getLocation());
     GlobalData.push_back(std::move(Global));
   }
-  for (auto *F : Functions)
-    FunctionData.push_back(lower(F));
+  for (auto *F : Functions) {
+    const auto *Constructor = dyn_cast<CXXConstructorDecl>(F);
+    if (Constructor && BaseConstructorRecords.count(Constructor->getParent()->getCanonicalDecl())) {
+      FunctionData.push_back(lowerConstructorBody(Constructor));
+      FunctionData.push_back(lowerCompleteConstructor(Constructor));
+    } else {
+      FunctionData.push_back(lower(F));
+    }
+  }
   if (S.coreV2()) {
     std::vector<const VarDecl *> StartupObjects;
     std::set<const VarDecl *> StartupDefinitions;
@@ -12849,11 +12916,15 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     }
   }
   if (S.coreV2()) {
-    // Either helper can discover another static temporary or record cleanup.
+    // Helpers can discover another base entry, static temporary or record cleanup.
     // Copy work items before lowering: discovery may reallocate these vectors.
-    std::size_t StaticIndex = 0, RecordIndex = 0;
-    while (StaticIndex < StaticDestructions.size() || RecordIndex < Destructions.size()) {
-      if (StaticIndex < StaticDestructions.size()) {
+    std::size_t StaticIndex = 0, RecordIndex = 0, BaseIndex = 0;
+    while (StaticIndex < StaticDestructions.size() || RecordIndex < Destructions.size() ||
+           BaseIndex < BaseConstructors.size()) {
+      if (BaseIndex < BaseConstructors.size()) {
+        const auto *Constructor = BaseConstructors[BaseIndex++];
+        FunctionData.push_back(lowerBaseConstructor(Constructor));
+      } else if (StaticIndex < StaticDestructions.size()) {
         auto Object = StaticDestructions[StaticIndex++];
         FunctionData.push_back(lowerStaticDestruction(Object));
       } else {

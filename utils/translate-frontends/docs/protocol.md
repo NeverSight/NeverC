@@ -937,7 +937,7 @@ value operations. The dimension never generates runtime side effects.
 See the supported types, index domain and template behavior in the
 [array-query contract](cpp-core-v2.md#array-type-queries).
 
-## Core v2 trivial empty base storage
+## Core v2 empty base storage and lifetimes
 
 A checked empty direct base is represented by a real synthetic first member in
 its derived record, using existing field, aggregate, member and address nodes.
@@ -951,9 +951,18 @@ specifier, canonical identities and TypeSourceInfo.
 Null-preserving runtime upcasts branch before a member address is formed;
 checked inverse first-member conversions use existing void pointer conversions.
 Constant address paths select the same real nested member. No synthetic-byte
-store is introduced for trivial base initialization or copying. Nontrivial
-base lifecycle operations remain rejected. See the full
-[empty-chain contract](cpp-core-v2.md#trivial-empty-base-chains).
+store is introduced for trivial base initialization or copying. Nontrivial base
+construction uses complete and internal base entries forwarding the checked
+concrete signature to one internal body with a hidden boolean construction role.
+The entries perform no parameter cleanup; the shared body owns parameters once.
+The base role survives delegation while ordinary local objects retain
+complete-object initialization. Local static globals/guards and their initialization
+and registration sites remain unique. No transport opcode or schema change is
+required. Generated base copies and assignments preserve exact
+member receivers; the existing destruction helper runs the derived body before
+the direct base's cleanup, including after early returns. Original base-specifier
+TypeSourceInfo supplies source proof for locationless generated initializer types.
+See the full [empty-chain contract](cpp-core-v2.md#empty-base-chains).
 
 ## Core v2 pointer arithmetic
 

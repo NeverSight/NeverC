@@ -14,6 +14,8 @@ class FunctionLowering {
   Adapter &A;
   const FunctionDecl *Function;
   const CXXRecordDecl *DestroyedRecord = nullptr;
+  bool SharedConstruction = false;
+  std::optional<Expression> BaseConstruction;
   json::Array Parameters, Locals, Body;
   struct OwnedObject {
     Expression Place, Live;
@@ -1597,6 +1599,16 @@ class FunctionLowering {
                         {"loc", A.loc(L)}};
       destroy(std::move(Member), Field->getType(), L);
     }
+    if (const auto *Base = A.emptyBase(DestroyedRecord)) {
+      auto T = A.Context.getRecordType(Base->Base);
+      Expression Member{{"kind", "member"}, {"type", type(T, L)},
+                        {"name", Base->Member},
+                        {"args", json::Array{dereference(*ThisPointer, L)}},
+                        {"loc", A.loc(L)}};
+      // The base belongs to this complete object's cleanup, never to a second
+      // lexical lifetime. The derived body and fields have already finished.
+      destroy(std::move(Member), T, L);
+    }
   }
   void initializeZero(Expression Place, QualType T, SourceLocation L) {
     if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
@@ -1721,7 +1733,7 @@ class FunctionLowering {
     return Place;
   }
   void construct(Expression Place, QualType T, const CXXConstructExpr *C,
-                 SourceLocation L, bool BaseObject = false) {
+                 SourceLocation L, bool BaseObject = false, bool Delegating = false) {
     if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
       auto Element = Array->getElementType();
       auto Count = Array->getSize().getLimitedValue(65537);
@@ -1743,6 +1755,20 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    const auto ZeroCompleteObject = [&] {
+      if (!C->requiresZeroInitialization() || BaseObject)
+        return;
+      if (Delegating && BaseConstruction) {
+        auto Zero = labelName(), Ready = labelName();
+        branch(*BaseConstruction, Ready, Zero, L);
+        label(Zero, L);
+        initializeZero(Place, T, L);
+        jump(Ready, L);
+        label(Ready, L);
+      } else {
+        initializeZero(Place, T, L);
+      }
+    };
     if (Constructor->isImplicit() && Constructor->isTrivial()) {
       if (Constructor->isCopyOrMoveConstructor() && C->getNumArgs() == 1) {
         auto Source = expression(C->getArg(0));
@@ -1753,8 +1779,7 @@ class FunctionLowering {
         return;
       }
       if (Constructor->isDefaultConstructor() && !C->getNumArgs()) {
-        if (C->requiresZeroInitialization() && !BaseObject)
-          initializeZero(std::move(Place), T, L);
+        ZeroCompleteObject();
         return;
       }
     }
@@ -1771,25 +1796,29 @@ class FunctionLowering {
         Constructor->isDefaultConstructor() && !C->getNumArgs()) {
       // Clang can omit the body of an explicitly defaulted trivial constructor.
       // Its declaration still determines default versus value initialization.
-      if (C->requiresZeroInitialization() && !BaseObject)
-        initializeZero(std::move(Place), T, L);
+      ZeroCompleteObject();
       return;
     }
-    if (BaseObject)
-      reject(L, "base construction", "Nontrivial base construction requires separate lifecycle lowering.");
     if (!supportedConstructor(Constructor) || !Constructor->hasBody() ||
         C->getNumArgs() != Constructor->getNumParams())
       reject(L, "construction", "Unsupported selected constructor or argument list.");
-    if (C->requiresZeroInitialization())
-      initializeZero(Place, T, L);
+    ZeroCompleteObject();
     json::Array Args;
     Args.push_back(snapshot(address(std::move(Place), T.getUnqualifiedType(), L), L));
     for (unsigned I = 0; I < C->getNumArgs(); ++I)
       Args.push_back(argument(C->getArg(I),
                               Constructor->getParamDecl(I)->getType()));
+    auto Callee = BaseObject ? A.requireBaseConstructor(Constructor, L) : A.name(Constructor);
+    if (Delegating && BaseConstruction) {
+      // Evaluate arguments only once, then forward the current role to the
+      // target's single body. In particular, do not clone static/default sites.
+      A.requireBaseConstructor(Constructor, L);
+      Callee = A.name(Constructor) + "_construction";
+      Args.push_back(json::Object(*BaseConstruction));
+    }
     chargeCall(Args, L);
     Body.push_back(json::Object{{"op", "call"},
-                                {"callee", A.name(Constructor)},
+                                {"callee", std::move(Callee)},
                                 {"args", std::move(Args)},
                                 {"loc", A.loc(L)}});
   }
@@ -1808,18 +1837,44 @@ class FunctionLowering {
       // The target initializes this complete object. Its members must not be
       // initialized a second time before the delegating constructor's body.
       beginFullExpression();
-      initialize(dereference(*ThisPointer, C->getLocation()), Init->getInit(),
-                 C->getLocation());
+      const Expr *Expression = Init->getInit()->IgnoreParens();
+      if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression))
+        Expression = Cleanup->getSubExpr()->IgnoreParens();
+      const auto *Construction = dyn_cast<CXXConstructExpr>(Expression);
+      if (!Construction || Construction->getConstructionKind() != CXXConstructionKind::Delegating ||
+          Construction->getConstructor()->getCanonicalDecl() != Target->getCanonicalDecl())
+        reject(C->getLocation(), "delegating construction", "The actual same-class constructor call must be retained.");
+      construct(dereference(*ThisPointer, C->getLocation()),
+                A.Context.getRecordType(C->getParent()), Construction,
+                C->getLocation(), false, true);
       endFullExpression();
       return;
     }
     std::map<const Decl *, const Expr *> Initializers;
     auto L = C->getLocation();
+    const auto *Base = A.emptyBase(C->getParent());
+    const Expr *BaseInitializer = nullptr;
     for (const auto *I : C->inits()) {
+      if (const auto *SelectedBase = A.emptyBaseInitializer(C, I)) {
+        if (SelectedBase != Base || BaseInitializer)
+          reject(L, "base initializer", "The exact direct base must be initialized once.");
+        BaseInitializer = I->getInit();
+        continue;
+      }
       if (!I->isMemberInitializer() || I->isPackExpansion() ||
           I->getMember()->getParent() != C->getParent() || !I->getInit() ||
           !Initializers.emplace(I->getMember()->getCanonicalDecl(), I->getInit()).second)
         reject(L, "constructor initializer", "Unsupported or duplicate field initializer.");
+    }
+    if (Base) {
+      if (!BaseInitializer)
+        reject(L, "base initializer", "Missing semantic direct-base initialization.");
+      Expression Member{{"kind", "member"}, {"name", Base->Member},
+                        {"type", type(A.Context.getRecordType(Base->Base), L)},
+                        {"args", json::Array{dereference(*ThisPointer, L)}}, {"loc", A.loc(L)}};
+      beginFullExpression();
+      initializeEmptyBase(std::move(Member), BaseInitializer, L);
+      endFullExpression();
     }
     for (const auto *Field : C->getParent()->fields()) {
       auto Found = Initializers.find(Field->getCanonicalDecl());
@@ -1849,15 +1904,14 @@ class FunctionLowering {
     const auto *Record = Init->getType()->getAsCXXRecordDecl();
     if (!Record || !A.emptyBaseChainShape(Record) ||
         Place.getString("type") != type(Init->getType(), L))
-      reject(L, "base initialization", "A base initializer requires its exact trivial empty destination.");
+      reject(L, "base initialization", "A base initializer requires its exact empty destination.");
     if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
       initializeEmptyBase(std::move(Place), W->getSubExpr(), L);
       return;
     }
     if (const auto *C = dyn_cast<CXXConstructExpr>(Init)) {
-      if (C->getConstructionKind() != CXXConstructionKind::NonVirtualBase ||
-          !C->getConstructor()->isTrivial())
-        reject(L, "base construction", "The selected construction must identify a trivial nonvirtual base operation.");
+      if (C->getConstructionKind() != CXXConstructionKind::NonVirtualBase)
+        reject(L, "base construction", "The selected construction must identify its nonvirtual base operation.");
       construct(std::move(Place), Init->getType(), C, L, true);
       return;
     }
@@ -2509,8 +2563,9 @@ class FunctionLowering {
   }
 
 public:
-  FunctionLowering(Adapter &A, const FunctionDecl *F) : A(A), Function(F) {
-    Prefix = "nct_f" + digest(A.name(F)).substr(0, 12) + "_";
+  FunctionLowering(Adapter &A, const FunctionDecl *F, bool SharedBody = false)
+      : A(A), Function(F), SharedConstruction(SharedBody) {
+    Prefix = "nct_f" + digest(A.name(F) + (SharedBody ? "_construction" : "")).substr(0, 12) + "_";
   }
   FunctionLowering(Adapter &A, const CXXRecordDecl *R)
       : A(A), Function(nullptr), DestroyedRecord(R->getDefinition()) {
@@ -2531,7 +2586,8 @@ public:
   json::Object run() {
     auto L = Function ? Function->getLocation() : DestroyedRecord->getLocation();
     auto Name = DestroyedRecord ? A.destructionName(DestroyedRecord)
-                                : A.name(Function);
+        : SharedConstruction ? A.name(Function) + "_construction"
+                           : A.name(Function);
     auto ResultType = DestroyedRecord ? std::string("void")
                                      : type(Function->getReturnType(), L, true);
     if (DestroyedRecord) {
@@ -2558,6 +2614,8 @@ public:
                             ? dereference(std::move(Place), P->getLocation())
                             : std::move(Place));
       }
+      if (SharedConstruction)
+        BaseConstruction = parameter(A.Context.BoolTy, L);
     }
     Entry = labelName();
     label(Entry, L);
@@ -2599,9 +2657,35 @@ public:
     }
     Scopes.pop_back();
     return finish(Name, ResultType, L,
-                  DestroyedRecord || Function->getFormalLinkage() == Linkage::Internal,
-                  !DestroyedRecord && Function->isExternC() &&
+                  SharedConstruction || DestroyedRecord || Function->getFormalLinkage() == Linkage::Internal,
+                  !SharedConstruction && !DestroyedRecord && Function->isExternC() &&
                       Function->getFormalLinkage() != Linkage::Internal);
+  }
+  json::Object runConstructorEntry(bool BaseObject) {
+    const auto *Constructor = cast<CXXConstructorDecl>(Function);
+    const auto L = Constructor->getLocation();
+    if (!A.BaseConstructorRecords.count(Constructor->getParent()->getCanonicalDecl()))
+      reject(L, "constructor entry", "A shared body requires an already checked base record.");
+    const auto Name = BaseObject ? A.baseConstructorName(Constructor) : A.name(Constructor);
+    Prefix = "nct_f" + digest(Name).substr(0, 12) + "_";
+    json::Array Args;
+    Args.push_back(parameter(Constructor->getThisType(), L));
+    for (const auto *P : Constructor->parameters())
+      Args.push_back(parameter(parameterType(P->getType()), P->getLocation()));
+    Args.push_back(boolean(BaseObject, L));
+    Entry = labelName();
+    label(Entry, L);
+    // Forward the caller's existing carriers. Only the shared body owns and
+    // cleans by-value parameters; a wrapper neither copies nor destroys them.
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(Constructor) + "_construction"},
+                                {"args", std::move(Args)}, {"loc", A.loc(L)}});
+    A.chargeExpansion(1, L);
+    Body.push_back(json::Object{{"op", "return"}, {"loc", A.loc(L)}});
+    Open = false;
+    return finish(Name, "void", L,
+                  BaseObject || Constructor->getFormalLinkage() == Linkage::Internal, false);
   }
   explicit FunctionLowering(Adapter &A) : A(A), Function(nullptr) {
     Prefix = "nct_f" + digest("startup:" + A.S.Relative).substr(0, 12) + "_";
@@ -2692,6 +2776,15 @@ private:
 
 json::Object Adapter::lower(FunctionDecl *Function) {
   return FunctionLowering(*this, Function).run();
+}
+json::Object Adapter::lowerBaseConstructor(const CXXConstructorDecl *Constructor) {
+  return FunctionLowering(*this, Constructor).runConstructorEntry(true);
+}
+json::Object Adapter::lowerCompleteConstructor(const CXXConstructorDecl *Constructor) {
+  return FunctionLowering(*this, Constructor).runConstructorEntry(false);
+}
+json::Object Adapter::lowerConstructorBody(const CXXConstructorDecl *Constructor) {
+  return FunctionLowering(*this, Constructor, true).run();
 }
 json::Object Adapter::lowerStartup(llvm::ArrayRef<const VarDecl *> Objects) {
   return FunctionLowering(*this).runStartup(Objects);

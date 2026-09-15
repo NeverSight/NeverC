@@ -541,6 +541,26 @@ pull the generic primary body into constexpr source dependencies. Admission of
 existing owned-definition, friend/member and already materialized body categories
 is unchanged; the collector only closes retained selected source.
 
+All-empty base chains retain checked source-owned one-byte standard-layout storage
+while admitting selected nontrivial construction, copying, assignment and
+destruction. Pinned SemaDeclCXX.cpp BuildImplicitBaseInitializer creates a trivial
+TypeSourceInfo with an invalid location. It proves the actual initializer type,
+not written source. The adapter matches the exact checked direct base and consumes
+the original BaseSpecifier TypeSourceInfo in its existing source frame. Written
+dependent aliases retain structural checks until actual substitution supplies the
+concrete role. Actual generated copy/move bodies and assignment base casts retain
+their selected operation and exact base path; no generated body is invented.
+Checked base records are registered before function lowering. Their constructor
+entries forward existing parameter carriers to one internal body with a hidden
+base-role boolean. Value-zero initialization and same-class delegation preserve
+that role; unrelated locals still use complete-object construction. Parameters
+are owned and cleaned only by the shared body. Static globals, guards and their
+initialization/registration sites remain unique, preserving consumer validation.
+Destruction helpers run the derived body before the direct base, including early
+returns. Nonempty derived layouts, inherited constructors and exceptional control
+flow retain their exclusions. No pinned-source or transport-schema change is
+required for this lifecycle lowering.
+
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy
 notice. BLAKE3/LICENSE and NeverCCppThirdPartyNotices.txt retain the additional
 notices for the statically included Support sources. The separate cpp-sdk
