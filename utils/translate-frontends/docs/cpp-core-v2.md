@@ -906,8 +906,8 @@ that cannot invoke user-defined operations:
 | Implicit conversion | `__is_convertible`, `__is_convertible_to`, `__is_nothrow_convertible` |
 | Nothrow destruction | `__is_nothrow_destructible` |
 
-Each operand must satisfy the existing queried-type contract. After removing a
-reference and every array extent, it must not be a record. Admitted scalar types,
+For the non-record subset, each operand satisfies the existing queried-type
+contract. After removing a reference and every array extent, it is not a record. Admitted scalar types,
 ordinary pointers, references and fixed arrays of those types are covered; `void`
 and ordinary function types keep their actual C++ query results. Pointers to
 admitted records, including arrays of such pointers, qualify because constructing,
@@ -946,22 +946,62 @@ An attempted operation that fails can already have selected an overload or
 processed a default argument. Its incomplete status is explicit; a missing root
 does not prove absence of source operations. A complete operation can still give
 a false nothrow/trivial result. Full checking of those selected sources, partial
-failure paths and exception dependencies remains necessary for record operands.
-Nothrow destruction also needs the exact exception specifications actually resolved.
-Such operands remain rejected even behind references/arrays or
-when the result would be false. This restriction is separate from the metadata
-record queries above. Actual standard-header and complete C++/STL support remain
+failure paths and exception dependencies remains necessary for user-defined
+record operations. The implicit trivial subset below has an independent source
+proof. Nothrow record queries still require the exact exception specifications
+actually resolved and remain rejected, including references and arrays. This is
+separate from the metadata record queries above. Actual standard-header and complete C++/STL support remain
 unfinished.
 
 Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 33 accepted, 32 unsupported-source and seven invalid-C++ cases cover
-these boundaries. Twenty saved-NC O0/O2 runtime checkpoints, relocation and twelve
+The paired 54 accepted, 44 unsupported-source and seven invalid-C++ cases cover
+these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
 introduced.
+
+### Implicit trivial record operations
+
+The non-nothrow construction, assignment and conversion predicates additionally
+accept an admitted record operand when its retained operation is complete and
+uses only implicit trivial constructors or assignment operators. Direct reference
+binding and array decay can also use the exact synthetic operands without
+invoking a record operation. A pre-operation result is admitted only when Sema
+has not attempted initialization and retained neither a root nor operands.
+
+```cpp
+struct Value { int n; };
+static_assert(__is_constructible(Value));
+static_assert(__is_trivially_constructible(Value, const Value&));
+static_assert(__is_trivially_assignable(Value&, Value));
+static_assert(__is_convertible(Value&, const Value&));
+```
+
+The independent checker visits each retained operation node with the existing
+type, depth and expansion limits. A selected generated operation must remain
+implicit through every owning field, array element and base in that operation
+family. Explicitly defaulted subobject operations can carry written exception
+source despite being trivial, so they still require further selection evidence.
+Reference members do not own their referents. Construction also requires implicit
+trivial destruction; a direct reference binding does not destroy the referent and
+can therefore bind an admitted record with a nontrivial or deleted destructor.
+
+This stage rejects selected user or explicitly defaulted operations, incomplete
+failed initialization, unsupported derived-to-base reference adjustments and all
+nothrow record operations. Failed selection cannot be accepted just because the
+boolean is false. Unused user default-constructor bodies stay lazy when the query
+selects only an implicit copy/move operation. Written query types, aliases, bounds
+and defaults retain their ordinary source checks.
+
+The source checker does not populate runtime construction/default caches or queue
+runtime helpers. A separate twelve-checkpoint O0/O2 fixture exercises query values,
+zero query effects, actual copy/assignment/reference identity and real destruction.
+Six exported boolean functions check that no hypothetical calls or record locals
+enter the protocol; relocation remains deterministic. Native validation requires
+the implementing revision's CI.
 
 ## Array type queries
 

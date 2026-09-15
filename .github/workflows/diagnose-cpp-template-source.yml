@@ -12,6 +12,7 @@ on:
       - tests/neverc/Inputs/translate/cpp/array-allocation.cpp
       - tests/neverc/Inputs/translate/cpp/builtin-type-classification.cpp
       - tests/neverc/Inputs/translate/cpp/scalar-operation-traits.cpp
+      - tests/neverc/Inputs/translate/cpp/trivial-record-operation-traits.cpp
       - tests/neverc/Inputs/translate/cpp/array-type-queries.cpp
       - tests/neverc/Inputs/translate/cpp/empty-base-chains.cpp
 
@@ -107,7 +108,7 @@ jobs:
         if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
         run: |
           status=0
-          for fixture in nullptr-template-values builtin-type-classification scalar-operation-traits array-type-queries empty-base-chains runtime-aggregate-array; do
+          for fixture in nullptr-template-values builtin-type-classification scalar-operation-traits trivial-record-operation-traits array-type-queries empty-base-chains runtime-aggregate-array; do
             for optimization in 0 2; do
               if clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
                 "tests/neverc/Inputs/translate/cpp/$fixture.cpp" -o "$RUNNER_TEMP/$fixture"; then

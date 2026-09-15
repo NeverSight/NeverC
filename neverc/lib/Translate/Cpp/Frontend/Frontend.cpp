@@ -1708,6 +1708,109 @@ void Adapter::checkQueryType(QualType T, SourceLocation L) {
   }
 }
 
+// A hypothetical operation needs source admission, but no runtime owner or
+// helper. This first record boundary admits only compiler-generated trivial
+// operations and the exact synthetic glvalues retained for this query. In
+// particular, do not reuse runtime construction/default caches to check it.
+static bool trivialOperationTraitSource(Adapter &A,
+                                       const OperationTraitSource &Source) {
+  if (!Source.Attempted)
+    return !Source.Root && Source.Operands.empty();
+  if (!Source.Complete || !Source.Root)
+    return false;
+  enum class Family { Default, CopyMove, Assignment };
+  // A trivial generated parent can still select an explicitly defaulted field
+  // operation with written noexcept source. Until those selections are retained,
+  // require this operation family to be implicit throughout owned subobjects.
+  auto ImplicitClosure = [&](auto &&Self, const CXXRecordDecl *Record,
+                             Family Operation, unsigned Depth) -> bool {
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
+      return false;
+    A.chargeExpansion(1, Record->getLocation());
+    if ((Operation == Family::Default && Record->hasUserDeclaredConstructor()) ||
+        (Operation == Family::CopyMove && (Record->hasUserDeclaredCopyConstructor() ||
+                                         Record->hasUserDeclaredMoveConstructor())) ||
+        (Operation == Family::Assignment && (Record->hasUserDeclaredCopyAssignment() ||
+                                            Record->hasUserDeclaredMoveAssignment())) ||
+        (Operation != Family::Assignment && (Record->hasUserDeclaredDestructor() ||
+                                            !Record->hasTrivialDestructor())))
+      return false;
+    for (const auto &Base : Record->bases())
+      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Operation, Depth + 1))
+        return false;
+    for (const auto *Field : Record->fields()) {
+      auto T = A.Context.getBaseElementType(Field->getType());
+      if (const auto *Member = T->getAsCXXRecordDecl())
+        if (!Self(Self, Member, Operation, Depth + 1))
+          return false;
+    }
+    return true;
+  };
+  const std::set<const Expr *> Operands(Source.Operands.begin(), Source.Operands.end());
+  auto Check = [&](auto &&Self, const Expr *E, unsigned Depth) -> bool {
+    if (!E || Depth > 64 || E->isInstantiationDependent())
+      return false;
+    A.chargeExpansion(1, E->getExprLoc());
+    A.checkQueryType(E->getType(), E->getExprLoc());
+    if (isa<OpaqueValueExpr>(E))
+      return Operands.count(E);
+    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E)) {
+      switch (Cast->getCastKind()) {
+      case CK_NoOp: case CK_LValueToRValue:
+      case CK_ArrayToPointerDecay: case CK_FunctionToPointerDecay:
+      case CK_ConstructorConversion:
+        return Self(Self, Cast->getSubExpr(), Depth + 1);
+      default:
+        return false;
+      }
+    }
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(E)) {
+      const auto *Constructor = Construction->getConstructor();
+      if (!Constructor->isImplicit() || !Constructor->isTrivial() ||
+          (!Constructor->isDefaultConstructor() &&
+           !Constructor->isCopyOrMoveConstructor()) ||
+          !Constructor->getParent()->hasTrivialDestructor() ||
+          !A.S.owns(A.Sources, Constructor->getLocation()) ||
+          Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+          Construction->getNumArgs() != Constructor->getNumParams() ||
+          !ImplicitClosure(ImplicitClosure, Constructor->getParent(),
+                           Constructor->isDefaultConstructor() ? Family::Default
+                                                               : Family::CopyMove, 0))
+        return false;
+      for (const auto *Argument : Construction->arguments())
+        if (!Self(Self, Argument, Depth + 1))
+          return false;
+      return true;
+    }
+    if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(E)) {
+      const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+      if (Call->getOperator() != OO_Equal || !Method || !Method->isImplicit() ||
+          !Method->isTrivial() || Method->getNumParams() != 1 ||
+          (!Method->isCopyAssignmentOperator() && !Method->isMoveAssignmentOperator()) ||
+          !A.S.owns(A.Sources, Method->getLocation()) || Call->getNumArgs() != 2 ||
+          !ImplicitClosure(ImplicitClosure, Method->getParent(), Family::Assignment, 0))
+        return false;
+      return Self(Self, Call->getArg(0), Depth + 1) &&
+             Self(Self, Call->getArg(1), Depth + 1);
+    }
+    if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(E)) {
+      const auto *Destructor = Temporary->getTemporary()->getDestructor();
+      return Destructor->isImplicit() && Destructor->isTrivial() &&
+             A.S.owns(A.Sources, Destructor->getLocation()) &&
+             Self(Self, Temporary->getSubExpr(), Depth + 1);
+    }
+    if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(E))
+      return Self(Self, Temporary->getSubExpr(), Depth + 1);
+    if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(E))
+      return Cleanup->getNumObjects() == 0 &&
+             Self(Self, Cleanup->getSubExpr(), Depth + 1);
+    return isa<ImplicitValueInitExpr>(E) &&
+           !A.Context.getBaseElementType(E->getType())->isRecordType();
+  };
+  return Check(Check, Source.Root, 0);
+}
+
 static unsigned metadataTypeClassificationArity(TypeTrait Trait) {
   switch (Trait) {
   case UTT_IsArithmetic: case UTT_IsFloatingPoint: case UTT_IsIntegral:
@@ -1735,24 +1838,24 @@ static unsigned metadataTypeClassificationArity(TypeTrait Trait) {
 bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   const auto L = Query->getExprLoc();
   unsigned Arity = metadataTypeClassificationArity(Query->getTrait());
-  bool NonRecordOperation = false;
+  bool OperationTrait = false;
   switch (Query->getTrait()) {
   case UTT_IsNothrowDestructible:
     Arity = 1;
-    NonRecordOperation = true;
+    OperationTrait = true;
     break;
   case BTT_IsAssignable: case BTT_IsNothrowAssignable:
   case BTT_IsTriviallyAssignable: case BTT_IsConvertible:
   case BTT_IsConvertibleTo: case BTT_IsNothrowConvertible:
     Arity = 2;
-    NonRecordOperation = true;
+    OperationTrait = true;
     break;
   case TT_IsConstructible: case TT_IsNothrowConstructible:
   case TT_IsTriviallyConstructible:
     // One destination and at most 64 hypothetical constructor arguments.
     if (Query->getNumArgs() <= 65)
       Arity = Query->getNumArgs();
-    NonRecordOperation = true;
+    OperationTrait = true;
     break;
   default:
     break;
@@ -1765,7 +1868,7 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
     throw Failure{};
   }
   chargeExpansion(Arity + 1, L);
-  if (NonRecordOperation && Query->getTrait() != UTT_IsNothrowDestructible) {
+  if (OperationTrait && Query->getTrait() != UTT_IsNothrowDestructible) {
     auto Found = OperationTraits.find(Query);
     if (Found == OperationTraits.end()) {
       reject(L, "operation trait source", "An operation query requires its exact retained semantic source.");
@@ -1806,21 +1909,26 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
       throw Failure{};
     }
   }
+  bool RecordOperand = false;
   for (const auto *Argument : Query->getArgs()) {
     if (!Argument) {
       reject(L, "type classification source", "Every classified type requires its resolved written type source.");
       throw Failure{};
     }
     checkQueryType(Argument->getType(), L);
-    if (NonRecordOperation &&
-        Context.getBaseElementType(Argument->getType().getNonReferenceType())
-            ->isRecordType()) {
-      // Retention preserves complete roots and marks failed operations, but
-      // selected source traversal is not yet admitted for record queries. Only
-      // operands without user constructors, conversions or destructors qualify.
-      // Pointers to admitted records do not invoke those pointee operations.
+    RecordOperand |= Context.getBaseElementType(
+        Argument->getType().getNonReferenceType())->isRecordType();
+  }
+  if (OperationTrait && RecordOperand) {
+    const auto Kind = Query->getTrait();
+    const bool Nothrow = Kind == UTT_IsNothrowDestructible ||
+        Kind == TT_IsNothrowConstructible || Kind == BTT_IsNothrowAssignable ||
+        Kind == BTT_IsNothrowConvertible;
+    auto Found = OperationTraits.find(Query);
+    if (Nothrow || Found == OperationTraits.end() ||
+        !trivialOperationTraitSource(*this, Found->second)) {
       reject(L, "operation trait source",
-             "Operation queries require non-record operands, including after removing references and array extents.");
+             "Record queries require a complete implicit trivial operation or a checked pre-operation result; selected user operations and exception dependencies need further source checks.");
       throw Failure{};
     }
   }

@@ -6345,25 +6345,46 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'unevaluated-type': 'int effects;int next(){return ++effects;}static_assert(__is_constructible(decltype(next()),decltype(++effects))&&__is_assignable(decltype(++effects),int));int f(){return effects;}',
         'noexcept-query': 'int n;bool f()noexcept(__is_nothrow_assignable(int&,int)){return noexcept(__is_constructible(decltype(++n)));}',
         'argument-limit': 'static_assert(!__is_constructible(int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int));',
+        'record-destination': 'struct R{int n;};bool f(){return __is_constructible(R);}',
+        'record-reference': 'struct R{int n;};bool f(){return __is_constructible(R&,R&);}',
+        'record-assignment': 'struct R{int n;};bool f(){return __is_trivially_assignable(R&,R);}',
+        'record-convertible-reference': 'struct R{int n;};bool f(){return __is_convertible_to(R&,const R&);}',
+        'record-alias': 'struct R{int n;};template<class T>using A=T&;bool f(){return __is_assignable(A<R>,R);}',
+        'record-default-construction': 'struct R{int n;};static_assert(__is_constructible(R)&&__is_trivially_constructible(R));',
+        'record-copy-move': 'struct R{int n;};static_assert(__is_constructible(R,R)&&__is_constructible(R,const R&)&&__is_trivially_constructible(R,R&&)&&__is_constructible(const R,R));',
+        'record-copy-assignment': 'struct R{int n;};static_assert(__is_assignable(R&,R)&&__is_trivially_assignable(R&,const R&)&&__is_assignable(R&&,R));',
+        'record-reference-only-destruction': 'struct R{int n;~R(){}};static_assert(__is_constructible(R&,R&)&&__is_constructible(const R&,R&)&&__is_convertible(R&,const R&));',
+        'record-reference-deleted-destructor': 'struct R{~R()=delete;};static_assert(__is_constructible(R&,R&)&&__is_convertible(R&,const R&));',
+        'record-array-construction': 'struct R{int n;};static_assert(__is_constructible(R[2])&&__is_trivially_constructible(R[2][3]));',
+        'record-array-decay': 'struct R{int n;};static_assert(__is_convertible(R[2],R*)&&__is_constructible(const R*,R(&)[2]));',
+        'record-reference-member-copy': 'struct R{int&n;};static_assert(__is_constructible(R,const R&)&&__is_trivially_constructible(R,R));',
+        'record-const-member-copy': 'struct R{const int n;};static_assert(__is_constructible(R,R));',
+        'record-nested-array-copy': 'struct M{int n;};struct R{M m[2];};static_assert(__is_constructible(R,R)&&__is_trivially_assignable(R&,R));',
+        'record-empty-base-copy': 'struct B{};struct D:B{};static_assert(__is_constructible(D,D)&&__is_assignable(D&,D));',
+        'record-copy-unused-default-body': 'template<class T>struct R{T n;R(){T::missing();}};static_assert(__is_constructible(R<int>,R<int>)&&__is_trivially_assignable(R<int>&,R<int>));',
+        'record-copy-conversion': 'struct R{int n;};static_assert(__is_convertible(R&,R)&&__is_convertible(R,const R&));',
+        'record-pre-operation-false': 'struct R{int n;};static_assert(!__is_constructible(void,R)&&!__is_assignable(void,R)&&!__is_assignable(R&,void)&&!__is_convertible(R,void)&&!__is_convertible(R,R[2]));',
+        'record-query-pack': 'struct R{int n;};template<class T,class...A>constexpr bool f(){return __is_constructible(T,A...)&&__is_trivially_constructible(T,A...);}static_assert(f<R>()&&f<R,R>()&&f<R,const R&>());',
+        'record-reference-owned-nontrivial': 'struct F{~F(){}};struct R{F&field;};static_assert(__is_constructible(R,R));',
     }
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'record-query-before-runtime-body': 'template<class T>struct R{T n;R(){long double hidden=0;}};static_assert(__is_constructible(R<int>,R<int>));int main(){R<int>value;return 0;}',
+        'record-runtime-before-query-body': 'template<class T>struct R{T n;R(){long double hidden=0;}};int main(){R<int>value;return 0;}static_assert(__is_constructible(R<int>,R<int>));',
+        'record-base-written-default': 'struct B{B()=default;};struct R:B{};bool f(){return __is_constructible(R);}',
+        'record-base-written-copy': 'struct B{B(const B&)noexcept(false)=default;};struct R:B{};bool f(){return __is_constructible(R,R);}',
+        'record-query-hidden-source': 'struct R{int n;};bool f(){return __is_constructible(decltype((sizeof(long double),R{})),R);}',
         'retained-nontrivial-construction': 'struct R{R(int){}};bool f(){return __is_trivially_constructible(R,int);}',
         'retained-throwing-construction': 'struct R{R(int)noexcept(false){}};bool f(){return __is_nothrow_constructible(R,int);}',
         'retained-inaccessible-construction': 'class R{R(int){}};bool f(){return __is_constructible(R,int);}',
         'retained-throwing-conversion': 'struct R{operator int()const noexcept(false){return 1;}};bool f(){return __is_nothrow_convertible(R,int);}',
         'retained-nontrivial-assignment': 'struct R{R&operator=(int){return *this;}};bool f(){return __is_trivially_assignable(R&,int);}',
         'retained-nested-default-query': 'struct R{R(int=__is_constructible(int,int)){}};bool f(){return __is_constructible(R);}',
-        'record-destination': 'struct R{int n;};bool f(){return __is_constructible(R);}',
         'record-conversion-source': 'struct R{operator int()const{return 3;}};bool f(){return __is_constructible(int,R);}',
-        'record-reference': 'struct R{int n;};bool f(){return __is_constructible(R&,R&);}',
         'record-array': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R[2]);}',
-        'record-assignment': 'struct R{int n;};bool f(){return __is_trivially_assignable(R&,R);}',
         'record-convertible-false': 'struct R{int n;};bool f(){return __is_convertible(int,R);}',
-        'record-convertible-reference': 'struct R{int n;};bool f(){return __is_convertible_to(R&,const R&);}',
         'record-destructor-array': 'struct R{int n;};bool f(){return __is_nothrow_destructible(R[2][3]);}',
-        'record-alias': 'struct R{int n;};template<class T>using A=T&;bool f(){return __is_assignable(A<R>,R);}',
         'long-double': 'bool f(){return __is_constructible(long double,int);}',
         'unsupported-source': 'bool f(){return __is_convertible(long double,int);}',
         'unsupported-pointee': 'bool f(){return __is_destructible(long double*);}',
@@ -6381,6 +6402,18 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'noexcept-hidden-source': 'bool f(){return noexcept(__is_constructible(decltype(sizeof(long double))));}',
         'default-hidden-source': 'template<bool B=__is_nothrow_destructible(decltype(sizeof(long double)))>int f(){return 1;}int g(){return f();}',
         'argument-overflow': 'bool f(){return __is_constructible(int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int);}',
+        'record-failed-reference-binding': 'struct R{int n;};bool f(){return __is_constructible(R&,R);}',
+        'record-written-default-constructor': 'struct R{R()=default;};bool f(){return __is_constructible(R);}',
+        'record-written-copy-constructor': 'struct R{R(const R&)=default;};bool f(){return __is_constructible(R,const R&);}',
+        'record-written-assignment': 'struct R{R&operator=(const R&)=default;};bool f(){return __is_assignable(R&,const R&);}',
+        'record-field-written-copy': 'struct F{F(const F&)noexcept(false)=default;};struct R{F field;};bool f(){return __is_constructible(R,const R&);}',
+        'record-field-written-default': 'struct F{F()noexcept(false)=default;};struct R{F field;};bool f(){return __is_constructible(R);}',
+        'record-field-written-assignment': 'struct F{F&operator=(const F&)noexcept(false)=default;};struct R{F field;};bool f(){return __is_trivially_assignable(R&,const R&);}',
+        'record-written-destructor': 'struct R{~R()noexcept(false)=default;};bool f(){return __is_constructible(R,R);}',
+        'record-nontrivial-destruction-construction': 'struct R{~R(){}};bool f(){return __is_constructible(R);}',
+        'record-reference-nothrow': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R&,R&);}',
+        'record-implicit-nothrow-assignment': 'struct R{int n;};bool f(){return __is_nothrow_assignable(R&,R);}',
+        'record-unretained-base-reference': 'struct B{};struct D:B{};bool f(){return __is_convertible(D&,B&);}',
     }
     for name, source in operation_trait_negative.items():
         check("v2-operation_trait_negative-" + name, source, 'TR0201', profile="cpp-core-v2")
@@ -6402,6 +6435,32 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         relocated = check("v2-operation-trait-relocated", operation_trait_source,
                           root=Path(temporary)/"project", profile="cpp-core-v2")
         assert relocated == operation_trait_module
+
+    record_operation_source = (repository / "tests/neverc/Inputs/translate/cpp/trivial-record-operation-traits.cpp").read_text()
+    record_operation_module = check("v2-trivial-record-operation-traits", record_operation_source, profile="cpp-core-v2")
+    record_expected = {"record_default": True, "record_copy": True,
+                       "record_assign": True, "record_convert": True,
+                       "record_reference": True, "record_false": False}
+    for function in record_operation_module["functions"]:
+        if not function["c_export"]:
+            continue
+        assert not any(i["op"] in ("call", "static_init_begin") for i in function["body"])
+        assert all(local["type"] == "bool" for local in function["locals"])
+        returned = next(i["value"] for i in function["body"] if i["op"] == "return")
+        bindings = {i["target"]["name"]: i["value"] for i in function["body"]
+                    if i["op"] == "assign" and i["target"]["kind"] == "var"}
+        seen = set()
+        while returned["kind"] == "var":
+            assert returned["name"] not in seen
+            seen.add(returned["name"])
+            returned = bindings[returned["name"]]
+        assert returned["kind"] == "literal" and returned["type"] == "bool"
+        assert returned["value"] is record_expected.pop(function["name"])
+    assert not record_expected
+    with tempfile.TemporaryDirectory(prefix="neverc-record-operation-relocated-") as temporary:
+        relocated = check("v2-record-operation-relocated", record_operation_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == record_operation_module
 
     operation_trait_expected = {
         "trait_construct": True, "trait_nothrow_construct": True,

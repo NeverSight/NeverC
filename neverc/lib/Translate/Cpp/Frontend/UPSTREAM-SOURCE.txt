@@ -272,8 +272,12 @@ early exits and cannot prove absence of a selected function/default argument.
 All fifteen anchors in the two-file source group are validated for consistent
 pristine or rewritten state before either file is written. Audits cover drift,
 duplicates, missing anchors/files, mixed states, orphan markers and repeat runs.
-This retention does not request extra instantiation, change query booleans,
-admit record operation queries or serialize hypothetical operations.
+This retention does not request extra instantiation, change query booleans or
+serialize hypothetical operations. The adapter separately checks complete implicit
+trivial record operations and exact synthetic reference/decay paths. Selected
+operation families must be implicit through owning bases and fields; user-defined
+operations, incomplete selection and nothrow record queries need further evidence.
+The independent source check never fills runtime construction/default caches.
 
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy
 notice. BLAKE3/LICENSE and NeverCCppThirdPartyNotices.txt retain the additional
