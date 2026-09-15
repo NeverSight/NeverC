@@ -1849,6 +1849,40 @@ static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function
          Function->getTemplateInstantiationPattern() == Origin;
 }
 
+static bool lazyQueryConstructorSignature(Adapter &A, const CXXConstructorDecl *Constructor) {
+  return Constructor && ordinaryConstructor(Constructor) &&
+         concreteClassFunction(Constructor) && Constructor->isReferenced() &&
+         !Constructor->isUsed(/*CheckUsedAttr=*/false) && !Constructor->hasBody() &&
+         A.S.owns(A.Sources, Constructor->getLocation()) &&
+         Constructor->getTypeSourceInfo() && operationDefinitionCategory(A, Constructor);
+}
+
+static const CXXConstructExpr *operationRootConstruction(Adapter &A,
+    const OperationTraitSource &Source) {
+  if (!Source.Attempted || !Source.Complete || !Source.Root ||
+      Source.Root->getType().isNull() || !Source.Root->getType()->isRecordType() ||
+      !Source.Root->isPRValue() || Source.Root->isTypeDependent() ||
+      Source.Root->isValueDependent() || Source.Root->isInstantiationDependent())
+    return nullptr;
+  const Expr *Expression = Source.Root;
+  for (unsigned Depth = 0; Depth <= 64; ++Depth) {
+    A.chargeExpansion(1, Expression->getExprLoc());
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(Expression))
+      return Construction;
+    const Expr *Sub = nullptr;
+    if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Expression))
+      Sub = Temporary->getSubExpr();
+    else if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression);
+             Cleanup && !Cleanup->getNumObjects())
+      Sub = Cleanup->getSubExpr();
+    if (!Sub || !Sub->isPRValue() ||
+        !A.Context.hasSameType(Expression->getType(), Sub->getType()))
+      return nullptr;
+    Expression = Sub;
+  }
+  return nullptr;
+}
+
 static bool inlineTemplateDefaultingSource(Adapter &A, const FunctionDecl *Function) {
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
   if (!Method || !Method->isDefaulted() || !concreteMemberFunction(Method) ||
@@ -1978,6 +2012,21 @@ public:
            requireType(operationTypeSourceKey(Definition->getTypeSourceInfo()->getTypeLoc())) &&
            prototypeSource(Function->getType()->getAs<FunctionProtoType>(), Function) &&
            prototypeSource(Definition->getType()->getAs<FunctionProtoType>(), Definition);
+  }
+  bool queryConstructorSignature(const CXXConstructorDecl *Constructor) {
+    if (!lazyQueryConstructorSignature(A, Constructor))
+      return false;
+    for (const auto *Declaration : Constructor->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+      if (!lazyQueryConstructorSignature(A, cast<CXXConstructorDecl>(Declaration)) ||
+          !standardExceptionSpecification(Prototype) ||
+          !Declaration->getTypeSourceInfo() ||
+          !requireType(operationTypeSourceKey(Declaration->getTypeSourceInfo()->getTypeLoc())) ||
+          !prototypeSource(Prototype, Declaration))
+        return false;
+    }
+    return true;
   }
   bool generatedDeclaration(const CXXMethodDecl *Method) {
     if (!Method || !A.S.owns(A.Sources, Method->getLocation()))
@@ -2157,12 +2206,15 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const OperationDefaultSources *Defaults = nullptr,
     const OperationExpressionSources *Expressions = nullptr,
     const OperationTypeSources *Types = nullptr,
-    const GeneratedOperationSources *Generated = nullptr) {
+    const GeneratedOperationSources *Generated = nullptr,
+    const std::set<const CXXConstructExpr *> *QueryConstructions = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
     return false;
   OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated);
+  const auto *TopLevelConstruction = QueryConstructions
+      ? operationRootConstruction(A, Source) : nullptr;
   auto PrototypeSource = [&](const FunctionProtoType *Prototype,
                              const FunctionDecl *Function) {
     return SourceCheck.prototypeSource(Prototype, Function);
@@ -2332,8 +2384,13 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
       // Owning destruction is checked independently below, including written
       // and nontrivial destructors with completed source evidence.
       const bool Implicit = implicitSpecialMemberSource(A, Constructor, false);
+      const bool UserSource = ordinaryConstructor(Constructor) &&
+          (Defined(Constructor) ||
+           (Construction == TopLevelConstruction && QueryConstructions &&
+            QueryConstructions->count(Construction) &&
+            SourceCheck.queryConstructorSignature(Constructor)));
       if ((!Implicit && !GeneratedOperation(Constructor) &&
-           !(ordinaryConstructor(Constructor) && Defined(Constructor))) ||
+           !UserSource) ||
           !ExceptionSource(Constructor) ||
           !A.S.owns(A.Sources, Constructor->getLocation()) || !Construction->isPRValue() ||
           Construction->getConstructionKind() != CXXConstructionKind::Complete ||
@@ -2349,7 +2406,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           const auto *Owner = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
           const auto *Init = operationDefaultInitializer(A, P);
           if (!Defaults || !Init || !Owner ||
-              !Defined(Constructor) ||
+              !UserSource ||
               Owner->getCanonicalDecl() != Constructor->getCanonicalDecl() ||
               P->getFunctionScopeIndex() != I || Default->hasRewrittenInit() ||
               !A.S.owns(A.Sources, Default->getUsedLocation()) ||
@@ -2433,6 +2490,11 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
 static bool operationTraitNeedsExceptionSource(TypeTrait Trait) {
   return Trait == TT_IsNothrowConstructible || Trait == BTT_IsNothrowAssignable ||
          Trait == BTT_IsNothrowConvertible;
+}
+
+static bool isConstructionTypeTrait(TypeTrait Trait) {
+  return Trait == TT_IsConstructible || Trait == TT_IsNothrowConstructible ||
+         Trait == TT_IsTriviallyConstructible;
 }
 
 static bool isOperationTypeTrait(TypeTrait Trait) {
@@ -3754,6 +3816,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   GeneratedOperationSources CompletedGeneratedOperations;
   std::vector<const CXXDestructorDecl *> ConsumedDestructorSignatures;
   std::set<const CXXDestructorDecl *> QueuedDestructorSignatures;
+  std::vector<const CXXConstructExpr *> ConsumedConstructorSignatures;
+  std::set<const CXXConstructExpr *> QueuedConstructorSignatures;
+  std::set<const CXXConstructExpr *> CompletedQueryConstructions;
   OperationDefaultSources CompletedOperationDefaults;
   std::map<const Expr *, OperationSourceDependencies> SharedOperationDefaults;
   std::vector<OperationSourceDependencies *> ActiveOperationSources;
@@ -10148,49 +10213,84 @@ public:
     if (Record)
       queueOwningDestructorSignatures(Record, Record->getDestructor(), Query->getExprLoc());
   }
-  bool finishConsumedDestructorSignatures(std::size_t &Index) {
-    while (Index < ConsumedDestructorSignatures.size()) {
-      const auto *Destructor = ConsumedDestructorSignatures[Index++];
-      const auto Location = Destructor->getTypeSourceInfo()->getTypeLoc();
-      // Only TraverseTypeLoc creates these entries. Even an incomplete existing
-      // node cannot be replayed; final source validation retains its failure.
-      if (CheckedOperationTypes.count(operationTypeSourceKey(Location)))
-        continue;
-      auto *SavedFunction = CurrentFunction;
-      auto *SavedMethod = CurrentMethod;
-      auto *SavedDeclarator = CurrentDeclarator;
-      auto *SavedField = CurrentDefaultField;
-      auto SavedOwner = ImplicitInitializerOwner;
-      std::vector<OperationSourceDependencies *> SavedSources;
+  void queueConsumedConstructorSignature(const TypeTraitExpr *Query) {
+    if (!isConstructionTypeTrait(Query->getTrait()))
+      return;
+    auto Found = A.OperationTraits.find(Query);
+    if (Found == A.OperationTraits.end())
+      return;
+    const auto *Construction = operationRootConstruction(A, Found->second);
+    if (Construction && lazyQueryConstructorSignature(A, Construction->getConstructor()) &&
+        QueuedConstructorSignatures.insert(Construction).second) {
+      A.chargeExpansion(1, Query->getExprLoc());
+      ConsumedConstructorSignatures.push_back(Construction);
+    }
+  }
+  bool checkConsumedOperationSignature(const CXXMethodDecl *Method) {
+    const auto Location = Method->getTypeSourceInfo()->getTypeLoc();
+    // Only TraverseTypeLoc creates these entries. Even an incomplete existing
+    // node cannot be replayed; final source validation retains its failure.
+    if (CheckedOperationTypes.count(operationTypeSourceKey(Location)))
+      return true;
+    auto *SavedFunction = CurrentFunction;
+    auto *SavedMethod = CurrentMethod;
+    auto *SavedDeclarator = CurrentDeclarator;
+    auto *SavedField = CurrentDefaultField;
+    auto SavedOwner = ImplicitInitializerOwner;
+    std::vector<OperationSourceDependencies *> SavedSources;
+    SavedSources.swap(ActiveOperationSources);
+    CurrentFunction = Method;
+    CurrentMethod = Method;
+    CurrentDeclarator = Method;
+    CurrentDefaultField = nullptr;
+    ImplicitInitializerOwner = Method->getLocation();
+    auto Restore = llvm::make_scope_exit([&] {
+      CurrentFunction = SavedFunction;
+      CurrentMethod = SavedMethod;
+      CurrentDeclarator = SavedDeclarator;
+      CurrentDefaultField = SavedField;
+      ImplicitInitializerOwner = SavedOwner;
       SavedSources.swap(ActiveOperationSources);
-      CurrentFunction = Destructor;
-      CurrentMethod = Destructor;
-      CurrentDeclarator = Destructor;
-      CurrentDefaultField = nullptr;
-      ImplicitInitializerOwner = Destructor->getLocation();
-      auto Restore = llvm::make_scope_exit([&] {
-        CurrentFunction = SavedFunction;
-        CurrentMethod = SavedMethod;
-        CurrentDeclarator = SavedDeclarator;
-        CurrentDefaultField = SavedField;
-        ImplicitInitializerOwner = SavedOwner;
-        SavedSources.swap(ActiveOperationSources);
-      });
-      // Every queued specification was already resolved. Check only its
-      // existing written/resolved type source, with no body or Sema work.
-      if (!TraverseTypeLoc(Location) || !A.S.Diagnostics.empty())
+    });
+    // Every queued specification was already resolved. Check only its
+    // existing written/resolved type source, with no body or Sema work.
+    if (!TraverseTypeLoc(Location) || !A.S.Diagnostics.empty())
+      return false;
+    return true;
+  }
+  bool finishConsumedDestructorSignatures(std::size_t &Index) {
+    while (Index < ConsumedDestructorSignatures.size())
+      if (!checkConsumedOperationSignature(ConsumedDestructorSignatures[Index++]))
         return false;
+    return A.S.Diagnostics.empty();
+  }
+  bool finishConsumedConstructorSignatures(std::size_t &Index) {
+    while (Index < ConsumedConstructorSignatures.size()) {
+      const auto *Construction = ConsumedConstructorSignatures[Index++];
+      const auto *Constructor = Construction->getConstructor();
+      if (!lazyQueryConstructorSignature(A, Constructor))
+        continue;
+      if (!checkConsumedOperationSignature(Constructor))
+        return false;
+      auto Found = CheckedOperationTypes.find(
+          operationTypeSourceKey(Constructor->getTypeSourceInfo()->getTypeLoc()));
+      if (Found != CheckedOperationTypes.end() && Found->second.Complete)
+        CompletedQueryConstructions.insert(Construction);
     }
     return A.S.Diagnostics.empty();
   }
   bool finishGeneratedMethods() {
     // Inspect selected definitions only. RAV normally skips defaulted bodies;
     // visiting all implicit declarations would broaden source admission. Either
-    // source queue can discover more work for the other; process every new item
+    // signature queue can discover more work for another; process every new item
     // once and leave each method's scopes before starting another signature.
-    for (std::size_t Index = 0, SignatureIndex = 0;;) {
-      if (!finishConsumedDestructorSignatures(SignatureIndex))
+    for (std::size_t Index = 0, DestructorIndex = 0, ConstructorIndex = 0;;) {
+      if (!finishConsumedDestructorSignatures(DestructorIndex) ||
+          !finishConsumedConstructorSignatures(ConstructorIndex))
         return false;
+      if (DestructorIndex != ConsumedDestructorSignatures.size() ||
+          ConstructorIndex != ConsumedConstructorSignatures.size())
+        continue;
       if (Index == GeneratedMethods.size())
         break;
       const auto *Method = GeneratedMethods[Index++];
@@ -10270,10 +10370,12 @@ public:
             : operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
                                    operationTraitNeedsExceptionSource(Query->getTrait()),
                                    &CompletedOperationDefaults, &CheckedOperationExpressions,
-                                   &CheckedOperationTypes, &CompletedGeneratedOperations));
+                                   &CheckedOperationTypes, &CompletedGeneratedOperations,
+                                   isConstructionTypeTrait(Query->getTrait())
+                                       ? &CompletedQueryConstructions : nullptr));
       if (!Complete) {
         A.reject(Query->getExprLoc(), "operation trait source",
-                 "A complete hypothetical operation requires checked exact ordinary definitions, arguments and destruction source.");
+                 "A complete hypothetical operation requires checked exact callable source, arguments and destruction source.");
         return false;
       }
       A.VerifiedOperationQueries.insert(Query);
@@ -10356,8 +10458,10 @@ public:
       return RecursiveASTVisitor<Allowlist>::TraverseTypeTraitExpr(Query, Queue);
     });
     if (Result && A.S.coreV2() && A.S.Diagnostics.empty() &&
-        !Query->isTypeDependent() && !Query->isValueDependent() && !Query->isInstantiationDependent())
+        !Query->isTypeDependent() && !Query->isValueDependent() && !Query->isInstantiationDependent()) {
       queueConsumedDestructorSignature(Query);
+      queueConsumedConstructorSignature(Query);
+    }
     return Result;
   }
   bool TraverseArrayTypeTraitExpr(ArrayTypeTraitExpr *Query) {

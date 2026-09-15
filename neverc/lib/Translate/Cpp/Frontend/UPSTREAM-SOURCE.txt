@@ -443,7 +443,19 @@ retained roots and selected default expressions. Default constructor nodes must
 match their selected parent type and prvalue category before that composition;
 assignment source checks are unchanged. Clang's omitted trivial-destructor binding
 can give construction and destruction different nothrow booleans, both preserved.
-Unmaterialized templates, separate template definitions, copied member-template
+The three construction traits can additionally check an ordinary concrete class
+constructor's selected signature while its inline body stays uninstantiated.
+Only referenced, unused, non-defaulted constructors with the exact uncopied inline
+origin and resolved current standard prototypes qualify. First TSI traversal uses
+the actual method/declarator context and normal parameter/default source checks;
+existing incomplete nodes are never replayed. Completion is tied to the exact
+retained top-level CXXConstructExpr through only same-type prvalue BTE/EWC envelopes.
+Nested constructions and other query kinds cannot borrow a function-wide proof.
+Every actual redeclaration's source and current specification, arguments, defaults
+and owning destruction remain independently required. Constructor/destructor
+signature and generated-body queues drain completely after prior contexts exit.
+No unused body is instantiated or added to runtime emission. Other
+unmaterialized templates, separate template definitions, copied member-template
 origins, unchecked template defaulted destructors, uninstantiated or rewritten
 defaults, incomplete selection and unresolved exception dependencies still need
 further evidence. The independent

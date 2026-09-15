@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 479 accepted, 304 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
+The paired 496 accepted, 308 unsupported-source, fifteen missing-definition and seventeen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1114,7 +1114,8 @@ alone cannot prove a later template definition's independently written signature
 The query never materializes an unused template body. A later real source use or
 explicit instantiation can supply the already checked definition before final
 validation; queries within that body use the same deferred completion rule.
-Unmaterialized bodies and selected defaults lacking exact completed source remain unsupported.
+Unmaterialized bodies outside the lazy class-constructor signature subset below,
+and selected defaults lacking exact completed source, remain unsupported.
 These source restrictions do not change ordinary runtime template support.
 
 Selected ordinary and checked concrete template constructor defaults also qualify
@@ -1178,7 +1179,7 @@ remain rejected when destruction is consumed. Unused bodies that contribute no s
 functions, including nested template expressions under existing source rules;
 uninstantiated or incompletely checked default parameters need further source evidence.
 
-Declaration-only and lazy template user operations, unproven defaulted
+Declaration-only and other lazy template user operations, unproven defaulted
 construction/assignment, incomplete selection and
 unproven exception dependencies still require further source evidence.
 Unused templates remain lazy, and actual runtime use retains all ordinary source
@@ -1186,11 +1187,39 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has eighty-nine O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has ninety-two O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Ninety exported query
+default evaluation with full-expression temporary cleanup. Ninety-six exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
+
+### Lazy class-template constructor signatures
+
+The three constructibility predicates can use a checked signature for an ordinary
+constructor of a concrete class-template instance whose body remains uninstantiated.
+The constructor must be referenced but unused, with an exact uncopied inline
+definition origin and already resolved standard exception specifications on every
+actual redeclaration. This permits dependent or unsupported source in that unused
+body; actual runtime use still instantiates and checks the body normally.
+
+Only the current query's exact complete record-prvalue construction is eligible,
+with unchanged temporary-binding or cleanup envelopes. The completed proof belongs
+to that expression, not every use of the constructor. Nested constructions,
+conversion/assignment queries and unvisited template-body queries cannot borrow it.
+Copy/move constructor signatures and complete false trivial/nothrow results use
+the same checks. Explicit member function-template constructors, separate template
+definitions and missing ordinary definitions retain their existing requirements.
+
+A first signature check visits existing actual TypeSourceInfo and parameters in
+the concrete method context, including selected defaults and original/resolved
+exception expressions. Existing incomplete nodes are never replayed. Constructor
+signatures, owning destructor signatures and generated bodies all finish before
+final validation, including work discovered by another signature. The final proof
+still checks every actual declaration's signature source, selected argument/default
+identity, conversions and full owning destruction. It neither requests a missing
+body nor adds a runtime constructor helper. A query-only template specialization
+with a poisoned body and a different real specialization exercise this separation
+in the shared runtime fixture.
 
 ### Resolved exception source for operation queries
 
@@ -1399,7 +1428,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared eighty-nine-checkpoint user-operation fixture checks
+queries. The shared ninety-two-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
 user/generated array destruction at O0/O2. Query-only nested owning signatures

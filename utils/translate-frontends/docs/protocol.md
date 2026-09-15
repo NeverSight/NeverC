@@ -847,9 +847,18 @@ defaults can also use this completed generated-source proof, retaining exact
 parameter/initializer identity, call source, exceptions and owning destruction.
 Concrete template constructor defaults also qualify after normal traversal of the
 actual instantiated parameter initializer succeeds. Matching class/function template
-context, the exact completed constructor definition and inline origin remain required.
+context and inline origin remain required, together with the exact completed
+constructor definition or the narrow lazy class-constructor root proof.
 Uninstantiated defaults, another specialization's initializer and per-use rewrites
 cannot borrow that completion; explicit arguments leave unused defaults lazy.
+Only the three construction traits can use an exact completed record-prvalue root
+whose ordinary class-template constructor is referenced, unused and has no actual
+body. All actual signatures must complete with resolved standard specifications
+and an exact single inline origin. Completion is tied to the retained construction
+expression: nested operations and other query kinds cannot reuse it. Parameter,
+default, exception and owning-destruction proofs remain mandatory; actual runtime
+body requirements are unchanged. All signature and generated-source queues drain
+before final checking, without introducing protocol helpers or new values.
 The collector and evaluated-default scan classify the complete defaulted declaration
 family even when selection names a declaration preceding the `= default` definition.
 Classification never replaces actual signature or generated-body completion.

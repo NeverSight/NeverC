@@ -6394,6 +6394,24 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert not expected
 
     operation_trait_positive = {
+        'template-default-unmaterialized-root': 'template<class T>struct R{R(T n=T(3))noexcept{}};static_assert(__is_constructible(R<int>));',
+        'template-default-unmaterialized-trivial-false': 'template<class T>struct R{R(T n=T(3))noexcept{}};static_assert(!__is_trivially_constructible(R<int>));',
+        'materialized-template-unconsumed-body': 'template<class T>struct R{R(T)noexcept{}};static_assert(__is_constructible(R<int>,int));',
+        'nothrow-default-template-owner': 'template<class T>struct R{R(int=3)noexcept{T::missing();}};bool f(){return __is_nothrow_constructible(R<int>);}',
+        'user-lazy-template-body': 'template<class T>struct R{R(int){T::missing();}};bool f(){return __is_constructible(R<int>,int);}',
+        'nothrow-lazy-template-body': 'template<class T>struct R{R(int)noexcept{T::missing();}};bool f(){return __is_nothrow_constructible(R<int>,int);}',
+        'lazy-class-signature-body-effects': 'int effects;template<class T>struct R{T n;R()noexcept:n(3){++effects;}};static_assert(__is_constructible(R<int>)&&__is_nothrow_constructible(R<int>)&&!__is_trivially_constructible(R<int>));',
+        'lazy-class-signature-hidden-unused-body': 'template<class T>struct R{R(int)noexcept{long double unused=0;T::missing();}};static_assert(__is_constructible(R<int>,int));',
+        'lazy-class-signature-copy': 'template<class T>struct R{T n;R(const R&)noexcept{T::body();}};static_assert(__is_constructible(R<int>,const R<int>&)&&__is_nothrow_constructible(R<int>,const R<int>&)&&!__is_trivially_constructible(R<int>,const R<int>&));',
+        'lazy-class-signature-move': 'template<class T>struct R{T n;R(R&&)noexcept(false){T::body();}};static_assert(__is_constructible(R<int>,R<int>&&)&&!__is_nothrow_constructible(R<int>,R<int>&&));',
+        'lazy-class-signature-unused-default': 'template<class T>struct R{R(int=T::missing)noexcept{T::body();}};static_assert(__is_constructible(R<int>,int)&&__is_nothrow_constructible(R<int>,int));',
+        'lazy-class-signature-computed-exception': 'template<class T>struct R{R()noexcept(sizeof(T)==sizeof(int)){T::body();}};static_assert(__is_nothrow_constructible(R<int>)&&!__is_nothrow_constructible(R<bool>));',
+        'lazy-class-signature-helper-default': 'int supplied(int n)noexcept{return n;}template<class T>struct R{R(int=supplied(sizeof(T)))noexcept{T::body();}};static_assert(__is_constructible(R<int>)&&__is_nothrow_constructible(R<int>));',
+        'lazy-class-signature-nested-destructor-query': 'template<class T>struct Leaf{T n;~Leaf()=default;};template<class T>struct R{R()noexcept(__is_nothrow_destructible(Leaf<T>)){T::body();}};static_assert(__is_nothrow_constructible(R<int>));',
+        'lazy-class-signature-nested-constructor-query': 'template<class T>struct S{S()noexcept{T::body();}};template<class T>struct R{R()noexcept(__is_nothrow_constructible(S<T>)){T::body();}};static_assert(__is_nothrow_constructible(R<int>));',
+        'lazy-class-signature-repeated-root': 'template<class T>struct R{R(int=3)noexcept{T::body();}};static_assert(__is_constructible(R<int>)&&__is_constructible(R<int>,int)&&!__is_trivially_constructible(R<int>,int));',
+        'lazy-class-signature-reference-parameter': 'template<class T>struct R{R(T(&)[2])noexcept{T::body();}};static_assert(__is_constructible(R<int>,int(&)[2])&&__is_nothrow_constructible(R<int>,int(&)[2]));',
+        'lazy-class-signature-unvisited-query': 'template<class T>struct R{R()noexcept(sizeof(long double)>0){T::body();}};template<class T>int unused(){return __is_constructible(R<int>);}static_assert(__is_constructible(int));',
         'result-signature-unused-body-query': 'template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0)=default;};struct Owner{R<int>field;};template<class T>int unused(){static_assert(__is_constructible(Owner));return T::missing;}static_assert(__is_constructible(int));',
         'result-signature-default-construction': 'template<class T>struct R{T n;~R()=default;};static_assert(__is_constructible(R<int>)&&__is_nothrow_constructible(R<int>));',
         'result-signature-copy-construction': 'template<class T>struct R{T n;~R()noexcept=default;};static_assert(__is_constructible(R<int>,const R<int>&)&&__is_nothrow_constructible(R<int>,const R<int>&));',
@@ -6406,7 +6424,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'result-signature-assignment-result': 'template<class T>struct R{T n;~R()=default;};struct S{R<int>operator=(int)noexcept{return {};}};static_assert(__is_assignable(S&,int)&&__is_nothrow_assignable(S&,int));',
         'result-signature-reference-lazy': 'template<class T>struct R{T n;~R()noexcept(T::missing)=default;};static_assert(sizeof(R<int>)==sizeof(int));static_assert(__is_constructible(R<int>&,R<int>&)&&__is_convertible(R<int>&,const R<int>&));',
         'result-signature-assignment-reference-lazy': 'template<class T>struct R{T n;~R()noexcept(T::missing)=default;};static_assert(sizeof(R<int>)==sizeof(int));R<int>*p;struct S{R<int>&operator=(int)noexcept{return *p;}};static_assert(__is_assignable(S&,int)&&__is_nothrow_assignable(S&,int));',
-        'result-signature-deleted-constructor-lazy': 'template<class T>struct R{R()=delete;~R()noexcept(T::missing)=default;};static_assert(!__is_constructible(R<int>));',
         'inferred-false-owning-array': 'struct F{~F()noexcept(false){}};struct R{F fields[2];};static_assert(!__is_nothrow_destructible(R[2])&&__is_constructible(R,const R&)&&!__is_nothrow_constructible(R,const R&));',
         'inferred-false-ordinary-destructor': 'struct F{~F()noexcept(false){}};struct R{F field;~R(){}};static_assert(!__is_nothrow_destructible(R)&&__is_constructible(R)&&!__is_nothrow_constructible(R));',
         'inferred-false-defaulted-destructor': 'struct F{~F()noexcept(false){}};struct R{F field;~R()=default;};static_assert(!__is_nothrow_destructible(R)&&__is_constructible(R)&&!__is_nothrow_constructible(R));',
@@ -6877,6 +6894,16 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'result-signature-deleted-constructor-lazy': 'template<class T>struct R{R()=delete;~R()noexcept(T::missing)=default;};static_assert(!__is_constructible(R<int>));',
+        'lazy-class-signature-private-false': 'template<class T>class R{R()noexcept{T::body();}};static_assert(!__is_constructible(R<int>));',
+        'lazy-class-signature-hidden-exception': 'template<class T>struct R{R()noexcept((sizeof(long double),false)){T::body();}};static_assert(!__is_nothrow_constructible(R<int>));',
+        'lazy-class-signature-hidden-parameter': 'template<class T>using A=decltype((sizeof(long double),int{}));template<class T>struct R{R(A<T>)noexcept{T::body();}};static_assert(__is_constructible(R<int>,int));',
+        'lazy-class-signature-hidden-default': 'template<class T>struct R{R(int=sizeof(long double))noexcept{T::body();}};static_assert(__is_constructible(R<int>));',
+        'lazy-class-signature-split-origin': 'template<class T>struct R{R(T)noexcept;};template<class T>R<T>::R(T)noexcept{T::body();}static_assert(__is_constructible(R<int>,int));',
+        'lazy-class-signature-conversion-cannot-borrow': 'template<class T>struct R{R(int)noexcept{T::body();}};static_assert(__is_constructible(R<int>,int));static_assert(__is_convertible(int,R<int>));',
+        'lazy-class-signature-nested-cannot-borrow': 'template<class T>struct R{R(int)noexcept{T::body();}};static_assert(__is_constructible(R<int>,int));struct S{S(R<int>)noexcept{}};static_assert(__is_constructible(S,int));',
+        'lazy-class-signature-hidden-owning-destruction': 'template<class T>struct F{~F()noexcept(sizeof(long double)>0)=default;};template<class T>struct R{F<T>field;R()noexcept{T::body();}};static_assert(__is_constructible(R<int>));',
+        'lazy-class-signature-real-hidden-body': 'template<class T>struct R{R()noexcept{long double hidden=0;}};static_assert(__is_constructible(R<int>));int main(){R<int>value;}',
         'result-signature-hidden-root': 'template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0)=default;};static_assert(__is_constructible(R<int>));',
         'result-signature-hidden-child': 'template<class T>struct F{~F()noexcept(sizeof(long double)>0)=default;};struct R{F<int>field;};static_assert(__is_constructible(R));',
         'result-signature-hidden-after-throw': 'struct F{~F()noexcept(false){}};template<class T>struct B{~B()noexcept(sizeof(long double)>0)=default;};struct R{F first;B<int>last;};static_assert(!__is_nothrow_constructible(R));',
@@ -6891,8 +6918,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'owning-signature-unresolved-child': 'template<class T>struct Leaf{T n;~Leaf()noexcept(T::missing)=default;};template<class T>struct R{Leaf<T>field;~R()noexcept=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'owning-signature-unmaterialized-user-body': 'template<class T>struct Leaf{T n;~Leaf()noexcept{T::missing();}};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));',
         'owning-signature-split-child': 'template<class T>struct Leaf{T n;~Leaf()noexcept;};template<class T>Leaf<T>::~Leaf()noexcept=default;struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));',
-        'template-default-unmaterialized-root': 'template<class T>struct R{R(T n=T(3))noexcept{}};static_assert(__is_constructible(R<int>));',
-        'template-default-unmaterialized-trivial-false': 'template<class T>struct R{R(T n=T(3))noexcept{}};static_assert(!__is_trivially_constructible(R<int>));',
         'template-default-hidden-written-type': 'template<class T>struct R{R(T n=T(sizeof(long double)))noexcept{}};void force(){R<int>value(3);}static_assert(__is_constructible(R<int>));',
         'template-default-hidden-value-source': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>struct R{R(T n=T(noexcept(Mid())))noexcept{}};void force(){R<int>value(3);}static_assert(__is_constructible(R<int>));',
         'template-default-hidden-generated-source': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};struct S{int n=noexcept(Mid());S()=default;};template<class T>struct R{R(const T& =T())noexcept{}};void force(){R<S>value;}static_assert(__is_constructible(R<S>));',
@@ -6964,7 +6989,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'decltype-terminal-hidden-left-source': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int>field;};struct R{int n;};R make(){return {3};}using U=decltype((noexcept(Mid()),make()));static_assert(__is_nothrow_destructible(U&));',
         'decltype-terminal-hidden-result-layout': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int>field;};struct R{char bytes[noexcept(Mid())?1:2];};R make(){return {};}using U=decltype(make());static_assert(__is_nothrow_destructible(U&));',
         'materialized-member-explicit-specialization': 'template<class T>struct R{R(T)noexcept{}};template<>R<int>::R(int)noexcept{}void use(){R<int>r(3);}static_assert(__is_constructible(R<int>,int));',
-        'materialized-template-unconsumed-body': 'template<class T>struct R{R(T)noexcept{}};static_assert(__is_constructible(R<int>,int));',
         'materialized-template-hidden-body': 'template<class T>struct R{R(T)noexcept{long double hidden=0;}};void use(){R<int>r(3);}static_assert(__is_constructible(R<int>,int));',
         'materialized-template-hidden-destruction-body': 'template<class T>struct R{~R()noexcept{long double hidden=0;}};void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>));',
         'materialized-template-hidden-spec': 'template<class T>struct R{R(T)noexcept(sizeof(long double)>0){}};void use(){R<int>r(3);}static_assert(__is_nothrow_constructible(R<int>,int));',
@@ -7124,7 +7148,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'nothrow-default-hidden-call-specification': 'int get()noexcept(sizeof(long double)>0){return 3;}struct R{R(int=get())noexcept{}};bool f(){return __is_nothrow_constructible(R);}',
         'nothrow-default-hidden-destruction-specification': 'struct S{~S()noexcept(sizeof(long double)>0){}};struct R{R(const S& =S{})noexcept{}};bool f(){return __is_nothrow_constructible(R);}',
         'nothrow-default-hidden-pointer-specification': 'int get()noexcept{return 3;}int(*selected)()noexcept(sizeof(long double)>0)=get;struct R{R(int=selected())noexcept{}};bool f(){return __is_nothrow_constructible(R);}',
-        'nothrow-default-template-owner': 'template<class T>struct R{R(int=3)noexcept{T::missing();}};bool f(){return __is_nothrow_constructible(R<int>);}',
         'default-inferred-constructor-source': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct Out{Out(Mid=Mid())noexcept{}};static_assert(__is_constructible(Out));',
         'nothrow-default-inferred-constructor-source': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct Out{Out(Mid=Mid())noexcept{}};static_assert(__is_nothrow_constructible(Out));',
         'default-inferred-copy-source': 'template<class T>struct Inner{Inner(const Inner&)noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};Mid*pointer;struct Out{Out(Mid=*pointer){}};static_assert(__is_constructible(Out));',
@@ -7170,7 +7193,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'user-hidden-assignment': 'struct R{R&operator=(int){(void)sizeof(long double);return *this;}};bool f(){return __is_assignable(R&,int);}',
         'user-hidden-destructor': 'struct R{R(int){}~R(){(void)sizeof(long double);}};bool f(){return __is_constructible(R,int);}',
         'user-hidden-signature': 'struct R{R(int v[sizeof(long double)]){}};bool f(){return __is_constructible(R,int*);}',
-        'user-lazy-template-body': 'template<class T>struct R{R(int){T::missing();}};bool f(){return __is_constructible(R<int>,int);}',
         'user-constructor-template': 'struct R{template<class T>R(T){T::missing();}};bool f(){return __is_constructible(R,int);}',
         'user-conversion-template': 'struct R{template<class T>operator T()const{return T::missing;}};bool f(){return __is_convertible(R,int);}',
         'user-self-query-incomplete': 'struct R{R(int){static_assert(!__is_constructible(R));}};bool f(){return __is_constructible(R,int);}',
@@ -7178,7 +7200,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'nothrow-hidden-specification': 'struct R{R(int)noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}',
         'nothrow-hidden-conversion-specification': 'struct R{operator int()const noexcept(sizeof(long double)>0){return 3;}};bool f(){return __is_nothrow_convertible(R,int);}',
         'nothrow-hidden-destructor-specification': 'struct R{R(int)noexcept{}~R()noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}',
-        'nothrow-lazy-template-body': 'template<class T>struct R{R(int)noexcept{T::missing();}};bool f(){return __is_nothrow_constructible(R<int>,int);}',
         'nothrow-incomplete-reference': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R&,R);}',
         'nothrow-defaulted-field-assignment': 'struct F{F&operator=(const F&)noexcept(false)=default;};struct R{F field;};bool f(){return __is_nothrow_assignable(R&,R);}',
     }
@@ -7204,6 +7225,8 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_missing.items():
         check("v2-operation_trait_missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     operation_trait_invalid = {
+        'lazy-class-signature-real-body-error': 'template<class T>struct R{R()noexcept{T::body();}};static_assert(__is_constructible(R<int>));int main(){R<int>value;}',
+        'lazy-class-signature-selected-default-error': 'template<class T>struct R{R(int=T::missing)noexcept{}};static_assert(__is_constructible(R<int>));',
         'consumed-destructor-invalid-selected-spec': 'template<class T>struct R{T n;~R()noexcept(T::missing)=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'inline-defaulting-invalid-selected-spec': 'template<class T>struct S{T n;~S()noexcept(T::missing)=default;};void force(){S<int>value{};}static_assert(__is_nothrow_destructible(S<int>));',
         'inline-defaulting-invalid-deleted-copy': 'struct F{F()=default;F(const F&)=delete;};template<class T>struct S{T f;S()=default;S(const S&)=default;};void force(){S<F>a;S<F>b(a);}using A=char[sizeof(S<F>)];static_assert(__is_constructible(A*));',
@@ -7259,7 +7282,13 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
 
     defined_operation_source = (repository / "tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp").read_text()
     defined_operation_module = check("v2-defined-operation-traits", defined_operation_source, profile="cpp-core-v2")
-    defined_expected = {"defined_result_signature_construct": True,
+    defined_expected = {"defined_lazy_class_default": True,
+                        "defined_lazy_class_nothrow": True,
+                        "defined_lazy_class_explicit": True,
+                        "defined_lazy_class_trivial": False,
+                        "defined_lazy_class_copy": True,
+                        "defined_lazy_class_nothrow_copy": True,
+                        "defined_result_signature_construct": True,
                         "defined_result_signature_nothrow": True,
                         "defined_result_signature_copy": True,
                         "defined_result_signature_trivial": False,

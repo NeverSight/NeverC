@@ -403,6 +403,28 @@ extern "C" bool defined_result_signature_nothrow() { return __is_nothrow_constru
 extern "C" bool defined_result_signature_copy() { return __is_constructible(QueryResultOwner<int>, const QueryResultOwner<int>&); }
 extern "C" bool defined_result_signature_trivial() { return __is_trivially_constructible(QueryResultOwner<int>); }
 
+int lazy_class_constructions;
+int lazy_class_copies;
+int lazy_class_defaults;
+int lazyClassDefault(int value) noexcept { ++lazy_class_defaults; return value; }
+template<class T> struct LazyClassConstructor {
+  T value;
+  LazyClassConstructor(T n = T(lazyClassDefault(7))) noexcept : value(n) {
+    if constexpr (__is_same(T, int)) T::body();
+    else ++lazy_class_constructions;
+  }
+  LazyClassConstructor(const LazyClassConstructor &other) noexcept : value(other.value) {
+    if constexpr (__is_same(T, int)) T::body();
+    else ++lazy_class_copies;
+  }
+};
+extern "C" bool defined_lazy_class_default() { return __is_constructible(LazyClassConstructor<int>); }
+extern "C" bool defined_lazy_class_nothrow() { return __is_nothrow_constructible(LazyClassConstructor<int>); }
+extern "C" bool defined_lazy_class_explicit() { return __is_constructible(LazyClassConstructor<int>, int); }
+extern "C" bool defined_lazy_class_trivial() { return __is_trivially_constructible(LazyClassConstructor<int>); }
+extern "C" bool defined_lazy_class_copy() { return __is_constructible(LazyClassConstructor<int>, const LazyClassConstructor<int>&); }
+extern "C" bool defined_lazy_class_nothrow_copy() { return __is_nothrow_constructible(LazyClassConstructor<int>, const LazyClassConstructor<int>&); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -750,5 +772,21 @@ int main() {
   }
   if (query_result_destructions != 4 || inferred_false_destructions != 8 ||
       inferred_false_owner_destructions != 1) return 89;
+  if (!defined_lazy_class_default() || !defined_lazy_class_nothrow() ||
+      !defined_lazy_class_explicit() || defined_lazy_class_trivial() ||
+      !defined_lazy_class_copy() || !defined_lazy_class_nothrow_copy() ||
+      lazy_class_constructions || lazy_class_copies || lazy_class_defaults) return 90;
+  {
+    LazyClassConstructor<unsigned> first;
+    LazyClassConstructor<unsigned> second(11);
+    LazyClassConstructor<unsigned> third(first);
+    first.value = 13;
+    if (third.value != 7 || second.value != 11 || &first.value == &third.value ||
+        lazy_class_constructions != 2 || lazy_class_copies != 1 || lazy_class_defaults != 1) return 91;
+  }
+  if (!defined_lazy_class_default() || !defined_lazy_class_nothrow() ||
+      !defined_lazy_class_copy() || defined_lazy_class_trivial() ||
+      lazy_class_constructions != 2 || lazy_class_copies != 1 || lazy_class_defaults != 1 ||
+      query_result_destructions != 4 || inferred_false_destructions != 8) return 92;
   return 0;
 }
