@@ -385,10 +385,12 @@ public:
     std::string Op;
     if (!string(O, "op", Op) || !location(O, I.Loc))
       return false;
-    if (Op == "static_init_begin" || Op == "static_init_end") {
+    if (Op == "static_init_begin" || Op == "static_init_end" ||
+        Op == "register_static_destructor") {
       const bool Begin = Op == "static_init_begin";
       I.Op = Begin ? InstructionKind::StaticInitBegin
-                   : InstructionKind::StaticInitEnd;
+             : Op == "static_init_end" ? InstructionKind::StaticInitEnd
+                                        : InstructionKind::RegisterStaticDestructor;
       return (O.size() == (Begin ? 5u : 3u) &&
               string(O, "global", I.GlobalName) &&
               (!Begin || (string(O, "true", I.TrueLabel) &&
@@ -556,6 +558,10 @@ public:
                }) ||
         !array(O, "globals", M.Globals,
                [&](const auto &V, Global &G) {
+                 if (V.get("destructor") &&
+                     (M.Profile != "cpp-core-v2" ||
+                      !string(V, "destructor", G.Destructor) || G.Destructor.empty()))
+                   return error("A static destructor requires a nonempty core v2 function identifier.");
                  if (V.get("initialization_owner") &&
                      (M.Profile != "cpp-core-v2" ||
                       !string(V, "initialization_owner", G.InitializationOwner) ||
@@ -690,9 +696,9 @@ class Verifier {
   std::map<std::string, bool> RecordHasArray;
   std::map<std::string, Type> Globals;
   std::set<std::string> MutableGlobals;
-  std::map<std::string, const Global *> DynamicGlobals;
+  std::map<std::string, const Global *> GuardedGlobals, DestructibleGlobals;
   std::map<std::string, const Global *> InitializationGroups;
-  std::set<std::string> StaticInitOwners;
+  std::set<std::string> StaticInitOwners, StaticDestructorSites;
   const Global *InitializingGlobal = nullptr;
   std::map<std::string, const Function *> Functions;
   std::set<std::string> Symbols;
@@ -1160,7 +1166,7 @@ class Verifier {
     if (E.Kind == ExprKind::Var)
       return Storage.count(E.Name) ||
              (Globals.count(E.Name) && (!Write || MutableGlobals.count(E.Name) ||
-                                       (InitializingGlobal &&
+                                       (InitializingGlobal && InitializingGlobal->DynamicInitialization &&
                                         InitializationGroups.count(E.Name) &&
                                         InitializationGroups.at(E.Name) == InitializingGlobal))) ||
              error(E.Loc, "Global constants are not writable.");
@@ -1182,36 +1188,44 @@ class Verifier {
                                 std::vector<const Global *> &Owners) {
     std::map<std::string, std::size_t> Labels;
     std::set<std::string> Begins, Ends;
+    std::vector<std::size_t> Registrations;
     for (std::size_t N = 0; N < F.Body.size(); ++N) {
       const auto &I = F.Body[N];
       if (I.Op == InstructionKind::Label)
         Labels.emplace(I.Label, N);
       const bool Begin = I.Op == InstructionKind::StaticInitBegin;
       const bool End = I.Op == InstructionKind::StaticInitEnd;
-      if (!Begin && !End) {
+      const bool Register = I.Op == InstructionKind::RegisterStaticDestructor;
+      if (!Begin && !End && !Register) {
         if (!I.GlobalName.empty())
           return error(I.Loc, "Global guard identity requires a static initialization operation.");
         continue;
       }
       if (M.Profile != "cpp-core-v2" || !Context.HasLockFreeIntAtomics ||
-          !DynamicGlobals.count(I.GlobalName) || I.Target || I.Value ||
+          !(Register ? DestructibleGlobals.count(I.GlobalName)
+                     : GuardedGlobals.count(I.GlobalName)) || I.Target || I.Value ||
           I.Condition || I.Callable || !I.Args.empty() || !I.Callee.empty() ||
           !I.MappingID.empty() || !I.Label.empty() ||
           (!Begin && (!I.TrueLabel.empty() || !I.FalseLabel.empty())))
-        return error(I.Loc, "Static initialization requires a dynamic global, native lock-free int atomics and exact operands.");
-      if (Begin) {
+        return error(I.Loc, "Static lifetime operations require a matching guarded or destructible global, native lock-free int atomics and exact operands.");
+      if (Register) {
+        if (!StaticDestructorSites.insert(I.GlobalName).second)
+          return error(I.Loc, "A static object has more than one destructor registration site.");
+        Registrations.push_back(N);
+      } else if (Begin) {
         if (!Begins.insert(I.GlobalName).second ||
             !StaticInitOwners.insert(I.GlobalName).second)
-          return error(I.Loc, "A dynamic global has more than one initialization site.");
+          return error(I.Loc, "A guarded global has more than one initialization site.");
       } else if (!Ends.insert(I.GlobalName).second)
-        return error(I.Loc, "A dynamic global has more than one publication site.");
+        return error(I.Loc, "A guarded global has more than one publication site.");
     }
     for (const auto &G : Ends)
       if (!Begins.count(G))
         return error(F.Loc, "Static initialization must be published by its declaring function.");
     Owners.resize(F.Body.size());
     if (Begins.empty())
-      return true;
+      return Registrations.empty() ||
+             error(F.Loc, "Static destructor registration lacks initialization ownership.");
     std::vector<bool> Seen(F.Body.size());
     std::vector<std::size_t> Work;
     auto Enqueue = [&](std::size_t N, const Global *Owner,
@@ -1246,13 +1260,13 @@ class Verifier {
         if (I.Op == InstructionKind::StaticInitBegin) {
           if (Owner)
             return error(I.Loc, "Static initialization sites cannot nest in one function.");
-          if (!Edge(I.TrueLabel, DynamicGlobals.at(I.GlobalName)) ||
+          if (!Edge(I.TrueLabel, GuardedGlobals.at(I.GlobalName)) ||
               !Edge(I.FalseLabel, nullptr))
             return false;
           continue;
         }
         if (I.Op == InstructionKind::StaticInitEnd) {
-          if (Owner != DynamicGlobals.at(I.GlobalName))
+          if (Owner != GuardedGlobals.at(I.GlobalName))
             return error(I.Loc, "Static initialization publication lacks matching ownership.");
           Owner = nullptr;
         }
@@ -1271,6 +1285,111 @@ class Verifier {
           return false;
       }
     }
+    for (auto N : Registrations) {
+      const auto &I = F.Body[N];
+      const auto Group = InitializationGroups.find(I.GlobalName);
+      if (!Owners[N] || Group == InitializationGroups.end() || Group->second != Owners[N])
+        return error(I.Loc, "Static destructor registration requires its exact initialization owner.");
+    }
+    if (DestructibleGlobals.empty())
+      return true;
+    // Keep only edges inside one acquisition. Outer loops may revisit the
+    // declaration after publication; the runtime guard then skips its region.
+    const auto Count = F.Body.size();
+    std::vector<std::vector<std::size_t>> Edges(Count), Reverse(Count);
+    for (std::size_t N = 0; N < Count; ++N) {
+      const auto &I = F.Body[N];
+      if (!Owners[N] || I.Op == InstructionKind::StaticInitEnd ||
+          I.Op == InstructionKind::Return)
+        continue;
+      auto Add = [&](std::size_t To) {
+        if (To < Count && Owners[To] == Owners[N]) {
+          Edges[N].push_back(To);
+          Reverse[To].push_back(N);
+        }
+      };
+      if (I.Op == InstructionKind::Jump)
+        Add(Labels.at(I.Label));
+      else if (I.Op == InstructionKind::Branch) {
+        Add(Labels.at(I.TrueLabel));
+        Add(Labels.at(I.FalseLabel));
+      } else
+        Add(N + 1);
+    }
+    // Iterative Kosaraju avoids host-stack growth on large, untrusted CFGs.
+    std::vector<std::size_t> Order;
+    std::vector<std::pair<std::size_t, std::size_t>> DFS;
+    std::fill(Seen.begin(), Seen.end(), false);
+    for (std::size_t Seed = 0; Seed < Count; ++Seed) {
+      if (Seen[Seed])
+        continue;
+      Seen[Seed] = true;
+      DFS.emplace_back(Seed, 0);
+      while (!DFS.empty()) {
+        auto &[N, Next] = DFS.back();
+        if (Next == Edges[N].size()) {
+          Order.push_back(N);
+          DFS.pop_back();
+          continue;
+        }
+        const auto To = Edges[N][Next++];
+        if (!Seen[To]) {
+          Seen[To] = true;
+          DFS.emplace_back(To, 0);
+        }
+      }
+    }
+    std::vector<std::size_t> Component(Count, Count), Sizes;
+    for (auto It = Order.rbegin(); It != Order.rend(); ++It) {
+      if (Component[*It] != Count)
+        continue;
+      const auto ID = Sizes.size();
+      Sizes.push_back(0);
+      Component[*It] = ID;
+      Work.push_back(*It);
+      while (!Work.empty()) {
+        const auto N = Work.back();
+        Work.pop_back();
+        ++Sizes[ID];
+        for (auto To : Reverse[N])
+          if (Component[To] == Count) {
+            Component[To] = ID;
+            Work.push_back(To);
+          }
+      }
+    }
+    for (auto N : Registrations)
+      if (Sizes[Component[N]] > 1 ||
+          std::find(Edges[N].begin(), Edges[N].end(), N) != Edges[N].end())
+        return error(F.Body[N].Loc, "Static destructor registration can repeat before publication.");
+    // Two may-state bits: 1 = not registered, 2 = registered. Union at joins
+    // preserves every incoming possibility and each edge changes at most twice.
+    std::vector<unsigned char> States(Count, 0);
+    auto Propagate = [&](std::size_t N, unsigned char State) {
+      const auto Joined = States[N] | State;
+      if (Joined != States[N]) {
+        States[N] = Joined;
+        Work.push_back(N);
+      }
+    };
+    for (const auto &I : F.Body)
+      if (I.Op == InstructionKind::StaticInitBegin)
+        Propagate(Labels.at(I.TrueLabel), 1);
+    while (!Work.empty()) {
+      const auto N = Work.back();
+      Work.pop_back();
+      const auto &I = F.Body[N];
+      auto State = States[N];
+      if (I.Op == InstructionKind::RegisterStaticDestructor &&
+          Owners[N] && I.GlobalName == Owners[N]->Name)
+        State = 2;
+      for (auto To : Edges[N])
+        Propagate(To, State);
+    }
+    for (std::size_t N = 0; N < Count; ++N)
+      if (F.Body[N].Op == InstructionKind::StaticInitEnd &&
+          !Owners[N]->Destructor.empty() && (States[N] & 1))
+        return error(F.Body[N].Loc, "Static publication can precede its destructor registration.");
     return true;
   }
   bool function(const Function &F, bool Definition = true) {
@@ -1339,6 +1458,7 @@ class Verifier {
         Terminated = true;
         break;
       case InstructionKind::StaticInitEnd:
+      case InstructionKind::RegisterStaticDestructor:
         break;
       case InstructionKind::Assign:
         if (!I.Target || !I.Value || I.Condition || !I.Args.empty() ||
@@ -1698,22 +1818,35 @@ public:
           (containsArray(G.ValueType) && M.Profile != "cpp-core-v2") ||
           !Symbols.insert(G.Name).second)
         return error(G.Loc, "Invalid or duplicate global identifier/type.");
+      if (!G.Destructor.empty()) {
+        const auto ABI = Context.NativeStaticDestruction;
+        const bool NativeABI =
+            (ABI == StaticDestructionABI::CxaAtExit &&
+             (T.isMacOSX() || (T.isOSLinux() && !T.isAndroid()))) ||
+            (ABI == StaticDestructionABI::CAtExit && T.isKnownWindowsMSVCEnvironment());
+        if (M.Profile != "cpp-core-v2" || !NativeABI ||
+            (G.ValueType.Kind != TypeKind::Record && G.ValueType.Kind != TypeKind::Array))
+          return error(G.Loc, "Static destruction requires a core v2 complete record or array and an independently checked hosted CRT ABI.");
+        DestructibleGlobals.emplace(G.Name, &G);
+      }
       Globals.emplace(G.Name, G.ValueType);
       if (G.Mutable)
         MutableGlobals.insert(G.Name);
-      if (G.DynamicInitialization) {
+      if (G.DynamicInitialization ||
+          (!G.Destructor.empty() && G.InitializationOwner.empty())) {
         if (M.Profile != "cpp-core-v2" || !Context.HasLockFreeIntAtomics)
-          return error(G.Loc, "Dynamic globals require core v2 zero initialization and native lock-free int atomics.");
-        DynamicGlobals.emplace(G.Name, &G);
+          return error(G.Loc, "Guarded globals require core v2 and native lock-free int atomics.");
+        GuardedGlobals.emplace(G.Name, &G);
         InitializationGroups.emplace(G.Name, &G);
       }
     }
     for (const auto &G : M.Globals) {
       if (G.InitializationOwner.empty())
         continue;
-      const auto Owner = DynamicGlobals.find(G.InitializationOwner);
+      const auto Owner = GuardedGlobals.find(G.InitializationOwner);
       if (M.Profile != "cpp-core-v2" || G.DynamicInitialization ||
-          Owner == DynamicGlobals.end() || !Owner->second->InitializationOwner.empty())
+          Owner == GuardedGlobals.end() || !Owner->second->DynamicInitialization ||
+          !Owner->second->InitializationOwner.empty())
         return error(G.Loc, "An initialization child requires an independent dynamic object-pointer owner or aggregate owner.");
       const auto &T = Owner->second->ValueType;
       const bool ReferenceOwner = T.Kind == TypeKind::Pointer && !Owner->second->Mutable &&
@@ -1760,6 +1893,12 @@ public:
           if (!P.ValueType.isScalar())
             return error(P.Loc, "C exports require scalar parameter types.");
       }
+      if (F.CExport && !DestructibleGlobals.empty() &&
+          ((Context.NativeStaticDestruction == StaticDestructionABI::CAtExit &&
+            F.Name == "atexit") ||
+           (Context.NativeStaticDestruction == StaticDestructionABI::CxaAtExit &&
+            (F.Name == "__cxa_atexit" || F.Name == "__dso_handle"))))
+        return error(F.Loc, "C export collides with the selected static destruction runtime.");
       Functions.emplace(F.Name, &F);
     }
     if (M.Startup) {
@@ -1770,6 +1909,16 @@ public:
       if (!F.Internal || F.CExport || F.Name == "main" ||
           F.Result.Kind != TypeKind::Void || !F.Params.empty())
         return error(F.Loc, "Startup requires an internal, non-exported void() function.");
+    }
+    for (const auto &[Name, G] : DestructibleGlobals) {
+      const auto Found = Functions.find(G->Destructor);
+      if (Found == Functions.end() || !DefinedFunctions.count(G->Destructor))
+        return error(G->Loc, "Static destructor must name a definition in this module.");
+      const auto &F = *Found->second;
+      if (!F.Internal || F.CExport || F.Name == "main" ||
+          F.Result.Kind != TypeKind::Void || !F.Params.empty() ||
+          (M.Startup && *M.Startup == F.Name))
+        return error(F.Loc, "Static destruction requires an internal non-exported void() cleanup definition.");
     }
     const std::map<std::string, Type> Empty;
     for (const auto &G : M.Globals)

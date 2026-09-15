@@ -268,6 +268,11 @@ inline bool unsignedInteger(llvm::StringRef T) {
   return T == "uint" || T == "u8" || T == "u16" || T == "u64" || T == "bool";
 }
 
+struct StaticDestruction {
+  std::string Global, Function;
+  clang::QualType Type;
+  clang::SourceLocation Location;
+};
 class Adapter {
 public:
   State &S;
@@ -281,6 +286,7 @@ public:
   std::vector<clang::CXXRecordDecl *> Records;
   std::vector<const clang::CXXRecordDecl *> Destructions;
   std::set<const clang::CXXRecordDecl *> RequiredDestructions;
+  std::vector<StaticDestruction> StaticDestructions;
   std::vector<clang::VarDecl *> Globals;
   std::map<const clang::VarDecl *, json::Object> ConstantStaticInitializers;
   std::map<const clang::VarDecl *, json::Object> StaticReferenceInitializers;
@@ -344,6 +350,9 @@ public:
   const clang::VarDecl *temporaryOwner(const clang::MaterializeTemporaryExpr *Temporary);
   json::Object lower(clang::FunctionDecl *Function);
   json::Object lowerStartup(llvm::ArrayRef<const clang::VarDecl *> Objects);
+  std::string requireStaticDestruction(llvm::StringRef Global, clang::QualType Type,
+                                       clang::SourceLocation Location);
+  json::Object lowerStaticDestruction(const StaticDestruction &Object);
   std::string destructionName(const clang::CXXRecordDecl *Record);
   void requireDestruction(const clang::CXXRecordDecl *Record,
                           clang::SourceLocation Location);

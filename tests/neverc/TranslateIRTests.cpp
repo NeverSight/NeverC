@@ -108,6 +108,7 @@ VerificationContext context(const Module &M) {
     C.ExpectedPtrDiffBits = 64;
     C.ExpectedUIntPtrBits = 64;
     C.HasLockFreeIntAtomics = true;
+    C.NativeStaticDestruction = StaticDestructionABI::CxaAtExit;
   }
   return C;
 }
@@ -1234,6 +1235,217 @@ Module startupModule() {
 }
 } // namespace
 
+namespace {
+Module staticDestructionModule() {
+  auto M = dynamicStaticModule();
+  Type R{TypeKind::Record, "nct_record"};
+  M.Records.push_back({R.RecordID, {{"value", intType()}}, InputLoc,
+                       RecordLayout{{32, 32}, {0}}});
+  auto &G = M.Globals[0];
+  G.ValueType = R;
+  G.Value = pointerExpr(ExprKind::Aggregate, R, {literal("7")});
+  G.Mutable = false;
+  G.DynamicInitialization = false;
+  G.Destructor = "nct_cleanup";
+  auto &F = M.Functions[0];
+  auto &Register = F.Body[3];
+  Register = {};
+  Register.Op = InstructionKind::RegisterStaticDestructor;
+  Register.GlobalName = G.Name;
+  Register.Loc = InputLoc;
+  F.Body.back() = ret(literal("0"));
+  Function Cleanup;
+  Cleanup.Name = G.Destructor;
+  Cleanup.Result = {TypeKind::Void, {}};
+  Cleanup.Internal = true;
+  Cleanup.Loc = InputLoc;
+  auto Return = ret(literal("0"));
+  Return.Value.reset();
+  Cleanup.Body = {label("nct_cleanup_entry"), Return};
+  M.Functions.push_back(std::move(Cleanup));
+  return M;
+}
+} // namespace
+
+TEST(TranslateIR, StaticDestructionPreservesConstantStorageAndChecksTheCallback) {
+  auto M = staticDestructionModule();
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, context(M), Output, D));
+  EXPECT_NE(Output.Text.find("static nct_record nct_static = "), std::string::npos);
+  EXPECT_EQ(Output.Text.find("static const nct_record nct_static"), std::string::npos);
+  EXPECT_NE(Output.Text.find("(void)__cxa_atexit("), std::string::npos);
+  EXPECT_NE(Output.Text.find(", (void *)0, &__dso_handle);"), std::string::npos);
+  EXPECT_NE(Output.Text.find("visibility(\"hidden\")"), std::string::npos);
+  EXPECT_NE(Output.Text.find("nct_cleanup();"), std::string::npos);
+  for (const auto Name : {"nct_missing", "sample", "main"}) {
+    auto Bad = M;
+    Bad.Globals[0].Destructor = Name;
+    invalid(Bad);
+  }
+  for (unsigned Case = 0; Case != 4; ++Case) {
+    auto Bad = M;
+    auto &Cleanup = Bad.Functions[1];
+    if (Case == 0) Cleanup.Internal = false;
+    if (Case == 1) Cleanup.CExport = true;
+    if (Case == 2) Cleanup.Result = intType();
+    if (Case == 3) Cleanup.Params.push_back({"nct_parameter", intType(), InputLoc});
+    invalid(Bad);
+  }
+  auto Bad = M;
+  Instruction Store;
+  Store.Op = InstructionKind::Assign;
+  Store.Loc = InputLoc;
+  Store.Target = pointerExpr(ExprKind::Member, intType(),
+                             {variable("nct_static", M.Globals[0].ValueType)});
+  Store.Target->Name = "value";
+  Store.Value = literal("8");
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.begin() + 3, Store);
+  invalid(Bad, "not writable");
+  auto C = context(M);
+  C.NativeStaticDestruction = StaticDestructionABI::None;
+  EXPECT_FALSE(verifyModule(M, C, D));
+  C.NativeStaticDestruction = StaticDestructionABI::CAtExit;
+  EXPECT_FALSE(verifyModule(M, C, D));
+}
+
+TEST(TranslateIR, StaticDestructionRequiresRegistrationOnEveryPublicationPath) {
+  auto M = staticDestructionModule();
+  auto Bad = M;
+  Bad.Functions[0].Body.erase(Bad.Functions[0].Body.begin() + 3);
+  invalid(Bad, "precede");
+  Bad = M;
+  Bad.Functions[0].Body.insert(Bad.Functions[0].Body.begin() + 3,
+                              Bad.Functions[0].Body[3]);
+  invalid(Bad, "more than one");
+  Bad = M;
+  Bad.Functions[0].Body[3].GlobalName = "nct_foreign";
+  invalid(Bad);
+  Bad = M;
+  auto Register = Bad.Functions[0].Body[3];
+  Bad.Functions[0].Body.erase(Bad.Functions[0].Body.begin() + 3);
+  Bad.Functions[1].Body.insert(Bad.Functions[1].Body.begin() + 1, Register);
+  invalid(Bad);
+  // A conditional route that skips root registration cannot publish.
+  Instruction Branch, Jump;
+  Branch.Op = InstructionKind::Branch;
+  Branch.Loc = InputLoc;
+  Branch.Condition = pointerExpr(ExprKind::Literal, boolType());
+  Branch.Condition->Boolean = true;
+  Branch.TrueLabel = "nct_register";
+  Branch.FalseLabel = "nct_publish";
+  Jump.Op = InstructionKind::Jump;
+  Jump.Loc = InputLoc;
+  Jump.Label = "nct_publish";
+  auto Original = M.Functions[0].Body;
+  M.Functions[0].Body = {Original[0], Original[1], Original[2], Branch,
+                        label("nct_register"), Original[3], Jump,
+                        label("nct_publish"), Original[4], Original[5],
+                        Original[6], Original[7]};
+  invalid(M, "precede");
+  // An internal loop can repeat the one textual registration site.
+  M.Functions[0].Body[3].FalseLabel = "nct_register";
+  M.Functions[0].Body[6] = Branch;
+  invalid(M, "repeat");
+  // A loop around the complete declaration crosses publication and is safe.
+  M = staticDestructionModule();
+  M.Functions[0].Body.back() = Jump;
+  M.Functions[0].Body.back().Label = M.Functions[0].Body.front().Label;
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  // A never-reached source static may have metadata without a registration site.
+  M.Functions[0].Body = {label(), ret(literal("0"))};
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+}
+
+TEST(TranslateIR, StaticDestructionAllowsConditionalChildrenOnlyInsideTheirOwner) {
+  auto M = staticDestructionModule();
+  M.Globals[0].DynamicInitialization = true;
+  M.Globals[0].Value.Args[0] = literal("0");
+  auto Child = M.Globals[0];
+  Child.Name = "nct_child";
+  Child.DynamicInitialization = false;
+  Child.InitializationOwner = M.Globals[0].Name;
+  M.Globals.push_back(Child);
+  auto Original = M.Functions[0].Body;
+  auto RegisterChild = Original[3];
+  RegisterChild.GlobalName = Child.Name;
+  Instruction Branch, Jump;
+  Branch.Op = InstructionKind::Branch;
+  Branch.Loc = InputLoc;
+  Branch.Condition = pointerExpr(ExprKind::Literal, boolType());
+  Branch.Condition->Boolean = true;
+  Branch.TrueLabel = "nct_child_complete";
+  Branch.FalseLabel = "nct_root_complete";
+  Jump.Op = InstructionKind::Jump;
+  Jump.Loc = InputLoc;
+  Jump.Label = "nct_root_complete";
+  M.Functions[0].Body = {Original[0], Original[1], Original[2], Branch,
+                        label("nct_child_complete"), RegisterChild, Jump,
+                        label("nct_root_complete"), Original[3], Original[4],
+                        Original[5], Original[6], Original[7]};
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+  auto Bad = M;
+  Bad.Globals[1].InitializationOwner.clear();
+  invalid(Bad, "exact initialization owner");
+  Bad = M;
+  Bad.Globals[0].DynamicInitialization = false;
+  invalid(Bad, "independent dynamic");
+  Bad = M;
+  Bad.Globals[1].Destructor.clear();
+  invalid(Bad);
+  Bad = M;
+  Bad.Functions[0].Body[5].Args.push_back(literal("1"));
+  invalid(Bad, "exact operands");
+  // Acquiring the child itself cannot grant registration or construction.
+  Bad = M;
+  Bad.Functions[0].Body[1].GlobalName = Child.Name;
+  invalid(Bad);
+}
+
+TEST(TranslateIR, StaticDestructionChecksLongControlFlowWithoutRecursiveDFS) {
+  auto M = staticDestructionModule();
+  auto Original = M.Functions[0].Body;
+  std::vector<Instruction> Body{Original[0], Original[1], Original[2]};
+  for (unsigned N = 0; N < 12000; ++N) {
+    auto Jump = Original[5];
+    Jump.Label = "nct_chain_" + std::to_string(N);
+    Body.push_back(Jump);
+    Body.push_back(label(Jump.Label));
+  }
+  Body.insert(Body.end(), Original.begin() + 3, Original.end());
+  M.Functions[0].Body = std::move(Body);
+  Diagnostics D;
+  EXPECT_TRUE(verifyModule(M, context(M), D));
+}
+
+TEST(TranslateIR, StaticDestructionUsesExactMSVCEnvironmentAndCallingConvention) {
+  auto M = staticDestructionModule();
+  M.Target.Triple = "x86_64-pc-windows-msvc";
+  auto C = context(M);
+  C.NativeStaticDestruction = StaticDestructionABI::CAtExit;
+  Diagnostics D;
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, C, Output, D));
+  EXPECT_NE(Output.Text.find("__NEVERC_WINDOWS_MSVC_ABI__"), std::string::npos);
+  EXPECT_NE(Output.Text.find("extern int atexit(void (*)(void));"), std::string::npos);
+  EXPECT_EQ(Output.Text.find("__cxa_atexit"), std::string::npos);
+  auto Bad = M;
+  Bad.Functions[0].Name = "atexit";
+  EXPECT_FALSE(verifyModule(Bad, C, D));
+  M.Target.Triple = C.TargetTriple = "x86_64-w64-windows-gnu";
+  EXPECT_FALSE(verifyModule(M, C, D));
+  M.Target.Triple = C.TargetTriple = "i686-pc-windows-msvc";
+  M.Target.PointerBits = C.PointerBits = 32;
+  M.Target.Carriers->Carriers[PointerCarrierSlot] = {32, 32};
+  C.ExpectedCarrierLayout = M.Target.Carriers;
+  C.ExpectedPtrDiffBits = C.ExpectedUIntPtrBits = 32;
+  ASSERT_TRUE(emitNC(M, C, Output, D));
+  EXPECT_NE(Output.Text.find("extern int __attribute__((cdecl)) atexit(void (__attribute__((cdecl)) *)(void));"), std::string::npos);
+  EXPECT_NE(Output.Text.find("static void __attribute__((cdecl)) nct_emit_static_destructor_0(void)"), std::string::npos);
+}
+
 TEST(TranslateIR, StartupRequiresARealInternalVoidFunctionInCoreV2) {
   auto M = startupModule();
   Diagnostics D;
@@ -1372,7 +1584,7 @@ TEST(TranslateIR, CoreV2DynamicStaticOwnershipRejectsForgedControlFlowAndWrites)
   invalid(Bad, "ownership");
   Bad = M;
   Bad.Functions[0].Body[1].GlobalName = "nct_missing";
-  invalid(Bad, "dynamic global");
+  invalid(Bad, "matching guarded or destructible global");
   Bad = M;
   Bad.Functions[0].Body.erase(Bad.Functions[0].Body.begin() + 4);
   invalid(Bad, "ownership");
@@ -1514,10 +1726,10 @@ TEST(TranslateIR, CoreV2DynamicTemporaryGroupsRestrictInitializationAuthority) {
   invalid(Bad, "not writable");
   Bad = M;
   Bad.Functions[0].Body[1].GlobalName = "nct_child";
-  invalid(Bad, "dynamic global");
+  invalid(Bad, "matching guarded or destructible global");
   Bad = M;
   Bad.Functions[0].Body[5].GlobalName = "nct_child";
-  invalid(Bad, "dynamic global");
+  invalid(Bad, "matching guarded or destructible global");
   // A const pointer alias never acquires the direct-root grant.
   Bad = M;
   Bad.Functions[0].Body[3].Target = pointerExpr(
@@ -1710,7 +1922,8 @@ TEST(TranslateIR, CoreV2DynamicStaticProtocolRejectsMissingOrForeignPayloads) {
       Location + R"json(,"value":{"kind":"literal","type":"int","value":"0","loc":)json" + Location + "}}";
   for (const auto &Op : {
        R"json({"op":"static_init_begin","global":"nct_static","true":"nct_entry","false":"nct_entry",)json",
-       R"json({"op":"static_init_end","global":"nct_static",)json"}) {
+       R"json({"op":"static_init_end","global":"nct_static",)json",
+       R"json({"op":"register_static_destructor","global":"nct_static",)json"}) {
     auto Wire = wireModule(true);
     replaceOnce(Wire, "\"globals\": []", "\"globals\": [" + Global + "]");
     auto At = Wire.find("\"body\": [") + std::string("\"body\": [").size();
@@ -1734,6 +1947,26 @@ TEST(TranslateIR, CoreV2DynamicStaticProtocolRejectsMissingOrForeignPayloads) {
     replaceOnce(Bad, "\"dynamic_initialization\":true", "\"dynamic_initialization\":false");
     EXPECT_FALSE(parseModule(Bad, M, D));
   }
+}
+
+TEST(TranslateIR, StaticDestructorMetadataRequiresANonemptyCoreV2String) {
+  const auto Location = R"json({"file":"input.cpp","line":1,"column":1})json";
+  const auto Global = std::string(R"json({"name":"nct_static","type":"int","destructor":"nct_cleanup","loc":)json") +
+      Location + R"json(,"value":{"kind":"literal","type":"int","value":"0","loc":)json" + Location + "}}";
+  auto Wire = wireModule(true);
+  replaceOnce(Wire, "\"globals\": []", "\"globals\": [" + Global + "]");
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(Wire, M, D));
+  EXPECT_EQ(M.Globals[0].Destructor, "nct_cleanup");
+  for (const auto Value : {"null", "true", "1", "[]", "{}", "\"\""}) {
+    auto Bad = Wire;
+    replaceOnce(Bad, "\"destructor\":\"nct_cleanup\"", std::string("\"destructor\":") + Value);
+    EXPECT_FALSE(parseModule(Bad, M, D));
+  }
+  auto V1 = wireModule();
+  replaceOnce(V1, "\"globals\": []", "\"globals\": [" + Global + "]");
+  EXPECT_FALSE(parseModule(V1, M, D));
 }
 
 TEST(TranslateIR, CoreV2MutableStaticRecordsPreserveMemberAndWholeObjectWrites) {

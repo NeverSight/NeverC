@@ -215,6 +215,8 @@ void neverc::initializePredefinedMacros(const TargetInfo &TI,
   // Compiler version introspection macros.
   Builder.defineMacro("__llvm__"); // LLVM Backend
   Builder.defineMacro("__neverc__");
+  if (LangOpts.DynCodeMode)
+    Builder.defineMacro("__NEVERC_DYNCODE__", "1");
 #define TOSTR2(X) #X
 #define TOSTR(X) TOSTR2(X)
   Builder.defineMacro("__neverc_major__", TOSTR(NEVERC_VERSION_MAJOR));

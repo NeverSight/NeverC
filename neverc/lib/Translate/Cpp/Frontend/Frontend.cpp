@@ -993,7 +993,7 @@ const VarDecl *automaticTemporaryOwner(const MaterializeTemporaryExpr *M,
 }
 const VarDecl *Adapter::staticTemporaryOwner(const MaterializeTemporaryExpr *M) const {
   if (!S.coreV2() || !temporaryShape(M, Context) || M->getStorageDuration() != SD_Static ||
-      M->getType().isVolatileQualified() || needsDestruction(M->getType()))
+      M->getType().isVolatileQualified())
     return nullptr;
   const auto *Descriptor = M->getLifetimeExtendedTemporaryDecl();
   const auto *Owner = dyn_cast_or_null<VarDecl>(M->getExtendingDecl());
@@ -1292,6 +1292,16 @@ const CXXPseudoDestructorExpr *scalarDestruction(const CallExpr *Call,
   return !Destroyed.isNull() && Destroyed->isScalarType() &&
                  Context.hasSameUnqualifiedType(Object, Destroyed)
              ? D : nullptr;
+}
+
+std::string Adapter::requireStaticDestruction(llvm::StringRef Global, QualType T,
+                                               SourceLocation L) {
+  if (!S.coreV2() || !needsDestruction(T))
+    throw Failure{};
+  chargeExpansion(1, L);
+  auto Name = "nct_static_destruction_" + digest(Global).substr(0, 16);
+  StaticDestructions.push_back({Global.str(), Name, T, L});
+  return Name;
 }
 
 std::string Adapter::destructionName(const CXXRecordDecl *Record) {
@@ -1887,6 +1897,13 @@ json::Object Adapter::staticTemporaryObject(const MaterializeTemporaryExpr *Temp
         InitializingDecl->hasConstantInitialization())
       ConstantStaticTemporaryOwners.insert(Owner);
   }
+  // C++17's checked constant initializer rejects a static MTE whose complete
+  // type requires destruction, recursively including array/member subobjects.
+  // Do not turn a retained partial value into an unregistered static lifetime.
+  if (needsDestruction(T)) {
+    reject(L, "static temporary storage", "A nontrivial static temporary requires dynamic lifetime lowering.");
+    throw Failure{};
+  }
   if (!Owner || DynamicStaticObjects.count(Owner) ||
       !ConstantStaticTemporaryOwners.count(Owner)) {
     reject(L, "static temporary storage",
@@ -1945,6 +1962,8 @@ json::Object Adapter::dynamicStaticTemporaryObject(const MaterializeTemporaryExp
                       {"initialization_owner", name(Owner)}, {"loc", loc(L)}};
   if (!T.isConstQualified())
     Global["mutable"] = true;
+  if (needsDestruction(T))
+    Global["destructor"] = requireStaticDestruction(Name, T, L);
   StaticTemporaryGlobals.push_back(std::move(Global));
   return json::Object{{"kind", "var"}, {"type", Kind},
                       {"name", Name}, {"loc", loc(L)}};
@@ -8485,10 +8504,10 @@ public:
     if (A.ConstantStaticInitializers.count(Canonical))
       return true;
     auto T = Definition->getType();
-    if (!staticObjectElementType(T) || needsDestruction(T) ||
+    if (!staticObjectElementType(T) ||
         Definition->getTLSKind() != VarDecl::TLS_None || T.isVolatileQualified()) {
       A.reject(Definition->getLocation(), "static object storage",
-               "Static arrays and records require admitted elements without TLS, volatile storage or destruction.");
+               "Static arrays and records require admitted elements without TLS or volatile storage.");
       return false;
     }
     const VarDecl *InitializingDecl = nullptr;
@@ -8836,12 +8855,6 @@ public:
       checkBinding(D->getInit(), HasDefault,
                    D->getKind() == Decl::Var && D->isLocalVarDecl() && D->hasLocalStorage()
                        ? D->getCanonicalDecl() : nullptr);
-    if (A.S.coreV2() && !D->isLocalVarDeclOrParm() &&
-        needsDestruction(D->getType())) {
-      A.reject(D->getLocation(), "global destruction",
-               "Global records requiring destruction need static lifetime lowering.");
-      return true;
-    }
     if (A.S.coreV2() && !D->isLocalVarDeclOrParm() &&
         (D->getType()->isArrayType() || D->getType()->isRecordType())) {
       auto *Definition = D->getDefinition();
@@ -9759,6 +9772,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       Global["mutable"] = true;
     if (Dynamic)
       Global["dynamic_initialization"] = true;
+    if (S.coreV2() && needsDestruction(G->getType()))
+      Global["destructor"] = requireStaticDestruction(name(G), G->getType(), G->getLocation());
     GlobalData.push_back(std::move(Global));
   }
   for (auto *F : Functions)
@@ -9767,7 +9782,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     std::vector<const VarDecl *> StartupObjects;
     std::set<const VarDecl *> StartupDefinitions;
     for (const auto *G : Globals)
-      if (!G->isStaticLocal() && DynamicStaticObjects.count(G->getCanonicalDecl()) &&
+      if (!G->isStaticLocal() &&
+          (DynamicStaticObjects.count(G->getCanonicalDecl()) || needsDestruction(G->getType())) &&
           StartupDefinitions.insert(G->getCanonicalDecl()).second)
         StartupObjects.push_back(G);
     // Original locations retain declaration order inside one macro expansion.
@@ -9786,11 +9802,20 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       FunctionData.push_back(std::move(Startup));
     }
   }
-  if (S.coreV2())
-    // Lowering a helper can request additional member/array destruction.
-    // Unused implicit helpers must not force lazy template destructor bodies.
-    for (std::size_t I = 0; I < Destructions.size(); ++I)
-      FunctionData.push_back(lowerDestruction(Destructions[I]));
+  if (S.coreV2()) {
+    // Either helper can discover another static temporary or record cleanup.
+    // Copy work items before lowering: discovery may reallocate these vectors.
+    std::size_t StaticIndex = 0, RecordIndex = 0;
+    while (StaticIndex < StaticDestructions.size() || RecordIndex < Destructions.size()) {
+      if (StaticIndex < StaticDestructions.size()) {
+        auto Object = StaticDestructions[StaticIndex++];
+        FunctionData.push_back(lowerStaticDestruction(Object));
+      } else {
+        const auto *Record = Destructions[RecordIndex++];
+        FunctionData.push_back(lowerDestruction(Record));
+      }
+    }
+  }
   if (S.project())
     addProjectMetadata();
   if (S.math()) {

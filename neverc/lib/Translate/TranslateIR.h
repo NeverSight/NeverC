@@ -96,7 +96,8 @@ enum class InstructionKind {
   MappedCall,
   IndirectCall,
   StaticInitBegin,
-  StaticInitEnd
+  StaticInitEnd,
+  RegisterStaticDestructor
 };
 struct Instruction {
   InstructionKind Op = InstructionKind::Return;
@@ -164,6 +165,8 @@ struct Global {
   bool Mutable = false;
   bool DynamicInitialization = false;
   std::string InitializationOwner;
+  // Internal void() definition, registered when this complete object finishes.
+  std::string Destructor;
 };
 struct Function {
   std::string Name;
@@ -238,6 +241,7 @@ struct Module {
   std::vector<MappingEvidence> Mappings;
 };
 
+enum class StaticDestructionABI { None, CxaAtExit, CAtExit };
 struct VerificationContext {
   std::string Profile = "cpp-core-v1";
   std::string TargetTriple;
@@ -254,6 +258,8 @@ struct VerificationContext {
   uint32_t ExpectedUIntPtrBits = 0;
   // Independent native capability; guard operations must never call libatomic.
   bool HasLockFreeIntAtomics = false;
+  // Independently selected hosted CRT ABI; never supplied by the producer.
+  StaticDestructionABI NativeStaticDestruction = StaticDestructionABI::None;
 };
 struct SourceMapEntry {
   uint32_t BeginLine = 1;

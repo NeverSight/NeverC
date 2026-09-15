@@ -124,10 +124,11 @@ implementing revision; this increment does not establish complete C++/STL.
 
 Admitted non-constexpr functions can dynamically initialize local static numeric,
 boolean, enum, null, object-pointer, callback, record and fixed-array objects,
-including const objects. Records and array elements must have trivial static
-destruction. The original initializer stays in the declaring function and may
+including const objects and records/array elements with admitted static destruction.
+The original initializer stays in the declaring function and may
 use parameters, automatic locals and its actual `this`. Constant initialization
-keeps its existing eager, guard-free representation.
+keeps its existing eager data representation; a required destructor adds only
+first-passage registration under a guard.
 
 Local static lvalue/rvalue references can also bind existing objects through
 parameters, pointer loads, conditional glvalues and owned reference-returning
@@ -193,10 +194,62 @@ Generated assertions check atomic capability and storage layout. Protocol/IR
 checks, O0/O2 execution, sixteen-thread visibility tests and assembly checks for
 runtime helper dependencies require native validation at the implementing CI head.
 
-Nontrivial static destruction, TLS and exception propagation/retry still require
-implementation. Nonlocal objects follow the [startup contract](#nonlocal-dynamic-initialization). Unsupported throwing source and
+TLS and exception propagation/retry still require implementation. Static objects
+use the [registered destruction contract](#static-destruction). Nonlocal objects follow the [startup contract](#nonlocal-dynamic-initialization). Unsupported throwing source and
 unowned callees remain diagnosed; there is no substitute termination or fake
 success path. Actual standard headers and complete C++/STL remain unfinished.
+
+## Static destruction
+
+Core v2 registers destruction of admitted complete static records, fixed arrays
+and lifetime-extended static temporaries. This includes const objects, local and
+nonlocal definitions, class/variable-template instances and implicit containing
+record destruction. The source destructor must pass the same owned-body, type,
+layout and selected-template checks as ordinary automatic destruction.
+
+Each complete object registers its internal `void()` cleanup immediately after
+construction. A complete root registers before its initializer's ordinary
+full-expression cleanup; each permanent child registers separately when that
+child finishes. The root guard publishes after ordinary cleanup. This preserves
+interleaving when another static completes between a child and its parent, or
+inside an argument destructor. Arrays register one cleanup for the complete
+array and destroy elements in reverse order; record helpers retain reverse member
+cleanup. No static object receives automatic lexical cleanup.
+
+Constant initialization and runtime registration are distinct: a complete constant
+root keeps its constant value and uses a once guard only for registration. A local
+root registers at first passage; a nonlocal root registers through native startup.
+C++17's checked constant-initializer evaluation rejects a static materialized
+temporary whose complete type requires destruction, including recursive arrays,
+fields and reference paths. Such temporary objects take the dynamic path; retained
+partial APValues never authorize constant construction or teardown. A reference
+to a named static object does not register another destruction for that referent.
+
+Native Linux and Darwin use `__cxa_atexit` and the module's hidden `__dso_handle`.
+MSVC Windows uses `atexit`; x86 declarations, callback types and thunks explicitly
+use the C calling convention. Real matching-signature thunks call checked internal
+cleanup functions. This preserves native exit-callback order and ordinary module
+unload ownership. Registration return values follow pinned Clang's existing
+ignored-result behavior; there is no invented retry or exception path.
+
+The consumer independently selects the hosted target ABI. Saved NC checks hosted
+compilation and the MSVC target ABI marker independently of compatibility-version
+flags. DynCode compilation is explicitly rejected, including a unit containing
+only local statics. Manual loaders without the ordinary CRT module lifecycle are
+unsupported. Storage requiring a destructor is physically writable, while source
+const accesses remain checked. Cleanup obtains a const address and uses the
+existing explicit cv pointer cast for the destructor receiver; registration-only
+regions grant no new const-write permission.
+
+Paired source/protocol and malformed-IR cases cover registration ownership,
+constant data, callback signatures and native ABI selection. O0/O2 fixtures cover
+C `atexit` interleaving, ordinary full-expression cleanup, parent/child completion,
+reverse arrays/members, conditional and never-called locals, initialization from
+a destructor, placement reconstruction and template identity. Separate native
+library load/unload and sixteen-thread first-use fixtures cover module ownership
+and once-only registration. These fixtures require the implementing CI revision;
+no native result is implied by source-only checks. TLS, exception unwinding,
+default heap runtime, standard headers and complete C++/STL remain unfinished.
 
 ## Nonlocal dynamic initialization
 
@@ -229,7 +282,7 @@ Each full expression cleans its ordinary temporaries before publishing that
 object and starting the next initializer. Lifetime-extended temporaries are built
 in their existing permanent child storage. Source-defined single-object allocation
 can run in startup; missing default heap functions still require a runtime.
-Nontrivial static destruction, TLS, exceptions/unwind, actual standard headers and
+TLS, exceptions/unwind, actual standard headers and
 complete C++/STL remain unfinished.
 
 The optional core-v2 module `startup` identifier names an independently checked
@@ -288,12 +341,12 @@ including const array members that cannot use scalar declaration-only values.
 The frontend evaluates each actual initialized object once and serializes all
 elements, including static zero fill. Mutable arrays use the existing global
 `mutable` permission; const arrays and literal objects remain read-only. Local
-constant-initialized declarations emit no automatic shadow, runtime initialization guard or
-repeated element stores. Arrays cannot be assigned as whole values.
+constant-initialized declarations emit no automatic shadow or repeated element
+stores; arrays requiring destruction use a guard only for registration. Arrays cannot be assigned as whole values.
 
 Dynamic local arrays follow the [first-use contract](#dynamic-local-static-initialization).
 Nonlocal arrays follow the [startup contract](#nonlocal-dynamic-initialization).
-TLS, volatile storage and nontrivial static destruction still need further support. Records follow their [static object contract](#static-record-objects). Object-pointer elements follow the
+TLS and volatile storage still need further support. Records follow their [static object contract](#static-record-objects). Object-pointer elements follow the
 [static address contract](#static-object-pointer-storage). Standard headers and full STL remain
 unfinished. Paired source/protocol cases, IR checks and O0/O2 fixtures cover
 shared state, initialization, nested elements, aliases, template identity,
@@ -352,7 +405,7 @@ template-instance state follow the existing storage contracts. Static reference
 bindings follow their [alias contract](#static-reference-bindings).
 Dynamic local pointers follow the [first-use contract](#dynamic-local-static-initialization).
 Nonlocal pointers follow the [startup contract](#nonlocal-dynamic-initialization).
-TLS, default heap runtime, static destruction,
+TLS, default heap runtime,
 standard-library headers/runtime still require further work. Mutable records
 follow their [static object contract](#static-record-objects). Paired source/protocol cases, malformed-address IR cases,
 relocation and O0/O2 fixtures require native validation in implementing CI.
@@ -457,7 +510,8 @@ and function reentry does not reinitialize local static storage. Pointer and
 reference paths retain the existing subobject, const and byte-offset validation.
 
 Constant initialization introduces no runtime initializer or guard.
-Nontrivial static destruction and TLS still require further work.
+Nontrivial static temporaries use [dynamic registration](#static-destruction); TLS
+still requires further work.
 Binding through a function call or pointer arithmetic does not
 invent lifetime extension; unsupported source remains checked even when folded
 or unused. Paired source/protocol tests cover admission and rejection, retained
@@ -470,7 +524,8 @@ Complete C++/STL remains unfinished.
 A local declaration such as `static const R &r = make(argument);` constructs
 its complete temporary in permanent storage under the reference's first-use
 guard. Scalar, pointer, callback, null, record and fixed-array temporaries retain
-their admitted source types and must have trivial static destruction. The exact
+their admitted source types and use [registered destruction](#static-destruction)
+when required. The exact
 Clang materialization descriptor, canonical extending declaration and static
 storage duration establish ownership. References to fields and array elements
 retain the complete temporary, following [C++17 temporary lifetime rules](https://timsong-cpp.github.io/cppwp/n4659/class.temporary).
@@ -497,16 +552,18 @@ a reference-returning call does not extend its argument temporary's lifetime.
 Constant temporary serialization separately requires successful evaluation of
 the exact owner, including Clang's positive constant-initialization evidence for
 later static member definitions. Merely retaining an APValue grants no access.
-Nontrivial destruction remains diagnosed even in dead or unselected source.
+Nontrivial constant temporary allocation remains rejected by the C++17 constant
+initializer proof; dynamic temporaries register their own destruction when completed.
+Unsupported destructor source remains diagnosed in dead or unselected source.
 Paired source/protocol, malformed IR, relocation, O0/O2 and concurrent-reader
-fixtures require native validation at the implementing CI revision. Static
-destruction, exceptions/retry, TLS, default heap runtime and real
+fixtures require native validation at the implementing CI revision.
+Exceptions/retry, TLS, default heap runtime and real
 standard-library support remain unfinished parts of the full C++/STL goal.
 
 ## Static record objects
 
-Core v2 admits source-owned static records with trivial destruction and fully
-constant initialization, at namespace scope, in function-local statics and in
+Core v2 admits source-owned static records with checked constant initialization
+and [registered destruction](#static-destruction), at namespace scope, in function-local statics and in
 defined class static members, including admitted class/variable templates.
 Mutable records support updates to their existing object; const records and
 const fields retain the source language's access rules. Nested records, fixed
@@ -552,7 +609,7 @@ forward declarations needed for self addresses.
 Local nonconstant constructor calls and initializer reads follow the
 [first-use contract](#dynamic-local-static-initialization). Nonlocal objects use
 [dynamic startup](#nonlocal-dynamic-initialization). TLS, volatile objects,
-nontrivial static destruction, unsupported layouts/fields and default heap runtime remain
+unsupported layouts/fields and default heap runtime remain
 outside this increment. Exception unwinding and actual
 standard-library headers/runtime still require
 further work. Paired source/protocol cases, mutable/self-address IR cases,
@@ -811,7 +868,8 @@ synchronized first-use local initialization under the existing guard contract.
 Constant bindings serialize their actual referent address; a reference-field
 layout offset cannot stand in for the referent. Dynamic aggregates and their
 extended temporary children use one flat initialization group and one guard.
-Children initialize at their final addresses and require trivial destruction.
+Children initialize at their final addresses and register their own required static
+destruction immediately upon completion.
 Materializing default elements retain distinct constant and runtime identities.
 
 Materializing default array elements receive separate semantic initializers in
@@ -846,7 +904,7 @@ Paired source/protocol fixtures cover binding, copied aliases, nested layouts,
 source diagnostics, zero children, owner graphs and relocation. O0/O2 and
 concurrent-reader fixtures cover identity, first-use state and destruction order;
 native acceptance requires the implementing CI revision. Actual standard-library
-headers/runtime, remaining templates, default heap runtime, exceptions, static destruction,
+headers/runtime, remaining templates, default heap runtime, exceptions,
 inheritance/virtual dispatch and multi-TU v2 remain unfinished.
 
 ## Live-object rvalue references
@@ -1074,7 +1132,8 @@ record copies can still copy object representation with NeverC's aggregate memcp
 Local objects, reference-extended temporaries, full-expression temporaries and
 arrays retain their existing complete-object cleanup ownership. Aliases create
 no extra owner. Empty constexpr values and admitted trivial constant globals keep
-normal definition checking. Nontrivial global destruction remains unsupported.
+normal definition checking. Nontrivial global destruction follows the
+[registered static lifetime contract](#static-destruction).
 
 The internal byte is not a semantic source field. Existing pointer conversions
 can still reach object representation through byte pointers; absence of a named
@@ -1156,7 +1215,7 @@ local statics follow their first-use contract above. Exception unwinding,
 default heap runtime, inheritance, virtual dispatch and STL are still outside this increment.
 Compile-time const scalar/record globals may use an admitted constexpr
 constructor after source inspection; nonlocal dynamic construction follows the
-startup contract. Records requiring static destruction remain rejected. Static pointer fields and arrays follow their
+startup contract. Records use the [static destruction contract](#static-destruction). Static pointer fields and arrays follow their
 storage contract above. V1 profiles continue to reject user constructors.
 
 ## Deleted function declarations
@@ -1247,7 +1306,7 @@ operators can modify permitted non-const members while leaving const keys intact
 
 Volatile, mutable, reference and bitfield members remain outside this increment.
 Deleted declarations follow their separate contract below. Restrictions on
-nontrivial static destruction and unsupported element types remain. V1 profiles retain
+unsupported element types remain. V1 profiles retain
 their const-field rejection. Paired source/protocol tests, const-pointer signature
 and relocation checks, and O0/O2 fixtures require native CI of the implementing
 revision. Standard headers and complete C++/STL remain unfinished.
@@ -1489,8 +1548,8 @@ They need no invented storage definition.
 Fixed arrays follow the [static array contract](#fixed-array-static-storage).
 Static references follow their [alias contract](#static-reference-bindings).
 Records follow their [static object contract](#static-record-objects).
-Dynamic initialization and TLS retain their restrictions. There is no startup or
-static-destruction function in this representation. Older profiles retain their
+Dynamic initialization and static destruction use the linked contracts; TLS remains
+unsupported. Older profiles retain their
 existing behavior. Native O0/O2 fixtures and protocol checks cover shared state,
 canonical definitions, initializer ownership, receiver effects, actual addresses,
 const permissions, temporary cleanup, default arguments and relocation. Native
@@ -1699,7 +1758,7 @@ destructor body. Ordinary materialized user bodies remain checked and emitted.
 There is no opaque source or binary fallback and no external Clang process.
 
 Explicit destructor calls follow their separate contract below. Lifetime restart, virtual dispatch/bases,
-static-duration destruction and the other unsupported
+the other unsupported
 template forms remain unfinished. Native O0/O2 fixtures check body/member/array
 order, control-flow exits, temporary/reference/parameter/result storage, copy/move,
 specializations and local identities. Protocol checks cover exact signatures,
@@ -3473,7 +3532,7 @@ follow their [alias contract](#static-reference-bindings). Records follow their
 startup contract. Volatile/atomic globals and TLS remain outside current support.
 Statically initialized scalar locals and defined scalar static data members
 follow their separate contracts above. Nontrivial global object destruction
-still requires separate lifetime support. Other profiles retain their prior
+uses the [registered lifetime contract](#static-destruction). Other profiles retain their prior
 constant-global contract.
 
 The optional global IR field `mutable` defaults to `false`. Only core v2 accepts
@@ -4163,8 +4222,8 @@ int main() {
 ```
 
 This increment covers normal completion only. Throw/catch, stack unwinding,
-partial construction rollback, default heap runtime, static/global object
-destruction remain rejected. Temporary calls and automatic local reference
+partial construction rollback and default heap runtime remain rejected.
+Static/global object destruction uses its registered lifetime contract. Temporary calls and automatic local reference
 extension follow their separate contracts below. Existing expansion/storage limits also bound emitted
 cleanup instructions and recursive array destruction. V1 profiles retain their
 original trivial-lifetime boundary. Regression fixtures cover O0/O2 execution,

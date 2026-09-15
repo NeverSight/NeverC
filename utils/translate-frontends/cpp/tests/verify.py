@@ -2951,7 +2951,6 @@ bool query(){return noexcept(C());}
         'unevaluated-unsupported': 'struct E{operator long double()const{return 1.0L;}};bool f(){E e;return noexcept(static_cast<long double>(e));}',
         'extent-limit': 'struct E{};using A=E[65537];',
         'storage-limit': 'struct E{};using A=E[512][512];',
-        'global-destruction': 'struct E{~E(){}};const E e{};',
     }
     for name, source in empty_record_rejected.items():
         check("v2-" + 'empty_record_rejected' + "-" + name, source, "TR0201", profile="cpp-core-v2")
@@ -5183,9 +5182,6 @@ int*address(){return &state();}
     startup_negative = {
         'tls': ('int seed(){return 3;}thread_local int n=seed();', 'TR0201'),
         'volatile': ('int seed(){return 3;}volatile int n=seed();', 'TR0201'),
-        'destruction': ('struct R{R(){}~R(){}};R r;', 'TR0201'),
-        'extended-destruction': ('struct R{int n;~R(){}};const int&r=R{3}.n;', 'TR0201'),
-        'array-destruction': ('struct R{R(){}~R(){}};R a[2];', 'TR0201'),
         'missing-function': ('int seed();int n=seed();', 'TR0203'),
         'missing-global': ('extern int n;int f(){return n;}', 'TR0203'),
         'hidden-type': ('int seed(){return 3;}int n=(static_cast<void>(sizeof(long double)),seed());', 'TR0201'),
@@ -5195,6 +5191,80 @@ int*address(){return &state();}
     }
     for name, (source, diagnostic) in startup_negative.items():
         check("v2-startup-reject-" + name, source, diagnostic, profile="cpp-core-v2")
+    static_destruction_positive = {
+        'former-1-destruction': 'struct R{R(){}~R(){}};R r;',
+        'former-2-extended-destruction': 'struct R{int n;~R(){}};const int&r=R{3}.n;',
+        'former-3-array-destruction': 'struct R{R(){}~R(){}};R a[2];',
+        'former-4-destruction': 'struct R{R(int){}~R(){}};void f(int n){static R r(n);}',
+        'former-5-static-destruction': 'struct R{int n;~R(){}};const R&f(int n){static const R&r=R{n};return r;}',
+        'former-6-dead-static-destruction': 'struct R{int n;~R(){}};void f(int n){if(false){static const R&r=R{n};}}',
+        'former-7-unselected-static-destruction': 'struct R{int n;~R(){}};int value;void f(int n){static const int&r=true?static_cast<int&&>(value):R{n}.n;}',
+        'former-8-array-static-destruction': 'struct R{int n;~R(){}};void f(int n){static const R(&r)[2]={{n},{n+1}};}',
+        'former-9-static-temporary-destruction': 'struct T{int n;~T(){}};struct R{const T&r;};void f(int n){static R r{T{n}};}',
+        'former-10-dead-static-temporary-destruction': 'struct T{int n;~T(){}};struct R{const T&r;};void f(int n){if(false){static R r{T{n}};}}',
+        'former-11-record-destruction': 'struct R{int n;~R(){}};int f(){static R r{3};return r.n;}',
+        'former-12-global-destruction': 'struct R{int n;~R(){}};R r{3};',
+        'former-13-local-destruction': 'struct R{int n;~R(){}};int f(){static R r{3};return r.n;}',
+        'former-14-member-destruction': 'struct I{int n;~I(){}};struct R{inline static I i{3};};',
+        'former-15-nontrivial-destructor': 'struct R{int n;~R(){}};const R&r=R{3};',
+        'former-16-array-destructor': 'struct R{int n;~R(){}};const R(&r)[2]={{3},{4}};',
+        'former-17-local-destructor': 'struct R{int n;~R(){}};R*f(){static R a[2]={{1},{2}};return a;}',
+        'former-18-member-destructor': 'struct I{int n;~I(){}};struct R{inline static I a[2]={{1},{2}};};',
+        'former-19-template-destructor': 'struct R{int n;~R(){}};template<class T>inline T a[2]{};R*f(){return a<R>;}',
+        'former-20-global-array-destructor': 'struct R{int n;~R(){}};const R r[2]={{1},{2}};',
+        'former-21-global-destruction': 'struct E{~E(){}};const E e{};',
+        'constant-constexpr-constructor': 'int n;struct R{int value;constexpr R(int v):value(v){}~R(){n=value;}};const R r(3);',
+        'forward-constant-read': 'int observed;struct R{int n;~R(){}};extern const R r;int read(){return r.n;}int value=read();const R r{7};',
+        'class-template-member': 'int n;template<class T>struct Box{T value;~Box(){n=value;}};template<class T>struct Owner{inline static Box<T>value{3};};int f(){return Owner<int>::value.value;}',
+        'dependent-destructor-local': 'int n;template<int N>struct R{~R(){n=N;}};template<int N>void f(){static R<N>r;}void g(){f<1>();f<2>();}',
+        'loop-registration': 'int n;struct R{~R(){++n;}};void f(int count){for(int i=0;i<count;++i){static R r;}}',
+        'nested-array-temporary': 'int n;struct R{int v;~R(){n+=v;}};void f(int v){static const R(&a)[2][2]={{{v},{v+1}},{{v+2},{v+3}}};}',
+        'global-const-array': 'int n;struct R{int v;~R(){n+=v;v=0;}};const R a[2]={{3},{4}};',
+    }
+    for name, source in static_destruction_positive.items():
+        check("v2-static-destruction-"+name, source, profile="cpp-core-v2")
+    static_destruction_negative = {
+        'missing-root-destructor': ('struct R{int n;~R();};R r{3};', 'TR0203'),
+        'missing-temporary-destructor': ('struct R{int n;~R();};const R&r=R{3};', 'TR0203'),
+        'destructor-body': ('struct R{~R(){long double n=0;}};R r;', 'TR0201'),
+        'selected-template-body': ('template<class T>struct R{~R(){long double n=0;}};R<int>r;', 'TR0201'),
+        'tls-root': ('struct R{~R(){}};thread_local R r;', 'TR0201'),
+        'tls-temporary': ('struct R{int n;~R(){}};thread_local const R&r=R{3};', 'TR0201'),
+        'volatile-root': ('struct R{~R(){}};volatile R r;', 'TR0201'),
+        'const-write': ('struct R{int n;~R(){}};const R r{3};void f(){r.n=4;}', 'TR0202'),
+    }
+    for name, (source, diagnostic) in static_destruction_negative.items():
+        check("v2-static-destruction-reject-"+name, source, diagnostic, profile="cpp-core-v2")
+
+    thread_source = (repository / "tests/neverc/Inputs/translate/cpp/static-destruction-threads.cpp").read_text()
+    thread_destruction = check("v2-static-destruction-threads", thread_source, profile="cpp-core-v2")
+    assert sum("destructor" in g for g in thread_destruction["globals"]) == 2
+    assert sum(i["op"] == "register_static_destructor" for f in thread_destruction["functions"] for i in f["body"]) == 2
+    library_source = (repository / "tests/neverc/Inputs/translate/cpp/static-destruction-library.cpp").read_text()
+    library = check("v2-static-destruction-library", library_source, profile="cpp-core-v2")
+    library_startup = next(f for f in library["functions"] if f["name"] == library["startup"])
+    assert any(i["op"] == "register_static_destructor" for i in library_startup["body"])
+    assert sum("destructor" in g for g in library["globals"]) == 8
+    assert any(not g.get("dynamic_initialization") and g.get("destructor") for g in library["globals"])
+    destruction_source = (repository / "tests/neverc/Inputs/translate/cpp/static-destruction-module.cpp").read_text()
+    destruction = check("v2-static-destruction-module", destruction_source, profile="cpp-core-v2")
+    cleanup_functions = {f["name"]:f for f in destruction["functions"]}
+    destruction_globals = {g["name"]:g for g in destruction["globals"] if "destructor" in g}
+    registrations = [i for f in destruction["functions"] for i in f["body"] if i["op"] == "register_static_destructor"]
+    assert destruction_globals and registrations
+    assert len({i["global"] for i in registrations}) == len(registrations)
+    assert all(i["global"] in destruction_globals for i in registrations)
+    for g in destruction_globals.values():
+        f = cleanup_functions[g["destructor"]]
+        assert f["internal"] and not f["c_export"] and f["result"] == "void" and not f["params"]
+        assert any(i["op"] == "call" for i in f["body"])
+    children = [g for g in destruction_globals.values() if "initialization_owner" in g]
+    assert children and all(not g.get("dynamic_initialization") for g in children)
+    assert any(not g.get("dynamic_initialization") and not g.get("initialization_owner") for g in destruction_globals.values())
+    with tempfile.TemporaryDirectory(prefix="neverc-static-destruction-relocated-") as temp:
+        relocated = check("v2-static-destruction-relocated", destruction_source, root=Path(temp)/"project", profile="cpp-core-v2")
+        assert relocated == destruction
+
     for fixture_name in ("startup-program.cpp", "startup-templates.cpp", "startup-module.cpp"):
         startup_source = (repository / "tests/neverc/Inputs/translate/cpp" / fixture_name).read_text()
         startup = check("v2-" + fixture_name, startup_source, profile="cpp-core-v2")
@@ -5289,7 +5359,6 @@ int*address(){return &state();}
 
     dynamic_static_reject = {
         'throw': ('int make(){throw 1;}int f(){static int n=make();return n;}', 'TR0201'),
-        'destruction': ('struct R{R(int){}~R(){}};void f(int n){static R r(n);}', 'TR0201'),
         'hidden-source': ('int seed(){return 3;}int f(){static int n=(static_cast<void>(sizeof(long double)),seed());return n;}', 'TR0201'),
         'unowned-call': ('extern int seed();int f(){static int n=seed();return n;}', 'TR0203'),
         'const-write': ('int f(int v){static const int n=v;return ++n;}', 'TR0202'),
@@ -5365,10 +5434,6 @@ int*address(){return &state();}
     for name, source in dynamic_temporary_positive.items():
         check("v2-dynamic-temporary-" + name, source, profile="cpp-core-v2")
     dynamic_temporary_negative = {
-        'static-destruction': ('struct R{int n;~R(){}};const R&f(int n){static const R&r=R{n};return r;}', 'TR0201'),
-        'dead-static-destruction': ('struct R{int n;~R(){}};void f(int n){if(false){static const R&r=R{n};}}', 'TR0201'),
-        'unselected-static-destruction': ('struct R{int n;~R(){}};int value;void f(int n){static const int&r=true?static_cast<int&&>(value):R{n}.n;}', 'TR0201'),
-        'array-static-destruction': ('struct R{int n;~R(){}};void f(int n){static const R(&r)[2]={{n},{n+1}};}', 'TR0201'),
         'tls': ('int f(int n){static thread_local const int&r=n+1;return r;}', 'TR0201'),
         'hidden-type': ('int f(int n){static const int&r=(static_cast<void>(sizeof(long double)),n+1);return r;}', 'TR0201'),
         'unowned-call': ('int make(int);const int&f(int n){static const int&r=make(n);return r;}', 'TR0203'),
@@ -5822,8 +5887,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'member-pointer': ('struct R{int n;};struct H{int R::*&r;};', 'TR0201'),
         'meminitializer-temporary': ('struct R{const int&r;R():r(3){}};', 'TR0202'),
         'constructor-default-temporary': ('struct R{const int&r=3;};void f(){R r;}', 'TR0202'),
-        'static-temporary-destruction': ('struct T{int n;~T(){}};struct R{const T&r;};void f(int n){static R r{T{n}};}', 'TR0201'),
-        'dead-static-temporary-destruction': ('struct T{int n;~T(){}};struct R{const T&r;};void f(int n){if(false){static R r{T{n}};}}', 'TR0201'),
         'unowned-reference': ('int&get();struct R{int&r;};R f(){return R{get()};}', 'TR0203'),
     }
     for name, (source, diagnostic) in reference_member_negative.items():
@@ -5886,7 +5949,6 @@ const Default*array(){static const Default r[3]{};return r;}
         'static-tls': 'int f(){static thread_local int n=3;return n;}',
         'volatile': 'int f(){static volatile int n=3;return n;}',
         'floating': 'long double f(){static long double n=3.0L;return n;}',
-        'record-destruction': 'struct R{int n;~R(){}};int f(){static R r{3};return r.n;}',
         'extern': 'int value=3;int f(){extern int value;return value;}',
         'constexpr-function': 'constexpr int f(bool b){if(b){static int n=3;return n;}return 0;}',
         'constexpr-method': 'struct R{constexpr int f(bool b)const{if(b){static const int n=3;return n;}return 0;}};',
@@ -9933,9 +9995,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     for name, source in static_record_positive.items():
         check("v2-static-record-positive-"+name, source, profile="cpp-core-v2")
     static_record_negative = {
-        'global-destruction': ('struct R{int n;~R(){}};R r{3};', 'TR0201'),
-        'local-destruction': ('struct R{int n;~R(){}};int f(){static R r{3};return r.n;}', 'TR0201'),
-        'member-destruction': ('struct I{int n;~I(){}};struct R{inline static I i{3};};', 'TR0201'),
         'tls': ('struct R{int n;};thread_local R r{3};', 'TR0201'),
         'volatile': ('struct R{int n;};volatile R r{3};', 'TR0201'),
         'unsupported-field': ('struct R{long double n;};R r{};', 'TR0201'),
@@ -10023,8 +10082,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         check("v2-static-temporary-positive-"+name, source, profile="cpp-core-v2")
     static_temporary_negative = {
         'runtime-constructor': ('struct R{int n;R():n(3){}};const R&r=R();', 'TR0201'),
-        'nontrivial-destructor': ('struct R{int n;~R(){}};const R&r=R{3};', 'TR0201'),
-        'array-destructor': ('struct R{int n;~R(){}};const R(&r)[2]={{3},{4}};', 'TR0201'),
         'tls': ('thread_local const int&r=3;', 'TR0201'),
         'hidden-type': ('const long double&r=3.0L;', 'TR0201'),
         'hidden-comma': ('const int&r=(static_cast<void>(1.0L),3);', 'TR0201'),
@@ -10376,9 +10433,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
     for name, source in static_array_positive.items():
         check("v2-static-array-positive-"+name, source, profile="cpp-core-v2")
     static_array_negative = {
-        'local-destructor': ('struct R{int n;~R(){}};R*f(){static R a[2]={{1},{2}};return a;}', 'TR0201'),
-        'member-destructor': ('struct I{int n;~I(){}};struct R{inline static I a[2]={{1},{2}};};', 'TR0201'),
-        'template-destructor': ('struct R{int n;~R(){}};template<class T>inline T a[2]{};R*f(){return a<R>;}', 'TR0201'),
         'volatile-array': ('volatile int a[2];', 'TR0201'),
         'tls-local': ('int*f(){thread_local int a[2];return a;}', 'TR0201'),
         'tls-member': ('struct R{inline static thread_local int a[2];};', 'TR0201'),
@@ -10493,7 +10547,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'literal-nttp': ('template<const char*p>int f(){return *p;}int g(){return f<"abc">();}', 'TR0202'),
         'literal-user-defined': ('unsigned operator""_n(const char*,decltype(sizeof(0))){return 1;}int f(){return "abc"_n;}', 'TR0201'),
         'thread-local-array': ('thread_local const char a[]="abc";', 'TR0201'),
-        'global-array-destructor': ('struct R{int n;~R(){}};const R r[2]={{1},{2}};', 'TR0201'),
         'global-array-extended': ('const long double a[2]={1.0L,2.0L};', 'TR0201'),
         'global-array-missing': ('extern const int a[2];int f(){return a[0];}', 'TR0203'),
         'global-array-write': ('constexpr char a[]="abc";void f(){a[0]=\'x\';}', 'TR0202'),

@@ -114,6 +114,11 @@ bool expectedCarrierLayout(VerificationContext &Context, Diagnostics &D,
   Context.LittleEndian = Target->isLittleEndian();
   Context.HasLockFreeIntAtomics = Target->getIntWidth() == 32 &&
       Target->hasBuiltinAtomic(32, Target->getIntAlign());
+  if (NativeTriple.isMacOSX() ||
+      (NativeTriple.isOSLinux() && !NativeTriple.isAndroid()))
+    Context.NativeStaticDestruction = StaticDestructionABI::CxaAtExit;
+  else if (NativeTriple.isKnownWindowsMSVCEnvironment())
+    Context.NativeStaticDestruction = StaticDestructionABI::CAtExit;
   Context.ExpectedCarrierLayout = Layout;
   return true;
 }

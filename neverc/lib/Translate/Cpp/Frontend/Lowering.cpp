@@ -1370,6 +1370,8 @@ class FunctionLowering {
       // Each lowered occurrence constructs its own permanent destination,
       // including repeated array fillers, without automatic destruction.
       initialize(Place, M->getSubExpr(), L);
+      if (needsDestruction(M->getType()))
+        registerStaticDestructor(*Place.getString("name"), L);
       return Place;
     }
     const auto *Owner = A.temporaryOwner(M);
@@ -1783,10 +1785,16 @@ class FunctionLowering {
                         ? dereference(Place, L) : Place);
     return Place;
   }
-  void initializeDynamicStatic(const VarDecl *V, const Expr *Init) {
+  void registerStaticDestructor(llvm::StringRef Global, SourceLocation L) {
+    A.chargeExpansion(1, L);
+    Body.push_back(json::Object{{"op", "register_static_destructor"},
+                                {"global", Global.str()}, {"loc", A.loc(L)}});
+  }
+  void initializeStatic(const VarDecl *V, const Expr *Init) {
     auto L = V->getLocation();
-    if (!Init || !A.DynamicStaticObjects.count(V->getCanonicalDecl()))
-      reject(L, "static initializer", "Expected a checked dynamic static initializer.");
+    const bool Dynamic = A.DynamicStaticObjects.count(V->getCanonicalDecl());
+    if ((Dynamic && !Init) || (!Dynamic && !needsDestruction(V->getType())))
+      reject(L, "static initializer", "Expected checked initialization or destructor registration.");
     A.chargeExpansion(2, L);
     const auto Initialize = labelName(), Ready = labelName();
     const auto Global = A.name(V);
@@ -1801,11 +1809,17 @@ class FunctionLowering {
     beginFullExpression();
     auto Previous = ActiveDynamicInitializer;
     auto Restore = llvm::make_scope_exit([&] { ActiveDynamicInitializer = Previous; });
-    ActiveDynamicInitializer = V->getCanonicalDecl();
-    if (V->getType()->isReferenceType())
-      assign(variable(Global, type(V->getType(), L), L), bind(Init, V->getType()), L);
-    else
-      initialize(storage(V, L), Init, L);
+    if (Dynamic) {
+      ActiveDynamicInitializer = V->getCanonicalDecl();
+      if (V->getType()->isReferenceType())
+        assign(variable(Global, type(V->getType(), L), L), bind(Init, V->getType()), L);
+      else
+        initialize(storage(V, L), Init, L);
+    }
+    // Registration follows complete-object construction, before argument
+    // cleanup can initialize and register some other static object.
+    if (needsDestruction(V->getType()))
+      registerStaticDestructor(Global, L);
     endFullExpression();
     Body.push_back(json::Object{{"op", "static_init_end"},
                                 {"global", Global}, {"loc", A.loc(L)}});
@@ -1815,8 +1829,8 @@ class FunctionLowering {
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
     if (A.S.coreV2() && V->isStaticLocal()) {
-      if (A.DynamicStaticObjects.count(V->getCanonicalDecl()))
-        initializeDynamicStatic(V, V->getInit());
+      if (A.DynamicStaticObjects.count(V->getCanonicalDecl()) || needsDestruction(V->getType()))
+        initializeStatic(V, V->getInit());
       return;
     }
     auto Place = localStorage(V);
@@ -2273,15 +2287,34 @@ public:
     for (const auto *Object : Objects) {
       const VarDecl *InitializingDecl = nullptr;
       const auto *Init = Object->getAnyInitializer(InitializingDecl);
-      if (!InitializingDecl || InitializingDecl->getCanonicalDecl() != Object->getCanonicalDecl())
+      if (Init && (!InitializingDecl ||
+                   InitializingDecl->getCanonicalDecl() != Object->getCanonicalDecl()))
         reject(Object->getLocation(), "startup initializer", "Missing checked source initializer.");
-      initializeDynamicStatic(Object, Init);
+      initializeStatic(Object, Init);
     }
     cleanupScopes(0);
     Scopes.pop_back();
     Body.push_back(json::Object{{"op", "return"}, {"loc", A.loc(L)}});
     Open = false;
     return finish(Name, "void", L, true, false);
+  }
+  json::Object runStaticDestruction(const StaticDestruction &Object) {
+    const auto L = Object.Location;
+    Prefix = "nct_f" + digest(Object.Function).substr(0, 12) + "_";
+    Entry = labelName();
+    label(Entry, L);
+    Scopes.emplace_back();
+    auto Place = variable(Object.Global, type(Object.Type, L), L);
+    // Source-const storage is addressed through a const pointer, then an
+    // explicit checked cv cast supplies the destructor's mutable receiver.
+    auto Pointer = address(std::move(Place), A.Context.getConstType(Object.Type), L);
+    Pointer = cast(std::move(Pointer), "ptr:" + type(Object.Type, L), L);
+    destroy(dereference(std::move(Pointer), L), Object.Type, L);
+    cleanupScopes(0);
+    Scopes.pop_back();
+    Body.push_back(json::Object{{"op", "return"}, {"loc", A.loc(L)}});
+    Open = false;
+    return finish(Object.Function, "void", L, true, false);
   }
 private:
   json::Object finish(llvm::StringRef Name, llvm::StringRef ResultType,
@@ -2332,6 +2365,9 @@ json::Object Adapter::lower(FunctionDecl *Function) {
 }
 json::Object Adapter::lowerStartup(llvm::ArrayRef<const VarDecl *> Objects) {
   return FunctionLowering(*this).runStartup(Objects);
+}
+json::Object Adapter::lowerStaticDestruction(const StaticDestruction &Object) {
+  return FunctionLowering(*this).runStaticDestruction(Object);
 }
 json::Object Adapter::lowerDestruction(const CXXRecordDecl *Record) {
   return FunctionLowering(*this, Record).run();

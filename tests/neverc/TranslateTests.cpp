@@ -3897,9 +3897,6 @@ TEST_F(TranslateTest, CoreV2NonlocalDynamicInitializationRetainsSourceBoundaries
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"tls", "int seed(){return 3;}thread_local int n=seed();", "TR0201"},
       {"volatile", "int seed(){return 3;}volatile int n=seed();", "TR0201"},
-      {"destruction", "struct R{R(){}~R(){}};R r;", "TR0201"},
-      {"extended-destruction", "struct R{int n;~R(){}};const int&r=R{3}.n;", "TR0201"},
-      {"array-destruction", "struct R{R(){}~R(){}};R a[2];", "TR0201"},
       {"missing-function", "int seed();int n=seed();", "TR0203"},
       {"missing-global", "extern int n;int f(){return n;}", "TR0203"},
       {"hidden-type", "int seed(){return 3;}int n=(static_cast<void>(sizeof(long double)),seed());", "TR0201"},
@@ -3949,6 +3946,138 @@ TEST_F(TranslateTest, CoreV2NonlocalStartupRunsForASeparatelyLinkedCClient) {
     const auto Executable = tmpFile("startup-client" + Optimization);
     auto Link = compileGenerated(fixture("startup-harness.c"), Executable, Optimization, {Object.string()});
     ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticDestructionAcceptsCompleteOwnedObjects) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"former-1-destruction", "struct R{R(){}~R(){}};R r;"},
+      {"former-2-extended-destruction", "struct R{int n;~R(){}};const int&r=R{3}.n;"},
+      {"former-3-array-destruction", "struct R{R(){}~R(){}};R a[2];"},
+      {"former-4-destruction", "struct R{R(int){}~R(){}};void f(int n){static R r(n);}"},
+      {"former-5-static-destruction", "struct R{int n;~R(){}};const R&f(int n){static const R&r=R{n};return r;}"},
+      {"former-6-dead-static-destruction", "struct R{int n;~R(){}};void f(int n){if(false){static const R&r=R{n};}}"},
+      {"former-7-unselected-static-destruction", "struct R{int n;~R(){}};int value;void f(int n){static const int&r=true?static_cast<int&&>(value):R{n}.n;}"},
+      {"former-8-array-static-destruction", "struct R{int n;~R(){}};void f(int n){static const R(&r)[2]={{n},{n+1}};}"},
+      {"former-9-static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){static R r{T{n}};}"},
+      {"former-10-dead-static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){if(false){static R r{T{n}};}}"},
+      {"former-11-record-destruction", "struct R{int n;~R(){}};int f(){static R r{3};return r.n;}"},
+      {"former-12-global-destruction", "struct R{int n;~R(){}};R r{3};"},
+      {"former-13-local-destruction", "struct R{int n;~R(){}};int f(){static R r{3};return r.n;}"},
+      {"former-14-member-destruction", "struct I{int n;~I(){}};struct R{inline static I i{3};};"},
+      {"former-15-nontrivial-destructor", "struct R{int n;~R(){}};const R&r=R{3};"},
+      {"former-16-array-destructor", "struct R{int n;~R(){}};const R(&r)[2]={{3},{4}};"},
+      {"former-17-local-destructor", "struct R{int n;~R(){}};R*f(){static R a[2]={{1},{2}};return a;}"},
+      {"former-18-member-destructor", "struct I{int n;~I(){}};struct R{inline static I a[2]={{1},{2}};};"},
+      {"former-19-template-destructor", "struct R{int n;~R(){}};template<class T>inline T a[2]{};R*f(){return a<R>;}"},
+      {"former-20-global-array-destructor", "struct R{int n;~R(){}};const R r[2]={{1},{2}};"},
+      {"former-21-global-destruction", "struct E{~E(){}};const E e{};"},
+      {"constant-constexpr-constructor", "int n;struct R{int value;constexpr R(int v):value(v){}~R(){n=value;}};const R r(3);"},
+      {"forward-constant-read", "int observed;struct R{int n;~R(){}};extern const R r;int read(){return r.n;}int value=read();const R r{7};"},
+      {"class-template-member", "int n;template<class T>struct Box{T value;~Box(){n=value;}};template<class T>struct Owner{inline static Box<T>value{3};};int f(){return Owner<int>::value.value;}"},
+      {"dependent-destructor-local", "int n;template<int N>struct R{~R(){n=N;}};template<int N>void f(){static R<N>r;}void g(){f<1>();f<2>();}"},
+      {"loop-registration", "int n;struct R{~R(){++n;}};void f(int count){for(int i=0;i<count;++i){static R r;}}"},
+      {"nested-array-temporary", "int n;struct R{int v;~R(){n+=v;}};void f(int v){static const R(&a)[2][2]={{{v},{v+1}},{{v+2},{v+3}}};}"},
+      {"global-const-array", "int n;struct R{int v;~R(){n+=v;v=0;}};const R a[2]={{3},{4}};"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static-destruction-positive-" + Name + ".cpp");
+    const auto Output = tmpFile("static-destruction-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticDestructionRetainsSourceAndLifetimeBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"missing-root-destructor", "struct R{int n;~R();};R r{3};", "TR0203"},
+      {"missing-temporary-destructor", "struct R{int n;~R();};const R&r=R{3};", "TR0203"},
+      {"destructor-body", "struct R{~R(){long double n=0;}};R r;", "TR0201"},
+      {"selected-template-body", "template<class T>struct R{~R(){long double n=0;}};R<int>r;", "TR0201"},
+      {"tls-root", "struct R{~R(){}};thread_local R r;", "TR0201"},
+      {"tls-temporary", "struct R{int n;~R(){}};thread_local const R&r=R{3};", "TR0201"},
+      {"volatile-root", "struct R{~R(){}};volatile R r;", "TR0201"},
+      {"const-write", "struct R{int n;~R(){}};const R r{3};void f(){r.n=4;}", "TR0202"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile("static-destruction-negative-" + Name + ".cpp");
+    const auto Output = tmpFile("static-destruction-negative-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticDestructionInterleavesWithNativeExitCallbacks) {
+  const auto Output = tmpFile("static-destruction-module.nc");
+  auto Result = translate(fixture("static-destruction-module.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  auto DynCode = compileGenerated(Output, tmpFile("static-destruction.bin"), "-O0",
+                                   {"-fdyncode"});
+  EXPECT_NE(DynCode.exitCode, 0);
+  EXPECT_NE(DynCode.err.find("translated static destruction requires native CRT loading"),
+            std::string::npos) << DynCode.out << DynCode.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Object = tmpFile("static-destruction" + Optimization + ".o");
+    auto Compile = compileGenerated(Output, Object, Optimization,
+                                     {"-c", "-fno-inline", "-fstrict-aliasing"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Executable = tmpFile("static-destruction-client" + Optimization);
+    auto Link = compileGenerated(fixture("static-destruction-harness.c"),
+                                  Executable, Optimization, {Object.string()});
+    ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticDestructionFollowsNativeLibraryUnload) {
+  const auto Output = tmpFile("static-destruction-library.nc");
+  auto Result = translate(fixture("static-destruction-library.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Library = tmpFile("static-destruction-library" + Optimization +
+                                  (isWindows() ? ".dll" : isLinux() ? ".so" : ".dylib"));
+    std::vector<std::string> Options{"-shared", "-fno-inline"};
+    if (isWindows())
+      Options.push_back("-Wl,/EXPORT:lifetime_start");
+    else
+      Options.push_back("-fPIC");
+    auto Build = compileGenerated(Output, Library, Optimization, Options);
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
+    const auto Executable = tmpFile("static-destruction-loader" + Optimization);
+    std::vector<std::string> LinkOptions;
+    if (isLinux()) LinkOptions.push_back("-ldl");
+    auto Link = compileGenerated(fixture("static-destruction-loader.c"),
+                                  Executable, Optimization, LinkOptions);
+    ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
+    auto Run = exec(Executable.string(), {Library.string()});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StaticDestructionRegistersOnceUnderConcurrentFirstUse) {
+  const auto Output = tmpFile("static-destruction-threads.nc");
+  auto Result = translate(fixture("static-destruction-threads.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("static-destruction-threads" + Optimization);
+    std::vector<std::string> Extra{fixture("static-destruction-threads.c").string()};
+    if (!isWindows()) Extra.push_back("-pthread");
+    auto Build = compileGenerated(Output, Executable, Optimization, Extra);
+    ASSERT_EQ(Build.exitCode, 0) << Build.out << Build.err;
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
@@ -4164,7 +4293,6 @@ int main(void){
 TEST_F(TranslateTest, CoreV2DynamicStaticLocalsRetainSourceAndLifetimeBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"throw", "int make(){throw 1;}int f(){static int n=make();return n;}", "TR0201"},
-      {"destruction", "struct R{R(int){}~R(){}};void f(int n){static R r(n);}", "TR0201"},
       {"hidden-source", "int seed(){return 3;}int f(){static int n=(static_cast<void>(sizeof(long double)),seed());return n;}", "TR0201"},
       {"unowned-call", "extern int seed();int f(){static int n=seed();return n;}", "TR0203"},
       {"const-write", "int f(int v){static const int n=v;return ++n;}", "TR0202"},
@@ -4326,10 +4454,6 @@ TEST_F(TranslateTest, CoreV2DynamicStaticTemporariesAcceptOwnedLifetimes) {
 
 TEST_F(TranslateTest, CoreV2DynamicStaticTemporariesRetainSourceAndDestructionBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"static-destruction", "struct R{int n;~R(){}};const R&f(int n){static const R&r=R{n};return r;}", "TR0201"},
-      {"dead-static-destruction", "struct R{int n;~R(){}};void f(int n){if(false){static const R&r=R{n};}}", "TR0201"},
-      {"unselected-static-destruction", "struct R{int n;~R(){}};int value;void f(int n){static const int&r=true?static_cast<int&&>(value):R{n}.n;}", "TR0201"},
-      {"array-static-destruction", "struct R{int n;~R(){}};void f(int n){static const R(&r)[2]={{n},{n+1}};}", "TR0201"},
       {"tls", "int f(int n){static thread_local const int&r=n+1;return r;}", "TR0201"},
       {"hidden-type", "int f(int n){static const int&r=(static_cast<void>(sizeof(long double)),n+1);return r;}", "TR0201"},
       {"unowned-call", "int make(int);const int&f(int n){static const int&r=make(n);return r;}", "TR0203"},
@@ -5004,8 +5128,6 @@ TEST_F(TranslateTest, CoreV2ReferenceMembersRetainSourceAndLayoutBoundaries) {
       {"member-pointer", "struct R{int n;};struct H{int R::*&r;};", "TR0201"},
       {"meminitializer-temporary", "struct R{const int&r;R():r(3){}};", "TR0202"},
       {"constructor-default-temporary", "struct R{const int&r=3;};void f(){R r;}", "TR0202"},
-      {"static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){static R r{T{n}};}", "TR0201"},
-      {"dead-static-temporary-destruction", "struct T{int n;~T(){}};struct R{const T&r;};void f(int n){if(false){static R r{T{n}};}}", "TR0201"},
       {"unowned-reference", "int&get();struct R{int&r;};R f(){return R{get()};}", "TR0203"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
@@ -5123,7 +5245,6 @@ TEST_F(TranslateTest, CoreV2StaticLocalsRetainInitializationAndLanguageBoundarie
       {"static-tls", "int f(){static thread_local int n=3;return n;}", "TR0201"},
       {"volatile", "int f(){static volatile int n=3;return n;}", "TR0201"},
       {"floating", "long double f(){static long double n=3.0L;return n;}", "TR0201"},
-      {"record-destruction", "struct R{int n;~R(){}};int f(){static R r{3};return r.n;}", "TR0201"},
       {"extern", "int value=3;int f(){extern int value;return value;}", "TR0201"},
       {"constexpr-function", "constexpr int f(bool b){if(b){static int n=3;return n;}return 0;}", "TR0201"},
       {"constexpr-method", "struct R{constexpr int f(bool b)const{if(b){static const int n=3;return n;}return 0;}};", "TR0201"},
@@ -9487,9 +9608,6 @@ TEST_F(TranslateTest, CoreV2StaticRecordsAcceptSourceComposition) {
 
 TEST_F(TranslateTest, CoreV2StaticRecordsRetainInitializationAndLifetimeRequirements) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"global-destruction", "struct R{int n;~R(){}};R r{3};", "TR0201"},
-      {"local-destruction", "struct R{int n;~R(){}};int f(){static R r{3};return r.n;}", "TR0201"},
-      {"member-destruction", "struct I{int n;~I(){}};struct R{inline static I i{3};};", "TR0201"},
       {"tls", "struct R{int n;};thread_local R r{3};", "TR0201"},
       {"volatile", "struct R{int n;};volatile R r{3};", "TR0201"},
       {"unsupported-field", "struct R{long double n;};R r{};", "TR0201"},
@@ -9661,8 +9779,6 @@ TEST_F(TranslateTest, CoreV2StaticTemporariesAcceptSourceComposition) {
 TEST_F(TranslateTest, CoreV2StaticTemporariesRetainInitializationAndLifetimeChecks) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"runtime-constructor", "struct R{int n;R():n(3){}};const R&r=R();", "TR0201"},
-      {"nontrivial-destructor", "struct R{int n;~R(){}};const R&r=R{3};", "TR0201"},
-      {"array-destructor", "struct R{int n;~R(){}};const R(&r)[2]={{3},{4}};", "TR0201"},
       {"tls", "thread_local const int&r=3;", "TR0201"},
       {"hidden-type", "const long double&r=3.0L;", "TR0201"},
       {"hidden-comma", "const int&r=(static_cast<void>(1.0L),3);", "TR0201"},
@@ -10208,9 +10324,6 @@ TEST_F(TranslateTest, CoreV2StaticArraysAcceptSourceComposition) {
 
 TEST_F(TranslateTest, CoreV2StaticArraysRetainInitializationAndSourceRequirements) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"local-destructor", "struct R{int n;~R(){}};R*f(){static R a[2]={{1},{2}};return a;}", "TR0201"},
-      {"member-destructor", "struct I{int n;~I(){}};struct R{inline static I a[2]={{1},{2}};};", "TR0201"},
-      {"template-destructor", "struct R{int n;~R(){}};template<class T>inline T a[2]{};R*f(){return a<R>;}", "TR0201"},
       {"volatile-array", "volatile int a[2];", "TR0201"},
       {"tls-local", "int*f(){thread_local int a[2];return a;}", "TR0201"},
       {"tls-member", "struct R{inline static thread_local int a[2];};", "TR0201"},
@@ -10408,7 +10521,6 @@ TEST_F(TranslateTest, CoreV2StringsRetainSourceAndLifetimeRestrictions) {
       {"literal-nttp", "template<const char*p>int f(){return *p;}int g(){return f<\"abc\">();}", "TR0202"},
       {"literal-user-defined", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}int f(){return \"abc\"_n;}", "TR0201"},
       {"thread-local-array", "thread_local const char a[]=\"abc\";", "TR0201"},
-      {"global-array-destructor", "struct R{int n;~R(){}};const R r[2]={{1},{2}};", "TR0201"},
       {"global-array-extended", "const long double a[2]={1.0L,2.0L};", "TR0201"},
       {"global-array-missing", "extern const int a[2];int f(){return a[0];}", "TR0203"},
       {"global-array-write", "constexpr char a[]=\"abc\";void f(){a[0]='x';}", "TR0202"},
@@ -16733,7 +16845,6 @@ TEST_F(TranslateTest, CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries) {
       {"unevaluated-unsupported", "struct E{operator long double()const{return 1.0L;}};bool f(){E e;return noexcept(static_cast<long double>(e));}", "TR0201"},
       {"extent-limit", "struct E{};using A=E[65537];", "TR0201"},
       {"storage-limit", "struct E{};using A=E[512][512];", "TR0201"},
-      {"global-destruction", "struct E{~E(){}};const E e{};", "TR0201"},
       {"initializer-arity", "struct E{};void f(){E e{1};}", "TR0202"},
       {"missing-field", "struct E{};int f(){E e;return e.n;}", "TR0202"},
       {"private-carrier-name", "struct E{};int f(){E e;return e.nct_emit_empty_storage;}", "TR0202"},

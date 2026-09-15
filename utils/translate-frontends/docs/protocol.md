@@ -113,10 +113,12 @@ Each instruction has `op` and `loc`:
 - `jump`: a known destination `label`.
 - `branch`: bool `condition`, destination strings `true` and `false`.
 - Core-v2 `static_init_begin`: only `global`, `true`, `false`, `op` and `loc`;
-  acquires initialization ownership of the named dynamic global and terminates
+  acquires initialization or registration ownership of the named guarded global and terminates
   the block, selecting initialize (`true`) or already published (`false`).
 - Core-v2 `static_init_end`: only `global`, `op` and `loc`; publishes initialization
   with release semantics and continues in the current block.
+- Core-v2 `register_static_destructor`: only `global`, `op` and `loc`; registers
+  the named complete object's checked cleanup inside its owner's acquired region.
 - `return`: `value` matches the result type, or is absent for void.
 
 The body starts with a label. Each basic block ends with jump, branch, static initialization begin or return; there is no implicit fallthrough, unreachable instruction after a terminator, or unknown label. Loops and break/continue use explicit labels, allowing the adapter to preserve condition, increment, and branch-local effects. Every nonvoid function must return on each reachable terminating path; an infinite loop is allowed. Default return 0 is emitted for the fallthrough of main only, following C++ semantics.
@@ -159,7 +161,8 @@ The owner alone has guard operations. A CFG-proven grant for that owner permits
 direct-root construction of its declared children, including const children.
 Both tentative and initialized C definitions use writable physical storage for
 these children while ordinary accesses preserve source constness. Children never
-acquire independent guards or exception/destruction behavior. The verifier keeps
+acquire independent guards or exception behavior; required static destruction
+registers separately on each child's completion. The verifier keeps
 resolved stable global identities; associations cannot override ordinary alias
 qualifiers, layout checks or protocol resource limits.
 
@@ -189,6 +192,49 @@ release publication after full-expression cleanup. On AArch64, per-function
 helper calls during normal downstream compilation. Atomics use compiler
 builtins without headers. No source atomic operation, guard address or exception
 retry permission is introduced. See the [source contract](cpp-core-v2.md#dynamic-local-static-initialization).
+
+## Core v2 static destruction
+
+A global's optional `destructor` is a nonempty core-v2 function identifier naming
+an internal, non-exported `void()` definition in the same module. The global is
+a complete record or fixed array; the callback cannot be `main` or module startup.
+Missing definitions, wrong signatures/profiles and malformed wire types reject.
+The producer supplies no native symbol name or ABI: `VerificationContext` derives
+`CxaAtExit` for hosted Linux/Darwin or `CAtExit` for an explicit MSVC Windows
+environment independently from NeverC's native target. Unsupported environments
+reject. C exports cannot collide with the selected fixed runtime symbols.
+
+A root needs a guard when dynamically initialized or when it has a destructor.
+A child with `initialization_owner` never acquires its own guard and still requires
+a dynamic root. Constant roots retain their full ordinary initializer; semantic
+zero remains mandatory only for dynamic roots and their children. A registration-only
+acquisition cannot grant construction writes to a const constant root.
+
+`register_static_destructor` names an existing destructor-bearing global with exact
+operands and no expressions, result, call target or branch labels. Its CFG owner
+must be that root, or the child's resolved `initialization_owner`. There is at
+most one textual registration site per global module-wide. Verification retains
+same-owner CFG edges and cuts publication outgoing edges, computes SCCs with an
+explicit DFS stack, and rejects a registration in a cyclic component. An outer
+loop around an entire declaration remains valid because the guard skips a
+published acquisition. Two may-state bits union at joins; every path reaching a
+root's publication must have registered its destructor. Conditional child
+registration, dead static metadata and nonterminating initialization remain valid.
+The passes use linear storage and avoid recursive traversal of untrusted CFGs.
+
+Emission uses a real `void(void*)` thunk for `__cxa_atexit`, passing null callback
+data and the address of hidden `__dso_handle`. Windows uses an exact `void()` thunk;
+on x86, the runtime function, callback type and thunk all carry `cdecl`. Thunks
+call the validated internal cleanup definition without function-pointer coercion.
+Registration occurs at each completion and its return value is ignored, matching
+the existing pinned frontend ABI. Saved NC checks `__STDC_HOSTED__` and the
+independent `__NEVERC_WINDOWS_MSVC_ABI__` predefine for MSVC registration. The
+`__NEVERC_DYNCODE__` mode predefine rejects this native CRT lifecycle in DynCode.
+
+Physical storage with destructor metadata is writable even when source-const.
+Ordinary accesses remain const-checked; generated destruction uses a const address
+followed by the existing checked cv pointer cast. No new alias provenance or
+arbitrary const-write authority is claimed. See the [source contract](cpp-core-v2.md#static-destruction).
 
 ## Core v2 nonlocal startup
 
@@ -1078,8 +1124,8 @@ The producer evaluates the actual source definition and retains canonical
 identity across namespace redeclarations, local/class statics and template
 instances. Trivial default construction at static storage supplies zero values
 before any ordinary runtime use; automatic uninitialized storage retains its
-existing rules. Dynamic initializer code, allocator calls and static destruction
-are not introduced here. See the [source contract](cpp-core-v2.md#static-record-objects).
+existing rules. Dynamic initialization, source-owned allocation and static destruction
+follow their dedicated contracts. See the [source contract](cpp-core-v2.md#static-record-objects).
 
 ## Core v2 binary floating-point values
 

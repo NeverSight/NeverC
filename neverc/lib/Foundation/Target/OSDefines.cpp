@@ -178,8 +178,11 @@ void addWindowsDefines(const llvm::Triple &Triple, const LangOptions &Opts,
   Builder.defineMacro("_WIN32");
   if (Triple.isArch64Bit())
     Builder.defineMacro("_WIN64");
-  if (Triple.isKnownWindowsMSVCEnvironment())
+  if (Triple.isKnownWindowsMSVCEnvironment()) {
+    // Target ABI evidence independent of language compatibility-version flags.
+    Builder.defineMacro("__NEVERC_WINDOWS_MSVC_ABI__", "1");
     addVisualCDefines(Opts, Builder);
+  }
 }
 
 } // namespace targets

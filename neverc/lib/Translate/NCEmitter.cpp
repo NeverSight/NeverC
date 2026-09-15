@@ -167,7 +167,8 @@ class Emitter {
   std::vector<PointerHelper> PointerHelpers;
   std::map<std::string, size_t> PointerHelperIndices;
   bool HasPointerDifference = false, HasPointerOrdering = false;
-  std::map<std::string, std::string> StaticGuards;
+  std::map<std::string, std::string> StaticGuards, StaticDestructors;
+  StaticDestructionABI DestructionABI = StaticDestructionABI::None;
   std::map<std::string, Type> LifetimeTypes;
   std::map<std::string, std::string> LifetimeNames;
   std::set<std::string> EmittedLifetimeTypes;
@@ -404,6 +405,19 @@ class Emitter {
       line("#if !__has_attribute(may_alias)");
       line("#error \"translated memory lifetimes require may_alias support\"");
       line("#endif");
+    }
+    if (!StaticDestructors.empty()) {
+      line("#if defined(__NEVERC_DYNCODE__)");
+      line("#error \"translated static destruction requires native CRT loading\"");
+      line("#endif");
+      line("#if !__STDC_HOSTED__");
+      line("#error \"translated static destruction requires a hosted CRT\"");
+      line("#endif");
+      if (DestructionABI == StaticDestructionABI::CAtExit) {
+        line("#if !defined(__NEVERC_WINDOWS_MSVC_ABI__) || __NEVERC_WINDOWS_MSVC_ABI__ != 1");
+        line("#error \"translated static destruction requires the MSVC target ABI\"");
+        line("#endif");
+      }
     }
     if (M.Startup) {
       line("#if !__has_attribute(constructor)");
@@ -648,9 +662,13 @@ class Emitter {
       for (const auto &Field : R.Fields)
         inspectType(Field.ValueType);
     for (const auto &G : M.Globals) {
-      if (G.DynamicInitialization)
+      if (G.DynamicInitialization ||
+          (!G.Destructor.empty() && G.InitializationOwner.empty()))
         StaticGuards.emplace(G.Name, "nct_emit_static_guard_" +
                                         std::to_string(StaticGuards.size()));
+      if (!G.Destructor.empty())
+        StaticDestructors.emplace(G.Name, "nct_emit_static_destructor_" +
+                                            std::to_string(StaticDestructors.size()));
       inspectType(G.ValueType);
       inspect(G.Value);
       HasStaticObjectAddresses |= containsObjectAddress(G.Value);
@@ -668,6 +686,31 @@ class Emitter {
           inspect(A);
       }
     }
+  }
+  void staticDestructionRuntime() {
+    if (StaticDestructors.empty())
+      return;
+    const llvm::Triple T(M.Target.Triple);
+    const auto CC = DestructionABI == StaticDestructionABI::CAtExit &&
+                            T.getArch() == llvm::Triple::x86
+                        ? std::string("__attribute__((cdecl)) ") : std::string();
+    if (DestructionABI == StaticDestructionABI::CxaAtExit) {
+      line("extern int __cxa_atexit(void (*)(void *), void *, void *);");
+      line("extern unsigned char __dso_handle __attribute__((visibility(\"hidden\")));");
+    } else
+      line("extern int " + CC + "atexit(void (" + CC + "*)(void));");
+    for (const auto &G : M.Globals) {
+      if (G.Destructor.empty())
+        continue;
+      const auto Parameter = DestructionABI == StaticDestructionABI::CxaAtExit
+                                 ? "void *nct_emit_unused" : "void";
+      line("static void " + CC + StaticDestructors.at(G.Name) + "(" + Parameter + ") {");
+      if (DestructionABI == StaticDestructionABI::CxaAtExit)
+        line("  (void)nct_emit_unused;");
+      line("  " + G.Destructor + "();");
+      line("}");
+    }
+    line("");
   }
   void function(const Function &F) {
     if (M.Startup && *M.Startup == F.Name)
@@ -715,6 +758,13 @@ class Emitter {
         Text = "  if (nct_emit_static_enter(&" + StaticGuards.at(I.GlobalName) +
                ")) goto " + I.TrueLabel + "; else goto " + I.FalseLabel + ";";
         break;
+      case InstructionKind::RegisterStaticDestructor:
+        if (DestructionABI == StaticDestructionABI::CxaAtExit)
+          Text = "  (void)__cxa_atexit(" + StaticDestructors.at(I.GlobalName) +
+                 ", (void *)0, &__dso_handle);";
+        else
+          Text = "  (void)atexit(" + StaticDestructors.at(I.GlobalName) + ");";
+        break;
       case InstructionKind::StaticInitEnd:
         Text = "  __c11_atomic_store(&" + StaticGuards.at(I.GlobalName) +
                ", 2u, __ATOMIC_RELEASE);";
@@ -730,7 +780,9 @@ class Emitter {
   }
 
 public:
-  explicit Emitter(const Module &M) : M(M) {}
+  explicit Emitter(const Module &M,
+                   StaticDestructionABI ABI = StaticDestructionABI::None)
+      : M(M), DestructionABI(ABI) {}
   EmittedSource run() {
     inspectModule();
     guards();
@@ -762,23 +814,24 @@ public:
       for (const auto &G : M.Globals)
         line("static " + declaration(G.ValueType, G.Name,
                                       !G.Mutable && !G.DynamicInitialization &&
-                                      G.InitializationOwner.empty()) + ";", &G.Loc);
+                                      G.InitializationOwner.empty() && G.Destructor.empty()) + ";", &G.Loc);
       if (!M.Globals.empty())
         line("");
     }
     for (const auto &G : M.Globals) {
       line("static " + declaration(G.ValueType, G.Name,
                                     !G.Mutable && !G.DynamicInitialization &&
-                                    G.InitializationOwner.empty()) + " = " +
+                                    G.InitializationOwner.empty() && G.Destructor.empty()) + " = " +
                expression(G.Value, true) + ";",
            &G.Loc);
-      if (G.DynamicInitialization)
+      if (StaticGuards.count(G.Name))
         line("static _Atomic(unsigned int) " + StaticGuards.at(G.Name) + " = 0u;", &G.Loc);
     }
     if (!M.Globals.empty())
       line("");
     if (FunctionPointers.empty())
       Prototypes();
+    staticDestructionRuntime();
     for (const auto &F : M.Functions)
       function(F);
     return std::move(Output);
@@ -836,7 +889,7 @@ bool emitNC(const Module &M, const VerificationContext &Context,
             EmittedSource &Out, Diagnostics &D) {
   if (!verifyModule(M, Context, D))
     return false;
-  EmittedSource Result = Emitter(M).run();
+  EmittedSource Result = Emitter(M, Context.NativeStaticDestruction).run();
   if (Result.Text.size() > 2 * MaxFrontendResponseBytes) {
     D.push_back({"TR0301",
                  {M.Dependencies.front().Path, 1, 1},
