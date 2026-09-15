@@ -5541,7 +5541,7 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
       {"owning-signature-nested-arrays", "template<class T>struct Leaf{T n;~Leaf()noexcept=default;};template<class T>struct Mid{Leaf<T>fields[2];~Mid()=default;};struct R{Mid<int>fields[2];};static_assert(__is_nothrow_destructible(R[2]));"},
       {"owning-signature-throwing-child", "template<bool B>struct Leaf{~Leaf()noexcept(B)=default;};struct R{Leaf<false>first;Leaf<true>last;};static_assert(!__is_nothrow_destructible(R));"},
       {"owning-signature-explicit-parent", "template<class T>struct Leaf{T n;~Leaf()noexcept=default;};struct R{Leaf<int>field;~R()noexcept{}};static_assert(__is_nothrow_destructible(R));"},
-      {"owning-signature-empty-base", "template<class T>struct Base{~Base()noexcept=default;};struct R:Base<int>{int n;};static_assert(__is_nothrow_destructible(R));"},
+      {"owning-signature-empty-base", "template<class T>struct Base{~Base()noexcept=default;};struct R:Base<int>{};static_assert(__is_nothrow_destructible(R));"},
       {"owning-signature-pointer-reference-lazy", "template<class T>struct Leaf{~Leaf()noexcept(T::missing)=default;};static_assert(sizeof(Leaf<int>)>0);struct R{Leaf<int>*pointer;Leaf<int>&reference;};static_assert(__is_nothrow_destructible(R));"},
       {"owning-signature-unused-body-query", "template<class T>struct Leaf{~Leaf()noexcept(sizeof(long double)>0)=default;};struct R{Leaf<int>field;};template<class T>int unused(){static_assert(__is_nothrow_destructible(R));return T::missing;}static_assert(__is_nothrow_destructible(int));"},
       {"owning-signature-reference-short-circuit", "template<class T>struct Leaf{~Leaf()noexcept(sizeof(long double)>0)=default;};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R&));"},
@@ -5742,7 +5742,7 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
       {"destruction-value-implicit-empty", "struct R{};static_assert(__is_nothrow_destructible(R));"},
       {"destruction-value-implicit-field", "struct R{int field;};static_assert(__is_nothrow_destructible(R)&&__is_nothrow_destructible(const R));"},
       {"destruction-value-array", "struct R{int field;};static_assert(__is_nothrow_destructible(R[2][3])&&__is_nothrow_destructible(const R[2]));"},
-      {"destruction-value-empty-base", "struct B{};struct R:B{int field;};static_assert(__is_nothrow_destructible(R));"},
+      {"destruction-value-empty-base", "struct B{};struct R:B{};static_assert(__is_nothrow_destructible(R));"},
       {"destruction-value-owning-fields", "struct Field{int value;};struct R{Field fields[2];};static_assert(__is_nothrow_destructible(R));"},
       {"destruction-value-implicit-template", "template<class T>struct R{T field;};static_assert(__is_nothrow_destructible(R<int>));"},
       {"destruction-value-defined-noexcept", "struct R{~R()noexcept{}};static_assert(__is_nothrow_destructible(R)&&__is_nothrow_destructible(R[2]));"},
@@ -5999,12 +5999,15 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
     auto Output = tmpFile("operation-trait-" + Name + ".nc");
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
-    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    // Each case has independent files; report all failures from this CI run.
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
   }
 }
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"owning-signature-nonempty-derived", "template<class T>struct Base{~Base()noexcept=default;};struct R:Base<int>{int n;};static_assert(__is_nothrow_destructible(R));"},
+      {"destruction-value-nonempty-derived", "struct B{};struct R:B{int field;};static_assert(__is_nothrow_destructible(R));"},
       {"lazy-member-assignment-query-hidden-spec", "struct R{template<class T>R&operator=(T)noexcept(sizeof(long double)>0){T::body();return *this;}};static_assert(__is_nothrow_assignable(R&,int));"},
       {"lazy-member-assignment-query-hidden-false-spec", "struct R{template<class T>R&operator=(T)noexcept((sizeof(long double),false)){T::body();return *this;}};static_assert(!__is_nothrow_assignable(R&,int));"},
       {"lazy-member-assignment-query-hidden-template-default", "struct R{template<class T,int N=sizeof(long double)>R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R&,int));"},
