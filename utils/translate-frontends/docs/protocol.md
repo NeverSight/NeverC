@@ -940,6 +940,11 @@ runtime helper is introduced for an operand that exists only in a query. Type-on
 alias/template checks retain exact source evidence; actual object and signature
 types continue through ordinary carrier validation. Known inner extents retain
 their size/storage limits, including when the queried result is zero.
+Supported unknown-array operation queries likewise emit only their checked boolean
+result. Direct incomplete-array nothrow destruction retains an explicit no-lookup
+source event; successful reference/decay operations keep their exact source proof.
+The eight-ABI scalar query fixture checks eighteen exports, no globals or function
+parameters, and no additional query helpers.
 See the supported types, index domain and template behavior in the
 [array-query contract](cpp-core-v2.md#array-type-queries).
 

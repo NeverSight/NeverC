@@ -4,6 +4,8 @@
 
 # C++ を NeverC に変換する
 
+Core v2 の操作クエリは、長さが未確定の配列の型情報を検査できます。構築・破棄の早期結果、厳密な参照束縛、配列からポインターへの変換は、対応するソースの証拠を保持します。実行時ストレージの制限は引き続き適用され、ネイティブ検証は実装リビジョンの CI で行います。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
+
 Core v2 は未評価呼び出しで、定義のない名前空間テンプレートの検証済みシグネチャを扱えます。`declval` 型の参照・配列・関数・void フォールバックに対応し、選択結果、シグネチャから消えたテンプレート既定引数、使用した関数既定引数のソースを最終検証します。実行時呼び出しとアドレス取得には定義が必要です。ネイティブ検証は実装版の CI が必要で、標準ヘッダーと完全な C++/STL は未完成です。 定義がソース内にある未使用の名前空間テンプレートにも同じ検証を行い、関数本体は未インスタンス化のまま保ちます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
 
 Core v2 は既定の sized delete 転送に対応します。ソースで再宣言されていない暗黙のグローバル sized delete/delete[] は、対応するソース定義の unsized 演算子を呼び出せます。明示的な sized 定義と元の配列 cookie レイアウトを保持します。既定のアロケーターや例外ランタイムは追加せず、ネイティブ検証には実装版の CI が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).

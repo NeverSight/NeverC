@@ -4,6 +4,8 @@
 
 # 將 C++ 轉譯為 NeverC
 
+Core v2 操作查詢現可檢查未知長度陣列的型別資訊。建構與解構的直接回傳、精確參考繫結及陣列至指標轉換均保留對應原始碼證據；執行期儲存仍受原有限制。原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
+
 Core v2 支援未求值呼叫中經過檢查的命名空間範本宣告簽章，包括 `declval` 使用的參考、陣列、函式和 void 回退模式。實際選擇、從簽章中消失的範本預設引數及已使用的函式預設引數仍須通過最終來源檢查。執行期呼叫和取址仍要求定義。原生驗證以實作版本的 CI 為準；標準標頭及完整 C++/STL 尚未完成。 已有原始碼內定義、但尚未使用的命名空間範本也執行相同的來源檢查，函式本體仍保持惰性。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
 
 Core v2 支援預設 sized delete 轉送：未經原始碼重新宣告的隱含全域 sized delete/delete[] 可呼叫對應的 unsized 定義。明確的 sized 定義優先，陣列保留原運算式的 cookie 配置。此項不提供預設配置器或例外執行環境；原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).

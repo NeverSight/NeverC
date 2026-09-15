@@ -5186,6 +5186,8 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesPreserveSubstitutionAndValues) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unknown-bound-nothrow-destructible", "static_assert(!__is_nothrow_destructible(int[]));"},
+      {"unknown-bound-constructible", "static_assert(!__is_constructible(int[]));"},
       {"structural-unknown-array", "bool f(){return __is_standard_layout(int[]);}"},
       {"unique-unknown-array", "bool f(){return __has_unique_object_representations(int[]);}"},
       {"destruction-unknown-array", "struct R{int n;};bool f(){return __is_trivially_destructible(R[]);}"},
@@ -5432,8 +5434,6 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
       {"unknown-bound-runtime-reference", "using A=int[];void f(A&){}"},
       {"unknown-bound-runtime-global", "using A=int[];extern A values;"},
       {"unknown-bound-runtime-static", "using A=int[];A*value=nullptr;"},
-      {"unknown-bound-constructible", "static_assert(!__is_constructible(int[]));"},
-      {"unknown-bound-nothrow-destructible", "static_assert(!__is_nothrow_destructible(int[]));"},
       {"unknown-bound-incomplete-element", "struct R;static_assert(__is_array(R[]));"},
       {"unknown-bound-union-element", "union R{int n;};static_assert(__is_array(R[]));"},
   };
@@ -5514,6 +5514,32 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluat
 
 TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unknown-construct", "static_assert(!__is_constructible(int[])&&!__is_nothrow_constructible(int[])&&!__is_trivially_constructible(int[]));"},
+      {"unknown-construct-arguments", "static_assert(!__is_constructible(int[],int)&&!__is_constructible(int[][3],int));"},
+      {"unknown-destruction", "static_assert(!__is_nothrow_destructible(int[])&&!__is_nothrow_destructible(const int[][3])&&__is_nothrow_destructible(int(&)[])&&__is_nothrow_destructible(int(&&)[3]));"},
+      {"unknown-reference", "static_assert(__is_constructible(int(&)[],int(&)[])&&__is_nothrow_constructible(const int(&)[],int(&)[])&&__is_trivially_constructible(int(&&)[],int(&&)[]));"},
+      {"unknown-reference-conversion", "static_assert(__is_convertible(int(&)[],const int(&)[])&&__is_nothrow_convertible(int(&&)[],int(&&)[])&&!__is_convertible(const int(&)[],int(&)[]));"},
+      {"unknown-decay", "static_assert(__is_convertible(int[],int*)&&__is_convertible_to(const int[],const int*)&&__is_nothrow_convertible(int[][3],int(*)[3]));"},
+      {"unknown-decay-construction", "static_assert(__is_constructible(int*,int[])&&__is_nothrow_constructible(const int*,int(&)[])&&__is_trivially_constructible(int(*)[3],int[][3]));"},
+      {"unknown-decay-assignment", "static_assert(__is_assignable(int*&,int[])&&__is_nothrow_assignable(const int*&,int(&)[])&&__is_trivially_assignable(int(*&)[3],int[][3]));"},
+      {"unknown-scalar-assignment-false", "static_assert(!__is_assignable(int[],int[])&&!__is_nothrow_assignable(int(&)[],int(&)[])&&!__is_trivially_assignable(int(&)[],int));"},
+      {"unknown-destination-conversion", "struct R{};static_assert(!__is_convertible(int*,int[])&&!__is_convertible(R*,R[])&&!__is_nothrow_convertible(R[],R[]));"},
+      {"unknown-array-pointer", "using P=int(*)[];static_assert(__is_constructible(P)&&__is_trivially_constructible(P,P)&&__is_nothrow_assignable(P&,P)&&__is_convertible(P,const int(*)[]));"},
+      {"unknown-record-construct", "struct R{R()noexcept{}~R()noexcept{}};static_assert(!__is_constructible(R[])&&!__is_nothrow_constructible(R[][3])&&!__is_trivially_constructible(R[]));"},
+      {"unknown-record-reference", "struct R{int n;};static_assert(__is_constructible(R(&)[],R(&)[])&&__is_trivially_constructible(const R(&)[],R(&)[])&&__is_nothrow_convertible(R(&)[],const R(&)[]));"},
+      {"unknown-record-decay", "struct R{int n;};static_assert(__is_convertible(R[],R*)&&__is_nothrow_constructible(const R*,R(&)[])&&__is_trivially_assignable(R*&,R[]));"},
+      {"unknown-record-inner-decay", "struct R{int n;};static_assert(__is_nothrow_convertible(R[][3],R(*)[3])&&__is_nothrow_constructible(const R(*)[3],R[][3]));"},
+      {"unknown-unused-element-destructor", "template<class T>struct R{~R()noexcept(T::missing){T::body();}};static_assert(sizeof(R<int>)==1);static_assert(!__is_nothrow_destructible(R<int>[])&&__is_nothrow_destructible(R<int>(&)[])&&!__is_constructible(R<int>[])&&__is_nothrow_convertible(R<int>[],R<int>*));"},
+      {"unknown-private-element-destructor", "class R{~R()noexcept{}};static_assert(!__is_nothrow_destructible(R[])&&__is_nothrow_destructible(R(&)[]));"},
+      {"unknown-deleted-element-destructor", "struct R{~R()=delete;};static_assert(!__is_nothrow_destructible(R[])&&__is_nothrow_destructible(R(&)[])&&__is_nothrow_constructible(R(&)[],R(&)[]));"},
+      {"unknown-operation-template", "template<class T>constexpr bool test(){return !__is_constructible(T)&&!__is_nothrow_destructible(T)&&__is_convertible(T,int*);}static_assert(test<int[]>());"},
+      {"unknown-operation-alias", "template<class T>using A=T[];template<class T>struct R{static constexpr bool value=__is_nothrow_constructible(T&,T&);};static_assert(R<A<int>>::value);"},
+      {"unknown-operation-pack", "template<class...T>constexpr bool test(){return ((!__is_constructible(T)&&__is_nothrow_destructible(T&))&&...);}static_assert(test<>()&&test<int[],unsigned[][3]>());"},
+      {"unknown-operation-partial", "template<class T>struct R;template<class T>struct R<T[]>{static constexpr bool value=__is_nothrow_convertible(T[],T*);};static_assert(R<int[]>::value);"},
+      {"unknown-operation-parameter", "template<bool B>struct E{};template<>struct E<true>{using type=int;};template<class T,typename E<__is_convertible(int[],T)>::type N=3>constexpr int f(){return N;}static_assert(f<int*>()==3);"},
+      {"unknown-operation-no-effects", "int effects;int next(){return ++effects;}using A=int[][noexcept(next())?2:3];static_assert(__is_nothrow_convertible(A,int(*)[3]));int f(){return effects;}"},
+      {"unknown-unused-element-constructor", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct R{Bad<int>field;};static_assert(!__is_constructible(R[])&&!__is_nothrow_destructible(R[])&&__is_nothrow_convertible(R[],R*));"},
+      {"parameter-operation-unknown-array", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__is_convertible(int[],T)>::type N=3>int f(){return N;}"},
       {"unknown-array", "bool f(){return __is_destructible(int[]);}"},
       {"parameter-operation-construct", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__is_constructible(T)>::type N=3>constexpr int f(){return N;}static_assert(f<int>()==3);"},
       {"parameter-operation-construct-argument", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,class U,typename E<__is_constructible(T,U)>::type N=3>constexpr int f(){return N;}static_assert(f<int,unsigned>()==3);"},
@@ -6149,9 +6175,21 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unknown-record-assignment-incomplete", "struct R{int n;};static_assert(!__is_assignable(R(&)[],R(&)[]));"},
+      {"unknown-record-assignment-nothrow-incomplete", "struct R{int n;};static_assert(!__is_nothrow_assignable(R[],R[]));"},
+      {"unknown-record-reference-failed-operation", "struct R{int n;};static_assert(!__is_constructible(R(&)[],R*));"},
+      {"unknown-operation-wide-element", "static_assert(!__is_nothrow_destructible(long double[]));"},
+      {"unknown-operation-volatile-element", "static_assert(!__is_constructible(volatile int[]));"},
+      {"unknown-operation-hidden-bound", "static_assert(!__is_constructible(int[][sizeof(long double)]));"},
+      {"unknown-operation-erased-default", "template<class T,unsigned N=sizeof(long double)>using A=T[];static_assert(!__is_nothrow_destructible(A<int>));"},
+      {"unknown-operation-element-layout", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct M{Bad<int>field;};struct R{char field[noexcept(M())?1:2];};static_assert(!__is_nothrow_destructible(R[]));"},
+      {"unknown-operation-incomplete-element", "struct R;static_assert(!__is_nothrow_destructible(R[]));"},
+      {"unknown-operation-runtime-reference", "using A=int[];void f(A&){}"},
+      {"unknown-operation-runtime-pointer", "using P=int(*)[];P f(){return nullptr;}"},
+      {"unknown-operation-constructor-parameter", "struct R{R(int(&)[])noexcept{}};static_assert(__is_constructible(R,int(&)[]));"},
+      {"unknown-operation-inner-storage", "static_assert(!__is_constructible(int[][65536][4]));"},
       {"parameter-operation-nested-type", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__is_constructible(T*)>::type N=3>int f(){return N;}"},
       {"parameter-operation-wide-operand", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__is_constructible(T,long double)>::type N=3>int f(){return N;}"},
-      {"parameter-operation-unknown-array", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__is_convertible(int[],T)>::type N=3>int f(){return N;}"},
       {"parameter-operation-unsupported-kind", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__has_trivial_destructor(T)>::type N=3>int f(){return N;}"},
       {"parameter-operation-selected-source", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T>struct R{R()noexcept(sizeof(T)==sizeof(long double)){T::body();}};template<class T,typename E<__is_constructible(T)>::type N=3>int f(){return N;}int g(){return f<R<int>>();}"},
       {"lazy-class-call-incomplete-query", "template<class T>struct R{operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>bool unused(){return __is_nothrow_convertible(R<T>,T);}static_assert(__is_class(R<int>));"},

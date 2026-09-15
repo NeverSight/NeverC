@@ -4,6 +4,8 @@
 
 # Tradurre C++ in NeverC
 
+Le query di operazione Core v2 esaminano array di lunghezza sconosciuta tramite tipi verificati. I risultati immediati di costruzione e distruzione, i legami dei riferimenti e le conversioni a puntatori conservano le prove del sorgente. Lo storage resta limitato; la verifica nativa richiede la CI della revisione. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
+
 Core v2 ammette firme verificate di template di funzione dichiarati senza definizione nei namespace per chiamate non valutate, inclusi riferimenti, array, funzioni e il caso void di `declval`. La selezione e gli argomenti predefiniti utilizzati mantengono il controllo finale delle sorgenti, anche quando scompaiono dalla firma. Le chiamate a runtime e gli indirizzi richiedono definizioni. La verifica nativa dipende dalla CI della revisione; gli header standard e C++/STL completo restano incompleti. Lo stesso controllo copre i template inutilizzati con definizione nelle sorgenti; i corpi restano non istanziati. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
 
 Core v2 supporta l’inoltro predefinito di sized delete: un sized delete/delete[] globale implicito senza ridichiarazioni nel sorgente può chiamare il corrispondente operatore unsized definito nel sorgente. Le definizioni sized esplicite hanno la precedenza e il cookie dell’array conserva la disposizione originale. Non vengono aggiunti allocatori predefiniti né runtime delle eccezioni; la verifica nativa richiede la CI della revisione. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).

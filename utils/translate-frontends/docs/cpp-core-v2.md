@@ -840,7 +840,7 @@ element layout-source dependencies; pointers/references keep the existing policy
 of checking type/bound source without consuming pointee record layout. Ordinary
 and trivial destructibility preserve the incomplete-value false and reference
 true results without selecting an element destructor. Nothrow destruction and
-other operation queries retain their separate complete-carrier restrictions.
+other operation queries use the checked type-only operation contract below.
 
 Core v2 accepts the standard class `final` keyword on otherwise admitted ordinary,
 nested and template record definitions, including partial/full specializations,
@@ -902,7 +902,7 @@ same source gate. This proof reuses the checked source rules below, without turn
 metadata classification into a hypothetical construction or destruction query.
 Pointer/reference spelling keeps unconsumed pointee layout lazy; declaration-only
 dependent parameter queries retain their existing path. The paired classification
-corpus has 155 accepted, 82 unsupported-source and fourteen invalid-C++ cases.
+corpus has 157 accepted, 80 unsupported-source and fourteen invalid-C++ cases.
 
 The builtin spelling does not expand the operand domain. Volatile types, member
 pointers, incomplete/union types and `long double` remain rejected, even for a
@@ -988,13 +988,33 @@ A dependent operation query in a non-type template parameter declaration type
 can use direct type parameters from that exact written parameter list and concrete
 admitted operands. It shares the supported trait arities with concrete queries,
 but never reads a dependent boolean or invents a semantic operation event. Nested
-dependent pointer/alias shapes and unknown-bound operation operands remain excluded;
+dependent pointer/alias shapes remain excluded;
 each selected substitution still needs its own concrete type and retained source proof.
-The paired 621 accepted, 352 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
-these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
+The paired 647 accepted, 364 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
+these boundaries. Twenty-four scalar saved-NC O0/O2 runtime checkpoints, relocation and eighteen
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
 introduced.
+
+### Unknown-bound array operation types
+
+Supported operation queries can inspect `int[]`, `R[][3]`, aliases and their
+pointer/reference wrappers through bounded type-only validation. The element must
+already be complete and admitted. Incomplete array destinations preserve the
+construction query's early false result; nothrow destruction preserves false for
+an incomplete array and true for a reference without looking up or resolving the
+element destructor. A retained selection event must show no destructor, prototype
+or attempted lookup on those paths.
+
+Exact reference bindings and array-to-element-pointer decay retain the normal
+complete hypothetical operation, original operand identities and source graphs.
+Failed record-array assignment or reference initialization still needs complete
+source evidence and remains rejected when the producer retained only a failed
+attempt. Inner bounds, aliases, selected defaults and consumed element layout stay
+checked even for false results. Unselected element constructors/destructors stay
+lazy. Actual function parameters, callback signatures, expressions and object
+storage still require ordinary supported runtime carriers; these queries do not
+add an unknown-array storage representation or adopt C++20 conversions.
 
 ### Implicit trivial record operations
 
@@ -1034,9 +1054,9 @@ selects only an implicit copy/move operation. Written query types, aliases, boun
 and defaults retain their ordinary source checks.
 
 The source checker does not populate runtime construction/default caches or queue
-runtime helpers. A separate fourteen-checkpoint O0/O2 fixture exercises query values,
+runtime helpers. A separate eighteen-checkpoint O0/O2 fixture exercises query values,
 zero query effects, actual copy/assignment/reference identity and real destruction.
-Eight exported boolean functions check that no hypothetical calls or record locals
+Thirteen exported boolean functions check that no hypothetical calls or record locals
 enter the protocol; relocation remains deterministic. Native validation requires
 the implementing revision's CI.
 

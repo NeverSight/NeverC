@@ -566,8 +566,9 @@ EvaluateArrayTypeTrait: ArrayType dimensions count toward rank, while an unknown
 or missing dimension has extent zero. A bounded array/pointer/reference detector
 selects separate type-only validation at written/concrete template arguments,
 alias-template underlying sources, retained replacements and ordinary aliases.
-Classification and array queries explicitly admit this metadata; operation roots
-and actual expression/signature/storage types retain the ordinary carrier gate.
+Classification, array queries and retained hypothetical operation roots explicitly
+admit this metadata; actual expression/signature/storage types retain the ordinary
+carrier gate.
 Known inner extents, qualifiers, complete elements and exact source dependencies
 remain checked without asking for an incomplete array's size or inventing a count.
 The existing pointer/reference layout-source policy is unchanged. Pinned ordinary
@@ -580,3 +581,11 @@ notice. BLAKE3/LICENSE and NeverCCppThirdPartyNotices.txt retain the additional
 notices for the statically included Support sources. The separate cpp-sdk
 directory contains the exact header source snapshot, hashes, provenance,
 generation script, and notices for the embedded C++ header distribution.
+Unknown-bound operation operands follow the same complete-element metadata
+check. Pinned construction returns false for an incomplete destination before
+allocating hypothetical operands; direct incomplete-array nothrow destruction
+returns false before destructor lookup, while references return true. The exact
+no-lookup event must have no destructor/prototype/attempt flags. Successful array
+reference/decay operations retain their complete root and opaque operand identity;
+failed record-array assignment cannot borrow a false-result shortcut. No runtime
+carrier, source replay or new producer event is added.

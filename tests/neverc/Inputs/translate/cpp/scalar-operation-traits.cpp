@@ -56,6 +56,15 @@ static_assert(!constructible<int, int, int>() && !constructible<void>());
 static_assert(all_destructible<>() && all_destructible<int, int*, Null>());
 static_assert(!all_destructible<int, void>());
 
+using Unknown = int[];
+using UnknownRows = int[][3];
+extern "C" bool trait_unknown_construct() { return __is_constructible(Unknown); }
+extern "C" bool trait_unknown_destruct() { return __is_nothrow_destructible(Unknown); }
+extern "C" bool trait_unknown_reference() { return __is_nothrow_constructible(Unknown&,Unknown&); }
+extern "C" bool trait_unknown_convert() { return __is_nothrow_convertible(UnknownRows,int(*)[3]); }
+extern "C" bool trait_unknown_assign() { return __is_trivially_assignable(int*&,Unknown); }
+extern "C" bool trait_unknown_pointer() { return __is_constructible(Unknown*); }
+
 int main() {
   if (!trait_construct() || !trait_nothrow_construct() ||
       !trait_trivial_construct()) return 1;
@@ -109,5 +118,17 @@ int main() {
       __is_convertible(int, void) || !__is_convertible(void, void) ||
       !__is_assignable(int&, int) || effects != 1 ||
       constructions || destructions) return 20;
+  if (trait_unknown_construct() || trait_unknown_destruct() ||
+      !trait_unknown_reference() || !trait_unknown_convert() ||
+      !trait_unknown_assign() || !trait_unknown_pointer()) return 21;
+  if (constructible<Unknown>() || Default<Unknown>::value ||
+      !all_destructible<Unknown&, Unknown*>() || all_destructible<Unknown>() ||
+      !constructible<int*, Unknown>() || !constructible<Unknown&, Unknown&>()) return 22;
+  if (__is_assignable(Unknown&, Unknown&) ||
+      !__is_nothrow_convertible(Unknown&, const int*) ||
+      !__is_nothrow_assignable(int(*&)[3], UnknownRows) ||
+      __is_convertible(int*, Unknown)) return 23;
+  if (!__is_constructible(int(*)[3], int[][noexcept(next())?2:3]) ||
+      effects != 1 || constructions || destructions) return 24;
   return 0;
 }

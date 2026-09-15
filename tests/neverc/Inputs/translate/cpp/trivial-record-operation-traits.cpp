@@ -23,6 +23,19 @@ extern "C" bool record_nothrow() { return __is_nothrow_constructible(Nested, Nes
 static_assert(constructs<Plain>() && constructs<Plain, Plain>() && constructs<Plain, const Plain&>());
 static_assert(__is_constructible(Lazy<int>, Lazy<int>) && __is_assignable(Lazy<int>&, Lazy<int>));
 
+using UnknownRecord = Plain[];
+template<class T> struct UnknownLazy {
+  T value;
+  ~UnknownLazy() noexcept(T::missing) { T::destroy(); }
+};
+static_assert(sizeof(UnknownLazy<int>) == sizeof(int));
+using UnknownPoison = UnknownLazy<int>[];
+extern "C" bool record_unknown_construct() { return __is_constructible(UnknownRecord); }
+extern "C" bool record_unknown_destruct() { return __is_nothrow_destructible(UnknownPoison); }
+extern "C" bool record_unknown_reference() { return __is_nothrow_constructible(UnknownPoison&,UnknownPoison&); }
+extern "C" bool record_unknown_convert() { return __is_nothrow_convertible(UnknownPoison,UnknownLazy<int>*); }
+extern "C" bool record_unknown_assign() { return __is_trivially_assignable(Plain*&,UnknownRecord); }
+
 int main() {
   if (!record_default() || !record_copy() || !record_assign() || !record_convert() ||
       !record_reference() || record_false()) return 1;
@@ -61,5 +74,17 @@ int main() {
   if (!record_nothrow() || !__is_nothrow_constructible(Plain[2]) ||
       !__is_nothrow_assignable(Nested&, Nested) || !__is_nothrow_convertible(Plain, Plain) ||
       destructions != 1 || effects) return 14;
+  if (record_unknown_construct() || record_unknown_destruct() ||
+      !record_unknown_reference() || !record_unknown_convert() ||
+      !record_unknown_assign() || effects || destructions != 1) return 15;
+  if (__is_constructible(UnknownPoison) ||
+      !__is_nothrow_destructible(UnknownPoison&) ||
+      !__is_convertible(UnknownPoison&, const UnknownPoison&) ||
+      !__is_trivially_constructible(UnknownRecord&, UnknownRecord&)) return 16;
+  if (!__is_nothrow_convertible(Plain[][3], Plain(*)[3]) ||
+      !__is_nothrow_assignable(Plain(*&)[3], Plain[][3]) ||
+      __is_convertible(Plain*, UnknownRecord) || constructs<UnknownRecord>()) return 17;
+  if (!__is_convertible(decltype((++effects, Plain{}))[], Plain*) ||
+      effects || destructions != 1) return 18;
   return 0;
 }
