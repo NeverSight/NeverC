@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 339 accepted, 244 unsupported-source, fifteen missing-definition and twelve invalid-C++ cases cover
+The paired 355 accepted, 254 unsupported-source, fifteen missing-definition and twelve invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1131,9 +1131,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has forty-two O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has forty-five O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Forty-seven exported query
+default evaluation with full-expression temporary cleanup. Forty-nine exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1183,8 +1183,17 @@ An implicit enum value follows the nearest preceding explicit initializer withou
 recomputing its value. Parameter references do not select their defaults; actual
 default-argument expressions retain that selection. The proof conservatively
 checks an already materialized constexpr body even for an unevaluated reference,
-but never materializes a missing body. Implicit special members keep their
-existing family proof. Semantic visit-once state is separate from graph-node
+but never materializes a missing body. Collected generated-operation dependencies
+can use ordinary explicitly defaulted trivial methods after exact original
+redeclaration/type/specification checks, while owning subobject families remain
+implicit. Nontrivial generated methods require a separate completion node from
+their existing successful semantic initializer/body traversal, including the
+owning layout source. An emission queue entry alone is insufficient. Written
+template defaulting and unmaterialized nontrivial bodies need further evidence.
+Generated array assignment may replace selected element calls with `memcpy`;
+record elements therefore retain a separate implicit assignment-family proof.
+This source-only composition does not widen the hypothetical operation root or
+its evaluated-default scan. Semantic visit-once state is separate from graph-node
 creation, so value initializers cannot hide cached semantic children.
 Consumed type metadata also has exact completion nodes, keyed by the original
 qualified type and `TypeLoc` source identity. Normal type traversal captures array
@@ -1288,9 +1297,10 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared forty-two-checkpoint user-operation fixture checks
+queries. The shared forty-five-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
-independent storage, template operations and user/generated array destruction at O0/O2;
+independent storage, template operations, constexpr generated source values and
+user/generated array destruction at O0/O2;
 relocation must preserve the protocol. Native results require implementing CI.
 Standard headers and complete C++/STL support remain unfinished.
 

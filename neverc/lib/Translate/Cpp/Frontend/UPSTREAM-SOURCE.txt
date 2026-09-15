@@ -332,6 +332,16 @@ actual signature traversal. Their body stays lazy; runtime-used definitions are
 still required. Selected
 operation/default/destruction source consumes the complete transitive graph,
 including ordinary non-nothrow queries, without replay or extra Sema work.
+Collected generated operation dependencies can use exact ordinary trivial
+defaulting source with implicit owning families, or a separate completion node
+from the existing finishGeneratedMethods traversal. That node includes semantic
+constructor initializers, body and owning layout and completes only on success;
+the runtime emission queue is not a source certificate. Actual written
+redeclarations and current specs remain required; written template defaulting
+cannot borrow the proof. SemaDeclCXX.cpp buildSingleCopyAssign can omit selected
+record-array element calls in favor of memcpy, so the existing exact generated
+array recognition also records an independent implicit assignment-family edge.
+These graph changes do not alter hypothetical-root or evaluated-default admission.
 Variable and enum references retain actual initializer dependencies, including
 implicit-enumerator predecessors and previously cached variable templates.
 Already materialized user-provided constexpr bodies and constructor initializers

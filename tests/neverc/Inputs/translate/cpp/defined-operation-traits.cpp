@@ -114,6 +114,20 @@ struct SignatureOwner {
                             noexcept(lazyFriend(LazyFriendTag<int>{}, 0))) {}
 };
 using FriendResult = decltype(lazyFriend(LazyFriendTag<int>{}, 0));
+struct SourceAssignmentValue {
+  int value;
+  constexpr SourceAssignmentValue &operator=(const SourceAssignmentValue&) = default;
+};
+constexpr int sourceAssignment() {
+  SourceAssignmentValue first{1}, second{3};
+  first = second;
+  return first.value;
+}
+struct SourceGeneratedLeaf { int value; constexpr SourceGeneratedLeaf() : value(5) {} };
+struct SourceGeneratedOwner { SourceGeneratedLeaf field; constexpr SourceGeneratedOwner() = default; };
+constexpr int sourceConstruction() { SourceGeneratedOwner owner; return owner.field.value; }
+using AssignmentExtent = int[sourceAssignment()];
+using ConstructionExtent = int[sourceConstruction()];
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -162,6 +176,8 @@ extern "C" bool defined_decltype_pointer() { return __is_constructible(CommaResu
 extern "C" bool defined_decltype_false() { return __is_convertible(CommaResult*, int*); }
 extern "C" bool defined_lazy_signature() { return __is_nothrow_constructible(SignatureOwner); }
 extern "C" bool defined_lazy_friend_alias() { return __is_constructible(FriendResult); }
+extern "C" bool defined_generated_assignment_source() { return __is_constructible(AssignmentExtent*); }
+extern "C" bool defined_generated_construction_source() { return __is_constructible(ConstructionExtent*); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -299,5 +315,14 @@ int main() {
       constructions != 6 || destructions != 10) return 41;
   if (!defined_lazy_signature() || !defined_lazy_friend_alias() || lazy_signature_calls ||
       default_calls != 2 || destructions != 10) return 42;
+  if (!defined_generated_assignment_source() || !defined_generated_construction_source() ||
+      sourceAssignment() != 3 || sourceConstruction() != 5 || lazy_signature_calls) return 43;
+  SourceAssignmentValue first{2}, second{7};
+  first = second;
+  first.value = 11;
+  if (first.value != 11 || second.value != 7 || &first == &second) return 44;
+  SourceGeneratedOwner generated;
+  if (generated.field.value != 5 || !defined_generated_construction_source() ||
+      default_calls != 2 || constructions != 6 || destructions != 10) return 45;
   return 0;
 }

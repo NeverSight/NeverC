@@ -1388,6 +1388,7 @@ static OperationTypeSourceKey operationTypeSourceKey(TypeLoc Location) {
 }
 struct OperationSourceDependencies {
   std::set<const CXXMethodDecl *> Families;
+  std::set<const CXXRecordDecl *> ArrayAssignments;
   std::set<const CXXRecordDecl *> Destructions;
   std::set<const Stmt *> Expressions;
   std::set<OperationTypeSourceKey> Types;
@@ -1398,6 +1399,7 @@ struct OperationExpressionSource {
 };
 using OperationExpressionSources = std::map<const Stmt *, OperationExpressionSource>;
 using OperationTypeSources = std::map<OperationTypeSourceKey, OperationExpressionSource>;
+using GeneratedOperationSources = std::map<const CXXMethodDecl *, OperationExpressionSource>;
 using OperationDefaultSources =
     std::map<std::pair<const ParmVarDecl *, const Expr *>, const OperationSourceDependencies *>;
 
@@ -1757,16 +1759,18 @@ enum class OperationFamily { Default, CopyMove, Assignment };
 // operations without generating a body. Source-only uses retain the family
 // checks and validate collected destruction dependencies separately.
 static bool implicitOperationFamilySource(Adapter &A, const CXXRecordDecl *Record,
-    OperationFamily Operation, bool CheckDestruction, unsigned Depth = 0) {
+    OperationFamily Operation, bool CheckDestruction, unsigned Depth = 0,
+    bool CheckRootDeclarations = true) {
   Record = Record ? Record->getDefinition() : nullptr;
   if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
     return false;
   A.chargeExpansion(1, Record->getLocation());
-  if ((Operation == OperationFamily::Default && Record->hasUserDeclaredConstructor()) ||
+  if ((CheckRootDeclarations &&
+      ((Operation == OperationFamily::Default && Record->hasUserDeclaredConstructor()) ||
       (Operation == OperationFamily::CopyMove && (Record->hasUserDeclaredCopyConstructor() ||
                                                 Record->hasUserDeclaredMoveConstructor())) ||
       (Operation == OperationFamily::Assignment && (Record->hasUserDeclaredCopyAssignment() ||
-                                                   Record->hasUserDeclaredMoveAssignment())) ||
+                                                   Record->hasUserDeclaredMoveAssignment())))) ||
       (CheckDestruction && Operation != OperationFamily::Assignment &&
        (Record->hasUserDeclaredDestructor() || !Record->hasTrivialDestructor())))
     return false;
@@ -1849,12 +1853,14 @@ class OperationSourceChecker {
   const std::set<const FunctionDecl *> *Definitions;
   const OperationExpressionSources *Expressions;
   const OperationTypeSources *Types;
+  const GeneratedOperationSources *Generated;
   std::vector<const OperationSourceDependencies *> Work;
 
 public:
   OperationSourceChecker(Adapter &A, const std::set<const FunctionDecl *> *Definitions,
-      const OperationExpressionSources *Expressions, const OperationTypeSources *Types)
-      : A(A), Definitions(Definitions), Expressions(Expressions), Types(Types) {}
+      const OperationExpressionSources *Expressions, const OperationTypeSources *Types,
+      const GeneratedOperationSources *Generated = nullptr)
+      : A(A), Definitions(Definitions), Expressions(Expressions), Types(Types), Generated(Generated) {}
   void add(const OperationSourceDependencies *Dependencies) { Work.push_back(Dependencies); }
   bool requireExpression(const Stmt *Expression) {
     if (!Expression)
@@ -1892,14 +1898,12 @@ public:
            prototypeSource(Function->getType()->getAs<FunctionProtoType>()) &&
            prototypeSource(Definition->getType()->getAs<FunctionProtoType>());
   }
-  bool generatedDestructor(const CXXDestructorDecl *Destructor) {
-    if (!Destructor || !defaultedLifecycle(Destructor) ||
-        !A.S.owns(A.Sources, Destructor->getLocation()) ||
-        (!Destructor->isImplicit() &&
-         Destructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate))
+  bool generatedDeclaration(const CXXMethodDecl *Method) {
+    if (!Method || !A.S.owns(A.Sources, Method->getLocation()) ||
+        (!Method->isImplicit() && Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate))
       return false;
     bool WrittenDefaulting = false;
-    for (const auto *Declaration : Destructor->redecls()) {
+    for (const auto *Declaration : Method->redecls()) {
       A.chargeExpansion(1, Declaration->getLocation());
       if (!A.S.owns(A.Sources, Declaration->getLocation()))
         return false;
@@ -1920,13 +1924,44 @@ public:
         if (!Prototype || Prototype->getExceptionSpecType() != EST_Unevaluated ||
             !Prototype->getExceptionSpecDecl() ||
             Prototype->getExceptionSpecDecl()->getCanonicalDecl() !=
-                Destructor->getCanonicalDecl())
+                Method->getCanonicalDecl())
           return false;
       }
       if (!prototypeSource(Prototype))
         return false;
     }
-    return Destructor->isImplicit() || WrittenDefaulting;
+    return Method->isImplicit() || WrittenDefaulting;
+  }
+  bool generatedDestructor(const CXXDestructorDecl *Destructor) {
+    return Destructor && defaultedLifecycle(Destructor) && generatedDeclaration(Destructor);
+  }
+  bool generatedOperation(const CXXMethodDecl *Method) {
+    if (implicitSpecialMemberSource(A, Method, false))
+      return true;
+    const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Method);
+    if (!(Constructor ? (defaultedLifecycle(Constructor) || defaultedCopyOrMoveConstructor(Constructor))
+                      : defaultedAssignment(Method)) || !generatedDeclaration(Method))
+      return false;
+    if (Method->isTrivial()) {
+      // The exact written root has its own declaration proof. Subobjects still
+      // require the original implicit-family proof, with no written exception
+      // source borrowed from a selected-but-unmaterialized child operation.
+      const auto Family = Constructor
+          ? (Constructor->isDefaultConstructor() ? OperationFamily::Default : OperationFamily::CopyMove)
+          : OperationFamily::Assignment;
+      return implicitOperationFamilySource(A, Method->getParent(), Family, false, 0, false);
+    }
+    const FunctionDecl *BodyOwner = nullptr;
+    if (!Generated || !Method->hasBody(BodyOwner))
+      return false;
+    const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(BodyOwner);
+    if (!Definition || !generatedDeclaration(Definition))
+      return false;
+    auto Found = Generated->find(Definition);
+    if (Found == Generated->end() || !Found->second.Complete)
+      return false;
+    add(&Found->second.Dependencies);
+    return true;
   }
   bool destruction(const CXXRecordDecl *Record, unsigned Depth = 0) {
     Record = Record ? Record->getDefinition() : nullptr;
@@ -1971,7 +2006,10 @@ public:
         continue;
       A.chargeExpansion(1, L);
       for (const auto *Method : Dependencies->Families)
-        if (!implicitSpecialMemberSource(A, Method, false))
+        if (!generatedOperation(Method))
+          return false;
+      for (const auto *Record : Dependencies->ArrayAssignments)
+        if (!implicitOperationFamilySource(A, Record, OperationFamily::Assignment, false))
           return false;
       for (const auto *Record : Dependencies->Destructions)
         if (!destruction(Record))
@@ -2037,12 +2075,13 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     bool RequiresExceptionSource = false,
     const OperationDefaultSources *Defaults = nullptr,
     const OperationExpressionSources *Expressions = nullptr,
-    const OperationTypeSources *Types = nullptr) {
+    const OperationTypeSources *Types = nullptr,
+    const GeneratedOperationSources *Generated = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
     return false;
-  OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types);
+  OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated);
   auto PrototypeSource = [&](const FunctionProtoType *Prototype) {
     return SourceCheck.prototypeSource(Prototype);
   };
@@ -3620,6 +3659,7 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
+  GeneratedOperationSources CompletedGeneratedOperations;
   OperationDefaultSources CompletedOperationDefaults;
   std::map<const Expr *, OperationSourceDependencies> SharedOperationDefaults;
   std::vector<OperationSourceDependencies *> ActiveOperationSources;
@@ -9519,6 +9559,7 @@ public:
         // collected dependencies while retaining each parameter's own completion.
         auto &Shared = SharedOperationDefaults[Init];
         Shared.Families.insert(Dependencies.Families.begin(), Dependencies.Families.end());
+        Shared.ArrayAssignments.insert(Dependencies.ArrayAssignments.begin(), Dependencies.ArrayAssignments.end());
         Shared.Destructions.insert(Dependencies.Destructions.begin(), Dependencies.Destructions.end());
         Shared.Expressions.insert(Dependencies.Expressions.begin(), Dependencies.Expressions.end());
         Shared.Types.insert(Dependencies.Types.begin(), Dependencies.Types.end());
@@ -9946,6 +9987,20 @@ public:
                  "Expected an admitted defaulted definition with a semantic body.");
         continue;
       }
+      auto &Source = CompletedGeneratedOperations[Method];
+      const auto ActiveDepth = ActiveOperationSources.size();
+      if (OperationSourceDepth >= 64) {
+        A.reject(Method->getLocation(), "generated operation source depth",
+                 "Nested generated operation source exceeds the depth limit.");
+        return false;
+      }
+      A.chargeExpansion(1, Method->getLocation());
+      ActiveOperationSources.push_back(&Source.Dependencies);
+      ++OperationSourceDepth;
+      auto RestoreSource = llvm::make_scope_exit([&] {
+        ActiveOperationSources.resize(ActiveDepth);
+        --OperationSourceDepth;
+      });
       auto *SavedMethod = CurrentMethod;
       auto *SavedFunction = CurrentFunction;
       auto SavedOwner = ImplicitInitializerOwner;
@@ -9961,6 +10016,10 @@ public:
       A.type(Method->getThisType(), Method->getLocation());
       for (const auto *Parameter : Method->parameters())
         A.type(Parameter->getType(), Method->getLocation());
+      // The semantic body can be empty or omit a field operation. Keep the
+      // owner's actual layout source alongside all traversed initializers.
+      collectOperationTypeSource(A.Context.getRecordType(Method->getParent()),
+                                 Method->getLocation(), true);
       if (C) {
         std::set<const Decl *> Initialized;
         for (const auto *I : C->inits()) {
@@ -9977,6 +10036,7 @@ public:
       }
       if (!TraverseStmt(const_cast<CompoundStmt *>(Body)))
         return false;
+      Source.Complete = A.S.Diagnostics.empty();
       A.Functions.push_back(const_cast<CXXMethodDecl *>(Method));
     }
     return A.S.Diagnostics.empty();
@@ -9988,14 +10048,14 @@ public:
     for (const auto *Query : A.PendingOperationQueries) {
       auto Source = A.OperationTraits.find(Query);
       OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
-          &CheckedOperationExpressions, &CheckedOperationTypes);
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations);
       const bool Complete = Source != A.OperationTraits.end() &&
           (Query->getTrait() == UTT_IsNothrowDestructible
             ? nothrowDestructionSource(A, Query, Source->second, &SourceCheck)
             : operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
                                    operationTraitNeedsExceptionSource(Query->getTrait()),
                                    &CompletedOperationDefaults, &CheckedOperationExpressions,
-                                   &CheckedOperationTypes));
+                                   &CheckedOperationTypes, &CompletedGeneratedOperations));
       if (!Complete) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact ordinary definitions, arguments and destruction source.");
@@ -10008,7 +10068,7 @@ public:
     // pre-operation false results, after all ordinary source nodes complete.
     for (const auto *Query : OperationTypeQueries) {
       OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
-          &CheckedOperationExpressions, &CheckedOperationTypes);
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations);
       if (!SourceCheck.requireExpression(Query) || !SourceCheck.finish(Query->getExprLoc())) {
         A.reject(Query->getExprLoc(), "operation query type source",
                  "Every consumed operation type requires completed original source dependencies.");
@@ -11279,6 +11339,12 @@ public:
           A.type(Copy->Type, L);
           if (A.storageUnits(Copy->Type) > 200000)
             A.reject(L, "generated array assignment", "Array assignment exceeds the storage limit.");
+          // Sema can replace selected element assignments with memcpy. Their
+          // inferred exception source is then absent from the generated body.
+          if (const auto *Record = A.Context.getBaseElementType(Copy->Type)->getAsCXXRecordDecl())
+            for (auto *Dependencies : ActiveOperationSources)
+              if (Dependencies->ArrayAssignments.insert(Record).second)
+                A.chargeExpansion(1, L);
           GeneratedArrayAssignments.insert(Call);
           const Expr *E = Call->getCallee();
           while (true) {

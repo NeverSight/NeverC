@@ -819,6 +819,13 @@ the original written node and the distinct resolved node require completion.
 Referenced unused inline friends require exact retained declaration/selection
 evidence and their concrete signature checks; their bodies and unselected defaults
 remain lazy. Actual runtime uses still require a materialized definition.
+Generated operations consumed by query source require either checked ordinary
+trivial defaulting with implicit owning families or an exact completed generated
+definition. That completion includes normal semantic initializer/body traversal
+and owning layout; it is independent of the emission queue. Generated record-array
+memcpy retains a separate implicit assignment-family source requirement because
+the selected element call may be absent from the body. This does not widen the
+hypothetical operation root or admit written template defaulting.
 Variable/enum initializers and already materialized constexpr value source retain
 their own completion nodes. Exact written type nodes retain earlier array bounds,
 alias/template source and consumed record layout dependencies. Function parameter
