@@ -4,6 +4,8 @@
 
 # C++ nach NeverC übersetzen
 
+Core-v2-Typmetadaten unterstützen unvollständige Nicht-Union-Klassen aus eigenen Quellen, einschließlich Vorwärtsdeklarationen und nicht instanziierter Templates. Klassifikation und Array-Dimensionen behalten ihre Quellidentität ohne Record-Speicher. Laufzeittypen, Callbacks und Operationsabfragen benötigen weiterhin vollständige unterstützte Typen. Die native Prüfung erfolgt in der CI der Implementierung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+
 Core-v2-Operationsabfragen prüfen nun Arrays unbekannter Länge anhand ihrer Typinformationen. Frühe Ergebnisse für Konstruktion und Destruktion sowie Referenzbindungen und Zeigerkonvertierungen behalten ihre Quellnachweise. Die Speichergrenzen gelten weiter; die native Prüfung erfolgt in der CI der Implementierung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 
 Core v2 unterstützt geprüfte Signaturen nur deklarierter Namespace-Funktionstemplates in nicht ausgewerteten Aufrufen, einschließlich Referenzen, Arrays, Funktionen und der void-Auswahl von `declval`. Auswahl und verwendete Standardargumente werden auch dann abschließend anhand ihrer Quellen geprüft, wenn sie aus der Signatur verschwinden. Laufzeitaufrufe und Adressen benötigen weiterhin Definitionen. Native Validierung erfordert die CI dieser Implementierung; Standardheader und vollständiges C++/STL sind noch nicht fertig. Dieselbe Quellenprüfung gilt für ungenutzte Namespace-Templates mit eigener Definition; ihre Funktionskörper bleiben nicht instanziiert. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).

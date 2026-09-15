@@ -4,6 +4,8 @@
 
 # C++를 NeverC로 변환
 
+Core v2 형식 메타데이터는 소유한 소스의 불완전한 비공용체 클래스를 지원합니다. 전방 선언과 인스턴스화되지 않은 템플릿 형식의 분류 및 배열 차원을 저장소 생성 없이 검사합니다. 실행 시 형식, 콜백, 연산 질의에는 여전히 지원되는 완전한 형식이 필요합니다. 네이티브 검증은 구현 리비전의 CI에서 수행합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+
 Core v2 연산 질의는 길이가 정해지지 않은 배열의 형식 정보를 검사합니다. 생성과 소멸의 조기 결과, 정확한 참조 바인딩, 배열에서 포인터로의 변환은 해당 소스 증거를 유지합니다. 실행 시 저장소 제한은 계속 적용되며 네이티브 검증은 구현 리비전의 CI에서 수행합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 
 Core v2는 평가되지 않는 호출에서 정의가 없는 네임스페이스 템플릿의 검증된 시그니처를 지원합니다. `declval`의 참조·배열·함수·void 대체 패턴을 포함하며, 실제 선택과 시그니처에서 사라진 템플릿 기본 인수, 사용된 함수 기본 인수의 소스를 최종 검사합니다. 런타임 호출과 주소 취득에는 정의가 필요합니다. 네이티브 검증에는 구현 버전의 CI가 필요하며, 표준 헤더와 완전한 C++/STL은 아직 미완성입니다. 소스에 정의가 있는 미사용 네임스페이스 템플릿에도 같은 검사를 적용하며, 함수 본문은 인스턴스화하지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).

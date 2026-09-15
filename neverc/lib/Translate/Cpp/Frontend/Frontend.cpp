@@ -1754,15 +1754,43 @@ static bool incompleteArrayMetadataType(QualType T) {
   return false;
 }
 
+static bool incompleteRecordMetadataType(QualType T) {
+  for (unsigned Depth = 0; Depth <= 64 && !T.isNull(); ++Depth) {
+    const auto *Raw = T.getCanonicalType().getTypePtr();
+    if (const auto *Record = Raw->getAsCXXRecordDecl())
+      return !Record->getDefinition();
+    if (const auto *Array = dyn_cast<ArrayType>(Raw))
+      T = Array->getElementType();
+    else if (Raw->isPointerType() || Raw->isReferenceType())
+      T = Raw->getPointeeType();
+    else
+      return false;
+  }
+  return false;
+}
+
+static bool incompleteRecordMetadataIdentity(Adapter &A, const CXXRecordDecl *D) {
+  // This is only a type identity gate. Template uses, copied member origins and
+  // written declaration sources retain their independent allowlist traversal.
+  // A primary's body never completes an uninstantiated actual specialization.
+  return D && !D->getDefinition() && !D->isInvalidDecl() && D->getIdentifier() &&
+         !D->isUnion() && !D->isLambda() && !D->isLocalClass() &&
+         !D->isInjectedClassName() && !hasNonFinalAttributes(D) &&
+         !D->getFriendObjectKind() && A.S.owns(A.Sources, D->getLocation()) &&
+         isa<TranslationUnitDecl, NamespaceDecl, CXXRecordDecl>(D->getDeclContext()) &&
+         isa<TranslationUnitDecl, NamespaceDecl, CXXRecordDecl>(D->getLexicalDeclContext());
+}
+
 void Adapter::checkTypeOnly(QualType T, SourceLocation L) {
-  if (incompleteArrayMetadataType(T))
-    checkQueryType(T, L, true);
+  if (incompleteArrayMetadataType(T) || incompleteRecordMetadataType(T))
+    checkQueryType(T, L, true, true);
   else
     type(T, L, true);
 }
 
 void Adapter::checkQueryType(QualType T, SourceLocation L,
-                           bool AllowIncompleteArrays, unsigned Depth) {
+                           bool AllowIncompleteArrays,
+                           bool AllowIncompleteRecords, unsigned Depth) {
   if (T.isNull() || T->isDependentType() || T->isInstantiationDependentType()) {
     reject(L, "query type source", "Every queried type requires a resolved written type source.");
     throw Failure{};
@@ -1771,10 +1799,11 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
     reject(L, "query type depth", "Nested type metadata exceeds the depth limit.");
     throw Failure{};
   }
-  if (AllowIncompleteArrays && incompleteArrayMetadataType(T)) {
+  if ((AllowIncompleteArrays && incompleteArrayMetadataType(T)) ||
+      (AllowIncompleteRecords && incompleteRecordMetadataType(T))) {
     if (T.isVolatileQualified() || T->isAtomicType() || T.isRestrictQualified() ||
         T.getAddressSpace() != LangAS::Default) {
-      reject(L, "array metadata qualifiers", "Array metadata requires admitted qualifiers and the default address space.");
+      reject(L, "type metadata qualifiers", "Type metadata requires admitted qualifiers and the default address space.");
       throw Failure{};
     }
     chargeExpansion(1, L);
@@ -1785,20 +1814,25 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
           reject(L, "array metadata extent", "Known array dimensions exceed the extent/storage limit.");
           throw Failure{};
         }
-      } else if (!isa<IncompleteArrayType>(Array)) {
+      } else if (!AllowIncompleteArrays || !isa<IncompleteArrayType>(Array)) {
         reject(L, "array metadata", "Only fixed or unknown-bound array dimensions are admitted.");
         throw Failure{};
       }
       // Never manufacture a count, size or runtime carrier for this type.
-      checkQueryType(Array->getElementType(), L, true, Depth + 1);
+      checkQueryType(Array->getElementType(), L, AllowIncompleteArrays,
+                     AllowIncompleteRecords, Depth + 1);
     } else if (T->isPointerType() || T->isReferenceType()) {
       if (T->getPointeeType().getAddressSpace() != LangAS::Default) {
         reject(L, "array metadata address space", "The pointee requires the default address space.");
         throw Failure{};
       }
-      checkQueryType(T->getPointeeType(), L, true, Depth + 1);
+      checkQueryType(T->getPointeeType(), L, AllowIncompleteArrays,
+                     AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               incompleteRecordMetadataIdentity(*this, T->getAsCXXRecordDecl())) {
+      // Identity requires no size, field traversal, operation or IR record.
     } else {
-      reject(L, "array metadata type", "An exact array, pointer or reference wrapper is required.");
+      reject(L, "type metadata", "An admitted incomplete record or exact array, pointer or reference wrapper is required.");
       throw Failure{};
     }
     return;
@@ -2793,7 +2827,7 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
       reject(L, "type classification source", "Every classified type requires its resolved written type source.");
       throw Failure{};
     }
-    checkQueryType(Argument->getType(), L, true);
+    checkQueryType(Argument->getType(), L, true, !OperationTrait);
     RecordOperand |= Context.getBaseElementType(
         Argument->getType().getNonReferenceType())->isRecordType();
   }
@@ -2856,7 +2890,7 @@ uint64_t Adapter::arrayTypeQueryValue(const ArrayTypeTraitExpr *Query) {
     throw Failure{};
   }
   chargeExpansion(2, L);
-  checkQueryType(Query->getQueriedType(), L, true);
+  checkQueryType(Query->getQueriedType(), L, true, true);
   if (Dimension) {
     APValue Value;
     if (Dimension->getType().isNull() ||
@@ -5575,7 +5609,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto *Definition = Pattern->getDefinition();
     if (!Definition)
-      return true; // A forward pattern is usable only after a real definition.
+      return true; // A forward pattern supplies identity, never a runtime body.
     if (ActiveClassShapes.size() >= 64 || !ActiveClassShapes.insert(D).second)
       return false;
     auto Restore = llvm::make_scope_exit([&] { ActiveClassShapes.erase(D); });
@@ -5963,7 +5997,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!Info)
         return false;
       if (!Info->getType()->isInstantiationDependentType()) {
-        A.checkQueryType(Info->getType(), Query->getExprLoc(), true);
+        A.checkQueryType(Info->getType(), Query->getExprLoc(), true,
+                         !isOperationTypeTrait(Query->getTrait()));
         continue;
       }
       auto Written = Info->getTypeLoc().getUnqualifiedLoc().getAs<TemplateTypeParmTypeLoc>();
@@ -12067,9 +12102,13 @@ public:
     if (!owned(D))
       return true;
     if (!D->isCompleteDefinition()) {
-      if (!D->getDefinition())
+      const bool ForwardIdentity = A.S.coreV2() && D->getKind() == Decl::CXXRecord &&
+          !D->getDescribedClassTemplate() && !D->getInstantiatedFromMemberClass() &&
+          !D->isDependentContext() && !D->getNumTemplateParameterLists() &&
+          incompleteRecordMetadataIdentity(A, D) && classOwnerScope(D->getDeclContext());
+      if (!D->getDefinition() && !ForwardIdentity)
         A.reject(D->getLocation(), "record",
-                 "Incomplete records are unsupported.");
+                 "An incomplete record requires an admitted type-only declaration identity.");
       return true;
     }
     if (A.S.coreV2())

@@ -569,7 +569,7 @@ alias-template underlying sources, retained replacements and ordinary aliases.
 Classification, array queries and retained hypothetical operation roots explicitly
 admit this metadata; actual expression/signature/storage types retain the ordinary
 carrier gate.
-Known inner extents, qualifiers, complete elements and exact source dependencies
+Known inner extents, qualifiers, admitted elements and exact source dependencies
 remain checked without asking for an incomplete array's size or inventing a count.
 The existing pointer/reference layout-source policy is unchanged. Pinned ordinary
 and trivial destructibility short-circuit incomplete arrays before destructor
@@ -598,3 +598,17 @@ but an actually consumed method's missing resolved expression receives its first
 traversal in that exact method/template context. Existing incomplete type or
 expression nodes are not replayed; the final exact prototype source graph remains
 mandatory. No new Sema resolution or body instantiation is requested.
+
+Incomplete record metadata follows pinned SemaExprCXX.cpp's category/cv
+completeness rules, exact is_same/is_base_of identity and array rank/extent
+evaluation. SemaType.cpp permits incomplete class array elements without reading
+their size or alignment. A separate bounded array/pointer/reference detector
+selects metadata-only identity validation using the actual record's getDefinition;
+an available primary body does not complete an uninstantiated specialization.
+Owned named non-union ordinary forward declarations add no IR record. Existing
+template/copy/full source paths, exact arguments, defaults and frames stay
+authoritative even when specialization declaration traversal remains lazy.
+Complete definitions still receive their existing checks. Operation operands and
+retained operation expression types do not receive incomplete-record permission;
+ordinary runtime carriers and callback signatures also retain their restrictions.
+No pinned-source or transport-schema change is required.

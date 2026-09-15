@@ -940,6 +940,13 @@ runtime helper is introduced for an operand that exists only in a query. Type-on
 alias/template checks retain exact source evidence; actual object and signature
 types continue through ordinary carrier validation. Known inner extents retain
 their size/storage limits, including when the queried result is zero.
+Owned incomplete record identities use the same type-only path for metadata
+queries, aliases and template arguments. Their actual declarations and retained
+template sources remain checked without forming an IR record or inventing size.
+The eight-ABI identity fixture requires seven constant boolean exports, no records,
+globals, parameters or extra functions; rank/extent values retain native `size_t`.
+Actual carriers, callbacks and operation-query types still require complete
+admitted records, and later complete definitions retain full source checking.
 Supported unknown-array operation queries likewise emit only their checked boolean
 result. Direct incomplete-array nothrow destruction retains an explicit no-lookup
 source event; successful reference/decay operations keep their exact source proof.

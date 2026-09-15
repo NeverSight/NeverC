@@ -4,6 +4,8 @@
 
 # Traducir C++ a NeverC
 
+Los metadatos de tipos Core v2 admiten clases incompletas que no sean uniones del código propio, incluidas declaraciones anticipadas y plantillas sin instanciar. La clasificación y las dimensiones de matrices conservan su identidad de origen sin crear almacenamiento. Los tipos en ejecución, callbacks y consultas de operaciones siguen requiriendo tipos completos compatibles. La CI de la revisión realiza la verificación nativa. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+
 Las consultas de operaciones Core v2 inspeccionan matrices de longitud desconocida mediante tipos verificados. Los resultados directos de construcción y destrucción, los enlaces de referencias y las conversiones a punteros conservan su evidencia de origen. El almacenamiento sigue limitado; la CI de la revisión verifica la ejecución nativa. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 
 Core v2 admite firmas verificadas de plantillas de funciones declaradas sin definición en espacios de nombres para llamadas no evaluadas, incluidos referencias, matrices, funciones y la alternativa void de `declval`. La selección y los argumentos predeterminados consumidos conservan la comprobación final de su origen, aunque desaparezcan de la firma. Las llamadas en ejecución y las direcciones requieren definiciones. La validación nativa depende de la CI de esta revisión; las cabeceras estándar y C++/STL completo siguen pendientes. La misma comprobación cubre las plantillas no utilizadas con definición en las fuentes; sus cuerpos siguen sin instanciarse. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).

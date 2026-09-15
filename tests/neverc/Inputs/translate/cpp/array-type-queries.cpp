@@ -1,5 +1,8 @@
 using Size = decltype(sizeof(0));
 using Array = int[2][3];
+struct Forward;
+using ForwardArray = Forward[][3];
+template<class T> struct Uninstantiated { typename T::missing value; };
 enum Dimension { first = 0, second = 1 };
 
 // The type stays fixed while only the dimension needs substitution.
@@ -53,6 +56,11 @@ extern "C" Size query_unknown_inner() { return __array_extent(Unknown, 1); }
 extern "C" Size query_unknown_far() { return __array_extent(Unknown, 18446744073709551615ULL); }
 extern "C" Size query_unknown_pointer() { return __array_rank(Unknown*); }
 extern "C" Size query_unknown_source() { return __array_extent(UnknownGenerated, 1); }
+extern "C" Size query_forward_rank() { return __array_rank(ForwardArray); }
+extern "C" Size query_forward_outer() { return __array_extent(ForwardArray, 0); }
+extern "C" Size query_forward_inner() { return __array_extent(ForwardArray, 1); }
+extern "C" Size query_forward_bare() { return __array_rank(Forward); }
+extern "C" Size query_forward_lazy() { return __array_rank(Uninstantiated<int>); }
 
 static_assert(fixed_extent<0>() == 2 && fixed_extent<1>() == 3 && fixed_extent<2>() == 0);
 static_assert(rank<Array>() == 2 && extent<Array, 1>() == 3);
@@ -112,5 +120,16 @@ int main() {
       UnknownPartial<int[2]>::value || __array_rank(UnknownOf<int[3]>) != 2) return 22;
   int known[2] = {5, 6};
   if (adjusted<int[]>(known) != 5 || adjusted<int[2]>(known) != 7 || known[0] != 5) return 23;
+  if (query_forward_rank() != 2 || query_forward_outer() || query_forward_inner() != 3 ||
+      query_forward_bare() || query_forward_lazy()) return 24;
+  if (rank<ForwardArray>() != 2 || extent<Forward[2][3], 0>() != 2 ||
+      extent<ForwardArray, 1>() != 3 || extent_value<ForwardArray, 1> != 3) return 25;
+  Bound<ForwardArray> forward_bound;
+  Row<ForwardArray> forward_row{};
+  if (forward_bound.value || __array_extent(decltype(forward_row), 0) != 3 ||
+      UnknownPartial<ForwardArray>::value != 2 || unknownRanks<Forward, ForwardArray>() != 2) return 26;
+  if (__array_extent(ForwardArray, (sizeof(++effects), 1)) != 3 ||
+      __array_rank(Forward[(sizeof(++effects), 2)][3]) != 2 ||
+      __array_rank(ForwardArray*) || __array_extent(ForwardArray&, 1) || effects != 1) return 27;
   return 0;
 }

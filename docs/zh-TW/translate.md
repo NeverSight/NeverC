@@ -4,6 +4,8 @@
 
 # 將 C++ 轉譯為 NeverC
 
+Core v2 型別中繼資料現支援自有原始碼中的不完整非聯合類別，包括前置宣告與未實例化範本型別。分類和陣列維度查詢保留精確原始碼身分，不產生類別儲存；執行期型別、回呼和操作查詢仍要求完整的已支援型別。原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+
 Core v2 操作查詢現可檢查未知長度陣列的型別資訊。建構與解構的直接回傳、精確參考繫結及陣列至指標轉換均保留對應原始碼證據；執行期儲存仍受原有限制。原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 
 Core v2 支援未求值呼叫中經過檢查的命名空間範本宣告簽章，包括 `declval` 使用的參考、陣列、函式和 void 回退模式。實際選擇、從簽章中消失的範本預設引數及已使用的函式預設引數仍須通過最終來源檢查。執行期呼叫和取址仍要求定義。原生驗證以實作版本的 CI 為準；標準標頭及完整 C++/STL 尚未完成。 已有原始碼內定義、但尚未使用的命名空間範本也執行相同的來源檢查，函式本體仍保持惰性。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).

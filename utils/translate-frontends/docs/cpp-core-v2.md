@@ -834,7 +834,7 @@ conversion to be accessible.
 
 Unknown-bound arrays such as `int[]` and `int[][3]` also have checked type-only
 metadata, including pointer/reference wrappers, aliases and template arguments.
-Their known inner dimensions and complete admitted element types remain checked;
+Their known inner dimensions and admitted element types remain checked;
 no unknown count or runtime carrier is invented. Direct array queries retain
 element layout-source dependencies; pointers/references keep the existing policy
 of checking type/bound source without consuming pointee record layout. Ordinary
@@ -878,7 +878,7 @@ when they would fail if instantiated. Existing ordinary function-definition and
 record source restrictions still apply. `__is_nothrow_destructible` on record
 values and arrays uses the separate retained destructor and exception-source
 proof below. Record references use the unconditional reference result below.
-The shared classification fixture has 41 O0/O2 checkpoints and twenty-six exported
+The shared classification fixture has 46 O0/O2 checkpoints and thirty-three exported
 boolean checks, including a real destruction outside the query; native results
 require the implementing revision's CI.
 
@@ -902,10 +902,10 @@ same source gate. This proof reuses the checked source rules below, without turn
 metadata classification into a hypothetical construction or destruction query.
 Pointer/reference spelling keeps unconsumed pointee layout lazy; declaration-only
 dependent parameter queries retain their existing path. The paired classification
-corpus has 157 accepted, 80 unsupported-source and fourteen invalid-C++ cases.
+corpus has 184 accepted, 96 unsupported-source and seventeen invalid-C++ cases.
 
 The builtin spelling does not expand the operand domain. Volatile types, member
-pointers, incomplete/union types and `long double` remain rejected, even for a
+pointers, union types and `long double` remain rejected, even for a
 query that would return false. Unknown-bound arrays use the type-only metadata
 contract above. Direct unknown-bound arrays
 are distinct from array parameters adjusted within an admitted function type.
@@ -915,6 +915,34 @@ trait kinds remain rejected. V1 admission
 is unchanged. Paired source/protocol tests, O0/O2 saved-NC execution, unevaluated
 effects and relocation require the implementing revision's CI; this does not
 establish standard-header or complete C++/STL support.
+
+### Incomplete record type metadata
+
+Owned, named non-union forward declarations and uninstantiated class types can
+supply identity to type-only aliases, template arguments, classification and
+array rank/extent queries. For example, `struct R;` permits `__is_class(R)`,
+`__is_same(R, const R)` (false), `__is_base_of(R, const R)` (true), and
+`__array_extent(R[][3], 1)` (three). Pointer/reference and cv spelling remain
+distinct. Ordinary/trivial destruction of `R[]` is false, while a reference is
+destructible without inspecting a missing destructor. Traits whose semantics
+require a complete class still receive the original C++ diagnostic.
+
+Completeness is determined from the actual record, never its primary template's
+body. Querying `__is_class(R<int>)` need not instantiate fields or methods.
+Each concrete template use still requires its exact written arguments, selected
+defaults and retained substitution frames. Copied nested types retain their
+ordinary source/origin rules. The ordinary forward-declaration gate adds no
+permission for namespace explicit-specialization forward declarations. A real
+definition, when present, retains the existing whole-source and layout checks.
+
+This metadata creates no IR record, storage, helper or invented size. Bounds,
+qualifiers, source expressions and expansion budgets remain checked, including
+unsupported source hidden behind a constant result. Actual objects, fields,
+parameters, results, callback signatures and operation-query operands keep their
+complete-carrier checks. The eight-ABI identity fixture asserts seven constant
+boolean exports with no records, globals, parameters or additional functions;
+the rank/extent fixture also checks incomplete elements with native `size_t`.
+O0/O2 and relocation verification use the implementing revision's CI.
 
 ## Non-record operation traits
 
@@ -937,7 +965,7 @@ assigning or destroying the pointer does not invoke an operation on the pointee.
 The pointee layout and all written type sources still pass the existing checks.
 A class-template pointee requires an already-materialized class definition; a
 written `sizeof(R<int>)` can require that layout while leaving unused constructor
-bodies lazy. Incomplete record-pointer query support remains separate work.
+bodies lazy. Incomplete record-pointer operation support remains separate work.
 An inaccessible base-pointer conversion returns false without inventing access.
 
 Construction takes one destination type and zero to 64 argument types. Assignment
@@ -990,7 +1018,7 @@ admitted operands. It shares the supported trait arities with concrete queries,
 but never reads a dependent boolean or invents a semantic operation event. Nested
 dependent pointer/alias shapes remain excluded;
 each selected substitution still needs its own concrete type and retained source proof.
-The paired 657 accepted, 367 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
+The paired 658 accepted, 370 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
 these boundaries. Twenty-four scalar saved-NC O0/O2 runtime checkpoints, relocation and eighteen
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1604,9 +1632,9 @@ the dimension has unknown bound or is outside the rank; both queries return zero
 non-array type. References and pointers to arrays remain non-array types for
 these queries. All queried types satisfy the same admitted operand domain as
 [builtin classification](#builtin-type-classification), including unknown-bound
-arrays with admitted complete elements. Known inner bounds remain exact:
+arrays and [incomplete record identities](#incomplete-record-type-metadata). Known inner bounds remain exact:
 `__array_rank(int[][3])` is two, and extents zero and one are zero and three.
-Volatile, incomplete element, union and other unsupported types remain rejected.
+Volatile, union and other unsupported types remain rejected.
 
 Type-only validation covers written and concrete template arguments, selected
 type defaults, alias underlying types and retained replacements. Each original
@@ -1630,7 +1658,7 @@ The private frontend defers dependent dimension evaluation and substitutes the
 index even when its array type is unchanged. Both parsing and substitution use
 a constant-evaluated dimension context so required constexpr bodies are available
 inside `sizeof` and `noexcept`. Parameter-pack collection explicitly includes the
-dimension; the shared runtime fixture has twenty-three checkpoints and nine exported
+dimension; the shared runtime fixture has twenty-seven checkpoints and fourteen exported
 native-size integer checks. Ordinary and pack substitutions,
 constant assertions, variable/alias/class defaults and `if constexpr` use the
 existing template source rules; unused dependent patterns remain lazy.
@@ -1639,7 +1667,7 @@ The final source graph covers both the original type and the exact dimension
 expression, including cached constant/default children and generated value source.
 Its synchronous dimension root completes independently of the folded index. Rank,
 non-array and out-of-range results cannot bypass applicable source dependencies.
-The paired corpus has 65 accepted, 42 unsupported-source and ten invalid-C++ cases;
+The paired corpus has 77 accepted, 48 unsupported-source and ten invalid-C++ cases;
 no new array query kind or implicit conversion is admitted by this source proof.
 
 V1 remains unchanged. Paired source/protocol, fixed-type template-index regression,

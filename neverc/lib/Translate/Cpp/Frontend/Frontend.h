@@ -363,7 +363,8 @@ public:
                                   unsigned Depth = 0);
   bool typeClassificationValue(const clang::TypeTraitExpr *Query);
   void checkQueryType(clang::QualType T, clang::SourceLocation L,
-                      bool AllowIncompleteArrays = false, unsigned Depth = 0);
+                      bool AllowIncompleteArrays = false,
+                      bool AllowIncompleteRecords = false, unsigned Depth = 0);
   void checkTypeOnly(clang::QualType T, clang::SourceLocation L);
   uint64_t arrayTypeQueryValue(const clang::ArrayTypeTraitExpr *Query);
   bool emptyBaseChainShape(const clang::CXXRecordDecl *Record);

@@ -4,6 +4,8 @@
 
 # Traduire C++ vers NeverC
 
+Les métadonnées de types Core v2 acceptent les classes incomplètes hors union du source détenu, y compris les déclarations anticipées et les templates non instanciés. Classification et dimensions des tableaux conservent leur identité source sans créer de stockage. Les types à l’exécution, callbacks et requêtes d’opération exigent toujours des types complets pris en charge. La validation native relève de la CI de la révision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+
 Les requêtes d’opération Core v2 examinent les tableaux de taille inconnue via leurs types vérifiés. Les résultats immédiats de construction/destruction, les liaisons de références et les conversions en pointeurs conservent leurs preuves de source. Le stockage reste limité ; la validation native relève de la CI de la révision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 
 Core v2 accepte les signatures vérifiées de modèles de fonctions déclarés sans définition dans un espace de noms pour les appels non évalués, notamment les références, tableaux, fonctions et le repli void de `declval`. La sélection et les arguments par défaut consommés, même effacés de la signature, restent soumis à la vérification finale des sources. Les appels exécutés et les adresses exigent une définition. La validation native dépend de la CI de cette révision ; les en-têtes standard et C++/STL complet restent inachevés. Le même contrôle couvre les modèles inutilisés dont la définition appartient aux sources ; leurs corps restent non instanciés. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).

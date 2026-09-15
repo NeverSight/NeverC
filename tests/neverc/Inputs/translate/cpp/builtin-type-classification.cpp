@@ -26,6 +26,11 @@ template<class T> struct LazyDestruction {
 using Function = int(int);
 using CertainFunction = int(int) noexcept;
 using Null = decltype(nullptr);
+struct Forward;
+struct OtherForward;
+template<class T> struct Uninstantiated { typename T::missing value; };
+using ForwardArray = Forward[][3];
+template<class... T> constexpr bool all_classes() { return (__is_class(T) && ...); }
 
 int effects;
 int constructed;
@@ -103,6 +108,13 @@ extern "C" bool classified_unknown_destructor() { return __is_destructible(Unkno
 extern "C" bool classified_unknown_reference() { return __is_trivially_destructible(LazyDestruction<int>(&)[]); }
 extern "C" bool classified_unknown_const() { return __is_const(const Unknown); }
 extern "C" bool classified_unknown_source() { return __is_array(UnknownAssigned); }
+extern "C" bool classified_forward_class() { return __is_class(Forward); }
+extern "C" bool classified_forward_same() { return __is_same(Forward, OtherForward); }
+extern "C" bool classified_forward_base() { return __is_base_of(Forward, const Forward); }
+extern "C" bool classified_forward_reference() { return __is_trivially_destructible(Forward&); }
+extern "C" bool classified_forward_array() { return __is_destructible(ForwardArray); }
+extern "C" bool classified_forward_lazy() { return __is_class(Uninstantiated<int>); }
+extern "C" bool classified_forward_const() { return __is_const(const Forward); }
 template<class Base, class Derived> inline constexpr bool base_of = __is_base_of(Base, Derived);
 template<class... T> constexpr bool all_empty() { return (__is_empty(T) && ...); }
 
@@ -226,5 +238,18 @@ int main() {
   if (!all_arrays<>() || !all_arrays<Unknown, const int[][3]>() || all_arrays<Unknown, int>()) return 39;
   if (category<Unknown>() != 3 || category<Unknown*>() != 2 || category<Unknown&>() != 3) return 40;
   if (!classified_unknown_source() || effects != 1 || constructed != 1 || destroyed != 1) return 41;
+  if (!classified_forward_class() || classified_forward_same() || !classified_forward_base() ||
+      !classified_forward_reference() || classified_forward_array() ||
+      !classified_forward_lazy() || !classified_forward_const()) return 42;
+  if (category<Forward>() != 3 || category<Forward*>() != 2 || integral<Forward> ||
+      !same<Forward, Forward> || same<Forward, OtherForward>) return 43;
+  if (!Category<Forward*>::value || Category<Forward>::value ||
+      !all_classes<>() || !all_classes<Forward, OtherForward, Uninstantiated<int>>() ||
+      all_classes<Forward, int>()) return 44;
+  if (!__is_same(ForwardArray, UnknownOf<Forward[3]>) ||
+      !__is_array(ForwardArray) || __is_class(ForwardArray)) return 45;
+  if (!__is_same(Forward[sizeof(++effects)], Forward[sizeof(int)]) ||
+      !__is_array(Forward[(sizeof(++effects), 3)]) || effects != 1 ||
+      constructed != 1 || destroyed != 1) return 46;
   return 0;
 }

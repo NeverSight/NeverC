@@ -5008,6 +5008,18 @@ TEST_F(TranslateTest, CoreV2EmptyBaseChainsPreserveAddressesAndEffects) {
 
 TEST_F(TranslateTest, CoreV2ArrayTypeQueriesRetainTypesAndDimensions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"incomplete-fixed", "struct R;static_assert(__array_rank(R[2][3])==2&&__array_extent(R[2][3],0)==2&&__array_extent(R[2][3],1)==3);"},
+      {"incomplete-unknown", "struct R;using A=R[][3];static_assert(__array_rank(A)==2&&__array_extent(A,0)==0&&__array_extent(A,1)==3);"},
+      {"incomplete-pointer-reference", "struct R;static_assert(__array_rank(R*)==0&&__array_rank(R&)==0&&__array_extent(R(&)[3],0)==0&&__array_rank(R*[3])==1);"},
+      {"incomplete-far-index", "struct R;static_assert(__array_extent(R[],18446744073709551615ULL)==0&&__array_extent(R,0)==0);"},
+      {"incomplete-function-template", "struct R;template<class T>constexpr auto f(){return __array_rank(T);}static_assert(f<R>()==0&&f<R[][3]>()==2);"},
+      {"incomplete-default-index", "struct R;template<class T=R[2][3],unsigned I=1>constexpr auto f(){return __array_extent(T,I);}static_assert(f()==3);"},
+      {"incomplete-variable-template", "struct R;template<class T>inline constexpr auto rank=__array_rank(T);static_assert(rank<R[2]> ==1);"},
+      {"incomplete-type-pack", "struct R;template<class...T>constexpr auto f(){return (__array_rank(T)+...+0);}static_assert(f<>()==0&&f<R,R[],R[2][3]>()==3);"},
+      {"incomplete-source-dimension", "struct R;constexpr unsigned index(){return 1;}static_assert(__array_extent(R[2][3],index())==3);"},
+      {"incomplete-source-effects", "struct R;int effects;static_assert(__array_extent(R[2][3],(sizeof(++effects),1))==3);"},
+      {"incomplete-lazy-template", "template<class T>struct R{typename T::missing value;};static_assert(__array_rank(R<int>)==0);"},
+      {"rank-incomplete", "struct R;int f(){return int(__array_rank(R));}"},
       {"source-dimension-family", "struct P{int n;};struct Mid{P field;};static_assert(__array_extent(int[2][3],noexcept(Mid()))==3);"},
       {"source-dimension-out-of-range", "struct P{int n;};struct Mid{P field;};static_assert(__array_extent(int[2][3],noexcept(Mid())+99)==0);"},
       {"source-dimension-nonarray", "struct P{int n;};struct Mid{P field;};static_assert(__array_extent(int,noexcept(Mid()))==0);"},
@@ -5072,7 +5084,7 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesRetainTypesAndDimensions) {
       {"unknown-source-inner-bound", "struct P{int n;};struct Mid{P field;};using A=int[][noexcept(Mid())?3:4];static_assert(__array_rank(A)==2&&__array_extent(A,1)==3);"},
       {"unknown-pointer-array", "using P=int(*)[];static_assert(__array_rank(P[3])==1&&__array_extent(P[3],0)==3&&__array_rank(P)==0);"},
       {"unknown-unused-alias", "template<class T>using A=T[];template<class T>int unused(){return T::body();}using U=A<int>;static_assert(__array_extent(U,0)==0);"},
-      {"size-width-protocol", "using Size=decltype(sizeof(0));extern \"C\" Size rank_value(){return __array_rank(int[2][3]);}extern \"C\" Size extent_value(){return __array_extent(int[2][3],1);}extern \"C\" Size missing_extent(){return __array_extent(int[2][3],18446744073709551615ULL);}using Unknown=int[][3];extern \"C\" Size rank_unknown(){return __array_rank(Unknown);}extern \"C\" Size outer_unknown(){return __array_extent(Unknown,0);}extern \"C\" Size inner_unknown(){return __array_extent(Unknown,1);}extern \"C\" Size pointer_unknown(){return __array_rank(Unknown*);}"},
+      {"size-width-protocol", "using Size=decltype(sizeof(0));extern \"C\" Size rank_value(){return __array_rank(int[2][3]);}extern \"C\" Size extent_value(){return __array_extent(int[2][3],1);}extern \"C\" Size missing_extent(){return __array_extent(int[2][3],18446744073709551615ULL);}using Unknown=int[][3];extern \"C\" Size rank_unknown(){return __array_rank(Unknown);}extern \"C\" Size outer_unknown(){return __array_extent(Unknown,0);}extern \"C\" Size inner_unknown(){return __array_extent(Unknown,1);}extern \"C\" Size pointer_unknown(){return __array_rank(Unknown*);}struct Forward;extern \"C\" Size rank_forward(){return __array_rank(Forward[2][3]);}extern \"C\" Size inner_forward(){return __array_extent(Forward[][3],1);}extern \"C\" Size outer_forward(){return __array_extent(Forward[],0);}extern \"C\" Size bare_forward(){return __array_rank(Forward);}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -5086,6 +5098,13 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesRetainTypesAndDimensions) {
 
 TEST_F(TranslateTest, CoreV2ArrayTypeQueriesCheckErasedSource) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"incomplete-hidden-dimension", "struct R;static_assert(__array_extent(R[2],(sizeof(long double),0))==2);"},
+      {"incomplete-hidden-bound", "struct R;static_assert(__array_rank(R[sizeof(long double)])==1);"},
+      {"incomplete-hidden-default", "struct R;template<class T,unsigned I=sizeof(long double)>constexpr auto f(){return __array_extent(T,I);}static_assert(f<R[]>()==0);"},
+      {"incomplete-volatile", "struct R;static_assert(__array_rank(volatile R[])==1);"},
+      {"incomplete-union", "union R;static_assert(__array_rank(R[])==1);"},
+      {"incomplete-storage", "struct R;static_assert(__array_rank(R[65536][4])==2);"},
+      {"incomplete-inner-storage", "struct R;static_assert(__array_rank(R[][65536][4])==3);"},
       {"source-hidden-dimension", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};static_assert(__array_extent(int[2][3],noexcept(Mid()))==3);"},
       {"source-hidden-out-of-range", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};static_assert(__array_extent(int[2][3],noexcept(Mid())+99)==0);"},
       {"source-hidden-nonarray", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};static_assert(__array_extent(int,noexcept(Mid()))==0);"},
@@ -5101,7 +5120,6 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesCheckErasedSource) {
       {"rank-long-double", "int f(){return int(__array_rank(long double));}"},
       {"extent-long-double", "int f(){return int(__array_extent(long double[2],0));}"},
       {"rank-volatile", "int f(){return int(__array_rank(volatile int[2]));}"},
-      {"rank-incomplete", "struct R;int f(){return int(__array_rank(R));}"},
       {"rank-union", "union U{int n;};int f(){return int(__array_rank(U));}"},
       {"rank-hidden-type", "int f(){return int(__array_rank(decltype(sizeof(long double))));}"},
       {"rank-hidden-bound", "int f(){return int(__array_rank(int[sizeof(long double)]));}"},
@@ -5186,6 +5204,33 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesPreserveSubstitutionAndValues) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"incomplete-identity-protocol", "struct R;struct S;template<class T>struct Lazy{typename T::missing value;};extern \"C\" bool incomplete_class(){return __is_class(R);}extern \"C\" bool incomplete_same(){return __is_same(R,S);}extern \"C\" bool incomplete_base(){return __is_base_of(R,const R);}extern \"C\" bool incomplete_reference(){return __is_trivially_destructible(R&);}extern \"C\" bool incomplete_array(){return __is_destructible(R[]);}extern \"C\" bool incomplete_lazy(){return __is_class(Lazy<int>);}extern \"C\" bool incomplete_const(){return __is_const(const R);}"},
+      {"incomplete-categories", "struct R;static_assert(__is_class(R)&&__is_object(R)&&__is_compound(R));static_assert(!__is_scalar(R)&&!__is_union(R)&&!__is_enum(R)&&!__is_integral(R));"},
+      {"incomplete-namespace", "namespace N{struct R;}using A=N::R;static_assert(__is_class(A)&&__is_same(A,N::R));"},
+      {"incomplete-nested", "struct O{struct R;};using A=O::R;static_assert(__is_class(A));"},
+      {"incomplete-cv", "struct R;using C=const R;static_assert(__is_const(C)&&!__is_const(R)&&__is_same(C,const R));"},
+      {"incomplete-pointers-references", "struct R;static_assert(__is_pointer(R*)&&__is_reference(R&)&&__is_lvalue_reference(R&)&&__is_rvalue_reference(R&&));"},
+      {"incomplete-distinct-types", "struct R;struct S;static_assert(!__is_same(R,S)&&!__is_same(R,R*)&&__is_same(R&,R&));"},
+      {"incomplete-same-base", "struct R;static_assert(__is_base_of(R,const R)&&!__is_base_of(R,int)&&!__is_base_of(int,R));"},
+      {"incomplete-array-shapes", "struct R;using A=R[][3];static_assert(__is_array(A)&&__is_same(A,R[][3])&&!__is_same(A,R[2][3]));"},
+      {"incomplete-destruction-metadata", "struct R;static_assert(!__is_destructible(R[])&&!__is_trivially_destructible(R[])&&__is_destructible(R&)&&__is_trivially_destructible(R&&));"},
+      {"incomplete-pointer-properties", "struct R;static_assert(__is_standard_layout(R*)&&__is_trivially_copyable(R*)&&!__is_empty(R*)&&!__is_final(R*));"},
+      {"incomplete-forward-template", "template<class T>struct R;static_assert(__is_class(R<int>)&&!__is_same(R<int>,R<unsigned>));"},
+      {"incomplete-lazy-field", "template<class T>struct R{typename T::missing value;};static_assert(__is_class(R<int>));"},
+      {"incomplete-lazy-method", "template<class T>struct R{T value;~R()noexcept(T::missing){T::body();}};static_assert(__is_class(R<int>));"},
+      {"incomplete-alias-template", "struct R;template<class T>using A=T;template<class T>using P=T*;static_assert(__is_same(A<R>,R)&&__is_pointer(P<R>));"},
+      {"incomplete-function-template", "struct R;template<class T>constexpr bool f(){return __is_class(T);}static_assert(f<R>());"},
+      {"incomplete-class-template-argument", "struct R;template<class T>struct Meta{static constexpr bool value=__is_class(T);};static_assert(Meta<R>::value);"},
+      {"incomplete-variable-template", "struct R;template<class T>inline constexpr bool value=__is_class(T);static_assert(value<R>);"},
+      {"incomplete-default-argument", "struct R;template<class T=R>constexpr bool f(){return __is_class(T);}static_assert(f());"},
+      {"incomplete-partial", "struct R;template<class T>struct Meta{static constexpr bool value=false;};template<class T>struct Meta<T*>{static constexpr bool value=__is_class(T);};static_assert(Meta<R*>::value);"},
+      {"incomplete-pack", "struct R;struct S;template<class...T>constexpr bool f(){return (__is_class(T)&&...);}static_assert(f<>()&&f<R,S>());"},
+      {"incomplete-copied-nested", "template<class T>struct O{struct R;};static_assert(__is_class(O<int>::R));"},
+      {"incomplete-copied-template", "template<class T>struct O{template<class U>struct R;};static_assert(__is_class(O<int>::R<unsigned>));"},
+      {"incomplete-restricted-parameter", "struct R;template<bool,class T>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<class T,typename Enable<__is_same(T,R),int>::type N=7>constexpr int f(){return N;}static_assert(f<R>()==7);"},
+      {"incomplete-source-effects", "struct R;int effects;static_assert(__is_same(R[sizeof(++effects)],R[sizeof(int)]));bool f(){return __is_array(R[(sizeof(++effects),3)]);}"},
+      {"incomplete", "struct R;bool f(){return __is_class(R);}"},
+      {"unknown-bound-incomplete-element", "struct R;static_assert(__is_array(R[]));"},
       {"unknown-bound-nothrow-destructible", "static_assert(!__is_nothrow_destructible(int[]));"},
       {"unknown-bound-constructible", "static_assert(!__is_constructible(int[]));"},
       {"structural-unknown-array", "bool f(){return __is_standard_layout(int[]);}"},
@@ -5356,6 +5401,24 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"incomplete-explicit-specialization", "template<class T>struct R;template<>struct R<int>;static_assert(__is_class(R<int>));"},
+      {"incomplete-runtime-pointer", "struct R;int f(R*){return 0;}"},
+      {"incomplete-runtime-reference", "struct R;void f(R&){}"},
+      {"incomplete-runtime-return", "struct R;R*f(){return nullptr;}"},
+      {"incomplete-runtime-global", "struct R;R*p=nullptr;"},
+      {"incomplete-runtime-field", "struct R;struct O{R*p;};"},
+      {"incomplete-runtime-declaration", "struct R;R f();"},
+      {"incomplete-callback-alias", "struct R;using F=int(R*);static_assert(__is_function(F));"},
+      {"incomplete-callback-pointer", "struct R;static_assert(__is_pointer(void(*)(R&)));"},
+      {"incomplete-volatile", "struct R;static_assert(__is_class(volatile R));"},
+      {"incomplete-union", "union R;static_assert(__is_union(R));"},
+      {"incomplete-local", "bool f(){struct R;return __is_class(R);}"},
+      {"incomplete-attributed", "struct __attribute__((aligned(16))) R;static_assert(__is_class(R));"},
+      {"incomplete-hidden-bound", "struct R;static_assert(__is_array(R[sizeof(long double)]));"},
+      {"incomplete-hidden-template-default", "struct R;template<class T,unsigned N=sizeof(long double)>using A=T;static_assert(__is_class(A<R>));"},
+      {"incomplete-hidden-lazy-argument", "template<unsigned N>struct R;static_assert(__is_class(R<sizeof(long double)>));"},
+      {"incomplete-completed-wide-field", "struct R;static_assert(__is_class(R));struct R{long double value;};"},
+      {"incomplete-completed-wide-template", "template<class T>struct R{T value;};static_assert(__is_class(R<long double>));static_assert(sizeof(R<long double>)>0);"},
       {"source-hidden-alias", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?1:2];static_assert(__is_array(A));"},
       {"source-hidden-false-result", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?1:2];static_assert(!__is_integral(A));"},
       {"source-hidden-pointer-alias", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?1:2];static_assert(__is_pointer(A*));"},
@@ -5405,7 +5468,6 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
       {"unsupported-pointee", "bool f(){return __is_pointer(long double*);}"},
       {"volatile", "bool f(){return __is_volatile(volatile int);}"},
       {"volatile-pointee", "bool f(){return __is_pointer(volatile int*);}"},
-      {"incomplete", "struct R;bool f(){return __is_class(R);}"},
       {"union", "union U{int n;};bool f(){return __is_union(U);}"},
       {"zero-bound", "bool f(){return __is_array(int[0]);}"},
       {"member-pointer", "struct R{int n;};bool f(){return __is_member_pointer(int R::*);}"},
@@ -5434,7 +5496,6 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
       {"unknown-bound-runtime-reference", "using A=int[];void f(A&){}"},
       {"unknown-bound-runtime-global", "using A=int[];extern A values;"},
       {"unknown-bound-runtime-static", "using A=int[];A*value=nullptr;"},
-      {"unknown-bound-incomplete-element", "struct R;static_assert(__is_array(R[]));"},
       {"unknown-bound-union-element", "union R{int n;};static_assert(__is_array(R[]));"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -5450,6 +5511,9 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRejectsInvalidCpp) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"incomplete-size", "struct R;static_assert(sizeof(R)>0);"},
+      {"incomplete-object", "struct R;R value;"},
+      {"incomplete-array-layout", "struct R;static_assert(__is_standard_layout(R[]));"},
       {"destruction-incomplete", "struct R;bool f(){return __is_destructible(R);}"},
       {"destruction-failed-assert", "struct R{~R()=delete;};static_assert(__is_destructible(R));"},
       {"final-derived-class", "struct B final{};struct D:B{};"},
@@ -5514,6 +5578,7 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluat
 
 TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lazy-class-call-incomplete-query", "template<class T>struct R{operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>bool unused(){return __is_nothrow_convertible(R<T>,T);}static_assert(__is_class(R<int>));"},
       {"shared-signature-destructor-before", "template<class T>struct R{~R()noexcept(false){if constexpr(__is_same(T,int))T::body();}};static_assert(!__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}"},
       {"shared-signature-destructor-after", "template<class T>struct R{~R()noexcept(false){if constexpr(__is_same(T,int))T::body();}};void force(){R<unsigned>r;}static_assert(!__is_nothrow_destructible(R<int>));"},
       {"shared-signature-destructor-multiple", "template<class T>struct R{~R()noexcept(false){if constexpr(!__is_same(T,unsigned))T::body();}};static_assert(!__is_nothrow_destructible(R<int>)&&!__is_nothrow_destructible(R<char>));void force(){R<unsigned>r;}"},
@@ -6185,6 +6250,10 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"incomplete-operation-reference", "struct R;static_assert(__is_nothrow_destructible(R&));"},
+      {"incomplete-operation-pointer", "struct R;static_assert(__is_constructible(R*,decltype(nullptr)));"},
+      {"incomplete-operation-conversion", "struct R;static_assert(__is_convertible(R*,void*));"},
+      {"incomplete-operation-parameter-source", "struct R;template<bool,class T>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<class T,typename Enable<__is_convertible(T,R*),int>::type N=7>int f(){return N;}static_assert(__is_class(R));"},
       {"shared-signature-hidden-original-expression", "template<class T>struct R{~R()noexcept((sizeof(long double),false)){if constexpr(__is_same(T,int))T::body();}};static_assert(!__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}"},
       {"shared-signature-hidden-resolved-expression", "template<class T>constexpr bool spec(){if constexpr(__is_same(T,int)){return sizeof(long double)>0;}return false;}template<class T>struct R{~R()noexcept(spec<T>()){if constexpr(__is_same(T,int))T::body();}};static_assert(__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}"},
       {"shared-signature-missing-construction-source", "template<class T>struct R{R()noexcept(false);};template<class T>R<T>::R()noexcept(false){if constexpr(__is_same(T,int))T::body();}static_assert(__is_constructible(R<int>));void force(){R<unsigned>r;}"},
@@ -6205,7 +6274,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"parameter-operation-wide-operand", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__is_constructible(T,long double)>::type N=3>int f(){return N;}"},
       {"parameter-operation-unsupported-kind", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__has_trivial_destructor(T)>::type N=3>int f(){return N;}"},
       {"parameter-operation-selected-source", "template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T>struct R{R()noexcept(sizeof(T)==sizeof(long double)){T::body();}};template<class T,typename E<__is_constructible(T)>::type N=3>int f(){return N;}int g(){return f<R<int>>();}"},
-      {"lazy-class-call-incomplete-query", "template<class T>struct R{operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>bool unused(){return __is_nothrow_convertible(R<T>,T);}static_assert(__is_class(R<int>));"},
       {"copied-query-split-constructor", "template<class T>struct R{template<class U>R(U)noexcept;};template<class T>template<class U>R<T>::R(U)noexcept{U::body();}static_assert(__is_constructible(R<int>,unsigned));"},
       {"copied-query-split-conversion", "template<class T>struct R{template<class U>operator U()const noexcept;};template<class T>template<class U>R<T>::operator U()const noexcept{U::body();}static_assert(__is_convertible(R<int>,unsigned));"},
       {"copied-query-split-assignment", "template<class T>struct R{template<class U>R&operator=(U)noexcept;};template<class T>template<class U>R<T>&R<T>::operator=(U)noexcept{U::body();return *this;}static_assert(__is_assignable(R<int>&,unsigned));"},
