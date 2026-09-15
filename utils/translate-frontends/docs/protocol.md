@@ -855,27 +855,24 @@ parameter/initializer identity, call source, exceptions and owning destruction.
 Concrete template constructor defaults also qualify after normal traversal of the
 actual instantiated parameter initializer succeeds. Matching class/function template
 context and inline origin remain required, together with the exact completed
-constructor definition or the narrow lazy class-constructor root proof.
+constructor definition or an exact lazy class-constructor expression proof.
 Uninstantiated defaults, another specialization's initializer and per-use rewrites
 cannot borrow that completion; explicit arguments leave unused defaults lazy.
-Only the three construction traits can use an exact completed record-prvalue root
-whose ordinary class-template constructor is referenced, unused and has no actual
-body. All actual signatures must complete with resolved standard specifications
-and an exact single inline origin. Completion is tied to the retained construction
-expression: nested operations and other query kinds cannot reuse it. Parameter,
-default, exception and owning-destruction proofs remain mandatory; actual runtime
-body requirements are unchanged. All signature and generated-source queues drain
-before final checking, without introducing protocol helpers or new values.
-The three assignment and three conversion traits can similarly check a lazy
-ordinary class-template operator signature for their exact retained top-level
-call. Only supported single-expression envelopes may lead to that call; traversal
-never enters arguments or an implicit object to select another candidate. Each
-actual redeclaration must supply complete type source and resolved standard
-specifications with an exact inline origin. Completion is tied to the call pointer
-and matched again against the current root and trait during final checking.
-Nested calls, construction traits and scalar assignments with a lazy RHS conversion
-cannot borrow this proof. False results, result destruction and actual runtime body
-requirements remain checked; query-only signatures do not create protocol functions.
+Construction, assignment and conversion traits can use an exact selected
+construction or operator call whose ordinary class-template method is referenced,
+unused and has no actual body. All actual signatures must complete with resolved
+standard specifications and an exact single inline origin. A bounded traversal
+of the complete retained operation follows only supported casts, construction
+arguments, assignment operands, conversion objects and checked BTE/EWC/MTE
+envelopes. Every selected expression supplies its own completion; final validation
+must reach that same expression from the current root and check every redeclaration.
+Synthetic operands are leaves and default initializers retain their separate exact
+parameter/source proof. No function body or unvisited query registry is traversed.
+Consumed record-prvalue constructions, calls and exact temporary bindings also
+retain their owning destructor signatures, even inside scalar/reference results.
+False results and actual runtime body requirements remain checked. All signature
+and generated-source queues drain before final checking, without introducing
+protocol functions, helpers or new values.
 The collector and evaluated-default scan classify the complete defaulted declaration
 family even when selection names a declaration preceding the `= default` definition.
 Classification never replaces actual signature or generated-body completion.

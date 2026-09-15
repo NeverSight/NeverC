@@ -1869,16 +1869,6 @@ static bool lazyQueryDestructorSignature(Adapter &A, const CXXDestructorDecl *De
          operationDefinitionCategory(A, Destructor);
 }
 
-static bool isAssignmentTypeTrait(TypeTrait Trait) {
-  return Trait == BTT_IsAssignable || Trait == BTT_IsNothrowAssignable ||
-         Trait == BTT_IsTriviallyAssignable;
-}
-
-static bool isConversionTypeTrait(TypeTrait Trait) {
-  return Trait == BTT_IsConvertible || Trait == BTT_IsConvertibleTo ||
-         Trait == BTT_IsNothrowConvertible;
-}
-
 static bool lazyQueryCallSignature(Adapter &A, const CXXMethodDecl *Method) {
   return Method && !Method->isInvalidDecl() &&
          ((ordinaryOperator(Method) && Method->getOverloadedOperator() == OO_Equal) ||
@@ -1888,102 +1878,6 @@ static bool lazyQueryCallSignature(Adapter &A, const CXXMethodDecl *Method) {
          A.S.owns(A.Sources, Method->getLocation()) && Method->getTypeSourceInfo() &&
          standardExceptionSpecification(Method->getType()->getAs<FunctionProtoType>()) &&
          operationDefinitionCategory(A, Method);
-}
-
-static const CallExpr *operationRootCall(Adapter &A, const OperationTraitSource &Source,
-                                        TypeTrait Trait) {
-  const bool Assignment = isAssignmentTypeTrait(Trait);
-  if ((!Assignment && !isConversionTypeTrait(Trait)) || !Source.Attempted ||
-      !Source.Complete || !Source.Root)
-    return nullptr;
-  const Expr *Expression = Source.Root;
-  for (unsigned Depth = 0; Depth <= 64; ++Depth) {
-    if (!Expression || Expression->getType().isNull() || Expression->isTypeDependent() ||
-        Expression->isValueDependent() || Expression->isInstantiationDependent())
-      return nullptr;
-    A.chargeExpansion(1, Expression->getExprLoc());
-    // Stop at the first call. Its arguments/object can never supply selection
-    // provenance for this root, even if the same method has another query proof.
-    if (const auto *Call = dyn_cast<CallExpr>(Expression)) {
-      if (Assignment) {
-        const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-        return Operator && Operator->getOperator() == OO_Equal ? Call : nullptr;
-      }
-      return isa<CXXMemberCallExpr>(Call) &&
-             isa_and_nonnull<CXXConversionDecl>(Call->getDirectCallee()) ? Call : nullptr;
-    }
-    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression)) {
-      switch (Cast->getCastKind()) {
-      case CK_NoOp: case CK_LValueToRValue:
-      case CK_ArrayToPointerDecay: case CK_FunctionToPointerDecay:
-      case CK_IntegralCast: case CK_IntegralToBoolean:
-      case CK_IntegralToFloating: case CK_FloatingToIntegral:
-      case CK_FloatingToBoolean: case CK_FloatingCast:
-      case CK_NullToPointer: case CK_PointerToBoolean:
-        break;
-      case CK_UserDefinedConversion:
-        if (Assignment || !userConversionCall(Cast, A.Context))
-          return nullptr;
-        break;
-      case CK_BitCast:
-        if (!Cast->getType()->isPointerType() ||
-            !Cast->getSubExpr()->getType()->isPointerType() ||
-            Cast->getType()->isFunctionPointerType() ||
-            Cast->getSubExpr()->getType()->isFunctionPointerType() ||
-            (!Cast->getType()->getPointeeType()->isVoidType() &&
-             !Cast->getSubExpr()->getType()->getPointeeType()->isVoidType()))
-          return nullptr;
-        break;
-      default:
-        return nullptr;
-      }
-      Expression = Cast->getSubExpr();
-      continue;
-    }
-    const Expr *Sub = nullptr;
-    if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Expression);
-        Temporary && Temporary->isPRValue())
-      Sub = Temporary->getSubExpr();
-    else if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression);
-             Cleanup && !Cleanup->getNumObjects())
-      Sub = Cleanup->getSubExpr();
-    else if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Expression);
-             Temporary && fullExpressionTemporary(Temporary, A.Context)) {
-      Expression = Temporary->getSubExpr();
-      continue;
-    }
-    if (!Sub || !A.Context.hasSameType(Expression->getType(), Sub->getType()) ||
-        Expression->getValueKind() != Sub->getValueKind())
-      return nullptr;
-    Expression = Sub;
-  }
-  return nullptr;
-}
-
-static const CXXConstructExpr *operationRootConstruction(Adapter &A,
-    const OperationTraitSource &Source) {
-  if (!Source.Attempted || !Source.Complete || !Source.Root ||
-      Source.Root->getType().isNull() || !Source.Root->getType()->isRecordType() ||
-      !Source.Root->isPRValue() || Source.Root->isTypeDependent() ||
-      Source.Root->isValueDependent() || Source.Root->isInstantiationDependent())
-    return nullptr;
-  const Expr *Expression = Source.Root;
-  for (unsigned Depth = 0; Depth <= 64; ++Depth) {
-    A.chargeExpansion(1, Expression->getExprLoc());
-    if (const auto *Construction = dyn_cast<CXXConstructExpr>(Expression))
-      return Construction;
-    const Expr *Sub = nullptr;
-    if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Expression))
-      Sub = Temporary->getSubExpr();
-    else if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression);
-             Cleanup && !Cleanup->getNumObjects())
-      Sub = Cleanup->getSubExpr();
-    if (!Sub || !Sub->isPRValue() ||
-        !A.Context.hasSameType(Expression->getType(), Sub->getType()))
-      return nullptr;
-    Expression = Sub;
-  }
-  return nullptr;
 }
 
 static bool inlineTemplateDefaultingSource(Adapter &A, const FunctionDecl *Function) {
@@ -2346,19 +2240,14 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const GeneratedOperationSources *Generated = nullptr,
     const std::set<const CXXConstructExpr *> *QueryConstructions = nullptr,
     const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr,
-    const std::set<const CallExpr *> *QueryCalls = nullptr,
-    TypeTrait QueryTrait = TT_IsConstructible) {
+    const std::set<const CallExpr *> *QueryCalls = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
     return false;
   OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated, QueryDestructors);
-  const auto *TopLevelConstruction = QueryConstructions
-      ? operationRootConstruction(A, Source) : nullptr;
-  const auto *TopLevelCall = QueryCalls ? operationRootCall(A, Source, QueryTrait) : nullptr;
   auto QueryCallSource = [&](const CallExpr *Call, const CXXMethodDecl *Method) {
-    return Call == TopLevelCall && QueryCalls && QueryCalls->count(Call) &&
-           SourceCheck.queryCallSignature(Method);
+    return QueryCalls && QueryCalls->count(Call) && SourceCheck.queryCallSignature(Method);
   };
   auto PrototypeSource = [&](const FunctionProtoType *Prototype,
                              const FunctionDecl *Function) {
@@ -2531,8 +2420,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
       const bool Implicit = implicitSpecialMemberSource(A, Constructor, false);
       const bool UserSource = ordinaryConstructor(Constructor) &&
           (Defined(Constructor) ||
-           (Construction == TopLevelConstruction && QueryConstructions &&
-            QueryConstructions->count(Construction) &&
+           (QueryConstructions && QueryConstructions->count(Construction) &&
             SourceCheck.queryConstructorSignature(Constructor)));
       if ((!Implicit && !GeneratedOperation(Constructor) &&
            !UserSource) ||
@@ -2637,11 +2525,6 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
 static bool operationTraitNeedsExceptionSource(TypeTrait Trait) {
   return Trait == TT_IsNothrowConstructible || Trait == BTT_IsNothrowAssignable ||
          Trait == BTT_IsNothrowConvertible;
-}
-
-static bool isConstructionTypeTrait(TypeTrait Trait) {
-  return Trait == TT_IsConstructible || Trait == TT_IsNothrowConstructible ||
-         Trait == TT_IsTriviallyConstructible;
 }
 
 static bool isOperationTypeTrait(TypeTrait Trait) {
@@ -10337,7 +10220,7 @@ public:
     };
     Queue(Queue, RootRecord, 0);
   }
-  void queueConsumedDestructorSignature(const TypeTraitExpr *Query) {
+  void queueConsumedOperationSignatures(const TypeTraitExpr *Query) {
     auto Found = A.OperationTraits.find(Query);
     if (Found == A.OperationTraits.end())
       return;
@@ -10350,44 +10233,141 @@ public:
                                        Source.Destructor, Query->getExprLoc());
       return;
     }
-    // A retained complete record prvalue consumes owning destruction too.
-    // Do not peel references or wrappers, select a destructor, or repair a
-    // missing operation. The final operation checker still proves the exact
-    // root shape, operands, calls, signatures and lifetime dependencies.
+    // Walk only the expression edges accepted by the final operation checker.
+    // Each selected expression supplies its own signature evidence; neither a
+    // method whitelist nor a scan of unrelated retained query events is used.
     if (!isOperationTypeTrait(Query->getTrait()) || !Source.Attempted ||
-        !Source.Complete || !Source.Root || Source.Root->getType().isNull() ||
-        !Source.Root->isPRValue() ||
-        Source.Root->isTypeDependent() || Source.Root->isValueDependent() ||
-        Source.Root->isInstantiationDependent())
+        !Source.Complete || !Source.Root)
       return;
-    const auto *Record = Source.Root->getType()->getAsCXXRecordDecl();
-    Record = Record ? Record->getDefinition() : nullptr;
-    if (Record)
-      queueOwningDestructorSignatures(Record, Record->getDestructor(), Query->getExprLoc());
-  }
-  void queueConsumedConstructorSignature(const TypeTraitExpr *Query) {
-    if (!isConstructionTypeTrait(Query->getTrait()))
-      return;
-    auto Found = A.OperationTraits.find(Query);
-    if (Found == A.OperationTraits.end())
-      return;
-    const auto *Construction = operationRootConstruction(A, Found->second);
-    if (Construction && lazyQueryConstructorSignature(A, Construction->getConstructor()) &&
-        QueuedConstructorSignatures.insert(Construction).second) {
-      A.chargeExpansion(1, Query->getExprLoc());
-      ConsumedConstructorSignatures.push_back(Construction);
-    }
-  }
-  void queueConsumedCallSignature(const TypeTraitExpr *Query) {
-    auto Found = A.OperationTraits.find(Query);
-    if (Found == A.OperationTraits.end())
-      return;
-    const auto *Call = operationRootCall(A, Found->second, Query->getTrait());
-    if (Call && lazyQueryCallSignature(A, dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())) &&
-        QueuedCallSignatures.insert(Call).second) {
-      A.chargeExpansion(1, Query->getExprLoc());
-      ConsumedCallSignatures.push_back(Call);
-    }
+    auto OwningResult = [&](const Expr *E) {
+      if (!E->isPRValue())
+        return;
+      const auto *Record = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl();
+      Record = Record ? Record->getDefinition() : nullptr;
+      if (Record)
+        queueOwningDestructorSignatures(Record, Record->getDestructor(), E->getExprLoc());
+    };
+    auto CallSignature = [&](const CallExpr *Call) {
+      if (lazyQueryCallSignature(A, dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())) &&
+          QueuedCallSignatures.insert(Call).second) {
+        A.chargeExpansion(1, Call->getExprLoc());
+        ConsumedCallSignatures.push_back(Call);
+      }
+      OwningResult(Call);
+    };
+    std::set<const Expr *> Seen;
+    auto Queue = [&](auto &&Self, const Expr *E, unsigned Depth) -> void {
+      if (!E || Depth > 64 || E->getType().isNull() || E->isTypeDependent() ||
+          E->isValueDependent() || E->isInstantiationDependent() || !Seen.insert(E).second)
+        return;
+      A.chargeExpansion(1, E->getExprLoc());
+      // Synthetic operands never expose their SourceExpr. Defaults retain the
+      // independent exact parameter/initializer source proof and normal traversal.
+      if (isa<OpaqueValueExpr, CXXDefaultArgExpr>(E))
+        return;
+      if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E)) {
+        switch (Cast->getCastKind()) {
+        case CK_NoOp: case CK_LValueToRValue:
+        case CK_ArrayToPointerDecay: case CK_FunctionToPointerDecay:
+        case CK_IntegralCast: case CK_IntegralToBoolean:
+        case CK_IntegralToFloating: case CK_FloatingToIntegral:
+        case CK_FloatingToBoolean: case CK_FloatingCast:
+        case CK_NullToPointer: case CK_PointerToBoolean:
+          break;
+        case CK_ConstructorConversion:
+          if (!constructorConversion(Cast, A.Context))
+            return;
+          break;
+        case CK_UserDefinedConversion:
+          if (!userConversionCall(Cast, A.Context))
+            return;
+          break;
+        case CK_BitCast:
+          if (!Cast->getType()->isPointerType() ||
+              !Cast->getSubExpr()->getType()->isPointerType() ||
+              Cast->getType()->isFunctionPointerType() ||
+              Cast->getSubExpr()->getType()->isFunctionPointerType() ||
+              (!Cast->getType()->getPointeeType()->isVoidType() &&
+               !Cast->getSubExpr()->getType()->getPointeeType()->isVoidType()))
+            return;
+          break;
+        default:
+          return;
+        }
+        Self(Self, Cast->getSubExpr(), Depth + 1);
+        return;
+      }
+      if (const auto *Construction = dyn_cast<CXXConstructExpr>(E)) {
+        const auto *Constructor = Construction->getConstructor();
+        if (!Constructor || !Construction->isPRValue() ||
+            Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+            Construction->getNumArgs() != Constructor->getNumParams() ||
+            !A.Context.hasSameUnqualifiedType(A.Context.getBaseElementType(Construction->getType()),
+                A.Context.getRecordType(Constructor->getParent())))
+          return;
+        if (lazyQueryConstructorSignature(A, Constructor) &&
+            QueuedConstructorSignatures.insert(Construction).second) {
+          A.chargeExpansion(1, Construction->getExprLoc());
+          ConsumedConstructorSignatures.push_back(Construction);
+        }
+        OwningResult(Construction);
+        for (const auto *Argument : Construction->arguments())
+          Self(Self, Argument, Depth + 1);
+        return;
+      }
+      if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(E)) {
+        const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+        if (Call->getOperator() != OO_Equal || !Method || Method->getNumParams() != 1 ||
+            Call->getNumArgs() != 2 || !directMethodReference(Call) ||
+            !A.S.owns(A.Sources, Method->getLocation()))
+          return;
+        CallSignature(Call);
+        Self(Self, Call->getArg(0), Depth + 1);
+        Self(Self, Call->getArg(1), Depth + 1);
+        return;
+      }
+      if (const auto *Call = dyn_cast<CXXMemberCallExpr>(E)) {
+        if (!ordinaryConversion(dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee())) ||
+            !directMethodReference(Call) || Call->getNumArgs() || !Call->getImplicitObjectArgument())
+          return;
+        CallSignature(Call);
+        Self(Self, Call->getImplicitObjectArgument(), Depth + 1);
+        return;
+      }
+      if (const auto *Assignment = dyn_cast<BinaryOperator>(E)) {
+        if (Assignment->getOpcode() != BO_Assign || !Assignment->isLValue() ||
+            !Assignment->getLHS()->isLValue() || !Assignment->getType()->isScalarType() ||
+            !A.Context.hasSameType(Assignment->getType(), Assignment->getLHS()->getType()))
+          return;
+        Self(Self, Assignment->getLHS(), Depth + 1);
+        Self(Self, Assignment->getRHS(), Depth + 1);
+        return;
+      }
+      if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(E)) {
+        const auto *Destructor = Temporary->getTemporary()->getDestructor();
+        const auto *Sub = Temporary->getSubExpr();
+        if (!Destructor || !Sub || !Temporary->isPRValue() || !Sub->isPRValue() ||
+            !A.Context.hasSameType(Temporary->getType(), Sub->getType()) ||
+            !A.Context.hasSameUnqualifiedType(Temporary->getType(),
+                A.Context.getRecordType(Destructor->getParent())))
+          return;
+        queueOwningDestructorSignatures(Destructor->getParent(), Destructor, E->getExprLoc());
+        Self(Self, Sub, Depth + 1);
+        return;
+      }
+      if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(E)) {
+        if (fullExpressionTemporary(Temporary, A.Context))
+          Self(Self, Temporary->getSubExpr(), Depth + 1);
+        return;
+      }
+      if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(E)) {
+        if (!Cleanup->getNumObjects() && Cleanup->getSubExpr() &&
+            A.Context.hasSameType(Cleanup->getType(), Cleanup->getSubExpr()->getType()) &&
+            Cleanup->getValueKind() == Cleanup->getSubExpr()->getValueKind())
+          Self(Self, Cleanup->getSubExpr(), Depth + 1);
+      }
+    };
+    Queue(Queue, Source.Root, 0);
   }
   bool checkConsumedOperationSignature(const CXXMethodDecl *Method) {
     const auto Location = Method->getTypeSourceInfo()->getTypeLoc();
@@ -10560,13 +10540,9 @@ public:
                                    operationTraitNeedsExceptionSource(Query->getTrait()),
                                    &CompletedOperationDefaults, &CheckedOperationExpressions,
                                    &CheckedOperationTypes, &CompletedGeneratedOperations,
-                                   isConstructionTypeTrait(Query->getTrait())
-                                       ? &CompletedQueryConstructions : nullptr,
+                                   &CompletedQueryConstructions,
                                    &CompletedQueryDestructorSignatures,
-                                   isAssignmentTypeTrait(Query->getTrait()) ||
-                                       isConversionTypeTrait(Query->getTrait())
-                                       ? &CompletedQueryCalls : nullptr,
-                                   Query->getTrait()));
+                                   &CompletedQueryCalls));
       if (!Complete) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact callable source, arguments and destruction source.");
@@ -10654,9 +10630,7 @@ public:
     });
     if (Result && A.S.coreV2() && A.S.Diagnostics.empty() &&
         !Query->isTypeDependent() && !Query->isValueDependent() && !Query->isInstantiationDependent()) {
-      queueConsumedDestructorSignature(Query);
-      queueConsumedConstructorSignature(Query);
-      queueConsumedCallSignature(Query);
+      queueConsumedOperationSignatures(Query);
     }
     return Result;
   }

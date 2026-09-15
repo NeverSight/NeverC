@@ -511,6 +511,57 @@ extern "C" bool defined_lazy_call_reference() { return __is_nothrow_convertible(
 extern "C" bool defined_lazy_call_throwing_assign() { return __is_nothrow_assignable(LazyThrowingClassCall<int>&, int); }
 extern "C" bool defined_lazy_call_throwing_convert() { return __is_nothrow_convertible(LazyThrowingClassCall<int>, int); }
 
+int composed_conversions, composed_constructions, composed_assignments;
+int composed_temporary_constructions, composed_temporary_destructions, composed_sink_constructions;
+template<class T> struct ComposedQuerySource {
+  T value;
+  operator T() const noexcept {
+    if constexpr (__is_same(T, int)) T::convert();
+    else ++composed_conversions;
+    return value;
+  }
+};
+template<class T> struct ComposedQueryValue {
+  T value;
+  ComposedQueryValue(T n) noexcept : value(n) {
+    if constexpr (__is_same(T, int)) T::construct();
+    else ++composed_constructions;
+  }
+  ComposedQueryValue& operator=(T n) noexcept {
+    if constexpr (__is_same(T, int)) T::assign();
+    else { value = n; ++composed_assignments; }
+    return *this;
+  }
+};
+template<class T> struct ComposedQueryTemporary {
+  T value;
+  ComposedQueryTemporary(T n) noexcept : value(n) {
+    if constexpr (__is_same(T, int)) T::construct();
+    else ++composed_temporary_constructions;
+  }
+  ~ComposedQueryTemporary() noexcept(false) {
+    if constexpr (__is_same(T, int)) T::destroy();
+    else ++composed_temporary_destructions;
+  }
+};
+template<class T> struct ComposedQuerySink {
+  T value;
+  ComposedQuerySink(const ComposedQueryTemporary<T>& temporary) noexcept : value(temporary.value) {
+    if constexpr (__is_same(T, int)) T::construct();
+    else ++composed_sink_constructions;
+  }
+};
+extern "C" bool defined_composed_construct() { return __is_nothrow_constructible(ComposedQueryValue<int>, ComposedQuerySource<int>); }
+extern "C" bool defined_composed_assign() { return __is_nothrow_assignable(ComposedQueryValue<int>&, ComposedQuerySource<int>); }
+extern "C" bool defined_composed_scalar_construct() { return __is_nothrow_constructible(double, ComposedQuerySource<int>); }
+extern "C" bool defined_composed_scalar_assign() { return __is_nothrow_assignable(double&, ComposedQuerySource<int>); }
+extern "C" bool defined_composed_constructor_conversion() { return __is_nothrow_convertible(int, ComposedQueryValue<int>); }
+extern "C" bool defined_composed_trivial() { return __is_trivially_constructible(ComposedQueryValue<int>, ComposedQuerySource<int>); }
+extern "C" bool defined_composed_temporary() { return __is_constructible(ComposedQuerySink<int>, int); }
+extern "C" bool defined_composed_temporary_nothrow() { return __is_nothrow_constructible(ComposedQuerySink<int>, int); }
+extern "C" bool defined_composed_throwing_construct() { return __is_constructible(ComposedQueryValue<int>, LazyThrowingClassCall<int>); }
+extern "C" bool defined_composed_throwing_nothrow() { return __is_nothrow_constructible(ComposedQueryValue<int>, LazyThrowingClassCall<int>); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -928,6 +979,39 @@ int main() {
         defined_lazy_call_throwing_convert() || lazy_call_assignments != 1 || lazy_call_copies != 1 ||
         lazy_call_moves != 1 || lazy_call_conversions != 1 || lazy_call_references != 1 ||
         lazy_destructor_calls != 2 || lazy_destructor_order != 37) return 100;
+  }
+  if (!defined_composed_construct() || !defined_composed_assign() ||
+      !defined_composed_scalar_construct() || !defined_composed_scalar_assign() ||
+      !defined_composed_constructor_conversion() || defined_composed_trivial() ||
+      !defined_composed_temporary() || defined_composed_temporary_nothrow() ||
+      !defined_composed_throwing_construct() || defined_composed_throwing_nothrow() ||
+      composed_conversions || composed_constructions || composed_assignments ||
+      composed_temporary_constructions || composed_temporary_destructions ||
+      composed_sink_constructions) return 101;
+  {
+    ComposedQuerySource<unsigned> source{5};
+    ComposedQueryValue<unsigned> first(source);
+    ComposedQueryValue<unsigned>& assigned = (first = source);
+    double scalar = 0;
+    scalar = source;
+    ComposedQueryValue<unsigned> second = 7;
+    if (&assigned != &first || first.value != 5 || second.value != 7 || scalar != 5.0 ||
+        &first.value == &second.value || composed_conversions != 3 ||
+        composed_constructions != 2 || composed_assignments != 1 ||
+        composed_temporary_constructions || composed_temporary_destructions) return 102;
+    ComposedQuerySink<unsigned> sink(11);
+    if (sink.value != 11 || composed_temporary_constructions != 1 ||
+        composed_temporary_destructions != 1 || composed_sink_constructions != 1) return 103;
+    source.value = 13;
+    ComposedQueryValue<unsigned> third(source);
+    double constructed(source);
+    if (third.value != 13 || constructed != 13.0 || first.value != 5 ||
+        &first.value == &third.value || !defined_composed_construct() || !defined_composed_assign() ||
+        !defined_composed_scalar_construct() || defined_composed_temporary_nothrow() ||
+        defined_composed_throwing_nothrow() || composed_conversions != 5 ||
+        composed_constructions != 3 || composed_assignments != 1 ||
+        composed_temporary_constructions != 1 || composed_temporary_destructions != 1 ||
+        composed_sink_constructions != 1 || lazy_call_throwing_conversions != 1) return 104;
   }
   return 0;
 }

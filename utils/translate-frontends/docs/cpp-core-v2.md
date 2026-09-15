@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 537 accepted, 319 unsupported-source, fifteen missing-definition and twenty invalid-C++ cases cover
+The paired 555 accepted, 320 unsupported-source, seventeen missing-definition and twenty-one invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1187,25 +1187,26 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has one hundred O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has one hundred and four O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. One hundred and twelve exported query
+default evaluation with full-expression temporary cleanup. One hundred and twenty-two exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
 ### Lazy class-template constructor signatures
 
-The three constructibility predicates can use a checked signature for an ordinary
+Construction, assignment and conversion predicates can use a checked signature for an ordinary
 constructor of a concrete class-template instance whose body remains uninstantiated.
 The constructor must be referenced but unused, with an exact uncopied inline
 definition origin and already resolved standard exception specifications on every
 actual redeclaration. This permits dependent or unsupported source in that unused
 body; actual runtime use still instantiates and checks the body normally.
 
-Only the current query's exact complete record-prvalue construction is eligible,
-with unchanged temporary-binding or cleanup envelopes. The completed proof belongs
-to that expression, not every use of the constructor. Nested constructions,
-conversion/assignment queries and unvisited template-body queries cannot borrow it.
+Each exact construction consumed inside the current complete retained operation
+is eligible, including constructor conversions and nested argument construction.
+The completed proof belongs to that expression, not every use of the constructor.
+The bounded traversal follows only supported operation expressions and checked
+temporary/conversion envelopes; it never scans unvisited template-body queries.
 Copy/move constructor signatures and complete false trivial/nothrow results use
 the same checks. Explicit member function-template constructors, separate template
 definitions and missing ordinary definitions retain their existing requirements.
@@ -1231,8 +1232,10 @@ specification. Unary nothrow destruction does not mark the destructor referenced
 so its existing exact lookup/resolution event supplies selection evidence.
 
 Only the existing authorized signature queue can register this proof: an actually
-visited valid unary destruction query or a complete retained record-prvalue result
-and its owning base/field/array graph. Completing TypeSourceInfo through another
+visited valid unary destruction query or a complete retained operation's consumed
+record-prvalue construction/call/binding and its owning base/field/array graph.
+This includes a temporary inside an operation with a scalar or reference result.
+Completing TypeSourceInfo through another
 ordinary traversal alone does not register a lazy destructor. Once registered,
 that exact destructor's signature may supply another query's source dependency,
 including an earlier or later selected default containing `sizeof` of a temporary.
@@ -1249,32 +1252,37 @@ covered by the shared runtime fixture.
 
 ### Lazy class-template assignment and conversion signatures
 
-The three assignment predicates and three conversion predicates can check an
+Construction, assignment and conversion predicates can check an
 ordinary operator of a concrete class-template instance while its inline body
-remains uninstantiated. Assignment requires the retained top-level `operator=`
+remains uninstantiated. Assignment requires an exact retained `operator=`
 call, including copy/move and other admitted assignment signatures. Conversion
-requires the retained top-level conversion-function call. Supported standard
+requires an exact retained conversion-function call. Supported standard
 conversion, temporary binding, materialization and cleanup envelopes retain their
-type and value category checks. Finding a call never searches its arguments or
-object for another eligible call.
+type and value category checks. Checked constructor arguments, assignment operands
+and conversion objects can contain further selected operations, each requiring its
+own exact expression proof. Thus a scalar assignment or construction may consume
+a lazy template conversion, and a class construction may consume one in an argument.
 
 The actual selected method must be referenced, unused and have no actual body,
 with an exact uncopied inline origin and already resolved standard specifications.
 A first check traverses only its existing concrete signature in the matching
 method context. Completed signatures register the exact call expression; final
-validation independently matches it to the current query's root and checks every
+validation reaches that same expression from the current query's root and checks every
 actual redeclaration's source and current prototype. Separate template definitions,
 member function-templates and missing ordinary definitions retain their restrictions.
 
-The proof is limited to that query call. Construction queries, conversions nested
-inside an assignment argument, and scalar assignments using a lazy RHS conversion
-cannot borrow it. False nothrow/trivial results retain all source checks, including
-owning destruction of a record result. Unvisited query events cannot start signature
+The proof is limited to that exact selected expression. Synthetic operands are
+leaves, and selected default initializers keep their separate parameter/source
+proof instead of being traversed through this queue. Ordinary source calls cannot
+use these expression completions to bypass their body requirements. False
+nothrow/trivial results retain all source checks, including owning destruction of
+nested record temporaries. Unvisited query events cannot start signature
 work. All signature and generated-body queues finish before final checking, including
 queries discovered in another method's exception specification. Real runtime calls
 still instantiate and check bodies normally. The shared runtime fixture checks
 query-only poisoned specializations, real assignment reference identity, move
-effects, reference conversions, standard post-conversions and zero query effects.
+effects, reference conversions, nested conversion counts, temporary destruction,
+standard post-conversions and zero query effects.
 
 ### Resolved exception source for operation queries
 

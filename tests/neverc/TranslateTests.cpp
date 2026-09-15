@@ -5404,6 +5404,24 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluat
 
 TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"composed-query-scalar-construction", "template<class T>struct R{operator T()const noexcept{return T::body();}};static_assert(__is_constructible(int,R<int>)&&__is_nothrow_constructible(double,R<int>)&&!__is_trivially_constructible(int,R<int>));"},
+      {"composed-query-converting-constructor", "template<class T>struct R{R(T)noexcept{T::body();}};static_assert(__is_convertible(int,R<int>)&&__is_nothrow_convertible(int,R<int>));"},
+      {"composed-query-lazy-constructor-argument", "template<class T>struct S{operator T()const noexcept{return T::body();}};template<class T>struct R{R(T)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R<int>,S<int>));"},
+      {"composed-query-lazy-assignment-argument", "template<class T>struct S{operator T()const noexcept{return T::body();}};template<class T>struct R{R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R<int>&,S<int>)&&__is_nothrow_assignable(R<int>&,S<int>)&&!__is_trivially_assignable(R<int>&,S<int>));"},
+      {"composed-query-builtin-assignment", "template<class T>struct R{operator T()const noexcept{return T::body();}};static_assert(__is_assignable(int&,R<int>)&&__is_nothrow_assignable(double&,R<int>)&&!__is_trivially_assignable(int&,R<int>));"},
+      {"composed-query-nested-throwing-conversion", "template<class T>struct S{operator T()const noexcept(false){return T::body();}};template<class T>struct R{R(T)noexcept{T::body();}};static_assert(__is_constructible(R<int>,S<int>)&&!__is_nothrow_constructible(R<int>,S<int>));"},
+      {"composed-query-nested-owning-temporary", "template<class T>struct S{S(T)noexcept{T::construct();}~S()noexcept(false){T::destroy();}};struct R{R(const S<int>&)noexcept{}};static_assert(__is_constructible(R,int)&&!__is_nothrow_constructible(R,int));"},
+      {"composed-query-assignment-owning-temporary", "template<class T>struct R{R&operator=(const R&)noexcept{T::assign();return *this;}~R()noexcept(false){T::destroy();}};template<class T>struct S{operator R<T>()const noexcept{T::convert();return {};}};static_assert(__is_assignable(R<int>&,S<int>)&&!__is_nothrow_assignable(R<int>&,S<int>));"},
+      {"composed-query-reference-construction", "template<class T>struct R{T value;operator T&()noexcept{T::body();return value;}};static_assert(__is_nothrow_constructible(int&,R<int>&));"},
+      {"composed-query-call-reference-default-constructor", "template<class T>struct R{R(T,int=sizeof(T))noexcept{T::body();}};static_assert(__is_nothrow_convertible(int,R<int>));"},
+      {"composed-query-nested-constructor-default", "template<class T>struct S{S(T,int=sizeof(T))noexcept{T::body();}};struct R{R(S<int>)noexcept{}};static_assert(__is_nothrow_constructible(R,int));"},
+      {"composed-query-nested-reentry", "template<class T>struct S{operator T()const noexcept{T::convert();}};template<class T>struct R{R(T)noexcept(__is_nothrow_assignable(T&,S<T>)){T::construct();}};static_assert(__is_nothrow_constructible(R<int>,S<int>));"},
+      {"composed-query-unvisited-concrete-event", "template<class T>struct S{operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>bool unused(){return __is_nothrow_constructible(int,S<int>);}static_assert(__is_class(S<int>));"},
+      {"lazy-class-call-construction-independent-proof", "template<class T>struct R{operator T()const noexcept{T::body();}};static_assert(__is_nothrow_convertible(R<int>,int));static_assert(__is_nothrow_constructible(int,R<int>));"},
+      {"lazy-class-call-builtin-assignment-independent-proof", "template<class T>struct R{operator T()const noexcept{T::body();}};static_assert(__is_nothrow_convertible(R<int>,int));static_assert(__is_nothrow_assignable(int&,R<int>));"},
+      {"lazy-class-call-nested-assignment-independent-proof", "template<class T>struct R{operator T()const noexcept{T::body();}};static_assert(__is_nothrow_convertible(R<int>,int));struct S{S&operator=(int)noexcept{return *this;}};static_assert(__is_nothrow_assignable(S&,R<int>));"},
+      {"lazy-class-signature-conversion-independent-proof", "template<class T>struct R{R(int)noexcept{T::body();}};static_assert(__is_constructible(R<int>,int));static_assert(__is_convertible(int,R<int>));"},
+      {"lazy-class-signature-nested-independent-proof", "template<class T>struct R{R(int)noexcept{T::body();}};static_assert(__is_constructible(R<int>,int));struct S{S(R<int>)noexcept{}};static_assert(__is_constructible(S,int));"},
       {"lazy-class-call-unvisited-nondependent-query", "template<class T>struct R{operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>bool unused(){return __is_nothrow_convertible(R<int>,int);}static_assert(__is_class(R<int>));"},
       {"lazy-class-call-materialized-value-reference", "template<class T>struct R{operator T()const noexcept{return T::body();}};static_assert(__is_convertible(R<int>,const int&)&&__is_nothrow_convertible(R<int>,const int&));"},
       {"lazy-class-call-assignment-poison", "template<class T>struct R{R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_assignable(R<int>&,int)&&__is_nothrow_assignable(R<int>&,int)&&!__is_trivially_assignable(R<int>&,int));"},
@@ -5954,6 +5972,12 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"composed-query-hidden-nested-call-spec", "template<class T>struct S{operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>struct R{R(T)noexcept{T::body();}};static_assert(__is_nothrow_constructible(R<int>,S<int>));"},
+      {"composed-query-hidden-nested-constructor-spec", "template<class T>struct S{S(T)noexcept(sizeof(long double)>0){T::body();}};struct R{R(S<int>)noexcept{}};static_assert(__is_nothrow_constructible(R,int));"},
+      {"composed-query-hidden-nested-destruction", "template<class T>struct S{S(T)noexcept{T::construct();}~S()noexcept(sizeof(long double)>0){T::destroy();}};struct R{R(const S<int>&)noexcept{}};static_assert(__is_nothrow_constructible(R,int));"},
+      {"composed-query-hidden-nested-constructor-default", "template<class T>struct S{S(T,int=sizeof(long double))noexcept{T::body();}};struct R{R(S<int>)noexcept{}};static_assert(__is_nothrow_constructible(R,int));"},
+      {"composed-query-split-nested-source", "template<class T>struct S{operator T()const noexcept;};template<class T>S<T>::operator T()const noexcept{T::body();}struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S<int>));"},
+      {"composed-query-member-template-nested-source", "struct S{template<class T>operator T()const noexcept{T::body();}};struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S));"},
       {"lazy-class-call-hidden-assignment-spec", "template<class T>struct R{R&operator=(T)noexcept((sizeof(long double),false)){T::body();return *this;}};static_assert(!__is_nothrow_assignable(R<int>&,int));"},
       {"lazy-class-call-hidden-conversion-spec", "template<class T>struct R{operator T()const noexcept((sizeof(long double),false)){T::body();}};static_assert(!__is_nothrow_convertible(R<int>,int));"},
       {"lazy-class-call-hidden-assignment-parameter", "template<class T>using A=decltype((sizeof(long double),int{}));template<class T>struct R{R&operator=(A<T>)noexcept{T::body();return *this;}};static_assert(__is_assignable(R<int>&,int));"},
@@ -5963,9 +5987,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"lazy-class-call-member-function-template", "template<class T>struct R{template<class U>R&operator=(U)noexcept{U::body();return *this;}};static_assert(__is_assignable(R<int>&,int));"},
       {"lazy-class-call-private-assignment", "template<class T>class R{R&operator=(T)noexcept{T::body();return *this;}};static_assert(!__is_assignable(R<int>&,int));"},
       {"lazy-class-call-deleted-conversion", "template<class T>struct R{operator T()const=delete;};static_assert(!__is_convertible(R<int>,int));"},
-      {"lazy-class-call-construction-cannot-borrow", "template<class T>struct R{operator T()const noexcept{T::body();}};static_assert(__is_nothrow_convertible(R<int>,int));static_assert(__is_nothrow_constructible(int,R<int>));"},
-      {"lazy-class-call-builtin-assignment-cannot-borrow", "template<class T>struct R{operator T()const noexcept{T::body();}};static_assert(__is_nothrow_convertible(R<int>,int));static_assert(__is_nothrow_assignable(int&,R<int>));"},
-      {"lazy-class-call-nested-assignment-cannot-borrow", "template<class T>struct R{operator T()const noexcept{T::body();}};static_assert(__is_nothrow_convertible(R<int>,int));struct S{S&operator=(int)noexcept{return *this;}};static_assert(__is_nothrow_assignable(S&,R<int>));"},
       {"lazy-class-call-hidden-result-destruction", "template<class T>struct V{~V()noexcept(sizeof(long double)>0){T::destroy();}};template<class T>struct R{operator V<T>()const noexcept{T::body();return {};}};static_assert(__is_nothrow_convertible(R<int>,V<int>));"},
       {"lazy-class-call-real-assignment-hidden-body", "template<class T>struct R{R&operator=(T)noexcept{long double hidden=0;return *this;}};static_assert(__is_nothrow_assignable(R<int>&,int));void f(R<int>&value){value=3;}"},
       {"lazy-class-call-real-conversion-hidden-body", "template<class T>struct R{operator T()const noexcept{return T(sizeof(long double));}};static_assert(__is_nothrow_convertible(R<int>,int));int f(const R<int>&value){return value;}"},
@@ -5980,8 +6001,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"lazy-class-signature-hidden-parameter", "template<class T>using A=decltype((sizeof(long double),int{}));template<class T>struct R{R(A<T>)noexcept{T::body();}};static_assert(__is_constructible(R<int>,int));"},
       {"lazy-class-signature-hidden-default", "template<class T>struct R{R(int=sizeof(long double))noexcept{T::body();}};static_assert(__is_constructible(R<int>));"},
       {"lazy-class-signature-split-origin", "template<class T>struct R{R(T)noexcept;};template<class T>R<T>::R(T)noexcept{T::body();}static_assert(__is_constructible(R<int>,int));"},
-      {"lazy-class-signature-conversion-cannot-borrow", "template<class T>struct R{R(int)noexcept{T::body();}};static_assert(__is_constructible(R<int>,int));static_assert(__is_convertible(int,R<int>));"},
-      {"lazy-class-signature-nested-cannot-borrow", "template<class T>struct R{R(int)noexcept{T::body();}};static_assert(__is_constructible(R<int>,int));struct S{S(R<int>)noexcept{}};static_assert(__is_constructible(S,int));"},
       {"lazy-class-signature-hidden-owning-destruction", "template<class T>struct F{~F()noexcept(sizeof(long double)>0)=default;};template<class T>struct R{F<T>field;R()noexcept{T::body();}};static_assert(__is_constructible(R<int>));"},
       {"lazy-class-signature-real-hidden-body", "template<class T>struct R{R()noexcept{long double hidden=0;}};static_assert(__is_constructible(R<int>));int main(){R<int>value;}"},
       {"result-signature-hidden-root", "template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0)=default;};static_assert(__is_constructible(R<int>));"},
@@ -6287,6 +6306,8 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainRequiredDefinitions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"composed-query-default-cannot-borrow", "template<class T>struct S{operator T()const noexcept{T::body();}};static_assert(__is_nothrow_convertible(S<int>,int));S<int>*p;struct R{R(int=sizeof(static_cast<int>(*p)))noexcept{}};static_assert(__is_nothrow_constructible(R));"},
+      {"composed-query-unvisited-nested-event", "template<class T>struct S{operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>bool unused(){return __is_nothrow_constructible(int,S<int>);}S<int>*p;using A=decltype((static_cast<int>(*p),int{}));static_assert(__is_constructible(A));"},
       {"materialized-template-missing-destructor", "template<class T>struct R{~R()noexcept;};void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>));"},
       {"implicit-construct-missing-destructor", "struct R{~R()noexcept;};static_assert(__is_constructible(R));"},
       {"generated-destructor-owning-missing-definition", "struct F{~F()noexcept;};struct R{F value;~R()=default;};static_assert(__is_nothrow_destructible(R));"},
@@ -6316,6 +6337,7 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainRequiredDefinitions) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsKeepCppDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"composed-query-real-nested-body", "template<class T>struct S{operator T()const noexcept{return T::body();}};struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S<int>));R f(S<int>source){return R(source);}"},
       {"lazy-class-call-real-assignment-body-poison", "template<class T>struct R{R&operator=(T)noexcept{T::body();return *this;}};static_assert(__is_nothrow_assignable(R<int>&,int));void f(R<int>&value){value=3;}"},
       {"lazy-class-call-real-conversion-body-poison", "template<class T>struct R{operator T()const noexcept{return T::body();}};static_assert(__is_nothrow_convertible(R<int>,int));int f(const R<int>&value){return value;}"},
       {"lazy-class-destructor-real-body-error", "template<class T>struct R{~R()noexcept{T::body();}};static_assert(__is_nothrow_destructible(R<int>));int main(){R<int>value;}"},

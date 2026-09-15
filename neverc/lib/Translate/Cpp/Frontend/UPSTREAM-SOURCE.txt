@@ -417,9 +417,10 @@ already-defaulted methods manufactures a completed concrete signature. An
 actual visited query with exact valid lookup/resolution/snapshot identity can
 enqueue the first TypeLoc traversal of an admitted inline defaulted class-template
 destructor. Exact TypeLoc map presence prevents replay, including incomplete nodes.
-Other actually visited operation queries can supply the same first owning-signature
-check through an attempted, complete, concrete record-prvalue root and its already
-declared destructor. No wrappers or references are peeled, and incomplete roots
+Other actually visited complete concrete operation queries can supply the same
+first owning-signature check through a consumed record-prvalue construction, call
+or exact temporary binding, including nested operations. Only the checked operation
+expression edges are followed; pointer/reference referents and incomplete roots
 supply no signature work. Final operation shape, operand, definition, exception
 and lifetime checks remain mandatory even when the retained trait result is false.
 Normal method context and original/resolved exception checks remain; no body or
@@ -443,31 +444,35 @@ retained roots and selected default expressions. Default constructor nodes must
 match their selected parent type and prvalue category before that composition;
 assignment source checks are unchanged. Clang's omitted trivial-destructor binding
 can give construction and destruction different nothrow booleans, both preserved.
-The three construction traits can additionally check an ordinary concrete class
-constructor's selected signature while its inline body stays uninstantiated.
+Construction, assignment and conversion traits can additionally check an ordinary
+concrete class constructor's selected signature while its inline body stays uninstantiated.
 Only referenced, unused, non-defaulted constructors with the exact uncopied inline
 origin and resolved current standard prototypes qualify. First TSI traversal uses
 the actual method/declarator context and normal parameter/default source checks;
 existing incomplete nodes are never replayed. Completion is tied to the exact
-retained top-level CXXConstructExpr through only same-type prvalue BTE/EWC envelopes.
-Nested constructions and other query kinds cannot borrow a function-wide proof.
+retained CXXConstructExpr, including nested arguments and constructor conversions.
+Every reached expression needs its own proof; no function-wide proof is registered.
 Every actual redeclaration's source and current specification, arguments, defaults
 and owning destruction remain independently required. Constructor/destructor
 signature and generated-body queues drain completely after prior contexts exit.
 No unused body is instantiated or added to runtime emission.
-The three assignment and three conversion traits can retain lazy ordinary concrete
-class operator signatures for their exact top-level operator= or conversion call.
+These traits can also retain lazy ordinary concrete class operator signatures for
+their exact selected operator= or conversion calls, including nested conversions.
 Pinned BuildBinOp/InitializationSequence select these in an unevaluated context;
-MarkFunctionReferenced need not instantiate the inline body. Supported single-path
-standard conversion/BTE/EWC/full-expression MTE wrappers preserve the candidate,
-but extraction stops at the first call without entering operands or implicit objects.
+MarkFunctionReferenced need not instantiate the inline body. The bounded operation
+traversal follows only supported casts, constructor arguments, assignment operands,
+conversion objects and checked BTE/EWC/full-expression MTE wrappers. Opaque operands
+are leaves and CXXDefaultArgExpr initializers keep their independent source proof;
+no arbitrary child, body or unused query registry is traversed.
 Only referenced, unused, bodyless methods with an exact uncopied inline origin and
 resolved standard current prototypes enter the exact-call signature queue. Existing
 actual TSI nodes are checked once in their concrete context, then final validation
-matches the call pointer to the current trait root and rechecks every redeclaration.
+reaches that same call pointer from the current root and rechecks every redeclaration.
 The constructor, destructor, call and generated queues drain after each context
-exits. Nested/cross-trait uses do not borrow completion; false results and record
-result destruction remain checked. No runtime helper or body is manufactured.
+exits. Ordinary type/default source cannot borrow the call's completion; false
+results and owning destruction of nested record temporaries remain checked.
+Each BTE supplies its exact destructor; ordinary record-prvalue constructions/calls
+read only existing destructor declarations. No runtime helper or body is manufactured.
 Ordinary unused concrete class destructors can also retain their lazy inline bodies
 after exact authorized signature-queue completion. Their raw origin, absence of
 actual bodies, all actual redeclaration TSIs and current standard specifications
