@@ -4,7 +4,7 @@
 
 # 将 C++ 转译为 NeverC
 
-Core v2 类型元数据现支持自有源码中的不完整非联合类，包括前置声明与未实例化模板类型。分类和数组维度查询保留精确源码身份，不生成类存储；运行时类型、回调和操作查询仍要求完整的已支持类型。原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+Core v2 类型元数据现支持自有源码中的不完整非联合类，包括前置声明与未实例化模板类型。分类和数组维度查询保留精确源码身份，不生成类存储；运行时类型与回调仍要求完整的已支持类型。引用／指针操作查询可使用这些身份，并保留精确操作源码证明；实际选中的惰性方法返回签名仍须通过完整类型检查。原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core v2 操作查询现可检查未知长度数组的类型信息。构造与析构的直接返回、精确引用绑定及数组到指针转换均保留对应源码证据；运行时存储仍受原有限制。原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 

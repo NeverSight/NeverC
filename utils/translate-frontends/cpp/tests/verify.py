@@ -6724,6 +6724,35 @@ extern "C" void run(){D value;}
         assert not expected
 
     operation_trait_positive = {
+        'incomplete-pointer-construction': 'struct R;static_assert(__is_constructible(R*)&&__is_nothrow_constructible(R*,decltype(nullptr))&&__is_trivially_constructible(R*,R*));',
+        'incomplete-pointer-assignment': 'struct R;static_assert(__is_assignable(R*&,R*)&&__is_nothrow_assignable(R*&,decltype(nullptr))&&__is_trivially_assignable(const R*&,R*));',
+        'incomplete-pointer-false': 'struct R;struct S;static_assert(!__is_assignable(R*&,S*)&&!__is_convertible(R*,S*)&&!__is_constructible(R*,S*));',
+        'incomplete-pointer-void': 'struct R;static_assert(__is_convertible(R*,void*)&&__is_convertible_to(R*,const void*)&&__is_nothrow_convertible(decltype(nullptr),R*));',
+        'incomplete-pointer-cv': 'struct R;static_assert(__is_convertible(R*,const R*)&&!__is_convertible(const R*,R*)&&!__is_assignable(R*const&,R*));',
+        'incomplete-reference-construction': 'struct R;static_assert(__is_constructible(R&,R&)&&__is_nothrow_constructible(const R&,R&)&&__is_trivially_constructible(R&&,R&&));',
+        'incomplete-reference-conversion': 'struct R;static_assert(__is_convertible(R&,const R&)&&__is_nothrow_convertible(R&&,const R&)&&__is_convertible_to(R&&,R&&));',
+        'incomplete-reference-destruction': 'struct R;static_assert(__is_nothrow_destructible(R&)&&__is_nothrow_destructible(R&&)&&__is_nothrow_destructible(R*));',
+        'incomplete-array-preoperation': 'struct R;static_assert(!__is_constructible(R[])&&!__is_nothrow_constructible(R[])&&!__is_trivially_constructible(R[])&&!__is_nothrow_destructible(R[]));',
+        'incomplete-array-binding': 'struct R;static_assert(__is_constructible(R(&)[],R(&)[])&&__is_nothrow_constructible(R(&)[3],R(&)[3])&&__is_nothrow_destructible(R(&)[3]));',
+        'incomplete-array-decay': 'struct R;static_assert(__is_constructible(R*,R[])&&__is_nothrow_convertible(R[],R*)&&__is_trivially_assignable(R*&,R[]));',
+        'incomplete-fixed-array-conversion': 'struct R;static_assert(__is_convertible(R[3],R*)&&__is_convertible(R(&)[3],const R*));',
+        'incomplete-value-preoperation': 'struct R;static_assert(!__is_convertible(int,R)&&!__is_nothrow_convertible(R,R)&&!__is_convertible_to(R,void));',
+        'incomplete-value-array-destination': 'struct R;static_assert(!__is_convertible(R,R[])&&!__is_convertible(void,R)&&!__is_convertible(int,R[3]));',
+        'incomplete-pointer-template-argument': 'struct R;template<class T>constexpr bool f(){return __is_constructible(T*,decltype(nullptr));}static_assert(f<R>());',
+        'incomplete-reference-template-argument': 'struct R;template<class T>constexpr bool f(){return __is_nothrow_constructible(T&,T&);}static_assert(f<R>());',
+        'incomplete-operation-alias': 'struct R;template<class T>using Ref=T&;template<class T>using Arr=T[];static_assert(__is_convertible(Ref<R>,const R&)&&__is_constructible(R*,Arr<R>));',
+        'incomplete-operation-default': 'struct R;template<class T=R*>constexpr bool f(){return __is_trivially_constructible(T);}static_assert(f());',
+        'incomplete-operation-class': 'struct R;template<class T,bool B=__is_nothrow_destructible(T&)>struct M{static constexpr bool value=B;};static_assert(M<R>::value);',
+        'incomplete-operation-variable': 'struct R;template<class T>inline constexpr bool value=__is_convertible(T*,void*);static_assert(value<R>);',
+        'incomplete-operation-pack': 'struct R;struct S;template<class...T>constexpr bool f(){return (__is_nothrow_destructible(T)&&...);}static_assert(f<>()&&f<R&,S*,R(&)[]>()&&!f<R[]>());',
+        'incomplete-operation-lazy-element': 'template<class T>struct R{typename T::missing value;};static_assert(__is_constructible(R<int>*)&&__is_nothrow_destructible(R<int>&));',
+        'incomplete-operation-selected-parameter': 'struct R;template<bool,class T>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<class T,typename Enable<__is_convertible(T,R*),int>::type N=7>constexpr int f(){return N;}static_assert(f<R*>()==7);',
+        'incomplete-operation-bound-effects': 'struct R;int effects;static_assert(__is_constructible(R(&)[sizeof(++effects)],R(&)[sizeof(int)]));',
+        'incomplete-operation-reference': 'struct R;static_assert(__is_nothrow_destructible(R&));',
+        'incomplete-operation-pointer': 'struct R;static_assert(__is_constructible(R*,decltype(nullptr)));',
+        'incomplete-operation-conversion': 'struct R;static_assert(__is_convertible(R*,void*));',
+        'incomplete-operation-parameter-source': 'struct R;template<bool,class T>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<class T,typename Enable<__is_convertible(T,R*),int>::type N=7>int f(){return N;}static_assert(__is_class(R));',
+        'unknown-operation-incomplete-element': 'struct R;static_assert(!__is_nothrow_destructible(R[]));',
         'lazy-class-call-incomplete-query': 'template<class T>struct R{operator T()const noexcept(sizeof(long double)>0){T::body();}};template<class T>bool unused(){return __is_nothrow_convertible(R<T>,T);}static_assert(__is_class(R<int>));',
         'shared-signature-destructor-before': 'template<class T>struct R{~R()noexcept(false){if constexpr(__is_same(T,int))T::body();}};static_assert(!__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}',
         'shared-signature-destructor-after': 'template<class T>struct R{~R()noexcept(false){if constexpr(__is_same(T,int))T::body();}};void force(){R<unsigned>r;}static_assert(!__is_nothrow_destructible(R<int>));',
@@ -7386,10 +7415,22 @@ extern "C" void run(){D value;}
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
-        'incomplete-operation-reference': 'struct R;static_assert(__is_nothrow_destructible(R&));',
-        'incomplete-operation-pointer': 'struct R;static_assert(__is_constructible(R*,decltype(nullptr)));',
-        'incomplete-operation-conversion': 'struct R;static_assert(__is_convertible(R*,void*));',
-        'incomplete-operation-parameter-source': 'struct R;template<bool,class T>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<class T,typename Enable<__is_convertible(T,R*),int>::type N=7>int f(){return N;}static_assert(__is_class(R));',
+        'incomplete-reference-failed-binding': 'struct R;struct S;static_assert(!__is_constructible(R&,S&));',
+        'incomplete-reference-failed-conversion': 'struct R;struct S;static_assert(!__is_convertible(R&,S&));',
+        'incomplete-reference-failed-assignment': 'struct R;static_assert(!__is_assignable(R&,R&));',
+        'incomplete-record-failed-array-assignment': 'struct R;static_assert(!__is_nothrow_assignable(R[],R[]));',
+        'incomplete-record-failed-value-conversion': 'struct R;static_assert(!__is_convertible(R,int));',
+        'incomplete-operation-hidden-default': 'struct R;template<class T,unsigned N=sizeof(long double)>using P=T*;static_assert(__is_constructible(P<R>));',
+        'incomplete-operation-hidden-bound': 'struct R;static_assert(__is_nothrow_destructible(R(&)[sizeof(long double)]));',
+        'incomplete-operation-volatile': 'struct R;static_assert(__is_constructible(volatile R*));',
+        'incomplete-operation-union': 'union R;static_assert(__is_constructible(R*));',
+        'incomplete-lazy-conversion-pointer-return': 'struct R;template<class T>struct S{operator R*()const noexcept{T::body();return nullptr;}};static_assert(__is_convertible(S<int>,R*));',
+        'incomplete-lazy-conversion-reference-return': 'struct R;template<class T>struct S{operator R&()const noexcept{return *T::pointer();}};static_assert(__is_convertible(S<int>,R&));',
+        'incomplete-lazy-assignment-pointer-return': 'struct R;template<class T>struct S{R*operator=(int)noexcept{T::body();return nullptr;}};static_assert(__is_assignable(S<int>&,int));',
+        'incomplete-lazy-member-template-return': 'struct R;template<class T>struct S{template<class U>operator U*()const noexcept{T::body();return nullptr;}};static_assert(__is_convertible(S<int>,R*));',
+        'incomplete-lazy-constructor-parameter': 'struct R;template<class T>struct S{S(R*)noexcept{T::body();}};static_assert(__is_constructible(S<int>,R*));',
+        'incomplete-lazy-default-parameter': 'struct R;template<class T>struct S{S(int,R*p=nullptr)noexcept{T::body();}};static_assert(__is_constructible(S<int>,int));',
+        'incomplete-defined-conversion-return': 'struct R;struct S{operator R*()const noexcept{return nullptr;}};static_assert(__is_convertible(S,R*));',
         'shared-signature-hidden-original-expression': 'template<class T>struct R{~R()noexcept((sizeof(long double),false)){if constexpr(__is_same(T,int))T::body();}};static_assert(!__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}',
         'shared-signature-hidden-resolved-expression': 'template<class T>constexpr bool spec(){if constexpr(__is_same(T,int)){return sizeof(long double)>0;}return false;}template<class T>struct R{~R()noexcept(spec<T>()){if constexpr(__is_same(T,int))T::body();}};static_assert(__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}',
         'shared-signature-missing-construction-source': 'template<class T>struct R{R()noexcept(false);};template<class T>R<T>::R()noexcept(false){if constexpr(__is_same(T,int))T::body();}static_assert(__is_constructible(R<int>));void force(){R<unsigned>r;}',
@@ -7401,7 +7442,6 @@ extern "C" void run(){D value;}
         'unknown-operation-hidden-bound': 'static_assert(!__is_constructible(int[][sizeof(long double)]));',
         'unknown-operation-erased-default': 'template<class T,unsigned N=sizeof(long double)>using A=T[];static_assert(!__is_nothrow_destructible(A<int>));',
         'unknown-operation-element-layout': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct M{Bad<int>field;};struct R{char field[noexcept(M())?1:2];};static_assert(!__is_nothrow_destructible(R[]));',
-        'unknown-operation-incomplete-element': 'struct R;static_assert(!__is_nothrow_destructible(R[]));',
         'unknown-operation-runtime-reference': 'using A=int[];void f(A&){}',
         'unknown-operation-runtime-pointer': 'using P=int(*)[];P f(){return nullptr;}',
         'unknown-operation-constructor-parameter': 'struct R{R(int(&)[])noexcept{}};static_assert(__is_constructible(R,int(&)[]));',
@@ -7781,6 +7821,10 @@ extern "C" void run(){D value;}
     for name, source in operation_trait_missing.items():
         check("v2-operation_trait_missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     operation_trait_invalid = {
+        'incomplete-direct-assignment': 'struct R;static_assert(!__is_assignable(R,R));',
+        'incomplete-direct-destruction': 'struct R;static_assert(!__is_nothrow_destructible(R));',
+        'incomplete-fixed-array-construction-argument': 'struct R;static_assert(__is_constructible(R*,R[3]));',
+        'incomplete-fixed-array-assignment-argument': 'struct R;static_assert(__is_assignable(R*&,R[3]));',
         'copied-query-real-constructor-body': 'template<class T>struct R{template<class U>R(U)noexcept{U::body();}};static_assert(__is_constructible(R<int>,unsigned));void force(){R<int>value(1u);}',
         'copied-query-real-conversion-body': 'template<class T>struct R{template<class U>operator U()const noexcept{return U::body();}};static_assert(__is_convertible(R<int>,unsigned));unsigned force(R<int>r){return r;}',
         'copied-query-real-assignment-body': 'template<class T>struct R{template<class U>R&operator=(U)noexcept{U::body();return *this;}};static_assert(__is_assignable(R<int>&,unsigned));void force(R<int>&r){r=1u;}',
@@ -8052,6 +8096,11 @@ extern "C" void run(){D value;}
         assert relocated == defined_operation_module
 
     operation_trait_expected = {
+        "trait_forward_construct": True, "trait_forward_assign": True,
+        "trait_forward_reference": True, "trait_forward_reference_convert": True,
+        "trait_forward_destruct_reference": True, "trait_forward_destruct_array": False,
+        "trait_forward_construct_array": False, "trait_forward_convert_void": True,
+        "trait_forward_convert_value": False, "trait_forward_pointer_false": False,
         "trait_unknown_construct": False,
         "trait_unknown_destruct": False,
         "trait_unknown_reference": True,
@@ -8065,10 +8114,11 @@ extern "C" void run(){D value;}
         "trait_nothrow_convert": True, "trait_destruct": False,
         "trait_nothrow_destruct": True, "trait_trivial_destruct": True,
     }
-    # Reuse the exact eighteen runtime expressions across all supported native ABIs.
+    # Reuse the exact twenty-eight runtime expressions across supported native ABIs.
     operation_trait_abi_source = "\n".join(
         line for line in operation_trait_source.splitlines()
-        if line.startswith(("enum ", "using ", "struct Record ", 'extern "C" bool trait_')))
+        if line.startswith(("enum ", "using ", "struct Record ", "struct Forward;",
+                            "struct OtherForward;", 'extern "C" bool trait_')))
     for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
                    "x86_64-apple-macosx", "aarch64-apple-macosx",
                    "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
@@ -8077,6 +8127,8 @@ extern "C" void run(){D value;}
                        profile="cpp-core-v2", target=target)
         expected = operation_trait_expected.copy()
         assert not module["globals"]
+        assert len(module["records"]) == 1
+        assert module["records"][0]["fields"] == [{"name": "value", "type": "int"}]
         assert {f["name"] for f in module["functions"]} == set(expected)
         assert all(not f["params"] for f in module["functions"])
         for function in module["functions"]:

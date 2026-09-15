@@ -581,7 +581,7 @@ notice. BLAKE3/LICENSE and NeverCCppThirdPartyNotices.txt retain the additional
 notices for the statically included Support sources. The separate cpp-sdk
 directory contains the exact header source snapshot, hashes, provenance,
 generation script, and notices for the embedded C++ header distribution.
-Unknown-bound operation operands follow the same complete-element metadata
+Unknown-bound operation operands follow the same admitted-element metadata
 check. Pinned construction returns false for an incomplete destination before
 allocating hypothetical operands; direct incomplete-array nothrow destruction
 returns false before destructor lookup, while references return true. The exact
@@ -609,6 +609,18 @@ Owned named non-union ordinary forward declarations add no IR record. Existing
 template/copy/full source paths, exact arguments, defaults and frames stay
 authoritative even when specialization declaration traversal remains lazy.
 Complete definitions still receive their existing checks. Operation operands and
-retained operation expression types do not receive incomplete-record permission;
-ordinary runtime carriers and callback signatures also retain their restrictions.
+retained expression types can use incomplete identities with their exact operation
+proof. Ordinary runtime carriers and callback signatures retain their restrictions.
 No pinned-source or transport-schema change is required.
+
+Pinned construction and assignment require complete non-void/non-unknown-array
+operand types; references/pointers can remain complete with incomplete referents.
+Nothrow reference/unknown-array destruction returns before lookup. Conversion to
+void, an array/function destination or an incomplete destination can return false
+before an attempt, preserving the exact empty event. Failed record-reference
+operations cannot replace an attempted incomplete root with that shortcut.
+Retained primitive nodes admit identity-only types, while selected construction,
+calls, casts, defaults, exception and owning destruction keep their existing proof.
+Lazy query conversion/assignment methods bypass VisitFunctionDecl, so each actual
+redeclaration's return type explicitly retains the ordinary carrier gate after
+its TSI/prototype source check. Parameter declarations keep their normal type gate.

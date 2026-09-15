@@ -945,13 +945,15 @@ queries, aliases and template arguments. Their actual declarations and retained
 template sources remain checked without forming an IR record or inventing size.
 The eight-ABI identity fixture requires seven constant boolean exports, no records,
 globals, parameters or extra functions; rank/extent values retain native `size_t`.
-Actual carriers, callbacks and operation-query types still require complete
-admitted records, and later complete definitions retain full source checking.
+Actual carriers and callbacks still require complete admitted records, and later
+complete definitions retain full source checking. Operation-query types can use
+incomplete identity only with their exact retained operation proof; selected lazy
+conversion/assignment return signatures keep their separate complete-carrier gate.
 Supported unknown-array operation queries likewise emit only their checked boolean
 result. Direct incomplete-array nothrow destruction retains an explicit no-lookup
 source event; successful reference/decay operations keep their exact source proof.
-The eight-ABI scalar query fixture checks eighteen exports, no globals or function
-parameters, and no additional query helpers.
+The eight-ABI scalar query fixture checks twenty-eight exports, no globals or function
+parameters, only its original complete record, and no additional query helpers.
 See the supported types, index domain and template behavior in the
 [array-query contract](cpp-core-v2.md#array-type-queries).
 

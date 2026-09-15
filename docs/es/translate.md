@@ -4,7 +4,7 @@
 
 # Traducir C++ a NeverC
 
-Los metadatos de tipos Core v2 admiten clases incompletas que no sean uniones del código propio, incluidas declaraciones anticipadas y plantillas sin instanciar. La clasificación y las dimensiones de matrices conservan su identidad de origen sin crear almacenamiento. Los tipos en ejecución, callbacks y consultas de operaciones siguen requiriendo tipos completos compatibles. La CI de la revisión realiza la verificación nativa. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+Los metadatos de tipos Core v2 admiten clases incompletas que no sean uniones del código propio, incluidas declaraciones anticipadas y plantillas sin instanciar. La clasificación y las dimensiones de matrices conservan su identidad de origen sin crear almacenamiento. Los tipos en ejecución y callbacks siguen requiriendo tipos completos compatibles. Las consultas sobre referencias y punteros usan estas identidades con pruebas de origen exactas; los tipos de retorno de métodos seleccionados sin instanciar conservan su comprobación de completitud. La CI de la revisión realiza la verificación nativa. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Las consultas de operaciones Core v2 inspeccionan matrices de longitud desconocida mediante tipos verificados. Los resultados directos de construcción y destrucción, los enlaces de referencias y las conversiones a punteros conservan su evidencia de origen. El almacenamiento sigue limitado; la CI de la revisión verifica la ejecución nativa. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 

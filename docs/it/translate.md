@@ -4,7 +4,7 @@
 
 # Tradurre C++ in NeverC
 
-I metadati di tipo Core v2 supportano classi incomplete non union del sorgente posseduto, incluse dichiarazioni anticipate e template non istanziati. Classificazione e dimensioni degli array mantengono l’identità del sorgente senza creare storage. Tipi a runtime, callback e query di operazione richiedono ancora tipi completi supportati. La verifica nativa richiede la CI della revisione. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+I metadati di tipo Core v2 supportano classi incomplete non union del sorgente posseduto, incluse dichiarazioni anticipate e template non istanziati. Classificazione e dimensioni degli array mantengono l’identità del sorgente senza creare storage. Tipi a runtime e callback richiedono ancora tipi completi supportati. Le query su riferimenti e puntatori usano queste identità con prove esatte del sorgente; i tipi restituiti dai metodi selezionati non istanziati mantengono il controllo di completezza. La verifica nativa richiede la CI della revisione. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Le query di operazione Core v2 esaminano array di lunghezza sconosciuta tramite tipi verificati. I risultati immediati di costruzione e distruzione, i legami dei riferimenti e le conversioni a puntatori conservano le prove del sorgente. Lo storage resta limitato; la verifica nativa richiede la CI della revisione. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 

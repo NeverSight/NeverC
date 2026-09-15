@@ -4,6 +4,8 @@ using Function = int(int);
 using CertainFunction = int(int) noexcept;
 using Null = decltype(nullptr);
 struct Record { int value; };
+struct Forward;
+struct OtherForward;
 struct Base {};
 struct Derived : Base {};
 struct PrivateDerived : private Base {};
@@ -64,6 +66,16 @@ extern "C" bool trait_unknown_reference() { return __is_nothrow_constructible(Un
 extern "C" bool trait_unknown_convert() { return __is_nothrow_convertible(UnknownRows,int(*)[3]); }
 extern "C" bool trait_unknown_assign() { return __is_trivially_assignable(int*&,Unknown); }
 extern "C" bool trait_unknown_pointer() { return __is_constructible(Unknown*); }
+extern "C" bool trait_forward_construct() { return __is_nothrow_constructible(Forward*, Null); }
+extern "C" bool trait_forward_assign() { return __is_trivially_assignable(Forward*&, Forward[]); }
+extern "C" bool trait_forward_reference() { return __is_constructible(const Forward&, Forward&); }
+extern "C" bool trait_forward_reference_convert() { return __is_nothrow_convertible(Forward&&, const Forward&); }
+extern "C" bool trait_forward_destruct_reference() { return __is_nothrow_destructible(Forward&); }
+extern "C" bool trait_forward_destruct_array() { return __is_nothrow_destructible(Forward[]); }
+extern "C" bool trait_forward_construct_array() { return __is_constructible(Forward[]); }
+extern "C" bool trait_forward_convert_void() { return __is_convertible(Forward*, void*); }
+extern "C" bool trait_forward_convert_value() { return __is_convertible(int, Forward); }
+extern "C" bool trait_forward_pointer_false() { return __is_convertible(Forward*, OtherForward*); }
 
 int main() {
   if (!trait_construct() || !trait_nothrow_construct() ||
@@ -130,5 +142,18 @@ int main() {
       __is_convertible(int*, Unknown)) return 23;
   if (!__is_constructible(int(*)[3], int[][noexcept(next())?2:3]) ||
       effects != 1 || constructions || destructions) return 24;
+  if (!trait_forward_construct() || !trait_forward_assign() || !trait_forward_reference() ||
+      !trait_forward_reference_convert() || !trait_forward_destruct_reference()) return 25;
+  if (trait_forward_destruct_array() || trait_forward_construct_array() ||
+      !trait_forward_convert_void() || trait_forward_convert_value() || trait_forward_pointer_false()) return 26;
+  if (!constructible<Forward&, Forward&>() || !Default<Forward*>::value ||
+      !trivial<Forward*&, Forward*&> ||
+      !all_destructible<Forward&, Forward*, Forward(&)[3]>() || all_destructible<Forward[]>()) return 27;
+  if (!__is_nothrow_constructible(Forward(&)[sizeof(++effects)], Forward(&)[sizeof(int)]) ||
+      !noexcept(__is_convertible(Forward[(sizeof(++effects), 3)], Forward*)) ||
+      effects != 1 || constructions || destructions) return 28;
+  if (!__is_constructible(Forward(*)[3], Forward[][3]) ||
+      !__is_nothrow_assignable(Forward*&, Forward[]) ||
+      !__is_convertible(Forward[], const void*)) return 29;
   return 0;
 }

@@ -938,8 +938,9 @@ definition, when present, retains the existing whole-source and layout checks.
 This metadata creates no IR record, storage, helper or invented size. Bounds,
 qualifiers, source expressions and expansion budgets remain checked, including
 unsupported source hidden behind a constant result. Actual objects, fields,
-parameters, results, callback signatures and operation-query operands keep their
-complete-carrier checks. The eight-ABI identity fixture asserts seven constant
+parameters, results and callback signatures keep their complete-carrier checks.
+Operation queries use the [separate retained-operation proof](#incomplete-record-operation-types).
+The eight-ABI identity fixture asserts seven constant
 boolean exports with no records, globals, parameters or additional functions;
 the rank/extent fixture also checks incomplete elements with native `size_t`.
 O0/O2 and relocation verification use the implementing revision's CI.
@@ -962,10 +963,9 @@ ordinary pointers, references and fixed arrays of those types are covered; `void
 and ordinary function types keep their actual C++ query results. Pointers to
 admitted records, including arrays of such pointers, qualify because constructing,
 assigning or destroying the pointer does not invoke an operation on the pointee.
-The pointee layout and all written type sources still pass the existing checks.
-A class-template pointee requires an already-materialized class definition; a
-written `sizeof(R<int>)` can require that layout while leaving unused constructor
-bodies lazy. Incomplete record-pointer operation support remains separate work.
+All written type sources still pass the existing checks. An incomplete pointee
+can use its checked record identity without forcing a class-template definition;
+an available actual definition retains its normal source and layout checks.
 An inaccessible base-pointer conversion returns false without inventing access.
 
 Construction takes one destination type and zero to 64 argument types. Assignment
@@ -1018,8 +1018,8 @@ admitted operands. It shares the supported trait arities with concrete queries,
 but never reads a dependent boolean or invents a semantic operation event. Nested
 dependent pointer/alias shapes remain excluded;
 each selected substitution still needs its own concrete type and retained source proof.
-The paired 658 accepted, 370 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
-these boundaries. Twenty-four scalar saved-NC O0/O2 runtime checkpoints, relocation and eighteen
+The paired 687 accepted, 381 unsupported-source, seventeen missing-definition and thirty-two invalid-C++ cases cover
+these boundaries. Twenty-nine scalar saved-NC O0/O2 runtime checkpoints, relocation and twenty-eight
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
 introduced.
@@ -1028,7 +1028,7 @@ introduced.
 
 Supported operation queries can inspect `int[]`, `R[][3]`, aliases and their
 pointer/reference wrappers through bounded type-only validation. The element must
-already be complete and admitted. Incomplete array destinations preserve the
+be admitted, including a checked incomplete record identity. Incomplete array destinations preserve the
 construction query's early false result; nothrow destruction preserves false for
 an incomplete array and true for a reference without looking up or resolving the
 element destructor. A retained selection event must show no destructor, prototype
@@ -1043,6 +1043,32 @@ checked even for false results. Unselected element constructors/destructors stay
 lazy. Actual function parameters, callback signatures, expressions and object
 storage still require ordinary supported runtime carriers; these queries do not
 add an unknown-array storage representation or adopt C++20 conversions.
+
+### Incomplete record operation types
+
+Owned incomplete non-union class identities also qualify for operation queries
+where the retained semantic event supplies the necessary proof. Constructing or
+assigning `R*`, converting it to `void*`, binding `R&` from the same reference and
+destroying a reference require no referent layout. Exact array reference binding
+and unknown-array decay follow the same checked root and synthetic operand rules.
+Nothrow destruction of `R[]` returns false with an explicit no-lookup event.
+
+Pinned conversion checks can return false before creating any hypothetical
+operand: examples include `int` to incomplete `R`, `R` to `R`, or `R` to `void`.
+These results keep their empty unattempted events. Failed record-reference
+assignment/conversion cannot use that shortcut after an attempt has begun.
+Unrelated pointer types keep the existing scalar false-result path. Direct record
+construction, assignment and destruction, and fixed-array arguments needing
+complete elements, retain Clang's original completeness diagnostics.
+
+Each retained expression still passes exact type/source, cast, selection and
+owning-destruction checks. A selected lazy conversion or assignment additionally
+validates every actual redeclaration's return carrier: a completed type source
+does not grant an incomplete return signature. Parameter/default and exception
+source checks are unchanged. No incomplete object, callback, runtime parameter
+or result gains storage or an emitted helper. The eight-ABI operation fixture
+checks twenty-eight constant boolean exports and only its original complete
+record; O0/O2 tests preserve unevaluated effects and relocation.
 
 ### Implicit trivial record operations
 

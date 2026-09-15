@@ -4,7 +4,7 @@
 
 # Traduire C++ vers NeverC
 
-Les métadonnées de types Core v2 acceptent les classes incomplètes hors union du source détenu, y compris les déclarations anticipées et les templates non instanciés. Classification et dimensions des tableaux conservent leur identité source sans créer de stockage. Les types à l’exécution, callbacks et requêtes d’opération exigent toujours des types complets pris en charge. La validation native relève de la CI de la révision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+Les métadonnées de types Core v2 acceptent les classes incomplètes hors union du source détenu, y compris les déclarations anticipées et les templates non instanciés. Classification et dimensions des tableaux conservent leur identité source sans créer de stockage. Les types à l’exécution et callbacks exigent toujours des types complets pris en charge. Les requêtes sur références et pointeurs utilisent ces identités avec une preuve source exacte ; les types de retour des méthodes sélectionnées non instanciées restent soumis au contrôle de complétude. La validation native relève de la CI de la révision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Les requêtes d’opération Core v2 examinent les tableaux de taille inconnue via leurs types vérifiés. Les résultats immédiats de construction/destruction, les liaisons de références et les conversions en pointeurs conservent leurs preuves de source. Le stockage reste limité ; la validation native relève de la CI de la révision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 

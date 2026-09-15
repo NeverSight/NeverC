@@ -4,7 +4,7 @@
 
 # C++ nach NeverC übersetzen
 
-Core-v2-Typmetadaten unterstützen unvollständige Nicht-Union-Klassen aus eigenen Quellen, einschließlich Vorwärtsdeklarationen und nicht instanziierter Templates. Klassifikation und Array-Dimensionen behalten ihre Quellidentität ohne Record-Speicher. Laufzeittypen, Callbacks und Operationsabfragen benötigen weiterhin vollständige unterstützte Typen. Die native Prüfung erfolgt in der CI der Implementierung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
+Core-v2-Typmetadaten unterstützen unvollständige Nicht-Union-Klassen aus eigenen Quellen, einschließlich Vorwärtsdeklarationen und nicht instanziierter Templates. Klassifikation und Array-Dimensionen behalten ihre Quellidentität ohne Record-Speicher. Laufzeittypen und Callbacks benötigen weiterhin vollständige unterstützte Typen. Referenz- und Zeigeroperationen verwenden diese Identitäten mit exaktem Quellnachweis; Rückgabetypen ausgewählter nicht instanziierter Methoden bleiben vollständig geprüft. Die native Prüfung erfolgt in der CI der Implementierung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core-v2-Operationsabfragen prüfen nun Arrays unbekannter Länge anhand ihrer Typinformationen. Frühe Ergebnisse für Konstruktion und Destruktion sowie Referenzbindungen und Zeigerkonvertierungen behalten ihre Quellnachweise. Die Speichergrenzen gelten weiter; die native Prüfung erfolgt in der CI der Implementierung. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).
 

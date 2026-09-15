@@ -2205,6 +2205,11 @@ public:
           !requireType(operationTypeSourceKey(Declaration->getTypeSourceInfo()->getTypeLoc())) ||
           !prototypeSource(Prototype, Declaration))
         return false;
+      // Uninstantiated query methods bypass VisitFunctionDecl. Their completed
+      // TSI proves source, not permission for an otherwise unsupported return
+      // carrier; retained primitive operands may use incomplete identities.
+      if (A.type(Declaration->getReturnType(), Declaration->getLocation(), true).empty())
+        return false;
     }
     return true;
   }
@@ -2547,7 +2552,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     if (!E || Depth > 64 || E->isInstantiationDependent())
       return false;
     A.chargeExpansion(1, E->getExprLoc());
-    A.checkQueryType(E->getType(), E->getExprLoc(), true);
+    A.checkQueryType(E->getType(), E->getExprLoc(), true, true);
     if (isa<OpaqueValueExpr>(E))
       return Operands.count(E);
     if (const auto *Cast = dyn_cast<ImplicitCastExpr>(E)) {
@@ -2827,7 +2832,7 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
       reject(L, "type classification source", "Every classified type requires its resolved written type source.");
       throw Failure{};
     }
-    checkQueryType(Argument->getType(), L, true, !OperationTrait);
+    checkQueryType(Argument->getType(), L, true, true);
     RecordOperand |= Context.getBaseElementType(
         Argument->getType().getNonReferenceType())->isRecordType();
   }
@@ -5997,8 +6002,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!Info)
         return false;
       if (!Info->getType()->isInstantiationDependentType()) {
-        A.checkQueryType(Info->getType(), Query->getExprLoc(), true,
-                         !isOperationTypeTrait(Query->getTrait()));
+        A.checkQueryType(Info->getType(), Query->getExprLoc(), true, true);
         continue;
       }
       auto Written = Info->getTypeLoc().getUnqualifiedLoc().getAs<TemplateTypeParmTypeLoc>();
