@@ -6394,6 +6394,18 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert not expected
 
     operation_trait_positive = {
+        'owning-signature-explicit-parent-overrides-child': 'template<class T>struct Leaf{~Leaf()noexcept(false)=default;};static_assert(!__is_nothrow_destructible(Leaf<int>));template<class T>struct R{Leaf<T>field;~R()noexcept=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'owning-signature-implicit-root': 'template<class T>struct Leaf{T n;~Leaf()noexcept=default;};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));',
+        'owning-signature-nested-arrays': 'template<class T>struct Leaf{T n;~Leaf()noexcept=default;};template<class T>struct Mid{Leaf<T>fields[2];~Mid()=default;};struct R{Mid<int>fields[2];};static_assert(__is_nothrow_destructible(R[2]));',
+        'owning-signature-throwing-child': 'template<bool B>struct Leaf{~Leaf()noexcept(B)=default;};struct R{Leaf<false>first;Leaf<true>last;};static_assert(!__is_nothrow_destructible(R));',
+        'owning-signature-explicit-parent': 'template<class T>struct Leaf{T n;~Leaf()noexcept=default;};struct R{Leaf<int>field;~R()noexcept{}};static_assert(__is_nothrow_destructible(R));',
+        'owning-signature-empty-base': 'template<class T>struct Base{~Base()noexcept=default;};struct R:Base<int>{int n;};static_assert(__is_nothrow_destructible(R));',
+        'owning-signature-pointer-reference-lazy': 'template<class T>struct Leaf{~Leaf()noexcept(T::missing)=default;};static_assert(sizeof(Leaf<int>)>0);struct R{Leaf<int>*pointer;Leaf<int>&reference;};static_assert(__is_nothrow_destructible(R));',
+        'owning-signature-unused-body-query': 'template<class T>struct Leaf{~Leaf()noexcept(sizeof(long double)>0)=default;};struct R{Leaf<int>field;};template<class T>int unused(){static_assert(__is_nothrow_destructible(R));return T::missing;}static_assert(__is_nothrow_destructible(int));',
+        'owning-signature-reference-short-circuit': 'template<class T>struct Leaf{~Leaf()noexcept(sizeof(long double)>0)=default;};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R&));',
+        'owning-signature-deleted-short-circuit': 'template<class T>struct Leaf{~Leaf()noexcept(sizeof(long double)>0)=default;};struct R{Leaf<int>field;~R()=delete;};static_assert(!__is_nothrow_destructible(R));',
+        'owning-signature-private-short-circuit': 'template<class T>struct Leaf{~Leaf()noexcept(sizeof(long double)>0)=default;};class R{Leaf<int>field;~R()noexcept=default;};static_assert(!__is_nothrow_destructible(R));',
+        'consumed-destructor-unchecked-owning-template': 'template<class T>struct Leaf{T n;~Leaf()noexcept=default;};template<class T>struct R{Leaf<T>field;~R()=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'template-default-dependent-value': 'template<class T>struct R{T n;R(T value=T(3))noexcept:n(value){}};void force(){R<int>value;}static_assert(__is_constructible(R<int>)&&__is_nothrow_constructible(R<int>)&&!__is_trivially_constructible(R<int>));',
         'template-default-nontype-parameter': 'template<int N>struct R{int n;R(int value=N)noexcept:n(value){}};void force(){R<3>a;R<7>b(9);}static_assert(__is_nothrow_constructible(R<3>)&&__is_nothrow_constructible(R<7>));',
         'template-default-member-constructor': 'struct R{int n;template<class T>R(T first,int second=sizeof(T))noexcept:n(second){}};void force(){R value(1);}static_assert(__is_constructible(R,int)&&__is_nothrow_constructible(R,int));',
@@ -6842,6 +6854,12 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'owning-signature-hidden-child-type': 'template<class T>struct Leaf{T n;~Leaf()noexcept(sizeof(long double)>0)=default;};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));',
+        'owning-signature-hidden-child-value': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>struct Leaf{T n;~Leaf()noexcept(noexcept(Mid()))=default;};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));',
+        'owning-signature-hidden-child-after-throw': 'template<bool B>struct First{~First()noexcept(B)=default;};template<class T>struct Last{~Last()noexcept(sizeof(long double)>0)=default;};struct R{First<false>first;Last<int>last;};static_assert(!__is_nothrow_destructible(R));',
+        'owning-signature-unresolved-child': 'template<class T>struct Leaf{T n;~Leaf()noexcept(T::missing)=default;};template<class T>struct R{Leaf<T>field;~R()noexcept=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'owning-signature-unmaterialized-user-body': 'template<class T>struct Leaf{T n;~Leaf()noexcept{T::missing();}};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));',
+        'owning-signature-split-child': 'template<class T>struct Leaf{T n;~Leaf()noexcept;};template<class T>Leaf<T>::~Leaf()noexcept=default;struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));',
         'template-default-unmaterialized-root': 'template<class T>struct R{R(T n=T(3))noexcept{}};static_assert(__is_constructible(R<int>));',
         'template-default-unmaterialized-trivial-false': 'template<class T>struct R{R(T n=T(3))noexcept{}};static_assert(!__is_trivially_constructible(R<int>));',
         'template-default-hidden-written-type': 'template<class T>struct R{R(T n=T(sizeof(long double)))noexcept{}};void force(){R<int>value(3);}static_assert(__is_constructible(R<int>));',
@@ -6876,7 +6894,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'consumed-destructor-hidden-family': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>struct R{T n;~R()noexcept(noexcept(Mid()))=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'consumed-destructor-hidden-value': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};constexpr bool value=noexcept(Mid());template<class T>struct R{T n;~R()noexcept(value)=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'consumed-destructor-hidden-default': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};int value(int=noexcept(Mid()))noexcept{return 0;}template<class T>struct R{T n;~R()noexcept(noexcept(value()))=default;};static_assert(__is_nothrow_destructible(R<int>));',
-        'consumed-destructor-unchecked-owning-template': 'template<class T>struct Leaf{T n;~Leaf()noexcept=default;};template<class T>struct R{Leaf<T>field;~R()=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'consumed-destructor-hidden-nested-query': 'template<class T>struct Leaf{T n;~Leaf()noexcept(sizeof(long double)>0)=default;};template<class T>struct R{Leaf<T>field;~R()noexcept(__is_nothrow_destructible(Leaf<T>))=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'consumed-destructor-hidden-generated-query': 'template<class T>struct Leaf{T n;~Leaf()noexcept(sizeof(long double)>0)=default;};struct G{int n=__is_nothrow_destructible(Leaf<int>);constexpr G()=default;};template<class T>constexpr int value(){G g;return g.n;}template<class T>struct R{~R()noexcept(value<T>()==1)=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'inline-defaulting-split-constructor': 'struct F{int n;F()noexcept:n(1){}};template<class T>struct S{T f;S()noexcept;};template<class T>S<T>::S()noexcept=default;void force(){S<F>value;}using A=char[noexcept(S<F>())?1:2];static_assert(__is_constructible(A*));',
@@ -7235,6 +7252,10 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
                         "defined_template_default_member": True,
                         "defined_template_default_throwing": False,
                         "defined_template_default_explicit": True,
+                        "defined_owning_signature_tree": True,
+                        "defined_owning_signature_throwing": False,
+                        "defined_owning_signature_override": True,
+                        "defined_owning_signature_references": True,
                         "defined_consumed_lazy_destruction": True,
                         "defined_consumed_throwing_destruction": False,
                         "defined_inline_defaulted_assignment_source": True,

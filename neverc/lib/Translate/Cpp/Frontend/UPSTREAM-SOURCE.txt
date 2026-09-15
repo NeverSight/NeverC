@@ -411,9 +411,17 @@ destructor. Exact TypeLoc map presence prevents replay, including incomplete nod
 Normal method context and original/resolved exception checks remain; no body or
 Sema operation is requested. Signature and generated-body queues use independent
 forward indices and drain after each prior source context has exited. Unvisited
-template-body events, unselected owning signatures and missing local-class
-function frames cannot borrow the proof. Implicit nontrivial owners retain the complete owning-subobject closure;
-no generated body is requested. Lazy generated specifications are allowed only as
+template-body events and missing local-class function frames cannot borrow the
+proof. The consumed owning base/field/array graph can supply further existing resolved
+inline-defaulted class signatures for first checking. Exact record deduplication
+and the 64-level limit bound traversal; pointer/reference referents are excluded.
+No child source node supplies a query event or changes the retained root boolean.
+Pinned ImplicitExceptionSpecification::CalledDecl resolves a child before its
+throw-all short circuit, but an explicit parent noexcept need not resolve any
+child: the queue independently requires a standard current child prototype.
+An unresolved template child lacking completion still fails the final proof.
+Implicit nontrivial owners retain the complete owning-subobject closure; no
+generated body is requested. Lazy generated specifications are allowed only as
 EST_Unevaluated with the same canonical destructor owner; direct nothrow query
 snapshots remain resolved. Implicit trivial construction uses its separate owning
 constructor-family proof together with exact record-prvalue destruction, both for

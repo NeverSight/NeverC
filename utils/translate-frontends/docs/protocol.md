@@ -849,7 +849,12 @@ source-owned inline defaulting origin of the same method kind. Separate definiti
 explicit specializations and copied origin chains do not qualify. The same category
 proof applies to defaulted destruction. An actually visited query with exact
 lookup/resolution evidence can request the first traversal of an otherwise
-unvisited inline class-template destructor signature. Existing TSI nodes are not
+unvisited inline class-template destructor signature. Its exact owned by-value
+base/field/array graph can supply further already resolved signatures passing
+the same category gate, with record deduplication and a 64-level bound. These
+source nodes never substitute for the root event or boolean. Missing unresolved
+template-child completion and unavailable local-class context remain rejected;
+no pointer/reference referent is followed. Existing TSI nodes are not
 replayed; lazy body events are not scanned and no body or exception resolution is
 requested. New signature and existing generated-body work both finish before
 final source validation. Unselected owning signatures and missing local-class

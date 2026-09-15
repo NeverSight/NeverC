@@ -10020,18 +10020,38 @@ public:
       return;
     bool CanDefer = false;
     (void)nothrowDestructionSource(A, Query, Found->second, nullptr, &CanDefer);
-    const auto *Destructor = Found->second.Destructor;
-    // Only actual visited queries can select this first signature traversal.
-    // Local classes may need an enclosing function frame that has already
-    // exited, so their missing signatures cannot borrow the class-only proof.
-    if (!CanDefer || !concreteClassFunction(Destructor) ||
-        !inlineTemplateDefaultingSource(A, Destructor) ||
-        !defaultedLifecycle(Destructor) || !Destructor->getTypeSourceInfo())
+    if (!CanDefer)
       return;
-    if (QueuedDestructorSignatures.insert(Destructor).second) {
+    // The consumed owning destruction graph requires these exact source nodes.
+    // It supplies no child query event and never changes the retained root result.
+    const auto *RootDestructor = Found->second.Destructor;
+    const auto *RootRecord = RootDestructor->getParent()->getDefinition();
+    std::set<const CXXRecordDecl *> Seen;
+    auto Queue = [&](auto &&Self, const CXXRecordDecl *Record, unsigned Depth) -> void {
+      Record = Record ? Record->getDefinition() : nullptr;
+      if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()) ||
+          !Seen.insert(Record).second)
+        return;
       A.chargeExpansion(1, Query->getExprLoc());
-      ConsumedDestructorSignatures.push_back(Destructor);
-    }
+      const auto *Destructor = Record == RootRecord ? RootDestructor : Record->getDestructor();
+      // Explicit parent specifications need not resolve child specifications.
+      // Only already resolved concrete class signatures can receive a first
+      // check; a local class may require an unavailable outer function frame.
+      if (Destructor && A.S.owns(A.Sources, Destructor->getLocation()) &&
+          standardExceptionSpecification(Destructor->getType()->getAs<FunctionProtoType>()) &&
+          concreteClassFunction(Destructor) && inlineTemplateDefaultingSource(A, Destructor) &&
+          defaultedLifecycle(Destructor) && Destructor->getTypeSourceInfo() &&
+          QueuedDestructorSignatures.insert(Destructor).second) {
+        A.chargeExpansion(1, Query->getExprLoc());
+        ConsumedDestructorSignatures.push_back(Destructor);
+      }
+      for (const auto &Base : Record->bases())
+        Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1);
+      for (const auto *Field : Record->fields())
+        if (const auto *Member = A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl())
+          Self(Self, Member, Depth + 1);
+    };
+    Queue(Queue, RootRecord, 0);
   }
   bool finishConsumedDestructorSignatures(std::size_t &Index) {
     while (Index < ConsumedDestructorSignatures.size()) {
@@ -10061,8 +10081,8 @@ public:
         ImplicitInitializerOwner = SavedOwner;
         SavedSources.swap(ActiveOperationSources);
       });
-      // The retained lookup already resolved the actual specification. This
-      // checks existing written/resolved type source, with no body or Sema work.
+      // Every queued specification was already resolved. Check only its
+      // existing written/resolved type source, with no body or Sema work.
       if (!TraverseTypeLoc(Location) || !A.S.Diagnostics.empty())
         return false;
     }

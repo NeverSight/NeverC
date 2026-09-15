@@ -258,6 +258,34 @@ template<class T> struct TemplateThrowingDefault {
   TemplateThrowingDefault(T n = T(throwingTemplateDefaultValue(11))) noexcept
       : value(n) { ++template_default_owners; }
 };
+int owning_signature_destructions;
+int owning_signature_order;
+struct OwningSignatureTracked {
+  int digit;
+  ~OwningSignatureTracked() noexcept {
+    ++owning_signature_destructions;
+    owning_signature_order = owning_signature_order * 10 + digit;
+  }
+};
+template<class T> struct OwningSignatureLeaf {
+  T value;
+  OwningSignatureTracked tracked;
+  ~OwningSignatureLeaf() noexcept = default;
+};
+template<class T> struct OwningSignatureMiddle {
+  OwningSignatureLeaf<T> leaves[2];
+  ~OwningSignatureMiddle() = default;
+};
+template<class T> struct OwningSignatureTree { OwningSignatureMiddle<T> branches[2]; };
+template<bool B> struct OwningSignatureFlag { ~OwningSignatureFlag() noexcept(B) = default; };
+struct OwningSignatureThrowing { OwningSignatureFlag<false> first; OwningSignatureFlag<true> last; };
+template<class T> struct OwningSignatureOverride {
+  OwningSignatureFlag<false> field;
+  ~OwningSignatureOverride() noexcept = default;
+};
+template<class T> struct OwningSignatureLazy { T value; ~OwningSignatureLazy() noexcept(T::missing) = default; };
+static_assert(sizeof(OwningSignatureLazy<int>) == sizeof(int));
+struct OwningSignatureReferences { OwningSignatureLazy<int> *pointer; OwningSignatureLazy<int> &reference; };
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -337,6 +365,10 @@ extern "C" bool defined_template_default_trivial() { return __is_trivially_const
 extern "C" bool defined_template_default_member() { return __is_nothrow_constructible(TemplateDefaultMember, int); }
 extern "C" bool defined_template_default_throwing() { return __is_nothrow_constructible(TemplateThrowingDefault<int>); }
 extern "C" bool defined_template_default_explicit() { return __is_nothrow_constructible(TemplateThrowingDefault<int>, int); }
+extern "C" bool defined_owning_signature_tree() { return __is_nothrow_destructible(OwningSignatureTree<int>[2]); }
+extern "C" bool defined_owning_signature_throwing() { return __is_nothrow_destructible(OwningSignatureThrowing); }
+extern "C" bool defined_owning_signature_override() { return __is_nothrow_destructible(OwningSignatureOverride<int>); }
+extern "C" bool defined_owning_signature_references() { return __is_nothrow_destructible(OwningSignatureReferences); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -629,5 +661,31 @@ int main() {
       template_default_destructions != 4 || template_default_owners != 7 ||
       root_destructions != 8 || selected_default_calls != 7 || generated_destructions != 14 ||
       default_calls != 2 || destructions != 10 || lazy_signature_calls) return 76;
+  if (!defined_owning_signature_tree() || defined_owning_signature_throwing() ||
+      !defined_owning_signature_override() || !defined_owning_signature_references() ||
+      owning_signature_destructions || owning_signature_order) return 77;
+  {
+    OwningSignatureTree<unsigned> original{
+        { { { {1, {1}}, {2, {2}} } }, { { {3, {3}}, {4, {4}} } } }
+    };
+    if (original.branches[0].leaves[0].value != 1 ||
+        original.branches[1].leaves[1].value != 4 ||
+        owning_signature_destructions || owning_signature_order) return 78;
+    {
+      OwningSignatureTree<unsigned> copy(original);
+      copy.branches[0].leaves[0].value = 9;
+      if (copy.branches[0].leaves[0].value != 9 || original.branches[0].leaves[0].value != 1 ||
+          &copy.branches[0].leaves[0] == &original.branches[0].leaves[0] ||
+          owning_signature_destructions || owning_signature_order) return 79;
+      if (!defined_owning_signature_tree() || defined_owning_signature_throwing() ||
+          !defined_owning_signature_override() || !defined_owning_signature_references() ||
+          owning_signature_destructions || owning_signature_order) return 80;
+    }
+    if (owning_signature_destructions != 4 || owning_signature_order != 4321 ||
+        original.branches[0].leaves[0].value != 1) return 81;
+  }
+  if (owning_signature_destructions != 8 || owning_signature_order != 43214321 ||
+      template_default_calls != 3 || template_default_destructions != 4 || root_destructions != 8 ||
+      selected_default_calls != 7 || generated_destructions != 14 || destructions != 10) return 82;
   return 0;
 }

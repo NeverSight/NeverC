@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 444 accepted, 291 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
+The paired 456 accepted, 296 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1186,9 +1186,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has seventy-six O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has eighty-two O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Seventy-eight exported query
+default evaluation with full-expression temporary cleanup. Eighty-two exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1346,8 +1346,17 @@ all completed-source and prototype snapshot checks still apply. The pass restore
 the actual method context and checks only existing written/resolved type source,
 without instantiating a body, requesting resolution or scanning unused template
 body events. Nested visited queries can add signatures, and signature/generated
-body worklists both drain before final validation. It does not invent missing
-local-class context or unselected owning-subobject signatures. Deleted/access and
+body worklists both drain before final validation. The consumed owning graph
+also supplies exact existing signatures of by-value fields, bases and array
+elements for a first check when each signature is already resolved and satisfies
+the same concrete inline-defaulting category. Record identities are deduplicated
+and traversal is bounded to 64 levels; pointer/reference referents stay lazy.
+Child source checks neither supply a new query event nor recompute the root
+boolean. An explicit parent specification need not resolve child specifications;
+missing completion of such unresolved template children still fails the final
+source check. Existing admitted implicit/ordinary inferred specifications keep
+their separate source rules. This pass does not invent missing local-class context.
+Deleted/access and
 reference short circuits do not trigger this pass. Separate template
 defaulting and user destructors without the exact completed
 inline-definition proof still require further source evidence.
@@ -1372,10 +1381,12 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared seventy-six-checkpoint user-operation fixture checks
+queries. The shared eighty-two-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
-user/generated array destruction at O0/O2;
+user/generated array destruction at O0/O2. Query-only nested owning signatures
+use a different template specialization from the real copied object; reverse
+destruction order and independent member storage are checked;
 relocation must preserve the protocol. Native results require implementing CI.
 Standard headers and complete C++/STL support remain unfinished.
 
