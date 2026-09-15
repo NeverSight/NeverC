@@ -960,7 +960,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 114 accepted, 68 unsupported-source and seven invalid-C++ cases cover
+The paired 114 accepted, 61 unsupported-source, seven missing-definition and seven invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is

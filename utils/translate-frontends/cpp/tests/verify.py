@@ -6468,10 +6468,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'record-written-destructor': 'struct R{~R()noexcept(false)=default;};bool f(){return __is_constructible(R,R);}',
         'record-nontrivial-destruction-construction': 'struct R{~R(){}};bool f(){return __is_constructible(R);}',
         'record-unretained-base-reference': 'struct B{};struct D:B{};bool f(){return __is_convertible(D&,B&);}',
-        'user-missing-constructor': 'struct R{R(int);};bool f(){return __is_constructible(R,int);}',
-        'user-missing-conversion': 'struct R{operator int()const;};bool f(){return __is_convertible(R,int);}',
-        'user-missing-assignment': 'struct R{R&operator=(int);};bool f(){return __is_assignable(R&,int);}',
-        'user-missing-destructor': 'struct R{R(int){}~R();};bool f(){return __is_constructible(R,int);}',
         'user-hidden-body': 'struct R{R(int){long double hidden=0;}};static_assert(__is_constructible(R,int));',
         'user-hidden-out-of-line': 'struct R{R(int);};static_assert(__is_constructible(R,int));R::R(int){long double hidden=0;}',
         'user-hidden-conversion': 'struct R{operator int()const{return sizeof(long double);}};bool f(){return __is_convertible(R,int);}',
@@ -6484,12 +6480,9 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'user-conversion-template': 'struct R{template<class T>operator T()const{return T::missing;}};bool f(){return __is_convertible(R,int);}',
         'user-destructor-defaulted': 'struct R{R(int){}~R()noexcept(false)=default;};bool f(){return __is_constructible(R,int);}',
         'user-destructor-implicit-nontrivial': 'struct F{~F(){}};struct R{F f;R(){}};bool f(){return __is_constructible(R);}',
-        'user-destructor-field-missing': 'struct F{~F();};struct R{F f;R(){}~R(){}};bool f(){return __is_constructible(R);}',
         'user-self-query-incomplete': 'struct R{R(int){static_assert(!__is_constructible(R));}};bool f(){return __is_constructible(R,int);}',
         'user-mutual-query-hidden': 'struct A{A(int);};struct B{B(int);};A::A(int){static_assert(__is_constructible(B,int));}B::B(int){(void)sizeof(long double);static_assert(__is_constructible(A,int));}',
         'user-nested-default-conversion': 'struct S{S(int=3){}};struct R{R(S={}){}};bool f(){return __is_constructible(R);}',
-        'nothrow-missing-constructor': 'struct R{R(int)noexcept;};bool f(){return __is_nothrow_constructible(R,int);}',
-        'nothrow-missing-conversion': 'struct R{operator int()const noexcept;};bool f(){return __is_nothrow_convertible(R,int);}',
         'nothrow-hidden-specification': 'struct R{R(int)noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}',
         'nothrow-hidden-conversion-specification': 'struct R{operator int()const noexcept(sizeof(long double)>0){return 3;}};bool f(){return __is_nothrow_convertible(R,int);}',
         'nothrow-hidden-destructor-specification': 'struct R{R(int)noexcept{}~R()noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}',
@@ -6501,6 +6494,17 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     }
     for name, source in operation_trait_negative.items():
         check("v2-operation_trait_negative-" + name, source, 'TR0201', profile="cpp-core-v2")
+    operation_trait_missing = {
+        'user-missing-constructor': 'struct R{R(int);};bool f(){return __is_constructible(R,int);}',
+        'user-missing-conversion': 'struct R{operator int()const;};bool f(){return __is_convertible(R,int);}',
+        'user-missing-assignment': 'struct R{R&operator=(int);};bool f(){return __is_assignable(R&,int);}',
+        'user-missing-destructor': 'struct R{R(int){}~R();};bool f(){return __is_constructible(R,int);}',
+        'user-destructor-field-missing': 'struct F{~F();};struct R{F f;R(){}~R(){}};bool f(){return __is_constructible(R);}',
+        'nothrow-missing-constructor': 'struct R{R(int)noexcept;};bool f(){return __is_nothrow_constructible(R,int);}',
+        'nothrow-missing-conversion': 'struct R{operator int()const noexcept;};bool f(){return __is_nothrow_convertible(R,int);}',
+    }
+    for name, source in operation_trait_missing.items():
+        check("v2-operation_trait_missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     operation_trait_invalid = {
         'construct-arity': 'bool f(){return __is_constructible();}',
         'assign-arity': 'bool f(){return __is_assignable(int);}',
