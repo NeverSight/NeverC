@@ -290,7 +290,7 @@ definitions that completed normal source traversal. Completion excludes implicit
 and defaulted functions, whose bodies normal RAV may skip despite user-provided
 classification. Both selected and body-owning definitions consume exact completed
 TypeSourceInfo and current exception-expression nodes. A concrete template needs
-its raw original member/uncopied-primary declaration to own the exact selected
+its raw original member or proven primary-origin declaration to own the exact selected
 body, with no further instantiation metadata on that origin. Separate definitions
 and copied member-template origins cannot borrow an earlier signature's evidence;
 no unused body is instantiated. Deferred roots are checked after successful traversal,
@@ -446,7 +446,7 @@ assignment source checks are unchanged. Clang's omitted trivial-destructor bindi
 can give construction and destruction different nothrow booleans, both preserved.
 Construction, assignment and conversion traits can additionally check an ordinary
 concrete class constructor's selected signature while its inline body stays uninstantiated.
-Only referenced, unused, non-defaulted constructors with the exact uncopied inline
+Only referenced, unused, non-defaulted constructors with the exact checked inline
 origin and resolved current standard prototypes qualify. First TSI traversal uses
 the actual method/declarator context and normal parameter/default source checks;
 existing incomplete nodes are never replayed. Completion is tied to the exact
@@ -464,7 +464,7 @@ traversal follows only supported casts, constructor arguments, assignment operan
 conversion objects and checked BTE/EWC/full-expression MTE wrappers. Opaque operands
 are leaves and CXXDefaultArgExpr initializers keep their independent source proof;
 no arbitrary child, body or unused query registry is traversed.
-Only referenced, unused, bodyless methods with an exact uncopied inline origin and
+Only referenced, unused, bodyless methods with an exact checked inline origin and
 resolved standard current prototypes enter the exact-call signature queue. Existing
 actual TSI nodes are checked once in their concrete context, then final validation
 reaches that same call pointer from the current root and rechecks every redeclaration.
@@ -473,7 +473,7 @@ exits. Ordinary type/default source cannot borrow the call's completion; false
 results and owning destruction of nested record temporaries remain checked.
 Each BTE supplies its exact destructor; ordinary record-prvalue constructions/calls
 read only existing destructor declarations. No runtime helper or body is manufactured.
-Uncopied constructor and conversion function-template specializations can use this
+Constructor and conversion function-template specializations can use this
 lazy signature proof with their existing exact SelectedCallSources/FunctionSources
 events. Every retained expression independently checks successful selection at its
 original deduction location, including when its method body already exists.
@@ -492,9 +492,19 @@ final CXXOperatorCallExpr. The adapter requires the actual direct reference to n
 the exact selected declaration and preserve that operator location before checking
 its existing FunctionSources. Both defined and lazy ordinary assignment branches
 consume the selection node, including template defaults erased from the signature.
-Copied primaries, split definitions, explicit specialization origins and other
-operator categories remain excluded; neither producer behavior nor the transport
-schema changes.
+Copied member-template primaries additionally follow a bounded chain of the raw
+getInstantiatedFromMemberTemplate pointers retained in FunctionTemplateDecl's Common
+storage. Canonical declarations are used only for cycle detection, checked ordinal
+identity and class ownership, never to replace the raw terminal body source.
+Every edge requires owned valid declarations, matching method kind and parameter
+count, and the exact enclosing class pattern relation. Every member-specialization
+stop is rejected. The raw terminal method must be lexically inside its parent and
+own the inline body, and FunctionDecl::getTemplateInstantiationPattern(true) must
+return that exact declaration. Actual signature/selection frames still use the
+copied primary and inner arguments; associated outer substitutions retain their
+own class instance. Split definitions, explicit specialization origins, unproven
+copy chains and other operator categories remain excluded; neither producer
+behavior nor the transport schema changes.
 Ordinary unused concrete class destructors can also retain their lazy inline bodies
 after exact authorized signature-queue completion. Their raw origin, absence of
 actual bodies, all actual redeclaration TSIs and current standard specifications

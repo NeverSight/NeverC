@@ -1821,6 +1821,46 @@ static const FunctionProtoType *operationCalleePrototype(const CallExpr *Call) {
   return T->getAs<FunctionProtoType>();
 }
 
+static const FunctionDecl *copiedOperationTemplateOrigin(Adapter &A,
+                                                         const FunctionDecl *Function) {
+  if (!concreteMemberFunctionTemplate(Function))
+    return nullptr;
+  const auto *Primary = Function->getPrimaryTemplate();
+  if (!Primary || !Primary->getInstantiatedFromMemberTemplate())
+    return nullptr;
+  auto Indexed = A.TemplateOrdinals.find(Primary->getCanonicalDecl());
+  if (Indexed == A.TemplateOrdinals.end())
+    return nullptr;
+  const auto Ordinal = Indexed->second;
+  std::set<const FunctionTemplateDecl *> Seen;
+  for (auto *Current = Primary; Current;) {
+    A.chargeExpansion(1, Current->getLocation());
+    const auto *Method = dyn_cast<CXXMethodDecl>(Current->getTemplatedDecl());
+    auto Source = A.TemplateOrdinals.find(Current->getCanonicalDecl());
+    if (Seen.size() >= 64 || !Seen.insert(Current->getCanonicalDecl()).second ||
+        Current->isInvalidDecl() || Current->isMemberSpecialization() ||
+        !A.S.owns(A.Sources, Current->getLocation()) || !Method ||
+        Method->isInvalidDecl() || Method->getKind() != Function->getKind() ||
+        !A.S.owns(A.Sources, Method->getLocation()) ||
+        Current->getDeclContext() != Method->getParent() ||
+        Source == A.TemplateOrdinals.end() || Source->second != Ordinal)
+      return nullptr;
+    // Keep the raw edge: canonical declarations may precede the written body.
+    const auto *Next = Current->getInstantiatedFromMemberTemplate();
+    if (!Next)
+      return Method->getLexicalDeclContext() == Method->getParent() ? Method : nullptr;
+    const auto *Pattern = dyn_cast<CXXMethodDecl>(Next->getTemplatedDecl());
+    const auto *Selected = classBodyRecord(Method->getParent());
+    if (!Pattern || Pattern->getKind() != Method->getKind() ||
+        Current->getTemplateParameters()->size() != Next->getTemplateParameters()->size() ||
+        (Method->getParent()->getCanonicalDecl() != Pattern->getParent()->getCanonicalDecl() &&
+         (!Selected || Selected->getCanonicalDecl() != Pattern->getParent()->getCanonicalDecl())))
+      return nullptr;
+    Current = Next;
+  }
+  return nullptr;
+}
+
 // Category and original signature identity only. An admitted category still
 // needs the exact completed body and type/expression source nodes below.
 static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function) {
@@ -1835,9 +1875,9 @@ static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function
   const FunctionDecl *Origin = nullptr;
   if (const auto *Member = Function->getMemberSpecializationInfo())
     Origin = dyn_cast<FunctionDecl>(Member->getInstantiatedFrom());
-  else if (const auto *Primary = Function->getPrimaryTemplate();
-           Primary && !Primary->getInstantiatedFromMemberTemplate())
-    Origin = Primary->getTemplatedDecl();
+  else if (const auto *Primary = Function->getPrimaryTemplate())
+    Origin = Primary->getInstantiatedFromMemberTemplate()
+                 ? copiedOperationTemplateOrigin(A, Function) : Primary->getTemplatedDecl();
   if (!Origin || !A.S.owns(A.Sources, Origin->getLocation()))
     return false;
   A.chargeExpansion(1, Origin->getLocation());
@@ -1847,7 +1887,7 @@ static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function
   return !Origin->isImplicit() && !Origin->isDefaulted() &&
          !Origin->getMemberSpecializationInfo() && !Origin->getPrimaryTemplate() &&
          Origin->doesThisDeclarationHaveABody() && Origin->getDefinition() == Origin &&
-         Function->getTemplateInstantiationPattern() == Origin;
+         Function->getTemplateInstantiationPattern(/*ForDefinition=*/true) == Origin;
 }
 
 static bool lazyQueryConstructorSignature(Adapter &A, const CXXConstructorDecl *Constructor) {

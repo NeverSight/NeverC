@@ -650,6 +650,40 @@ extern "C" bool defined_member_assign_throwing() { return __is_nothrow_assignabl
 extern "C" bool defined_member_assign_scalar() { return __is_assignable(LazyMemberQueryThrowingAssignment&, int); }
 extern "C" bool defined_member_assign_materialized() { return __is_nothrow_assignable(LazyMemberQueryAssignment&, unsigned); }
 
+int copied_member_query_defaults;
+int copiedMemberQueryDefault(int n) noexcept { ++copied_member_query_defaults; return n; }
+template<class T> struct CopiedMemberQuery {
+  unsigned value;
+  inline static int constructions, assignments, conversions;
+  template<class U, int N = sizeof(T) + sizeof(U)>
+  CopiedMemberQuery(U n, int extra = copiedMemberQueryDefault(N)) noexcept : value(n + extra) {
+    if constexpr (__is_same(U, int)) U::construct();
+    else ++constructions;
+  }
+  template<class U, int N = sizeof(T) + sizeof(U)>
+  CopiedMemberQuery& operator=(U n) noexcept {
+    if constexpr (__is_same(U, int)) U::assign();
+    else ++assignments;
+    value = n + N;
+    return *this;
+  }
+  template<class U, int N = sizeof(T) + sizeof(U)> operator U() const noexcept {
+    if constexpr (__is_same(U, int)) U::convert();
+    else ++conversions;
+    return U(value + N);
+  }
+};
+extern "C" bool defined_copied_construct() { return __is_constructible(CopiedMemberQuery<unsigned>, int); }
+extern "C" bool defined_copied_outer_construct() { return __is_nothrow_constructible(CopiedMemberQuery<char>, int); }
+extern "C" bool defined_copied_nothrow_construct() { return __is_nothrow_constructible(CopiedMemberQuery<unsigned>, int); }
+extern "C" bool defined_copied_trivial() { return __is_trivially_constructible(CopiedMemberQuery<unsigned>, int); }
+extern "C" bool defined_copied_assign() { return __is_nothrow_assignable(CopiedMemberQuery<unsigned>&, int); }
+extern "C" bool defined_copied_outer_assign() { return __is_nothrow_assignable(CopiedMemberQuery<char>&, int); }
+extern "C" bool defined_copied_convert() { return __is_nothrow_convertible(CopiedMemberQuery<unsigned>, int); }
+extern "C" bool defined_copied_outer_convert() { return __is_nothrow_convertible(CopiedMemberQuery<char>, int); }
+extern "C" bool defined_copied_materialized_construct() { return __is_nothrow_constructible(CopiedMemberQuery<unsigned>, unsigned); }
+extern "C" bool defined_copied_materialized_convert() { return __is_nothrow_convertible(CopiedMemberQuery<unsigned>, unsigned); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -1166,6 +1200,41 @@ int main() {
         !defined_member_assign_materialized() || member_query_assignments != 3 ||
         member_query_forwarding_assignments != 2 || member_query_ordinary_assignments != 1 ||
         member_query_constructions != 2 || member_query_conversions != 2) return 112;
+  }
+  if (!defined_copied_construct() || !defined_copied_outer_construct() ||
+      !defined_copied_nothrow_construct() || defined_copied_trivial() ||
+      !defined_copied_assign() || !defined_copied_outer_assign() ||
+      !defined_copied_convert() || !defined_copied_outer_convert() ||
+      !defined_copied_materialized_construct() || !defined_copied_materialized_convert() ||
+      copied_member_query_defaults || CopiedMemberQuery<unsigned>::constructions ||
+      CopiedMemberQuery<char>::constructions || CopiedMemberQuery<unsigned>::assignments ||
+      CopiedMemberQuery<char>::assignments || CopiedMemberQuery<unsigned>::conversions ||
+      CopiedMemberQuery<char>::conversions) return 113;
+  {
+    CopiedMemberQuery<unsigned> first(5u), second(9u, 2);
+    CopiedMemberQuery<char> other(7u);
+    if (first.value != 13 || second.value != 11 || other.value != 12 ||
+        CopiedMemberQuery<unsigned>::constructions != 2 ||
+        CopiedMemberQuery<char>::constructions != 1 || copied_member_query_defaults != 2)
+      return 114;
+    CopiedMemberQuery<unsigned>& selected = (first = 11u);
+    other = 13u;
+    if (first.value != 19 || second.value != 11 || other.value != 18 ||
+        &selected != &first || &first.value == &second.value ||
+        CopiedMemberQuery<unsigned>::assignments != 1 ||
+        CopiedMemberQuery<char>::assignments != 1) return 115;
+    unsigned firstConverted = first;
+    unsigned otherConverted = other;
+    const CopiedMemberQuery<unsigned>& view = second;
+    unsigned secondConverted = view;
+    if (firstConverted != 27 || otherConverted != 23 || secondConverted != 19 ||
+        CopiedMemberQuery<unsigned>::conversions != 2 || CopiedMemberQuery<char>::conversions != 1 ||
+        !defined_copied_nothrow_construct() || !defined_copied_outer_assign() ||
+        !defined_copied_convert() || !defined_copied_materialized_construct() ||
+        !defined_copied_materialized_convert() || copied_member_query_defaults != 2 ||
+        CopiedMemberQuery<unsigned>::constructions != 2 || CopiedMemberQuery<char>::constructions != 1 ||
+        CopiedMemberQuery<unsigned>::assignments != 1 || CopiedMemberQuery<char>::assignments != 1 ||
+        member_query_assignments != 3 || member_query_forwarding_assignments != 2) return 116;
   }
   return 0;
 }

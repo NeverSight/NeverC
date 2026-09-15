@@ -801,8 +801,8 @@ Nothrow construction and destruction preserve their separate Clang results even
 when a trivial destructor binding was omitted. Already materialized inline template
 operations can use the exact completed body proof, with raw original-definition
 identity and both selected/body-owning signature source checked. No unused body is
-instantiated; separate template definitions and copied member-template origins
-remain outside this bounded proof. Template-owned query defaults are unchanged.
+instantiated; separate template definitions and unproven copied member-template
+origins remain outside this bounded proof. Template-owned query defaults are unchanged.
 For a written `decltype`, the exact terminal call result and its parentheses or
 built-in comma-right wrappers introduce no temporary, so they add no result
 destruction dependency. Callee signatures, arguments, comma-left temporaries and
@@ -873,7 +873,7 @@ retain their owning destructor signatures, even inside scalar/reference results.
 False results and actual runtime body requirements remain checked. All signature
 and generated-source queues drain before final checking, without introducing
 protocol functions, helpers or new values.
-Uncopied member-template constructors, assignments and conversions additionally
+Member-template constructors, assignments and conversions additionally
 require exact successful selection evidence at the original deduction location.
 Constructors/conversions use their retained selection events. An ordinary assignment
 uses its exact direct function reference, selected declaration and matching original
@@ -883,9 +883,17 @@ template arguments, parameter types and consumed defaults, including values that
 disappear from the actual signature. Both checked-body and lazy-signature paths
 must consume this proof. Signature traversal uses the matching actual function,
 primary and bounded argument frame, fenced from caller frames. Every source-check
-failure prevents completion; copied origins, split definitions, explicit
+failure prevents completion; unproven copied origins, split definitions, explicit
 specializations and other operator categories retain their restrictions. These
 selection events and dependency graphs are private frontend evidence.
+Copied member-template primaries additionally require a bounded raw origin chain
+with the same checked source ordinal, matching method/parameter shapes and exact
+selected enclosing class edges. Canonical identity is used only for cycle and
+ordinal checks. Every member-specialization stop is rejected; the raw terminal
+declaration must own the inline body and equal the definition instantiation pattern.
+The actual copied primary remains the inner argument owner; outer substitutions
+retain their exact class instance and pattern. Neither a later definition nor
+another inner/outer specialization can supply missing source completion.
 The collector and evaluated-default scan classify the complete defaulted declaration
 family even when selection names a declaration preceding the `= default` definition.
 Classification never replaces actual signature or generated-body completion.

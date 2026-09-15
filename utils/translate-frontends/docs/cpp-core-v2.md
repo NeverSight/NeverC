@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 588 accepted, 341 unsupported-source, seventeen missing-definition and twenty-five invalid-C++ cases cover
+The paired 608 accepted, 347 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1100,14 +1100,15 @@ Both the selected declaration and the actual body-owning definition require thei
 original completed type-source nodes and current exception-expression graphs.
 An already emitted or referenced function does not substitute for that proof.
 
-The initial template subset requires an original inline definition. Its raw
-member-specialization origin, or uncopied primary's templated declaration, must
+The template subset requires an original inline definition. Its raw
+member-specialization origin or proven primary-origin declaration must
 itself own the body and match Clang's actual instantiation pattern exactly. The
 origin cannot itself have member-specialization or primary-template instantiation
 metadata. Both selected and body-owning declarations pass this identity gate.
-Class-template operations and member templates in ordinary classes can qualify;
-explicit specializations in this new category, copied member-template primaries
-and separate template declaration/definition pairs still need further evidence.
+Class-template operations and member templates in ordinary or instantiated classes
+can qualify; copied member-template primaries require the bounded raw origin proof
+described below. Explicit specializations in this category and separate template
+declaration/definition pairs still need further evidence.
 Body instantiation can retain an earlier declaration's TypeSourceInfo, so a body
 alone cannot prove a later template definition's independently written signature.
 
@@ -1187,9 +1188,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has one hundred and twelve O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has one hundred and sixteen O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. One hundred and forty-two exported query
+default evaluation with full-expression temporary cleanup. One hundred and fifty-two exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1197,7 +1198,7 @@ preserve the protocol exactly. Native results require implementing CI.
 
 Construction, assignment and conversion predicates can use a checked signature for an ordinary
 constructor of a concrete class-template instance whose body remains uninstantiated.
-The constructor must be referenced but unused, with an exact uncopied inline
+The constructor must be referenced but unused, with an exact checked inline
 definition origin and already resolved standard exception specifications on every
 actual redeclaration. This permits dependent or unsupported source in that unused
 body; actual runtime use still instantiates and checks the body normally.
@@ -1265,7 +1266,7 @@ own exact expression proof. Thus a scalar assignment or construction may consume
 a lazy template conversion, and a class construction may consume one in an argument.
 
 The actual selected method must be referenced, unused and have no actual body,
-with an exact uncopied inline origin and already resolved standard specifications.
+with an exact checked inline origin and already resolved standard specifications.
 A first check traverses only its existing concrete signature in the matching
 method context. Completed signatures register the exact call expression; final
 validation reaches that same expression from the current query's root and checks every
@@ -1288,7 +1289,7 @@ standard post-conversions and zero query effects.
 
 ### Lazy member-template operation signatures
 
-An uncopied constructor, assignment or conversion function-template specialization can use the
+A constructor, assignment or conversion function-template specialization can use the
 same exact expression proof while its inline body remains uninstantiated. Its
 actual selected expression must also have retained successful member-template
 selection evidence at its original deduction location. Constructors and conversions
@@ -1301,6 +1302,18 @@ The first signature traversal uses the exact function/primary/argument context,
 fenced from the caller's template argument frames. Existing incomplete signature
 nodes cannot be replayed.
 
+For a primary copied with an enclosing class instance, a bounded chain of raw
+`getInstantiatedFromMemberTemplate` edges must reach the original inline body.
+Each edge retains owned valid declarations, matching method kinds and parameter
+counts, the exact selected class pattern and the previously checked source ordinal.
+Canonical declarations only identify repeated nodes and source ordinals; they do
+not replace the raw declaration used to find the body. Every member-specialization
+stop is rejected, and the final declaration must itself own the body and equal
+Clang's definition instantiation pattern. Split definitions cannot supply a body
+through a later declaration. Inner signature frames retain the actual copied
+primary and its arguments; outer substitutions use their actual class instance
+and selected pattern. A different outer instance cannot supply either proof.
+
 Each expression keeps a separate completed selection-source dependency graph.
 A consumed template default can disappear from the final function signature, so
 signature completion alone is insufficient. The final operation checker closes
@@ -1311,8 +1324,8 @@ underlying source-check failure prevents selection completion, including failure
 that return without adding a diagnostic.
 
 Selected function defaults and bounded packs retain their existing source checks;
-unused defaults and poisoned uninstantiated bodies remain lazy. Copied member-template
-primaries, split template definitions and explicit specializations retain their
+unused defaults and poisoned uninstantiated bodies remain lazy. Unproven copied
+origins, split template definitions and explicit specializations retain their
 restrictions. Other operator categories do not enter this signature queue. The proof
 does not register a body or runtime helper. Paired tests cover erased default
 source and existing-body selections; runtime checks use query-only integer
@@ -1320,6 +1333,8 @@ specializations and real unsigned calls to verify defaults, conversions, assignm
 reference identity, forwarding arguments, ordinary overload selection and independent
 object storage. A real explicit template call can select the same assignment
 specialization without its default; a later query still checks that consumed default.
+Copied-template runtime checks use distinct outer types with the same inner type,
+including independent static counters, defaults and instance storage.
 
 ### Resolved exception source for operation queries
 
