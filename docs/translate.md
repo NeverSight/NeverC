@@ -128,6 +128,8 @@ Core v2 supports constant-initialized temporary scalars, arrays and records whos
 
 Static records now support constant initialization and shared mutable state, including local/class statics and admitted template instances. Typed self addresses, constexpr construction and static zero initialization retain object identity. See the [static record contract](../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects).
 
+
+Core v2 admits checked trivial empty base chains, including supported templates and inherited methods, conversions and static values. Each base has real first-member C storage with independently checked layout; null pointers, reference identity, constant paths and source effects are preserved. Nontrivial base lifecycles and standard headers remain unfinished. Native validation requires implementing-revision CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#trivial-empty-base-chains).
 ## Setup and scalar translation
 
 Use a normal NeverC installation with its standard resources. The C++ frontend and approved SDK headers are built into NeverC; no separate Clang installation is needed. See the [frontend build notes](../utils/translate-frontends/cpp/README.md).

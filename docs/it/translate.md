@@ -128,6 +128,8 @@ Core v2 supporta temporanei scalari, array e record con inizializzazione costant
 
 I record statici supportano inizializzazione costante e stato modificabile condiviso, anche nelle variabili statiche locali, nelle classi e nelle istanze di template ammesse. Gli indirizzi interni, la costruzione constexpr e l’inizializzazione statica a zero preservano l’identità dell’oggetto. Vedere il [contratto dei record statici](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects).
 
+
+Core v2 ammette catene verificate di basi vuote triviali, con template supportati, metodi ereditati, conversioni e valori statici. Ogni base usa un vero primo membro C con layout verificato indipendentemente. Restano preservati puntatori nulli, identità dei riferimenti, percorsi costanti ed effetti. Cicli di vita non triviali e header standard restano incompleti; la verifica nativa richiede la CI della revisione implementata. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#trivial-empty-base-chains).
 ## Installazione e traduzione scalare
 
 Usare una normale installazione di NeverC con le risorse standard. Il frontend C++ e gli header SDK approvati sono integrati; non occorre installare Clang separatamente. Vedere le [note di compilazione del frontend](../../utils/translate-frontends/cpp/README.md).

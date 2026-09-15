@@ -128,6 +128,8 @@ Core v2 prend en charge les temporaires scalaires, tableaux et enregistrements i
 
 Les enregistrements statiques prennent en charge l’initialisation constante et un état mutable partagé, y compris dans les variables statiques locales, les classes et les modèles admis. Les adresses internes, la construction constexpr et l’initialisation statique à zéro conservent l’identité de l’objet. Voir le [contrat des objets statiques](../../utils/translate-frontends/docs/cpp-core-v2.md#static-record-objects).
 
+
+Core v2 accepte les chaînes vérifiées de bases vides triviales, avec les templates pris en charge, méthodes héritées, conversions et valeurs statiques. Chaque base occupe un véritable premier membre C dont la disposition est vérifiée indépendamment. Pointeurs nuls, identité des références, chemins constants et effets sont conservés. Les cycles de vie non triviaux et les en-têtes standard restent à compléter ; la validation native exige la CI de la révision concernée. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#trivial-empty-base-chains).
 ## Installation et traduction scalaire
 
 Utilisez une installation normale de NeverC avec ses ressources standard. Le frontend C++ et les en-têtes SDK approuvés sont intégrés ; aucune installation séparée de Clang n’est nécessaire. Voir les [notes de compilation du frontend](../../utils/translate-frontends/cpp/README.md).

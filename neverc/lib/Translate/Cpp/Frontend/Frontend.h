@@ -276,6 +276,12 @@ struct StaticDestruction {
   clang::QualType Type;
   clang::SourceLocation Location;
 };
+struct CheckedEmptyBase {
+  const clang::CXXRecordDecl *Derived, *Base;
+  const clang::CXXBaseSpecifier *Specifier;
+  const clang::TypeSourceInfo *Source;
+  std::string Member;
+};
 struct ArrayAllocationLayout {
   clang::QualType Element;
   uint64_t ElementBytes = 0, CookieBytes = 0, CountOffset = 0;
@@ -323,6 +329,7 @@ public:
   std::map<const clang::Decl *, clang::VarDecl *> GlobalDeclarations;
   std::map<std::string, json::Object> MappedFunctions;
   std::map<const clang::CXXRecordDecl *, std::size_t> StorageUnits;
+  std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::size_t ExpandedNodes = 0;
   Adapter(State &S, clang::ASTContext &C)
@@ -342,6 +349,9 @@ public:
   bool typeClassificationValue(const clang::TypeTraitExpr *Query);
   void checkQueryType(clang::QualType T, clang::SourceLocation L);
   uint64_t arrayTypeQueryValue(const clang::ArrayTypeTraitExpr *Query);
+  bool emptyBaseChainShape(const clang::CXXRecordDecl *Record);
+  const CheckedEmptyBase *emptyBase(const clang::CXXRecordDecl *Record);
+  std::vector<const CheckedEmptyBase *> emptyBaseCast(const clang::CastExpr *Cast);
   bool functionAddressTarget(const clang::FunctionDecl *F, clang::SourceLocation L);
   const clang::FunctionDecl *allocationFunction(const clang::FunctionDecl *F,
                                                bool Allocate, clang::SourceLocation L,

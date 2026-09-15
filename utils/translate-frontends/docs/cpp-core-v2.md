@@ -1219,7 +1219,8 @@ requires the implementing revision's CI; full C++/STL remains unfinished.
 
 Core v2 admits ordinary empty standard-layout records, including stateless
 functors and conversion objects, with the same method, constructor, destructor,
-source ownership and type checks as other records. No bases, unions, nesting,
+source ownership and type checks as other records. The separate trivial empty
+base-chain contract below extends the base-free storage case. No unions, nesting,
 virtual dispatch, unrestricted class templates, packing or custom alignment are added. Other
 profiles retain their nonempty-record boundary.
 
@@ -1259,11 +1260,61 @@ signatures and forged layout evidence. Successful manifests use an empty
 `field_offsets_bits` array as allowed by the manifest schema. Native verification
 requires CI for the implementing revision. Full C++/STL remains unfinished.
 
+## Trivial empty base chains
+
+Core v2 admits source-owned standard-layout empty single-base chains. Every
+concrete node has no nonstatic fields, a one-byte size/alignment, at most one
+nonvirtual base at offset zero, trivial default construction and destruction,
+and trivial copying/moving. Non-deleted constructors must be trivial;
+constructor templates and nontrivial base lifecycles remain excluded from this
+increment. Ordinary methods, call operators, conversion functions and static
+members retain their existing source and effect checks.
+
+Each derived carrier contains its actual base carrier as a synthetic first
+member, recursively. This is real C subobject storage. The frontend checks the
+source base offset; the consumer independently computes the carrier layout and
+emits size, alignment and member-offset assertions. The innermost empty carrier
+owns its existing internal storage byte. Source code cannot name the synthetic
+member. Base dependencies are ordered before derived definitions and count
+against declaration, storage and expansion limits.
+
+```cpp
+template<bool V> struct Boolean {
+  static constexpr bool value = V;
+  constexpr operator bool() const { return V; }
+};
+template<class T, class U> struct Same : Boolean<__is_same(T, U)> {};
+static_assert(Same<int, int>::value && !Same<int, unsigned>::value);
+```
+
+Ordinary, primary, partial, full and supported nested templates retain their
+actual base TypeLoc and selected substitution evidence. Nondependent written
+base types are checked even in unused patterns; concrete instances undergo the
+full layout/lifecycle check. Unsupported fields, erased template arguments,
+virtual/multiple bases, custom alignment and packing remain rejected.
+
+Derived-to-base references designate real nested members. Pointer conversions
+capture source effects once and retain null without taking a member address
+through it. Downcasts require Clang's exact checked nonvirtual base path and
+retain source access and cv rules. Constant APValues preserve every base value
+and actual nonvirtual base address path, including array element and temporary
+owners. Existing offset, one-past and lifetime checks continue to apply.
+
+Base aggregate initialization and selected trivial copies retain source effects
+without storing the synthetic byte or adding a complete-object owner. Normal
+complete-object zero initialization and static storage retain their existing
+rules. Nontrivial base construction, copy/move, assignment and destruction need
+the next lifecycle increment; they are not accepted by this storage increment.
+The fixture includes inherited members, temporary references, static pointers,
+null/effectful conversions, arrays and heap elements. Paired source/protocol,
+eight-target layout and saved-NC O0/O2 checks require implementing-revision CI.
+Standard headers and complete C++/STL remain unfinished.
+
 ## Ordinary record constructors
 
 Core v2 admits ordinary user-provided default, converting and multi-argument
 constructors, including `explicit`, `constexpr` and out-of-line definitions.
-Records must be standard-layout with no bases; named non-template nested
+User-constructed records must be standard-layout with no bases; named non-template nested
 records follow the scope contract below. Empty records
 follow the storage contract above. Each
 selected construction, copy or assignment must follow its admitted operation
@@ -1729,7 +1780,7 @@ constructors, destructors, operators and conversions as described below. Aggrega
 complete standard-layout records whose fields satisfy the ordinary type,
 array, storage and lifetime rules. Existing implicit special-member operations
 remain checked when selected. Nested records/templates and instantiated free
-friends follow their separate contracts below; bases remain unsupported.
+friends and trivial empty base chains follow their separate contracts; other bases remain unsupported.
 Namespace partial specializations follow their separate contract below. Template-template parameters and non-scalar value arguments remain excluded.
 
 The producer traverses materialized records without enabling unrestricted
@@ -1783,7 +1834,7 @@ the ordinary profile checks. Deleted declarations use the separate declaration
 contract; attributes, virtual/variadic methods and volatile/restrict qualifiers
 are excluded. The class
 must remain an admitted standard-layout record. Static data, friend,
-Member class templates follow the ordinary-owner contract below; bases remain unsupported. Namespace partial
+Member class templates follow the ordinary-owner contract below; bases require the trivial empty-chain contract. Namespace partial
 specializations follow their separate contract below. Operators and
 conversions follow their separate class-template contract below.
 

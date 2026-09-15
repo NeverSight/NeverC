@@ -775,6 +775,24 @@ value is consumed. The dimension never generates runtime side effects.
 See the supported types, index domain and template behavior in the
 [array-query contract](cpp-core-v2.md#array-type-queries).
 
+## Core v2 trivial empty base storage
+
+A checked empty direct base is represented by a real synthetic first member in
+its derived record, using existing field, aggregate, member and address nodes.
+The field's offset evidence comes from the actual Clang base offset. The
+consumer independently verifies size, alignment and natural field layout; no
+base-cast opcode, opaque object or unchecked layout flag is added. Every record
+constant includes the corresponding base subtree, and base definitions precede
+derived definitions. The source-only descriptor retains the actual base
+specifier, canonical identities and TypeSourceInfo.
+
+Null-preserving runtime upcasts branch before a member address is formed;
+checked inverse first-member conversions use existing void pointer conversions.
+Constant address paths select the same real nested member. No synthetic-byte
+store is introduced for trivial base initialization or copying. Nontrivial
+base lifecycle operations remain rejected. See the full
+[empty-chain contract](cpp-core-v2.md#trivial-empty-base-chains).
+
 ## Core v2 pointer arithmetic
 
 Typed `binary` `+`/`-` nodes admit complete-object pointers and explicitly

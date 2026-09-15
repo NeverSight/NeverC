@@ -2958,7 +2958,6 @@ bool query(){return noexcept(C());}
         assert relocated == empty_records, "empty record identities depend on the absolute root"
 
     empty_record_rejected = {
-        'base': 'struct E{};struct D:E{};',
         'union': 'union E{};',
         'virtual': 'struct E{virtual void f(){}};',
         'overaligned': 'struct alignas(2) E{};',
@@ -5736,6 +5735,90 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
             assert int(stores[0]["value"]["value"]) == 4
         check("v2-array-sized-trivial-"+target, sized_source,
               "TR0201" if abi == "msvc" else None, profile="cpp-core-v2", target=target)
+
+    empty_base_positive = {
+        'declarations': 'struct E{};struct D:E{};',
+        'chain': 'struct B{};struct M:B{};struct D:M{};static_assert(sizeof(D)==1&&alignof(D)==1);',
+        'static-value': 'struct B{static constexpr int value=3;};struct D:B{};int f(){return D::value;}',
+        'mutable-static': 'struct B{inline static int value=3;};struct D:B{};int f(){D d;return ++d.value;}',
+        'conversion': 'struct B{constexpr operator bool()const{return true;}};struct D:B{};int f(){D d;return bool(d);}',
+        'inherited-method': 'struct B{int get()const{return 3;}};struct D:B{};int f(){D d;return d.get();}',
+        'null-upcast': 'struct B{};struct D:B{};B*f(D*p){return p;}D*g(B*p){return static_cast<D*>(p);}',
+        'reference-upcast': 'struct B{};struct D:B{};B&f(D&d){return d;}const D&g(const B&b){return static_cast<const D&>(b);}',
+        'temporary-reference': 'struct B{};struct D:B{};bool f(){const B&b=D{};return &b!=nullptr;}',
+        'constant-path': 'struct B{};struct M:B{};struct D:M{};constexpr D d{};constexpr const B*p=&d;constexpr const D*q=static_cast<const D*>(p);static_assert(q==&d);',
+        'array-constant-path': 'struct B{};struct D:B{};constexpr D a[2]{};constexpr const B*p=&a[1];static_assert(static_cast<const D*>(p)==a+1);',
+        'template-primary': 'template<bool V>struct B{static constexpr bool value=V;};template<class T>struct D:B<__is_integral(T)>{};static_assert(D<int>::value&&!D<float>::value);',
+        'dependent-base': 'struct B{};template<class T>struct D:T{};int f(){D<B>d{};return sizeof(d);}',
+        'template-partial': 'template<int N>struct B{static constexpr int value=N;};template<class T>struct D:B<1>{};template<class T>struct D<T*>:B<2>{};static_assert(D<int>::value==1&&D<int*>::value==2);',
+        'template-full': 'struct B{static constexpr int value=3;};template<class T>struct D{};template<>struct D<int>:B{};static_assert(D<int>::value==3);',
+        'nested-class': 'struct O{struct B{static constexpr int value=3;};struct D:B{};};int f(){O::D d;return d.value;}',
+        'member-template': 'struct B{template<class T>T get(T v){return v;}};struct D:B{};int f(){D d;return d.get(3);}',
+        'generic-nested': 'template<class T>struct O{struct B{static constexpr int value=3;};struct D:B{};};int f(){O<int>::D d;return d.value;}',
+        'trivial-specials': 'struct B{};struct D:B{D()=default;D(const D&)=default;D(D&&)=default;D&operator=(const D&)=default;~D()=default;};int f(){D a{};D b=a;D c=static_cast<D&&>(b);a=c;return &a==&c;}',
+        'aggregate-base-copy': 'struct B{};struct D:B{};B source(){return B{};}void f(){D d{source()};}',
+        'array-filler': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);extern "C" void free(void*);struct B{};struct D:B{static void*operator new[](Size n)noexcept{return malloc(n);}static void operator delete[](void*p)noexcept{free(p);}};void f(int n){D*p=new D[n]{};delete[]p;}',
+        'layout-protocol': 'struct B{};struct M:B{};struct D:M{};D object{};extern "C" B*up(D*p){return p;}extern "C" D*down(B*p){return static_cast<D*>(p);}',
+    }
+    for name, source in empty_base_positive.items():
+        check("v2-empty_base_positive-" + name, source, profile="cpp-core-v2")
+    empty_base_negative = {
+        'nonempty-base': 'struct B{int n;};struct D:B{};',
+        'nonempty-derived': 'struct B{};struct D:B{int n;};',
+        'multiple': 'struct A{};struct B{};struct D:A,B{};',
+        'virtual-base': 'struct B{};struct D:virtual B{};',
+        'dynamic': 'struct B{virtual int f(){return 1;}};struct D:B{};',
+        'constructor': 'struct B{B(){}};struct D:B{};',
+        'derived-constructor': 'struct B{};struct D:B{D(){}};',
+        'destructor': 'struct B{~B(){}};struct D:B{};',
+        'copy': 'struct B{B()=default;B(const B&){}};struct D:B{};',
+        'assignment': 'struct B{B&operator=(const B&){return *this;}};struct D:B{};',
+        'overaligned': 'struct alignas(2) B{};struct D:B{};',
+        'pack': 'template<class...T>struct D:T...{};',
+        'hidden-base-argument': 'template<int N>struct B{};struct D:B<sizeof(long double)>{};',
+        'generic-hidden-base': 'template<int N>struct B{};template<class T>struct D:B<sizeof(long double)>{};',
+        'instantiated-nonempty': 'struct B{int n;};template<class T>struct D:T{};D<B>d;',
+        'query-nonempty': 'struct B{int n;};struct D:B{};bool f(){return __is_class(D);}',
+        'hidden-method': 'struct B{long double get(){return 1.0L;}};struct D:B{};int f(){D d;return int(d.get());}',
+        'constructor-template-runtime': 'struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};void f(){D d{1};}',
+        'constructor-template-constant': 'struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};constexpr D d{1};',
+        'constructor-template-sizeof': 'struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};static_assert(sizeof(D{1})==1);',
+    }
+    for name, source in empty_base_negative.items():
+        check("v2-empty_base_negative-" + name, source, 'TR0201', profile="cpp-core-v2")
+    empty_base_invalid = {
+        'private-upcast': 'struct B{};class D:B{};B*f(D*p){return p;}',
+        'private-downcast': 'struct B{};class D:B{};D*f(B*p){return static_cast<D*>(p);}',
+        'final-base': 'struct B final{};struct D:B{};',
+        'incomplete-base': 'struct B;struct D:B{};',
+        'const-removal': 'struct B{};struct D:B{};D*f(const B*p){return static_cast<D*>(p);}',
+        'synthetic-field': 'struct B{};struct D:B{};int f(){D d;return sizeof(d.nct_base_storage);}',
+    }
+    for name, source in empty_base_invalid.items():
+        check("v2-empty_base_invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    check("empty-base-v1", "struct B{};struct D:B{};", "TR0201")
+    empty_base_source = (repository / "tests/neverc/Inputs/translate/cpp/empty-base-chains.cpp").read_text()
+    empty_bases = check("v2-empty-base-chains", empty_base_source, profile="cpp-core-v2")
+    with tempfile.TemporaryDirectory(prefix="neverc-empty-base-relocated-") as temporary:
+        relocated = check("v2-empty-base-relocated", empty_base_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == empty_bases
+    for triple in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+                   "x86_64-apple-macosx15.0.0", "arm64-apple-macosx15.0.0",
+                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
+                   "i686-pc-windows-msvc", "i686-w64-windows-gnu"):
+        module = check("v2-empty-base-layout-" + triple, empty_base_positive["layout-protocol"],
+                       profile="cpp-core-v2", target=triple)
+        records = module["records"]
+        assert len(records) == 3
+        for index, record in enumerate(records):
+            assert record["layout"]["size_bits"] == 8
+            assert record["layout"]["abi_align_bits"] == 8
+            assert record["layout"]["field_offsets_bits"] == ([] if index == 0 else [0])
+            if index:
+                assert record["fields"] == [{"name": "nct_base_storage", "type": records[index-1]["id"]}]
+            else:
+                assert record["fields"] == []
 
     array_query_positive = {
         'rank': 'bool f(){return __array_rank(int)==0&&__array_rank(int[2])==1&&__array_rank(int[2][3])==2;}',

@@ -1586,6 +1586,12 @@ std::size_t Adapter::storageUnits(QualType T, unsigned Depth) {
       return Found->second;
     StorageUnits.emplace(R, Limit + 1);
     std::size_t Units = R->field_empty() ? 1 : 0;
+    for (const auto &Base : R->bases()) {
+      auto Added = storageUnits(Base.getType(), Depth + 1);
+      if (Added > Limit - Units)
+        return Limit + 1;
+      Units += Added;
+    }
     for (const auto *F : R->fields()) {
       auto Added = storageUnits(F->getType(), Depth + 1);
       if (Added > Limit - Units)
@@ -1760,6 +1766,104 @@ uint64_t Adapter::arrayTypeQueryValue(const ArrayTypeTraitExpr *Query) {
   // Both operands are inspected by Allowlist, including the dimension omitted
   // from pinned RAV's default traversal. Neither creates runtime instructions.
   return Query->getValue();
+}
+
+bool Adapter::emptyBaseChainShape(const CXXRecordDecl *Record) {
+  std::set<const CXXRecordDecl *> Seen;
+  while (Record) {
+    Record = Record->getDefinition();
+    if (!S.coreV2() || !Record || Record->isDependentContext() ||
+        !S.owns(Sources, Record->getLocation()) || Record->isInvalidDecl() ||
+        Record->hasAttrs() || Record->isUnion() || !Record->field_empty() ||
+        !Record->isStandardLayout() || Record->isDynamicClass() ||
+        Record->getNumBases() > 1 || !Record->isTriviallyCopyable() ||
+        !Record->hasTrivialDefaultConstructor() || !Record->hasTrivialDestructor() ||
+        Seen.size() >= 64 || !Seen.insert(Record->getCanonicalDecl()).second)
+      return false;
+    chargeExpansion(1, Record->getLocation());
+    // The first increment has no nontrivial base lifecycle helpers. Ordinary
+    // methods/conversions may have effects; selected constructors may not.
+    for (const auto *Constructor : Record->ctors())
+      if (!Constructor->isDeleted() && !Constructor->isTrivial())
+        return false;
+    for (const auto *Declaration : Record->decls())
+      if (const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration))
+        if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Template->getTemplatedDecl());
+            Constructor && !Constructor->isDeleted())
+          return false; // Constructor templates are not included in ctors().
+    const auto &Layout = Context.getASTRecordLayout(Record);
+    if (Layout.getSize().getQuantity() != 1 ||
+        Layout.getAlignment().getQuantity() != 1)
+      return false;
+    if (!Record->getNumBases())
+      return true;
+    const auto &Base = *Record->bases_begin();
+    const auto *Next = Base.getType()->getAsCXXRecordDecl();
+    if (Base.isVirtual() || Base.isPackExpansion() || !Base.getTypeSourceInfo() ||
+        !S.owns(Sources, Base.getBeginLoc()) || !Next || !Next->getDefinition() ||
+        !Layout.getBaseClassOffset(Next).isZero())
+      return false;
+    Record = Next;
+  }
+  return false;
+}
+
+const CheckedEmptyBase *Adapter::emptyBase(const CXXRecordDecl *Record) {
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!Record || !Record->getNumBases())
+    return nullptr;
+  if (!emptyBaseChainShape(Record)) {
+    reject(Record->getLocation(), "empty base storage",
+           "A base requires a source-owned, trivial, one-byte standard-layout empty single-base chain.");
+    throw Failure{};
+  }
+  const auto &Base = *Record->bases_begin();
+  const auto *Canonical = Record->getCanonicalDecl();
+  auto Inserted = EmptyBases.try_emplace(Canonical, CheckedEmptyBase{
+      Canonical, Base.getType()->getAsCXXRecordDecl()->getCanonicalDecl(),
+      &Base, Base.getTypeSourceInfo(), "nct_base_storage"});
+  return &Inserted.first->second;
+}
+
+std::vector<const CheckedEmptyBase *> Adapter::emptyBaseCast(const CastExpr *Cast) {
+  auto L = Cast->getExprLoc();
+  auto Reject = [&]() {
+    reject(L, "empty base conversion", "The conversion must retain its exact nonvirtual empty first-member chain and source qualifiers.");
+    throw Failure{};
+  };
+  const bool Down = Cast->getCastKind() == CK_BaseToDerived;
+  if (!S.coreV2() || (!Down && Cast->getCastKind() != CK_DerivedToBase &&
+                     Cast->getCastKind() != CK_UncheckedDerivedToBase) ||
+      !Cast->getSubExpr() || Cast->isTypeDependent() || Cast->isValueDependent() ||
+      Cast->isInstantiationDependent() || Cast->path_empty())
+    Reject();
+  auto From = Cast->getSubExpr()->getType(), To = Cast->getType();
+  if (From->isPointerType() != To->isPointerType())
+    Reject();
+  if (From->isPointerType()) {
+    From = From->getPointeeType();
+    To = To->getPointeeType();
+  } else if (!Cast->isGLValue() || !Cast->getSubExpr()->isGLValue()) {
+    Reject();
+  }
+  if ((From.isConstQualified() && !To.isConstQualified()) ||
+      type(From, L).empty() || type(To, L).empty())
+    Reject();
+  const auto *Current = (Down ? To : From)->getAsCXXRecordDecl();
+  const auto *Target = (Down ? From : To)->getAsCXXRecordDecl();
+  if (!Current || !Target)
+    Reject();
+  std::vector<const CheckedEmptyBase *> Path;
+  for (const auto *Step : Cast->path()) {
+    const auto *Base = emptyBase(Current);
+    if (!Base || Step != Base->Specifier || Path.size() >= 64)
+      Reject();
+    Path.push_back(Base);
+    Current = Base->Base;
+  }
+  if (Current->getCanonicalDecl() != Target->getCanonicalDecl())
+    Reject();
+  return Path;
 }
 
 bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
@@ -1963,9 +2067,14 @@ static bool repeatedAggregateInitializer(const Expr *Init, QualType Destination,
     }
     const auto *Record = Destination->getAsCXXRecordDecl();
     if (!Record || !(Record = Record->getDefinition()) ||
-        List->getNumInits() != std::distance(Record->field_begin(), Record->field_end()))
+        List->getNumInits() != Record->getNumBases() +
+            std::distance(Record->field_begin(), Record->field_end()))
       return false;
     unsigned Index = 0;
+    if (const auto *Base = A.emptyBase(Record))
+      if (!repeatedAggregateInitializer(List->getInit(Index++),
+                                        A.Context.getRecordType(Base->Base), A, Depth + 1))
+        return false;
     for (const auto *Field : Record->fields())
       if (!repeatedAggregateInitializer(List->getInit(Index++), Field->getType(), A, Depth + 1))
         return false;
@@ -2297,6 +2406,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
+    if (const auto *Base = emptyBase(R))
+      Args.push_back(zero(Context.getRecordType(Base->Base), L));
     for (const auto *F : R->getDefinition()->fields())
       Args.push_back(zero(F->getType(), L));
     return json::Object{{"kind", "aggregate"},
@@ -2573,6 +2684,20 @@ json::Object Adapter::constantPointer(const APValue &V, QualType T, SourceLocati
       AtArrayEnd = N == Count;
     } else if (const auto *Record = Current->getAsCXXRecordDecl()) {
       auto Entry = Path[I].getAsBaseOrMember();
+      if (const auto *BaseRecord = dyn_cast_or_null<CXXRecordDecl>(Entry.getPointer())) {
+        const auto *Base = emptyBase(Record);
+        if (!Base || Entry.getInt() ||
+            BaseRecord->getCanonicalDecl() != Base->Base)
+          Reject("A constant base path requires its exact checked nonvirtual direct base.");
+        auto BaseType = Context.getRecordType(Base->Base);
+        if (Current.isConstQualified())
+          BaseType = BaseType.withConst();
+        Place = json::Object{{"kind", "member"}, {"name", Base->Member},
+                             {"type", type(BaseType, L)},
+                             {"args", json::Array{std::move(Place)}}, {"loc", loc(L)}};
+        Current = BaseType;
+        continue; // The descriptor has checked the actual base offset is zero.
+      }
       const auto *Field = dyn_cast_or_null<FieldDecl>(Entry.getPointer());
       if (!Field || Entry.getInt() || Field->isBitField() || Field->isMutable() ||
           Field->getType()->isReferenceType() ||
@@ -2653,8 +2778,17 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
   }
   if (V.isStruct()) {
     json::Array Args;
+    const auto *Record = T->getAsCXXRecordDecl();
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || V.getStructNumBases() != Record->getNumBases() ||
+        V.getStructNumFields() != std::distance(Record->field_begin(), Record->field_end())) {
+      reject(L, "constant record", "A folded record must retain every actual base and field value.");
+      throw Failure{};
+    }
+    if (const auto *Base = emptyBase(Record))
+      Args.push_back(constant(V.getStructBase(0), Context.getRecordType(Base->Base), L));
     unsigned I = 0;
-    for (const auto *F : T->getAsCXXRecordDecl()->getDefinition()->fields())
+    for (const auto *F : Record->fields())
       Args.push_back(constant(V.getStructField(I++), F->getType(), L));
     return json::Object{{"kind", "aggregate"},
                         {"type", Kind},
@@ -2839,6 +2973,20 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     return ordinaryClassIdentityShape(Record) &&
            classOwnerScope(Record->getDeclContext());
   }
+  bool emptyBasesShape(const CXXRecordDecl *Record) {
+    if (!Record->getNumBases())
+      return true;
+    if (!A.S.coreV2() || Record->getNumBases() != 1 || !Record->field_empty())
+      return false;
+    const auto &Base = *Record->bases_begin();
+    if (Base.isVirtual() || Base.isPackExpansion() || !Base.getTypeSourceInfo() ||
+        !A.S.owns(A.Sources, Base.getBeginLoc()))
+      return false;
+    if (!Record->isDependentContext())
+      return A.emptyBaseChainShape(Record);
+    return Base.getType()->isDependentType() ||
+           A.emptyBaseChainShape(Base.getType()->getAsCXXRecordDecl());
+  }
   bool ordinaryClassBodyShape(const CXXRecordDecl *Record) {
     if (!ordinaryClassDeclarationShape(Record))
       return false;
@@ -2849,7 +2997,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     auto Restore = llvm::make_scope_exit([&] { ActiveClassShapes.erase(Record); });
     return owned(Definition) && !Definition->isInvalidDecl() &&
-           !Definition->hasAttrs() && !Definition->getNumBases() &&
+           !Definition->hasAttrs() && emptyBasesShape(Definition) &&
            classTemplateMembers(Definition);
   }
   bool zeroParameterClassBodyShape(const CXXRecordDecl *Record) {
@@ -2904,7 +3052,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     auto Restore = llvm::make_scope_exit([&] { ActiveClassShapes.erase(D); });
     return owned(Definition) && !Definition->isInvalidDecl() &&
-           !Definition->hasAttrs() && !Definition->getNumBases() &&
+           !Definition->hasAttrs() && emptyBasesShape(Definition) &&
            classTemplateMembers(Definition);
   }
   // Structural ancestors only. A child declaration must not recursively ask
@@ -2942,7 +3090,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Definition = Body ? Body->getDefinition() : nullptr;
       }
       if (!owned(Definition) || Definition->isInvalidDecl() ||
-          Definition->hasAttrs() || Definition->getNumBases() ||
+          Definition->hasAttrs() || !emptyBasesShape(Definition) ||
           (Definition->getLexicalDeclContext() != Definition->getDeclContext() &&
            !isa<TranslationUnitDecl, NamespaceDecl>(Definition->getLexicalDeclContext())))
         return false;
@@ -3082,7 +3230,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto *Definition = Parent->getDefinition();
     if (Definition && (!owned(Definition) || Definition->isInvalidDecl() ||
-                       Definition->hasAttrs() || Definition->getNumBases()))
+                       Definition->hasAttrs() || !emptyBasesShape(Definition)))
       return false;
     const auto *Outer = classTemplatePattern(Parent);
     const bool OrdinaryBody = ordinaryMemberClassScope(Parent);
@@ -3215,7 +3363,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // Structural owner only: classTemplateMembers calls this helper itself.
     const auto *Definition = Parent->getDefinition();
     if (!owned(Definition) || Definition->isInvalidDecl() ||
-        Definition->hasAttrs() || Definition->getNumBases())
+        Definition->hasAttrs() || !emptyBasesShape(Definition))
       return false;
     const auto *Outer = classTemplatePattern(Parent);
     const bool OrdinaryBody = ordinaryMemberClassScope(Parent);
@@ -3385,7 +3533,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto *Definition = Parent->getDefinition();
     if (!owned(Definition) || Definition->isInvalidDecl() ||
-        Definition->hasAttrs() || Definition->getNumBases())
+        Definition->hasAttrs() || !emptyBasesShape(Definition))
       return false;
     // Check the outer structural owner without recursively enumerating this
     // alias through classTemplateMembers again.
@@ -4178,7 +4326,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     auto Restore = llvm::make_scope_exit([&] { ActiveClassShapes.erase(D); });
     return owned(Definition) && !Definition->isInvalidDecl() &&
-           !Definition->hasAttrs() && !Definition->getNumBases() &&
+           !Definition->hasAttrs() && emptyBasesShape(Definition) &&
            classTemplateMembers(Definition);
   }
   bool classTemplateShape(const ClassTemplateDecl *D) {
@@ -7759,6 +7907,11 @@ public:
     const auto *Definition = Record ? Record->getDefinition() : nullptr;
     if (!owned(Definition))
       return true;
+    // Custom generic-class traversal skips the record itself. Inspect written
+    // nondependent bases now; concrete RAV checks substituted dependent bases.
+    for (const auto &Base : Definition->bases())
+      if (!Base.getType()->isDependentType() && !TraverseCXXBaseSpecifier(Base))
+        return false;
     for (auto *Member : Definition->decls()) {
       A.chargeExpansion(1, Member->getLocation());
       if (auto *Friend = dyn_cast<FriendDecl>(Member)) {
@@ -9557,12 +9710,12 @@ public:
     if (D->isUnion() || (!D->isAggregate() && !ConstructedRecord) ||
         (A.S.coreV2() && !ConstructedRecord) ||
         (!A.S.coreV2() && D->field_empty()) ||
-        D->getNumBases() || D->getDescribedClassTemplate() ||
+        !emptyBasesShape(D) || D->getDescribedClassTemplate() ||
         (D->getDeclContext()->isRecord() &&
          (!A.S.coreV2() || !D->getIdentifier())))
       A.reject(D->getLocation(), "record",
                "Only admitted flat records with supported selected special "
-               "members and no bases are admitted; empty and named nested "
+               "members and checked trivial empty base chains are admitted; empty and named nested "
                "records require core v2.");
     A.Records.push_back(D);
     return true;
@@ -9721,6 +9874,11 @@ public:
                      "Only direct admitted constructor conversions are supported.");
             break;
           }
+          case CK_DerivedToBase:
+          case CK_UncheckedDerivedToBase:
+          case CK_BaseToDerived:
+            A.emptyBaseCast(C);
+            break;
           case CK_BitCast:
             if (C->getType()->isPointerType() &&
                 C->getSubExpr()->getType()->isPointerType() &&
@@ -10218,6 +10376,19 @@ static void orderCoreV2Records(Adapter &A) {
     if (State[I] == Visit::Done)
       return;
     State[I] = Visit::Active;
+    if (const auto *Base = A.emptyBase(R)) {
+      auto Found = Indices.find(Base->Base);
+      if (Found == Indices.end()) {
+        A.reject(R->getLocation(), "base dependency", "An empty base requires its checked complete record definition.");
+        throw Failure{};
+      }
+      Self(Self, Found->second, Depth + 1);
+      if (Heights[Found->second] >= 64) {
+        A.reject(R->getLocation(), "base dependency", "Empty base nesting exceeds the declaration limit.");
+        throw Failure{};
+      }
+      Heights[I] = Heights[Found->second] + 1;
+    }
     for (const auto *F : R->fields()) {
       // A pointer to a record needs only its forward declaration, but an array
       // element needs a complete definition even inside a callback signature.
@@ -10314,6 +10485,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   json::Array RecordData, GlobalData, FunctionData;
   for (const auto *R : Records) {
     json::Array Fields;
+    const auto *Base = S.coreV2() ? emptyBase(R) : nullptr;
+    if (Base)
+      Fields.push_back(json::Object{{"name", Base->Member},
+          {"type", type(Context.getRecordType(Base->Base), R->getLocation())}});
     for (const auto *F : R->fields())
       Fields.push_back(json::Object{
           {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
@@ -10322,6 +10497,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     if (S.coreV2()) {
       const auto &Layout = Context.getASTRecordLayout(R);
       json::Array Offsets;
+      if (Base)
+        Offsets.push_back(uint64_t(Layout.getBaseClassOffset(Base->Base).getQuantity()) * 8);
       for (unsigned I = 0; I < Layout.getFieldCount(); ++I)
         Offsets.push_back(Layout.getFieldOffset(I));
       Record["layout"] = json::Object{

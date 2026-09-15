@@ -4746,6 +4746,115 @@ TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErrorsAndTemporaryOrder)
   }
 }
 
+TEST_F(TranslateTest, CoreV2EmptyBaseChainsRetainStorageAndTypes) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"declarations", "struct E{};struct D:E{};"},
+      {"chain", "struct B{};struct M:B{};struct D:M{};static_assert(sizeof(D)==1&&alignof(D)==1);"},
+      {"static-value", "struct B{static constexpr int value=3;};struct D:B{};int f(){return D::value;}"},
+      {"mutable-static", "struct B{inline static int value=3;};struct D:B{};int f(){D d;return ++d.value;}"},
+      {"conversion", "struct B{constexpr operator bool()const{return true;}};struct D:B{};int f(){D d;return bool(d);}"},
+      {"inherited-method", "struct B{int get()const{return 3;}};struct D:B{};int f(){D d;return d.get();}"},
+      {"null-upcast", "struct B{};struct D:B{};B*f(D*p){return p;}D*g(B*p){return static_cast<D*>(p);}"},
+      {"reference-upcast", "struct B{};struct D:B{};B&f(D&d){return d;}const D&g(const B&b){return static_cast<const D&>(b);}"},
+      {"temporary-reference", "struct B{};struct D:B{};bool f(){const B&b=D{};return &b!=nullptr;}"},
+      {"constant-path", "struct B{};struct M:B{};struct D:M{};constexpr D d{};constexpr const B*p=&d;constexpr const D*q=static_cast<const D*>(p);static_assert(q==&d);"},
+      {"array-constant-path", "struct B{};struct D:B{};constexpr D a[2]{};constexpr const B*p=&a[1];static_assert(static_cast<const D*>(p)==a+1);"},
+      {"template-primary", "template<bool V>struct B{static constexpr bool value=V;};template<class T>struct D:B<__is_integral(T)>{};static_assert(D<int>::value&&!D<float>::value);"},
+      {"dependent-base", "struct B{};template<class T>struct D:T{};int f(){D<B>d{};return sizeof(d);}"},
+      {"template-partial", "template<int N>struct B{static constexpr int value=N;};template<class T>struct D:B<1>{};template<class T>struct D<T*>:B<2>{};static_assert(D<int>::value==1&&D<int*>::value==2);"},
+      {"template-full", "struct B{static constexpr int value=3;};template<class T>struct D{};template<>struct D<int>:B{};static_assert(D<int>::value==3);"},
+      {"nested-class", "struct O{struct B{static constexpr int value=3;};struct D:B{};};int f(){O::D d;return d.value;}"},
+      {"member-template", "struct B{template<class T>T get(T v){return v;}};struct D:B{};int f(){D d;return d.get(3);}"},
+      {"generic-nested", "template<class T>struct O{struct B{static constexpr int value=3;};struct D:B{};};int f(){O<int>::D d;return d.value;}"},
+      {"trivial-specials", "struct B{};struct D:B{D()=default;D(const D&)=default;D(D&&)=default;D&operator=(const D&)=default;~D()=default;};int f(){D a{};D b=a;D c=static_cast<D&&>(b);a=c;return &a==&c;}"},
+      {"aggregate-base-copy", "struct B{};struct D:B{};B source(){return B{};}void f(){D d{source()};}"},
+      {"array-filler", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);extern \"C\" void free(void*);struct B{};struct D:B{static void*operator new[](Size n)noexcept{return malloc(n);}static void operator delete[](void*p)noexcept{free(p);}};void f(int n){D*p=new D[n]{};delete[]p;}"},
+      {"layout-protocol", "struct B{};struct M:B{};struct D:M{};D object{};extern \"C\" B*up(D*p){return p;}extern \"C\" D*down(B*p){return static_cast<D*>(p);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("empty-base-" + Name + ".cpp");
+    auto Output = tmpFile("empty-base-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyBaseChainsRejectUnrepresentedLayoutsAndLifetimes) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"nonempty-base", "struct B{int n;};struct D:B{};"},
+      {"nonempty-derived", "struct B{};struct D:B{int n;};"},
+      {"multiple", "struct A{};struct B{};struct D:A,B{};"},
+      {"virtual-base", "struct B{};struct D:virtual B{};"},
+      {"dynamic", "struct B{virtual int f(){return 1;}};struct D:B{};"},
+      {"constructor", "struct B{B(){}};struct D:B{};"},
+      {"derived-constructor", "struct B{};struct D:B{D(){}};"},
+      {"destructor", "struct B{~B(){}};struct D:B{};"},
+      {"copy", "struct B{B()=default;B(const B&){}};struct D:B{};"},
+      {"assignment", "struct B{B&operator=(const B&){return *this;}};struct D:B{};"},
+      {"overaligned", "struct alignas(2) B{};struct D:B{};"},
+      {"pack", "template<class...T>struct D:T...{};"},
+      {"hidden-base-argument", "template<int N>struct B{};struct D:B<sizeof(long double)>{};"},
+      {"generic-hidden-base", "template<int N>struct B{};template<class T>struct D:B<sizeof(long double)>{};"},
+      {"instantiated-nonempty", "struct B{int n;};template<class T>struct D:T{};D<B>d;"},
+      {"query-nonempty", "struct B{int n;};struct D:B{};bool f(){return __is_class(D);}"},
+      {"hidden-method", "struct B{long double get(){return 1.0L;}};struct D:B{};int f(){D d;return int(d.get());}"},
+      {"constructor-template-runtime", "struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};void f(){D d{1};}"},
+      {"constructor-template-constant", "struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};constexpr D d{1};"},
+      {"constructor-template-sizeof", "struct B{B()=default;template<class T>constexpr B(T){}};struct D:B{};static_assert(sizeof(D{1})==1);"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("empty-base-" + Name + ".cpp");
+    auto Output = tmpFile("empty-base-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyBaseChainsRetainLanguageDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"private-upcast", "struct B{};class D:B{};B*f(D*p){return p;}"},
+      {"private-downcast", "struct B{};class D:B{};D*f(B*p){return static_cast<D*>(p);}"},
+      {"final-base", "struct B final{};struct D:B{};"},
+      {"incomplete-base", "struct B;struct D:B{};"},
+      {"const-removal", "struct B{};struct D:B{};D*f(const B*p){return static_cast<D*>(p);}"},
+      {"synthetic-field", "struct B{};struct D:B{};int f(){D d;return sizeof(d.nct_base_storage);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("empty-base-" + Name + ".cpp");
+    auto Output = tmpFile("empty-base-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2EmptyBaseChainsPreserveAddressesAndEffects) {
+  auto Output = tmpFile("empty-base-chains.nc");
+  auto Result = translate(fixture("empty-base-chains.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("empty-base-chains" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  auto Legacy = tmpFile("empty-base-v1.cpp");
+  writeFile(Legacy, "struct B{};struct D:B{};");
+  auto Rejected = translate(Legacy, {"--profile", "cpp-core-v1", "-o", tmpFile("empty-base-v1.nc").string()});
+  expectCode(Rejected, "TR0201");
+  expectNoArtifacts(tmpFile("empty-base-v1.nc"));
+}
+
 TEST_F(TranslateTest, CoreV2ArrayTypeQueriesRetainTypesAndDimensions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"rank", "bool f(){return __array_rank(int)==0&&__array_rank(int[2])==1&&__array_rank(int[2][3])==2;}"},
@@ -17545,7 +17654,6 @@ TEST_F(TranslateTest, CoreV2EmptyRecordsAcceptOrdinaryOperations) {
 
 TEST_F(TranslateTest, CoreV2EmptyRecordsRetainTypeAndLayoutBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
-      {"base", "struct E{};struct D:E{};", "TR0201"},
       {"union", "union E{};", "TR0201"},
       {"virtual", "struct E{virtual void f(){}};", "TR0201"},
       {"overaligned", "struct alignas(2) E{};", "TR0201"},

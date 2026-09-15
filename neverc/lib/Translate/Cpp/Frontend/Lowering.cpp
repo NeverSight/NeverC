@@ -296,9 +296,52 @@ class FunctionLowering {
       discard(Member->getBase());
     return A.literal(Found->second, type(E->getType(), L), L);
   }
+  Expression emptyBaseConversion(const CastExpr *C) {
+    auto L = C->getExprLoc();
+    const auto Path = A.emptyBaseCast(C);
+    const bool Pointer = C->getType()->isPointerType();
+    if (C->getCastKind() == CK_BaseToDerived) {
+      auto Source = Pointer ? expression(C->getSubExpr())
+                            : address(lvalue(C->getSubExpr()), C->getSubExpr()->getType(), L);
+      auto Target = Pointer ? C->getType() : A.Context.getPointerType(C->getType());
+      // Each edge names a real first member. C permits the inverse conversion
+      // to its containing structure; void retains the existing wire cast rules.
+      auto Result = cast(cast(std::move(Source), "ptr:void", L), type(Target, L), L);
+      return Pointer ? std::move(Result) : dereference(std::move(Result), L);
+    }
+    auto Members = [&](Expression Place) {
+      for (const auto *Base : Path)
+        Place = Expression{{"kind", "member"}, {"name", Base->Member},
+                           {"type", type(A.Context.getRecordType(Base->Base), L)},
+                           {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+      return Place;
+    };
+    if (!Pointer)
+      return Members(lvalue(C->getSubExpr()));
+    // Taking a member address through null is not a valid C expression. Save
+    // the source once before branching, including calls and postfix updates.
+    auto Source = snapshot(expression(C->getSubExpr()), L);
+    auto Result = temporary(type(C->getType(), L), L);
+    auto Yes = labelName(), No = labelName(), End = labelName();
+    branch(cast(Source, "bool", L), Yes, No, L);
+    label(Yes, L);
+    assign(Result, address(Members(dereference(Source, L)),
+                           C->getType()->getPointeeType(), L), L);
+    jump(End, L);
+    label(No, L);
+    assign(Result, A.zero(C->getType(), L), L);
+    jump(End, L);
+    label(End, L);
+    return Result;
+  }
   Expression lvalue(const Expr *E) {
     E = E->IgnoreParens();
     auto L = E->getExprLoc();
+    if (const auto *C = dyn_cast<CastExpr>(E);
+        C && (C->getCastKind() == CK_DerivedToBase ||
+              C->getCastKind() == CK_UncheckedDerivedToBase ||
+              C->getCastKind() == CK_BaseToDerived))
+      return emptyBaseConversion(C);
     if (const auto *Literal = dyn_cast<StringLiteral>(E); Literal && A.S.coreV2())
       return A.stringObject(Literal);
     if (auto Value = staticMemberValue(E)) {
@@ -1137,6 +1180,10 @@ class FunctionLowering {
     }
     if (const auto *C = dyn_cast<CastExpr>(E)) {
       switch (C->getCastKind()) {
+      case CK_DerivedToBase:
+      case CK_UncheckedDerivedToBase:
+      case CK_BaseToDerived:
+        return emptyBaseConversion(C);
       case CK_ToVoid:
         if (!A.S.coreV2() || !C->isPRValue() || !C->getType()->isVoidType() ||
             C->isTypeDependent() || C->isValueDependent() ||
@@ -1672,7 +1719,7 @@ class FunctionLowering {
     return Place;
   }
   void construct(Expression Place, QualType T, const CXXConstructExpr *C,
-                 SourceLocation L) {
+                 SourceLocation L, bool BaseObject = false) {
     if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
       auto Element = Array->getElementType();
       auto Count = Array->getSize().getLimitedValue(65537);
@@ -1704,7 +1751,7 @@ class FunctionLowering {
         return;
       }
       if (Constructor->isDefaultConstructor() && !C->getNumArgs()) {
-        if (C->requiresZeroInitialization())
+        if (C->requiresZeroInitialization() && !BaseObject)
           initializeZero(std::move(Place), T, L);
         return;
       }
@@ -1722,10 +1769,12 @@ class FunctionLowering {
         Constructor->isDefaultConstructor() && !C->getNumArgs()) {
       // Clang can omit the body of an explicitly defaulted trivial constructor.
       // Its declaration still determines default versus value initialization.
-      if (C->requiresZeroInitialization())
+      if (C->requiresZeroInitialization() && !BaseObject)
         initializeZero(std::move(Place), T, L);
       return;
     }
+    if (BaseObject)
+      reject(L, "base construction", "Nontrivial base construction requires separate lifecycle lowering.");
     if (!supportedConstructor(Constructor) || !Constructor->hasBody() ||
         C->getNumArgs() != Constructor->getNumParams())
       reject(L, "construction", "Unsupported selected constructor or argument list.");
@@ -1791,6 +1840,42 @@ class FunctionLowering {
       else
         initialize(std::move(Member), Found->second, L);
       endFullExpression();
+    }
+  }
+  void initializeEmptyBase(Expression Place, const Expr *Init, SourceLocation L) {
+    Init = Init->IgnoreParens();
+    const auto *Record = Init->getType()->getAsCXXRecordDecl();
+    if (!Record || !A.emptyBaseChainShape(Record) ||
+        Place.getString("type") != type(Init->getType(), L))
+      reject(L, "base initialization", "A base initializer requires its exact trivial empty destination.");
+    if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
+      initializeEmptyBase(std::move(Place), W->getSubExpr(), L);
+      return;
+    }
+    if (const auto *C = dyn_cast<CXXConstructExpr>(Init)) {
+      if (C->getConstructionKind() != CXXConstructionKind::NonVirtualBase ||
+          !C->getConstructor()->isTrivial())
+        reject(L, "base construction", "The selected construction must identify a trivial nonvirtual base operation.");
+      construct(std::move(Place), Init->getType(), C, L, true);
+      return;
+    }
+    // Empty base subobjects have no semantic bytes to zero. Their real C
+    // carrier provides an address, but its placeholder must not gain a store.
+    if (isa<ImplicitValueInitExpr>(Init))
+      return;
+    const auto *List = dyn_cast<InitListExpr>(Init);
+    if (!List)
+      reject(L, "base initialization", "An empty base requires its checked semantic aggregate or construction initializer.");
+    if (List->isSyntacticForm() && List->getSemanticForm())
+      List = List->getSemanticForm();
+    const auto *Base = A.emptyBase(Record);
+    if (List->isGLValue() || List->getNumInits() != unsigned(Base != nullptr))
+      reject(L, "base aggregate initialization", "The semantic list must retain the exact direct base initializer.");
+    if (Base) {
+      Expression Member{{"kind", "member"}, {"name", Base->Member},
+                        {"type", type(A.Context.getRecordType(Base->Base), L)},
+                        {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
+      initializeEmptyBase(std::move(Member), List->getInit(0), L);
     }
   }
   void initialize(Expression Place, const Expr *Init, SourceLocation L) {
@@ -1978,10 +2063,17 @@ class FunctionLowering {
       // Explicit clauses keep the enclosing expression's this. Only a selected
       // default temporarily rebinds it to this aggregate's construction storage.
       auto Fields = Record->fields();
-      if (I->getNumInits() != std::distance(Fields.begin(), Fields.end()))
+      const auto *Base = A.emptyBase(Record);
+      if (I->getNumInits() != std::distance(Fields.begin(), Fields.end()) + unsigned(Base != nullptr))
         reject(L, "aggregate initialization",
                "Incomplete semantic field initializer list.");
       unsigned Index = 0;
+      if (Base) {
+        Expression Member{{"kind", "member"}, {"name", Base->Member},
+                          {"type", type(A.Context.getRecordType(Base->Base), L)},
+                          {"args", json::Array{json::Object(Place)}}, {"loc", A.loc(L)}};
+        initializeEmptyBase(std::move(Member), I->getInit(Index++), L);
+      }
       // Initialization is observable through earlier destination subobjects.
       // Store each field before evaluating the next clause, including nested
       // lists. Ordinary record copy/assignment still uses the value path.
