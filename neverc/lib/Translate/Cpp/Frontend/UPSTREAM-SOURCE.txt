@@ -275,9 +275,14 @@ duplicates, missing anchors/files, mixed states, orphan markers and repeat runs.
 This retention does not request extra instantiation, change query booleans or
 serialize hypothetical operations. The adapter separately checks complete implicit
 trivial record operations and exact synthetic reference/decay paths. Selected
-operation families must be implicit through owning bases and fields; user-defined
-operations, incomplete selection and nothrow record queries need further evidence.
-The independent source check never fills runtime construction/default caches.
+operation families must be implicit through owning bases and fields. Ordinary
+user operations additionally require exact non-template definitions that completed
+normal source traversal. Deferred roots are checked after successful traversal,
+with deferral closed before validation and lowering. Independent lifetime checks
+include owning subobject destruction, not just a written destructor body. No
+extra Sema instantiation is requested. Lazy templates, selected defaults, incomplete
+selection and nothrow record queries still need further evidence. The independent
+source check never fills runtime construction/default caches or queues helpers.
 
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy
 notice. BLAKE3/LICENSE and NeverCCppThirdPartyNotices.txt retain the additional

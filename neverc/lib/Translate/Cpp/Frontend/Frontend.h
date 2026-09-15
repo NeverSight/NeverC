@@ -323,6 +323,9 @@ public:
   std::set<const clang::VarDecl *> CheckedConstantTemporaryOccurrences;
   std::set<const clang::Expr *> SeparateArrayFillers;
   std::map<const clang::TypeTraitExpr *, OperationTraitSource> OperationTraits;
+  bool CheckingSource = false;
+  std::vector<const clang::TypeTraitExpr *> PendingOperationQueries;
+  std::set<const clang::TypeTraitExpr *> DeferredOperationQueries, VerifiedOperationQueries;
   std::map<const clang::StringLiteral *, std::string> StringObjects;
   json::Array StringGlobals;
   std::map<const clang::MaterializeTemporaryExpr *, std::string> StaticTemporaryObjects;

@@ -947,9 +947,9 @@ An attempted operation that fails can already have selected an overload or
 processed a default argument. Its incomplete status is explicit; a missing root
 does not prove absence of source operations. A complete operation can still give
 a false nothrow/trivial result. Full checking of those selected sources, partial
-failure paths and exception dependencies remains necessary for user-defined
-record operations. The implicit trivial subset below has an independent source
-proof. Nothrow record queries still require the exact exception specifications
+failure paths and exception dependencies remains necessary. The implicit trivial
+and completed ordinary-definition subsets below have independent source proofs.
+Nothrow record queries still require the exact exception specifications
 actually resolved and remain rejected for record values and arrays. Nothrow
 destruction of record references takes the separate no-selection path below. This is
 separate from the metadata record queries above. Actual standard-header and complete C++/STL support remain
@@ -959,7 +959,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 60 accepted, 46 unsupported-source and seven invalid-C++ cases cover
+The paired 89 accepted, 63 unsupported-source and seven invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -991,7 +991,7 @@ Reference members do not own their referents. Construction also requires implici
 trivial destruction; a direct reference binding does not destroy the referent and
 can therefore bind an admitted record with a nontrivial or deleted destructor.
 
-This stage rejects selected user or explicitly defaulted operations, incomplete
+The implicit subset rejects selected user or explicitly defaulted operations, incomplete
 failed initialization, unsupported derived-to-base reference adjustments and
 nothrow record construction, assignment, conversion and value/array destruction. Failed selection cannot be accepted just because the
 boolean is false. Unused user default-constructor bodies stay lazy when the query
@@ -1004,6 +1004,59 @@ zero query effects, actual copy/assignment/reference identity and real destructi
 Seven exported boolean functions check that no hypothetical calls or record locals
 enter the protocol; relocation remains deterministic. Native validation requires
 the implementing revision's CI.
+
+### Operations with completed ordinary definitions
+
+Non-nothrow record construction, assignment and conversion queries also accept
+selected ordinary user operations when the exact body-owning definitions have
+completed normal source traversal. This includes explicit constructors, user
+copy/move constructors, assignment operators, conversion functions, their admitted
+standard conversions and user destructors. Built-in scalar assignment can use a
+checked record conversion, such as assigning an `operator int()` result to `double`.
+False triviality results preserve the same selected-source checks as true results.
+
+```cpp
+struct Value {
+  int n;
+  Value(int v) : n(v) {}
+  operator int() const { return n; }
+};
+static_assert(__is_constructible(Value, int));
+static_assert(!__is_trivially_constructible(Value, int));
+static_assert(__is_convertible(Value, double));
+static_assert(__is_assignable(int&, Value));
+```
+
+The source phase defers complete roots that need these definitions. After all
+ordinary and selected generated source traversal succeeds, an independent pass
+checks every pending root. Deferral closes before this pass and before any
+serialization or runtime lowering. A query inside its own selected function body,
+mutual query dependencies and later out-of-line definitions therefore need no
+recursive body traversal. A function queued for emission is not a completed proof.
+Any failed traversal or pending query prevents artifact publication.
+
+Only source-owned, user-provided non-template definitions qualify here. Each root
+checks its exact synthetic operands, selected declaration's actual definition,
+converted arguments, result type and supported full-expression temporary shape.
+Constructed objects and record-valued results also require checked destruction of
+every owning base, field and array element. A user destructor body alone cannot
+prove implicit subobject destruction. Reference and pointer members do not own
+their referents. Query checking never requests runtime construction/default caches
+or queues hypothetical destruction helpers.
+
+Declaration-only and lazy template operations, selected default arguments,
+explicitly defaulted operations, implicit nontrivial destructors, incomplete
+selection and nothrow record exception dependencies still require further source
+evidence. Supplying every argument to an ordinary function with defaults can pass;
+selecting an omitted default cannot yet use this proof. Unused templates remain
+lazy, and actual runtime use retains all ordinary source and lowering checks.
+
+Paired tests cover source order, recursive queries, conversions, missing bodies,
+hidden unsupported source and these remaining restrictions. A separate saved-NC
+fixture has twelve O0/O2 checkpoints for zero hypothetical effects, real user
+construction/copy/move/assignment/conversion and field-array destruction. Seven
+exported query functions must contain only boolean value flow; relocation must
+preserve the protocol exactly. Native results require implementing CI.
 
 ### Nothrow destruction of record references
 

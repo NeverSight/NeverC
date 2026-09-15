@@ -6312,6 +6312,10 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert not expected
 
     operation_trait_positive = {
+        'user-pointer-void-conversion': 'struct S{int*value;operator int*()const{return value;}};static_assert(__is_convertible(S,void*)&&__is_assignable(void*&,S));',
+        'user-pointer-void-constructor': 'struct S{int*value;operator int*()const{return value;}};struct R{void*value;R(void*v):value(v){}};static_assert(__is_constructible(R,S));',
+        'user-converted-reference-argument': 'struct S{operator int()const{return 3;}};struct R{double value;R(const double&v):value(v){}};static_assert(__is_constructible(R,S));',
+        'user-supplied-default-argument': 'struct R{int n;R(int a,int b=3):n(a+b){}};static_assert(__is_constructible(R,int,int));',
         'record-reference-nothrow-destruction': 'struct R{int n;};static_assert(__is_nothrow_destructible(R&)&&__is_nothrow_destructible(const R&&)&&__is_nothrow_destructible(R(&)[2]));',
         'record-reference-throwing-destruction': 'struct R{~R()noexcept(false){}};static_assert(__is_nothrow_destructible(R&)&&__is_nothrow_destructible(R&&));',
         'record-reference-deleted-nothrow-destruction': 'struct R{~R()=delete;};static_assert(__is_nothrow_destructible(R&));',
@@ -6372,6 +6376,31 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'record-pre-operation-false': 'struct R{int n;};static_assert(!__is_constructible(void,R)&&!__is_assignable(void,R)&&!__is_assignable(R&,void)&&!__is_convertible(R,void)&&!__is_convertible(R,R[2]));',
         'record-query-pack': 'struct R{int n;};template<class T,class...A>constexpr bool f(){return __is_constructible(T,A...)&&__is_trivially_constructible(T,A...);}static_assert(f<R>()&&f<R,R>()&&f<R,const R&>());',
         'record-reference-owned-nontrivial': 'struct F{~F(){}};struct R{F&field;};static_assert(__is_constructible(R,R));',
+        'retained-nontrivial-construction': 'struct R{R(int){}};bool f(){return __is_trivially_constructible(R,int);}',
+        'retained-nontrivial-assignment': 'struct R{R&operator=(int){return *this;}};bool f(){return __is_trivially_assignable(R&,int);}',
+        'record-conversion-source': 'struct R{operator int()const{return 3;}};bool f(){return __is_constructible(int,R);}',
+        'user-default': 'struct R{int n;R():n(3){}};static_assert(__is_constructible(R)&&!__is_trivially_constructible(R));',
+        'user-explicit': 'struct R{int n;explicit R(int v):n(v){}};static_assert(__is_constructible(R,int)&&!__is_trivially_constructible(R,int));',
+        'user-copy-move': 'struct R{int n;R(const R&r):n(r.n){}R(R&&r):n(r.n){r.n=0;}};static_assert(__is_constructible(R,const R&)&&__is_constructible(R,R)&&!__is_trivially_constructible(R,R));',
+        'user-assignment': 'struct R{int n;R&operator=(int v){n=v;return *this;}};static_assert(__is_assignable(R&,int)&&!__is_trivially_assignable(R&,int));',
+        'user-copy-assignment': 'struct R{int n;R&operator=(const R&r){n=r.n;return *this;}};static_assert(__is_assignable(R&,R)&&!__is_trivially_assignable(R&,const R&));',
+        'user-conversion': 'struct R{int n;operator int()const{return n;}};static_assert(__is_constructible(int,R)&&__is_convertible(R,int)&&__is_convertible_to(const R&,int)&&!__is_trivially_constructible(int,R));',
+        'user-second-conversion': 'struct R{operator int()const{return 3;}};static_assert(__is_convertible(R,double)&&__is_constructible(bool,R)&&!__is_trivially_constructible(double,R));',
+        'user-builtin-assignment': 'struct R{operator int()const{return 3;}};static_assert(__is_assignable(int&,R)&&__is_assignable(double&,R)&&!__is_trivially_assignable(int&,R));',
+        'user-reference-conversion': 'struct R{int n;operator int&(){return n;}};static_assert(__is_convertible(R&,int&)&&__is_constructible(int&,R&));',
+        'user-overloads': 'struct R{int n;R(int v):n(v){}R(double v):n((int)v){}R&operator=(int v){n=v;return *this;}R&operator=(double v){n=(int)v;return *this;}};static_assert(__is_constructible(R,int)&&__is_constructible(R,double)&&__is_assignable(R&,int)&&__is_assignable(R&,double));',
+        'user-nested-conversion': 'struct S{operator int()const{return 3;}};struct R{int n;R(int v):n(v){}};static_assert(__is_constructible(R,S)&&!__is_trivially_constructible(R,S));',
+        'user-record-conversion': 'struct V{int n;};struct R{operator V()const{return {3};}};static_assert(__is_convertible(R,V));',
+        'user-destructor': 'int drops;struct R{int n;R(int v):n(v){}~R(){++drops;}};static_assert(__is_constructible(R,int)&&__is_convertible(int,R)&&!__is_trivially_constructible(R,int));',
+        'user-destructor-fields': 'int drops;struct F{int n;~F(){++drops;}};struct R{F f[2];R():f{{1},{2}}{}~R(){++drops;}};static_assert(__is_constructible(R));',
+        'user-destructor-reference': 'struct F{~F()=delete;};struct R{F&f;R(F&v):f(v){}};static_assert(__is_constructible(R,F&));',
+        'user-out-of-line': 'struct R{int n;R(int);R&operator=(int);operator int()const;~R();};static_assert(__is_constructible(R,int)&&__is_assignable(R&,int)&&__is_convertible(R,int));R::R(int v):n(v){}R&R::operator=(int v){n=v;return *this;}R::operator int()const{return n;}R::~R(){}',
+        'user-self-query': 'struct R{int n;R(int v):n(v){static_assert(__is_constructible(R,int));}operator int()const{static_assert(__is_convertible(R,int));return n;}R&operator=(int v){static_assert(__is_assignable(R&,int));n=v;return *this;}};static_assert(__is_constructible(R,int));',
+        'user-mutual-query': 'struct A{A(int);};struct B{B(int);};A::A(int){static_assert(__is_constructible(B,int));}B::B(int){static_assert(__is_constructible(A,int));}static_assert(__is_constructible(A,int)&&__is_constructible(B,int));',
+        'user-query-before-runtime': 'struct R{int n;R(int v):n(v){}};static_assert(__is_constructible(R,int));int f(){R r(3);return r.n;}',
+        'user-runtime-before-query': 'struct R{int n;R(int v):n(v){}};int f(){R r(3);return r.n;}static_assert(__is_constructible(R,int));',
+        'user-query-substitution': 'struct R{R(int){}};template<class T,class...Args>constexpr bool f(){return __is_constructible(T,Args...);}static_assert(f<R,int>());',
+        'user-query-if-constexpr': 'struct R{R(int){}};template<class T>int f(){if constexpr(__is_constructible(T,int))return 3;else return T::missing;}int g(){return f<R>();}',
     }
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
@@ -6383,13 +6412,10 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'record-base-written-default': 'struct B{B()=default;};struct R:B{};bool f(){return __is_constructible(R);}',
         'record-base-written-copy': 'struct B{B(const B&)noexcept(false)=default;};struct R:B{};bool f(){return __is_constructible(R,R);}',
         'record-query-hidden-source': 'struct R{int n;};bool f(){return __is_constructible(decltype((sizeof(long double),R{})),R);}',
-        'retained-nontrivial-construction': 'struct R{R(int){}};bool f(){return __is_trivially_constructible(R,int);}',
         'retained-throwing-construction': 'struct R{R(int)noexcept(false){}};bool f(){return __is_nothrow_constructible(R,int);}',
         'retained-inaccessible-construction': 'class R{R(int){}};bool f(){return __is_constructible(R,int);}',
         'retained-throwing-conversion': 'struct R{operator int()const noexcept(false){return 1;}};bool f(){return __is_nothrow_convertible(R,int);}',
-        'retained-nontrivial-assignment': 'struct R{R&operator=(int){return *this;}};bool f(){return __is_trivially_assignable(R&,int);}',
         'retained-nested-default-query': 'struct R{R(int=__is_constructible(int,int)){}};bool f(){return __is_constructible(R);}',
-        'record-conversion-source': 'struct R{operator int()const{return 3;}};bool f(){return __is_constructible(int,R);}',
         'record-array': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R[2]);}',
         'record-convertible-false': 'struct R{int n;};bool f(){return __is_convertible(int,R);}',
         'record-destructor-array': 'struct R{int n;};bool f(){return __is_nothrow_destructible(R[2][3]);}',
@@ -6422,6 +6448,26 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'record-reference-nothrow': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R&,R&);}',
         'record-implicit-nothrow-assignment': 'struct R{int n;};bool f(){return __is_nothrow_assignable(R&,R);}',
         'record-unretained-base-reference': 'struct B{};struct D:B{};bool f(){return __is_convertible(D&,B&);}',
+        'user-missing-constructor': 'struct R{R(int);};bool f(){return __is_constructible(R,int);}',
+        'user-missing-conversion': 'struct R{operator int()const;};bool f(){return __is_convertible(R,int);}',
+        'user-missing-assignment': 'struct R{R&operator=(int);};bool f(){return __is_assignable(R&,int);}',
+        'user-missing-destructor': 'struct R{R(int){}~R();};bool f(){return __is_constructible(R,int);}',
+        'user-hidden-body': 'struct R{R(int){long double hidden=0;}};static_assert(__is_constructible(R,int));',
+        'user-hidden-out-of-line': 'struct R{R(int);};static_assert(__is_constructible(R,int));R::R(int){long double hidden=0;}',
+        'user-hidden-conversion': 'struct R{operator int()const{return sizeof(long double);}};bool f(){return __is_convertible(R,int);}',
+        'user-hidden-assignment': 'struct R{R&operator=(int){(void)sizeof(long double);return *this;}};bool f(){return __is_assignable(R&,int);}',
+        'user-hidden-destructor': 'struct R{R(int){}~R(){(void)sizeof(long double);}};bool f(){return __is_constructible(R,int);}',
+        'user-hidden-signature': 'struct R{R(int v[sizeof(long double)]){}};bool f(){return __is_constructible(R,int*);}',
+        'user-selected-default': 'struct R{R(int,int=3){}};bool f(){return __is_constructible(R,int);}',
+        'user-lazy-template-body': 'template<class T>struct R{R(int){T::missing();}};bool f(){return __is_constructible(R<int>,int);}',
+        'user-constructor-template': 'struct R{template<class T>R(T){T::missing();}};bool f(){return __is_constructible(R,int);}',
+        'user-conversion-template': 'struct R{template<class T>operator T()const{return T::missing;}};bool f(){return __is_convertible(R,int);}',
+        'user-destructor-defaulted': 'struct R{R(int){}~R()noexcept(false)=default;};bool f(){return __is_constructible(R,int);}',
+        'user-destructor-implicit-nontrivial': 'struct F{~F(){}};struct R{F f;R(){}};bool f(){return __is_constructible(R);}',
+        'user-destructor-field-missing': 'struct F{~F();};struct R{F f;R(){}~R(){}};bool f(){return __is_constructible(R);}',
+        'user-self-query-incomplete': 'struct R{R(int){static_assert(!__is_constructible(R));}};bool f(){return __is_constructible(R,int);}',
+        'user-mutual-query-hidden': 'struct A{A(int);};struct B{B(int);};A::A(int){static_assert(__is_constructible(B,int));}B::B(int){(void)sizeof(long double);static_assert(__is_constructible(A,int));}',
+        'user-nested-default-conversion': 'struct S{S(int=3){}};struct R{R(S={}){}};bool f(){return __is_constructible(R);}',
     }
     for name, source in operation_trait_negative.items():
         check("v2-operation_trait_negative-" + name, source, 'TR0201', profile="cpp-core-v2")
@@ -6470,6 +6516,33 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         relocated = check("v2-record-operation-relocated", record_operation_source,
                           root=Path(temporary)/"project", profile="cpp-core-v2")
         assert relocated == record_operation_module
+
+    defined_operation_source = (repository / "tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp").read_text()
+    defined_operation_module = check("v2-defined-operation-traits", defined_operation_source, profile="cpp-core-v2")
+    defined_expected = {"defined_construct": True, "defined_copy": True,
+                        "defined_trivial": False, "defined_assign": True,
+                        "defined_scalar_assign": False, "defined_convert": True,
+                        "defined_fields": True}
+    for function in defined_operation_module["functions"]:
+        if not function["c_export"]:
+            continue
+        assert not any(i["op"] in ("call", "static_init_begin") for i in function["body"])
+        assert all(local["type"] == "bool" for local in function["locals"])
+        returned = next(i["value"] for i in function["body"] if i["op"] == "return")
+        bindings = {i["target"]["name"]: i["value"] for i in function["body"]
+                    if i["op"] == "assign" and i["target"]["kind"] == "var"}
+        seen = set()
+        while returned["kind"] == "var":
+            assert returned["name"] not in seen
+            seen.add(returned["name"])
+            returned = bindings[returned["name"]]
+        assert returned["kind"] == "literal" and returned["type"] == "bool"
+        assert returned["value"] is defined_expected.pop(function["name"])
+    assert not defined_expected
+    with tempfile.TemporaryDirectory(prefix="neverc-defined-operation-relocated-") as temporary:
+        relocated = check("v2-defined-operation-relocated", defined_operation_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == defined_operation_module
 
     operation_trait_expected = {
         "trait_construct": True, "trait_nothrow_construct": True,

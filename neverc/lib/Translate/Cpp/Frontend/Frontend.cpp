@@ -1709,15 +1709,45 @@ void Adapter::checkQueryType(QualType T, SourceLocation L) {
 }
 
 // A hypothetical operation needs source admission, but no runtime owner or
-// helper. This first record boundary admits only compiler-generated trivial
-// operations and the exact synthetic glvalues retained for this query. In
-// particular, do not reuse runtime construction/default caches to check it.
-static bool trivialOperationTraitSource(Adapter &A,
-                                       const OperationTraitSource &Source) {
+// helper. User operations require exact definitions that have completed normal
+// source traversal. Do not reuse runtime construction/default caches or infer
+// completed source proof from the function emission queue.
+static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
+    const std::set<const FunctionDecl *> *Definitions = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
     return false;
+  auto Defined = [&](const FunctionDecl *Function) {
+    const auto *Definition = Function ? Function->getDefinition() : nullptr;
+    return Definitions && Definition && Definitions->count(Definition) &&
+           Function->getTemplatedKind() == FunctionDecl::TK_NonTemplate &&
+           A.S.owns(A.Sources, Function->getLocation());
+  };
+  // A written destructor body omits implicit field/base destruction. Check
+  // those owning subobjects separately, including when Sema's root has no bind.
+  auto Destruction = [&](auto &&Self, const CXXRecordDecl *Record,
+                         unsigned Depth) -> bool {
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
+      return false;
+    A.chargeExpansion(1, Record->getLocation());
+    if (Record->hasUserDeclaredDestructor()) {
+      const auto *Destructor = Record->getDestructor();
+      if (!ordinaryDestructor(Destructor) || !Defined(Destructor))
+        return false;
+    } else if (!Record->hasTrivialDestructor()) {
+      return false;
+    }
+    for (const auto &Base : Record->bases())
+      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1))
+        return false;
+    for (const auto *Field : Record->fields())
+      if (const auto *Member = A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl())
+        if (!Self(Self, Member, Depth + 1))
+          return false;
+    return true;
+  };
   enum class Family { Default, CopyMove, Assignment };
   // A trivial generated parent can still select an explicitly defaulted field
   // operation with written noexcept source. Until those selections are retained,
@@ -1759,24 +1789,43 @@ static bool trivialOperationTraitSource(Adapter &A,
       switch (Cast->getCastKind()) {
       case CK_NoOp: case CK_LValueToRValue:
       case CK_ArrayToPointerDecay: case CK_FunctionToPointerDecay:
-      case CK_ConstructorConversion:
+      case CK_IntegralCast: case CK_IntegralToBoolean:
+      case CK_IntegralToFloating: case CK_FloatingToIntegral:
+      case CK_FloatingToBoolean: case CK_FloatingCast:
+      case CK_NullToPointer: case CK_PointerToBoolean:
         return Self(Self, Cast->getSubExpr(), Depth + 1);
+      case CK_ConstructorConversion:
+        return constructorConversion(Cast, A.Context) &&
+               Self(Self, Cast->getSubExpr(), Depth + 1);
+      case CK_UserDefinedConversion:
+        return userConversionCall(Cast, A.Context) &&
+               Self(Self, Cast->getSubExpr(), Depth + 1);
+      case CK_BitCast:
+        return Cast->getType()->isPointerType() &&
+               Cast->getSubExpr()->getType()->isPointerType() &&
+               !Cast->getType()->isFunctionPointerType() &&
+               !Cast->getSubExpr()->getType()->isFunctionPointerType() &&
+               (Cast->getType()->getPointeeType()->isVoidType() ||
+                Cast->getSubExpr()->getType()->getPointeeType()->isVoidType()) &&
+               Self(Self, Cast->getSubExpr(), Depth + 1);
       default:
         return false;
       }
     }
     if (const auto *Construction = dyn_cast<CXXConstructExpr>(E)) {
       const auto *Constructor = Construction->getConstructor();
-      if (!Constructor->isImplicit() || !Constructor->isTrivial() ||
-          (!Constructor->isDefaultConstructor() &&
-           !Constructor->isCopyOrMoveConstructor()) ||
-          !Constructor->getParent()->hasTrivialDestructor() ||
-          !A.S.owns(A.Sources, Constructor->getLocation()) ||
+      const bool Implicit = Constructor->isImplicit() && Constructor->isTrivial() &&
+          (Constructor->isDefaultConstructor() || Constructor->isCopyOrMoveConstructor()) &&
+          ImplicitClosure(ImplicitClosure, Constructor->getParent(),
+                          Constructor->isDefaultConstructor() ? Family::Default
+                                                              : Family::CopyMove, 0);
+      if ((!Implicit && !(ordinaryConstructor(Constructor) && Defined(Constructor))) ||
+          !A.S.owns(A.Sources, Constructor->getLocation()) || !Construction->isPRValue() ||
           Construction->getConstructionKind() != CXXConstructionKind::Complete ||
           Construction->getNumArgs() != Constructor->getNumParams() ||
-          !ImplicitClosure(ImplicitClosure, Constructor->getParent(),
-                           Constructor->isDefaultConstructor() ? Family::Default
-                                                               : Family::CopyMove, 0))
+          !A.Context.hasSameUnqualifiedType(A.Context.getBaseElementType(Construction->getType()),
+              A.Context.getRecordType(Constructor->getParent())) ||
+          !Destruction(Destruction, Constructor->getParent(), 0))
         return false;
       for (const auto *Argument : Construction->arguments())
         if (!Self(Self, Argument, Depth + 1))
@@ -1785,25 +1834,55 @@ static bool trivialOperationTraitSource(Adapter &A,
     }
     if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(E)) {
       const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
-      if (Call->getOperator() != OO_Equal || !Method || !Method->isImplicit() ||
-          !Method->isTrivial() || Method->getNumParams() != 1 ||
-          (!Method->isCopyAssignmentOperator() && !Method->isMoveAssignmentOperator()) ||
-          !A.S.owns(A.Sources, Method->getLocation()) || Call->getNumArgs() != 2 ||
-          !ImplicitClosure(ImplicitClosure, Method->getParent(), Family::Assignment, 0))
+      if (Call->getOperator() != OO_Equal || !Method || Method->getNumParams() != 1 ||
+          !A.S.owns(A.Sources, Method->getLocation()) || Call->getNumArgs() != 2)
+        return false;
+      const bool Implicit = Method->isImplicit() && Method->isTrivial() &&
+          (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) &&
+          ImplicitClosure(ImplicitClosure, Method->getParent(), Family::Assignment, 0);
+      if (!Implicit && !(ordinaryOperator(Method) && Defined(Method) && directMethodReference(Call)))
+        return false;
+      if (Call->isPRValue() && Call->getType()->isRecordType() &&
+          !Destruction(Destruction, Call->getType()->getAsCXXRecordDecl(), 0))
         return false;
       return Self(Self, Call->getArg(0), Depth + 1) &&
              Self(Self, Call->getArg(1), Depth + 1);
     }
+    if (const auto *Call = dyn_cast<CXXMemberCallExpr>(E)) {
+      const auto *Conversion = dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee());
+      if (!ordinaryConversion(Conversion) || !Defined(Conversion) ||
+          !directMethodReference(Call) || Call->getNumArgs() != 0 ||
+          !Call->getImplicitObjectArgument())
+        return false;
+      if (Call->isPRValue() && Call->getType()->isRecordType() &&
+          !Destruction(Destruction, Call->getType()->getAsCXXRecordDecl(), 0))
+        return false;
+      return Self(Self, Call->getImplicitObjectArgument(), Depth + 1);
+    }
+    if (const auto *Assignment = dyn_cast<BinaryOperator>(E))
+      return Assignment->getOpcode() == BO_Assign && Assignment->isLValue() &&
+             Assignment->getLHS()->isLValue() &&
+             Assignment->getType()->isScalarType() &&
+             A.Context.hasSameType(Assignment->getType(), Assignment->getLHS()->getType()) &&
+             Self(Self, Assignment->getLHS(), Depth + 1) &&
+             Self(Self, Assignment->getRHS(), Depth + 1);
     if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(E)) {
       const auto *Destructor = Temporary->getTemporary()->getDestructor();
-      return Destructor->isImplicit() && Destructor->isTrivial() &&
-             A.S.owns(A.Sources, Destructor->getLocation()) &&
+      const auto *Sub = Temporary->getSubExpr();
+      return Destructor && Sub && Temporary->isPRValue() && Sub->isPRValue() &&
+             A.Context.hasSameType(Temporary->getType(), Sub->getType()) &&
+             A.Context.hasSameUnqualifiedType(Temporary->getType(),
+                 A.Context.getRecordType(Destructor->getParent())) &&
+             Destruction(Destruction, Destructor->getParent(), 0) &&
              Self(Self, Temporary->getSubExpr(), Depth + 1);
     }
     if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(E))
-      return Self(Self, Temporary->getSubExpr(), Depth + 1);
+      return fullExpressionTemporary(Temporary, A.Context) &&
+             Self(Self, Temporary->getSubExpr(), Depth + 1);
     if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(E))
-      return Cleanup->getNumObjects() == 0 &&
+      return Cleanup->getNumObjects() == 0 && Cleanup->getSubExpr() &&
+             A.Context.hasSameType(Cleanup->getType(), Cleanup->getSubExpr()->getType()) &&
+             Cleanup->getValueKind() == Cleanup->getSubExpr()->getValueKind() &&
              Self(Self, Cleanup->getSubExpr(), Depth + 1);
     return isa<ImplicitValueInitExpr>(E) &&
            !A.Context.getBaseElementType(E->getType())->isRecordType();
@@ -1930,11 +2009,22 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
         Kind == TT_IsNothrowConstructible || Kind == BTT_IsNothrowAssignable ||
         Kind == BTT_IsNothrowConvertible;
     auto Found = OperationTraits.find(Query);
-    if (Nothrow || Found == OperationTraits.end() ||
-        !trivialOperationTraitSource(*this, Found->second)) {
+    if (Nothrow || Found == OperationTraits.end()) {
       reject(L, "operation trait source",
-             "Record queries require a complete implicit trivial operation or a checked pre-operation result; selected user operations and exception dependencies need further source checks.");
+             "Record exception dependencies require further source checks.");
       throw Failure{};
+    }
+    if (!VerifiedOperationQueries.count(Query) &&
+        !operationTraitSource(*this, Found->second)) {
+      if (CheckingSource && Found->second.Attempted &&
+          Found->second.Complete && Found->second.Root) {
+        if (DeferredOperationQueries.insert(Query).second)
+          PendingOperationQueries.push_back(Query);
+      } else {
+        reject(L, "operation trait source",
+               "Record queries require a complete operation with checked selected source or a checked pre-operation result.");
+        throw Failure{};
+      }
     }
   }
   // RAV separately visits every TypeSourceInfo, including decltype operands,
@@ -3078,6 +3168,7 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
 
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
+  std::set<const FunctionDecl *> CompletedOperationDefinitions;
   std::map<const CXXRecordDecl *, bool> HasArray;
   std::map<const CXXRecordDecl *, bool> FlatReferenceLayouts;
   std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees, FunctionValueDesignators;
@@ -8867,9 +8958,14 @@ public:
          copiedOrdinaryClassStatic(Variable)))
       if (auto *Definition = Variable->getDefinition(); Definition && Definition != Variable)
         Result = TraverseDecl(Definition);
+    if (const auto *Function = dyn_cast_or_null<FunctionDecl>(D);
+        Result && A.S.coreV2() && A.S.Diagnostics.empty() && Function && owned(Function) &&
+        Function->isUserProvided() && Function->doesThisDeclarationHaveABody() &&
+        Function->getTemplatedKind() == FunctionDecl::TK_NonTemplate)
+      CompletedOperationDefinitions.insert(Function);
     return Result;
   }
-  void finishGeneratedMethods() {
+  bool finishGeneratedMethods() {
     // Inspect selected definitions only. RAV normally skips defaulted bodies;
     // visiting all implicit declarations would broaden source admission.
     for (std::size_t Index = 0; Index < GeneratedMethods.size(); ++Index) {
@@ -8907,12 +9003,31 @@ public:
                      "Only unique direct field initializers are supported.");
             continue;
           }
-          TraverseStmt(I->getInit());
+          if (!TraverseStmt(I->getInit()))
+            return false;
         }
       }
-      TraverseStmt(const_cast<CompoundStmt *>(Body));
+      if (!TraverseStmt(const_cast<CompoundStmt *>(Body)))
+        return false;
       A.Functions.push_back(const_cast<CXXMethodDecl *>(Method));
     }
+    return A.S.Diagnostics.empty();
+  }
+  bool finishOperationQueries() {
+    // Deferral is closed before this pass. A query in the selected definition's
+    // own body can use its completed proof, but all pending roots must pass
+    // before any runtime lowering observes the provisional boolean values.
+    for (const auto *Query : A.PendingOperationQueries) {
+      auto Source = A.OperationTraits.find(Query);
+      if (Source == A.OperationTraits.end() ||
+          !operationTraitSource(A, Source->second, &CompletedOperationDefinitions)) {
+        A.reject(Query->getExprLoc(), "operation trait source",
+                 "A complete hypothetical operation requires checked exact ordinary definitions, arguments and destruction source.");
+        return false;
+      }
+      A.VerifiedOperationQueries.insert(Query);
+    }
+    return A.S.Diagnostics.empty();
   }
   bool TraverseCXXForRangeStmt(CXXForRangeStmt *Loop) {
     if (!A.S.coreV2())
@@ -10825,6 +10940,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                   llvm::ArrayRef<FriendFunctionTemplateSource> FriendTemplates,
                   llvm::ArrayRef<FunctionTemplateBodySource> TemplateBodies,
                   llvm::ArrayRef<FriendClassTemplateSource> FriendClasses) {
+  CheckingSource = true;
+  auto FinishSource = llvm::make_scope_exit([&] { CheckingSource = false; });
   Allowlist Check(*this);
   Check.indexFriendSources(FriendFunctions, FriendDeclarations, FriendTemplates, TemplateBodies, FriendClasses);
   Check.indexTemplates();
@@ -10837,11 +10954,16 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     Check.checkExplicitStaticDataInstantiation(Directive);
   for (const auto &Directive : MemberClassDirectives)
     Check.checkExplicitMemberClassInstantiation(Directive);
-  Check.TraverseDecl(Context.getTranslationUnitDecl());
-  if (!S.Diagnostics.empty())
+  bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
+  if (Traversed && S.Diagnostics.empty())
+    Traversed = Check.finishGeneratedMethods();
+  if (!Traversed && S.Diagnostics.empty())
+    reject(Context.getTranslationUnitDecl()->getBeginLoc(), "source traversal",
+           "Complete source traversal is required before operation validation and lowering.");
+  if (!Traversed || !S.Diagnostics.empty())
     return;
-  Check.finishGeneratedMethods();
-  if (!S.Diagnostics.empty())
+  CheckingSource = false;
+  if (!Check.finishOperationQueries())
     return;
   if (S.coreV2())
     orderCoreV2Records(*this);
