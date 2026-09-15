@@ -2165,16 +2165,18 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           !ExceptionSource(Constructor))
         return false;
       // Every exact record prvalue passed the shared destruction proof above.
-      // The implicit family here proves only its selected construction source.
-      if ((Constructor->isImplicit() || Constructor->isDefaulted()) &&
-          !implicitSpecialMemberSource(A, Constructor, false))
+      // Classify the whole family: an earlier selected declaration need not
+      // carry its later =default definition's flag or generated source.
+      if ((Constructor->isImplicit() || defaultedDeclaration(Constructor)) &&
+          !implicitSpecialMemberSource(A, Constructor, false) &&
+          !GeneratedOperation(Constructor))
         return false;
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
           Method && (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) &&
-          (Method->isImplicit() || Method->isDefaulted()))
-        if (!implicitSpecialMemberSource(A, Method, true))
+          (Method->isImplicit() || defaultedDeclaration(Method)))
+        if (!implicitSpecialMemberSource(A, Method, true) && !GeneratedOperation(Method))
           return false;
     if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Node)) {
       const auto *Destructor = Temporary->getTemporary()->getDestructor();
@@ -6378,7 +6380,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (Destroyed)
         FunctionSource(Destroyed->getDestructor());
       for (auto *Dependencies : ActiveOperationSources) {
-        if (Selected && (Selected->isImplicit() || Selected->isDefaulted()) &&
+        if (Selected && (Selected->isImplicit() || defaultedDeclaration(Selected)) &&
             Dependencies->Families.insert(Selected).second)
           A.chargeExpansion(1, Selected->getLocation());
         if (Destroyed && Dependencies->Destructions.insert(Destroyed).second)

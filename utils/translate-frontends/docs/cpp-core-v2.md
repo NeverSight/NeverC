@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 411 accepted, 273 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
+The paired 430 accepted, 285 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1049,7 +1049,8 @@ reference. These checks run after source completion; the provisional implicit fa
 path is unchanged. True, false, trivial and nothrow results retain Clang's values.
 Written child operation families, template split defaulting, unmaterialized
 nontrivial operations and unsupported signature/body source still require further
-proof. The separate evaluated constructor-default dependency scan is unchanged.
+proof. Selected ordinary constructor defaults use the same completed generated
+source proof while retaining their independent initializer and lifetime checks.
 
 ### Operations with completed ordinary definitions
 
@@ -1125,15 +1126,24 @@ one full-expression wrapper from a parameter default, so its type, value categor
 exact operand and cleanup objects are checked independently. Per-use rewritten
 initializers cannot borrow the original expression's proof.
 
-An additional bounded scan checks implicit operation families and destruction in
+An additional bounded scan checks generated operations and destruction in
 query-only defaults. Implicit/defaulted constructors and assignments require the
-same implicit trivial owning-subobject family proof as outer query operations:
-marking a selected function referenced can infer its exception specification even
-for a non-nothrow query, while a trivial body remains ungenerated. The scan covers
+same implicit trivial family or completed generated-operation source proof as
+outer query operations. The latter path runs only with all final source tables;
+actual written declarations, signatures, owning families and existing nontrivial
+generated bodies remain required. Marking a selected function referenced can infer
+its exception specification even for a non-nothrow query, while a trivial body
+remains ungenerated. Clang's normal selected-default processing can materialize
+a generated body; the checker itself never asks for one. Nested unevaluated
+expressions still need their own source proof. The scan covers
 record prvalues, bound temporaries, nested defaults and semantic array fillers,
 explicit destructor calls and delete all retain their owning-subobject proofs.
 During normal parameter traversal, a scoped collector records implicit/defaulted
 constructor and assignment selections and record-prvalue destruction dependencies.
+Selection may point to an earlier declaration whose later definition spells
+`= default`. Both the collector and evaluated scan classify the complete
+declaration family, then check the actual selected signature and generated body
+independently; the defaulting flag on one declaration is not a source certificate.
 It also covers unevaluated operands and written decltype reached through TypeLoc;
 Clang can resolve inferred specifications there and can omit trivial destructor
 binding nodes. Each exact parameter/initializer retains its own completion proof. Parameters
@@ -1169,9 +1179,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has fifty-seven O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has sixty-seven O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Sixty-two exported query
+default evaluation with full-expression temporary cleanup. Seventy-one exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1355,7 +1365,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared fifty-seven-checkpoint user-operation fixture checks
+queries. The shared sixty-seven-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
 user/generated array destruction at O0/O2;

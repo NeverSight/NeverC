@@ -352,8 +352,16 @@ defaulted construction/assignment roots. All source maps must be available befor
 this new branch is attempted, preserving provisional implicit admission. Complete
 construction, synthetic operand/argument identity, direct assignment references,
 exception source and owning destruction checks remain independent. Nontrivial
-roots require their existing completed generated body; evaluated-default admission
-is unchanged and no body is instantiated for a query.
+operations require their existing completed generated body. Selected ordinary
+constructor defaults use the same final proof while preserving their exact
+parameter/initializer, callee exception and lifetime checks. No checker asks Sema
+to instantiate a body. Pinned SemaExpr.cpp CheckCXXDefaultArgExpr normally marks
+selected default expressions referenced in a PotentiallyEvaluated context, but
+nested unevaluated operands still provide no body-completion guarantee.
+The collector and evaluated scan use defaultedDeclaration for classification:
+FunctionDecl::isDefaulted is per declaration, and SetDeclDefaulted marks the
+actual definition only. An earlier selected declaration must therefore retain
+the later generated initializer/body dependencies without borrowing its signature.
 Variable and enum references retain actual initializer dependencies, including
 implicit-enumerator predecessors and previously cached variable templates.
 Already materialized user-provided constexpr bodies and constructor initializers

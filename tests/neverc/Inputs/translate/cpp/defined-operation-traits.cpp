@@ -188,6 +188,49 @@ struct GeneratedQueryRoot {
   GeneratedQueryRoot &operator=(GeneratedQueryRoot&&) = default;
   ~GeneratedQueryRoot() = default;
 };
+int selected_default_calls;
+GeneratedQueryRoot *default_source;
+GeneratedQueryRoot *default_target;
+ThrowingQueryAssignment<int> *default_throwing_source;
+ThrowingQueryAssignment<int> *default_throwing_target;
+struct GeneratedDefaultConstruction {
+  int value;
+  GeneratedDefaultConstruction(const GeneratedQueryRoot &object = GeneratedQueryRoot()) noexcept
+      : value(object.field.value) { ++selected_default_calls; }
+};
+struct GeneratedDefaultCopy {
+  int value;
+  GeneratedDefaultCopy(const GeneratedQueryRoot &object = GeneratedQueryRoot(*default_source)) noexcept
+      : value(object.field.value) { ++selected_default_calls; }
+};
+struct GeneratedDefaultMove {
+  int value;
+  GeneratedDefaultMove(const GeneratedQueryRoot &object =
+      GeneratedQueryRoot(static_cast<GeneratedQueryRoot&&>(*default_source))) noexcept
+      : value(object.field.value) { ++selected_default_calls; }
+};
+struct GeneratedDefaultAssignment {
+  int value;
+  GeneratedDefaultAssignment(int n = (*default_target = *default_source, default_target->field.value)) noexcept
+      : value(n) { ++selected_default_calls; }
+};
+struct GeneratedDefaultMoveAssignment {
+  int value;
+  GeneratedDefaultMoveAssignment(int n =
+      (default_target->operator=(static_cast<GeneratedQueryRoot&&>(*default_source)),
+       default_target->field.value)) noexcept : value(n) { ++selected_default_calls; }
+};
+struct GeneratedDefaultTrivial {
+  int value;
+  GeneratedDefaultTrivial(const TrivialQueryRoot<int> &object = TrivialQueryRoot<int>()) noexcept
+      : value(object.value) { ++selected_default_calls; }
+};
+struct GeneratedDefaultThrowingAssignment {
+  int value;
+  GeneratedDefaultThrowingAssignment(int n =
+      (*default_throwing_target = *default_throwing_source, default_throwing_target->value)) noexcept
+      : value(n) { ++selected_default_calls; }
+};
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -251,6 +294,15 @@ extern "C" bool defined_defaulted_materialized_copy() { return __is_nothrow_cons
 extern "C" bool defined_defaulted_materialized_move() { return __is_nothrow_constructible(GeneratedQueryRoot, GeneratedQueryRoot&&); }
 extern "C" bool defined_defaulted_materialized_assign() { return __is_nothrow_assignable(GeneratedQueryRoot&, const GeneratedQueryRoot&); }
 extern "C" bool defined_defaulted_materialized_trivial() { return __is_trivially_constructible(GeneratedQueryRoot); }
+extern "C" bool defined_defaulted_materialized_move_assign() { return __is_nothrow_assignable(GeneratedQueryRoot&, GeneratedQueryRoot&&); }
+extern "C" bool defined_generated_default_construct() { return __is_nothrow_constructible(GeneratedDefaultConstruction); }
+extern "C" bool defined_generated_default_copy() { return __is_nothrow_constructible(GeneratedDefaultCopy); }
+extern "C" bool defined_generated_default_move() { return __is_nothrow_constructible(GeneratedDefaultMove); }
+extern "C" bool defined_generated_default_assign() { return __is_nothrow_constructible(GeneratedDefaultAssignment); }
+extern "C" bool defined_generated_default_move_assign() { return __is_nothrow_constructible(GeneratedDefaultMoveAssignment); }
+extern "C" bool defined_generated_default_trivial_temporary() { return __is_nothrow_constructible(GeneratedDefaultTrivial); }
+extern "C" bool defined_generated_default_throwing_assign() { return __is_nothrow_constructible(GeneratedDefaultThrowingAssignment); }
+extern "C" bool defined_generated_default_trivial() { return __is_trivially_constructible(GeneratedDefaultConstruction); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -448,5 +500,60 @@ int main() {
   trivialFirst.value = 11;
   if (trivialFirst.value != 11 || trivialSecond.value != 7 || &trivialFirst == &trivialSecond ||
       !defined_defaulted_template_assign()) return 57;
+  if (!defined_defaulted_materialized_move_assign() || !defined_generated_default_construct() ||
+      !defined_generated_default_copy() || !defined_generated_default_move() ||
+      !defined_generated_default_assign() || !defined_generated_default_move_assign() ||
+      !defined_generated_default_trivial_temporary() || defined_generated_default_throwing_assign() ||
+      defined_generated_default_trivial() || selected_default_calls || root_constructions != 1 ||
+      root_copies != 1 || root_moves != 1 || root_assignments != 1 ||
+      root_move_assignments != 1 || root_destructions != 3) return 58;
+  {
+    GeneratedQueryRoot source, target;
+    source.field.value = 11;
+    target.field.value = 5;
+    default_source = &source;
+    default_target = &target;
+    GeneratedDefaultConstruction constructed;
+    if (constructed.value != 3 || selected_default_calls != 1 || root_constructions != 4 ||
+        root_destructions != 4) return 59;
+    GeneratedDefaultCopy copied;
+    if (copied.value != 11 || source.field.value != 11 || selected_default_calls != 2 ||
+        root_copies != 2 || root_destructions != 5) return 60;
+    GeneratedDefaultMove moved;
+    if (moved.value != 11 || source.field.value != -1 || selected_default_calls != 3 ||
+        root_moves != 2 || root_destructions != 6) return 61;
+    source.field.value = 17;
+    GeneratedDefaultAssignment assigned;
+    if (assigned.value != 17 || target.field.value != 17 || source.field.value != 17 ||
+        selected_default_calls != 4 || root_assignments != 2) return 62;
+    source.field.value = 19;
+    GeneratedDefaultMoveAssignment moveAssigned;
+    if (moveAssigned.value != 19 || target.field.value != 19 || source.field.value != -1 ||
+        selected_default_calls != 5 || root_move_assignments != 2 ||
+        &source.field == &target.field) return 63;
+    GeneratedDefaultTrivial trivial;
+    if (trivial.value != 0 || selected_default_calls != 6 || root_destructions != 6) return 64;
+    if (!defined_generated_default_construct() || !defined_generated_default_copy() ||
+        !defined_generated_default_move() || !defined_generated_default_assign() ||
+        !defined_generated_default_move_assign() || defined_generated_default_trivial() ||
+        selected_default_calls != 6 || root_constructions != 4 || root_copies != 2 ||
+        root_moves != 2 || root_assignments != 2 || root_move_assignments != 2 ||
+        root_destructions != 6 || source.field.value != -1 || target.field.value != 19) return 65;
+    default_source = nullptr;
+    default_target = nullptr;
+  }
+  if (root_destructions != 8 || root_constructions != 4 || root_copies != 2 ||
+      root_moves != 2 || root_assignments != 2 || root_move_assignments != 2 ||
+      selected_default_calls != 6) return 66;
+  ThrowingQueryAssignment<int> throwingFirst{5}, throwingSecond{9};
+  default_throwing_source = &throwingSecond;
+  default_throwing_target = &throwingFirst;
+  GeneratedDefaultThrowingAssignment throwing;
+  throwingFirst.value = 11;
+  if (throwing.value != 9 || throwingFirst.value != 11 || throwingSecond.value != 9 ||
+      &throwingFirst == &throwingSecond || selected_default_calls != 7 ||
+      defined_generated_default_throwing_assign() || root_destructions != 8 ||
+      generated_destructions != 14 || default_calls != 2 || destructions != 10 ||
+      lazy_signature_calls) return 67;
   return 0;
 }

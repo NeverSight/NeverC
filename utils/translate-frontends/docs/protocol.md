@@ -832,8 +832,13 @@ the selected element call may be absent from the body. Completed generated sourc
 also admits exact defaulted construction/assignment query roots, while preserving
 synthetic operands, direct assignment method identity, exception and owning
 destruction checks. This additional path requires the final completed-source
-checker; provisional implicit admission and evaluated-default checks are unchanged.
-Nontrivial roots require an already materialized generated body. Inline template defaulting can use this source proof
+checker; provisional implicit admission is unchanged. Selected ordinary constructor
+defaults can also use this completed generated-source proof, retaining exact
+parameter/initializer identity, call source, exceptions and owning destruction.
+The collector and evaluated-default scan classify the complete defaulted declaration
+family even when selection names a declaration preceding the `= default` definition.
+Classification never replaces actual signature or generated-body completion.
+Nontrivial operations require an already materialized generated body. Inline template defaulting can use this source proof
 only with actual concrete defaulting and completed signatures, plus the exact
 source-owned inline defaulting origin of the same method kind. Separate definitions,
 explicit specializations and copied origin chains do not qualify. The same category
