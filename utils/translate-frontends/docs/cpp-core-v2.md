@@ -867,7 +867,7 @@ destructor's dependent exception specification and unused body stay lazy, even
 when they would fail if instantiated. Existing ordinary function-definition and
 record source restrictions still apply. `__is_nothrow_destructible` on record
 operands requires further exception-source retention and remains restricted.
-The shared classification fixture has 27 O0/O2 checkpoints and sixteen exported
+The shared classification fixture has 29 O0/O2 checkpoints and sixteen exported
 boolean checks, including a real destruction outside the query; native results
 require the implementing revision's CI.
 
@@ -875,7 +875,12 @@ require the implementing revision's CI.
 and selected defaults are inspected even when the query is folded, discarded or
 inside `noexcept`. Their unevaluated side effects, construction and destruction
 are not executed. Existing template substitution sources and lazy uninstantiated
-patterns remain authoritative. Concrete queries can feed static assertions,
+patterns remain authoritative. Within a written template parameter's type,
+metadata classification queries can name direct type parameters from that same
+list (including cv spelling) and concrete admitted operands. Pointer/alias-shaped
+dependent operands need a separate source proof. This declaration-only check
+never reads an unresolved boolean; every selected substitution is checked again.
+Concrete queries can feed static assertions,
 constant initializers, `if constexpr`, defaults and bounded parameter packs.
 
 The builtin spelling does not expand the operand domain. Volatile types, member
@@ -980,7 +985,10 @@ an integer literal, including nested queries, `sizeof`/`decltype` expressions,
 template arguments and selected defaults. Their unevaluated effects are never
 executed, even when a non-array operand or an out-of-range index yields zero.
 The private frontend defers dependent dimension evaluation and substitutes the
-index even when its array type is unchanged. Ordinary and pack substitutions,
+index even when its array type is unchanged. Both parsing and substitution use
+a constant-evaluated dimension context so required constexpr bodies are available
+inside `sizeof` and `noexcept`. Parameter-pack collection explicitly includes the
+dimension; the shared runtime fixture has ten checkpoints. Ordinary and pack substitutions,
 constant assertions, variable/alias/class defaults and `if constexpr` use the
 existing template source rules; unused dependent patterns remain lazy.
 
@@ -3453,8 +3461,12 @@ instantiation and recursion retain selected concrete identities. Unused primary
 bodies stay lazy. Selected types, definitions, exception specifications, folded
 source and every materialized body remain checked. Explicit directives keep each
 written argument/type/name/qualifier and attribute check, including extern and
-no-effect repetition. An unevaluated signature-only call still needs a definition
-under the existing source-closure rule.
+no-effect repetition. An unused implicit free-function specialization can retain
+only its signature when its owned primary has a definition. Its actual signature,
+resolved exception specification and selected template/default arguments are
+checked; the primary body stays lazy. Used instances and explicit instantiations
+still require their concrete definitions. This does not change member-template
+or callback definition boundaries.
 
 Free operator calls contain only explicit source parameters plus the ordinary
 hidden result pointer for record returns. There is no implicit receiver or runtime
@@ -5137,9 +5149,10 @@ int main() {
 
 Every written specification and query operand is still inspected, including
 unused, nested and short-circuited expressions. Unsupported types and operations
-remain rejected; unevaluated source still rejects signature-only template calls without definitions,
-unsupported callback forms,
-unsupported lifetime extension. Explicit destructor queries inspect the selected
+remain rejected. Unevaluated calls to implicit free-function specializations may
+keep the body lazy when the owned primary has a definition; their actual signature,
+resolved specification and selected source remain checked. Missing definitions,
+unsupported callback forms and unsupported lifetime extension remain rejected. Explicit destructor queries inspect the selected
 signature and written source without forcing an otherwise unused template body. Missing ordinary owned
 definitions remain diagnostics. Dependent/unresolved written specifications,
 vendor forms and C++17-invalid typed dynamic specifications are not accepted.

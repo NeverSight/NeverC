@@ -441,15 +441,139 @@ def fix_pseudo_destructor_exception_spec(path):
 
 
 def fix_array_type_query_dimensions(source_root):
-    # Validate both exact producer states before changing either file.
-    patches = (
-        ('clang/lib/Sema/SemaExprCXX.cpp',
-         "ExprResult Sema::BuildArrayTypeTrait(ArrayTypeTrait ATT,\n                                     SourceLocation KWLoc,\n                                     TypeSourceInfo *TSInfo,\n                                     Expr* DimExpr,\n                                     SourceLocation RParen) {\n  QualType T = TSInfo->getType();\n\n  // FIXME: This should likely be tracked as an APInt to remove any host\n  // assumptions about the width of size_t on the target.\n  uint64_t Value = 0;\n  if (!T->isDependentType())\n    Value = EvaluateArrayTypeTrait(*this, ATT, T, DimExpr, KWLoc);\n\n  // While the specification for these traits from the Embarcadero C++\n  // compiler's documentation says the return type is 'unsigned int', Clang\n  // returns 'size_t'. On Windows, the primary platform for the Embarcadero\n  // compiler, there is no difference. On several other platforms this is an\n  // important distinction.\n  return new (Context) ArrayTypeTraitExpr(KWLoc, ATT, TSInfo, Value, DimExpr,\n                                          RParen, Context.getSizeType());\n}\n",
-         "ExprResult Sema::BuildArrayTypeTrait(ArrayTypeTrait ATT,\n                                     SourceLocation KWLoc,\n                                     TypeSourceInfo *TSInfo,\n                                     Expr* DimExpr,\n                                     SourceLocation RParen) {\n  QualType T = TSInfo->getType();\n\n  // FIXME: This should likely be tracked as an APInt to remove any host\n  // assumptions about the width of size_t on the target.\n  uint64_t Value = 0;\n  // NeverC array-query dimensions must be substituted before evaluation.\n  if (!T->isDependentType() &&\n      (!DimExpr || (!DimExpr->isTypeDependent() && !DimExpr->isValueDependent())))\n    Value = EvaluateArrayTypeTrait(*this, ATT, T, DimExpr, KWLoc);\n\n  // While the specification for these traits from the Embarcadero C++\n  // compiler's documentation says the return type is 'unsigned int', Clang\n  // returns 'size_t'. On Windows, the primary platform for the Embarcadero\n  // compiler, there is no difference. On several other platforms this is an\n  // important distinction.\n  return new (Context) ArrayTypeTraitExpr(KWLoc, ATT, TSInfo, Value, DimExpr,\n                                          RParen, Context.getSizeType());\n}\n"),
-        ('clang/lib/Sema/TreeTransform.h',
-         'TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {\n  TypeSourceInfo *T = getDerived().TransformType(E->getQueriedTypeSourceInfo());\n  if (!T)\n    return ExprError();\n\n  if (!getDerived().AlwaysRebuild() &&\n      T == E->getQueriedTypeSourceInfo())\n    return E;\n\n  ExprResult SubExpr;\n  {\n    EnterExpressionEvaluationContext Unevaluated(\n        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);\n    SubExpr = getDerived().TransformExpr(E->getDimensionExpression());\n    if (SubExpr.isInvalid())\n      return ExprError();\n  }\n\n  return getDerived().RebuildArrayTypeTrait(E->getTrait(), E->getBeginLoc(), T,\n                                            SubExpr.get(), E->getEndLoc());\n}\n',
-         'TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {\n  TypeSourceInfo *T = getDerived().TransformType(E->getQueriedTypeSourceInfo());\n  if (!T)\n    return ExprError();\n\n  ExprResult SubExpr;\n  {\n    EnterExpressionEvaluationContext Unevaluated(\n        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);\n    SubExpr = getDerived().TransformExpr(E->getDimensionExpression());\n    if (SubExpr.isInvalid())\n      return ExprError();\n  }\n\n  // NeverC array-query dimensions can change while the type stays fixed.\n  if (!getDerived().AlwaysRebuild() &&\n      T == E->getQueriedTypeSourceInfo() &&\n      SubExpr.get() == E->getDimensionExpression())\n    return E;\n\n  return getDerived().RebuildArrayTypeTrait(E->getTrait(), E->getBeginLoc(), T,\n                                            SubExpr.get(), E->getEndLoc());\n}\n'),
-    )
+    # Validate every exact producer state before changing any file.
+    patches = (('clang/lib/Sema/SemaExprCXX.cpp',
+  'ExprResult Sema::BuildArrayTypeTrait(ArrayTypeTrait ATT,\n'
+  '                                     SourceLocation KWLoc,\n'
+  '                                     TypeSourceInfo *TSInfo,\n'
+  '                                     Expr* DimExpr,\n'
+  '                                     SourceLocation RParen) {\n'
+  '  QualType T = TSInfo->getType();\n'
+  '\n'
+  '  // FIXME: This should likely be tracked as an APInt to remove any host\n'
+  '  // assumptions about the width of size_t on the target.\n'
+  '  uint64_t Value = 0;\n'
+  '  if (!T->isDependentType())\n'
+  '    Value = EvaluateArrayTypeTrait(*this, ATT, T, DimExpr, KWLoc);\n'
+  '\n'
+  '  // While the specification for these traits from the Embarcadero C++\n'
+  "  // compiler's documentation says the return type is 'unsigned int', Clang\n"
+  "  // returns 'size_t'. On Windows, the primary platform for the Embarcadero\n"
+  '  // compiler, there is no difference. On several other platforms this is an\n'
+  '  // important distinction.\n'
+  '  return new (Context) ArrayTypeTraitExpr(KWLoc, ATT, TSInfo, Value, DimExpr,\n'
+  '                                          RParen, Context.getSizeType());\n'
+  '}\n',
+  'ExprResult Sema::BuildArrayTypeTrait(ArrayTypeTrait ATT,\n'
+  '                                     SourceLocation KWLoc,\n'
+  '                                     TypeSourceInfo *TSInfo,\n'
+  '                                     Expr* DimExpr,\n'
+  '                                     SourceLocation RParen) {\n'
+  '  QualType T = TSInfo->getType();\n'
+  '\n'
+  '  // FIXME: This should likely be tracked as an APInt to remove any host\n'
+  '  // assumptions about the width of size_t on the target.\n'
+  '  uint64_t Value = 0;\n'
+  '  // NeverC array-query dimensions must be substituted before evaluation.\n'
+  '  if (!T->isDependentType() &&\n'
+  '      (!DimExpr || (!DimExpr->isTypeDependent() && !DimExpr->isValueDependent())))\n'
+  '    Value = EvaluateArrayTypeTrait(*this, ATT, T, DimExpr, KWLoc);\n'
+  '\n'
+  '  // While the specification for these traits from the Embarcadero C++\n'
+  "  // compiler's documentation says the return type is 'unsigned int', Clang\n"
+  "  // returns 'size_t'. On Windows, the primary platform for the Embarcadero\n"
+  '  // compiler, there is no difference. On several other platforms this is an\n'
+  '  // important distinction.\n'
+  '  return new (Context) ArrayTypeTraitExpr(KWLoc, ATT, TSInfo, Value, DimExpr,\n'
+  '                                          RParen, Context.getSizeType());\n'
+  '}\n'),
+ ('clang/lib/Sema/TreeTransform.h',
+  'TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {\n'
+  '  TypeSourceInfo *T = getDerived().TransformType(E->getQueriedTypeSourceInfo());\n'
+  '  if (!T)\n'
+  '    return ExprError();\n'
+  '\n'
+  '  if (!getDerived().AlwaysRebuild() &&\n'
+  '      T == E->getQueriedTypeSourceInfo())\n'
+  '    return E;\n'
+  '\n'
+  '  ExprResult SubExpr;\n'
+  '  {\n'
+  '    EnterExpressionEvaluationContext Unevaluated(\n'
+  '        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);\n'
+  '    SubExpr = getDerived().TransformExpr(E->getDimensionExpression());\n'
+  '    if (SubExpr.isInvalid())\n'
+  '      return ExprError();\n'
+  '  }\n'
+  '\n'
+  '  return getDerived().RebuildArrayTypeTrait(E->getTrait(), E->getBeginLoc(), T,\n'
+  '                                            SubExpr.get(), E->getEndLoc());\n'
+  '}\n',
+  'TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {\n'
+  '  TypeSourceInfo *T = getDerived().TransformType(E->getQueriedTypeSourceInfo());\n'
+  '  if (!T)\n'
+  '    return ExprError();\n'
+  '\n'
+  '  ExprResult SubExpr;\n'
+  '  {\n'
+  '    EnterExpressionEvaluationContext ConstantContext(\n'
+  '        SemaRef, Sema::ExpressionEvaluationContext::ConstantEvaluated);\n'
+  '    SubExpr = getDerived().TransformExpr(E->getDimensionExpression());\n'
+  '    if (SubExpr.isInvalid())\n'
+  '      return ExprError();\n'
+  '  }\n'
+  '\n'
+  '  // NeverC array-query dimensions can change while the type stays fixed.\n'
+  '  if (!getDerived().AlwaysRebuild() &&\n'
+  '      T == E->getQueriedTypeSourceInfo() &&\n'
+  '      SubExpr.get() == E->getDimensionExpression())\n'
+  '    return E;\n'
+  '\n'
+  '  return getDerived().RebuildArrayTypeTrait(E->getTrait(), E->getBeginLoc(), T,\n'
+  '                                            SubExpr.get(), E->getEndLoc());\n'
+  '}\n'),
+ ('clang/lib/Parse/ParseExprCXX.cpp',
+  '  case ATT_ArrayExtent: {\n'
+  '    if (ExpectAndConsume(tok::comma)) {\n'
+  '      SkipUntil(tok::r_paren, StopAtSemi);\n'
+  '      return ExprError();\n'
+  '    }\n'
+  '\n'
+  '    ExprResult DimExpr = ParseExpression();\n'
+  '    T.consumeClose();\n'
+  '\n'
+  '    if (DimExpr.isInvalid())\n'
+  '      return ExprError();\n'
+  '\n'
+  '    return Actions.ActOnArrayTypeTrait(ATT, Loc, Ty.get(), DimExpr.get(),\n'
+  '                                       T.getCloseLocation());',
+  '  case ATT_ArrayExtent: {\n'
+  '    if (ExpectAndConsume(tok::comma)) {\n'
+  '      SkipUntil(tok::r_paren, StopAtSemi);\n'
+  '      return ExprError();\n'
+  '    }\n'
+  '\n'
+  '    // NeverC array-query dimensions are constant-evaluated, even in noexcept.\n'
+  '    EnterExpressionEvaluationContext ConstantContext(\n'
+  '        Actions, Sema::ExpressionEvaluationContext::ConstantEvaluated);\n'
+  '    ExprResult DimExpr = ParseExpression();\n'
+  '    T.consumeClose();\n'
+  '\n'
+  '    if (DimExpr.isInvalid())\n'
+  '      return ExprError();\n'
+  '\n'
+  '    return Actions.ActOnArrayTypeTrait(ATT, Loc, Ty.get(), DimExpr.get(),\n'
+  '                                       T.getCloseLocation());'),
+ ('clang/lib/Sema/SemaTemplateVariadic.cpp',
+  '    bool TraverseCXXFoldExpr(CXXFoldExpr *E) override { return true; }',
+  '    // NeverC array-query dimensions are not ordinary Stmt children.\n'
+  '    bool TraverseArrayTypeTraitExpr(ArrayTypeTraitExpr *E) override {\n'
+  '      return DynamicRecursiveASTVisitor::TraverseArrayTypeTraitExpr(E) &&\n'
+  '             TraverseStmt(E->getDimensionExpression());\n'
+  '    }\n'
+  '    bool TraverseCXXFoldExpr(CXXFoldExpr *E) override {\n'
+  '      return true;\n'
+  '    }'))
     checked = []
     states = []
     for relative, before, after in patches:

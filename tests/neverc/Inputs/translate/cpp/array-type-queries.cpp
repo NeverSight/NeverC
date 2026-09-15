@@ -15,6 +15,12 @@ template<class T, Size N = __array_extent(T, 0)> struct Bound { int value = int(
 template<class T, Size N = __array_extent(T, 1)> using Row = int[N];
 template<int I> constexpr int index() { return I; }
 template<int I> Size nested() { return __array_extent(int[2][3], index<I>()); }
+template<unsigned... I> constexpr Size packed_extent() {
+  return (__array_extent(int[2][3], index<I>()) + ... + 0);
+}
+static_assert(packed_extent<>() == 0 && packed_extent<0, 1, 2>() == 5);
+static_assert(noexcept(__array_extent(Array, index<1>())));
+static_assert(sizeof(int[__array_extent(Array, index<1>())]) == 3 * sizeof(int));
 int effects;
 int effect() { return ++effects; }
 
@@ -49,5 +55,6 @@ int main() {
       __array_extent(Array, (sizeof(++effects), 0)) != 2 || effects) return 8;
   Size value = (++effects, __array_extent(Array, 1));
   if (value != 3 || effects != 1) return 9;
+  if (packed_extent<>() != 0 || packed_extent<0, 1, 2>() != 5) return 10;
   return 0;
 }

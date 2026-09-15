@@ -54,6 +54,10 @@ template<bool Value, class T = void> struct Enable {};
 template<class T> struct Enable<true, T> { using type = T; };
 template<class T> using WhenIntegral = typename Enable<__is_integral(T), int>::type;
 template<class T, WhenIntegral<T> N = 7> int selected() { return N; }
+template<class T, typename Enable<__is_trivially_copyable(T), int>::type N = 9>
+int structural_selected() { return N; }
+template<class T> int query_only(T) noexcept(__is_integral(T)) { return T::missing; }
+static_assert(noexcept(query_only(1)) && !noexcept(query_only(1.0)));
 template<bool B> int bit() { return B ? 1 : 0; }
 extern "C" bool classified_integer() { return __is_integral(int); }
 extern "C" bool classified_enum() { return __is_integral(Plain); }
@@ -169,5 +173,7 @@ int main() {
   }
   if (!__is_destructible(Probe) || __is_trivially_destructible(Probe) ||
       effects != 1 || constructed != 1 || destroyed != 1) return 27;
+  if (!noexcept(query_only(++effects)) || noexcept(query_only(1.0)) || effects != 1) return 28;
+  if (structural_selected<int>() != 9 || structural_selected<int, 11>() != 11) return 29;
   return 0;
 }

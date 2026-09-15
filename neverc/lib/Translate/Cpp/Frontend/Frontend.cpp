@@ -1708,11 +1708,8 @@ void Adapter::checkQueryType(QualType T, SourceLocation L) {
   }
 }
 
-bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
-  const auto L = Query->getExprLoc();
-  unsigned Arity = 0;
-  bool NonRecordOperation = false;
-  switch (Query->getTrait()) {
+static unsigned metadataTypeClassificationArity(TypeTrait Trait) {
+  switch (Trait) {
   case UTT_IsArithmetic: case UTT_IsFloatingPoint: case UTT_IsIntegral:
   case UTT_IsVoid: case UTT_IsArray: case UTT_IsFunction:
   case UTT_IsReference: case UTT_IsLvalueReference: case UTT_IsRvalueReference:
@@ -1727,11 +1724,19 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   case UTT_IsFinal: case UTT_IsLiteral: case UTT_HasUniqueObjectRepresentations:
   // These inspect deletion/access without resolving a destructor's noexcept.
   case UTT_IsDestructible: case UTT_IsTriviallyDestructible:
-    Arity = 1;
-    break;
+    return 1;
   case BTT_IsSame: case BTT_IsBaseOf:
-    Arity = 2;
-    break;
+    return 2;
+  default:
+    return 0;
+  }
+}
+
+bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
+  const auto L = Query->getExprLoc();
+  unsigned Arity = metadataTypeClassificationArity(Query->getTrait());
+  bool NonRecordOperation = false;
+  switch (Query->getTrait()) {
   case UTT_IsNothrowDestructible:
     Arity = 1;
     NonRecordOperation = true;
@@ -4854,6 +4859,38 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return true;
     }
     return false;
+  }
+  bool parameterTypeQueryMetadata(const TypeTraitExpr *Query) {
+    const unsigned Arity = metadataTypeClassificationArity(Query->getTrait());
+    if (!TemplateParameterTypeSource || !Arity || Query->getNumArgs() != Arity ||
+        Query->isTypeDependent() || !Query->isValueDependent() ||
+        !Query->isInstantiationDependent() || !Query->isPRValue() ||
+        !A.Context.hasSameType(Query->getType(), A.Context.BoolTy))
+      return false;
+    for (const auto *Info : Query->getArgs()) {
+      A.chargeExpansion(1, Query->getExprLoc());
+      if (!Info)
+        return false;
+      if (!Info->getType()->isInstantiationDependentType()) {
+        A.checkQueryType(Info->getType(), Query->getExprLoc());
+        continue;
+      }
+      auto Written = Info->getTypeLoc().getUnqualifiedLoc().getAs<TemplateTypeParmTypeLoc>();
+      const auto *Parameter = Written ? Written.getDecl() : nullptr;
+      if (!owned(Parameter) || Parameter->isInvalidDecl() || Parameter->hasAttrs() ||
+          Parameter->isParameterPack())
+        return false;
+      bool SameList = false;
+      for (const auto *Candidate : *TemplateParameterTypeSource) {
+        A.chargeExpansion(1, Query->getExprLoc());
+        SameList |= Candidate == Parameter;
+      }
+      if (!SameList)
+        return false;
+    }
+    // This declaration-only proof never reads a dependent boolean. RAV still
+    // visits written types; each selected substitution is checked concretely.
+    return true;
   }
   void checkPackSize(const SizeOfPackExpr *Query) {
     A.chargeExpansion(1, Query->getExprLoc());
@@ -8007,6 +8044,20 @@ public:
     }
     return true;
   }
+  bool lazyFreeFunctionSignature(const FunctionDecl *Function) {
+    if (!A.S.coreV2() || !concreteFreeFunctionTemplate(Function) ||
+        !owned(Function) || Function->hasBody() ||
+        Function->isUsed(/*CheckUsedAttr=*/false) || Function->isDeleted() ||
+        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Function->getTypeSourceInfo())
+      return false;
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    const auto *Definition = Pattern ? Pattern->getDefinition() : nullptr;
+    return functionTemplateShape(Primary) && owned(Definition) &&
+           !Function->getType()->isInstantiationDependentType() &&
+           standardExceptionSpecification(Function->getType()->getAs<FunctionProtoType>());
+  }
   bool TraverseFunctionTemplateDecl(FunctionTemplateDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseFunctionTemplateDecl(D);
@@ -8053,7 +8104,8 @@ public:
         A.chargeExpansion(1, Declaration->getLocation());
         auto Kind = Declaration->getTemplateSpecializationKind();
         if (!Declaration->hasBody() &&
-            (Kind == TSK_Undeclared || Kind == TSK_ImplicitInstantiation))
+            (Kind == TSK_Undeclared || Kind == TSK_ImplicitInstantiation) &&
+            !(Declaration->isReferenced() && lazyFreeFunctionSignature(Declaration)))
           continue;
         if (!TraverseDecl(Declaration))
           return false;
@@ -9302,7 +9354,7 @@ public:
           A.reject(P->getLocation(), "C export",
                    "C ABI exports require scalar results and parameters.");
     }
-    if (!D->hasBody() && !Defaulted && !Deleted &&
+    if (!D->hasBody() && !Defaulted && !Deleted && !lazyFreeFunctionSignature(D) &&
         A.nativeHeapImport(D, D->getLocation()).empty() &&
         (!A.S.project() || D->getFormalLinkage() == Linkage::Internal))
       A.reject(
@@ -10258,7 +10310,8 @@ public:
         // RAV visits the unevaluated operand and written specification
         // expressions. Unsupported source must not disappear behind a bool.
       }
-      if (const auto *Query = dyn_cast<TypeTraitExpr>(S))
+      if (const auto *Query = dyn_cast<TypeTraitExpr>(S);
+          Query && !parameterTypeQueryMetadata(Query))
         A.typeClassificationValue(Query);
       if (const auto *Query = dyn_cast<ArrayTypeTraitExpr>(S))
         A.arrayTypeQueryValue(Query);
@@ -10404,8 +10457,14 @@ public:
         else
           queueGenerated(Method, L);
       }
+      const bool LazySignature = lazyFreeFunctionSignature(F);
+      // Sema's unused specialization needs its complete signature and selected
+      // source, but does not request a body. Runtime-used instances still need
+      // definitions and lowering never emits this hypothetical call.
+      if (LazySignature && !TraverseDecl(const_cast<FunctionDecl *>(F)))
+        return false;
       if (!F ||
-          (!GeneratedAssignment && !F->isImplicit() && !F->hasBody() &&
+          (!GeneratedAssignment && !LazySignature && !F->isImplicit() && !F->hasBody() &&
            (!A.S.project() || F->getFormalLinkage() == Linkage::Internal ||
             F->isInlined())))
         A.reject(

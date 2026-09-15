@@ -4611,8 +4611,9 @@ TEST_F(TranslateTest, CoreV2DefaultSizedDeleteUsesOwnedUnsizedDefinition) {
     writeFile(Source, Code);
     // Force the ABI that selects implicit global sized deletion. The shared
     // runtime fixture below separately exercises every native CI target.
-    auto Result = translate(Source, {"--profile", "cpp-core-v2", "--target",
-                                     "x86_64-unknown-linux-gnu", "-o", Output.string()});
+    auto Args = args(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    Args.insert(Args.end(), {"--", "-std=c++17", "--target=x86_64-unknown-linux-gnu"});
+    auto Result = ncc(Args);
     ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
   }
 }
@@ -4639,8 +4640,9 @@ TEST_F(TranslateTest, CoreV2DefaultSizedDeleteRetainsDefinitionBoundaries) {
     writeFile(Source, Code);
     // Force the ABI that selects implicit global sized deletion. The shared
     // runtime fixture below separately exercises every native CI target.
-    auto Result = translate(Source, {"--profile", "cpp-core-v2", "--target",
-                                     "x86_64-unknown-linux-gnu", "-o", Output.string()});
+    auto Args = args(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    Args.insert(Args.end(), {"--", "-std=c++17", "--target=x86_64-unknown-linux-gnu"});
+    auto Result = ncc(Args);
     expectCode(Result, Diagnostic);
     expectNoArtifacts(Output);
   }
@@ -4957,6 +4959,10 @@ TEST_F(TranslateTest, CoreV2EmptyBaseChainsPreserveAddressesAndEffects) {
 
 TEST_F(TranslateTest, CoreV2ArrayTypeQueriesRetainTypesAndDimensions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"dimension-call-in-noexcept", "template<unsigned I>constexpr unsigned index(){return I;}static_assert(noexcept(__array_extent(int[2][3],index<1>())));static_assert(__array_extent(int[2][3],index<1>())==3);"},
+      {"dimension-call-in-sizeof", "template<unsigned I>constexpr unsigned index(){return I;}static_assert(sizeof(int[__array_extent(int[2][3],index<1>())])==3*sizeof(int));"},
+      {"dimension-template-call-pack", "template<unsigned I>constexpr unsigned index(){return I;}template<unsigned...I>constexpr auto f(){return (__array_extent(int[2][3],index<I>())+...+0);}static_assert(f<>()==0&&f<0,1,2>()==5);"},
+      {"dimension-arithmetic-pack", "template<unsigned...I>constexpr auto f(){return (__array_extent(int[2][3],I+0)+...+0);}static_assert(f<>()==0&&f<0,1,2>()==5);"},
       {"rank", "bool f(){return __array_rank(int)==0&&__array_rank(int[2])==1&&__array_rank(int[2][3])==2;}"},
       {"extent", "bool f(){return __array_extent(int[2][3],0)==2&&__array_extent(int[2][3],1)==3&&__array_extent(int[2][3],2)==0;}"},
       {"large-index", "bool f(){return __array_extent(int[2],18446744073709551615ULL)==0;}"},
@@ -5068,6 +5074,13 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesPreserveSubstitutionAndValues) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lazy-noexcept-body", "template<class T>int f(T)noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f(1))&&!noexcept(f(1.0)));"},
+      {"lazy-noexcept-default", "template<class T>int f(int n=T::missing)noexcept(__is_integral(T)){return T::body;}static_assert(noexcept(f<int>(3)));"},
+      {"lazy-noexcept-later-definition", "template<class T>int f(T)noexcept(__is_integral(T));template<class T>int f(T)noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f(1)));"},
+      {"lazy-noexcept-and-runtime", "template<class T>int f(T n)noexcept(__is_integral(T)){return int(n);}static_assert(noexcept(f(1)));int main(){return f(3)-3;}"},
+      {"parameter-binary-query", "template<class T, bool B=__is_same(T,int)>struct R{};template<class T,decltype(__is_same(T,int)) B=true>int f(){return B;}int main(){return f<int>()-1;}"},
+      {"parameter-two-owned-types", "template<class T,class U,decltype(__is_same(T,U)) B=true>int f(){return B;}int main(){return f<int,float>()-1;}"},
+      {"parameter-cv-type", "template<class T,decltype(__is_const(const T)) B=true>int f(){return B;}int main(){return f<int>()-1;}"},
       {"destruction-promoted-record", "struct R{int n;};bool f(){return __is_destructible(R);}"},
       {"destruction-promoted-reference", "struct R{int n;};bool f(){return __is_trivially_destructible(const R&);}"},
       {"destruction-trivial", "struct R{int n;};static_assert(__is_destructible(R)&&__is_trivially_destructible(R)&&__is_destructible(const R)&&__is_trivially_destructible(R[2][3]));"},
@@ -5134,7 +5147,7 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
       {"structural-alias-default", "template<class T,bool B=__is_trivially_copyable(T)>using A=T;static_assert(__is_trivially_copyable(A<int>));"},
       {"structural-base-dependent", "template<class B>struct D:B{};template<class B,class R>constexpr bool base(){return __is_base_of(B,R);}struct E{};static_assert(base<E,D<E>>());"},
       {"structural-pack-fold", "template<class...T>constexpr bool empty(){return (__is_empty(T)&&...);}struct E{};static_assert(empty<>()&&empty<E,E>()&&!empty<E,int>());"},
-      {"structural-base-pack", "template<class...T>constexpr bool base(){return __is_base_of(T...);}struct E{};struct D:E{};static_assert(base<E,D>()&&!base<D,E>());"},
+      {"structural-base-pack", "template<class B,class...T>constexpr bool base(){return (__is_base_of(B,T)&&...);}struct E{};struct D:E{};static_assert(base<E,D>()&&!base<D,E>());"},
       {"structural-noexcept", "template<class T>void f()noexcept(__is_trivially_copyable(T)){}struct D{int n;~D(){}};static_assert(noexcept(f<int>())&&!noexcept(f<D>()));"},
       {"structural-unused-member-body", "template<class T>struct R{int n;R(){T::missing();}};static_assert(__is_trivially_copyable(R<int>)&&!__is_trivial(R<int>));"},
       {"structural-sfinae", "template<bool B,class T=void>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__is_trivially_copyable(T),int>::type N=3>int f(){return N;}int main(){return f<int>()-3;}"},
@@ -5175,7 +5188,7 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
       {"alias-default", "template<class T,bool B=__is_integral(T)>using A=T;bool f(){return __is_integral(A<int>);}"},
       {"partial", "template<class T,bool B=__is_integral(T)>struct R{static constexpr int value=0;};template<class T>struct R<T,true>{static constexpr int value=1;};static_assert(R<int>::value==1&&R<float>::value==0);"},
       {"pack-fold", "template<class...T>constexpr bool f(){return (__is_integral(T)&&...);}static_assert(f<>()&&f<int,bool>()&&!f<int,float>());"},
-      {"pack-trait-arguments", "template<class...T>constexpr bool f(){return __is_same(T...);}static_assert(f<int,int>()&&!f<int,float>());"},
+      {"pack-trait-arguments", "template<class T,class...U>constexpr bool f(){return (__is_same(T,U)&&...);}static_assert(f<int,int>()&&!f<int,float>());"},
       {"constexpr-branch", "template<class T>int f(){if constexpr(__is_integral(T))return 3;else return 7;}int main(){return f<int>()+f<float>()-10;}"},
       {"noexcept-specification", "template<class T>int f(T n)noexcept(__is_integral(T)){return int(n);}static_assert(noexcept(f(1))&&!noexcept(f(1.0)));"},
       {"argument-identity", "template<bool B>int&slot(){static int n;return n;}bool f(){return &slot<__is_integral(int)>()==&slot<true>();}"},
@@ -5196,6 +5209,14 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lazy-noexcept-hidden-specification", "template<class T>int f(T)noexcept((sizeof(long double),__is_integral(T))){return T::missing;}static_assert(noexcept(f(1)));"},
+      {"lazy-noexcept-hidden-return", "template<class T>long double f(T)noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f(1)));"},
+      {"lazy-noexcept-hidden-parameter", "template<class T>int f(T,long double)noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f(1,0)));"},
+      {"lazy-noexcept-selected-default", "template<class T>int f(int n=(sizeof(long double),3))noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f<int>()));"},
+      {"lazy-noexcept-used-body", "template<class T>int f(T)noexcept(__is_integral(T)){long double n=0;return int(n);}static_assert(noexcept(f(1)));int main(){return f(1);}"},
+      {"parameter-query-hidden-concrete", "template<class T,decltype(__is_same(T,long double)) B=true>int f(){return B;}int main(){return f<int>();}"},
+      {"parameter-query-pointer-metadata", "template<class T,decltype(__is_pointer(T*)) B=true>int f(){return B;}int main(){return f<int>();}"},
+      {"parameter-query-alias-metadata", "template<class T>using A=T;template<class T,decltype(__is_integral(A<T>)) B=true>int f(){return B;}int main(){return f<int>();}"},
       {"destruction-hidden-decltype", "bool f(){return __is_destructible(decltype(sizeof(long double)));}"},
       {"destruction-hidden-default", "template<class T,int N=sizeof(long double)>struct R{T n;};bool f(){return __is_destructible(R<int>);}"},
       {"destruction-hidden-array-bound", "struct R{int n;};bool f(){return __is_trivially_destructible(R[sizeof(long double)]);}"},
@@ -17249,6 +17270,8 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2FunctionTemplatesAcceptConcreteTypeInstances) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"noexcept-signature-only", "template<class T>T f(T v){return v;}int main(){return noexcept(f(1));}"},
+      {"sizeof-signature-only", "template<class T>T f(T v){return v;}int main(){return sizeof(f(1));}"},
       {"deduced", "template<class T>T id(T v){return v;}int main(){return id(3)-3;}"},
       {"explicit", "template<class T>T id(T v){return v;}int main(){return id<int>(3)-3;}"},
       {"default-type", "template<class T=int>T zero(){return T{};}int main(){return zero();}"},
@@ -17332,8 +17355,6 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"selected-declaration", "template<class T>T f(T);int main(){return f(1);}", "TR0203"},
       {"external-instantiation", "template<class T>T f(T v){return v;}extern template int f<int>(int);int main(){return f(1);}", "TR0203"},
       {"unused-specialization", "template<class T>T f(T);template<>int f<int>(int);", "TR0203"},
-      {"sizeof-signature-only", "template<class T>T f(T v){return v;}int main(){return sizeof(f(1));}", "TR0203"},
-      {"noexcept-signature-only", "template<class T>T f(T v){return v;}int main(){return noexcept(f(1));}", "TR0203"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
     SCOPED_TRACE(Name);
