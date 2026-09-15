@@ -12163,7 +12163,8 @@ static bool request(State &S, llvm::StringRef Path) {
       return false;
   }
   if ((T.getArch() != llvm::Triple::aarch64 &&
-       T.getArch() != llvm::Triple::x86_64) ||
+       T.getArch() != llvm::Triple::x86_64 &&
+       T.getArch() != llvm::Triple::x86) ||
       (!T.isMacOSX() && !(T.isOSLinux() && !T.isAndroid()) &&
        !T.isOSWindows())) {
     S.diagnose(

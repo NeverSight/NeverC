@@ -914,6 +914,9 @@ and ordinary function types keep their actual C++ query results. Pointers to
 admitted records, including arrays of such pointers, qualify because constructing,
 assigning or destroying the pointer does not invoke an operation on the pointee.
 The pointee layout and all written type sources still pass the existing checks.
+A class-template pointee requires an already-materialized class definition; a
+written `sizeof(R<int>)` can require that layout while leaving unused constructor
+bodies lazy. Incomplete record-pointer query support remains separate work.
 An inaccessible base-pointer conversion returns false without inventing access.
 
 Construction takes one destination type and zero to 64 argument types. Assignment
@@ -960,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 114 accepted, 61 unsupported-source, seven missing-definition and seven invalid-C++ cases cover
+The paired 114 accepted, 62 unsupported-source, seven missing-definition and seven invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is

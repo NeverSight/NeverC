@@ -4609,11 +4609,9 @@ TEST_F(TranslateTest, CoreV2DefaultSizedDeleteUsesOwnedUnsizedDefinition) {
     auto Source = tmpFile("default-sized-delete-positive-" + Name + ".cpp");
     auto Output = tmpFile("default-sized-delete-positive-" + Name + ".nc");
     writeFile(Source, Code);
-    // Force the ABI that selects implicit global sized deletion. The shared
-    // runtime fixture below separately exercises every native CI target.
-    auto Args = args(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
-    Args.insert(Args.end(), {"--", "-std=c++17", "--target=x86_64-unknown-linux-gnu"});
-    auto Result = ncc(Args);
+    // Core CLI uses its native target. Protocol tests separately request the
+    // Linux ABIs that select implicit global sized deletion.
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
   }
 }
@@ -4638,11 +4636,9 @@ TEST_F(TranslateTest, CoreV2DefaultSizedDeleteRetainsDefinitionBoundaries) {
     auto Source = tmpFile("default-sized-delete-negative-" + Name + ".cpp");
     auto Output = tmpFile("default-sized-delete-negative-" + Name + ".nc");
     writeFile(Source, Code);
-    // Force the ABI that selects implicit global sized deletion. The shared
-    // runtime fixture below separately exercises every native CI target.
-    auto Args = args(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
-    Args.insert(Args.end(), {"--", "-std=c++17", "--target=x86_64-unknown-linux-gnu"});
-    auto Result = ncc(Args);
+    // Core CLI uses its native target. Protocol tests separately request the
+    // Linux ABIs that select implicit global sized deletion.
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     expectCode(Result, Diagnostic);
     expectNoArtifacts(Output);
   }
@@ -5382,7 +5378,7 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
       {"record-pointers", "struct R{int n;};static_assert(__is_constructible(R*)&&__is_trivially_assignable(R*&,R*)&&__is_convertible(R*,const R*)&&__is_destructible(R*)&&__is_destructible(R*[2]));"},
       {"base-pointers", "struct B{};struct D:B{};static_assert(__is_convertible(D*,B*)&&!__is_convertible(B*,D*)&&__is_constructible(B*,D*));"},
       {"private-base-pointers", "struct B{};struct D:private B{};static_assert(!__is_convertible(D*,B*)&&!__is_constructible(B*,D*));"},
-      {"pointer-unused-body", "template<class T>struct R{T n;R(){T::missing();}};static_assert(__is_constructible(R<int>*)&&__is_nothrow_destructible(R<int>*));"},
+      {"pointer-unused-body", "template<class T>struct R{T n;R(){T::missing();}};static_assert(sizeof(R<int>)==sizeof(int));static_assert(__is_constructible(R<int>*)&&__is_nothrow_destructible(R<int>*));"},
       {"pack-substitution", "template<class T,class...A>constexpr bool test(){return __is_constructible(T,A...)&&__is_nothrow_constructible(T,A...)&&__is_trivially_constructible(T,A...);}static_assert(test<int>()&&test<int,int>()&&!test<int,int,int>());"},
       {"fold-substitution", "template<class...T>constexpr bool test(){return (__is_trivially_destructible(T)&&...);}static_assert(test<>()&&test<int,int*,int&>()&&!test<void>());"},
       {"query-default", "template<class T,bool B=__is_constructible(T)>struct R{static constexpr bool value=B;};static_assert(R<int>::value&&!R<int&>::value);"},
@@ -5474,6 +5470,7 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"pointer-unmaterialized-record", "template<class T>struct R{T n;R(){T::missing();}};static_assert(__is_constructible(R<int>*)&&__is_nothrow_destructible(R<int>*));"},
       {"record-reference-nothrow-hidden-type", "struct R{int n;};bool f(){return __is_nothrow_destructible(decltype((sizeof(long double),R{}))&);}"},
       {"record-reference-nothrow-used-body", "template<class T>struct R{~R(){long double hidden=0;}};static_assert(__is_nothrow_destructible(R<int>&));int main(){R<int>value;}"},
       {"record-query-before-runtime-body", "template<class T>struct R{T n;R(){long double hidden=0;}};static_assert(__is_constructible(R<int>,R<int>));int main(){R<int>value;return 0;}"},
