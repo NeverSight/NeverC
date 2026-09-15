@@ -905,8 +905,9 @@ dependent parameter queries retain their existing path. The paired classificatio
 corpus has 152 accepted, 85 unsupported-source and fourteen invalid-C++ cases.
 
 The builtin spelling does not expand the operand domain. Volatile types, member
-pointers, incomplete/union types, unknown-bound arrays and `long double` remain
-rejected, even for a query that would return false. Direct unknown-bound arrays
+pointers, incomplete/union types and `long double` remain rejected, even for a
+query that would return false. Unknown-bound arrays use the type-only metadata
+contract above. Direct unknown-bound arrays
 are distinct from array parameters adjusted within an admitted function type.
 Construction, assignment, conversion and nothrow destruction follow the narrower
 [non-record operation contract](#non-record-operation-traits) below. Other builtin
@@ -983,7 +984,13 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 608 accepted, 347 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
+A dependent operation query in a non-type template parameter declaration type
+can use direct type parameters from that exact written parameter list and concrete
+admitted operands. It shares the supported trait arities with concrete queries,
+but never reads a dependent boolean or invents a semantic operation event. Nested
+dependent pointer/alias shapes and unknown-bound operation operands remain excluded;
+each selected substitution still needs its own concrete type and retained source proof.
+The paired 620 accepted, 353 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is

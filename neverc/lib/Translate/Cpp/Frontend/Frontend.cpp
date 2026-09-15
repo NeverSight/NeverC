@@ -1941,6 +1941,9 @@ static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function
                  ? copiedOperationTemplateOrigin(A, Function) : Primary->getTemplatedDecl();
   if (!Origin || !A.S.owns(A.Sources, Origin->getLocation()))
     return false;
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(Origin);
+      Method && Method->getLexicalDeclContext() != Method->getParent())
+    return false;
   A.chargeExpansion(1, Origin->getLocation());
   // Body instantiation can keep an earlier declaration's TypeSourceInfo.
   // Require the raw written origin itself to own the selected body; neither a
@@ -2692,32 +2695,34 @@ static unsigned metadataTypeClassificationArity(TypeTrait Trait) {
   }
 }
 
-bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
-  const auto L = Query->getExprLoc();
-  unsigned Arity = metadataTypeClassificationArity(Query->getTrait());
-  bool OperationTrait = false;
-  switch (Query->getTrait()) {
+static unsigned typeClassificationArity(TypeTrait Trait, unsigned Count) {
+  unsigned Arity = metadataTypeClassificationArity(Trait);
+  switch (Trait) {
   case UTT_IsNothrowDestructible:
     Arity = 1;
-    OperationTrait = true;
     break;
   case BTT_IsAssignable: case BTT_IsNothrowAssignable:
   case BTT_IsTriviallyAssignable: case BTT_IsConvertible:
   case BTT_IsConvertibleTo: case BTT_IsNothrowConvertible:
     Arity = 2;
-    OperationTrait = true;
     break;
   case TT_IsConstructible: case TT_IsNothrowConstructible:
   case TT_IsTriviallyConstructible:
     // One destination and at most 64 hypothetical constructor arguments.
-    if (Query->getNumArgs() <= 65)
-      Arity = Query->getNumArgs();
-    OperationTrait = true;
+    if (Count <= 65)
+      Arity = Count;
     break;
   default:
     break;
   }
-  if (!S.coreV2() || !Arity || Query->getNumArgs() != Arity ||
+  return Count == Arity ? Arity : 0;
+}
+
+bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
+  const auto L = Query->getExprLoc();
+  const unsigned Arity = typeClassificationArity(Query->getTrait(), Query->getNumArgs());
+  const bool OperationTrait = isOperationTypeTrait(Query->getTrait());
+  if (!S.coreV2() || !Arity ||
       !Query->isPRValue() || Query->isTypeDependent() ||
       Query->isValueDependent() || Query->isInstantiationDependent() ||
       !Context.hasSameType(Query->getType(), Context.BoolTy)) {
@@ -5945,8 +5950,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     return false;
   }
   bool parameterTypeQueryMetadata(const TypeTraitExpr *Query) {
-    const unsigned Arity = metadataTypeClassificationArity(Query->getTrait());
-    if (!TemplateParameterTypeSource || !Arity || Query->getNumArgs() != Arity ||
+    const unsigned Arity = typeClassificationArity(Query->getTrait(), Query->getNumArgs());
+    if (!TemplateParameterTypeSource || !Arity ||
         Query->isTypeDependent() || !Query->isValueDependent() ||
         !Query->isInstantiationDependent() || !Query->isPRValue() ||
         !A.Context.hasSameType(Query->getType(), A.Context.BoolTy))
@@ -5956,7 +5961,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (!Info)
         return false;
       if (!Info->getType()->isInstantiationDependentType()) {
-        A.checkQueryType(Info->getType(), Query->getExprLoc(), true);
+        A.checkQueryType(Info->getType(), Query->getExprLoc(),
+                         !isOperationTypeTrait(Query->getTrait()));
         continue;
       }
       auto Written = Info->getTypeLoc().getUnqualifiedLoc().getAs<TemplateTypeParmTypeLoc>();
