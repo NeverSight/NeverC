@@ -4746,6 +4746,116 @@ TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErrorsAndTemporaryOrder)
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayTypeQueriesRetainTypesAndDimensions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"rank", "bool f(){return __array_rank(int)==0&&__array_rank(int[2])==1&&__array_rank(int[2][3])==2;}"},
+      {"extent", "bool f(){return __array_extent(int[2][3],0)==2&&__array_extent(int[2][3],1)==3&&__array_extent(int[2][3],2)==0;}"},
+      {"large-index", "bool f(){return __array_extent(int[2],18446744073709551615ULL)==0;}"},
+      {"aliases", "using A=const int[2][3];bool f(){return __array_rank(A)==2&&__array_extent(A,1)==3;}"},
+      {"non-array", "bool f(){return __array_rank(int*)==0&&__array_rank(int(&)[2])==0&&__array_extent(int,0)==0&&__array_rank(void)==0;}"},
+      {"function-type", "using F=int(int);bool f(){return __array_rank(F)==0&&__array_extent(F,0)==0;}"},
+      {"constant-index", "constexpr int value=1;enum Index{one=1};bool f(){return __array_extent(int[2][3],value)==3&&__array_extent(int[2][3],one)==3&&__array_extent(int[2][3],true)==3;}"},
+      {"constexpr-index-call", "constexpr int index(){return 1;}bool f(){return __array_extent(int[2][3],index())==3;}"},
+      {"fixed-type-dependent-index", "template<int I>constexpr auto f(){return __array_extent(int[2][3],I);}static_assert(f<0>()==2&&f<1>()==3&&f<2>()==0);"},
+      {"index-only-variable-template", "template<unsigned I>inline constexpr auto extent=__array_extent(int[2][3],I);static_assert(extent<0> ==2&&extent<1> ==3);"},
+      {"dependent-type-and-index", "template<class T,unsigned I>constexpr auto f(){return __array_extent(T,I);}static_assert(f<int[2][3],0>()==2&&f<int[2][3],1>()==3);"},
+      {"rank-template", "template<class T>constexpr auto f(){return __array_rank(T);}static_assert(f<int>()==0&&f<int[2][3]>()==2);"},
+      {"default-index", "template<class T,unsigned I=__array_rank(T)-1>constexpr auto f(){return __array_extent(T,I);}static_assert(f<int[2][3]>()==3);"},
+      {"alias-default", "template<class T,unsigned I=0>using A=int[__array_extent(T,I)];static_assert(__array_extent(A<int[2][3],1>,0)==3);"},
+      {"class-default", "template<class T,unsigned N=__array_extent(T,0)>struct R{static constexpr unsigned value=N;};static_assert(R<int[2][3]>::value==2);"},
+      {"nested-query", "bool f(){return __array_extent(int[2][3],__array_rank(int[7]))==3&&__array_extent(int[2][3],__array_extent(int,0))==2;}"},
+      {"boolean-query-index", "bool f(){return __array_extent(int[2][3],__is_integral(int))==3;}"},
+      {"query-result-type", "using Size=decltype(sizeof(0));static_assert(__is_same(decltype(__array_rank(int[2])),Size)&&__is_same(decltype(__array_extent(int[2],0)),Size));"},
+      {"dimension-template-call", "template<int I>constexpr int index(){return I;}template<int I>auto f(){return __array_extent(int[2][3],index<I>());}int main(){return int(f<1>())-3;}"},
+      {"constexpr-branch", "template<class T>int f(){if constexpr(__array_rank(T)>0)return 1;else return 2;}int main(){return f<int[2]>()+f<int>()-3;}"},
+      {"unevaluated-dimension", "int n;bool f(){return __array_extent(int[2],(sizeof(++n),0))==2;}"},
+      {"lazy-dimension-default", "template<class T,int I=T::missing>int unused(){return int(__array_extent(T,I));}int f(){return int(__array_rank(int[2]));}"},
+      {"pack-indexes", "template<unsigned...I>constexpr auto f(){return (__array_extent(int[2][3],I)+...+0);}static_assert(f<>()==0&&f<0,1,2>()==5);"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("array-query-" + Name + ".cpp");
+    auto Output = tmpFile("array-query-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayTypeQueriesCheckErasedSource) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"rank-long-double", "int f(){return int(__array_rank(long double));}"},
+      {"extent-long-double", "int f(){return int(__array_extent(long double[2],0));}"},
+      {"rank-volatile", "int f(){return int(__array_rank(volatile int[2]));}"},
+      {"rank-unknown-bound", "int f(){return int(__array_rank(int[]));}"},
+      {"extent-unknown-bound", "int f(){return int(__array_extent(int[],0));}"},
+      {"rank-unknown-bound-reference", "int f(){return int(__array_rank(int(&)[]));}"},
+      {"rank-incomplete", "struct R;int f(){return int(__array_rank(R));}"},
+      {"rank-union", "union U{int n;};int f(){return int(__array_rank(U));}"},
+      {"rank-hidden-type", "int f(){return int(__array_rank(decltype(sizeof(long double))));}"},
+      {"rank-hidden-bound", "int f(){return int(__array_rank(int[sizeof(long double)]));}"},
+      {"extent-hidden-dimension", "int f(){return int(__array_extent(int[2],(sizeof(long double),0)));}"},
+      {"extent-hidden-nonarray-dimension", "int f(){return int(__array_extent(int,(sizeof(long double),0)));}"},
+      {"extent-folded-dimension", "int f(){return int(__array_extent(int[2],true?0:sizeof(long double)));}"},
+      {"extent-noexcept-dimension", "int f(){return int(__array_extent(int[2],noexcept(sizeof(long double))));}"},
+      {"extent-template-default", "template<class T,unsigned I=(sizeof(long double),0)>auto f(){return __array_extent(T,I);}int g(){return int(f<int[2]>());}"},
+      {"extent-template-argument", "template<unsigned I>auto f(){return __array_extent(int[2],I);}int g(){return int(f<(sizeof(long double),0)>());}"},
+      {"extent-conversion", "struct I{constexpr operator int()const{return 0;}};int f(){return int(__array_extent(int[2],I{}));}"},
+      {"extent-unsupported-index-call", "constexpr int index(){return (sizeof(long double),0);}int f(){return int(__array_extent(int[2],index()));}"},
+      {"extent-short-circuit", "bool f(){return true||__array_extent(int[2],(sizeof(long double),0));}"},
+      {"extent-assertion", "static_assert(true||__array_extent(int[2],(sizeof(long double),0)));"},
+      {"extent-nested", "int f(){return int(__array_extent(int[2],__array_rank(long double)));}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("array-query-" + Name + ".cpp");
+    auto Output = tmpFile("array-query-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayTypeQueriesRejectInvalidCpp) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"negative-index", "int f(){return int(__array_extent(int[2],-1));}"},
+      {"runtime-index", "int f(int n){return int(__array_extent(int[2],n));}"},
+      {"scoped-enum-index", "enum class I{zero=0};int f(){return int(__array_extent(int[2],I::zero));}"},
+      {"missing-index", "int f(){return int(__array_extent(int[2]));}"},
+      {"extra-rank-index", "int f(){return int(__array_rank(int[2],0));}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("array-query-" + Name + ".cpp");
+    auto Output = tmpFile("array-query-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayTypeQueriesPreserveSubstitutionAndValues) {
+  auto Output = tmpFile("array-type-queries.nc");
+  auto Result = translate(fixture("array-type-queries.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("array-type-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  auto Legacy = tmpFile("array-query-v1.cpp");
+  writeFile(Legacy, "int f(){return int(__array_extent(int[2],0));}");
+  auto Rejected = translate(Legacy, {"--profile", "cpp-core-v1", "-o", tmpFile("array-query-v1.nc").string()});
+  expectCode(Rejected, "TR0201");
+  expectNoArtifacts(tmpFile("array-query-v1.nc"));
+}
+
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"arithmetic", "bool f(){return __is_arithmetic(int)&&__is_arithmetic(float)&&!__is_arithmetic(int*);}"},
@@ -4836,7 +4946,6 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
       {"layout", "bool f(){return __is_standard_layout(int);}"},
       {"inheritance", "struct R{};bool f(){return __is_base_of(R,R);}"},
       {"newer-lifetime", "bool f(){return __is_trivially_relocatable(int);}"},
-      {"array-rank", "int f(){return __array_rank(int[2]);}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);

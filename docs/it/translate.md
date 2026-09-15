@@ -4,6 +4,8 @@
 
 # Tradurre C++ in NeverC
 
+Core v2 supporta anche `__array_rank` e `__array_extent` verificati con indici interi costanti non negativi, inclusi indici di template per tipi di array fissi. Entrambi gli operandi vengono controllati prima della valutazione costante. I tipi non supportati e gli indici convertiti implicitamente da classi restano esclusi. I risultati nativi richiedono la CI della revisione implementata. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
+
 Core v2 aggiunge la classificazione integrata e verificata dei tipi, tra cui `__is_integral`, `__is_pointer` e `__is_same`. Le query preservano l’identità dei tipi C++ e controllano gli operandi scritti prima di produrre un booleano. I tipi non supportati e gli altri tratti restano limitati. I test O0/O2 e di rilocazione richiedono la CI della revisione che implementa la modifica; gli header standard e il supporto completo C++/STL restano incompleti. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
 
 Core v2 aggiunge chiamate dirette a `malloc/calloc/free` tramite dichiarazioni C globali esatte nel sorgente. Gli allocatori C++ definiti nel sorgente possono usare lo heap nativo e scambiare e liberare memoria con un chiamante C indipendente. Restano attivi i controlli su ampiezza, convenzione di chiamata, sorgente e IR. La verifica O0/O2 richiede la CI di questa implementazione. `realloc`, l’allocazione C++ predefinita con eccezioni, gli header standard e il supporto C++/STL completo restano incompleti. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).

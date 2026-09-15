@@ -11,6 +11,7 @@ on:
       - tests/neverc/Inputs/translate/cpp/runtime-aggregate-array.cpp
       - tests/neverc/Inputs/translate/cpp/array-allocation.cpp
       - tests/neverc/Inputs/translate/cpp/builtin-type-classification.cpp
+      - tests/neverc/Inputs/translate/cpp/array-type-queries.cpp
 
 permissions:
   contents: read
@@ -104,7 +105,7 @@ jobs:
         if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
         run: |
           status=0
-          for fixture in nullptr-template-values builtin-type-classification runtime-aggregate-array; do
+          for fixture in nullptr-template-values builtin-type-classification array-type-queries runtime-aggregate-array; do
             for optimization in 0 2; do
               if clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
                 "tests/neverc/Inputs/translate/cpp/$fixture.cpp" -o "$RUNNER_TEMP/$fixture"; then

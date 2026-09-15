@@ -764,6 +764,17 @@ unevaluated operand effects are emitted. See the exact spellings, supported
 operand domain and remaining exclusions in the
 [classification contract](cpp-core-v2.md#builtin-type-classification).
 
+## Core v2 array type queries
+
+Checked `__array_rank(T)` and `__array_extent(T, I)` reuse the existing integer
+`literal`, with the native `size_t` carrier, exact decimal value and query location.
+No query instruction or runtime helper is added. Source admission independently
+checks the retained type and extent dimension, including folded children; a
+dependent dimension is substituted by the private source frontend before its
+value is consumed. The dimension never generates runtime side effects.
+See the supported types, index domain and template behavior in the
+[array-query contract](cpp-core-v2.md#array-type-queries).
+
 ## Core v2 pointer arithmetic
 
 Typed `binary` `+`/`-` nodes admit complete-object pointers and explicitly

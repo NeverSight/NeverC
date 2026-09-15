@@ -19,6 +19,7 @@
 
 namespace clang {
 class CallExpr;
+class ArrayTypeTraitExpr;
 class CastExpr;
 class CXXConstructExpr;
 class CXXNewExpr;
@@ -339,6 +340,8 @@ public:
   std::string functionPointerType(clang::QualType T, clang::SourceLocation L,
                                   unsigned Depth = 0);
   bool typeClassificationValue(const clang::TypeTraitExpr *Query);
+  void checkQueryType(clang::QualType T, clang::SourceLocation L);
+  uint64_t arrayTypeQueryValue(const clang::ArrayTypeTraitExpr *Query);
   bool functionAddressTarget(const clang::FunctionDecl *F, clang::SourceLocation L);
   const clang::FunctionDecl *allocationFunction(const clang::FunctionDecl *F,
                                                bool Allocate, clang::SourceLocation L,

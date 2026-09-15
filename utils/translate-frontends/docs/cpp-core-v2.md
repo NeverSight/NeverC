@@ -835,6 +835,38 @@ is unchanged. Paired source/protocol tests, O0/O2 saved-NC execution, unevaluate
 effects and relocation require the implementing revision's CI; this does not
 establish standard-header or complete C++/STL support.
 
+## Array type queries
+
+`__array_rank(T)` returns the number of array dimensions and
+`__array_extent(T, I)` returns the bound of dimension `I`, starting at zero.
+Both use the pinned Clang result type, native `size_t`. Extent returns zero when
+the dimension is outside the rank; both queries return zero for a supported
+non-array type. References and pointers to arrays remain non-array types for
+these queries. All queried types satisfy the same admitted operand domain as
+[builtin classification](#builtin-type-classification); unknown-bound arrays,
+volatile, incomplete, union and other unsupported types remain rejected.
+
+An extent dimension must be a resolved nonnegative constant of admitted integer,
+boolean or unscoped enum type. Scoped enum indices need an explicit admitted
+integer conversion. Implicit class conversions as dimension operands require a
+separate source contract and remain rejected. Large unsigned indices simply
+produce zero. Rank has no dimension operand.
+
+The written type and dimension expression are checked before the query becomes
+an integer literal, including nested queries, `sizeof`/`decltype` expressions,
+template arguments and selected defaults. Their unevaluated effects are never
+executed, even when a non-array operand or an out-of-range index yields zero.
+The private frontend defers dependent dimension evaluation and substitutes the
+index even when its array type is unchanged. Ordinary and pack substitutions,
+constant assertions, variable/alias/class defaults and `if constexpr` use the
+existing template source rules; unused dependent patterns remain lazy.
+
+V1 remains unchanged. Paired source/protocol, fixed-type template-index regression,
+O0/O2 saved-NC and relocation fixtures require the implementing revision's CI.
+An unpatched upstream baseline can reproduce the original dimension substitution
+failure and is not the translated-program oracle. Standard headers and complete
+C++/STL remain unfinished.
+
 ## Object pointers and lvalue references
 
 - Local variables and supported function parameters/results may use object pointers

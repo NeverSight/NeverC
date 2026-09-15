@@ -1667,6 +1667,26 @@ std::string Adapter::functionPointerType(QualType T, SourceLocation L,
   return Result;
 }
 
+void Adapter::checkQueryType(QualType T, SourceLocation L) {
+  if (T.isNull() || T->isDependentType() || T->isInstantiationDependentType()) {
+    reject(L, "query type source", "Every queried type requires a resolved written type source.");
+    throw Failure{};
+  }
+  if (T->isFunctionType()) {
+    // Bare function aliases already use this signature contract. Check the
+    // prototype before forming a pointer to reject cv/ref-qualified functions.
+    if (T.hasQualifiers() ||
+        !ordinaryCallbackPrototype(T->getAs<FunctionProtoType>())) {
+      reject(L, "queried function type", "Type queries require an ordinary admitted callback signature.");
+      throw Failure{};
+    }
+    if (functionPointerType(Context.getPointerType(T), L).empty())
+      throw Failure{};
+  } else if (type(T, L, true).empty()) {
+    throw Failure{};
+  }
+}
+
 bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   const auto L = Query->getExprLoc();
   unsigned Arity = 0;
@@ -1696,31 +1716,49 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   }
   chargeExpansion(Arity + 1, L);
   for (const auto *Argument : Query->getArgs()) {
-    if (!Argument || Argument->getType().isNull() ||
-        Argument->getType()->isDependentType() ||
-        Argument->getType()->isInstantiationDependentType()) {
+    if (!Argument) {
       reject(L, "type classification source", "Every classified type requires its resolved written type source.");
       throw Failure{};
     }
-    const auto T = Argument->getType();
-    if (T->isFunctionType()) {
-      // Bare function aliases already use this signature contract. Check the
-      // prototype before forming a pointer to reject cv/ref-qualified functions.
-      if (T.hasQualifiers() ||
-          !ordinaryCallbackPrototype(T->getAs<FunctionProtoType>())) {
-        reject(L, "classified function type", "Function classification requires an ordinary admitted callback signature.");
-        throw Failure{};
-      }
-      if (functionPointerType(Context.getPointerType(T), L).empty())
-        throw Failure{};
-    } else if (type(T, L, true).empty()) {
-      throw Failure{};
-    }
+    checkQueryType(Argument->getType(), L);
   }
   // RAV separately visits every TypeSourceInfo, including decltype operands,
   // array bounds, noexcept specifications and template substitution sources.
   // Preserve Clang's source identity: enums/references/noexcept can share IR
   // carriers while remaining different inputs to these predicates.
+  return Query->getValue();
+}
+
+uint64_t Adapter::arrayTypeQueryValue(const ArrayTypeTraitExpr *Query) {
+  const auto L = Query->getExprLoc();
+  const bool Rank = Query->getTrait() == ATT_ArrayRank;
+  const auto *Dimension = Query->getDimensionExpression();
+  if (!S.coreV2() || (!Rank && Query->getTrait() != ATT_ArrayExtent) ||
+      !Query->isPRValue() || Query->isTypeDependent() ||
+      Query->isValueDependent() || Query->isInstantiationDependent() ||
+      !Context.hasSameType(Query->getType(), Context.getSizeType()) ||
+      !Query->getQueriedTypeSourceInfo() || (Rank ? Dimension != nullptr : !Dimension)) {
+    reject(L, "array type query", "A resolved rank or extent query requires its written type, exact dimension and native size_t result.");
+    throw Failure{};
+  }
+  chargeExpansion(2, L);
+  checkQueryType(Query->getQueriedType(), L);
+  if (Dimension) {
+    APValue Value;
+    if (Dimension->getType().isNull() ||
+        !Dimension->getType()->isIntegralOrUnscopedEnumerationType() ||
+        Dimension->isTypeDependent() || Dimension->isValueDependent() ||
+        Dimension->isInstantiationDependent() ||
+        !Dimension->isCXX11ConstantExpr(Context, &Value) || !Value.isInt() ||
+        (Value.getInt().isSigned() && Value.getInt().isNegative())) {
+      reject(L, "array query dimension", "An extent query requires a nonnegative constant integer dimension.");
+      throw Failure{};
+    }
+    if (type(Dimension->getType(), L).empty())
+      throw Failure{};
+  }
+  // Both operands are inspected by Allowlist, including the dimension omitted
+  // from pinned RAV's default traversal. Neither creates runtime instructions.
   return Query->getValue();
 }
 
@@ -8428,6 +8466,14 @@ public:
            TraverseStmt(Loop->getCond()) && TraverseStmt(Loop->getInc()) &&
            TraverseStmt(Loop->getBody());
   }
+  bool TraverseArrayTypeTraitExpr(ArrayTypeTraitExpr *Query) {
+    if (!RecursiveASTVisitor<Allowlist>::TraverseArrayTypeTraitExpr(Query))
+      return false;
+    // ArrayTypeTraitExpr has no Stmt children. RAV visits only the type, so
+    // explicitly inspect the original index rather than just its folded value.
+    return !Query->getDimensionExpression() ||
+           TraverseStmt(Query->getDimensionExpression());
+  }
   bool TraverseMaterializeTemporaryExpr(MaterializeTemporaryExpr *Temporary) {
     if (!A.S.coreV2())
       return RecursiveASTVisitor<Allowlist>::TraverseMaterializeTemporaryExpr(Temporary);
@@ -9746,7 +9792,8 @@ public:
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
               DefaultStmt, AttributedStmt, CharacterLiteral, StringLiteral,
-              UnaryExprOrTypeTraitExpr, TypeTraitExpr, CXXNoexceptExpr, CXXThisExpr,
+              UnaryExprOrTypeTraitExpr, TypeTraitExpr, ArrayTypeTraitExpr,
+              CXXNoexceptExpr, CXXThisExpr,
               CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt,
               SubstNonTypeTemplateParmExpr, SizeOfPackExpr,
               CXXPseudoDestructorExpr, CXXNewExpr, CXXDeleteExpr>(S)) &&
@@ -9856,6 +9903,8 @@ public:
       }
       if (const auto *Query = dyn_cast<TypeTraitExpr>(S))
         A.typeClassificationValue(Query);
+      if (const auto *Query = dyn_cast<ArrayTypeTraitExpr>(S))
+        A.arrayTypeQueryValue(Query);
       if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S);
           Query && !parameterTypeQueryMetadata(Query)) {
         auto Operand = Query->getTypeOfArgument();

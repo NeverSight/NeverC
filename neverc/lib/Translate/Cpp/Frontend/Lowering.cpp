@@ -1104,6 +1104,10 @@ class FunctionLowering {
     }
     if (const auto *Query = dyn_cast<TypeTraitExpr>(E); Query && A.S.coreV2())
       return boolean(A.typeClassificationValue(Query), L);
+    if (const auto *Query = dyn_cast<ArrayTypeTraitExpr>(E); Query && A.S.coreV2())
+      return A.literal(llvm::APSInt(llvm::APInt(integerBits(T),
+                                               A.arrayTypeQueryValue(Query)),
+                                    unsignedInteger(T)), T, L);
     if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(E); Query && A.S.coreV2()) {
       APValue Value;
       if (!Query->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt())

@@ -5737,6 +5737,75 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         check("v2-array-sized-trivial-"+target, sized_source,
               "TR0201" if abi == "msvc" else None, profile="cpp-core-v2", target=target)
 
+    array_query_positive = {
+        'rank': 'bool f(){return __array_rank(int)==0&&__array_rank(int[2])==1&&__array_rank(int[2][3])==2;}',
+        'extent': 'bool f(){return __array_extent(int[2][3],0)==2&&__array_extent(int[2][3],1)==3&&__array_extent(int[2][3],2)==0;}',
+        'large-index': 'bool f(){return __array_extent(int[2],18446744073709551615ULL)==0;}',
+        'aliases': 'using A=const int[2][3];bool f(){return __array_rank(A)==2&&__array_extent(A,1)==3;}',
+        'non-array': 'bool f(){return __array_rank(int*)==0&&__array_rank(int(&)[2])==0&&__array_extent(int,0)==0&&__array_rank(void)==0;}',
+        'function-type': 'using F=int(int);bool f(){return __array_rank(F)==0&&__array_extent(F,0)==0;}',
+        'constant-index': 'constexpr int value=1;enum Index{one=1};bool f(){return __array_extent(int[2][3],value)==3&&__array_extent(int[2][3],one)==3&&__array_extent(int[2][3],true)==3;}',
+        'constexpr-index-call': 'constexpr int index(){return 1;}bool f(){return __array_extent(int[2][3],index())==3;}',
+        'fixed-type-dependent-index': 'template<int I>constexpr auto f(){return __array_extent(int[2][3],I);}static_assert(f<0>()==2&&f<1>()==3&&f<2>()==0);',
+        'index-only-variable-template': 'template<unsigned I>inline constexpr auto extent=__array_extent(int[2][3],I);static_assert(extent<0> ==2&&extent<1> ==3);',
+        'dependent-type-and-index': 'template<class T,unsigned I>constexpr auto f(){return __array_extent(T,I);}static_assert(f<int[2][3],0>()==2&&f<int[2][3],1>()==3);',
+        'rank-template': 'template<class T>constexpr auto f(){return __array_rank(T);}static_assert(f<int>()==0&&f<int[2][3]>()==2);',
+        'default-index': 'template<class T,unsigned I=__array_rank(T)-1>constexpr auto f(){return __array_extent(T,I);}static_assert(f<int[2][3]>()==3);',
+        'alias-default': 'template<class T,unsigned I=0>using A=int[__array_extent(T,I)];static_assert(__array_extent(A<int[2][3],1>,0)==3);',
+        'class-default': 'template<class T,unsigned N=__array_extent(T,0)>struct R{static constexpr unsigned value=N;};static_assert(R<int[2][3]>::value==2);',
+        'nested-query': 'bool f(){return __array_extent(int[2][3],__array_rank(int[7]))==3&&__array_extent(int[2][3],__array_extent(int,0))==2;}',
+        'boolean-query-index': 'bool f(){return __array_extent(int[2][3],__is_integral(int))==3;}',
+        'query-result-type': 'using Size=decltype(sizeof(0));static_assert(__is_same(decltype(__array_rank(int[2])),Size)&&__is_same(decltype(__array_extent(int[2],0)),Size));',
+        'dimension-template-call': 'template<int I>constexpr int index(){return I;}template<int I>auto f(){return __array_extent(int[2][3],index<I>());}int main(){return int(f<1>())-3;}',
+        'constexpr-branch': 'template<class T>int f(){if constexpr(__array_rank(T)>0)return 1;else return 2;}int main(){return f<int[2]>()+f<int>()-3;}',
+        'unevaluated-dimension': 'int n;bool f(){return __array_extent(int[2],(sizeof(++n),0))==2;}',
+        'lazy-dimension-default': 'template<class T,int I=T::missing>int unused(){return int(__array_extent(T,I));}int f(){return int(__array_rank(int[2]));}',
+        'pack-indexes': 'template<unsigned...I>constexpr auto f(){return (__array_extent(int[2][3],I)+...+0);}static_assert(f<>()==0&&f<0,1,2>()==5);',
+    }
+    for name, source in array_query_positive.items():
+        check("v2-array_query_positive-" + name, source, profile="cpp-core-v2")
+    array_query_negative = {
+        'rank-long-double': 'int f(){return int(__array_rank(long double));}',
+        'extent-long-double': 'int f(){return int(__array_extent(long double[2],0));}',
+        'rank-volatile': 'int f(){return int(__array_rank(volatile int[2]));}',
+        'rank-unknown-bound': 'int f(){return int(__array_rank(int[]));}',
+        'extent-unknown-bound': 'int f(){return int(__array_extent(int[],0));}',
+        'rank-unknown-bound-reference': 'int f(){return int(__array_rank(int(&)[]));}',
+        'rank-incomplete': 'struct R;int f(){return int(__array_rank(R));}',
+        'rank-union': 'union U{int n;};int f(){return int(__array_rank(U));}',
+        'rank-hidden-type': 'int f(){return int(__array_rank(decltype(sizeof(long double))));}',
+        'rank-hidden-bound': 'int f(){return int(__array_rank(int[sizeof(long double)]));}',
+        'extent-hidden-dimension': 'int f(){return int(__array_extent(int[2],(sizeof(long double),0)));}',
+        'extent-hidden-nonarray-dimension': 'int f(){return int(__array_extent(int,(sizeof(long double),0)));}',
+        'extent-folded-dimension': 'int f(){return int(__array_extent(int[2],true?0:sizeof(long double)));}',
+        'extent-noexcept-dimension': 'int f(){return int(__array_extent(int[2],noexcept(sizeof(long double))));}',
+        'extent-template-default': 'template<class T,unsigned I=(sizeof(long double),0)>auto f(){return __array_extent(T,I);}int g(){return int(f<int[2]>());}',
+        'extent-template-argument': 'template<unsigned I>auto f(){return __array_extent(int[2],I);}int g(){return int(f<(sizeof(long double),0)>());}',
+        'extent-conversion': 'struct I{constexpr operator int()const{return 0;}};int f(){return int(__array_extent(int[2],I{}));}',
+        'extent-unsupported-index-call': 'constexpr int index(){return (sizeof(long double),0);}int f(){return int(__array_extent(int[2],index()));}',
+        'extent-short-circuit': 'bool f(){return true||__array_extent(int[2],(sizeof(long double),0));}',
+        'extent-assertion': 'static_assert(true||__array_extent(int[2],(sizeof(long double),0)));',
+        'extent-nested': 'int f(){return int(__array_extent(int[2],__array_rank(long double)));}',
+    }
+    for name, source in array_query_negative.items():
+        check("v2-array_query_negative-" + name, source, 'TR0201', profile="cpp-core-v2")
+    array_query_invalid = {
+        'negative-index': 'int f(){return int(__array_extent(int[2],-1));}',
+        'runtime-index': 'int f(int n){return int(__array_extent(int[2],n));}',
+        'scoped-enum-index': 'enum class I{zero=0};int f(){return int(__array_extent(int[2],I::zero));}',
+        'missing-index': 'int f(){return int(__array_extent(int[2]));}',
+        'extra-rank-index': 'int f(){return int(__array_rank(int[2],0));}',
+    }
+    for name, source in array_query_invalid.items():
+        check("v2-array_query_invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+    check("array-query-v1", "int f(){return int(__array_extent(int[2],0));}", "TR0201")
+    array_query_source = (repository / "tests/neverc/Inputs/translate/cpp/array-type-queries.cpp").read_text()
+    array_queries = check("v2-array-type-queries", array_query_source, profile="cpp-core-v2")
+    with tempfile.TemporaryDirectory(prefix="neverc-array-query-relocated-") as temporary:
+        relocated = check("v2-array-query-relocated", array_query_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == array_queries
+
     builtin_type_positive = {
         'arithmetic': 'bool f(){return __is_arithmetic(int)&&__is_arithmetic(float)&&!__is_arithmetic(int*);}',
         'floating-point': 'bool f(){return __is_floating_point(float)&&__is_floating_point(double)&&!__is_floating_point(int);}',
@@ -5817,7 +5886,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'layout': 'bool f(){return __is_standard_layout(int);}',
         'inheritance': 'struct R{};bool f(){return __is_base_of(R,R);}',
         'newer-lifetime': 'bool f(){return __is_trivially_relocatable(int);}',
-        'array-rank': 'int f(){return __array_rank(int[2]);}',
     }
     for name, source in builtin_type_negative.items():
         check("v2-builtin_type_negative-" + name, source, 'TR0201', profile="cpp-core-v2")

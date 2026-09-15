@@ -60,6 +60,18 @@ complete group states, including reservation/provenance loss and stale list coun
 Source/protocol and O0/O2 fixtures check distinct self addresses, static/automatic
 lifetimes and default-argument cleanup; native acceptance requires implementing CI.
 
+A two-file checked array-query repair defers SemaExprCXX.cpp's extent evaluation
+while the dimension is type/value dependent, even when the queried array type is
+already fixed. TreeTransform.h transforms the dimension before its unchanged-node
+shortcut and reuses the original node only when both type and dimension stay the
+same. The exact dimension expression and type source remain in ArrayTypeTraitExpr;
+no canonical replacement AST is synthesized. Pure source fixtures require both
+files to be pristine or fully rewritten before either file changes and cover
+idempotence, mixed states, missing/duplicate/drifted blocks and orphan markers.
+The frontend separately visits the dimension omitted by the upstream RAV and
+requires an admitted nonnegative integer or unscoped-enum constant index. Native
+template-index substitution and saved-NC behavior require implementing CI.
+
 A separate checked SemaExpr.cpp repair enables lazy default member initializer
 substitution for copied class-scope full specializations in requesting consumers.
 Their explicit specialization kind coexists with an implicit member-class origin;

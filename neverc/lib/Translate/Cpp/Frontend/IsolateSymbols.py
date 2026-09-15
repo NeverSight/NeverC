@@ -417,6 +417,43 @@ def fix_copied_full_initializers(path):
         path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
 
+def fix_array_type_query_dimensions(source_root):
+    # Validate both exact producer states before changing either file.
+    patches = (
+        ('clang/lib/Sema/SemaExprCXX.cpp',
+         "ExprResult Sema::BuildArrayTypeTrait(ArrayTypeTrait ATT,\n                                     SourceLocation KWLoc,\n                                     TypeSourceInfo *TSInfo,\n                                     Expr* DimExpr,\n                                     SourceLocation RParen) {\n  QualType T = TSInfo->getType();\n\n  // FIXME: This should likely be tracked as an APInt to remove any host\n  // assumptions about the width of size_t on the target.\n  uint64_t Value = 0;\n  if (!T->isDependentType())\n    Value = EvaluateArrayTypeTrait(*this, ATT, T, DimExpr, KWLoc);\n\n  // While the specification for these traits from the Embarcadero C++\n  // compiler's documentation says the return type is 'unsigned int', Clang\n  // returns 'size_t'. On Windows, the primary platform for the Embarcadero\n  // compiler, there is no difference. On several other platforms this is an\n  // important distinction.\n  return new (Context) ArrayTypeTraitExpr(KWLoc, ATT, TSInfo, Value, DimExpr,\n                                          RParen, Context.getSizeType());\n}\n",
+         "ExprResult Sema::BuildArrayTypeTrait(ArrayTypeTrait ATT,\n                                     SourceLocation KWLoc,\n                                     TypeSourceInfo *TSInfo,\n                                     Expr* DimExpr,\n                                     SourceLocation RParen) {\n  QualType T = TSInfo->getType();\n\n  // FIXME: This should likely be tracked as an APInt to remove any host\n  // assumptions about the width of size_t on the target.\n  uint64_t Value = 0;\n  // NeverC array-query dimensions must be substituted before evaluation.\n  if (!T->isDependentType() &&\n      (!DimExpr || (!DimExpr->isTypeDependent() && !DimExpr->isValueDependent())))\n    Value = EvaluateArrayTypeTrait(*this, ATT, T, DimExpr, KWLoc);\n\n  // While the specification for these traits from the Embarcadero C++\n  // compiler's documentation says the return type is 'unsigned int', Clang\n  // returns 'size_t'. On Windows, the primary platform for the Embarcadero\n  // compiler, there is no difference. On several other platforms this is an\n  // important distinction.\n  return new (Context) ArrayTypeTraitExpr(KWLoc, ATT, TSInfo, Value, DimExpr,\n                                          RParen, Context.getSizeType());\n}\n"),
+        ('clang/lib/Sema/TreeTransform.h',
+         'TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {\n  TypeSourceInfo *T = getDerived().TransformType(E->getQueriedTypeSourceInfo());\n  if (!T)\n    return ExprError();\n\n  if (!getDerived().AlwaysRebuild() &&\n      T == E->getQueriedTypeSourceInfo())\n    return E;\n\n  ExprResult SubExpr;\n  {\n    EnterExpressionEvaluationContext Unevaluated(\n        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);\n    SubExpr = getDerived().TransformExpr(E->getDimensionExpression());\n    if (SubExpr.isInvalid())\n      return ExprError();\n  }\n\n  return getDerived().RebuildArrayTypeTrait(E->getTrait(), E->getBeginLoc(), T,\n                                            SubExpr.get(), E->getEndLoc());\n}\n',
+         'TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {\n  TypeSourceInfo *T = getDerived().TransformType(E->getQueriedTypeSourceInfo());\n  if (!T)\n    return ExprError();\n\n  ExprResult SubExpr;\n  {\n    EnterExpressionEvaluationContext Unevaluated(\n        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);\n    SubExpr = getDerived().TransformExpr(E->getDimensionExpression());\n    if (SubExpr.isInvalid())\n      return ExprError();\n  }\n\n  // NeverC array-query dimensions can change while the type stays fixed.\n  if (!getDerived().AlwaysRebuild() &&\n      T == E->getQueriedTypeSourceInfo() &&\n      SubExpr.get() == E->getDimensionExpression())\n    return E;\n\n  return getDerived().RebuildArrayTypeTrait(E->getTrait(), E->getBeginLoc(), T,\n                                            SubExpr.get(), E->getEndLoc());\n}\n'),
+    )
+    checked = []
+    states = []
+    for relative, before, after in patches:
+        path = source_root / relative
+        error_message = "Unexpected pinned Clang array query source in " + str(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise SystemExit(error_message) from error
+        counts = (text.count(before), text.count(after))
+        if counts == (1, 0):
+            state = 0
+        elif counts == (0, 1):
+            state = 1
+        else:
+            raise SystemExit(error_message)
+        if "NeverC array-query dimensions" in text.replace((before, after)[state], "", 1):
+            raise SystemExit(error_message)
+        checked.append((path, text, before, after))
+        states.append(state)
+    if len(set(states)) != 1:
+        raise SystemExit("Unexpected mixed pinned Clang array query source states")
+    if states[0] == 0:
+        for path, text, before, after in checked:
+            path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def fix_member_class_instantiation_patterns(path):
     before = '''    if (auto *CTD = dyn_cast_if_present<ClassTemplateDecl *>(From)) {
       while (auto *NewCTD = CTD->getInstantiatedFromMemberTemplate()) {
@@ -931,6 +968,7 @@ fix_nested_friend_access(args.source / "clang/lib/Sema/SemaAccess.cpp")
 fix_nested_friend_declaration_access(args.source)
 fix_imported_namespace_defaults(args.source)
 fix_member_class_instantiation_patterns(args.source / "clang/lib/AST/DeclCXX.cpp")
+fix_array_type_query_dimensions(args.source)
 fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
 fix_deduced_reference_arguments(args.source / "clang/lib/Sema/SemaOverload.cpp")
 fix_copied_full_initializers(args.source / "clang/lib/Sema/SemaExpr.cpp")

@@ -2,6 +2,7 @@
 """Controlled symbol inventories for the builtin frontend link gate."""
 
 import argparse
+import ast
 import io
 import json
 import re
@@ -85,6 +86,70 @@ SETUP_INTERFACE_PTR = (
 PRIVATE_SETUP_INTERFACE_PTR = (
     "?GetInterfacePtr@?$_com_ptr_t@V?$_com_IIID@UISetupConfiguration2@@$1?"
     "neverc_cpp26aab78c4a6049d6af3b3c35bc93365d@@3U__s_GUID@@B@@@@QEAAAEAPEAUISetupConfiguration2@@XZ")
+
+
+
+# Exact independent source/result fixtures for array query dimension substitution.
+ARRAY_QUERY_PATCHES = (
+    ('clang/lib/Sema/SemaExprCXX.cpp',
+     "ExprResult Sema::BuildArrayTypeTrait(ArrayTypeTrait ATT,\n                                     SourceLocation KWLoc,\n                                     TypeSourceInfo *TSInfo,\n                                     Expr* DimExpr,\n                                     SourceLocation RParen) {\n  QualType T = TSInfo->getType();\n\n  // FIXME: This should likely be tracked as an APInt to remove any host\n  // assumptions about the width of size_t on the target.\n  uint64_t Value = 0;\n  if (!T->isDependentType())\n    Value = EvaluateArrayTypeTrait(*this, ATT, T, DimExpr, KWLoc);\n\n  // While the specification for these traits from the Embarcadero C++\n  // compiler's documentation says the return type is 'unsigned int', Clang\n  // returns 'size_t'. On Windows, the primary platform for the Embarcadero\n  // compiler, there is no difference. On several other platforms this is an\n  // important distinction.\n  return new (Context) ArrayTypeTraitExpr(KWLoc, ATT, TSInfo, Value, DimExpr,\n                                          RParen, Context.getSizeType());\n}\n",
+     "ExprResult Sema::BuildArrayTypeTrait(ArrayTypeTrait ATT,\n                                     SourceLocation KWLoc,\n                                     TypeSourceInfo *TSInfo,\n                                     Expr* DimExpr,\n                                     SourceLocation RParen) {\n  QualType T = TSInfo->getType();\n\n  // FIXME: This should likely be tracked as an APInt to remove any host\n  // assumptions about the width of size_t on the target.\n  uint64_t Value = 0;\n  // NeverC array-query dimensions must be substituted before evaluation.\n  if (!T->isDependentType() &&\n      (!DimExpr || (!DimExpr->isTypeDependent() && !DimExpr->isValueDependent())))\n    Value = EvaluateArrayTypeTrait(*this, ATT, T, DimExpr, KWLoc);\n\n  // While the specification for these traits from the Embarcadero C++\n  // compiler's documentation says the return type is 'unsigned int', Clang\n  // returns 'size_t'. On Windows, the primary platform for the Embarcadero\n  // compiler, there is no difference. On several other platforms this is an\n  // important distinction.\n  return new (Context) ArrayTypeTraitExpr(KWLoc, ATT, TSInfo, Value, DimExpr,\n                                          RParen, Context.getSizeType());\n}\n"),
+    ('clang/lib/Sema/TreeTransform.h',
+     'TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {\n  TypeSourceInfo *T = getDerived().TransformType(E->getQueriedTypeSourceInfo());\n  if (!T)\n    return ExprError();\n\n  if (!getDerived().AlwaysRebuild() &&\n      T == E->getQueriedTypeSourceInfo())\n    return E;\n\n  ExprResult SubExpr;\n  {\n    EnterExpressionEvaluationContext Unevaluated(\n        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);\n    SubExpr = getDerived().TransformExpr(E->getDimensionExpression());\n    if (SubExpr.isInvalid())\n      return ExprError();\n  }\n\n  return getDerived().RebuildArrayTypeTrait(E->getTrait(), E->getBeginLoc(), T,\n                                            SubExpr.get(), E->getEndLoc());\n}\n',
+     'TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {\n  TypeSourceInfo *T = getDerived().TransformType(E->getQueriedTypeSourceInfo());\n  if (!T)\n    return ExprError();\n\n  ExprResult SubExpr;\n  {\n    EnterExpressionEvaluationContext Unevaluated(\n        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);\n    SubExpr = getDerived().TransformExpr(E->getDimensionExpression());\n    if (SubExpr.isInvalid())\n      return ExprError();\n  }\n\n  // NeverC array-query dimensions can change while the type stays fixed.\n  if (!getDerived().AlwaysRebuild() &&\n      T == E->getQueriedTypeSourceInfo() &&\n      SubExpr.get() == E->getDimensionExpression())\n    return E;\n\n  return getDerived().RebuildArrayTypeTrait(E->getTrait(), E->getBeginLoc(), T,\n                                            SubExpr.get(), E->getEndLoc());\n}\n'),
+)
+
+class ArrayQuerySourceTests(unittest.TestCase):
+    def test_pinned_dimension_repairs_are_atomic_and_idempotent(self):
+        script = Path(__file__).resolve().with_name("IsolateSymbols.py")
+        function = next(node for node in ast.parse(script.read_text()).body
+                        if isinstance(node, ast.FunctionDef) and
+                        node.name == "fix_array_type_query_dimensions")
+        namespace = {}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(script), "exec"), namespace)
+        repair = namespace[function.name]
+        with tempfile.TemporaryDirectory(prefix="neverc-array-query-source-") as temporary:
+            root = Path(temporary)
+            def reset(states):
+                for (relative, before, after), state in zip(ARRAY_QUERY_PATCHES, states):
+                    path = root / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text((before, after)[state])
+            def snapshot():
+                return {str(path.relative_to(root)): path.read_bytes()
+                        for path in root.rglob("*") if path.is_file()}
+            reset([0, 0])
+            repair(root)
+            for relative, before, after in ARRAY_QUERY_PATCHES:
+                self.assertEqual((root / relative).read_text(), after)
+            complete = snapshot()
+            repair(root)
+            self.assertEqual(snapshot(), complete)
+            for index, (relative, before, after) in enumerate(ARRAY_QUERY_PATCHES):
+                cases = {
+                    "missing": None, "empty": "", "duplicate original": before * 2,
+                    "duplicate rewritten": after * 2, "mixed blocks": before + after,
+                    "drift": before.replace("return", "RETURN", 1),
+                    "orphan marker": before + "\n// NeverC array-query dimensions\n",
+                }
+                for name, contents in cases.items():
+                    with self.subTest(file=relative, state=name):
+                        reset([0, 0])
+                        path = root / relative
+                        if contents is None:
+                            path.unlink()
+                        else:
+                            path.write_text(contents)
+                        prior = snapshot()
+                        with self.assertRaises(SystemExit):
+                            repair(root)
+                        self.assertEqual(snapshot(), prior)
+            for states in ([0, 1], [1, 0]):
+                reset(states)
+                prior = snapshot()
+                with self.assertRaises(SystemExit):
+                    repair(root)
+                self.assertEqual(snapshot(), prior)
 
 
 class SetupGuidPolicyTests(unittest.TestCase):
@@ -875,6 +940,11 @@ public:
         files['clang/include/clang/Sema/Overload.h'] = call_overload_header_original
         files['clang/lib/Sema/SemaOverload.cpp'] = argument_reference_original + call_overload_original
         files['clang/lib/Sema/SemaInit.cpp'] = reference_original + call_init_original
+        # This independently tested patch group stays complete while the
+        # following test varies the older callback-source group in the same file.
+        call_expr_cxx_original += ARRAY_QUERY_PATCHES[0][2]
+        call_expr_cxx_expected += ARRAY_QUERY_PATCHES[0][2]
+        files['clang/lib/Sema/TreeTransform.h'] = ARRAY_QUERY_PATCHES[1][2]
         files['clang/lib/Sema/SemaExprCXX.cpp'] = call_expr_cxx_original
         with tempfile.TemporaryDirectory(prefix="neverc-isolate-source-") as temporary:
             root = Path(temporary)
