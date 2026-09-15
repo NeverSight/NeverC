@@ -4,6 +4,8 @@
 
 # 將 C++ 轉譯為 NeverC
 
+Core v2 支援未求值呼叫中經過檢查的命名空間範本宣告簽章，包括 `declval` 使用的參考、陣列、函式和 void 回退模式。實際選擇、從簽章中消失的範本預設引數及已使用的函式預設引數仍須通過最終來源檢查。執行期呼叫和取址仍要求定義。原生驗證以實作版本的 CI 為準；標準標頭及完整 C++/STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
+
 Core v2 支援預設 sized delete 轉送：未經原始碼重新宣告的隱含全域 sized delete/delete[] 可呼叫對應的 unsized 定義。明確的 sized 定義優先，陣列保留原運算式的 cookie 配置。此項不提供預設配置器或例外執行環境；原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 Core v2 也支援經過檢查的 `__array_rank` 和 `__array_extent`，維度索引為非負常數整數，也支援固定陣列型別搭配模板索引。折疊前仍檢查型別和索引原始碼；不支援的陣列型別與隱含類別轉換索引仍被拒絕。原生結果須由實作版本的 CI 驗證。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

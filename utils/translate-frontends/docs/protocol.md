@@ -1693,3 +1693,19 @@ their own element rule. No omission flag is accepted from the IR protocol; ordin
 express the actual initialization and cleanup order. Source expansion remains
 bounded, and unexpected shared static temporary identities are diagnosed. See the
 [source contract](cpp-core-v2.md#reference-members).
+
+### Declaration-only namespace template queries
+
+Unused implicit namespace function-template instances may retain a signature from
+an owned primary without a definition. Primary, written pattern and selected
+function must remain non-friend file declarations; copied/member-specialization
+metadata is excluded. The normal exact selection, actual arguments, signature and
+resolved specification remain mandatory. Only this category's actual ordinary or
+free operator calls drain source children synchronously into the existing final
+query dependency graph. Consumed template defaults erased from the signature and
+selected function defaults retain their implicit/generated operation families and
+destruction dependencies, even for false query results. Failed selection checks
+cannot mark a source complete. No transport field, runtime import or body-completion
+proof is added. Runtime calls/addresses and explicit directives retain definition
+requirements. Fixtures check absence of query-only functions, literal boolean
+results and exactly two calls to the independently defined specialization.

@@ -18111,6 +18111,8 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesAcceptResolvedScalarArguments) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unevaluated-size", "template<int N>int f();int main(){return sizeof(f<3>());}"},
+      {"unevaluated-noexcept", "template<int N>int f()noexcept;int main(){return noexcept(f<3>());}"},
       {"unused", "template<int N>int f(){return N;}"},
       {"signed", "template<int N>int f(){return N;}int main(){return f<-3>()+3;}"},
       {"bool", "template<bool B>bool f(){return B;}int main(){return !f<true>();}"},
@@ -18183,8 +18185,6 @@ TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesRetainSourceAndValueBoundari
       {"class-parameter", "struct R{int n;};template<R N>int f(){return 1;}", "TR0202"},
       {"floating-argument", "template<int N>int f(){return N;}int main(){return f<1.0>();}", "TR0202"},
       {"selected", "template<int N>int f();int main(){return f<3>();}", "TR0203"},
-      {"unevaluated-size", "template<int N>int f();int main(){return sizeof(f<3>());}", "TR0203"},
-      {"unevaluated-noexcept", "template<int N>int f()noexcept;int main(){return noexcept(f<3>());}", "TR0203"},
       {"explicit-extern", "template<int N>int f();extern template int f<3>();", "TR0203"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
@@ -18300,6 +18300,23 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2FunctionTemplatesAcceptConcreteTypeInstances) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"declared-signature-free-operator", "struct R{};template<class T,int N=sizeof(T)>int operator+(T,T)noexcept(N>0);static_assert(noexcept(R{}+R{}));"},
+      {"declared-signature-default-family", "struct Mid{int n;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept;static_assert(noexcept(f<int>()));"},
+      {"declared-signature-false-default-family", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false);static_assert(!noexcept(f<int>()));"},
+      {"declared-signature-deduced", "template<class T>T f(T);static_assert(__is_same(decltype(f(1)),int));"},
+      {"declared-signature-noexcept", "template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));"},
+      {"declared-signature-noexcept-false", "template<class T>T f(T)noexcept(false);static_assert(!noexcept(f(1)));"},
+      {"declared-signature-type-default", "template<class T=int>T f()noexcept;static_assert(__is_same(decltype(f()),int)&&noexcept(f()));"},
+      {"declared-signature-value-default", "template<class T,int N=sizeof(T)>T f(T,int=N)noexcept(N==sizeof(T));static_assert(noexcept(f(1)));"},
+      {"declared-signature-explicit-default-unused", "template<class T>int f(int=T::missing)noexcept;static_assert(noexcept(f<int>(3)));"},
+      {"declared-signature-packs", "template<class...T>int f(T...)noexcept(sizeof...(T)==2);static_assert(noexcept(f(1,2u))&&!noexcept(f()));"},
+      {"declared-signature-qualified-parenthesis", "namespace N{template<class T>T f(T)noexcept;}static_assert(noexcept((N::f)(1))&&__is_same(decltype((N::f)(1)),int));"},
+      {"declared-signature-reference-overload", "template<class T>T&& probe(int);template<class T>T probe(long);template<class T>decltype(probe<T>(0)) value()noexcept{static_assert(!__is_same(T,T));}static_assert(__is_same(decltype(value<int>()),int&&)&&__is_same(decltype(value<int&>()),int&));"},
+      {"declared-signature-void-fallback", "template<class T>T&& probe(int);template<class T>T probe(long);template<class T>decltype(probe<T>(0)) value()noexcept{static_assert(!__is_same(T,T));}static_assert(__is_same(decltype(value<void>()),void)&&noexcept(value<void>()));"},
+      {"declared-signature-array-function", "template<class T>T&& probe(int);template<class T>T probe(long);template<class T>decltype(probe<T>(0)) value()noexcept{static_assert(!__is_same(T,T));}using A=int[2];using F=int(int);static_assert(__is_same(decltype(value<A>()),A&&)&&__is_same(decltype(value<F>()),F&));"},
+      {"declared-signature-default-effects", "int calls;int next()noexcept{++calls;return 3;}template<class T>int f(int=next())noexcept;static_assert(noexcept(f<int>()));int main(){return calls;}"},
+      {"declared-signature-ordinary-default-source", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>T f()noexcept;static_assert(noexcept(f<int>()));"},
+      {"declared-signature-materialized-specialization", "int calls;template<class T>T f(T)noexcept;template<>unsigned f<unsigned>(unsigned n)noexcept{++calls;return n+1;}static_assert(noexcept(f(1)));int main(){auto v=f(3u);return v-4+calls-1;}"},
       {"noexcept-signature-only", "template<class T>T f(T v){return v;}int main(){return noexcept(f(1));}"},
       {"sizeof-signature-only", "template<class T>T f(T v){return v;}int main(){return sizeof(f(1));}"},
       {"deduced", "template<class T>T id(T v){return v;}int main(){return id(3)-3;}"},
@@ -18353,6 +18370,25 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesAcceptConcreteTypeInstances) {
 
 TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"declared-signature-hidden-default-family", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept;static_assert(noexcept(f<int>()));", "TR0201"},
+      {"declared-signature-hidden-exception-family", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f()noexcept(noexcept(Mid())&&sizeof(T)>0);static_assert(noexcept(f<int>()));", "TR0201"},
+      {"declared-signature-hidden-operator-default", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{};template<class T,int N=noexcept(Mid())+sizeof(T)>int operator+(T,T)noexcept;static_assert(noexcept(R{}+R{}));", "TR0201"},
+      {"declared-signature-hidden-false-default", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false);static_assert(!noexcept(f<int>()));", "TR0201"},
+      {"declared-signature-hidden-return", "template<class T>long double f(T)noexcept;static_assert(noexcept(f(1)));", "TR0201"},
+      {"declared-signature-hidden-parameter", "template<class T>int f(T,long double)noexcept;static_assert(noexcept(f(1,0)));", "TR0201"},
+      {"declared-signature-hidden-exception", "template<class T>T f(T)noexcept(sizeof(long double)>sizeof(T));static_assert(noexcept(f(1)));", "TR0201"},
+      {"declared-signature-hidden-default", "template<class T>int f(int=(sizeof(long double),3))noexcept;static_assert(noexcept(f<int>()));", "TR0201"},
+      {"declared-signature-hidden-template-default", "template<class T,int N=sizeof(long double)+sizeof(T)>T f()noexcept;static_assert(noexcept(f<int>()));", "TR0201"},
+      {"declared-signature-erased-default-source", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>T f()noexcept;static_assert(noexcept(f<int>()));", "TR0201"},
+      {"declared-signature-runtime-after-query", "template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));int main(){return f(1);}", "TR0203"},
+      {"declared-signature-runtime-address", "template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));auto pointer=&f<int>;", "TR0203"},
+      {"declared-signature-explicit-extern", "template<class T>T f(T)noexcept;extern template int f<int>(int)noexcept;static_assert(noexcept(f(1)));", "TR0203"},
+      {"declared-signature-ordinary-function", "int f()noexcept;static_assert(noexcept(f()));", "TR0203"},
+      {"declared-signature-member-function", "struct R{template<class T>T f(T)noexcept;};R*r;static_assert(noexcept(r->f(1)));", "TR0203"},
+      {"declared-signature-friend-function", "struct R{template<class T>friend T f(R,T)noexcept;};static_assert(noexcept(f(R{},1)));", "TR0203"},
+      {"declared-signature-undeduced-return", "template<class T>auto f(T)noexcept;using A=decltype(f(1));", "TR0202"},
+      {"declared-signature-bad-default", "template<class T>int f(int=T::missing)noexcept;static_assert(noexcept(f<int>()));", "TR0202"},
+      {"declared-signature-explicit-definition", "template<class T>T f(T)noexcept;template int f<int>(int)noexcept;", "TR0202"},
       {"template-template", "template<template<class>class T>int f(){return 1;}", "TR0201"},
       {"float-argument", "template<class T>int f(){return 1;}int main(){return f<long double>();}", "TR0201"},
       {"float-signature", "template<class T>long double f(T n){return n;}int main(){return static_cast<int>(f(1));}", "TR0201"},

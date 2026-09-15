@@ -7446,7 +7446,36 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
 
     defined_operation_source = (repository / "tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp").read_text()
     defined_operation_module = check("v2-defined-operation-traits", defined_operation_source, profile="cpp-core-v2")
-    defined_expected = {"defined_copied_construct": True,
+    declared_query_only_lines = {
+        line for line, text in enumerate(defined_operation_source.splitlines(), 1)
+        if text.startswith(("template<class T> T&& probe(", "template<class T> T probe(",
+                            "template<class T> decltype(probe<T>(0)) value(",
+                            "template<class T, int N = sizeof(T)> T selected(",
+                            "template<class T> T throwing(", "template<class T> T runtime("))
+    }
+    assert len(declared_query_only_lines) == 6
+    assert not any(function["loc"]["line"] in declared_query_only_lines
+                   for function in defined_operation_module["functions"])
+    declared_runtime_line = next(line for line, text in enumerate(defined_operation_source.splitlines(), 1)
+                                 if text.startswith("template<> unsigned runtime<unsigned>("))
+    declared_runtime = [function for function in defined_operation_module["functions"]
+                        if function["loc"]["line"] == declared_runtime_line]
+    assert len(declared_runtime) == 1
+    declared_runtime_calls = [node for function in defined_operation_module["functions"]
+                              for node in gc_calls(function)
+                              if node["callee"] == declared_runtime[0]["name"]]
+    assert len(declared_runtime_calls) == 2
+    defined_expected = {"defined_declared_rvalue": True,
+                        "defined_declared_lvalue": True,
+                        "defined_declared_void": True,
+                        "defined_declared_array": True,
+                        "defined_declared_function": True,
+                        "defined_declared_default": True,
+                        "defined_declared_explicit": True,
+                        "defined_declared_throwing": False,
+                        "defined_declared_runtime_query": True,
+                        "defined_declared_specialization": True,
+                        "defined_copied_construct": True,
                         "defined_copied_outer_construct": True,
                         "defined_copied_nothrow_construct": True,
                         "defined_copied_trivial": False,
@@ -17430,6 +17459,8 @@ Plain chosenRecord(){return choose<false>();}
         assert relocated == non_type_templates
 
     non_type_templates_positive = {
+        'unevaluated-size': 'template<int N>int f();int main(){return sizeof(f<3>());}',
+        'unevaluated-noexcept': 'template<int N>int f()noexcept;int main(){return noexcept(f<3>());}',
         'unused': 'template<int N>int f(){return N;}',
         'signed': 'template<int N>int f(){return N;}int main(){return f<-3>()+3;}',
         'bool': 'template<bool B>bool f(){return B;}int main(){return !f<true>();}',
@@ -17501,8 +17532,6 @@ Plain chosenRecord(){return choose<false>();}
         check("v2-non-type-templates-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
     non_type_templates_missing = {
         'selected': 'template<int N>int f();int main(){return f<3>();}',
-        'unevaluated-size': 'template<int N>int f();int main(){return sizeof(f<3>());}',
-        'unevaluated-noexcept': 'template<int N>int f()noexcept;int main(){return noexcept(f<3>());}',
         'explicit-extern': 'template<int N>int f();extern template int f<3>();',
     }
     for name, source in non_type_templates_missing.items():
@@ -17511,6 +17540,23 @@ Plain chosenRecord(){return choose<false>();}
     check("v1-auto-value-template", "template<auto N>auto f(){return N;}int main(){return f<3>();}", "TR0201")
 
     function_templates_positive = {
+        'declared-signature-free-operator': 'struct R{};template<class T,int N=sizeof(T)>int operator+(T,T)noexcept(N>0);static_assert(noexcept(R{}+R{}));',
+        'declared-signature-default-family': 'struct Mid{int n;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept;static_assert(noexcept(f<int>()));',
+        'declared-signature-false-default-family': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false);static_assert(!noexcept(f<int>()));',
+        'declared-signature-deduced': 'template<class T>T f(T);static_assert(__is_same(decltype(f(1)),int));',
+        'declared-signature-noexcept': 'template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));',
+        'declared-signature-noexcept-false': 'template<class T>T f(T)noexcept(false);static_assert(!noexcept(f(1)));',
+        'declared-signature-type-default': 'template<class T=int>T f()noexcept;static_assert(__is_same(decltype(f()),int)&&noexcept(f()));',
+        'declared-signature-value-default': 'template<class T,int N=sizeof(T)>T f(T,int=N)noexcept(N==sizeof(T));static_assert(noexcept(f(1)));',
+        'declared-signature-explicit-default-unused': 'template<class T>int f(int=T::missing)noexcept;static_assert(noexcept(f<int>(3)));',
+        'declared-signature-packs': 'template<class...T>int f(T...)noexcept(sizeof...(T)==2);static_assert(noexcept(f(1,2u))&&!noexcept(f()));',
+        'declared-signature-qualified-parenthesis': 'namespace N{template<class T>T f(T)noexcept;}static_assert(noexcept((N::f)(1))&&__is_same(decltype((N::f)(1)),int));',
+        'declared-signature-reference-overload': 'template<class T>T&& probe(int);template<class T>T probe(long);template<class T>decltype(probe<T>(0)) value()noexcept{static_assert(!__is_same(T,T));}static_assert(__is_same(decltype(value<int>()),int&&)&&__is_same(decltype(value<int&>()),int&));',
+        'declared-signature-void-fallback': 'template<class T>T&& probe(int);template<class T>T probe(long);template<class T>decltype(probe<T>(0)) value()noexcept{static_assert(!__is_same(T,T));}static_assert(__is_same(decltype(value<void>()),void)&&noexcept(value<void>()));',
+        'declared-signature-array-function': 'template<class T>T&& probe(int);template<class T>T probe(long);template<class T>decltype(probe<T>(0)) value()noexcept{static_assert(!__is_same(T,T));}using A=int[2];using F=int(int);static_assert(__is_same(decltype(value<A>()),A&&)&&__is_same(decltype(value<F>()),F&));',
+        'declared-signature-default-effects': 'int calls;int next()noexcept{++calls;return 3;}template<class T>int f(int=next())noexcept;static_assert(noexcept(f<int>()));int main(){return calls;}',
+        'declared-signature-ordinary-default-source': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>T f()noexcept;static_assert(noexcept(f<int>()));',
+        'declared-signature-materialized-specialization': 'int calls;template<class T>T f(T)noexcept;template<>unsigned f<unsigned>(unsigned n)noexcept{++calls;return n+1;}static_assert(noexcept(f(1)));int main(){auto v=f(3u);return v-4+calls-1;}',
         'noexcept-signature-only': 'template<class T>T f(T v){return v;}int main(){return noexcept(f(1));}',
         'sizeof-signature-only': 'template<class T>T f(T v){return v;}int main(){return sizeof(f(1));}',
         'deduced': 'template<class T>T id(T v){return v;}int main(){return id(3)-3;}',
@@ -17555,6 +17601,16 @@ Plain chosenRecord(){return choose<false>();}
     for name, source in function_templates_positive.items():
         check("v2-function-templates-positive-" + name, source, profile="cpp-core-v2")
     function_templates_reject = {
+        'declared-signature-hidden-default-family': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept;static_assert(noexcept(f<int>()));',
+        'declared-signature-hidden-exception-family': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f()noexcept(noexcept(Mid())&&sizeof(T)>0);static_assert(noexcept(f<int>()));',
+        'declared-signature-hidden-operator-default': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{};template<class T,int N=noexcept(Mid())+sizeof(T)>int operator+(T,T)noexcept;static_assert(noexcept(R{}+R{}));',
+        'declared-signature-hidden-false-default': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false);static_assert(!noexcept(f<int>()));',
+        'declared-signature-hidden-return': 'template<class T>long double f(T)noexcept;static_assert(noexcept(f(1)));',
+        'declared-signature-hidden-parameter': 'template<class T>int f(T,long double)noexcept;static_assert(noexcept(f(1,0)));',
+        'declared-signature-hidden-exception': 'template<class T>T f(T)noexcept(sizeof(long double)>sizeof(T));static_assert(noexcept(f(1)));',
+        'declared-signature-hidden-default': 'template<class T>int f(int=(sizeof(long double),3))noexcept;static_assert(noexcept(f<int>()));',
+        'declared-signature-hidden-template-default': 'template<class T,int N=sizeof(long double)+sizeof(T)>T f()noexcept;static_assert(noexcept(f<int>()));',
+        'declared-signature-erased-default-source': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>T f()noexcept;static_assert(noexcept(f<int>()));',
         'template-template': 'template<template<class>class T>int f(){return 1;}',
         'float-argument': 'template<class T>int f(){return 1;}int main(){return f<long double>();}',
         'float-signature': 'template<class T>long double f(T n){return n;}int main(){return static_cast<int>(f(1));}',
@@ -17578,6 +17634,9 @@ Plain chosenRecord(){return choose<false>();}
     for name, source in function_templates_reject.items():
         check("v2-function-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
     function_templates_invalid = {
+        'declared-signature-undeduced-return': 'template<class T>auto f(T)noexcept;using A=decltype(f(1));',
+        'declared-signature-bad-default': 'template<class T>int f(int=T::missing)noexcept;static_assert(noexcept(f<int>()));',
+        'declared-signature-explicit-definition': 'template<class T>T f(T)noexcept;template int f<int>(int)noexcept;',
         'unused-consteval': 'template<class T>int f(){if consteval{return 1;}else{return 2;}}',
         'discarded-consteval': 'template<class T>int f(){if constexpr(sizeof(T)==4)return 1;else{if consteval{return 2;}else{return 3;}}}int main(){return f<int>();}',
         'deduction': 'template<class T>T f(T a,T b){return a;}int main(){return f(1,true);}',
@@ -17592,6 +17651,12 @@ Plain chosenRecord(){return choose<false>();}
     for name, source in function_templates_invalid.items():
         check("v2-function-templates-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
     function_templates_missing = {
+        'declared-signature-runtime-after-query': 'template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));int main(){return f(1);}',
+        'declared-signature-runtime-address': 'template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));auto pointer=&f<int>;',
+        'declared-signature-explicit-extern': 'template<class T>T f(T)noexcept;extern template int f<int>(int)noexcept;static_assert(noexcept(f(1)));',
+        'declared-signature-ordinary-function': 'int f()noexcept;static_assert(noexcept(f()));',
+        'declared-signature-member-function': 'struct R{template<class T>T f(T)noexcept;};R*r;static_assert(noexcept(r->f(1)));',
+        'declared-signature-friend-function': 'struct R{template<class T>friend T f(R,T)noexcept;};static_assert(noexcept(f(R{},1)));',
         'selected-declaration': 'template<class T>T f(T);int main(){return f(1);}',
         'external-instantiation': 'template<class T>T f(T v){return v;}extern template int f<int>(int);int main(){return f(1);}',
         'unused-specialization': 'template<class T>T f(T);template<>int f<int>(int);',

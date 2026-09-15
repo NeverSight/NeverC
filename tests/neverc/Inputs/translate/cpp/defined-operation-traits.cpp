@@ -684,6 +684,32 @@ extern "C" bool defined_copied_outer_convert() { return __is_nothrow_convertible
 extern "C" bool defined_copied_materialized_construct() { return __is_nothrow_constructible(CopiedMemberQuery<unsigned>, unsigned); }
 extern "C" bool defined_copied_materialized_convert() { return __is_nothrow_convertible(CopiedMemberQuery<unsigned>, unsigned); }
 
+namespace DeclaredQuery {
+template<class T> T&& probe(int);
+template<class T> T probe(long);
+template<class T> decltype(probe<T>(0)) value() noexcept {
+  static_assert(!__is_same(T, T));
+}
+int defaults, calls;
+int next() noexcept { ++defaults; return 3; }
+template<class T, int N = sizeof(T)> T selected(int = next()) noexcept(N == sizeof(T));
+template<class T> T throwing(T) noexcept(false);
+template<class T> T runtime(T) noexcept;
+template<> unsigned runtime<unsigned>(unsigned n) noexcept { ++calls; return n + 1; }
+using Array = int[2];
+using Function = int(int);
+}
+extern "C" bool defined_declared_rvalue() { return __is_same(decltype(DeclaredQuery::value<int>()), int&&); }
+extern "C" bool defined_declared_lvalue() { return __is_same(decltype(DeclaredQuery::value<int&>()), int&); }
+extern "C" bool defined_declared_void() { return __is_same(decltype(DeclaredQuery::value<void>()), void); }
+extern "C" bool defined_declared_array() { return __is_same(decltype(DeclaredQuery::value<DeclaredQuery::Array>()), DeclaredQuery::Array&&); }
+extern "C" bool defined_declared_function() { return __is_same(decltype(DeclaredQuery::value<DeclaredQuery::Function>()), DeclaredQuery::Function&); }
+extern "C" bool defined_declared_default() { return noexcept(DeclaredQuery::selected<int>()); }
+extern "C" bool defined_declared_explicit() { return noexcept(DeclaredQuery::selected<int>(7)); }
+extern "C" bool defined_declared_throwing() { return noexcept(DeclaredQuery::throwing(1)); }
+extern "C" bool defined_declared_runtime_query() { return noexcept(DeclaredQuery::runtime(1)); }
+extern "C" bool defined_declared_specialization() { return noexcept(DeclaredQuery::runtime(1u)); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -1236,5 +1262,17 @@ int main() {
         CopiedMemberQuery<unsigned>::assignments != 1 || CopiedMemberQuery<char>::assignments != 1 ||
         member_query_assignments != 3 || member_query_forwarding_assignments != 2) return 116;
   }
+  if (!defined_declared_rvalue() || !defined_declared_lvalue() || !defined_declared_void() ||
+      !defined_declared_array() || !defined_declared_function() || !defined_declared_default() ||
+      !defined_declared_explicit() || defined_declared_throwing() ||
+      !defined_declared_runtime_query() || !defined_declared_specialization() ||
+      DeclaredQuery::defaults || DeclaredQuery::calls) return 117;
+  unsigned declaredFirst = DeclaredQuery::runtime(7u);
+  unsigned declaredSecond = DeclaredQuery::runtime(13u);
+  if (declaredFirst != 8 || declaredSecond != 14 || DeclaredQuery::calls != 2 ||
+      DeclaredQuery::defaults || !defined_declared_default() ||
+      !defined_declared_runtime_query() || !defined_declared_specialization() ||
+      defined_declared_throwing() || DeclaredQuery::calls != 2 ||
+      member_query_assignments != 3 || copied_member_query_defaults != 2) return 118;
   return 0;
 }

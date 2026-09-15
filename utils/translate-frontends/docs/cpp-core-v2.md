@@ -4064,11 +4064,13 @@ bodies stay lazy. Selected types, definitions, exception specifications, folded
 source and every materialized body remain checked. Explicit directives keep each
 written argument/type/name/qualifier and attribute check, including extern and
 no-effect repetition. An unused implicit free-function specialization can retain
-only its signature when its owned primary has a definition. Its actual signature,
+only its signature when its owned primary has a definition, or when it is an
+owned non-friend namespace template with no definition. Its actual signature,
 resolved exception specification and selected template/default arguments are
-checked; the primary body stays lazy. Used instances and explicit instantiations
-still require their concrete definitions. This does not change member-template
-or callback definition boundaries.
+checked; existing primary bodies stay lazy. Declaration-only calls additionally
+retain a final dependency proof for their complete selection and argument source.
+Used instances and explicit instantiations still require their concrete definitions.
+This does not change member-template or callback definition boundaries.
 
 Free operator calls contain only explicit source parameters plus the ordinary
 hidden result pointer for record returns. There is no implicit receiver or runtime
@@ -5718,6 +5720,40 @@ ownership and early exits. Protocol assertions inspect complete typed signatures
 actual array/element destinations, one cleanup guard per array, reverse destruction,
 query purity and relocation. Native execution evidence requires the implementing CI.
 
+## Unevaluated declaration-only template signatures
+
+Unused implicit instances of source-owned non-friend namespace function templates
+can provide a resolved signature without a primary definition. This covers the
+reference-overload pattern used by `declval`, including reference collapse, arrays,
+function references and the substitution-failure fallback for `void`:
+
+```cpp
+template<class T> T&& probe(int);
+template<class T> T probe(long);
+template<class T> decltype(probe<T>(0)) value() noexcept {
+  static_assert(!__is_same(T, T));
+}
+static_assert(__is_same(decltype(value<int>()), int&&));
+static_assert(__is_same(decltype(value<void>()), void));
+```
+
+The selected namespace primary and actual declaration must retain their original
+owned file contexts, without friend, copied-member or member-specialization
+metadata. Actual calls and free operator calls collect their complete source
+synchronously, including deduction evidence, type/value defaults erased from the
+signature, selected function defaults, resolved exceptions and argument lifetimes.
+Every collected dependency must pass final source validation even when the query
+result is false. Unselected defaults and existing unused bodies retain normal
+C++ laziness; no missing body is fabricated or emitted.
+
+Runtime calls and function values still require definitions. Explicit directives,
+ordinary non-template declarations and member/friend templates keep their existing
+boundaries. Protocol fixtures check that declaration-only helpers and the poisoned
+`value` body emit no functions or calls. Native O0/O2 fixtures check query results,
+zero default-argument effects and independent calls to a defined specialization;
+these results require the implementing revision's CI. Standard-header enablement
+and complete C++/STL remain unfinished.
+
 ## Noexcept declarations and queries
 
 Core v2 admits standard resolved exception specifications on its supported free
@@ -5752,8 +5788,9 @@ int main() {
 Every written specification and query operand is still inspected, including
 unused, nested and short-circuited expressions. Unsupported types and operations
 remain rejected. Unevaluated calls to implicit free-function specializations may
-keep the body lazy when the owned primary has a definition; their actual signature,
-resolved specification and selected source remain checked. Referenced unused
+keep the body lazy when the owned primary has a definition; unused non-friend
+namespace template declarations can also supply checked signatures without a body.
+Their actual signature, resolved specification and selected source remain checked. Referenced unused
 inline friends use the same signature-only boundary with their exact paired
 written/selected/owning source evidence. Missing required definitions,
 unsupported callback forms and unsupported lifetime extension remain rejected. Explicit destructor queries inspect the selected

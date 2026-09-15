@@ -4,6 +4,8 @@
 
 # Traduire C++ vers NeverC
 
+Core v2 accepte les signatures vérifiées de modèles de fonctions déclarés sans définition dans un espace de noms pour les appels non évalués, notamment les références, tableaux, fonctions et le repli void de `declval`. La sélection et les arguments par défaut consommés, même effacés de la signature, restent soumis à la vérification finale des sources. Les appels exécutés et les adresses exigent une définition. La validation native dépend de la CI de cette révision ; les en-têtes standard et C++/STL complet restent inachevés. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
+
 Core v2 prend en charge le transfert sized delete par défaut : un sized delete/delete[] global implicite, sans redéclaration source, peut appeler son opérateur unsized défini dans le source. Les définitions sized explicites restent prioritaires et le cookie du tableau conserve sa disposition originale. Aucun allocateur par défaut ni runtime d’exceptions n’est ajouté ; la validation native exige la CI de cette révision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 Core v2 prend aussi en charge `__array_rank` et `__array_extent` avec des indices entiers constants non négatifs, y compris les indices de templates sur des tableaux fixes. Les deux opérandes restent vérifiés avant réduction. Les types non pris en charge et les indices convertis implicitement depuis une classe sont exclus. Les résultats natifs nécessitent la CI de la révision implémentée. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

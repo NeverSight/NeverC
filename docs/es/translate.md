@@ -4,6 +4,8 @@
 
 # Traducir C++ a NeverC
 
+Core v2 admite firmas verificadas de plantillas de funciones declaradas sin definición en espacios de nombres para llamadas no evaluadas, incluidos referencias, matrices, funciones y la alternativa void de `declval`. La selección y los argumentos predeterminados consumidos conservan la comprobación final de su origen, aunque desaparezcan de la firma. Las llamadas en ejecución y las direcciones requieren definiciones. La validación nativa depende de la CI de esta revisión; las cabeceras estándar y C++/STL completo siguen pendientes. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
+
 Core v2 admite el reenvío predeterminado de sized delete: un sized delete/delete[] global implícito sin redeclaraciones en el código puede llamar al operador unsized correspondiente definido en el código. Las definiciones sized explícitas tienen prioridad y se conserva la disposición original del cookie del array. No se añade un asignador predeterminado ni un runtime de excepciones; la verificación nativa requiere la CI de esta revisión. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 Core v2 también admite `__array_rank` y `__array_extent` verificados con índices enteros constantes no negativos, incluidos índices de plantillas para tipos de array fijos. Ambos operandos se revisan antes del plegado. Los tipos no admitidos y los índices con conversión implícita desde una clase siguen excluidos. Los resultados nativos requieren la CI de la revisión implementada. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

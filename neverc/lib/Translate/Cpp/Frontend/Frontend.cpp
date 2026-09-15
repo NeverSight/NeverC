@@ -9384,9 +9384,10 @@ public:
     // require inspection before that diagnostic suppresses further traversal.
     if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
         concreteFunctionTemplate(Function))
-      checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments(),
+      if (!checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments(),
           Reference->hasQualifier() ? Reference->getBeginLoc() : SourceLocation(),
-          directTemplateCallLocation(Reference));
+          directTemplateCallLocation(Reference)))
+        return false;
     // Each source event owns argument traversal before the callee's frame.
     // RAV's normal argument traversal would visit nested template uses again
     // at every level, making a linear source chain expand exponentially.
@@ -9455,9 +9456,29 @@ public:
     const auto *Primary = Function->getPrimaryTemplate();
     const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
     const auto *Definition = Pattern ? Pattern->getDefinition() : nullptr;
-    return functionTemplateShape(Primary) && owned(Definition) &&
+    return functionTemplateShape(Primary) &&
+           (owned(Definition) || declarationOnlyFreeFunctionSignature(Function)) &&
            !Function->getType()->isInstantiationDependentType() &&
            standardExceptionSpecification(Function->getType()->getAs<FunctionProtoType>());
+  }
+  bool declarationOnlyFreeFunctionSignature(const FunctionDecl *Function) {
+    if (!A.S.coreV2() || !concreteFreeFunctionTemplate(Function) || !owned(Function) ||
+        Function->hasBody() || Function->isUsed(/*CheckUsedAttr=*/false) || Function->isDeleted() ||
+        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Function->getTypeSourceInfo() || Function->getType()->isInstantiationDependentType() ||
+        !standardExceptionSpecification(Function->getType()->getAs<FunctionProtoType>()))
+      return false;
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+    // Unevaluated namespace helpers such as declval's overload probes can
+    // require a concrete signature without having any definition to instantiate.
+    return owned(Pattern) && !Pattern->getDefinition() && functionTemplateShape(Primary) &&
+        !Primary->getInstantiatedFromMemberTemplate() && !Primary->isMemberSpecialization() &&
+        !Primary->getFriendObjectKind() && !Pattern->getFriendObjectKind() &&
+        !Function->getFriendObjectKind() &&
+        Primary->getDeclContext()->isFileContext() && Primary->getLexicalDeclContext()->isFileContext() &&
+        Pattern->getDeclContext()->isFileContext() && Pattern->getLexicalDeclContext()->isFileContext() &&
+        Function->getDeclContext()->isFileContext() && Function->getLexicalDeclContext()->isFileContext();
   }
   bool lazyFriendFunctionSignature(const FunctionDecl *Function) {
     if (!A.S.coreV2() || !concreteFriendFunction(Function) || !owned(Function) ||
@@ -10755,6 +10776,23 @@ public:
     if (Result && A.S.Diagnostics.empty())
       Source.Complete = true;
     return Result;
+  }
+  bool TraverseCallExpr(CallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (!declarationOnlyFreeFunctionSignature(Call->getDirectCallee()))
+      return RecursiveASTVisitor<Allowlist>::TraverseCallExpr(Call, Queue);
+    // Keep selection/default source that can disappear from the instantiated
+    // signature. A private synchronous queue completes every argument before
+    // this source frame closes; a declaration alone never supplies a body proof.
+    return traverseTypeQuerySource(Call, [&] {
+      return RecursiveASTVisitor<Allowlist>::TraverseCallExpr(Call, nullptr);
+    });
+  }
+  bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *Call, DataRecursionQueue *Queue = nullptr) {
+    if (!declarationOnlyFreeFunctionSignature(Call->getDirectCallee()))
+      return RecursiveASTVisitor<Allowlist>::TraverseCXXOperatorCallExpr(Call, Queue);
+    return traverseTypeQuerySource(Call, [&] {
+      return RecursiveASTVisitor<Allowlist>::TraverseCXXOperatorCallExpr(Call, nullptr);
+    });
   }
   bool TraverseTypeTraitExpr(TypeTraitExpr *Query, DataRecursionQueue *Queue = nullptr) {
     if (!isOperationTypeTrait(Query->getTrait()) &&

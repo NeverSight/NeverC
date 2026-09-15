@@ -4,6 +4,8 @@
 
 # 将 C++ 转译为 NeverC
 
+Core v2 支持未求值调用中经过检查的命名空间模板声明签名，包括 `declval` 使用的引用、数组、函数和 void 回退模式。实际选择、从签名中消失的模板默认参数及已使用的函数默认参数仍须通过最终来源检查。运行时调用和取址仍要求定义。原生验证以实现版本的 CI 为准；标准头文件及完整 C++/STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
+
 Core v2 支持默认 sized delete 转发：未被源码重声明的隐式全局 sized delete/delete[] 可调用对应的源码 unsized 定义。显式 sized 定义优先，数组仍使用原表达式的 cookie 布局。此项不提供默认分配器或异常运行时；原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 Core v2 还支持经过检查的 `__array_rank` 和 `__array_extent`，维度索引为非负常量整数，也支持固定数组类型配合模板索引。折叠前仍检查类型和索引源码；不支持的数组类型与隐式类转换索引仍被拒绝。原生结果须由实现版本的 CI 验证。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

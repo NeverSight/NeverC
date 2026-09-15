@@ -4,6 +4,8 @@
 
 # C++ nach NeverC übersetzen
 
+Core v2 unterstützt geprüfte Signaturen nur deklarierter Namespace-Funktionstemplates in nicht ausgewerteten Aufrufen, einschließlich Referenzen, Arrays, Funktionen und der void-Auswahl von `declval`. Auswahl und verwendete Standardargumente werden auch dann abschließend anhand ihrer Quellen geprüft, wenn sie aus der Signatur verschwinden. Laufzeitaufrufe und Adressen benötigen weiterhin Definitionen. Native Validierung erfordert die CI dieser Implementierung; Standardheader und vollständiges C++/STL sind noch nicht fertig. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
+
 Core v2 unterstützt die standardmäßige Weiterleitung von sized delete: Ein implizites globales sized delete/delete[] ohne erneute Quelldeklaration kann den entsprechenden im Quelltext definierten unsized-Operator aufrufen. Explizite sized-Definitionen haben Vorrang; das ursprüngliche Array-Cookie-Layout bleibt erhalten. Standardallokator und Ausnahmelaufzeit werden nicht ergänzt; die native Prüfung benötigt die CI dieser Revision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 Core v2 unterstützt auch geprüfte `__array_rank`- und `__array_extent`-Abfragen mit nichtnegativen konstanten Ganzzahlindizes, einschließlich Templateindizes für feste Arraytypen. Beide Operanden werden vor der Konstantenfaltung geprüft. Nicht unterstützte Arraytypen und implizit aus Klassen konvertierte Indizes bleiben ausgeschlossen. Native Ergebnisse benötigen die CI der implementierenden Revision. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

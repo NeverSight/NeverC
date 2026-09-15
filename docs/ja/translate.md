@@ -4,6 +4,8 @@
 
 # C++ を NeverC に変換する
 
+Core v2 は未評価呼び出しで、定義のない名前空間テンプレートの検証済みシグネチャを扱えます。`declval` 型の参照・配列・関数・void フォールバックに対応し、選択結果、シグネチャから消えたテンプレート既定引数、使用した関数既定引数のソースを最終検証します。実行時呼び出しとアドレス取得には定義が必要です。ネイティブ検証は実装版の CI が必要で、標準ヘッダーと完全な C++/STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
+
 Core v2 は既定の sized delete 転送に対応します。ソースで再宣言されていない暗黙のグローバル sized delete/delete[] は、対応するソース定義の unsized 演算子を呼び出せます。明示的な sized 定義と元の配列 cookie レイアウトを保持します。既定のアロケーターや例外ランタイムは追加せず、ネイティブ検証には実装版の CI が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 Core v2 は検証済みの `__array_rank` と `__array_extent` にも対応し、固定配列型に対するテンプレート引数を含む非負の定数整数インデックスを扱います。定数化の前に型とインデックスのソースを検査します。未対応の配列型と暗黙のクラス変換によるインデックスは対象外です。ネイティブ結果には実装リビジョンの CI が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

@@ -521,6 +521,20 @@ defaults, incomplete selection and unresolved exception dependencies still need
 further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.
 
+Unused implicit namespace template instances can also retain only a declaration
+when neither the selected function nor its primary has a body. The adapter checks
+owned raw primary/pattern/function file contexts, rejects friend and copied/member
+specialization metadata, and preserves isUsed and explicit-instantiation gates.
+Ordinary and free operator calls in this category collect exact callee selection,
+actual argument/default source and resolved signature dependencies through a
+synchronous RecursiveASTVisitor child traversal. Their final existing query proof
+cannot lose a template default erased from the signature or a selected default's
+implicit operation family. Failed selected-source traversal prevents completion.
+The pinned Expr::getValueKindForType retains lvalues for function-reference results;
+Sema's normal overload substitution supplies declval-style void fallback. No Sema
+instantiation, source event replay, emitted body, transport or runtime change is
+introduced by this declaration-only admission.
+
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy
 notice. BLAKE3/LICENSE and NeverCCppThirdPartyNotices.txt retain the additional
 notices for the statically included Support sources. The separate cpp-sdk
