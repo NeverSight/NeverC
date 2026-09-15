@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 135 accepted, 67 unsupported-source, nine missing-definition and eight invalid-C++ cases cover
+The paired 135 accepted, 71 unsupported-source, nine missing-definition and eight invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1058,7 +1058,11 @@ one full-expression wrapper from a parameter default, so its type, value categor
 exact operand and cleanup objects are checked independently. Per-use rewritten
 initializers cannot borrow the original expression's proof.
 
-An additional bounded scan checks implicit destruction in query-only defaults:
+An additional bounded scan checks implicit operation families and destruction in
+query-only defaults. Implicit/defaulted constructors and assignments require the
+same implicit trivial owning-subobject family proof as outer query operations:
+marking a selected function referenced can infer its exception specification even
+for a non-nothrow query, while a trivial body remains ungenerated. The scan covers
 record prvalues, bound temporaries, nested defaults and semantic array fillers,
 explicit destructor calls and delete all retain their owning-subobject proofs.
 The scan conservatively requires destruction proof for every record prvalue,

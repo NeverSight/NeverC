@@ -1783,6 +1783,35 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           return false;
     return true;
   };
+  enum class Family { Default, CopyMove, Assignment };
+  // A trivial generated parent can still select an explicitly defaulted field
+  // operation with written noexcept source. Until those selections are retained,
+  // require this operation family to be implicit throughout owned subobjects.
+  auto ImplicitClosure = [&](auto &&Self, const CXXRecordDecl *Record,
+                             Family Operation, unsigned Depth) -> bool {
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
+      return false;
+    A.chargeExpansion(1, Record->getLocation());
+    if ((Operation == Family::Default && Record->hasUserDeclaredConstructor()) ||
+        (Operation == Family::CopyMove && (Record->hasUserDeclaredCopyConstructor() ||
+                                         Record->hasUserDeclaredMoveConstructor())) ||
+        (Operation == Family::Assignment && (Record->hasUserDeclaredCopyAssignment() ||
+                                            Record->hasUserDeclaredMoveAssignment())) ||
+        (Operation != Family::Assignment && (Record->hasUserDeclaredDestructor() ||
+                                            !Record->hasTrivialDestructor())))
+      return false;
+    for (const auto &Base : Record->bases())
+      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Operation, Depth + 1))
+        return false;
+    for (const auto *Field : Record->fields()) {
+      auto T = A.Context.getBaseElementType(Field->getType());
+      if (const auto *Member = T->getAsCXXRecordDecl())
+        if (!Self(Self, Member, Operation, Depth + 1))
+          return false;
+    }
+    return true;
+  };
   // Normal parameter traversal proves the unchanged initializer's written
   // operations. It does not prove every implicit destructor, and an unused
   // default need never reach runtime lowering. Inspect those dependencies here
@@ -1801,6 +1830,26 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
         E && !E->getType().isNull() && E->isPRValue())
       if (const auto *Record = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl())
         if (!Destruction(Destruction, Record, 0))
+          return false;
+    // MarkFunctionReferenced can resolve an implicit special member's inferred
+    // specification even for non-nothrow queries. A trivial parent body need
+    // never be generated, leaving selected subobject signatures unvisited.
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node)) {
+      const auto *Constructor = Construction->getConstructor();
+      if ((Constructor->isImplicit() || Constructor->isDefaulted()) &&
+          !(Constructor->isImplicit() && Constructor->isTrivial() &&
+            (Constructor->isDefaultConstructor() || Constructor->isCopyOrMoveConstructor()) &&
+            ImplicitClosure(ImplicitClosure, Constructor->getParent(),
+                            Constructor->isDefaultConstructor() ? Family::Default
+                                                                : Family::CopyMove, 0)))
+        return false;
+    }
+    if (const auto *Call = dyn_cast<CallExpr>(Node))
+      if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+          Method && (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) &&
+          (Method->isImplicit() || Method->isDefaulted()))
+        if (!(Method->isImplicit() && Method->isTrivial() &&
+              ImplicitClosure(ImplicitClosure, Method->getParent(), Family::Assignment, 0)))
           return false;
     if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Node)) {
       const auto *Destructor = Temporary->getTemporary()->getDestructor();
@@ -1847,35 +1896,6 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     for (const auto *Child : Node->children())
       if (!Self(Self, Child, Depth + 1))
         return false;
-    return true;
-  };
-  enum class Family { Default, CopyMove, Assignment };
-  // A trivial generated parent can still select an explicitly defaulted field
-  // operation with written noexcept source. Until those selections are retained,
-  // require this operation family to be implicit throughout owned subobjects.
-  auto ImplicitClosure = [&](auto &&Self, const CXXRecordDecl *Record,
-                             Family Operation, unsigned Depth) -> bool {
-    Record = Record ? Record->getDefinition() : nullptr;
-    if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
-      return false;
-    A.chargeExpansion(1, Record->getLocation());
-    if ((Operation == Family::Default && Record->hasUserDeclaredConstructor()) ||
-        (Operation == Family::CopyMove && (Record->hasUserDeclaredCopyConstructor() ||
-                                         Record->hasUserDeclaredMoveConstructor())) ||
-        (Operation == Family::Assignment && (Record->hasUserDeclaredCopyAssignment() ||
-                                            Record->hasUserDeclaredMoveAssignment())) ||
-        (Operation != Family::Assignment && (Record->hasUserDeclaredDestructor() ||
-                                            !Record->hasTrivialDestructor())))
-      return false;
-    for (const auto &Base : Record->bases())
-      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Operation, Depth + 1))
-        return false;
-    for (const auto *Field : Record->fields()) {
-      auto T = A.Context.getBaseElementType(Field->getType());
-      if (const auto *Member = T->getAsCXXRecordDecl())
-        if (!Self(Self, Member, Operation, Depth + 1))
-          return false;
-    }
     return true;
   };
   const std::set<const Expr *> Operands(Source.Operands.begin(), Source.Operands.end());

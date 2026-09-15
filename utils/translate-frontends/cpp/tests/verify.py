@@ -6451,6 +6451,10 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'default-inferred-constructor-source': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct Out{Out(Mid=Mid())noexcept{}};static_assert(__is_constructible(Out));',
+        'nothrow-default-inferred-constructor-source': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct Out{Out(Mid=Mid())noexcept{}};static_assert(__is_nothrow_constructible(Out));',
+        'default-inferred-copy-source': 'template<class T>struct Inner{Inner(const Inner&)noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};Mid*pointer;struct Out{Out(Mid=*pointer){}};static_assert(__is_constructible(Out));',
+        'default-inferred-assignment-source': 'template<class T>struct Inner{Inner&operator=(const Inner&)noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};Mid*pointer;struct Out{Out(int=(*pointer=*pointer,3)){}};static_assert(__is_constructible(Out));',
         'default-hidden-initializer': 'struct R{R(int=sizeof(long double)){}};bool f(){return __is_constructible(R);}',
         'default-hidden-callee-body': 'int get(){long double hidden=0;return 3;}struct R{R(int=get()){}};bool f(){return __is_constructible(R);}',
         'default-hidden-temporary-destruction': 'struct S{~S(){long double hidden=0;}};struct R{R(const S& =S{}){}};bool f(){return __is_constructible(R);}',

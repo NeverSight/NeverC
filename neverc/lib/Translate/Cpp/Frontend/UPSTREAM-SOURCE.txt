@@ -287,7 +287,10 @@ The same source proof covers owning-subobject destructor inference. Non-nothrow
 constructor queries can select unchanged ordinary parameter defaults after exact
 parameter/initializer source completion. The adapter independently validates the
 FullExpr envelope stripped by ParmVarDecl::getDefaultArg(), source ownership,
-selected owner/slot and nested implicit destruction. These checks do not rewrite
+selected owner/slot, implicit special-member families and nested destruction.
+Implicit family checks also apply to non-nothrow queries because marking the
+selected function referenced can resolve its inferred exception specification.
+These checks do not rewrite
 or evaluate the initializer. Lazy templates, template-owned or rewritten defaults,
 nothrow defaults, incomplete selection, unresolved exception dependencies and
 record-value nothrow destruction still need further evidence. The independent
