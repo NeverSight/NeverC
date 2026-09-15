@@ -100,6 +100,20 @@ template<class T> LazyDecltype<T> lazyResult() { return {7}; }
 static_assert(sizeof(LazyDecltype<int>) == sizeof(int));
 using LazyResult = decltype((lazyResult<int>()));
 using CommaResult = decltype((defaultValue(), lazyResult<int>()));
+int lazy_signature_calls;
+int signatureInput(int = noexcept(PlainDestruction())) noexcept { ++lazy_signature_calls; return 0; }
+template<class T> int lazySignature() noexcept(noexcept(signatureInput())) { T::missing(); return 0; }
+template<class T> struct LazyFriendTag {
+  friend int lazyFriend(LazyFriendTag, int = sizeof(T)) noexcept(noexcept(signatureInput())) {
+    T::body();
+    return 0;
+  }
+};
+struct SignatureOwner {
+  SignatureOwner() noexcept(noexcept(lazySignature<int>()) &&
+                            noexcept(lazyFriend(LazyFriendTag<int>{}, 0))) {}
+};
+using FriendResult = decltype(lazyFriend(LazyFriendTag<int>{}, 0));
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -146,6 +160,8 @@ extern "C" bool defined_member_convert() { return __is_nothrow_convertible(Query
 extern "C" bool defined_decltype_reference() { return __is_nothrow_destructible(LazyResult&); }
 extern "C" bool defined_decltype_pointer() { return __is_constructible(CommaResult*, decltype(nullptr)); }
 extern "C" bool defined_decltype_false() { return __is_convertible(CommaResult*, int*); }
+extern "C" bool defined_lazy_signature() { return __is_nothrow_constructible(SignatureOwner); }
+extern "C" bool defined_lazy_friend_alias() { return __is_constructible(FriendResult); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -281,5 +297,7 @@ int main() {
   if (!defined_decltype_reference() || !defined_decltype_pointer() || defined_decltype_false() ||
       default_calls != 2 || default_constructions != 7 || default_destructions != 7 ||
       constructions != 6 || destructions != 10) return 41;
+  if (!defined_lazy_signature() || !defined_lazy_friend_alias() || lazy_signature_calls ||
+      default_calls != 2 || destructions != 10) return 42;
   return 0;
 }

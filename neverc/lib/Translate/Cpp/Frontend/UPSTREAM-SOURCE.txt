@@ -322,7 +322,14 @@ callee prototypes and actual binding/destruction expressions stay checked.
 The same graph retains exact noexcept expression completion from normal Type,
 TypeLoc, concrete-template and friend-signature traversal. Calls and function
 references keep edges to actual and selected declaration exception expressions;
-independent function declarations isolate unused defaults and bodies. Selected
+independent function declarations isolate unused defaults and bodies. Template
+default-argument context changes can rebuild a nondependent noexcept expression
+without updating the original TypeSourceInfo; both exact expressions complete
+through normal traversal. Dependent written expressions use their resolved
+replacement. Referenced unused inline friends require both retained source
+events, the selected written definition, concrete standard prototype and their
+actual signature traversal. Their body stays lazy; runtime-used definitions are
+still required. Selected
 operation/default/destruction source consumes the complete transitive graph,
 including ordinary non-nothrow queries, without replay or extra Sema work.
 Variable and enum references retain actual initializer dependencies, including

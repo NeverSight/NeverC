@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 327 accepted, 238 unsupported-source, fifteen missing-definition and ten invalid-C++ cases cover
+The paired 339 accepted, 244 unsupported-source, fifteen missing-definition and twelve invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1131,9 +1131,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has forty-one O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has forty-two O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Forty-five exported query
+default evaluation with full-expression temporary cleanup. Forty-seven exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1165,6 +1165,14 @@ referencing a selected function can resolve its specification independently of a
 nothrow predicate. Completed function definitions cannot substitute for completed
 expression source. Independent function declarations use separate collection
 frames, so their unused defaults and bodies do not become caller dependencies.
+Instantiation may also rebuild a nondependent exception expression when its
+selected default-argument context changes. The original written node and the
+distinct already-resolved node both receive normal source checks; a dependent
+written expression uses its resolved replacement. No new resolution is requested.
+Referenced unused inline friends can keep their body lazy only with exact paired
+written/selected/granting-class evidence and a concrete standard prototype. Their
+actual signature still completes in its own friend context, with unselected
+defaults isolated. Runtime-used friends continue to require a materialized body.
 Missing or unfinished graph nodes remain unsupported; the adapter does not replay
 source traversal or request resolution to fill them.
 
@@ -1280,7 +1288,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared forty-one-checkpoint user-operation fixture checks
+queries. The shared forty-two-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations and user/generated array destruction at O0/O2;
 relocation must preserve the protocol. Native results require implementing CI.
@@ -2995,8 +3003,10 @@ Generic bodies remain lazy. Original nondependent signature/default source,
 actual substituted signatures, selected defaults and every materialized body
 are checked, including folded source and local method packs. Existing source,
 parameter and pack budgets remain in force. Invalid C++ and access yield `TR0202`;
-missing required definitions, including signature-only calls under unevaluated
-queries, retain `TR0203`. Unsupported syntax yields `TR0201` without artifacts.
+missing required definitions retain `TR0203`. Referenced unused inline friends
+with exact retained source and a concrete resolved signature can remain lazy in
+unevaluated queries; their selected defaults still require source checks.
+Unsupported syntax yields `TR0201` without artifacts.
 
 Paired source/protocol fixtures cover ADL, access, owner variants, independent
 inner/outer arguments, declaration-only/namespace merges and compatible bodies
@@ -5474,7 +5484,9 @@ Every written specification and query operand is still inspected, including
 unused, nested and short-circuited expressions. Unsupported types and operations
 remain rejected. Unevaluated calls to implicit free-function specializations may
 keep the body lazy when the owned primary has a definition; their actual signature,
-resolved specification and selected source remain checked. Missing definitions,
+resolved specification and selected source remain checked. Referenced unused
+inline friends use the same signature-only boundary with their exact paired
+written/selected/owning source evidence. Missing required definitions,
 unsupported callback forms and unsupported lifetime extension remain rejected. Explicit destructor queries inspect the selected
 signature and written source without forcing an otherwise unused template body. Missing ordinary owned
 definitions remain diagnostics. Dependent/unresolved written specifications,

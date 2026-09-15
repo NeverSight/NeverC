@@ -9135,6 +9135,21 @@ public:
            !Function->getType()->isInstantiationDependentType() &&
            standardExceptionSpecification(Function->getType()->getAs<FunctionProtoType>());
   }
+  bool lazyFriendFunctionSignature(const FunctionDecl *Function) {
+    if (!A.S.coreV2() || !concreteFriendFunction(Function) || !owned(Function) ||
+        Function->hasBody() || !Function->isReferenced() ||
+        Function->isUsed(/*CheckUsedAttr=*/false) || Function->isDeleted() ||
+        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Function->getTypeSourceInfo() || Function->getType()->isInstantiationDependentType() ||
+        !standardExceptionSpecification(Function->getType()->getAs<FunctionProtoType>()))
+      return false;
+    auto Source = FriendFunctionSources.find(Function);
+    auto Declaration = FriendFunctionDeclarations.find(Function);
+    return Source != FriendFunctionSources.end() &&
+           Declaration != FriendFunctionDeclarations.end() &&
+           Source->second->Selected->isThisDeclarationADefinition() &&
+           owned(Source->second->Selected) && friendSourceIdentity(Declaration->second);
+  }
   bool TraverseFunctionTemplateDecl(FunctionTemplateDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseFunctionTemplateDecl(D);
@@ -9571,10 +9586,7 @@ public:
     const auto *Written = TL.getTypePtr();
     const auto *Resolved = CurrentFunction->getType()->getAs<FunctionProtoType>();
     const auto *OldExpression = Written->getNoexceptExpr();
-    if (!Resolved || !OldExpression ||
-        (!OldExpression->isTypeDependent() && !OldExpression->isValueDependent() &&
-         !OldExpression->isInstantiationDependent()) ||
-        OldExpression == Resolved->getNoexceptExpr())
+    if (!Resolved || OldExpression == Resolved->getNoexceptExpr())
       return Normal();
     auto *Expression = Resolved->getNoexceptExpr();
     if (!standardExceptionSpecification(Resolved) ||
@@ -9585,8 +9597,15 @@ public:
       return true;
     }
     // Instantiation can replace FunctionDecl's type while its TypeSourceInfo
-    // retains the primary's dependent noexcept. Keep all other written source.
-    return traverseFunctionPrototypeLoc(TL, Expression);
+    // retains the primary's noexcept. A nondependent expression can also be
+    // rebuilt (for example through a selected default argument). Check both
+    // exact nodes; only dependent written source uses the resolved replacement.
+    if (OldExpression && (OldExpression->isTypeDependent() || OldExpression->isValueDependent() ||
+                          OldExpression->isInstantiationDependent()))
+      return traverseFunctionPrototypeLoc(TL, Expression);
+    if (!Normal())
+      return false;
+    return !A.S.Diagnostics.empty() || traverseOperationException(Expression);
   }
   bool TraverseDecl(Decl *D) {
     registerOperationValueRoots(D);
@@ -9624,10 +9643,15 @@ public:
           if (!A.S.Diagnostics.empty())
             return true;
           if (!Function->hasBody() && Source->second->Selected->isThisDeclarationADefinition()) {
-            if (Function->isUsed(/*CheckUsedAttr=*/false))
+            if (Function->isUsed(/*CheckUsedAttr=*/false)) {
               A.reject(Function->getLocation(), "friend definition",
                        "A required friend definition must be materialized in this source unit.", "TR0203");
-            return true; // Keep unused ordinary bodies and undeduced auto lazy.
+              return true;
+            }
+            if (!lazyFriendFunctionSignature(Function))
+              return true; // Keep unused bodies and undeduced/unresolved signatures lazy.
+            // A referenced resolved friend still needs its concrete signature.
+            // Normal traversal keeps its body and unselected defaults lazy.
           }
         } else if (concreteFriendFunction(Function)) {
           A.reject(Function->getLocation(), "friend function source",
@@ -10579,6 +10603,7 @@ public:
                    "C ABI exports require scalar results and parameters.");
     }
     if (!D->hasBody() && !Defaulted && !Deleted && !lazyFreeFunctionSignature(D) &&
+        !lazyFriendFunctionSignature(D) &&
         A.nativeHeapImport(D, D->getLocation()).empty() &&
         (!A.S.project() || D->getFormalLinkage() == Linkage::Internal))
       A.reject(
@@ -11683,7 +11708,7 @@ public:
         else
           queueGenerated(Method, L);
       }
-      const bool LazySignature = lazyFreeFunctionSignature(F);
+      const bool LazySignature = lazyFreeFunctionSignature(F) || lazyFriendFunctionSignature(F);
       // Sema's unused specialization needs its complete signature and selected
       // source, but does not request a body. Runtime-used instances still need
       // definitions and lowering never emits this hypothetical call.

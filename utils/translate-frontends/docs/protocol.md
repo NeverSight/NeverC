@@ -814,6 +814,11 @@ exception specifications before preserving the existing boolean. Consumed
 noexcept expressions retain independent completed nodes and transitive source
 dependencies, including selected defaults and function references. A completed
 function declaration or definition alone cannot prove those expression dependencies.
+When template substitution rebuilds a nondependent exception expression, both
+the original written node and the distinct resolved node require completion.
+Referenced unused inline friends require exact retained declaration/selection
+evidence and their concrete signature checks; their bodies and unselected defaults
+remain lazy. Actual runtime uses still require a materialized definition.
 Variable/enum initializers and already materialized constexpr value source retain
 their own completion nodes. Exact written type nodes retain earlier array bounds,
 alias/template source and consumed record layout dependencies. Function parameter

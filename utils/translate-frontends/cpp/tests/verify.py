@@ -6312,6 +6312,18 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert not expected
 
     operation_trait_positive = {
+        'lazy-specification-rebuilt-true': 'struct Mid{int field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>int middle()noexcept(noexcept(helper())){T::missing();return 0;}static_assert(noexcept(middle<int>()));struct R{R()noexcept(noexcept(middle<int>())){}};static_assert(__is_nothrow_constructible(R));',
+        'lazy-specification-rebuilt-false': 'struct Mid{int field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>int middle()noexcept(!noexcept(helper())){T::missing();return 0;}struct R{R()noexcept(noexcept(middle<int>())){}};static_assert(__is_constructible(R)&&!__is_nothrow_constructible(R));',
+        'lazy-specification-alias': 'struct Mid{int field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>int middle()noexcept(noexcept(helper())){T::missing();return 0;}using U=decltype(middle<int>());static_assert(__is_constructible(U)&&__is_nothrow_constructible(U));',
+        'lazy-specification-selected-default': 'struct Mid{int field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>int middle()noexcept(noexcept(helper())){T::missing();return 0;}struct R{R(int=sizeof(middle<int>()))noexcept{}};static_assert(__is_constructible(R)&&__is_nothrow_constructible(R));',
+        'lazy-specification-repeated': 'struct Mid{int field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>int middle()noexcept(noexcept(helper())){T::missing();return 0;}struct R{R()noexcept(noexcept(middle<int>())){}};struct S{S()noexcept(noexcept(middle<int>())){}};static_assert(__is_nothrow_constructible(R)&&__is_nothrow_constructible(S));',
+        'lazy-friend-signature': 'template<class T>struct Tag{friend int helper(Tag)noexcept{T::missing();return 0;}};struct R{R()noexcept(noexcept(helper(Tag<int>{}))){}};static_assert(__is_constructible(R)&&__is_nothrow_constructible(R));',
+        'lazy-friend-dependent-signature': 'template<class T>struct Tag{friend int helper(Tag)noexcept(sizeof(T)>0){T::missing();return 0;}};struct R{R()noexcept(noexcept(helper(Tag<int>{}))){}};static_assert(__is_nothrow_constructible(R));',
+        'lazy-friend-rebuilt-signature': 'struct Mid{int field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>struct Tag{friend int middle(Tag)noexcept(noexcept(helper())){T::missing();return 0;}};struct R{R()noexcept(noexcept(middle(Tag<int>{}))){}};static_assert(__is_constructible(R)&&__is_nothrow_constructible(R));',
+        'lazy-friend-false-signature': 'template<class T>struct Tag{friend int helper(Tag)noexcept(false){T::missing();return 0;}};struct R{R()noexcept(noexcept(helper(Tag<int>{}))){}};static_assert(__is_constructible(R)&&!__is_nothrow_constructible(R));',
+        'lazy-friend-decltype-alias': 'template<class T>struct Tag{friend int helper(Tag)noexcept{T::missing();return 0;}};using U=decltype(helper(Tag<int>{}));static_assert(__is_constructible(U));',
+        'lazy-friend-repeated': 'template<class T>struct Tag{friend int helper(Tag)noexcept{T::missing();return 0;}};struct R{R()noexcept(noexcept(helper(Tag<int>{}))){}};struct S{S()noexcept(noexcept(helper(Tag<int>{}))){}};static_assert(__is_nothrow_constructible(S)&&__is_nothrow_constructible(R));',
+        'lazy-friend-unused-overload': 'template<class T>struct Tag{friend int helper(Tag)noexcept{T::missing();return 0;}friend auto unused(Tag,int){return T::body();}};struct R{R()noexcept(noexcept(helper(Tag<int>{}))){}};static_assert(__is_nothrow_constructible(R));',
         'decltype-terminal-cached-default': 'template<class T>struct R{int n;~R()noexcept(T::missing){T::body();}};template<class T>R<T> make(){return {3};}static_assert(sizeof(R<int>)==sizeof(int));using U=decltype(make<int>());struct V{U*pointer=nullptr;};V cached{};struct Out{Out(V={})noexcept{}};static_assert(__is_constructible(Out)&&__is_nothrow_constructible(Out));',
         'decltype-terminal-default-before-cache': 'template<class T>struct R{int n;~R()noexcept(T::missing){T::body();}};template<class T>R<T> make(){return {3};}static_assert(sizeof(R<int>)==sizeof(int));using U=decltype(make<int>());struct V{U*pointer=nullptr;};struct Out{Out(V={})noexcept{}};static_assert(__is_constructible(Out)&&__is_nothrow_constructible(Out));V cached{};',
         'decltype-terminal-lazy-body': 'template<class T>struct R{int n;~R()noexcept{T::body();}};template<class T>R<T> make(){return {3};}static_assert(sizeof(R<int>)==sizeof(int));using U=decltype(make<int>());static_assert(__is_nothrow_destructible(U&));',
@@ -6643,6 +6655,12 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'lazy-specification-hidden-rebuilt': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int>field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>int middle()noexcept(noexcept(helper())){T::missing();return 0;}struct R{R()noexcept(noexcept(middle<int>())){}};static_assert(__is_constructible(R));',
+        'lazy-specification-hidden-false': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int>field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>int middle()noexcept(!noexcept(helper())){T::missing();return 0;}struct R{R()noexcept(noexcept(middle<int>())){}};static_assert(!__is_nothrow_constructible(R));',
+        'lazy-specification-hidden-alias': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int>field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>int middle()noexcept(noexcept(helper())){T::missing();return 0;}using U=decltype(middle<int>());static_assert(__is_constructible(U));',
+        'lazy-friend-hidden-rebuilt': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int>field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>struct Tag{friend int middle(Tag)noexcept(noexcept(helper())){T::missing();return 0;}};struct R{R()noexcept(noexcept(middle(Tag<int>{}))){}};static_assert(__is_constructible(R));',
+        'lazy-friend-hidden-false': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int>field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>struct Tag{friend int middle(Tag)noexcept(!noexcept(helper())){T::missing();return 0;}};struct R{R()noexcept(noexcept(middle(Tag<int>{}))){}};static_assert(!__is_nothrow_constructible(R));',
+        'lazy-friend-selected-default-source': 'template<class T>struct Token{~Token()noexcept{T::body();}};template<class T>struct Tag{friend int helper(Tag,int=sizeof(Token<T>{}))noexcept{T::missing();return 0;}};struct R{R()noexcept(noexcept(helper(Tag<int>{}))){}};static_assert(__is_nothrow_constructible(R));',
         'decltype-terminal-full-object-query': 'template<class T>struct R{int n;~R()noexcept{T::body();}};template<class T>R<T> make(){return {3};}static_assert(sizeof(R<int>)==sizeof(int));using U=decltype(make<int>());static_assert(__is_constructible(U));',
         'decltype-terminal-full-destruction-query': 'template<class T>struct R{int n;~R()noexcept{T::body();}};template<class T>R<T> make(){return {3};}static_assert(sizeof(R<int>)==sizeof(int));using U=decltype(make<int>());static_assert(__is_nothrow_destructible(U));',
         'decltype-nonterminal-comma-left': 'template<class T>struct R{int n;~R()noexcept{T::body();}};template<class T>R<T> make(){return {3};}static_assert(sizeof(R<int>)==sizeof(int));int effect(){return 1;}using U=decltype((make<int>(),effect()));static_assert(__is_constructible(U));',
@@ -6904,6 +6922,8 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_missing.items():
         check("v2-operation_trait_missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     operation_trait_invalid = {
+        'lazy-friend-runtime-body-required': 'template<class T>struct Tag{friend int helper(Tag)noexcept{T::missing();return 0;}};int f(){return helper(Tag<int>{});}',
+        'lazy-free-runtime-body-required': 'struct Mid{int field;};int helper(int=noexcept(Mid()))noexcept{return 0;}template<class T>int middle()noexcept(noexcept(helper())){T::missing();return 0;}int f(){return middle<int>();}',
         'materialized-template-invalid-body': 'template<class T>struct R{R(T)noexcept{T::missing();}};void use(){R<int>r(3);}static_assert(__is_constructible(R<int>,int));',
         'generated-destructor-conflicting-spec': 'struct R{~R()noexcept;};R::~R()noexcept(false)=default;static_assert(__is_nothrow_destructible(R));',
         'default-required-order': 'struct R{R(int=3,int){}};bool f(){return __is_constructible(R);}',
@@ -6954,7 +6974,8 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
 
     defined_operation_source = (repository / "tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp").read_text()
     defined_operation_module = check("v2-defined-operation-traits", defined_operation_source, profile="cpp-core-v2")
-    defined_expected = {"defined_decltype_reference": True, "defined_decltype_pointer": True,
+    defined_expected = {"defined_lazy_signature": True, "defined_lazy_friend_alias": True,
+                        "defined_decltype_reference": True, "defined_decltype_pointer": True,
                         "defined_decltype_false": False,
                         "defined_template_construct": True, "defined_template_copy": True,
                         "defined_template_assign": True, "defined_template_convert": True,
