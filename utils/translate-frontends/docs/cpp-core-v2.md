@@ -757,7 +757,7 @@ remains rejected. Existing pack/depth and expansion limits remain unchanged.
 
 The existing typed `null` expression and `nullptr` IR type carry these values;
 no runtime template argument or additional wire operation is introduced. Paired
-source/protocol tests cover 33 accepted and 22 rejected cases, with saved-NC O0/O2
+source/protocol tests cover 33 accepted, 20 source-boundary rejection and 5 invalid-C++ cases, with saved-NC O0/O2
 execution, canonical storage identity and relocation checks. Native validation
 requires CI of the implementing revision. Standard headers and complete C++/STL
 remain unfinished.
