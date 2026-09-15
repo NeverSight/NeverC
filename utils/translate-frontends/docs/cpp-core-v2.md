@@ -902,7 +902,7 @@ same source gate. This proof reuses the checked source rules below, without turn
 metadata classification into a hypothetical construction or destruction query.
 Pointer/reference spelling keeps unconsumed pointee layout lazy; declaration-only
 dependent parameter queries retain their existing path. The paired classification
-corpus has 152 accepted, 85 unsupported-source and fourteen invalid-C++ cases.
+corpus has 155 accepted, 82 unsupported-source and fourteen invalid-C++ cases.
 
 The builtin spelling does not expand the operand domain. Volatile types, member
 pointers, incomplete/union types and `long double` remain rejected, even for a
@@ -990,7 +990,7 @@ admitted operands. It shares the supported trait arities with concrete queries,
 but never reads a dependent boolean or invents a semantic operation event. Nested
 dependent pointer/alias shapes and unknown-bound operation operands remain excluded;
 each selected substitution still needs its own concrete type and retained source proof.
-The paired 620 accepted, 353 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
+The paired 621 accepted, 352 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is

@@ -6293,6 +6293,9 @@ extern "C" void run(){D value;}
         assert relocated == array_queries
 
     builtin_type_positive = {
+        'structural-unknown-array': 'bool f(){return __is_standard_layout(int[]);}',
+        'unique-unknown-array': 'bool f(){return __has_unique_object_representations(int[]);}',
+        'destruction-unknown-array': 'struct R{int n;};bool f(){return __is_trivially_destructible(R[]);}',
         'source-alias-family': 'struct P{int n;};struct Mid{P field;};using A=int[noexcept(Mid())?1:2];static_assert(__is_array(A)&&!__is_integral(A));',
         'source-pointer-alias': 'struct P{int n;};struct Mid{P field;};using A=int[noexcept(Mid())?1:2];static_assert(__is_pointer(A*)&&__is_same(A*,A*));',
         'source-record-layout': 'struct P{int n;};struct Mid{P field;};using A=int[noexcept(Mid())?1:2];struct R{A field;};static_assert(__is_class(R)&&__is_standard_layout(R));',
@@ -6477,7 +6480,6 @@ extern "C" void run(){D value;}
         'destruction-unsupported-field': 'struct R{long double n;};bool f(){return __is_destructible(R);}',
         'destruction-virtual': 'struct R{virtual ~R(){}};bool f(){return __is_destructible(R);}',
         'destruction-volatile': 'struct R{int n;};bool f(){return __is_destructible(volatile R);}',
-        'destruction-unknown-array': 'struct R{int n;};bool f(){return __is_trivially_destructible(R[]);}',
         'destruction-union': 'union R{int n;};bool f(){return __is_destructible(R);}',
         'final-unsupported-field': 'struct R final{long double n;};bool f(){return __is_final(R);}',
         'final-extra-attribute': 'struct __attribute__((packed)) R final{int n;};bool f(){return __is_final(R);}',
@@ -6485,7 +6487,6 @@ extern "C" void run(){D value;}
         'final-hidden-source': 'bool f(){return __is_final(decltype((sizeof(long double),1)));}',
         'literal-hidden-source': 'bool f(){return __is_literal(int[(sizeof(long double),2)]);}',
         'unique-hidden-source': 'template<class T,int N=sizeof(long double)>using A=T;bool f(){return __has_unique_object_representations(A<int>);}',
-        'unique-unknown-array': 'bool f(){return __has_unique_object_representations(int[]);}',
         'literal-volatile': 'bool f(){return __is_literal(volatile int);}',
         'structural-hidden-bound': 'bool f(){return __is_empty(int[(sizeof(long double),2)]);}',
         'structural-hidden-decltype': 'bool f(){return __is_trivial(decltype((sizeof(long double),1)));}',
@@ -6495,7 +6496,6 @@ extern "C" void run(){D value;}
         'structural-base-erased-false': 'bool f(){return __is_base_of(long double,int);}',
         'structural-virtual-record': 'struct R{virtual void f(){}};bool f(){return __is_polymorphic(R);}',
         'structural-multiple-bases': 'struct B{};struct C{};struct D:B,C{};bool f(){return __is_base_of(B,D);}',
-        'structural-unknown-array': 'bool f(){return __is_standard_layout(int[]);}',
         'structural-volatile': 'bool f(){return __is_trivial(volatile int);}',
         'long-double': 'bool f(){return __is_floating_point(long double);}',
         'unsupported-pointee': 'bool f(){return __is_pointer(long double*);}',
@@ -6624,6 +6624,7 @@ extern "C" void run(){D value;}
         assert not expected
 
     operation_trait_positive = {
+        'unknown-array': 'bool f(){return __is_destructible(int[]);}',
         'parameter-operation-construct': 'template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__is_constructible(T)>::type N=3>constexpr int f(){return N;}static_assert(f<int>()==3);',
         'parameter-operation-construct-argument': 'template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,class U,typename E<__is_constructible(T,U)>::type N=3>constexpr int f(){return N;}static_assert(f<int,unsigned>()==3);',
         'parameter-operation-construct-nothrow': 'template<bool B,class T=int>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,class U,typename E<__is_nothrow_constructible(T,U)>::type N=3>constexpr int f(){return N;}static_assert(f<int,unsigned>()==3);',
@@ -7570,7 +7571,6 @@ extern "C" void run(){D value;}
         'unsupported-source': 'bool f(){return __is_convertible(long double,int);}',
         'unsupported-pointee': 'bool f(){return __is_destructible(long double*);}',
         'volatile': 'bool f(){return __is_assignable(volatile int&,int);}',
-        'unknown-array': 'bool f(){return __is_destructible(int[]);}',
         'member-pointer': 'struct R{int n;};bool f(){return __is_constructible(int R::*);}',
         'function-reference': 'using F=int();bool f(){return __is_destructible(F&);}',
         'function-noexcept-source': 'bool f(){return __is_convertible(int(*)()noexcept(sizeof(long double)>0),int(*)());}',
