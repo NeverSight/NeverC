@@ -492,10 +492,10 @@ public:
          !M.MemoryLifetimes))
       return error("Memory lifetimes require true core v2 evidence.");
     if (O.get("startup")) {
-      const auto Startup = O.getString("startup");
-      if (!CoreV2 || !Startup || Startup->empty())
+      std::string Startup;
+      if (!CoreV2 || !string(O, "startup", Startup) || Startup.empty())
         return error("Startup requires a nonempty core v2 function identifier.");
-      M.Startup = Startup->str();
+      M.Startup = std::move(Startup);
     }
     const auto *F = O.getObject("frontend");
     const auto *T = O.getObject("target");
