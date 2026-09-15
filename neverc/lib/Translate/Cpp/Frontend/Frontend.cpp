@@ -2115,6 +2115,12 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
            (!RequiresExceptionSource || standardExceptionSpecification(Prototype));
   };
   auto Defined = [&](const FunctionDecl *Function) { return SourceCheck.defined(Function); };
+  auto GeneratedOperation = [&](const CXXMethodDecl *Method) {
+    // New generated roots belong only to the final completed-source pass.
+    // Preserve the independent implicit fast path during provisional queries.
+    return Definitions && Expressions && Types && Generated &&
+           SourceCheck.generatedOperation(Method);
+  };
   auto Destruction = [&](auto &&, const CXXRecordDecl *Record, unsigned Depth) {
     return SourceCheck.destruction(Record, Depth);
   };
@@ -2265,7 +2271,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
       // Owning destruction is checked independently below, including written
       // and nontrivial destructors with completed source evidence.
       const bool Implicit = implicitSpecialMemberSource(A, Constructor, false);
-      if ((!Implicit && !(ordinaryConstructor(Constructor) && Defined(Constructor))) ||
+      if ((!Implicit && !GeneratedOperation(Constructor) &&
+           !(ordinaryConstructor(Constructor) && Defined(Constructor))) ||
           !ExceptionSource(Constructor) ||
           !A.S.owns(A.Sources, Constructor->getLocation()) || !Construction->isPRValue() ||
           Construction->getConstructionKind() != CXXConstructionKind::Complete ||
@@ -2305,7 +2312,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           !A.S.owns(A.Sources, Method->getLocation()) || Call->getNumArgs() != 2)
         return false;
       const bool Implicit = implicitSpecialMemberSource(A, Method, true);
-      if (!Implicit && !(ordinaryOperator(Method) && Defined(Method) && directMethodReference(Call)))
+      if (!Implicit && !(directMethodReference(Call) &&
+          (GeneratedOperation(Method) || (ordinaryOperator(Method) && Defined(Method)))))
         return false;
       if (!ExceptionSource(Method))
         return false;

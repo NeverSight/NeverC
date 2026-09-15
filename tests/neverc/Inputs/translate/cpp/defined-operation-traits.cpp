@@ -151,6 +151,43 @@ template<class T> struct ConsumedLazyDestruction {
   int unused(int = T::missing) { T::body(); return 0; }
 };
 template<bool B> struct ConsumedThrowingDestruction { ~ConsumedThrowingDestruction() noexcept(B) = default; };
+template<class T> struct TrivialQueryRoot {
+  T value;
+  TrivialQueryRoot() = default;
+  TrivialQueryRoot &operator=(const TrivialQueryRoot&) = default;
+};
+template<class T> struct ThrowingQueryAssignment {
+  T value;
+  ThrowingQueryAssignment &operator=(const ThrowingQueryAssignment&) noexcept(false) = default;
+};
+int root_constructions;
+int root_copies;
+int root_moves;
+int root_assignments;
+int root_move_assignments;
+int root_destructions;
+struct GeneratedRootLeaf {
+  int value;
+  GeneratedRootLeaf() noexcept : value(3) { ++root_constructions; }
+  GeneratedRootLeaf(const GeneratedRootLeaf &other) noexcept : value(other.value) { ++root_copies; }
+  GeneratedRootLeaf(GeneratedRootLeaf &&other) noexcept : value(other.value) { ++root_moves; other.value = -1; }
+  GeneratedRootLeaf &operator=(const GeneratedRootLeaf &other) noexcept {
+    value = other.value; ++root_assignments; return *this;
+  }
+  GeneratedRootLeaf &operator=(GeneratedRootLeaf &&other) noexcept {
+    value = other.value; other.value = -1; ++root_move_assignments; return *this;
+  }
+  ~GeneratedRootLeaf() noexcept { ++root_destructions; }
+};
+struct GeneratedQueryRoot {
+  GeneratedRootLeaf field;
+  GeneratedQueryRoot() = default;
+  GeneratedQueryRoot(const GeneratedQueryRoot&) = default;
+  GeneratedQueryRoot(GeneratedQueryRoot&&) = default;
+  GeneratedQueryRoot &operator=(const GeneratedQueryRoot&) = default;
+  GeneratedQueryRoot &operator=(GeneratedQueryRoot&&) = default;
+  ~GeneratedQueryRoot() = default;
+};
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -206,6 +243,14 @@ extern "C" bool defined_inline_defaulted_construction_source() { return __is_con
 extern "C" bool defined_inline_defaulted_destruction() { return __is_nothrow_destructible(InlineSourceDestruction<GeneratedLeaf>[2]); }
 extern "C" bool defined_consumed_lazy_destruction() { return __is_nothrow_destructible(ConsumedLazyDestruction<int>[2]); }
 extern "C" bool defined_consumed_throwing_destruction() { return __is_nothrow_destructible(ConsumedThrowingDestruction<false>); }
+extern "C" bool defined_defaulted_trivial_construct() { return __is_trivially_constructible(TrivialQueryRoot<int>); }
+extern "C" bool defined_defaulted_template_assign() { return __is_nothrow_assignable(TrivialQueryRoot<int>&, const TrivialQueryRoot<int>&); }
+extern "C" bool defined_defaulted_throwing_assign() { return __is_nothrow_assignable(ThrowingQueryAssignment<int>&, const ThrowingQueryAssignment<int>&); }
+extern "C" bool defined_defaulted_materialized_construct() { return __is_nothrow_constructible(GeneratedQueryRoot); }
+extern "C" bool defined_defaulted_materialized_copy() { return __is_nothrow_constructible(GeneratedQueryRoot, const GeneratedQueryRoot&); }
+extern "C" bool defined_defaulted_materialized_move() { return __is_nothrow_constructible(GeneratedQueryRoot, GeneratedQueryRoot&&); }
+extern "C" bool defined_defaulted_materialized_assign() { return __is_nothrow_assignable(GeneratedQueryRoot&, const GeneratedQueryRoot&); }
+extern "C" bool defined_defaulted_materialized_trivial() { return __is_trivially_constructible(GeneratedQueryRoot); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -374,5 +419,34 @@ int main() {
   consumed.value = 17;
   if (consumed.value != 17 || !defined_consumed_lazy_destruction() ||
       defined_consumed_throwing_destruction() || lazy_signature_calls) return 51;
+  if (!defined_defaulted_trivial_construct() || !defined_defaulted_template_assign() ||
+      defined_defaulted_throwing_assign() || !defined_defaulted_materialized_construct() ||
+      !defined_defaulted_materialized_copy() || !defined_defaulted_materialized_move() ||
+      !defined_defaulted_materialized_assign() || defined_defaulted_materialized_trivial() ||
+      root_constructions || root_copies || root_moves || root_assignments ||
+      root_move_assignments || root_destructions) return 52;
+  {
+    GeneratedQueryRoot original;
+    GeneratedQueryRoot copy(original);
+    GeneratedQueryRoot moved(static_cast<GeneratedQueryRoot&&>(copy));
+    if (original.field.value != 3 || copy.field.value != -1 || moved.field.value != 3 ||
+        &original.field == &moved.field || root_constructions != 1 || root_copies != 1 ||
+        root_moves != 1 || root_destructions) return 53;
+    original.field.value = 7;
+    moved = original;
+    copy = static_cast<GeneratedQueryRoot&&>(moved);
+    if (original.field.value != 7 || moved.field.value != -1 || copy.field.value != 7 ||
+        root_assignments != 1 || root_move_assignments != 1 || root_destructions) return 54;
+    if (!defined_defaulted_materialized_construct() || !defined_defaulted_materialized_assign() ||
+        defined_defaulted_materialized_trivial() || root_constructions != 1 || root_copies != 1 ||
+        root_moves != 1 || root_assignments != 1 || root_move_assignments != 1 || root_destructions) return 55;
+  }
+  if (root_destructions != 3 || generated_destructions != 14 || constructions != 6 ||
+      destructions != 10 || default_calls != 2 || lazy_signature_calls) return 56;
+  TrivialQueryRoot<int> trivialFirst{2}, trivialSecond{7};
+  trivialFirst = trivialSecond;
+  trivialFirst.value = 11;
+  if (trivialFirst.value != 11 || trivialSecond.value != 7 || &trivialFirst == &trivialSecond ||
+      !defined_defaulted_template_assign()) return 57;
   return 0;
 }

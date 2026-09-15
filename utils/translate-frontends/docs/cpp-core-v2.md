@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 389 accepted, 267 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
+The paired 411 accepted, 273 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1022,6 +1022,34 @@ zero query effects, actual copy/assignment/reference identity and real destructi
 Eight exported boolean functions check that no hypothetical calls or record locals
 enter the protocol; relocation remains deterministic. Native validation requires
 the implementing revision's CI.
+
+### Checked defaulted record operations
+
+Retained construction and assignment roots can also select checked ordinary or
+single-stage inline template defaulted operations. A trivial written operation
+requires every actual declaration and concrete signature to have completed source
+checks, plus the implicit owning-subobject family proof. A nontrivial operation
+requires its exact existing generated definition and completed initializer, body
+and layout source. The query does not cause a missing body to be instantiated.
+
+```cpp
+struct Value {
+  int n;
+  Value() = default;
+  Value &operator=(const Value&) = default;
+};
+static_assert(__is_trivially_constructible(Value));
+static_assert(__is_nothrow_assignable(Value&, const Value&));
+```
+
+The original synthetic operands, complete-object construction kind, argument
+count, receiver/reference identity, selected exception specifications and separate
+owning destruction proof remain required. Assignment keeps its exact direct method
+reference. These checks run after source completion; the provisional implicit fast
+path is unchanged. True, false, trivial and nothrow results retain Clang's values.
+Written child operation families, template split defaulting, unmaterialized
+nontrivial operations and unsupported signature/body source still require further
+proof. The separate evaluated constructor-default dependency scan is unchanged.
 
 ### Operations with completed ordinary definitions
 
@@ -1133,7 +1161,7 @@ remain rejected when destruction is consumed. Unused bodies that contribute no s
 functions, including nested template expressions under existing source rules;
 template-owned default parameters need further source evidence.
 
-Declaration-only and lazy template user operations, explicitly defaulted
+Declaration-only and lazy template user operations, unproven defaulted
 construction/assignment, incomplete selection and
 unproven exception dependencies still require further source evidence.
 Unused templates remain lazy, and actual runtime use retains all ordinary source
@@ -1141,9 +1169,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has fifty-one O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has fifty-seven O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Fifty-four exported query
+default evaluation with full-expression temporary cleanup. Sixty-two exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1209,8 +1237,8 @@ defaulting nor completion. Separate template definitions, explicit specializatio
 copied origin chains and unmaterialized nontrivial bodies need further evidence.
 Generated array assignment may replace selected element calls with `memcpy`;
 record elements therefore retain a separate implicit assignment-family proof.
-This source-only composition does not widen the hypothetical operation root or
-its evaluated-default scan. Semantic visit-once state is separate from graph-node
+The same completed generated proof also supplies the defaulted operation roots
+above; their evaluated-default scan remains unchanged. Semantic visit-once state is separate from graph-node
 creation, so value initializers cannot hide cached semantic children.
 Consumed type metadata also has exact completion nodes, keyed by the original
 qualified type and `TypeLoc` source identity. Normal type traversal captures array
@@ -1306,7 +1334,7 @@ local-class context or unselected owning-subobject signatures. Deleted/access an
 reference short circuits do not trigger this pass. Separate template
 defaulting and user destructors without the exact completed
 inline-definition proof still require further source evidence.
-Construction and assignment retain their separate implicit-family source checks.
+Construction and assignment retain their separate operation source checks.
 For retained implicit constructors, destruction is verified independently for the
 exact record prvalue. The same composition applies inside query-only defaults;
 the constructor expression must have the same base-element record type as its
@@ -1327,7 +1355,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared fifty-one-checkpoint user-operation fixture checks
+queries. The shared fifty-seven-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
 user/generated array destruction at O0/O2;

@@ -347,7 +347,13 @@ signature completion. Separate definitions and explicit specializations stay out
 this source category. SemaDeclCXX.cpp buildSingleCopyAssign can omit selected
 record-array element calls in favor of memcpy, so the existing exact generated
 array recognition also records an independent implicit assignment-family edge.
-These graph changes do not alter hypothetical-root or evaluated-default admission.
+The final completed-source checker can also use generatedOperation for exact
+defaulted construction/assignment roots. All source maps must be available before
+this new branch is attempted, preserving provisional implicit admission. Complete
+construction, synthetic operand/argument identity, direct assignment references,
+exception source and owning destruction checks remain independent. Nontrivial
+roots require their existing completed generated body; evaluated-default admission
+is unchanged and no body is instantiated for a query.
 Variable and enum references retain actual initializer dependencies, including
 implicit-enumerator predecessors and previously cached variable templates.
 Already materialized user-provided constexpr bodies and constructor initializers

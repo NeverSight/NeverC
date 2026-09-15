@@ -828,8 +828,12 @@ trivial defaulting with implicit owning families or an exact completed generated
 definition. That completion includes normal semantic initializer/body traversal
 and owning layout; it is independent of the emission queue. Generated record-array
 memcpy retains a separate implicit assignment-family source requirement because
-the selected element call may be absent from the body. This does not widen the
-hypothetical operation root. Inline template defaulting can use this source proof
+the selected element call may be absent from the body. Completed generated source
+also admits exact defaulted construction/assignment query roots, while preserving
+synthetic operands, direct assignment method identity, exception and owning
+destruction checks. This additional path requires the final completed-source
+checker; provisional implicit admission and evaluated-default checks are unchanged.
+Nontrivial roots require an already materialized generated body. Inline template defaulting can use this source proof
 only with actual concrete defaulting and completed signatures, plus the exact
 source-owned inline defaulting origin of the same method kind. Separate definitions,
 explicit specializations and copied origin chains do not qualify. The same category
