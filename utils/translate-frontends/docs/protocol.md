@@ -766,6 +766,11 @@ C storage carrier includes a byte. Padding/trivial-copy metadata is never inferr
 from that carrier. Standard final class declarations use the same checked record
 layout and function identities, without a new protocol property or consumer ABI.
 
+Destructibility and trivial destruction also use exact source deletion/access
+metadata. References do not inherit their referent's destructor restrictions;
+implicit field deletion stays distinct from the C carrier layout. These predicates
+do not resolve a destructor's exception specification or instantiate a lazy body.
+
 Type source traversal checks nested `decltype`, array bounds, function
 specifications and selected template substitutions even in erased queries. No
 unevaluated operand effects are emitted. See the exact spellings, supported
@@ -773,12 +778,12 @@ operand domain and remaining exclusions in the
 [classification contract](cpp-core-v2.md#builtin-type-classification).
 
 Operation predicates also emit ordinary checked boolean literals. Construction,
-assignment, implicit conversion and destruction require non-record operands after
+assignment, implicit conversion and nothrow destruction require non-record operands after
 removing references and array extents; pointers to admitted records qualify.
 Construction retains one destination and at most 64 hypothetical argument type
 sources. The frontend checks every written operand and returns pinned Clang's
 result without emitting hypothetical calls or treating C pointer carriers as
-C++ reference identity. Record operation queries await retained selection source;
+C++ reference identity. The remaining record operation queries await retained selection source;
 folding a false result does not bypass that restriction. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).
 

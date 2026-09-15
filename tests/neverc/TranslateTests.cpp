@@ -5068,6 +5068,28 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesPreserveSubstitutionAndValues) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"destruction-promoted-record", "struct R{int n;};bool f(){return __is_destructible(R);}"},
+      {"destruction-promoted-reference", "struct R{int n;};bool f(){return __is_trivially_destructible(const R&);}"},
+      {"destruction-trivial", "struct R{int n;};static_assert(__is_destructible(R)&&__is_trivially_destructible(R)&&__is_destructible(const R)&&__is_trivially_destructible(R[2][3]));"},
+      {"destruction-user-body", "struct R{int n;~R(){}};static_assert(__is_destructible(R)&&!__is_trivially_destructible(R)&&!__is_trivially_destructible(R[2])&&__is_trivially_destructible(R&));"},
+      {"destruction-private", "class R{~R()=default;};static_assert(!__is_destructible(R)&&!__is_trivially_destructible(R)&&__is_destructible(R&)&&__is_trivially_destructible(R&&));"},
+      {"destruction-protected", "class R{protected:~R()=default;};static_assert(!__is_destructible(R)&&!__is_trivially_destructible(R));"},
+      {"destruction-deleted", "struct R{~R()=delete;};static_assert(!__is_destructible(R)&&!__is_trivially_destructible(R)&&__is_destructible(R&)&&__is_trivially_destructible(const R&));"},
+      {"destruction-private-field", "class Inner{~Inner()=default;};struct R{Inner value;};static_assert(!__is_destructible(R)&&!__is_trivially_destructible(R));"},
+      {"destruction-deleted-field", "struct Inner{~Inner()=delete;};struct R{Inner values[2];};static_assert(!__is_destructible(R)&&!__is_trivially_destructible(R)&&__is_destructible(R&));"},
+      {"destruction-reference-field", "struct Inner{~Inner()=delete;};struct R{Inner&value;};static_assert(__is_destructible(R)&&__is_trivially_destructible(R));"},
+      {"destruction-nested", "struct Inner{int n;~Inner(){}};struct R{Inner values[2];};static_assert(__is_destructible(R)&&!__is_trivially_destructible(R));"},
+      {"destruction-explicit-default", "struct R{int n;~R()=default;};static_assert(__is_destructible(R)&&__is_trivially_destructible(R));"},
+      {"destruction-late-default", "struct R{int n;~R();};R::~R()=default;static_assert(__is_destructible(R)&&!__is_trivially_destructible(R));"},
+      {"destruction-empty-chain", "struct B{};struct D final:B{};static_assert(__is_destructible(D)&&__is_trivially_destructible(D));"},
+      {"destruction-template", "template<class T>struct R{T n;};static_assert(__is_destructible(R<int>)&&__is_trivially_destructible(R<int>));"},
+      {"destruction-lazy-body", "template<class T>struct R{int n;~R(){T::missing();}};static_assert(__is_destructible(R<int>)&&!__is_trivially_destructible(R<int>));"},
+      {"destruction-lazy-specification", "template<class T>struct R{int n;~R()noexcept(T::missing){T::also_missing();}};static_assert(__is_destructible(R<int>)&&!__is_trivially_destructible(R<int>));"},
+      {"destruction-lazy-declaration", "template<class T>struct R{int n;~R();};static_assert(__is_destructible(R<int>)&&!__is_trivially_destructible(R<int>));"},
+      {"destruction-lazy-nested", "template<class T>struct Inner{int n;~Inner()noexcept(T::missing){T::also_missing();}};template<class T>struct R{Inner<T>values[2];};static_assert(__is_destructible(R<int>)&&!__is_trivially_destructible(R<int>));"},
+      {"destruction-pack", "template<class...T>constexpr bool all(){return (__is_destructible(T)&&...);}struct R{int n;};struct D{~D()=delete;};static_assert(all<>()&&all<R,R&,D&>()&&!all<R,D>());"},
+      {"destruction-default", "template<class T,bool B=__is_destructible(T)>struct Query{static constexpr bool value=B;};struct R{int n;};struct D{~D()=delete;};static_assert(Query<R>::value&&!Query<D>::value);"},
+      {"destruction-hidden-body-unused", "template<class T>struct R{int n;~R(){long double hidden=0;(void)hidden;}};static_assert(__is_destructible(R<int>)&&!__is_trivially_destructible(R<int>));"},
       {"final-copied-nested", "template<class T>struct O final{struct I final{T n;};};int f(){O<int>::I r{3};static_assert(__is_final(O<int>::I));return r.n;}"},
       {"final-member-template", "template<class T>struct O final{template<class U>struct I final{U n;};};int f(){O<int>::I<int>r{3};return r.n;}"},
       {"final-hidden-friend", "template<class T>struct R final{T n;friend T get(R r){return r.n;}};int f(){R<int>r{3};return get(r);}"},
@@ -5174,6 +5196,14 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"destruction-hidden-decltype", "bool f(){return __is_destructible(decltype(sizeof(long double)));}"},
+      {"destruction-hidden-default", "template<class T,int N=sizeof(long double)>struct R{T n;};bool f(){return __is_destructible(R<int>);}"},
+      {"destruction-hidden-array-bound", "struct R{int n;};bool f(){return __is_trivially_destructible(R[sizeof(long double)]);}"},
+      {"destruction-unsupported-field", "struct R{long double n;};bool f(){return __is_destructible(R);}"},
+      {"destruction-virtual", "struct R{virtual ~R(){}};bool f(){return __is_destructible(R);}"},
+      {"destruction-volatile", "struct R{int n;};bool f(){return __is_destructible(volatile R);}"},
+      {"destruction-unknown-array", "struct R{int n;};bool f(){return __is_trivially_destructible(R[]);}"},
+      {"destruction-union", "union R{int n;};bool f(){return __is_destructible(R);}"},
       {"final-unsupported-field", "struct R final{long double n;};bool f(){return __is_final(R);}"},
       {"final-extra-attribute", "struct __attribute__((packed)) R final{int n;};bool f(){return __is_final(R);}"},
       {"final-virtual", "struct R final{virtual int f(){return 3;}};bool f(){return __is_final(R);}"},
@@ -5232,6 +5262,8 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRejectsInvalidCpp) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"destruction-incomplete", "struct R;bool f(){return __is_destructible(R);}"},
+      {"destruction-failed-assert", "struct R{~R()=delete;};static_assert(__is_destructible(R));"},
       {"final-derived-class", "struct B final{};struct D:B{};"},
       {"final-incomplete", "struct R;bool f(){return __is_final(R);}"},
       {"literal-incomplete", "struct R;bool f(){return __is_literal(R);}"},
@@ -5254,6 +5286,14 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRejectsInvalidCpp) {
     expectCode(Result, "TR0202");
     expectNoArtifacts(Output);
   }
+}
+
+TEST_F(TranslateTest, CoreV2DestructionQueriesKeepOrdinaryDefinitionRequirements) {
+  auto Source = tmpFile("destruction-query-undefined.cpp");
+  auto Output = tmpFile("destruction-query-undefined.nc");
+  writeFile(Source, "struct R{int n;~R();};bool f(){return __is_destructible(R);}");
+  expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), "TR0203");
+  expectNoArtifacts(Output);
 }
 
 TEST_F(TranslateTest, FinalClassKeywordRemainsOutsideCoreV1) {
@@ -5336,8 +5376,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"record-assignment", "struct R{int n;};bool f(){return __is_trivially_assignable(R&,R);}"},
       {"record-convertible-false", "struct R{int n;};bool f(){return __is_convertible(int,R);}"},
       {"record-convertible-reference", "struct R{int n;};bool f(){return __is_convertible_to(R&,const R&);}"},
-      {"record-destructor", "struct R{int n;};bool f(){return __is_destructible(R);}"},
-      {"record-destructor-reference", "struct R{int n;};bool f(){return __is_trivially_destructible(const R&);}"},
       {"record-destructor-array", "struct R{int n;};bool f(){return __is_nothrow_destructible(R[2][3]);}"},
       {"record-alias", "struct R{int n;};template<class T>using A=T&;bool f(){return __is_assignable(A<R>,R);}"},
       {"long-double", "bool f(){return __is_constructible(long double,int);}"},

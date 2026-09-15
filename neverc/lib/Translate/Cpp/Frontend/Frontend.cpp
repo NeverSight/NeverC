@@ -1725,13 +1725,14 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   case UTT_IsTrivial: case UTT_IsTriviallyCopyable: case UTT_IsPOD:
   case UTT_IsPolymorphic: case UTT_IsAbstract:
   case UTT_IsFinal: case UTT_IsLiteral: case UTT_HasUniqueObjectRepresentations:
+  // These inspect deletion/access without resolving a destructor's noexcept.
+  case UTT_IsDestructible: case UTT_IsTriviallyDestructible:
     Arity = 1;
     break;
   case BTT_IsSame: case BTT_IsBaseOf:
     Arity = 2;
     break;
-  case UTT_IsDestructible: case UTT_IsNothrowDestructible:
-  case UTT_IsTriviallyDestructible:
+  case UTT_IsNothrowDestructible:
     Arity = 1;
     NonRecordOperation = true;
     break;

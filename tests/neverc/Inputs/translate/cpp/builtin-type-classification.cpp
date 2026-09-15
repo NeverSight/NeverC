@@ -15,6 +15,14 @@ struct FinalRecord final {
 template<class T> struct FinalBox final { T value; };
 struct Bytes { unsigned char a, b; };
 struct Padded { char a; int b; };
+class PrivateDestruction { ~PrivateDestruction() = default; };
+struct DeletedDestruction { ~DeletedDestruction() = delete; };
+struct NestedDeletedDestruction { DeletedDestruction values[2]; };
+struct ReferencedDeletedDestruction { DeletedDestruction &value; };
+template<class T> struct LazyDestruction {
+  int value;
+  ~LazyDestruction() noexcept(T::missing) { T::also_missing(); }
+};
 using Function = int(int);
 using CertainFunction = int(int) noexcept;
 using Null = decltype(nullptr);
@@ -57,6 +65,12 @@ extern "C" bool classified_final() { return __is_final(FinalRecord); }
 extern "C" bool classified_literal() { return __is_literal(FinalRecord); }
 extern "C" bool classified_unique_padded() { return __has_unique_object_representations(Padded); }
 extern "C" bool classified_unique_empty() { return __has_unique_object_representations(EmptyDerived); }
+extern "C" bool classified_destructible() { return __is_destructible(DestructedRecord); }
+extern "C" bool classified_trivial_destructor() { return __is_trivially_destructible(PlainRecord); }
+extern "C" bool classified_deleted_destructor() { return __is_destructible(DeletedDestruction); }
+extern "C" bool classified_private_destructor() { return __is_destructible(PrivateDestruction); }
+extern "C" bool classified_deleted_reference() { return __is_trivially_destructible(DeletedDestruction&); }
+extern "C" bool classified_lazy_destructor() { return __is_destructible(LazyDestruction<int>); }
 template<class Base, class Derived> inline constexpr bool base_of = __is_base_of(Base, Derived);
 template<class... T> constexpr bool all_empty() { return (__is_empty(T) && ...); }
 
@@ -139,5 +153,21 @@ int main() {
       sizeof(final) != sizeof(int) || sizeof(box) != sizeof(int)) return 22;
   if (__is_final(FinalRecord*) || __is_final(int) || !__is_final(const FinalRecord) ||
       __is_literal(decltype(Probe{})) || effects != 1 || constructed || destroyed) return 23;
+  if (!classified_destructible() || !classified_trivial_destructor() ||
+      __is_trivially_destructible(DestructedRecord) ||
+      !__is_destructible(EmptyDerived) ||
+      !__is_trivially_destructible(ReferenceRecord)) return 24;
+  if (classified_deleted_destructor() || classified_private_destructor() ||
+      !classified_deleted_reference() || __is_destructible(NestedDeletedDestruction) ||
+      !__is_trivially_destructible(ReferencedDeletedDestruction)) return 25;
+  if (!classified_lazy_destructor() || __is_trivially_destructible(LazyDestruction<int>) ||
+      !__is_destructible(LazyDestruction<int>[2]) ||
+      effects != 1 || constructed || destroyed) return 26;
+  {
+    Probe real;
+    if (real.value != 1) return 27;
+  }
+  if (!__is_destructible(Probe) || __is_trivially_destructible(Probe) ||
+      effects != 1 || constructed != 1 || destroyed != 1) return 27;
   return 0;
 }
