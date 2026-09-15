@@ -1924,17 +1924,84 @@ std::string Adapter::nativeHeapImport(const FunctionDecl *F, SourceLocation L) {
   return F->getName().str();
 }
 
+// Only Clang's untouched implicit global sized delete has the standard default
+// forwarding body. A written declaration, including a later redeclaration,
+// cannot be given an inferred implementation.
+static bool implicitSizedDeallocation(const FunctionDecl *F, ASTContext &Context,
+                                      OverloadedOperatorKind Operator) {
+  if (!F || F->getDefinition() ||
+      (Operator != OO_Delete && Operator != OO_Array_Delete))
+    return false;
+  for (const auto *D : F->redecls()) {
+    const auto *Prototype = D->getType()->getAs<FunctionProtoType>();
+    if (!D->isImplicit() || D->isInvalidDecl() || D->getLocation().isValid() ||
+        D->getBeginLoc().isValid() || D->getEndLoc().isValid() ||
+        D->getTypeSourceInfo() || !D->getDeclContext()->isTranslationUnit() ||
+        isa<CXXMethodDecl>(D) || D->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        D->getOverloadedOperator() != Operator ||
+        !D->isReplaceableGlobalAllocationFunction() ||
+        !ordinaryCallbackPrototype(Prototype) ||
+        Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+        D->getNumParams() != 2 ||
+        !Context.hasSameType(D->getReturnType(), Context.VoidTy) ||
+        !Context.hasSameType(D->getParamDecl(0)->getType(), Context.VoidPtrTy) ||
+        !Context.hasSameType(D->getParamDecl(1)->getType(), Context.getSizeType()))
+      return false;
+    for (const auto *Attribute : D->attrs()) {
+      const auto *Visibility = dyn_cast<VisibilityAttr>(Attribute);
+      if (!Visibility || !Visibility->isImplicit() ||
+          Visibility->getRange().isValid() ||
+          Visibility->getVisibility() != VisibilityAttr::Default)
+        return false;
+    }
+    for (const auto *P : D->parameters())
+      if (!P->isImplicit() || P->isInvalidDecl() || P->getLocation().isValid() ||
+          P->getBeginLoc().isValid() || P->getEndLoc().isValid() ||
+          P->getTypeSourceInfo() || P->hasAttrs() || P->hasDefaultArg())
+        return false;
+  }
+  return true;
+}
+
 const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
                                                bool Allocate, SourceLocation L,
                                                bool Array) {
+  const auto Operator = Allocate ? (Array ? OO_Array_New : OO_New)
+                                 : (Array ? OO_Array_Delete : OO_Delete);
   const auto *Definition = F ? F->getDefinition() : nullptr;
+  if (S.coreV2() && !Allocate &&
+      implicitSizedDeallocation(F, Context, Operator)) {
+    for (const auto *Declaration : Context.getTranslationUnitDecl()->lookup(
+             Context.DeclarationNames.getCXXOperatorName(Operator))) {
+      const auto *Candidate = dyn_cast<FunctionDecl>(Declaration);
+      if (!Candidate || isa<CXXMethodDecl>(Candidate) || Candidate->isVariadic() ||
+          Candidate->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+          Candidate->getNumParams() != 1 ||
+          !Context.hasSameType(Candidate->getReturnType(), Context.VoidTy) ||
+          !Context.hasSameUnqualifiedType(Candidate->getParamDecl(0)->getType(),
+                                          Context.VoidPtrTy))
+        continue;
+      const auto *Body = Candidate->getDefinition();
+      // Namespace definitions are visited by the ordinary owned-source walk.
+      // Do not instantiate or borrow a class-template friend's body here.
+      if (!Body || !Body->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+          !Body->getLexicalDeclContext()->getRedeclContext()->isTranslationUnit() ||
+          Body->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+          !ordinaryCallbackPrototype(Body->getType()->getAs<FunctionProtoType>()))
+        continue;
+      if (Definition && Definition->getCanonicalDecl() != Body->getCanonicalDecl()) {
+        reject(L, "default sized deallocation",
+               "A unique source-defined matching unsized operator is required.", "TR0203");
+        throw Failure{};
+      }
+      Definition = Body;
+    }
+  }
   if (!Definition || !S.owns(Sources, Definition->getLocation())) {
     reject(L, Allocate ? "allocation definition" : "deallocation definition",
            "The selected allocation function requires its definition in this source unit.", "TR0203");
     throw Failure{};
   }
-  const auto Operator = Allocate ? (Array ? OO_Array_New : OO_New)
-                                 : (Array ? OO_Array_Delete : OO_Delete);
   if (!S.coreV2() || Definition->getOverloadedOperator() != Operator ||
       !ordinaryOperator(Definition) || !supportedDeclarationAttributes(Definition) ||
       Definition->isReservedGlobalPlacementOperator() ||

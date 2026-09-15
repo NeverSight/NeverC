@@ -4221,7 +4221,8 @@ relocation. Native results require the implementing revision's CI.
 ## Single-object allocation and placement reuse
 
 Core v2 admits C++17 single-object `new` and `delete` when their selected allocation
-and deallocation functions have checked definitions in this source unit. Global
+and deallocation functions have checked definitions in this source unit, including
+the bounded default sized-delete forwarding rule below. Global
 replacement functions, class-specific static functions, custom placement overloads
 and existing concrete function/class/member templates compose with supported
 scalar and complete record types. Allocation operator declarations and direct
@@ -4254,6 +4255,33 @@ preferred object alignment, matching pinned Clang. A destructor that changes the
 variable originally holding the pointer cannot change the deallocation address.
 Global qualification and class-specific selection remain Clang's decisions.
 
+When a delete/delete[] expression selects Clang's untouched implicit global
+`operator delete` or `operator delete[]` with signature `void(void*, size_t)`,
+core v2 implements the C++17 default forwarding rule by calling the matching
+source-defined unsized `void(void*)` operator. The selected sized declaration and
+every redeclaration must be implicit, have no written type, location or body, use
+the ordinary default ABI and noexcept signature, and carry only Clang's exact
+implicit default visibility attribute, if any. Lookup must find a unique ordinary
+namespace-scope non-template definition in this source unit; its declarations,
+attributes, parameter types and body retain their ordinary source checks. A
+written sized definition takes priority. A written sized declaration without a
+body, including one after the delete expression, cannot borrow this default.
+
+Scalar and array operator names never substitute for each other. Class-specific,
+aligned and destroying deletion, direct calls and operator addresses do not gain
+a default definition from this rule. Template friend bodies are not instantiated
+or borrowed by fallback lookup. The generated call targets the actual checked
+unsized function; there is no runtime C++ ABI dependency or synthesized sized
+function. Array cookie decisions still use the original expression's usual
+array-delete metadata, even for trivial elements with a class-specific sized
+delete[] and a global-qualified `::delete[]`. The raw allocation pointer must be
+recovered before calling the unsized body. This follows C++17's default
+[single-object](https://timsong-cpp.github.io/cppwp/n4659/new.delete.single#16) and
+[array](https://timsong-cpp.github.io/cppwp/n4659/new.delete.array#15) deallocation
+semantics. Paired admission/diagnostic cases, eight-ABI cookie protocol checks,
+relocation and a saved-NC C client with 15 O0/O2 runtime checkpoints cover this
+boundary; native validation requires the implementing revision's CI.
+
 Explicit destruction followed by placement construction can reuse supported
 storage and satisfy an automatic object's later cleanup obligation. Both source
 operations enable the independently verified `memory_lifetimes` alias policy
@@ -4262,7 +4290,8 @@ alignment or transparent replacement of every old alias. Defined C++ source must
 supply suitable storage and obey const, reference-member and lifetime rules.
 
 The self-contained source profile supplies no default heap or standard placement runtime.
-A selected function without an owned definition reports `TR0203`; it never becomes
+A selected function without an owned definition or this exact default forwarding
+case reports `TR0203`; it never becomes
 an unchecked host allocation call. Reserved global `operator new(size_t, void*)`
 and its matching delete cannot be defined as user functions here and also report
 `TR0203`. Use class-specific placement or a custom global overload with a distinct

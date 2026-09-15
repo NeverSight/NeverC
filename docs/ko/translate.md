@@ -4,6 +4,8 @@
 
 # C++를 NeverC로 변환
 
+Core v2는 기본 sized delete 전달을 지원합니다. 소스에서 다시 선언되지 않은 암시적 전역 sized delete/delete[]는 대응하는 소스 정의 unsized 연산자를 호출할 수 있습니다. 명시적 sized 정의가 우선하며 원래 배열 cookie 레이아웃을 유지합니다. 기본 할당기나 예외 런타임은 추가하지 않으며 네이티브 검증에는 구현 버전의 CI가 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
+
 Core v2는 검증된 `__array_rank`와 `__array_extent`도 지원하며, 고정 배열 타입에 대한 템플릿 인덱스를 포함한 음이 아닌 상수 정수 인덱스를 처리합니다. 상수로 바꾸기 전에 타입과 인덱스 소스를 검사합니다. 지원하지 않는 배열 타입과 암시적 클래스 변환 인덱스는 제외되며, 네이티브 결과는 구현 리비전의 CI로 검증해야 합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
 
 Core v2는 `__is_integral`, `__is_pointer`, `__is_same` 등의 검증된 내장 타입 분류를 추가합니다. C++ 타입의 동일성을 유지하고 불리언 값을 생성하기 전에 작성된 피연산자 타입을 검사합니다. 지원하지 않는 타입과 다른 타입 특성은 계속 제한됩니다. O0/O2 및 재배치 검증에는 구현 리비전의 CI가 필요하며 표준 헤더와 완전한 C++/STL 지원은 아직 미완성입니다. 지원되는 타입의 집합체, 빈 클래스, 표준 레이아웃, trivial, trivially-copyable, POD, 다형성／추상 속성과 `__is_base_of` 기반 클래스 관계도 조회할 수 있습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).

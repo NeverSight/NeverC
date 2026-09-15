@@ -5720,6 +5720,88 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     check("v2-array-explicit-unsigned-bound", truncated_bound_prefix +
           'int*f(){return new int[static_cast<Size>(-4294967296LL)]{};}',
           profile="cpp-core-v2", target="i686-pc-windows-msvc")
+    default_sized_delete_positive = {
+        'scalar': 'void operator delete(void*)noexcept{}void f(int*p){delete p;}',
+        'record': 'void operator delete(void*)noexcept{}struct R{int n;~R(){}};void f(R*p){delete p;}',
+        'array': 'void operator delete[](void*)noexcept{}struct R{int n;~R(){}};void f(R*p){delete[]p;}',
+        'nested-array': 'void operator delete[](void*)noexcept{}struct R{int n;~R(){}};void f(R(*p)[2]){delete[]p;}',
+        'qualified-trivial-cookie': 'using Size=decltype(sizeof(0));void operator delete[](void*)noexcept{}struct R{int n;static void operator delete[](void*,Size)noexcept{}};void f(R*p){::delete[]p;}',
+        'later-definition': 'void f(int*p){delete p;}void operator delete(void*)noexcept{}',
+        'repeated-unsized-declaration': 'void operator delete(void*)noexcept;void operator delete(void*)noexcept;void f(int*p){delete p;}void operator delete(void*)noexcept{}',
+        'linkage-block': 'extern "C++"{void operator delete(void*)noexcept{}}void f(int*p){delete p;}',
+        'const-parameter': 'void operator delete(void*const p)noexcept{}void f(const int*p){delete p;}',
+        'function-template': 'void operator delete(void*)noexcept{}template<class T>void release(T*p){delete p;}void f(int*p){release(p);}',
+        'global-qualified': 'using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}struct R{int n;static void operator delete(void*,Size)noexcept{}};void f(R*p){::delete p;}',
+        'explicit-sized-wins': 'using Size=decltype(sizeof(0));int selected;void operator delete(void*)noexcept{selected=1;}void operator delete(void*,Size)noexcept{selected=2;}extern "C" void release(int*p){delete p;}',
+        'explicit-sized-array-wins': 'using Size=decltype(sizeof(0));int selected;void operator delete[](void*)noexcept{selected=1;}void operator delete[](void*,Size)noexcept{selected=2;}struct R{int n;~R(){}};extern "C" void release(R*p){delete[]p;}',
+    }
+    default_sized_delete_negative = {
+        'missing-unsized': ('void f(int*p){delete p;}', 'TR0203'),
+        'missing-unsized-array': ('struct R{int n;~R(){}};void f(R*p){delete[]p;}', 'TR0203'),
+        'explicit-undefined-sized': ('using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}void operator delete(void*,Size)noexcept;void f(int*p){delete p;}', 'TR0203'),
+        'late-written-sized': ('using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}void f(int*p){delete p;}void operator delete(void*,Size)noexcept;', 'TR0203'),
+        'explicit-undefined-sized-array': ('using Size=decltype(sizeof(0));void operator delete[](void*)noexcept{}void operator delete[](void*,Size)noexcept;struct R{int n;~R(){}};void f(R*p){delete[]p;}', 'TR0203'),
+        'class-specific-undefined': ('using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}struct R{int n;static void operator delete(void*,Size)noexcept;};void f(R*p){delete p;}', 'TR0203'),
+        'other-kind-scalar': ('void operator delete[](void*)noexcept{}void f(int*p){delete p;}', 'TR0203'),
+        'other-kind-array': ('void operator delete(void*)noexcept{}struct R{int n;~R(){}};void f(R*p){delete[]p;}', 'TR0203'),
+        'unsupported-unsized-body': ('void operator delete(void*)noexcept{long double n=0;}void f(int*p){delete p;}', 'TR0201'),
+        'discarded-unsized-body': ('void operator delete(void*)noexcept{if constexpr(false){long double n=0;}}void f(int*p){delete p;}', 'TR0201'),
+        'missing-direct-sized-call': ('using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}void f(int*p){delete p;}void g(void*p){operator delete(p,Size(4));}', 'TR0203'),
+        'missing-aligned-member': ('using Size=decltype(sizeof(0));namespace std{enum class align_val_t:Size{};}void operator delete(void*)noexcept{}struct R{int n;static void operator delete(void*,std::align_val_t)noexcept;};void f(R*p){delete p;}', 'TR0203'),
+    }
+    for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"):
+        for name, source in default_sized_delete_positive.items():
+            module = check("v2-default-sized-delete-"+target+"-"+name, source,
+                           profile="cpp-core-v2", target=target)
+            if name.startswith("explicit-sized-"):
+                release = next(f for f in module["functions"] if f["c_export"])
+                by_name = {f["name"]: f for f in module["functions"]}
+                call = [i for i in release["body"] if i["op"] == "call"][-1]
+                assert len(call["args"]) == len(by_name[call["callee"]]["params"]) == 2
+        for name, (source, diagnostic) in default_sized_delete_negative.items():
+            check("v2-default-sized-delete-reject-"+target+"-"+name, source, diagnostic,
+                  profile="cpp-core-v2", target=target)
+    check("v1-default-sized-delete", default_sized_delete_positive["scalar"], "TR0201")
+    default_delete_source = (repository / "tests/neverc/Inputs/translate/cpp/default-sized-delete.cpp").read_text()
+    default_delete = check("v2-default-sized-delete-runtime", default_delete_source,
+                           profile="cpp-core-v2")
+    assert default_delete["memory_lifetimes"] and default_delete["array_cookie_abi"]
+    with tempfile.TemporaryDirectory(prefix="neverc-default-sized-delete-relocated-") as temporary:
+        relocated = check("v2-default-sized-delete-relocated", default_delete_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == default_delete
+    # No destructor exists to force a cookie here. The class-sized usual delete[]
+    # must determine layout even though ::delete[] calls the unsized global body.
+    default_delete_cookie = ("using Size=decltype(sizeof(0));unsigned char storage[128]{};\n"
+                            "void*operator new[](Size){return storage;}\n"
+                            "void operator delete[](void*)noexcept{}\n"
+                            "struct R{int n;static void operator delete[](void*,Size)noexcept{}};\n"
+                            'extern "C" R*make(){return new R[3]{};}\n'
+                            'extern "C" void release(R*p){::delete[]p;}\n')
+    for target, abi, cookie in (
+        ("x86_64-unknown-linux-gnu", "itanium", 8),
+        ("aarch64-unknown-linux-gnu", "itanium", 8),
+        ("x86_64-apple-macosx", "itanium", 8),
+        ("aarch64-apple-macosx", "apple-arm64", 16),
+        ("x86_64-pc-windows-msvc", "msvc", 0),
+        ("aarch64-pc-windows-msvc", "msvc", 0),
+        ("i686-pc-windows-msvc", "msvc", 0),
+        ("x86_64-w64-windows-gnu", "itanium", 8)):
+        module = check("v2-default-sized-delete-cookie-"+target, default_delete_cookie,
+                       profile="cpp-core-v2", target=target)
+        assert module["array_cookie_abi"] == abi
+        by_name = {f["name"]: f for f in module["functions"]}
+        make_call = next(i for i in by_name["make"]["body"] if i["op"] == "call")
+        assert int(make_call["args"][0]["value"]) == 12 + cookie
+        release = by_name["release"]
+        calls = [i for i in release["body"] if i["op"] == "call"]
+        assert len(calls) == 1 and len(calls[0]["args"]) == 1
+        callee = by_name[calls[0]["callee"]]
+        assert callee["loc"]["line"] == 3 and len(callee["params"]) == 1
+        offsets = [n for n in walk(release["body"]) if n.get("operator") == "-"
+                   and n.get("args", []) and n["args"][-1].get("kind") == "literal"]
+        assert [int(n["args"][-1]["value"]) for n in offsets] == ([cookie] if cookie else [])
+
     array_runtime_source = (repository / "tests/neverc/Inputs/translate/cpp/array-allocation.cpp").read_text()
     array_runtime = check("v2-array-allocation-runtime", array_runtime_source, profile="cpp-core-v2")
     assert array_runtime["memory_lifetimes"] and array_runtime["array_cookie_abi"]

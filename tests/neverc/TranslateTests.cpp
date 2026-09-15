@@ -4588,6 +4588,83 @@ int main(){
 
 
 
+TEST_F(TranslateTest, CoreV2DefaultSizedDeleteUsesOwnedUnsizedDefinition) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"scalar", "void operator delete(void*)noexcept{}void f(int*p){delete p;}"},
+      {"record", "void operator delete(void*)noexcept{}struct R{int n;~R(){}};void f(R*p){delete p;}"},
+      {"array", "void operator delete[](void*)noexcept{}struct R{int n;~R(){}};void f(R*p){delete[]p;}"},
+      {"nested-array", "void operator delete[](void*)noexcept{}struct R{int n;~R(){}};void f(R(*p)[2]){delete[]p;}"},
+      {"qualified-trivial-cookie", "using Size=decltype(sizeof(0));void operator delete[](void*)noexcept{}struct R{int n;static void operator delete[](void*,Size)noexcept{}};void f(R*p){::delete[]p;}"},
+      {"later-definition", "void f(int*p){delete p;}void operator delete(void*)noexcept{}"},
+      {"repeated-unsized-declaration", "void operator delete(void*)noexcept;void operator delete(void*)noexcept;void f(int*p){delete p;}void operator delete(void*)noexcept{}"},
+      {"linkage-block", "extern \"C++\"{void operator delete(void*)noexcept{}}void f(int*p){delete p;}"},
+      {"const-parameter", "void operator delete(void*const p)noexcept{}void f(const int*p){delete p;}"},
+      {"function-template", "void operator delete(void*)noexcept{}template<class T>void release(T*p){delete p;}void f(int*p){release(p);}"},
+      {"global-qualified", "using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}struct R{int n;static void operator delete(void*,Size)noexcept{}};void f(R*p){::delete p;}"},
+      {"explicit-sized-wins", "using Size=decltype(sizeof(0));int selected;void operator delete(void*)noexcept{selected=1;}void operator delete(void*,Size)noexcept{selected=2;}extern \"C\" void release(int*p){delete p;}"},
+      {"explicit-sized-array-wins", "using Size=decltype(sizeof(0));int selected;void operator delete[](void*)noexcept{selected=1;}void operator delete[](void*,Size)noexcept{selected=2;}struct R{int n;~R(){}};extern \"C\" void release(R*p){delete[]p;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("default-sized-delete-positive-" + Name + ".cpp");
+    auto Output = tmpFile("default-sized-delete-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    // Force the ABI that selects implicit global sized deletion. The shared
+    // runtime fixture below separately exercises every native CI target.
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "--target",
+                                     "x86_64-unknown-linux-gnu", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultSizedDeleteRetainsDefinitionBoundaries) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"missing-unsized", "void f(int*p){delete p;}", "TR0203"},
+      {"missing-unsized-array", "struct R{int n;~R(){}};void f(R*p){delete[]p;}", "TR0203"},
+      {"explicit-undefined-sized", "using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}void operator delete(void*,Size)noexcept;void f(int*p){delete p;}", "TR0203"},
+      {"late-written-sized", "using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}void f(int*p){delete p;}void operator delete(void*,Size)noexcept;", "TR0203"},
+      {"explicit-undefined-sized-array", "using Size=decltype(sizeof(0));void operator delete[](void*)noexcept{}void operator delete[](void*,Size)noexcept;struct R{int n;~R(){}};void f(R*p){delete[]p;}", "TR0203"},
+      {"class-specific-undefined", "using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}struct R{int n;static void operator delete(void*,Size)noexcept;};void f(R*p){delete p;}", "TR0203"},
+      {"other-kind-scalar", "void operator delete[](void*)noexcept{}void f(int*p){delete p;}", "TR0203"},
+      {"other-kind-array", "void operator delete(void*)noexcept{}struct R{int n;~R(){}};void f(R*p){delete[]p;}", "TR0203"},
+      {"unsupported-unsized-body", "void operator delete(void*)noexcept{long double n=0;}void f(int*p){delete p;}", "TR0201"},
+      {"discarded-unsized-body", "void operator delete(void*)noexcept{if constexpr(false){long double n=0;}}void f(int*p){delete p;}", "TR0201"},
+      {"missing-direct-sized-call", "using Size=decltype(sizeof(0));void operator delete(void*)noexcept{}void f(int*p){delete p;}void g(void*p){operator delete(p,Size(4));}", "TR0203"},
+      {"missing-aligned-member", "using Size=decltype(sizeof(0));namespace std{enum class align_val_t:Size{};}void operator delete(void*)noexcept{}struct R{int n;static void operator delete(void*,std::align_val_t)noexcept;};void f(R*p){delete p;}", "TR0203"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("default-sized-delete-negative-" + Name + ".cpp");
+    auto Output = tmpFile("default-sized-delete-negative-" + Name + ".nc");
+    writeFile(Source, Code);
+    // Force the ABI that selects implicit global sized deletion. The shared
+    // runtime fixture below separately exercises every native CI target.
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "--target",
+                                     "x86_64-unknown-linux-gnu", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DefaultSizedDeletePreservesPointersAndCookies) {
+  const auto Output = tmpFile("default-sized-delete.nc");
+  auto Result = translate(fixture("default-sized-delete.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Object = tmpFile("default-sized-delete" + Optimization + ".o");
+    auto Compile = compileGenerated(Output, Object, Optimization, {"-c", "-fstrict-aliasing"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Executable = tmpFile("default-sized-delete-client" + Optimization);
+    auto Link = compileGenerated(fixture("default-sized-delete-harness.c"), Executable,
+                                  Optimization, {Object.string()});
+    ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayAllocationAcceptsCheckedConstantExtents) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"scalar-list", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}void operator delete[](void*p,Size)noexcept{operator delete[](p);}int f(){int*p=new int[4]{1,2};int n=p[1]+p[3];delete[]p;return n;}"},

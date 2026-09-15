@@ -4,6 +4,8 @@
 
 # 將 C++ 轉譯為 NeverC
 
+Core v2 支援預設 sized delete 轉送：未經原始碼重新宣告的隱含全域 sized delete/delete[] 可呼叫對應的 unsized 定義。明確的 sized 定義優先，陣列保留原運算式的 cookie 配置。此項不提供預設配置器或例外執行環境；原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
+
 Core v2 也支援經過檢查的 `__array_rank` 和 `__array_extent`，維度索引為非負常數整數，也支援固定陣列型別搭配模板索引。折疊前仍檢查型別和索引原始碼；不支援的陣列型別與隱含類別轉換索引仍被拒絕。原生結果須由實作版本的 CI 驗證。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
 
 Core v2 新增經過檢查的內建型別分類查詢，包括 `__is_integral`、`__is_pointer` 和 `__is_same`。查詢保留 C++ 型別身分，在產生布林值前檢查寫出的運算元。不支援的運算元型別及其他型別特徵仍受限制。O0／O2 與重定位驗證須由實作版本的 CI 執行；標準標頭檔與完整 C++／STL 尚未完成。 記錄型別查詢也涵蓋聚合、空類別、標準配置、平凡性、平凡可複製性、POD、多型／抽象屬性，以及已支援型別的 `__is_base_of` 基底關係。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).

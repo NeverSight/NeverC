@@ -1081,8 +1081,14 @@ full-expression flags; the new object acquires no lexical cleanup flag.
 Delete saves its operand before branching. The nonnull block destroys through
 that saved address, then calls the selected deallocator with the saved pointer and
 optional typed size/preferred-alignment literals. A source destructor cannot
-reseat this private capture. Missing source definitions are rejected before
-emission. Default heap/runtime, arrays and exceptions remain unfinished; see the
+reseat this private capture. An untouched implicit global sized delete may resolve
+to the matching source-owned namespace unsized definition under the C++17 default
+forwarding rule. This emits an ordinary one-argument call to that checked body;
+explicit sized replacements keep their own signatures and bodies. Array cookie
+layout continues to use the original delete expression's metadata, independently
+of the resolved callee's parameter count. Missing definitions outside this exact
+rule are rejected before emission. Default heap/runtime and exceptions remain
+unfinished; array expressions follow their separate contract. See the
 [source contract](cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 ## Core v2 destruction
