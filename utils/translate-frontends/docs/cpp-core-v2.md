@@ -141,6 +141,11 @@ ordinary full-expression cleanup. A temporary whose lifetime extends to that
 reference is constructed in permanent storage inside the same first-use region;
 see [dynamic temporary lifetimes](#dynamic-local-static-temporaries). A partial
 value retained by failed constant evaluation never replaces runtime effects.
+The static-initializer check retains proven null-reference, out-of-bounds and
+expired-temporary diagnostics before selecting dynamic initialization. Merely
+reading runtime state still permits the dynamic path, including a local static
+binding to a live parameter. Empty declarations between owned declarations or
+class members are accepted and do not create storage or instructions.
 
 ```cpp
 int constructions = 0;
@@ -4485,6 +4490,9 @@ argument list. Dot operands designate storage without loading an uninitialized
 scalar; arrow operands evaluate the pointer. Original bases, qualifiers, scope
 types and destroyed-type spellings remain inspected. These operations follow
 [C++17 pseudo-destructor semantics](https://timsong-cpp.github.io/cppwp/n4659/expr.pseudo).
+The pinned producer includes receiver evaluation when calculating `noexcept`:
+a potentially throwing pointer-producing call keeps the whole expression
+potentially throwing, although the pseudo-destructor operation itself cannot throw.
 
 An explicit call does not cancel a registered automatic or temporary cleanup.
 Defined source must satisfy the original object's later lifetime obligations;

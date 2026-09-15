@@ -25,8 +25,9 @@ void created_at_exit() { static Item value(16); }
 struct Reentrant { ~Reentrant() { mark(15); created_at_exit(); } };
 void reentrant() { static Reentrant value; }
 using Size = decltype(sizeof(0));
-void *operator new(Size, void *p) { return p; }
-void reuse() { static Item value(17); value.~Item(); new(&value) Item(18); }
+struct PlacementTag {};
+void *operator new(Size, PlacementTag, void *p) { return p; }
+void reuse() { static Item value(17); value.~Item(); new(PlacementTag{}, &value) Item(18); }
 template<int N> const Constant &templated() { static const Constant value{N}; return value; }
 extern "C" void start_first() { first(); }
 extern "C" void start_rest() {

@@ -48,6 +48,7 @@ struct Storage { unsigned long long alignment; unsigned char bytes[128]; };
 Storage storage{};
 void *operator new(Size) { mark(23); return storage.bytes; }
 void operator delete(void *) noexcept { mark(25); }
+void operator delete(void *p, Size) noexcept { operator delete(p); }
 Record *allocated = new Record(24);
 int main() {
   int expected[] = {1,2,3,4,7,0,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24};

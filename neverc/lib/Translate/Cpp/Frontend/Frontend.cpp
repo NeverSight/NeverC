@@ -9,6 +9,7 @@
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticAST.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/Builtins.h"
@@ -4171,7 +4172,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         continue;
       if (!owned(Member) || Member->isInvalidDecl() || Member->hasAttrs() ||
           (!isa<FieldDecl, TypedefNameDecl, EnumDecl, EnumConstantDecl,
-                StaticAssertDecl, AccessSpecDecl>(Member) &&
+                StaticAssertDecl, AccessSpecDecl, EmptyDecl>(Member) &&
            !classTemplateStaticDataShape(dyn_cast<VarDecl>(Member)) &&
            !classTemplateFunctionShape(dyn_cast<CXXMethodDecl>(Member)) &&
            !genericFriendDeclarationShape(dyn_cast<FriendDecl>(Member)) &&
@@ -8785,7 +8786,7 @@ public:
     }
     const bool ExtendedDeclaration =
         A.S.coreV2() &&
-        (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl, FriendDecl,
+        (isa<TypedefNameDecl, EnumDecl, EnumConstantDecl, StaticAssertDecl, FriendDecl, EmptyDecl,
              NamespaceAliasDecl, UsingDirectiveDecl, UsingDecl,
              FunctionTemplateDecl, ClassTemplateDecl, TypeAliasTemplateDecl, VarTemplateDecl>(D) ||
          D->getKind() == Decl::UsingShadow ||
@@ -9205,6 +9206,52 @@ public:
     }
     return false;
   }
+  bool evaluateStaticInitializer(const Expr *Init, const VarDecl *Definition,
+                                 const VarDecl *InitializingDecl, APValue &Value,
+                                 bool &Constant) {
+    llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+    const bool Evaluated =
+        Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true);
+    // An inability to read runtime state permits dynamic initialization. A
+    // proven invalid address or expired lifetime does not. These structured
+    // diagnostics come from the pinned evaluator; never consume a failed
+    // evaluation's partial APValue or turn its temporary storage into globals.
+    bool NonGlobal = false, Temporary = false;
+    for (const auto &Note : Notes) {
+      switch (Note.second.getDiagID()) {
+      case clang::diag::note_constexpr_array_index:
+      case clang::diag::note_constexpr_past_end:
+      case clang::diag::note_constexpr_past_end_subobject:
+      case clang::diag::note_constexpr_null_subobject:
+      case clang::diag::note_constexpr_access_null:
+      case clang::diag::note_constexpr_access_past_end:
+      case clang::diag::note_constexpr_lifetime_ended:
+        A.reject(Note.first, "static initializer lifetime",
+                 "A static initializer cannot use a proven invalid object address or expired lifetime.");
+        return false;
+      case clang::diag::note_constexpr_non_global:
+        NonGlobal = true;
+        break;
+      case clang::diag::note_constexpr_temporary_here:
+        Temporary = true;
+        break;
+      default:
+        break;
+      }
+    }
+    if ((NonGlobal && Temporary) ||
+        (Evaluated && Definition->getType()->isReferenceType() &&
+         Value.isLValue() && (Value.isNullPointer() || Value.isLValueOnePastTheEnd()))) {
+      A.reject(Definition->getLocation(), "static reference lifetime",
+               "A static reference requires a live object, not null, a past-end address or an unextended temporary.");
+      return false;
+    }
+    // Preserve the native point-of-definition decision even when later
+    // definitions let the evaluator calculate a value during this check.
+    Constant = Evaluated && Notes.empty() &&
+        (Definition->isStaticLocal() || InitializingDecl->hasConstantInitialization());
+    return true;
+  }
   bool cacheStaticObjectInitializer(VarDecl *Definition) {
     auto Canonical = Definition->getCanonicalDecl();
     if (A.ConstantStaticInitializers.count(Canonical))
@@ -9221,7 +9268,6 @@ public:
     json::Object Initializer;
     if (Init) {
       APValue Value;
-      llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
       if (!InitializingDecl || !owned(InitializingDecl) ||
           InitializingDecl->getCanonicalDecl() != Canonical ||
           InitializingDecl->getDeclContext()->getRedeclContext() !=
@@ -9240,12 +9286,10 @@ public:
         // Evaluating that constructor alone would leave scalar fields indeterminate.
         Initializer = A.zero(T, Definition->getLocation());
       } else {
-        // The native point-of-definition flag prevents later definitions from
-        // retroactively promoting a nonlocal dynamic initializer to static data.
-        if ((!Definition->isStaticLocal() &&
-             !InitializingDecl->hasConstantInitialization()) ||
-            !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
-            !Notes.empty()) {
+        bool Constant = false;
+        if (!evaluateStaticInitializer(Init, Definition, InitializingDecl, Value, Constant))
+          return false;
+        if (!Constant) {
           A.DynamicStaticObjects.insert(Canonical);
           Initializer = A.zero(T, Definition->getLocation());
         } else {
@@ -9300,11 +9344,10 @@ public:
         return false;
       }
       APValue Value;
-      llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
-      if ((!Definition->isStaticLocal() &&
-           !InitializingDecl->hasConstantInitialization()) ||
-          !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
-          !Notes.empty()) {
+      bool Constant = false;
+      if (!evaluateStaticInitializer(Init, Definition, InitializingDecl, Value, Constant))
+        return false;
+      if (!Constant) {
         A.DynamicStaticObjects.insert(Canonical);
         Initializer = A.zero(T, L);
       } else {
@@ -9341,7 +9384,6 @@ public:
     const VarDecl *InitializingDecl = nullptr;
     const auto *Init = Definition->getAnyInitializer(InitializingDecl);
     APValue Value;
-    llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
     if (!Init || !InitializingDecl || !owned(InitializingDecl) ||
         InitializingDecl->getCanonicalDecl() != Canonical ||
         InitializingDecl->getDeclContext()->getRedeclContext() !=
@@ -9352,10 +9394,10 @@ public:
       return false;
     }
     auto PointerType = A.Context.getPointerType(T->getPointeeType());
-    if ((!Definition->isStaticLocal() &&
-         !InitializingDecl->hasConstantInitialization()) ||
-        !Init->EvaluateAsInitializer(Value, A.Context, Definition, Notes, true) ||
-        !Notes.empty()) {
+    bool Constant = false;
+    if (!evaluateStaticInitializer(Init, Definition, InitializingDecl, Value, Constant))
+      return false;
+    if (!Constant) {
       // The binding and its lifetime-extended temporaries initialize together.
       // Runtime allocation never consumes a partial APValue.
       A.DynamicStaticObjects.insert(Canonical);

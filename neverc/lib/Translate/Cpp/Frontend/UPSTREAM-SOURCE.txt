@@ -5,6 +5,12 @@ Source archive: llvm-project-20.1.8.src.tar.xz
 URL: https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/llvm-project-20.1.8.src.tar.xz
 SHA256: 6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d
 
+A checked private SemaExceptionSpec.cpp repair includes the actual receiver of
+a scalar pseudo-destructor expression in canThrow. The call itself remains
+nonthrowing, while receiver calls retain their exception specifications and
+dependency. Exact original/rewritten source blocks, idempotence and rejection of
+missing, duplicate, drifted or orphaned blocks are audited before source writes.
+
 The archive is fetched and verified during the NeverC build. An offline copy
 can be selected with CMake's NEVERC_CPP_LLVM_SOURCE_ARCHIVE option; the same
 SHA256 is required. No upstream executable or shared library is installed.

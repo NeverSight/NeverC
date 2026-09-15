@@ -3419,6 +3419,7 @@ TEST(TranslateIR, NativeHeapChecksPointerWidthAndWindowsCallingConvention) {
        {"x86_64-unknown-linux-gnu", 64}, {"aarch64-unknown-linux-gnu", 64},
        {"x86_64-apple-macosx", 64}, {"aarch64-apple-macosx", 64},
        {"x86_64-pc-windows-msvc", 64}, {"aarch64-pc-windows-msvc", 64},
+       {"x86_64-pc-windows-unknown", 64},
        {"i686-pc-windows-msvc", 32}, {"i686-w64-windows-gnu", 32}}) {
     SCOPED_TRACE(Target);
     auto M = nativeHeapModule(NativeHeapOperation::Calloc, Bits);
@@ -3440,7 +3441,8 @@ TEST(TranslateIR, NativeHeapChecksPointerWidthAndWindowsCallingConvention) {
     EXPECT_FALSE(verifyModule(M, C, D));
   }
   for (const std::string Target : {"x86_64-unknown-freebsd", "aarch64-linux-android",
-                                  "x86_64-pc-windows-unknown"}) {
+                                  "x86_64-pc-windows-cygnus", "x86_64-pc-windows-itanium"}) {
+    SCOPED_TRACE(Target);
     auto M = nativeHeapModule();
     M.Target.Triple = Target;
     invalid(M);

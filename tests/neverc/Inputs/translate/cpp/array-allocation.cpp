@@ -12,6 +12,7 @@ void *take(Size size) {
 }
 void *operator new[](Size size) { return take(size); }
 void operator delete[](void *pointer) noexcept { ++frees; freedRaw = pointer; }
+void operator delete[](void *pointer, Size) noexcept { operator delete[](pointer); }
 struct Tag {};
 void *operator new(Size, Tag, void *pointer) { return pointer; }
 int events[64]{}, eventCount = 0, nextValue = 0;

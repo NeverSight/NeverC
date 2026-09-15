@@ -99,6 +99,44 @@ ARRAY_QUERY_PATCHES = (
      'TreeTransform<Derived>::TransformArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {\n  TypeSourceInfo *T = getDerived().TransformType(E->getQueriedTypeSourceInfo());\n  if (!T)\n    return ExprError();\n\n  ExprResult SubExpr;\n  {\n    EnterExpressionEvaluationContext Unevaluated(\n        SemaRef, Sema::ExpressionEvaluationContext::Unevaluated);\n    SubExpr = getDerived().TransformExpr(E->getDimensionExpression());\n    if (SubExpr.isInvalid())\n      return ExprError();\n  }\n\n  // NeverC array-query dimensions can change while the type stays fixed.\n  if (!getDerived().AlwaysRebuild() &&\n      T == E->getQueriedTypeSourceInfo() &&\n      SubExpr.get() == E->getDimensionExpression())\n    return E;\n\n  return getDerived().RebuildArrayTypeTrait(E->getTrait(), E->getBeginLoc(), T,\n                                            SubExpr.get(), E->getEndLoc());\n}\n'),
 )
 
+PSEUDO_DESTRUCTOR_BEFORE = '  case Expr::AddrLabelExprClass:\n  case Expr::ArrayTypeTraitExprClass:\n  case Expr::AtomicExprClass:\n  case Expr::TypeTraitExprClass:\n  case Expr::CXXBoolLiteralExprClass:\n  case Expr::CXXNoexceptExprClass:\n  case Expr::CXXNullPtrLiteralExprClass:\n  case Expr::CXXPseudoDestructorExprClass:\n  case Expr::CXXScalarValueInitExprClass:\n  case Expr::CXXThisExprClass:\n  case Expr::CXXUuidofExprClass:\n  case Expr::CharacterLiteralClass:\n  case Expr::ExpressionTraitExprClass:\n  case Expr::FloatingLiteralClass:\n  case Expr::GNUNullExprClass:\n  case Expr::ImaginaryLiteralClass:\n  case Expr::ImplicitValueInitExprClass:\n  case Expr::IntegerLiteralClass:\n  case Expr::FixedPointLiteralClass:\n  case Expr::ArrayInitIndexExprClass:\n  case Expr::NoInitExprClass:\n  case Expr::ObjCEncodeExprClass:\n  case Expr::ObjCStringLiteralClass:\n  case Expr::ObjCBoolLiteralExprClass:\n  case Expr::OpaqueValueExprClass:\n  case Expr::PredefinedExprClass:\n  case Expr::SizeOfPackExprClass:\n  case Expr::PackIndexingExprClass:\n  case Expr::StringLiteralClass:\n  case Expr::SourceLocExprClass:\n  case Expr::EmbedExprClass:\n  case Expr::ConceptSpecializationExprClass:\n  case Expr::RequiresExprClass:\n  case Expr::HLSLOutArgExprClass:\n  case Stmt::OpenACCEnterDataConstructClass:\n  case Stmt::OpenACCExitDataConstructClass:\n  case Stmt::OpenACCWaitConstructClass:\n  case Stmt::OpenACCInitConstructClass:\n  case Stmt::OpenACCShutdownConstructClass:\n  case Stmt::OpenACCSetConstructClass:\n  case Stmt::OpenACCUpdateConstructClass:\n    // These expressions can never throw.\n    return CT_Cannot;\n'
+PSEUDO_DESTRUCTOR_AFTER = '  case Expr::CXXPseudoDestructorExprClass:\n    // NeverC pseudo-destructor receivers retain their potentially throwing evaluation.\n    return canThrow(cast<CXXPseudoDestructorExpr>(S)->getBase());\n\n  case Expr::AddrLabelExprClass:\n  case Expr::ArrayTypeTraitExprClass:\n  case Expr::AtomicExprClass:\n  case Expr::TypeTraitExprClass:\n  case Expr::CXXBoolLiteralExprClass:\n  case Expr::CXXNoexceptExprClass:\n  case Expr::CXXNullPtrLiteralExprClass:\n  case Expr::CXXScalarValueInitExprClass:\n  case Expr::CXXThisExprClass:\n  case Expr::CXXUuidofExprClass:\n  case Expr::CharacterLiteralClass:\n  case Expr::ExpressionTraitExprClass:\n  case Expr::FloatingLiteralClass:\n  case Expr::GNUNullExprClass:\n  case Expr::ImaginaryLiteralClass:\n  case Expr::ImplicitValueInitExprClass:\n  case Expr::IntegerLiteralClass:\n  case Expr::FixedPointLiteralClass:\n  case Expr::ArrayInitIndexExprClass:\n  case Expr::NoInitExprClass:\n  case Expr::ObjCEncodeExprClass:\n  case Expr::ObjCStringLiteralClass:\n  case Expr::ObjCBoolLiteralExprClass:\n  case Expr::OpaqueValueExprClass:\n  case Expr::PredefinedExprClass:\n  case Expr::SizeOfPackExprClass:\n  case Expr::PackIndexingExprClass:\n  case Expr::StringLiteralClass:\n  case Expr::SourceLocExprClass:\n  case Expr::EmbedExprClass:\n  case Expr::ConceptSpecializationExprClass:\n  case Expr::RequiresExprClass:\n  case Expr::HLSLOutArgExprClass:\n  case Stmt::OpenACCEnterDataConstructClass:\n  case Stmt::OpenACCExitDataConstructClass:\n  case Stmt::OpenACCWaitConstructClass:\n  case Stmt::OpenACCInitConstructClass:\n  case Stmt::OpenACCShutdownConstructClass:\n  case Stmt::OpenACCSetConstructClass:\n  case Stmt::OpenACCUpdateConstructClass:\n    // These expressions can never throw.\n    return CT_Cannot;\n'
+
+class PseudoDestructorSourceTests(unittest.TestCase):
+    def test_receiver_repair_checks_pinned_source_states(self):
+        script = Path(__file__).resolve().with_name("IsolateSymbols.py")
+        function = next(node for node in ast.parse(script.read_text()).body
+                        if isinstance(node, ast.FunctionDef) and
+                        node.name == "fix_pseudo_destructor_exception_spec")
+        namespace = {}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(script), "exec"), namespace)
+        repair = namespace[function.name]
+        with tempfile.TemporaryDirectory(prefix="neverc-pseudo-destructor-source-") as temporary:
+            path = Path(temporary) / "SemaExceptionSpec.cpp"
+            path.write_text(PSEUDO_DESTRUCTOR_BEFORE)
+            repair(path)
+            self.assertEqual(path.read_text(), PSEUDO_DESTRUCTOR_AFTER)
+            repair(path)
+            self.assertEqual(path.read_text(), PSEUDO_DESTRUCTOR_AFTER)
+            for name, contents in {
+                "missing": None, "empty": "",
+                "duplicate original": PSEUDO_DESTRUCTOR_BEFORE * 2,
+                "duplicate rewritten": PSEUDO_DESTRUCTOR_AFTER * 2,
+                "mixed": PSEUDO_DESTRUCTOR_BEFORE + PSEUDO_DESTRUCTOR_AFTER,
+                "drift": PSEUDO_DESTRUCTOR_BEFORE.replace("CT_Cannot", "CT_Can"),
+                "orphan marker": PSEUDO_DESTRUCTOR_BEFORE + "// NeverC pseudo-destructor receivers",
+                "orphan case": PSEUDO_DESTRUCTOR_BEFORE + "case Expr::CXXPseudoDestructorExprClass:",
+            }.items():
+                with self.subTest(state=name):
+                    if contents is None:
+                        path.unlink()
+                    else:
+                        path.write_text(contents)
+                    with self.assertRaises(SystemExit):
+                        repair(path)
+                    self.assertEqual(path.read_text() if path.exists() else None, contents)
+
+
 class ArrayQuerySourceTests(unittest.TestCase):
     def test_pinned_dimension_repairs_are_atomic_and_idempotent(self):
         script = Path(__file__).resolve().with_name("IsolateSymbols.py")
@@ -945,6 +983,7 @@ public:
         call_expr_cxx_original += ARRAY_QUERY_PATCHES[0][2]
         call_expr_cxx_expected += ARRAY_QUERY_PATCHES[0][2]
         files['clang/lib/Sema/TreeTransform.h'] = ARRAY_QUERY_PATCHES[1][2]
+        files['clang/lib/Sema/SemaExceptionSpec.cpp'] = PSEUDO_DESTRUCTOR_AFTER
         files['clang/lib/Sema/SemaExprCXX.cpp'] = call_expr_cxx_original
         with tempfile.TemporaryDirectory(prefix="neverc-isolate-source-") as temporary:
             root = Path(temporary)

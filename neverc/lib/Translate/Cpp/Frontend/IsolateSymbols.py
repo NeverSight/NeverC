@@ -417,6 +417,29 @@ def fix_copied_full_initializers(path):
         path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
 
+def fix_pseudo_destructor_exception_spec(path):
+    before = '  case Expr::AddrLabelExprClass:\n  case Expr::ArrayTypeTraitExprClass:\n  case Expr::AtomicExprClass:\n  case Expr::TypeTraitExprClass:\n  case Expr::CXXBoolLiteralExprClass:\n  case Expr::CXXNoexceptExprClass:\n  case Expr::CXXNullPtrLiteralExprClass:\n  case Expr::CXXPseudoDestructorExprClass:\n  case Expr::CXXScalarValueInitExprClass:\n  case Expr::CXXThisExprClass:\n  case Expr::CXXUuidofExprClass:\n  case Expr::CharacterLiteralClass:\n  case Expr::ExpressionTraitExprClass:\n  case Expr::FloatingLiteralClass:\n  case Expr::GNUNullExprClass:\n  case Expr::ImaginaryLiteralClass:\n  case Expr::ImplicitValueInitExprClass:\n  case Expr::IntegerLiteralClass:\n  case Expr::FixedPointLiteralClass:\n  case Expr::ArrayInitIndexExprClass:\n  case Expr::NoInitExprClass:\n  case Expr::ObjCEncodeExprClass:\n  case Expr::ObjCStringLiteralClass:\n  case Expr::ObjCBoolLiteralExprClass:\n  case Expr::OpaqueValueExprClass:\n  case Expr::PredefinedExprClass:\n  case Expr::SizeOfPackExprClass:\n  case Expr::PackIndexingExprClass:\n  case Expr::StringLiteralClass:\n  case Expr::SourceLocExprClass:\n  case Expr::EmbedExprClass:\n  case Expr::ConceptSpecializationExprClass:\n  case Expr::RequiresExprClass:\n  case Expr::HLSLOutArgExprClass:\n  case Stmt::OpenACCEnterDataConstructClass:\n  case Stmt::OpenACCExitDataConstructClass:\n  case Stmt::OpenACCWaitConstructClass:\n  case Stmt::OpenACCInitConstructClass:\n  case Stmt::OpenACCShutdownConstructClass:\n  case Stmt::OpenACCSetConstructClass:\n  case Stmt::OpenACCUpdateConstructClass:\n    // These expressions can never throw.\n    return CT_Cannot;\n'
+    after = '  case Expr::CXXPseudoDestructorExprClass:\n    // NeverC pseudo-destructor receivers retain their potentially throwing evaluation.\n    return canThrow(cast<CXXPseudoDestructorExpr>(S)->getBase());\n\n  case Expr::AddrLabelExprClass:\n  case Expr::ArrayTypeTraitExprClass:\n  case Expr::AtomicExprClass:\n  case Expr::TypeTraitExprClass:\n  case Expr::CXXBoolLiteralExprClass:\n  case Expr::CXXNoexceptExprClass:\n  case Expr::CXXNullPtrLiteralExprClass:\n  case Expr::CXXScalarValueInitExprClass:\n  case Expr::CXXThisExprClass:\n  case Expr::CXXUuidofExprClass:\n  case Expr::CharacterLiteralClass:\n  case Expr::ExpressionTraitExprClass:\n  case Expr::FloatingLiteralClass:\n  case Expr::GNUNullExprClass:\n  case Expr::ImaginaryLiteralClass:\n  case Expr::ImplicitValueInitExprClass:\n  case Expr::IntegerLiteralClass:\n  case Expr::FixedPointLiteralClass:\n  case Expr::ArrayInitIndexExprClass:\n  case Expr::NoInitExprClass:\n  case Expr::ObjCEncodeExprClass:\n  case Expr::ObjCStringLiteralClass:\n  case Expr::ObjCBoolLiteralExprClass:\n  case Expr::OpaqueValueExprClass:\n  case Expr::PredefinedExprClass:\n  case Expr::SizeOfPackExprClass:\n  case Expr::PackIndexingExprClass:\n  case Expr::StringLiteralClass:\n  case Expr::SourceLocExprClass:\n  case Expr::EmbedExprClass:\n  case Expr::ConceptSpecializationExprClass:\n  case Expr::RequiresExprClass:\n  case Expr::HLSLOutArgExprClass:\n  case Stmt::OpenACCEnterDataConstructClass:\n  case Stmt::OpenACCExitDataConstructClass:\n  case Stmt::OpenACCWaitConstructClass:\n  case Stmt::OpenACCInitConstructClass:\n  case Stmt::OpenACCShutdownConstructClass:\n  case Stmt::OpenACCSetConstructClass:\n  case Stmt::OpenACCUpdateConstructClass:\n    // These expressions can never throw.\n    return CT_Cannot;\n'
+    error_message = "Unexpected pinned Clang pseudo-destructor exception source in " + str(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(error_message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if ("NeverC pseudo-destructor receivers" in remainder or
+            "case Expr::CXXPseudoDestructorExprClass:" in remainder):
+        raise SystemExit(error_message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def fix_array_type_query_dimensions(source_root):
     # Validate both exact producer states before changing either file.
     patches = (
@@ -969,6 +992,7 @@ fix_nested_friend_declaration_access(args.source)
 fix_imported_namespace_defaults(args.source)
 fix_member_class_instantiation_patterns(args.source / "clang/lib/AST/DeclCXX.cpp")
 fix_array_type_query_dimensions(args.source)
+fix_pseudo_destructor_exception_spec(args.source / "clang/lib/Sema/SemaExceptionSpec.cpp")
 fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
 fix_deduced_reference_arguments(args.source / "clang/lib/Sema/SemaOverload.cpp")
 fix_copied_full_initializers(args.source / "clang/lib/Sema/SemaExpr.cpp")
