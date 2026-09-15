@@ -283,8 +283,13 @@ include owning subobject destruction, not just a written destructor body. No
 extra Sema instantiation is requested. The three retained nothrow operations also
 check already-resolved standard exception specifications on each selected root
 callee and bound destructor, without asking Sema to resolve additional dependencies.
-The same source proof covers owning-subobject destructor inference. Lazy templates,
-selected defaults, incomplete selection, unresolved exception dependencies and
+The same source proof covers owning-subobject destructor inference. Non-nothrow
+constructor queries can select unchanged ordinary parameter defaults after exact
+parameter/initializer source completion. The adapter independently validates the
+FullExpr envelope stripped by ParmVarDecl::getDefaultArg(), source ownership,
+selected owner/slot and nested implicit destruction. These checks do not rewrite
+or evaluate the initializer. Lazy templates, template-owned or rewritten defaults,
+nothrow defaults, incomplete selection, unresolved exception dependencies and
 record-value nothrow destruction still need further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.
 

@@ -786,6 +786,11 @@ result without emitting hypothetical calls or treating C pointer carriers as
 C++ reference identity. The remaining record operation queries await retained selection source;
 folding a false result does not bypass that restriction. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).
+Ordinary constructor defaults use exact completed parameter/initializer source
+proofs before erasure, including unchanged full-expression envelopes and implicit
+destruction dependencies. The frontend retains these identities internally;
+neither default expressions nor hypothetical calls are added to transport IR.
+
 
 ## Core v2 array type queries
 

@@ -5343,6 +5343,27 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluat
 
 TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"retained-nested-default-query", "struct R{R(int=__is_constructible(int,int)){}};bool f(){return __is_constructible(R);}"},
+      {"user-selected-default", "struct R{R(int,int=3){}};bool f(){return __is_constructible(R,int);}"},
+      {"user-nested-default-conversion", "struct S{S(int=3){}};struct R{R(S={}){}};bool f(){return __is_constructible(R);}"},
+      {"default-literal", "struct R{int n;R(int v=3):n(v){}};static_assert(__is_constructible(R)&&!__is_trivially_constructible(R));"},
+      {"default-multiple", "struct R{R(int=1,int=2){}};static_assert(__is_constructible(R)&&__is_constructible(R,int)&&__is_constructible(R,int,int));"},
+      {"default-nonconstant", "int calls;int next(){return ++calls;}struct R{R(int=next()){}};static_assert(__is_constructible(R));"},
+      {"default-later-callee", "int get();struct R{R(int=get()){}};static_assert(__is_constructible(R));int get(){return 3;}"},
+      {"default-inherited", "struct R{int n;R(int=3);};static_assert(__is_constructible(R));R::R(int v):n(v){}"},
+      {"default-out-of-line-added", "struct R{R(int,int);};R::R(int,int=3){}static_assert(__is_constructible(R,int));"},
+      {"default-pointer", "int value;struct R{R(int*p=&value){}};static_assert(__is_constructible(R));"},
+      {"default-reference", "struct R{int n;R(const int&v=3):n(v){}};static_assert(__is_constructible(R));"},
+      {"default-self-query", "struct R{R(int=__is_constructible(R,int)){}};static_assert(__is_constructible(R));"},
+      {"default-body-query", "struct R{R(int=3){static_assert(__is_constructible(R));}};static_assert(__is_constructible(R));"},
+      {"default-expression-query", "struct R{R(int=(sizeof(int),__is_constructible(int,int))){}};static_assert(__is_constructible(R));"},
+      {"default-unused-unevaluated", "template<class T>int poison(){T::missing();}struct R{R(int=sizeof(poison<int>())){}};static_assert(__is_constructible(R));"},
+      {"default-temporary", "struct S{int n;~S(){}};struct R{R(const S& =S{3}){}};static_assert(__is_constructible(R));"},
+      {"default-nested-filler", "struct S{~S(){}};struct V{S fields[2];~V(){}};struct R{R(const V& =V{}){}};static_assert(__is_constructible(R));"},
+      {"default-nested-field", "struct S{~S(){}};struct V{S field{};~V(){}};struct R{R(const V& =V{}){}};static_assert(__is_constructible(R));"},
+      {"default-pointer-subobject", "struct S{~S()=delete;};struct V{S*p;};struct R{R(V={nullptr}){}};static_assert(__is_constructible(R));"},
+      {"default-explicit-destruction", "struct S{~S(){}};S*pointer;struct R{R(int=(pointer->~S(),3)){}};static_assert(__is_constructible(R));"},
+      {"default-delete", "struct S{~S(){}static void operator delete(void*)noexcept{}};S*pointer;struct R{R(int=(delete pointer,3)){}};static_assert(__is_constructible(R));"},
       {"user-pointer-void-conversion", "struct S{int*value;operator int*()const{return value;}};static_assert(__is_convertible(S,void*)&&__is_assignable(void*&,S));"},
       {"user-pointer-void-constructor", "struct S{int*value;operator int*()const{return value;}};struct R{void*value;R(void*v):value(v){}};static_assert(__is_constructible(R,S));"},
       {"user-converted-reference-argument", "struct S{operator int()const{return 3;}};struct R{double value;R(const double&v):value(v){}};static_assert(__is_constructible(R,S));"},
@@ -5470,6 +5491,14 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"default-hidden-initializer", "struct R{R(int=sizeof(long double)){}};bool f(){return __is_constructible(R);}"},
+      {"default-hidden-callee-body", "int get(){long double hidden=0;return 3;}struct R{R(int=get()){}};bool f(){return __is_constructible(R);}"},
+      {"default-hidden-temporary-destruction", "struct S{~S(){long double hidden=0;}};struct R{R(const S& =S{}){}};bool f(){return __is_constructible(R);}"},
+      {"default-implicit-nontrivial-destruction", "struct S{~S(){}};struct V{S field;};struct R{R(const V& =V{}){}};bool f(){return __is_constructible(R);}"},
+      {"default-written-temporary-destruction", "struct S{~S()=default;};struct R{R(const S& =S{}){}};bool f(){return __is_constructible(R);}"},
+      {"default-nested-filler-destruction", "struct S{~S()=default;};struct V{S fields[2];~V(){}};struct R{R(const V& =V{}){}};bool f(){return __is_constructible(R);}"},
+      {"default-explicit-defaulted-destruction", "struct S{~S()=default;};S*pointer;struct R{R(int=(pointer->~S(),3)){}};bool f(){return __is_constructible(R);}"},
+      {"default-delete-defaulted-destruction", "struct S{~S()=default;static void operator delete(void*)noexcept{}};S*pointer;struct R{R(int=(delete pointer,3)){}};bool f(){return __is_constructible(R);}"},
       {"pointer-unmaterialized-record", "template<class T>struct R{T n;R(){T::missing();}};static_assert(__is_constructible(R<int>*)&&__is_nothrow_destructible(R<int>*));"},
       {"record-reference-nothrow-hidden-type", "struct R{int n;};bool f(){return __is_nothrow_destructible(decltype((sizeof(long double),R{}))&);}"},
       {"record-reference-nothrow-used-body", "template<class T>struct R{~R(){long double hidden=0;}};static_assert(__is_nothrow_destructible(R<int>&));int main(){R<int>value;}"},
@@ -5479,7 +5508,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"record-base-written-copy", "struct B{B(const B&)noexcept(false)=default;};struct R:B{};bool f(){return __is_constructible(R,R);}"},
       {"record-query-hidden-source", "struct R{int n;};bool f(){return __is_constructible(decltype((sizeof(long double),R{})),R);}"},
       {"retained-inaccessible-construction", "class R{R(int){}};bool f(){return __is_constructible(R,int);}"},
-      {"retained-nested-default-query", "struct R{R(int=__is_constructible(int,int)){}};bool f(){return __is_constructible(R);}"},
       {"record-convertible-false", "struct R{int n;};bool f(){return __is_convertible(int,R);}"},
       {"record-destructor-array", "struct R{int n;};bool f(){return __is_nothrow_destructible(R[2][3]);}"},
       {"long-double", "bool f(){return __is_constructible(long double,int);}"},
@@ -5515,7 +5543,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"user-hidden-assignment", "struct R{R&operator=(int){(void)sizeof(long double);return *this;}};bool f(){return __is_assignable(R&,int);}"},
       {"user-hidden-destructor", "struct R{R(int){}~R(){(void)sizeof(long double);}};bool f(){return __is_constructible(R,int);}"},
       {"user-hidden-signature", "struct R{R(int v[sizeof(long double)]){}};bool f(){return __is_constructible(R,int*);}"},
-      {"user-selected-default", "struct R{R(int,int=3){}};bool f(){return __is_constructible(R,int);}"},
       {"user-lazy-template-body", "template<class T>struct R{R(int){T::missing();}};bool f(){return __is_constructible(R<int>,int);}"},
       {"user-constructor-template", "struct R{template<class T>R(T){T::missing();}};bool f(){return __is_constructible(R,int);}"},
       {"user-conversion-template", "struct R{template<class T>operator T()const{return T::missing;}};bool f(){return __is_convertible(R,int);}"},
@@ -5523,7 +5550,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"user-destructor-implicit-nontrivial", "struct F{~F(){}};struct R{F f;R(){}};bool f(){return __is_constructible(R);}"},
       {"user-self-query-incomplete", "struct R{R(int){static_assert(!__is_constructible(R));}};bool f(){return __is_constructible(R,int);}"},
       {"user-mutual-query-hidden", "struct A{A(int);};struct B{B(int);};A::A(int){static_assert(__is_constructible(B,int));}B::B(int){(void)sizeof(long double);static_assert(__is_constructible(A,int));}"},
-      {"user-nested-default-conversion", "struct S{S(int=3){}};struct R{R(S={}){}};bool f(){return __is_constructible(R);}"},
       {"nothrow-hidden-specification", "struct R{R(int)noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}"},
       {"nothrow-hidden-conversion-specification", "struct R{operator int()const noexcept(sizeof(long double)>0){return 3;}};bool f(){return __is_nothrow_convertible(R,int);}"},
       {"nothrow-hidden-destructor-specification", "struct R{R(int)noexcept{}~R()noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}"},
@@ -5546,6 +5572,8 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainRequiredDefinitions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"default-missing-callee", "int get();struct R{R(int=get()){}};bool f(){return __is_constructible(R);}"},
+      {"default-missing-temporary-destructor", "struct S{~S();};struct R{R(const S& =S{}){}};bool f(){return __is_constructible(R);}"},
       {"user-missing-constructor", "struct R{R(int);};bool f(){return __is_constructible(R,int);}"},
       {"user-missing-conversion", "struct R{operator int()const;};bool f(){return __is_convertible(R,int);}"},
       {"user-missing-assignment", "struct R{R&operator=(int);};bool f(){return __is_assignable(R&,int);}"},
@@ -5567,6 +5595,7 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainRequiredDefinitions) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsKeepCppDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"default-required-order", "struct R{R(int=3,int){}};bool f(){return __is_constructible(R);}"},
       {"construct-arity", "bool f(){return __is_constructible();}"},
       {"assign-arity", "bool f(){return __is_assignable(int);}"},
       {"convert-arity", "bool f(){return __is_convertible(int,int,int);}"},

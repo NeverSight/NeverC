@@ -10,7 +10,7 @@ Core v2 也支援經過檢查的 `__array_rank` 和 `__array_extent`，維度索
 
 Core v2 新增經過檢查的內建型別分類查詢，包括 `__is_integral`、`__is_pointer` 和 `__is_same`。查詢保留 C++ 型別身分，在產生布林值前檢查寫出的運算元。不支援的運算元型別及其他型別特徵仍受限制。O0／O2 與重定位驗證須由實作版本的 CI 執行；標準標頭檔與完整 C++／STL 尚未完成。 記錄型別查詢也涵蓋聚合、空類別、標準配置、平凡性、平凡可複製性、POD、多型／抽象屬性，以及已支援型別的 `__is_base_of` 基底關係。 亦支援標準 `final` 類別及 `__is_final`、`__is_literal`、`__has_unique_object_representations` 查詢。結果保留原始碼的填補、空類別表示和 C++17 字面型別語意；其他屬性與虛擬方法仍受原有限制。 可解構性與平凡解構查詢亦涵蓋支援的類別，保留私有／已刪除解構函式、參考，以及範本函式本體和例外規格的延遲處理語意。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
 
-Core v2 新增非類別型別的建構、賦值、轉換與解構查詢，涵蓋支援的指標、參考及固定長度陣列，也包括指向支援類別的指標。書寫型別與所選預設引數仍會檢查，不執行運算元副作用。類別型別的建構、賦值、轉換及不拋出例外的解構查詢仍需保留選擇過程的原始碼。原生 O0/O2、重定位及八種 ABI 驗證待實作版本 CI；標準標頭與完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#non-record-operation-traits).
+Core v2 的建構、指派、轉換和解構查詢涵蓋支援的非類別型別、指標、參照及固定長度陣列。類別操作查詢保留實際選定的運算式，可接受隱含平凡操作，以及定義、引數轉換和解構相依性均已完成檢查的一般操作。非 nothrow 建構查詢也能使用未改寫的一般預設引數，逐一驗證參數身分、原始運算式和暫存物件清理相依性，查詢本身不執行副作用。範本操作、nothrow 預設引數和類別值的無例外解構仍未完成。O0/O2、重新定位和八種 ABI 驗證須由實作版本 CI 完成；標準標頭與完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#non-record-operation-traits).
 
 Core v2 新增透過原始碼中精確的全域 C 宣告直接呼叫 `malloc/calloc/free`。原始碼定義的 C++ 配置器可使用真正的原生堆積，並與獨立 C 呼叫端交換及釋放記憶體；原生寬度、呼叫慣例、原始碼和 IR 檢查持續生效。O0/O2 驗證須由實作版本的 CI 執行。`realloc`、預設可擲出例外的 C++ 配置、標準標頭和完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
 

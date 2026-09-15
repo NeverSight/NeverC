@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 114 accepted, 62 unsupported-source, seven missing-definition and seven invalid-C++ cases cover
+The paired 135 accepted, 67 unsupported-source, nine missing-definition and eight invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1049,18 +1049,38 @@ prove implicit subobject destruction. Reference and pointer members do not own
 their referents. Query checking never requests runtime construction/default caches
 or queues hypothetical destruction helpers.
 
-Declaration-only and lazy template operations, selected default arguments,
-explicitly defaulted operations, implicit nontrivial destructors, incomplete
-selection and unproven record exception dependencies still require further source
-evidence. Supplying every argument to an ordinary function with defaults can pass;
-selecting an omitted default cannot yet use this proof. Unused templates remain
-lazy, and actual runtime use retains all ordinary source and lowering checks.
+Selected ordinary constructor defaults also qualify for non-nothrow queries when
+the exact parameter and unchanged initializer have completed normal source checking.
+The actual selected parameter owner and argument slot must match; inherited and
+out-of-line defaults retain their own parameter identity. An owned declaration
+alone cannot prove an initializer inherited from unowned source. Clang may strip
+one full-expression wrapper from a parameter default, so its type, value category,
+exact operand and cleanup objects are checked independently. Per-use rewritten
+initializers cannot borrow the original expression's proof.
+
+An additional bounded scan checks implicit destruction in query-only defaults:
+record prvalues, bound temporaries, nested defaults and semantic array fillers,
+explicit destructor calls and delete all retain their owning-subobject proofs.
+The scan conservatively requires destruction proof for every record prvalue,
+including constructor expressions below new. Nested unevaluated
+sizeof/noexcept/type-query operands keep their independent source checks without
+forcing unused destructor bodies. No runtime cleanup queue
+is used as evidence. Ordinary default expressions can call already admitted
+functions, including nested template expressions under existing source rules;
+template-owned default parameters need further source evidence.
+
+Declaration-only and lazy template operations, explicitly defaulted operations,
+implicit nontrivial destructors, incomplete selection, nothrow defaults and
+unproven record exception dependencies still require further source evidence.
+Unused templates remain lazy, and actual runtime use retains all ordinary source
+and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has fifteen O0/O2 checkpoints for zero hypothetical effects, real user
-construction/copy/move/assignment/conversion and field-array destruction. Thirteen
-exported query functions must contain only boolean value flow; relocation must
+fixture has twenty-two O0/O2 checkpoints for zero hypothetical effects, real user
+construction/copy/move/assignment/conversion, field-array destruction and repeated
+default evaluation with full-expression temporary cleanup. Fifteen exported query
+functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
 ### Resolved exception source for operation queries
@@ -1084,7 +1104,7 @@ Clang's expression exception check can stop after a throwing callee. If a later
 callee remains unresolved, this bounded proof rejects the query conservatively.
 Destructor inference differs: it can still resolve later subobject destructors
 after an earlier one makes the result throwing, so every owning subobject remains
-part of the source proof. Neither path authorizes selected defaults, lazy template
+part of the source proof. These exception checks do not authorize selected defaults, lazy template
 operations, failed initialization or record-value nothrow destruction.
 
 ### Nothrow destruction of record references

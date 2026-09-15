@@ -46,6 +46,22 @@ struct ThrowingDestruction {
   ~ThrowingDestruction() noexcept(false) { ++destructions; }
 };
 
+int default_calls;
+int default_constructions;
+int default_destructions;
+int defaultValue() { return 30 + ++default_calls; }
+struct DefaultToken {
+  int value;
+  DefaultToken(int n) : value(n) { ++default_constructions; }
+  ~DefaultToken() { ++default_destructions; }
+};
+struct Defaults {
+  int value;
+  Defaults(int n = defaultValue(), const DefaultToken &token = DefaultToken(7))
+      : value(n + token.value) { ++default_constructions; }
+  ~Defaults() { ++default_destructions; }
+};
+
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
 extern "C" bool defined_trivial() { return __is_trivially_constructible(Value, int); }
@@ -59,6 +75,8 @@ extern "C" bool defined_nothrow_convert() { return __is_nothrow_convertible(Valu
 extern "C" bool defined_nothrow_assign() { return __is_nothrow_assignable(Value&, int); }
 extern "C" bool defined_nothrow_fields() { return __is_nothrow_constructible(Holder); }
 extern "C" bool defined_nothrow_destruction() { return __is_nothrow_constructible(ThrowingDestruction); }
+extern "C" bool defined_defaults() { return __is_constructible(Defaults); }
+extern "C" bool defined_trivial_defaults() { return __is_trivially_constructible(Defaults); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -106,5 +124,24 @@ int main() {
     if (constructions != 4 || destructions != 7) return 14;
   }
   if (destructions != 8 || constructions != 4 || conversions != 4) return 15;
+  if (!defined_defaults() || defined_trivial_defaults() ||
+      default_calls || default_constructions || default_destructions) return 16;
+  {
+    Defaults first;
+    if (first.value != 38 || default_calls != 1 ||
+        default_constructions != 2 || default_destructions != 1) return 17;
+    Defaults second(40);
+    if (second.value != 47 || default_calls != 1 ||
+        default_constructions != 4 || default_destructions != 2) return 18;
+    if (!__is_constructible(Defaults, int) || !defined_defaults() ||
+        default_calls != 1 || default_constructions != 4 || default_destructions != 2) return 19;
+  }
+  if (default_destructions != 4) return 20;
+  {
+    Defaults third;
+    if (third.value != 39 || default_calls != 2 ||
+        default_constructions != 6 || default_destructions != 5) return 21;
+  }
+  if (default_destructions != 6 || default_calls != 2) return 22;
   return 0;
 }

@@ -1382,6 +1382,33 @@ const Expr *selectedDefaultArgument(const CXXDefaultArgExpr *Default,
   return Init;
 }
 
+using OperationDefaultSources =
+    std::set<std::pair<const ParmVarDecl *, const Expr *>>;
+
+static const Expr *operationDefaultInitializer(Adapter &A, const ParmVarDecl *P) {
+  const auto *Init = defaultArgumentInitializer(P, A.Context);
+  const auto *Function = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
+  if (!Init || !Function || Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !A.S.owns(A.Sources, P->getLocation()) ||
+      !A.S.owns(A.Sources, Function->getLocation()) ||
+      !A.S.owns(A.Sources, Init->getBeginLoc()))
+    return nullptr;
+  const auto *Stored = P->getInit();
+  if (Stored == Init)
+    return Init;
+  // getDefaultArg() strips one FullExpr. RAV visits that normalized expression,
+  // so prove the omitted envelope separately before recording source completion.
+  const auto *Full = dyn_cast_or_null<FullExpr>(Stored);
+  if (!Full || Full->getSubExpr() != Init ||
+      !A.S.owns(A.Sources, Full->getBeginLoc()) ||
+      !A.Context.hasSameType(Full->getType(), Init->getType()) ||
+      Full->getValueKind() != Init->getValueKind())
+    return nullptr;
+  if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Full))
+    return Cleanup->getNumObjects() == 0 ? Init : nullptr;
+  return isa<ConstantExpr>(Full) ? Init : nullptr;
+}
+
 bool ordinaryDestructor(const CXXDestructorDecl *D) {
   if (!D || D->isImplicit() || !D->isUserProvided() || D->isVirtual() ||
       D->isDeletedAsWritten() || D->isExplicitlyDefaulted() ||
@@ -1714,7 +1741,8 @@ void Adapter::checkQueryType(QualType T, SourceLocation L) {
 // completed source proof from the function emission queue.
 static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const std::set<const FunctionDecl *> *Definitions = nullptr,
-    bool RequiresExceptionSource = false) {
+    bool RequiresExceptionSource = false,
+    const OperationDefaultSources *Defaults = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
@@ -1753,6 +1781,72 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
       if (const auto *Member = A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl())
         if (!Self(Self, Member, Depth + 1))
           return false;
+    return true;
+  };
+  // Normal parameter traversal proves the unchanged initializer's written
+  // operations. It does not prove every implicit destructor, and an unused
+  // default need never reach runtime lowering. Inspect those dependencies here
+  // with completed definitions, without creating runtime lifetime helpers.
+  auto DefaultLifetimes = [&](auto &&Self, const Stmt *Node,
+                              unsigned Depth) -> bool {
+    if (!Node)
+      return true;
+    if (Depth > 64)
+      return false;
+    A.chargeExpansion(1, Node->getBeginLoc());
+    if (isa<UnaryExprOrTypeTraitExpr, CXXNoexceptExpr, TypeTraitExpr,
+            ArrayTypeTraitExpr>(Node))
+      return true; // Their unevaluated source and pending queries are checked independently.
+    if (const auto *E = dyn_cast<Expr>(Node);
+        E && !E->getType().isNull() && E->isPRValue())
+      if (const auto *Record = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl())
+        if (!Destruction(Destruction, Record, 0))
+          return false;
+    if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Node)) {
+      const auto *Destructor = Temporary->getTemporary()->getDestructor();
+      const auto *Sub = Temporary->getSubExpr();
+      if (!Destructor || !Sub || !Temporary->isPRValue() || !Sub->isPRValue() ||
+          !A.Context.hasSameType(Temporary->getType(), Sub->getType()) ||
+          !A.Context.hasSameUnqualifiedType(Temporary->getType(),
+              A.Context.getRecordType(Destructor->getParent())) ||
+          !Destruction(Destruction, Destructor->getParent(), 0))
+        return false;
+    }
+    if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Node))
+      if (Cleanup->getNumObjects() || !Cleanup->getSubExpr() ||
+          !A.Context.hasSameType(Cleanup->getType(), Cleanup->getSubExpr()->getType()) ||
+          Cleanup->getValueKind() != Cleanup->getSubExpr()->getValueKind())
+        return false;
+    if (const auto *Delete = dyn_cast<CXXDeleteExpr>(Node)) {
+      auto T = Delete->getDestroyedType();
+      if (T.isNull())
+        return false;
+      if (const auto *Record = A.Context.getBaseElementType(T)->getAsCXXRecordDecl())
+        if (!Destruction(Destruction, Record, 0))
+          return false;
+    }
+    if (const auto *Call = dyn_cast<CallExpr>(Node))
+      if (const auto *Destructor = dyn_cast_or_null<CXXDestructorDecl>(Call->getDirectCallee()))
+        if (!Destruction(Destruction, Destructor->getParent(), 0))
+          return false;
+    // These source wrappers have no normal Stmt children. Array fillers may
+    // likewise exist only in the semantic initializer form.
+    if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
+      const auto *Init = selectedDefaultArgument(Default, A.Context);
+      return Init && Self(Self, Init, Depth + 1);
+    }
+    if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Node))
+      return Default->getExpr() && Self(Self, Default->getExpr(), Depth + 1);
+    if (const auto *List = dyn_cast<InitListExpr>(Node)) {
+      if (const auto *Semantic = List->getSemanticForm(); Semantic && Semantic != List)
+        if (!Self(Self, Semantic, Depth + 1))
+          return false;
+      if (List->hasArrayFiller() && !Self(Self, List->getArrayFiller(), Depth + 1))
+        return false;
+    }
+    for (const auto *Child : Node->children())
+      if (!Self(Self, Child, Depth + 1))
+        return false;
     return true;
   };
   enum class Family { Default, CopyMove, Assignment };
@@ -1835,9 +1929,25 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
               A.Context.getRecordType(Constructor->getParent())) ||
           !Destruction(Destruction, Constructor->getParent(), 0))
         return false;
-      for (const auto *Argument : Construction->arguments())
-        if (!Self(Self, Argument, Depth + 1))
+      for (unsigned I = 0; I < Construction->getNumArgs(); ++I) {
+        const auto *Argument = Construction->getArg(I);
+        if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument)) {
+          const auto *P = Default->getParam();
+          const auto *Owner = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
+          const auto *Init = operationDefaultInitializer(A, P);
+          if (RequiresExceptionSource || !Defaults || !Init || !Owner ||
+              !Defined(Constructor) ||
+              Owner->getCanonicalDecl() != Constructor->getCanonicalDecl() ||
+              P->getFunctionScopeIndex() != I || Default->hasRewrittenInit() ||
+              !A.S.owns(A.Sources, Default->getUsedLocation()) ||
+              selectedDefaultArgument(Default, A.Context) != Init ||
+              !Defaults->count({P, Init}) ||
+              !DefaultLifetimes(DefaultLifetimes, Init, 0))
+            return false;
+        } else if (!Self(Self, Argument, Depth + 1)) {
           return false;
+        }
+      }
       return true;
     }
     if (const auto *Call = dyn_cast<CXXOperatorCallExpr>(E)) {
@@ -3184,6 +3294,7 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
+  OperationDefaultSources CompletedOperationDefaults;
   std::map<const CXXRecordDecl *, bool> HasArray;
   std::map<const CXXRecordDecl *, bool> FlatReferenceLayouts;
   std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees, FunctionValueDesignators;
@@ -8612,8 +8723,13 @@ public:
     return RecursiveASTVisitor<Allowlist>::TraverseTemplateArgumentLoc(Argument);
   }
   bool TraverseParmVarDecl(ParmVarDecl *D) {
-    if (!A.S.coreV2() || !lazyTemplateDefault(D))
-      return RecursiveASTVisitor<Allowlist>::TraverseParmVarDecl(D);
+    if (!A.S.coreV2() || !lazyTemplateDefault(D)) {
+      const bool Result = RecursiveASTVisitor<Allowlist>::TraverseParmVarDecl(D);
+      if (Result && A.S.coreV2() && A.S.Diagnostics.empty())
+        if (const auto *Init = operationDefaultInitializer(A, D))
+          CompletedOperationDefaults.emplace(D, Init);
+      return Result;
+    }
     // RAV normally traverses the uninstantiated pattern expression here.
     // Its concrete type is still checked; only Sema-selected defaults run.
     if (!WalkUpFromParmVarDecl(D))
@@ -9036,7 +9152,8 @@ public:
       auto Source = A.OperationTraits.find(Query);
       if (Source == A.OperationTraits.end() ||
           !operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
-                                operationTraitNeedsExceptionSource(Query->getTrait()))) {
+                                operationTraitNeedsExceptionSource(Query->getTrait()),
+                                &CompletedOperationDefaults)) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact ordinary definitions, arguments and destruction source.");
         return false;
