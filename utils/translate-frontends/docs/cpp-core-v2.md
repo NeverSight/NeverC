@@ -815,13 +815,21 @@ function types differ from potentially throwing function types.
 | Arrays, pointers and functions | `__is_array`, `__is_pointer`, `__is_function`, `__is_member_pointer`, `__is_member_object_pointer`, `__is_member_function_pointer` |
 | References and qualifications | `__is_reference`, `__is_lvalue_reference`, `__is_rvalue_reference`, `__is_const`, `__is_volatile` |
 | Exact source type identity | `__is_same`, including its Clang alias `__is_same_as` |
+| Record and object properties | `__is_aggregate`, `__is_empty`, `__is_standard_layout`, `__is_trivial`, `__is_trivially_copyable`, `__is_pod`, `__is_polymorphic`, `__is_abstract` |
+| Class relationship | `__is_base_of` |
 
 Each operand retains its written type source and must satisfy the existing type
 contract, including `void` for queries. Bare function types and function aliases
 use the admitted callback signature contract; normal parameter adjustments are
 preserved. Function-type template arguments and references to functions retain
-their existing restrictions. Querying a type does not request a new definition
-or force an otherwise unused dependent class body to instantiate.
+their existing restrictions. Required class completeness follows the source
+language, while unused dependent member bodies remain lazy. No constructor or
+destructor runs as a result of a query. Record properties describe the C++ type:
+a reference-bearing record is not standard-layout even when its C carrier is;
+a user-provided default constructor can coexist with trivial copying.
+`__is_base_of` includes supported indirect and private empty bases, compares the
+same class independently of cv-qualification, and does not require a pointer
+conversion to be accessible.
 
 `decltype` operands, array bounds, exception specifications, template arguments
 and selected defaults are inspected even when the query is folded, discarded or
@@ -834,7 +842,7 @@ The builtin spelling does not expand the operand domain. Volatile types, member
 pointers, incomplete/union types, unknown-bound arrays and `long double` remain
 rejected, even for a query that would return false. Direct unknown-bound arrays
 are distinct from array parameters adjusted within an admitted function type.
-Construction, assignment, conversion, destruction, layout, inheritance and other
+Construction, assignment, conversion, destruction and other
 builtin trait kinds require separate contracts and remain rejected. V1 admission
 is unchanged. Paired source/protocol tests, O0/O2 saved-NC execution, unevaluated
 effects and relocation require the implementing revision's CI; this does not

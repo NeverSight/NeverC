@@ -5939,6 +5939,31 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert relocated == array_queries
 
     builtin_type_positive = {
+        'structural-empty': 'struct E{};struct R{int n;};static_assert(__is_empty(E)&&!__is_empty(R)&&!__is_empty(int));',
+        'structural-aggregate': 'struct A{int n;};struct C{int n;C():n(3){}};static_assert(__is_aggregate(A)&&__is_aggregate(int[2])&&!__is_aggregate(C)&&!__is_aggregate(int));',
+        'structural-standard-layout': 'struct A{int n;};struct R{int&r;};static_assert(__is_standard_layout(A)&&!__is_standard_layout(R)&&__is_standard_layout(int));',
+        'structural-trivial': 'struct A{int n;};struct C{int n;C():n(3){}};static_assert(__is_trivial(A)&&!__is_trivial(C)&&__is_trivial(int));',
+        'structural-trivial-copy': 'struct C{int n;C():n(3){}};struct D{int n;~D(){}};static_assert(__is_trivially_copyable(C)&&!__is_trivially_copyable(D)&&__is_trivially_copyable(int[2]));',
+        'structural-pod': 'struct A{int n;};struct C{int n;C():n(3){}};static_assert(__is_pod(A)&&!__is_pod(C)&&__is_pod(int));',
+        'structural-non-polymorphic': 'struct R{int n;~R(){}};static_assert(!__is_polymorphic(R)&&!__is_polymorphic(int)&&!__is_abstract(R));',
+        'structural-private-fields': 'class R{int n;};static_assert(__is_standard_layout(R)&&!__is_aggregate(R));',
+        'structural-base-chain': 'struct B{};struct M:B{};struct D:M{};static_assert(__is_base_of(B,D)&&__is_base_of(M,D)&&!__is_base_of(D,B)&&__is_empty(D));',
+        'structural-private-base': 'struct B{};struct D:private B{};static_assert(__is_base_of(B,D)&&__is_empty(D)&&__is_standard_layout(D));',
+        'structural-base-self-cv': 'struct B{};static_assert(__is_base_of(const B,B)&&__is_base_of(B,const B)&&!__is_base_of(B&,B)&&!__is_base_of(B*,B*));',
+        'structural-base-unrelated': 'struct A{};struct B{};static_assert(!__is_base_of(A,B)&&!__is_base_of(int,int)&&!__is_base_of(void,void));',
+        'structural-reference-and-void': 'static_assert(!__is_trivial(int&)&&!__is_trivially_copyable(int&)&&!__is_standard_layout(void)&&!__is_aggregate(void));',
+        'structural-function': 'using F=int();static_assert(!__is_trivial(F)&&!__is_trivially_copyable(F)&&!__is_empty(F)&&!__is_base_of(F,F));',
+        'structural-variable-template': 'template<class T>inline constexpr bool value=__is_standard_layout(T);struct R{int&r;};static_assert(value<int>&&!value<R>);',
+        'structural-class-default': 'template<class T,bool B=__is_empty(T)>struct Q{static constexpr bool value=B;};struct E{};static_assert(Q<E>::value&&!Q<int>::value);',
+        'structural-alias-default': 'template<class T,bool B=__is_trivially_copyable(T)>using A=T;static_assert(__is_trivially_copyable(A<int>));',
+        'structural-base-dependent': 'template<class B>struct D:B{};template<class B,class R>constexpr bool base(){return __is_base_of(B,R);}struct E{};static_assert(base<E,D<E>>());',
+        'structural-pack-fold': 'template<class...T>constexpr bool empty(){return (__is_empty(T)&&...);}struct E{};static_assert(empty<>()&&empty<E,E>()&&!empty<E,int>());',
+        'structural-base-pack': 'template<class...T>constexpr bool base(){return __is_base_of(T...);}struct E{};struct D:E{};static_assert(base<E,D>()&&!base<D,E>());',
+        'structural-noexcept': 'template<class T>void f()noexcept(__is_trivially_copyable(T)){}struct D{int n;~D(){}};static_assert(noexcept(f<int>())&&!noexcept(f<D>()));',
+        'structural-unused-member-body': 'template<class T>struct R{int n;R(){T::missing();}};static_assert(__is_trivially_copyable(R<int>)&&!__is_trivial(R<int>));',
+        'structural-sfinae': 'template<bool B,class T=void>struct E{};template<class T>struct E<true,T>{using type=T;};template<class T,typename E<__is_trivially_copyable(T),int>::type N=3>int f(){return N;}int main(){return f<int>()-3;}',
+        'promoted-structural-layout': 'bool f(){return __is_standard_layout(int);}',
+        'promoted-structural-inheritance': 'struct R{};bool f(){return __is_base_of(R,R);}',
         'arithmetic': 'bool f(){return __is_arithmetic(int)&&__is_arithmetic(float)&&!__is_arithmetic(int*);}',
         'floating-point': 'bool f(){return __is_floating_point(float)&&__is_floating_point(double)&&!__is_floating_point(int);}',
         'integral': 'enum E:int{e};bool f(){return __is_integral(bool)&&__is_integral(char)&&__is_integral(unsigned long)&&!__is_integral(E);}',
@@ -5986,6 +6011,16 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in builtin_type_positive.items():
         check("v2-builtin_type_positive-" + name, source, profile="cpp-core-v2")
     builtin_type_negative = {
+        'structural-hidden-bound': 'bool f(){return __is_empty(int[(sizeof(long double),2)]);}',
+        'structural-hidden-decltype': 'bool f(){return __is_trivial(decltype((sizeof(long double),1)));}',
+        'structural-hidden-default': 'template<class T,int N=sizeof(long double)>using A=T;bool f(){return __is_standard_layout(A<int>);}',
+        'structural-hidden-noexcept': 'bool f(){return __is_trivially_copyable(int()noexcept(sizeof(long double)>0));}',
+        'structural-base-hidden-type': 'template<class T,int N>using A=T;struct B{};bool f(){return __is_base_of(A<B,sizeof(long double)>,B);}',
+        'structural-base-erased-false': 'bool f(){return __is_base_of(long double,int);}',
+        'structural-virtual-record': 'struct R{virtual void f(){}};bool f(){return __is_polymorphic(R);}',
+        'structural-multiple-bases': 'struct B{};struct C{};struct D:B,C{};bool f(){return __is_base_of(B,D);}',
+        'structural-unknown-array': 'bool f(){return __is_standard_layout(int[]);}',
+        'structural-volatile': 'bool f(){return __is_trivial(volatile int);}',
         'long-double': 'bool f(){return __is_floating_point(long double);}',
         'unsupported-pointee': 'bool f(){return __is_pointer(long double*);}',
         'volatile': 'bool f(){return __is_volatile(volatile int);}',
@@ -6015,13 +6050,15 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'assignable': 'bool f(){return __is_assignable(int&,int);}',
         'convertible': 'bool f(){return __is_convertible(int,double);}',
         'destructible': 'bool f(){return __is_destructible(int);}',
-        'layout': 'bool f(){return __is_standard_layout(int);}',
-        'inheritance': 'struct R{};bool f(){return __is_base_of(R,R);}',
         'newer-lifetime': 'bool f(){return __is_trivially_relocatable(int);}',
     }
     for name, source in builtin_type_negative.items():
         check("v2-builtin_type_negative-" + name, source, 'TR0201', profile="cpp-core-v2")
     builtin_type_invalid = {
+        'structural-incomplete-empty': 'struct R;bool f(){return __is_empty(R);}',
+        'structural-incomplete-base': 'struct B{};struct D;bool f(){return __is_base_of(B,D);}',
+        'structural-wrong-base-arity': 'bool f(){return __is_base_of(int);}',
+        'structural-bad-assertion': 'struct R{int n;};static_assert(__is_empty(R));',
         'wrong-arity': 'bool f(){return __is_same(int);}',
         'missing-type': 'bool f(){return __is_integral(Unknown);}',
         'failed-assertion': 'static_assert(__is_integral(double));',
@@ -6031,6 +6068,24 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     check("builtin-type-v1", "bool f(){return __is_integral(int);}", "TR0201")
     builtin_type_source = (repository / "tests/neverc/Inputs/translate/cpp/builtin-type-classification.cpp").read_text()
     builtin_types = check("v2-builtin-type-classification", builtin_type_source, profile="cpp-core-v2")
+    classified = {f["name"]: f for f in builtin_types["functions"] if f["c_export"]}
+    for name, expected in (("classified_integer", True), ("classified_enum", False),
+                           ("classified_empty", True), ("classified_reference_layout", False),
+                           ("classified_private_base", True), ("classified_reverse_base", False)):
+        function = classified[name]
+        assert function["result"] == "bool"
+        returns = [node["value"] for node in function["body"] if node["op"] == "return"]
+        assert len(returns) == 1
+        bindings = {node["target"]["name"]: node["value"] for node in function["body"]
+                    if node["op"] == "assign" and node["target"]["kind"] == "var"}
+        returned = returns[0]
+        seen = set()
+        while returned["kind"] == "var":
+            assert returned["name"] not in seen
+            seen.add(returned["name"])
+            returned = bindings[returned["name"]]
+        assert returned["kind"] == "literal" and returned["type"] == "bool"
+        assert returned["value"] is expected
     with tempfile.TemporaryDirectory(prefix="neverc-builtin-type-relocated-") as temporary:
         relocated = check("v2-builtin-type-relocated", builtin_type_source,
                           root=Path(temporary)/"project", profile="cpp-core-v2")

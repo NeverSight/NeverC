@@ -6,7 +6,7 @@
 
 Core v2 は検証済みの `__array_rank` と `__array_extent` にも対応し、固定配列型に対するテンプレート引数を含む非負の定数整数インデックスを扱います。定数化の前に型とインデックスのソースを検査します。未対応の配列型と暗黙のクラス変換によるインデックスは対象外です。ネイティブ結果には実装リビジョンの CI が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
 
-Core v2 は `__is_integral`、`__is_pointer`、`__is_same` などの検証済み組み込み型分類を追加します。C++ の型の同一性を保ち、真偽値を生成する前に記述された型を検査します。未対応の型とその他の型特性には引き続き制限があります。O0/O2 と再配置の検証には実装リビジョンの CI が必要です。標準ヘッダーと完全な C++/STL 対応は未完了です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
+Core v2 は `__is_integral`、`__is_pointer`、`__is_same` などの検証済み組み込み型分類を追加します。C++ の型の同一性を保ち、真偽値を生成する前に記述された型を検査します。未対応の型とその他の型特性には引き続き制限があります。O0/O2 と再配置の検証には実装リビジョンの CI が必要です。標準ヘッダーと完全な C++/STL 対応は未完了です。 対応する型について、集成体、空のクラス、標準レイアウト、trivial、trivially-copyable、POD、多態性／抽象性、および `__is_base_of` の基底関係も照会できます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
 
 Core v2 は、ソース内の正確なグローバル C 宣言による `malloc/calloc/free` の直接呼び出しに対応します。ソース定義の C++ アロケーターがネイティブヒープを使い、独立した C 側とメモリーの確保・解放を共有できます。型幅、呼び出し規約、ソースと IR の検証は維持されます。O0/O2 の検証には実装版の CI が必要です。`realloc`、例外を送出する標準 C++ 確保処理、標準ヘッダー、完全な C++／STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
 

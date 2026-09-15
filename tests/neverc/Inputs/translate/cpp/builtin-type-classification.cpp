@@ -1,6 +1,13 @@
 enum Plain : int { plain = 1 };
 enum class Scoped : unsigned { one = 1 };
 struct Empty {};
+struct EmptyMiddle : Empty {};
+struct EmptyDerived : EmptyMiddle {};
+struct PrivateDerived : private Empty {};
+struct PlainRecord { int value; };
+struct ReferenceRecord { int &value; };
+struct ConstructedRecord { int value; ConstructedRecord() : value(3) {} };
+struct DestructedRecord { int value; ~DestructedRecord() {} };
 using Function = int(int);
 using CertainFunction = int(int) noexcept;
 using Null = decltype(nullptr);
@@ -35,6 +42,12 @@ template<class T, WhenIntegral<T> N = 7> int selected() { return N; }
 template<bool B> int bit() { return B ? 1 : 0; }
 extern "C" bool classified_integer() { return __is_integral(int); }
 extern "C" bool classified_enum() { return __is_integral(Plain); }
+extern "C" bool classified_empty() { return __is_empty(EmptyDerived); }
+extern "C" bool classified_reference_layout() { return __is_standard_layout(ReferenceRecord); }
+extern "C" bool classified_private_base() { return __is_base_of(Empty, PrivateDerived); }
+extern "C" bool classified_reverse_base() { return __is_base_of(EmptyDerived, Empty); }
+template<class Base, class Derived> inline constexpr bool base_of = __is_base_of(Base, Derived);
+template<class... T> constexpr bool all_empty() { return (__is_empty(T) && ...); }
 
 static_assert(__is_integral(bool) && !__is_integral(Plain));
 static_assert(__is_same(Null, decltype(nullptr)) && !__is_same(Null, void*));
@@ -82,5 +95,21 @@ int main() {
   if (__is_same(int[2], int[3]) || __is_same(int[2], int*) ||
       !__is_same(const int[2], const int[2]) ||
       __is_same(Function*, CertainFunction*)) return 12;
+  if (!classified_empty() || classified_reference_layout() ||
+      !classified_private_base() || classified_reverse_base()) return 13;
+  if (!__is_aggregate(PlainRecord) || !__is_aggregate(int[2]) ||
+      __is_aggregate(ConstructedRecord) || __is_aggregate(void)) return 14;
+  if (!__is_trivial(PlainRecord) || __is_trivial(ConstructedRecord) ||
+      !__is_trivially_copyable(ConstructedRecord) ||
+      __is_trivially_copyable(DestructedRecord) ||
+      !__is_trivially_copyable(int[2]) || __is_trivially_copyable(int&)) return 15;
+  if (!__is_pod(PlainRecord) || __is_pod(ConstructedRecord) ||
+      __is_polymorphic(DestructedRecord) || __is_abstract(DestructedRecord) ||
+      !__is_standard_layout(EmptyDerived)) return 16;
+  if (!base_of<Empty, EmptyDerived> || !base_of<const Empty, EmptyDerived> ||
+      base_of<EmptyDerived, Empty> || !all_empty<Empty, EmptyDerived>() ||
+      all_empty<Empty, PlainRecord>() || !all_empty<>()) return 17;
+  if (__is_aggregate(decltype(Probe{})) || __is_trivial(decltype(Probe{})) ||
+      effects != 1 || constructed || destroyed) return 18;
   return 0;
 }

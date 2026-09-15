@@ -1706,9 +1706,12 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   case UTT_IsMemberFunctionPointer: case UTT_IsMemberPointer:
   case UTT_IsConst: case UTT_IsVolatile: case UTT_IsSigned: case UTT_IsUnsigned:
   case UTT_IsEnum: case UTT_IsClass: case UTT_IsUnion:
+  case UTT_IsAggregate: case UTT_IsEmpty: case UTT_IsStandardLayout:
+  case UTT_IsTrivial: case UTT_IsTriviallyCopyable: case UTT_IsPOD:
+  case UTT_IsPolymorphic: case UTT_IsAbstract:
     Arity = 1;
     break;
-  case BTT_IsSame:
+  case BTT_IsSame: case BTT_IsBaseOf:
     Arity = 2;
     break;
   default:

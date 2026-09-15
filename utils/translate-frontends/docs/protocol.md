@@ -757,6 +757,9 @@ using Clang's source-level value. No new instruction, protocol field, runtime
 capability or recomputation from erased C carrier types is introduced. Enum versus
 integer, reference versus pointer and distinct function exception specifications
 therefore retain their source query results.
+Record layout, aggregate and triviality properties, and base relationships also
+use the checked C++ metadata. They are never inferred from the emitted C carrier,
+and they do not create construction, destruction or base-conversion instructions.
 
 Type source traversal checks nested `decltype`, array bounds, function
 specifications and selected template substitutions even in erased queries. No

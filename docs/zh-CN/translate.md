@@ -6,7 +6,7 @@
 
 Core v2 还支持经过检查的 `__array_rank` 和 `__array_extent`，维度索引为非负常量整数，也支持固定数组类型配合模板索引。折叠前仍检查类型和索引源码；不支持的数组类型与隐式类转换索引仍被拒绝。原生结果须由实现版本的 CI 验证。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
 
-Core v2 新增经过检查的内置类型分类查询，包括 `__is_integral`、`__is_pointer` 和 `__is_same`。查询保留 C++ 类型身份，在生成布尔值前检查写出的操作数。不支持的操作数类型及其他类型特征仍受限制。O0／O2 与重定位验证须由实现版本的 CI 执行；标准头文件和完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
+Core v2 新增经过检查的内置类型分类查询，包括 `__is_integral`、`__is_pointer` 和 `__is_same`。查询保留 C++ 类型身份，在生成布尔值前检查写出的操作数。不支持的操作数类型及其他类型特征仍受限制。O0／O2 与重定位验证须由实现版本的 CI 执行；标准头文件和完整 C++／STL 尚未完成。 记录类型查询还覆盖聚合、空类、标准布局、平凡性、平凡可复制性、POD、多态／抽象属性，以及已支持类型的 `__is_base_of` 基类关系。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
 
 Core v2 新增通过源码中精确的全局 C 声明直接调用 `malloc/calloc/free`。源码定义的 C++ 分配器可使用真实本机堆，并与独立 C 调用方交换和释放内存；本机宽度、调用约定、源码和 IR 检查继续生效。O0/O2 验证须由实现版本的 CI 执行。`realloc`、默认可抛异常的 C++ 分配、标准头文件和完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
 
