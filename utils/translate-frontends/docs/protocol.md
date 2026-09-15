@@ -794,7 +794,11 @@ no template pattern substitutes for a missing defaulting declaration.
 Implicit trivial construction composes its independent family proof with checked
 destruction of the exact record prvalue, including within selected defaults.
 Nothrow construction and destruction preserve their separate Clang results even
-when a trivial destructor binding was omitted.
+when a trivial destructor binding was omitted. Already materialized inline template
+operations can use the exact completed body proof, with raw original-definition
+identity and both selected/body-owning signature source checked. No unused body is
+instantiated; separate template definitions and copied member-template origins
+remain outside this bounded proof. Template-owned query defaults are unchanged.
 Deleted/access failures retain their pre-resolution false result; record references
 retain their no-selection result. These private events do not enter the protocol. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).

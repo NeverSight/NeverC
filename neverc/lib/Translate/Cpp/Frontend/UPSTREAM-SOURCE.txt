@@ -285,8 +285,15 @@ these distinct fields. This retention does not request extra instantiation, chan
 query booleans or serialize hypothetical operations. The adapter separately checks complete implicit
 trivial record operations and exact synthetic reference/decay paths. Selected
 operation families must be implicit through owning bases and fields. Ordinary
-user operations additionally require exact non-template definitions that completed
-normal source traversal. Deferred roots are checked after successful traversal,
+user operations additionally require exact ordinary or proven inline template
+definitions that completed normal source traversal. Completion excludes implicit
+and defaulted functions, whose bodies normal RAV may skip despite user-provided
+classification. Both selected and body-owning definitions consume exact completed
+TypeSourceInfo and current exception-expression nodes. A concrete template needs
+its raw original member/uncopied-primary declaration to own the exact selected
+body, with no further instantiation metadata on that origin. Separate definitions
+and copied member-template origins cannot borrow an earlier signature's evidence;
+no unused body is instantiated. Deferred roots are checked after successful traversal,
 with deferral closed before validation and lowering. Independent lifetime checks
 include owning subobject destruction, not just a written destructor body. No
 extra Sema instantiation is requested. The three retained nothrow operations also
@@ -349,8 +356,10 @@ retained roots and selected default expressions. Default constructor nodes must
 match their selected parent type and prvalue category before that composition;
 assignment source checks are unchanged. Clang's omitted trivial-destructor binding
 can give construction and destruction different nothrow booleans, both preserved.
-Lazy templates, written template destructors, template-owned or rewritten defaults,
-incomplete selection and unresolved exception dependencies still need further evidence. The independent
+Unmaterialized templates, separate template definitions, copied member-template
+origins, written template defaulted destructors, template-owned or rewritten
+defaults, incomplete selection and unresolved exception dependencies still need
+further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.
 
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy

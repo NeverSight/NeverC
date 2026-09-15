@@ -73,6 +73,25 @@ struct GeneratedLeaf { int value; ~GeneratedLeaf() noexcept { ++generated_destru
 struct GeneratedOwner { GeneratedLeaf fields[2]; ~GeneratedOwner() = default; };
 struct ImplicitOwner { GeneratedLeaf fields[2]; };
 struct ThrowingGenerated { ~ThrowingGenerated() noexcept(false) = default; };
+int template_constructions;
+int template_copies;
+int template_assignments;
+int template_conversions;
+int template_destructions;
+template<class T> struct QueryTemplate {
+  T value;
+  QueryTemplate(T n) noexcept : value(n) { ++template_constructions; }
+  QueryTemplate(const QueryTemplate &other) noexcept : value(other.value) { ++template_copies; }
+  QueryTemplate &operator=(T n) noexcept { value = n; ++template_assignments; return *this; }
+  operator T() const noexcept { ++template_conversions; return value; }
+  ~QueryTemplate() noexcept { ++template_destructions; }
+};
+struct QueryMemberTemplate {
+  int value;
+  template<class T> QueryMemberTemplate(T n) noexcept : value(n) { ++template_constructions; }
+  template<class T> operator T() const noexcept { ++template_conversions; return T(value); }
+  ~QueryMemberTemplate() noexcept { ++template_destructions; }
+};
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -108,6 +127,14 @@ extern "C" bool defined_implicit_copy() { return __is_constructible(ImplicitOwne
 extern "C" bool defined_implicit_nothrow() { return __is_nothrow_constructible(ImplicitOwner); }
 extern "C" bool defined_implicit_trivial() { return __is_trivially_constructible(ImplicitOwner); }
 extern "C" bool defined_implicit_trivial_throwing() { return __is_nothrow_constructible(ThrowingGenerated); }
+extern "C" bool defined_template_construct() { return __is_nothrow_constructible(QueryTemplate<int>, int); }
+extern "C" bool defined_template_copy() { return __is_nothrow_constructible(QueryTemplate<int>, const QueryTemplate<int>&); }
+extern "C" bool defined_template_assign() { return __is_nothrow_assignable(QueryTemplate<int>&, int); }
+extern "C" bool defined_template_convert() { return __is_nothrow_convertible(QueryTemplate<int>, int); }
+extern "C" bool defined_template_destruct() { return __is_nothrow_destructible(QueryTemplate<int>); }
+extern "C" bool defined_template_trivial() { return __is_trivially_constructible(QueryTemplate<int>, int); }
+extern "C" bool defined_member_construct() { return __is_nothrow_constructible(QueryMemberTemplate, int); }
+extern "C" bool defined_member_convert() { return __is_nothrow_convertible(QueryMemberTemplate, int); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -220,5 +247,25 @@ int main() {
         generated_destructions != 6) return 35;
   }
   if (generated_destructions != 10 || constructions != 6 || destructions != 10) return 36;
+  if (!defined_template_construct() || !defined_template_copy() || !defined_template_assign() ||
+      !defined_template_convert() || !defined_template_destruct() || defined_template_trivial() ||
+      !defined_member_construct() || !defined_member_convert() || template_constructions ||
+      template_copies || template_assignments || template_conversions || template_destructions) return 37;
+  {
+    QueryTemplate<int> original(5);
+    QueryTemplate<int> copy(original);
+    copy = 7;
+    QueryMemberTemplate member(11);
+    int total = static_cast<int>(copy) + static_cast<int>(member);
+    if (original.value != 5 || copy.value != 7 || total != 18 || template_constructions != 2 ||
+        template_copies != 1 || template_assignments != 1 || template_conversions != 2 ||
+        template_destructions != 0) return 38;
+    if (!defined_template_copy() || !defined_template_destruct() || !defined_member_convert() ||
+        template_constructions != 2 || template_copies != 1 || template_assignments != 1 ||
+        template_conversions != 2 || template_destructions != 0) return 39;
+  }
+  if (template_constructions != 2 || template_copies != 1 || template_assignments != 1 ||
+      template_conversions != 2 || template_destructions != 3 || generated_destructions != 10 ||
+      constructions != 6 || destructions != 10) return 40;
   return 0;
 }

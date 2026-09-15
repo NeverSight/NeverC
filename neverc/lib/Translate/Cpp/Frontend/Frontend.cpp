@@ -1813,6 +1813,35 @@ static const FunctionProtoType *operationCalleePrototype(const CallExpr *Call) {
   return T->getAs<FunctionProtoType>();
 }
 
+// Category and original signature identity only. An admitted category still
+// needs the exact completed body and type/expression source nodes below.
+static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function) {
+  if (!Function)
+    return false;
+  if (Function->getTemplatedKind() == FunctionDecl::TK_NonTemplate)
+    return true;
+  if ((!concreteFreeFunctionTemplate(Function) && !concreteMemberFunction(Function) &&
+       !concreteFriendFunction(Function)) ||
+      Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+    return false;
+  const FunctionDecl *Origin = nullptr;
+  if (const auto *Member = Function->getMemberSpecializationInfo())
+    Origin = dyn_cast<FunctionDecl>(Member->getInstantiatedFrom());
+  else if (const auto *Primary = Function->getPrimaryTemplate();
+           Primary && !Primary->getInstantiatedFromMemberTemplate())
+    Origin = Primary->getTemplatedDecl();
+  if (!Origin || !A.S.owns(A.Sources, Origin->getLocation()))
+    return false;
+  A.chargeExpansion(1, Origin->getLocation());
+  // Body instantiation can keep an earlier declaration's TypeSourceInfo.
+  // Require the raw written origin itself to own the selected body; neither a
+  // separate definition nor another instantiated origin supplies its signature.
+  return !Origin->isImplicit() && !Origin->isDefaulted() &&
+         !Origin->getMemberSpecializationInfo() && !Origin->getPrimaryTemplate() &&
+         Origin->doesThisDeclarationHaveABody() && Origin->getDefinition() == Origin &&
+         Function->getTemplateInstantiationPattern() == Origin;
+}
+
 // Source completion is independent of a trait's computed Boolean and of the
 // hypothetical root's fast admission path. Share this proof with query type roots.
 class OperationSourceChecker {
@@ -1853,11 +1882,15 @@ public:
   bool defined(const FunctionDecl *Function) {
     const auto *Definition = Function ? Function->getDefinition() : nullptr;
     return Definitions && Definition && Definitions->count(Definition) &&
-           Function->getTemplatedKind() == FunctionDecl::TK_NonTemplate &&
+           operationDefinitionCategory(A, Function) &&
+           operationDefinitionCategory(A, Definition) &&
            A.S.owns(A.Sources, Function->getLocation()) &&
-           Function->getTypeSourceInfo() &&
+           A.S.owns(A.Sources, Definition->getLocation()) &&
+           Function->getTypeSourceInfo() && Definition->getTypeSourceInfo() &&
            requireType(operationTypeSourceKey(Function->getTypeSourceInfo()->getTypeLoc())) &&
-           prototypeSource(Function->getType()->getAs<FunctionProtoType>());
+           requireType(operationTypeSourceKey(Definition->getTypeSourceInfo()->getTypeLoc())) &&
+           prototypeSource(Function->getType()->getAs<FunctionProtoType>()) &&
+           prototypeSource(Definition->getType()->getAs<FunctionProtoType>());
   }
   bool generatedDestructor(const CXXDestructorDecl *Destructor) {
     if (!Destructor || !defaultedLifecycle(Destructor) ||
@@ -9835,8 +9868,9 @@ public:
         Result = TraverseDecl(Definition);
     if (const auto *Function = dyn_cast_or_null<FunctionDecl>(D);
         Result && A.S.coreV2() && A.S.Diagnostics.empty() && Function && owned(Function) &&
+        !Function->isImplicit() && !Function->isDefaulted() &&
         Function->isUserProvided() && Function->doesThisDeclarationHaveABody() &&
-        Function->getTemplatedKind() == FunctionDecl::TK_NonTemplate)
+        operationDefinitionCategory(A, Function))
       CompletedOperationDefinitions.insert(Function);
     return Result;
   }

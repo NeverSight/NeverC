@@ -5343,6 +5343,24 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluat
 
 TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"materialized-local-class-operations", "template<class T>int use(){struct R{T value;R(T n)noexcept:value(n){}~R()noexcept{}};R r(3);static_assert(__is_constructible(R,T)&&__is_nothrow_destructible(R));return r.value;}int f(){return use<int>();}"},
+      {"materialized-class-constructor", "template<class T>struct R{T value;R(T n)noexcept:value(n){}};void use(){R<int>r(3);}static_assert(__is_constructible(R<int>,int)&&__is_nothrow_constructible(R<int>,int));"},
+      {"materialized-class-later-use", "template<class T>struct R{T value;R(T n)noexcept:value(n){}};static_assert(__is_constructible(R<int>,int));void use(){R<int>r(3);}"},
+      {"materialized-class-copy", "template<class T>struct R{T value;R(T n):value(n){}R(const R&other)noexcept:value(other.value){}};void use(){R<int>a(3);R<int>b(a);}static_assert(__is_constructible(R<int>,const R<int>&)&&__is_nothrow_constructible(R<int>,const R<int>&));"},
+      {"materialized-class-move", "template<class T>struct R{T value;R(T n):value(n){}R(R&&other)noexcept:value(other.value){other.value=0;}};void use(){R<int>a(3);R<int>b(static_cast<R<int>&&>(a));}static_assert(__is_constructible(R<int>,R<int>&&));"},
+      {"materialized-class-assignment", "template<class T>struct R{T value;R&operator=(T n)noexcept{value=n;return *this;}};void use(){R<int>r{3};r=4;}static_assert(__is_assignable(R<int>&,int)&&__is_nothrow_assignable(R<int>&,int));"},
+      {"materialized-class-conversion", "template<class T>struct R{T value;operator T()const noexcept{return value;}};int use(){R<int>r{3};return r;}static_assert(__is_convertible(R<int>,int)&&__is_nothrow_convertible(R<int>,int));"},
+      {"materialized-member-constructor", "struct R{int value;template<class T>R(T n)noexcept:value(n){}};void use(){R r(3);}static_assert(__is_constructible(R,int)&&__is_nothrow_constructible(R,int));"},
+      {"materialized-member-assignment", "struct R{int value;template<class T>R&operator=(T n)noexcept{value=n;return *this;}};void use(){R r{3};r=4;}static_assert(__is_assignable(R&,int)&&__is_nothrow_assignable(R&,int));"},
+      {"materialized-member-conversion", "struct R{template<class T>operator T()const noexcept{return T(3);}};int use(){return static_cast<int>(R{});}static_assert(__is_convertible(R,int)&&__is_nothrow_convertible(R,int));"},
+      {"materialized-template-destructor", "template<class T>struct R{~R()noexcept{}};void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>));"},
+      {"materialized-template-destructor-throwing", "template<class T>struct R{~R()noexcept(false){}};void use(){R<int>r;}static_assert(!__is_nothrow_destructible(R<int>));"},
+      {"materialized-template-destructor-implicit-construction", "template<class T>struct R{~R()noexcept{}};void use(){R<int>r;}static_assert(__is_constructible(R<int>)&&__is_nothrow_constructible(R<int>));"},
+      {"materialized-template-owning-destructor", "template<class T>struct F{~F()noexcept{}};template<class T>struct R{F<T>fields[2];~R()noexcept{}};void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>[2]));"},
+      {"materialized-template-explicit-instantiation", "template<class T>struct R{T value;R(T n)noexcept:value(n){}~R()noexcept{}};template struct R<int>;static_assert(__is_constructible(R<int>,int)&&__is_nothrow_destructible(R<int>));"},
+      {"materialized-template-computed-spec", "template<class T>struct R{R(T)noexcept(sizeof(T)==sizeof(int)){}~R()noexcept(sizeof(T)>0){}};void use(){R<int>r(3);}static_assert(__is_nothrow_constructible(R<int>,int)&&__is_nothrow_destructible(R<int>));"},
+      {"materialized-template-self-constructor", "template<class T>struct R{R(T)noexcept{static_assert(__is_constructible(R,T));}};void use(){R<int>r(3);}static_assert(__is_nothrow_constructible(R<int>,int));"},
+      {"materialized-template-self-destructor", "template<class T>struct R{~R()noexcept{static_assert(__is_nothrow_destructible(R));}};void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>));"},
       {"record-written-destructor", "struct R{~R()noexcept(false)=default;};bool f(){return __is_constructible(R,R);}"},
       {"record-nontrivial-destruction-construction", "struct R{~R(){}};bool f(){return __is_constructible(R);}"},
       {"implicit-construct-user-destruction", "struct R{int value;~R()noexcept{}};static_assert(__is_constructible(R)&&__is_constructible(R,const R&)&&__is_constructible(R,R&&));static_assert(!__is_trivially_constructible(R));"},
@@ -5651,6 +5669,21 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"materialized-member-explicit-specialization", "template<class T>struct R{R(T)noexcept{}};template<>R<int>::R(int)noexcept{}void use(){R<int>r(3);}static_assert(__is_constructible(R<int>,int));"},
+      {"materialized-template-unconsumed-body", "template<class T>struct R{R(T)noexcept{}};static_assert(__is_constructible(R<int>,int));"},
+      {"materialized-template-hidden-body", "template<class T>struct R{R(T)noexcept{long double hidden=0;}};void use(){R<int>r(3);}static_assert(__is_constructible(R<int>,int));"},
+      {"materialized-template-hidden-destruction-body", "template<class T>struct R{~R()noexcept{long double hidden=0;}};void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>));"},
+      {"materialized-template-hidden-spec", "template<class T>struct R{R(T)noexcept(sizeof(long double)>0){}};void use(){R<int>r(3);}static_assert(__is_nothrow_constructible(R<int>,int));"},
+      {"materialized-template-owned-default", "template<class T>struct R{R(T n=T(3))noexcept{}};void use(){R<int>r(3);}static_assert(__is_constructible(R<int>));"},
+      {"materialized-template-defaulted-destructor", "template<class T>struct R{~R()noexcept=default;};template struct R<int>;static_assert(__is_nothrow_destructible(R<int>));"},
+      {"materialized-split-template-constructor", "template<class T>struct R{R()noexcept;};template<class T>R<T>::R()noexcept{}void use(){R<int>r;}static_assert(__is_constructible(R<int>));"},
+      {"materialized-split-template-hidden-constructor", "template<class T>struct R{R()noexcept(1);};template<class T>R<T>::R()noexcept(sizeof(long double)>0){}void use(){R<int>r;}static_assert(__is_constructible(R<int>));"},
+      {"materialized-split-template-hidden-destructor", "template<class T>struct R{~R()noexcept(1);};template<class T>R<T>::~R()noexcept(sizeof(long double)>0){}void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>));"},
+      {"materialized-split-template-hidden-conversion", "template<class T>struct R{operator T()const noexcept(1);};template<class T>R<T>::operator T()const noexcept(sizeof(long double)>0){return T(3);}int use(){return R<int>{};}static_assert(__is_convertible(R<int>,int));"},
+      {"materialized-ordinary-defaulted-constructor", "struct R{R()noexcept;};R::R()noexcept=default;void use(){R r;}static_assert(__is_constructible(R));"},
+      {"materialized-copied-member-template-constructor", "template<class T>struct R{T value;template<class U>R(U n):value(n){}};void use(){R<int>r(3);}static_assert(__is_constructible(R<int>,int));"},
+      {"materialized-ordinary-split-hidden-spec", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct S{F<int>field;};struct R{R(int)noexcept(1);};static_assert(__is_constructible(R,int));R::R(int)noexcept(noexcept(S())){}"},
+      {"materialized-ordinary-split-hidden-parameter", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct S{F<int>field;};using Hidden=int[noexcept(S())?1:1];struct R{R(int(*)[1]);};static_assert(__is_constructible(R,int(*)[1]));R::R(Hidden*){}"},
       {"implicit-construct-template-destructor", "template<class T>struct R{~R()noexcept{}};static_assert(__is_constructible(R<int>));"},
       {"implicit-construct-defaulted-template-destructor", "template<class T>struct R{~R()noexcept=default;};static_assert(__is_constructible(R<int>));"},
       {"implicit-construct-hidden-destructor-body", "struct R{~R()noexcept{long double hidden=0;}};static_assert(__is_constructible(R));"},
@@ -5877,6 +5910,7 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainRequiredDefinitions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"materialized-template-missing-destructor", "template<class T>struct R{~R()noexcept;};void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>));"},
       {"implicit-construct-missing-destructor", "struct R{~R()noexcept;};static_assert(__is_constructible(R));"},
       {"generated-destructor-owning-missing-definition", "struct F{~F()noexcept;};struct R{F value;~R()=default;};static_assert(__is_nothrow_destructible(R));"},
       {"destruction-value-missing-definition", "struct R{~R()noexcept;};static_assert(__is_nothrow_destructible(R));"},
@@ -5905,6 +5939,7 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainRequiredDefinitions) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsKeepCppDiagnostics) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"materialized-template-invalid-body", "template<class T>struct R{R(T)noexcept{T::missing();}};void use(){R<int>r(3);}static_assert(__is_constructible(R<int>,int));"},
       {"generated-destructor-conflicting-spec", "struct R{~R()noexcept;};R::~R()noexcept(false)=default;static_assert(__is_nothrow_destructible(R));"},
       {"default-required-order", "struct R{R(int=3,int){}};bool f(){return __is_constructible(R);}"},
       {"construct-arity", "bool f(){return __is_constructible();}"},

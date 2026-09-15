@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 295 accepted, 212 unsupported-source, fourteen missing-definition and nine invalid-C++ cases cover
+The paired 313 accepted, 227 unsupported-source, fifteen missing-definition and ten invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1043,14 +1043,40 @@ mutual query dependencies and later out-of-line definitions therefore need no
 recursive body traversal. A function queued for emission is not a completed proof.
 Any failed traversal or pending query prevents artifact publication.
 
-Only source-owned, user-provided non-template definitions qualify here. Each root
-checks its exact synthetic operands, selected declaration's actual definition,
+Source-owned, user-provided ordinary definitions and the checked concrete template
+definitions below qualify here. Each root checks its exact synthetic operands,
+selected declaration's actual definition,
 converted arguments, result type and supported full-expression temporary shape.
 Constructed objects and record-valued results also require checked destruction of
 every owning base, field and array element. A user destructor body alone cannot
 prove implicit subobject destruction. Reference and pointer members do not own
 their referents. Query checking never requests runtime construction/default caches
 or queues hypothetical destruction helpers.
+
+Already materialized concrete template operations also qualify when the exact
+body has completed the same normal source traversal. The completion set excludes
+implicit and defaulted functions explicitly: an out-of-line defaulted function
+can be user-provided in Clang's classification while RAV still skips its body.
+Both the selected declaration and the actual body-owning definition require their
+original completed type-source nodes and current exception-expression graphs.
+An already emitted or referenced function does not substitute for that proof.
+
+The initial template subset requires an original inline definition. Its raw
+member-specialization origin, or uncopied primary's templated declaration, must
+itself own the body and match Clang's actual instantiation pattern exactly. The
+origin cannot itself have member-specialization or primary-template instantiation
+metadata. Both selected and body-owning declarations pass this identity gate.
+Class-template operations and member templates in ordinary classes can qualify;
+explicit specializations in this new category, copied member-template primaries
+and separate template declaration/definition pairs still need further evidence.
+Body instantiation can retain an earlier declaration's TypeSourceInfo, so a body
+alone cannot prove a later template definition's independently written signature.
+
+The query never materializes an unused template body. A later real source use or
+explicit instantiation can supply the already checked definition before final
+validation; queries within that body use the same deferred completion rule.
+Unmaterialized bodies and template-owned selected defaults remain unsupported.
+These source restrictions do not change ordinary runtime template support.
 
 Selected ordinary constructor defaults also qualify when
 the exact parameter and unchanged initializer have completed normal source checking.
@@ -1086,7 +1112,7 @@ expression scan and never requests runtime cleanup or instantiates a body.
 The proof conservatively requires destruction evidence for every collected record
 prvalue, including constructor expressions below new and unevaluated aggregates.
 Implicit destruction, ordinary explicitly defaulted destructors with checked
-written source, or completed ordinary user destructors qualify;
+written source, or completed ordinary/checked inline template user destructors qualify;
 lazy template destructor prvalues need a separate completed-signature proof and
 remain rejected. Unused bodies that contribute no such dependency remain lazy. Ordinary default expressions can call already admitted
 functions, including nested template expressions under existing source rules;
@@ -1100,9 +1126,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has thirty-six O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has forty O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Thirty-four exported query
+default evaluation with full-expression temporary cleanup. Forty-two exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1213,7 +1239,7 @@ that still matches the selected declaration's current prototype. The consumed
 noexcept expression and its transitive source dependencies must have completed
 normal checking. The shared owning-subobject proof admits implicit destruction,
 ordinary explicitly defaulted destructors with checked written declarations, and
-ordinary user destructors with completed non-template definitions,
+user destructors with completed ordinary or checked inline template definitions,
 including throwing and inferred specifications. Every owning base and by-value
 field remains part of that proof, even after an earlier destructor makes the
 result false. Pointer and reference fields do not destroy their referents.
@@ -1226,7 +1252,8 @@ specification may remain lazy in the shared source proof only as `EST_Unevaluate
 owned by the same destructor declaration family; the direct nothrow query still
 requires its retained resolved snapshot. Implicit nontrivial owners use the same
 recursive subobject proof, including implicit class-template owners. Written
-template user/defaulted destructors still require further source evidence.
+template defaulted destructors and user destructors without the exact completed
+inline-definition proof still require further source evidence.
 Construction and assignment retain their separate implicit-family source checks.
 For retained implicit constructors, destruction is verified independently for the
 exact record prvalue. The same composition applies inside query-only defaults;
@@ -1248,9 +1275,9 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared thirty-six-checkpoint user-operation fixture checks
-boolean-only output, zero query effects, real implicit copies with independent
-storage and actual user/generated array destruction at O0/O2;
+queries. The shared forty-checkpoint user-operation fixture checks
+boolean-only output, zero query effects, real implicit/template copies with
+independent storage, template operations and user/generated array destruction at O0/O2;
 relocation must preserve the protocol. Native results require implementing CI.
 Standard headers and complete C++/STL support remain unfinished.
 
