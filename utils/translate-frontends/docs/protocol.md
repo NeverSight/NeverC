@@ -796,9 +796,13 @@ noexcept expressions retain independent completed nodes and transitive source
 dependencies, including selected defaults and function references. A completed
 function declaration or definition alone cannot prove those expression dependencies.
 Variable/enum initializers and already materialized constexpr value source retain
-their own completion nodes. None of this evidence enters the protocol. The frontend
+their own completion nodes. Exact written type nodes retain earlier array bounds,
+alias/template source and consumed record layout dependencies. Function parameter
+type source is independent of unused parameter defaults. None of this evidence enters the protocol. The frontend
 retains these identities internally;
 neither default expressions nor hypothetical calls are added to transport IR.
+All resolved operation queries validate this source graph before lowering;
+successful immediate checks and pre-operation false results cannot bypass it.
 
 
 ## Core v2 array type queries

@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 195 accepted, 149 unsupported-source, eleven missing-definition and eight invalid-C++ cases cover
+The paired 228 accepted, 201 unsupported-source, eleven missing-definition and eight invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1142,9 +1142,24 @@ checks an already materialized constexpr body even for an unevaluated reference,
 but never materializes a missing body. Implicit special members keep their
 existing family proof. Semantic visit-once state is separate from graph-node
 creation, so value initializers cannot hide cached semantic children.
-Type metadata that carries earlier constant expressions, such as an array bound
-behind a typedef used by `sizeof`, still needs additional dependency evidence.
-These value-source nodes do not establish complete C++ constant-source coverage.
+Consumed type metadata also has exact completion nodes, keyed by the original
+qualified type and `TypeLoc` source identity. Normal type traversal captures array
+bounds, `decltype` operands and retained template substitutions. Typedefs link to
+their written underlying source, and declaration references retain their actual
+type source rather than borrowing a canonical type's folded array size. Record
+layout uses link to existing base and field type source; pointer and reference
+spelling alone does not request the pointee's layout. Function signatures retain
+return and parameter type source with unused defaults isolated. These internal
+nodes share the expression graph's completion and budget checks; no type is
+instantiated to fill a missing source node. This remains the bounded operation
+source proof, not complete C++ constant-expression coverage.
+Every resolved operation query consumes its completed type-source graph after
+ordinary source traversal, including successful implicit assignment checks,
+scalar operands and false results reached before selecting an operation.
+Assignment references retain the operated record's layout dependencies; the
+nothrow-destruction reference shortcut keeps its no-selection behavior. Enum
+layout consumes existing written underlying-type declarations, including opaque
+enums, and nonfixed enum values retain their initializer source.
 
 Clang's expression exception check can stop after a throwing callee. If a later
 callee remains unresolved, this bounded proof rejects the query conservatively.

@@ -1382,16 +1382,22 @@ const Expr *selectedDefaultArgument(const CXXDefaultArgExpr *Default,
   return Init;
 }
 
+using OperationTypeSourceKey = std::pair<void *, void *>;
+static OperationTypeSourceKey operationTypeSourceKey(TypeLoc Location) {
+  return {Location.getType().getAsOpaquePtr(), Location.getOpaqueData()};
+}
 struct OperationSourceDependencies {
   std::set<const CXXMethodDecl *> Families;
   std::set<const CXXRecordDecl *> Destructions;
   std::set<const Stmt *> Expressions;
+  std::set<OperationTypeSourceKey> Types;
 };
 struct OperationExpressionSource {
   OperationSourceDependencies Dependencies;
   bool Complete = false;
 };
 using OperationExpressionSources = std::map<const Stmt *, OperationExpressionSource>;
+using OperationTypeSources = std::map<OperationTypeSourceKey, OperationExpressionSource>;
 using OperationDefaultSources =
     std::map<std::pair<const ParmVarDecl *, const Expr *>, const OperationSourceDependencies *>;
 
@@ -1807,6 +1813,104 @@ static const FunctionProtoType *operationCalleePrototype(const CallExpr *Call) {
   return T->getAs<FunctionProtoType>();
 }
 
+// Source completion is independent of a trait's computed Boolean and of the
+// hypothetical root's fast admission path. Share this proof with query type roots.
+class OperationSourceChecker {
+  Adapter &A;
+  const std::set<const FunctionDecl *> *Definitions;
+  const OperationExpressionSources *Expressions;
+  const OperationTypeSources *Types;
+  std::vector<const OperationSourceDependencies *> Work;
+
+public:
+  OperationSourceChecker(Adapter &A, const std::set<const FunctionDecl *> *Definitions,
+      const OperationExpressionSources *Expressions, const OperationTypeSources *Types)
+      : A(A), Definitions(Definitions), Expressions(Expressions), Types(Types) {}
+  void add(const OperationSourceDependencies *Dependencies) { Work.push_back(Dependencies); }
+  bool requireExpression(const Stmt *Expression) {
+    if (!Expression)
+      return true;
+    if (!Expressions)
+      return false;
+    auto Found = Expressions->find(Expression);
+    if (Found == Expressions->end() || !Found->second.Complete)
+      return false;
+    add(&Found->second.Dependencies);
+    return true;
+  }
+  bool requireType(OperationTypeSourceKey Key) {
+    if (!Types)
+      return false;
+    auto Found = Types->find(Key);
+    if (Found == Types->end() || !Found->second.Complete)
+      return false;
+    add(&Found->second.Dependencies);
+    return true;
+  }
+  bool prototypeSource(const FunctionProtoType *Prototype) {
+    return requireExpression(Prototype ? Prototype->getNoexceptExpr() : nullptr);
+  }
+  bool defined(const FunctionDecl *Function) {
+    const auto *Definition = Function ? Function->getDefinition() : nullptr;
+    return Definitions && Definition && Definitions->count(Definition) &&
+           Function->getTemplatedKind() == FunctionDecl::TK_NonTemplate &&
+           A.S.owns(A.Sources, Function->getLocation()) &&
+           Function->getTypeSourceInfo() &&
+           requireType(operationTypeSourceKey(Function->getTypeSourceInfo()->getTypeLoc())) &&
+           prototypeSource(Function->getType()->getAs<FunctionProtoType>());
+  }
+  bool destruction(const CXXRecordDecl *Record, unsigned Depth = 0) {
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
+      return false;
+    A.chargeExpansion(1, Record->getLocation());
+    if (Record->hasUserDeclaredDestructor()) {
+      const auto *Destructor = Record->getDestructor();
+      if (!ordinaryDestructor(Destructor) || !defined(Destructor))
+        return false;
+    } else if (!Record->hasTrivialDestructor()) {
+      return false;
+    }
+    for (const auto &Base : Record->bases())
+      if (!Base.getTypeSourceInfo() ||
+          !requireType(operationTypeSourceKey(Base.getTypeSourceInfo()->getTypeLoc())) ||
+          !destruction(Base.getType()->getAsCXXRecordDecl(), Depth + 1))
+        return false;
+    for (const auto *Field : Record->fields()) {
+      if (!Field->getTypeSourceInfo() ||
+          !requireType(operationTypeSourceKey(Field->getTypeSourceInfo()->getTypeLoc())))
+        return false;
+      if (const auto *Member = A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl())
+        if (!destruction(Member, Depth + 1))
+          return false;
+    }
+    return true;
+  }
+  bool finish(SourceLocation L) {
+    std::set<const OperationSourceDependencies *> Seen;
+    while (!Work.empty()) {
+      const auto *Dependencies = Work.back();
+      Work.pop_back();
+      if (!Dependencies || !Seen.insert(Dependencies).second)
+        continue;
+      A.chargeExpansion(1, L);
+      for (const auto *Method : Dependencies->Families)
+        if (!implicitSpecialMemberSource(A, Method, false))
+          return false;
+      for (const auto *Record : Dependencies->Destructions)
+        if (!destruction(Record))
+          return false;
+      for (const auto *Expression : Dependencies->Expressions)
+        if (!requireExpression(Expression))
+          return false;
+      for (const auto &Type : Dependencies->Types)
+        if (!requireType(Type))
+          return false;
+    }
+    return true;
+  }
+};
+
 // A hypothetical operation needs source admission, but no runtime owner or
 // helper. User operations require exact definitions that have completed normal
 // source traversal. Do not reuse runtime construction/default caches or infer
@@ -1815,63 +1919,25 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const std::set<const FunctionDecl *> *Definitions = nullptr,
     bool RequiresExceptionSource = false,
     const OperationDefaultSources *Defaults = nullptr,
-    const OperationExpressionSources *Expressions = nullptr) {
+    const OperationExpressionSources *Expressions = nullptr,
+    const OperationTypeSources *Types = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
     return false;
-  std::vector<const OperationSourceDependencies *> Work;
-  auto RequireExpression = [&](const Stmt *Expression) {
-    if (!Expression)
-      return true;
-    if (!Expressions)
-      return false;
-    auto Found = Expressions->find(Expression);
-    if (Found == Expressions->end() || !Found->second.Complete)
-      return false;
-    Work.push_back(&Found->second.Dependencies);
-    return true;
-  };
+  OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types);
   auto PrototypeSource = [&](const FunctionProtoType *Prototype) {
-    return RequireExpression(Prototype ? Prototype->getNoexceptExpr() : nullptr);
+    return SourceCheck.prototypeSource(Prototype);
   };
   auto ExceptionSource = [&](const FunctionDecl *Function) {
-    // Sema applies canThrow to this retained root. Read its resolved selected
-    // signatures; never resolve a later callee skipped by canThrow's early exit.
+    // Read the selected resolved signature without asking Sema to resolve it.
     const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
     return PrototypeSource(Prototype) &&
            (!RequiresExceptionSource || standardExceptionSpecification(Prototype));
   };
-  auto Defined = [&](const FunctionDecl *Function) {
-    const auto *Definition = Function ? Function->getDefinition() : nullptr;
-    return Definitions && Definition && Definitions->count(Definition) &&
-           Function->getTemplatedKind() == FunctionDecl::TK_NonTemplate &&
-           A.S.owns(A.Sources, Function->getLocation()) &&
-           PrototypeSource(Function->getType()->getAs<FunctionProtoType>());
-  };
-  // A written destructor body omits implicit field/base destruction. Check
-  // those owning subobjects separately, including when Sema's root has no bind.
-  auto Destruction = [&](auto &&Self, const CXXRecordDecl *Record,
-                         unsigned Depth) -> bool {
-    Record = Record ? Record->getDefinition() : nullptr;
-    if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
-      return false;
-    A.chargeExpansion(1, Record->getLocation());
-    if (Record->hasUserDeclaredDestructor()) {
-      const auto *Destructor = Record->getDestructor();
-      if (!ordinaryDestructor(Destructor) || !Defined(Destructor))
-        return false;
-    } else if (!Record->hasTrivialDestructor()) {
-      return false;
-    }
-    for (const auto &Base : Record->bases())
-      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1))
-        return false;
-    for (const auto *Field : Record->fields())
-      if (const auto *Member = A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl())
-        if (!Self(Self, Member, Depth + 1))
-          return false;
-    return true;
+  auto Defined = [&](const FunctionDecl *Function) { return SourceCheck.defined(Function); };
+  auto Destruction = [&](auto &&, const CXXRecordDecl *Record, unsigned Depth) {
+    return SourceCheck.destruction(Record, Depth);
   };
   auto CallExceptionSource = [&](const CallExpr *Call) {
     if (scalarDestruction(Call, A.Context))
@@ -2037,7 +2103,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           auto Proof = Defaults->find({P, Init});
           if (Proof == Defaults->end())
             return false;
-          Work.push_back(Proof->second);
+          SourceCheck.add(Proof->second);
           if (!DefaultDependencies(DefaultDependencies, Init, 0))
             return false;
         } else if (!Self(Self, Argument, Depth + 1)) {
@@ -2105,29 +2171,25 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
   };
   if (!Check(Check, Source.Root, 0))
     return false;
-  std::set<const OperationSourceDependencies *> Seen;
-  while (!Work.empty()) {
-    const auto *Dependencies = Work.back();
-    Work.pop_back();
-    if (!Dependencies || !Seen.insert(Dependencies).second)
-      continue;
-    A.chargeExpansion(1, Source.Root->getExprLoc());
-    for (const auto *Method : Dependencies->Families)
-      if (!implicitSpecialMemberSource(A, Method, false))
-        return false;
-    for (const auto *Record : Dependencies->Destructions)
-      if (!Destruction(Destruction, Record, 0))
-        return false;
-    for (const auto *Expression : Dependencies->Expressions)
-      if (!RequireExpression(Expression))
-        return false;
-  }
-  return true;
+  return SourceCheck.finish(Source.Root->getExprLoc());
 }
 
 static bool operationTraitNeedsExceptionSource(TypeTrait Trait) {
   return Trait == TT_IsNothrowConstructible || Trait == BTT_IsNothrowAssignable ||
          Trait == BTT_IsNothrowConvertible;
+}
+
+static bool isOperationTypeTrait(TypeTrait Trait) {
+  switch (Trait) {
+  case TT_IsConstructible: case TT_IsNothrowConstructible:
+  case TT_IsTriviallyConstructible: case BTT_IsAssignable:
+  case BTT_IsNothrowAssignable: case BTT_IsTriviallyAssignable:
+  case BTT_IsConvertible: case BTT_IsConvertibleTo:
+  case BTT_IsNothrowConvertible: case UTT_IsNothrowDestructible:
+    return true;
+  default:
+    return false;
+  }
 }
 
 static unsigned metadataTypeClassificationArity(TypeTrait Trait) {
@@ -3494,6 +3556,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const VarDecl *> ActiveVariablePartials, ActiveVariableDeclarations;
   std::vector<const TemplateUseSource *> ActiveTemplateUses;
   OperationExpressionSources CheckedOperationExpressions;
+  OperationTypeSources CheckedOperationTypes;
+  std::set<const TypeTraitExpr *> OperationTypeQueries;
   std::set<const Stmt *> OperationValueRoots;
   std::set<const Expr *> CheckedSemanticInitializers;
   std::map<const UnresolvedLookupExpr *, const DeclRefExpr *> InitializerLookups;
@@ -5829,6 +5893,107 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Register(Initializer->getInit());
     }
   }
+  void operationExpressionDependency(const Stmt *Source) {
+    if (Source)
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Expressions.insert(Source).second)
+          A.chargeExpansion(1, Source->getBeginLoc());
+  }
+  void operationTypeDependency(TypeLoc Source) {
+    if (Source)
+      for (auto *Dependencies : ActiveOperationSources)
+        if (Dependencies->Types.insert(operationTypeSourceKey(Source)).second)
+          A.chargeExpansion(1, Source.getBeginLoc());
+  }
+  void operationTypeDependency(const TypeSourceInfo *Source) {
+    if (Source)
+      operationTypeDependency(Source->getTypeLoc());
+  }
+  void collectOperationTypeSource(QualType InputType, SourceLocation L, bool Layout) {
+    if (ActiveOperationSources.empty() || InputType.isNull())
+      return;
+    std::set<std::pair<const Type *, bool>> Seen;
+    auto Collect = [&](auto &&Self, QualType T, bool NeedLayout, unsigned Depth) -> void {
+      if (T.isNull() || !Seen.insert({T.getTypePtr(), NeedLayout}).second)
+        return;
+      if (Depth >= 64) {
+        A.reject(L, "type source depth", "Nested type metadata source exceeds the depth limit.");
+        return;
+      }
+      A.chargeExpansion(1, L);
+      const auto *Raw = T.getTypePtr();
+      if (const auto *Alias = dyn_cast<TypedefType>(Raw))
+        operationTypeDependency(Alias->getDecl()->getTypeSourceInfo());
+      if (const auto *Deduced = dyn_cast<DecltypeType>(Raw))
+        operationExpressionDependency(Deduced->getUnderlyingExpr());
+      if (const auto *Adjusted = dyn_cast<AdjustedType>(Raw))
+        Self(Self, Adjusted->getOriginalType(), false, Depth + 1);
+      if (const auto *Transform = dyn_cast<UnaryTransformType>(Raw)) {
+        const auto Kind = Transform->getUTTKind();
+        const bool BaseLayout = Kind == UnaryTransformType::EnumUnderlyingType ||
+            Kind == UnaryTransformType::MakeSigned || Kind == UnaryTransformType::MakeUnsigned;
+        Self(Self, Transform->getBaseType(), BaseLayout, Depth + 1);
+      }
+      // Keep sugar as source identity. Canonical types alone do not retain
+      // written array bounds or exact template argument expressions.
+      auto Desugared = T.getSingleStepDesugaredType(A.Context);
+      if (Desugared != T) {
+        Self(Self, Desugared, NeedLayout, Depth + 1);
+        return;
+      }
+      if (const auto *Array = dyn_cast<ArrayType>(Raw)) {
+        if (const auto *Constant = dyn_cast<ConstantArrayType>(Array))
+          operationExpressionDependency(Constant->getSizeExpr());
+        Self(Self, Array->getElementType(), NeedLayout, Depth + 1);
+      } else if (Raw->isPointerType() || Raw->isReferenceType()) {
+        Self(Self, Raw->getPointeeType(), false, Depth + 1);
+      } else if (const auto *Prototype = dyn_cast<FunctionProtoType>(Raw)) {
+        // TypeLoc can still carry a template's old dependent specification.
+        // The chosen prototype and normal exception traversal supply that edge.
+        Self(Self, Prototype->getReturnType(), false, Depth + 1);
+        for (auto Parameter : Prototype->param_types())
+          Self(Self, Parameter, false, Depth + 1);
+      } else if (const auto *RecordType = dyn_cast<clang::RecordType>(Raw); RecordType && NeedLayout) {
+        const auto *Record = dyn_cast_or_null<CXXRecordDecl>(RecordType->getDecl()->getDefinition());
+        if (!Record)
+          return; // Never instantiate a record to manufacture source evidence.
+        for (const auto &Base : Record->bases()) {
+          operationTypeDependency(Base.getTypeSourceInfo());
+          Self(Self, Base.getType(), true, Depth + 1);
+        }
+        for (const auto *Field : Record->fields()) {
+          operationTypeDependency(Field->getTypeSourceInfo());
+          Self(Self, Field->getType(), true, Depth + 1);
+        }
+      } else if (const auto *Enum = dyn_cast<EnumType>(Raw); Enum && NeedLayout) {
+        for (const auto *Declaration : Enum->getDecl()->redecls()) {
+          A.chargeExpansion(1, Declaration->getLocation());
+          operationTypeDependency(cast<EnumDecl>(Declaration)->getIntegerTypeSourceInfo());
+        }
+        const auto *Definition = Enum->getDecl()->getDefinition();
+        if (Definition && !Definition->isFixed())
+          for (const auto *Constant : Definition->enumerators()) {
+            A.chargeExpansion(1, Constant->getLocation());
+            operationExpressionDependency(Constant->getInitExpr());
+          }
+      }
+    };
+    Collect(Collect, InputType, Layout, 0);
+  }
+  void collectOperationFunctionTypeSource(const FunctionDecl *Function) {
+    if (!Function || ActiveOperationSources.empty())
+      return;
+    // The dedicated written-friend path visits these source locations, without
+    // traversing a whole prototype. Defaults have their own selected-use proof.
+    const auto *Info = Function->getTypeSourceInfo();
+    const auto Prototype = Info ? Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>()
+                                : FunctionProtoTypeLoc();
+    if (Prototype)
+      operationTypeDependency(Prototype.getReturnLoc());
+    for (const auto *Parameter : Function->parameters())
+      operationTypeDependency(Parameter->getTypeSourceInfo());
+    collectOperationTypeSource(Function->getType(), Function->getLocation(), false);
+  }
   void collectOperationSource(const Stmt *S) {
     // Collect from the actual source traversal, including unevaluated operands
     // and expressions reached through TypeLoc or retained template source edges.
@@ -5837,10 +6002,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // even a trivial destructor and then omit the binding expression entirely.
     if (!ActiveOperationSources.empty()) {
       auto Dependency = [&](const Stmt *Source) {
-        if (Source)
-          for (auto *Dependencies : ActiveOperationSources)
-            if (Dependencies->Expressions.insert(Source).second)
-              A.chargeExpansion(1, Source->getBeginLoc());
+        operationExpressionDependency(Source);
       };
       auto Exception = [&](const FunctionProtoType *Prototype) {
         Dependency(Prototype ? Prototype->getNoexceptExpr() : nullptr);
@@ -5848,6 +6010,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       auto FunctionSource = [&](const FunctionDecl *Function) {
         if (!Function)
           return;
+        collectOperationFunctionTypeSource(Function);
         Exception(Function->getType()->getAs<FunctionProtoType>());
         // Constant value calls can consume an already materialized body. Keep
         // uninstantiated bodies lazy and implicit operations on their family proof.
@@ -5860,6 +6023,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         }
       };
       auto ValueSource = [&](const ValueDecl *Declaration) {
+        if (const auto *Declarator = dyn_cast<DeclaratorDecl>(Declaration);
+            Declarator && !isa<FunctionDecl>(Declaration))
+          operationTypeDependency(Declarator->getTypeSourceInfo());
         if (const auto *Variable = dyn_cast<VarDecl>(Declaration);
             Variable && !isa<ParmVarDecl>(Variable))
           Dependency(Variable->getAnyInitializer());
@@ -5877,6 +6043,40 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Dependency(Initializer);
         }
       };
+      if (const auto *E = dyn_cast<Expr>(S))
+        collectOperationTypeSource(E->getType(), E->getExprLoc(), true);
+      if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S)) {
+        if (Query->isArgumentType())
+          operationTypeDependency(Query->getArgumentTypeInfo());
+        collectOperationTypeSource(Query->getTypeOfArgument(), Query->getExprLoc(), true);
+      }
+      if (const auto *Query = dyn_cast<TypeTraitExpr>(S))
+        for (const auto *Argument : Query->getArgs()) {
+          operationTypeDependency(Argument);
+          auto T = Argument->getType();
+          if (isOperationTypeTrait(Query->getTrait()) &&
+              Query->getTrait() != UTT_IsNothrowDestructible)
+            T = T.getNonReferenceType();
+          collectOperationTypeSource(T, Query->getExprLoc(), true);
+        }
+      if (const auto *Query = dyn_cast<ArrayTypeTraitExpr>(S)) {
+        operationTypeDependency(Query->getQueriedTypeSourceInfo());
+        collectOperationTypeSource(Query->getQueriedType(), Query->getExprLoc(), true);
+      }
+      auto PointerLayout = [&](const Expr *E) {
+        if (E && !E->getType().isNull() && E->getType()->isPointerType())
+          collectOperationTypeSource(E->getType()->getPointeeType(), E->getExprLoc(), true);
+      };
+      if (const auto *Binary = dyn_cast<BinaryOperator>(S);
+          Binary && (Binary->getOpcode() == BO_Add || Binary->getOpcode() == BO_Sub ||
+                     Binary->getOpcode() == BO_AddAssign || Binary->getOpcode() == BO_SubAssign)) {
+        PointerLayout(Binary->getLHS());
+        PointerLayout(Binary->getRHS());
+      }
+      if (const auto *Unary = dyn_cast<UnaryOperator>(S); Unary && Unary->isIncrementDecrementOp())
+        PointerLayout(Unary->getSubExpr());
+      if (const auto *Subscript = dyn_cast<ArraySubscriptExpr>(S))
+        PointerLayout(Subscript->getBase());
       if (const auto *Reference = dyn_cast<DeclRefExpr>(S)) {
         FunctionSource(dyn_cast<FunctionDecl>(Reference->getDecl()));
         ValueSource(Reference->getDecl());
@@ -5886,6 +6086,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         FunctionSource(dyn_cast<FunctionDecl>(Reference->getMemberDecl()));
         ValueSource(Reference->getMemberDecl());
         Exception(Reference->getType()->getAs<FunctionProtoType>());
+        if (const auto *Field = dyn_cast<FieldDecl>(Reference->getMemberDecl()))
+          collectOperationTypeSource(A.Context.getRecordType(Field->getParent()),
+                                     Reference->getExprLoc(), true);
       }
       const CXXMethodDecl *Selected = nullptr;
       const CXXRecordDecl *Destroyed = nullptr;
@@ -6017,6 +6220,51 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
+  bool TraverseType(QualType T) {
+    if (A.S.coreV2() && !T.isNull()) {
+      const Expr *Root = nullptr;
+      if (const auto *Array = dyn_cast<ConstantArrayType>(T.getTypePtr()))
+        Root = Array->getSizeExpr();
+      if (const auto *Deduced = dyn_cast<DecltypeType>(T.getTypePtr()))
+        Root = Deduced->getUnderlyingExpr();
+      if (Root && OperationValueRoots.insert(Root).second)
+        A.chargeExpansion(1, Root->getExprLoc());
+    }
+    return RecursiveASTVisitor<Allowlist>::TraverseType(T);
+  }
+  bool TraverseTypeLoc(TypeLoc TL) {
+    if (!A.S.coreV2() || !TL)
+      return RecursiveASTVisitor<Allowlist>::TraverseTypeLoc(TL);
+    operationTypeDependency(TL);
+    auto &Source = CheckedOperationTypes[operationTypeSourceKey(TL)];
+    const auto ActiveDepth = ActiveOperationSources.size();
+    if (OperationSourceDepth >= 64) {
+      A.reject(TL.getBeginLoc(), "type source depth", "Nested type source exceeds the depth limit.");
+      return false;
+    }
+    A.chargeExpansion(1, TL.getBeginLoc());
+    ActiveOperationSources.push_back(&Source.Dependencies);
+    ++OperationSourceDepth;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActiveOperationSources.resize(ActiveDepth);
+      --OperationSourceDepth;
+    });
+    const auto RootLocation = TL.getUnqualifiedLoc();
+    const Expr *Root = nullptr;
+    if (auto Array = RootLocation.getAs<ArrayTypeLoc>())
+      Root = Array.getSizeExpr();
+    if (auto Deduced = RootLocation.getAs<DecltypeTypeLoc>())
+      Root = Deduced.getUnderlyingExpr();
+    if (Root && OperationValueRoots.insert(Root).second)
+      A.chargeExpansion(1, Root->getExprLoc());
+    collectOperationTypeSource(TL.getType(), TL.getBeginLoc(), false);
+    // QualifiedTypeLoc's base traversal deliberately bypasses this override
+    // for its unqualified inner location. The observed outer node covers it.
+    const bool Result = RecursiveASTVisitor<Allowlist>::TraverseTypeLoc(TL);
+    if (Result && A.S.Diagnostics.empty())
+      Source.Complete = true;
+    return Result;
+  }
   bool TraverseStmt(Stmt *S, DataRecursionQueue *Queue = nullptr) {
     if (!S || Queue || !OperationValueRoots.count(S))
       return RecursiveASTVisitor<Allowlist>::TraverseStmt(S, Queue);
@@ -9036,6 +9284,15 @@ public:
     return RecursiveASTVisitor<Allowlist>::TraverseTemplateArgumentLoc(Argument);
   }
   bool TraverseParmVarDecl(ParmVarDecl *D) {
+    if (A.S.coreV2())
+      operationTypeDependency(D->getTypeSourceInfo());
+    std::vector<OperationSourceDependencies *> SavedOperationSources;
+    if (A.S.coreV2())
+      SavedOperationSources.swap(ActiveOperationSources);
+    auto RestoreOperationSources = llvm::make_scope_exit([&] {
+      if (A.S.coreV2())
+        SavedOperationSources.swap(ActiveOperationSources);
+    });
     if (!A.S.coreV2() || !lazyTemplateDefault(D)) {
       const auto *Init = A.S.coreV2() ? operationDefaultInitializer(A, D) : nullptr;
       OperationSourceDependencies Dependencies;
@@ -9063,6 +9320,7 @@ public:
         Shared.Families.insert(Dependencies.Families.begin(), Dependencies.Families.end());
         Shared.Destructions.insert(Dependencies.Destructions.begin(), Dependencies.Destructions.end());
         Shared.Expressions.insert(Dependencies.Expressions.begin(), Dependencies.Expressions.end());
+        Shared.Types.insert(Dependencies.Types.begin(), Dependencies.Types.end());
         CompletedOperationDefaults[{D, Init}] = &Shared;
       }
       return Result;
@@ -9521,12 +9779,25 @@ public:
       if (Source == A.OperationTraits.end() ||
           !operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
                                 operationTraitNeedsExceptionSource(Query->getTrait()),
-                                &CompletedOperationDefaults, &CheckedOperationExpressions)) {
+                                &CompletedOperationDefaults, &CheckedOperationExpressions,
+                                &CheckedOperationTypes)) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact ordinary definitions, arguments and destruction source.");
         return false;
       }
       A.VerifiedOperationQueries.insert(Query);
+    }
+    // A successful fast hypothetical-root check does not prove its operands'
+    // type source. Check every resolved operation query, including scalar and
+    // pre-operation false results, after all ordinary source nodes complete.
+    for (const auto *Query : OperationTypeQueries) {
+      OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
+          &CheckedOperationExpressions, &CheckedOperationTypes);
+      if (!SourceCheck.requireExpression(Query) || !SourceCheck.finish(Query->getExprLoc())) {
+        A.reject(Query->getExprLoc(), "operation query type source",
+                 "Every consumed operation type requires completed original source dependencies.");
+        return false;
+      }
     }
     return A.S.Diagnostics.empty();
   }
@@ -9557,6 +9828,33 @@ public:
            TraverseStmt(const_cast<Expr *>(Parts->Variable->getInit())) &&
            TraverseStmt(Loop->getCond()) && TraverseStmt(Loop->getInc()) &&
            TraverseStmt(Loop->getBody());
+  }
+  bool TraverseTypeTraitExpr(TypeTraitExpr *Query, DataRecursionQueue *Queue = nullptr) {
+    if (!A.S.coreV2() || !isOperationTypeTrait(Query->getTrait()) ||
+        Query->isTypeDependent() || Query->isValueDependent() || Query->isInstantiationDependent())
+      return RecursiveASTVisitor<Allowlist>::TraverseTypeTraitExpr(Query, Queue);
+    operationExpressionDependency(Query);
+    auto &Source = CheckedOperationExpressions[Query];
+    if (OperationTypeQueries.insert(Query).second)
+      A.chargeExpansion(1, Query->getExprLoc());
+    const auto ActiveDepth = ActiveOperationSources.size();
+    if (OperationSourceDepth >= 64) {
+      A.reject(Query->getExprLoc(), "query source depth", "Nested query source exceeds the depth limit.");
+      return false;
+    }
+    A.chargeExpansion(1, Query->getExprLoc());
+    ActiveOperationSources.push_back(&Source.Dependencies);
+    ++OperationSourceDepth;
+    auto Restore = llvm::make_scope_exit([&] {
+      ActiveOperationSources.resize(ActiveDepth);
+      --OperationSourceDepth;
+    });
+    // TypeTraitExpr has no statement children. Its type source is visited
+    // synchronously even when the containing statement uses a recursion queue.
+    const bool Result = RecursiveASTVisitor<Allowlist>::TraverseTypeTraitExpr(Query, Queue);
+    if (Result && A.S.Diagnostics.empty())
+      Source.Complete = true;
+    return Result;
   }
   bool TraverseArrayTypeTraitExpr(ArrayTypeTraitExpr *Query) {
     if (!RecursiveASTVisitor<Allowlist>::TraverseArrayTypeTraitExpr(Query))

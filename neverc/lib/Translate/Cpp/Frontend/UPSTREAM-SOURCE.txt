@@ -311,6 +311,17 @@ are checked through their original synchronous RAV roots. Parameter references
 do not select defaults; implicit methods retain their existing family proof.
 No body is materialized for source checking, and semantic visit-once state stays
 separate from completion records for these value roots.
+Exact TypeLoc completion nodes retain type metadata dependencies from normal
+source traversal, including alias/template source, array bounds and decltype.
+Consumed declarations use their actual TypeSourceInfo; canonical type metadata
+cannot replace source. Layout dependencies follow existing owning base/field type
+source, while pointer/reference spelling keeps pointee layout lazy. Signature
+parameter types retain their own edges with unused defaults isolated. The same
+bounded worklist checks completed type and expression nodes without replaying
+Sema or instantiating missing definitions.
+All resolved operation queries consume this source proof after normal traversal,
+including implicit assignments, scalar types and pre-operation false results.
+Enum layout retains written underlying types even without an enumerator body.
 Implicit family checks also apply to non-nothrow queries because marking the
 selected function referenced can resolve its inferred exception specification.
 Nothrow defaults additionally check already-resolved actual callee prototypes,
