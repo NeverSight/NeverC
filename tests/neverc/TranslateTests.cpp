@@ -4747,6 +4747,103 @@ TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErrorsAndTemporaryOrder)
   }
 }
 
+TEST_F(TranslateTest, CoreV2NullptrTemplateValuesRetainCheckedSources) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"explicit", "template<decltype(nullptr) N>decltype(nullptr) f(){return N;}int main(){return f<nullptr>()!=nullptr;}"},
+      {"alias-type", "using Null=decltype(nullptr);template<Null N>Null f(){return N;}int main(){return f<nullptr>()!=nullptr;}"},
+      {"dependent-type", "template<class T,T N>T f(){return N;}int main(){return f<decltype(nullptr),nullptr>()!=nullptr;}"},
+      {"dependent-default", "template<class T,T N=nullptr>T f(){return N;}int main(){return f<decltype(nullptr)>()!=nullptr;}"},
+      {"inherited-default", "template<auto N=nullptr>int f();template<auto N>int f(){return N==nullptr;}int main(){return f()-1;}"},
+      {"parameter-alias", "template<class T>using K=decltype((sizeof(T),nullptr));template<class T,K<T> N>int f(){return N==nullptr;}int main(){return f<int,nullptr>()-1;}"},
+      {"value-init", "template<auto N>int f(){return N==nullptr;}int main(){return f<decltype(nullptr){}>()-1;}"},
+      {"constexpr-source", "constexpr auto n=nullptr;template<auto N>int f(){return N==nullptr;}int main(){return f<n>()-1;}"},
+      {"macro-source", "#define VALUE (sizeof(int),nullptr)\ntemplate<auto N>int f(){return N==nullptr;}int main(){return f<VALUE>()-1;}"},
+      {"pack-mixed", "template<auto...N>int f(){return sizeof...(N);}int main(){return f<nullptr,0,false,nullptr>()-4;}"},
+      {"pack-fold", "template<decltype(nullptr)...N>bool f(){return (true&&...&&(N==nullptr));}int main(){return !f<nullptr,nullptr>()||!f<>();}"},
+      {"dependent-pack-empty", "template<class T,T...N>int f(){return sizeof...(N);}int main(){return f<decltype(nullptr)>();}"},
+      {"dependent-pack-full", "template<class T,T...N>int f(){return sizeof...(N);}int main(){return f<decltype(nullptr),nullptr,nullptr>()-2;}"},
+      {"class-default", "template<decltype(nullptr) N=nullptr>struct R{decltype(nullptr) get(){return N;}};int main(){return R<>{}.get()!=nullptr;}"},
+      {"class-partial", "template<class T,auto N>struct R{int n=1;};template<class T>struct R<T*,nullptr>{int n=3;};int main(){return R<int*,nullptr>{}.n-3;}"},
+      {"class-full", "template<auto N>struct R{int n=1;};template<>struct R<nullptr>{int n=3;};int main(){return R<nullptr>{}.n-3;}"},
+      {"function-full", "template<auto N>int f(){return 1;}template<>int f<nullptr>(){return 3;}int main(){return f<nullptr>()-3;}"},
+      {"explicit-instantiation", "template<auto N>int f(){return N==nullptr;}template int f<nullptr>();int main(){return f<nullptr>()-1;}"},
+      {"variable", "template<auto N>inline auto v=N;int main(){return v<nullptr>!=nullptr;}"},
+      {"variable-partial", "template<class T,auto N>inline int v=1;template<class T>inline int v<T*,nullptr> =3;int main(){return v<int*,nullptr>-3;}"},
+      {"member-default", "template<class T>struct R{template<T N=nullptr>T f(){return N;}};int main(){return R<decltype(nullptr)>{}.f()!=nullptr;}"},
+      {"member-alias-default", "template<auto N>struct B{int n=3;};template<class T>struct R{template<T N=nullptr>using A=B<N>;};int main(){return R<decltype(nullptr)>::A<>{}.n-3;}"},
+      {"member-partial", "template<class T>struct R{template<class U,T N>struct B{int n=1;};template<class U>struct B<U*,nullptr>{int n=3;};};int main(){return R<decltype(nullptr)>::B<int*,nullptr>{}.n-3;}"},
+      {"repeated-canonical-source", "template<auto N>struct R{int n=3;};R<nullptr>f(){return {};}R<(sizeof(int),nullptr)>g(){return {};}int main(){return f().n+g().n-6;}"},
+      {"promoted-null-template-argument", "template<auto N>int f(){return 0;}int main(){return f<nullptr>();}"},
+      {"promoted-ignored-null-value", "template<auto N>using I=int;I<nullptr>f(){return 3;}"},
+      {"promoted-auto-null-pack", "template<auto...P>int f(){return sizeof...(P);}int main(){return f<nullptr>();}"},
+      {"promoted-auto-null-default", "template<auto N=nullptr>int f(){return 1;}int main(){return f();}"},
+      {"promoted-auto-null-class", "template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}"},
+      {"promoted-auto-null", "template<auto N>int f(){return 1;}int main(){return f<nullptr>();}"},
+      {"class-fixed-frontier", "using N=decltype(nullptr);template<N A,N B,N C>struct Q{int n=1;};template<N...Ns>struct Q<nullptr,Ns...>{int n=3;};int main(){return Q<nullptr,nullptr,nullptr>{}.n-3;}"},
+      {"variable-fixed-frontier", "using N=decltype(nullptr);template<N A,N B,N C>inline int q=1;template<N...Ns>inline int q<nullptr,Ns...> =3;int main(){return q<nullptr,nullptr,nullptr>-3;}"},
+      {"copied-expanded-frontier", "using N=decltype(nullptr);template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<N...Ns>struct I<int,nullptr,Ns...>{int n=3;};};int main(){return O<N,N>::I<int,nullptr,nullptr>{}.n-3;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("nullptr-template-" + Name + ".cpp");
+    auto Output = tmpFile("nullptr-template-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NullptrTemplatesRejectPointerValuesAndUncheckedSyntax) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"pointer-parameter", "template<int* N=nullptr>int f(){return 1;}int main(){return f();}"},
+      {"pointer-auto", "template<auto N>int f(){return 1;}int main(){return f<static_cast<int*>(nullptr)>();}"},
+      {"pointer-dependent", "template<class T,T N>int f(){return 1;}int main(){return f<int*,nullptr>();}"},
+      {"pointer-pack-empty", "template<int*...N>int f(){return sizeof...(N);}int main(){return f<>();}"},
+      {"pointer-dependent-pack-empty", "template<class T,T...N>int f(){return sizeof...(N);}int main(){return f<int*>();}"},
+      {"pointer-auto-pack", "template<auto...N>int f(){return sizeof...(N);}int main(){return f<nullptr,static_cast<int*>(nullptr)>();}"},
+      {"function-pointer", "template<int(*N)()=nullptr>int f(){return 1;}int main(){return f();}"},
+      {"function-pointer-auto", "template<auto N>int f(){return 1;}int main(){return f<static_cast<int(*)()>(nullptr)>();}"},
+      {"folded-written", "template<auto N>int f(){return 1;}int main(){return f<(sizeof(long double),nullptr)>();}"},
+      {"folded-default-unused", "template<auto N=(sizeof(long double),nullptr)>int f(){return 1;}"},
+      {"folded-dependent-default", "template<class T,auto N=(sizeof(T),sizeof(long double),nullptr)>int f(){return 1;}int main(){return f<int>();}"},
+      {"folded-parameter-type", "template<decltype((sizeof(long double),nullptr)) N>int f(){return 1;}int main(){return f<nullptr>();}"},
+      {"folded-parameter-alias", "template<class T>using K=decltype((sizeof(T),sizeof(long double),nullptr));template<class T,K<T> N>int f(){return 1;}int main(){return f<int,nullptr>();}"},
+      {"ignored-alias", "template<auto N>using I=int;I<(sizeof(long double),nullptr)>f(){return 3;}"},
+      {"repeated-canonical", "template<auto N>struct R{int n;};R<nullptr>f(){return {};}R<(sizeof(long double),nullptr)>g(){return {};}"},
+      {"repeated-function", "template<auto N>int f(){return 1;}int g(){return f<nullptr>()+f<(sizeof(long double),nullptr)>();}"},
+      {"full-source", "template<auto N>struct R{int n;};template<>struct R<(sizeof(long double),nullptr)>{int n;};"},
+      {"copied-default", "template<class T>struct R{template<T N=(sizeof(T),sizeof(long double),nullptr)>int f(){return 1;}};int main(){return R<decltype(nullptr)>{}.f();}"},
+      {"copied-alias-default", "template<auto N>using I=int;template<class T>struct R{template<T N=(sizeof(T),sizeof(long double),nullptr)>using A=I<N>;};R<decltype(nullptr)>::A<>f(){return 1;}"},
+      {"partial-pattern", "template<class T,auto N>struct R{int n;};template<class T>struct R<T*,(sizeof(long double),nullptr)>{int n;};int main(){return R<int*,nullptr>{}.n;}"},
+      {"copied-pointer-frontier", "template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<auto...Ns>struct I<int,nullptr,Ns...>{int n=3;};};int main(){return O<int*,int*>::I<int,nullptr,nullptr>{}.n;}"},
+      {"copied-hidden-frontier", "using N=decltype(nullptr);template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<N...Ns>struct I<int,(sizeof(long double),nullptr),Ns...>{int n=3;};};int main(){return O<N,N>::I<int,nullptr,nullptr>{}.n;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("nullptr-template-reject-" + Name + ".cpp");
+    auto Output = tmpFile("nullptr-template-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NullptrTemplateValuesPreserveTypesAndObjectIdentity) {
+  auto Output = tmpFile("nullptr-template-values.nc");
+  auto Result = translate(fixture("nullptr-template-values.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("nullptr-template-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NativeHeapAcceptsCheckedDirectDeclarations) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"malloc", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void*f(Size n){return malloc(n);}"},
@@ -11741,7 +11838,6 @@ TEST_F(TranslateTest, CoreV2NullPtrValuesRetainSourceBoundaries) {
       {"hidden-initializer", "constexpr auto n=(sizeof(long double),nullptr);", "TR0201"},
       {"hidden-noexcept", "bool f(){return noexcept((sizeof(long double),nullptr));}", "TR0201"},
       {"hidden-default", "void f(decltype(nullptr) n=(sizeof(long double),nullptr)){}", "TR0201"},
-      {"null-template-argument", "template<auto N>int f(){return 0;}int main(){return f<nullptr>();}", "TR0201"},
       {"arithmetic", "auto f(){return nullptr+1;}", "TR0202"},
       {"ordering", "bool f(){return nullptr<nullptr;}", "TR0202"},
       {"dereference", "auto f(){return *nullptr;}", "TR0202"},
@@ -13474,7 +13570,6 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesRetainSourceAndResourceChecks) {
       {"ignored-floating-chain", "template<class T>using Ignore=int;template<class T>using Chain=Ignore<T>;Chain<long double>f(){return 3;}"},
       {"ignored-floating-value", "template<int N>using I=int;I<int(1.0L)>f(){return 3;}"},
       {"ignored-pointer-value", "int n;template<auto N>using I=int;I<&n>f(){return 3;}"},
-      {"ignored-null-value", "template<auto N>using I=int;I<nullptr>f(){return 3;}"},
       {"nondependent-floating-underlying", "template<class T>using I=long double;"},
       {"nondependent-folded-underlying", "template<class T>using I=int[sizeof(long double)];"},
       {"selected-folded-array", "template<int N>using I=int[sizeof(long double)+N];int f(){I<1>a{};return sizeof(a);}"},
@@ -13753,7 +13848,6 @@ TEST_F(TranslateTest, CoreV2ParameterPacksRetainSourceAndResourceChecks) {
       {"class-counted-floating-type", "template<class...T>struct R{int n;};int main(){R<int,long double>r{};return r.n;}"},
       {"pointer-value-pack", "int n;template<int*...P>int f(){return sizeof...(P);}int main(){return f<&n>();}"},
       {"auto-pointer-pack", "int n;template<auto...P>int f(){return sizeof...(P);}int main(){return f<1,&n>();}"},
-      {"auto-null-pack", "template<auto...P>int f(){return sizeof...(P);}int main(){return f<nullptr>();}"},
       {"reference-value-pack", "int n;template<int&...P>int f(){return sizeof...(P);}int main(){return f<n>();}"},
       {"nonempty-floating-pattern", "template<int...Ns>int f(){return (0 + ... + (sizeof(long double), Ns));}int main(){return f<1>();}"},
       {"empty-floating-seed", "template<int...N>int f(){return (int(1.0L)+...+N);}int main(){return f<>();}"},
@@ -14141,7 +14235,6 @@ TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsRetainSourceBoundaries) {
       {"noexcept-floating", "template<bool B=noexcept(int(1.0L))>int f(){return B;}"},
       {"decltype-floating", "template<decltype(int(1.0L)) N=3>int f(){return N;}"},
       {"auto-pointer-default", "int n=3;template<auto N=&n>int f(){return 1;}int main(){return f();}"},
-      {"auto-null-default", "template<auto N=nullptr>int f(){return 1;}int main(){return f();}"},
       {"pointer-parameter", "template<int*P=nullptr>int f(){return 1;}"},
       {"default-function-query-source", "template<class T,int N=sizeof(T(1.0L))>int f(){return N;}int main(){return f<int>();}"},
       {"default-static-directive-source", "template<class T=int,int N=T(1.0L)>struct R{inline static int n=N;};template int R<>::n;"},
@@ -16058,7 +16151,6 @@ TEST_F(TranslateTest, CoreV2AggregateClassTemplatesRetainSourceAndMemberBoundari
       {"floating-default", "template<class T>struct R{int n=static_cast<int>(1.0L);};int main(){R<int>r{};return r.n;}", "TR0201"},
       {"pointer-value", "int n;template<int*P>struct R{int n;};", "TR0201"},
       {"auto-pointer", "int n;template<auto P>struct R{int n;};int main(){R<&n>r{};return r.n;}", "TR0201"},
-      {"auto-null", "template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}", "TR0201"},
       {"template-template", "template<template<class>class T>struct R{int n;};", "TR0201"},
       {"union", "template<class T>union R{T n;int m;};", "TR0201"},
       {"base", "struct B{int n;};template<class T>struct R:B{T m;};", "TR0201"},
@@ -16224,7 +16316,6 @@ TEST_F(TranslateTest, CoreV2NonTypeFunctionTemplatesRetainSourceAndValueBoundari
       {"function-parameter", "int g(){return 3;}template<int(*F)()>int f(){return F();}int main(){return f<g>();}", "TR0201"},
       {"member-pointer", "struct R{int n;};template<int R::*P>int f(){return 1;}int main(){return f<&R::n>();}", "TR0201"},
       {"auto-pointer", "int n=3;template<auto N>int f(){return 1;}int main(){return f<&n>();}", "TR0201"},
-      {"auto-null", "template<auto N>int f(){return 1;}int main(){return f<nullptr>();}", "TR0201"},
       {"dependent-pointer", "int n=3;template<class T,T N>int f(){return 1;}int main(){return f<int*,&n>();}", "TR0201"},
       {"selected-floating-body", "template<int N>int f(){long double d=N;return static_cast<int>(d);}int main(){return f<3>();}", "TR0201"},
       {"selected-floating-default", "template<int N>int f(int n=static_cast<int>(1.0L)+N){return n;}int main(){return f<3>();}", "TR0201"},

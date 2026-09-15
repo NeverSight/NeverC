@@ -311,6 +311,15 @@ All `null` expressions, including ordinary pointer nulls, reject extraneous
 payload fields. Independent carrier/layout verification and emitted C23
 `typeof(nullptr)` guards follow the [source contract](cpp-core-v2.md#null-pointer-values).
 
+Concrete nullptr_t non-type template arguments reuse this same `null` expression
+and `nullptr` type. Canonical argument types distinguish nullptr from integer
+zero and boolean false; equivalent nullptr arguments retain the same instance
+identity. The producer checks exact parameter type, canonical null value and
+retained source syntax, including selected defaults, packs and copied/partial
+source contexts. No template value or source-proof metadata is added to the wire.
+Pointer-typed null template arguments remain rejected. See
+[nullptr_t template values](cpp-core-v2.md#nullptr-template-values).
+
 ## Core v2 integral representations
 
 Core v2 adds canonical `i8`, `u8`, `i16`, `u16`, `i64` and `u64` type spellings;
@@ -483,7 +492,7 @@ Concrete core-v2 free function-template instances use ordinary function, record,
 scalar-global and call IR. Primary-template ordinals and source identities
 separate otherwise colliding specializations, including their local records and
 static variables. Scalar non-type arguments lower to existing integer/bool/enum
-literals and never add runtime template parameters. Equal constant arguments
+literals or typed nullptr_t null expressions and never add runtime template parameters. Equal constant arguments
 share a specialization; different values or deduced argument types keep distinct
 identities, including static storage. Patterns and uninstantiated defaults emit
 no runtime entities. See [concrete free function templates](cpp-core-v2.md#concrete-free-function-templates)

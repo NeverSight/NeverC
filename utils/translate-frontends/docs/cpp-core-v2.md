@@ -703,8 +703,8 @@ static locals, static data members and admitted concrete variable templates.
 Equivalent template instances share their object; other instances remain distinct.
 Dynamic local null objects follow the [first-use contract](#dynamic-local-static-initialization).
 Nonlocal null objects follow the [startup contract](#nonlocal-dynamic-initialization).
-Thread-local/volatile storage and null-valued
-non-type template arguments remain unsupported. All written types, initializers,
+Thread-local/volatile storage remains unsupported. `nullptr_t` non-type arguments
+follow the [template value contract](#nullptr-template-values). All written types, initializers,
 defaults and unevaluated expressions retain source checks; folding to null does
 not hide unsupported operations. Standard headers, including `<cstddef>`, are
 still outside this single-source profile; `using Null = decltype(nullptr)` needs
@@ -716,6 +716,46 @@ values. Source size/alignment are checked against the independent default-pointe
 carrier layout, including record field offsets, and generated code asserts the
 C23 carrier size/alignment. Paired source/protocol cases, forged-IR checks and
 O0/O2 execution fixtures require native CI from the implementing revision.
+
+## Nullptr template values
+
+Core v2 admits concrete `decltype(nullptr)` non-type template arguments, including
+an alias for that type, C++17 `auto`, dependent `T N`, selected scalar defaults and
+bounded empty or nonempty packs. Existing function, class, alias, variable, member,
+partial/full specialization and explicit-instantiation source rules still apply.
+
+```cpp
+using Null = decltype(nullptr);
+template<auto N> int &slot() { static int value = 3; return value; }
+template<class T, T N = nullptr> T selected() { return N; }
+int main() {
+  return selected<Null>() != nullptr ||
+         &slot<nullptr>() != &slot<(sizeof(int), nullptr)>() ||
+         &slot<nullptr>() == &slot<0>();
+}
+```
+
+The selected Clang argument must be `NullPtr` with concrete `nullptr_t` type;
+pointer-typed null arguments, function pointers, references and class values remain
+unsupported, including through `auto` and dependent parameter types. A replacement
+must match the selected argument's exact type and evaluate to an APValue null,
+never an integer zero. Equal null arguments share canonical instances and storage;
+integer `0`, boolean `false` and `nullptr` have distinct deduced template types.
+
+Every retained written or converted argument, default and parameter type keeps
+its source checks, including ignored alias arguments, repeated canonical uses,
+copied members and partial patterns. Null arguments explicitly traverse their
+original expression because pinned Clang's default visitor skips that argument
+kind. A missing retained expression is rejected; the producer does not invent
+source evidence from the canonical value. Folded `sizeof(long double)` syntax
+remains rejected. Existing pack/depth and expansion limits remain unchanged.
+
+The existing typed `null` expression and `nullptr` IR type carry these values;
+no runtime template argument or additional wire operation is introduced. Paired
+source/protocol tests cover 33 accepted and 22 rejected cases, with saved-NC O0/O2
+execution, canonical storage identity and relocation checks. Native validation
+requires CI of the implementing revision. Standard headers and complete C++/STL
+remain unfinished.
 
 ## Integer widths, characters and size queries
 
@@ -1606,7 +1646,7 @@ remains unfinished.
 ## Concrete aggregate class templates
 
 Core v2 admits concrete namespace-scope standard-layout class-template instances with
-one to 64 type or scalar integer/bool/enum parameters. Scalar `auto`
+one to 64 type or scalar integer/bool/enum/nullptr_t parameters. Scalar `auto`
 and dependent scalar parameters follow the same argument rules as free function
 templates. Type defaults, explicit instantiation and explicit specialization,
 including forward declarations followed by definitions, are supported.
@@ -2437,7 +2477,7 @@ target was declared in a reopened block. These contexts must identify the same
 primary namespace; the exact lookup result and preceding target chain are still
 checked independently.
 
-Each original and actual header checks supported type/integer/boolean/enum
+Each original and actual header checks supported type/integer/boolean/enum/nullptr_t
 parameters, packs, nondependent type source and qualifiers. Pending dependent
 syntax stays lazy until a successful copy or use. Written defaults on the original
 friend class-template declaration produce `TR0202`, even for an unused generic
@@ -2926,7 +2966,7 @@ frontends remain planned.
 ## Class-template partial specializations
 
 Owned namespace class-template partial specializations support the same admitted
-concrete type and integer/bool/enum/auto arguments, fields, ordinary members,
+concrete type and integer/bool/enum/nullptr_t/auto arguments, fields, ordinary members,
 scalar static data, constructors, destructors and defaulted operations as primary
 class templates. Each parameter list and concrete pack has at most 64 entries.
 Records still require supported standard-layout storage with no bases; member
@@ -2997,7 +3037,7 @@ language frontends remain planned.
 ## Scalar template parameter defaults
 
 Admitted namespace function, operator and class templates support scalar non-type
-parameter defaults, including integer, boolean and enum values, scalar C++17 auto,
+parameter defaults, including integer, boolean, enum and nullptr_t values, scalar C++17 auto,
 and types or expressions depending on earlier parameters. Deduction takes
 precedence where applicable; otherwise embedded Clang substitutes the selected
 default. Partial explicit argument lists, inherited defaults and ordinary explicit
@@ -3199,7 +3239,7 @@ executable.
 Admitted namespace function/operator templates and standard-layout class
 templates support resolved type and scalar value parameter packs. A primary has
 at most 64 parameters; each concrete pack has at most 64 elements, including zero.
-Every packed type or integer/bool/enum value is checked, even if the body uses only
+Every packed type or integer/bool/enum/nullptr_t value is checked, even if the body uses only
 the count. Scalar auto packs may contain different admitted deduced scalar types.
 Pointer/reference/class-valued non-type arguments, template-template parameters,
 unsupported member class templates, unsupported dependent friend class-template forms and bases retain their
@@ -3273,8 +3313,9 @@ outside this stage.
 
 Scalar non-type parameters include C++17 `template<auto N>` and dependent scalar
 types such as `template<class T, T N>`. Every materialized value argument must
-resolve to an integral argument with a supported concrete integer/bool/enum type.
-Pointers, references, null pointers, function/member pointers and class values
+resolve to an integral argument with a supported concrete integer/bool/enum type
+or a null argument whose type is exactly nullptr_t.
+Pointers, references, pointer-typed nulls, function/member pointers and class values
 are not admitted, even through `auto` or a dependent parameter type. Scalar
 non-type defaults, including inherited defaults, follow their source-evidence
 contract above. Existing type and function defaults retain their own rules.
@@ -3289,7 +3330,7 @@ or deduced argument types preserve distinct instance identities and storage.
 The producer checks written non-type parameter types and explicit argument
 expressions before erasure, including `sizeof`/`decltype` source expressions and
 explicit instantiation/specialization arguments. Unsupported `long double` operations
-cannot disappear behind an integer result. Direct dependent `T` and `auto` type
+cannot disappear behind an integer or nullptr_t result. Direct dependent `T` and `auto` type
 metadata stay lazy; other expression-bearing dependent parameter types must pass
 the ordinary source checks and are not generally admitted by this increment.
 

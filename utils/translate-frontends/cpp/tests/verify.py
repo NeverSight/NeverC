@@ -5738,6 +5738,83 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         check("v2-array-sized-trivial-"+target, sized_source,
               "TR0201" if abi == "msvc" else None, profile="cpp-core-v2", target=target)
 
+    nullptr_template_positive = {
+        'explicit': 'template<decltype(nullptr) N>decltype(nullptr) f(){return N;}int main(){return f<nullptr>()!=nullptr;}',
+        'alias-type': 'using Null=decltype(nullptr);template<Null N>Null f(){return N;}int main(){return f<nullptr>()!=nullptr;}',
+        'dependent-type': 'template<class T,T N>T f(){return N;}int main(){return f<decltype(nullptr),nullptr>()!=nullptr;}',
+        'dependent-default': 'template<class T,T N=nullptr>T f(){return N;}int main(){return f<decltype(nullptr)>()!=nullptr;}',
+        'inherited-default': 'template<auto N=nullptr>int f();template<auto N>int f(){return N==nullptr;}int main(){return f()-1;}',
+        'parameter-alias': 'template<class T>using K=decltype((sizeof(T),nullptr));template<class T,K<T> N>int f(){return N==nullptr;}int main(){return f<int,nullptr>()-1;}',
+        'value-init': 'template<auto N>int f(){return N==nullptr;}int main(){return f<decltype(nullptr){}>()-1;}',
+        'constexpr-source': 'constexpr auto n=nullptr;template<auto N>int f(){return N==nullptr;}int main(){return f<n>()-1;}',
+        'macro-source': '#define VALUE (sizeof(int),nullptr)\ntemplate<auto N>int f(){return N==nullptr;}int main(){return f<VALUE>()-1;}',
+        'pack-mixed': 'template<auto...N>int f(){return sizeof...(N);}int main(){return f<nullptr,0,false,nullptr>()-4;}',
+        'pack-fold': 'template<decltype(nullptr)...N>bool f(){return (true&&...&&(N==nullptr));}int main(){return !f<nullptr,nullptr>()||!f<>();}',
+        'dependent-pack-empty': 'template<class T,T...N>int f(){return sizeof...(N);}int main(){return f<decltype(nullptr)>();}',
+        'dependent-pack-full': 'template<class T,T...N>int f(){return sizeof...(N);}int main(){return f<decltype(nullptr),nullptr,nullptr>()-2;}',
+        'class-default': 'template<decltype(nullptr) N=nullptr>struct R{decltype(nullptr) get(){return N;}};int main(){return R<>{}.get()!=nullptr;}',
+        'class-partial': 'template<class T,auto N>struct R{int n=1;};template<class T>struct R<T*,nullptr>{int n=3;};int main(){return R<int*,nullptr>{}.n-3;}',
+        'class-full': 'template<auto N>struct R{int n=1;};template<>struct R<nullptr>{int n=3;};int main(){return R<nullptr>{}.n-3;}',
+        'function-full': 'template<auto N>int f(){return 1;}template<>int f<nullptr>(){return 3;}int main(){return f<nullptr>()-3;}',
+        'explicit-instantiation': 'template<auto N>int f(){return N==nullptr;}template int f<nullptr>();int main(){return f<nullptr>()-1;}',
+        'variable': 'template<auto N>inline auto v=N;int main(){return v<nullptr>!=nullptr;}',
+        'variable-partial': 'template<class T,auto N>inline int v=1;template<class T>inline int v<T*,nullptr> =3;int main(){return v<int*,nullptr>-3;}',
+        'member-default': 'template<class T>struct R{template<T N=nullptr>T f(){return N;}};int main(){return R<decltype(nullptr)>{}.f()!=nullptr;}',
+        'member-alias-default': 'template<auto N>struct B{int n=3;};template<class T>struct R{template<T N=nullptr>using A=B<N>;};int main(){return R<decltype(nullptr)>::A<>{}.n-3;}',
+        'member-partial': 'template<class T>struct R{template<class U,T N>struct B{int n=1;};template<class U>struct B<U*,nullptr>{int n=3;};};int main(){return R<decltype(nullptr)>::B<int*,nullptr>{}.n-3;}',
+        'repeated-canonical-source': 'template<auto N>struct R{int n=3;};R<nullptr>f(){return {};}R<(sizeof(int),nullptr)>g(){return {};}int main(){return f().n+g().n-6;}',
+        'promoted-null-template-argument': 'template<auto N>int f(){return 0;}int main(){return f<nullptr>();}',
+        'promoted-ignored-null-value': 'template<auto N>using I=int;I<nullptr>f(){return 3;}',
+        'promoted-auto-null-pack': 'template<auto...P>int f(){return sizeof...(P);}int main(){return f<nullptr>();}',
+        'promoted-auto-null-default': 'template<auto N=nullptr>int f(){return 1;}int main(){return f();}',
+        'promoted-auto-null-class': 'template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}',
+        'promoted-auto-null': 'template<auto N>int f(){return 1;}int main(){return f<nullptr>();}',
+        'class-fixed-frontier': 'using N=decltype(nullptr);template<N A,N B,N C>struct Q{int n=1;};template<N...Ns>struct Q<nullptr,Ns...>{int n=3;};int main(){return Q<nullptr,nullptr,nullptr>{}.n-3;}',
+        'variable-fixed-frontier': 'using N=decltype(nullptr);template<N A,N B,N C>inline int q=1;template<N...Ns>inline int q<nullptr,Ns...> =3;int main(){return q<nullptr,nullptr,nullptr>-3;}',
+        'copied-expanded-frontier': 'using N=decltype(nullptr);template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<N...Ns>struct I<int,nullptr,Ns...>{int n=3;};};int main(){return O<N,N>::I<int,nullptr,nullptr>{}.n-3;}',
+    }
+    for name, source in nullptr_template_positive.items():
+        check("v2-nullptr-template-" + name, source, profile="cpp-core-v2")
+    nullptr_template_negative = {
+        'pointer-parameter': 'template<int* N=nullptr>int f(){return 1;}int main(){return f();}',
+        'pointer-auto': 'template<auto N>int f(){return 1;}int main(){return f<static_cast<int*>(nullptr)>();}',
+        'pointer-dependent': 'template<class T,T N>int f(){return 1;}int main(){return f<int*,nullptr>();}',
+        'pointer-pack-empty': 'template<int*...N>int f(){return sizeof...(N);}int main(){return f<>();}',
+        'pointer-dependent-pack-empty': 'template<class T,T...N>int f(){return sizeof...(N);}int main(){return f<int*>();}',
+        'pointer-auto-pack': 'template<auto...N>int f(){return sizeof...(N);}int main(){return f<nullptr,static_cast<int*>(nullptr)>();}',
+        'function-pointer': 'template<int(*N)()=nullptr>int f(){return 1;}int main(){return f();}',
+        'function-pointer-auto': 'template<auto N>int f(){return 1;}int main(){return f<static_cast<int(*)()>(nullptr)>();}',
+        'folded-written': 'template<auto N>int f(){return 1;}int main(){return f<(sizeof(long double),nullptr)>();}',
+        'folded-default-unused': 'template<auto N=(sizeof(long double),nullptr)>int f(){return 1;}',
+        'folded-dependent-default': 'template<class T,auto N=(sizeof(T),sizeof(long double),nullptr)>int f(){return 1;}int main(){return f<int>();}',
+        'folded-parameter-type': 'template<decltype((sizeof(long double),nullptr)) N>int f(){return 1;}int main(){return f<nullptr>();}',
+        'folded-parameter-alias': 'template<class T>using K=decltype((sizeof(T),sizeof(long double),nullptr));template<class T,K<T> N>int f(){return 1;}int main(){return f<int,nullptr>();}',
+        'ignored-alias': 'template<auto N>using I=int;I<(sizeof(long double),nullptr)>f(){return 3;}',
+        'repeated-canonical': 'template<auto N>struct R{int n;};R<nullptr>f(){return {};}R<(sizeof(long double),nullptr)>g(){return {};}',
+        'repeated-function': 'template<auto N>int f(){return 1;}int g(){return f<nullptr>()+f<(sizeof(long double),nullptr)>();}',
+        'full-source': 'template<auto N>struct R{int n;};template<>struct R<(sizeof(long double),nullptr)>{int n;};',
+        'copied-default': 'template<class T>struct R{template<T N=(sizeof(T),sizeof(long double),nullptr)>int f(){return 1;}};int main(){return R<decltype(nullptr)>{}.f();}',
+        'copied-alias-default': 'template<auto N>using I=int;template<class T>struct R{template<T N=(sizeof(T),sizeof(long double),nullptr)>using A=I<N>;};R<decltype(nullptr)>::A<>f(){return 1;}',
+        'partial-pattern': 'template<class T,auto N>struct R{int n;};template<class T>struct R<T*,(sizeof(long double),nullptr)>{int n;};int main(){return R<int*,nullptr>{}.n;}',
+        'copied-pointer-frontier': 'template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<auto...Ns>struct I<int,nullptr,Ns...>{int n=3;};};int main(){return O<int*,int*>::I<int,nullptr,nullptr>{}.n;}',
+        'copied-hidden-frontier': 'using N=decltype(nullptr);template<class...Ts>struct O{template<class U,Ts...Vs>struct I{int n=1;};template<N...Ns>struct I<int,(sizeof(long double),nullptr),Ns...>{int n=3;};};int main(){return O<N,N>::I<int,nullptr,nullptr>{}.n;}',
+    }
+    for name, source in nullptr_template_negative.items():
+        check("v2-nullptr-template-reject-" + name, source, "TR0201", profile="cpp-core-v2")
+    nullptr_template_source = (repository / "tests/neverc/Inputs/translate/cpp/nullptr-template-values.cpp").read_text()
+    nullptr_templates = check("v2-nullptr-template-runtime", nullptr_template_source, profile="cpp-core-v2")
+    exports = {f["name"]: f for f in nullptr_templates["functions"] if f["c_export"]}
+    assert exports["null_template_value"]["result"] == "nullptr"
+    assert exports["null_template_pointer"]["result"] == "ptr:int"
+    assert all(exports[name]["result"] == "ptr:int" for name in (
+        "null_template_slot", "same_null_template_slot", "zero_template_slot", "false_template_slot"))
+    nulls = [n for n in walk(nullptr_templates) if n.get("kind") == "null" and n.get("type") == "nullptr"]
+    assert nulls and all("value" not in n for n in nulls), nulls
+    with tempfile.TemporaryDirectory(prefix="neverc-nullptr-template-relocated-") as temporary:
+        relocated = check("v2-nullptr-template-relocated", nullptr_template_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == nullptr_templates
+
     native_heap_positive = {'malloc': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(Size n){return malloc(n);}', 'calloc': 'using Size=decltype(sizeof(0));extern "C" void*calloc(Size,Size);void*f(Size n){return calloc(n,4);}', 'free': 'extern "C" void free(void*);void f(void*p){free(p);}', 'free-null': 'extern "C" void free(void*);void f(){free(nullptr);}', 'declaration-only': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);int main(){return 0;}', 'parenthesized': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(Size n){return (malloc)(n);}', 'qualified': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(Size n){return (::malloc)(n);}', 'sequenced-arguments': 'using Size=decltype(sizeof(0));extern "C" void*calloc(Size,Size);void*f(Size n){return calloc(n++,n++);}', 'conversion-argument': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);struct S{Size n;operator Size()const{return n;}};void*f(S n){return malloc(n);}', 'default-argument-call': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(void*p=malloc(4)){return p;}void*g(){return f();}', 'function-template': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);template<class T>void*f(T n){return malloc(n);}void*g(){return f(4u);}', 'dead-call': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);int main(){if(false)malloc(4);return 0;}', 'noexcept-call': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);bool f(){return noexcept(malloc(4));}', 'const-parameter': 'using Size=decltype(sizeof(0));extern "C" void*malloc(const Size);void*f(Size n){return malloc(n);}', 'noexcept-prototype': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size)noexcept;void*f(Size n){return malloc(n);}', 'redeclarations': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);extern "C" void*malloc(Size);void*f(Size n){return malloc(n);}', 'definition-wins': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);extern "C" void free(void*);unsigned char bytes[64]{};void*f(){void*p=malloc(4);free(p);return p;}extern "C" void*malloc(Size){return bytes;}extern "C" void free(void*){}', 'class-array': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);extern "C" void free(void*);struct R{int n;R():n(3){}~R(){}static void*operator new[](Size n)noexcept{return malloc(n);}static void operator delete[](void*p)noexcept{free(p);}};R*f(int n){return new R[n];}void g(R*p){delete[]p;}'}
     native_heap_data = {}
     for name, source in native_heap_positive.items():
@@ -11285,7 +11362,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'hidden-initializer': ('constexpr auto n=(sizeof(long double),nullptr);', 'TR0201'),
         'hidden-noexcept': ('bool f(){return noexcept((sizeof(long double),nullptr));}', 'TR0201'),
         'hidden-default': ('void f(decltype(nullptr) n=(sizeof(long double),nullptr)){}', 'TR0201'),
-        'null-template-argument': ('template<auto N>int f(){return 0;}int main(){return f<nullptr>();}', 'TR0201'),
         'arithmetic': ('auto f(){return nullptr+1;}', 'TR0202'),
         'ordering': ('bool f(){return nullptr<nullptr;}', 'TR0202'),
         'dereference': ('auto f(){return *nullptr;}', 'TR0202'),
@@ -12557,7 +12633,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'ignored-floating-chain': 'template<class T>using Ignore=int;template<class T>using Chain=Ignore<T>;Chain<long double>f(){return 3;}',
         'ignored-floating-value': 'template<int N>using I=int;I<int(1.0L)>f(){return 3;}',
         'ignored-pointer-value': 'int n;template<auto N>using I=int;I<&n>f(){return 3;}',
-        'ignored-null-value': 'template<auto N>using I=int;I<nullptr>f(){return 3;}',
         'nondependent-floating-underlying': 'template<class T>using I=long double;',
         'nondependent-folded-underlying': 'template<class T>using I=int[sizeof(long double)];',
         'selected-folded-array': 'template<int N>using I=int[sizeof(long double)+N];int f(){I<1>a{};return sizeof(a);}',
@@ -12855,7 +12930,6 @@ Token record(){return pp_record(2,3);}
         'class-counted-floating-type': 'template<class...T>struct R{int n;};int main(){R<int,long double>r{};return r.n;}',
         'pointer-value-pack': 'int n;template<int*...P>int f(){return sizeof...(P);}int main(){return f<&n>();}',
         'auto-pointer-pack': 'int n;template<auto...P>int f(){return sizeof...(P);}int main(){return f<1,&n>();}',
-        'auto-null-pack': 'template<auto...P>int f(){return sizeof...(P);}int main(){return f<nullptr>();}',
         'reference-value-pack': 'int n;template<int&...P>int f(){return sizeof...(P);}int main(){return f<n>();}',
         'nonempty-floating-pattern': 'template<int...Ns>int f(){return (0 + ... + (sizeof(long double), Ns));}int main(){return f<1>();}',
         'empty-floating-seed': 'template<int...N>int f(){return (int(1.0L)+...+N);}int main(){return f<>();}',
@@ -13186,7 +13260,6 @@ int&outsideValue(Outside<int>&r){return r;}
         'noexcept-floating': 'template<bool B=noexcept(int(1.0L))>int f(){return B;}',
         'decltype-floating': 'template<decltype(int(1.0L)) N=3>int f(){return N;}',
         'auto-pointer-default': 'int n=3;template<auto N=&n>int f(){return 1;}int main(){return f();}',
-        'auto-null-default': 'template<auto N=nullptr>int f(){return 1;}int main(){return f();}',
         'pointer-parameter': 'template<int*P=nullptr>int f(){return 1;}',
         'default-function-query-source': 'template<class T,int N=sizeof(T(1.0L))>int f(){return N;}int main(){return f<int>();}',
         'default-static-directive-source': 'template<class T=int,int N=T(1.0L)>struct R{inline static int n=N;};template int R<>::n;',
@@ -15240,7 +15313,6 @@ SelfAlias<int>::type selfAlias(){return SelfAlias<int>{4};}
         'floating-default': 'template<class T>struct R{int n=static_cast<int>(1.0L);};int main(){R<int>r{};return r.n;}',
         'pointer-value': 'int n;template<int*P>struct R{int n;};',
         'auto-pointer': 'int n;template<auto P>struct R{int n;};int main(){R<&n>r{};return r.n;}',
-        'auto-null': 'template<auto P>struct R{int n;};int main(){R<nullptr>r{};return r.n;}',
         'template-template': 'template<template<class>class T>struct R{int n;};',
         'union': 'template<class T>union R{T n;int m;};',
         'base': 'struct B{int n;};template<class T>struct R:B{T m;};',
@@ -15460,7 +15532,6 @@ Plain chosenRecord(){return choose<false>();}
         'function-parameter': 'int g(){return 3;}template<int(*F)()>int f(){return F();}int main(){return f<g>();}',
         'member-pointer': 'struct R{int n;};template<int R::*P>int f(){return 1;}int main(){return f<&R::n>();}',
         'auto-pointer': 'int n=3;template<auto N>int f(){return 1;}int main(){return f<&n>();}',
-        'auto-null': 'template<auto N>int f(){return 1;}int main(){return f<nullptr>();}',
         'dependent-pointer': 'int n=3;template<class T,T N>int f(){return 1;}int main(){return f<int*,&n>();}',
         'selected-floating-body': 'template<int N>int f(){long double d=N;return static_cast<int>(d);}int main(){return f<3>();}',
         'selected-floating-default': 'template<int N>int f(int n=static_cast<int>(1.0L)+N){return n;}int main(){return f<3>();}',
