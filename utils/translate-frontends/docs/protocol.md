@@ -818,6 +818,11 @@ exception specifications before preserving the existing boolean. Consumed
 noexcept expressions retain independent completed nodes and transitive source
 dependencies, including selected defaults and function references. A completed
 function declaration or definition alone cannot prove those expression dependencies.
+Clang's exact locationless false literal for an unwritten inferred exception
+specification instead retains its actual special-member/destructor owner as a
+source dependency. Every actual redeclaration must have no written exception
+specification; complete owning source is still required and false results do not
+short-circuit these checks. No synthetic expression completion is fabricated.
 When template substitution rebuilds a nondependent exception expression, both
 the original written node and the distinct resolved node require completion.
 Referenced unused inline friends require exact retained declaration/selection

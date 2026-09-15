@@ -5404,6 +5404,16 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluat
 
 TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"inferred-false-owning-array", "struct F{~F()noexcept(false){}};struct R{F fields[2];};static_assert(!__is_nothrow_destructible(R[2])&&__is_constructible(R,const R&)&&!__is_nothrow_constructible(R,const R&));"},
+      {"inferred-false-ordinary-destructor", "struct F{~F()noexcept(false){}};struct R{F field;~R(){}};static_assert(!__is_nothrow_destructible(R)&&__is_constructible(R)&&!__is_nothrow_constructible(R));"},
+      {"inferred-false-defaulted-destructor", "struct F{~F()noexcept(false){}};struct R{F field;~R()=default;};static_assert(!__is_nothrow_destructible(R)&&__is_constructible(R)&&!__is_nothrow_constructible(R));"},
+      {"inferred-false-template-destructor", "struct F{~F()noexcept(false){}};template<class T>struct R{T field;~R()=default;};static_assert(!__is_nothrow_destructible(R<F>));"},
+      {"inferred-false-selected-default", "struct F{~F()noexcept(false){}};struct S{F fields[2];};struct R{R(const S& =S{})noexcept{}};static_assert(__is_constructible(R)&&!__is_nothrow_constructible(R));"},
+      {"inferred-false-alias-bound", "struct F{~F()noexcept(false){}};struct S{F fields[2];};using A=int[noexcept(S{})?1:2];static_assert(__is_constructible(A*));"},
+      {"inferred-false-generated-constructor", "struct F{F()noexcept(false){}};struct R{F field;R()=default;};void force(){R r;}static_assert(__is_constructible(R)&&!__is_nothrow_constructible(R));"},
+      {"inferred-false-generated-assignment", "struct F{F&operator=(const F&)noexcept(false){return *this;}};struct R{F field;R&operator=(const R&)=default;};void force(R&a,const R&b){a=b;}static_assert(__is_assignable(R&,const R&)&&!__is_nothrow_assignable(R&,const R&));"},
+      {"generated-destructor-aggregate-lazy-constructor", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct R{~R()noexcept(noexcept(F<int>{}))=default;};static_assert(__is_nothrow_destructible(R));"},
+      {"generated-destructor-default-aggregate-lazy-constructor", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct S{~S()noexcept(noexcept(F<int>{}))=default;};struct R{R(const S& =S{}){}};bool f(){return __is_constructible(R);}"},
       {"owning-signature-explicit-parent-overrides-child", "template<class T>struct Leaf{~Leaf()noexcept(false)=default;};static_assert(!__is_nothrow_destructible(Leaf<int>));template<class T>struct R{Leaf<T>field;~R()noexcept=default;};static_assert(__is_nothrow_destructible(R<int>));"},
       {"owning-signature-implicit-root", "template<class T>struct Leaf{T n;~Leaf()noexcept=default;};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));"},
       {"owning-signature-nested-arrays", "template<class T>struct Leaf{T n;~Leaf()noexcept=default;};template<class T>struct Mid{Leaf<T>fields[2];~Mid()=default;};struct R{Mid<int>fields[2];};static_assert(__is_nothrow_destructible(R[2]));"},
@@ -5873,6 +5883,8 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"inferred-false-hidden-owning-spec", "struct F{~F()noexcept(false){}};template<class T>struct B{~B()noexcept(sizeof(long double)>0)=default;};struct R{F first;B<int>last;};static_assert(!__is_nothrow_destructible(R));"},
+      {"inferred-false-written-source", "template<class T>struct F{~F()noexcept((sizeof(long double),false))=default;};struct R{F<int>field;};static_assert(!__is_nothrow_destructible(R));"},
       {"owning-signature-hidden-child-type", "template<class T>struct Leaf{T n;~Leaf()noexcept(sizeof(long double)>0)=default;};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));"},
       {"owning-signature-hidden-child-value", "template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>struct Leaf{T n;~Leaf()noexcept(noexcept(Mid()))=default;};struct R{Leaf<int>field;};static_assert(__is_nothrow_destructible(R));"},
       {"owning-signature-hidden-child-after-throw", "template<bool B>struct First{~First()noexcept(B)=default;};template<class T>struct Last{~Last()noexcept(sizeof(long double)>0)=default;};struct R{First<false>first;Last<int>last;};static_assert(!__is_nothrow_destructible(R));"},
@@ -5973,9 +5985,9 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"generated-destructor-owning-template", "template<class T>struct F{~F()noexcept{}};struct R{F<int>value;~R()=default;};static_assert(__is_nothrow_destructible(R));"},
       {"generated-destructor-implicit-template-field", "template<class T>struct F{~F()noexcept{}};struct R{F<int>value;};static_assert(__is_nothrow_destructible(R));"},
       {"generated-destructor-written-spec", "struct R{~R()noexcept(sizeof(long double)>0)=default;};static_assert(__is_nothrow_destructible(R));"},
-      {"generated-destructor-hidden-family", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct R{~R()noexcept(noexcept(F<int>{}))=default;};static_assert(__is_nothrow_destructible(R));"},
+      {"generated-destructor-hidden-family", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct R{~R()noexcept(noexcept(F<int>()))=default;};static_assert(__is_nothrow_destructible(R));"},
       {"generated-destructor-later-template-dependency", "struct F{~F()noexcept(false){}};template<class T>struct Hidden{~Hidden()noexcept(sizeof(long double)>0){}};struct R{F first;Hidden<int>last;~R()=default;};static_assert(!__is_nothrow_destructible(R));"},
-      {"generated-destructor-default-hidden-source", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct S{~S()noexcept(noexcept(F<int>{}))=default;};struct R{R(const S& =S{}){}};bool f(){return __is_constructible(R);}"},
+      {"generated-destructor-default-hidden-source", "template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct S{~S()noexcept(noexcept(F<int>()))=default;};struct R{R(const S& =S{}){}};bool f(){return __is_constructible(R);}"},
       {"destruction-value-template-body", "template<class T>struct R{~R()noexcept{}};static_assert(__is_nothrow_destructible(R<int>));"},
       {"destruction-value-written-spec", "struct R{~R()noexcept(sizeof(long double)>0){}};static_assert(__is_nothrow_destructible(R));"},
       {"destruction-value-deleted-written-spec", "struct R{~R()noexcept(sizeof(long double)>0)=delete;};static_assert(!__is_nothrow_destructible(R));"},

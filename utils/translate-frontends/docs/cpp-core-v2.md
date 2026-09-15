@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 456 accepted, 296 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
+The paired 466 accepted, 298 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1186,9 +1186,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has eighty-two O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has eighty-six O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Eighty-two exported query
+default evaluation with full-expression temporary cleanup. Eighty-six exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1209,6 +1209,16 @@ default member initializers. Ordinary user definitions include their written
 signature checks; inferred user-destructor specifications also retain recursive
 source checks for all owning subobject destructors. An unselected destructor does
 not need new exception resolution solely because its object is constructed.
+
+Clang represents an inferred potentially-throwing specification with a generated
+locationless `false` literal. Only that exact current prototype of an admitted
+special member or ordinary destructor, with no written exception specification
+on any redeclaration, uses its owner's complete operation/destruction source in
+place of written-expression evidence. This also covers selected defaults and
+type-query dependencies. Written `noexcept(false)` expressions keep their normal
+source checks, and every owning dependency remains checked after a false result.
+C++17 aggregate initialization such as `F<int>{}` does not consume an unused
+inline-defaulted constructor's exception specification; `F<int>()` does.
 
 Each consumed written noexcept expression has its own completed source node in
 the bounded dependency graph. Normal Type, TypeLoc, concrete-template and friend
@@ -1381,7 +1391,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared eighty-two-checkpoint user-operation fixture checks
+queries. The shared eighty-six-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
 user/generated array destruction at O0/O2. Query-only nested owning signatures
@@ -3496,7 +3506,10 @@ Three former member-alias rejection cases are promoted without changing their
 source. Paired source/protocol fixtures, nine O0/O2 runtime checkpoints, concrete
 signature/storage behavior and relocation checks require validation on the
 implementing CI revision. Source-depth and shared source-budget guards still
-apply. Unsupported source reports `TR0201`, invalid C++ reports `TR0202`, and
+apply. Qualified-name wrappers and terminal type locations retain their complete
+source checks without consuming another recursion level: 64 nested member-alias
+uses remain admissible, while 65 exceed the limit.
+Unsupported source reports `TR0201`, invalid C++ reports `TR0202`, and
 required missing definitions report `TR0203`.
 
 Local/union owners, unsupported template owner chains, template-template

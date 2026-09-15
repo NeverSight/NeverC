@@ -370,6 +370,26 @@ extern "C" bool defined_owning_signature_throwing() { return __is_nothrow_destru
 extern "C" bool defined_owning_signature_override() { return __is_nothrow_destructible(OwningSignatureOverride<int>); }
 extern "C" bool defined_owning_signature_references() { return __is_nothrow_destructible(OwningSignatureReferences); }
 
+int inferred_false_destructions;
+int inferred_false_owner_destructions;
+struct InferredFalseLeaf {
+  int value;
+  ~InferredFalseLeaf() noexcept(false) { ++inferred_false_destructions; }
+};
+struct InferredFalseOwner { InferredFalseLeaf fields[2]; };
+struct InferredFalseOrdinary {
+  InferredFalseOwner field;
+  ~InferredFalseOrdinary() { ++inferred_false_owner_destructions; }
+};
+struct InferredFalseDefaulted {
+  InferredFalseOwner field;
+  ~InferredFalseDefaulted() = default;
+};
+extern "C" bool defined_inferred_false_construct() { return __is_constructible(InferredFalseOwner); }
+extern "C" bool defined_inferred_false_nothrow() { return __is_nothrow_constructible(InferredFalseOwner); }
+extern "C" bool defined_inferred_false_ordinary() { return __is_nothrow_destructible(InferredFalseOrdinary); }
+extern "C" bool defined_inferred_false_defaulted() { return __is_nothrow_destructible(InferredFalseDefaulted); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -687,5 +707,21 @@ int main() {
   if (owning_signature_destructions != 8 || owning_signature_order != 43214321 ||
       template_default_calls != 3 || template_default_destructions != 4 || root_destructions != 8 ||
       selected_default_calls != 7 || generated_destructions != 14 || destructions != 10) return 82;
+  if (!defined_inferred_false_construct() || defined_inferred_false_nothrow() ||
+      defined_inferred_false_ordinary() || defined_inferred_false_defaulted() ||
+      inferred_false_destructions || inferred_false_owner_destructions) return 83;
+  {
+    InferredFalseOwner first{{{3}, {5}}};
+    InferredFalseOwner second(first);
+    first.fields[0].value = 7;
+    if (second.fields[0].value != 3 || second.fields[1].value != 5 ||
+        &first.fields[0] == &second.fields[0] || inferred_false_destructions) return 84;
+  }
+  if (inferred_false_destructions != 4 || inferred_false_owner_destructions) return 85;
+  {
+    InferredFalseOrdinary ordinary{};
+    InferredFalseDefaulted defaulted{};
+  }
+  if (inferred_false_destructions != 8 || inferred_false_owner_destructions != 1) return 86;
   return 0;
 }

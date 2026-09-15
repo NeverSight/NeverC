@@ -300,6 +300,12 @@ extra Sema instantiation is requested. The three retained nothrow operations als
 check already-resolved standard exception specifications on each selected root
 callee and bound destructor, without asking Sema to resolve additional dependencies.
 The same source proof covers owning-subobject destructor inference. Constructor
+and destructor inference can contain Clang's locationless false literal. Only
+the exact current prototype of an admitted special member or ordinary destructor,
+with no written specification on any actual redeclaration, replaces that leaf
+with its complete operation/owning-destruction dependency. Stable checked-owner
+nodes close self-signature edges; ordinary written expressions retain completion
+requirements. Constructor
 queries can select unchanged ordinary parameter defaults after exact
 parameter/initializer source completion. The adapter independently validates the
 FullExpr envelope stripped by ParmVarDecl::getDefaultArg(), source ownership,
@@ -377,6 +383,9 @@ No body is materialized for source checking, and semantic visit-once state stays
 separate from completion records for these value roots.
 Exact TypeLoc completion nodes retain type metadata dependencies from normal
 source traversal, including alias/template source, array bounds and decltype.
+Elaborated name wrappers and terminal builtin/record/enum/typedef
+locations retain their exact nodes and source charges without consuming a nested
+source level; the existing 64/65 member-alias boundary remains unchanged.
 Consumed declarations use their actual TypeSourceInfo; canonical type metadata
 cannot replace source. Layout dependencies follow existing owning base/field type
 source, while pointer/reference spelling keeps pointee layout lazy. Signature

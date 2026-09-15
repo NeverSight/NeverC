@@ -1872,6 +1872,45 @@ static bool inlineTemplateDefaultingSource(Adapter &A, const FunctionDecl *Funct
          Method->getTemplateInstantiationPattern() == Origin;
 }
 
+static const CXXMethodDecl *inferredOperationExceptionSource(Adapter &A,
+    const FunctionProtoType *Prototype, const FunctionDecl *Function) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (!Method || !Prototype ||
+      Prototype != Method->getType()->getAs<FunctionProtoType>() ||
+      Prototype->getExceptionSpecType() != EST_NoexceptFalse)
+    return nullptr;
+  const auto *Literal = dyn_cast_or_null<CXXBoolLiteralExpr>(Prototype->getNoexceptExpr());
+  if (!Literal || Literal->getValue() || !Literal->isPRValue() ||
+      !A.Context.hasSameType(Literal->getType(), A.Context.BoolTy) ||
+      Literal->isTypeDependent() || Literal->isValueDependent() ||
+      Literal->isInstantiationDependent() || Literal->getBeginLoc().isValid() ||
+      Literal->getEndLoc().isValid())
+    return nullptr;
+  const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
+  const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
+  if (!defaultedLifecycle(Method) && !defaultedCopyOrMoveConstructor(Constructor) &&
+      !defaultedAssignment(Method) && !ordinaryDestructor(Destructor))
+    return nullptr;
+  // Sema's ImplicitExceptionSpecification creates this exact locationless
+  // false literal. A written noexcept/throw specification still needs its
+  // expression proof, even if its final value is also false.
+  for (const auto *Declaration : Method->redecls()) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    if (!A.S.owns(A.Sources, Declaration->getLocation()))
+      return nullptr;
+    const auto *Info = Declaration->getTypeSourceInfo();
+    if (!Info) {
+      if (!Declaration->isImplicit())
+        return nullptr;
+      continue;
+    }
+    const auto Location = Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
+    if (!Location || Location.getExceptionSpecRange().isValid())
+      return nullptr;
+  }
+  return Method;
+}
+
 // Source completion is independent of a trait's computed Boolean and of the
 // hypothetical root's fast admission path. Share this proof with query type roots.
 class OperationSourceChecker {
@@ -1881,6 +1920,7 @@ class OperationSourceChecker {
   const OperationTypeSources *Types;
   const GeneratedOperationSources *Generated;
   std::vector<const OperationSourceDependencies *> Work;
+  std::map<const CXXMethodDecl *, OperationSourceDependencies> InferredExceptions;
 
 public:
   OperationSourceChecker(Adapter &A, const std::set<const FunctionDecl *> *Definitions,
@@ -1908,7 +1948,22 @@ public:
     add(&Found->second.Dependencies);
     return true;
   }
-  bool prototypeSource(const FunctionProtoType *Prototype) {
+  bool prototypeSource(const FunctionProtoType *Prototype,
+                       const FunctionDecl *Function = nullptr) {
+    if (const auto *Method = inferredOperationExceptionSource(A, Prototype, Function)) {
+      auto [Entry, Inserted] = InferredExceptions.try_emplace(Method);
+      if (Inserted) {
+        if (const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method))
+          Entry->second.Destructions.insert(Destructor->getParent());
+        else
+          Entry->second.Families.insert(Method);
+      }
+      // The generated literal has no written source. Its actual owner still
+      // needs the complete owning destruction or generated-operation proof.
+      // Stable dependency nodes let finish() close self-signature edges once.
+      add(&Entry->second);
+      return true;
+    }
     return requireExpression(Prototype ? Prototype->getNoexceptExpr() : nullptr);
   }
   bool defined(const FunctionDecl *Function) {
@@ -1921,8 +1976,8 @@ public:
            Function->getTypeSourceInfo() && Definition->getTypeSourceInfo() &&
            requireType(operationTypeSourceKey(Function->getTypeSourceInfo()->getTypeLoc())) &&
            requireType(operationTypeSourceKey(Definition->getTypeSourceInfo()->getTypeLoc())) &&
-           prototypeSource(Function->getType()->getAs<FunctionProtoType>()) &&
-           prototypeSource(Definition->getType()->getAs<FunctionProtoType>());
+           prototypeSource(Function->getType()->getAs<FunctionProtoType>(), Function) &&
+           prototypeSource(Definition->getType()->getAs<FunctionProtoType>(), Definition);
   }
   bool generatedDeclaration(const CXXMethodDecl *Method) {
     if (!Method || !A.S.owns(A.Sources, Method->getLocation()))
@@ -1953,7 +2008,7 @@ public:
                 Method->getCanonicalDecl())
           return false;
       }
-      if (!prototypeSource(Prototype))
+      if (!prototypeSource(Prototype, Declaration))
         return false;
     }
     return Method->isImplicit() || WrittenDefaulting;
@@ -2088,7 +2143,7 @@ static bool nothrowDestructionSource(Adapter &A, const TypeTraitExpr *Query,
   // A later changed prototype cannot be used to repair or reinterpret it.
   if (CanDefer)
     *CanDefer = true;
-  return Check && Check->prototypeSource(Prototype) &&
+  return Check && Check->prototypeSource(Prototype, Destructor) &&
          Check->destruction(Record) && Check->finish(Query->getExprLoc());
 }
 
@@ -2108,13 +2163,14 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
   if (!Source.Complete || !Source.Root)
     return false;
   OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated);
-  auto PrototypeSource = [&](const FunctionProtoType *Prototype) {
-    return SourceCheck.prototypeSource(Prototype);
+  auto PrototypeSource = [&](const FunctionProtoType *Prototype,
+                             const FunctionDecl *Function) {
+    return SourceCheck.prototypeSource(Prototype, Function);
   };
   auto ExceptionSource = [&](const FunctionDecl *Function) {
     // Read the selected resolved signature without asking Sema to resolve it.
     const auto *Prototype = Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
-    return PrototypeSource(Prototype) &&
+    return PrototypeSource(Prototype, Function) &&
            (!RequiresExceptionSource || standardExceptionSpecification(Prototype));
   };
   auto Defined = [&](const FunctionDecl *Function) { return SourceCheck.defined(Function); };
@@ -2133,7 +2189,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     // C++17 canCalleeThrow reads the actual callee expression type, even for a
     // direct call. A pointer conversion can erase noexcept from its declaration.
     const auto *Prototype = operationCalleePrototype(Call);
-    return PrototypeSource(Prototype) &&
+    return PrototypeSource(Prototype, Call->getDirectCallee()) &&
            (!RequiresExceptionSource || standardExceptionSpecification(Prototype)) &&
            (!Call->getDirectCallee() || ExceptionSource(Call->getDirectCallee()));
   };
@@ -6264,14 +6320,26 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       auto Dependency = [&](const Stmt *Source) {
         operationExpressionDependency(Source);
       };
-      auto Exception = [&](const FunctionProtoType *Prototype) {
-        Dependency(Prototype ? Prototype->getNoexceptExpr() : nullptr);
+      auto Exception = [&](const FunctionProtoType *Prototype,
+                           const FunctionDecl *Function) {
+        if (const auto *Method = inferredOperationExceptionSource(A, Prototype, Function)) {
+          for (auto *Dependencies : ActiveOperationSources) {
+            const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
+            const bool Inserted = Destructor
+                ? Dependencies->Destructions.insert(Destructor->getParent()).second
+                : Dependencies->Families.insert(Method).second;
+            if (Inserted)
+              A.chargeExpansion(1, Method->getLocation());
+          }
+        } else {
+          Dependency(Prototype ? Prototype->getNoexceptExpr() : nullptr);
+        }
       };
       auto FunctionSource = [&](const FunctionDecl *Function) {
         if (!Function)
           return;
         collectOperationFunctionTypeSource(Function);
-        Exception(Function->getType()->getAs<FunctionProtoType>());
+        Exception(Function->getType()->getAs<FunctionProtoType>(), Function);
         // Constant value calls can consume an already materialized body. Keep
         // uninstantiated bodies lazy and implicit operations on their family proof.
         const auto *Definition = Function->getDefinition();
@@ -6340,12 +6408,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (const auto *Reference = dyn_cast<DeclRefExpr>(S)) {
         FunctionSource(dyn_cast<FunctionDecl>(Reference->getDecl()));
         ValueSource(Reference->getDecl());
-        Exception(Reference->getType()->getAs<FunctionProtoType>());
+        Exception(Reference->getType()->getAs<FunctionProtoType>(),
+                  dyn_cast<FunctionDecl>(Reference->getDecl()));
       }
       if (const auto *Reference = dyn_cast<MemberExpr>(S)) {
         FunctionSource(dyn_cast<FunctionDecl>(Reference->getMemberDecl()));
         ValueSource(Reference->getMemberDecl());
-        Exception(Reference->getType()->getAs<FunctionProtoType>());
+        Exception(Reference->getType()->getAs<FunctionProtoType>(),
+                  dyn_cast<FunctionDecl>(Reference->getMemberDecl()));
         if (const auto *Field = dyn_cast<FieldDecl>(Reference->getMemberDecl()))
           collectOperationTypeSource(A.Context.getRecordType(Field->getParent()),
                                      Reference->getExprLoc(), true);
@@ -6359,7 +6429,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Selected = Construction->getConstructor();
         FunctionSource(Selected);
       } else if (const auto *Call = dyn_cast<CallExpr>(S)) {
-        Exception(operationCalleePrototype(Call));
+        Exception(operationCalleePrototype(Call), Call->getDirectCallee());
         FunctionSource(Call->getDirectCallee());
         const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
         if (Method && (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()))
@@ -6500,18 +6570,24 @@ public:
     operationTypeDependency(TL);
     auto &Source = CheckedOperationTypes[operationTypeSourceKey(TL)];
     const auto ActiveDepth = ActiveOperationSources.size();
-    if (OperationSourceDepth >= 64) {
+    const auto RootLocation = TL.getUnqualifiedLoc();
+    // A qualified name has an elaborated wrapper around its named type.
+    // Keep both exact source nodes, but count only the nested type. Terminal
+    // locations also need source proof without consuming a recursion level.
+    const bool NestedSource = !RootLocation.getAs<ElaboratedTypeLoc>() &&
+        !RootLocation.getAs<BuiltinTypeLoc>() && !RootLocation.getAs<RecordTypeLoc>() &&
+        !RootLocation.getAs<EnumTypeLoc>() && !RootLocation.getAs<TypedefTypeLoc>();
+    if (NestedSource && OperationSourceDepth >= 64) {
       A.reject(TL.getBeginLoc(), "type source depth", "Nested type source exceeds the depth limit.");
       return false;
     }
     A.chargeExpansion(1, TL.getBeginLoc());
     ActiveOperationSources.push_back(&Source.Dependencies);
-    ++OperationSourceDepth;
+    OperationSourceDepth += NestedSource;
     auto Restore = llvm::make_scope_exit([&] {
       ActiveOperationSources.resize(ActiveDepth);
-      --OperationSourceDepth;
+      OperationSourceDepth -= NestedSource;
     });
-    const auto RootLocation = TL.getUnqualifiedLoc();
     const Expr *Root = nullptr;
     if (auto Array = RootLocation.getAs<ArrayTypeLoc>())
       Root = Array.getSizeExpr();
