@@ -21,6 +21,10 @@ struct Probe {
 template<class T, class... Args> constexpr bool constructible() {
   return __is_constructible(T, Args...);
 }
+template<class T> constexpr bool operation_pair() {
+  return __is_constructible(T, int) && __is_assignable(T&, int) &&
+         __is_convertible(T, int);
+}
 template<class... T> constexpr bool all_destructible() {
   return (__is_nothrow_destructible(T) && ...);
 }
@@ -98,5 +102,12 @@ int main() {
   bool value = (++effects, __is_nothrow_constructible(int));
   if (!value || effects != 1 || constructions || destructions ||
       !noexcept(__is_assignable(decltype(++effects), int))) return 18;
+  if (!operation_pair<int>() || !operation_pair<double>() ||
+      !operation_pair<int>() || constructible<int, int, int>() ||
+      !constructible<int, int>()) return 19;
+  if (!__is_constructible(decltype(__is_convertible(void, void)), int) ||
+      __is_convertible(int, void) || !__is_convertible(void, void) ||
+      !__is_assignable(int&, int) || effects != 1 ||
+      constructions || destructions) return 20;
   return 0;
 }

@@ -1760,6 +1760,47 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
     throw Failure{};
   }
   chargeExpansion(Arity + 1, L);
+  if (NonRecordOperation && Query->getTrait() != UTT_IsNothrowDestructible) {
+    auto Found = OperationTraits.find(Query);
+    if (Found == OperationTraits.end()) {
+      reject(L, "operation trait source", "An operation query requires its exact retained semantic source.");
+      throw Failure{};
+    }
+    const auto &Source = Found->second;
+    const bool Construction = Query->getTrait() == TT_IsConstructible ||
+        Query->getTrait() == TT_IsNothrowConstructible ||
+        Query->getTrait() == TT_IsTriviallyConstructible;
+    const bool Conversion = Query->getTrait() == BTT_IsConvertible ||
+        Query->getTrait() == BTT_IsConvertibleTo ||
+        Query->getTrait() == BTT_IsNothrowConvertible;
+    const unsigned Count = Construction ? Arity - 1 : Conversion ? 1 : 2;
+    if ((Source.Complete && (!Source.Attempted || !Source.Root)) ||
+        (!Source.Attempted && (Source.Root || !Source.Operands.empty())) ||
+        (Source.Attempted && Source.Operands.size() != Count)) {
+      reject(L, "operation trait source", "Retained operation status and operand count must agree.");
+      throw Failure{};
+    }
+    for (unsigned I = 0; I < Source.Operands.size(); ++I) {
+      const auto *Operand = dyn_cast_or_null<OpaqueValueExpr>(Source.Operands[I]);
+      QualType T = Query->getArg(I + (Construction ? 1 : 0))->getType();
+      if (T->isObjectType() || T->isFunctionType())
+        T = Context.getRValueReferenceType(T);
+      if (!Operand || Operand->getSourceExpr() ||
+          !Context.hasSameType(Operand->getType(), T.getNonLValueExprType(Context)) ||
+          Operand->getValueKind() != Expr::getValueKindForType(T)) {
+        reject(L, "operation trait source", "Synthetic operands must retain their exact queried type and value category.");
+        throw Failure{};
+      }
+    }
+    // Read after Sema's helper/allocator lifetime has ended. The producer owns
+    // these nodes in ASTContext, even when trivial/nothrow queries return false.
+    if (Source.Root && (Source.Root->isTypeDependent() ||
+                       Source.Root->isValueDependent() ||
+                       Source.Root->isInstantiationDependent())) {
+      reject(L, "operation trait source", "An operation root must be concrete.");
+      throw Failure{};
+    }
+  }
   for (const auto *Argument : Query->getArgs()) {
     if (!Argument) {
       reject(L, "type classification source", "Every classified type requires its resolved written type source.");
@@ -1769,9 +1810,9 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
     if (NonRecordOperation &&
         Context.getBaseElementType(Argument->getType().getNonReferenceType())
             ->isRecordType()) {
-      // Pinned Sema discards the hypothetical initialization/assignment tree.
-      // Until that tree and its selected source are retained, only operands
-      // that cannot call user constructors, conversions or destructors qualify.
+      // Retention preserves complete roots and marks failed operations, but
+      // selected source traversal is not yet admitted for record queries. Only
+      // operands without user constructors, conversions or destructors qualify.
       // Pointers to admitted records do not invoke those pointee operations.
       reject(L, "operation trait source",
              "Operation queries require non-record operands, including after removing references and array extents.");
@@ -11029,6 +11070,7 @@ class Consumer : public ASTConsumer {
   std::vector<FunctionSpecializationSource> Specializations;
   std::vector<VariableTypeSource> VariableTypes;
   std::vector<SelectedTemplateCallSource> SelectedCalls;
+  std::map<const TypeTraitExpr *, OperationTraitSource> OperationTraits;
   std::vector<FriendFunctionSource> FriendFunctions;
   std::vector<FriendDeclarationSource> FriendDeclarations;
   std::vector<FriendFunctionTemplateSource> FriendTemplates;
@@ -11141,6 +11183,34 @@ class Consumer : public ASTConsumer {
 public:
   explicit Consumer(State &S) : S(S) {}
   bool wantsNeverCTemplateSource() const override { return S.coreV2(); }
+  bool retainNeverCOperationTraitSource(
+      ASTContext &Context, unsigned Count, const SourceLocation &Location) override {
+    if (!S.coreV2() || !S.Diagnostics.empty() ||
+        !S.owns(Context.getSourceManager(), Location))
+      return false;
+    if (Count > 65) {
+      auto P = Context.getSourceManager().getPresumedLoc(Location);
+      S.diagnose("TR0201", "operation trait source",
+                 "Operation queries exceed the 64-argument construction limit.",
+                 "Reduce the number of queried argument types.",
+                 P.isValid() ? P.getLine() : 1, P.isValid() ? P.getColumn() : 1);
+      return false;
+    }
+    return reserveSourceUnits(Context.getSourceManager(), Location, Count + 1);
+  }
+  void HandleNeverCOperationTraitSource(
+      const TypeTraitExpr *Query, Expr *Root, Expr *const *Operands,
+      unsigned Count, bool Attempted, bool Complete) override {
+    if (!S.coreV2() || !S.Diagnostics.empty())
+      return;
+    OperationTraitSource Source{Root, {}, Attempted, Complete};
+    for (unsigned I = 0; I < Count; ++I)
+      Source.Operands.push_back(Operands[I]);
+    if (!OperationTraits.emplace(Query, std::move(Source)).second)
+      S.diagnose("TR0201", "operation trait source",
+                 "One query has duplicate semantic source evidence.",
+                 "Use a frontend with consistent query source ownership.");
+  }
   NeverCArrayFillerAction HandleNeverCArrayFiller(
       ASTContext &Context, const Expr *Filler, unsigned long long Count,
       unsigned long long Extent) override {
@@ -11497,6 +11567,7 @@ public:
       return;
     Adapter A(S, C);
     A.SeparateArrayFillers = std::move(SeparateArrayFillers);
+    A.OperationTraits = std::move(OperationTraits);
     try {
       A.run(Directives, StaticDirectives, TemplateUses, Specializations,
             VariableTypes, SelectedCalls, MemberClassDirectives,

@@ -928,10 +928,22 @@ static_assert(__is_convertible(int*, const void*));
 static_assert(__is_nothrow_destructible(int[3]));
 ```
 
-The private source frontend currently discards hypothetical initialization and
-assignment expressions when it builds these trait nodes. Record operands would
-therefore lose evidence of selected constructors or conversions. Nothrow
-destruction also needs the exact exception specifications actually resolved. Such operands remain rejected even behind references/arrays or
+The private source frontend retains hypothetical initialization and assignment
+roots and their exact synthetic operands for an opt-in NeverC consumer. One local
+state is passed through the actual Sema helpers and associated with the resulting
+query node; nested queries cannot overwrite it. Synthetic operands use ASTContext
+storage after a bounded reservation, so the trees survive Sema's stack and local
+allocator lifetimes. Other consumers keep their original operand allocation.
+The adapter checks query identity, operand types/categories and completion status.
+These private nodes are never serialized or executed.
+
+An attempted operation that fails can already have selected an overload or
+processed a default argument. Its incomplete status is explicit; a missing root
+does not prove absence of source operations. A complete operation can still give
+a false nothrow/trivial result. Full checking of those selected sources, partial
+failure paths and exception dependencies remains necessary for record operands.
+Nothrow destruction also needs the exact exception specifications actually resolved.
+Such operands remain rejected even behind references/arrays or
 when the result would be false. This restriction is separate from the metadata
 record queries above. Actual standard-header and complete C++/STL support remain
 unfinished.
@@ -940,8 +952,8 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 30 accepted, 26 unsupported-source and seven invalid-C++ cases cover
-these boundaries. Eighteen saved-NC O0/O2 runtime checkpoints, relocation and twelve
+The paired 33 accepted, 32 unsupported-source and seven invalid-C++ cases cover
+these boundaries. Twenty saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
 introduced.

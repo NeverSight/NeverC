@@ -160,6 +160,11 @@ struct SelectedTemplateCallSource {
   const clang::FunctionDecl *Function;
   clang::SourceLocation Location;
 };
+struct OperationTraitSource {
+  const clang::Expr *Root;
+  std::vector<const clang::Expr *> Operands;
+  bool Attempted, Complete;
+};
 struct FunctionSpecializationSource {
   const clang::FunctionDecl *Declaration, *Selected;
   const clang::ASTTemplateArgumentListInfo *Written;
@@ -317,6 +322,7 @@ public:
   std::set<const clang::VarDecl *> ConstantStaticTemporaryOwners;
   std::set<const clang::VarDecl *> CheckedConstantTemporaryOccurrences;
   std::set<const clang::Expr *> SeparateArrayFillers;
+  std::map<const clang::TypeTraitExpr *, OperationTraitSource> OperationTraits;
   std::map<const clang::StringLiteral *, std::string> StringObjects;
   json::Array StringGlobals;
   std::map<const clang::MaterializeTemporaryExpr *, std::string> StaticTemporaryObjects;

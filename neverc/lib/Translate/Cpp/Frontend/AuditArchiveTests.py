@@ -137,6 +137,225 @@ class PseudoDestructorSourceTests(unittest.TestCase):
                     self.assertEqual(path.read_text() if path.exists() else None, contents)
 
 
+# Independent pinned source/result fragments for query operand lifetime retention.
+OPERATION_TRAIT_PATCHES = (('clang/include/clang/AST/ASTConsumer.h',
+  (('  class ASTContext;', '  class ASTContext;\n  class TypeTraitExpr;'),
+   ('  virtual bool shouldSkipFunctionBody(Decl *D) { return true; }',
+    '  virtual bool shouldSkipFunctionBody(Decl *D) { return true; }\n'
+    '\n'
+    '  // NeverC reserves bounded source evidence before creating arena-owned operands.\n'
+    '  virtual bool retainNeverCOperationTraitSource(\n'
+    '      ASTContext &, unsigned, const SourceLocation &) { return false; }\n'
+    '  // The array belongs to this callback; its elements and root belong to ASTContext.\n'
+    '  // Incomplete includes failed selection/default conversion; a null root alone\n'
+    '  // does not establish that no source operation was selected.\n'
+    '  virtual void HandleNeverCOperationTraitSource(\n'
+    '      const TypeTraitExpr *, Expr *, Expr *const *, unsigned, bool, bool) {}'))),
+ ('clang/lib/Sema/SemaExprCXX.cpp',
+  (('static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
+    '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc);',
+    '// NeverC operation-trait evidence belongs to one BuildTypeTrait invocation.\n'
+    '// Do not retain stack/BumpPtrAllocator operands or treat a failed operation as\n'
+    '// proof that no overload/default argument was selected.\n'
+    'struct NeverCOperationTraitSource {\n'
+    '  SmallVector<Expr *, 4> Operands;\n'
+    '  Expr *Root = nullptr;\n'
+    '  bool Attempted = false;\n'
+    '  bool Complete = false;\n'
+    '};\n'
+    '\n'
+    'static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
+    '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc,\n'
+    '                                    NeverCOperationTraitSource *NeverCSource);'),
+   ('    SourceLocation KeyLoc, llvm::BumpPtrAllocator &OpaqueExprAllocator) {',
+    '    SourceLocation KeyLoc, llvm::BumpPtrAllocator &OpaqueExprAllocator,\n'
+    '    NeverCOperationTraitSource *NeverCSource = nullptr) {'),
+   ('  Expr *From = new (OpaqueExprAllocator.Allocate<OpaqueValueExpr>())\n'
+    '      OpaqueValueExpr(KeyLoc, LhsT.getNonLValueExprType(Self.Context),\n'
+    '                      Expr::getValueKindForType(LhsT));',
+    '  void *NeverCStorage = NeverCSource\n'
+    '      ? Self.Context.Allocate(sizeof(OpaqueValueExpr), alignof(OpaqueValueExpr))\n'
+    '      : OpaqueExprAllocator.Allocate<OpaqueValueExpr>();\n'
+    '  Expr *From = new (NeverCStorage)\n'
+    '      OpaqueValueExpr(KeyLoc, LhsT.getNonLValueExprType(Self.Context),\n'
+    '                      Expr::getValueKindForType(LhsT));\n'
+    '  if (NeverCSource) {\n'
+    '    NeverCSource->Operands.push_back(From);\n'
+    '    NeverCSource->Attempted = true;\n'
+    '  }'),
+   ('  ExprResult Result = Init.Perform(Self, To, Kind, From);\n'
+    '  if (Result.isInvalid() || SFINAE.hasErrorOccurred())\n'
+    '    return ExprError();\n'
+    '\n'
+    '  return Result;',
+    '  ExprResult Result = Init.Perform(Self, To, Kind, From);\n'
+    '  if (NeverCSource) {\n'
+    '    NeverCSource->Root = Result.isInvalid() ? nullptr : Result.get();\n'
+    '    NeverCSource->Complete = !Result.isInvalid() && !SFINAE.hasErrorOccurred();\n'
+    '  }\n'
+    '  if (Result.isInvalid() || SFINAE.hasErrorOccurred())\n'
+    '    return ExprError();\n'
+    '\n'
+    '  return Result;'),
+   ('                                     bool IsDependent) {\n  if (IsDependent)',
+    '                                     bool IsDependent,\n'
+    '                                     NeverCOperationTraitSource *NeverCSource) {\n'
+    '  if (IsDependent)'),
+   ('    return EvaluateBinaryTypeTrait(S, Kind, Args[0],\n'
+    '                                   Args[1], RParenLoc);',
+    '    return EvaluateBinaryTypeTrait(S, Kind, Args[0],\n'
+    '                                   Args[1], RParenLoc, NeverCSource);'),
+   ('      ArgExprs.push_back(\n'
+    '          new (OpaqueExprAllocator.Allocate<OpaqueValueExpr>())\n'
+    '              OpaqueValueExpr(Args[I]->getTypeLoc().getBeginLoc(),\n'
+    '                              ArgTy.getNonLValueExprType(S.Context),\n'
+    '                              Expr::getValueKindForType(ArgTy)));',
+    '      void *NeverCStorage = NeverCSource\n'
+    '          ? S.Context.Allocate(sizeof(OpaqueValueExpr), alignof(OpaqueValueExpr))\n'
+    '          : OpaqueExprAllocator.Allocate<OpaqueValueExpr>();\n'
+    '      ArgExprs.push_back(\n'
+    '          new (NeverCStorage)\n'
+    '              OpaqueValueExpr(Args[I]->getTypeLoc().getBeginLoc(),\n'
+    '                              ArgTy.getNonLValueExprType(S.Context),\n'
+    '                              Expr::getValueKindForType(ArgTy)));\n'
+    '      if (NeverCSource)\n'
+    '        NeverCSource->Operands.push_back(ArgExprs.back());'),
+   ('    InitializationSequence Init(S, To, InitKind, ArgExprs);\n    if (Init.Failed())',
+    '    if (NeverCSource)\n'
+    '      NeverCSource->Attempted = true;\n'
+    '    InitializationSequence Init(S, To, InitKind, ArgExprs);\n'
+    '    if (Init.Failed())'),
+   ('    ExprResult Result = Init.Perform(S, To, InitKind, ArgExprs);\n'
+    '    if (Result.isInvalid() || SFINAE.hasErrorOccurred())',
+    '    ExprResult Result = Init.Perform(S, To, InitKind, ArgExprs);\n'
+    '    if (NeverCSource) {\n'
+    '      NeverCSource->Root = Result.isInvalid() ? nullptr : Result.get();\n'
+    '      NeverCSource->Complete = !Result.isInvalid() && !SFINAE.hasErrorOccurred();\n'
+    '    }\n'
+    '    if (Result.isInvalid() || SFINAE.hasErrorOccurred())'),
+   ('    bool Result = EvaluateBooleanTypeTrait(*this, Kind, KWLoc, Args, RParenLoc,\n'
+    '                                           Dependent);\n'
+    '    return TypeTraitExpr::Create(Context, Context.getLogicalOperationType(),\n'
+    '                                 KWLoc, Kind, Args, RParenLoc, Result);',
+    '    NeverCOperationTraitSource NeverCStorage;\n'
+    '    NeverCOperationTraitSource *NeverCSource = nullptr;\n'
+    '    const bool NeverCOperation =\n'
+    '        Kind == TT_IsConstructible || Kind == TT_IsNothrowConstructible ||\n'
+    '        Kind == TT_IsTriviallyConstructible || Kind == BTT_IsAssignable ||\n'
+    '        Kind == BTT_IsNothrowAssignable || Kind == BTT_IsTriviallyAssignable ||\n'
+    '        Kind == BTT_IsConvertible || Kind == BTT_IsConvertibleTo ||\n'
+    '        Kind == BTT_IsNothrowConvertible;\n'
+    '    if (!Dependent && NeverCOperation &&\n'
+    '        Consumer.retainNeverCOperationTraitSource(Context, Args.size(), KWLoc))\n'
+    '      NeverCSource = &NeverCStorage;\n'
+    '    bool Result = EvaluateBooleanTypeTrait(*this, Kind, KWLoc, Args, RParenLoc,\n'
+    '                                           Dependent, NeverCSource);\n'
+    '    auto *NeverCQuery = TypeTraitExpr::Create(\n'
+    '        Context, Context.getLogicalOperationType(), KWLoc, Kind, Args,\n'
+    '        RParenLoc, Result);\n'
+    '    if (NeverCSource)\n'
+    '      Consumer.HandleNeverCOperationTraitSource(\n'
+    '          NeverCQuery, NeverCSource->Root, NeverCSource->Operands.data(),\n'
+    '          NeverCSource->Operands.size(), NeverCSource->Attempted,\n'
+    '          NeverCSource->Complete);\n'
+    '    return NeverCQuery;'),
+   ('static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
+    '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc) {',
+    'static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
+    '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc,\n'
+    '                                    NeverCOperationTraitSource *NeverCSource) {'),
+   ('    ExprResult Result = CheckConvertibilityForTypeTraits(Self, Lhs, Rhs, KeyLoc,\n'
+    '                                                         OpaqueExprAllocator);',
+    '    ExprResult Result = CheckConvertibilityForTypeTraits(Self, Lhs, Rhs, KeyLoc,\n'
+    '                                                         OpaqueExprAllocator,\n'
+    '                                                         NeverCSource);'),
+   ('    ExprResult Result = Self.BuildBinOp(/*S=*/nullptr, KeyLoc, BO_Assign, &Lhs,\n'
+    '                                        &Rhs);\n'
+    '    if (Result.isInvalid())',
+    '    Expr *NeverCLhs = &Lhs, *NeverCRhs = &Rhs;\n'
+    '    if (NeverCSource) {\n'
+    '      NeverCLhs = new (Self.Context) OpaqueValueExpr(\n'
+    '          KeyLoc, Lhs.getType(), Lhs.getValueKind());\n'
+    '      NeverCRhs = new (Self.Context) OpaqueValueExpr(\n'
+    '          KeyLoc, Rhs.getType(), Rhs.getValueKind());\n'
+    '      NeverCSource->Operands.push_back(NeverCLhs);\n'
+    '      NeverCSource->Operands.push_back(NeverCRhs);\n'
+    '      NeverCSource->Attempted = true;\n'
+    '    }\n'
+    '    ExprResult Result = Self.BuildBinOp(/*S=*/nullptr, KeyLoc, BO_Assign,\n'
+    '                                        NeverCLhs, NeverCRhs);\n'
+    '    if (NeverCSource) {\n'
+    '      NeverCSource->Root = Result.isInvalid() ? nullptr : Result.get();\n'
+    '      NeverCSource->Complete = !Result.isInvalid() && !SFINAE.hasErrorOccurred();\n'
+    '    }\n'
+    '    if (Result.isInvalid())'))))
+
+
+class OperationTraitSourceTests(unittest.TestCase):
+    def test_query_source_rewrites_are_atomic_and_idempotent(self):
+        script = Path(__file__).resolve().with_name("IsolateSymbols.py")
+        function = next(node for node in ast.parse(script.read_text()).body
+                        if isinstance(node, ast.FunctionDef) and
+                        node.name == "preserve_operation_trait_source")
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(script), "exec"), namespace)
+        repair = namespace[function.name]
+        with tempfile.TemporaryDirectory(prefix="neverc-operation-trait-source-") as temporary:
+            root = Path(temporary)
+            def reset(state=0):
+                for relative, patches in OPERATION_TRAIT_PATCHES:
+                    path = root / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("\n// Independent source boundary.\n".join(
+                        pair[state] for pair in patches))
+            def snapshot():
+                return {str(path.relative_to(root)): path.read_bytes()
+                        for path in root.rglob("*") if path.is_file()}
+            reset()
+            repair(root)
+            for relative, patches in OPERATION_TRAIT_PATCHES:
+                self.assertEqual((root / relative).read_text(),
+                    "\n// Independent source boundary.\n".join(after for _, after in patches))
+            complete = snapshot()
+            repair(root)
+            self.assertEqual(snapshot(), complete)
+            for relative, patches in OPERATION_TRAIT_PATCHES:
+                for before, after in patches:
+                    for state in (0, 1):
+                        for name in ("missing anchor", "duplicate", "drift", "mixed state"):
+                            with self.subTest(file=relative, anchor=before[:60], state=state, case=name):
+                                reset(state)
+                                path = root / relative
+                                text = path.read_text()
+                                chosen = (before, after)[state]
+                                if name == "missing anchor":
+                                    text = text.replace(chosen, "", 1)
+                                elif name == "duplicate":
+                                    text += "\n" + chosen
+                                elif name == "drift":
+                                    text = text.replace(chosen, re.sub(r"\S", "@", chosen, count=1), 1)
+                                else:
+                                    text = text.replace(chosen, (after, before)[state], 1)
+                                path.write_text(text)
+                                old = snapshot()
+                                with self.assertRaises(SystemExit):
+                                    repair(root)
+                                self.assertEqual(snapshot(), old)
+                for state in (0, 1):
+                    for name in ("missing file", "orphan marker"):
+                        with self.subTest(file=relative, state=state, case=name):
+                            reset(state)
+                            path = root / relative
+                            if name == "missing file":
+                                path.unlink()
+                            else:
+                                path.write_text(path.read_text() + "\n// NeverCSource\n")
+                            old = snapshot()
+                            with self.assertRaises(SystemExit):
+                                repair(root)
+                            self.assertEqual(snapshot(), old)
+
+
 class ArrayQuerySourceTests(unittest.TestCase):
     def test_pinned_dimension_repairs_are_atomic_and_idempotent(self):
         script = Path(__file__).resolve().with_name("IsolateSymbols.py")
@@ -951,6 +1170,15 @@ public:
         explicit_instantiate_original += "\n" + friend_context_original
         explicit_instantiate_expected += "\n" + friend_context_expected
         files['clang/lib/Sema/SemaTemplateInstantiateDecl.cpp'] = explicit_instantiate_original
+        explicit_header_original += "\n  class Decl;\n"
+        explicit_header_expected += "\n  class Decl;\n"
+        for before, after in OPERATION_TRAIT_PATCHES[0][1]:
+            if before in explicit_header_original:
+                explicit_header_original = explicit_header_original.replace(before, after, 1)
+                explicit_header_expected = explicit_header_expected.replace(before, after, 1)
+            else:
+                explicit_header_original += "\n" + after
+                explicit_header_expected += "\n" + after
         files['clang/include/clang/AST/ASTConsumer.h'] = explicit_header_original
         files['clang/lib/Sema/SemaTemplate.cpp'] = explicit_source_original
         files['clang/lib/Sema/SemaTemplateDeduction.cpp'] = explicit_deduction_original
@@ -984,6 +1212,9 @@ public:
         call_expr_cxx_expected += ARRAY_QUERY_PATCHES[0][2]
         files['clang/lib/Sema/TreeTransform.h'] = ARRAY_QUERY_PATCHES[1][2]
         files['clang/lib/Sema/SemaExceptionSpec.cpp'] = PSEUDO_DESTRUCTOR_AFTER
+        operation_source = "\n".join(after for _, after in OPERATION_TRAIT_PATCHES[1][1])
+        call_expr_cxx_original += "\n" + operation_source
+        call_expr_cxx_expected += "\n" + operation_source
         files['clang/lib/Sema/SemaExprCXX.cpp'] = call_expr_cxx_original
         with tempfile.TemporaryDirectory(prefix="neverc-isolate-source-") as temporary:
             root = Path(temporary)

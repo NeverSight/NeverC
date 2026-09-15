@@ -258,6 +258,20 @@ separately; these declarations have no ordinary member-template origin link.
 The exact scripts and compilation rules are part of the NeverC source tree at
 neverc/lib/Translate/Cpp/Frontend and neverc/cmake/modules/BuiltinCppFrontend.cmake.
 
+Operation-trait evaluation preserves hypothetical construction, conversion and
+assignment roots for the opt-in NeverC consumer. A state pointer passed through
+the actual Sema helpers belongs to one exact TypeTraitExpr; nested queries retain
+separate state. A bounded reservation precedes ASTContext allocation of synthetic
+operands, replacing their temporary BumpPtrAllocator/stack lifetime only for this
+consumer. Callback arrays are copied before return. Complete roots survive false
+trivial/nothrow results; incomplete attempts are marked separately from metadata
+early exits and cannot prove absence of a selected function/default argument.
+All fifteen anchors in the two-file source group are validated for consistent
+pristine or rewritten state before either file is written. Audits cover drift,
+duplicates, missing anchors/files, mixed states, orphan markers and repeat runs.
+This retention does not request extra instantiation, change query booleans,
+admit record operation queries or serialize hypothetical operations.
+
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy
 notice. BLAKE3/LICENSE and NeverCCppThirdPartyNotices.txt retain the additional
 notices for the statically included Support sources. The separate cpp-sdk

@@ -6277,6 +6277,9 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert not expected
 
     operation_trait_positive = {
+        'retained-query-order': 'template<class T>constexpr bool q(){return __is_constructible(T,int)&&__is_assignable(T&,int)&&__is_convertible(T,int);}static_assert(q<int>()&&q<double>()&&q<int>());',
+        'retained-mixed-arity': 'static_assert(__is_constructible(int)&&!__is_constructible(int,int,int)&&__is_constructible(const int&,int)&&!__is_convertible(int,void)&&__is_convertible(void,void)&&__is_assignable(int&,int));',
+        'retained-dependent-query-type': 'template<class T>struct R{using type=decltype(__is_assignable(T&,T));};template<class T>constexpr bool f(){return __is_constructible(typename R<T>::type,int)&&__is_convertible(typename R<T>::type,int);}static_assert(f<int>()&&f<double>());',
         'constructible': 'bool f(){return __is_constructible(int,int);}',
         'assignable': 'bool f(){return __is_assignable(int&,int);}',
         'convertible': 'bool f(){return __is_convertible(int,double);}',
@@ -6311,6 +6314,12 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'retained-nontrivial-construction': 'struct R{R(int){}};bool f(){return __is_trivially_constructible(R,int);}',
+        'retained-throwing-construction': 'struct R{R(int)noexcept(false){}};bool f(){return __is_nothrow_constructible(R,int);}',
+        'retained-inaccessible-construction': 'class R{R(int){}};bool f(){return __is_constructible(R,int);}',
+        'retained-throwing-conversion': 'struct R{operator int()const noexcept(false){return 1;}};bool f(){return __is_nothrow_convertible(R,int);}',
+        'retained-nontrivial-assignment': 'struct R{R&operator=(int){return *this;}};bool f(){return __is_trivially_assignable(R&,int);}',
+        'retained-nested-default-query': 'struct R{R(int=__is_constructible(int,int)){}};bool f(){return __is_constructible(R);}',
         'record-destination': 'struct R{int n;};bool f(){return __is_constructible(R);}',
         'record-conversion-source': 'struct R{operator int()const{return 3;}};bool f(){return __is_constructible(int,R);}',
         'record-reference': 'struct R{int n;};bool f(){return __is_constructible(R&,R&);}',
