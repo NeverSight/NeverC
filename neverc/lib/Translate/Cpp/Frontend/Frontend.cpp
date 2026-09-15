@@ -3773,7 +3773,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const TemplateUseSource *> ActiveTemplateUses;
   OperationExpressionSources CheckedOperationExpressions;
   OperationTypeSources CheckedOperationTypes;
-  std::set<const TypeTraitExpr *> OperationTypeQueries;
+  std::set<const Expr *> TypeSourceQueries;
   std::set<const Stmt *> OperationValueRoots;
   std::set<const Expr *> DecltypeCallResults;
   std::set<const Expr *> CheckedSemanticInitializers;
@@ -10128,7 +10128,7 @@ public:
     }
     return A.S.Diagnostics.empty();
   }
-  bool finishOperationQueries() {
+  bool finishTypeQueries() {
     // Deferral is closed before this pass. A query in the selected definition's
     // own body can use its completed proof, but all pending roots must pass
     // before any runtime lowering observes the provisional boolean values.
@@ -10150,15 +10150,15 @@ public:
       }
       A.VerifiedOperationQueries.insert(Query);
     }
-    // A successful fast hypothetical-root check does not prove its operands'
-    // type source. Check every resolved operation query, including scalar and
-    // pre-operation false results, after all ordinary source nodes complete.
-    for (const auto *Query : OperationTypeQueries) {
+    // A folded result does not prove its operands' type or value source. Check
+    // every resolved classification/operation/array query, including false and
+    // out-of-range results, after all ordinary source nodes complete.
+    for (const auto *Query : TypeSourceQueries) {
       OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
           &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations);
       if (!SourceCheck.requireExpression(Query) || !SourceCheck.finish(Query->getExprLoc())) {
-        A.reject(Query->getExprLoc(), "operation query type source",
-                 "Every consumed operation type requires completed original source dependencies.");
+        A.reject(Query->getExprLoc(), "query type source",
+                 "Every consumed query type or dimension requires completed original source dependencies.");
         return false;
       }
     }
@@ -10192,13 +10192,14 @@ public:
            TraverseStmt(Loop->getCond()) && TraverseStmt(Loop->getInc()) &&
            TraverseStmt(Loop->getBody());
   }
-  bool TraverseTypeTraitExpr(TypeTraitExpr *Query, DataRecursionQueue *Queue = nullptr) {
-    if (!A.S.coreV2() || !isOperationTypeTrait(Query->getTrait()) ||
+  template <typename Traverse>
+  bool traverseTypeQuerySource(Expr *Query, Traverse TraverseSource) {
+    if (!A.S.coreV2() ||
         Query->isTypeDependent() || Query->isValueDependent() || Query->isInstantiationDependent())
-      return RecursiveASTVisitor<Allowlist>::TraverseTypeTraitExpr(Query, Queue);
+      return TraverseSource();
     operationExpressionDependency(Query);
     auto &Source = CheckedOperationExpressions[Query];
-    if (OperationTypeQueries.insert(Query).second)
+    if (TypeSourceQueries.insert(Query).second)
       A.chargeExpansion(1, Query->getExprLoc());
     const auto ActiveDepth = ActiveOperationSources.size();
     if (OperationSourceDepth >= 64) {
@@ -10212,22 +10213,40 @@ public:
       ActiveOperationSources.resize(ActiveDepth);
       --OperationSourceDepth;
     });
+    const bool Result = TraverseSource();
+    if (Result && A.S.Diagnostics.empty())
+      Source.Complete = true;
+    return Result;
+  }
+  bool TraverseTypeTraitExpr(TypeTraitExpr *Query, DataRecursionQueue *Queue = nullptr) {
+    if (!isOperationTypeTrait(Query->getTrait()) &&
+        !metadataTypeClassificationArity(Query->getTrait()))
+      return RecursiveASTVisitor<Allowlist>::TraverseTypeTraitExpr(Query, Queue);
     // TypeTraitExpr has no statement children. Its type source is visited
     // synchronously even when the containing statement uses a recursion queue.
-    const bool Result = RecursiveASTVisitor<Allowlist>::TraverseTypeTraitExpr(Query, Queue);
-    if (Result && A.S.Diagnostics.empty()) {
-      Source.Complete = true;
+    const bool Result = traverseTypeQuerySource(Query, [&] {
+      return RecursiveASTVisitor<Allowlist>::TraverseTypeTraitExpr(Query, Queue);
+    });
+    if (Result && A.S.coreV2() && A.S.Diagnostics.empty() &&
+        !Query->isTypeDependent() && !Query->isValueDependent() && !Query->isInstantiationDependent())
       queueConsumedDestructorSignature(Query);
-    }
     return Result;
   }
   bool TraverseArrayTypeTraitExpr(ArrayTypeTraitExpr *Query) {
-    if (!RecursiveASTVisitor<Allowlist>::TraverseArrayTypeTraitExpr(Query))
-      return false;
-    // ArrayTypeTraitExpr has no Stmt children. RAV visits only the type, so
-    // explicitly inspect the original index rather than just its folded value.
-    return !Query->getDimensionExpression() ||
-           TraverseStmt(Query->getDimensionExpression());
+    return traverseTypeQuerySource(Query, [&] {
+      auto *Dimension = Query->getDimensionExpression();
+      if (A.S.coreV2() && !Query->isTypeDependent() && !Query->isValueDependent() &&
+          !Query->isInstantiationDependent() && Dimension) {
+        operationExpressionDependency(Dimension);
+        if (OperationValueRoots.insert(Dimension).second)
+          A.chargeExpansion(1, Dimension->getExprLoc());
+      }
+      if (!RecursiveASTVisitor<Allowlist>::TraverseArrayTypeTraitExpr(Query))
+        return false;
+      // RAV visits only the type. Complete the exact dimension synchronously,
+      // including cached value/default source omitted from its folded result.
+      return !Dimension || TraverseStmt(Dimension);
+    });
   }
   bool TraverseMaterializeTemporaryExpr(MaterializeTemporaryExpr *Temporary) {
     if (!A.S.coreV2())
@@ -12142,7 +12161,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   if (!Traversed || !S.Diagnostics.empty())
     return;
   CheckingSource = false;
-  if (!Check.finishOperationQueries())
+  if (!Check.finishTypeQueries())
     return;
   if (S.coreV2())
     orderCoreV2Records(*this);

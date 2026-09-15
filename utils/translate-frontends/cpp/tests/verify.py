@@ -5942,6 +5942,23 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
                 assert record["fields"] == []
 
     array_query_positive = {
+        'source-dimension-family': 'struct P{int n;};struct Mid{P field;};static_assert(__array_extent(int[2][3],noexcept(Mid()))==3);',
+        'source-dimension-out-of-range': 'struct P{int n;};struct Mid{P field;};static_assert(__array_extent(int[2][3],noexcept(Mid())+99)==0);',
+        'source-dimension-nonarray': 'struct P{int n;};struct Mid{P field;};static_assert(__array_extent(int,noexcept(Mid()))==0);',
+        'source-alias-bound': 'struct P{int n;};struct Mid{P field;};using A=int[noexcept(Mid())?2:3];static_assert(__array_rank(A)==1&&__array_extent(A,0)==2);',
+        'source-enum-dimension': 'struct P{int n;};struct Mid{P field;};enum E{first=noexcept(Mid()),second};static_assert(__array_extent(int[2][3],first)==3&&__array_extent(int[2][3],second)==0);',
+        'source-constexpr-dimension': 'struct P{int n;};struct Mid{P field;};constexpr int index(){return noexcept(Mid());}static_assert(__array_extent(int[2][3],index())==3);',
+        'source-generated-assignment-dimension': 'template<class T>struct S{T n;constexpr S&operator=(const S&)=default;};constexpr int index(){S<int>a{0},b{1};a=b;return a.n;}static_assert(__array_extent(int[2][3],index())==3);',
+        'source-generated-construction-dimension': 'struct F{int n;constexpr F():n(1){}};template<class T>struct S{T f;constexpr S()=default;};constexpr int index(){S<F>value;return value.f.n;}static_assert(__array_extent(int[2][3],index())==3);',
+        'source-selected-default-dimension': 'struct P{int n;};struct Mid{P field;};constexpr int index(int n=noexcept(Mid())){return n;}static_assert(__array_extent(int[2][3],index())==3);',
+        'source-nested-metadata-dimension': 'struct P{int n;};struct Mid{P field;};using A=int[noexcept(Mid())?2:3];static_assert(__array_extent(int[2][3],__is_array(A))==3);',
+        'source-decltype-terminal-call': 'template<class T>struct R{T n;~R()noexcept(T::missing){T::body();}};template<class T>R<T>result(){return {1};}static_assert(sizeof(R<int>)==sizeof(int));using A=decltype((result<int>()));static_assert(__array_rank(A)==0&&__array_extent(A,0)==0);',
+        'source-unused-array-event': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>int unused(){return int(__array_extent(int[2][3],noexcept(Mid())));}static_assert(__array_rank(int[2])==1);',
+        'source-materialized-decltype': 'struct F{int n;F()noexcept:n(1){}};struct S{F f;S()=default;};void force(){S value;}using A=decltype(S());static_assert(__array_rank(A)==0);',
+        'source-later-defaulting': 'struct F{int n;constexpr F():n(1){}};struct S{F f;constexpr S();};constexpr S::S()=default;constexpr int index(){S value;return value.f.n;}using A=char[index()+1];static_assert(__array_rank(A)==1&&__array_extent(A,0)>0);',
+        'source-inline-nontrivial-assignment': 'struct F{int n;constexpr F&operator=(const F&o){n=o.n+1;return *this;}};template<class T>struct S{T f;constexpr S&operator=(const S&)=default;};constexpr int index(){S<F>a{{1}},b{{2}};a=b;return a.f.n;}using A=char[index()+1];static_assert(__array_rank(A)==1&&__array_extent(A,0)>0);',
+        'source-inline-local-owner': 'template<class T>constexpr int index(){struct S{T n;constexpr S&operator=(const S&)=default;};S a{1},b{3};a=b;return a.n;}using A=char[index<int>()];static_assert(__array_rank(A)==1&&__array_extent(A,0)>0);',
+        'source-split-constexpr-function': 'template<class T>constexpr int extent(T);template<class T>constexpr int extent(T n){return n;}using A=int[extent(3)];static_assert(__array_rank(A)==1&&__array_extent(A,0)==3);',
         'dimension-call-in-noexcept': 'template<unsigned I>constexpr unsigned index(){return I;}static_assert(noexcept(__array_extent(int[2][3],index<1>())));static_assert(__array_extent(int[2][3],index<1>())==3);',
         'dimension-call-in-sizeof': 'template<unsigned I>constexpr unsigned index(){return I;}static_assert(sizeof(int[__array_extent(int[2][3],index<1>())])==3*sizeof(int));',
         'dimension-template-call-pack': 'template<unsigned I>constexpr unsigned index(){return I;}template<unsigned...I>constexpr auto f(){return (__array_extent(int[2][3],index<I>())+...+0);}static_assert(f<>()==0&&f<0,1,2>()==5);',
@@ -5999,6 +6016,18 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
             assert returned["kind"] == "literal" and returned["type"] == carrier
             assert returned["value"] == value
     array_query_negative = {
+        'source-hidden-dimension': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};static_assert(__array_extent(int[2][3],noexcept(Mid()))==3);',
+        'source-hidden-out-of-range': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};static_assert(__array_extent(int[2][3],noexcept(Mid())+99)==0);',
+        'source-hidden-nonarray': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};static_assert(__array_extent(int,noexcept(Mid()))==0);',
+        'source-hidden-alias-rank': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?2:3];static_assert(__array_rank(A)==1);',
+        'source-hidden-alias-extent': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?2:3];static_assert(__array_extent(A,0)==2);',
+        'source-hidden-enum-dimension': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};enum E{first=noexcept(Mid()),second};static_assert(__array_extent(int[2][3],second)==0);',
+        'source-hidden-constexpr-dimension': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};constexpr int index(){return noexcept(Mid());}static_assert(__array_extent(int[2][3],index())==3);',
+        'source-hidden-template-dimension': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>inline constexpr int index=noexcept(Mid());static_assert(__array_extent(int[2][3],index<int>)==3);',
+        'source-hidden-default-dimension': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};constexpr int index(int n=noexcept(Mid())){return n;}static_assert(__array_extent(int[2][3],index())==3);',
+        'source-hidden-metadata-dimension': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?2:3];static_assert(__array_extent(int[2][3],__is_array(A))==3);',
+        'source-unmaterialized-decltype': 'struct F{int n;F()noexcept:n(1){}};struct S{F f;S()=default;};using A=decltype(S());static_assert(__array_rank(A)==0);',
+        'source-split-template-defaulting': 'template<class T>struct S{T n=1;constexpr S();};template<class T>constexpr S<T>::S()=default;constexpr int extent(){S<int>value;return value.n;}using A=int[extent()];static_assert(__array_rank(A)==1);',
         'rank-long-double': 'int f(){return int(__array_rank(long double));}',
         'extent-long-double': 'int f(){return int(__array_extent(long double[2],0));}',
         'rank-volatile': 'int f(){return int(__array_rank(volatile int[2]));}',
@@ -6035,12 +6064,49 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     check("array-query-v1", "int f(){return int(__array_extent(int[2],0));}", "TR0201")
     array_query_source = (repository / "tests/neverc/Inputs/translate/cpp/array-type-queries.cpp").read_text()
     array_queries = check("v2-array-type-queries", array_query_source, profile="cpp-core-v2")
+    array_source_expected = {"query_assignment_dimension": "3",
+                             "query_construction_dimension": "3", "query_source_rank": "2"}
+    for function in array_queries["functions"]:
+        if not function["c_export"]:
+            continue
+        assert function["result"] in ("uint", "u64")
+        returns = [node["value"] for node in function["body"] if node["op"] == "return"]
+        assert len(returns) == 1
+        bindings = {node["target"]["name"]: node["value"] for node in function["body"]
+                    if node["op"] == "assign" and node["target"]["kind"] == "var"}
+        returned = returns[0]
+        seen = set()
+        while returned["kind"] == "var":
+            assert returned["name"] not in seen
+            seen.add(returned["name"])
+            returned = bindings[returned["name"]]
+        assert returned["kind"] == "literal" and returned["type"] == function["result"]
+        assert returned["value"] == array_source_expected.pop(function["name"])
+    assert not array_source_expected
     with tempfile.TemporaryDirectory(prefix="neverc-array-query-relocated-") as temporary:
         relocated = check("v2-array-query-relocated", array_query_source,
                           root=Path(temporary)/"project", profile="cpp-core-v2")
         assert relocated == array_queries
 
     builtin_type_positive = {
+        'source-alias-family': 'struct P{int n;};struct Mid{P field;};using A=int[noexcept(Mid())?1:2];static_assert(__is_array(A)&&!__is_integral(A));',
+        'source-pointer-alias': 'struct P{int n;};struct Mid{P field;};using A=int[noexcept(Mid())?1:2];static_assert(__is_pointer(A*)&&__is_same(A*,A*));',
+        'source-record-layout': 'struct P{int n;};struct Mid{P field;};using A=int[noexcept(Mid())?1:2];struct R{A field;};static_assert(__is_class(R)&&__is_standard_layout(R));',
+        'source-enum-values': 'struct P{int n;};struct Mid{P field;};enum E{first=noexcept(Mid()),second};static_assert(__is_enum(E)&&!__is_integral(E));',
+        'source-decltype-family': 'struct P{int n;};struct Mid{P field;};using I=decltype((noexcept(Mid()),1));static_assert(__is_integral(I));',
+        'source-constexpr-body': 'struct P{int n;};struct Mid{P field;};constexpr int extent(){return noexcept(Mid())?2:3;}using A=int[extent()];static_assert(__is_array(A));',
+        'source-template-value': 'struct P{int n;};struct Mid{P field;};template<class T>inline constexpr int extent=noexcept(Mid())?2:3;using A=int[extent<int>];static_assert(__is_array(A));',
+        'source-generated-assignment': 'struct S{int n;constexpr S&operator=(const S&)=default;};constexpr int extent(){S a{1},b{3};a=b;return a.n;}using A=int[extent()];static_assert(__is_array(A));',
+        'source-generated-template-assignment': 'template<class T>struct S{T n;constexpr S&operator=(const S&)=default;};constexpr int extent(){S<int>a{1},b{3};a=b;return a.n;}using A=int[extent()];static_assert(__is_array(A));',
+        'source-generated-template-construction': 'struct F{int n;constexpr F():n(3){}};template<class T>struct S{T f;constexpr S()=default;};constexpr int extent(){S<F>value;return value.f.n;}using A=int[extent()];static_assert(__is_array(A));',
+        'source-decltype-terminal-call': 'template<class T>struct R{T n;~R()noexcept(T::missing){T::body();}};template<class T>R<T>result(){return {1};}static_assert(sizeof(R<int>)==sizeof(int));using A=decltype((result<int>()));static_assert(__is_class(A)&&__is_pointer(A*));',
+        'source-selected-destructor-query': 'template<class T>struct R{T n;~R()noexcept=default;};using A=int[__is_nothrow_destructible(R<int>)?2:3];static_assert(__is_array(A));',
+        'source-unused-metadata-event': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>int unused(){return __is_array(int[noexcept(Mid())?1:2]);}static_assert(__is_integral(int));',
+        'source-materialized-decltype': 'struct F{int n;F()noexcept:n(1){}};struct S{F f;S()=default;};void force(){S value;}using A=decltype(S());static_assert(__is_class(A));',
+        'source-later-defaulting': 'struct F{int n;constexpr F():n(1){}};struct S{F f;constexpr S();};constexpr S::S()=default;constexpr int index(){S value;return value.f.n;}using A=char[index()+1];static_assert(__is_array(A));',
+        'source-inline-nontrivial-assignment': 'struct F{int n;constexpr F&operator=(const F&o){n=o.n+1;return *this;}};template<class T>struct S{T f;constexpr S&operator=(const S&)=default;};constexpr int index(){S<F>a{{1}},b{{2}};a=b;return a.f.n;}using A=char[index()+1];static_assert(__is_array(A));',
+        'source-inline-local-owner': 'template<class T>constexpr int index(){struct S{T n;constexpr S&operator=(const S&)=default;};S a{1},b{3};a=b;return a.n;}using A=char[index<int>()];static_assert(__is_array(A));',
+        'source-split-constexpr-function': 'template<class T>constexpr int extent(T);template<class T>constexpr int extent(T n){return n;}using A=int[extent(3)];static_assert(__is_array(A));',
         'lazy-noexcept-body': 'template<class T>int f(T)noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f(1))&&!noexcept(f(1.0)));',
         'lazy-noexcept-default': 'template<class T>int f(int n=T::missing)noexcept(__is_integral(T)){return T::body;}static_assert(noexcept(f<int>(3)));',
         'lazy-noexcept-later-definition': 'template<class T>int f(T)noexcept(__is_integral(T));template<class T>int f(T)noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f(1)));',
@@ -6167,6 +6233,20 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in builtin_type_positive.items():
         check("v2-builtin_type_positive-" + name, source, profile="cpp-core-v2")
     builtin_type_negative = {
+        'source-hidden-alias': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?1:2];static_assert(__is_array(A));',
+        'source-hidden-false-result': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?1:2];static_assert(!__is_integral(A));',
+        'source-hidden-pointer-alias': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?1:2];static_assert(__is_pointer(A*));',
+        'source-hidden-same-type': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?1:2];static_assert(__is_same(A*,A*));',
+        'source-hidden-record-layout': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using A=int[noexcept(Mid())?1:2];struct R{A field;};static_assert(__is_class(R));',
+        'source-hidden-enum-values': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};enum E{first=noexcept(Mid()),second};static_assert(__is_enum(E));',
+        'source-hidden-decltype': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};using I=decltype((noexcept(Mid()),1));static_assert(__is_integral(I));',
+        'source-hidden-constant': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};constexpr int extent=noexcept(Mid())?2:3;using A=int[extent];static_assert(__is_array(A));',
+        'source-hidden-template-value': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>inline constexpr int extent=noexcept(Mid())?2:3;using A=int[extent<int>];static_assert(__is_array(A));',
+        'source-hidden-constexpr-body': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};constexpr int extent(){return noexcept(Mid())?2:3;}using A=int[extent()];static_assert(__is_array(A));',
+        'source-hidden-selected-default': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};int helper(int=noexcept(Mid()))noexcept{return 0;}using A=int[noexcept(helper())?1:2];static_assert(__is_array(A));',
+        'source-hidden-deleted-metadata': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};struct R{int values[noexcept(Mid())?1:2];~R()=delete;};static_assert(!__is_destructible(R));',
+        'source-unmaterialized-decltype': 'struct F{int n;F()noexcept:n(1){}};struct S{F f;S()=default;};using A=decltype(S());static_assert(__is_class(A));',
+        'source-split-template-defaulting': 'template<class T>struct S{T n=1;constexpr S();};template<class T>constexpr S<T>::S()=default;constexpr int extent(){S<int>value;return value.n;}using A=int[extent()];static_assert(__is_array(A));',
         'lazy-noexcept-hidden-specification': 'template<class T>int f(T)noexcept((sizeof(long double),__is_integral(T))){return T::missing;}static_assert(noexcept(f(1)));',
         'lazy-noexcept-hidden-return': 'template<class T>long double f(T)noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f(1)));',
         'lazy-noexcept-hidden-parameter': 'template<class T>int f(T,long double)noexcept(__is_integral(T)){return T::missing;}static_assert(noexcept(f(1,0)));',
@@ -6261,7 +6341,9 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
                            ("classified_unique_padded", False), ("classified_unique_empty", False),
                            ("classified_destructible", True), ("classified_trivial_destructor", True),
                            ("classified_deleted_destructor", False), ("classified_private_destructor", False),
-                           ("classified_deleted_reference", True), ("classified_lazy_destructor", True)):
+                           ("classified_deleted_reference", True), ("classified_lazy_destructor", True),
+                           ("classified_assignment_source", True), ("classified_construction_source", True),
+                           ("classified_false_source", False)):
         function = classified[name]
         assert function["result"] == "bool"
         returns = [node["value"] for node in function["body"] if node["op"] == "return"]

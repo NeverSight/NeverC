@@ -363,8 +363,14 @@ source, while pointer/reference spelling keeps pointee layout lazy. Signature
 parameter types retain their own edges with unused defaults isolated. The same
 bounded worklist checks completed type and expression nodes without replaying
 Sema or instantiating missing definitions.
-All resolved operation queries consume this source proof after normal traversal,
-including implicit assignments, scalar types and pre-operation false results.
+All supported resolved classification, operation and array queries consume this
+source proof after normal traversal, including implicit assignments, scalar types,
+false results and out-of-range dimensions. A shared scoped Expr root preserves
+exact TypeTraitExpr TypeLoc sources. ArrayTypeTraitExpr has no Stmt children;
+its exact dimension is registered as a value root before the existing synchronous
+type/index traversal, so cached/default children cannot disappear behind the
+folded index. Dependent metadata parameter source keeps its original path.
+Metadata-only roots do not acquire hypothetical operation or destructor selection.
 Enum layout retains written underlying types even without an enumerator body.
 Implicit family checks also apply to non-nothrow queries because marking the
 selected function referenced can resolve its inferred exception specification.

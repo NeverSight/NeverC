@@ -772,7 +772,11 @@ implicit field deletion stays distinct from the C carrier layout. These predicat
 do not resolve a destructor's exception specification or instantiate a lazy body.
 
 Type source traversal checks nested `decltype`, array bounds, function
-specifications and selected template substitutions even in erased queries. No
+specifications and selected template substitutions even in erased queries. Every
+supported concrete classification also validates the completed type/expression
+dependency graph, including consumed layout, cached constants and generated value
+source, before lowering either a true or false result. This does not select a
+hypothetical operation or resolve a metadata-only destructor specification. No
 unevaluated operand effects are emitted. See the exact spellings, supported
 operand domain and remaining exclusions in the
 [classification contract](cpp-core-v2.md#builtin-type-classification).
@@ -842,8 +846,9 @@ alias/template source and consumed record layout dependencies. Function paramete
 type source is independent of unused parameter defaults. None of this evidence enters the protocol. The frontend
 retains these identities internally;
 neither default expressions nor hypothetical calls are added to transport IR.
-All resolved operation queries validate this source graph before lowering;
-successful immediate checks and pre-operation false results cannot bypass it.
+All supported resolved classification, operation and array queries validate this
+source graph before lowering; successful immediate checks and false or out-of-range
+results cannot bypass consumed dependencies.
 
 
 ## Core v2 array type queries
@@ -853,7 +858,9 @@ Checked `__array_rank(T)` and `__array_extent(T, I)` reuse the existing integer
 No query instruction or runtime helper is added. Source admission independently
 checks the retained type and extent dimension, including folded children; a
 dependent dimension is substituted by the private source frontend before its
-value is consumed. The dimension never generates runtime side effects.
+value is consumed. The exact dimension has its own completed expression root in
+the final type/value source graph, including cached children, defaults and generated
+value operations. The dimension never generates runtime side effects.
 See the supported types, index domain and template behavior in the
 [array-query contract](cpp-core-v2.md#array-type-queries).
 

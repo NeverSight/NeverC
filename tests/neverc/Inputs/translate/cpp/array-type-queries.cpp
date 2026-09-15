@@ -23,6 +23,22 @@ static_assert(noexcept(__array_extent(Array, index<1>())));
 static_assert(sizeof(int[__array_extent(Array, index<1>())]) == 3 * sizeof(int));
 int effects;
 int effect() { return ++effects; }
+template<class T> struct SourceAssignment {
+  T value;
+  constexpr SourceAssignment &operator=(const SourceAssignment&) = default;
+};
+constexpr int assignedIndex() {
+  SourceAssignment<int> first{0}, second{1};
+  first = second;
+  return first.value;
+}
+struct SourceLeaf { int value; constexpr SourceLeaf() : value(1) {} };
+template<class T> struct SourceConstruction { T field; constexpr SourceConstruction() = default; };
+constexpr int constructedIndex() { SourceConstruction<SourceLeaf> owner; return owner.field.value; }
+using GeneratedArray = int[assignedIndex() + 1][constructedIndex() + 2];
+extern "C" Size query_assignment_dimension() { return __array_extent(Array, assignedIndex()); }
+extern "C" Size query_construction_dimension() { return __array_extent(Array, constructedIndex()); }
+extern "C" Size query_source_rank() { return __array_rank(GeneratedArray); }
 
 static_assert(fixed_extent<0>() == 2 && fixed_extent<1>() == 3 && fixed_extent<2>() == 0);
 static_assert(rank<Array>() == 2 && extent<Array, 1>() == 3);
@@ -56,5 +72,14 @@ int main() {
   Size value = (++effects, __array_extent(Array, 1));
   if (value != 3 || effects != 1) return 9;
   if (packed_extent<>() != 0 || packed_extent<0, 1, 2>() != 5) return 10;
+  if (query_assignment_dimension() != 3 || query_construction_dimension() != 3 ||
+      query_source_rank() != 2 || effects != 1) return 11;
+  if (assignedIndex() != 1 || constructedIndex() != 1 || effects != 1) return 12;
+  SourceAssignment<int> first{2}, second{7};
+  first = second;
+  first.value = 11;
+  if (first.value != 11 || second.value != 7 || &first == &second) return 13;
+  SourceConstruction<SourceLeaf> owner;
+  if (owner.field.value != 1 || sizeof(GeneratedArray) != sizeof(Array) || effects != 1) return 14;
   return 0;
 }

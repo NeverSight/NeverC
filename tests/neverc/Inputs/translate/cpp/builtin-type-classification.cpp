@@ -36,6 +36,20 @@ struct Probe {
   Probe() : value(++constructed) {}
   ~Probe() { ++destroyed; }
 };
+template<class T> struct SourceAssignment {
+  T value;
+  constexpr SourceAssignment &operator=(const SourceAssignment&) = default;
+};
+constexpr int assignedBound() {
+  SourceAssignment<int> first{1}, second{3};
+  first = second;
+  return first.value;
+}
+struct SourceLeaf { int value; constexpr SourceLeaf() : value(5) {} };
+template<class T> struct SourceConstruction { T field; constexpr SourceConstruction() = default; };
+constexpr int constructedBound() { SourceConstruction<SourceLeaf> owner; return owner.field.value; }
+using AssignedArray = int[assignedBound()];
+using ConstructedArray = int[constructedBound()];
 
 template<class T> inline constexpr bool integral = __is_integral(T);
 template<class A, class B> inline constexpr bool same = __is_same(A, B);
@@ -75,6 +89,9 @@ extern "C" bool classified_deleted_destructor() { return __is_destructible(Delet
 extern "C" bool classified_private_destructor() { return __is_destructible(PrivateDestruction); }
 extern "C" bool classified_deleted_reference() { return __is_trivially_destructible(DeletedDestruction&); }
 extern "C" bool classified_lazy_destructor() { return __is_destructible(LazyDestruction<int>); }
+extern "C" bool classified_assignment_source() { return __is_array(AssignedArray); }
+extern "C" bool classified_construction_source() { return __is_array(ConstructedArray); }
+extern "C" bool classified_false_source() { return __is_integral(AssignedArray); }
 template<class Base, class Derived> inline constexpr bool base_of = __is_base_of(Base, Derived);
 template<class... T> constexpr bool all_empty() { return (__is_empty(T) && ...); }
 
@@ -172,8 +189,19 @@ int main() {
     if (real.value != 1) return 27;
   }
   if (!__is_destructible(Probe) || __is_trivially_destructible(Probe) ||
-      effects != 1 || constructed != 1 || destroyed != 1) return 27;
-  if (!noexcept(query_only(++effects)) || noexcept(query_only(1.0)) || effects != 1) return 28;
-  if (structural_selected<int>() != 9 || structural_selected<int, 11>() != 11) return 29;
+      effects != 1 || constructed != 1 || destroyed != 1) return 28;
+  if (!noexcept(query_only(++effects)) || noexcept(query_only(1.0)) || effects != 1) return 29;
+  if (structural_selected<int>() != 9 || structural_selected<int, 11>() != 11) return 30;
+  if (!classified_assignment_source() || !classified_construction_source() || classified_false_source() ||
+      assignedBound() != 3 || constructedBound() != 5 || effects != 1 ||
+      constructed != 1 || destroyed != 1) return 31;
+  SourceAssignment<int> first{2}, second{7};
+  first = second;
+  first.value = 11;
+  if (first.value != 11 || second.value != 7 || &first == &second) return 32;
+  SourceConstruction<SourceLeaf> owner;
+  if (owner.field.value != 5 || sizeof(AssignedArray) != 3 * sizeof(int) ||
+      sizeof(ConstructedArray) != 5 * sizeof(int) || effects != 1 ||
+      constructed != 1 || destroyed != 1) return 33;
   return 0;
 }
