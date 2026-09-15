@@ -52,12 +52,6 @@ extern "C" int runtime_aggregate_array_check() {
     return 4;
   delete[] values;
   allocated = allocations;
-  values = make(-1);
-  if (values || effects != before || allocations != allocated)
-    return 5;
-  values = prefix(0);
-  if (values || effects != before || allocations != allocated)
-    return 6;
   fail = 1;
   values = prefix(3);
   if (values || effects != before || allocations != allocated + 1)
@@ -84,7 +78,21 @@ extern "C" int runtime_aggregate_array_check() {
   if (!values || !valid(values[0], 1) || !valid(values[1], 2) || effects != 6)
     return 12;
   delete[] values;
-  return eventCount == 2 && events[0] == 2 && events[1] == 1 ? 0 : 13;
+  if (eventCount != 2 || events[0] != 2 || events[1] != 1)
+    return 13;
+  // Check invalid lengths after all valid initialization and destruction cases.
+  // Unmodified Clang 20 calls the allocator with SIZE_MAX here; C++17 requires
+  // no allocation call. Keep the translated result strict while letting its
+  // upstream diagnostic baseline exercise the preceding independent cases.
+  before = effects;
+  allocated = allocations;
+  values = make(-1);
+  if (values || effects != before || allocations != allocated)
+    return 5;
+  values = prefix(0);
+  if (values || effects != before || allocations != allocated)
+    return 6;
+  return 0;
 }
 
 int main() { return runtime_aggregate_array_check(); }

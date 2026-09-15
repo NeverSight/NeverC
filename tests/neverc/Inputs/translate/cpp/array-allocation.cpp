@@ -130,10 +130,6 @@ extern "C" int array_lifetime_check() {
   if (seenArguments != 123 || liveArguments || argumentDrops != 3) return 21;
   delete[] explicitClauses;
   seenArguments = argumentDrops = 0;
-  Aggregate *aggregates = new Aggregate[3]{};
-  if (seenArguments != 123 || liveArguments || argumentDrops != 3) return 22;
-  delete[] aggregates;
-  seenArguments = argumentDrops = 0;
   Direct *noElements = new Direct[0];
   if (seenArguments || argumentDrops || liveArguments) return 23;
   delete[] noElements;
@@ -156,5 +152,11 @@ extern "C" int array_lifetime_check() {
   new(Tag{}, &rebuilt[0]) R(33);
   delete[] rebuilt;
   if (eventCount != 3 || events[0] != 31 || events[1] != 32 || events[2] != 33 || freedRaw != raw) return 29;
+  // Keep this known upstream cleanup difference last so its diagnostic
+  // baseline still reaches the independent allocation/placement cases above.
+  seenArguments = argumentDrops = 0;
+  Aggregate *aggregates = new Aggregate[3]{};
+  if (seenArguments != 123 || liveArguments || argumentDrops != 3) return 22;
+  delete[] aggregates;
   return 0;
 }
