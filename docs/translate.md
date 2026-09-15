@@ -4,7 +4,7 @@
 
 # Translate C++ to NeverC
 
-Core v2 accepts checked declaration-only namespace template signatures in unevaluated calls, including the reference, array, function and void fallback pattern used by `declval`. Exact selection, erased template defaults and consumed function defaults retain a final source check. Runtime calls and addresses still require definitions. Native validation requires the implementing revision’s CI; standard headers and complete C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
+Core v2 accepts checked declaration-only namespace template signatures in unevaluated calls, including the reference, array, function and void fallback pattern used by `declval`. Exact selection, erased template defaults and consumed function defaults retain a final source check. Runtime calls and addresses still require definitions. Native validation requires the implementing revision’s CI; standard headers and complete C++/STL remain unfinished. The same source check covers unused namespace templates with owned definitions; their bodies stay lazy. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
 
 Core v2 implements default sized-delete forwarding: an untouched implicit global sized delete/delete[] can call the corresponding source-defined unsized operator. Explicit sized definitions and original array cookie layout remain authoritative. This adds no default allocator or exception runtime; native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 

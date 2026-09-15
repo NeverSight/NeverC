@@ -4,7 +4,7 @@
 
 # C++를 NeverC로 변환
 
-Core v2는 평가되지 않는 호출에서 정의가 없는 네임스페이스 템플릿의 검증된 시그니처를 지원합니다. `declval`의 참조·배열·함수·void 대체 패턴을 포함하며, 실제 선택과 시그니처에서 사라진 템플릿 기본 인수, 사용된 함수 기본 인수의 소스를 최종 검사합니다. 런타임 호출과 주소 취득에는 정의가 필요합니다. 네이티브 검증에는 구현 버전의 CI가 필요하며, 표준 헤더와 완전한 C++/STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
+Core v2는 평가되지 않는 호출에서 정의가 없는 네임스페이스 템플릿의 검증된 시그니처를 지원합니다. `declval`의 참조·배열·함수·void 대체 패턴을 포함하며, 실제 선택과 시그니처에서 사라진 템플릿 기본 인수, 사용된 함수 기본 인수의 소스를 최종 검사합니다. 런타임 호출과 주소 취득에는 정의가 필요합니다. 네이티브 검증에는 구현 버전의 CI가 필요하며, 표준 헤더와 완전한 C++/STL은 아직 미완성입니다. 소스에 정의가 있는 미사용 네임스페이스 템플릿에도 같은 검사를 적용하며, 함수 본문은 인스턴스화하지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unevaluated-declaration-only-template-signatures).
 
 Core v2는 기본 sized delete 전달을 지원합니다. 소스에서 다시 선언되지 않은 암시적 전역 sized delete/delete[]는 대응하는 소스 정의 unsized 연산자를 호출할 수 있습니다. 명시적 sized 정의가 우선하며 원래 배열 cookie 레이아웃을 유지합니다. 기본 할당기나 예외 런타임은 추가하지 않으며 네이티브 검증에는 구현 버전의 CI가 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 

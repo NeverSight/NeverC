@@ -7446,6 +7446,14 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
 
     defined_operation_source = (repository / "tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp").read_text()
     defined_operation_module = check("v2-defined-operation-traits", defined_operation_source, profile="cpp-core-v2")
+    lazy_namespace_body_lines = {
+        line for line, text in enumerate(defined_operation_source.splitlines(), 1)
+        if text.startswith(("int throwing() noexcept(false) { T::body();",
+                            "int operator+(T, T) noexcept { T::body();"))
+    }
+    assert len(lazy_namespace_body_lines) == 2
+    assert not any(function["loc"]["line"] in lazy_namespace_body_lines
+                   for function in defined_operation_module["functions"])
     declared_query_only_lines = {
         line for line, text in enumerate(defined_operation_source.splitlines(), 1)
         if text.startswith(("template<class T> T&& probe(", "template<class T> T probe(",
@@ -7465,7 +7473,12 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
                               for node in gc_calls(function)
                               if node["callee"] == declared_runtime[0]["name"]]
     assert len(declared_runtime_calls) == 2
-    defined_expected = {"defined_declared_rvalue": True,
+    defined_expected = {"defined_namespace_default": True,
+                        "defined_namespace_explicit": True,
+                        "defined_namespace_throwing": False,
+                        "defined_namespace_operator": True,
+                        "defined_namespace_type": True,
+                        "defined_declared_rvalue": True,
                         "defined_declared_lvalue": True,
                         "defined_declared_void": True,
                         "defined_declared_array": True,
@@ -17540,6 +17553,16 @@ Plain chosenRecord(){return choose<false>();}
     check("v1-auto-value-template", "template<auto N>auto f(){return N;}int main(){return f<3>();}", "TR0201")
 
     function_templates_positive = {
+        'lazy-namespace-source-nttp-default': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept(f<int>()));',
+        'lazy-namespace-source-function-default': 'struct Mid{int n;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept{T::body();return 0;}static_assert(noexcept(f<int>()));',
+        'lazy-namespace-source-exception-family': 'struct Mid{int n;};template<class T>int f()noexcept(noexcept(Mid())&&sizeof(T)>0){T::body();return 0;}static_assert(noexcept(f<int>()));',
+        'lazy-namespace-source-operator-default': 'struct Mid{int n;};struct R{};template<class T,int N=noexcept(Mid())+sizeof(T)>int operator+(T,T)noexcept{T::body();return N;}static_assert(noexcept(R{}+R{}));',
+        'lazy-namespace-source-false-result': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false){T::body();return N;}static_assert(!noexcept(f<int>()));',
+        'lazy-namespace-source-selected-type': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(__is_same(decltype(f<int>()),int));',
+        'lazy-namespace-source-parenthesized': 'struct Mid{int n;};namespace N{template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}}static_assert(noexcept((N::f<int>)()));',
+        'lazy-namespace-source-comma-result': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept((0,f<int>())));',
+        'lazy-namespace-source-unused-default': 'template<class T,int N=sizeof(T)>int f(int=T::missing)noexcept{T::body();return N;}static_assert(noexcept(f<int>(3)));',
+        'lazy-namespace-source-separate-definition': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept;template<class T,int N>int f()noexcept{T::body();return N;}static_assert(noexcept(f<int>()));',
         'declared-signature-free-operator': 'struct R{};template<class T,int N=sizeof(T)>int operator+(T,T)noexcept(N>0);static_assert(noexcept(R{}+R{}));',
         'declared-signature-default-family': 'struct Mid{int n;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept;static_assert(noexcept(f<int>()));',
         'declared-signature-false-default-family': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false);static_assert(!noexcept(f<int>()));',
@@ -17601,6 +17624,14 @@ Plain chosenRecord(){return choose<false>();}
     for name, source in function_templates_positive.items():
         check("v2-function-templates-positive-" + name, source, profile="cpp-core-v2")
     function_templates_reject = {
+        'lazy-namespace-source-nttp-default': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept(f<int>()));',
+        'lazy-namespace-source-function-default': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept{T::body();return 0;}static_assert(noexcept(f<int>()));',
+        'lazy-namespace-source-exception-family': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f()noexcept(noexcept(Mid())&&sizeof(T)>0){T::body();return 0;}static_assert(noexcept(f<int>()));',
+        'lazy-namespace-source-operator-default': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{};template<class T,int N=noexcept(Mid())+sizeof(T)>int operator+(T,T)noexcept{T::body();return N;}static_assert(noexcept(R{}+R{}));',
+        'lazy-namespace-source-false-result': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false){T::body();return N;}static_assert(!noexcept(f<int>()));',
+        'lazy-namespace-source-selected-type': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(__is_same(decltype(f<int>()),int));',
+        'lazy-namespace-source-parenthesized': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};namespace N{template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}}static_assert(noexcept((N::f<int>)()));',
+        'lazy-namespace-source-comma-result': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept((0,f<int>())));',
         'declared-signature-hidden-default-family': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept;static_assert(noexcept(f<int>()));',
         'declared-signature-hidden-exception-family': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f()noexcept(noexcept(Mid())&&sizeof(T)>0);static_assert(noexcept(f<int>()));',
         'declared-signature-hidden-operator-default': 'template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{};template<class T,int N=noexcept(Mid())+sizeof(T)>int operator+(T,T)noexcept;static_assert(noexcept(R{}+R{}));',
@@ -17634,6 +17665,7 @@ Plain chosenRecord(){return choose<false>();}
     for name, source in function_templates_reject.items():
         check("v2-function-templates-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
     function_templates_invalid = {
+        'lazy-namespace-source-runtime-body': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept(f<int>()));int main(){return f<int>();}',
         'declared-signature-undeduced-return': 'template<class T>auto f(T)noexcept;using A=decltype(f(1));',
         'declared-signature-bad-default': 'template<class T>int f(int=T::missing)noexcept;static_assert(noexcept(f<int>()));',
         'declared-signature-explicit-definition': 'template<class T>T f(T)noexcept;template int f<int>(int)noexcept;',
@@ -17651,6 +17683,7 @@ Plain chosenRecord(){return choose<false>();}
     for name, source in function_templates_invalid.items():
         check("v2-function-templates-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
     function_templates_missing = {
+        'lazy-namespace-source-explicit-extern': 'struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{return N;}extern template int f<int>()noexcept;static_assert(noexcept(f<int>()));',
         'declared-signature-runtime-after-query': 'template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));int main(){return f(1);}',
         'declared-signature-runtime-address': 'template<class T>T f(T)noexcept;static_assert(noexcept(f(1)));auto pointer=&f<int>;',
         'declared-signature-explicit-extern': 'template<class T>T f(T)noexcept;extern template int f<int>(int)noexcept;static_assert(noexcept(f(1)));',

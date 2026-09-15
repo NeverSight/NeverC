@@ -9457,11 +9457,11 @@ public:
     const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
     const auto *Definition = Pattern ? Pattern->getDefinition() : nullptr;
     return functionTemplateShape(Primary) &&
-           (owned(Definition) || declarationOnlyFreeFunctionSignature(Function)) &&
+           (owned(Definition) || (!Definition && lazyNamespaceFunctionSignature(Function))) &&
            !Function->getType()->isInstantiationDependentType() &&
            standardExceptionSpecification(Function->getType()->getAs<FunctionProtoType>());
   }
-  bool declarationOnlyFreeFunctionSignature(const FunctionDecl *Function) {
+  bool lazyNamespaceFunctionSignature(const FunctionDecl *Function) {
     if (!A.S.coreV2() || !concreteFreeFunctionTemplate(Function) || !owned(Function) ||
         Function->hasBody() || Function->isUsed(/*CheckUsedAttr=*/false) || Function->isDeleted() ||
         Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
@@ -9470,9 +9470,11 @@ public:
       return false;
     const auto *Primary = Function->getPrimaryTemplate();
     const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
-    // Unevaluated namespace helpers such as declval's overload probes can
-    // require a concrete signature without having any definition to instantiate.
-    return owned(Pattern) && !Pattern->getDefinition() && functionTemplateShape(Primary) &&
+    // Namespace query calls retain their selected source independently of the
+    // primary's body. Its absence permits declval-style declaration-only probes;
+    // an existing generic body still stays uninstantiated.
+    const auto *Definition = Pattern ? Pattern->getDefinition() : nullptr;
+    return owned(Pattern) && (!Definition || owned(Definition)) && functionTemplateShape(Primary) &&
         !Primary->getInstantiatedFromMemberTemplate() && !Primary->isMemberSpecialization() &&
         !Primary->getFriendObjectKind() && !Pattern->getFriendObjectKind() &&
         !Function->getFriendObjectKind() &&
@@ -10778,7 +10780,7 @@ public:
     return Result;
   }
   bool TraverseCallExpr(CallExpr *Call, DataRecursionQueue *Queue = nullptr) {
-    if (!declarationOnlyFreeFunctionSignature(Call->getDirectCallee()))
+    if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCallExpr(Call, Queue);
     // Keep selection/default source that can disappear from the instantiated
     // signature. A private synchronous queue completes every argument before
@@ -10788,7 +10790,7 @@ public:
     });
   }
   bool TraverseCXXOperatorCallExpr(CXXOperatorCallExpr *Call, DataRecursionQueue *Queue = nullptr) {
-    if (!declarationOnlyFreeFunctionSignature(Call->getDirectCallee()))
+    if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCXXOperatorCallExpr(Call, Queue);
     return traverseTypeQuerySource(Call, [&] {
       return RecursiveASTVisitor<Allowlist>::TraverseCXXOperatorCallExpr(Call, nullptr);

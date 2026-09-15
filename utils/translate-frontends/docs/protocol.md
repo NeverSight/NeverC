@@ -1702,7 +1702,11 @@ function must remain non-friend file declarations; copied/member-specialization
 metadata is excluded. The normal exact selection, actual arguments, signature and
 resolved specification remain mandatory. Only this category's actual ordinary or
 free operator calls drain source children synchronously into the existing final
-query dependency graph. Consumed template defaults erased from the signature and
+query dependency graph. The same proof covers unused non-friend namespace
+instances with an owned primary definition, including separate declarations and
+definitions. The actual instance still has no body; primary bodies remain lazy.
+Friend/member categories and already materialized actual bodies retain their
+existing rules. Consumed template defaults erased from the signature and
 selected function defaults retain their implicit/generated operation families and
 destruction dependencies, even for false query results. Failed selection checks
 cannot mark a source complete. No transport field, runtime import or body-completion

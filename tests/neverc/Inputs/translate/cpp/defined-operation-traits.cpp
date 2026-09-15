@@ -710,6 +710,28 @@ extern "C" bool defined_declared_throwing() { return noexcept(DeclaredQuery::thr
 extern "C" bool defined_declared_runtime_query() { return noexcept(DeclaredQuery::runtime(1)); }
 extern "C" bool defined_declared_specialization() { return noexcept(DeclaredQuery::runtime(1u)); }
 
+namespace LazyNamespaceQuery {
+struct Mid { int n; };
+int defaults, calls;
+int next() noexcept { ++defaults; return 3; }
+template<class T, int N = noexcept(Mid()) + sizeof(T)>
+int selected(int n = next()) noexcept(N > 0) {
+  if constexpr (__is_same(T, int)) T::body();
+  ++calls;
+  return n + N;
+}
+template<class T, int N = noexcept(Mid()) + sizeof(T)>
+int throwing() noexcept(false) { T::body(); return N; }
+struct Operand {};
+template<class T, int N = noexcept(Mid()) + sizeof(T)>
+int operator+(T, T) noexcept { T::body(); return N; }
+}
+extern "C" bool defined_namespace_default() { return noexcept(LazyNamespaceQuery::selected<int>()); }
+extern "C" bool defined_namespace_explicit() { return noexcept(LazyNamespaceQuery::selected<int>(7)); }
+extern "C" bool defined_namespace_throwing() { return noexcept(LazyNamespaceQuery::throwing<int>()); }
+extern "C" bool defined_namespace_operator() { return noexcept(LazyNamespaceQuery::Operand{} + LazyNamespaceQuery::Operand{}); }
+extern "C" bool defined_namespace_type() { return __is_same(decltype(LazyNamespaceQuery::selected<int>()), int); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -1274,5 +1296,16 @@ int main() {
       !defined_declared_runtime_query() || !defined_declared_specialization() ||
       defined_declared_throwing() || DeclaredQuery::calls != 2 ||
       member_query_assignments != 3 || copied_member_query_defaults != 2) return 118;
+  if (!defined_namespace_default() || !defined_namespace_explicit() ||
+      defined_namespace_throwing() || !defined_namespace_operator() ||
+      !defined_namespace_type() || LazyNamespaceQuery::defaults || LazyNamespaceQuery::calls)
+    return 119;
+  int lazyFirst = LazyNamespaceQuery::selected<unsigned>();
+  int lazySecond = LazyNamespaceQuery::selected<unsigned>(11);
+  if (lazyFirst != 8 || lazySecond != 16 || LazyNamespaceQuery::defaults != 1 ||
+      LazyNamespaceQuery::calls != 2 || !defined_namespace_default() ||
+      defined_namespace_throwing() || !defined_namespace_operator() ||
+      LazyNamespaceQuery::defaults != 1 || LazyNamespaceQuery::calls != 2 ||
+      DeclaredQuery::defaults || DeclaredQuery::calls != 2) return 120;
   return 0;
 }

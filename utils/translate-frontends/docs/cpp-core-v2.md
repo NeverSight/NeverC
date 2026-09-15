@@ -4067,8 +4067,9 @@ no-effect repetition. An unused implicit free-function specialization can retain
 only its signature when its owned primary has a definition, or when it is an
 owned non-friend namespace template with no definition. Its actual signature,
 resolved exception specification and selected template/default arguments are
-checked; existing primary bodies stay lazy. Declaration-only calls additionally
-retain a final dependency proof for their complete selection and argument source.
+checked; existing primary bodies stay lazy. Unused non-friend namespace calls
+retain a final dependency proof for their complete selection and argument source,
+with or without an owned primary definition.
 Used instances and explicit instantiations still require their concrete definitions.
 This does not change member-template or callback definition boundaries.
 
@@ -5743,8 +5744,12 @@ metadata. Actual calls and free operator calls collect their complete source
 synchronously, including deduction evidence, type/value defaults erased from the
 signature, selected function defaults, resolved exceptions and argument lifetimes.
 Every collected dependency must pass final source validation even when the query
-result is false. Unselected defaults and existing unused bodies retain normal
-C++ laziness; no missing body is fabricated or emitted.
+result is false. The same synchronous source proof applies to unused non-friend
+namespace instances whose primary has an owned definition, including separate
+namespace declarations and definitions. A generic body is never the actual
+instance's body; it remains uninstantiated. Unselected defaults retain normal
+C++ laziness; no missing body is fabricated or emitted. This extra source proof
+does not change existing friend, member or already materialized body boundaries.
 
 Runtime calls and function values still require definitions. Explicit directives,
 ordinary non-template declarations and member/friend templates keep their existing

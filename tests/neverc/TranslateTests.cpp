@@ -18300,6 +18300,16 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2FunctionTemplatesAcceptConcreteTypeInstances) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"lazy-namespace-source-nttp-default", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept(f<int>()));"},
+      {"lazy-namespace-source-function-default", "struct Mid{int n;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept{T::body();return 0;}static_assert(noexcept(f<int>()));"},
+      {"lazy-namespace-source-exception-family", "struct Mid{int n;};template<class T>int f()noexcept(noexcept(Mid())&&sizeof(T)>0){T::body();return 0;}static_assert(noexcept(f<int>()));"},
+      {"lazy-namespace-source-operator-default", "struct Mid{int n;};struct R{};template<class T,int N=noexcept(Mid())+sizeof(T)>int operator+(T,T)noexcept{T::body();return N;}static_assert(noexcept(R{}+R{}));"},
+      {"lazy-namespace-source-false-result", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false){T::body();return N;}static_assert(!noexcept(f<int>()));"},
+      {"lazy-namespace-source-selected-type", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(__is_same(decltype(f<int>()),int));"},
+      {"lazy-namespace-source-parenthesized", "struct Mid{int n;};namespace N{template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}}static_assert(noexcept((N::f<int>)()));"},
+      {"lazy-namespace-source-comma-result", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept((0,f<int>())));"},
+      {"lazy-namespace-source-unused-default", "template<class T,int N=sizeof(T)>int f(int=T::missing)noexcept{T::body();return N;}static_assert(noexcept(f<int>(3)));"},
+      {"lazy-namespace-source-separate-definition", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept;template<class T,int N>int f()noexcept{T::body();return N;}static_assert(noexcept(f<int>()));"},
       {"declared-signature-free-operator", "struct R{};template<class T,int N=sizeof(T)>int operator+(T,T)noexcept(N>0);static_assert(noexcept(R{}+R{}));"},
       {"declared-signature-default-family", "struct Mid{int n;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept;static_assert(noexcept(f<int>()));"},
       {"declared-signature-false-default-family", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false);static_assert(!noexcept(f<int>()));"},
@@ -18370,6 +18380,16 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesAcceptConcreteTypeInstances) {
 
 TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"lazy-namespace-source-runtime-body", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept(f<int>()));int main(){return f<int>();}", "TR0202"},
+      {"lazy-namespace-source-explicit-extern", "struct Mid{int n;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{return N;}extern template int f<int>()noexcept;static_assert(noexcept(f<int>()));", "TR0203"},
+      {"lazy-namespace-source-nttp-default", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept(f<int>()));", "TR0201"},
+      {"lazy-namespace-source-function-default", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept{T::body();return 0;}static_assert(noexcept(f<int>()));", "TR0201"},
+      {"lazy-namespace-source-exception-family", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f()noexcept(noexcept(Mid())&&sizeof(T)>0){T::body();return 0;}static_assert(noexcept(f<int>()));", "TR0201"},
+      {"lazy-namespace-source-operator-default", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{};template<class T,int N=noexcept(Mid())+sizeof(T)>int operator+(T,T)noexcept{T::body();return N;}static_assert(noexcept(R{}+R{}));", "TR0201"},
+      {"lazy-namespace-source-false-result", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept(false){T::body();return N;}static_assert(!noexcept(f<int>()));", "TR0201"},
+      {"lazy-namespace-source-selected-type", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(__is_same(decltype(f<int>()),int));", "TR0201"},
+      {"lazy-namespace-source-parenthesized", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};namespace N{template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}}static_assert(noexcept((N::f<int>)()));", "TR0201"},
+      {"lazy-namespace-source-comma-result", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T,int N=noexcept(Mid())+sizeof(T)>int f()noexcept{T::body();return N;}static_assert(noexcept((0,f<int>())));", "TR0201"},
       {"declared-signature-hidden-default-family", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f(int=noexcept(Mid())+sizeof(T))noexcept;static_assert(noexcept(f<int>()));", "TR0201"},
       {"declared-signature-hidden-exception-family", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};template<class T>int f()noexcept(noexcept(Mid())&&sizeof(T)>0);static_assert(noexcept(f<int>()));", "TR0201"},
       {"declared-signature-hidden-operator-default", "template<class T>struct Hidden{Hidden()noexcept(sizeof(long double)>0)=default;};struct Mid{Hidden<int>field;};struct R{};template<class T,int N=noexcept(Mid())+sizeof(T)>int operator+(T,T)noexcept;static_assert(noexcept(R{}+R{}));", "TR0201"},
