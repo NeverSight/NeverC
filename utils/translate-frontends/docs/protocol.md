@@ -788,7 +788,7 @@ complete retained selection and checked source, or a checked pre-operation resul
 folding a false result does not bypass those checks. Record-value and fixed-array
 nothrow destruction use exact retained destructor selection and the resolved
 prototype snapshot, with completed exception source and owning-subobject proof.
-That proof includes implicit nontrivial owners and ordinary explicitly defaulted
+That proof includes implicit nontrivial owners and checked explicitly defaulted
 destructors whose actual written redeclarations have completed source checks;
 no template pattern substitutes for a missing defaulting declaration.
 Implicit trivial construction composes its independent family proof with checked
@@ -825,7 +825,12 @@ definition. That completion includes normal semantic initializer/body traversal
 and owning layout; it is independent of the emission queue. Generated record-array
 memcpy retains a separate implicit assignment-family source requirement because
 the selected element call may be absent from the body. This does not widen the
-hypothetical operation root or admit written template defaulting.
+hypothetical operation root. Inline template defaulting can use this source proof
+only with actual concrete defaulting and completed signatures, plus the exact
+source-owned inline defaulting origin of the same method kind. Separate definitions,
+explicit specializations and copied origin chains do not qualify. The same category
+proof applies to defaulted destruction; a lazy standalone lookup still lacks
+concrete signature completion and remains unsupported.
 Variable/enum initializers and already materialized constexpr value source retain
 their own completion nodes. Exact written type nodes retain earlier array bounds,
 alias/template source and consumed record layout dependencies. Function parameter

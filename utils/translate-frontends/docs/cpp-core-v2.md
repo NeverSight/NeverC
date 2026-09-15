@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 355 accepted, 254 unsupported-source, fifteen missing-definition and twelve invalid-C++ cases cover
+The paired 372 accepted, 262 unsupported-source, fifteen missing-definition and fourteen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -993,7 +993,7 @@ family. Explicitly defaulted subobject operations can carry written exception
 source despite being trivial, so they still require further selection evidence.
 Reference members do not own their referents. Construction separately requires
 the shared owning destruction proof below: completed ordinary user destruction,
-ordinary explicit defaulting and implicit nontrivial owners can accompany a
+checked explicit defaulting and implicit nontrivial owners can accompany a
 checked implicit trivial constructor. A direct reference binding does not destroy
 the referent and can therefore bind an admitted record with a nontrivial or
 deleted destructor.
@@ -1131,9 +1131,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has forty-five O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has forty-nine O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Forty-nine exported query
+default evaluation with full-expression temporary cleanup. Fifty-two exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1188,8 +1188,14 @@ can use ordinary explicitly defaulted trivial methods after exact original
 redeclaration/type/specification checks, while owning subobject families remain
 implicit. Nontrivial generated methods require a separate completion node from
 their existing successful semantic initializer/body traversal, including the
-owning layout source. An emission queue entry alone is insufficient. Written
-template defaulting and unmaterialized nontrivial bodies need further evidence.
+owning layout source. An emission queue entry alone is insufficient.
+Concrete inline template defaulting can use the same proof when every actual
+declaration is defaulted and has completed type/specification source. Its raw
+member-instantiation origin must be the exact source-owned inline `= default`
+declaration of the same method kind, with no further instantiated or function-template
+origin. The origin proves category only; it supplies neither missing concrete
+defaulting nor completion. Separate template definitions, explicit specializations,
+copied origin chains and unmaterialized nontrivial bodies need further evidence.
 Generated array assignment may replace selected element calls with `memcpy`;
 record elements therefore retain a separate implicit assignment-family proof.
 This source-only composition does not widen the hypothetical operation root or
@@ -1260,21 +1266,27 @@ Public, nondeleted destructors require a resolved standard prototype snapshot
 that still matches the selected declaration's current prototype. The consumed
 noexcept expression and its transitive source dependencies must have completed
 normal checking. The shared owning-subobject proof admits implicit destruction,
-ordinary explicitly defaulted destructors with checked written declarations, and
+explicitly defaulted destructors with checked written declarations, and
 user destructors with completed ordinary or checked inline template definitions,
 including throwing and inferred specifications. Every owning base and by-value
 field remains part of that proof, even after an earlier destructor makes the
 result false. Pointer and reference fields do not destroy their referents.
-Each ordinary defaulted destructor requires an actual nonimplicit defaulting
+Each written defaulted destructor requires an actual nonimplicit defaulting
 declaration in its own redeclaration chain. Every written redeclaration retains
 its completed original type source and current exception-expression dependencies;
-a class-template pattern cannot supply the defaulting evidence. Generated bodies
+a class-template pattern cannot supply missing concrete defaulting evidence.
+Inline template defaulting also requires the exact single-stage origin proof above.
+Generated bodies
 need not be instantiated for an unevaluated query. An unwritten inferred
 specification may remain lazy in the shared source proof only as `EST_Unevaluated`
 owned by the same destructor declaration family; the direct nothrow query still
 requires its retained resolved snapshot. Implicit nontrivial owners use the same
-recursive subobject proof, including implicit class-template owners. Written
-template defaulted destructors and user destructors without the exact completed
+recursive subobject proof, including implicit class-template owners. A standalone
+nothrow destruction lookup does not mark a template destructor referenced; without
+normal concrete signature completion it remains unsupported, even after explicit
+class instantiation. Actual use or an unevaluated binding can provide that signature
+completion without requesting a body solely for the query. Separate template
+defaulting and user destructors without the exact completed
 inline-definition proof still require further source evidence.
 Construction and assignment retain their separate implicit-family source checks.
 For retained implicit constructors, destruction is verified independently for the
@@ -1297,7 +1309,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared forty-five-checkpoint user-operation fixture checks
+queries. The shared forty-nine-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
 user/generated array destruction at O0/O2;

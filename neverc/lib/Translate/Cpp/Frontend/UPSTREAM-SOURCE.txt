@@ -337,8 +337,14 @@ defaulting source with implicit owning families, or a separate completion node
 from the existing finishGeneratedMethods traversal. That node includes semantic
 constructor initializers, body and owning layout and completes only on success;
 the runtime emission queue is not a source certificate. Actual written
-redeclarations and current specs remain required; written template defaulting
-cannot borrow the proof. SemaDeclCXX.cpp buildSingleCopyAssign can omit selected
+redeclarations and current specs remain required. Concrete inline template defaulting
+requires actual defaulting flags and its exact source-owned raw member origin:
+the same method kind, inline explicitly defaulted declaration, no further member/
+primary/described-template origin, and exact getTemplateInstantiationPattern identity.
+SemaTemplateInstantiateDecl.cpp SubstDefaultedFunction calls SetDeclDefaulted,
+which sets the actual defaulting flags; a pattern cannot supply missing flags or
+signature completion. Separate definitions and explicit specializations stay outside
+this source category. SemaDeclCXX.cpp buildSingleCopyAssign can omit selected
 record-array element calls in favor of memcpy, so the existing exact generated
 array recognition also records an independent implicit assignment-family edge.
 These graph changes do not alter hypothetical-root or evaluated-default admission.
@@ -369,7 +375,11 @@ The shared destruction proof also checks ordinary explicit defaulting through
 actual nonimplicit declarations in the selected destructor's own redeclaration
 family, requiring every written TypeSourceInfo and current exception-expression
 node to complete. It never borrows defaulting from an uninstantiated template
-pattern. Implicit nontrivial owners retain the complete owning-subobject closure;
+pattern. Already checked inline template defaulting uses the same raw-origin proof
+as generated operations. EvaluateUnaryTypeTrait's nothrow destructor lookup does not
+MarkFunctionReferenced; neither that lookup nor InstantiateClassMembers' handling of
+already-defaulted methods manufactures a completed concrete signature. Pure lazy
+queries therefore remain unsupported. Implicit nontrivial owners retain the complete owning-subobject closure;
 no generated body is requested. Lazy generated specifications are allowed only as
 EST_Unevaluated with the same canonical destructor owner; direct nothrow query
 snapshots remain resolved. Implicit trivial construction uses its separate owning
@@ -379,7 +389,7 @@ match their selected parent type and prvalue category before that composition;
 assignment source checks are unchanged. Clang's omitted trivial-destructor binding
 can give construction and destruction different nothrow booleans, both preserved.
 Unmaterialized templates, separate template definitions, copied member-template
-origins, written template defaulted destructors, template-owned or rewritten
+origins, unchecked template defaulted destructors, template-owned or rewritten
 defaults, incomplete selection and unresolved exception dependencies still need
 further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.

@@ -1846,6 +1846,29 @@ static bool operationDefinitionCategory(Adapter &A, const FunctionDecl *Function
          Function->getTemplateInstantiationPattern() == Origin;
 }
 
+static bool inlineTemplateDefaultingSource(Adapter &A, const FunctionDecl *Function) {
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (!Method || !Method->isDefaulted() || !concreteMemberFunction(Method) ||
+      Method->getTemplateSpecializationKind() == TSK_ExplicitSpecialization ||
+      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate())
+    return false;
+  const auto *Member = Method->getMemberSpecializationInfo();
+  const auto *Origin = Member
+      ? dyn_cast<CXXMethodDecl>(Member->getInstantiatedFrom()) : nullptr;
+  if (!Origin || !A.S.owns(A.Sources, Origin->getLocation()))
+    return false;
+  A.chargeExpansion(1, Origin->getLocation());
+  // Only the exact inline =default origin explains this concrete signature.
+  // A pattern's later definition cannot supply actual defaulting or completed
+  // source, and a copied origin cannot hide an additional substitution stage.
+  return !Origin->isImplicit() && Origin->isDefaulted() && Origin->isExplicitlyDefaulted() &&
+         Origin->getKind() == Method->getKind() &&
+         Origin->getLexicalDeclContext() == Origin->getParent() &&
+         !Origin->getMemberSpecializationInfo() && !Origin->getPrimaryTemplate() &&
+         !Origin->getDescribedFunctionTemplate() &&
+         Method->getTemplateInstantiationPattern() == Origin;
+}
+
 // Source completion is independent of a trait's computed Boolean and of the
 // hypothetical root's fast admission path. Share this proof with query type roots.
 class OperationSourceChecker {
@@ -1899,8 +1922,7 @@ public:
            prototypeSource(Definition->getType()->getAs<FunctionProtoType>());
   }
   bool generatedDeclaration(const CXXMethodDecl *Method) {
-    if (!Method || !A.S.owns(A.Sources, Method->getLocation()) ||
-        (!Method->isImplicit() && Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate))
+    if (!Method || !A.S.owns(A.Sources, Method->getLocation()))
       return false;
     bool WrittenDefaulting = false;
     for (const auto *Declaration : Method->redecls()) {
@@ -1908,9 +1930,10 @@ public:
       if (!A.S.owns(A.Sources, Declaration->getLocation()))
         return false;
       if (!Declaration->isImplicit()) {
-        // defaultedDeclaration can borrow a class-template pattern. Only the
-        // current ordinary redeclaration family supplies written query source.
-        if (Declaration->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        // The origin only proves a template declaration's category. Actual
+        // redeclarations still supply defaulting and every completed TSI.
+        if ((Declaration->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+             !inlineTemplateDefaultingSource(A, Declaration)) ||
             !Declaration->getTypeSourceInfo() ||
             !requireType(operationTypeSourceKey(
                 Declaration->getTypeSourceInfo()->getTypeLoc())))

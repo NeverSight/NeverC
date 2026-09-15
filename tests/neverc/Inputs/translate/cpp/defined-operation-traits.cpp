@@ -128,6 +128,23 @@ struct SourceGeneratedOwner { SourceGeneratedLeaf field; constexpr SourceGenerat
 constexpr int sourceConstruction() { SourceGeneratedOwner owner; return owner.field.value; }
 using AssignmentExtent = int[sourceAssignment()];
 using ConstructionExtent = int[sourceConstruction()];
+template<class T> struct InlineSourceAssignment {
+  T value;
+  constexpr InlineSourceAssignment &operator=(const InlineSourceAssignment&) = default;
+};
+constexpr int inlineSourceAssignment() {
+  InlineSourceAssignment<int> first{1}, second{7};
+  first = second;
+  return first.value;
+}
+template<class T> struct InlineSourceConstruction { T field; constexpr InlineSourceConstruction() = default; };
+constexpr int inlineSourceConstruction() {
+  InlineSourceConstruction<SourceGeneratedLeaf> owner;
+  return owner.field.value;
+}
+template<class T> struct InlineSourceDestruction { T fields[2]; ~InlineSourceDestruction() = default; };
+using InlineAssignmentExtent = int[inlineSourceAssignment()];
+using InlineConstructionExtent = int[inlineSourceConstruction()];
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -178,6 +195,9 @@ extern "C" bool defined_lazy_signature() { return __is_nothrow_constructible(Sig
 extern "C" bool defined_lazy_friend_alias() { return __is_constructible(FriendResult); }
 extern "C" bool defined_generated_assignment_source() { return __is_constructible(AssignmentExtent*); }
 extern "C" bool defined_generated_construction_source() { return __is_constructible(ConstructionExtent*); }
+extern "C" bool defined_inline_defaulted_assignment_source() { return __is_constructible(InlineAssignmentExtent*); }
+extern "C" bool defined_inline_defaulted_construction_source() { return __is_constructible(InlineConstructionExtent*); }
+extern "C" bool defined_inline_defaulted_destruction() { return __is_nothrow_destructible(InlineSourceDestruction<GeneratedLeaf>[2]); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -324,5 +344,21 @@ int main() {
   SourceGeneratedOwner generated;
   if (generated.field.value != 5 || !defined_generated_construction_source() ||
       default_calls != 2 || constructions != 6 || destructions != 10) return 45;
+  if (!defined_inline_defaulted_assignment_source() || !defined_inline_defaulted_construction_source() ||
+      !defined_inline_defaulted_destruction() || inlineSourceAssignment() != 7 ||
+      inlineSourceConstruction() != 5 || generated_destructions != 10) return 46;
+  InlineSourceAssignment<int> inlineFirst{2}, inlineSecond{7};
+  inlineFirst = inlineSecond;
+  inlineFirst.value = 11;
+  if (inlineFirst.value != 11 || inlineSecond.value != 7 || &inlineFirst == &inlineSecond) return 47;
+  {
+    InlineSourceDestruction<GeneratedLeaf> original{{{2}, {3}}};
+    InlineSourceDestruction<GeneratedLeaf> copy(original);
+    copy.fields[0].value = 9;
+    if (original.fields[0].value != 2 || copy.fields[0].value != 9 ||
+        &original.fields[0] == &copy.fields[0] || generated_destructions != 10) return 48;
+  }
+  if (generated_destructions != 14 || default_calls != 2 || constructions != 6 ||
+      destructions != 10 || lazy_signature_calls) return 49;
   return 0;
 }
