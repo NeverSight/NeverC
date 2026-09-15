@@ -2671,10 +2671,10 @@ Callbacks may occupy parameters/results, local arrays, record fields and pointer
 or references to callback storage. This extends the earlier integer/boolean/enum
 static-storage contract with nonvolatile callback globals, static locals and
 ordinary static data members, including non-template members of admitted concrete
-class instances. Initial values must be null or checked symbolic function addresses
-from constant evaluation; zero initialization and mutable reseating are supported.
-Dynamic initialization and thread-local storage
-retain their separate restrictions. Constant
+class instances. Constant initializers must be null or checked symbolic function addresses;
+zero initialization and mutable reseating are supported. Dynamic callback
+initializers follow the first-use and startup contracts. Thread-local storage
+retains its separate restrictions. Constant
 record aggregates may contain callback fields under their existing rules.
 Object-pointer storage follows the [static address contract](#static-object-pointer-storage).
 
