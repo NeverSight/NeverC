@@ -808,6 +808,13 @@ built-in comma-right wrappers introduce no temporary, so they add no result
 destruction dependency. Callee signatures, arguments, comma-left temporaries and
 actual bindings remain checked; a separate operation on the alias retains its
 own complete-object requirements.
+Ordinary unused class-template destructors with no actual body may use checked
+actual signatures and an exact single inline origin. Only the existing authorized
+destructor queue registers that exact declaration after successful source completion;
+ordinary TSI completion alone does not. Final query graphs may reuse that signature
+while independently checking all actual redeclarations, current specifications and
+the entire owning destruction graph. False results do not bypass dependencies.
+This proof is unavailable to runtime cleanup, which still requires actual bodies.
 Deleted/access failures retain their pre-resolution false result; record references
 retain their no-selection result. These private events do not enter the protocol. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).

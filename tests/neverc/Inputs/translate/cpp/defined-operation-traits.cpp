@@ -425,6 +425,37 @@ extern "C" bool defined_lazy_class_trivial() { return __is_trivially_constructib
 extern "C" bool defined_lazy_class_copy() { return __is_constructible(LazyClassConstructor<int>, const LazyClassConstructor<int>&); }
 extern "C" bool defined_lazy_class_nothrow_copy() { return __is_nothrow_constructible(LazyClassConstructor<int>, const LazyClassConstructor<int>&); }
 
+int lazy_destructor_constructions;
+int lazy_destructor_calls;
+int lazy_destructor_order;
+int lazy_throwing_destructor_calls;
+template<class T> struct LazyClassDestructor {
+  T value;
+  LazyClassDestructor(T n) noexcept : value(n) {
+    if constexpr (__is_same(T, int)) T::construct();
+    else ++lazy_destructor_constructions;
+  }
+  ~LazyClassDestructor() noexcept {
+    if constexpr (__is_same(T, int)) T::destroy();
+    else {
+      ++lazy_destructor_calls;
+      lazy_destructor_order = lazy_destructor_order * 10 + value;
+    }
+  }
+};
+template<class T> struct LazyThrowingDestructor {
+  ~LazyThrowingDestructor() noexcept(false) {
+    if constexpr (__is_same(T, int)) T::destroy();
+    else ++lazy_throwing_destructor_calls;
+  }
+};
+extern "C" bool defined_lazy_destructor_array() { return __is_nothrow_destructible(LazyClassDestructor<int>[2]); }
+extern "C" bool defined_lazy_destructor_construct() { return __is_constructible(LazyClassDestructor<int>, int); }
+extern "C" bool defined_lazy_destructor_copy() { return __is_constructible(LazyClassDestructor<int>, const LazyClassDestructor<int>&); }
+extern "C" bool defined_lazy_destructor_throwing() { return __is_nothrow_destructible(LazyThrowingDestructor<int>); }
+extern "C" bool defined_lazy_destructor_reference() { return __is_nothrow_destructible(LazyClassDestructor<int>&); }
+extern "C" bool defined_lazy_destructor_trivial() { return __is_trivially_constructible(LazyClassDestructor<int>, int); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -788,5 +819,27 @@ int main() {
       !defined_lazy_class_copy() || defined_lazy_class_trivial() ||
       lazy_class_constructions != 2 || lazy_class_copies != 1 || lazy_class_defaults != 1 ||
       query_result_destructions != 4 || inferred_false_destructions != 8) return 92;
+  if (!defined_lazy_destructor_array() || !defined_lazy_destructor_construct() ||
+      !defined_lazy_destructor_copy() || defined_lazy_destructor_throwing() ||
+      !defined_lazy_destructor_reference() || defined_lazy_destructor_trivial() ||
+      lazy_destructor_constructions || lazy_destructor_calls ||
+      lazy_destructor_order || lazy_throwing_destructor_calls) return 93;
+  {
+    LazyClassDestructor<unsigned> first(3);
+    LazyClassDestructor<unsigned> second(first);
+    first.value = 7;
+    if (second.value != 3 || &first.value == &second.value ||
+        lazy_destructor_constructions != 1 || lazy_destructor_calls || lazy_destructor_order) return 94;
+  }
+  if (lazy_destructor_constructions != 1 || lazy_destructor_calls != 2 ||
+      lazy_destructor_order != 37 || lazy_throwing_destructor_calls) return 95;
+  {
+    LazyThrowingDestructor<unsigned> throwing;
+  }
+  if (!defined_lazy_destructor_array() || !defined_lazy_destructor_construct() ||
+      !defined_lazy_destructor_copy() || defined_lazy_destructor_throwing() ||
+      lazy_destructor_constructions != 1 || lazy_destructor_calls != 2 ||
+      lazy_destructor_order != 37 || lazy_throwing_destructor_calls != 1 ||
+      lazy_class_constructions != 2 || lazy_class_copies != 1 || lazy_class_defaults != 1) return 96;
   return 0;
 }

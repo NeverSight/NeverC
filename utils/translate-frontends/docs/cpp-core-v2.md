@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 496 accepted, 308 unsupported-source, fifteen missing-definition and seventeen invalid-C++ cases cover
+The paired 516 accepted, 304 unsupported-source, fifteen missing-definition and eighteen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1173,7 +1173,7 @@ does not introduce that result temporary. Callee/type source, arguments, comma-l
 temporaries and actual binding/destruction expressions remain checked. The exemption
 does not extend to a separate hypothetical operation on the resulting alias.
 Implicit destruction, ordinary explicitly defaulted destructors with checked
-written source, or completed ordinary/checked inline template user destructors qualify;
+written source, or checked ordinary/inline template user destructors qualify;
 lazy template destructor prvalues need a separate completed-signature proof and
 remain rejected when destruction is consumed. Unused bodies that contribute no such dependency remain lazy. Ordinary default expressions can call already admitted
 functions, including nested template expressions under existing source rules;
@@ -1187,9 +1187,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has ninety-two O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has ninety-six O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Ninety-six exported query
+default evaluation with full-expression temporary cleanup. One hundred and two exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1220,6 +1220,32 @@ identity, conversions and full owning destruction. It neither requests a missing
 body nor adds a runtime constructor helper. A query-only template specialization
 with a poisoned body and a different real specialization exercise this separation
 in the shared runtime fixture.
+
+### Lazy class-template destructor signatures
+
+An ordinary destructor of a concrete class-template instance can also use its
+checked signature while its inline body remains uninstantiated. It must be unused,
+have no actual body, and retain the exact uncopied inline origin. Every actual
+redeclaration needs complete type source and an already resolved standard exception
+specification. Unary nothrow destruction does not mark the destructor referenced,
+so its existing exact lookup/resolution event supplies selection evidence.
+
+Only the existing authorized signature queue can register this proof: an actually
+visited valid unary destruction query or a complete retained record-prvalue result
+and its owning base/field/array graph. Completing TypeSourceInfo through another
+ordinary traversal alone does not register a lazy destructor. Once registered,
+that exact destructor's signature may supply another query's source dependency,
+including an earlier or later selected default containing `sizeof` of a temporary.
+No body is instantiated and no runtime cleanup helper is created by the proof.
+
+Every use still checks the full owning destruction graph and current signatures,
+including false results and inferred `noexcept(false)`. Unresolved children,
+unsupported written exception source, separate template definitions and missing
+ordinary definitions retain their restrictions. Defaulted destructors retain their
+separate proof; runtime destruction still requires and checks actual user bodies.
+Poisoned query-only bodies, another real specialization's independent storage,
+reverse destruction order and an actual potentially-throwing destructor are
+covered by the shared runtime fixture.
 
 ### Resolved exception source for operation queries
 
@@ -1397,8 +1423,8 @@ source check. Existing admitted implicit/ordinary inferred specifications keep
 their separate source rules. This pass does not invent missing local-class context.
 Deleted/access and
 reference short circuits do not trigger this pass. Separate template
-defaulting and user destructors without the exact completed
-inline-definition proof still require further source evidence.
+defaulting and user destructors without an exact completed definition or the
+authorized lazy class-destructor signature proof still require further source evidence.
 Construction and assignment retain their separate operation source checks.
 An actually visited construction, conversion or assignment query can also supply
 this first owning-signature check when its retained operation is attempted,
@@ -1428,7 +1454,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared ninety-two-checkpoint user-operation fixture checks
+queries. The shared ninety-six-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
 user/generated array destruction at O0/O2. Query-only nested owning signatures

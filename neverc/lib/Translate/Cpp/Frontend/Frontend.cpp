@@ -1857,6 +1857,18 @@ static bool lazyQueryConstructorSignature(Adapter &A, const CXXConstructorDecl *
          Constructor->getTypeSourceInfo() && operationDefinitionCategory(A, Constructor);
 }
 
+static bool lazyQueryDestructorSignature(Adapter &A, const CXXDestructorDecl *Destructor) {
+  // Unary nothrow destruction resolves the selected signature without marking
+  // it referenced. Only an authorized query queue can complete this proof.
+  return Destructor && ordinaryDestructor(Destructor) &&
+         concreteClassFunction(Destructor) && !Destructor->isInvalidDecl() &&
+         !Destructor->isUsed(/*CheckUsedAttr=*/false) && !Destructor->hasBody() &&
+         A.S.owns(A.Sources, Destructor->getLocation()) &&
+         Destructor->getTypeSourceInfo() &&
+         standardExceptionSpecification(Destructor->getType()->getAs<FunctionProtoType>()) &&
+         operationDefinitionCategory(A, Destructor);
+}
+
 static const CXXConstructExpr *operationRootConstruction(Adapter &A,
     const OperationTraitSource &Source) {
   if (!Source.Attempted || !Source.Complete || !Source.Root ||
@@ -1953,14 +1965,17 @@ class OperationSourceChecker {
   const OperationExpressionSources *Expressions;
   const OperationTypeSources *Types;
   const GeneratedOperationSources *Generated;
+  const std::set<const CXXDestructorDecl *> *QueryDestructors;
   std::vector<const OperationSourceDependencies *> Work;
   std::map<const CXXMethodDecl *, OperationSourceDependencies> InferredExceptions;
 
 public:
   OperationSourceChecker(Adapter &A, const std::set<const FunctionDecl *> *Definitions,
       const OperationExpressionSources *Expressions, const OperationTypeSources *Types,
-      const GeneratedOperationSources *Generated = nullptr)
-      : A(A), Definitions(Definitions), Expressions(Expressions), Types(Types), Generated(Generated) {}
+      const GeneratedOperationSources *Generated = nullptr,
+      const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr)
+      : A(A), Definitions(Definitions), Expressions(Expressions), Types(Types),
+        Generated(Generated), QueryDestructors(QueryDestructors) {}
   void add(const OperationSourceDependencies *Dependencies) { Work.push_back(Dependencies); }
   bool requireExpression(const Stmt *Expression) {
     if (!Expression)
@@ -2020,6 +2035,22 @@ public:
       A.chargeExpansion(1, Declaration->getLocation());
       const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
       if (!lazyQueryConstructorSignature(A, cast<CXXConstructorDecl>(Declaration)) ||
+          !standardExceptionSpecification(Prototype) ||
+          !Declaration->getTypeSourceInfo() ||
+          !requireType(operationTypeSourceKey(Declaration->getTypeSourceInfo()->getTypeLoc())) ||
+          !prototypeSource(Prototype, Declaration))
+        return false;
+    }
+    return true;
+  }
+  bool queryDestructorSignature(const CXXDestructorDecl *Destructor) {
+    if (!QueryDestructors || !QueryDestructors->count(Destructor) ||
+        !lazyQueryDestructorSignature(A, Destructor))
+      return false;
+    for (const auto *Declaration : Destructor->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+      if (!lazyQueryDestructorSignature(A, cast<CXXDestructorDecl>(Declaration)) ||
           !standardExceptionSpecification(Prototype) ||
           !Declaration->getTypeSourceInfo() ||
           !requireType(operationTypeSourceKey(Declaration->getTypeSourceInfo()->getTypeLoc())) ||
@@ -2105,7 +2136,8 @@ public:
       if (defaultedDeclaration(Destructor)) {
         if (!generatedDestructor(Destructor))
           return false;
-      } else if (!ordinaryDestructor(Destructor) || !defined(Destructor)) {
+      } else if (!ordinaryDestructor(Destructor) ||
+                 (!defined(Destructor) && !queryDestructorSignature(Destructor))) {
         return false;
       }
     } else if (!Record->hasTrivialDestructor() &&
@@ -2207,12 +2239,13 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const OperationExpressionSources *Expressions = nullptr,
     const OperationTypeSources *Types = nullptr,
     const GeneratedOperationSources *Generated = nullptr,
-    const std::set<const CXXConstructExpr *> *QueryConstructions = nullptr) {
+    const std::set<const CXXConstructExpr *> *QueryConstructions = nullptr,
+    const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
     return false;
-  OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated);
+  OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated, QueryDestructors);
   const auto *TopLevelConstruction = QueryConstructions
       ? operationRootConstruction(A, Source) : nullptr;
   auto PrototypeSource = [&](const FunctionProtoType *Prototype,
@@ -3816,6 +3849,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   GeneratedOperationSources CompletedGeneratedOperations;
   std::vector<const CXXDestructorDecl *> ConsumedDestructorSignatures;
   std::set<const CXXDestructorDecl *> QueuedDestructorSignatures;
+  std::set<const CXXDestructorDecl *> CompletedQueryDestructorSignatures;
   std::vector<const CXXConstructExpr *> ConsumedConstructorSignatures;
   std::set<const CXXConstructExpr *> QueuedConstructorSignatures;
   std::set<const CXXConstructExpr *> CompletedQueryConstructions;
@@ -10171,8 +10205,9 @@ public:
       // check; a local class may require an unavailable outer function frame.
       if (Destructor && A.S.owns(A.Sources, Destructor->getLocation()) &&
           standardExceptionSpecification(Destructor->getType()->getAs<FunctionProtoType>()) &&
-          concreteClassFunction(Destructor) && inlineTemplateDefaultingSource(A, Destructor) &&
-          defaultedLifecycle(Destructor) && Destructor->getTypeSourceInfo() &&
+          concreteClassFunction(Destructor) &&
+          ((inlineTemplateDefaultingSource(A, Destructor) && defaultedLifecycle(Destructor)) ||
+           lazyQueryDestructorSignature(A, Destructor)) && Destructor->getTypeSourceInfo() &&
           QueuedDestructorSignatures.insert(Destructor).second) {
         A.chargeExpansion(1, L);
         ConsumedDestructorSignatures.push_back(Destructor);
@@ -10259,9 +10294,17 @@ public:
     return true;
   }
   bool finishConsumedDestructorSignatures(std::size_t &Index) {
-    while (Index < ConsumedDestructorSignatures.size())
-      if (!checkConsumedOperationSignature(ConsumedDestructorSignatures[Index++]))
+    while (Index < ConsumedDestructorSignatures.size()) {
+      const auto *Destructor = ConsumedDestructorSignatures[Index++];
+      if (!checkConsumedOperationSignature(Destructor))
         return false;
+      if (lazyQueryDestructorSignature(A, Destructor)) {
+        auto Found = CheckedOperationTypes.find(
+            operationTypeSourceKey(Destructor->getTypeSourceInfo()->getTypeLoc()));
+        if (Found != CheckedOperationTypes.end() && Found->second.Complete)
+          CompletedQueryDestructorSignatures.insert(Destructor);
+      }
+    }
     return A.S.Diagnostics.empty();
   }
   bool finishConsumedConstructorSignatures(std::size_t &Index) {
@@ -10363,7 +10406,8 @@ public:
     for (const auto *Query : A.PendingOperationQueries) {
       auto Source = A.OperationTraits.find(Query);
       OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
-          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations);
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+          &CompletedQueryDestructorSignatures);
       const bool Complete = Source != A.OperationTraits.end() &&
           (Query->getTrait() == UTT_IsNothrowDestructible
             ? nothrowDestructionSource(A, Query, Source->second, &SourceCheck)
@@ -10372,7 +10416,8 @@ public:
                                    &CompletedOperationDefaults, &CheckedOperationExpressions,
                                    &CheckedOperationTypes, &CompletedGeneratedOperations,
                                    isConstructionTypeTrait(Query->getTrait())
-                                       ? &CompletedQueryConstructions : nullptr));
+                                       ? &CompletedQueryConstructions : nullptr,
+                                   &CompletedQueryDestructorSignatures));
       if (!Complete) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact callable source, arguments and destruction source.");
@@ -10385,7 +10430,8 @@ public:
     // out-of-range results, after all ordinary source nodes complete.
     for (const auto *Query : TypeSourceQueries) {
       OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
-          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations);
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+          &CompletedQueryDestructorSignatures);
       if (!SourceCheck.requireExpression(Query) || !SourceCheck.finish(Query->getExprLoc())) {
         A.reject(Query->getExprLoc(), "query type source",
                  "Every consumed query type or dimension requires completed original source dependencies.");

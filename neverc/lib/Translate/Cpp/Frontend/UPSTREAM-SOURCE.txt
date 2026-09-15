@@ -454,7 +454,17 @@ Nested constructions and other query kinds cannot borrow a function-wide proof.
 Every actual redeclaration's source and current specification, arguments, defaults
 and owning destruction remain independently required. Constructor/destructor
 signature and generated-body queues drain completely after prior contexts exit.
-No unused body is instantiated or added to runtime emission. Other
+No unused body is instantiated or added to runtime emission.
+Ordinary unused concrete class destructors can also retain their lazy inline bodies
+after exact authorized signature-queue completion. Their raw origin, absence of
+actual bodies, all actual redeclaration TSIs and current standard specifications
+remain checked. Unary lookup/resolution need not mark the destructor referenced.
+Only the existing visited unary/complete record-prvalue owning queue registers
+the exact D pointer; unrelated normal TSI completion cannot grant this proof.
+Final query graphs may reuse that signature dependency while checking the complete
+owning graph, including inferred false specifications and source after false results.
+Defaulted declaration families keep their separate proof and runtime destruction
+cannot receive the lazy-query completion set. Other
 unmaterialized templates, separate template definitions, copied member-template
 origins, unchecked template defaulted destructors, uninstantiated or rewritten
 defaults, incomplete selection and unresolved exception dependencies still need
