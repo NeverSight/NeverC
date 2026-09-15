@@ -421,7 +421,9 @@ class Emitter {
       }
     }
     if (M.ArrayCookies != ArrayCookieABI::None) {
-      line("static_assert(sizeof(__SIZE_TYPE__) == sizeof(void *) && alignof(__SIZE_TYPE__) == alignof(void *) && (__SIZE_TYPE__)-1 > 0, \"translated array cookies require native size_t layout\");
+      line("static_assert(sizeof(__SIZE_TYPE__) == sizeof(void *) && "
+           "alignof(__SIZE_TYPE__) == alignof(void *) && (__SIZE_TYPE__)-1 > 0, "
+           "\"translated array cookies require native size_t layout\");");
       if (T.isOSWindows()) {
         line(M.ArrayCookies == ArrayCookieABI::Microsoft
                  ? "#if !defined(__NEVERC_WINDOWS_MSVC_ABI__) || __NEVERC_WINDOWS_MSVC_ABI__ != 1"
