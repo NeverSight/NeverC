@@ -5555,7 +5555,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert module["memory_lifetimes"] and module["array_cookie_abi"] in ("itanium", "apple-arm64", "msvc")
     array_allocation_negative = {
         'runtime-bound': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(int n){return new int[n]{};}', 'TR0201'),
-        'runtime-nothrow': ('using Size=decltype(sizeof(0));struct R{static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n];}', 'TR0201'),
         'missing-array-allocator': ('int*f(){return new int[3]{};}', 'TR0203'),
         'missing-array-deallocator': ('void f(int*p){delete[]p;}', 'TR0203'),
         'missing-record-destructor': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{~R();};R*f(){return new R[3];}', 'TR0203'),
@@ -5572,6 +5571,108 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     }
     for name, (source, diagnostic) in array_allocation_negative.items():
         check("v2-array-allocation-reject-"+name, source, diagnostic, profile="cpp-core-v2")
+
+    runtime_array_positive = {
+        'default': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n];}',
+        'value': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]();}',
+        'braced': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}',
+        'prefix': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{R(1),R(2)};}',
+        'unsigned': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(unsigned n){return new R[n];}',
+        'wide-unsigned': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(unsigned long long n){return new R[n];}',
+        'wide-signed': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(long long n){return new R[n];}',
+        'boolean': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(bool n){return new R[n];}',
+        'enum': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};enum Count{zero,one,two};R*f(Count n){return new R[n];}',
+        'const': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};const R*f(int n){return new const R[n];}',
+        'nested': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};using Row=R[2];Row*f(int n){return new R[n][2];}void g(Row*p){delete[]p;}',
+        'nested-value': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};using Row=R[2];Row*f(int n){return new R[n][2]();}',
+        'default-argument-temps': 'using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n];}',
+        'braced-default-temps': 'using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}',
+        'explicit-prefix-temps': 'using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{{},{}};}',
+        'nested-default-temps': 'using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};using Row=R[2];Row*f(int n){return new R[n][2];}',
+        'bound-temp': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};struct Count{long long n;operator long long()const{return n;}~Count(){}};R*f(long long n){return new R[Count{n}];}',
+        'unsigned-source-cast': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(long long n){return new R[static_cast<Size>(n)];}',
+        'bound-side-effect': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int&n){return new R[n++];}',
+        'function-template': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};template<class T>T*make(int n){return new T[n];}R*f(int n){return make<R>(n);}',
+        'class-template': 'using Size=decltype(sizeof(0));template<class T>struct R{T n;R():n(0){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};R<int>*f(int n){return new R<int>[n];}',
+        'static-pointer': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){static R*p=new R[n];return p;}',
+        'query': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};bool f(int n){return sizeof(new R[n])==sizeof(R*)&&noexcept(new R[n]);}',
+        'discarded': 'using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};int f(int n){if constexpr(false){R*p=new R[n];delete[]p;}return 0;}',
+        'empty-record': 'using Size=decltype(sizeof(0));struct R{static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n];}',
+        'zero-trivial-record': 'using Size=decltype(sizeof(0));struct R{int n;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]();}',
+    }
+    for name, source in runtime_array_positive.items():
+        check("v2-runtime-array-"+name, source, profile="cpp-core-v2")
+
+    runtime_array_negative = {
+        'placement': ('using Size=decltype(sizeof(0));struct R{R(){}static void*operator new[](Size,void*p)noexcept{return p;}};R*f(int n,void*p){return new(p)R[n];}', 'TR0201'),
+        'member-throwing': ('using Size=decltype(sizeof(0));struct R{R(){}static void*operator new[](Size){return nullptr;}};R*f(int n){return new R[n];}', 'TR0201'),
+        'aggregate-filler': ('using Size=decltype(sizeof(0));struct R{int n;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}', 'TR0201'),
+        'aggregate-default-temps': ('using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct Inner{Inner(const A&a=A()){}~Inner(){}};struct R{Inner field;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}', 'TR0201'),
+        'aggregate-trivial-reference': ('using Size=decltype(sizeof(0));struct R{const int&r=3;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}', 'TR0201'),
+        'nested-braced': ('using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};using Row=R[2];Row*f(int n){return new R[n][2]{};}', 'TR0201'),
+        'discarded-aggregate': ('using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct Inner{Inner(const A&a=A()){}~Inner(){}};struct R{Inner field;static void*operator new[](Size)noexcept{return nullptr;}};int f(int n){if constexpr(false){auto p=new R[n]{};}return 0;}', 'TR0201'),
+        'unevaluated-aggregate': ('using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct Inner{Inner(const A&a=A()){}~Inner(){}};struct R{Inner field;static void*operator new[](Size)noexcept{return nullptr;}};bool f(int n){return noexcept(new R[n]{});}', 'TR0201'),
+        'sizeof-aggregate': ('using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct Inner{Inner(const A&a=A()){}~Inner(){}};struct R{Inner field;static void*operator new[](Size)noexcept{return nullptr;}};int f(int n){return sizeof(new R[n]{});}', 'TR0201'),
+        'bound-source': ('using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[(sizeof(long double),n)];}', 'TR0201'),
+        'missing-allocator': ('using Size=decltype(sizeof(0));struct R{R(){}static void*operator new[](Size)noexcept;};R*f(int n){return new R[n];}', 'TR0203'),
+        'default-source': ('using Size=decltype(sizeof(0));struct R{R(int n=sizeof(long double)){}static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n];}', 'TR0201'),
+    }
+    for name, (source, diagnostic) in runtime_array_negative.items():
+        check("v2-runtime-array-reject-"+name, source, diagnostic, profile="cpp-core-v2")
+
+    runtime_array_source = (repository / "tests/neverc/Inputs/translate/cpp/runtime-array-allocation.cpp").read_text()
+    runtime_array = check("v2-runtime-array-runtime", runtime_array_source, profile="cpp-core-v2")
+    assert runtime_array["memory_lifetimes"] and runtime_array["array_cookie_abi"]
+    with tempfile.TemporaryDirectory(prefix="neverc-runtime-array-relocated-") as temporary:
+        relocated = check("v2-runtime-array-relocated", runtime_array_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == runtime_array
+
+    def runtime_array_nodes(value):
+        if isinstance(value, dict):
+            yield value
+            for child in value.values():
+                yield from runtime_array_nodes(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from runtime_array_nodes(child)
+
+    runtime_bound_prefix = ('using Size=decltype(sizeof(0));'
+                            'struct R{int value;R(int n=0):value(n){}~R(){}'
+                            'static void*operator new[](Size)noexcept{return nullptr;}};')
+    for target, bits, cookie in (
+        ("i686-pc-windows-msvc", 32, 4),
+        ("x86_64-pc-windows-msvc", 64, 8),
+        ("aarch64-pc-windows-msvc", 64, 8),
+        ("x86_64-unknown-linux-gnu", 64, 8),
+        ("aarch64-unknown-linux-gnu", 64, 8),
+        ("x86_64-apple-macosx", 64, 8),
+        ("aarch64-apple-macosx", 64, 16),
+        ("x86_64-w64-windows-gnu", 64, 8)):
+        for signed in (False, True):
+            source = runtime_bound_prefix + ('extern "C" void*make(' +
+                     ("long long" if signed else "unsigned long long") +
+                     ' n){return new R[n]{R(1),R(2)};}')
+            module = check("v2-runtime-array-width-"+target+str(signed), source,
+                           profile="cpp-core-v2", target=target)
+            make = next(f for f in module["functions"] if f["c_export"])
+            nodes = list(runtime_array_nodes(make["body"]))
+            comparisons = [n for n in nodes if n.get("kind") == "binary" and n["type"] == "bool"]
+            maximum = ((1 << bits)-1-cookie)//4
+            assert any(n["operator"] == "<=" and n["args"][1].get("value") == str(maximum)
+                       for n in comparisons)
+            assert any(n["operator"] == ">=" and n["args"][1].get("value") == "2"
+                       for n in comparisons)
+            signed_checks = [n for n in comparisons if n["operator"] == "<" and
+                             n["args"][1].get("value") == "0"]
+            assert bool(signed_checks) == signed
+            if signed:
+                assert signed_checks[0]["args"][0]["type"] == "i64"
+            # Positive wide values are converted normally; only converted count
+            # participates in the byte-overflow comparison, even on 32-bit.
+            size_type = "uint" if bits == 32 else "u64"
+            bounds = [n for n in comparisons if n["operator"] in ("<=", ">=")]
+            assert all(n["args"][0]["type"] == size_type for n in bounds)
 
     truncated_bound_prefix = ('using Size=decltype(sizeof(0));unsigned char bytes[8]{};'
                               'void*operator new[](Size){return bytes;}')

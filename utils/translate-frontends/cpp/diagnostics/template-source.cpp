@@ -245,6 +245,7 @@ int main(int Argc, const char **Argv) {
       "struct R{int value;R(const Temporary&t=Temporary()):value(0){}~R(){}"
       "static void*operator new[](Size)noexcept{return nullptr;}};"
       "R*plain(int n){return new R[n];}R*value(int n){return new R[n]();}"
+      "R*braced(int n){return new R[n]{};}"
       "R*list(int n){return new R[n]{{},{}};}"
       "struct Aggregate{R field;};Aggregate*aggregate(int n){return new(Tag{})Aggregate[n]{};}"
       "int*scalar(int n){return new(Tag{})int[n];}int*zero(int n){return new(Tag{})int[n]();}"

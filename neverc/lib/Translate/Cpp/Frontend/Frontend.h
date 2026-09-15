@@ -279,6 +279,16 @@ struct ArrayAllocationLayout {
   uint64_t ElementBytes = 0, CookieBytes = 0, CountOffset = 0;
   bool StoresElementSize = false;
 };
+enum class RuntimeArrayInitialization { None, Zero, DefaultConstruction };
+struct ArrayNewInfo {
+  std::optional<uint64_t> Count;
+  const clang::Expr *BoundBeforeConversion = nullptr;
+  const clang::Expr *Initializer = nullptr, *Filler = nullptr;
+  uint64_t PrefixCount = 0;
+  RuntimeArrayInitialization Repeated = RuntimeArrayInitialization::None;
+};
+bool omittedDefaultConstruction(const clang::Expr *Init, clang::QualType Element,
+                                clang::ASTContext &Context);
 class Adapter {
 public:
   State &S;
@@ -333,7 +343,7 @@ public:
                                                bool Array = false);
   ArrayAllocationLayout arrayAllocationLayout(clang::QualType Object,
       bool UsualDeleteWantsSize, clang::SourceLocation L);
-  uint64_t arrayNewCount(const clang::CXXNewExpr *N);
+  ArrayNewInfo arrayNewInfo(const clang::CXXNewExpr *N);
   json::Object functionAddress(const clang::FunctionDecl *F, clang::SourceLocation L);
   std::size_t storageUnits(clang::QualType T, unsigned Depth = 0);
   void chargeExpansion(std::size_t Nodes, clang::SourceLocation L);

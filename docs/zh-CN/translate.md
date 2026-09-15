@@ -8,7 +8,7 @@ Core v2 现已实现已接纳静态记录、数组和延长寿命临时对象的
 
 Core v2 现已实现已接纳对象与引用的非局部动态初始化，包括已实例化的模板对象。 经过检查的内部原生启动函数在 main 前按定义顺序执行，先完成零初始化与常量初始化，并在每个初始化器之后清理普通临时对象。 静态局部对象保留首次使用初始化。 程序及独立 C 入口的 O0／O2 测试需由实现版本的 CI 验证。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#nonlocal-dynamic-initialization).
 
-Core v2 支持通过源代码定义的分配函数执行常量长度 new[]，包括零长度和嵌套数组；delete[] 逆序析构并保留原始分配地址。分别检查通用 Itanium、Apple ARM64 和 MSVC 数组头。空返回跳过初始化，参数与临时对象按源代码生命周期清理。原生验证等待实现版本 CI。运行时 new[] 长度、默认堆、异常、标准头文件及完整 C++/STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#constant-array-allocation).
+运行时长度 new[] 现可使用源代码定义、无 placement 参数的 noexcept 类分配函数。非法长度在调用分配函数前返回空指针；合法元素通过循环构造，默认参数临时对象逐元素清理。显式前缀和长度转换临时对象保留到整个完整表达式结束。重复聚合填充、抛异常或 placement 的运行时分配、默认堆及完整 C++/STL 仍未完成。原生验证等待实现版本 CI。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#runtime-array-allocation).
 
 Core v2 支持通过经过检查的源代码分配函数执行单对象 new/delete，包括类和模板 placement 重载、原始存储地址及参数清理。显式析构与 placement 重建保留后续自动清理义务。原生验证需要实现版本的 CI。默认堆运行时、运行时 new[] 长度、异常、标准头文件和完整 C++/STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 

@@ -773,7 +773,7 @@ class FunctionLowering {
         const bool Shared = N >= List->getNumInits();
         const auto *Value = Shared ? List->getArrayFiller() : List->getInit(N);
         const bool Omitted = Shared || A.SeparateArrayFillers.count(Value);
-        const bool Cleanup = Omitted && omittedDefaultConstruction(Value, Element);
+        const bool Cleanup = Omitted && omittedDefaultConstruction(Value, Element, A.Context);
         if (Cleanup) beginFullExpression();
         if (Value) initialize(std::move(Place), Value, L);
         else initializeZero(std::move(Place), Element, L);
@@ -783,17 +783,86 @@ class FunctionLowering {
       }
     }
   }
+  void initializeRuntimeNewArray(Expression Pointer, QualType Object,
+                                  Expression Count, const ArrayNewInfo &Info,
+                                  SourceLocation L) {
+    if (Info.Repeated == RuntimeArrayInitialization::None)
+      return;
+    // Each written clause is emitted once and retains the enclosing FE. The
+    // shared descriptor admits no repeated aggregate/list temporary storage.
+    if (Info.PrefixCount)
+      initializeNewArray(Pointer, Object, Info.PrefixCount, Info.Initializer, L);
+    auto Element = Object.getUnqualifiedType();
+    const auto T = type(Element, L), Size = type(A.Context.getSizeType(), L);
+    Pointer = cast(std::move(Pointer), "ptr:" + T, L);
+    auto Position = temporary(Size, L);
+    assign(Position, quantity(Info.PrefixCount, Size, L), L);
+    const auto Check = labelName(), BodyLabel = labelName(), End = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<", Position, Count, "bool", L), BodyLabel, End, L);
+    label(BodyLabel, L);
+    auto Place = index(Pointer, Position, T, L);
+    if (Info.Repeated == RuntimeArrayInitialization::Zero) {
+      initializeZero(std::move(Place), Element, L);
+    } else {
+      // This boundary follows the semantic omitted default-constructor role,
+      // never an ExprWithCleanups wrapper. All its argument temporaries end
+      // before the next iteration can reuse the generated automatic storage.
+      beginFullExpression();
+      if (const auto *Construction = dyn_cast<CXXConstructExpr>(Info.Initializer))
+        construct(std::move(Place), Element, Construction, L);
+      else
+        initialize(std::move(Place), Info.Filler, L);
+      endFullExpression();
+    }
+    assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(End, L);
+  }
   Expression allocateArray(const CXXNewExpr *N) {
     const auto L = N->getExprLoc();
     const auto *F = A.allocationFunction(N->getOperatorNew(), true, L, true);
     const auto Object = N->getAllocatedType();
-    const auto Count = A.arrayNewCount(N);
+    const auto Info = A.arrayNewInfo(N);
     const auto Layout = A.arrayAllocationLayout(Object, N->doesUsualArrayDeleteWantSize(), L);
     const uint64_t ObjectBytes = A.Context.getTypeSizeInChars(Object).getQuantity();
     const auto Size = type(A.Context.getSizeType(), L);
-    discard(*N->getArraySize());
+    auto Result = temporary(type(N->getType(), L), L);
+    assign(Result, A.zero(N->getType(), L), L);
+    std::string End;
+    Expression Count;
+    if (Info.Count) {
+      discard(*N->getArraySize());
+      Count = quantity(*Info.Count, Size, L);
+    } else {
+      End = labelName();
+      // Preserve bound temporary ownership in the enclosing FE, including
+      // invalid lengths and allocator-null paths. Do not re-evaluate the bound.
+      auto Before = snapshot(expression(Info.BoundBeforeConversion), L);
+      Count = snapshot(cast(Before, Size, L), L);
+      if (Info.BoundBeforeConversion->getType()->isSignedIntegerOrEnumerationType()) {
+        auto Nonnegative = labelName();
+        auto BeforeType = type(Info.BoundBeforeConversion->getType(), L);
+        branch(binary("<", Before, quantity(0, BeforeType, L), "bool", L), End, Nonnegative, L);
+        label(Nonnegative, L);
+      }
+      const auto Maximum = llvm::APInt::getMaxValue(integerBits(Size)).getZExtValue();
+      const auto MaximumCount = (Maximum - Layout.CookieBytes) / ObjectBytes;
+      auto Fits = labelName();
+      branch(binary("<=", Count, quantity(MaximumCount, Size, L), "bool", L), Fits, End, L);
+      label(Fits, L);
+      if (Info.PrefixCount) {
+        auto Enough = labelName();
+        branch(binary(">=", Count, quantity(Info.PrefixCount, Size, L), "bool", L), Enough, End, L);
+        label(Enough, L);
+      }
+    }
     json::Array Args;
-    Args.push_back(quantity(Count * ObjectBytes + Layout.CookieBytes, Size, L));
+    Args.push_back(Info.Count
+        ? quantity(*Info.Count * ObjectBytes + Layout.CookieBytes, Size, L)
+        : binary("+", binary("*", Count, quantity(ObjectBytes, Size, L), Size, L),
+                 quantity(Layout.CookieBytes, Size, L), Size, L));
     unsigned Prefix = 1;
     if (N->passAlignment()) {
       Args.push_back(allocationExtent(Object, F->getParamDecl(1)->getType(), true, L));
@@ -806,12 +875,9 @@ class FunctionLowering {
     Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(F)},
                                 {"args", std::move(Args)}, {"target", json::Object(Storage)},
                                 {"loc", A.loc(L)}});
-    auto Result = temporary(type(N->getType(), L), L);
-    assign(Result, A.zero(N->getType(), L), L);
-    std::string End;
     if (N->shouldNullCheckAllocation()) {
       auto Initialize = labelName();
-      End = labelName();
+      if (End.empty()) End = labelName();
       branch(cast(Storage, "bool", L), Initialize, End, L);
       label(Initialize, L);
     }
@@ -819,12 +885,16 @@ class FunctionLowering {
     if (Layout.CookieBytes) {
       if (Layout.StoresElementSize)
         assign(cookieSlot(Bytes, 0, L), quantity(Layout.ElementBytes, Size, L), L);
-      assign(cookieSlot(Bytes, Layout.CountOffset, L),
-             quantity(Count * (ObjectBytes / Layout.ElementBytes), Size, L), L);
+      assign(cookieSlot(Bytes, Layout.CountOffset, L), Info.Count
+          ? quantity(*Info.Count * (ObjectBytes / Layout.ElementBytes), Size, L)
+          : binary("*", Count, quantity(ObjectBytes / Layout.ElementBytes, Size, L), Size, L), L);
       Bytes = binary("+", std::move(Bytes), quantity(Layout.CookieBytes, Size, L), "ptr:u8", L);
     }
     assign(Result, cast(cast(std::move(Bytes), "ptr:void", L), type(N->getType(), L), L), L);
-    initializeNewArray(Result, Object, Count, N->getInitializer(), L);
+    if (Info.Count)
+      initializeNewArray(Result, Object, *Info.Count, N->getInitializer(), L);
+    else
+      initializeRuntimeNewArray(Result, Object, Count, Info, L);
     if (!End.empty()) {
       jump(End, L);
       label(End, L);
@@ -1694,38 +1764,6 @@ class FunctionLowering {
       endFullExpression();
     }
   }
-  bool omittedDefaultConstruction(const Expr *Init, QualType Element) const {
-    const auto *Record = Element->getAsCXXRecordDecl();
-    if (!Init || !Record)
-      return false;
-    while (true) {
-      Init = Init->IgnoreParens();
-      if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
-        Init = W->getSubExpr();
-      } else if (const auto *B = dyn_cast<CXXBindTemporaryExpr>(Init)) {
-        Init = B->getSubExpr();
-      } else if (const auto *C = dyn_cast<ConstantExpr>(Init)) {
-        Init = C->getSubExpr();
-      } else if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(Init);
-                 M && fullExpressionTemporary(M, A.Context)) {
-        Init = M->getSubExpr();
-      } else if (const auto *C = dyn_cast<CastExpr>(Init);
-                 C && C->getCastKind() == CK_ConstructorConversion) {
-        Init = constructorConversion(C, A.Context);
-        if (!Init)
-          return false;
-      } else if (const auto *C = dyn_cast<CastExpr>(Init);
-                 C && C->getCastKind() == CK_NoOp && C->isPRValue() &&
-                 A.Context.hasSameUnqualifiedType(C->getType(), C->getSubExpr()->getType())) {
-        Init = C->getSubExpr();
-      } else {
-        const auto *Construct = dyn_cast<CXXConstructExpr>(Init);
-        return Construct && Construct->getConstructor()->isDefaultConstructor() &&
-               Construct->getConstructor()->getParent()->getCanonicalDecl() ==
-                   Record->getCanonicalDecl();
-      }
-    }
-  }
   void initialize(Expression Place, const Expr *Init, SourceLocation L) {
     Init = Init->IgnoreParens();
     if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
@@ -1886,7 +1924,7 @@ class FunctionLowering {
           // C++17's exception concerns the default constructor of an omitted
           // array element. A constructor of a field inside an aggregate element
           // retains the whole initializer's full expression, as do explicit clauses.
-          const bool ElementCleanup = Omitted && omittedDefaultConstruction(Value, Element);
+          const bool ElementCleanup = Omitted && omittedDefaultConstruction(Value, Element, A.Context);
           if (ElementCleanup)
             beginFullExpression();
           if (Value)

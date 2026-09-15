@@ -4603,7 +4603,6 @@ TEST_F(TranslateTest, CoreV2ArrayAllocationAcceptsCheckedConstantExtents) {
 TEST_F(TranslateTest, CoreV2ArrayAllocationRetainsSourceAndLengthBoundaries) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"runtime-bound", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(int n){return new int[n]{};}", "TR0201"},
-      {"runtime-nothrow", "using Size=decltype(sizeof(0));struct R{static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n];}", "TR0201"},
       {"missing-array-allocator", "int*f(){return new int[3]{};}", "TR0203"},
       {"missing-array-deallocator", "void f(int*p){delete[]p;}", "TR0203"},
       {"missing-record-destructor", "using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{~R();};R*f(){return new R[3];}", "TR0203"},
@@ -4628,6 +4627,70 @@ TEST_F(TranslateTest, CoreV2ArrayAllocationRetainsSourceAndLengthBoundaries) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationAcceptsCheckedLengths) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"default", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n];}"},
+      {"value", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]();}"},
+      {"braced", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"prefix", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{R(1),R(2)};}"},
+      {"unsigned", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(unsigned n){return new R[n];}"},
+      {"wide-unsigned", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(unsigned long long n){return new R[n];}"},
+      {"wide-signed", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(long long n){return new R[n];}"},
+      {"boolean", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(bool n){return new R[n];}"},
+      {"enum", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};enum Count{zero,one,two};R*f(Count n){return new R[n];}"},
+      {"const", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};const R*f(int n){return new const R[n];}"},
+      {"nested", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};using Row=R[2];Row*f(int n){return new R[n][2];}void g(Row*p){delete[]p;}"},
+      {"nested-value", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};using Row=R[2];Row*f(int n){return new R[n][2]();}"},
+      {"default-argument-temps", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n];}"},
+      {"braced-default-temps", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}"},
+      {"explicit-prefix-temps", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{{},{}};}"},
+      {"nested-default-temps", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};using Row=R[2];Row*f(int n){return new R[n][2];}"},
+      {"bound-temp", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};struct Count{long long n;operator long long()const{return n;}~Count(){}};R*f(long long n){return new R[Count{n}];}"},
+      {"unsigned-source-cast", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(long long n){return new R[static_cast<Size>(n)];}"},
+      {"bound-side-effect", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int&n){return new R[n++];}"},
+      {"function-template", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};template<class T>T*make(int n){return new T[n];}R*f(int n){return make<R>(n);}"},
+      {"class-template", "using Size=decltype(sizeof(0));template<class T>struct R{T n;R():n(0){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};R<int>*f(int n){return new R<int>[n];}"},
+      {"static-pointer", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){static R*p=new R[n];return p;}"},
+      {"query", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};bool f(int n){return sizeof(new R[n])==sizeof(R*)&&noexcept(new R[n]);}"},
+      {"discarded", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};int f(int n){if constexpr(false){R*p=new R[n];delete[]p;}return 0;}"},
+      {"empty-record", "using Size=decltype(sizeof(0));struct R{static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n];}"},
+      {"zero-trivial-record", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]();}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("runtime-array-" + Name + ".cpp");
+    auto Output = tmpFile("runtime-array-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErasedInitializers) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"placement", "using Size=decltype(sizeof(0));struct R{R(){}static void*operator new[](Size,void*p)noexcept{return p;}};R*f(int n,void*p){return new(p)R[n];}", "TR0201"},
+      {"member-throwing", "using Size=decltype(sizeof(0));struct R{R(){}static void*operator new[](Size){return nullptr;}};R*f(int n){return new R[n];}", "TR0201"},
+      {"aggregate-filler", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}", "TR0201"},
+      {"aggregate-default-temps", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct Inner{Inner(const A&a=A()){}~Inner(){}};struct R{Inner field;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}", "TR0201"},
+      {"aggregate-trivial-reference", "using Size=decltype(sizeof(0));struct R{const int&r=3;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}", "TR0201"},
+      {"nested-braced", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};using Row=R[2];Row*f(int n){return new R[n][2]{};}", "TR0201"},
+      {"discarded-aggregate", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct Inner{Inner(const A&a=A()){}~Inner(){}};struct R{Inner field;static void*operator new[](Size)noexcept{return nullptr;}};int f(int n){if constexpr(false){auto p=new R[n]{};}return 0;}", "TR0201"},
+      {"unevaluated-aggregate", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct Inner{Inner(const A&a=A()){}~Inner(){}};struct R{Inner field;static void*operator new[](Size)noexcept{return nullptr;}};bool f(int n){return noexcept(new R[n]{});}", "TR0201"},
+      {"sizeof-aggregate", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct Inner{Inner(const A&a=A()){}~Inner(){}};struct R{Inner field;static void*operator new[](Size)noexcept{return nullptr;}};int f(int n){return sizeof(new R[n]{});}", "TR0201"},
+      {"bound-source", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[(sizeof(long double),n)];}", "TR0201"},
+      {"missing-allocator", "using Size=decltype(sizeof(0));struct R{R(){}static void*operator new[](Size)noexcept;};R*f(int n){return new R[n];}", "TR0203"},
+      {"default-source", "using Size=decltype(sizeof(0));struct R{R(int n=sizeof(long double)){}static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n];}", "TR0201"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("runtime-array-reject-" + Name + ".cpp");
+    auto Output = tmpFile("runtime-array-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayAllocationPreservesNativeStorageAndCleanupOrder) {
   const auto Output = tmpFile("array-allocation.nc");
   auto Result = translate(fixture("array-allocation.cpp"),
@@ -4640,6 +4703,25 @@ TEST_F(TranslateTest, CoreV2ArrayAllocationPreservesNativeStorageAndCleanupOrder
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     const auto Executable = tmpFile("array-allocation-client" + Optimization);
     auto Link = compileGenerated(fixture("array-allocation-harness.c"), Executable,
+                                  Optimization, {Object.string()});
+    ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErrorsAndTemporaryOrder) {
+  const auto Output = tmpFile("runtime-array-allocation.nc");
+  auto Result = translate(fixture("runtime-array-allocation.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Object = tmpFile("runtime-array-allocation" + Optimization + ".o");
+    auto Compile = compileGenerated(Output, Object, Optimization, {"-c", "-fstrict-aliasing"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    const auto Executable = tmpFile("runtime-array-allocation-client" + Optimization);
+    auto Link = compileGenerated(fixture("runtime-array-allocation-harness.c"), Executable,
                                   Optimization, {Object.string()});
     ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
     auto Run = exec(Executable.string(), {});

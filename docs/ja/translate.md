@@ -8,7 +8,7 @@ Core v2 は、対応する静的レコード、配列、寿命延長された一
 
 Core v2 は、具現化されたテンプレートを含む対応済みオブジェクトと参照の非ローカル動的初期化を実装しました。 検証済みの内部ネイティブ起動関数が、ゼロ・定数初期化後に main より前で定義順に実行し、各初期化式の後で通常の一時オブジェクトを破棄します。 静的ローカルは初回使用時の初期化を維持します。 プログラムと別の C 入口による O0/O2 テストには実装版 CI が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#nonlocal-dynamic-initialization).
 
-Core v2 はソース定義の割り当て関数による定数長の new[] に対応し、長さゼロと多次元配列も扱います。delete[] は元の割り当てアドレスを保ち、要素を逆順に破棄します。汎用 Itanium、Apple ARM64、MSVC の配列ヘッダーを個別に検証します。null の場合は初期化を省略し、引数と一時オブジェクトはソースの寿命に従います。ネイティブ検証は実装版 CI 待ちです。実行時の new[] 長、既定のヒープ、例外、標準ヘッダー、完全な C++/STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#constant-array-allocation).
+実行時長の new[] は、placement 引数を持たないソース定義の noexcept クラス割り当て関数にも対応します。不正な長さでは割り当て関数を呼ぶ前に null を返し、有効な要素はループで構築して既定引数の一時オブジェクトを要素ごとに破棄します。明示的な初期化の接頭部分と長さ変換の一時オブジェクトは完全式の終わりまで保持します。繰り返す集成体初期化、例外を投げる割り当て、実行時 placement、既定のヒープ、完全な C++/STL は未完成です。ネイティブ検証は実装版 CI 待ちです。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#runtime-array-allocation).
 
 Core v2 は検証済みのソース定義割り当て関数による単一オブジェクトの new/delete に対応し、クラスやテンプレートの placement オーバーロード、格納アドレス、引数の破棄を保持します。明示的破棄と placement 再構築でも後の自動破棄義務は残ります。ネイティブ検証には実装版 CI が必要です。既定のヒープ実行時機構、実行時の new[] 長、例外、標準ヘッダー、完全な C++/STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 

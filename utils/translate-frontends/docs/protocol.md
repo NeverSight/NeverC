@@ -949,6 +949,16 @@ destruction loops use existing checked typed operations; metadata does not prove
 all of those operations semantically correct. See the
 [array allocation contract](cpp-core-v2.md#constant-array-allocation).
 
+Runtime outer array lengths add no wire type or opcode. The source frontend
+captures the bound, checks pre-conversion signed negativity and converted size_t
+byte/prefix limits, and branches to a typed null result before the allocation call
+on failure. Construction uses bounded explicit-prefix code plus a checked typed
+loop for admitted default construction or zero initialization. Existing cleanup
+frames preserve enclosing bound/prefix temporaries and per-element default
+arguments. The independent verifier still checks the emitted types, calls and
+CFG; it does not reconstruct the original C++ new-expression semantics. See the
+[runtime array contract](cpp-core-v2.md#runtime-array-allocation).
+
 The optional module property `memory_lifetimes` must be boolean `true` and requires
 `cpp-core-v2`. Absence defaults to false; an explicitly false/nonboolean property
 is rejected. The verifier independently rejects this flag in other profiles.

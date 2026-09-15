@@ -1648,51 +1648,160 @@ ArrayAllocationLayout Adapter::arrayAllocationLayout(
   return Result;
 }
 
-uint64_t Adapter::arrayNewCount(const CXXNewExpr *N) {
-  auto Bound = N->getArraySize();
-  const auto L = N->getExprLoc();
-  auto Value = Bound ? (*Bound)->getIntegerConstantExpr(Context) : std::nullopt;
-  // Inspect the result before Sema's final implicit conversion to size_t.
-  // A negative wider integer could otherwise truncate to an admitted zero.
-  bool Negative = false;
-  if (Bound) {
-    const Expr *Converted = *Bound;
-    while (true) {
-      Converted = Converted->IgnoreParens();
-      if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Converted))
-        Converted = Wrapper->getSubExpr();
-      else if (const auto *Constant = dyn_cast<ConstantExpr>(Converted))
-        Converted = Constant->getSubExpr();
-      else
-        break;
-    }
-    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Converted);
-        Cast && Cast->getCastKind() == CK_IntegralCast &&
-        Context.hasSameUnqualifiedType(Cast->getType(), Context.getSizeType())) {
-      auto Before = Cast->getSubExpr()->getIntegerConstantExpr(Context);
-      Negative = Before && Before->isSigned() && Before->isNegative();
+bool omittedDefaultConstruction(const Expr *Init, QualType Element, ASTContext &Context) {
+  const auto *Record = Element->getAsCXXRecordDecl();
+  if (!Init || !Record)
+    return false;
+  while (true) {
+    Init = Init->IgnoreParens();
+    if (const auto *W = dyn_cast<ExprWithCleanups>(Init)) {
+      Init = W->getSubExpr();
+    } else if (const auto *B = dyn_cast<CXXBindTemporaryExpr>(Init)) {
+      Init = B->getSubExpr();
+    } else if (const auto *C = dyn_cast<ConstantExpr>(Init)) {
+      Init = C->getSubExpr();
+    } else if (const auto *M = dyn_cast<MaterializeTemporaryExpr>(Init);
+               M && fullExpressionTemporary(M, Context)) {
+      Init = M->getSubExpr();
+    } else if (const auto *C = dyn_cast<CastExpr>(Init);
+               C && C->getCastKind() == CK_ConstructorConversion) {
+      Init = constructorConversion(C, Context);
+      if (!Init)
+        return false;
+    } else if (const auto *C = dyn_cast<CastExpr>(Init);
+               C && C->getCastKind() == CK_NoOp && C->isPRValue() &&
+               Context.hasSameUnqualifiedType(C->getType(), C->getSubExpr()->getType())) {
+      Init = C->getSubExpr();
+    } else {
+      const auto *Construct = dyn_cast<CXXConstructExpr>(Init);
+      return Construct && Construct->getConstructor()->isDefaultConstructor() &&
+             Construct->getConstructor()->getParent()->getCanonicalDecl() ==
+                 Record->getCanonicalDecl();
     }
   }
-  if (!Value || Negative || (Value->isSigned() && Value->isNegative()) ||
-      Value->getLimitedValue(65537) > 65536) {
-    reject(L, "new array extent", "Array new requires a nonnegative integer constant extent within the expansion limit; runtime bounds require checked length-error handling.");
+}
+
+ArrayNewInfo Adapter::arrayNewInfo(const CXXNewExpr *N) {
+  const auto L = N->getExprLoc();
+  const auto Bound = N->getArraySize();
+  if (!Bound) {
+    reject(L, "new array extent", "A checked outer array bound is required.");
     throw Failure{};
   }
-  const uint64_t Count = Value->getZExtValue();
-  const auto Units = storageUnits(N->getAllocatedType());
-  if (!Units || (Count && Units > 200000 / Count)) {
+  ArrayNewInfo Result;
+  const Expr *Converted = *Bound;
+  while (true) {
+    Converted = Converted->IgnoreParens();
+    if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Converted))
+      Converted = Wrapper->getSubExpr();
+    else if (const auto *Constant = dyn_cast<ConstantExpr>(Converted))
+      Converted = Constant->getSubExpr();
+    else
+      break;
+  }
+  Result.BoundBeforeConversion = Converted;
+  if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Converted);
+      Cast && Cast->getCastKind() == CK_IntegralCast &&
+      Context.hasSameUnqualifiedType(Cast->getType(), Context.getSizeType()))
+    Result.BoundBeforeConversion = Cast->getSubExpr();
+  auto Value = (*Bound)->getIntegerConstantExpr(Context);
+  if (Value) {
+    // The final unsigned conversion may erase a negative wide bound. Positive
+    // wide values retain normal conversion semantics, including truncation.
+    auto Before = Result.BoundBeforeConversion->getIntegerConstantExpr(Context);
+    if ((Before && Before->isSigned() && Before->isNegative()) ||
+        (Value->isSigned() && Value->isNegative()) || Value->getLimitedValue(65537) > 65536) {
+      reject(L, "new array extent", "Constant array bounds must be nonnegative and within the expansion limit.");
+      throw Failure{};
+    }
+    Result.Count = Value->getZExtValue();
+  } else {
+    const auto *Function = N->getOperatorNew();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    if (!isa<CXXMethodDecl>(Function) || N->getNumPlacementArgs() ||
+        !Prototype || !Prototype->isNothrow() || !N->shouldNullCheckAllocation()) {
+      reject(L, "runtime new array extent", "Runtime array bounds require a source-owned nonthrowing class allocator without placement arguments; throwing length errors require exception runtime support.");
+      throw Failure{};
+    }
+  }
+  const auto Object = N->getAllocatedType();
+  const auto Units = storageUnits(Object);
+  if (!Units || Units > 200000 || (Result.Count && *Result.Count && Units > 200000 / *Result.Count)) {
     reject(L, "new array storage", "Array initialization exceeds the storage expansion limit.");
     throw Failure{};
   }
-  const auto Layout = arrayAllocationLayout(N->getAllocatedType(),
-                                           N->doesUsualArrayDeleteWantSize(), L);
-  const uint64_t Bytes = Context.getTypeSizeInChars(N->getAllocatedType()).getQuantity();
+  const auto Layout = arrayAllocationLayout(Object, N->doesUsualArrayDeleteWantSize(), L);
+  const uint64_t Bytes = Context.getTypeSizeInChars(Object).getQuantity();
   const auto Maximum = llvm::APInt::getMaxValue(Context.getTypeSize(Context.getSizeType())).getZExtValue();
-  if (!Bytes || Layout.CookieBytes > Maximum || Count > (Maximum - Layout.CookieBytes) / Bytes) {
+  if (!Bytes || Layout.CookieBytes > Maximum ||
+      (Result.Count && *Result.Count > (Maximum - Layout.CookieBytes) / Bytes)) {
     reject(L, "new array size", "Array allocation bytes and cookie must fit native size_t.");
     throw Failure{};
   }
-  return Count;
+  const Expr *Init = N->getInitializer();
+  while (Init) {
+    const auto *Array = Init->getType().isNull() ? nullptr : Context.getAsArrayType(Init->getType());
+    const auto *Constant = dyn_cast_or_null<ConstantArrayType>(Array);
+    const auto *List = dyn_cast<InitListExpr>(Init);
+    if (List && List->isSyntacticForm() && List->getSemanticForm())
+      List = List->getSemanticForm();
+    const uint64_t Extent = Constant ? Constant->getSize().getLimitedValue() : 0;
+    bool Shape = Array && Context.hasSameUnqualifiedType(Array->getElementType(), Object);
+    if (Result.Count)
+      Shape &= Constant && (isa<StringLiteral>(Init) ? Extent <= *Result.Count : Extent == *Result.Count);
+    else if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Init))
+      Shape &= Context.hasSameType(Init->getType(), Wrapper->getSubExpr()->getType());
+    else
+      Shape &= (List && Constant && Extent == List->getNumInits()) ||
+               (!List && isa_and_nonnull<IncompleteArrayType>(Array));
+    if (!Shape) {
+      reject(L, "new array initializer", "The exact semantic array initializer must match its checked element type and constant extent or runtime prefix.");
+      throw Failure{};
+    }
+    if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Init)) {
+      Init = Wrapper->getSubExpr();
+      continue;
+    }
+    Result.Initializer = List ? List : Init;
+    if (List) {
+      Result.PrefixCount = List->getNumInits();
+      if (Result.Count && !List->isStringLiteralInit() && Result.PrefixCount > *Result.Count) {
+        reject(L, "new array initializer", "Too many array initializer clauses.");
+        throw Failure{};
+      }
+    }
+    break;
+  }
+  if (Result.Count || !Result.Initializer)
+    return Result;
+  if (Result.PrefixCount > 65536 ||
+      (Result.PrefixCount && Units > 200000 / Result.PrefixCount)) {
+    reject(L, "new array initializer", "Explicit array clauses exceed the storage expansion limit.");
+    throw Failure{};
+  }
+  const auto *List = dyn_cast<InitListExpr>(Result.Initializer);
+  Result.Filler = List ? List->getArrayFiller() : Result.Initializer;
+  if (List && Result.Filler &&
+      !Context.hasSameUnqualifiedType(Result.Filler->getType(), Object)) {
+    reject(L, "runtime array initializer", "The repeated filler must initialize the exact allocated element type.");
+    throw Failure{};
+  }
+  if (Result.Filler && isa<ImplicitValueInitExpr>(Result.Filler)) {
+    Result.Repeated = RuntimeArrayInitialization::Zero;
+    return Result;
+  }
+  const bool Default = List
+      ? omittedDefaultConstruction(Result.Filler, Object, Context)
+      : omittedDefaultConstruction(Result.Filler, Context.getBaseElementType(Object), Context);
+  if (Default) {
+    Result.Repeated = RuntimeArrayInitialization::DefaultConstruction;
+    return Result;
+  }
+  // The same classification runs before source erasure and before lowering.
+  // Explicit clauses have bounded fresh storage; repeated aggregate fillers
+  // can create distinct temporaries that all outlive the construction loop.
+  reject(L, "runtime array initializer", "Repeated array elements require direct default construction or implicit zero initialization; aggregate fillers need dynamic temporary lifetime support.");
+  throw Failure{};
 }
 
 json::Object Adapter::functionAddress(const FunctionDecl *F, SourceLocation L) {
@@ -9351,27 +9460,17 @@ public:
         const auto *Selected = N->getOperatorNew();
         const auto *F = A.allocationFunction(Selected, true, L, N->isArray());
         if (N->isArray()) {
-          const auto Count = A.arrayNewCount(N);
+          A.arrayNewInfo(N); // Shared bound/initializer proof also covers erased source.
           const Expr *Init = N->getInitializer();
           while (Init) {
-            const auto *Array = A.Context.getAsConstantArrayType(Init->getType());
-            if (!Array || !A.Context.hasSameUnqualifiedType(Array->getElementType(), Object) ||
-                (isa<StringLiteral>(Init) ? Array->getSize().getLimitedValue() > Count
-                                         : Array->getSize().getLimitedValue() != Count)) {
-              A.reject(L, "new array initializer", "The exact semantic initializer must match the checked constant array extent and element type.");
-              break;
-            }
-            // Only this new-expression's complete initializer is exempt from
-            // value-type serialization (notably its zero-sized array wrapper).
-            // Constructors, defaults, clauses and written types are still visited.
+            // Exempt only this new-expression's exact array wrapper. Its
+            // clauses, defaults, constructors and written types remain checked.
             NewArrayInitializers.insert(Init);
             if (const auto *List = dyn_cast<InitListExpr>(Init)) {
               if (const auto *Written = List->getSyntacticForm())
                 NewArrayInitializers.insert(Written);
               if (const auto *Semantic = List->getSemanticForm())
                 NewArrayInitializers.insert(Semantic);
-              if (!List->isStringLiteralInit() && List->getNumInits() > Count)
-                A.reject(L, "new array initializer", "Too many array initializer clauses.");
             }
             if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Init))
               Init = Wrapper->getSubExpr();

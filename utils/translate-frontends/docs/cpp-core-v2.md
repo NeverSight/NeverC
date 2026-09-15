@@ -4103,7 +4103,7 @@ order, null branching, lack of lexical new ownership and relocation. Twenty-seve
 runtime checkpoints at O0/O2 with strict aliasing and inlining disabled cover
 storage identity, failed allocation, temporary cleanup, placement reuse and saved
 deallocation addresses. Native validation requires CI of this implementation.
-Default/standard heap runtime, runtime array-new bounds, extended-alignment source
+Default/standard heap runtime, throwing/placement runtime array-new bounds, extended-alignment source
 support, exceptions/unwinding, standard headers, inheritance and full C++/STL
 remain unfinished.
 
@@ -4121,9 +4121,9 @@ Clang's semantic array initializer construction. It also checks a negative value
 before the final implicit size_t conversion. Written casts retain their source
 semantics. Outer extents are at most 65536, total initialization storage units at
 most 200000, and allocation bytes plus padding must fit target size_t. Runtime
-bounds still report `TR0201`: their invalid-length path must avoid calling the
-allocator and produce null or `bad_array_new_length` according to the selected
-allocator. No SIZE_MAX allocation request substitutes for this behavior.
+bounds have the separate [nonthrowing class-allocation contract](#runtime-array-allocation).
+Throwing runtime bounds still require `bad_array_new_length` support. No SIZE_MAX
+allocation request substitutes for the specified invalid-length behavior.
 
 Only exact array-initializer wrappers belonging to the checked new-expression
 can bypass serialization as value types. In particular zero length emits no
@@ -4171,12 +4171,62 @@ new-expression's end are not destroyed again by delete.
 
 Paired source/protocol cases, eight-target cookie/layout checks, forged metadata,
 relocation and a separate C client at O0/O2 with strict aliasing cover these rules.
-The native and pinned-upstream runtime checks run only in CI. Runtime new bounds,
-default heap/standard placement, extended-alignment source types, exception
+The native and pinned-upstream runtime checks run only in CI. Throwing runtime
+new bounds, default heap/standard placement, extended-alignment source types, exception
 unwinding, standard headers and complete C++/STL remain unfinished. Language
 requirements follow [C++17 array new](https://timsong-cpp.github.io/cppwp/n4659/expr.new)
 and [C++17 delete](https://timsong-cpp.github.io/cppwp/n4659/expr.delete); native cookie
 layouts follow the pinned Clang20.1.8 ABI implementations.
+
+## Runtime array allocation
+
+Core v2 also admits runtime outer lengths for source-defined class `operator new[]`
+with a nonthrowing exception specification and no placement arguments. The
+ordinary NeverC frontend remains C23. This path uses the same independently
+checked native array cookie families, allocation operators and reverse `delete[]`
+as constant allocation. It does not provide the default heap or standard library.
+
+The bound is evaluated once. A negative signed result is detected before Sema's
+implicit conversion to size_t. Positive wide integers retain normal unsigned
+conversion semantics, including truncation on 32-bit targets; explicit source
+casts retain their own semantics. The converted count must fit
+`(SIZE_MAX-cookieBytes)/sizeof(allocatedInnerType)` and be at least the number of
+explicit outer initializer clauses. Invalid lengths return a typed null pointer
+without calling the allocator or running any element initializer. Zero valid
+lengths still call the allocator. An allocator returning null also skips cookie
+writes, pointer adjustment and all element initialization.
+
+Only the exact runtime new-expression's incomplete or prefix-sized initializer
+wrappers bypass array value serialization. The private pinned Sema patch retains
+the unknown-bound sentinel as the loop filler, never as an explicit initializer.
+Fixed inner arrays keep their bounded separate materializations. All source,
+selected constructors/defaults, types and semantic fillers are checked before
+erasure, including a whole new-expression inside sizeof, noexcept or dead code.
+
+Explicit clauses use bounded expansion and fresh temporary storage. Remaining
+elements use a runtime loop and accept only direct omitted default construction,
+implicit zero initialization, or genuinely absent initialization. A whole-array
+default-constructor wrapper can initialize fixed inner arrays recursively.
+Default-constructor argument temporaries end after each element; explicit-prefix
+temporaries and bound-conversion temporaries remain alive until the enclosing
+full-expression ends. This also applies on invalid-length and allocator-null
+paths. ExprWithCleanups alone never creates a per-element lifetime boundary.
+
+Repeated aggregate/list fillers, including braced fixed-inner-array fillers,
+currently report `TR0201`: they can need distinct temporary storage retained
+across iterations. Throwing allocators require actual exception runtime support;
+runtime placement allocation needs a separately checked argument-evaluation
+contract. Runtime primitive/string allocation through the default heap remains
+outside this source-owned class path. Constant-length cases retain their broader
+existing initialization and placement support.
+
+Paired source/protocol tests, eight-target 32/64-bit bound checks, relocation and
+an O0/O2 separate C client cover signed negative values, positive wide conversion,
+byte overflow, too-short prefixes, zero, null, receiver identity, escaped deletion,
+per-element cleanup and enclosing bound/prefix temporary cleanup. Native checks
+run only in implementing CI. The semantics follow
+[C++17 array new](https://timsong-cpp.github.io/cppwp/n4659/expr.new) and
+[CWG 1992](https://cplusplus.github.io/CWG/issues/1992.html). Full C++/STL remains unfinished.
 
 ## Explicit destruction
 
@@ -4649,7 +4699,7 @@ break and continue clean the appropriate scopes. Array construction needs no
 external helper or memory-copy call. Static lifetimes and reference fields follow
 their separate contracts. Thread-local storage, fresh reference returns,
 non-extended pointer-derived bindings,
-unsupported element types, runtime array-new bounds, unwinding, other template forms
+unsupported element types, throwing/placement runtime array-new bounds, unwinding, other template forms
 and complete STL remain outside this increment. V1 and protocol major 1 are unchanged.
 
 O0/O2 no-inline fixtures cover real element addresses, reference calls, decay,
