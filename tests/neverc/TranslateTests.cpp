@@ -5347,6 +5347,12 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluat
 
 TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"record-reference-nothrow-destruction", "struct R{int n;};static_assert(__is_nothrow_destructible(R&)&&__is_nothrow_destructible(const R&&)&&__is_nothrow_destructible(R(&)[2]));"},
+      {"record-reference-throwing-destruction", "struct R{~R()noexcept(false){}};static_assert(__is_nothrow_destructible(R&)&&__is_nothrow_destructible(R&&));"},
+      {"record-reference-deleted-nothrow-destruction", "struct R{~R()=delete;};static_assert(__is_nothrow_destructible(R&));"},
+      {"record-reference-private-nothrow-destruction", "class R{~R(){}};static_assert(__is_nothrow_destructible(R&));"},
+      {"record-reference-lazy-nothrow-destruction", "template<class T>struct R{~R()noexcept(T::missing){T::body();}};static_assert(__is_nothrow_destructible(R<int>&)&&__is_nothrow_destructible(R<int>(&)[2]));"},
+      {"record-reference-pack-nothrow-destruction", "struct R{~R()=delete;};template<class...T>constexpr bool f(){return (__is_nothrow_destructible(T&)&&...);}static_assert(f<>()&&f<R,int>());"},
       {"retained-query-order", "template<class T>constexpr bool q(){return __is_constructible(T,int)&&__is_assignable(T&,int)&&__is_convertible(T,int);}static_assert(q<int>()&&q<double>()&&q<int>());"},
       {"retained-mixed-arity", "static_assert(__is_constructible(int)&&!__is_constructible(int,int,int)&&__is_constructible(const int&,int)&&!__is_convertible(int,void)&&__is_convertible(void,void)&&__is_assignable(int&,int));"},
       {"retained-dependent-query-type", "template<class T>struct R{using type=decltype(__is_assignable(T&,T));};template<class T>constexpr bool f(){return __is_constructible(typename R<T>::type,int)&&__is_convertible(typename R<T>::type,int);}static_assert(f<int>()&&f<double>());"},
@@ -5414,6 +5420,8 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
 
 TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"record-reference-nothrow-hidden-type", "struct R{int n;};bool f(){return __is_nothrow_destructible(decltype((sizeof(long double),R{}))&);}"},
+      {"record-reference-nothrow-used-body", "template<class T>struct R{~R(){long double hidden=0;}};static_assert(__is_nothrow_destructible(R<int>&));int main(){R<int>value;}"},
       {"record-query-before-runtime-body", "template<class T>struct R{T n;R(){long double hidden=0;}};static_assert(__is_constructible(R<int>,R<int>));int main(){R<int>value;return 0;}"},
       {"record-runtime-before-query-body", "template<class T>struct R{T n;R(){long double hidden=0;}};int main(){R<int>value;return 0;}static_assert(__is_constructible(R<int>,R<int>));"},
       {"record-base-written-default", "struct B{B()=default;};struct R:B{};bool f(){return __is_constructible(R);}"},

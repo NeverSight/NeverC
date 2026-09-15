@@ -1919,7 +1919,12 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
     RecordOperand |= Context.getBaseElementType(
         Argument->getType().getNonReferenceType())->isRecordType();
   }
-  if (OperationTrait && RecordOperand) {
+  // Pinned Sema returns true for a reference before LookupDestructor and
+  // ResolveExceptionSpec. The referred type and its written source are still
+  // checked above and by RAV; no destructor selection can be borrowed here.
+  const bool ReferenceDestruction = Query->getTrait() == UTT_IsNothrowDestructible &&
+      Query->getArg(0)->getType()->isReferenceType();
+  if (OperationTrait && RecordOperand && !ReferenceDestruction) {
     const auto Kind = Query->getTrait();
     const bool Nothrow = Kind == UTT_IsNothrowDestructible ||
         Kind == TT_IsNothrowConstructible || Kind == BTT_IsNothrowAssignable ||

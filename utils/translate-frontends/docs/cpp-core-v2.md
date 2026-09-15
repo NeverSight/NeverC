@@ -866,7 +866,8 @@ field/base deletion and access checks for admitted nonvirtual layouts. A generic
 destructor's dependent exception specification and unused body stay lazy, even
 when they would fail if instantiated. Existing ordinary function-definition and
 record source restrictions still apply. `__is_nothrow_destructible` on record
-operands requires further exception-source retention and remains restricted.
+values and arrays requires further exception-source retention. Record references
+use the unconditional reference result described below.
 The shared classification fixture has 29 O0/O2 checkpoints and sixteen exported
 boolean checks, including a real destruction outside the query; native results
 require the implementing revision's CI.
@@ -949,7 +950,8 @@ a false nothrow/trivial result. Full checking of those selected sources, partial
 failure paths and exception dependencies remains necessary for user-defined
 record operations. The implicit trivial subset below has an independent source
 proof. Nothrow record queries still require the exact exception specifications
-actually resolved and remain rejected, including references and arrays. This is
+actually resolved and remain rejected for record values and arrays. Nothrow
+destruction of record references takes the separate no-selection path below. This is
 separate from the metadata record queries above. Actual standard-header and complete C++/STL support remain
 unfinished.
 
@@ -957,7 +959,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 54 accepted, 44 unsupported-source and seven invalid-C++ cases cover
+The paired 60 accepted, 46 unsupported-source and seven invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -990,18 +992,32 @@ trivial destruction; a direct reference binding does not destroy the referent an
 can therefore bind an admitted record with a nontrivial or deleted destructor.
 
 This stage rejects selected user or explicitly defaulted operations, incomplete
-failed initialization, unsupported derived-to-base reference adjustments and all
-nothrow record operations. Failed selection cannot be accepted just because the
+failed initialization, unsupported derived-to-base reference adjustments and
+nothrow record construction, assignment, conversion and value/array destruction. Failed selection cannot be accepted just because the
 boolean is false. Unused user default-constructor bodies stay lazy when the query
 selects only an implicit copy/move operation. Written query types, aliases, bounds
 and defaults retain their ordinary source checks.
 
 The source checker does not populate runtime construction/default caches or queue
-runtime helpers. A separate twelve-checkpoint O0/O2 fixture exercises query values,
+runtime helpers. A separate thirteen-checkpoint O0/O2 fixture exercises query values,
 zero query effects, actual copy/assignment/reference identity and real destruction.
-Six exported boolean functions check that no hypothetical calls or record locals
+Seven exported boolean functions check that no hypothetical calls or record locals
 enter the protocol; relocation remains deterministic. Native validation requires
 the implementing revision's CI.
+
+### Nothrow destruction of record references
+
+`__is_nothrow_destructible` accepts references to admitted records and record
+arrays, including records with throwing, deleted or nonpublic destructors. Pinned
+Clang returns true for a reference before destructor lookup or exception-specification
+resolution: destroying a reference does not destroy its referent. A dependent
+unused destructor specification or body remains lazy on this path.
+
+The full referred type and every written type source still require admission.
+Hidden unsupported types in `decltype`, array bounds or template arguments remain
+rejected. Actual destruction elsewhere retains ordinary body and lifetime checks.
+This reference-only result does not admit nothrow destruction of record values or
+arrays themselves, nor other nothrow record operations.
 
 ## Array type queries
 

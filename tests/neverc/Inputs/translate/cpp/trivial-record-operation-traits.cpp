@@ -18,6 +18,7 @@ extern "C" bool record_assign() { return __is_trivially_assignable(Plain&, Plain
 extern "C" bool record_convert() { return __is_convertible(Plain&, Plain); }
 extern "C" bool record_reference() { return __is_constructible(const Probe&, Probe&); }
 extern "C" bool record_false() { return __is_convertible(Plain, void); }
+extern "C" bool record_reference_destruct() { return __is_nothrow_destructible(Deleted&); }
 static_assert(constructs<Plain>() && constructs<Plain, Plain>() && constructs<Plain, const Plain&>());
 static_assert(__is_constructible(Lazy<int>, Lazy<int>) && __is_assignable(Lazy<int>&, Lazy<int>));
 
@@ -54,5 +55,7 @@ int main() {
     if (!__is_constructible(Probe&, decltype(probe)&) || destructions) return 11;
   }
   if (destructions != 1 || effects || !constructs<Plain, Plain>()) return 12;
+  if (!record_reference_destruct() || !__is_nothrow_destructible(Probe&) ||
+      !__is_nothrow_destructible(Nested(&)[2]) || destructions != 1) return 13;
   return 0;
 }
