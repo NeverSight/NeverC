@@ -4303,17 +4303,32 @@ selected constructors/defaults, types and semantic fillers are checked before
 erasure, including a whole new-expression inside sizeof, noexcept or dead code.
 
 Explicit clauses use bounded expansion and fresh temporary storage. Remaining
-elements use a runtime loop and accept only direct omitted default construction,
-implicit zero initialization, or genuinely absent initialization. A whole-array
+elements use a runtime loop and accept direct omitted default construction,
+implicit zero initialization, absent initialization, or the checked aggregate
+fillers described below. A whole-array
 default-constructor wrapper can initialize fixed inner arrays recursively.
 Default-constructor argument temporaries end after each element; explicit-prefix
 temporaries and bound-conversion temporaries remain alive until the enclosing
 full-expression ends. This also applies on invalid-length and allocator-null
 paths. ExprWithCleanups alone never creates a per-element lifetime boundary.
 
-Repeated aggregate/list fillers, including braced fixed-inner-array fillers,
-currently report `TR0201`: they can need distinct temporary storage retained
-across iterations. Throwing allocators require actual exception runtime support;
+Repeated semantic aggregate/list fillers, including fixed inner arrays, are
+admitted when their initialization writes directly into the current array element
+without separate temporary storage. The proof distinguishes actual initialization
+destinations from evaluated, bound or discarded expressions. It follows selected
+default member/default argument expressions and all semantic clauses and fillers,
+with the existing depth and expansion budget. Scalar calls, live object references,
+self pointers, scalar defaults and nested plain aggregate lists are supported.
+Each field is initialized before the next field is evaluated. These aggregate
+iterations keep the enclosing new-expression's full-expression boundary.
+
+Materialized/bound temporaries, opaque values, evaluated record/array prvalues,
+constructed subobjects, record-return calls and by-value record arguments remain
+outside this conservative proof and report `TR0201`. Even a trivial scalar
+temporary can have observable identity, and a discarded aggregate can need
+enclosing-expression destruction. Arbitrary repeated temporary storage requires
+further lifetime support. The existing direct default-constructor category keeps
+its separate per-element cleanup behavior. Throwing allocators require actual exception runtime support;
 runtime placement allocation needs a separately checked argument-evaluation
 contract. Runtime primitive/string allocation through the default heap remains
 outside this source-owned class path. Constant-length cases retain their broader
@@ -4323,6 +4338,10 @@ Paired source/protocol tests, eight-target 32/64-bit bound checks, relocation an
 an O0/O2 separate C client cover signed negative values, positive wide conversion,
 byte overflow, too-short prefixes, zero, null, receiver identity, escaped deletion,
 per-element cleanup and enclosing bound/prefix temporary cleanup. Native checks
+also cover 17 accepted and 12 rejected aggregate cases and 13 O0/O2 runtime
+checkpoints for self/member-reference identity, nested arrays, effects, prefixes,
+null/invalid suppression and reverse destruction using native heap allocation.
+Upstream Clang O0/O2 baselines run in the diagnostic workflow. These checks
 run only in implementing CI. The semantics follow
 [C++17 array new](https://timsong-cpp.github.io/cppwp/n4659/expr.new) and
 [CWG 1992](https://cplusplus.github.io/CWG/issues/1992.html). Full C++/STL remains unfinished.

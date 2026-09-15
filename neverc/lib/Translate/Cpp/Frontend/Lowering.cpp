@@ -808,7 +808,7 @@ class FunctionLowering {
     if (Info.Repeated == RuntimeArrayInitialization::None)
       return;
     // Each written clause is emitted once and retains the enclosing FE. The
-    // shared descriptor admits no repeated aggregate/list temporary storage.
+    // shared descriptor proves repeated aggregates need no separate temporaries.
     if (Info.PrefixCount)
       initializeNewArray(Pointer, Object, Info.PrefixCount, Info.Initializer, L);
     auto Element = Object.getUnqualifiedType();
@@ -824,6 +824,10 @@ class FunctionLowering {
     auto Place = index(Pointer, Position, T, L);
     if (Info.Repeated == RuntimeArrayInitialization::Zero) {
       initializeZero(std::move(Place), Element, L);
+    } else if (Info.Repeated == RuntimeArrayInitialization::Aggregate) {
+      // Aggregate initialization retains the enclosing new-expression's FE.
+      // Its checked destination-only lists initialize each actual array slot.
+      initialize(std::move(Place), Info.Filler, L);
     } else {
       // This boundary follows the semantic omitted default-constructor role,
       // never an ExprWithCleanups wrapper. All its argument temporaries end

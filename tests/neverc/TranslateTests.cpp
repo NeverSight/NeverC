@@ -4688,7 +4688,6 @@ TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErasedInitializers) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"placement", "using Size=decltype(sizeof(0));struct R{R(){}static void*operator new[](Size,void*p)noexcept{return p;}};R*f(int n,void*p){return new(p)R[n];}", "TR0201"},
       {"member-throwing", "using Size=decltype(sizeof(0));struct R{R(){}static void*operator new[](Size){return nullptr;}};R*f(int n){return new R[n];}", "TR0201"},
-      {"aggregate-filler", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}", "TR0201"},
       {"aggregate-default-temps", "using Size=decltype(sizeof(0));struct A{A(){}~A(){}};struct Inner{Inner(const A&a=A()){}~Inner(){}};struct R{Inner field;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}", "TR0201"},
       {"aggregate-trivial-reference", "using Size=decltype(sizeof(0));struct R{const int&r=3;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}", "TR0201"},
       {"nested-braced", "using Size=decltype(sizeof(0));struct R{int n;R(int v=0):n(v){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};using Row=R[2];Row*f(int n){return new R[n][2]{};}", "TR0201"},
@@ -4742,6 +4741,77 @@ TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErrorsAndTemporaryOrder)
     auto Link = compileGenerated(fixture("runtime-array-allocation-harness.c"), Executable,
                                   Optimization, {Object.string()});
     ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RuntimeAggregateArraysInitializeActualElements) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"plain-zero", "using Size=decltype(sizeof(0));struct R{int value;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"scalar-default", "using Size=decltype(sizeof(0));struct R{int value=3;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"scalar-call", "using Size=decltype(sizeof(0));int state;int next(){return ++state;}struct R{int value=next();static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"scalar-call-default", "using Size=decltype(sizeof(0));int next(int value=3){return value;}struct R{int value=next();static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"self-pointer", "using Size=decltype(sizeof(0));struct R{R*self=this;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"self-reference", "using Size=decltype(sizeof(0));struct R{int value=3;const int&alias=value;int copied=alias;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"existing-reference", "using Size=decltype(sizeof(0));int existing=3;struct R{int&alias=existing;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"scalar-reference-call", "using Size=decltype(sizeof(0));int existing=3;int&select(){return existing;}struct R{int&alias=select();static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"null-values", "using Size=decltype(sizeof(0));struct R{decltype(nullptr) value{};int*pointer=nullptr;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"fixed-array", "using Size=decltype(sizeof(0));struct R{int values[3]={1,2,3};static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"nested-lists", "using Size=decltype(sizeof(0));struct Inner{int values[2]={3,4};};struct R{Inner inner{};static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"nested-filler", "using Size=decltype(sizeof(0));struct Inner{int value=3;};struct R{Inner inner[3]{};static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"scalar-member-call", "using Size=decltype(sizeof(0));struct Source{int get(){return 3;}};Source source;struct R{int value=source.get();static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"explicit-prefix", "using Size=decltype(sizeof(0));struct R{int value=3;R*self=this;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{{41}};}"},
+      {"function-template", "using Size=decltype(sizeof(0));struct R{int value=3;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};template<class T>T*make(int n){return new T[n]{};}R*f(int n){return make<R>(n);}"},
+      {"nested-new-array", "using Size=decltype(sizeof(0));struct R{int value=3;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};using Row=R[2];Row*f(int n){return new R[n][2]{};}"},
+      {"promoted-aggregate-filler", "using Size=decltype(sizeof(0));struct R{int n;static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n]{};}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("runtime-aggregate-" + Name + ".cpp");
+    auto Output = tmpFile("runtime-aggregate-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RuntimeAggregateArraysRejectUnprovenTemporaryStorage) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"reference-temporary", "using Size=decltype(sizeof(0));struct R{const int&value=3;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"default-reference-temporary", "using Size=decltype(sizeof(0));int read(const int&value=3){return value;}struct R{int value=read();static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"discarded-record", "using Size=decltype(sizeof(0));struct Token{int value;};struct R{int value=((void)Token{},3);static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"discarded-record-destructor", "using Size=decltype(sizeof(0));int drops;struct Token{~Token(){++drops;}};struct R{int value=((void)Token{},3);static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"discarded-array", "using Size=decltype(sizeof(0));using Values=int[2];struct R{int value=((void)Values{},3);static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"record-return", "using Size=decltype(sizeof(0));struct Token{int value;};Token make(){return {3};}struct R{Token value=make();static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"record-parameter", "using Size=decltype(sizeof(0));struct Token{int value;};int read(Token value){return value.value;}struct R{int value=read({3});static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"record-default-parameter", "using Size=decltype(sizeof(0));struct Token{int value;};int read(Token value={3}){return value.value;}struct R{int value=read();static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"constructed-subobject", "using Size=decltype(sizeof(0));struct Token{Token(){}};struct R{Token value;static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"nested-reference-temporary", "using Size=decltype(sizeof(0));struct Inner{const int&value=3;};struct R{Inner values[2]{};static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"hidden-source", "using Size=decltype(sizeof(0));struct R{int value=(sizeof(long double),3);static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+      {"default-hidden-source", "using Size=decltype(sizeof(0));int read(int value=(sizeof(long double),3)){return value;}struct R{int value=read();static void*operator new[](Size)noexcept{return nullptr;}static void operator delete[](void*)noexcept{}};R*f(int n){return new R[n]{};}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("runtime-aggregate-" + Name + ".cpp");
+    auto Output = tmpFile("runtime-aggregate-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RuntimeAggregateArraysPreserveIdentityEffectsAndDestruction) {
+  auto Output = tmpFile("runtime-aggregate-array.nc");
+  auto Result = translate(fixture("runtime-aggregate-array.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("runtime-aggregate-array" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }

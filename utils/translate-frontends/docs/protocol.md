@@ -981,6 +981,14 @@ arguments. The independent verifier still checks the emitted types, calls and
 CFG; it does not reconstruct the original C++ new-expression semantics. See the
 [runtime array contract](cpp-core-v2.md#runtime-array-allocation).
 
+Checked repeated aggregate array fillers reuse ordinary loop, index, field,
+assignment and call instructions. Their source proof distinguishes actual
+initialization destinations from expression materialization, explicitly follows
+selected defaults and semantic nested fillers, and rejects any unproven separate
+temporary storage. No per-iteration full-expression cleanup is added to this
+aggregate category. Direct omitted default constructors retain their existing
+per-element cleanup. No new wire flag or operation is required.
+
 The optional module property `memory_lifetimes` must be boolean `true` and requires
 `cpp-core-v2`. Absence defaults to false; an explicitly false/nonboolean property
 is rejected. The verifier independently rejects this flag in other profiles.

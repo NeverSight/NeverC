@@ -7,6 +7,8 @@ on:
     paths:
       - .github/workflows/diagnose-cpp-template-source.yml
       - utils/translate-frontends/cpp/diagnostics/template-source.cpp
+      - tests/neverc/Inputs/translate/cpp/nullptr-template-values.cpp
+      - tests/neverc/Inputs/translate/cpp/runtime-aggregate-array.cpp
 
 permissions:
   contents: read
@@ -94,3 +96,26 @@ jobs:
               exit "$result"
             fi
           done
+      - name: Check upstream nullptr templates and runtime aggregate initialization
+        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+        run: |
+          status=0
+          for fixture in nullptr-template-values runtime-aggregate-array; do
+            for optimization in 0 2; do
+              if clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
+                "tests/neverc/Inputs/translate/cpp/$fixture.cpp" -o "$RUNNER_TEMP/$fixture"; then
+                if "$RUNNER_TEMP/$fixture"; then
+                  result=0
+                else
+                  result=$?
+                fi
+                echo "$fixture O$optimization upstream result: $result"
+                if [ "$result" -ne 0 ]; then
+                  status=1
+                fi
+              else
+                status=1
+              fi
+            done
+          done
+          exit "$status"

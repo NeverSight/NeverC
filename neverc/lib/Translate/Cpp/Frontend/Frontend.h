@@ -279,7 +279,7 @@ struct ArrayAllocationLayout {
   uint64_t ElementBytes = 0, CookieBytes = 0, CountOffset = 0;
   bool StoresElementSize = false;
 };
-enum class RuntimeArrayInitialization { None, Zero, DefaultConstruction };
+enum class RuntimeArrayInitialization { None, Zero, DefaultConstruction, Aggregate };
 struct ArrayNewInfo {
   std::optional<uint64_t> Count;
   const clang::Expr *BoundBeforeConversion = nullptr;

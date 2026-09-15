@@ -1820,6 +1820,94 @@ bool omittedDefaultConstruction(const Expr *Init, QualType Element, ASTContext &
   }
 }
 
+static bool repeatedAggregateInitializer(const Expr *Init, QualType Destination,
+                                         Adapter &A, unsigned Depth = 0) {
+  if (!Init || Depth > 64)
+    return false;
+  A.chargeExpansion(1, Init->getExprLoc());
+  // A null Destination denotes evaluation/binding, where aggregate prvalues
+  // would create separate automatic result storage. Lists are safe only when
+  // initialize() writes them into the actual allocated object or its fields.
+  if (const auto *P = dyn_cast<ParenExpr>(Init))
+    return repeatedAggregateInitializer(P->getSubExpr(), Destination, A, Depth + 1);
+  if (const auto *W = dyn_cast<ExprWithCleanups>(Init))
+    return !W->getNumObjects() &&
+           repeatedAggregateInitializer(W->getSubExpr(), Destination, A, Depth + 1);
+  if (const auto *C = dyn_cast<ConstantExpr>(Init))
+    return repeatedAggregateInitializer(C->getSubExpr(), Destination, A, Depth + 1);
+  if (const auto *D = dyn_cast<CXXDefaultInitExpr>(Init))
+    return repeatedAggregateInitializer(D->getExpr(), Destination, A, Depth + 1);
+  if (const auto *D = dyn_cast<CXXDefaultArgExpr>(Init))
+    return repeatedAggregateInitializer(selectedDefaultArgument(D, A.Context),
+                                        Destination, A, Depth + 1);
+  if (Init->getType().isNull() || Init->isInstantiationDependent() ||
+      isa<MaterializeTemporaryExpr, CXXBindTemporaryExpr, OpaqueValueExpr>(Init))
+    return false;
+  if (!Destination.isNull() && Destination->isReferenceType())
+    Destination = {}; // bind() must designate already-live storage.
+  const bool AggregateDestination = !Destination.isNull() &&
+      (Destination->isRecordType() || Destination->isArrayType());
+  if (AggregateDestination) {
+    if (!A.Context.hasSameUnqualifiedType(Destination, Init->getType()))
+      return false;
+    if (isa<ImplicitValueInitExpr>(Init))
+      return true;
+    if (Destination->isArrayType() && isa<StringLiteral>(Init))
+      return true;
+    const auto *List = dyn_cast<InitListExpr>(Init);
+    if (!List)
+      return false; // Constructed subobjects and record-return calls need a later proof.
+    if (List->isSyntacticForm() && List->getSemanticForm())
+      List = List->getSemanticForm();
+    if (const auto *Array = A.Context.getAsConstantArrayType(Destination)) {
+      for (const auto *Element : List->inits())
+        if (!repeatedAggregateInitializer(Element, Array->getElementType(), A, Depth + 1))
+          return false;
+      return !List->getArrayFiller() || repeatedAggregateInitializer(
+          List->getArrayFiller(), Array->getElementType(), A, Depth + 1);
+    }
+    const auto *Record = Destination->getAsCXXRecordDecl();
+    if (!Record || !(Record = Record->getDefinition()) ||
+        List->getNumInits() != std::distance(Record->field_begin(), Record->field_end()))
+      return false;
+    unsigned Index = 0;
+    for (const auto *Field : Record->fields())
+      if (!repeatedAggregateInitializer(List->getInit(Index++), Field->getType(), A, Depth + 1))
+        return false;
+    return true;
+  }
+  // Inspect every evaluated child, even when Clang can fold the final scalar.
+  // In particular, discarded R{} still materializes outside a destination role.
+  if (Init->isPRValue() && (Init->getType()->isRecordType() || Init->getType()->isArrayType()))
+    return false;
+  if (const auto *Call = dyn_cast<CallExpr>(Init)) {
+    const auto *Function = Call->getDirectCallee();
+    auto Type = Function ? Function->getType() : Call->getCallee()->getType();
+    if (Type->isPointerType())
+      Type = Type->getPointeeType();
+    const auto *Prototype = Type->getAs<FunctionProtoType>();
+    if (!Prototype)
+      return false;
+    // Caller-owned by-value record arguments use separate storage. Keep them
+    // outside this first proof even when the callee ends their lifetime.
+    for (auto Parameter : Prototype->param_types())
+      if (Parameter->isRecordType())
+        return false;
+  }
+  if (const auto *List = dyn_cast<InitListExpr>(Init)) {
+    if (List->getArrayFiller())
+      return false;
+  }
+  for (const auto *Child : Init->children()) {
+    if (!Child)
+      continue;
+    const auto *Expression = dyn_cast<Expr>(Child);
+    if (!Expression || !repeatedAggregateInitializer(Expression, {}, A, Depth + 1))
+      return false;
+  }
+  return true;
+}
+
 ArrayNewInfo Adapter::arrayNewInfo(const CXXNewExpr *N) {
   const auto L = N->getExprLoc();
   const auto Bound = N->getArraySize();
@@ -1936,10 +2024,14 @@ ArrayNewInfo Adapter::arrayNewInfo(const CXXNewExpr *N) {
     Result.Repeated = RuntimeArrayInitialization::DefaultConstruction;
     return Result;
   }
+  if (List && repeatedAggregateInitializer(Result.Filler, Object, *this)) {
+    Result.Repeated = RuntimeArrayInitialization::Aggregate;
+    return Result;
+  }
   // The same classification runs before source erasure and before lowering.
   // Explicit clauses have bounded fresh storage; repeated aggregate fillers
   // can create distinct temporaries that all outlive the construction loop.
-  reject(L, "runtime array initializer", "Repeated array elements require direct default construction or implicit zero initialization; aggregate fillers need dynamic temporary lifetime support.");
+  reject(L, "runtime array initializer", "Repeated elements require direct default construction, zero initialization or aggregate initialization without separate temporary storage.");
   throw Failure{};
 }
 

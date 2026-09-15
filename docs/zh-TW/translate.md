@@ -10,7 +10,7 @@ Core v2 已實作已接納靜態記錄、陣列與延長生命週期暫存物件
 
 Core v2 現已實作已接納物件與參考的非區域動態初始化，包括已具現化的範本物件。 經過檢查的內部原生啟動函式在 main 前依定義順序執行，先完成零初始化與常數初始化，並在每個初始化器之後清理一般暫存物件。 靜態區域物件保留首次使用初始化。 程式及獨立 C 入口的 O0／O2 測試須由實作版本的 CI 驗證。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#nonlocal-dynamic-initialization).
 
-執行期長度 new[] 現可使用原始碼定義、無 placement 參數的 noexcept 類別配置函式。無效長度在呼叫配置函式前傳回空指標；有效元素透過迴圈建構，預設參數暫存物件逐元素清理。明確前綴及長度轉換暫存物件保留到整個完整運算式結束。重複聚合填充、拋出例外或 placement 的執行期配置、預設堆積及完整 C++/STL 仍未完成。原生驗證等待實作版本 CI。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#runtime-array-allocation).
+執行期長度 new[] 現可使用原始碼定義、無 placement 參數的 noexcept 類別配置函式。無效長度在呼叫配置函式前傳回空指標；有效元素透過迴圈建構，預設參數暫存物件逐元素清理。明確前綴及長度轉換暫存物件保留到整個完整運算式結束。重複聚合填充現可直接初始化實際元素，包括巢狀串列與對既有物件的參考；需要額外暫存物件的填充、拋出例外或 placement 的執行期配置、預設堆積及完整 C++/STL 仍未完成。原生驗證等待實作版本 CI。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#runtime-array-allocation).
 
 Core v2 支援透過經過檢查的原始碼配置函式執行單物件 new/delete，包括類別與範本 placement 多載、原始儲存位址及引數清理。顯式解構與 placement 重建保留後續自動清理義務。原生驗證需要實作版本的 CI。預設堆積執行階段、執行期 new[] 長度、例外、標準標頭及完整 C++/STL 仍未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
