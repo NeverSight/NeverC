@@ -166,6 +166,32 @@ public:
     }
     return true;
   }
+  bool VisitCXXNewExpr(CXXNewExpr *E) {
+    llvm::outs() << "new array=" << E->isArray()
+                 << " allocated=" << E->getAllocatedType().getAsString()
+                 << " usual-sized-delete=" << E->doesUsualArrayDeleteWantSize()
+                 << " nullable=" << E->shouldNullCheckAllocation() << "\n";
+    if (auto Bound = E->getArraySize()) {
+      llvm::outs() << "  bound " << (*Bound)->getStmtClassName()
+                   << " type=" << (*Bound)->getType().getAsString()
+                   << " constant=" << bool((*Bound)->getIntegerConstantExpr(Context)) << "\n";
+    }
+    if (const auto *Init = E->getInitializer()) {
+      llvm::outs() << "  initializer " << Init->getStmtClassName()
+                   << " type=" << Init->getType().getAsString() << "\n";
+      if (const auto *List = dyn_cast<InitListExpr>(Init)) {
+        if (List->isSyntacticForm() && List->getSemanticForm())
+          List = List->getSemanticForm();
+        llvm::outs() << "  array prefix=" << List->getNumInits() << " filler=";
+        if (const auto *Filler = List->getArrayFiller())
+          llvm::outs() << Filler->getStmtClassName() << " type=" << Filler->getType().getAsString();
+        else
+          llvm::outs() << "none";
+        llvm::outs() << "\n";
+      }
+    }
+    return true;
+  }
 };
 
 // Controlled upstream experiment: make the compatible friend owner visible to
@@ -213,6 +239,20 @@ int main(int Argc, const char **Argv) {
     const char *Source;
   };
   const Fixture Sources[] = {
+      {"runtime-array-initializers",
+      "using Size=decltype(sizeof(0));struct Tag{};void*operator new[](Size,Tag)noexcept{return nullptr;}"
+      "struct Temporary{Temporary(int=0){}~Temporary(){}};"
+      "struct R{int value;R(const Temporary&t=Temporary()):value(0){}~R(){}"
+      "static void*operator new[](Size)noexcept{return nullptr;}};"
+      "R*plain(int n){return new R[n];}R*value(int n){return new R[n]();}"
+      "R*list(int n){return new R[n]{{},{}};}"
+      "struct Aggregate{R field;};Aggregate*aggregate(int n){return new(Tag{})Aggregate[n]{};}"
+      "int*scalar(int n){return new(Tag{})int[n];}int*zero(int n){return new(Tag{})int[n]();}"
+      "int*prefix(int n){return new(Tag{})int[n]{1,2};}char*text(int n){return new(Tag{})char[n]{\"hi\"};}"
+      "using Row=R[2];Row*nested(int n){return new R[n][2];}"
+      "R*empty(){return new R[0];}R*known(){return new R[3]{};}"
+      "struct Bound{long long n;operator long long()const{return n;}};"
+      "R*converted(long long n){return new R[Bound{n}];}"},
       {"static-forward-reference-copy",
       "int n=3;struct R{int&r;};struct S{static const R a;static const R b;};const R S::a=S::b;const R S::b{n};int f(){return ++S::a.r;}"},
       {"static-prior-reference-copy",

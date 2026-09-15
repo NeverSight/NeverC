@@ -42,7 +42,8 @@ jobs:
             static-temporary-values static-reference-fillers \
             static-reference-single-filler automatic-reference-fillers \
             aggregate-member-cleanup static-forward-reference-copy \
-            static-prior-reference-copy static-constexpr-reference-copy; do
+            static-prior-reference-copy static-constexpr-reference-copy \
+            runtime-array-initializers; do
             if "$RUNNER_TEMP/template-source" "$fixture"; then
               echo "$fixture: success"
             else
