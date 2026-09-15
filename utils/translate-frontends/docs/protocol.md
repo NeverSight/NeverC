@@ -788,7 +788,9 @@ folding a false result does not bypass that restriction. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).
 Ordinary constructor defaults use exact completed parameter/initializer source
 proofs before erasure, including unchanged full-expression envelopes and implicit
-destruction dependencies. The frontend retains these identities internally;
+destruction dependencies. Nothrow defaults also check actual resolved callee
+exception specifications before preserving the existing boolean. The frontend
+retains these identities internally;
 neither default expressions nor hypothetical calls are added to transport IR.
 
 

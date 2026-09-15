@@ -52,14 +52,18 @@ int default_destructions;
 int defaultValue() { return 30 + ++default_calls; }
 struct DefaultToken {
   int value;
-  DefaultToken(int n) : value(n) { ++default_constructions; }
-  ~DefaultToken() { ++default_destructions; }
+  DefaultToken(int n) noexcept : value(n) { ++default_constructions; }
+  ~DefaultToken() noexcept { ++default_destructions; }
 };
 struct Defaults {
   int value;
-  Defaults(int n = defaultValue(), const DefaultToken &token = DefaultToken(7))
+  Defaults(int n = defaultValue(), const DefaultToken &token = DefaultToken(7)) noexcept
       : value(n + token.value) { ++default_constructions; }
   ~Defaults() { ++default_destructions; }
+};
+struct QuietDefaults {
+  QuietDefaults(int = 7) noexcept { ++default_constructions; }
+  ~QuietDefaults() noexcept { ++default_destructions; }
 };
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
@@ -77,6 +81,9 @@ extern "C" bool defined_nothrow_fields() { return __is_nothrow_constructible(Hol
 extern "C" bool defined_nothrow_destruction() { return __is_nothrow_constructible(ThrowingDestruction); }
 extern "C" bool defined_defaults() { return __is_constructible(Defaults); }
 extern "C" bool defined_trivial_defaults() { return __is_trivially_constructible(Defaults); }
+extern "C" bool defined_nothrow_defaults() { return __is_nothrow_constructible(Defaults); }
+extern "C" bool defined_nothrow_quiet_defaults() { return __is_nothrow_constructible(QuietDefaults); }
+extern "C" bool defined_nothrow_explicit_default() { return __is_nothrow_constructible(Defaults, int); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -143,5 +150,10 @@ int main() {
         default_constructions != 6 || default_destructions != 5) return 21;
   }
   if (default_destructions != 6 || default_calls != 2) return 22;
+  if (defined_nothrow_defaults() || !defined_nothrow_quiet_defaults() ||
+      !defined_nothrow_explicit_default() || default_calls != 2 ||
+      default_constructions != 6 || default_destructions != 6) return 23;
+  { QuietDefaults value; }
+  if (default_constructions != 7 || default_destructions != 7 || default_calls != 2) return 24;
   return 0;
 }

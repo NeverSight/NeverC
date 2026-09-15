@@ -1382,8 +1382,18 @@ const Expr *selectedDefaultArgument(const CXXDefaultArgExpr *Default,
   return Init;
 }
 
+struct OperationDefaultDependencies {
+  std::set<const CXXMethodDecl *> Families;
+  std::set<const CXXRecordDecl *> Destructions;
+  std::set<const Expr *> SemanticInitializers;
+};
+struct OperationSemanticSource {
+  OperationDefaultDependencies Dependencies;
+  bool Complete = false;
+};
+using OperationSemanticSources = std::map<const Expr *, OperationSemanticSource>;
 using OperationDefaultSources =
-    std::set<std::pair<const ParmVarDecl *, const Expr *>>;
+    std::map<std::pair<const ParmVarDecl *, const Expr *>, const OperationDefaultDependencies *>;
 
 static const Expr *operationDefaultInitializer(Adapter &A, const ParmVarDecl *P) {
   const auto *Init = defaultArgumentInitializer(P, A.Context);
@@ -1735,6 +1745,51 @@ void Adapter::checkQueryType(QualType T, SourceLocation L) {
   }
 }
 
+enum class OperationFamily { Default, CopyMove, Assignment };
+
+// A trivial implicit parent can infer specifications from written subobject
+// operations without generating a body. Source-only uses retain the family
+// checks and validate collected destruction dependencies separately.
+static bool implicitOperationFamilySource(Adapter &A, const CXXRecordDecl *Record,
+    OperationFamily Operation, bool CheckDestruction, unsigned Depth = 0) {
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
+    return false;
+  A.chargeExpansion(1, Record->getLocation());
+  if ((Operation == OperationFamily::Default && Record->hasUserDeclaredConstructor()) ||
+      (Operation == OperationFamily::CopyMove && (Record->hasUserDeclaredCopyConstructor() ||
+                                                Record->hasUserDeclaredMoveConstructor())) ||
+      (Operation == OperationFamily::Assignment && (Record->hasUserDeclaredCopyAssignment() ||
+                                                   Record->hasUserDeclaredMoveAssignment())) ||
+      (CheckDestruction && Operation != OperationFamily::Assignment &&
+       (Record->hasUserDeclaredDestructor() || !Record->hasTrivialDestructor())))
+    return false;
+  for (const auto &Base : Record->bases())
+    if (!implicitOperationFamilySource(A, Base.getType()->getAsCXXRecordDecl(),
+                                       Operation, CheckDestruction, Depth + 1))
+      return false;
+  for (const auto *Field : Record->fields())
+    if (const auto *Member = A.Context.getBaseElementType(Field->getType())->getAsCXXRecordDecl())
+      if (!implicitOperationFamilySource(A, Member, Operation, CheckDestruction, Depth + 1))
+        return false;
+  return true;
+}
+
+static bool implicitSpecialMemberSource(Adapter &A, const CXXMethodDecl *Method,
+                                         bool CheckDestruction) {
+  if (!Method || !Method->isImplicit() || !Method->isTrivial())
+    return false;
+  if (const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method))
+    return (Constructor->isDefaultConstructor() || Constructor->isCopyOrMoveConstructor()) &&
+           implicitOperationFamilySource(A, Constructor->getParent(),
+               Constructor->isDefaultConstructor() ? OperationFamily::Default
+                                                   : OperationFamily::CopyMove,
+               CheckDestruction);
+  return (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) &&
+         implicitOperationFamilySource(A, Method->getParent(), OperationFamily::Assignment,
+                                       CheckDestruction);
+}
+
 // A hypothetical operation needs source admission, but no runtime owner or
 // helper. User operations require exact definitions that have completed normal
 // source traversal. Do not reuse runtime construction/default caches or infer
@@ -1742,7 +1797,8 @@ void Adapter::checkQueryType(QualType T, SourceLocation L) {
 static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const std::set<const FunctionDecl *> *Definitions = nullptr,
     bool RequiresExceptionSource = false,
-    const OperationDefaultSources *Defaults = nullptr) {
+    const OperationDefaultSources *Defaults = nullptr,
+    const OperationSemanticSources *Semantics = nullptr) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
@@ -1783,41 +1839,29 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           return false;
     return true;
   };
-  enum class Family { Default, CopyMove, Assignment };
-  // A trivial generated parent can still select an explicitly defaulted field
-  // operation with written noexcept source. Until those selections are retained,
-  // require this operation family to be implicit throughout owned subobjects.
-  auto ImplicitClosure = [&](auto &&Self, const CXXRecordDecl *Record,
-                             Family Operation, unsigned Depth) -> bool {
-    Record = Record ? Record->getDefinition() : nullptr;
-    if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
-      return false;
-    A.chargeExpansion(1, Record->getLocation());
-    if ((Operation == Family::Default && Record->hasUserDeclaredConstructor()) ||
-        (Operation == Family::CopyMove && (Record->hasUserDeclaredCopyConstructor() ||
-                                         Record->hasUserDeclaredMoveConstructor())) ||
-        (Operation == Family::Assignment && (Record->hasUserDeclaredCopyAssignment() ||
-                                            Record->hasUserDeclaredMoveAssignment())) ||
-        (Operation != Family::Assignment && (Record->hasUserDeclaredDestructor() ||
-                                            !Record->hasTrivialDestructor())))
-      return false;
-    for (const auto &Base : Record->bases())
-      if (!Self(Self, Base.getType()->getAsCXXRecordDecl(), Operation, Depth + 1))
+  auto CallExceptionSource = [&](const CallExpr *Call) {
+    if (!RequiresExceptionSource || scalarDestruction(Call, A.Context))
+      return true;
+    auto T = Call->getCallee()->getType();
+    // C++17 canCalleeThrow reads the actual callee expression type, even for a
+    // direct call. A pointer conversion can erase noexcept from its declaration.
+    if (T->isSpecificPlaceholderType(BuiltinType::BoundMember)) {
+      const auto *Reference = dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
+      if (!Reference)
         return false;
-    for (const auto *Field : Record->fields()) {
-      auto T = A.Context.getBaseElementType(Field->getType());
-      if (const auto *Member = T->getAsCXXRecordDecl())
-        if (!Self(Self, Member, Operation, Depth + 1))
-          return false;
+      T = Reference->getMemberDecl()->getType();
     }
-    return true;
+    if (T->isPointerType() || T->isReferenceType())
+      T = T->getPointeeType();
+    return standardExceptionSpecification(T->getAs<FunctionProtoType>()) &&
+           (!Call->getDirectCallee() || ExceptionSource(Call->getDirectCallee()));
   };
   // Normal parameter traversal proves the unchanged initializer's written
-  // operations. It does not prove every implicit destructor, and an unused
-  // default need never reach runtime lowering. Inspect those dependencies here
-  // with completed definitions, without creating runtime lifetime helpers.
-  auto DefaultLifetimes = [&](auto &&Self, const Stmt *Node,
-                              unsigned Depth) -> bool {
+  // operations. It does not prove every inferred specification or implicit
+  // destructor, and an unused default need never reach runtime lowering.
+  // Inspect those dependencies without resolving specs or creating helpers.
+  auto DefaultDependencies = [&](auto &&Self, const Stmt *Node,
+                                 unsigned Depth) -> bool {
     if (!Node)
       return true;
     if (Depth > 64)
@@ -1836,25 +1880,23 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     // never be generated, leaving selected subobject signatures unvisited.
     if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node)) {
       const auto *Constructor = Construction->getConstructor();
+      if (!ExceptionSource(Constructor))
+        return false;
       if ((Constructor->isImplicit() || Constructor->isDefaulted()) &&
-          !(Constructor->isImplicit() && Constructor->isTrivial() &&
-            (Constructor->isDefaultConstructor() || Constructor->isCopyOrMoveConstructor()) &&
-            ImplicitClosure(ImplicitClosure, Constructor->getParent(),
-                            Constructor->isDefaultConstructor() ? Family::Default
-                                                                : Family::CopyMove, 0)))
+          !implicitSpecialMemberSource(A, Constructor, true))
         return false;
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
           Method && (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) &&
           (Method->isImplicit() || Method->isDefaulted()))
-        if (!(Method->isImplicit() && Method->isTrivial() &&
-              ImplicitClosure(ImplicitClosure, Method->getParent(), Family::Assignment, 0)))
+        if (!implicitSpecialMemberSource(A, Method, true))
           return false;
     if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Node)) {
       const auto *Destructor = Temporary->getTemporary()->getDestructor();
       const auto *Sub = Temporary->getSubExpr();
       if (!Destructor || !Sub || !Temporary->isPRValue() || !Sub->isPRValue() ||
+          !ExceptionSource(Destructor) ||
           !A.Context.hasSameType(Temporary->getType(), Sub->getType()) ||
           !A.Context.hasSameUnqualifiedType(Temporary->getType(),
               A.Context.getRecordType(Destructor->getParent())) ||
@@ -1866,18 +1908,25 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           !A.Context.hasSameType(Cleanup->getType(), Cleanup->getSubExpr()->getType()) ||
           Cleanup->getValueKind() != Cleanup->getSubExpr()->getValueKind())
         return false;
+    if (const auto *New = dyn_cast<CXXNewExpr>(Node))
+      if (!ExceptionSource(New->getOperatorNew()))
+        return false;
     if (const auto *Delete = dyn_cast<CXXDeleteExpr>(Node)) {
       auto T = Delete->getDestroyedType();
-      if (T.isNull())
+      if (T.isNull() || !ExceptionSource(Delete->getOperatorDelete()))
         return false;
       if (const auto *Record = A.Context.getBaseElementType(T)->getAsCXXRecordDecl())
-        if (!Destruction(Destruction, Record, 0))
+        if (!Destruction(Destruction, Record, 0) ||
+            !ExceptionSource(Record->getDestructor()))
           return false;
     }
-    if (const auto *Call = dyn_cast<CallExpr>(Node))
+    if (const auto *Call = dyn_cast<CallExpr>(Node)) {
+      if (!CallExceptionSource(Call))
+        return false;
       if (const auto *Destructor = dyn_cast_or_null<CXXDestructorDecl>(Call->getDirectCallee()))
         if (!Destruction(Destruction, Destructor->getParent(), 0))
           return false;
+    }
     // These source wrappers have no normal Stmt children. Array fillers may
     // likewise exist only in the semantic initializer form.
     if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Node)) {
@@ -1935,11 +1984,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     }
     if (const auto *Construction = dyn_cast<CXXConstructExpr>(E)) {
       const auto *Constructor = Construction->getConstructor();
-      const bool Implicit = Constructor->isImplicit() && Constructor->isTrivial() &&
-          (Constructor->isDefaultConstructor() || Constructor->isCopyOrMoveConstructor()) &&
-          ImplicitClosure(ImplicitClosure, Constructor->getParent(),
-                          Constructor->isDefaultConstructor() ? Family::Default
-                                                              : Family::CopyMove, 0);
+      const bool Implicit = implicitSpecialMemberSource(A, Constructor, true);
       if ((!Implicit && !(ordinaryConstructor(Constructor) && Defined(Constructor))) ||
           !ExceptionSource(Constructor) ||
           !A.S.owns(A.Sources, Constructor->getLocation()) || !Construction->isPRValue() ||
@@ -1955,14 +2000,40 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           const auto *P = Default->getParam();
           const auto *Owner = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
           const auto *Init = operationDefaultInitializer(A, P);
-          if (RequiresExceptionSource || !Defaults || !Init || !Owner ||
+          if (!Defaults || !Init || !Owner ||
               !Defined(Constructor) ||
               Owner->getCanonicalDecl() != Constructor->getCanonicalDecl() ||
               P->getFunctionScopeIndex() != I || Default->hasRewrittenInit() ||
               !A.S.owns(A.Sources, Default->getUsedLocation()) ||
-              selectedDefaultArgument(Default, A.Context) != Init ||
-              !Defaults->count({P, Init}) ||
-              !DefaultLifetimes(DefaultLifetimes, Init, 0))
+              selectedDefaultArgument(Default, A.Context) != Init)
+            return false;
+          auto Proof = Defaults->find({P, Init});
+          if (Proof == Defaults->end())
+            return false;
+          std::vector<const OperationDefaultDependencies *> Work{Proof->second};
+          std::set<const OperationDefaultDependencies *> Seen;
+          while (!Work.empty()) {
+            const auto *Dependencies = Work.back();
+            Work.pop_back();
+            if (!Dependencies || !Seen.insert(Dependencies).second)
+              continue;
+            A.chargeExpansion(1, Default->getUsedLocation());
+            for (const auto *Method : Dependencies->Families)
+              if (!implicitSpecialMemberSource(A, Method, false))
+                return false;
+            for (const auto *Record : Dependencies->Destructions)
+              if (!Destruction(Destruction, Record, 0))
+                return false;
+            for (const auto *Initializer : Dependencies->SemanticInitializers) {
+              if (!Semantics)
+                return false;
+              auto Source = Semantics->find(Initializer);
+              if (Source == Semantics->end() || !Source->second.Complete)
+                return false;
+              Work.push_back(&Source->second.Dependencies);
+            }
+          }
+          if (!DefaultDependencies(DefaultDependencies, Init, 0))
             return false;
         } else if (!Self(Self, Argument, Depth + 1)) {
           return false;
@@ -1975,9 +2046,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
       if (Call->getOperator() != OO_Equal || !Method || Method->getNumParams() != 1 ||
           !A.S.owns(A.Sources, Method->getLocation()) || Call->getNumArgs() != 2)
         return false;
-      const bool Implicit = Method->isImplicit() && Method->isTrivial() &&
-          (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) &&
-          ImplicitClosure(ImplicitClosure, Method->getParent(), Family::Assignment, 0);
+      const bool Implicit = implicitSpecialMemberSource(A, Method, true);
       if (!Implicit && !(ordinaryOperator(Method) && Defined(Method) && directMethodReference(Call)))
         return false;
       if (!ExceptionSource(Method))
@@ -3315,6 +3384,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
   OperationDefaultSources CompletedOperationDefaults;
+  std::map<const Expr *, OperationDefaultDependencies> SharedOperationDefaults;
+  std::vector<OperationDefaultDependencies *> ActiveOperationDefaults;
   std::map<const CXXRecordDecl *, bool> HasArray;
   std::map<const CXXRecordDecl *, bool> FlatReferenceLayouts;
   std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees, FunctionValueDesignators;
@@ -3397,7 +3468,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const VarDecl *> CheckedVariablePartials, CheckedVariableDeclarations;
   std::vector<const VarDecl *> ActiveVariablePartials, ActiveVariableDeclarations;
   std::vector<const TemplateUseSource *> ActiveTemplateUses;
-  std::set<const Expr *> CheckedSemanticInitializers;
+  OperationSemanticSources SemanticInitializerSources;
   std::map<const UnresolvedLookupExpr *, const DeclRefExpr *> InitializerLookups;
   std::set<const Stmt *> InitializerLookupWrappers;
   std::set<const InitListExpr *> EmptyVoidLists;
@@ -5711,42 +5782,94 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                "One written callback clause must have one selected reference.");
     InitializerLookupWrappers.insert(Wrappers.begin(), Wrappers.end());
   }
-  void checkSemanticInitializers(const InitListExpr *List, SourceLocation Owner) {
+  void collectOperationDefaultSource(const Stmt *S) {
+    // Collect from the actual source traversal, including unevaluated operands
+    // and expressions reached through TypeLoc or retained template source edges.
+    // Capture before ownership/cache skips; only a query selecting this exact
+    // completed default consumes the evidence. MaybeBindToTemporary can resolve
+    // even a trivial destructor and then omit the binding expression entirely.
+    if (!ActiveOperationDefaults.empty()) {
+      const CXXMethodDecl *Selected = nullptr;
+      const CXXRecordDecl *Destroyed = nullptr;
+      if (const auto *E = dyn_cast<Expr>(S);
+          E && !E->getType().isNull() && E->isPRValue())
+        Destroyed = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl();
+      if (const auto *Construction = dyn_cast<CXXConstructExpr>(S))
+        Selected = Construction->getConstructor();
+      else if (const auto *Call = dyn_cast<CallExpr>(S)) {
+        const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+        if (Method && (Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()))
+          Selected = Method;
+        if (const auto *Destructor = dyn_cast_or_null<CXXDestructorDecl>(Method))
+          Destroyed = Destructor->getParent();
+      } else if (const auto *Delete = dyn_cast<CXXDeleteExpr>(S)) {
+        auto T = Delete->getDestroyedType();
+        if (!T.isNull())
+          Destroyed = A.Context.getBaseElementType(T)->getAsCXXRecordDecl();
+      }
+      for (auto *Dependencies : ActiveOperationDefaults) {
+        if (Selected && (Selected->isImplicit() || Selected->isDefaulted()) &&
+            Dependencies->Families.insert(Selected).second)
+          A.chargeExpansion(1, Selected->getLocation());
+        if (Destroyed && Dependencies->Destructions.insert(Destroyed).second)
+          A.chargeExpansion(1, Destroyed->getLocation());
+      }
+    }
+  }
+  bool checkSemanticInitializers(const InitListExpr *List, SourceLocation Owner) {
     // RAV visits only the written form of a braced initializer by default.
     // Follow its semantic elements and shared array filler once for admission;
     // lowering still evaluates a filler separately for every destination.
-    std::vector<const Expr *> Work{List};
-    while (!Work.empty()) {
-      const auto *E = Work.back();
-      Work.pop_back();
+    auto Check = [&](auto &&Self, const Expr *E, unsigned Depth) -> bool {
+      if (!E)
+        return true;
+      if (const auto *I = dyn_cast<InitListExpr>(E);
+          I && I->isSyntacticForm() && I->getSemanticForm())
+        E = I->getSemanticForm();
+      // Record cached edges too: a nested default can reuse semantic source
+      // first checked outside this parameter, or while another frame is active.
+      for (auto *Dependencies : ActiveOperationDefaults)
+        if (Dependencies->SemanticInitializers.insert(E).second)
+          A.chargeExpansion(1, Owner);
+      auto [Entry, Inserted] = SemanticInitializerSources.try_emplace(E);
+      if (!Inserted)
+        return true;
+      A.chargeExpansion(1, Owner);
+      const auto ActiveDepth = ActiveOperationDefaults.size();
+      if (Depth >= 64 || ActiveDepth >= 64) {
+        A.reject(Owner, "initializer source depth", "Nested initializer source exceeds the depth limit.");
+        return false;
+      }
+      ActiveOperationDefaults.push_back(&Entry->second.Dependencies);
+      auto RestoreDependencies = llvm::make_scope_exit([&] { ActiveOperationDefaults.resize(ActiveDepth); });
+      // Manual semantic-list traversal has no VisitStmt for the list itself.
+      collectOperationDefaultSource(E);
       if (const auto *I = dyn_cast<InitListExpr>(E)) {
-        if (I->isSyntacticForm() && I->getSemanticForm())
-          I = I->getSemanticForm();
-        if (!CheckedSemanticInitializers.insert(I).second)
-          continue;
         if (const auto *Written = I->getSyntacticForm();
             Written && Written->getNumInits() == I->getNumInits())
           for (unsigned Index = 0; Index < I->getNumInits(); ++Index)
             retainInitializerLookup(Written->getInit(Index), I->getInit(Index));
         if (I->isGLValue() && !referenceListInitializer(I, A.Context))
           A.reject(Owner, "reference initializer", "A transparent single-element reference list is required.");
-        for (const auto *Init : I->inits())
-          if (Init) Work.push_back(Init);
         if (const auto *Filler = I->getArrayFiller())
-          Work.push_back(Filler);
-        continue;
+          if (!Self(Self, Filler, Depth + 1))
+            return false;
+        for (unsigned Index = I->getNumInits(); Index != 0; --Index)
+          if (!Self(Self, I->getInit(Index - 1), Depth + 1))
+            return false;
+      } else {
+        // Reference temporaries can contain further semantic lists and implicit
+        // conversions. Traverse the entire element with its source owner.
+        auto PreviousOwner = ImplicitInitializerOwner;
+        ImplicitInitializerOwner = Owner;
+        auto Restore = llvm::make_scope_exit([&] { ImplicitInitializerOwner = PreviousOwner; });
+        if (!TraverseStmt(const_cast<Expr *>(E)))
+          return false;
       }
-      if (!CheckedSemanticInitializers.insert(E).second)
-        continue;
-      // A reference temporary can itself contain a semantic initializer list
-      // with an implicit conversion call. Traverse every semantic element;
-      // inspecting only constructors or outer materializations misses those
-      // calls when RAV follows the nested list's written form instead.
-      auto PreviousOwner = ImplicitInitializerOwner;
-      ImplicitInitializerOwner = Owner;
-      auto Restore = llvm::make_scope_exit([&] { ImplicitInitializerOwner = PreviousOwner; });
-      TraverseStmt(const_cast<Expr *>(E));
-    }
+      Entry->second.Complete = A.S.Diagnostics.empty();
+      return true;
+    };
+    return Check(Check, List, 0);
   }
 
 public:
@@ -8744,10 +8867,30 @@ public:
   }
   bool TraverseParmVarDecl(ParmVarDecl *D) {
     if (!A.S.coreV2() || !lazyTemplateDefault(D)) {
+      const auto *Init = A.S.coreV2() ? operationDefaultInitializer(A, D) : nullptr;
+      OperationDefaultDependencies Dependencies;
+      const auto ActiveDepth = ActiveOperationDefaults.size();
+      if (Init) {
+        if (ActiveDepth >= 64) {
+          A.reject(D->getLocation(), "default source depth", "Nested default source exceeds the depth limit.");
+          return false;
+        }
+        A.chargeExpansion(1, D->getLocation());
+        ActiveOperationDefaults.push_back(&Dependencies);
+      }
+      auto Restore = llvm::make_scope_exit([&] { ActiveOperationDefaults.resize(ActiveDepth); });
       const bool Result = RecursiveASTVisitor<Allowlist>::TraverseParmVarDecl(D);
-      if (Result && A.S.coreV2() && A.S.Diagnostics.empty())
-        if (const auto *Init = operationDefaultInitializer(A, D))
-          CompletedOperationDefaults.emplace(D, Init);
+      if (Result && Init && A.S.Diagnostics.empty()) {
+        // Inherited parameters can share this exact initializer. Semantic source
+        // caches may omit its children on later traversals, so share the union of
+        // collected dependencies while retaining each parameter's own completion.
+        auto &Shared = SharedOperationDefaults[Init];
+        Shared.Families.insert(Dependencies.Families.begin(), Dependencies.Families.end());
+        Shared.Destructions.insert(Dependencies.Destructions.begin(), Dependencies.Destructions.end());
+        Shared.SemanticInitializers.insert(Dependencies.SemanticInitializers.begin(),
+                                           Dependencies.SemanticInitializers.end());
+        CompletedOperationDefaults[{D, Init}] = &Shared;
+      }
       return Result;
     }
     // RAV normally traverses the uninstantiated pattern expression here.
@@ -9173,7 +9316,7 @@ public:
       if (Source == A.OperationTraits.end() ||
           !operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
                                 operationTraitNeedsExceptionSource(Query->getTrait()),
-                                &CompletedOperationDefaults)) {
+                                &CompletedOperationDefaults, &SemanticInitializerSources)) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact ordinary definitions, arguments and destruction source.");
         return false;
@@ -10377,8 +10520,10 @@ public:
            Descriptor->getStorageDuration() == SD_Automatic;
   }
   bool VisitStmt(Stmt *S) {
-    if (!S || (!ImplicitInitializerOwner.isValid() &&
-               !A.S.owns(A.Sources, S->getBeginLoc())))
+    if (!S)
+      return true;
+    collectOperationDefaultSource(S);
+    if (!ImplicitInitializerOwner.isValid() && !A.S.owns(A.Sources, S->getBeginLoc()))
       return true;
     if (A.S.coreV2() && InitializerLookupWrappers.count(S))
       return true; // Exact source wrappers of an already checked callback clause.
@@ -10456,8 +10601,8 @@ public:
       if (E->getType().isNull()) {
         if (A.S.coreV2() && NewArrayInitializers.count(E))
           if (const auto *List = dyn_cast<InitListExpr>(E)) {
-            checkSemanticInitializers(List, L);
-            return true; // RAV still visits this exact written list's children.
+            // RAV still visits this exact written list's children.
+            return checkSemanticInitializers(List, L);
           }
         if (A.S.coreV2())
           if (const auto *List = dyn_cast<InitListExpr>(E);
@@ -10866,7 +11011,8 @@ public:
       checkConstruction(C, L);
     if (A.S.coreV2())
       if (const auto *I = dyn_cast<InitListExpr>(S))
-        checkSemanticInitializers(I, L);
+        if (!checkSemanticInitializers(I, L))
+          return false;
     if (const auto *U = dyn_cast<UnaryOperator>(S)) {
       if ((!A.S.coreV2() &&
            (U->getOpcode() == UO_AddrOf || U->getOpcode() == UO_Deref)) ||

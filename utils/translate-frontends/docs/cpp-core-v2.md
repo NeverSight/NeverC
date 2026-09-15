@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 135 accepted, 71 unsupported-source, nine missing-definition and eight invalid-C++ cases cover
+The paired 169 accepted, 102 unsupported-source, eleven missing-definition and eight invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1049,7 +1049,7 @@ prove implicit subobject destruction. Reference and pointer members do not own
 their referents. Query checking never requests runtime construction/default caches
 or queues hypothetical destruction helpers.
 
-Selected ordinary constructor defaults also qualify for non-nothrow queries when
+Selected ordinary constructor defaults also qualify when
 the exact parameter and unchanged initializer have completed normal source checking.
 The actual selected parameter owner and argument slot must match; inherited and
 out-of-line defaults retain their own parameter identity. An owned declaration
@@ -1065,25 +1065,40 @@ marking a selected function referenced can infer its exception specification eve
 for a non-nothrow query, while a trivial body remains ungenerated. The scan covers
 record prvalues, bound temporaries, nested defaults and semantic array fillers,
 explicit destructor calls and delete all retain their owning-subobject proofs.
-The scan conservatively requires destruction proof for every record prvalue,
-including constructor expressions below new. Nested unevaluated
-sizeof/noexcept/type-query operands keep their independent source checks without
-forcing unused destructor bodies. No runtime cleanup queue
-is used as evidence. Ordinary default expressions can call already admitted
+During normal parameter traversal, a scoped collector records implicit/defaulted
+constructor and assignment selections and record-prvalue destruction dependencies.
+It also covers unevaluated operands and written decltype reached through TypeLoc;
+Clang can resolve inferred specifications there and can omit trivial destructor
+binding nodes. Each exact parameter/initializer retains its own completion proof. Parameters
+inheriting the same exact initializer share its collected dependency union.
+Each semantic initializer also retains its collected dependencies and edges to
+other semantic initializers, including cache hits. A nested default can therefore
+reuse source first checked in another parameter or member initializer. Every
+reachable node must have completed checking; an in-progress cache entry supplies
+no completion proof. Nodes, edges and active frames use the shared expansion
+budget, with a 64-frame depth limit. Dependencies are checked after source
+completion. This is separate from the evaluated
+expression scan and never requests runtime cleanup or instantiates a body.
+
+The proof conservatively requires destruction evidence for every collected record
+prvalue, including constructor expressions below new and unevaluated aggregates.
+Implicit trivial destruction or completed ordinary user destructors qualify;
+lazy template destructor prvalues need a separate completed-signature proof and
+remain rejected. Unused bodies that contribute no such dependency remain lazy. Ordinary default expressions can call already admitted
 functions, including nested template expressions under existing source rules;
 template-owned default parameters need further source evidence.
 
 Declaration-only and lazy template operations, explicitly defaulted operations,
-implicit nontrivial destructors, incomplete selection, nothrow defaults and
-unproven record exception dependencies still require further source evidence.
+implicit nontrivial destructors, incomplete selection and
+unproven exception dependencies still require further source evidence.
 Unused templates remain lazy, and actual runtime use retains all ordinary source
 and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has twenty-two O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has twenty-four O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Fifteen exported query
+default evaluation with full-expression temporary cleanup. Eighteen exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1108,8 +1123,18 @@ Clang's expression exception check can stop after a throwing callee. If a later
 callee remains unresolved, this bounded proof rejects the query conservatively.
 Destructor inference differs: it can still resolve later subobject destructors
 after an earlier one makes the result throwing, so every owning subobject remains
-part of the source proof. These exception checks do not authorize selected defaults, lazy template
-operations, failed initialization or record-value nothrow destruction.
+part of the source proof. Lazy template operations, failed initialization and
+record-value nothrow destruction still require further evidence.
+
+Unchanged ordinary defaults also support nothrow construction when every actual
+call, constructor, bound destructor, allocation and deallocation dependency has
+an already-resolved standard exception specification. Calls inspect the actual
+callee expression prototype as well as any selected direct declaration. A function
+pointer conversion can erase noexcept, so checking the declaration alone would
+not describe the call. The frontend preserves Clang's computed true or false value;
+it neither recomputes that value nor resolves a dependency skipped by an earlier
+throwing expression. The same independent implicit-family and destruction checks
+continue to apply to all defaults, including non-nothrow queries.
 
 ### Nothrow destruction of record references
 

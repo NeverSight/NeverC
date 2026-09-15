@@ -283,16 +283,28 @@ include owning subobject destruction, not just a written destructor body. No
 extra Sema instantiation is requested. The three retained nothrow operations also
 check already-resolved standard exception specifications on each selected root
 callee and bound destructor, without asking Sema to resolve additional dependencies.
-The same source proof covers owning-subobject destructor inference. Non-nothrow
-constructor queries can select unchanged ordinary parameter defaults after exact
+The same source proof covers owning-subobject destructor inference. Constructor
+queries can select unchanged ordinary parameter defaults after exact
 parameter/initializer source completion. The adapter independently validates the
 FullExpr envelope stripped by ParmVarDecl::getDefaultArg(), source ownership,
 selected owner/slot, implicit special-member families and nested destruction.
+Normal parameter traversal collects exact family and record-prvalue destruction
+dependencies even through unevaluated operands and written TypeLoc expressions;
+trivial destructor binding nodes may be absent after specification resolution.
+Collections finish by exact parameter/initializer identity. Exact semantic
+initializer cache entries retain dependencies and edges even on cache hits;
+every reachable entry must complete before query validation. This covers nested
+defaults and initializers first checked outside a parameter collector without
+replaying source traversal. Graph nodes, edges and frames remain bounded by the
+shared budget and depth limit. Lazy template destructor prvalues still need
+separate signature proof.
 Implicit family checks also apply to non-nothrow queries because marking the
 selected function referenced can resolve its inferred exception specification.
-These checks do not rewrite
-or evaluate the initializer. Lazy templates, template-owned or rewritten defaults,
-nothrow defaults, incomplete selection, unresolved exception dependencies and
+Nothrow defaults additionally check already-resolved actual callee prototypes,
+selected function declarations, constructors, bound destructors and allocation/
+deallocation dependencies. These checks do not rewrite or evaluate the initializer.
+Lazy templates, template-owned or rewritten defaults, incomplete selection,
+unresolved exception dependencies and
 record-value nothrow destruction still need further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.
 
