@@ -79,10 +79,61 @@ static bool ordinaryOperatorKind(OverloadedOperatorKind Kind) {
   }
 }
 
+// Shape only. Import classification separately requires source ownership,
+// checked attributes and the absence of a definition across all redeclarations.
+static unsigned nativeHeapDeclaration(const FunctionDecl *F) {
+  if (!F || F->getKind() != Decl::Function || !F->getIdentifier() ||
+      F->isImplicit() || F->isInvalidDecl() || F->isInlined() || F->isConstexpr() ||
+      F->isDeleted() || F->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !F->isExternC() || F->getFormalLinkage() != Linkage::External ||
+      !F->getDeclContext()->getRedeclContext()->isTranslationUnit())
+    return 0;
+  const auto *Prototype = F->getType()->getAs<FunctionProtoType>();
+  if (!Prototype || Prototype->isVariadic() || Prototype->getCallConv() != CC_C ||
+      !standardExceptionSpecification(Prototype))
+    return 0;
+  for (const auto *P : F->parameters())
+    if (P->hasDefaultArg() || P->isParameterPack())
+      return 0;
+  auto &Context = F->getASTContext();
+  auto Same = [&](QualType A, QualType B) { return Context.hasSameUnqualifiedType(A, B); };
+  const auto Name = F->getName();
+  if (Name == "free")
+    return F->getNumParams() == 1 && Same(F->getReturnType(), Context.VoidTy) &&
+                   Same(F->getParamDecl(0)->getType(), Context.VoidPtrTy)
+               ? Builtin::BIfree : 0;
+  const unsigned Count = Name == "malloc" ? 1 : Name == "calloc" ? 2 : 0;
+  if (!Count || F->getNumParams() != Count || !Same(F->getReturnType(), Context.VoidPtrTy))
+    return 0;
+  for (const auto *P : F->parameters())
+    if (!Same(P->getType(), Context.getSizeType()))
+      return 0;
+  return Count == 1 ? Builtin::BImalloc : Builtin::BIcalloc;
+}
+
 static bool supportedDeclarationAttributes(const Decl *D) {
   if (!D->hasAttrs())
     return true;
   const auto *F = dyn_cast<FunctionDecl>(D);
+  if (const auto ID = nativeHeapDeclaration(F)) {
+    // Bare source declarations acquire these exact pinned Clang facts too.
+    // Written attributes and unrelated implicit builtin properties stay denied.
+    for (const auto *Attribute : F->attrs()) {
+      if (!Attribute->isImplicit()) return false;
+      if (const auto *Builtin = dyn_cast<BuiltinAttr>(Attribute);
+          Builtin && Builtin->getID() == ID)
+        continue;
+      if (const auto *Size = dyn_cast<AllocSizeAttr>(Attribute);
+          Size && ID != Builtin::BIfree && Size->getElemSizeParam().isValid() &&
+          Size->getElemSizeParam().getSourceIndex() == 1 &&
+          (ID == Builtin::BIcalloc
+               ? Size->getNumElemsParam().isValid() && Size->getNumElemsParam().getSourceIndex() == 2
+               : !Size->getNumElemsParam().isValid()))
+        continue;
+      return false;
+    }
+    return true;
+  }
   if (!F || !allocationOperatorKind(F->getOverloadedOperator()))
     return false;
   const bool Allocate = F->getOverloadedOperator() == OO_New ||
@@ -1605,6 +1656,28 @@ bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
     return false;
   }
   return true;
+}
+
+std::string Adapter::nativeHeapImport(const FunctionDecl *F, SourceLocation L) {
+  if (!S.coreV2() || !nativeHeapDeclaration(F) || F->getDefinition())
+    return {};
+  for (const auto *Declaration : F->redecls())
+    if (!S.owns(Sources, Declaration->getLocation()) ||
+        nativeHeapDeclaration(Declaration) != nativeHeapDeclaration(F) ||
+        !supportedDeclarationAttributes(Declaration))
+      return {};
+  const auto &Target = Context.getTargetInfo();
+  const auto &Triple = Target.getTriple();
+  const auto Size = Context.getSizeType();
+  if ((!Triple.isMacOSX() && !(Triple.isOSLinux() && !Triple.isAndroid()) &&
+       !Triple.isKnownWindowsMSVCEnvironment() && !Triple.isWindowsGNUEnvironment()) ||
+      !Size->isUnsignedIntegerType() ||
+      Context.getTypeSize(Size) != Context.getTypeSize(Context.VoidPtrTy) ||
+      Context.getTypeAlign(Size) != Context.getTypeAlign(Context.VoidPtrTy)) {
+    reject(L, "native heap ABI", "Native heap declarations require a checked hosted C ABI and native size_t layout.", "TR0204");
+    throw Failure{};
+  }
+  return F->getName().str();
 }
 
 const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
@@ -8669,6 +8742,7 @@ public:
                    "C ABI exports require scalar results and parameters.");
     }
     if (!D->hasBody() && !Defaulted && !Deleted &&
+        A.nativeHeapImport(D, D->getLocation()).empty() &&
         (!A.S.project() || D->getFormalLinkage() == Linkage::Internal))
       A.reject(
           D->getLocation(), "function declaration",
@@ -9335,6 +9409,11 @@ public:
           }
         }
       }
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(S))
+      if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
+          Function && !DirectFunctionCallees.count(Reference) &&
+          !A.nativeHeapImport(Function, L).empty())
+        A.reject(L, "native heap function value", "Native heap functions require an exact direct call; function addresses and discarded designators are unsupported.");
     if (const auto *E = dyn_cast<Expr>(S)) {
       // Clang's unevaluated diagnostic strings have no QualType. They can
       // appear below an already rejected declaration (for example a v1
@@ -9700,6 +9779,11 @@ public:
                    "std::floor(double) import from the pinned SDK.",
                    "TR0203");
         return true;
+      }
+      if (!A.nativeHeapImport(F, L).empty()) {
+        if (!directFunctionReference(C) || C->getNumArgs() != F->getNumParams())
+          A.reject(L, "native heap call", "A checked direct call with exact arguments is required.");
+        return true; // RAV still checks every source argument and callee leaf.
       }
       const bool GeneratedAssignment = A.S.coreV2() && defaultedAssignment(Method);
       if (GeneratedAssignment) {

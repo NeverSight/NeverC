@@ -4,6 +4,8 @@
 
 # 将 C++ 转译为 NeverC
 
+Core v2 新增通过源码中精确的全局 C 声明直接调用 `malloc/calloc/free`。源码定义的 C++ 分配器可使用真实本机堆，并与独立 C 调用方交换和释放内存；本机宽度、调用约定、源码和 IR 检查继续生效。O0/O2 验证须由实现版本的 CI 执行。`realloc`、默认可抛异常的 C++ 分配、标准头文件和完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
+
 Core v2 现已实现已接纳静态记录、数组和延长寿命临时对象的析构登记，每个完整对象构造完成后分别登记。常量根对象保留原值，局部对象在首次经过声明时登记，非局部对象通过原生启动登记。宿主 CRT 保留退出和模块卸载时的析构顺序。O0／O2、模块卸载和并发首次使用测试需由实现版本的 CI 验证。TLS、异常展开、默认堆与标准头文件以及完整 C++／STL 仍未完成；不支持手动／DynCode 加载。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-destruction).
 
 Core v2 现已实现已接纳对象与引用的非局部动态初始化，包括已实例化的模板对象。 经过检查的内部原生启动函数在 main 前按定义顺序执行，先完成零初始化与常量初始化，并在每个初始化器之后清理普通临时对象。 静态局部对象保留首次使用初始化。 程序及独立 C 入口的 O0／O2 测试需由实现版本的 CI 验证。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#nonlocal-dynamic-initialization).

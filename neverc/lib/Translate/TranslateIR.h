@@ -97,8 +97,11 @@ enum class InstructionKind {
   IndirectCall,
   StaticInitBegin,
   StaticInitEnd,
-  RegisterStaticDestructor
+  RegisterStaticDestructor,
+  NativeHeapCall
 };
+enum class NativeHeapOperation { None, Malloc, Calloc, Free };
+const char *nativeHeapName(NativeHeapOperation Operation);
 struct Instruction {
   InstructionKind Op = InstructionKind::Return;
   SourceLocation Loc;
@@ -113,6 +116,7 @@ struct Instruction {
   std::string TrueLabel;
   std::string FalseLabel;
   std::string GlobalName;
+  NativeHeapOperation HeapOperation = NativeHeapOperation::None;
 };
 
 struct Variable {
@@ -227,6 +231,7 @@ struct Module {
   // C++ storage reuse requires alias-permissive emitted object accesses. This
   // does not relax typed IR operations, layout evidence, or storage permissions.
   bool MemoryLifetimes = false;
+  bool NativeHeap = false;
   // Native C++ array allocation headers used by lowered new[]/delete[].
   ArrayCookieABI ArrayCookies = ArrayCookieABI::None;
   // Hosted native startup calls this checked internal void() definition.
@@ -261,6 +266,8 @@ struct VerificationContext {
   uint32_t ExpectedUIntPtrBits = 0;
   // Independent native capability; guard operations must never call libatomic.
   bool HasLockFreeIntAtomics = false;
+  // Hosted C allocator ABI plus independently checked unsigned size_t layout.
+  bool HasNativeHeap = false;
   // Independently selected hosted CRT ABI; never supplied by the producer.
   StaticDestructionABI NativeStaticDestruction = StaticDestructionABI::None;
   // Independent target ABI with an unsigned pointer-width/aligned size_t.

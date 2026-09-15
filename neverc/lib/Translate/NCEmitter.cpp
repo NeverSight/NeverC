@@ -169,6 +169,7 @@ class Emitter {
   bool HasPointerDifference = false, HasPointerOrdering = false;
   std::map<std::string, std::string> StaticGuards, StaticDestructors;
   StaticDestructionABI DestructionABI = StaticDestructionABI::None;
+  std::set<std::string> NativeHeapSymbols;
   std::map<std::string, Type> LifetimeTypes;
   std::map<std::string, std::string> LifetimeNames;
   std::set<std::string> EmittedLifetimeTypes;
@@ -405,6 +406,19 @@ class Emitter {
       line("#if !__has_attribute(may_alias)");
       line("#error \"translated memory lifetimes require may_alias support\"");
       line("#endif");
+    }
+    if (M.NativeHeap) {
+      line("#if !__STDC_HOSTED__ || defined(__NEVERC_DYNCODE__)");
+      line("#error \"translated native heap calls require a hosted native CRT\"");
+      line("#endif");
+      line("static_assert(sizeof(__SIZE_TYPE__) == sizeof(void *) && alignof(__SIZE_TYPE__) == alignof(void *) && (__SIZE_TYPE__)-1 > 0, \"translated native heap calls require native size_t layout\");");
+      if (T.isOSWindows()) {
+        line(T.isKnownWindowsMSVCEnvironment()
+                 ? "#if !defined(__NEVERC_WINDOWS_MSVC_ABI__) || __NEVERC_WINDOWS_MSVC_ABI__ != 1"
+                 : "#if defined(__NEVERC_WINDOWS_MSVC_ABI__)");
+        line("#error \"translated native heap calls require the recorded Windows ABI\"");
+        line("#endif");
+      }
     }
     if (M.ArrayCookies != ArrayCookieABI::None) {
       line("static_assert(sizeof(__SIZE_TYPE__) == sizeof(void *) && alignof(__SIZE_TYPE__) == alignof(void *) && (__SIZE_TYPE__)-1 > 0, \"translated array cookies require native size_t layout\");
@@ -689,6 +703,8 @@ class Emitter {
         for (const auto &V : *Variables)
           inspectType(V.ValueType);
       for (const auto &I : F.Body) {
+        if (I.Op == InstructionKind::NativeHeapCall)
+          NativeHeapSymbols.insert(nativeHeapName(I.HeapOperation));
         for (const auto *E : {&I.Target, &I.Value, &I.Condition, &I.Callable})
           if (*E)
             inspect(**E);
@@ -696,6 +712,25 @@ class Emitter {
           inspect(A);
       }
     }
+  }
+  void nativeHeapRuntime() {
+    const llvm::Triple T(M.Target.Triple);
+    const auto CC = T.isOSWindows() && T.getArch() == llvm::Triple::x86
+                        ? std::string("__attribute__((cdecl)) ") : std::string();
+    for (const auto &Name : NativeHeapSymbols) {
+      const auto Result = Name == "free" ? "void " : "void *";
+      const auto Parameters = Name == "free" ? "void *nct_emit_pointer"
+                              : Name == "calloc" ? "__SIZE_TYPE__ nct_emit_count, __SIZE_TYPE__ nct_emit_size"
+                                                 : "__SIZE_TYPE__ nct_emit_size";
+      const auto Arguments = Name == "free" ? "nct_emit_pointer"
+                             : Name == "calloc" ? "nct_emit_count, nct_emit_size"
+                                                : "nct_emit_size";
+      line("extern " + std::string(Result) + CC + Name + "(" + Parameters + ");");
+      line("static " + std::string(Result) + CC + "nct_emit_native_" + Name + "(" + Parameters + ") {");
+      line(std::string(Name == "free" ? "  " : "  return ") + Name + "(" + Arguments + ");");
+      line("}");
+    }
+    if (!NativeHeapSymbols.empty()) line("");
   }
   void staticDestructionRuntime() {
     if (StaticDestructors.empty())
@@ -738,10 +773,13 @@ class Emitter {
       case InstructionKind::Call:
       case InstructionKind::MappedCall:
       case InstructionKind::IndirectCall:
+      case InstructionKind::NativeHeapCall:
         Text = "  ";
         if (I.Target)
           Text += expression(*I.Target) + " = ";
-        Text += (I.Op == InstructionKind::MappedCall
+        Text += (I.Op == InstructionKind::NativeHeapCall
+                     ? std::string("nct_emit_native_") + nativeHeapName(I.HeapOperation)
+                     : I.Op == InstructionKind::MappedCall
                      ? findMappingSpec(I.MappingID)->RuntimeSymbol
                      : I.Op == InstructionKind::IndirectCall
                            ? "(" + expression(*I.Callable) + ")"
@@ -841,6 +879,7 @@ public:
       line("");
     if (FunctionPointers.empty())
       Prototypes();
+    nativeHeapRuntime();
     staticDestructionRuntime();
     for (const auto &F : M.Functions)
       function(F);

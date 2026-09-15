@@ -123,6 +123,9 @@ bool expectedCarrierLayout(VerificationContext &Context, Diagnostics &D,
   if (!neverc::TargetInfo::isTypeSigned(Size) &&
       Target->getTypeWidth(Size) == Context.PointerBits &&
       Target->getTypeAlign(Size) == Layout.Carriers[9].ABIAlignBits) {
+    Context.HasNativeHeap = NativeTriple.isMacOSX() ||
+        (NativeTriple.isOSLinux() && !NativeTriple.isAndroid()) ||
+        NativeTriple.isKnownWindowsMSVCEnvironment() || NativeTriple.isWindowsGNUEnvironment();
     if (NativeTriple.isKnownWindowsMSVCEnvironment())
       Context.NativeArrayCookies = ArrayCookieABI::Microsoft;
     else if (NativeTriple.isMacOSX() && NativeTriple.getArch() == llvm::Triple::aarch64)

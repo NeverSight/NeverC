@@ -935,6 +935,19 @@ opaque operation is introduced. See the [defaulted lifecycle contract](cpp-core-
 
 ## Core v2 explicit lifetimes and memory aliases
 
+The optional core-v2 module property `native_heap` must be exactly `true` and
+requires `memory_lifetimes: true` plus independently selected native C allocator
+and size_t capability. A `native_heap_call` has exactly `op`, `operation`, `args`,
+`loc`, and an allocation-only `target`. Allowed operations are `malloc` (one
+native unsigned size_t argument), `calloc` (two), and `free` (one `ptr:void`
+argument). Allocations require a local `ptr:void` result; free has no result.
+Unknown operations, extra fields, indirect callees, mapping IDs, noncanonical
+types, missing capabilities and a source C export with the imported name fail
+validation. Operation metadata on any other instruction is rejected. There is
+no general foreign-symbol import. The emitter declares only the used functions
+with the native C calling convention and preserves the saved target/hosted ABI
+contract. See [native C heap calls](cpp-core-v2.md#native-c-heap-calls).
+
 The optional core-v2 module property `array_cookie_abi` is one of the exact
 strings `itanium`, `apple-arm64` or `msvc`. Empty, unknown, nonstring and v1 values
 are rejected. It additionally requires `memory_lifetimes: true` and a matching

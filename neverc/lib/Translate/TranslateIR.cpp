@@ -51,6 +51,16 @@ std::string typeName(const Type &T) {
   return {};
 }
 
+const char *nativeHeapName(NativeHeapOperation Operation) {
+  switch (Operation) {
+  case NativeHeapOperation::Malloc: return "malloc";
+  case NativeHeapOperation::Calloc: return "calloc";
+  case NativeHeapOperation::Free: return "free";
+  case NativeHeapOperation::None: return nullptr;
+  }
+  return nullptr;
+}
+
 const MappingSpec *findMappingSpec(llvm::StringRef ID) {
   static const MappingSpec Specs[] = {
       {"cpp.math.fabs.f64.v1", "neverc_math_abs", "math_abs",
@@ -385,6 +395,21 @@ public:
     std::string Op;
     if (!string(O, "op", Op) || !location(O, I.Loc))
       return false;
+    if (Op == "native_heap_call") {
+      std::string Operation;
+      if (!CoreV2 || O.size() != (O.get("target") ? 5u : 4u) ||
+          !string(O, "operation", Operation))
+        return error("Native heap calls require exact core v2 operands.");
+      I.Op = InstructionKind::NativeHeapCall;
+      if (Operation == "malloc") I.HeapOperation = NativeHeapOperation::Malloc;
+      else if (Operation == "calloc") I.HeapOperation = NativeHeapOperation::Calloc;
+      else if (Operation == "free") I.HeapOperation = NativeHeapOperation::Free;
+      else return error("Unknown native heap operation.");
+      return expressionField(O, "target", I.Target, false) &&
+             array(O, "args", I.Args, [&](const auto &A, Expr &E) { return expr(A, E); });
+    }
+    if (O.get("operation"))
+      return error("Native operation operands require a native heap call.");
     if (Op == "static_init_begin" || Op == "static_init_end" ||
         Op == "register_static_destructor") {
       const bool Begin = Op == "static_init_begin";
@@ -493,6 +518,9 @@ public:
         (!CoreV2 || !boolean(O, "memory_lifetimes", M.MemoryLifetimes) ||
          !M.MemoryLifetimes))
       return error("Memory lifetimes require true core v2 evidence.");
+    if (O.get("native_heap") &&
+        (!CoreV2 || !boolean(O, "native_heap", M.NativeHeap) || !M.NativeHeap))
+      return error("Native heap calls require true core v2 evidence.");
     if (O.get("array_cookie_abi")) {
       std::string ABI;
       if (!CoreV2 || !string(O, "array_cookie_abi", ABI))
@@ -1439,6 +1467,8 @@ class Verifier {
       InitializingGlobal = InitializationOwners[N];
       if (!loc(I.Loc))
         return false;
+      if (I.Op != InstructionKind::NativeHeapCall && I.HeapOperation != NativeHeapOperation::None)
+        return error(I.Loc, "Native operation is valid only on a native heap call.");
       if (I.Op != InstructionKind::MappedCall && !I.MappingID.empty())
         return error(
             I.Loc,
@@ -1478,6 +1508,30 @@ class Verifier {
         if (!lvalue(*I.Target, Storage))
           return false;
         break;
+      case InstructionKind::NativeHeapCall: {
+        const auto *Symbol = nativeHeapName(I.HeapOperation);
+        if (M.Profile != "cpp-core-v2" || !M.NativeHeap || !Context.HasNativeHeap || !Symbol ||
+            !I.Callee.empty() || !I.MappingID.empty() || I.Value || I.Condition || I.Callable ||
+            !I.Label.empty() || !I.TrueLabel.empty() || !I.FalseLabel.empty() || !I.GlobalName.empty())
+          return error(I.Loc, "Native heap calls require an authorized exact operation and operands.");
+        const Type Pointer{TypeKind::Pointer, {}, {{TypeKind::Void, {}}}};
+        if (I.HeapOperation == NativeHeapOperation::Free) {
+          if (I.Target || I.Args.size() != 1 || I.Args[0].ValueType != Pointer)
+            return error(I.Loc, "Native free requires one void pointer and no result.");
+        } else {
+          if (I.Args.size() != (I.HeapOperation == NativeHeapOperation::Calloc ? 2u : 1u) ||
+              !I.Target || I.Target->Kind != ExprKind::Var || !Locals.count(I.Target->Name) ||
+              I.Target->ValueType != Pointer)
+            return error(I.Loc, "Native allocation requires exact size arguments and a local void-pointer result.");
+          for (const auto &A : I.Args)
+            if (A.ValueType.Kind != TypeKind::UInt || A.ValueType.integerBits() != Context.PointerBits)
+              return error(I.Loc, "Native allocation arguments must match the independently checked unsigned size_t.");
+        }
+        const auto Definition = Functions.find(Symbol);
+        if (Definition != Functions.end() && Definition->second->CExport)
+          return error(I.Loc, "Native heap operation collides with a source C export definition.");
+        break;
+      }
       case InstructionKind::MappedCall:
         if (!Math || !Mappings.count(I.MappingID) || !I.Callee.empty() ||
             I.Value || I.Condition || I.Args.size() != 1 ||
@@ -1765,6 +1819,12 @@ public:
                   "are unsupported.");
     if (!carrierLayout(Anchor) || !mathMetadata(Anchor, T))
       return false;
+    if (M.NativeHeap &&
+        (M.Profile != "cpp-core-v2" || !M.MemoryLifetimes || !Context.HasNativeHeap ||
+         (!T.isMacOSX() && !(T.isOSLinux() && !T.isAndroid()) &&
+          !T.isKnownWindowsMSVCEnvironment() && !T.isWindowsGNUEnvironment())))
+      return fail(D, "TR0204", Anchor, "native heap ABI",
+                  "Native heap calls require independent hosted CRT and size_t evidence with core v2 memory lifetimes.");
     if (M.ArrayCookies != ArrayCookieABI::None) {
       const auto Expected = T.isKnownWindowsMSVCEnvironment()
           ? ArrayCookieABI::Microsoft

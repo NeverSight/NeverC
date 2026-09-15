@@ -4747,6 +4747,99 @@ TEST_F(TranslateTest, CoreV2RuntimeArrayAllocationChecksErrorsAndTemporaryOrder)
   }
 }
 
+TEST_F(TranslateTest, CoreV2NativeHeapAcceptsCheckedDirectDeclarations) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"malloc", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void*f(Size n){return malloc(n);}"},
+      {"calloc", "using Size=decltype(sizeof(0));extern \"C\" void*calloc(Size,Size);void*f(Size n){return calloc(n,4);}"},
+      {"free", "extern \"C\" void free(void*);void f(void*p){free(p);}"},
+      {"free-null", "extern \"C\" void free(void*);void f(){free(nullptr);}"},
+      {"declaration-only", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);int main(){return 0;}"},
+      {"parenthesized", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void*f(Size n){return (malloc)(n);}"},
+      {"qualified", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void*f(Size n){return (::malloc)(n);}"},
+      {"sequenced-arguments", "using Size=decltype(sizeof(0));extern \"C\" void*calloc(Size,Size);void*f(Size n){return calloc(n++,n++);}"},
+      {"conversion-argument", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);struct S{Size n;operator Size()const{return n;}};void*f(S n){return malloc(n);}"},
+      {"default-argument-call", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void*f(void*p=malloc(4)){return p;}void*g(){return f();}"},
+      {"function-template", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);template<class T>void*f(T n){return malloc(n);}void*g(){return f(4u);}"},
+      {"dead-call", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);int main(){if(false)malloc(4);return 0;}"},
+      {"noexcept-call", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);bool f(){return noexcept(malloc(4));}"},
+      {"const-parameter", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(const Size);void*f(Size n){return malloc(n);}"},
+      {"noexcept-prototype", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size)noexcept;void*f(Size n){return malloc(n);}"},
+      {"redeclarations", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);extern \"C\" void*malloc(Size);void*f(Size n){return malloc(n);}"},
+      {"definition-wins", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);extern \"C\" void free(void*);unsigned char bytes[64]{};void*f(){void*p=malloc(4);free(p);return p;}extern \"C\" void*malloc(Size){return bytes;}extern \"C\" void free(void*){}"},
+      {"class-array", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);extern \"C\" void free(void*);struct R{int n;R():n(3){}~R(){}static void*operator new[](Size n)noexcept{return malloc(n);}static void operator delete[](void*p)noexcept{free(p);}};R*f(int n){return new R[n];}void g(R*p){delete[]p;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("native-heap-" + Name + ".cpp");
+    auto Output = tmpFile("native-heap-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NativeHeapRejectsUnverifiedDeclarationsAndFunctionValues) {
+  const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
+      {"cpp-linkage", "using Size=decltype(sizeof(0));void*malloc(Size);void*f(){return malloc(4);}", "TR0203"},
+      {"wrong-argument", "extern \"C\" void*malloc(int);void*f(){return malloc(4);}", "TR0203"},
+      {"wrong-result", "using Size=decltype(sizeof(0));extern \"C\" const void*malloc(Size);", "TR0203"},
+      {"wrong-free-type", "extern \"C\" void free(const void*);void f(){free(nullptr);}", "TR0203"},
+      {"wrong-arity", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size,Size);", "TR0203"},
+      {"variadic", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size,...);", "TR0201"},
+      {"namespace", "using Size=decltype(sizeof(0));namespace N{extern \"C\" void*malloc(Size);}void*f(){return N::malloc(4);}", "TR0201"},
+      {"written-attribute", "using Size=decltype(sizeof(0));extern \"C\" __attribute__((used)) void*malloc(Size);", "TR0201"},
+      {"written-size-attribute", "using Size=decltype(sizeof(0));extern \"C\" __attribute__((alloc_size(1))) void*malloc(Size);", "TR0201"},
+      {"address", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);auto f(){return &malloc;}", "TR0201"},
+      {"discarded-name", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void f(){malloc;}", "TR0201"},
+      {"noexcept-name", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);bool f(){return noexcept(malloc);}", "TR0201"},
+      {"discarded-address", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void f(){if constexpr(false){auto p=&malloc;}}", "TR0201"},
+      {"composite-callee", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void*f(){return (0,malloc)(4);}", "TR0201"},
+      {"default-parameter", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size=4);void*f(){return malloc();}", "TR0201"},
+      {"unsupported-argument", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void*f(){return malloc(sizeof(long double));}", "TR0201"},
+      {"unknown-function", "using Size=decltype(sizeof(0));extern \"C\" void*allocate(Size);void*f(){return allocate(4);}", "TR0203"},
+      {"realloc", "using Size=decltype(sizeof(0));extern \"C\" void*realloc(void*,Size);void*f(void*p){return realloc(p,0);}", "TR0201"},
+  };
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("native-heap-reject-" + Name + ".cpp");
+    auto Output = tmpFile("native-heap-reject-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NativeHeapInteroperatesWithAnIndependentCClient) {
+  const auto Output = tmpFile("native-heap.nc");
+  auto Result = translate(fixture("native-heap.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Object = tmpFile("native-heap" + Optimization + ".o");
+    // A function-only TU leaves ownership of the process allocator to main.
+    auto Compile = ncc({Output.string(), Optimization, "-fno-lto", "-c",
+                        "-fstrict-aliasing", "-o", Object.string()});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    for (bool NativeCRT : {true, false}) {
+      SCOPED_TRACE(NativeCRT ? "native CRT" : "default process allocator");
+      const auto Executable = tmpFile("native-heap" + Optimization + (NativeCRT ? "-crt" : "-default"));
+      std::vector<std::string> Arguments{fixture("native-heap-harness.c").string(),
+          Object.string(), Optimization, "-fno-lto", "-fstrict-aliasing", "-o", Executable.string()};
+      if (NativeCRT) Arguments.push_back("-fno-builtin-mimalloc");
+      auto Link = ncc(Arguments);
+      ASSERT_EQ(Link.exitCode, 0) << Link.out << Link.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+  auto Freestanding = ncc({Output.string(), "-fsyntax-only", "-ffreestanding"});
+  EXPECT_NE(Freestanding.exitCode, 0);
+  EXPECT_TRUE(Freestanding.contains("translated native heap calls require a hosted native CRT"))
+      << Freestanding.out << Freestanding.err;
+}
+
 TEST_F(TranslateTest, CoreV2AllocationAcceptsSourceDefinedFunctions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"inherited-global-visibility", "using Size=decltype(sizeof(0));unsigned char bytes[64]{};void*operator new(Size);void*operator new(Size){return bytes;}void operator delete(void*)noexcept;void operator delete(void*)noexcept{}int*f(){return new int(3);}"},

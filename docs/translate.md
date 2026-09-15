@@ -4,6 +4,8 @@
 
 # Translate C++ to NeverC
 
+Core v2 adds checked direct `malloc/calloc/free` calls through exact source-owned global C declarations. Source-defined C++ allocators can use the real native heap; allocation and release interoperate with an independent C client. Native width, calling convention, source and IR checks remain enforced. O0/O2 validation requires implementing CI. `realloc`, default throwing C++ allocation, standard headers and complete C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
+
 Core v2 now registers destruction of admitted static records, arrays and lifetime-extended temporaries when each complete object finishes construction. Constant roots retain their values; local registration occurs at first passage and nonlocal registration runs during native startup. Native CRT callbacks preserve exit and module-unload order. O0/O2, library-unload and concurrent-first-use fixtures require implementing CI. TLS, exception unwinding, default heap/standard headers and complete C++/STL remain unfinished; manual/DynCode loading is unsupported. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#static-destruction).
 
 Core v2 now supports nonlocal dynamic initialization of admitted objects and references, including materialized template instances. A checked internal native constructor runs before main in definition order, after zero/constant initialization; ordinary temporaries are cleaned after each initializer. Local statics retain first-use initialization. Program and separate C-client O0/O2 tests require implementing CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#nonlocal-dynamic-initialization).

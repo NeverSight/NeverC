@@ -108,6 +108,7 @@ VerificationContext context(const Module &M) {
     C.ExpectedPtrDiffBits = 64;
     C.ExpectedUIntPtrBits = 64;
     C.HasLockFreeIntAtomics = true;
+    C.HasNativeHeap = true; // Independent hosted x86_64 Linux CRT fixture.
     C.NativeStaticDestruction = StaticDestructionABI::CxaAtExit;
     C.NativeArrayCookies = ArrayCookieABI::Itanium;
   }
@@ -3329,6 +3330,155 @@ TEST(TranslateIR, MemoryLifetimesRequireExplicitTrueCoreV2Evidence) {
       }
     }
   }
+}
+
+namespace {
+Module nativeHeapModule(NativeHeapOperation Operation = NativeHeapOperation::Malloc,
+                        unsigned Bits = 64) {
+  auto M = module(true);
+  M.NativeHeap = M.MemoryLifetimes = true;
+  const auto Pointer = pointerType({TypeKind::Void, {}});
+  M.Functions[0].Locals = {{"nct_memory", Pointer, InputLoc}};
+  Instruction I;
+  I.Op = InstructionKind::NativeHeapCall;
+  I.HeapOperation = Operation;
+  I.Loc = InputLoc;
+  if (Operation == NativeHeapOperation::Free) {
+    I.Args = {pointerExpr(ExprKind::Null, Pointer)};
+  } else {
+    I.Target = variable("nct_memory", Pointer);
+    I.Args = {literal("4", integerType(Bits, true))};
+    if (Operation == NativeHeapOperation::Calloc)
+      I.Args.push_back(literal("8", integerType(Bits, true)));
+  }
+  M.Functions[0].Body.insert(M.Functions[0].Body.begin() + 1, std::move(I));
+  return M;
+}
+}
+
+TEST(TranslateIR, NativeHeapRequiresIndependentCapabilityAndExactOperands) {
+  for (auto Operation : {NativeHeapOperation::Malloc, NativeHeapOperation::Calloc,
+                         NativeHeapOperation::Free}) {
+    auto M = nativeHeapModule(Operation);
+    Diagnostics D;
+    EmittedSource Out;
+    ASSERT_TRUE(emitNC(M, context(M), Out, D));
+    for (const std::string Name : {"malloc", "calloc", "free"})
+      EXPECT_EQ(Out.Text.find("nct_emit_native_" + Name) != std::string::npos,
+                Name == nativeHeapName(Operation));
+    EXPECT_NE(Out.Text.find("defined(__NEVERC_DYNCODE__)"), std::string::npos);
+    EXPECT_NE(Out.Text.find("native size_t layout"), std::string::npos);
+    auto C = context(M);
+    C.HasNativeHeap = false;
+    D.clear();
+    EXPECT_FALSE(verifyModule(M, C, D));
+    M.NativeHeap = false;
+    invalid(M, "authorized exact operation");
+    M.NativeHeap = true;
+    M.MemoryLifetimes = false;
+    invalid(M, "Native heap calls require independent");
+  }
+  for (unsigned Case = 0; Case < 17; ++Case) {
+    SCOPED_TRACE(Case);
+    auto M = nativeHeapModule();
+    auto &I = M.Functions[0].Body[1];
+    switch (Case) {
+    case 0: I.HeapOperation = NativeHeapOperation::None; break;
+    case 1: I.HeapOperation = static_cast<NativeHeapOperation>(999); break;
+    case 2: I.Callee = "malloc"; break;
+    case 3: I.MappingID = "arbitrary"; break;
+    case 4: I.Value = literal("1"); break;
+    case 5: I.Condition = literal("1"); break;
+    case 6: I.Label = "nct_entry"; break;
+    case 7: I.TrueLabel = "nct_entry"; break;
+    case 8: I.FalseLabel = "nct_entry"; break;
+    case 9: I.GlobalName = "nct_memory"; break;
+    case 10: I.Args.clear(); break;
+    case 11: I.Args.push_back(I.Args[0]); break;
+    case 12: I.Args[0] = literal("4", integerType(64)); break;
+    case 13: I.Args[0] = literal("4", uintType()); break;
+    case 14: I.Target.reset(); break;
+    case 15: I.Target = pointerExpr(ExprKind::Null, pointerType({TypeKind::Void, {}})); break;
+    case 16: I.Op = InstructionKind::Return; break;
+    }
+    invalid(M);
+  }
+  auto M = nativeHeapModule(NativeHeapOperation::Free);
+  M.Functions[0].Body[1].Target = variable("nct_memory", pointerType({TypeKind::Void, {}}));
+  invalid(M, "no result");
+  M.Functions[0].Body[1].Target.reset();
+  M.Functions[0].Body[1].Args = {pointerExpr(ExprKind::Null, pointerType(intType()))};
+  invalid(M, "one void pointer");
+  M = nativeHeapModule();
+  M.Functions[0].Name = "malloc";
+  invalid(M, "collides with a source C export");
+}
+
+TEST(TranslateIR, NativeHeapChecksPointerWidthAndWindowsCallingConvention) {
+  for (const auto &[Target, Bits] : std::vector<std::pair<std::string, unsigned>>{
+       {"x86_64-unknown-linux-gnu", 64}, {"aarch64-unknown-linux-gnu", 64},
+       {"x86_64-apple-macosx", 64}, {"aarch64-apple-macosx", 64},
+       {"x86_64-pc-windows-msvc", 64}, {"aarch64-pc-windows-msvc", 64},
+       {"i686-pc-windows-msvc", 32}, {"i686-w64-windows-gnu", 32}}) {
+    SCOPED_TRACE(Target);
+    auto M = nativeHeapModule(NativeHeapOperation::Calloc, Bits);
+    M.Target.Triple = Target;
+    M.Target.PointerBits = Bits;
+    M.Target.Carriers->Carriers[9] = {Bits, Bits};
+    auto C = context(M);
+    C.ExpectedCarrierLayout->Carriers[9] = {Bits, Bits};
+    C.ExpectedPtrDiffBits = C.ExpectedUIntPtrBits = Bits;
+    Diagnostics D;
+    EmittedSource Out;
+    ASSERT_TRUE(emitNC(M, C, Out, D));
+    EXPECT_EQ(Out.Text.find("__attribute__((cdecl)) calloc") != std::string::npos, Bits == 32);
+    EXPECT_EQ(Out.Text.find("__attribute__((cdecl)) nct_emit_native_calloc") != std::string::npos, Bits == 32);
+    if (Target.find("windows") != std::string::npos)
+      EXPECT_NE(Out.Text.find("recorded Windows ABI"), std::string::npos);
+    M.Functions[0].Body[1].Args[0] = literal("4", integerType(Bits == 32 ? 64 : 32, true));
+    D.clear();
+    EXPECT_FALSE(verifyModule(M, C, D));
+  }
+  for (const std::string Target : {"x86_64-unknown-freebsd", "aarch64-linux-android",
+                                  "x86_64-pc-windows-unknown"}) {
+    auto M = nativeHeapModule();
+    M.Target.Triple = Target;
+    invalid(M);
+  }
+}
+
+TEST(TranslateIR, NativeHeapWireRejectsUnknownOperationsAndExtraFields) {
+  const std::string Call = R"json({"op":"native_heap_call","operation":"free","args":[{"kind":"null","type":"ptr:void","loc":{"file":"input.cpp","line":2,"column":1}}],"loc":{"file":"input.cpp","line":2,"column":1}})json";
+  auto JSON = wireModule(true);
+  JSON.insert(1, "\"native_heap\":true,\"memory_lifetimes\":true,");
+  replaceOnce(JSON, "{\"op\": \"return\",", Call + ", {\"op\": \"return\",");
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(JSON, M, D));
+  ASSERT_TRUE(verifyModule(M, context(M), D));
+  for (const std::string Extra : {"\"callee\":\"free\",", "\"mapping\":\"free\",",
+                                  "\"value\":null,", "\"label\":\"nct_entry\","}) {
+    auto Bad = JSON;
+    replaceOnce(Bad, "\"operation\":\"free\",", "\"operation\":\"free\"," + Extra);
+    Module Parsed;
+    Diagnostics Errors;
+    EXPECT_FALSE(parseModule(Bad, Parsed, Errors));
+  }
+  for (const std::string Operation : {"realloc", "aligned_alloc", "system", "", "FREE"}) {
+    auto Bad = JSON;
+    replaceOnce(Bad, "\"operation\":\"free\"", "\"operation\":\"" + Operation + "\"");
+    Module Parsed;
+    Diagnostics Errors;
+    EXPECT_FALSE(parseModule(Bad, Parsed, Errors));
+  }
+  for (bool CoreV2 : {false, true})
+    for (const std::string Value : {"true", "false", "null", "0", "\"true\""}) {
+      auto Metadata = wireModule(CoreV2);
+      Metadata.insert(1, "\"native_heap\":" + Value + ",");
+      Module Parsed;
+      Diagnostics Errors;
+      EXPECT_EQ(parseModule(Metadata, Parsed, Errors), CoreV2 && Value == "true");
+    }
 }
 
 TEST(TranslateIR, ArrayCookiesRequireExactWireAndIndependentNativeEvidence) {

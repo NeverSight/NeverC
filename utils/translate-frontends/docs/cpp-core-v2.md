@@ -4109,6 +4109,62 @@ Default/standard heap runtime, throwing/placement runtime array-new bounds, exte
 support, exceptions/unwinding, standard headers, inheritance and full C++/STL
 remain unfinished.
 
+## Native C heap calls
+
+Core v2 admits direct native `malloc`, `calloc` and `free` calls declared in
+source with these exact global C signatures. `Size` denotes the target's native
+unsigned `size_t` type; parameter top-level const and compatible redeclarations
+retain their ordinary C++ meaning.
+
+```cpp
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void *calloc(Size, Size);
+extern "C" void free(void *);
+```
+
+Source-defined C++ allocation functions can call these operations, including
+admitted class `operator new[]`/`delete[]` using the real native heap and native
+array cookies. This does not yet supply default throwing C++ allocation,
+`new_handler`, `bad_alloc`, exceptions or general standard-library headers.
+NeverC's ordinary source frontend remains C23.
+
+Only noninline, non-template, nonvariadic global external-C declarations with
+ordinary C calling convention, exact parameter/result types and no default
+arguments qualify. Every redeclaration must be source-owned and checked. Pinned
+Clang's exact implicit `BuiltinAttr` and `AllocSizeAttr` are admitted for these
+signatures; explicit attributes and unrelated implicit attributes remain rejected.
+Written types, default arguments, qualifiers and expressions remain checked even
+in discarded or unevaluated source. Only the exact direct callee reference is
+exempt from function-value conversion; addresses, decay, discarded names and
+composite callees remain unsupported. A source definition anywhere in the
+redeclaration chain takes priority and is translated as an ordinary function.
+
+Lowering captures each argument before evaluating the next and emits a checked
+`native_heap_call`. Independent driver evidence requires a hosted Linux/macOS or
+explicit Windows MSVC/GNU target and unsigned pointer-width, pointer-aligned
+size_t. The typed IR checks each operation's arity, local void-pointer result or
+void free result, and rejects collisions with source C exports. Saved NC declares
+only used operations, uses the native CRT, retains Win32 cdecl and recorded
+Windows ABI guards, and rejects DynCode/non-hosted compilation. The process's
+normal allocator remains authoritative, including legitimate allocator overrides.
+
+Zero-size results, null free and allocation failure retain the native C contract;
+there is no extra allocation, private heap, invented C++ exception, or promise
+about unobservable allocator calls or additional interposer behavior. `realloc`
+is deferred because its zero-size contract differs between C++17/C11 and C23;
+a wrapper alone does not remove native compiler allocation inference. Standard
+headers and complete C++/STL remain unfinished.
+
+Paired accepted/rejected source cases, raw protocol relocation, malformed IR,
+eight-target width/calling-convention checks and an independent C client at O0/O2
+cover the boundary. The C client allocates memory released by translated code and
+releases memory allocated by translated code. Both the native CRT and the default
+program-entry-owned allocator are tested; a helper translation unit never chooses
+its caller's allocator. Source-defined class allocators exercise object/array
+construction and destruction on the native heap. Native
+compilation and execution require CI of the implementing revision.
+
 ## Constant array allocation
 
 Core v2 admits source-owned C++17 `new[]` with a nonnegative integer constant

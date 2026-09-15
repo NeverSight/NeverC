@@ -4,6 +4,8 @@
 
 # 將 C++ 轉譯為 NeverC
 
+Core v2 新增透過原始碼中精確的全域 C 宣告直接呼叫 `malloc/calloc/free`。原始碼定義的 C++ 配置器可使用真正的原生堆積，並與獨立 C 呼叫端交換及釋放記憶體；原生寬度、呼叫慣例、原始碼和 IR 檢查持續生效。O0/O2 驗證須由實作版本的 CI 執行。`realloc`、預設可擲出例外的 C++ 配置、標準標頭和完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
+
 Core v2 已實作已接納靜態記錄、陣列與延長生命週期暫存物件的解構登記，每個完整物件建構完成後分別登記。常數根物件保留原值，區域物件首次經過宣告時登記，非區域物件透過原生啟動登記。宿主 CRT 保留退出與模組卸載時的解構順序。O0／O2、模組卸載及並行首次使用測試需要實作版本的 CI 驗證。TLS、例外展開、預設堆積與標準標頭及完整 C++／STL 仍未完成；不支援手動／DynCode 載入。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-destruction).
 
 Core v2 現已實作已接納物件與參考的非區域動態初始化，包括已具現化的範本物件。 經過檢查的內部原生啟動函式在 main 前依定義順序執行，先完成零初始化與常數初始化，並在每個初始化器之後清理一般暫存物件。 靜態區域物件保留首次使用初始化。 程式及獨立 C 入口的 O0／O2 測試須由實作版本的 CI 驗證。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#nonlocal-dynamic-initialization).

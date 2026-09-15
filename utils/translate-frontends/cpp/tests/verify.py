@@ -5738,6 +5738,44 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         check("v2-array-sized-trivial-"+target, sized_source,
               "TR0201" if abi == "msvc" else None, profile="cpp-core-v2", target=target)
 
+    native_heap_positive = {'malloc': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(Size n){return malloc(n);}', 'calloc': 'using Size=decltype(sizeof(0));extern "C" void*calloc(Size,Size);void*f(Size n){return calloc(n,4);}', 'free': 'extern "C" void free(void*);void f(void*p){free(p);}', 'free-null': 'extern "C" void free(void*);void f(){free(nullptr);}', 'declaration-only': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);int main(){return 0;}', 'parenthesized': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(Size n){return (malloc)(n);}', 'qualified': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(Size n){return (::malloc)(n);}', 'sequenced-arguments': 'using Size=decltype(sizeof(0));extern "C" void*calloc(Size,Size);void*f(Size n){return calloc(n++,n++);}', 'conversion-argument': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);struct S{Size n;operator Size()const{return n;}};void*f(S n){return malloc(n);}', 'default-argument-call': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(void*p=malloc(4)){return p;}void*g(){return f();}', 'function-template': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);template<class T>void*f(T n){return malloc(n);}void*g(){return f(4u);}', 'dead-call': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);int main(){if(false)malloc(4);return 0;}', 'noexcept-call': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);bool f(){return noexcept(malloc(4));}', 'const-parameter': 'using Size=decltype(sizeof(0));extern "C" void*malloc(const Size);void*f(Size n){return malloc(n);}', 'noexcept-prototype': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size)noexcept;void*f(Size n){return malloc(n);}', 'redeclarations': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);extern "C" void*malloc(Size);void*f(Size n){return malloc(n);}', 'definition-wins': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);extern "C" void free(void*);unsigned char bytes[64]{};void*f(){void*p=malloc(4);free(p);return p;}extern "C" void*malloc(Size){return bytes;}extern "C" void free(void*){}', 'class-array': 'using Size=decltype(sizeof(0));extern "C" void*malloc(Size);extern "C" void free(void*);struct R{int n;R():n(3){}~R(){}static void*operator new[](Size n)noexcept{return malloc(n);}static void operator delete[](void*p)noexcept{free(p);}};R*f(int n){return new R[n];}void g(R*p){delete[]p;}'}
+    native_heap_data = {}
+    for name, source in native_heap_positive.items():
+        data = check("v2-native-heap-" + name, source, profile="cpp-core-v2")
+        native_heap_data[name] = data
+        calls = [n for n in walk(data) if n.get("op") == "native_heap_call"]
+        if name in ("declaration-only", "dead-call", "noexcept-call", "definition-wins"):
+            assert not calls, (name, calls)
+        else:
+            assert calls and data["native_heap"] and data["memory_lifetimes"], (name, data)
+        assert all(n["operation"] in ("malloc", "calloc", "free") for n in calls)
+    definitions = native_heap_data["definition-wins"]
+    assert {"malloc", "free"} <= {f["name"] for f in definitions["functions"] if f["c_export"]}
+    for n in walk(definitions):
+        assert n.get("op") != "native_heap_call"
+    native_heap_negative = {'cpp-linkage': ('using Size=decltype(sizeof(0));void*malloc(Size);void*f(){return malloc(4);}', 'TR0203'), 'wrong-argument': ('extern "C" void*malloc(int);void*f(){return malloc(4);}', 'TR0203'), 'wrong-result': ('using Size=decltype(sizeof(0));extern "C" const void*malloc(Size);', 'TR0203'), 'wrong-free-type': ('extern "C" void free(const void*);void f(){free(nullptr);}', 'TR0203'), 'wrong-arity': ('using Size=decltype(sizeof(0));extern "C" void*malloc(Size,Size);', 'TR0203'), 'variadic': ('using Size=decltype(sizeof(0));extern "C" void*malloc(Size,...);', 'TR0201'), 'namespace': ('using Size=decltype(sizeof(0));namespace N{extern "C" void*malloc(Size);}void*f(){return N::malloc(4);}', 'TR0201'), 'written-attribute': ('using Size=decltype(sizeof(0));extern "C" __attribute__((used)) void*malloc(Size);', 'TR0201'), 'written-size-attribute': ('using Size=decltype(sizeof(0));extern "C" __attribute__((alloc_size(1))) void*malloc(Size);', 'TR0201'), 'address': ('using Size=decltype(sizeof(0));extern "C" void*malloc(Size);auto f(){return &malloc;}', 'TR0201'), 'discarded-name': ('using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void f(){malloc;}', 'TR0201'), 'noexcept-name': ('using Size=decltype(sizeof(0));extern "C" void*malloc(Size);bool f(){return noexcept(malloc);}', 'TR0201'), 'discarded-address': ('using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void f(){if constexpr(false){auto p=&malloc;}}', 'TR0201'), 'composite-callee': ('using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(){return (0,malloc)(4);}', 'TR0201'), 'default-parameter': ('using Size=decltype(sizeof(0));extern "C" void*malloc(Size=4);void*f(){return malloc();}', 'TR0201'), 'unsupported-argument': ('using Size=decltype(sizeof(0));extern "C" void*malloc(Size);void*f(){return malloc(sizeof(long double));}', 'TR0201'), 'unknown-function': ('using Size=decltype(sizeof(0));extern "C" void*allocate(Size);void*f(){return allocate(4);}', 'TR0203'), 'realloc': ('using Size=decltype(sizeof(0));extern "C" void*realloc(void*,Size);void*f(void*p){return realloc(p,0);}', 'TR0201')}
+    for name, (source, diagnostic) in native_heap_negative.items():
+        check("v2-native-heap-reject-" + name, source, diagnostic, profile="cpp-core-v2")
+    heap_source = (repository / "tests/neverc/Inputs/translate/cpp/native-heap.cpp").read_text()
+    heap = check("v2-native-heap-runtime", heap_source, profile="cpp-core-v2")
+    assert heap["native_heap"] and heap["memory_lifetimes"]
+    with tempfile.TemporaryDirectory(prefix="neverc-native-heap-relocated-") as temporary:
+        relocated = check("v2-native-heap-relocated", heap_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == heap
+    for target, bits in (
+            ("x86_64-unknown-linux-gnu", 64), ("aarch64-unknown-linux-gnu", 64),
+            ("x86_64-apple-macosx", 64), ("aarch64-apple-macosx", 64),
+            ("x86_64-pc-windows-msvc", 64), ("aarch64-pc-windows-msvc", 64),
+            ("i686-pc-windows-msvc", 32), ("i686-w64-windows-gnu", 32)):
+        data = check("v2-native-heap-size-" + target, native_heap_positive["calloc"],
+                     target=target, profile="cpp-core-v2")
+        calls = [n for n in walk(data) if n.get("op") == "native_heap_call"]
+        assert len(calls) == 1 and calls[0]["operation"] == "calloc"
+        size_type = "uint" if bits == 32 else "u64"
+        assert [arg["type"] for arg in calls[0]["args"]] == [size_type, size_type]
+        assert calls[0]["target"]["type"] == "ptr:void"
+
     allocation_positive = {
         'inherited-global-visibility': 'using Size=decltype(sizeof(0));unsigned char bytes[64]{};void*operator new(Size);void*operator new(Size){return bytes;}void operator delete(void*)noexcept;void operator delete(void*)noexcept{}int*f(){return new int(3);}',
         'inherited-array-visibility': 'using Size=decltype(sizeof(0));unsigned char bytes[64]{};void*operator new[](Size);void*operator new[](Size){return bytes;}void operator delete[](void*)noexcept;void operator delete[](void*)noexcept{}int*f(){return new int[2]{};}',

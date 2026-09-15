@@ -597,6 +597,25 @@ class FunctionLowering {
                                   {"loc", A.loc(L)}});
       return Result;
     }
+    if (auto Operation = A.nativeHeapImport(Callee, L); !Operation.empty()) {
+      if (Destination || !directFunctionReference(Call) || Call->getNumArgs() != Callee->getNumParams())
+        reject(L, "native heap call", "A checked direct native heap call is required.");
+      json::Array Args;
+      for (const auto *Arg : Call->arguments())
+        Args.push_back(snapshot(expression(Arg), Arg->getExprLoc()));
+      chargeCall(Args, L);
+      Expression Result;
+      json::Object Instruction{{"op", "native_heap_call"}, {"operation", Operation},
+                                {"args", std::move(Args)}, {"loc", A.loc(L)}};
+      if (Operation != "free") {
+        Result = temporary(T, L);
+        Instruction["target"] = json::Object(Result);
+      }
+      Body.push_back(std::move(Instruction));
+      A.S.Module["native_heap"] = true;
+      A.S.Module["memory_lifetimes"] = true;
+      return Result;
+    }
     if (A.S.coreV2())
       if (auto Copy = generatedArrayAssignment(
               Call, dyn_cast_or_null<CXXMethodDecl>(Function), A.Context)) {

@@ -344,6 +344,7 @@ public:
   ArrayAllocationLayout arrayAllocationLayout(clang::QualType Object,
       bool UsualDeleteWantsSize, clang::SourceLocation L);
   ArrayNewInfo arrayNewInfo(const clang::CXXNewExpr *N);
+  std::string nativeHeapImport(const clang::FunctionDecl *F, clang::SourceLocation L);
   json::Object functionAddress(const clang::FunctionDecl *F, clang::SourceLocation L);
   std::size_t storageUnits(clang::QualType T, unsigned Depth = 0);
   void chargeExpansion(std::size_t Nodes, clang::SourceLocation L);
