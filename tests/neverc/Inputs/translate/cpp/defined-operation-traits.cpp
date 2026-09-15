@@ -7,24 +7,24 @@ int destructions;
 
 struct Source {
   int value;
-  operator int() const { ++conversions; return value; }
+  operator int() const noexcept { ++conversions; return value; }
 };
 struct Value {
   int value;
-  Value(int n) : value(n) {
+  Value(int n) noexcept : value(n) {
     static_assert(__is_constructible(Value, int));
     ++constructions;
   }
   Value(const Value &other) : value(other.value) { ++copies; }
   Value(Value &&other) : value(other.value) { ++moves; other.value = -1; }
-  Value &operator=(int n) { ++assignments; value = n; return *this; }
+  Value &operator=(int n) noexcept { ++assignments; value = n; return *this; }
   operator int() const { ++conversions; return value; }
   ~Value() { ++destructions; }
 };
 struct Field { int value; ~Field() { ++destructions; } };
 struct Holder {
   Field fields[2];
-  Holder() : fields{{13}, {17}} { ++constructions; }
+  Holder() noexcept : fields{{13}, {17}} { ++constructions; }
   ~Holder() { ++destructions; }
 };
 struct Later {
@@ -38,6 +38,14 @@ Later::Later(int n) : value(n) {}
 Later::operator int() const { return value; }
 Later::~Later() {}
 
+struct ThrowingSource {
+  operator int() const noexcept(false) { ++conversions; return 23; }
+};
+struct ThrowingDestruction {
+  ThrowingDestruction() noexcept { ++constructions; }
+  ~ThrowingDestruction() noexcept(false) { ++destructions; }
+};
+
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
 extern "C" bool defined_trivial() { return __is_trivially_constructible(Value, int); }
@@ -45,6 +53,12 @@ extern "C" bool defined_assign() { return __is_assignable(Value&, int); }
 extern "C" bool defined_scalar_assign() { return __is_trivially_assignable(int&, Source); }
 extern "C" bool defined_convert() { return __is_convertible(Value, double); }
 extern "C" bool defined_fields() { return __is_constructible(Holder); }
+extern "C" bool defined_nothrow() { return __is_nothrow_constructible(Value, int); }
+extern "C" bool defined_nothrow_copy() { return __is_nothrow_constructible(Value, const Value&); }
+extern "C" bool defined_nothrow_convert() { return __is_nothrow_convertible(Value, int); }
+extern "C" bool defined_nothrow_assign() { return __is_nothrow_assignable(Value&, int); }
+extern "C" bool defined_nothrow_fields() { return __is_nothrow_constructible(Holder); }
+extern "C" bool defined_nothrow_destruction() { return __is_nothrow_constructible(ThrowingDestruction); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -83,5 +97,14 @@ int main() {
     if (value != 19) return 11;
   }
   if (destructions != 7 || conversions != 4 || assignments != 1) return 12;
+  if (!defined_nothrow() || defined_nothrow_copy() || defined_nothrow_convert() ||
+      !defined_nothrow_assign() || !defined_nothrow_fields() || defined_nothrow_destruction() ||
+      !__is_nothrow_constructible(Value, Source) || __is_nothrow_constructible(Value, ThrowingSource) ||
+      !__is_nothrow_assignable(double&, Source) || conversions != 4) return 13;
+  {
+    ThrowingDestruction value;
+    if (constructions != 4 || destructions != 7) return 14;
+  }
+  if (destructions != 8 || constructions != 4 || conversions != 4) return 15;
   return 0;
 }

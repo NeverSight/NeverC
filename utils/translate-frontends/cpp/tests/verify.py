@@ -6401,6 +6401,31 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'user-runtime-before-query': 'struct R{int n;R(int v):n(v){}};int f(){R r(3);return r.n;}static_assert(__is_constructible(R,int));',
         'user-query-substitution': 'struct R{R(int){}};template<class T,class...Args>constexpr bool f(){return __is_constructible(T,Args...);}static_assert(f<R,int>());',
         'user-query-if-constexpr': 'struct R{R(int){}};template<class T>int f(){if constexpr(__is_constructible(T,int))return 3;else return T::missing;}int g(){return f<R>();}',
+        'retained-throwing-construction': 'struct R{R(int)noexcept(false){}};bool f(){return __is_nothrow_constructible(R,int);}',
+        'retained-throwing-conversion': 'struct R{operator int()const noexcept(false){return 1;}};bool f(){return __is_nothrow_convertible(R,int);}',
+        'record-array': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R[2]);}',
+        'record-reference-nothrow': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R&,R&);}',
+        'record-implicit-nothrow-assignment': 'struct R{int n;};bool f(){return __is_nothrow_assignable(R&,R);}',
+        'implicit-nothrow-default': 'struct R{int n;};static_assert(__is_nothrow_constructible(R)&&__is_nothrow_constructible(R[2][3]));',
+        'implicit-nothrow-copy-move': 'struct R{int n;};static_assert(__is_nothrow_constructible(R,const R&)&&__is_nothrow_constructible(R,R)&&__is_nothrow_convertible(R,R));',
+        'implicit-nothrow-nested': 'struct F{int n;};struct R{F fields[2];};static_assert(__is_nothrow_constructible(R,R)&&__is_nothrow_assignable(R&,R));',
+        'implicit-nothrow-empty-base': 'struct B{};struct R:B{};static_assert(__is_nothrow_constructible(R)&&__is_nothrow_assignable(R&,R));',
+        'implicit-nothrow-references': 'struct R{~R()=delete;};static_assert(__is_nothrow_constructible(const R&,R&)&&__is_nothrow_convertible(R&,const R&));',
+        'implicit-nothrow-pre-operation': 'struct R{int n;};static_assert(!__is_nothrow_constructible(void,R)&&!__is_nothrow_assignable(void,R)&&!__is_nothrow_convertible(R,void));',
+        'user-nothrow-constructor': 'struct R{int n;R(int v)noexcept:n(v){}};static_assert(__is_nothrow_constructible(R,int)&&__is_nothrow_convertible(int,R));',
+        'user-throwing-constructor': 'struct R{R(int)noexcept(false){}};static_assert(!__is_nothrow_constructible(R,int)&&!__is_nothrow_convertible(int,R));',
+        'user-nothrow-assignment': 'struct R{int n;R&operator=(int v)noexcept{n=v;return *this;}};static_assert(__is_nothrow_assignable(R&,int));',
+        'user-throwing-assignment': 'struct R{R&operator=(int)noexcept(false){return *this;}};static_assert(!__is_nothrow_assignable(R&,int));',
+        'user-nothrow-conversion': 'struct R{operator int()const noexcept{return 3;}};static_assert(__is_nothrow_convertible(R,double)&&__is_nothrow_assignable(double&,R)&&__is_nothrow_constructible(int,R));',
+        'user-throwing-conversion': 'struct R{operator int()const noexcept(false){return 3;}};static_assert(!__is_nothrow_convertible(R,int)&&!__is_nothrow_assignable(int&,R));',
+        'user-nothrow-nested-argument': 'struct S{operator int()const noexcept{return 3;}};struct R{R(int)noexcept{}};static_assert(__is_nothrow_constructible(R,S));',
+        'user-nothrow-throwing-argument': 'struct S{operator int()const noexcept(false){return 3;}};struct R{R(int)noexcept{}};static_assert(!__is_nothrow_constructible(R,S));',
+        'user-nothrow-throwing-destruction': 'struct R{R(int)noexcept{}~R()noexcept(false){}};static_assert(!__is_nothrow_constructible(R,int)&&!__is_nothrow_convertible(int,R));',
+        'user-nothrow-inferred-destruction': 'struct F{int n;~F()noexcept(false){}};struct R{F field;R(int v)noexcept:field{v}{}~R(){}};static_assert(!__is_nothrow_constructible(R,int));',
+        'user-nothrow-out-of-line': 'struct R{R(int)noexcept;operator int()const noexcept;~R()noexcept;};static_assert(__is_nothrow_constructible(R,int)&&__is_nothrow_convertible(R,int));R::R(int)noexcept{}R::operator int()const noexcept{return 3;}R::~R()noexcept{}',
+        'user-nothrow-self-query': 'struct R{R(int)noexcept{static_assert(__is_nothrow_constructible(R,int));}operator int()const noexcept{static_assert(__is_nothrow_convertible(R,int));return 3;}};static_assert(__is_nothrow_constructible(R,int));',
+        'user-nothrow-written-spec': 'constexpr bool safe=true;struct R{R(int)noexcept(safe){}};static_assert(__is_nothrow_constructible(R,int));',
+        'user-nothrow-query-substitution': 'struct R{R(int)noexcept{}};template<class T,class...A>constexpr bool f(){return __is_nothrow_constructible(T,A...);}static_assert(f<R,int>());',
     }
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
@@ -6412,11 +6437,8 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'record-base-written-default': 'struct B{B()=default;};struct R:B{};bool f(){return __is_constructible(R);}',
         'record-base-written-copy': 'struct B{B(const B&)noexcept(false)=default;};struct R:B{};bool f(){return __is_constructible(R,R);}',
         'record-query-hidden-source': 'struct R{int n;};bool f(){return __is_constructible(decltype((sizeof(long double),R{})),R);}',
-        'retained-throwing-construction': 'struct R{R(int)noexcept(false){}};bool f(){return __is_nothrow_constructible(R,int);}',
         'retained-inaccessible-construction': 'class R{R(int){}};bool f(){return __is_constructible(R,int);}',
-        'retained-throwing-conversion': 'struct R{operator int()const noexcept(false){return 1;}};bool f(){return __is_nothrow_convertible(R,int);}',
         'retained-nested-default-query': 'struct R{R(int=__is_constructible(int,int)){}};bool f(){return __is_constructible(R);}',
-        'record-array': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R[2]);}',
         'record-convertible-false': 'struct R{int n;};bool f(){return __is_convertible(int,R);}',
         'record-destructor-array': 'struct R{int n;};bool f(){return __is_nothrow_destructible(R[2][3]);}',
         'long-double': 'bool f(){return __is_constructible(long double,int);}',
@@ -6445,8 +6467,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'record-field-written-assignment': 'struct F{F&operator=(const F&)noexcept(false)=default;};struct R{F field;};bool f(){return __is_trivially_assignable(R&,const R&);}',
         'record-written-destructor': 'struct R{~R()noexcept(false)=default;};bool f(){return __is_constructible(R,R);}',
         'record-nontrivial-destruction-construction': 'struct R{~R(){}};bool f(){return __is_constructible(R);}',
-        'record-reference-nothrow': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R&,R&);}',
-        'record-implicit-nothrow-assignment': 'struct R{int n;};bool f(){return __is_nothrow_assignable(R&,R);}',
         'record-unretained-base-reference': 'struct B{};struct D:B{};bool f(){return __is_convertible(D&,B&);}',
         'user-missing-constructor': 'struct R{R(int);};bool f(){return __is_constructible(R,int);}',
         'user-missing-conversion': 'struct R{operator int()const;};bool f(){return __is_convertible(R,int);}',
@@ -6468,6 +6488,16 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'user-self-query-incomplete': 'struct R{R(int){static_assert(!__is_constructible(R));}};bool f(){return __is_constructible(R,int);}',
         'user-mutual-query-hidden': 'struct A{A(int);};struct B{B(int);};A::A(int){static_assert(__is_constructible(B,int));}B::B(int){(void)sizeof(long double);static_assert(__is_constructible(A,int));}',
         'user-nested-default-conversion': 'struct S{S(int=3){}};struct R{R(S={}){}};bool f(){return __is_constructible(R);}',
+        'nothrow-missing-constructor': 'struct R{R(int)noexcept;};bool f(){return __is_nothrow_constructible(R,int);}',
+        'nothrow-missing-conversion': 'struct R{operator int()const noexcept;};bool f(){return __is_nothrow_convertible(R,int);}',
+        'nothrow-hidden-specification': 'struct R{R(int)noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}',
+        'nothrow-hidden-conversion-specification': 'struct R{operator int()const noexcept(sizeof(long double)>0){return 3;}};bool f(){return __is_nothrow_convertible(R,int);}',
+        'nothrow-hidden-destructor-specification': 'struct R{R(int)noexcept{}~R()noexcept(sizeof(long double)>0){}};bool f(){return __is_nothrow_constructible(R,int);}',
+        'nothrow-defaulted-field-destruction': 'struct F{~F()noexcept(false)=default;};struct R{F field;R()noexcept{}~R(){}};bool f(){return __is_nothrow_constructible(R);}',
+        'nothrow-lazy-template-body': 'template<class T>struct R{R(int)noexcept{T::missing();}};bool f(){return __is_nothrow_constructible(R<int>,int);}',
+        'nothrow-selected-default': 'struct R{R(int,int=3)noexcept{}};bool f(){return __is_nothrow_constructible(R,int);}',
+        'nothrow-incomplete-reference': 'struct R{int n;};bool f(){return __is_nothrow_constructible(R&,R);}',
+        'nothrow-defaulted-field-assignment': 'struct F{F&operator=(const F&)noexcept(false)=default;};struct R{F field;};bool f(){return __is_nothrow_assignable(R&,R);}',
     }
     for name, source in operation_trait_negative.items():
         check("v2-operation_trait_negative-" + name, source, 'TR0201', profile="cpp-core-v2")
@@ -6495,7 +6525,7 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     record_expected = {"record_default": True, "record_copy": True,
                        "record_assign": True, "record_convert": True,
                        "record_reference": True, "record_false": False,
-                       "record_reference_destruct": True}
+                       "record_reference_destruct": True, "record_nothrow": True}
     for function in record_operation_module["functions"]:
         if not function["c_export"]:
             continue
@@ -6522,7 +6552,10 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     defined_expected = {"defined_construct": True, "defined_copy": True,
                         "defined_trivial": False, "defined_assign": True,
                         "defined_scalar_assign": False, "defined_convert": True,
-                        "defined_fields": True}
+                        "defined_fields": True, "defined_nothrow": True,
+                        "defined_nothrow_copy": False, "defined_nothrow_convert": False,
+                        "defined_nothrow_assign": True, "defined_nothrow_fields": True,
+                        "defined_nothrow_destruction": False}
     for function in defined_operation_module["functions"]:
         if not function["c_export"]:
             continue

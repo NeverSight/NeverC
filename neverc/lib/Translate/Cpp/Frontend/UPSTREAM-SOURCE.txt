@@ -280,8 +280,12 @@ user operations additionally require exact non-template definitions that complet
 normal source traversal. Deferred roots are checked after successful traversal,
 with deferral closed before validation and lowering. Independent lifetime checks
 include owning subobject destruction, not just a written destructor body. No
-extra Sema instantiation is requested. Lazy templates, selected defaults, incomplete
-selection and nothrow record queries still need further evidence. The independent
+extra Sema instantiation is requested. The three retained nothrow operations also
+check already-resolved standard exception specifications on each selected root
+callee and bound destructor, without asking Sema to resolve additional dependencies.
+The same source proof covers owning-subobject destructor inference. Lazy templates,
+selected defaults, incomplete selection, unresolved exception dependencies and
+record-value nothrow destruction still need further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.
 
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy

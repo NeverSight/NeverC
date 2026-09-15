@@ -1713,11 +1713,18 @@ void Adapter::checkQueryType(QualType T, SourceLocation L) {
 // source traversal. Do not reuse runtime construction/default caches or infer
 // completed source proof from the function emission queue.
 static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
-    const std::set<const FunctionDecl *> *Definitions = nullptr) {
+    const std::set<const FunctionDecl *> *Definitions = nullptr,
+    bool RequiresExceptionSource = false) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
     return false;
+  auto ExceptionSource = [&](const FunctionDecl *Function) {
+    // Sema applies canThrow to this retained root. Read its resolved selected
+    // signatures; never resolve a later callee skipped by canThrow's early exit.
+    return !RequiresExceptionSource || (Function &&
+        standardExceptionSpecification(Function->getType()->getAs<FunctionProtoType>()));
+  };
   auto Defined = [&](const FunctionDecl *Function) {
     const auto *Definition = Function ? Function->getDefinition() : nullptr;
     return Definitions && Definition && Definitions->count(Definition) &&
@@ -1820,6 +1827,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
                           Constructor->isDefaultConstructor() ? Family::Default
                                                               : Family::CopyMove, 0);
       if ((!Implicit && !(ordinaryConstructor(Constructor) && Defined(Constructor))) ||
+          !ExceptionSource(Constructor) ||
           !A.S.owns(A.Sources, Constructor->getLocation()) || !Construction->isPRValue() ||
           Construction->getConstructionKind() != CXXConstructionKind::Complete ||
           Construction->getNumArgs() != Constructor->getNumParams() ||
@@ -1842,6 +1850,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
           ImplicitClosure(ImplicitClosure, Method->getParent(), Family::Assignment, 0);
       if (!Implicit && !(ordinaryOperator(Method) && Defined(Method) && directMethodReference(Call)))
         return false;
+      if (!ExceptionSource(Method))
+        return false;
       if (Call->isPRValue() && Call->getType()->isRecordType() &&
           !Destruction(Destruction, Call->getType()->getAsCXXRecordDecl(), 0))
         return false;
@@ -1851,6 +1861,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     if (const auto *Call = dyn_cast<CXXMemberCallExpr>(E)) {
       const auto *Conversion = dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee());
       if (!ordinaryConversion(Conversion) || !Defined(Conversion) ||
+          !ExceptionSource(Conversion) ||
           !directMethodReference(Call) || Call->getNumArgs() != 0 ||
           !Call->getImplicitObjectArgument())
         return false;
@@ -1870,6 +1881,7 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
       const auto *Destructor = Temporary->getTemporary()->getDestructor();
       const auto *Sub = Temporary->getSubExpr();
       return Destructor && Sub && Temporary->isPRValue() && Sub->isPRValue() &&
+             ExceptionSource(Destructor) &&
              A.Context.hasSameType(Temporary->getType(), Sub->getType()) &&
              A.Context.hasSameUnqualifiedType(Temporary->getType(),
                  A.Context.getRecordType(Destructor->getParent())) &&
@@ -1888,6 +1900,11 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
            !A.Context.getBaseElementType(E->getType())->isRecordType();
   };
   return Check(Check, Source.Root, 0);
+}
+
+static bool operationTraitNeedsExceptionSource(TypeTrait Trait) {
+  return Trait == TT_IsNothrowConstructible || Trait == BTT_IsNothrowAssignable ||
+         Trait == BTT_IsNothrowConvertible;
 }
 
 static unsigned metadataTypeClassificationArity(TypeTrait Trait) {
@@ -2005,17 +2022,15 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
       Query->getArg(0)->getType()->isReferenceType();
   if (OperationTrait && RecordOperand && !ReferenceDestruction) {
     const auto Kind = Query->getTrait();
-    const bool Nothrow = Kind == UTT_IsNothrowDestructible ||
-        Kind == TT_IsNothrowConstructible || Kind == BTT_IsNothrowAssignable ||
-        Kind == BTT_IsNothrowConvertible;
     auto Found = OperationTraits.find(Query);
-    if (Nothrow || Found == OperationTraits.end()) {
+    if (Kind == UTT_IsNothrowDestructible || Found == OperationTraits.end()) {
       reject(L, "operation trait source",
-             "Record exception dependencies require further source checks.");
+             "Record-value destruction requires retained selected source and exception dependencies.");
       throw Failure{};
     }
     if (!VerifiedOperationQueries.count(Query) &&
-        !operationTraitSource(*this, Found->second)) {
+        !operationTraitSource(*this, Found->second, nullptr,
+                              operationTraitNeedsExceptionSource(Kind))) {
       if (CheckingSource && Found->second.Attempted &&
           Found->second.Complete && Found->second.Root) {
         if (DeferredOperationQueries.insert(Query).second)
@@ -9020,7 +9035,8 @@ public:
     for (const auto *Query : A.PendingOperationQueries) {
       auto Source = A.OperationTraits.find(Query);
       if (Source == A.OperationTraits.end() ||
-          !operationTraitSource(A, Source->second, &CompletedOperationDefinitions)) {
+          !operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
+                                operationTraitNeedsExceptionSource(Query->getTrait()))) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact ordinary definitions, arguments and destruction source.");
         return false;

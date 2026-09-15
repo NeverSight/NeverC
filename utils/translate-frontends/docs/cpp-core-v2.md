@@ -949,9 +949,10 @@ does not prove absence of source operations. A complete operation can still give
 a false nothrow/trivial result. Full checking of those selected sources, partial
 failure paths and exception dependencies remains necessary. The implicit trivial
 and completed ordinary-definition subsets below have independent source proofs.
-Nothrow record queries still require the exact exception specifications
-actually resolved and remain rejected for record values and arrays. Nothrow
-destruction of record references takes the separate no-selection path below. This is
+Nothrow construction, assignment and conversion also require the checked resolved
+exception source described below. Record-value and array nothrow destruction still
+need retained destructor selection. Nothrow destruction of record references takes
+the separate no-selection path below. This is
 separate from the metadata record queries above. Actual standard-header and complete C++/STL support remain
 unfinished.
 
@@ -959,7 +960,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 89 accepted, 63 unsupported-source and seven invalid-C++ cases cover
+The paired 114 accepted, 68 unsupported-source and seven invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -967,7 +968,7 @@ introduced.
 
 ### Implicit trivial record operations
 
-The non-nothrow construction, assignment and conversion predicates additionally
+The construction, assignment and conversion predicates additionally
 accept an admitted record operand when its retained operation is complete and
 uses only implicit trivial constructors or assignment operators. Direct reference
 binding and array decay can also use the exact synthetic operands without
@@ -993,21 +994,22 @@ can therefore bind an admitted record with a nontrivial or deleted destructor.
 
 The implicit subset rejects selected user or explicitly defaulted operations, incomplete
 failed initialization, unsupported derived-to-base reference adjustments and
-nothrow record construction, assignment, conversion and value/array destruction. Failed selection cannot be accepted just because the
+record-value/array nothrow destruction. Nothrow construction, assignment and
+conversion use the additional resolved-exception check below. Failed selection cannot be accepted just because the
 boolean is false. Unused user default-constructor bodies stay lazy when the query
 selects only an implicit copy/move operation. Written query types, aliases, bounds
 and defaults retain their ordinary source checks.
 
 The source checker does not populate runtime construction/default caches or queue
-runtime helpers. A separate thirteen-checkpoint O0/O2 fixture exercises query values,
+runtime helpers. A separate fourteen-checkpoint O0/O2 fixture exercises query values,
 zero query effects, actual copy/assignment/reference identity and real destruction.
-Seven exported boolean functions check that no hypothetical calls or record locals
+Eight exported boolean functions check that no hypothetical calls or record locals
 enter the protocol; relocation remains deterministic. Native validation requires
 the implementing revision's CI.
 
 ### Operations with completed ordinary definitions
 
-Non-nothrow record construction, assignment and conversion queries also accept
+Record construction, assignment and conversion queries also accept
 selected ordinary user operations when the exact body-owning definitions have
 completed normal source traversal. This includes explicit constructors, user
 copy/move constructors, assignment operators, conversion functions, their admitted
@@ -1046,17 +1048,41 @@ or queues hypothetical destruction helpers.
 
 Declaration-only and lazy template operations, selected default arguments,
 explicitly defaulted operations, implicit nontrivial destructors, incomplete
-selection and nothrow record exception dependencies still require further source
+selection and unproven record exception dependencies still require further source
 evidence. Supplying every argument to an ordinary function with defaults can pass;
 selecting an omitted default cannot yet use this proof. Unused templates remain
 lazy, and actual runtime use retains all ordinary source and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has twelve O0/O2 checkpoints for zero hypothetical effects, real user
-construction/copy/move/assignment/conversion and field-array destruction. Seven
+fixture has fifteen O0/O2 checkpoints for zero hypothetical effects, real user
+construction/copy/move/assignment/conversion and field-array destruction. Thirteen
 exported query functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
+
+### Resolved exception source for operation queries
+
+`__is_nothrow_constructible`, `__is_nothrow_assignable` and
+`__is_nothrow_convertible` use the same retained roots and source proofs above.
+Each selected constructor, assignment operator, conversion function and bound
+temporary destructor must additionally have an already-resolved standard exception
+specification. The adapter reads these specifications without resolving new ones,
+instantiating bodies or recomputing Clang's result. Both true and false results
+must pass the source checks. A `noexcept` constructor with a throwing argument
+conversion or bound destructor still gives the original false result.
+
+Implicit operation families exclude written/defaulted subobject operations and
+default member initializers. Ordinary user definitions include their written
+signature checks; inferred user-destructor specifications also retain recursive
+source checks for all owning subobject destructors. An unselected destructor does
+not need new exception resolution solely because its object is constructed.
+
+Clang's expression exception check can stop after a throwing callee. If a later
+callee remains unresolved, this bounded proof rejects the query conservatively.
+Destructor inference differs: it can still resolve later subobject destructors
+after an earlier one makes the result throwing, so every owning subobject remains
+part of the source proof. Neither path authorizes selected defaults, lazy template
+operations, failed initialization or record-value nothrow destruction.
 
 ### Nothrow destruction of record references
 
@@ -1070,7 +1096,8 @@ The full referred type and every written type source still require admission.
 Hidden unsupported types in `decltype`, array bounds or template arguments remain
 rejected. Actual destruction elsewhere retains ordinary body and lifetime checks.
 This reference-only result does not admit nothrow destruction of record values or
-arrays themselves, nor other nothrow record operations.
+arrays themselves. Other nothrow record operations require the separate retained
+operation proof above.
 
 ## Array type queries
 
