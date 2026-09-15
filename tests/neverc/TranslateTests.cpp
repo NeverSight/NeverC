@@ -5068,6 +5068,31 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesPreserveSubstitutionAndValues) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"final-copied-nested", "template<class T>struct O final{struct I final{T n;};};int f(){O<int>::I r{3};static_assert(__is_final(O<int>::I));return r.n;}"},
+      {"final-member-template", "template<class T>struct O final{template<class U>struct I final{U n;};};int f(){O<int>::I<int>r{3};return r.n;}"},
+      {"final-hidden-friend", "template<class T>struct R final{T n;friend T get(R r){return r.n;}};int f(){R<int>r{3};return get(r);}"},
+      {"final-class-partial", "template<class T>struct R final{T n;};template<class T>struct R<T*> final{T*n;};static_assert(__is_final(R<int*>)&&__is_final(R<int>));"},
+      {"final-reference-layout", "struct R final{int&r;};static_assert(__is_final(R)&&__is_literal(R)&&!__is_standard_layout(R));int f(){int n=3;R r{n};++r.r;return n;}"},
+      {"final-empty", "struct R final{};static_assert(__is_final(R)&&__is_empty(R)&&sizeof(R)==1);"},
+      {"final-record", "struct R final{int n;};int f(){R r{3};R copy=r;return copy.n;}"},
+      {"final-template", "template<class T>struct R final{T n;};static_assert(__is_final(R<int>));int f(){R<int>r{3};return r.n;}"},
+      {"final-specialization", "template<class T>struct R{T n;};template<>struct R<int> final{int n;};static_assert(__is_final(R<int>)&&!__is_final(R<char>));"},
+      {"final-nested", "struct O{struct R final{int n;};};static_assert(__is_final(O::R));"},
+      {"final-local", "int f(){struct R final{int n;};static_assert(__is_final(R));R r{3};return r.n;}"},
+      {"final-private", "class R final{int n;public:R():n(3){}int get()const{return n;}};int f(){R r;return r.get();}"},
+      {"final-empty-base", "struct B{};template<class T>struct D final:T{};static_assert(__is_final(D<B>)&&__is_base_of(B,D<B>)&&!__has_unique_object_representations(D<B>));"},
+      {"final-cv", "struct R final{};static_assert(__is_final(const R)&&!__is_final(R*)&&!__is_final(R&)&&!__is_final(int)&&!__is_final(void));"},
+      {"literal-scalar", "static_assert(__is_literal(int)&&__is_literal(void)&&__is_literal(int&)&&__is_literal(int[3])&&!__is_literal(int()));"},
+      {"literal-record", "struct C{int n;constexpr C():n(3){}};struct R{int n;R():n(3){}};struct D{int n;~D(){}};static_assert(__is_literal(C)&&!__is_literal(R)&&!__is_literal(D));"},
+      {"literal-reference-record", "struct R{int&r;};static_assert(__is_literal(R));"},
+      {"literal-unused-body", "template<class T>struct R{int n;R(){T::missing();}};static_assert(!__is_literal(R<int>));"},
+      {"unique-scalars", "enum E:unsigned{e};static_assert(__has_unique_object_representations(unsigned)&&__has_unique_object_representations(E)&&__has_unique_object_representations(int*)&&!__has_unique_object_representations(float)&&!__has_unique_object_representations(void)&&!__has_unique_object_representations(int&));"},
+      {"unique-record-padding", "struct Bytes{unsigned char a,b;};struct Padded{char a;int b;};struct Empty{};static_assert(__has_unique_object_representations(Bytes)&&!__has_unique_object_representations(Padded)&&!__has_unique_object_representations(Empty));"},
+      {"unique-array", "static_assert(__has_unique_object_representations(unsigned char[2][3])&&!__has_unique_object_representations(double[2]));"},
+      {"unique-nontrivial-constructor", "struct R{int n;R():n(3){}};static_assert(__has_unique_object_representations(R)&&!__is_literal(R));"},
+      {"property-variable-template", "template<class T>inline constexpr bool literal=__is_literal(T);template<class T>inline constexpr bool unique=__has_unique_object_representations(T);struct R final{int n;};static_assert(literal<R>&&unique<R>);"},
+      {"property-pack", "template<class...T>constexpr bool finals(){return (__is_final(T)&&...);}struct R final{};static_assert(finals<>()&&finals<R,R>()&&!finals<R,int>());"},
+      {"property-noexcept", "template<class T>void f()noexcept(__has_unique_object_representations(T)){}static_assert(noexcept(f<int>())&&!noexcept(f<float>()));"},
       {"structural-empty", "struct E{};struct R{int n;};static_assert(__is_empty(E)&&!__is_empty(R)&&!__is_empty(int));"},
       {"structural-aggregate", "struct A{int n;};struct C{int n;C():n(3){}};static_assert(__is_aggregate(A)&&__is_aggregate(int[2])&&!__is_aggregate(C)&&!__is_aggregate(int));"},
       {"structural-standard-layout", "struct A{int n;};struct R{int&r;};static_assert(__is_standard_layout(A)&&!__is_standard_layout(R)&&__is_standard_layout(int));"},
@@ -5149,6 +5174,14 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"final-unsupported-field", "struct R final{long double n;};bool f(){return __is_final(R);}"},
+      {"final-extra-attribute", "struct __attribute__((packed)) R final{int n;};bool f(){return __is_final(R);}"},
+      {"final-virtual", "struct R final{virtual int f(){return 3;}};bool f(){return __is_final(R);}"},
+      {"final-hidden-source", "bool f(){return __is_final(decltype((sizeof(long double),1)));}"},
+      {"literal-hidden-source", "bool f(){return __is_literal(int[(sizeof(long double),2)]);}"},
+      {"unique-hidden-source", "template<class T,int N=sizeof(long double)>using A=T;bool f(){return __has_unique_object_representations(A<int>);}"},
+      {"unique-unknown-array", "bool f(){return __has_unique_object_representations(int[]);}"},
+      {"literal-volatile", "bool f(){return __is_literal(volatile int);}"},
       {"structural-hidden-bound", "bool f(){return __is_empty(int[(sizeof(long double),2)]);}"},
       {"structural-hidden-decltype", "bool f(){return __is_trivial(decltype((sizeof(long double),1)));}"},
       {"structural-hidden-default", "template<class T,int N=sizeof(long double)>using A=T;bool f(){return __is_standard_layout(A<int>);}"},
@@ -5203,6 +5236,11 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRejectsInvalidCpp) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"final-derived-class", "struct B final{};struct D:B{};"},
+      {"final-incomplete", "struct R;bool f(){return __is_final(R);}"},
+      {"literal-incomplete", "struct R;bool f(){return __is_literal(R);}"},
+      {"unique-incomplete", "struct R;bool f(){return __has_unique_object_representations(R);}"},
+      {"final-wrong-arity", "bool f(){return __is_final(int,int);}"},
       {"structural-incomplete-empty", "struct R;bool f(){return __is_empty(R);}"},
       {"structural-incomplete-base", "struct B{};struct D;bool f(){return __is_base_of(B,D);}"},
       {"structural-wrong-base-arity", "bool f(){return __is_base_of(int);}"},
@@ -5220,6 +5258,14 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRejectsInvalidCpp) {
     expectCode(Result, "TR0202");
     expectNoArtifacts(Output);
   }
+}
+
+TEST_F(TranslateTest, FinalClassKeywordRemainsOutsideCoreV1) {
+  const auto Source = tmpFile("final-class-v1.cpp");
+  const auto Output = tmpFile("final-class-v1.nc");
+  writeFile(Source, "struct R final{int n;};int f(){R r{3};return r.n;}");
+  expectCode(translate(Source, {"--profile", "cpp-core-v1", "-o", Output.string()}), "TR0201");
+  expectNoArtifacts(Output);
 }
 
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluatedEffects) {

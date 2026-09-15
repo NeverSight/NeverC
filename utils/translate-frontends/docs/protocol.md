@@ -760,6 +760,11 @@ therefore retain their source query results.
 Record layout, aggregate and triviality properties, and base relationships also
 use the checked C++ metadata. They are never inferred from the emitted C carrier,
 and they do not create construction, destruction or base-conversion instructions.
+Finality, C++17 literal-type status and unique object representation also remain
+source predicates. An empty C++ class has no value-bearing byte even though its
+C storage carrier includes a byte. Padding/trivial-copy metadata is never inferred
+from that carrier. Standard final class declarations use the same checked record
+layout and function identities, without a new protocol property or consumer ABI.
 
 Type source traversal checks nested `decltype`, array bounds, function
 specifications and selected template substitutions even in erased queries. No

@@ -8,7 +8,7 @@ Core v2는 기본 sized delete 전달을 지원합니다. 소스에서 다시 �
 
 Core v2는 검증된 `__array_rank`와 `__array_extent`도 지원하며, 고정 배열 타입에 대한 템플릿 인덱스를 포함한 음이 아닌 상수 정수 인덱스를 처리합니다. 상수로 바꾸기 전에 타입과 인덱스 소스를 검사합니다. 지원하지 않는 배열 타입과 암시적 클래스 변환 인덱스는 제외되며, 네이티브 결과는 구현 리비전의 CI로 검증해야 합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).
 
-Core v2는 `__is_integral`, `__is_pointer`, `__is_same` 등의 검증된 내장 타입 분류를 추가합니다. C++ 타입의 동일성을 유지하고 불리언 값을 생성하기 전에 작성된 피연산자 타입을 검사합니다. 지원하지 않는 타입과 다른 타입 특성은 계속 제한됩니다. O0/O2 및 재배치 검증에는 구현 리비전의 CI가 필요하며 표준 헤더와 완전한 C++/STL 지원은 아직 미완성입니다. 지원되는 타입의 집합체, 빈 클래스, 표준 레이아웃, trivial, trivially-copyable, POD, 다형성／추상 속성과 `__is_base_of` 기반 클래스 관계도 조회할 수 있습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
+Core v2는 `__is_integral`, `__is_pointer`, `__is_same` 등의 검증된 내장 타입 분류를 추가합니다. C++ 타입의 동일성을 유지하고 불리언 값을 생성하기 전에 작성된 피연산자 타입을 검사합니다. 지원하지 않는 타입과 다른 타입 특성은 계속 제한됩니다. O0/O2 및 재배치 검증에는 구현 리비전의 CI가 필요하며 표준 헤더와 완전한 C++/STL 지원은 아직 미완성입니다. 지원되는 타입의 집합체, 빈 클래스, 표준 레이아웃, trivial, trivially-copyable, POD, 다형성／추상 속성과 `__is_base_of` 기반 클래스 관계도 조회할 수 있습니다. 표준 `final` 클래스와 `__is_final`, `__is_literal`, `__has_unique_object_representations` 조회도 지원합니다. 소스의 패딩, 빈 클래스 표현 및 C++17 리터럴 타입 규칙을 유지하며 다른 속성과 가상 메서드는 기존 제한을 따릅니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
 
 Core v2는 소스의 정확한 전역 C 선언을 통한 `malloc/calloc/free` 직접 호출을 지원합니다. 소스에서 정의한 C++ 할당자는 실제 네이티브 힙을 사용하며 독립된 C 호출자와 메모리를 할당하고 해제할 수 있습니다. 비트 폭, 호출 규약, 소스 및 IR 검사는 유지됩니다. O0/O2 검증은 구현 버전의 CI가 필요합니다. `realloc`, 예외를 던지는 기본 C++ 할당, 표준 헤더와 완전한 C++／STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
 

@@ -112,8 +112,22 @@ static unsigned nativeHeapDeclaration(const FunctionDecl *F) {
   return Count == 1 ? Builtin::BImalloc : Builtin::BIcalloc;
 }
 
-static bool supportedDeclarationAttributes(const Decl *D) {
+// Structural source checks stay attribute-free except for the standard final
+// class keyword. Non-record declarations retain their original strict policy.
+static bool hasNonFinalAttributes(const Decl *D) {
   if (!D->hasAttrs())
+    return false;
+  if (!isa<CXXRecordDecl>(D))
+    return true;
+  for (const auto *Attribute : D->attrs())
+    if (!isa<FinalAttr>(Attribute) ||
+        llvm::StringRef(Attribute->getSpelling()) != "final")
+      return true;
+  return false;
+}
+
+static bool supportedDeclarationAttributes(const Decl *D) {
+  if (!hasNonFinalAttributes(D))
     return true;
   const auto *F = dyn_cast<FunctionDecl>(D);
   if (const auto ID = nativeHeapDeclaration(F)) {
@@ -1709,6 +1723,7 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   case UTT_IsAggregate: case UTT_IsEmpty: case UTT_IsStandardLayout:
   case UTT_IsTrivial: case UTT_IsTriviallyCopyable: case UTT_IsPOD:
   case UTT_IsPolymorphic: case UTT_IsAbstract:
+  case UTT_IsFinal: case UTT_IsLiteral: case UTT_HasUniqueObjectRepresentations:
     Arity = 1;
     break;
   case BTT_IsSame: case BTT_IsBaseOf:
@@ -1778,7 +1793,7 @@ bool Adapter::emptyBaseChainShape(const CXXRecordDecl *Record) {
     Record = Record->getDefinition();
     if (!S.coreV2() || !Record || Record->isDependentContext() ||
         !S.owns(Sources, Record->getLocation()) || Record->isInvalidDecl() ||
-        Record->hasAttrs() || Record->isUnion() || !Record->field_empty() ||
+        hasNonFinalAttributes(Record) || Record->isUnion() || !Record->field_empty() ||
         !Record->isStandardLayout() || Record->isDynamicClass() ||
         Record->getNumBases() > 1 || !Record->isTriviallyCopyable() ||
         !Record->hasTrivialDefaultConstructor() || !Record->hasTrivialDestructor() ||
@@ -3006,7 +3021,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     std::set<const CXXRecordDecl *> Seen;
     for (const auto *Current = Record; Current;) {
       if (!ordinaryMemberClassIdentity(Current) || !owned(Current) ||
-          Current->hasAttrs() || Current->getFriendObjectKind() ||
+          hasNonFinalAttributes(Current) || Current->getFriendObjectKind() ||
           (Current->getLexicalDeclContext() != Current->getDeclContext() &&
            !isa<TranslationUnitDecl, NamespaceDecl>(Current->getLexicalDeclContext())) ||
           !outerTemplateListsShape(Current) || Seen.size() >= 64 ||
@@ -3021,7 +3036,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         return WrittenOrdinaryClasses.count(Current);
       const auto *Own = writtenOwnMemberClass(Current);
       if (Own && (!WrittenOrdinaryClasses.count(Own) || !owned(Own) ||
-                  Own->isInvalidDecl() || Own->hasAttrs() ||
+                  Own->isInvalidDecl() || hasNonFinalAttributes(Own) ||
                   Own->getFriendObjectKind() || !outerTemplateListsShape(Own)))
         return false;
       if (!Own && Current->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
@@ -3068,7 +3083,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     auto Restore = llvm::make_scope_exit([&] { ActiveClassShapes.erase(Record); });
     return owned(Definition) && !Definition->isInvalidDecl() &&
-           !Definition->hasAttrs() && emptyBasesShape(Definition) &&
+           !hasNonFinalAttributes(Definition) && emptyBasesShape(Definition) &&
            classTemplateMembers(Definition);
   }
   bool zeroParameterClassBodyShape(const CXXRecordDecl *Record) {
@@ -3078,7 +3093,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   // Local structural edges only: never enumerate a parent's members here.
   bool classFullIdentityShape(const CXXRecordDecl *Record) {
-    if (!classScopeFullIdentity(Record) || !owned(Record) || Record->hasAttrs() ||
+    if (!classScopeFullIdentity(Record) || !owned(Record) || hasNonFinalAttributes(Record) ||
         !Record->getIdentifier() || Record->getFriendObjectKind())
       return false;
     const auto *D = cast<ClassTemplateSpecializationDecl>(Record);
@@ -3093,7 +3108,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // The successful copy producer supplies a final full object and the exact
     // written full object, independently of the primary's redeclaration chain.
     if (D->isDependentContext() || !genericClassFullIdentity(Origin) ||
-        !owned(Origin) || Origin->hasAttrs() || Origin->getFriendObjectKind() ||
+        !owned(Origin) || hasNonFinalAttributes(Origin) || Origin->getFriendObjectKind() ||
         !WrittenClassFullDeclarations.count(Origin))
       return false;
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
@@ -3123,7 +3138,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     auto Restore = llvm::make_scope_exit([&] { ActiveClassShapes.erase(D); });
     return owned(Definition) && !Definition->isInvalidDecl() &&
-           !Definition->hasAttrs() && emptyBasesShape(Definition) &&
+           !hasNonFinalAttributes(Definition) && emptyBasesShape(Definition) &&
            classTemplateMembers(Definition);
   }
   // Structural ancestors only. A child declaration must not recursively ask
@@ -3132,7 +3147,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     std::set<const CXXRecordDecl *> Seen;
     while (Context && !isa<TranslationUnitDecl, NamespaceDecl>(Context)) {
       const auto *Record = dyn_cast<CXXRecordDecl>(Context);
-      if (!owned(Record) || Record->isInvalidDecl() || Record->hasAttrs() ||
+      if (!owned(Record) || Record->isInvalidDecl() || hasNonFinalAttributes(Record) ||
           !Record->getIdentifier() || Record->isUnion() || Record->isLambda() ||
           Record->isLocalClass())
         return false;
@@ -3161,7 +3176,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Definition = Body ? Body->getDefinition() : nullptr;
       }
       if (!owned(Definition) || Definition->isInvalidDecl() ||
-          Definition->hasAttrs() || !emptyBasesShape(Definition) ||
+          hasNonFinalAttributes(Definition) || !emptyBasesShape(Definition) ||
           (Definition->getLexicalDeclContext() != Definition->getDeclContext() &&
            !isa<TranslationUnitDecl, NamespaceDecl>(Definition->getLexicalDeclContext())))
         return false;
@@ -3250,7 +3265,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return classFullDeclarationShape(dyn_cast<ClassTemplateSpecializationDecl>(Record));
     if (!owned(Record) || !isa<CXXRecordDecl>(Record->getDeclContext()) ||
         !classOwnerScope(Record->getDeclContext()) || Record->isInvalidDecl() ||
-        Record->hasAttrs() || Record->getFriendObjectKind() ||
+        hasNonFinalAttributes(Record) || Record->getFriendObjectKind() ||
         Record->getInstantiatedFromMemberClass() ||
         (Record->getLexicalDeclContext() != Record->getDeclContext() &&
          !isa<TranslationUnitDecl, NamespaceDecl>(Record->getLexicalDeclContext())) ||
@@ -3292,7 +3307,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Parent = M->getParent();
     // Do not recurse through classTemplateMembers here: that inventory calls
     // this helper for every member template. Its class checks run separately.
-    if (!owned(Parent) || Parent->isInvalidDecl() || Parent->hasAttrs() ||
+    if (!owned(Parent) || Parent->isInvalidDecl() || hasNonFinalAttributes(Parent) ||
         !Parent->getIdentifier() || Parent->isUnion() || Parent->isLambda() ||
         Parent->isLocalClass() || D->getDeclContext() != Parent ||
         !classOwnerScope(Parent->getDeclContext()) ||
@@ -3301,7 +3316,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto *Definition = Parent->getDefinition();
     if (Definition && (!owned(Definition) || Definition->isInvalidDecl() ||
-                       Definition->hasAttrs() || !emptyBasesShape(Definition)))
+                       hasNonFinalAttributes(Definition) || !emptyBasesShape(Definition)))
       return false;
     const auto *Outer = classTemplatePattern(Parent);
     const bool OrdinaryBody = ordinaryMemberClassScope(Parent);
@@ -3425,7 +3440,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   bool memberVariableOwnerShape(const VarDecl *D) {
     const auto *Parent = D ? dyn_cast<CXXRecordDecl>(D->getDeclContext()) : nullptr;
     if (!owned(Parent) || !D->isStaticDataMember() || Parent->isInvalidDecl() ||
-        Parent->hasAttrs() || !Parent->getIdentifier() || Parent->isUnion() ||
+        hasNonFinalAttributes(Parent) || !Parent->getIdentifier() || Parent->isUnion() ||
         Parent->isLambda() || Parent->isLocalClass() ||
         !classOwnerScope(Parent->getDeclContext()) ||
         (D->getLexicalDeclContext() != Parent &&
@@ -3434,7 +3449,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // Structural owner only: classTemplateMembers calls this helper itself.
     const auto *Definition = Parent->getDefinition();
     if (!owned(Definition) || Definition->isInvalidDecl() ||
-        Definition->hasAttrs() || !emptyBasesShape(Definition))
+        hasNonFinalAttributes(Definition) || !emptyBasesShape(Definition))
       return false;
     const auto *Outer = classTemplatePattern(Parent);
     const bool OrdinaryBody = ordinaryMemberClassScope(Parent);
@@ -3591,7 +3606,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto *Pattern = D->getTemplatedDecl();
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
-    if (!owned(Parent) || Parent->isInvalidDecl() || Parent->hasAttrs() ||
+    if (!owned(Parent) || Parent->isInvalidDecl() || hasNonFinalAttributes(Parent) ||
         !Parent->getIdentifier() || Parent->isUnion() || Parent->isLambda() ||
         Parent->isLocalClass() ||
         !classOwnerScope(Parent->getDeclContext()) ||
@@ -3604,7 +3619,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto *Definition = Parent->getDefinition();
     if (!owned(Definition) || Definition->isInvalidDecl() ||
-        Definition->hasAttrs() || !emptyBasesShape(Definition))
+        hasNonFinalAttributes(Definition) || !emptyBasesShape(Definition))
       return false;
     // Check the outer structural owner without recursively enumerating this
     // alias through classTemplateMembers again.
@@ -3681,7 +3696,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
     const auto *Function = dyn_cast_or_null<FunctionDecl>(D->getFriendDecl());
-    if (!owned(Parent) || Parent->isInvalidDecl() || Parent->hasAttrs() ||
+    if (!owned(Parent) || Parent->isInvalidDecl() || hasNonFinalAttributes(Parent) ||
         !Parent->getIdentifier() || Parent->isUnion() || Parent->isLambda() ||
         Parent->isLocalClass() || !classOwnerScope(Parent->getDeclContext()) ||
         !friendFunctionSourceShape(Function) || !Function->getFriendObjectKind() ||
@@ -3699,7 +3714,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto *Function = D->getTemplatedDecl();
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getLexicalDeclContext());
-    if (!owned(Parent) || Parent->isInvalidDecl() || Parent->hasAttrs() ||
+    if (!owned(Parent) || Parent->isInvalidDecl() || hasNonFinalAttributes(Parent) ||
         !Parent->getIdentifier() || Parent->isUnion() || Parent->isLambda() ||
         Parent->isLocalClass() || !classOwnerScope(Parent->getDeclContext()) ||
         !D->getDeclContext()->getRedeclContext()->isFileContext() ||
@@ -3919,7 +3934,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return true;
     }
     if (const auto *Parent = dyn_cast<CXXRecordDecl>(Body->second->LexicalContext))
-      if (!owned(Parent) || Parent->isInvalidDecl() || Parent->hasAttrs() ||
+      if (!owned(Parent) || Parent->isInvalidDecl() || hasNonFinalAttributes(Parent) ||
           !Parent->getIdentifier() || Parent->isUnion() || Parent->isLocalClass() ||
           Parent->isLambda() || !classOwnerScope(Parent->getDeclContext()) ||
           !checkClassFullOwnerSources(Parent)) {
@@ -3938,10 +3953,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getLexicalDeclContext());
     const auto *Pattern = D->getTemplatedDecl();
-    return owned(Parent) && !Parent->isInvalidDecl() && !Parent->hasAttrs() &&
+    return owned(Parent) && !Parent->isInvalidDecl() && !hasNonFinalAttributes(Parent) &&
            Parent->getIdentifier() && !Parent->isUnion() && !Parent->isLocalClass() &&
            !Parent->isLambda() && classOwnerScope(Parent->getDeclContext()) &&
-           owned(Pattern) && !Pattern->isInvalidDecl() && !Pattern->hasAttrs() &&
+           owned(Pattern) && !Pattern->isInvalidDecl() && !hasNonFinalAttributes(Pattern) &&
            Pattern->getKind() == Decl::CXXRecord && Pattern->getIdentifier() &&
            !Pattern->isUnion() && !Pattern->isLocalClass() && !Pattern->isLambda() &&
            !Pattern->isCompleteDefinition() && !Pattern->getNumTemplateParameterLists() &&
@@ -4138,7 +4153,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Parent = dyn_cast<CXXRecordDecl>(D->getDeclContext());
     return Type && !Type->getType().isNull() &&
            A.S.owns(A.Sources, Type->getTypeLoc().getBeginLoc()) &&
-           owned(Parent) && !Parent->isInvalidDecl() && !Parent->hasAttrs() &&
+           owned(Parent) && !Parent->isInvalidDecl() && !hasNonFinalAttributes(Parent) &&
            Parent->getIdentifier() && !Parent->isUnion() && !Parent->isLambda() &&
            !Parent->isLocalClass() && classOwnerScope(Parent->getDeclContext());
   }
@@ -4240,7 +4255,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       A.chargeExpansion(1, Member->getLocation());
       if (Member->isImplicit())
         continue;
-      if (!owned(Member) || Member->isInvalidDecl() || Member->hasAttrs() ||
+      if (!owned(Member) || Member->isInvalidDecl() || hasNonFinalAttributes(Member) ||
           (!isa<FieldDecl, TypedefNameDecl, EnumDecl, EnumConstantDecl,
                 StaticAssertDecl, AccessSpecDecl, EmptyDecl>(Member) &&
            !classTemplateStaticDataShape(dyn_cast<VarDecl>(Member)) &&
@@ -4276,7 +4291,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         !templateParametersShape(D->getTemplateParameters(), templateSourceParameterDepth(D)))
       return false;
     const auto *Pattern = D->getTemplatedDecl();
-    return owned(Pattern) && !Pattern->isInvalidDecl() && !Pattern->hasAttrs() &&
+    return owned(Pattern) && !Pattern->isInvalidDecl() && !hasNonFinalAttributes(Pattern) &&
            Pattern->getKind() == Decl::CXXRecord && Pattern->getIdentifier() &&
            !Pattern->isUnion() && !Pattern->isLambda() && !Pattern->isLocalClass() &&
            Pattern->getDescribedClassTemplate() == D &&
@@ -4287,7 +4302,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
            (!isa<CXXRecordDecl>(D->getDeclContext()) || memberClassDeclarationShape(Pattern));
   }
   bool classPartialDeclarationShape(const ClassTemplatePartialSpecializationDecl *D) {
-    if (!D || !owned(D) || D->isInvalidDecl() || D->hasAttrs() ||
+    if (!D || !owned(D) || D->isInvalidDecl() || hasNonFinalAttributes(D) ||
         !D->getIdentifier() || D->isUnion() || D->getFriendObjectKind() ||
         D->hasAssociatedConstraints() ||
         !classOwnerScope(D->getDeclContext()) ||
@@ -4318,7 +4333,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // copy. Require a lexical declaration that actually spells an outer header.
     auto Written = [&](const CXXRecordDecl *Record, bool Indexed) {
       return Indexed && owned(Record) && !Record->isInvalidDecl() &&
-             !Record->hasAttrs() && !Record->getFriendObjectKind() &&
+             !hasNonFinalAttributes(Record) && !Record->getFriendObjectKind() &&
              Record->getNumTemplateParameterLists() && outerTemplateListsShape(Record);
     };
     if (const auto *Primary = dyn_cast<ClassTemplateDecl>(Owner)) {
@@ -4397,7 +4412,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     auto Restore = llvm::make_scope_exit([&] { ActiveClassShapes.erase(D); });
     return owned(Definition) && !Definition->isInvalidDecl() &&
-           !Definition->hasAttrs() && emptyBasesShape(Definition) &&
+           !hasNonFinalAttributes(Definition) && emptyBasesShape(Definition) &&
            classTemplateMembers(Definition);
   }
   bool classTemplateShape(const ClassTemplateDecl *D) {
@@ -9765,7 +9780,7 @@ public:
     if (Found != FlatReferenceLayouts.end())
       return Found->second;
     FlatReferenceLayouts.emplace(D, false);
-    if (D->isUnion() || D->getNumBases() || D->isDynamicClass() || D->hasAttrs())
+    if (D->isUnion() || D->getNumBases() || D->isDynamicClass() || hasNonFinalAttributes(D))
       return false;
     bool HasReference = false;
     std::optional<AccessSpecifier> Access;

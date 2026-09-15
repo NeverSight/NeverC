@@ -8,6 +8,13 @@ struct PlainRecord { int value; };
 struct ReferenceRecord { int &value; };
 struct ConstructedRecord { int value; ConstructedRecord() : value(3) {} };
 struct DestructedRecord { int value; ~DestructedRecord() {} };
+struct FinalRecord final {
+  int value;
+  constexpr FinalRecord(int n = 3) : value(n) {}
+};
+template<class T> struct FinalBox final { T value; };
+struct Bytes { unsigned char a, b; };
+struct Padded { char a; int b; };
 using Function = int(int);
 using CertainFunction = int(int) noexcept;
 using Null = decltype(nullptr);
@@ -46,6 +53,10 @@ extern "C" bool classified_empty() { return __is_empty(EmptyDerived); }
 extern "C" bool classified_reference_layout() { return __is_standard_layout(ReferenceRecord); }
 extern "C" bool classified_private_base() { return __is_base_of(Empty, PrivateDerived); }
 extern "C" bool classified_reverse_base() { return __is_base_of(EmptyDerived, Empty); }
+extern "C" bool classified_final() { return __is_final(FinalRecord); }
+extern "C" bool classified_literal() { return __is_literal(FinalRecord); }
+extern "C" bool classified_unique_padded() { return __has_unique_object_representations(Padded); }
+extern "C" bool classified_unique_empty() { return __has_unique_object_representations(EmptyDerived); }
 template<class Base, class Derived> inline constexpr bool base_of = __is_base_of(Base, Derived);
 template<class... T> constexpr bool all_empty() { return (__is_empty(T) && ...); }
 
@@ -111,5 +122,22 @@ int main() {
       all_empty<Empty, PlainRecord>() || !all_empty<>()) return 17;
   if (__is_aggregate(decltype(Probe{})) || __is_trivial(decltype(Probe{})) ||
       effects != 1 || constructed || destroyed) return 18;
+  if (!classified_final() || !classified_literal() ||
+      classified_unique_padded() || classified_unique_empty()) return 19;
+  if (!__is_literal(void) || !__is_literal(int&) || !__is_literal(int[2]) ||
+      __is_literal(Function) || __is_literal(ConstructedRecord) ||
+      __is_literal(DestructedRecord) || !__is_literal(ReferenceRecord)) return 20;
+  if (!__has_unique_object_representations(Bytes) ||
+      !__has_unique_object_representations(unsigned char[2][3]) ||
+      !__has_unique_object_representations(ConstructedRecord) ||
+      __has_unique_object_representations(double) ||
+      __has_unique_object_representations(int&)) return 21;
+  FinalRecord final(7);
+  FinalRecord copied = final;
+  FinalBox<int> box{9};
+  if (copied.value != 7 || box.value != 9 || !__is_final(decltype(box)) ||
+      sizeof(final) != sizeof(int) || sizeof(box) != sizeof(int)) return 22;
+  if (__is_final(FinalRecord*) || __is_final(int) || !__is_final(const FinalRecord) ||
+      __is_literal(decltype(Probe{})) || effects != 1 || constructed || destroyed) return 23;
   return 0;
 }
