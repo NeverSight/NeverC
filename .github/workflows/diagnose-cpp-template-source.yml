@@ -63,6 +63,11 @@ jobs:
             fi
           done
           exit "$status"
+      - name: Inspect operation query and materialized specialization identities
+        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+        run: |
+          "$RUNNER_TEMP/template-source" --source-file \
+            tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp
       - name: Record upstream array-filler runtime identity and cleanup
         if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
         run: |

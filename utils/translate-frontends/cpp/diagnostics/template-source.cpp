@@ -10,6 +10,7 @@
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -64,6 +65,47 @@ public:
                  << " builtin=" << D->getBuiltinID() << " parent=";
     declaration(Decl::castFromDeclContext(D->getDeclContext()));
     llvm::outs() << "\n";
+    llvm::outs() << "  identity=" << static_cast<const void *>(D)
+                 << " referenced=" << D->isReferenced()
+                 << " used=" << D->isUsed(false)
+                 << " body=" << D->doesThisDeclarationHaveABody()
+                 << " pattern=" << static_cast<const void *>(D->getTemplateInstantiationPattern())
+                 << " definition-pattern=" << static_cast<const void *>(D->getTemplateInstantiationPattern(true))
+                 << " lexical=";
+    declaration(Decl::castFromDeclContext(D->getLexicalDeclContext()));
+    llvm::outs() << "\n";
+    const FunctionDecl *Origin = nullptr;
+    if (const auto *Member = D->getMemberSpecializationInfo())
+      Origin = dyn_cast<FunctionDecl>(Member->getInstantiatedFrom());
+    else if (const auto *Primary = D->getPrimaryTemplate())
+      Origin = Primary->getTemplatedDecl();
+    llvm::outs() << "  raw-origin=" << static_cast<const void *>(Origin)
+                 << " origin-lexical=";
+    declaration(Origin ? Decl::castFromDeclContext(Origin->getLexicalDeclContext()) : nullptr);
+    llvm::outs() << "\n";
+    auto Prototype = [&](const char *Name, const FunctionProtoType *P) {
+      llvm::outs() << "  " << Name << "=" << static_cast<const void *>(P);
+      if (P) {
+        const auto *E = P->getNoexceptExpr();
+        llvm::outs() << " exception-kind=" << P->getExceptionSpecType()
+                     << " expression=" << static_cast<const void *>(E);
+        if (E) {
+          llvm::outs() << " expression-kind=" << E->getStmtClassName()
+                       << " expression-location=";
+          E->getExprLoc().print(llvm::outs(), Context.getSourceManager());
+        }
+      }
+      llvm::outs() << "\n";
+    };
+    Prototype("resolved-prototype", D->getType()->getAs<FunctionProtoType>());
+    if (const auto *Info = D->getTypeSourceInfo()) {
+      auto TL = Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>();
+      if (TL) {
+        llvm::outs() << "  written-location=" << TL.getOpaqueData()
+                     << " exception-range=" << TL.getExceptionSpecRange().isValid() << "\n";
+        Prototype("written-prototype", TL.getTypePtr());
+      }
+    }
     qualifier(D->getQualifierLoc());
     for (const auto *Attribute : D->attrs()) {
       llvm::outs() << "  attribute implicit=" << Attribute->isImplicit() << " ";
@@ -247,6 +289,20 @@ class FriendContextAction : public ASTFrontendAction {
 
 int main(int Argc, const char **Argv) {
   llvm::sys::PrintStackTraceOnErrorSignal(Argv[0]);
+  if (Argc == 3 && llvm::StringRef(Argv[1]) == "--source-file") {
+    auto Input = llvm::MemoryBuffer::getFile(Argv[2]);
+    if (!Input) {
+      llvm::errs() << Input.getError().message() << "\n";
+      return 1;
+    }
+    auto Unit = tooling::buildASTFromCodeWithArgs(
+        (*Input)->getBuffer(), {"-std=c++17"}, Argv[2]);
+    if (!Unit)
+      return 1;
+    Inspect Visitor(Unit->getASTContext());
+    Visitor.TraverseDecl(Unit->getASTContext().getTranslationUnitDecl());
+    return Unit->getDiagnostics().hasErrorOccurred();
+  }
   struct Fixture {
     const char *Name;
     const char *Source;
