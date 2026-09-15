@@ -145,6 +145,12 @@ constexpr int inlineSourceConstruction() {
 template<class T> struct InlineSourceDestruction { T fields[2]; ~InlineSourceDestruction() = default; };
 using InlineAssignmentExtent = int[inlineSourceAssignment()];
 using InlineConstructionExtent = int[inlineSourceConstruction()];
+template<class T> struct ConsumedLazyDestruction {
+  T value;
+  ~ConsumedLazyDestruction() noexcept(sizeof(T) > 0) = default;
+  int unused(int = T::missing) { T::body(); return 0; }
+};
+template<bool B> struct ConsumedThrowingDestruction { ~ConsumedThrowingDestruction() noexcept(B) = default; };
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -198,6 +204,8 @@ extern "C" bool defined_generated_construction_source() { return __is_constructi
 extern "C" bool defined_inline_defaulted_assignment_source() { return __is_constructible(InlineAssignmentExtent*); }
 extern "C" bool defined_inline_defaulted_construction_source() { return __is_constructible(InlineConstructionExtent*); }
 extern "C" bool defined_inline_defaulted_destruction() { return __is_nothrow_destructible(InlineSourceDestruction<GeneratedLeaf>[2]); }
+extern "C" bool defined_consumed_lazy_destruction() { return __is_nothrow_destructible(ConsumedLazyDestruction<int>[2]); }
+extern "C" bool defined_consumed_throwing_destruction() { return __is_nothrow_destructible(ConsumedThrowingDestruction<false>); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -360,5 +368,11 @@ int main() {
   }
   if (generated_destructions != 14 || default_calls != 2 || constructions != 6 ||
       destructions != 10 || lazy_signature_calls) return 49;
+  if (!defined_consumed_lazy_destruction() || defined_consumed_throwing_destruction() ||
+      generated_destructions != 14 || default_calls != 2 || destructions != 10) return 50;
+  ConsumedLazyDestruction<unsigned> consumed{13};
+  consumed.value = 17;
+  if (consumed.value != 17 || !defined_consumed_lazy_destruction() ||
+      defined_consumed_throwing_destruction() || lazy_signature_calls) return 51;
   return 0;
 }

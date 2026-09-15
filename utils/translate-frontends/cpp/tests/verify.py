@@ -6312,6 +6312,23 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert not expected
 
     operation_trait_positive = {
+        'consumed-destructor-dependent-type': 'template<class T>struct R{T n;~R()noexcept(sizeof(T)>0)=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-dependent-boolean': 'template<bool B>struct R{int n;~R()noexcept(B)=default;};static_assert(__is_nothrow_destructible(R<true>)&&!__is_nothrow_destructible(R<false>));',
+        'consumed-destructor-this-source': 'template<class T>struct R{T n;~R()noexcept(sizeof(this->n)>0)=default;};static_assert(__is_nothrow_destructible(R<int>));struct S{int n;int get(){return this->n;}};int f(){S value{3};return value.get();}',
+        'consumed-destructor-repeated-array': 'template<class T>struct R{T n;~R()noexcept=default;};static_assert(__is_nothrow_destructible(R<int>)&&__is_nothrow_destructible(const R<int>[2])&&__is_nothrow_destructible(R<int>[2][3]));',
+        'consumed-destructor-owning-ordinary': 'struct F{int n;~F()noexcept{}};template<class T>struct R{T fields[2];~R()=default;};static_assert(__is_nothrow_destructible(R<F>));',
+        'consumed-destructor-owning-throwing': 'struct F{int n;~F()noexcept(false){}};template<class T>struct R{T field;~R()=default;};static_assert(!__is_nothrow_destructible(R<F>));',
+        'consumed-destructor-nested-query': 'template<class T>struct Leaf{T n;~Leaf()noexcept=default;};template<class T>struct R{Leaf<T>field;~R()noexcept(__is_nothrow_destructible(Leaf<T>))=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-variable-template': 'template<class T>struct R{T n;~R()noexcept=default;};template<class T>inline constexpr bool safe=__is_nothrow_destructible(R<T>);static_assert(safe<int>);',
+        'consumed-destructor-ordinary-default': 'template<class T>struct R{T n;~R()noexcept=default;};int value(int n=__is_nothrow_destructible(R<int>)){return n;}struct Out{Out(int=value())noexcept{}};static_assert(__is_constructible(Out));',
+        'consumed-destructor-generated-query': 'template<class T>struct Leaf{T n;~Leaf()noexcept=default;};struct G{int n=__is_nothrow_destructible(Leaf<int>);constexpr G()=default;};template<class T>constexpr int value(){G g;return g.n;}template<class T>struct R{~R()noexcept(value<T>()==1)=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-unused-body-event': 'template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0)=default;};template<class T>int unused(){return __is_nothrow_destructible(R<int>);}static_assert(__is_constructible(int));',
+        'consumed-destructor-unused-default-event': 'template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0)=default;};template<class T>int unused(int=__is_nothrow_destructible(R<int>)){T::body();return 0;}static_assert(__is_constructible(int));',
+        'consumed-destructor-private-lazy-spec': 'template<class T>class R{T n;~R()noexcept(T::missing)=default;};static_assert(!__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-reference-lazy-spec': 'template<class T>struct R{T n;~R()noexcept(T::missing)=default;};static_assert(__is_nothrow_destructible(R<int>&));',
+        'consumed-destructor-unselected-default': 'template<class T>struct R{T n;~R()noexcept=default;int unused(int=T::missing){T::body();return 0;}};static_assert(__is_nothrow_destructible(R<int>));',
+        'generated-destructor-template-defaulted': 'template<class T>struct R{~R()=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'materialized-template-defaulted-destructor': 'template<class T>struct R{~R()noexcept=default;};template struct R<int>;static_assert(__is_nothrow_destructible(R<int>));',
         'generated-source-written-template-default': 'struct F{int n;constexpr F():n(1){}};template<class T>struct S{T f;constexpr S()=default;};constexpr int index(){S<F>value;return value.f.n;}using A=char[index()+1];static_assert(__is_constructible(A*)&&__is_nothrow_constructible(A*));',
         'generated-source-written-template-trivial': 'template<class T>struct S{T n;constexpr S&operator=(const S&)=default;};constexpr int index(){S<int>a{0},b{1};a=b;return a.n;}using A=char[index()+1];static_assert(__is_constructible(A*)&&__is_nothrow_constructible(A*));',
         'implicit-construct-defaulted-template-destructor': 'template<class T>struct R{~R()noexcept=default;};static_assert(__is_constructible(R<int>));',
@@ -6688,6 +6705,13 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'consumed-destructor-hidden-type': 'template<class T>struct R{T n;~R()noexcept(sizeof(long double)>0)=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-hidden-family': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};template<class T>struct R{T n;~R()noexcept(noexcept(Mid()))=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-hidden-value': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};constexpr bool value=noexcept(Mid());template<class T>struct R{T n;~R()noexcept(value)=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-hidden-default': 'template<class T>struct Bad{Bad()noexcept(sizeof(long double)>0)=default;};struct Mid{Bad<int>field;};int value(int=noexcept(Mid()))noexcept{return 0;}template<class T>struct R{T n;~R()noexcept(noexcept(value()))=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-unchecked-owning-template': 'template<class T>struct Leaf{T n;~Leaf()noexcept=default;};template<class T>struct R{Leaf<T>field;~R()=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-hidden-nested-query': 'template<class T>struct Leaf{T n;~Leaf()noexcept(sizeof(long double)>0)=default;};template<class T>struct R{Leaf<T>field;~R()noexcept(__is_nothrow_destructible(Leaf<T>))=default;};static_assert(__is_nothrow_destructible(R<int>));',
+        'consumed-destructor-hidden-generated-query': 'template<class T>struct Leaf{T n;~Leaf()noexcept(sizeof(long double)>0)=default;};struct G{int n=__is_nothrow_destructible(Leaf<int>);constexpr G()=default;};template<class T>constexpr int value(){G g;return g.n;}template<class T>struct R{~R()noexcept(value<T>()==1)=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'inline-defaulting-split-constructor': 'struct F{int n;F()noexcept:n(1){}};template<class T>struct S{T f;S()noexcept;};template<class T>S<T>::S()noexcept=default;void force(){S<F>value;}using A=char[noexcept(S<F>())?1:2];static_assert(__is_constructible(A*));',
         'inline-defaulting-split-assignment': 'struct F{int n;F&operator=(const F&o)noexcept{n=o.n;return *this;}};template<class T>struct S{T f;S&operator=(const S&)noexcept;};template<class T>S<T>&S<T>::operator=(const S&)noexcept=default;void force(S<F>&a,const S<F>&b){a=b;}S<F>*p;using A=char[noexcept(*p=*p)?1:2];static_assert(__is_constructible(A*));',
         'inline-defaulting-split-destructor': 'template<class T>struct S{T n;~S()noexcept;};template<class T>S<T>::~S()noexcept=default;void force(){S<int>value{1};}static_assert(__is_nothrow_destructible(S<int>));',
@@ -6730,7 +6754,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'materialized-template-hidden-destruction-body': 'template<class T>struct R{~R()noexcept{long double hidden=0;}};void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>));',
         'materialized-template-hidden-spec': 'template<class T>struct R{R(T)noexcept(sizeof(long double)>0){}};void use(){R<int>r(3);}static_assert(__is_nothrow_constructible(R<int>,int));',
         'materialized-template-owned-default': 'template<class T>struct R{R(T n=T(3))noexcept{}};void use(){R<int>r(3);}static_assert(__is_constructible(R<int>));',
-        'materialized-template-defaulted-destructor': 'template<class T>struct R{~R()noexcept=default;};template struct R<int>;static_assert(__is_nothrow_destructible(R<int>));',
         'materialized-split-template-constructor': 'template<class T>struct R{R()noexcept;};template<class T>R<T>::R()noexcept{}void use(){R<int>r;}static_assert(__is_constructible(R<int>));',
         'materialized-split-template-hidden-constructor': 'template<class T>struct R{R()noexcept(1);};template<class T>R<T>::R()noexcept(sizeof(long double)>0){}void use(){R<int>r;}static_assert(__is_constructible(R<int>));',
         'materialized-split-template-hidden-destructor': 'template<class T>struct R{~R()noexcept(1);};template<class T>R<T>::~R()noexcept(sizeof(long double)>0){}void use(){R<int>r;}static_assert(__is_nothrow_destructible(R<int>));',
@@ -6746,7 +6769,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'implicit-construct-defaulted-root': 'struct R{R()=default;~R()noexcept{}};static_assert(__is_constructible(R));',
         'implicit-construct-hidden-default-destruction': 'template<class T>struct S{~S()noexcept(sizeof(long double)>0)=default;};struct R{R(const S<int>& =S<int>())noexcept{}};static_assert(__is_nothrow_constructible(R));',
         'generated-destructor-later-hidden-spec': 'template<class T>struct F{F()noexcept(sizeof(long double)>0)=default;};struct S{F<int>field;};struct R{~R()noexcept(1);};static_assert(__is_nothrow_destructible(R));R::~R()noexcept(noexcept(S()))=default;',
-        'generated-destructor-template-defaulted': 'template<class T>struct R{~R()=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'generated-destructor-template-out-of-line': 'template<class T>struct R{~R()noexcept;};template<class T>R<T>::~R()noexcept=default;static_assert(__is_nothrow_destructible(R<int>));',
         'generated-destructor-owning-template': 'template<class T>struct F{~F()noexcept{}};struct R{F<int>value;~R()=default;};static_assert(__is_nothrow_destructible(R));',
         'generated-destructor-implicit-template-field': 'template<class T>struct F{~F()noexcept{}};struct R{F<int>value;};static_assert(__is_nothrow_destructible(R));',
@@ -6973,6 +6995,7 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_missing.items():
         check("v2-operation_trait_missing-" + name, source, 'TR0203', profile="cpp-core-v2")
     operation_trait_invalid = {
+        'consumed-destructor-invalid-selected-spec': 'template<class T>struct R{T n;~R()noexcept(T::missing)=default;};static_assert(__is_nothrow_destructible(R<int>));',
         'inline-defaulting-invalid-selected-spec': 'template<class T>struct S{T n;~S()noexcept(T::missing)=default;};void force(){S<int>value{};}static_assert(__is_nothrow_destructible(S<int>));',
         'inline-defaulting-invalid-deleted-copy': 'struct F{F()=default;F(const F&)=delete;};template<class T>struct S{T f;S()=default;S(const S&)=default;};void force(){S<F>a;S<F>b(a);}using A=char[sizeof(S<F>)];static_assert(__is_constructible(A*));',
         'lazy-friend-runtime-body-required': 'template<class T>struct Tag{friend int helper(Tag)noexcept{T::missing();return 0;}};int f(){return helper(Tag<int>{});}',
@@ -7027,7 +7050,9 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
 
     defined_operation_source = (repository / "tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp").read_text()
     defined_operation_module = check("v2-defined-operation-traits", defined_operation_source, profile="cpp-core-v2")
-    defined_expected = {"defined_inline_defaulted_assignment_source": True,
+    defined_expected = {"defined_consumed_lazy_destruction": True,
+                        "defined_consumed_throwing_destruction": False,
+                        "defined_inline_defaulted_assignment_source": True,
                         "defined_inline_defaulted_construction_source": True,
                         "defined_inline_defaulted_destruction": True,
                         "defined_generated_assignment_source": True,

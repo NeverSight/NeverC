@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 372 accepted, 262 unsupported-source, fifteen missing-definition and fourteen invalid-C++ cases cover
+The paired 389 accepted, 267 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1131,9 +1131,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has forty-nine O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has fifty-one O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Fifty-two exported query
+default evaluation with full-expression temporary cleanup. Fifty-four exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1174,7 +1174,8 @@ written/selected/granting-class evidence and a concrete standard prototype. Thei
 actual signature still completes in its own friend context, with unselected
 defaults isolated. Runtime-used friends continue to require a materialized body.
 Missing or unfinished graph nodes remain unsupported; the adapter does not replay
-source traversal or request resolution to fill them.
+source traversal or request resolution to fill them. A selected inline defaulted
+destructor can receive its first concrete signature traversal as described below.
 
 Constant values also retain source dependencies: variable and enum initializers,
 cached variable-template initializers, and already materialized user-provided
@@ -1282,10 +1283,17 @@ specification may remain lazy in the shared source proof only as `EST_Unevaluate
 owned by the same destructor declaration family; the direct nothrow query still
 requires its retained resolved snapshot. Implicit nontrivial owners use the same
 recursive subobject proof, including implicit class-template owners. A standalone
-nothrow destruction lookup does not mark a template destructor referenced; without
-normal concrete signature completion it remains unsupported, even after explicit
-class instantiation. Actual use or an unevaluated binding can provide that signature
-completion without requesting a body solely for the query. Separate template
+nothrow destruction lookup does not mark a template destructor referenced. For an
+actually visited query with valid retained lookup/resolution evidence, an admitted
+inline defaulted class-template destructor can receive its first concrete signature
+check after translation-unit traversal. Existing exact TSI nodes are never replayed;
+all completed-source and prototype snapshot checks still apply. The pass restores
+the actual method context and checks only existing written/resolved type source,
+without instantiating a body, requesting resolution or scanning unused template
+body events. Nested visited queries can add signatures, and signature/generated
+body worklists both drain before final validation. It does not invent missing
+local-class context or unselected owning-subobject signatures. Deleted/access and
+reference short circuits do not trigger this pass. Separate template
 defaulting and user destructors without the exact completed
 inline-definition proof still require further source evidence.
 Construction and assignment retain their separate implicit-family source checks.
@@ -1309,7 +1317,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared forty-nine-checkpoint user-operation fixture checks
+queries. The shared fifty-one-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
 user/generated array destruction at O0/O2;

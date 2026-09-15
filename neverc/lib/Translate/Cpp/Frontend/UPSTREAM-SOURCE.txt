@@ -378,8 +378,15 @@ node to complete. It never borrows defaulting from an uninstantiated template
 pattern. Already checked inline template defaulting uses the same raw-origin proof
 as generated operations. EvaluateUnaryTypeTrait's nothrow destructor lookup does not
 MarkFunctionReferenced; neither that lookup nor InstantiateClassMembers' handling of
-already-defaulted methods manufactures a completed concrete signature. Pure lazy
-queries therefore remain unsupported. Implicit nontrivial owners retain the complete owning-subobject closure;
+already-defaulted methods manufactures a completed concrete signature. Only an
+actual visited query with exact valid lookup/resolution/snapshot identity can
+enqueue the first TypeLoc traversal of an admitted inline defaulted class-template
+destructor. Exact TypeLoc map presence prevents replay, including incomplete nodes.
+Normal method context and original/resolved exception checks remain; no body or
+Sema operation is requested. Signature and generated-body queues use independent
+forward indices and drain after each prior source context has exited. Unvisited
+template-body events, unselected owning signatures and missing local-class
+function frames cannot borrow the proof. Implicit nontrivial owners retain the complete owning-subobject closure;
 no generated body is requested. Lazy generated specifications are allowed only as
 EST_Unevaluated with the same canonical destructor owner; direct nothrow query
 snapshots remain resolved. Implicit trivial construction uses its separate owning

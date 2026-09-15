@@ -829,8 +829,13 @@ hypothetical operation root. Inline template defaulting can use this source proo
 only with actual concrete defaulting and completed signatures, plus the exact
 source-owned inline defaulting origin of the same method kind. Separate definitions,
 explicit specializations and copied origin chains do not qualify. The same category
-proof applies to defaulted destruction; a lazy standalone lookup still lacks
-concrete signature completion and remains unsupported.
+proof applies to defaulted destruction. An actually visited query with exact
+lookup/resolution evidence can request the first traversal of an otherwise
+unvisited inline class-template destructor signature. Existing TSI nodes are not
+replayed; lazy body events are not scanned and no body or exception resolution is
+requested. New signature and existing generated-body work both finish before
+final source validation. Unselected owning signatures and missing local-class
+context are not inferred.
 Variable/enum initializers and already materialized constexpr value source retain
 their own completion nodes. Exact written type nodes retain earlier array bounds,
 alias/template source and consumed record layout dependencies. Function parameter

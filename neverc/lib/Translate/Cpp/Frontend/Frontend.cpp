@@ -3683,6 +3683,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
   GeneratedOperationSources CompletedGeneratedOperations;
+  std::vector<const CXXDestructorDecl *> ConsumedDestructorSignatures;
+  std::set<const CXXDestructorDecl *> QueuedDestructorSignatures;
   OperationDefaultSources CompletedOperationDefaults;
   std::map<const Expr *, OperationSourceDependencies> SharedOperationDefaults;
   std::vector<OperationSourceDependencies *> ActiveOperationSources;
@@ -9997,11 +9999,73 @@ public:
       CompletedOperationDefinitions.insert(Function);
     return Result;
   }
+  void queueConsumedDestructorSignature(const TypeTraitExpr *Query) {
+    if (Query->getTrait() != UTT_IsNothrowDestructible)
+      return;
+    auto Found = A.OperationTraits.find(Query);
+    if (Found == A.OperationTraits.end())
+      return;
+    bool CanDefer = false;
+    (void)nothrowDestructionSource(A, Query, Found->second, nullptr, &CanDefer);
+    const auto *Destructor = Found->second.Destructor;
+    // Only actual visited queries can select this first signature traversal.
+    // Local classes may need an enclosing function frame that has already
+    // exited, so their missing signatures cannot borrow the class-only proof.
+    if (!CanDefer || !concreteClassFunction(Destructor) ||
+        !inlineTemplateDefaultingSource(A, Destructor) ||
+        !defaultedLifecycle(Destructor) || !Destructor->getTypeSourceInfo())
+      return;
+    if (QueuedDestructorSignatures.insert(Destructor).second) {
+      A.chargeExpansion(1, Query->getExprLoc());
+      ConsumedDestructorSignatures.push_back(Destructor);
+    }
+  }
+  bool finishConsumedDestructorSignatures(std::size_t &Index) {
+    while (Index < ConsumedDestructorSignatures.size()) {
+      const auto *Destructor = ConsumedDestructorSignatures[Index++];
+      const auto Location = Destructor->getTypeSourceInfo()->getTypeLoc();
+      // Only TraverseTypeLoc creates these entries. Even an incomplete existing
+      // node cannot be replayed; final source validation retains its failure.
+      if (CheckedOperationTypes.count(operationTypeSourceKey(Location)))
+        continue;
+      auto *SavedFunction = CurrentFunction;
+      auto *SavedMethod = CurrentMethod;
+      auto *SavedDeclarator = CurrentDeclarator;
+      auto *SavedField = CurrentDefaultField;
+      auto SavedOwner = ImplicitInitializerOwner;
+      std::vector<OperationSourceDependencies *> SavedSources;
+      SavedSources.swap(ActiveOperationSources);
+      CurrentFunction = Destructor;
+      CurrentMethod = Destructor;
+      CurrentDeclarator = Destructor;
+      CurrentDefaultField = nullptr;
+      ImplicitInitializerOwner = Destructor->getLocation();
+      auto Restore = llvm::make_scope_exit([&] {
+        CurrentFunction = SavedFunction;
+        CurrentMethod = SavedMethod;
+        CurrentDeclarator = SavedDeclarator;
+        CurrentDefaultField = SavedField;
+        ImplicitInitializerOwner = SavedOwner;
+        SavedSources.swap(ActiveOperationSources);
+      });
+      // The retained lookup already resolved the actual specification. This
+      // checks existing written/resolved type source, with no body or Sema work.
+      if (!TraverseTypeLoc(Location) || !A.S.Diagnostics.empty())
+        return false;
+    }
+    return A.S.Diagnostics.empty();
+  }
   bool finishGeneratedMethods() {
     // Inspect selected definitions only. RAV normally skips defaulted bodies;
-    // visiting all implicit declarations would broaden source admission.
-    for (std::size_t Index = 0; Index < GeneratedMethods.size(); ++Index) {
-      const auto *Method = GeneratedMethods[Index];
+    // visiting all implicit declarations would broaden source admission. Either
+    // source queue can discover more work for the other; process every new item
+    // once and leave each method's scopes before starting another signature.
+    for (std::size_t Index = 0, SignatureIndex = 0;;) {
+      if (!finishConsumedDestructorSignatures(SignatureIndex))
+        return false;
+      if (Index == GeneratedMethods.size())
+        break;
+      const auto *Method = GeneratedMethods[Index++];
       const auto *C = dyn_cast<CXXConstructorDecl>(Method);
       const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
       if (!Body || (C ? ((!defaultedLifecycle(C) && !defaultedCopyOrMoveConstructor(C)) ||
@@ -10151,8 +10215,10 @@ public:
     // TypeTraitExpr has no statement children. Its type source is visited
     // synchronously even when the containing statement uses a recursion queue.
     const bool Result = RecursiveASTVisitor<Allowlist>::TraverseTypeTraitExpr(Query, Queue);
-    if (Result && A.S.Diagnostics.empty())
+    if (Result && A.S.Diagnostics.empty()) {
       Source.Complete = true;
+      queueConsumedDestructorSignature(Query);
+    }
     return Result;
   }
   bool TraverseArrayTypeTraitExpr(ArrayTypeTraitExpr *Query) {
