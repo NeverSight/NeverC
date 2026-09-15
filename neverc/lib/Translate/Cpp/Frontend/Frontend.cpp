@@ -1406,7 +1406,10 @@ using OperationDefaultSources =
 static const Expr *operationDefaultInitializer(Adapter &A, const ParmVarDecl *P) {
   const auto *Init = defaultArgumentInitializer(P, A.Context);
   const auto *Function = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
-  if (!Init || !Function || Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+  // Concrete template defaults carry their own actual parameter initializer.
+  // This only collects source; the consuming query still needs the exact
+  // completed constructor definition, signature and unchanged selected default.
+  if (!Init || !Function ||
       !A.S.owns(A.Sources, P->getLocation()) ||
       !A.S.owns(A.Sources, Function->getLocation()) ||
       !A.S.owns(A.Sources, Init->getBeginLoc()))

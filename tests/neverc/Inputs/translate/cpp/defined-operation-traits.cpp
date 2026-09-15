@@ -231,6 +231,33 @@ struct GeneratedDefaultThrowingAssignment {
       (*default_throwing_target = *default_throwing_source, default_throwing_target->value)) noexcept
       : value(n) { ++selected_default_calls; }
 };
+int template_default_calls;
+int template_default_constructions;
+int template_default_destructions;
+int template_default_owners;
+int templateDefaultValue(int n) noexcept { ++template_default_calls; return n; }
+int throwingTemplateDefaultValue(int n) noexcept(false) { ++template_default_calls; return n; }
+struct TemplateDefaultToken {
+  int value;
+  TemplateDefaultToken(int n) noexcept : value(n) { ++template_default_constructions; }
+  ~TemplateDefaultToken() noexcept { ++template_default_destructions; }
+};
+template<class T, int N> struct TemplateDefaultOwner {
+  int value;
+  TemplateDefaultOwner(T n = T(templateDefaultValue(N)),
+      const TemplateDefaultToken &token = TemplateDefaultToken(N + 1)) noexcept
+      : value(static_cast<int>(n) + token.value) { ++template_default_owners; }
+};
+struct TemplateDefaultMember {
+  int value;
+  template<class T> TemplateDefaultMember(T first, int second = sizeof(T)) noexcept
+      : value(second) { ++template_default_owners; }
+};
+template<class T> struct TemplateThrowingDefault {
+  int value;
+  TemplateThrowingDefault(T n = T(throwingTemplateDefaultValue(11))) noexcept
+      : value(n) { ++template_default_owners; }
+};
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -303,6 +330,13 @@ extern "C" bool defined_generated_default_move_assign() { return __is_nothrow_co
 extern "C" bool defined_generated_default_trivial_temporary() { return __is_nothrow_constructible(GeneratedDefaultTrivial); }
 extern "C" bool defined_generated_default_throwing_assign() { return __is_nothrow_constructible(GeneratedDefaultThrowingAssignment); }
 extern "C" bool defined_generated_default_trivial() { return __is_trivially_constructible(GeneratedDefaultConstruction); }
+extern "C" bool defined_template_default_int() { return __is_nothrow_constructible(TemplateDefaultOwner<int, 3>); }
+extern "C" bool defined_template_default_bool() { return __is_nothrow_constructible(TemplateDefaultOwner<bool, 7>); }
+extern "C" bool defined_template_default_partial() { return __is_nothrow_constructible(TemplateDefaultOwner<int, 3>, int); }
+extern "C" bool defined_template_default_trivial() { return __is_trivially_constructible(TemplateDefaultOwner<int, 3>); }
+extern "C" bool defined_template_default_member() { return __is_nothrow_constructible(TemplateDefaultMember, int); }
+extern "C" bool defined_template_default_throwing() { return __is_nothrow_constructible(TemplateThrowingDefault<int>); }
+extern "C" bool defined_template_default_explicit() { return __is_nothrow_constructible(TemplateThrowingDefault<int>, int); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -555,5 +589,45 @@ int main() {
       defined_generated_default_throwing_assign() || root_destructions != 8 ||
       generated_destructions != 14 || default_calls != 2 || destructions != 10 ||
       lazy_signature_calls) return 67;
+  if (!defined_template_default_int() || !defined_template_default_bool() ||
+      !defined_template_default_partial() || defined_template_default_trivial() ||
+      !defined_template_default_member() || defined_template_default_throwing() ||
+      !defined_template_default_explicit() || template_default_calls ||
+      template_default_constructions || template_default_destructions ||
+      template_default_owners) return 68;
+  {
+    TemplateDefaultOwner<int, 3> first;
+    if (first.value != 7 || template_default_calls != 1 || template_default_constructions != 1 ||
+        template_default_destructions != 1 || template_default_owners != 1) return 69;
+    TemplateDefaultOwner<bool, 7> second;
+    if (second.value != 9 || first.value != 7 || template_default_calls != 2 ||
+        template_default_constructions != 2 || template_default_destructions != 2 ||
+        template_default_owners != 2) return 70;
+    TemplateDefaultOwner<int, 3> partial(10);
+    if (partial.value != 14 || template_default_calls != 2 || template_default_constructions != 3 ||
+        template_default_destructions != 3 || template_default_owners != 3) return 71;
+    TemplateDefaultToken token(20);
+    TemplateDefaultOwner<int, 3> explicitArguments(5, token);
+    if (explicitArguments.value != 25 || token.value != 20 || template_default_calls != 2 ||
+        template_default_constructions != 4 || template_default_destructions != 3 ||
+        template_default_owners != 4) return 72;
+    TemplateDefaultMember member(1);
+    if (member.value != sizeof(int) || template_default_calls != 2 ||
+        template_default_owners != 5) return 73;
+    TemplateThrowingDefault<int> throwingDefault;
+    TemplateThrowingDefault<int> explicitDefault(13);
+    if (throwingDefault.value != 11 || explicitDefault.value != 13 ||
+        template_default_calls != 3 || template_default_owners != 7 ||
+        template_default_constructions != 4 || template_default_destructions != 3) return 74;
+    if (!defined_template_default_int() || !defined_template_default_bool() ||
+        !defined_template_default_member() || defined_template_default_throwing() ||
+        !defined_template_default_explicit() || template_default_calls != 3 ||
+        template_default_owners != 7 || template_default_constructions != 4 ||
+        template_default_destructions != 3 || first.value != 7 || second.value != 9) return 75;
+  }
+  if (template_default_calls != 3 || template_default_constructions != 4 ||
+      template_default_destructions != 4 || template_default_owners != 7 ||
+      root_destructions != 8 || selected_default_calls != 7 || generated_destructions != 14 ||
+      default_calls != 2 || destructions != 10 || lazy_signature_calls) return 76;
   return 0;
 }

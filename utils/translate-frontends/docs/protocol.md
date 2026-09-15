@@ -835,6 +835,11 @@ destruction checks. This additional path requires the final completed-source
 checker; provisional implicit admission is unchanged. Selected ordinary constructor
 defaults can also use this completed generated-source proof, retaining exact
 parameter/initializer identity, call source, exceptions and owning destruction.
+Concrete template constructor defaults also qualify after normal traversal of the
+actual instantiated parameter initializer succeeds. Matching class/function template
+context, the exact completed constructor definition and inline origin remain required.
+Uninstantiated defaults, another specialization's initializer and per-use rewrites
+cannot borrow that completion; explicit arguments leave unused defaults lazy.
 The collector and evaluated-default scan classify the complete defaulted declaration
 family even when selection names a declaration preceding the `= default` definition.
 Classification never replaces actual signature or generated-body completion.

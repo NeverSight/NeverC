@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 430 accepted, 285 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
+The paired 444 accepted, 291 unsupported-source, fifteen missing-definition and fifteen invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1049,7 +1049,7 @@ reference. These checks run after source completion; the provisional implicit fa
 path is unchanged. True, false, trivial and nothrow results retain Clang's values.
 Written child operation families, template split defaulting, unmaterialized
 nontrivial operations and unsupported signature/body source still require further
-proof. Selected ordinary constructor defaults use the same completed generated
+proof. Selected checked constructor defaults use the same completed generated
 source proof while retaining their independent initializer and lifetime checks.
 
 ### Operations with completed ordinary definitions
@@ -1114,11 +1114,18 @@ alone cannot prove a later template definition's independently written signature
 The query never materializes an unused template body. A later real source use or
 explicit instantiation can supply the already checked definition before final
 validation; queries within that body use the same deferred completion rule.
-Unmaterialized bodies and template-owned selected defaults remain unsupported.
+Unmaterialized bodies and selected defaults lacking exact completed source remain unsupported.
 These source restrictions do not change ordinary runtime template support.
 
-Selected ordinary constructor defaults also qualify when
-the exact parameter and unchanged initializer have completed normal source checking.
+Selected ordinary and checked concrete template constructor defaults also qualify
+when the exact parameter and unchanged initializer have completed normal source
+checking. A template default must already be instantiated on that actual parameter;
+its pattern or another specialization's initializer cannot supply completion.
+Normal parameter traversal retains the matching class or function template context,
+including dependent scalar defaults and member constructor templates. The root
+constructor still requires its exact completed definition and strict inline-origin
+source proof; collecting a default does not materialize a missing body. Unselected
+uninstantiated defaults stay lazy, including bad defaults bypassed by explicit arguments.
 The actual selected parameter owner and argument slot must match; inherited and
 out-of-line defaults retain their own parameter identity. An owned declaration
 alone cannot prove an initializer inherited from unowned source. Clang may strip
@@ -1169,7 +1176,7 @@ written source, or completed ordinary/checked inline template user destructors q
 lazy template destructor prvalues need a separate completed-signature proof and
 remain rejected when destruction is consumed. Unused bodies that contribute no such dependency remain lazy. Ordinary default expressions can call already admitted
 functions, including nested template expressions under existing source rules;
-template-owned default parameters need further source evidence.
+uninstantiated or incompletely checked default parameters need further source evidence.
 
 Declaration-only and lazy template user operations, unproven defaulted
 construction/assignment, incomplete selection and
@@ -1179,9 +1186,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has sixty-seven O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has seventy-six O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Seventy-one exported query
+default evaluation with full-expression temporary cleanup. Seventy-eight exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1276,7 +1283,7 @@ after an earlier one makes the result throwing, so every owning subobject remain
 part of the source proof. Lazy template operations and failed initialization
 still require further evidence.
 
-Unchanged ordinary defaults also support nothrow construction when every actual
+Unchanged checked defaults also support nothrow construction when every actual
 call, constructor, bound destructor, allocation and deallocation dependency has
 an already-resolved standard exception specification. Calls inspect the actual
 callee expression prototype as well as any selected direct declaration. A function
@@ -1365,7 +1372,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared sixty-seven-checkpoint user-operation fixture checks
+queries. The shared seventy-six-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations, constexpr generated source values and
 user/generated array destruction at O0/O2;

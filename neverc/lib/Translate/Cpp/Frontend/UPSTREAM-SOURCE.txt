@@ -362,6 +362,12 @@ The collector and evaluated scan use defaultedDeclaration for classification:
 FunctionDecl::isDefaulted is per declaration, and SetDeclDefaulted marks the
 actual definition only. An earlier selected declaration must therefore retain
 the later generated initializer/body dependencies without borrowing its signature.
+Concrete template constructor defaults use the existing normal parameter traversal
+to retain exact (ParmVarDecl, initializer) completion. Pinned SubstDefaultArgument
+sets the instantiated default on that actual parameter; an uninstantiated pattern
+is never substituted by the checker. Actual class/function template context and
+the constructor's completed inline-origin definition/signatures remain required.
+Unselected defaults and missing body/default completion remain lazy or rejected.
 Variable and enum references retain actual initializer dependencies, including
 implicit-enumerator predecessors and previously cached variable templates.
 Already materialized user-provided constexpr bodies and constructor initializers
@@ -416,7 +422,7 @@ match their selected parent type and prvalue category before that composition;
 assignment source checks are unchanged. Clang's omitted trivial-destructor binding
 can give construction and destruction different nothrow booleans, both preserved.
 Unmaterialized templates, separate template definitions, copied member-template
-origins, unchecked template defaulted destructors, template-owned or rewritten
+origins, unchecked template defaulted destructors, uninstantiated or rewritten
 defaults, incomplete selection and unresolved exception dependencies still need
 further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.
