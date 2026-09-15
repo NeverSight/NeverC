@@ -3710,6 +3710,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   OperationTypeSources CheckedOperationTypes;
   std::set<const TypeTraitExpr *> OperationTypeQueries;
   std::set<const Stmt *> OperationValueRoots;
+  std::set<const Expr *> DecltypeCallResults;
   std::set<const Expr *> CheckedSemanticInitializers;
   std::map<const UnresolvedLookupExpr *, const DeclRefExpr *> InitializerLookups;
   std::set<const Stmt *> InitializerLookupWrappers;
@@ -6044,6 +6045,34 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Register(Initializer->getInit());
     }
   }
+  void registerDecltypeCallResult(const Expr *Expression) {
+    if (!Expression || !Expression->isPRValue() ||
+        !Expression->getType()->isRecordType())
+      return;
+    std::vector<const Expr *> Path;
+    while (Expression) {
+      if (Path.size() >= 64) {
+        A.reject(Expression->getExprLoc(), "decltype result source depth",
+                 "Nested decltype result source exceeds the depth limit.");
+        return;
+      }
+      A.chargeExpansion(1, Expression->getExprLoc());
+      Path.push_back(Expression);
+      if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression)) {
+        Expression = Parentheses->getSubExpr();
+      } else if (const auto *Comma = dyn_cast<BinaryOperator>(Expression);
+                 Comma && Comma->getOpcode() == BO_Comma) {
+        Expression = Comma->getRHS();
+      } else {
+        // ActOnDecltypeExpression removes the terminal call's temporary binding
+        // through these exact wrappers. Arguments and comma-left temporaries
+        // keep their own source dependencies; no other expression is peeled.
+        if (isa<CallExpr>(Expression))
+          DecltypeCallResults.insert(Path.begin(), Path.end());
+        return;
+      }
+    }
+  }
   void operationExpressionDependency(const Stmt *Source) {
     if (Source)
       for (auto *Dependencies : ActiveOperationSources)
@@ -6075,8 +6104,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       const auto *Raw = T.getTypePtr();
       if (const auto *Alias = dyn_cast<TypedefType>(Raw))
         operationTypeDependency(Alias->getDecl()->getTypeSourceInfo());
-      if (const auto *Deduced = dyn_cast<DecltypeType>(Raw))
+      if (const auto *Deduced = dyn_cast<DecltypeType>(Raw)) {
+        registerDecltypeCallResult(Deduced->getUnderlyingExpr());
         operationExpressionDependency(Deduced->getUnderlyingExpr());
+      }
       if (const auto *Adjusted = dyn_cast<AdjustedType>(Raw))
         Self(Self, Adjusted->getOriginalType(), false, Depth + 1);
       if (const auto *Transform = dyn_cast<UnaryTransformType>(Raw)) {
@@ -6244,7 +6275,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       const CXXMethodDecl *Selected = nullptr;
       const CXXRecordDecl *Destroyed = nullptr;
       if (const auto *E = dyn_cast<Expr>(S);
-          E && !E->getType().isNull() && E->isPRValue())
+          E && !E->getType().isNull() && E->isPRValue() && !DecltypeCallResults.count(E))
         Destroyed = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl();
       if (const auto *Construction = dyn_cast<CXXConstructExpr>(S)) {
         Selected = Construction->getConstructor();
@@ -6376,8 +6407,10 @@ public:
       const Expr *Root = nullptr;
       if (const auto *Array = dyn_cast<ConstantArrayType>(T.getTypePtr()))
         Root = Array->getSizeExpr();
-      if (const auto *Deduced = dyn_cast<DecltypeType>(T.getTypePtr()))
+      if (const auto *Deduced = dyn_cast<DecltypeType>(T.getTypePtr())) {
         Root = Deduced->getUnderlyingExpr();
+        registerDecltypeCallResult(Root);
+      }
       if (Root && OperationValueRoots.insert(Root).second)
         A.chargeExpansion(1, Root->getExprLoc());
     }
@@ -6404,8 +6437,10 @@ public:
     const Expr *Root = nullptr;
     if (auto Array = RootLocation.getAs<ArrayTypeLoc>())
       Root = Array.getSizeExpr();
-    if (auto Deduced = RootLocation.getAs<DecltypeTypeLoc>())
+    if (auto Deduced = RootLocation.getAs<DecltypeTypeLoc>()) {
       Root = Deduced.getUnderlyingExpr();
+      registerDecltypeCallResult(Root);
+    }
     if (Root && OperationValueRoots.insert(Root).second)
       A.chargeExpansion(1, Root->getExprLoc());
     collectOperationTypeSource(TL.getType(), TL.getBeginLoc(), false);

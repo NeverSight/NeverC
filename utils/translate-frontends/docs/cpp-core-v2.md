@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 313 accepted, 227 unsupported-source, fifteen missing-definition and ten invalid-C++ cases cover
+The paired 327 accepted, 238 unsupported-source, fifteen missing-definition and ten invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1109,12 +1109,17 @@ budget, with a 64-frame depth limit. Dependencies are checked after source
 completion. This is separate from the evaluated
 expression scan and never requests runtime cleanup or instantiates a body.
 
-The proof conservatively requires destruction evidence for every collected record
-prvalue, including constructor expressions below new and unevaluated aggregates.
+The proof conservatively requires destruction evidence for collected record
+prvalues, including constructor expressions below new and unevaluated aggregates.
+The exact terminal call of a written `decltype` is exempt from result destruction,
+including only its parentheses and built-in comma-right wrappers, because Clang
+does not introduce that result temporary. Callee/type source, arguments, comma-left
+temporaries and actual binding/destruction expressions remain checked. The exemption
+does not extend to a separate hypothetical operation on the resulting alias.
 Implicit destruction, ordinary explicitly defaulted destructors with checked
 written source, or completed ordinary/checked inline template user destructors qualify;
 lazy template destructor prvalues need a separate completed-signature proof and
-remain rejected. Unused bodies that contribute no such dependency remain lazy. Ordinary default expressions can call already admitted
+remain rejected when destruction is consumed. Unused bodies that contribute no such dependency remain lazy. Ordinary default expressions can call already admitted
 functions, including nested template expressions under existing source rules;
 template-owned default parameters need further source evidence.
 
@@ -1126,9 +1131,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has forty O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has forty-one O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Forty-two exported query
+default evaluation with full-expression temporary cleanup. Forty-five exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1275,7 +1280,7 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared forty-checkpoint user-operation fixture checks
+queries. The shared forty-one-checkpoint user-operation fixture checks
 boolean-only output, zero query effects, real implicit/template copies with
 independent storage, template operations and user/generated array destruction at O0/O2;
 relocation must preserve the protocol. Native results require implementing CI.

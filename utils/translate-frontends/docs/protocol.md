@@ -799,6 +799,11 @@ operations can use the exact completed body proof, with raw original-definition
 identity and both selected/body-owning signature source checked. No unused body is
 instantiated; separate template definitions and copied member-template origins
 remain outside this bounded proof. Template-owned query defaults are unchanged.
+For a written `decltype`, the exact terminal call result and its parentheses or
+built-in comma-right wrappers introduce no temporary, so they add no result
+destruction dependency. Callee signatures, arguments, comma-left temporaries and
+actual bindings remain checked; a separate operation on the alias retains its
+own complete-object requirements.
 Deleted/access failures retain their pre-resolution false result; record references
 retain their no-selection result. These private events do not enter the protocol. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).

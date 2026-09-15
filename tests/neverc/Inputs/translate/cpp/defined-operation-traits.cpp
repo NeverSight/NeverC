@@ -92,6 +92,14 @@ struct QueryMemberTemplate {
   template<class T> operator T() const noexcept { ++template_conversions; return T(value); }
   ~QueryMemberTemplate() noexcept { ++template_destructions; }
 };
+template<class T> struct LazyDecltype {
+  T value;
+  ~LazyDecltype() noexcept(T::missing) { T::body(); }
+};
+template<class T> LazyDecltype<T> lazyResult() { return {7}; }
+static_assert(sizeof(LazyDecltype<int>) == sizeof(int));
+using LazyResult = decltype((lazyResult<int>()));
+using CommaResult = decltype((defaultValue(), lazyResult<int>()));
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -135,6 +143,9 @@ extern "C" bool defined_template_destruct() { return __is_nothrow_destructible(Q
 extern "C" bool defined_template_trivial() { return __is_trivially_constructible(QueryTemplate<int>, int); }
 extern "C" bool defined_member_construct() { return __is_nothrow_constructible(QueryMemberTemplate, int); }
 extern "C" bool defined_member_convert() { return __is_nothrow_convertible(QueryMemberTemplate, int); }
+extern "C" bool defined_decltype_reference() { return __is_nothrow_destructible(LazyResult&); }
+extern "C" bool defined_decltype_pointer() { return __is_constructible(CommaResult*, decltype(nullptr)); }
+extern "C" bool defined_decltype_false() { return __is_convertible(CommaResult*, int*); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -267,5 +278,8 @@ int main() {
   if (template_constructions != 2 || template_copies != 1 || template_assignments != 1 ||
       template_conversions != 2 || template_destructions != 3 || generated_destructions != 10 ||
       constructions != 6 || destructions != 10) return 40;
+  if (!defined_decltype_reference() || !defined_decltype_pointer() || defined_decltype_false() ||
+      default_calls != 2 || default_constructions != 7 || default_destructions != 7 ||
+      constructions != 6 || destructions != 10) return 41;
   return 0;
 }

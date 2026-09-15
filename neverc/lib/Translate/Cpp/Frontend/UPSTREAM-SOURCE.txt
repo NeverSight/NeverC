@@ -313,7 +313,12 @@ every reachable entry must complete before query validation. This covers nested
 defaults and initializers first checked outside a parameter collector without
 replaying source traversal. Graph nodes, edges and frames remain bounded by the
 shared budget and depth limit. Lazy template destructor prvalues still need
-separate signature proof.
+separate signature proof when destruction is consumed. ActOnDecltypeExpression
+removes the exact terminal CallExpr binding through parentheses and built-in
+comma-right operands, so those result nodes do not infer destruction. Original
+Type/TypeLoc discovery records the exact path before collection; no casts,
+cleanup wrappers or other expressions are peeled. Arguments, comma-left source,
+callee prototypes and actual binding/destruction expressions stay checked.
 The same graph retains exact noexcept expression completion from normal Type,
 TypeLoc, concrete-template and friend-signature traversal. Calls and function
 references keep edges to actual and selected declaration exception expressions;
