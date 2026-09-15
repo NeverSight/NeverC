@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 280 accepted, 207 unsupported-source, thirteen missing-definition and nine invalid-C++ cases cover
+The paired 295 accepted, 212 unsupported-source, fourteen missing-definition and nine invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -991,11 +991,14 @@ type, depth and expansion limits. A selected generated operation must remain
 implicit through every owning field, array element and base in that operation
 family. Explicitly defaulted subobject operations can carry written exception
 source despite being trivial, so they still require further selection evidence.
-Reference members do not own their referents. Construction also requires implicit
-trivial destruction; a direct reference binding does not destroy the referent and
-can therefore bind an admitted record with a nontrivial or deleted destructor.
+Reference members do not own their referents. Construction separately requires
+the shared owning destruction proof below: completed ordinary user destruction,
+ordinary explicit defaulting and implicit nontrivial owners can accompany a
+checked implicit trivial constructor. A direct reference binding does not destroy
+the referent and can therefore bind an admitted record with a nontrivial or
+deleted destructor.
 
-The implicit subset rejects selected user or explicitly defaulted operations, incomplete
+The implicit subset rejects selected user or explicitly defaulted constructors/assignments, incomplete
 failed initialization and unsupported derived-to-base reference adjustments.
 Record-value/array nothrow destruction uses its separate proof below. Nothrow construction, assignment and
 conversion use the additional resolved-exception check below. Failed selection cannot be accepted just because the
@@ -1097,9 +1100,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has thirty-two O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has thirty-six O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Twenty-nine exported query
+default evaluation with full-expression temporary cleanup. Thirty-four exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1114,7 +1117,8 @@ instantiating bodies or recomputing Clang's result. Both true and false results
 must pass the source checks. A `noexcept` constructor with a throwing argument
 conversion or bound destructor still gives the original false result.
 
-Implicit operation families exclude written/defaulted subobject operations and
+Implicit constructor/assignment families exclude written/defaulted subobject
+operations of that family; implicit trivial default construction also excludes
 default member initializers. Ordinary user definitions include their written
 signature checks; inferred user-destructor specifications also retain recursive
 source checks for all owning subobject destructors. An unselected destructor does
@@ -1223,7 +1227,17 @@ owned by the same destructor declaration family; the direct nothrow query still
 requires its retained resolved snapshot. Implicit nontrivial owners use the same
 recursive subobject proof, including implicit class-template owners. Written
 template user/defaulted destructors still require further source evidence.
-Construction and assignment retain their separate implicit-family restrictions.
+Construction and assignment retain their separate implicit-family source checks.
+For retained implicit constructors, destruction is verified independently for the
+exact record prvalue. The same composition applies inside query-only defaults;
+the constructor expression must have the same base-element record type as its
+selected constructor's parent. Neither path skips the shared owning proof.
+
+Pinned Clang can omit a binding node for a trivial destructor even when its
+written specification is `noexcept(false)`. As a result, its nothrow construction
+query can be true while its nothrow destruction query is false. Both source
+paths remain checked and their original booleans are preserved independently;
+the adapter does not synthesize one trait's answer from another.
 
 Deleted and, when access control is enabled, nonpublic destructors preserve the
 original false result before exception resolution. Their retained event must
@@ -1234,8 +1248,9 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared thirty-two-checkpoint user-operation fixture checks
-boolean-only output, zero query effects and actual user/generated array destruction at O0/O2;
+queries. The shared thirty-six-checkpoint user-operation fixture checks
+boolean-only output, zero query effects, real implicit copies with independent
+storage and actual user/generated array destruction at O0/O2;
 relocation must preserve the protocol. Native results require implementing CI.
 Standard headers and complete C++/STL support remain unfinished.
 

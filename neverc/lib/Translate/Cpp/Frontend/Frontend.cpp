@@ -2057,10 +2057,16 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     // never be generated, leaving selected subobject signatures unvisited.
     if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node)) {
       const auto *Constructor = Construction->getConstructor();
-      if (!ExceptionSource(Constructor))
+      const auto ObjectType = Construction->getType();
+      if (!Constructor || ObjectType.isNull() || !Construction->isPRValue() ||
+          !A.Context.hasSameUnqualifiedType(A.Context.getBaseElementType(ObjectType),
+              A.Context.getRecordType(Constructor->getParent())) ||
+          !ExceptionSource(Constructor))
         return false;
+      // Every exact record prvalue passed the shared destruction proof above.
+      // The implicit family here proves only its selected construction source.
       if ((Constructor->isImplicit() || Constructor->isDefaulted()) &&
-          !implicitSpecialMemberSource(A, Constructor, true))
+          !implicitSpecialMemberSource(A, Constructor, false))
         return false;
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
@@ -2161,7 +2167,9 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     }
     if (const auto *Construction = dyn_cast<CXXConstructExpr>(E)) {
       const auto *Constructor = Construction->getConstructor();
-      const bool Implicit = implicitSpecialMemberSource(A, Constructor, true);
+      // Owning destruction is checked independently below, including written
+      // and nontrivial destructors with completed source evidence.
+      const bool Implicit = implicitSpecialMemberSource(A, Constructor, false);
       if ((!Implicit && !(ordinaryConstructor(Constructor) && Defined(Constructor))) ||
           !ExceptionSource(Constructor) ||
           !A.S.owns(A.Sources, Constructor->getLocation()) || !Construction->isPRValue() ||

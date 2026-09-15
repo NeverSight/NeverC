@@ -343,7 +343,12 @@ node to complete. It never borrows defaulting from an uninstantiated template
 pattern. Implicit nontrivial owners retain the complete owning-subobject closure;
 no generated body is requested. Lazy generated specifications are allowed only as
 EST_Unevaluated with the same canonical destructor owner; direct nothrow query
-snapshots remain resolved. Constructor/assignment family restrictions are unchanged.
+snapshots remain resolved. Implicit trivial construction uses its separate owning
+constructor-family proof together with exact record-prvalue destruction, both for
+retained roots and selected default expressions. Default constructor nodes must
+match their selected parent type and prvalue category before that composition;
+assignment source checks are unchanged. Clang's omitted trivial-destructor binding
+can give construction and destruction different nothrow booleans, both preserved.
 Lazy templates, written template destructors, template-owned or rewritten defaults,
 incomplete selection and unresolved exception dependencies still need further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.

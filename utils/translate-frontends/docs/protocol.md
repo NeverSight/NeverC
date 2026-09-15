@@ -791,6 +791,10 @@ prototype snapshot, with completed exception source and owning-subobject proof.
 That proof includes implicit nontrivial owners and ordinary explicitly defaulted
 destructors whose actual written redeclarations have completed source checks;
 no template pattern substitutes for a missing defaulting declaration.
+Implicit trivial construction composes its independent family proof with checked
+destruction of the exact record prvalue, including within selected defaults.
+Nothrow construction and destruction preserve their separate Clang results even
+when a trivial destructor binding was omitted.
 Deleted/access failures retain their pre-resolution false result; record references
 retain their no-selection result. These private events do not enter the protocol. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).

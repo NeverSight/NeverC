@@ -103,6 +103,11 @@ extern "C" bool defined_destruct_generated() { return __is_nothrow_destructible(
 extern "C" bool defined_destruct_generated_array() { return __is_nothrow_destructible(GeneratedOwner[2]); }
 extern "C" bool defined_destruct_generated_throwing() { return __is_nothrow_destructible(ThrowingGenerated); }
 extern "C" bool defined_destruct_implicit_nontrivial() { return __is_nothrow_destructible(ImplicitOwner); }
+extern "C" bool defined_implicit_construct() { return __is_constructible(ImplicitOwner); }
+extern "C" bool defined_implicit_copy() { return __is_constructible(ImplicitOwner, const ImplicitOwner&); }
+extern "C" bool defined_implicit_nothrow() { return __is_nothrow_constructible(ImplicitOwner); }
+extern "C" bool defined_implicit_trivial() { return __is_trivially_constructible(ImplicitOwner); }
+extern "C" bool defined_implicit_trivial_throwing() { return __is_nothrow_constructible(ThrowingGenerated); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -202,5 +207,18 @@ int main() {
         generated_destructions != 0) return 31;
   }
   if (generated_destructions != 6 || constructions != 6 || destructions != 10) return 32;
+  if (!defined_implicit_construct() || !defined_implicit_copy() || !defined_implicit_nothrow() ||
+      defined_implicit_trivial() || !defined_implicit_trivial_throwing() ||
+      generated_destructions != 6) return 33;
+  {
+    ImplicitOwner original = {{{31}, {37}}};
+    ImplicitOwner copy(original);
+    if (copy.fields[0].value != 31 || copy.fields[1].value != 37 ||
+        generated_destructions != 6) return 34;
+    copy.fields[0].value = 41;
+    if (original.fields[0].value != 31 || !defined_implicit_copy() ||
+        generated_destructions != 6) return 35;
+  }
+  if (generated_destructions != 10 || constructions != 6 || destructions != 10) return 36;
   return 0;
 }
