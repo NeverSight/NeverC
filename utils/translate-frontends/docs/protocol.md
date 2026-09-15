@@ -785,8 +785,11 @@ sources. The frontend checks every written operand and returns pinned Clang's
 result without emitting hypothetical calls or treating C pointer carriers as
 C++ reference identity. Record construction, assignment and conversion require
 complete retained selection and checked source, or a checked pre-operation result;
-folding a false result does not bypass those checks. Record-value nothrow destruction
-still requires further selection evidence. See the
+folding a false result does not bypass those checks. Record-value and fixed-array
+nothrow destruction use exact retained destructor selection and the resolved
+prototype snapshot, with completed exception source and owning-subobject proof.
+Deleted/access failures retain their pre-resolution false result; record references
+retain their no-selection result. These private events do not enter the protocol. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).
 Ordinary constructor defaults use exact completed parameter/initializer source
 proofs before erasure, including unchanged full-expression envelopes and implicit

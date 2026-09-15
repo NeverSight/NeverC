@@ -6312,6 +6312,31 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         assert not expected
 
     operation_trait_positive = {
+        'destruction-value-implicit-empty': 'struct R{};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-implicit-field': 'struct R{int field;};static_assert(__is_nothrow_destructible(R)&&__is_nothrow_destructible(const R));',
+        'destruction-value-array': 'struct R{int field;};static_assert(__is_nothrow_destructible(R[2][3])&&__is_nothrow_destructible(const R[2]));',
+        'destruction-value-empty-base': 'struct B{};struct R:B{int field;};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-owning-fields': 'struct Field{int value;};struct R{Field fields[2];};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-implicit-template': 'template<class T>struct R{T field;};static_assert(__is_nothrow_destructible(R<int>));',
+        'destruction-value-defined-noexcept': 'struct R{~R()noexcept{}};static_assert(__is_nothrow_destructible(R)&&__is_nothrow_destructible(R[2]));',
+        'destruction-value-defined-throwing': 'struct R{~R()noexcept(false){}};static_assert(!__is_nothrow_destructible(R)&&!__is_nothrow_destructible(R[2]));',
+        'destruction-value-defined-inferred': 'struct R{int field;~R(){}};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-defined-owning-fields': 'struct Field{~Field()noexcept{}};struct R{Field fields[2];~R(){}};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-defined-inferred-throwing': 'struct Field{~Field()noexcept(false){}};struct R{Field field;~R(){}};static_assert(!__is_nothrow_destructible(R));',
+        'destruction-value-deleted': 'struct R{~R()=delete;};static_assert(!__is_nothrow_destructible(R)&&!__is_nothrow_destructible(R[2]));',
+        'destruction-value-private': 'class R{~R()noexcept{}};static_assert(!__is_nothrow_destructible(R));',
+        'destruction-value-protected': 'class R{protected:~R()noexcept{}};static_assert(!__is_nothrow_destructible(R));',
+        'destruction-value-private-lazy-template': 'template<class T>class R{~R()noexcept(T::missing){T::body();}};static_assert(sizeof(R<int>)==1);static_assert(!__is_nothrow_destructible(R<int>));',
+        'destruction-value-deleted-lazy-template': 'template<class T>struct R{~R()noexcept(T::missing)=delete;};static_assert(sizeof(R<int>)==1);static_assert(!__is_nothrow_destructible(R<int>));',
+        'destruction-value-self-query': 'struct R{~R()noexcept{static_assert(__is_nothrow_destructible(R));}};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-later-definition': 'struct R{~R()noexcept;};static_assert(__is_nothrow_destructible(R));R::~R()noexcept{}',
+        'destruction-value-later-computed-definition': 'struct R{~R()noexcept(1);};static_assert(__is_nothrow_destructible(R));R::~R()noexcept(true){}',
+        'destruction-value-implicit-deleted': 'struct M{~M()=delete;};struct R{M value;};static_assert(!__is_nothrow_destructible(R)&&!__is_nothrow_destructible(R[2]));',
+        'destruction-value-reference-pointer-fields': 'template<class T>struct Bad{~Bad()noexcept(T::missing){T::body();}};static_assert(sizeof(Bad<int>)==1);struct R{Bad<int>*pointer;Bad<int>&reference;};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-pack': 'struct R{~R()noexcept{}};struct Throwing{~Throwing()noexcept(false){}};template<class...T>constexpr bool value(){return (__is_nothrow_destructible(T)&&...);}static_assert(value<>()&&value<R,int,R[2]>()&&!value<R,Throwing>());',
+        'destruction-value-reentrant': 'struct Inner{~Inner()noexcept{}};struct R{~R()noexcept(__is_nothrow_destructible(Inner)){}};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-default-query': 'struct R{~R()noexcept{}};template<bool B=__is_nothrow_destructible(R)>constexpr bool value(){return B;}static_assert(value<>());',
+        'record-destructor-array': 'struct R{int n;};bool f(){return __is_nothrow_destructible(R[2][3]);}',
         'type-source-enum-__make_signed': 'struct Mid{int field;};enum E:decltype(noexcept(Mid())?int():int()){zero};using Value=__make_signed(E);struct R{R()noexcept(sizeof(Value)==sizeof(int)){}};static_assert(__is_constructible(R)&&__is_nothrow_constructible(R));',
         'type-source-enum-__make_unsigned': 'struct Mid{int field;};enum E:decltype(noexcept(Mid())?int():int()){zero};using Value=__make_unsigned(E);struct R{R()noexcept(sizeof(Value)==sizeof(int)){}};static_assert(__is_constructible(R)&&__is_nothrow_constructible(R));',
         'type-source-unused-transformed-pointee-layout': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct Value{char bytes[noexcept(Mid())?1:2];};using Pointer=__add_pointer(Value);struct R{R()noexcept(sizeof(Pointer)>0){}};static_assert(__is_constructible(R)&&__is_nothrow_constructible(R));',
@@ -6544,6 +6569,15 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'destruction-value-explicit-defaulted': 'struct R{~R()=default;};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-template-body': 'template<class T>struct R{~R()noexcept{}};static_assert(__is_nothrow_destructible(R<int>));',
+        'destruction-value-implicit-nontrivial': 'struct Field{~Field()noexcept{}};struct R{Field field;};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-written-spec': 'struct R{~R()noexcept(sizeof(long double)>0){}};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-deleted-written-spec': 'struct R{~R()noexcept(sizeof(long double)>0)=delete;};static_assert(!__is_nothrow_destructible(R));',
+        'destruction-value-hidden-default': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};int helper(int=noexcept(Mid()))noexcept{return 1;}struct R{~R()noexcept(noexcept(helper())){}};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-hidden-constant': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};constexpr bool flag=noexcept(Mid());struct R{~R()noexcept(flag){}};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-hidden-type': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};using Bound=char[noexcept(Mid())?1:2];struct R{~R()noexcept(sizeof(Bound)==1){}};static_assert(__is_nothrow_destructible(R));',
+        'destruction-value-throwing-before-hidden-member': 'struct First{~First()noexcept(false){}};template<class T>struct Late{~Late()noexcept(sizeof(long double)>0)=default;};struct R{First first;Late<int> late;~R(){}};static_assert(!__is_nothrow_destructible(R));',
         'type-source-hidden-enum-__make_signed': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};enum E:decltype(noexcept(Mid())?int():int()){zero};using Value=__make_signed(E);struct R{R()noexcept(sizeof(Value)==sizeof(int)){}};static_assert(__is_constructible(R));',
         'type-source-hidden-enum-__make_signed-nothrow': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};enum E:decltype(noexcept(Mid())?int():int()){zero};using Value=__make_signed(E);struct R{R()noexcept(sizeof(Value)==sizeof(int)){}};static_assert(__is_nothrow_constructible(R));',
         'type-source-hidden-enum-__make_unsigned': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};enum E:decltype(noexcept(Mid())?int():int()){zero};using Value=__make_unsigned(E);struct R{R()noexcept(sizeof(Value)==sizeof(int)){}};static_assert(__is_constructible(R));',
@@ -6697,7 +6731,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'record-query-hidden-source': 'struct R{int n;};bool f(){return __is_constructible(decltype((sizeof(long double),R{})),R);}',
         'retained-inaccessible-construction': 'class R{R(int){}};bool f(){return __is_constructible(R,int);}',
         'record-convertible-false': 'struct R{int n;};bool f(){return __is_convertible(int,R);}',
-        'record-destructor-array': 'struct R{int n;};bool f(){return __is_nothrow_destructible(R[2][3]);}',
         'long-double': 'bool f(){return __is_constructible(long double,int);}',
         'unsupported-source': 'bool f(){return __is_convertible(long double,int);}',
         'unsupported-pointee': 'bool f(){return __is_destructible(long double*);}',
@@ -6749,6 +6782,7 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in operation_trait_negative.items():
         check("v2-operation_trait_negative-" + name, source, 'TR0201', profile="cpp-core-v2")
     operation_trait_missing = {
+        'destruction-value-missing-definition': 'struct R{~R()noexcept;};static_assert(__is_nothrow_destructible(R));',
         'nothrow-default-missing-call': 'int get()noexcept;struct R{R(int=get())noexcept{}};bool f(){return __is_nothrow_constructible(R);}',
         'nothrow-default-missing-destruction': 'struct S{~S()noexcept;};struct R{R(const S& =S{})noexcept{}};bool f(){return __is_nothrow_constructible(R);}',
         'default-missing-callee': 'int get();struct R{R(int=get()){}};bool f(){return __is_constructible(R);}',
@@ -6821,7 +6855,11 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
                         "defined_nothrow_destruction": False,
                         "defined_defaults": True, "defined_trivial_defaults": False,
                         "defined_nothrow_defaults": False, "defined_nothrow_quiet_defaults": True,
-                        "defined_nothrow_explicit_default": True}
+                        "defined_nothrow_explicit_default": True,
+                        "defined_destruct_value": True, "defined_destruct_array": True,
+                        "defined_destruct_throwing": False, "defined_destruct_deleted": False,
+                        "defined_destruct_private": False, "defined_destruct_reference": True,
+                        "defined_destruct_implicit": True}
     for function in defined_operation_module["functions"]:
         if not function["c_export"]:
             continue

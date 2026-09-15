@@ -65,6 +65,9 @@ struct QuietDefaults {
   QuietDefaults(int = 7) noexcept { ++default_constructions; }
   ~QuietDefaults() noexcept { ++default_destructions; }
 };
+struct PlainDestruction { int value; };
+struct DeletedDestruction { ~DeletedDestruction() = delete; };
+class PrivateDestruction { ~PrivateDestruction() noexcept {} };
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -84,6 +87,13 @@ extern "C" bool defined_trivial_defaults() { return __is_trivially_constructible
 extern "C" bool defined_nothrow_defaults() { return __is_nothrow_constructible(Defaults); }
 extern "C" bool defined_nothrow_quiet_defaults() { return __is_nothrow_constructible(QuietDefaults); }
 extern "C" bool defined_nothrow_explicit_default() { return __is_nothrow_constructible(Defaults, int); }
+extern "C" bool defined_destruct_value() { return __is_nothrow_destructible(Value); }
+extern "C" bool defined_destruct_array() { return __is_nothrow_destructible(Holder[2]); }
+extern "C" bool defined_destruct_throwing() { return __is_nothrow_destructible(ThrowingDestruction); }
+extern "C" bool defined_destruct_deleted() { return __is_nothrow_destructible(DeletedDestruction); }
+extern "C" bool defined_destruct_private() { return __is_nothrow_destructible(PrivateDestruction); }
+extern "C" bool defined_destruct_reference() { return __is_nothrow_destructible(ThrowingDestruction&); }
+extern "C" bool defined_destruct_implicit() { return __is_nothrow_destructible(PlainDestruction[2]); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -155,5 +165,18 @@ int main() {
       default_constructions != 6 || default_destructions != 6) return 23;
   { QuietDefaults value; }
   if (default_constructions != 7 || default_destructions != 7 || default_calls != 2) return 24;
+  if (!defined_destruct_value() || !defined_destruct_array() || defined_destruct_throwing() ||
+      defined_destruct_deleted() || defined_destruct_private() ||
+      !defined_destruct_reference() || !defined_destruct_implicit() ||
+      constructions != 4 || destructions != 8) return 25;
+  {
+    Value values[2] = {Value(41), Value(43)};
+    if (values[0].value != 41 || values[1].value != 43 || constructions != 6 ||
+        destructions != 8 || copies != 1 || moves != 1) return 26;
+    if (!__is_nothrow_destructible(decltype(values)) || !defined_destruct_value() ||
+        constructions != 6 || destructions != 8) return 27;
+  }
+  if (constructions != 6 || destructions != 10 || conversions != 4 ||
+      default_constructions != 7 || default_destructions != 7 || default_calls != 2) return 28;
   return 0;
 }

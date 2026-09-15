@@ -866,8 +866,8 @@ field/base deletion and access checks for admitted nonvirtual layouts. A generic
 destructor's dependent exception specification and unused body stay lazy, even
 when they would fail if instantiated. Existing ordinary function-definition and
 record source restrictions still apply. `__is_nothrow_destructible` on record
-values and arrays requires further exception-source retention. Record references
-use the unconditional reference result described below.
+values and arrays uses the separate retained destructor and exception-source
+proof below. Record references use the unconditional reference result below.
 The shared classification fixture has 29 O0/O2 checkpoints and sixteen exported
 boolean checks, including a real destruction outside the query; native results
 require the implementing revision's CI.
@@ -953,9 +953,9 @@ a false nothrow/trivial result. Full checking of those selected sources, partial
 failure paths and exception dependencies remains necessary. The implicit trivial
 and completed ordinary-definition subsets below have independent source proofs.
 Nothrow construction, assignment and conversion also require the checked resolved
-exception source described below. Record-value and array nothrow destruction still
-need retained destructor selection. Nothrow destruction of record references takes
-the separate no-selection path below. This is
+exception source described below. Record-value and array nothrow destruction use
+retained destructor selection and the resolved prototype snapshot described below.
+Nothrow destruction of record references takes the separate no-selection path. This is
 separate from the metadata record queries above. Actual standard-header and complete C++/STL support remain
 unfinished.
 
@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 228 accepted, 201 unsupported-source, eleven missing-definition and eight invalid-C++ cases cover
+The paired 253 accepted, 209 unsupported-source, twelve missing-definition and eight invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -996,8 +996,8 @@ trivial destruction; a direct reference binding does not destroy the referent an
 can therefore bind an admitted record with a nontrivial or deleted destructor.
 
 The implicit subset rejects selected user or explicitly defaulted operations, incomplete
-failed initialization, unsupported derived-to-base reference adjustments and
-record-value/array nothrow destruction. Nothrow construction, assignment and
+failed initialization and unsupported derived-to-base reference adjustments.
+Record-value/array nothrow destruction uses its separate proof below. Nothrow construction, assignment and
 conversion use the additional resolved-exception check below. Failed selection cannot be accepted just because the
 boolean is false. Unused user default-constructor bodies stay lazy when the query
 selects only an implicit copy/move operation. Written query types, aliases, bounds
@@ -1096,9 +1096,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has twenty-four O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has twenty-eight O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Eighteen exported query
+default evaluation with full-expression temporary cleanup. Twenty-five exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1165,8 +1165,8 @@ Clang's expression exception check can stop after a throwing callee. If a later
 callee remains unresolved, this bounded proof rejects the query conservatively.
 Destructor inference differs: it can still resolve later subobject destructors
 after an earlier one makes the result throwing, so every owning subobject remains
-part of the source proof. Lazy template operations, failed initialization and
-record-value nothrow destruction still require further evidence.
+part of the source proof. Lazy template operations and failed initialization
+still require further evidence.
 
 Unchanged ordinary defaults also support nothrow construction when every actual
 call, constructor, bound destructor, allocation and deallocation dependency has
@@ -1189,9 +1189,44 @@ unused destructor specification or body remains lazy on this path.
 The full referred type and every written type source still require admission.
 Hidden unsupported types in `decltype`, array bounds or template arguments remain
 rejected. Actual destruction elsewhere retains ordinary body and lifetime checks.
-This reference-only result does not admit nothrow destruction of record values or
-arrays themselves. Other nothrow record operations require the separate retained
-operation proof above.
+This path requires its own retained query event with no destructor lookup or
+exception resolution. Values and arrays use the distinct proof below; other
+nothrow record operations require the retained operation proof above.
+
+### Nothrow destruction of record values and arrays
+
+`__is_nothrow_destructible` also accepts admitted record values and fixed arrays
+when the actual selected destructor has checked source. The private frontend
+retains the exact destructor from its original lookup and the exact prototype
+returned by its original exception-specification resolution. Per-query attempt
+flags distinguish selection and resolution from earlier returns; nested queries
+retain independent evidence. The adapter never repeats either Sema operation or
+recomputes the boolean.
+
+Public, nondeleted destructors require a resolved standard prototype snapshot
+that still matches the selected declaration's current prototype. The consumed
+noexcept expression and its transitive source dependencies must have completed
+normal checking. The shared owning-subobject proof admits implicit trivial
+destruction and ordinary user destructors with completed non-template definitions,
+including throwing and inferred specifications. Every owning base and by-value
+field remains part of that proof, even after an earlier destructor makes the
+result false. Pointer and reference fields do not destroy their referents.
+Explicitly defaulted destructors, implicit nontrivial owners and lazy template
+user destructors still require further source evidence.
+
+Deleted and, when access control is enabled, nonpublic destructors preserve the
+original false result before exception resolution. Their retained event must
+contain the exact selected destructor and no resolution attempt or prototype;
+an unconsumed lazy body or specification is not required. Written source and
+query-type dependencies still receive their ordinary checks. Missing required
+ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
+
+Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
+lazy template controls, queries before later ordinary definitions and nested
+queries. The shared twenty-eight-checkpoint user-operation fixture checks
+boolean-only output, zero query effects and actual array destruction at O0/O2;
+relocation must preserve the protocol. Native results require implementing CI.
+Standard headers and complete C++/STL support remain unfinished.
 
 ## Array type queries
 

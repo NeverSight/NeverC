@@ -164,6 +164,9 @@ struct OperationTraitSource {
   const clang::Expr *Root;
   std::vector<const clang::Expr *> Operands;
   bool Attempted, Complete;
+  const clang::CXXDestructorDecl *Destructor;
+  const clang::FunctionProtoType *DestructionPrototype;
+  bool DestructionLookupAttempted, DestructionExceptionAttempted;
 };
 struct FunctionSpecializationSource {
   const clang::FunctionDecl *Declaration, *Selected;

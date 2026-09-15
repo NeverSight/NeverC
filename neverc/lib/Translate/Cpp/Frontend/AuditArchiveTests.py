@@ -263,7 +263,7 @@ class PseudoDestructorSourceTests(unittest.TestCase):
 
 # Independent pinned source/result fragments for query operand lifetime retention.
 OPERATION_TRAIT_PATCHES = (('clang/include/clang/AST/ASTConsumer.h',
-  (('  class ASTContext;', '  class ASTContext;\n  class TypeTraitExpr;'),
+  (('  class ASTContext;', '  class ASTContext;\n  class TypeTraitExpr;\n  class CXXDestructorDecl;\n  class FunctionProtoType;'),
    ('  virtual bool shouldSkipFunctionBody(Decl *D) { return true; }',
     '  virtual bool shouldSkipFunctionBody(Decl *D) { return true; }\n'
     '\n'
@@ -274,10 +274,12 @@ OPERATION_TRAIT_PATCHES = (('clang/include/clang/AST/ASTConsumer.h',
     '  // Incomplete includes failed selection/default conversion; a null root alone\n'
     '  // does not establish that no source operation was selected.\n'
     '  virtual void HandleNeverCOperationTraitSource(\n'
-    '      const TypeTraitExpr *, Expr *, Expr *const *, unsigned, bool, bool) {}'))),
+    '      const TypeTraitExpr *, Expr *, Expr *const *, unsigned, bool, bool,\n'
+    '      const CXXDestructorDecl *, const FunctionProtoType *, bool, bool) {}'))),
  ('clang/lib/Sema/SemaExprCXX.cpp',
-  (('static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
-    '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc);',
+  (('static bool EvaluateUnaryTypeTrait(Sema &Self, TypeTrait UTT,\n'
+    '                                   SourceLocation KeyLoc,\n'
+    '                                   TypeSourceInfo *TInfo) {',
     '// NeverC operation-trait evidence belongs to one BuildTypeTrait invocation.\n'
     '// Do not retain stack/BumpPtrAllocator operands or treat a failed operation as\n'
     '// proof that no overload/default argument was selected.\n'
@@ -286,8 +288,34 @@ OPERATION_TRAIT_PATCHES = (('clang/include/clang/AST/ASTConsumer.h',
     '  Expr *Root = nullptr;\n'
     '  bool Attempted = false;\n'
     '  bool Complete = false;\n'
+    '  const CXXDestructorDecl *Destructor = nullptr;\n'
+    '  const FunctionProtoType *DestructionPrototype = nullptr;\n'
+    '  bool DestructionLookupAttempted = false;\n'
+    '  bool DestructionExceptionAttempted = false;\n'
     '};\n'
     '\n'
+    'static bool EvaluateUnaryTypeTrait(Sema &Self, TypeTrait UTT,\n'
+    '                                   SourceLocation KeyLoc,\n'
+    '                                   TypeSourceInfo *TInfo,\n'
+    '                                   NeverCOperationTraitSource *NeverCSource) {'),
+   ('      CXXDestructorDecl *Destructor = Self.LookupDestructor(RD);',
+    '      CXXDestructorDecl *Destructor = Self.LookupDestructor(RD);\n'
+    '      if (NeverCSource) {\n'
+    '        NeverCSource->DestructionLookupAttempted = true;\n'
+    '        NeverCSource->Destructor = Destructor;\n'
+    '      }'),
+   ('      if (UTT == UTT_IsNothrowDestructible) {\n'
+    '        auto *CPT = Destructor->getType()->castAs<FunctionProtoType>();\n'
+    '        CPT = Self.ResolveExceptionSpec(KeyLoc, CPT);',
+    '      if (UTT == UTT_IsNothrowDestructible) {\n'
+    '        auto *CPT = Destructor->getType()->castAs<FunctionProtoType>();\n'
+    '        if (NeverCSource)\n'
+    '          NeverCSource->DestructionExceptionAttempted = true;\n'
+    '        CPT = Self.ResolveExceptionSpec(KeyLoc, CPT);\n'
+    '        if (NeverCSource)\n'
+    '          NeverCSource->DestructionPrototype = CPT;'),
+   ('static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
+    '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc);',
     'static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
     '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc,\n'
     '                                    NeverCOperationTraitSource *NeverCSource);'),
@@ -329,6 +357,8 @@ OPERATION_TRAIT_PATCHES = (('clang/include/clang/AST/ASTConsumer.h',
     '                                   Args[1], RParenLoc);',
     '    return EvaluateBinaryTypeTrait(S, Kind, Args[0],\n'
     '                                   Args[1], RParenLoc, NeverCSource);'),
+   ('    return EvaluateUnaryTypeTrait(S, Kind, KWLoc, Args[0]);',
+    '    return EvaluateUnaryTypeTrait(S, Kind, KWLoc, Args[0], NeverCSource);'),
    ('      ArgExprs.push_back(\n'
     '          new (OpaqueExprAllocator.Allocate<OpaqueValueExpr>())\n'
     '              OpaqueValueExpr(Args[I]->getTypeLoc().getBeginLoc(),\n'
@@ -368,7 +398,7 @@ OPERATION_TRAIT_PATCHES = (('clang/include/clang/AST/ASTConsumer.h',
     '        Kind == TT_IsTriviallyConstructible || Kind == BTT_IsAssignable ||\n'
     '        Kind == BTT_IsNothrowAssignable || Kind == BTT_IsTriviallyAssignable ||\n'
     '        Kind == BTT_IsConvertible || Kind == BTT_IsConvertibleTo ||\n'
-    '        Kind == BTT_IsNothrowConvertible;\n'
+    '        Kind == BTT_IsNothrowConvertible || Kind == UTT_IsNothrowDestructible;\n'
     '    if (!Dependent && NeverCOperation &&\n'
     '        Consumer.retainNeverCOperationTraitSource(Context, Args.size(), KWLoc))\n'
     '      NeverCSource = &NeverCStorage;\n'
@@ -381,7 +411,10 @@ OPERATION_TRAIT_PATCHES = (('clang/include/clang/AST/ASTConsumer.h',
     '      Consumer.HandleNeverCOperationTraitSource(\n'
     '          NeverCQuery, NeverCSource->Root, NeverCSource->Operands.data(),\n'
     '          NeverCSource->Operands.size(), NeverCSource->Attempted,\n'
-    '          NeverCSource->Complete);\n'
+    '          NeverCSource->Complete, NeverCSource->Destructor,\n'
+    '          NeverCSource->DestructionPrototype,\n'
+    '          NeverCSource->DestructionLookupAttempted,\n'
+    '          NeverCSource->DestructionExceptionAttempted);\n'
     '    return NeverCQuery;'),
    ('static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
     '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc) {',
@@ -466,14 +499,15 @@ class OperationTraitSourceTests(unittest.TestCase):
                                     repair(root)
                                 self.assertEqual(snapshot(), old)
                 for state in (0, 1):
-                    for name in ("missing file", "orphan marker"):
+                    for name in ("missing file", "NeverCSource", "DestructionPrototype",
+                                 "DestructionLookupAttempted", "DestructionExceptionAttempted"):
                         with self.subTest(file=relative, state=state, case=name):
                             reset(state)
                             path = root / relative
                             if name == "missing file":
                                 path.unlink()
                             else:
-                                path.write_text(path.read_text() + "\n// NeverCSource\n")
+                                path.write_text(path.read_text() + "\n// " + name + "\n")
                             old = snapshot()
                             with self.assertRaises(SystemExit):
                                 repair(root)

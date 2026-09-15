@@ -605,7 +605,7 @@ def preserve_operation_trait_source(source_root):
     # Explicit helper parameters keep nested trait queries independent. Retained
     # expressions never reference the helpers' temporary operand allocators.
     groups = (('clang/include/clang/AST/ASTConsumer.h',
-  (('  class ASTContext;', '  class ASTContext;\n  class TypeTraitExpr;'),
+  (('  class ASTContext;', '  class ASTContext;\n  class TypeTraitExpr;\n  class CXXDestructorDecl;\n  class FunctionProtoType;'),
    ('  virtual bool shouldSkipFunctionBody(Decl *D) { return true; }',
     '  virtual bool shouldSkipFunctionBody(Decl *D) { return true; }\n'
     '\n'
@@ -616,10 +616,12 @@ def preserve_operation_trait_source(source_root):
     '  // Incomplete includes failed selection/default conversion; a null root alone\n'
     '  // does not establish that no source operation was selected.\n'
     '  virtual void HandleNeverCOperationTraitSource(\n'
-    '      const TypeTraitExpr *, Expr *, Expr *const *, unsigned, bool, bool) {}'))),
+    '      const TypeTraitExpr *, Expr *, Expr *const *, unsigned, bool, bool,\n'
+    '      const CXXDestructorDecl *, const FunctionProtoType *, bool, bool) {}'))),
  ('clang/lib/Sema/SemaExprCXX.cpp',
-  (('static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
-    '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc);',
+  (('static bool EvaluateUnaryTypeTrait(Sema &Self, TypeTrait UTT,\n'
+    '                                   SourceLocation KeyLoc,\n'
+    '                                   TypeSourceInfo *TInfo) {',
     '// NeverC operation-trait evidence belongs to one BuildTypeTrait invocation.\n'
     '// Do not retain stack/BumpPtrAllocator operands or treat a failed operation as\n'
     '// proof that no overload/default argument was selected.\n'
@@ -628,8 +630,34 @@ def preserve_operation_trait_source(source_root):
     '  Expr *Root = nullptr;\n'
     '  bool Attempted = false;\n'
     '  bool Complete = false;\n'
+    '  const CXXDestructorDecl *Destructor = nullptr;\n'
+    '  const FunctionProtoType *DestructionPrototype = nullptr;\n'
+    '  bool DestructionLookupAttempted = false;\n'
+    '  bool DestructionExceptionAttempted = false;\n'
     '};\n'
     '\n'
+    'static bool EvaluateUnaryTypeTrait(Sema &Self, TypeTrait UTT,\n'
+    '                                   SourceLocation KeyLoc,\n'
+    '                                   TypeSourceInfo *TInfo,\n'
+    '                                   NeverCOperationTraitSource *NeverCSource) {'),
+   ('      CXXDestructorDecl *Destructor = Self.LookupDestructor(RD);',
+    '      CXXDestructorDecl *Destructor = Self.LookupDestructor(RD);\n'
+    '      if (NeverCSource) {\n'
+    '        NeverCSource->DestructionLookupAttempted = true;\n'
+    '        NeverCSource->Destructor = Destructor;\n'
+    '      }'),
+   ('      if (UTT == UTT_IsNothrowDestructible) {\n'
+    '        auto *CPT = Destructor->getType()->castAs<FunctionProtoType>();\n'
+    '        CPT = Self.ResolveExceptionSpec(KeyLoc, CPT);',
+    '      if (UTT == UTT_IsNothrowDestructible) {\n'
+    '        auto *CPT = Destructor->getType()->castAs<FunctionProtoType>();\n'
+    '        if (NeverCSource)\n'
+    '          NeverCSource->DestructionExceptionAttempted = true;\n'
+    '        CPT = Self.ResolveExceptionSpec(KeyLoc, CPT);\n'
+    '        if (NeverCSource)\n'
+    '          NeverCSource->DestructionPrototype = CPT;'),
+   ('static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
+    '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc);',
     'static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
     '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc,\n'
     '                                    NeverCOperationTraitSource *NeverCSource);'),
@@ -671,6 +699,8 @@ def preserve_operation_trait_source(source_root):
     '                                   Args[1], RParenLoc);',
     '    return EvaluateBinaryTypeTrait(S, Kind, Args[0],\n'
     '                                   Args[1], RParenLoc, NeverCSource);'),
+   ('    return EvaluateUnaryTypeTrait(S, Kind, KWLoc, Args[0]);',
+    '    return EvaluateUnaryTypeTrait(S, Kind, KWLoc, Args[0], NeverCSource);'),
    ('      ArgExprs.push_back(\n'
     '          new (OpaqueExprAllocator.Allocate<OpaqueValueExpr>())\n'
     '              OpaqueValueExpr(Args[I]->getTypeLoc().getBeginLoc(),\n'
@@ -710,7 +740,7 @@ def preserve_operation_trait_source(source_root):
     '        Kind == TT_IsTriviallyConstructible || Kind == BTT_IsAssignable ||\n'
     '        Kind == BTT_IsNothrowAssignable || Kind == BTT_IsTriviallyAssignable ||\n'
     '        Kind == BTT_IsConvertible || Kind == BTT_IsConvertibleTo ||\n'
-    '        Kind == BTT_IsNothrowConvertible;\n'
+    '        Kind == BTT_IsNothrowConvertible || Kind == UTT_IsNothrowDestructible;\n'
     '    if (!Dependent && NeverCOperation &&\n'
     '        Consumer.retainNeverCOperationTraitSource(Context, Args.size(), KWLoc))\n'
     '      NeverCSource = &NeverCStorage;\n'
@@ -723,7 +753,10 @@ def preserve_operation_trait_source(source_root):
     '      Consumer.HandleNeverCOperationTraitSource(\n'
     '          NeverCQuery, NeverCSource->Root, NeverCSource->Operands.data(),\n'
     '          NeverCSource->Operands.size(), NeverCSource->Attempted,\n'
-    '          NeverCSource->Complete);\n'
+    '          NeverCSource->Complete, NeverCSource->Destructor,\n'
+    '          NeverCSource->DestructionPrototype,\n'
+    '          NeverCSource->DestructionLookupAttempted,\n'
+    '          NeverCSource->DestructionExceptionAttempted);\n'
     '    return NeverCQuery;'),
    ('static bool EvaluateBinaryTypeTrait(Sema &Self, TypeTrait BTT, const TypeSourceInfo *Lhs,\n'
     '                                    const TypeSourceInfo *Rhs, SourceLocation KeyLoc) {',
@@ -776,7 +809,7 @@ def preserve_operation_trait_source(source_root):
             states.add(state)
             if not state:
                 updated = updated.replace(before, after, 1)
-        if re.search(r"\b(?:NeverCOperationTraitSource|NeverCSource|NeverCStorage|NeverCQuery|NeverCOperation|NeverCLhs|NeverCRhs|retainNeverCOperationTraitSource|HandleNeverCOperationTraitSource)\b", remainder):
+        if re.search(r"\b(?:NeverCOperationTraitSource|NeverCSource|NeverCStorage|NeverCQuery|NeverCOperation|NeverCLhs|NeverCRhs|DestructionPrototype|DestructionLookupAttempted|DestructionExceptionAttempted|retainNeverCOperationTraitSource|HandleNeverCOperationTraitSource)\b", remainder):
             raise SystemExit("Orphan pinned Clang operation-trait source: " + str(path))
         pending.append((path, updated))
     if len(states) != 1:

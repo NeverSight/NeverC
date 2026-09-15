@@ -1911,6 +1911,47 @@ public:
   }
 };
 
+static bool nothrowDestructionSource(Adapter &A, const TypeTraitExpr *Query,
+    const OperationTraitSource &Source, OperationSourceChecker *Check = nullptr,
+    bool *CanDefer = nullptr) {
+  if (CanDefer)
+    *CanDefer = false;
+  if (!Query || Query->getTrait() != UTT_IsNothrowDestructible ||
+      Query->getNumArgs() != 1 || Source.Root || !Source.Operands.empty() ||
+      Source.Attempted || Source.Complete)
+    return false;
+  const auto T = Query->getArg(0)->getType();
+  const auto *Record = T->isReferenceType() ? nullptr
+      : A.Context.getBaseElementType(T)->getAsCXXRecordDecl();
+  if (!Record)
+    return !Source.Destructor && !Source.DestructionPrototype &&
+           !Source.DestructionLookupAttempted && !Source.DestructionExceptionAttempted;
+  Record = Record->getDefinition();
+  const auto *Destructor = Source.Destructor;
+  if (!Record || !Source.DestructionLookupAttempted || !Destructor ||
+      !A.S.owns(A.Sources, Record->getLocation()) ||
+      !A.S.owns(A.Sources, Destructor->getLocation()) ||
+      Destructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !Record->getDestructor() || Destructor->getCanonicalDecl() !=
+          Record->getDestructor()->getCanonicalDecl())
+    return false;
+  // These are the producer's actual early returns before exception resolution.
+  // Do not demand an unconsumed body or conflate them with noexcept(false).
+  if (Destructor->isDeleted() ||
+      (A.Context.getLangOpts().AccessControl && Destructor->getAccess() != AS_public))
+    return !Source.DestructionExceptionAttempted && !Source.DestructionPrototype;
+  const auto *Prototype = Source.DestructionPrototype;
+  if (!Source.DestructionExceptionAttempted || !standardExceptionSpecification(Prototype) ||
+      Prototype != Destructor->getType()->getAs<FunctionProtoType>())
+    return false;
+  // Preserve the exact ResolveExceptionSpec result, including a false result.
+  // A later changed prototype cannot be used to repair or reinterpret it.
+  if (CanDefer)
+    *CanDefer = true;
+  return Check && Check->prototypeSource(Prototype) &&
+         Check->destruction(Record) && Check->finish(Query->getExprLoc());
+}
+
 // A hypothetical operation needs source admission, but no runtime owner or
 // helper. User operations require exact definitions that have completed normal
 // source traversal. Do not reuse runtime construction/default caches or infer
@@ -2249,6 +2290,20 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
     throw Failure{};
   }
   chargeExpansion(Arity + 1, L);
+  if (OperationTrait) {
+    auto Found = OperationTraits.find(Query);
+    if (Found == OperationTraits.end()) {
+      reject(L, "operation trait source", "Every operation query requires its own retained semantic event.");
+      throw Failure{};
+    }
+    const auto &Source = Found->second;
+    if (Query->getTrait() != UTT_IsNothrowDestructible &&
+        (Source.Destructor || Source.DestructionPrototype ||
+         Source.DestructionLookupAttempted || Source.DestructionExceptionAttempted)) {
+      reject(L, "operation trait source", "Destruction evidence belongs only to its exact unary query.");
+      throw Failure{};
+    }
+  }
   if (OperationTrait && Query->getTrait() != UTT_IsNothrowDestructible) {
     auto Found = OperationTraits.find(Query);
     if (Found == OperationTraits.end()) {
@@ -2303,14 +2358,26 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   // Pinned Sema returns true for a reference before LookupDestructor and
   // ResolveExceptionSpec. The referred type and its written source are still
   // checked above and by RAV; no destructor selection can be borrowed here.
-  const bool ReferenceDestruction = Query->getTrait() == UTT_IsNothrowDestructible &&
-      Query->getArg(0)->getType()->isReferenceType();
-  if (OperationTrait && RecordOperand && !ReferenceDestruction) {
+  if (OperationTrait && Query->getTrait() == UTT_IsNothrowDestructible) {
+    const auto &Source = OperationTraits.find(Query)->second;
+    bool CanDefer = false;
+    if (!VerifiedOperationQueries.count(Query) &&
+        !nothrowDestructionSource(*this, Query, Source, nullptr, &CanDefer)) {
+      if (CheckingSource && CanDefer) {
+        if (DeferredOperationQueries.insert(Query).second)
+          PendingOperationQueries.push_back(Query);
+      } else {
+        reject(L, "nothrow destruction source",
+               "Record destruction requires its exact selected destructor and checked exception source.");
+        throw Failure{};
+      }
+    }
+  } else if (OperationTrait && RecordOperand) {
     const auto Kind = Query->getTrait();
     auto Found = OperationTraits.find(Query);
-    if (Kind == UTT_IsNothrowDestructible || Found == OperationTraits.end()) {
+    if (Found == OperationTraits.end()) {
       reject(L, "operation trait source",
-             "Record-value destruction requires retained selected source and exception dependencies.");
+             "Record operations require retained selected source and exception dependencies.");
       throw Failure{};
     }
     if (!VerifiedOperationQueries.count(Query) &&
@@ -9776,11 +9843,16 @@ public:
     // before any runtime lowering observes the provisional boolean values.
     for (const auto *Query : A.PendingOperationQueries) {
       auto Source = A.OperationTraits.find(Query);
-      if (Source == A.OperationTraits.end() ||
-          !operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
-                                operationTraitNeedsExceptionSource(Query->getTrait()),
-                                &CompletedOperationDefaults, &CheckedOperationExpressions,
-                                &CheckedOperationTypes)) {
+      OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
+          &CheckedOperationExpressions, &CheckedOperationTypes);
+      const bool Complete = Source != A.OperationTraits.end() &&
+          (Query->getTrait() == UTT_IsNothrowDestructible
+            ? nothrowDestructionSource(A, Query, Source->second, &SourceCheck)
+            : operationTraitSource(A, Source->second, &CompletedOperationDefinitions,
+                                   operationTraitNeedsExceptionSource(Query->getTrait()),
+                                   &CompletedOperationDefaults, &CheckedOperationExpressions,
+                                   &CheckedOperationTypes));
+      if (!Complete) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact ordinary definitions, arguments and destruction source.");
         return false;
@@ -12301,10 +12373,13 @@ public:
   }
   void HandleNeverCOperationTraitSource(
       const TypeTraitExpr *Query, Expr *Root, Expr *const *Operands,
-      unsigned Count, bool Attempted, bool Complete) override {
+      unsigned Count, bool Attempted, bool Complete,
+      const CXXDestructorDecl *Destructor, const FunctionProtoType *DestructionPrototype,
+      bool DestructionLookupAttempted, bool DestructionExceptionAttempted) override {
     if (!S.coreV2() || !S.Diagnostics.empty())
       return;
-    OperationTraitSource Source{Root, {}, Attempted, Complete};
+    OperationTraitSource Source{Root, {}, Attempted, Complete, Destructor,
+        DestructionPrototype, DestructionLookupAttempted, DestructionExceptionAttempted};
     for (unsigned I = 0; I < Count; ++I)
       Source.Operands.push_back(Operands[I]);
     if (!OperationTraits.emplace(Query, std::move(Source)).second)

@@ -269,11 +269,20 @@ operands, replacing their temporary BumpPtrAllocator/stack lifetime only for thi
 consumer. Callback arrays are copied before return. Complete roots survive false
 trivial/nothrow results; incomplete attempts are marked separately from metadata
 early exits and cannot prove absence of a selected function/default argument.
-All fifteen anchors in the two-file source group are validated for consistent
+All nineteen anchors in the two-file source group are validated for consistent
 pristine or rewritten state before either file is written. Audits cover drift,
 duplicates, missing anchors/files, mixed states, orphan markers and repeat runs.
-This retention does not request extra instantiation, change query booleans or
-serialize hypothetical operations. The adapter separately checks complete implicit
+Nothrow destruction retains the selected destructor immediately after the original
+lookup and the exact FunctionProtoType returned by the original exception-spec
+resolution. Separate attempt flags preserve the reference, deleted and access
+short circuits. The unary helper receives the same per-query state as other
+operation helpers; no lookup or resolution is repeated. Public nondeleted paths
+require a resolved standard snapshot identical to the selected current prototype,
+completed exception source and the shared owning destruction proof. Deleted/access
+paths require selection evidence but no resolution snapshot; reference/nonrecord
+paths require an independent empty event. Source groups and orphan scans include
+these distinct fields. This retention does not request extra instantiation, change
+query booleans or serialize hypothetical operations. The adapter separately checks complete implicit
 trivial record operations and exact synthetic reference/decay paths. Selected
 operation families must be implicit through owning bases and fields. Ordinary
 user operations additionally require exact non-template definitions that completed
@@ -327,9 +336,9 @@ selected function referenced can resolve its inferred exception specification.
 Nothrow defaults additionally check already-resolved actual callee prototypes,
 selected function declarations, constructors, bound destructors and allocation/
 deallocation dependencies. These checks do not rewrite or evaluate the initializer.
-Lazy templates, template-owned or rewritten defaults, incomplete selection,
-unresolved exception dependencies and
-record-value nothrow destruction still need further evidence. The independent
+Lazy templates, explicitly defaulted destructors, implicit nontrivial owners,
+template-owned or rewritten defaults, incomplete selection and unresolved exception
+dependencies still need further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.
 
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy
