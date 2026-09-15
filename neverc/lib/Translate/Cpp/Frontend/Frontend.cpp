@@ -1869,6 +1869,97 @@ static bool lazyQueryDestructorSignature(Adapter &A, const CXXDestructorDecl *De
          operationDefinitionCategory(A, Destructor);
 }
 
+static bool isAssignmentTypeTrait(TypeTrait Trait) {
+  return Trait == BTT_IsAssignable || Trait == BTT_IsNothrowAssignable ||
+         Trait == BTT_IsTriviallyAssignable;
+}
+
+static bool isConversionTypeTrait(TypeTrait Trait) {
+  return Trait == BTT_IsConvertible || Trait == BTT_IsConvertibleTo ||
+         Trait == BTT_IsNothrowConvertible;
+}
+
+static bool lazyQueryCallSignature(Adapter &A, const CXXMethodDecl *Method) {
+  return Method && !Method->isInvalidDecl() &&
+         ((ordinaryOperator(Method) && Method->getOverloadedOperator() == OO_Equal) ||
+          ordinaryConversion(dyn_cast<CXXConversionDecl>(Method))) &&
+         concreteClassFunction(Method) && Method->isReferenced() &&
+         !Method->isUsed(/*CheckUsedAttr=*/false) && !Method->hasBody() &&
+         A.S.owns(A.Sources, Method->getLocation()) && Method->getTypeSourceInfo() &&
+         standardExceptionSpecification(Method->getType()->getAs<FunctionProtoType>()) &&
+         operationDefinitionCategory(A, Method);
+}
+
+static const CallExpr *operationRootCall(Adapter &A, const OperationTraitSource &Source,
+                                        TypeTrait Trait) {
+  const bool Assignment = isAssignmentTypeTrait(Trait);
+  if ((!Assignment && !isConversionTypeTrait(Trait)) || !Source.Attempted ||
+      !Source.Complete || !Source.Root)
+    return nullptr;
+  const Expr *Expression = Source.Root;
+  for (unsigned Depth = 0; Depth <= 64; ++Depth) {
+    if (!Expression || Expression->getType().isNull() || Expression->isTypeDependent() ||
+        Expression->isValueDependent() || Expression->isInstantiationDependent())
+      return nullptr;
+    A.chargeExpansion(1, Expression->getExprLoc());
+    // Stop at the first call. Its arguments/object can never supply selection
+    // provenance for this root, even if the same method has another query proof.
+    if (const auto *Call = dyn_cast<CallExpr>(Expression)) {
+      if (Assignment) {
+        const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+        return Operator && Operator->getOperator() == OO_Equal ? Call : nullptr;
+      }
+      return isa<CXXMemberCallExpr>(Call) &&
+             isa_and_nonnull<CXXConversionDecl>(Call->getDirectCallee()) ? Call : nullptr;
+    }
+    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression)) {
+      switch (Cast->getCastKind()) {
+      case CK_NoOp: case CK_LValueToRValue:
+      case CK_ArrayToPointerDecay: case CK_FunctionToPointerDecay:
+      case CK_IntegralCast: case CK_IntegralToBoolean:
+      case CK_IntegralToFloating: case CK_FloatingToIntegral:
+      case CK_FloatingToBoolean: case CK_FloatingCast:
+      case CK_NullToPointer: case CK_PointerToBoolean:
+        break;
+      case CK_UserDefinedConversion:
+        if (Assignment || !userConversionCall(Cast, A.Context))
+          return nullptr;
+        break;
+      case CK_BitCast:
+        if (!Cast->getType()->isPointerType() ||
+            !Cast->getSubExpr()->getType()->isPointerType() ||
+            Cast->getType()->isFunctionPointerType() ||
+            Cast->getSubExpr()->getType()->isFunctionPointerType() ||
+            (!Cast->getType()->getPointeeType()->isVoidType() &&
+             !Cast->getSubExpr()->getType()->getPointeeType()->isVoidType()))
+          return nullptr;
+        break;
+      default:
+        return nullptr;
+      }
+      Expression = Cast->getSubExpr();
+      continue;
+    }
+    const Expr *Sub = nullptr;
+    if (const auto *Temporary = dyn_cast<CXXBindTemporaryExpr>(Expression);
+        Temporary && Temporary->isPRValue())
+      Sub = Temporary->getSubExpr();
+    else if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression);
+             Cleanup && !Cleanup->getNumObjects())
+      Sub = Cleanup->getSubExpr();
+    else if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Expression);
+             Temporary && fullExpressionTemporary(Temporary, A.Context)) {
+      Expression = Temporary->getSubExpr();
+      continue;
+    }
+    if (!Sub || !A.Context.hasSameType(Expression->getType(), Sub->getType()) ||
+        Expression->getValueKind() != Sub->getValueKind())
+      return nullptr;
+    Expression = Sub;
+  }
+  return nullptr;
+}
+
 static const CXXConstructExpr *operationRootConstruction(Adapter &A,
     const OperationTraitSource &Source) {
   if (!Source.Attempted || !Source.Complete || !Source.Root ||
@@ -2059,6 +2150,20 @@ public:
     }
     return true;
   }
+  bool queryCallSignature(const CXXMethodDecl *Method) {
+    if (!lazyQueryCallSignature(A, Method))
+      return false;
+    for (const auto *Declaration : Method->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+      if (!lazyQueryCallSignature(A, cast<CXXMethodDecl>(Declaration)) ||
+          !standardExceptionSpecification(Prototype) || !Declaration->getTypeSourceInfo() ||
+          !requireType(operationTypeSourceKey(Declaration->getTypeSourceInfo()->getTypeLoc())) ||
+          !prototypeSource(Prototype, Declaration))
+        return false;
+    }
+    return true;
+  }
   bool generatedDeclaration(const CXXMethodDecl *Method) {
     if (!Method || !A.S.owns(A.Sources, Method->getLocation()))
       return false;
@@ -2240,7 +2345,9 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     const OperationTypeSources *Types = nullptr,
     const GeneratedOperationSources *Generated = nullptr,
     const std::set<const CXXConstructExpr *> *QueryConstructions = nullptr,
-    const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr) {
+    const std::set<const CXXDestructorDecl *> *QueryDestructors = nullptr,
+    const std::set<const CallExpr *> *QueryCalls = nullptr,
+    TypeTrait QueryTrait = TT_IsConstructible) {
   if (!Source.Attempted)
     return !Source.Root && Source.Operands.empty();
   if (!Source.Complete || !Source.Root)
@@ -2248,6 +2355,11 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
   OperationSourceChecker SourceCheck(A, Definitions, Expressions, Types, Generated, QueryDestructors);
   const auto *TopLevelConstruction = QueryConstructions
       ? operationRootConstruction(A, Source) : nullptr;
+  const auto *TopLevelCall = QueryCalls ? operationRootCall(A, Source, QueryTrait) : nullptr;
+  auto QueryCallSource = [&](const CallExpr *Call, const CXXMethodDecl *Method) {
+    return Call == TopLevelCall && QueryCalls && QueryCalls->count(Call) &&
+           SourceCheck.queryCallSignature(Method);
+  };
   auto PrototypeSource = [&](const FunctionProtoType *Prototype,
                              const FunctionDecl *Function) {
     return SourceCheck.prototypeSource(Prototype, Function);
@@ -2464,7 +2576,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
         return false;
       const bool Implicit = implicitSpecialMemberSource(A, Method, true);
       if (!Implicit && !(directMethodReference(Call) &&
-          (GeneratedOperation(Method) || (ordinaryOperator(Method) && Defined(Method)))))
+          (GeneratedOperation(Method) || (ordinaryOperator(Method) &&
+           (Defined(Method) || QueryCallSource(Call, Method))))))
         return false;
       if (!ExceptionSource(Method))
         return false;
@@ -2476,7 +2589,8 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
     }
     if (const auto *Call = dyn_cast<CXXMemberCallExpr>(E)) {
       const auto *Conversion = dyn_cast_or_null<CXXConversionDecl>(Call->getDirectCallee());
-      if (!ordinaryConversion(Conversion) || !Defined(Conversion) ||
+      if (!ordinaryConversion(Conversion) ||
+          (!Defined(Conversion) && !QueryCallSource(Call, Conversion)) ||
           !ExceptionSource(Conversion) ||
           !directMethodReference(Call) || Call->getNumArgs() != 0 ||
           !Call->getImplicitObjectArgument())
@@ -3853,6 +3967,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const CXXConstructExpr *> ConsumedConstructorSignatures;
   std::set<const CXXConstructExpr *> QueuedConstructorSignatures;
   std::set<const CXXConstructExpr *> CompletedQueryConstructions;
+  std::vector<const CallExpr *> ConsumedCallSignatures;
+  std::set<const CallExpr *> QueuedCallSignatures;
+  std::set<const CallExpr *> CompletedQueryCalls;
   OperationDefaultSources CompletedOperationDefaults;
   std::map<const Expr *, OperationSourceDependencies> SharedOperationDefaults;
   std::vector<OperationSourceDependencies *> ActiveOperationSources;
@@ -10261,6 +10378,17 @@ public:
       ConsumedConstructorSignatures.push_back(Construction);
     }
   }
+  void queueConsumedCallSignature(const TypeTraitExpr *Query) {
+    auto Found = A.OperationTraits.find(Query);
+    if (Found == A.OperationTraits.end())
+      return;
+    const auto *Call = operationRootCall(A, Found->second, Query->getTrait());
+    if (Call && lazyQueryCallSignature(A, dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee())) &&
+        QueuedCallSignatures.insert(Call).second) {
+      A.chargeExpansion(1, Query->getExprLoc());
+      ConsumedCallSignatures.push_back(Call);
+    }
+  }
   bool checkConsumedOperationSignature(const CXXMethodDecl *Method) {
     const auto Location = Method->getTypeSourceInfo()->getTypeLoc();
     // Only TraverseTypeLoc creates these entries. Even an incomplete existing
@@ -10322,17 +10450,34 @@ public:
     }
     return A.S.Diagnostics.empty();
   }
+  bool finishConsumedCallSignatures(std::size_t &Index) {
+    while (Index < ConsumedCallSignatures.size()) {
+      const auto *Call = ConsumedCallSignatures[Index++];
+      const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+      if (!lazyQueryCallSignature(A, Method))
+        continue;
+      if (!checkConsumedOperationSignature(Method))
+        return false;
+      auto Found = CheckedOperationTypes.find(
+          operationTypeSourceKey(Method->getTypeSourceInfo()->getTypeLoc()));
+      if (Found != CheckedOperationTypes.end() && Found->second.Complete)
+        CompletedQueryCalls.insert(Call);
+    }
+    return A.S.Diagnostics.empty();
+  }
   bool finishGeneratedMethods() {
     // Inspect selected definitions only. RAV normally skips defaulted bodies;
-    // visiting all implicit declarations would broaden source admission. Either
+    // visiting all implicit declarations would broaden source admission. Each
     // signature queue can discover more work for another; process every new item
     // once and leave each method's scopes before starting another signature.
-    for (std::size_t Index = 0, DestructorIndex = 0, ConstructorIndex = 0;;) {
+    for (std::size_t Index = 0, DestructorIndex = 0, ConstructorIndex = 0, CallIndex = 0;;) {
       if (!finishConsumedDestructorSignatures(DestructorIndex) ||
-          !finishConsumedConstructorSignatures(ConstructorIndex))
+          !finishConsumedConstructorSignatures(ConstructorIndex) ||
+          !finishConsumedCallSignatures(CallIndex))
         return false;
       if (DestructorIndex != ConsumedDestructorSignatures.size() ||
-          ConstructorIndex != ConsumedConstructorSignatures.size())
+          ConstructorIndex != ConsumedConstructorSignatures.size() ||
+          CallIndex != ConsumedCallSignatures.size())
         continue;
       if (Index == GeneratedMethods.size())
         break;
@@ -10417,7 +10562,11 @@ public:
                                    &CheckedOperationTypes, &CompletedGeneratedOperations,
                                    isConstructionTypeTrait(Query->getTrait())
                                        ? &CompletedQueryConstructions : nullptr,
-                                   &CompletedQueryDestructorSignatures));
+                                   &CompletedQueryDestructorSignatures,
+                                   isAssignmentTypeTrait(Query->getTrait()) ||
+                                       isConversionTypeTrait(Query->getTrait())
+                                       ? &CompletedQueryCalls : nullptr,
+                                   Query->getTrait()));
       if (!Complete) {
         A.reject(Query->getExprLoc(), "operation trait source",
                  "A complete hypothetical operation requires checked exact callable source, arguments and destruction source.");
@@ -10507,6 +10656,7 @@ public:
         !Query->isTypeDependent() && !Query->isValueDependent() && !Query->isInstantiationDependent()) {
       queueConsumedDestructorSignature(Query);
       queueConsumedConstructorSignature(Query);
+      queueConsumedCallSignature(Query);
     }
     return Result;
   }

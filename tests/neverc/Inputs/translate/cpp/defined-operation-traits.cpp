@@ -456,6 +456,61 @@ extern "C" bool defined_lazy_destructor_throwing() { return __is_nothrow_destruc
 extern "C" bool defined_lazy_destructor_reference() { return __is_nothrow_destructible(LazyClassDestructor<int>&); }
 extern "C" bool defined_lazy_destructor_trivial() { return __is_trivially_constructible(LazyClassDestructor<int>, int); }
 
+int lazy_call_assignments, lazy_call_copies, lazy_call_moves;
+int lazy_call_conversions, lazy_call_references;
+int lazy_call_throwing_assignments, lazy_call_throwing_conversions;
+template<class T> struct LazyClassCall {
+  T value;
+  LazyClassCall& operator=(T n) noexcept {
+    if constexpr (__is_same(T, int)) T::assign();
+    else { value = n; ++lazy_call_assignments; }
+    return *this;
+  }
+  LazyClassCall& operator=(const LazyClassCall& other) noexcept {
+    if constexpr (__is_same(T, int)) T::copy();
+    else { value = other.value; ++lazy_call_copies; }
+    return *this;
+  }
+  LazyClassCall& operator=(LazyClassCall&& other) noexcept {
+    if constexpr (__is_same(T, int)) T::move();
+    else { value = other.value; other.value = 0; ++lazy_call_moves; }
+    return *this;
+  }
+  operator T() const noexcept {
+    if constexpr (__is_same(T, int)) T::convert();
+    else ++lazy_call_conversions;
+    return value;
+  }
+  operator T&() & noexcept {
+    if constexpr (__is_same(T, int)) T::reference();
+    else ++lazy_call_references;
+    return value;
+  }
+};
+template<class T> struct LazyThrowingClassCall {
+  T value;
+  LazyThrowingClassCall& operator=(T n) noexcept(false) {
+    if constexpr (__is_same(T, int)) T::assign();
+    else { value = n; ++lazy_call_throwing_assignments; }
+    return *this;
+  }
+  operator T() const noexcept(false) {
+    if constexpr (__is_same(T, int)) T::convert();
+    else ++lazy_call_throwing_conversions;
+    return value;
+  }
+};
+extern "C" bool defined_lazy_call_assign() { return __is_assignable(LazyClassCall<int>&, int); }
+extern "C" bool defined_lazy_call_copy() { return __is_assignable(LazyClassCall<int>&, const LazyClassCall<int>&); }
+extern "C" bool defined_lazy_call_move() { return __is_assignable(LazyClassCall<int>&, LazyClassCall<int>); }
+extern "C" bool defined_lazy_call_nothrow_assign() { return __is_nothrow_assignable(LazyClassCall<int>&, int); }
+extern "C" bool defined_lazy_call_trivial_assign() { return __is_trivially_assignable(LazyClassCall<int>&, int); }
+extern "C" bool defined_lazy_call_convert() { return __is_convertible(LazyClassCall<int>, double); }
+extern "C" bool defined_lazy_call_nothrow_convert() { return __is_nothrow_convertible(LazyClassCall<int>, double); }
+extern "C" bool defined_lazy_call_reference() { return __is_nothrow_convertible(LazyClassCall<int>&, int&); }
+extern "C" bool defined_lazy_call_throwing_assign() { return __is_nothrow_assignable(LazyThrowingClassCall<int>&, int); }
+extern "C" bool defined_lazy_call_throwing_convert() { return __is_nothrow_convertible(LazyThrowingClassCall<int>, int); }
+
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
       !defined_assign() || defined_scalar_assign() || !defined_convert() ||
@@ -841,5 +896,38 @@ int main() {
       lazy_destructor_constructions != 1 || lazy_destructor_calls != 2 ||
       lazy_destructor_order != 37 || lazy_throwing_destructor_calls != 1 ||
       lazy_class_constructions != 2 || lazy_class_copies != 1 || lazy_class_defaults != 1) return 96;
+  if (!defined_lazy_call_assign() || !defined_lazy_call_copy() || !defined_lazy_call_move() ||
+      !defined_lazy_call_nothrow_assign() || defined_lazy_call_trivial_assign() ||
+      !defined_lazy_call_convert() || !defined_lazy_call_nothrow_convert() ||
+      !defined_lazy_call_reference() || defined_lazy_call_throwing_assign() ||
+      defined_lazy_call_throwing_convert() || lazy_call_assignments || lazy_call_copies ||
+      lazy_call_moves || lazy_call_conversions || lazy_call_references ||
+      lazy_call_throwing_assignments || lazy_call_throwing_conversions) return 97;
+  {
+    LazyClassCall<unsigned> first{3}, second{5}, third{7};
+    LazyClassCall<unsigned>& assigned = (second = first);
+    third = static_cast<LazyClassCall<unsigned>&&>(second);
+    first = 11;
+    if (&assigned != &second || first.value != 11 || second.value != 0 || third.value != 3 ||
+        &first.value == &third.value || lazy_call_assignments != 1 || lazy_call_copies != 1 ||
+        lazy_call_moves != 1 || lazy_call_conversions || lazy_call_references) return 98;
+    const LazyClassCall<unsigned>& view = first;
+    double converted = view;
+    unsigned& alias = third;
+    alias = 17;
+    if (converted != 11.0 || &alias != &third.value || third.value != 17 || first.value != 11 ||
+        lazy_call_conversions != 1 || lazy_call_references != 1) return 99;
+    LazyThrowingClassCall<unsigned> throwing{2};
+    throwing = 19;
+    const LazyThrowingClassCall<unsigned>& throwingView = throwing;
+    unsigned convertedThrowing = throwingView;
+    if (convertedThrowing != 19 || throwing.value != 19 ||
+        lazy_call_throwing_assignments != 1 || lazy_call_throwing_conversions != 1 ||
+        !defined_lazy_call_copy() || !defined_lazy_call_nothrow_convert() ||
+        !defined_lazy_call_reference() || defined_lazy_call_throwing_assign() ||
+        defined_lazy_call_throwing_convert() || lazy_call_assignments != 1 || lazy_call_copies != 1 ||
+        lazy_call_moves != 1 || lazy_call_conversions != 1 || lazy_call_references != 1 ||
+        lazy_destructor_calls != 2 || lazy_destructor_order != 37) return 100;
+  }
   return 0;
 }

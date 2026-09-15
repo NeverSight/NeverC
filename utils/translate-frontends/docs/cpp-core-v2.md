@@ -973,7 +973,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 516 accepted, 304 unsupported-source, fifteen missing-definition and eighteen invalid-C++ cases cover
+The paired 537 accepted, 319 unsupported-source, fifteen missing-definition and twenty invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1187,9 +1187,9 @@ and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has ninety-six O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has one hundred O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. One hundred and two exported query
+default evaluation with full-expression temporary cleanup. One hundred and twelve exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1246,6 +1246,35 @@ separate proof; runtime destruction still requires and checks actual user bodies
 Poisoned query-only bodies, another real specialization's independent storage,
 reverse destruction order and an actual potentially-throwing destructor are
 covered by the shared runtime fixture.
+
+### Lazy class-template assignment and conversion signatures
+
+The three assignment predicates and three conversion predicates can check an
+ordinary operator of a concrete class-template instance while its inline body
+remains uninstantiated. Assignment requires the retained top-level `operator=`
+call, including copy/move and other admitted assignment signatures. Conversion
+requires the retained top-level conversion-function call. Supported standard
+conversion, temporary binding, materialization and cleanup envelopes retain their
+type and value category checks. Finding a call never searches its arguments or
+object for another eligible call.
+
+The actual selected method must be referenced, unused and have no actual body,
+with an exact uncopied inline origin and already resolved standard specifications.
+A first check traverses only its existing concrete signature in the matching
+method context. Completed signatures register the exact call expression; final
+validation independently matches it to the current query's root and checks every
+actual redeclaration's source and current prototype. Separate template definitions,
+member function-templates and missing ordinary definitions retain their restrictions.
+
+The proof is limited to that query call. Construction queries, conversions nested
+inside an assignment argument, and scalar assignments using a lazy RHS conversion
+cannot borrow it. False nothrow/trivial results retain all source checks, including
+owning destruction of a record result. Unvisited query events cannot start signature
+work. All signature and generated-body queues finish before final checking, including
+queries discovered in another method's exception specification. Real runtime calls
+still instantiate and check bodies normally. The shared runtime fixture checks
+query-only poisoned specializations, real assignment reference identity, move
+effects, reference conversions, standard post-conversions and zero query effects.
 
 ### Resolved exception source for operation queries
 

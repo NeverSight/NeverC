@@ -866,6 +866,16 @@ expression: nested operations and other query kinds cannot reuse it. Parameter,
 default, exception and owning-destruction proofs remain mandatory; actual runtime
 body requirements are unchanged. All signature and generated-source queues drain
 before final checking, without introducing protocol helpers or new values.
+The three assignment and three conversion traits can similarly check a lazy
+ordinary class-template operator signature for their exact retained top-level
+call. Only supported single-expression envelopes may lead to that call; traversal
+never enters arguments or an implicit object to select another candidate. Each
+actual redeclaration must supply complete type source and resolved standard
+specifications with an exact inline origin. Completion is tied to the call pointer
+and matched again against the current root and trait during final checking.
+Nested calls, construction traits and scalar assignments with a lazy RHS conversion
+cannot borrow this proof. False results, result destruction and actual runtime body
+requirements remain checked; query-only signatures do not create protocol functions.
 The collector and evaluated-default scan classify the complete defaulted declaration
 family even when selection names a declaration preceding the `= default` definition.
 Classification never replaces actual signature or generated-body completion.

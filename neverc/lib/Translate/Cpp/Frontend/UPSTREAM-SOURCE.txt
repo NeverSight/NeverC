@@ -455,6 +455,19 @@ Every actual redeclaration's source and current specification, arguments, defaul
 and owning destruction remain independently required. Constructor/destructor
 signature and generated-body queues drain completely after prior contexts exit.
 No unused body is instantiated or added to runtime emission.
+The three assignment and three conversion traits can retain lazy ordinary concrete
+class operator signatures for their exact top-level operator= or conversion call.
+Pinned BuildBinOp/InitializationSequence select these in an unevaluated context;
+MarkFunctionReferenced need not instantiate the inline body. Supported single-path
+standard conversion/BTE/EWC/full-expression MTE wrappers preserve the candidate,
+but extraction stops at the first call without entering operands or implicit objects.
+Only referenced, unused, bodyless methods with an exact uncopied inline origin and
+resolved standard current prototypes enter the exact-call signature queue. Existing
+actual TSI nodes are checked once in their concrete context, then final validation
+matches the call pointer to the current trait root and rechecks every redeclaration.
+The constructor, destructor, call and generated queues drain after each context
+exits. Nested/cross-trait uses do not borrow completion; false results and record
+result destruction remain checked. No runtime helper or body is manufactured.
 Ordinary unused concrete class destructors can also retain their lazy inline bodies
 after exact authorized signature-queue completion. Their raw origin, absence of
 actual bodies, all actual redeclaration TSIs and current standard specifications
