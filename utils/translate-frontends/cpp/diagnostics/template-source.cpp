@@ -1,6 +1,7 @@
 // CI-only inspection of upstream Clang source metadata. This is not used by the
 // embedded translator and does not define the translator's admission policy.
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecursiveASTVisitor.h"
@@ -58,10 +59,19 @@ public:
     llvm::outs() << "function ";
     declaration(D);
     llvm::outs() << " dependent=" << D->isDependentContext()
-                 << " templated-kind=" << D->getTemplatedKind() << " parent=";
+                 << " templated-kind=" << D->getTemplatedKind()
+                 << " extern-c=" << D->isExternC()
+                 << " builtin=" << D->getBuiltinID() << " parent=";
     declaration(Decl::castFromDeclContext(D->getDeclContext()));
     llvm::outs() << "\n";
     qualifier(D->getQualifierLoc());
+    for (const auto *Attribute : D->attrs()) {
+      llvm::outs() << "  attribute implicit=" << Attribute->isImplicit() << " ";
+      Attribute->printPretty(llvm::outs(), Context.getPrintingPolicy());
+      if (const auto *Builtin = dyn_cast<BuiltinAttr>(Attribute))
+        llvm::outs() << " builtin-id=" << Builtin->getID();
+      llvm::outs() << "\n";
+    }
     if (auto *Primary = D->getPrimaryTemplate()) {
       llvm::outs() << "  body pattern ";
       declaration(D->getTemplateInstantiationPattern());
@@ -239,6 +249,15 @@ int main(int Argc, const char **Argv) {
     const char *Source;
   };
   const Fixture Sources[] = {
+      {"native-heap-declarations",
+      "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);"
+      "extern \"C\" void*calloc(Size,Size);extern \"C\" void*realloc(void*,Size);"
+      "extern \"C\" void free(void*);void*f(Size n){void*p=calloc(n,4);"
+      "p=realloc(p,n*8);free(p);return malloc(n);}"},
+      {"native-heap-definitions",
+      "using Size=decltype(sizeof(0));unsigned char data[64]{};"
+      "extern \"C\" void*malloc(Size){return data;}"
+      "extern \"C\" void free(void*){}void*f(Size n){void*p=malloc(n);free(p);return p;}"},
       {"runtime-array-initializers",
       "using Size=decltype(sizeof(0));struct Tag{};void*operator new[](Size,Tag)noexcept{return nullptr;}"
       "struct Temporary{Temporary(int=0){}~Temporary(){}};"
