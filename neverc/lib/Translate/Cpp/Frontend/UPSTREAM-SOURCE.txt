@@ -589,3 +589,12 @@ no-lookup event must have no destructor/prototype/attempt flags. Successful arra
 reference/decay operations retain their complete root and opaque operand identity;
 failed record-array assignment cannot borrow a false-result shortcut. No runtime
 carrier, source replay or new producer event is added.
+
+Pinned Sema can reuse one nondependent function TypeSourceInfo across class
+specializations while rebuilding distinct resolved ConstantExpr noexcept nodes.
+The CI source-identity probe confirms this for query-only and materialized
+LazyThrowingDestructor specializations. A completed shared type source is reused,
+but an actually consumed method's missing resolved expression receives its first
+traversal in that exact method/template context. Existing incomplete type or
+expression nodes are not replayed; the final exact prototype source graph remains
+mandatory. No new Sema resolution or body instantiation is requested.

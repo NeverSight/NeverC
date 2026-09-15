@@ -6624,6 +6624,16 @@ extern "C" void run(){D value;}
         assert not expected
 
     operation_trait_positive = {
+        'shared-signature-destructor-before': 'template<class T>struct R{~R()noexcept(false){if constexpr(__is_same(T,int))T::body();}};static_assert(!__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}',
+        'shared-signature-destructor-after': 'template<class T>struct R{~R()noexcept(false){if constexpr(__is_same(T,int))T::body();}};void force(){R<unsigned>r;}static_assert(!__is_nothrow_destructible(R<int>));',
+        'shared-signature-destructor-multiple': 'template<class T>struct R{~R()noexcept(false){if constexpr(!__is_same(T,unsigned))T::body();}};static_assert(!__is_nothrow_destructible(R<int>)&&!__is_nothrow_destructible(R<char>));void force(){R<unsigned>r;}',
+        'shared-signature-constructor-before': 'template<class T>struct R{R()noexcept(false){if constexpr(__is_same(T,int))T::body();}};static_assert(__is_constructible(R<int>)&&!__is_nothrow_constructible(R<int>));void force(){R<unsigned>r;}',
+        'shared-signature-constructor-after': 'template<class T>struct R{R()noexcept(false){if constexpr(__is_same(T,int))T::body();}};void force(){R<unsigned>r;}static_assert(__is_constructible(R<int>)&&!__is_nothrow_constructible(R<int>));',
+        'shared-signature-conversion-before': 'template<class T>struct R{operator int()noexcept(false){if constexpr(__is_same(T,int))T::body();return 3;}};static_assert(__is_convertible(R<int>,int)&&!__is_nothrow_convertible(R<int>,int));int force(R<unsigned>r){return r;}',
+        'shared-signature-conversion-after': 'template<class T>struct R{operator int()noexcept(false){if constexpr(__is_same(T,int))T::body();return 3;}};int force(R<unsigned>r){return r;}static_assert(__is_convertible(R<int>,int)&&!__is_nothrow_convertible(R<int>,int));',
+        'distinct-signature-assignment-before': 'template<class T>struct R{R&operator=(int)noexcept(false){if constexpr(__is_same(T,int))T::body();return *this;}};static_assert(__is_assignable(R<int>&,int)&&!__is_nothrow_assignable(R<int>&,int));void force(R<unsigned>&r){r=3;}',
+        'shared-signature-noexcept-value-source': 'constexpr bool maythrow(){return false;}template<class T>struct R{~R()noexcept(maythrow()){if constexpr(__is_same(T,int))T::body();}};static_assert(!__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}',
+        'shared-signature-constructor-destructor': 'template<class T>struct R{R()noexcept(false){if constexpr(__is_same(T,int))T::body();}~R()noexcept(false){if constexpr(__is_same(T,int))T::destroy();}};static_assert(__is_constructible(R<int>)&&!__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}',
         'unknown-construct': 'static_assert(!__is_constructible(int[])&&!__is_nothrow_constructible(int[])&&!__is_trivially_constructible(int[]));',
         'unknown-construct-arguments': 'static_assert(!__is_constructible(int[],int)&&!__is_constructible(int[][3],int));',
         'unknown-destruction': 'static_assert(!__is_nothrow_destructible(int[])&&!__is_nothrow_destructible(const int[][3])&&__is_nothrow_destructible(int(&)[])&&__is_nothrow_destructible(int(&&)[3]));',
@@ -7275,6 +7285,9 @@ extern "C" void run(){D value;}
     for name, source in operation_trait_positive.items():
         check("v2-operation_trait_positive-" + name, source, profile="cpp-core-v2")
     operation_trait_negative = {
+        'shared-signature-hidden-original-expression': 'template<class T>struct R{~R()noexcept((sizeof(long double),false)){if constexpr(__is_same(T,int))T::body();}};static_assert(!__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}',
+        'shared-signature-hidden-resolved-expression': 'template<class T>constexpr bool spec(){if constexpr(__is_same(T,int)){return sizeof(long double)>0;}return false;}template<class T>struct R{~R()noexcept(spec<T>()){if constexpr(__is_same(T,int))T::body();}};static_assert(__is_nothrow_destructible(R<int>));void force(){R<unsigned>r;}',
+        'shared-signature-missing-construction-source': 'template<class T>struct R{R()noexcept(false);};template<class T>R<T>::R()noexcept(false){if constexpr(__is_same(T,int))T::body();}static_assert(__is_constructible(R<int>));void force(){R<unsigned>r;}',
         'unknown-record-assignment-incomplete': 'struct R{int n;};static_assert(!__is_assignable(R(&)[],R(&)[]));',
         'unknown-record-assignment-nothrow-incomplete': 'struct R{int n;};static_assert(!__is_nothrow_assignable(R[],R[]));',
         'unknown-record-reference-failed-operation': 'struct R{int n;};static_assert(!__is_constructible(R(&)[],R*));',

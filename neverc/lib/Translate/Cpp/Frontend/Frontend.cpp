@@ -10637,9 +10637,9 @@ public:
   }
   bool checkConsumedOperationSignature(const CXXMethodDecl *Method) {
     const auto Location = Method->getTypeSourceInfo()->getTypeLoc();
-    // Only TraverseTypeLoc creates these entries. Even an incomplete existing
-    // node cannot be replayed; final source validation retains its failure.
-    if (CheckedOperationTypes.count(operationTypeSourceKey(Location)))
+    const auto Written = CheckedOperationTypes.find(operationTypeSourceKey(Location));
+    // An incomplete existing source cannot be replayed or repaired here.
+    if (Written != CheckedOperationTypes.end() && !Written->second.Complete)
       return true;
     auto *SavedFunction = CurrentFunction;
     auto *SavedMethod = CurrentMethod;
@@ -10677,11 +10677,24 @@ public:
         return false;
       DefinitionFrames.push_back({Method, Primary, Arguments, TemplateFrames.size()});
     }
-    // Every queued specification was already resolved. Check only its
-    // existing written/resolved type source, with no body or Sema work.
-    if (!TraverseTypeLoc(Location) || !A.S.Diagnostics.empty())
+    if (Written == CheckedOperationTypes.end())
+      return TraverseTypeLoc(Location) && A.S.Diagnostics.empty();
+    // Distinct specializations can share their exact written TSI while Sema
+    // rebuilds a separate resolved noexcept expression for each declaration.
+    // Reuse only the checked written node. The actual consumed expression
+    // still needs its first check in this method's context, without replaying
+    // an existing expression, visiting a body or requesting Sema resolution.
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    auto *Expression = Prototype ? Prototype->getNoexceptExpr() : nullptr;
+    if (!standardExceptionSpecification(Prototype) ||
+        (Expression && (Expression->isTypeDependent() || Expression->isValueDependent() ||
+                        Expression->isInstantiationDependent()))) {
+      A.reject(Method->getLocation(), "query exception specification",
+               "A consumed signature requires its already resolved standard exception source.");
       return false;
-    return true;
+    }
+    return !Expression || CheckedOperationExpressions.count(Expression) ||
+           (traverseOperationException(Expression) && A.S.Diagnostics.empty());
   }
   bool finishConsumedDestructorSignatures(std::size_t &Index) {
     while (Index < ConsumedDestructorSignatures.size()) {

@@ -990,7 +990,7 @@ admitted operands. It shares the supported trait arities with concrete queries,
 but never reads a dependent boolean or invents a semantic operation event. Nested
 dependent pointer/alias shapes remain excluded;
 each selected substitution still needs its own concrete type and retained source proof.
-The paired 647 accepted, 364 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
+The paired 657 accepted, 367 unsupported-source, seventeen missing-definition and twenty-eight invalid-C++ cases cover
 these boundaries. Twenty-four scalar saved-NC O0/O2 runtime checkpoints, relocation and eighteen
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1415,6 +1415,12 @@ Instantiation may also rebuild a nondependent exception expression when its
 selected default-argument context changes. The original written node and the
 distinct already-resolved node both receive normal source checks; a dependent
 written expression uses its resolved replacement. No new resolution is requested.
+Different concrete specializations can share the exact written TypeSourceInfo
+while retaining distinct resolved exception expressions. A completed shared type
+node proves only that written source. Each consumed actual expression still
+receives its first check in its own method and template argument context; existing
+incomplete type or expression nodes are never replayed or repaired. The final
+prototype check requires that actual node and its full dependency closure.
 Referenced unused inline friends can keep their body lazy only with exact paired
 written/selected/granting-class evidence and a concrete standard prototype. Their
 actual signature still completes in its own friend context, with unselected
