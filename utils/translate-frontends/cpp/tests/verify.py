@@ -5761,9 +5761,35 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'unevaluated-dimension': 'int n;bool f(){return __array_extent(int[2],(sizeof(++n),0))==2;}',
         'lazy-dimension-default': 'template<class T,int I=T::missing>int unused(){return int(__array_extent(T,I));}int f(){return int(__array_rank(int[2]));}',
         'pack-indexes': 'template<unsigned...I>constexpr auto f(){return (__array_extent(int[2][3],I)+...+0);}static_assert(f<>()==0&&f<0,1,2>()==5);',
+        'size-width-protocol': 'using Size=decltype(sizeof(0));extern "C" Size rank_value(){return __array_rank(int[2][3]);}extern "C" Size extent_value(){return __array_extent(int[2][3],1);}extern "C" Size missing_extent(){return __array_extent(int[2][3],18446744073709551615ULL);}',
     }
     for name, source in array_query_positive.items():
         check("v2-array_query_positive-" + name, source, profile="cpp-core-v2")
+    for triple, width in (
+            ("x86_64-unknown-linux-gnu", 64), ("aarch64-unknown-linux-gnu", 64),
+            ("x86_64-apple-darwin", 64), ("aarch64-apple-darwin", 64),
+            ("x86_64-pc-windows-msvc", 64), ("aarch64-pc-windows-msvc", 64),
+            ("i686-pc-windows-msvc", 32), ("i686-w64-windows-gnu", 32)):
+        queried = check("v2-array-query-width-" + triple, array_query_positive["size-width-protocol"],
+                        profile="cpp-core-v2", target=triple)
+        assert queried["target"]["pointer_bits"] == width
+        functions = {f["name"]: f for f in queried["functions"]}
+        for name, value in (("rank_value", "2"), ("extent_value", "3"), ("missing_extent", "0")):
+            function = functions[name]
+            carrier = "uint" if width == 32 else "u64"
+            assert function["result"] == carrier
+            values = [node["value"] for node in function["body"] if node["op"] == "return"]
+            assert len(values) == 1 and values[0]["type"] == carrier
+            bindings = {node["target"]["name"]: node["value"] for node in function["body"]
+                        if node["op"] == "assign" and node["target"]["kind"] == "var"}
+            returned = values[0]
+            seen = set()
+            while returned["kind"] == "var":
+                assert returned["name"] not in seen
+                seen.add(returned["name"])
+                returned = bindings[returned["name"]]
+            assert returned["kind"] == "literal" and returned["type"] == carrier
+            assert returned["value"] == value
     array_query_negative = {
         'rank-long-double': 'int f(){return int(__array_rank(long double));}',
         'extent-long-double': 'int f(){return int(__array_extent(long double[2],0));}',

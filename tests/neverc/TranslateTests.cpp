@@ -4771,6 +4771,7 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesRetainTypesAndDimensions) {
       {"unevaluated-dimension", "int n;bool f(){return __array_extent(int[2],(sizeof(++n),0))==2;}"},
       {"lazy-dimension-default", "template<class T,int I=T::missing>int unused(){return int(__array_extent(T,I));}int f(){return int(__array_rank(int[2]));}"},
       {"pack-indexes", "template<unsigned...I>constexpr auto f(){return (__array_extent(int[2][3],I)+...+0);}static_assert(f<>()==0&&f<0,1,2>()==5);"},
+      {"size-width-protocol", "using Size=decltype(sizeof(0));extern \"C\" Size rank_value(){return __array_rank(int[2][3]);}extern \"C\" Size extent_value(){return __array_extent(int[2][3],1);}extern \"C\" Size missing_extent(){return __array_extent(int[2][3],18446744073709551615ULL);}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
