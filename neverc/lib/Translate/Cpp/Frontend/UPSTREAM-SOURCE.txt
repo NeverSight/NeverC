@@ -336,9 +336,16 @@ selected function referenced can resolve its inferred exception specification.
 Nothrow defaults additionally check already-resolved actual callee prototypes,
 selected function declarations, constructors, bound destructors and allocation/
 deallocation dependencies. These checks do not rewrite or evaluate the initializer.
-Lazy templates, explicitly defaulted destructors, implicit nontrivial owners,
-template-owned or rewritten defaults, incomplete selection and unresolved exception
-dependencies still need further evidence. The independent
+The shared destruction proof also checks ordinary explicit defaulting through
+actual nonimplicit declarations in the selected destructor's own redeclaration
+family, requiring every written TypeSourceInfo and current exception-expression
+node to complete. It never borrows defaulting from an uninstantiated template
+pattern. Implicit nontrivial owners retain the complete owning-subobject closure;
+no generated body is requested. Lazy generated specifications are allowed only as
+EST_Unevaluated with the same canonical destructor owner; direct nothrow query
+snapshots remain resolved. Constructor/assignment family restrictions are unchanged.
+Lazy templates, written template destructors, template-owned or rewritten defaults,
+incomplete selection and unresolved exception dependencies still need further evidence. The independent
 source check never fills runtime construction/default caches or queues helpers.
 
 LICENSE.TXT contains LLVM's Apache 2.0 license with LLVM exceptions and legacy

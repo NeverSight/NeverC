@@ -68,6 +68,11 @@ struct QuietDefaults {
 struct PlainDestruction { int value; };
 struct DeletedDestruction { ~DeletedDestruction() = delete; };
 class PrivateDestruction { ~PrivateDestruction() noexcept {} };
+int generated_destructions;
+struct GeneratedLeaf { int value; ~GeneratedLeaf() noexcept { ++generated_destructions; } };
+struct GeneratedOwner { GeneratedLeaf fields[2]; ~GeneratedOwner() = default; };
+struct ImplicitOwner { GeneratedLeaf fields[2]; };
+struct ThrowingGenerated { ~ThrowingGenerated() noexcept(false) = default; };
 
 extern "C" bool defined_construct() { return __is_constructible(Value, int); }
 extern "C" bool defined_copy() { return __is_constructible(Value, const Value&); }
@@ -94,6 +99,10 @@ extern "C" bool defined_destruct_deleted() { return __is_nothrow_destructible(De
 extern "C" bool defined_destruct_private() { return __is_nothrow_destructible(PrivateDestruction); }
 extern "C" bool defined_destruct_reference() { return __is_nothrow_destructible(ThrowingDestruction&); }
 extern "C" bool defined_destruct_implicit() { return __is_nothrow_destructible(PlainDestruction[2]); }
+extern "C" bool defined_destruct_generated() { return __is_nothrow_destructible(GeneratedOwner); }
+extern "C" bool defined_destruct_generated_array() { return __is_nothrow_destructible(GeneratedOwner[2]); }
+extern "C" bool defined_destruct_generated_throwing() { return __is_nothrow_destructible(ThrowingGenerated); }
+extern "C" bool defined_destruct_implicit_nontrivial() { return __is_nothrow_destructible(ImplicitOwner); }
 
 int main() {
   if (!defined_construct() || !defined_copy() || defined_trivial() ||
@@ -178,5 +187,20 @@ int main() {
   }
   if (constructions != 6 || destructions != 10 || conversions != 4 ||
       default_constructions != 7 || default_destructions != 7 || default_calls != 2) return 28;
+  if (!defined_destruct_generated() || !defined_destruct_generated_array() ||
+      defined_destruct_generated_throwing() || !defined_destruct_implicit_nontrivial() ||
+      generated_destructions != 0) return 29;
+  {
+    GeneratedOwner owners[2] = {
+        { {{11}, {13}} },
+        { {{17}, {19}} }
+    };
+    ImplicitOwner implicit = {{{23}, {29}}};
+    if (owners[0].fields[1].value != 13 || owners[1].fields[0].value != 17 ||
+        implicit.fields[1].value != 29 || generated_destructions != 0) return 30;
+    if (!__is_nothrow_destructible(decltype(owners)) || !defined_destruct_implicit_nontrivial() ||
+        generated_destructions != 0) return 31;
+  }
+  if (generated_destructions != 6 || constructions != 6 || destructions != 10) return 32;
   return 0;
 }

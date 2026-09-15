@@ -963,7 +963,7 @@ Written `decltype` expressions, adjusted function parameters, array bounds,
 `noexcept`, template arguments and selected defaults remain checked before their
 results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
 variable templates and bounded packs without evaluating operand side effects.
-The paired 253 accepted, 209 unsupported-source, twelve missing-definition and eight invalid-C++ cases cover
+The paired 280 accepted, 207 unsupported-source, thirteen missing-definition and nine invalid-C++ cases cover
 these boundaries. Twenty scalar saved-NC O0/O2 runtime checkpoints, relocation and twelve
 boolean results across eight native ABIs require the implementing revision's CI.
 V1 and the transport format are unchanged; no opaque source or LLVM fallback is
@@ -1082,23 +1082,24 @@ expression scan and never requests runtime cleanup or instantiates a body.
 
 The proof conservatively requires destruction evidence for every collected record
 prvalue, including constructor expressions below new and unevaluated aggregates.
-Implicit trivial destruction or completed ordinary user destructors qualify;
+Implicit destruction, ordinary explicitly defaulted destructors with checked
+written source, or completed ordinary user destructors qualify;
 lazy template destructor prvalues need a separate completed-signature proof and
 remain rejected. Unused bodies that contribute no such dependency remain lazy. Ordinary default expressions can call already admitted
 functions, including nested template expressions under existing source rules;
 template-owned default parameters need further source evidence.
 
-Declaration-only and lazy template operations, explicitly defaulted operations,
-implicit nontrivial destructors, incomplete selection and
+Declaration-only and lazy template user operations, explicitly defaulted
+construction/assignment, incomplete selection and
 unproven exception dependencies still require further source evidence.
 Unused templates remain lazy, and actual runtime use retains all ordinary source
 and lowering checks.
 
 Paired tests cover source order, recursive queries, conversions, missing bodies,
 hidden unsupported source and these remaining restrictions. A separate saved-NC
-fixture has twenty-eight O0/O2 checkpoints for zero hypothetical effects, real user
+fixture has thirty-two O0/O2 checkpoints for zero hypothetical effects, real user
 construction/copy/move/assignment/conversion, field-array destruction and repeated
-default evaluation with full-expression temporary cleanup. Twenty-five exported query
+default evaluation with full-expression temporary cleanup. Twenty-nine exported query
 functions must contain only boolean value flow; relocation must
 preserve the protocol exactly. Native results require implementing CI.
 
@@ -1206,13 +1207,23 @@ recomputes the boolean.
 Public, nondeleted destructors require a resolved standard prototype snapshot
 that still matches the selected declaration's current prototype. The consumed
 noexcept expression and its transitive source dependencies must have completed
-normal checking. The shared owning-subobject proof admits implicit trivial
-destruction and ordinary user destructors with completed non-template definitions,
+normal checking. The shared owning-subobject proof admits implicit destruction,
+ordinary explicitly defaulted destructors with checked written declarations, and
+ordinary user destructors with completed non-template definitions,
 including throwing and inferred specifications. Every owning base and by-value
 field remains part of that proof, even after an earlier destructor makes the
 result false. Pointer and reference fields do not destroy their referents.
-Explicitly defaulted destructors, implicit nontrivial owners and lazy template
-user destructors still require further source evidence.
+Each ordinary defaulted destructor requires an actual nonimplicit defaulting
+declaration in its own redeclaration chain. Every written redeclaration retains
+its completed original type source and current exception-expression dependencies;
+a class-template pattern cannot supply the defaulting evidence. Generated bodies
+need not be instantiated for an unevaluated query. An unwritten inferred
+specification may remain lazy in the shared source proof only as `EST_Unevaluated`
+owned by the same destructor declaration family; the direct nothrow query still
+requires its retained resolved snapshot. Implicit nontrivial owners use the same
+recursive subobject proof, including implicit class-template owners. Written
+template user/defaulted destructors still require further source evidence.
+Construction and assignment retain their separate implicit-family restrictions.
 
 Deleted and, when access control is enabled, nonpublic destructors preserve the
 original false result before exception resolution. Their retained event must
@@ -1223,8 +1234,8 @@ ordinary definitions retain `TR0203`; unsupported source retains `TR0201`.
 
 Paired cases cover fixed arrays, owning subobjects, deleted/access short circuits,
 lazy template controls, queries before later ordinary definitions and nested
-queries. The shared twenty-eight-checkpoint user-operation fixture checks
-boolean-only output, zero query effects and actual array destruction at O0/O2;
+queries. The shared thirty-two-checkpoint user-operation fixture checks
+boolean-only output, zero query effects and actual user/generated array destruction at O0/O2;
 relocation must preserve the protocol. Native results require implementing CI.
 Standard headers and complete C++/STL support remain unfinished.
 

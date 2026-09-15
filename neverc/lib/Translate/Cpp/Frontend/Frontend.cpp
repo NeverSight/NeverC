@@ -1859,6 +1859,42 @@ public:
            requireType(operationTypeSourceKey(Function->getTypeSourceInfo()->getTypeLoc())) &&
            prototypeSource(Function->getType()->getAs<FunctionProtoType>());
   }
+  bool generatedDestructor(const CXXDestructorDecl *Destructor) {
+    if (!Destructor || !defaultedLifecycle(Destructor) ||
+        !A.S.owns(A.Sources, Destructor->getLocation()) ||
+        (!Destructor->isImplicit() &&
+         Destructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate))
+      return false;
+    bool WrittenDefaulting = false;
+    for (const auto *Declaration : Destructor->redecls()) {
+      A.chargeExpansion(1, Declaration->getLocation());
+      if (!A.S.owns(A.Sources, Declaration->getLocation()))
+        return false;
+      if (!Declaration->isImplicit()) {
+        // defaultedDeclaration can borrow a class-template pattern. Only the
+        // current ordinary redeclaration family supplies written query source.
+        if (Declaration->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+            !Declaration->getTypeSourceInfo() ||
+            !requireType(operationTypeSourceKey(
+                Declaration->getTypeSourceInfo()->getTypeLoc())))
+          return false;
+        WrittenDefaulting |= Declaration->isDefaulted();
+      }
+      const auto *Prototype = Declaration->getType()->getAs<FunctionProtoType>();
+      if (!standardExceptionSpecification(Prototype)) {
+        // A genuinely unwritten inferred specification has this exact owner.
+        // Unparsed or template-owned specifications cannot borrow this proof.
+        if (!Prototype || Prototype->getExceptionSpecType() != EST_Unevaluated ||
+            !Prototype->getExceptionSpecDecl() ||
+            Prototype->getExceptionSpecDecl()->getCanonicalDecl() !=
+                Destructor->getCanonicalDecl())
+          return false;
+      }
+      if (!prototypeSource(Prototype))
+        return false;
+    }
+    return Destructor->isImplicit() || WrittenDefaulting;
+  }
   bool destruction(const CXXRecordDecl *Record, unsigned Depth = 0) {
     Record = Record ? Record->getDefinition() : nullptr;
     if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
@@ -1866,9 +1902,16 @@ public:
     A.chargeExpansion(1, Record->getLocation());
     if (Record->hasUserDeclaredDestructor()) {
       const auto *Destructor = Record->getDestructor();
-      if (!ordinaryDestructor(Destructor) || !defined(Destructor))
+      // An out-of-line defaulted destructor's first declaration can still look
+      // user-provided. Classify the family before choosing its source proof.
+      if (defaultedDeclaration(Destructor)) {
+        if (!generatedDestructor(Destructor))
+          return false;
+      } else if (!ordinaryDestructor(Destructor) || !defined(Destructor)) {
         return false;
-    } else if (!Record->hasTrivialDestructor()) {
+      }
+    } else if (!Record->hasTrivialDestructor() &&
+               !generatedDestructor(Record->getDestructor())) {
       return false;
     }
     for (const auto &Base : Record->bases())

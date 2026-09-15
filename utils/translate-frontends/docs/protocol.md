@@ -788,6 +788,9 @@ complete retained selection and checked source, or a checked pre-operation resul
 folding a false result does not bypass those checks. Record-value and fixed-array
 nothrow destruction use exact retained destructor selection and the resolved
 prototype snapshot, with completed exception source and owning-subobject proof.
+That proof includes implicit nontrivial owners and ordinary explicitly defaulted
+destructors whose actual written redeclarations have completed source checks;
+no template pattern substitutes for a missing defaulting declaration.
 Deleted/access failures retain their pre-resolution false result; record references
 retain their no-selection result. These private events do not enter the protocol. See the
 [operation trait contract](cpp-core-v2.md#non-record-operation-traits).
