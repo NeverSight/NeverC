@@ -1711,6 +1711,7 @@ void Adapter::checkQueryType(QualType T, SourceLocation L) {
 bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   const auto L = Query->getExprLoc();
   unsigned Arity = 0;
+  bool NonRecordOperation = false;
   switch (Query->getTrait()) {
   case UTT_IsArithmetic: case UTT_IsFloatingPoint: case UTT_IsIntegral:
   case UTT_IsVoid: case UTT_IsArray: case UTT_IsFunction:
@@ -1729,6 +1730,24 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
   case BTT_IsSame: case BTT_IsBaseOf:
     Arity = 2;
     break;
+  case UTT_IsDestructible: case UTT_IsNothrowDestructible:
+  case UTT_IsTriviallyDestructible:
+    Arity = 1;
+    NonRecordOperation = true;
+    break;
+  case BTT_IsAssignable: case BTT_IsNothrowAssignable:
+  case BTT_IsTriviallyAssignable: case BTT_IsConvertible:
+  case BTT_IsConvertibleTo: case BTT_IsNothrowConvertible:
+    Arity = 2;
+    NonRecordOperation = true;
+    break;
+  case TT_IsConstructible: case TT_IsNothrowConstructible:
+  case TT_IsTriviallyConstructible:
+    // One destination and at most 64 hypothetical constructor arguments.
+    if (Query->getNumArgs() <= 65)
+      Arity = Query->getNumArgs();
+    NonRecordOperation = true;
+    break;
   default:
     break;
   }
@@ -1746,6 +1765,17 @@ bool Adapter::typeClassificationValue(const TypeTraitExpr *Query) {
       throw Failure{};
     }
     checkQueryType(Argument->getType(), L);
+    if (NonRecordOperation &&
+        Context.getBaseElementType(Argument->getType().getNonReferenceType())
+            ->isRecordType()) {
+      // Pinned Sema discards the hypothetical initialization/assignment tree.
+      // Until that tree and its selected source are retained, only operands
+      // that cannot call user constructors, conversions or destructors qualify.
+      // Pointers to admitted records do not invoke those pointee operations.
+      reject(L, "operation trait source",
+             "Operation queries require non-record operands, including after removing references and array extents.");
+      throw Failure{};
+    }
   }
   // RAV separately visits every TypeSourceInfo, including decltype operands,
   // array bounds, noexcept specifications and template substitution sources.

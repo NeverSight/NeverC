@@ -5217,10 +5217,6 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationInspectsErasedOperands) {
       {"alias-default-source", "template<class T,int N=sizeof(long double)>using A=T;bool f(){return __is_integral(A<int>);}"},
       {"template-argument-source", "template<class T,int N>using A=T;bool f(){return __is_integral(A<int,(sizeof(long double),1)>);}"},
       {"non-type-default-source", "template<bool B=__is_same(decltype(sizeof(long double)),unsigned long)>int f(){return 1;}int g(){return f();}"},
-      {"constructible", "bool f(){return __is_constructible(int,int);}"},
-      {"assignable", "bool f(){return __is_assignable(int&,int);}"},
-      {"convertible", "bool f(){return __is_convertible(int,double);}"},
-      {"destructible", "bool f(){return __is_destructible(int);}"},
       {"newer-lifetime", "bool f(){return __is_trivially_relocatable(int);}"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -5286,6 +5282,132 @@ TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationPreservesValuesAndUnevaluat
   auto Rejected = translate(Legacy, {"--profile", "cpp-core-v1", "-o", tmpFile("builtin-type-v1.nc").string()});
   expectCode(Rejected, "TR0201");
   expectNoArtifacts(tmpFile("builtin-type-v1.nc"));
+}
+
+TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedNonRecordTypes) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"constructible", "bool f(){return __is_constructible(int,int);}"},
+      {"assignable", "bool f(){return __is_assignable(int&,int);}"},
+      {"convertible", "bool f(){return __is_convertible(int,double);}"},
+      {"destructible", "bool f(){return __is_destructible(int);}"},
+      {"default-initialization", "static_assert(__is_constructible(int)&&__is_constructible(const int)&&__is_constructible(int*)&&__is_constructible(decltype(nullptr)));"},
+      {"nothrow-trivial-construction", "static_assert(__is_nothrow_constructible(int,double)&&__is_trivially_constructible(double,int)&&__is_trivially_constructible(int));"},
+      {"reference-construction", "static_assert(__is_constructible(int&,int&)&&!__is_constructible(int&,int)&&__is_constructible(const int&,int)&&__is_constructible(int&&,int)&&!__is_constructible(int&&,int&));"},
+      {"const-assignment", "static_assert(__is_assignable(int&,double)&&__is_nothrow_assignable(int&,int)&&__is_trivially_assignable(int&,int)&&!__is_assignable(const int&,int));"},
+      {"category-assignment", "static_assert(!__is_assignable(int,int)&&!__is_assignable(int&&,int)&&!__is_nothrow_assignable(const int&,int)&&!__is_trivially_assignable(int,int));"},
+      {"pointer-assignment", "static_assert(__is_assignable(const int*&,int*)&&!__is_assignable(int*&,const int*)&&!__is_assignable(int*const&,int*));"},
+      {"pointer-conversion", "static_assert(__is_convertible(int*,const int*)&&__is_convertible_to(int*,void*)&&__is_nothrow_convertible(int*,const void*)&&!__is_convertible(const int*,void*));"},
+      {"reference-conversion", "static_assert(__is_convertible(int&,const int&)&&!__is_convertible(const int&,int&)&&__is_convertible(int,const int&)&&!__is_convertible(int,int&));"},
+      {"void-results", "static_assert(__is_convertible(void,void)&&__is_convertible_to(const void,void)&&__is_nothrow_convertible(void,const void)&&!__is_convertible(int,void)&&!__is_convertible(void,int)&&!__is_constructible(void)&&!__is_assignable(void,int)&&!__is_destructible(void));"},
+      {"null-conversion", "using N=decltype(nullptr);static_assert(__is_constructible(int*,N)&&__is_nothrow_constructible(bool,N)&&__is_convertible(N,int*)&&!__is_convertible(N,bool)&&__is_trivially_assignable(int*&,N)&&__is_destructible(N));"},
+      {"enum-conversion", "enum E:int{e};enum class S:int{s};static_assert(__is_convertible(E,int)&&!__is_convertible(S,int)&&!__is_convertible(int,E)&&__is_constructible(S,S)&&__is_trivially_assignable(S&,S)&&__is_nothrow_destructible(S));"},
+      {"fixed-arrays", "static_assert(__is_constructible(int[2][3])&&__is_nothrow_constructible(int[2])&&__is_trivially_constructible(int[2])&&!__is_constructible(int[2],int)&&__is_destructible(const int[2][3])&&__is_trivially_destructible(int[2]));"},
+      {"array-conversion", "static_assert(__is_convertible(int[3],int*)&&__is_convertible(int(&)[3],const int*)&&!__is_convertible(int*,int[3])&&!__is_assignable(int(&)[3],int(&)[3]));"},
+      {"array-reference", "static_assert(__is_constructible(int(&)[3],int(&)[3])&&!__is_constructible(int(&)[3],int*)&&__is_nothrow_destructible(int(&)[3]));"},
+      {"function-types", "using F=int(int);using N=int(int)noexcept;static_assert(!__is_constructible(F)&&!__is_destructible(F)&&__is_constructible(F*,F)&&__is_convertible(F,F*)&&__is_convertible(N*,F*)&&!__is_convertible(F*,N*)&&__is_trivially_destructible(F*));"},
+      {"record-pointers", "struct R{int n;};static_assert(__is_constructible(R*)&&__is_trivially_assignable(R*&,R*)&&__is_convertible(R*,const R*)&&__is_destructible(R*)&&__is_destructible(R*[2]));"},
+      {"base-pointers", "struct B{};struct D:B{};static_assert(__is_convertible(D*,B*)&&!__is_convertible(B*,D*)&&__is_constructible(B*,D*));"},
+      {"private-base-pointers", "struct B{};struct D:private B{};static_assert(!__is_convertible(D*,B*)&&!__is_constructible(B*,D*));"},
+      {"pointer-unused-body", "template<class T>struct R{T n;R(){T::missing();}};static_assert(__is_constructible(R<int>*)&&__is_nothrow_destructible(R<int>*));"},
+      {"pack-substitution", "template<class T,class...A>constexpr bool test(){return __is_constructible(T,A...)&&__is_nothrow_constructible(T,A...)&&__is_trivially_constructible(T,A...);}static_assert(test<int>()&&test<int,int>()&&!test<int,int,int>());"},
+      {"fold-substitution", "template<class...T>constexpr bool test(){return (__is_trivially_destructible(T)&&...);}static_assert(test<>()&&test<int,int*,int&>()&&!test<void>());"},
+      {"query-default", "template<class T,bool B=__is_constructible(T)>struct R{static constexpr bool value=B;};static_assert(R<int>::value&&!R<int&>::value);"},
+      {"query-sfinae", "template<bool B,class T=void>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<class T,typename Enable<__is_convertible(T,int),int>::type N=3>int f(T){return N;}int g(){return f(1);}"},
+      {"unevaluated-type", "int effects;int next(){return ++effects;}static_assert(__is_constructible(decltype(next()),decltype(++effects))&&__is_assignable(decltype(++effects),int));int f(){return effects;}"},
+      {"noexcept-query", "int n;bool f()noexcept(__is_nothrow_assignable(int&,int)){return noexcept(__is_constructible(decltype(++n)));}"},
+      {"argument-limit", "static_assert(!__is_constructible(int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int));"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("operation-trait-" + Name + ".cpp");
+    auto Output = tmpFile("operation-trait-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"record-destination", "struct R{int n;};bool f(){return __is_constructible(R);}"},
+      {"record-conversion-source", "struct R{operator int()const{return 3;}};bool f(){return __is_constructible(int,R);}"},
+      {"record-reference", "struct R{int n;};bool f(){return __is_constructible(R&,R&);}"},
+      {"record-array", "struct R{int n;};bool f(){return __is_nothrow_constructible(R[2]);}"},
+      {"record-assignment", "struct R{int n;};bool f(){return __is_trivially_assignable(R&,R);}"},
+      {"record-convertible-false", "struct R{int n;};bool f(){return __is_convertible(int,R);}"},
+      {"record-convertible-reference", "struct R{int n;};bool f(){return __is_convertible_to(R&,const R&);}"},
+      {"record-destructor", "struct R{int n;};bool f(){return __is_destructible(R);}"},
+      {"record-destructor-reference", "struct R{int n;};bool f(){return __is_trivially_destructible(const R&);}"},
+      {"record-destructor-array", "struct R{int n;};bool f(){return __is_nothrow_destructible(R[2][3]);}"},
+      {"record-alias", "struct R{int n;};template<class T>using A=T&;bool f(){return __is_assignable(A<R>,R);}"},
+      {"long-double", "bool f(){return __is_constructible(long double,int);}"},
+      {"unsupported-source", "bool f(){return __is_convertible(long double,int);}"},
+      {"unsupported-pointee", "bool f(){return __is_destructible(long double*);}"},
+      {"volatile", "bool f(){return __is_assignable(volatile int&,int);}"},
+      {"unknown-array", "bool f(){return __is_destructible(int[]);}"},
+      {"member-pointer", "struct R{int n;};bool f(){return __is_constructible(int R::*);}"},
+      {"function-reference", "using F=int();bool f(){return __is_destructible(F&);}"},
+      {"function-noexcept-source", "bool f(){return __is_convertible(int(*)()noexcept(sizeof(long double)>0),int(*)());}"},
+      {"adjusted-parameter-source", "bool f(){return __is_constructible(int(*)(int*),int(int[sizeof(long double)]));}"},
+      {"array-bound-source", "bool f(){return __is_trivially_destructible(int[sizeof(long double)]);}"},
+      {"decltype-source", "bool f(){return __is_assignable(int&,decltype(sizeof(long double)));}"},
+      {"alias-default-source", "template<class T,int N=sizeof(long double)>using A=T;bool f(){return __is_convertible(A<int>,double);}"},
+      {"argument-source", "template<class T,int N>using A=T;bool f(){return __is_nothrow_constructible(A<int,(sizeof(long double),1)>);}"},
+      {"folded-query", "static_assert(true||__is_convertible(long double,int));"},
+      {"noexcept-hidden-source", "bool f(){return noexcept(__is_constructible(decltype(sizeof(long double))));}"},
+      {"default-hidden-source", "template<bool B=__is_nothrow_destructible(decltype(sizeof(long double)))>int f(){return 1;}int g(){return f();}"},
+      {"argument-overflow", "bool f(){return __is_constructible(int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int,int);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("operation-trait-" + Name + ".cpp");
+    auto Output = tmpFile("operation-trait-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OperationTraitsKeepCppDiagnostics) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"construct-arity", "bool f(){return __is_constructible();}"},
+      {"assign-arity", "bool f(){return __is_assignable(int);}"},
+      {"convert-arity", "bool f(){return __is_convertible(int,int,int);}"},
+      {"destruct-arity", "bool f(){return __is_destructible(int,int);}"},
+      {"unknown-type", "bool f(){return __is_constructible(Unknown);}"},
+      {"failed-assert", "static_assert(__is_assignable(const int&,int));"},
+      {"incomplete-construction", "struct R;bool f(){return __is_constructible(R);}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("operation-trait-" + Name + ".cpp");
+    auto Output = tmpFile("operation-trait-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OperationTraitsPreserveValuesAndUnevaluatedEffects) {
+  auto Output = tmpFile("scalar-operation-traits.nc");
+  auto Result = translate(fixture("scalar-operation-traits.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("scalar-operation-traits" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  auto Source = tmpFile("operation-trait-v1.cpp");
+  auto Legacy = tmpFile("operation-trait-v1.nc");
+  writeFile(Source, "bool f(){return __is_constructible(int);}");
+  expectCode(translate(Source, {"--profile", "cpp-core-v1", "-o", Legacy.string()}), "TR0201");
+  expectNoArtifacts(Legacy);
 }
 
 TEST_F(TranslateTest, CoreV2RuntimeAggregateArraysInitializeActualElements) {

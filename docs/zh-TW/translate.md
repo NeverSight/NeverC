@@ -10,6 +10,8 @@ Core v2 也支援經過檢查的 `__array_rank` 和 `__array_extent`，維度索
 
 Core v2 新增經過檢查的內建型別分類查詢，包括 `__is_integral`、`__is_pointer` 和 `__is_same`。查詢保留 C++ 型別身分，在產生布林值前檢查寫出的運算元。不支援的運算元型別及其他型別特徵仍受限制。O0／O2 與重定位驗證須由實作版本的 CI 執行；標準標頭檔與完整 C++／STL 尚未完成。 記錄型別查詢也涵蓋聚合、空類別、標準配置、平凡性、平凡可複製性、POD、多型／抽象屬性，以及已支援型別的 `__is_base_of` 基底關係。 亦支援標準 `final` 類別及 `__is_final`、`__is_literal`、`__has_unique_object_representations` 查詢。結果保留原始碼的填補、空類別表示和 C++17 字面型別語意；其他屬性與虛擬方法仍受原有限制。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#builtin-type-classification).
 
+Core v2 新增非類別型別的建構、賦值、轉換與解構查詢，涵蓋支援的指標、參考及固定長度陣列，也包括指向支援類別的指標。書寫型別與所選預設引數仍會檢查，不執行運算元副作用。類別值及其參考、陣列查詢仍需保留選擇過程的原始碼。原生 O0/O2、重定位及八種 ABI 驗證待實作版本 CI；標準標頭與完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#non-record-operation-traits).
+
 Core v2 新增透過原始碼中精確的全域 C 宣告直接呼叫 `malloc/calloc/free`。原始碼定義的 C++ 配置器可使用真正的原生堆積，並與獨立 C 呼叫端交換及釋放記憶體；原生寬度、呼叫慣例、原始碼和 IR 檢查持續生效。O0/O2 驗證須由實作版本的 CI 執行。`realloc`、預設可擲出例外的 C++ 配置、標準標頭和完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#native-c-heap-calls).
 
 Core v2 已實作已接納靜態記錄、陣列與延長生命週期暫存物件的解構登記，每個完整物件建構完成後分別登記。常數根物件保留原值，區域物件首次經過宣告時登記，非區域物件透過原生啟動登記。宿主 CRT 保留退出與模組卸載時的解構順序。O0／O2、模組卸載及並行首次使用測試需要實作版本的 CI 驗證。TLS、例外展開、預設堆積與標準標頭及完整 C++／STL 仍未完成；不支援手動／DynCode 載入。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#static-destruction).

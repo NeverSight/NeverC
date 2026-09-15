@@ -772,6 +772,16 @@ unevaluated operand effects are emitted. See the exact spellings, supported
 operand domain and remaining exclusions in the
 [classification contract](cpp-core-v2.md#builtin-type-classification).
 
+Operation predicates also emit ordinary checked boolean literals. Construction,
+assignment, implicit conversion and destruction require non-record operands after
+removing references and array extents; pointers to admitted records qualify.
+Construction retains one destination and at most 64 hypothetical argument type
+sources. The frontend checks every written operand and returns pinned Clang's
+result without emitting hypothetical calls or treating C pointer carriers as
+C++ reference identity. Record operation queries await retained selection source;
+folding a false result does not bypass that restriction. See the
+[operation trait contract](cpp-core-v2.md#non-record-operation-traits).
+
 ## Core v2 array type queries
 
 Checked `__array_rank(T)` and `__array_extent(T, I)` reuse the existing integer

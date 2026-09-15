@@ -862,11 +862,69 @@ The builtin spelling does not expand the operand domain. Volatile types, member
 pointers, incomplete/union types, unknown-bound arrays and `long double` remain
 rejected, even for a query that would return false. Direct unknown-bound arrays
 are distinct from array parameters adjusted within an admitted function type.
-Construction, assignment, conversion, destruction and other
-builtin trait kinds require separate contracts and remain rejected. V1 admission
+Construction, assignment, conversion and destruction queries follow the narrower
+[non-record operation contract](#non-record-operation-traits) below. Other builtin
+trait kinds remain rejected. V1 admission
 is unchanged. Paired source/protocol tests, O0/O2 saved-NC execution, unevaluated
 effects and relocation require the implementing revision's CI; this does not
 establish standard-header or complete C++/STL support.
+
+## Non-record operation traits
+
+Core v2 also admits the pinned frontend's resolved operation queries for types
+that cannot invoke user-defined operations:
+
+| Operation | Builtin spellings |
+| --- | --- |
+| Construction | `__is_constructible`, `__is_nothrow_constructible`, `__is_trivially_constructible` |
+| Assignment | `__is_assignable`, `__is_nothrow_assignable`, `__is_trivially_assignable` |
+| Implicit conversion | `__is_convertible`, `__is_convertible_to`, `__is_nothrow_convertible` |
+| Destruction | `__is_destructible`, `__is_nothrow_destructible`, `__is_trivially_destructible` |
+
+Each operand must satisfy the existing queried-type contract. After removing a
+reference and every array extent, it must not be a record. Admitted scalar types,
+ordinary pointers, references and fixed arrays of those types are covered; `void`
+and ordinary function types keep their actual C++ query results. Pointers to
+admitted records, including arrays of such pointers, qualify because constructing,
+assigning or destroying the pointer does not invoke an operation on the pointee.
+The pointee layout and all written type sources still pass the existing checks.
+An inaccessible base-pointer conversion returns false without inventing access.
+
+Construction takes one destination type and zero to 64 argument types. Assignment
+and conversion take exactly two types; destruction takes one. The result is the
+pinned Clang boolean, including false results and the distinction between explicit
+construction and implicit conversion. For example, construction of `bool` from
+`decltype(nullptr)` succeeds, while implicit conversion does not. A scalar rvalue
+is not an assignable lvalue; reference identity cannot be inferred from its C
+pointer carrier. Queries create no runtime calls, objects or destruction.
+
+```cpp
+static_assert(__is_constructible(int));
+static_assert(__is_constructible(const int&, int));
+static_assert(!__is_constructible(int&, int));
+static_assert(__is_trivially_assignable(int&, int));
+static_assert(!__is_assignable(int&&, int));
+static_assert(__is_convertible(int*, const void*));
+static_assert(__is_nothrow_destructible(int[3]));
+```
+
+The private source frontend currently discards hypothetical initialization and
+assignment expressions when it builds these trait nodes. Record operands would
+therefore lose evidence of selected constructors, conversions or exception
+specifications. Such operands remain rejected even behind references/arrays or
+when the result would be false. This restriction is separate from the metadata
+record queries above. Actual standard-header and complete C++/STL support remain
+unfinished.
+
+Written `decltype` expressions, adjusted function parameters, array bounds,
+`noexcept`, template arguments and selected defaults remain checked before their
+results can be erased. Concrete queries work in defaults, SFINAE, `if constexpr`,
+variable templates and bounded packs without evaluating operand side effects.
+The paired 30 accepted, 28 unsupported-source and seven invalid-C++ cases cover
+these boundaries. Eighteen saved-NC O0/O2 runtime checkpoints, relocation and twelve
+boolean results across eight native ABIs require the implementing revision's CI.
+V1 and the transport format are unchanged; no opaque source or LLVM fallback is
+introduced.
 
 ## Array type queries
 
