@@ -8,7 +8,9 @@ Core v2는 지원되는 정적 레코드, 배열과 수명이 연장된 임시 �
 
 Core v2는 구체화된 템플릿을 포함한 지원 객체와 참조의 비지역 동적 초기화를 구현합니다. 검증된 내부 네이티브 시작 함수가 0·상수 초기화 이후 main 전에 정의 순서로 실행하며, 각 초기화 식이 끝나면 일반 임시 객체를 정리합니다. 정적 지역 객체는 처음 사용할 때 초기화합니다. 프로그램과 별도 C 진입점의 O0/O2 테스트는 구현 버전 CI가 필요합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#nonlocal-dynamic-initialization).
 
-Core v2는 검증된 소스 정의 할당 함수를 통한 단일 객체 new/delete를 지원하며 클래스와 템플릿 placement 오버로드, 저장 주소, 인수 정리를 보존합니다. 명시적 소멸과 placement 재구성 이후에도 자동 정리 의무가 유지됩니다. 네이티브 검증에는 구현 버전의 CI가 필요합니다. 기본 힙 런타임, 배열 할당, 예외, 표준 헤더 및 완전한 C++/STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
+Core v2는 소스 정의 할당 함수를 통한 상수 길이 new[]를 지원하며 길이 0과 중첩 배열도 처리합니다. delete[]는 원래 할당 주소를 보존하고 요소를 역순으로 소멸시킵니다. 일반 Itanium, Apple ARM64, MSVC 배열 헤더를 각각 검증합니다. null 반환은 초기화를 건너뛰며 인수와 임시 객체는 소스 수명에 따라 정리됩니다. 네이티브 검증은 구현 버전 CI를 기다립니다. 런타임 new[] 길이, 기본 힙, 예외, 표준 헤더와 완전한 C++/STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#constant-array-allocation).
+
+Core v2는 검증된 소스 정의 할당 함수를 통한 단일 객체 new/delete를 지원하며 클래스와 템플릿 placement 오버로드, 저장 주소, 인수 정리를 보존합니다. 명시적 소멸과 placement 재구성 이후에도 자동 정리 의무가 유지됩니다. 네이티브 검증에는 구현 버전의 CI가 필요합니다. 기본 힙 런타임, 런타임 new[] 길이, 예외, 표준 헤더 및 완전한 C++/STL은 아직 미완성입니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 실험적인 `neverc translate`는 `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1`, `cpp-math-v1`으로 검토 가능한 `.nc` 소스를 생성합니다.
 

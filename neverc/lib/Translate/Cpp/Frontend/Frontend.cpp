@@ -1583,14 +1583,17 @@ bool Adapter::functionAddressTarget(const FunctionDecl *F, SourceLocation L) {
 }
 
 const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
-                                               bool Allocate, SourceLocation L) {
+                                               bool Allocate, SourceLocation L,
+                                               bool Array) {
   const auto *Definition = F ? F->getDefinition() : nullptr;
   if (!Definition || !S.owns(Sources, Definition->getLocation())) {
     reject(L, Allocate ? "allocation definition" : "deallocation definition",
            "The selected allocation function requires its definition in this source unit.", "TR0203");
     throw Failure{};
   }
-  if (!S.coreV2() || Definition->getOverloadedOperator() != (Allocate ? OO_New : OO_Delete) ||
+  const auto Operator = Allocate ? (Array ? OO_Array_New : OO_New)
+                                 : (Array ? OO_Array_Delete : OO_Delete);
+  if (!S.coreV2() || Definition->getOverloadedOperator() != Operator ||
       !ordinaryOperator(Definition) || !supportedDeclarationAttributes(Definition) ||
       Definition->isReservedGlobalPlacementOperator() ||
       Definition->isDestroyingOperatorDelete() || !Definition->getNumParams() ||
@@ -1599,13 +1602,97 @@ const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
       !Context.hasSameUnqualifiedType(Definition->getParamDecl(0)->getType(),
                                       Allocate ? Context.getSizeType() : Context.VoidPtrTy)) {
     reject(L, Allocate ? "allocation function" : "deallocation function",
-           "An admitted source-defined single-object allocation operator is required.");
+           "An admitted source-defined matching allocation operator is required.");
     throw Failure{};
   }
   type(Definition->getReturnType(), L, true);
   for (const auto *P : Definition->parameters())
     type(P->getType(), L);
   return Definition;
+}
+
+ArrayAllocationLayout Adapter::arrayAllocationLayout(
+    QualType Object, bool UsualDeleteWantsSize, SourceLocation L) {
+  const auto &Target = Context.getTargetInfo();
+  const auto &Triple = Target.getTriple();
+  const auto ABI = Context.getCXXABIKind();
+  const bool Microsoft = Triple.isKnownWindowsMSVCEnvironment() &&
+                         ABI == TargetCXXABI::Microsoft;
+  const bool Apple = Triple.isMacOSX() && Triple.getArch() == llvm::Triple::aarch64 &&
+                     ABI == TargetCXXABI::AppleARM64;
+  const bool Itanium = (Triple.isMacOSX() ||
+                        (Triple.isOSLinux() && !Triple.isAndroid()) ||
+                        Triple.isWindowsGNUEnvironment()) &&
+                       !(Triple.isMacOSX() && Triple.getArch() == llvm::Triple::aarch64) &&
+                       (ABI == TargetCXXABI::GenericItanium || ABI == TargetCXXABI::GenericAArch64);
+  const auto Size = Context.getSizeType();
+  if ((!Microsoft && !Apple && !Itanium) || !Size->isUnsignedIntegerType() ||
+      Context.getTypeSize(Size) != Context.getTypeSize(Context.VoidPtrTy) ||
+      Context.getTypeAlign(Size) != Context.getTypeAlign(Context.VoidPtrTy)) {
+    reject(L, "array cookie ABI", "Array allocation requires a checked native C++ ABI and size_t layout.", "TR0204");
+    throw Failure{};
+  }
+  S.Module["array_cookie_abi"] = Microsoft ? "msvc" : Apple ? "apple-arm64" : "itanium";
+  auto Element = Context.getBaseElementType(Object).getUnqualifiedType();
+  ArrayAllocationLayout Result;
+  Result.Element = Element;
+  Result.ElementBytes = Context.getTypeSizeInChars(Element).getQuantity();
+  if (!needsDestruction(Object) && (Microsoft || !UsualDeleteWantsSize))
+    return Result;
+  const uint64_t Word = Context.getTypeSizeInChars(Size).getQuantity();
+  const uint64_t Alignment = (Itanium ? Context.getPreferredTypeAlignInChars(Element)
+                                     : Context.getTypeAlignInChars(Element)).getQuantity();
+  Result.CookieBytes = std::max((Apple ? 2 : 1) * Word, Alignment);
+  Result.CountOffset = Apple ? Word : Microsoft ? 0 : Result.CookieBytes - Word;
+  Result.StoresElementSize = Apple;
+  return Result;
+}
+
+uint64_t Adapter::arrayNewCount(const CXXNewExpr *N) {
+  auto Bound = N->getArraySize();
+  const auto L = N->getExprLoc();
+  auto Value = Bound ? (*Bound)->getIntegerConstantExpr(Context) : std::nullopt;
+  // Inspect the result before Sema's final implicit conversion to size_t.
+  // A negative wider integer could otherwise truncate to an admitted zero.
+  bool Negative = false;
+  if (Bound) {
+    const Expr *Converted = *Bound;
+    while (true) {
+      Converted = Converted->IgnoreParens();
+      if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Converted))
+        Converted = Wrapper->getSubExpr();
+      else if (const auto *Constant = dyn_cast<ConstantExpr>(Converted))
+        Converted = Constant->getSubExpr();
+      else
+        break;
+    }
+    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Converted);
+        Cast && Cast->getCastKind() == CK_IntegralCast &&
+        Context.hasSameUnqualifiedType(Cast->getType(), Context.getSizeType())) {
+      auto Before = Cast->getSubExpr()->getIntegerConstantExpr(Context);
+      Negative = Before && Before->isSigned() && Before->isNegative();
+    }
+  }
+  if (!Value || Negative || (Value->isSigned() && Value->isNegative()) ||
+      Value->getLimitedValue(65537) > 65536) {
+    reject(L, "new array extent", "Array new requires a nonnegative integer constant extent within the expansion limit; runtime bounds require checked length-error handling.");
+    throw Failure{};
+  }
+  const uint64_t Count = Value->getZExtValue();
+  const auto Units = storageUnits(N->getAllocatedType());
+  if (!Units || (Count && Units > 200000 / Count)) {
+    reject(L, "new array storage", "Array initialization exceeds the storage expansion limit.");
+    throw Failure{};
+  }
+  const auto Layout = arrayAllocationLayout(N->getAllocatedType(),
+                                           N->doesUsualArrayDeleteWantSize(), L);
+  const uint64_t Bytes = Context.getTypeSizeInChars(N->getAllocatedType()).getQuantity();
+  const auto Maximum = llvm::APInt::getMaxValue(Context.getTypeSize(Context.getSizeType())).getZExtValue();
+  if (!Bytes || Layout.CookieBytes > Maximum || Count > (Maximum - Layout.CookieBytes) / Bytes) {
+    reject(L, "new array size", "Array allocation bytes and cookie must fit native size_t.");
+    throw Failure{};
+  }
+  return Count;
 }
 
 json::Object Adapter::functionAddress(const FunctionDecl *F, SourceLocation L) {
@@ -2233,6 +2320,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const Stmt *> InitializerLookupWrappers;
   std::set<const InitListExpr *> EmptyVoidLists;
   std::set<const CXXConstructExpr *> CheckedConstructions;
+  std::set<const Expr *> NewArrayInitializers;
   std::set<const VarDecl *> CheckedScalarGlobals;
   std::set<const UsingShadowDecl *> CheckedUsingShadows;
   std::set<const FunctionDecl *> CheckedTemplateDeclarations;
@@ -9111,6 +9199,11 @@ public:
       // appear below an already rejected declaration (for example a v1
       // static_assert), so diagnose them before inspecting expression types.
       if (E->getType().isNull()) {
+        if (A.S.coreV2() && NewArrayInitializers.count(E))
+          if (const auto *List = dyn_cast<InitListExpr>(E)) {
+            checkSemanticInitializers(List, L);
+            return true; // RAV still visits this exact written list's children.
+          }
         if (A.S.coreV2())
           if (const auto *List = dyn_cast<InitListExpr>(E);
               List && EmptyVoidLists.count(List))
@@ -9210,7 +9303,8 @@ public:
             Target = Member->getMemberDecl();
           if (const auto *Function = dyn_cast_or_null<FunctionDecl>(Target))
             A.functionAddressTarget(Function, E->getExprLoc());
-        } else if (!(A.S.coreV2() && isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())) &&
+        } else if (!NewArrayInitializers.count(E) &&
+                   !(A.S.coreV2() && isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())) &&
                    !E->getType()->isFunctionType() &&
                    (A.S.coreV2() || !FunctionDecay)) {
           A.type(E->getType(), E->getExprLoc(), true);
@@ -9245,17 +9339,46 @@ public:
     if (A.S.coreV2()) {
       if (const auto *N = dyn_cast<CXXNewExpr>(S)) {
         auto Object = N->getAllocatedType();
-        if (N->isArray() || Object->isArrayType() || !Object->isObjectType() ||
+        if ((!N->isArray() && Object->isArrayType()) || !Object->isObjectType() ||
             Object->isIncompleteType() || N->isTypeDependent() ||
             N->isValueDependent() || N->isInstantiationDependent()) {
-          A.reject(L, "new expression", "Single complete admitted objects require checked allocation and initialization.");
+          A.reject(L, "new expression", "Complete admitted objects require checked allocation and initialization.");
           return true;
         }
         A.type(Object, L);
         if (A.storageUnits(Object) > 200000)
           A.reject(L, "new object storage", "Allocated object exceeds the storage limit.");
         const auto *Selected = N->getOperatorNew();
-        const auto *F = A.allocationFunction(Selected, true, L);
+        const auto *F = A.allocationFunction(Selected, true, L, N->isArray());
+        if (N->isArray()) {
+          const auto Count = A.arrayNewCount(N);
+          const Expr *Init = N->getInitializer();
+          while (Init) {
+            const auto *Array = A.Context.getAsConstantArrayType(Init->getType());
+            if (!Array || !A.Context.hasSameUnqualifiedType(Array->getElementType(), Object) ||
+                (isa<StringLiteral>(Init) ? Array->getSize().getLimitedValue() > Count
+                                         : Array->getSize().getLimitedValue() != Count)) {
+              A.reject(L, "new array initializer", "The exact semantic initializer must match the checked constant array extent and element type.");
+              break;
+            }
+            // Only this new-expression's complete initializer is exempt from
+            // value-type serialization (notably its zero-sized array wrapper).
+            // Constructors, defaults, clauses and written types are still visited.
+            NewArrayInitializers.insert(Init);
+            if (const auto *List = dyn_cast<InitListExpr>(Init)) {
+              if (const auto *Written = List->getSyntacticForm())
+                NewArrayInitializers.insert(Written);
+              if (const auto *Semantic = List->getSemanticForm())
+                NewArrayInitializers.insert(Semantic);
+              if (!List->isStringLiteralInit() && List->getNumInits() > Count)
+                A.reject(L, "new array initializer", "Too many array initializer clauses.");
+            }
+            if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Init))
+              Init = Wrapper->getSubExpr();
+            else
+              break;
+          }
+        }
         checkSelectedTemplateCall(N, Selected, L);
         unsigned Prefix = 1 + unsigned(N->passAlignment());
         if (F->getNumParams() != Prefix + N->getNumPlacementArgs() ||
@@ -9273,21 +9396,27 @@ public:
       }
       if (const auto *Delete = dyn_cast<CXXDeleteExpr>(S)) {
         auto Object = Delete->getDestroyedType();
-        if (Delete->isArrayForm() || Object.isNull() || !Object->isObjectType() ||
-            Object->isArrayType() || Object->isIncompleteType()) {
-          A.reject(L, "delete expression", "Single complete admitted objects require their selected deallocation function.");
+        if (Object.isNull() || !Object->isObjectType() ||
+            (!Delete->isArrayForm() && Object->isArrayType()) || Object->isIncompleteType()) {
+          A.reject(L, "delete expression", "Complete admitted objects require their selected deallocation function.");
           return true;
         }
         A.type(Object, L);
-        const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L);
+        const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L, Delete->isArrayForm());
         unsigned Index = 1;
-        if (Index < F->getNumParams() &&
-            A.Context.hasSameUnqualifiedType(F->getParamDecl(Index)->getType(), A.Context.getSizeType()))
+        const bool Sized = Index < F->getNumParams() &&
+            A.Context.hasSameUnqualifiedType(F->getParamDecl(Index)->getType(), A.Context.getSizeType());
+        if (Sized)
           ++Index;
         if (Index < F->getNumParams() && F->getParamDecl(Index)->getType()->isAlignValT())
           ++Index;
         if (Index != F->getNumParams() || concreteFunctionTemplate(F))
           A.reject(L, "deallocation arguments", "Usual deallocation requires a pointer followed only by selected size and alignment values.");
+        if (Delete->isArrayForm()) {
+          const auto Layout = A.arrayAllocationLayout(Object, Delete->doesUsualArrayDeleteWantSize(), L);
+          if (Sized && !Layout.CookieBytes)
+            A.reject(L, "sized array delete", "The native array ABI supplies no count for this selected sized deallocation function.");
+        }
         A.S.Module["memory_lifetimes"] = true;
       }
       if (const auto *D = dyn_cast<CXXPseudoDestructorExpr>(S);

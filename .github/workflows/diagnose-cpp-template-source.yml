@@ -74,3 +74,21 @@ jobs:
               fi
             done
           done
+      - name: Check upstream constant array allocation and cleanup baseline
+        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+        run: |
+          clang-20 -std=c17 -c tests/neverc/Inputs/translate/cpp/array-allocation-harness.c -o "$RUNNER_TEMP/array-client.o"
+          for optimization in 0 2; do
+            clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
+              tests/neverc/Inputs/translate/cpp/array-allocation.cpp \
+              "$RUNNER_TEMP/array-client.o" -o "$RUNNER_TEMP/array-allocation"
+            if "$RUNNER_TEMP/array-allocation"; then
+              result=0
+            else
+              result=$?
+            fi
+            echo "array-allocation O$optimization upstream result: $result"
+            if [ "$result" -ne 0 ]; then
+              exit "$result"
+            fi
+          done

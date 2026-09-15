@@ -493,6 +493,15 @@ public:
         (!CoreV2 || !boolean(O, "memory_lifetimes", M.MemoryLifetimes) ||
          !M.MemoryLifetimes))
       return error("Memory lifetimes require true core v2 evidence.");
+    if (O.get("array_cookie_abi")) {
+      std::string ABI;
+      if (!CoreV2 || !string(O, "array_cookie_abi", ABI))
+        return error("Array cookies require a core v2 ABI string.");
+      if (ABI == "itanium") M.ArrayCookies = ArrayCookieABI::Itanium;
+      else if (ABI == "apple-arm64") M.ArrayCookies = ArrayCookieABI::AppleARM64;
+      else if (ABI == "msvc") M.ArrayCookies = ArrayCookieABI::Microsoft;
+      else return error("Unknown array cookie ABI.");
+    }
     if (O.get("startup")) {
       std::string Startup;
       if (!CoreV2 || !string(O, "startup", Startup) || Startup.empty())
@@ -1756,6 +1765,20 @@ public:
                   "are unsupported.");
     if (!carrierLayout(Anchor) || !mathMetadata(Anchor, T))
       return false;
+    if (M.ArrayCookies != ArrayCookieABI::None) {
+      const auto Expected = T.isKnownWindowsMSVCEnvironment()
+          ? ArrayCookieABI::Microsoft
+          : T.isMacOSX() && T.getArch() == llvm::Triple::aarch64
+              ? ArrayCookieABI::AppleARM64
+              : (T.isMacOSX() || (T.isOSLinux() && !T.isAndroid()) ||
+                 T.isWindowsGNUEnvironment())
+                    ? ArrayCookieABI::Itanium : ArrayCookieABI::None;
+      if (M.Profile != "cpp-core-v2" || !M.MemoryLifetimes ||
+          Expected == ArrayCookieABI::None || M.ArrayCookies != Expected ||
+          Context.NativeArrayCookies != Expected)
+        return fail(D, "TR0204", Anchor, "array cookie ABI",
+                    "Array cookies require matching independent native ABI and size_t evidence with core v2 memory lifetimes.");
+    }
     if (M.Dependencies.empty())
       return error(Anchor, "Module must record its input dependency.");
     for (const auto &Dep : M.Dependencies) {

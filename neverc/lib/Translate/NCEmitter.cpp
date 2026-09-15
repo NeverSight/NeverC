@@ -406,6 +406,16 @@ class Emitter {
       line("#error \"translated memory lifetimes require may_alias support\"");
       line("#endif");
     }
+    if (M.ArrayCookies != ArrayCookieABI::None) {
+      line("static_assert(sizeof(__SIZE_TYPE__) == sizeof(void *) && alignof(__SIZE_TYPE__) == alignof(void *) && (__SIZE_TYPE__)-1 > 0, \"translated array cookies require native size_t layout\");
+      if (T.isOSWindows()) {
+        line(M.ArrayCookies == ArrayCookieABI::Microsoft
+                 ? "#if !defined(__NEVERC_WINDOWS_MSVC_ABI__) || __NEVERC_WINDOWS_MSVC_ABI__ != 1"
+                 : "#if defined(__NEVERC_WINDOWS_MSVC_ABI__)");
+        line("#error \"translated array cookies require the recorded Windows C++ ABI\"");
+        line("#endif");
+      }
+    }
     if (!StaticDestructors.empty()) {
       line("#if defined(__NEVERC_DYNCODE__)");
       line("#error \"translated static destruction requires native CRT loading\"");

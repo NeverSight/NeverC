@@ -724,7 +724,116 @@ class FunctionLowering {
     return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), Quantity.getQuantity()),
                                   unsignedInteger(T)), T, L);
   }
+  Expression quantity(uint64_t Value, llvm::StringRef T, SourceLocation L) {
+    return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), Value),
+                                  unsignedInteger(T)), T, L);
+  }
+  Expression allocationBytes(Expression Pointer, SourceLocation L) {
+    return cast(cast(std::move(Pointer), "ptr:void", L), "ptr:u8", L);
+  }
+  Expression cookieSlot(Expression Bytes, uint64_t Offset, SourceLocation L) {
+    auto Size = type(A.Context.getSizeType(), L);
+    auto Pointer = binary("+", std::move(Bytes), quantity(Offset, Size, L), "ptr:u8", L);
+    return dereference(cast(cast(std::move(Pointer), "ptr:void", L), "ptr:" + Size, L), L);
+  }
+  void initializeNewArray(Expression Pointer, QualType Object, uint64_t Count,
+                          const Expr *Init, SourceLocation L) {
+    if (!Init)
+      return;
+    while (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Init))
+      Init = Wrapper->getSubExpr();
+    auto Element = Object.getUnqualifiedType();
+    auto T = type(Element, L);
+    Pointer = cast(std::move(Pointer), "ptr:" + T, L);
+    const auto *List = dyn_cast<InitListExpr>(Init);
+    if (List && List->isSyntacticForm() && List->getSemanticForm())
+      List = List->getSemanticForm();
+    const auto *String = dyn_cast<StringLiteral>(Init);
+    if (List && List->isStringLiteralInit())
+      String = dyn_cast<StringLiteral>(List->getInit(0)->IgnoreParens());
+    std::optional<Expression> StringValue;
+    if (String)
+      StringValue = A.stringInitializer(String);
+    for (uint64_t N = 0; N < Count; ++N) {
+      A.chargeExpansion(1, L);
+      auto Place = index(Pointer, quantity(N, "uint", L), T, L);
+      if (StringValue) {
+        auto *Units = StringValue->getArray("args");
+        if (N < Units->size())
+          assign(std::move(Place), *(*Units)[N].getAsObject(), L);
+        else
+          initializeZero(std::move(Place), Element, L);
+      } else if (const auto *Construction = dyn_cast<CXXConstructExpr>(Init)) {
+        beginFullExpression();
+        construct(std::move(Place), Element, Construction, L);
+        endFullExpression();
+      } else if (isa<ImplicitValueInitExpr>(Init)) {
+        initializeZero(std::move(Place), Element, L);
+      } else if (List) {
+        const bool Shared = N >= List->getNumInits();
+        const auto *Value = Shared ? List->getArrayFiller() : List->getInit(N);
+        const bool Omitted = Shared || A.SeparateArrayFillers.count(Value);
+        const bool Cleanup = Omitted && omittedDefaultConstruction(Value, Element);
+        if (Cleanup) beginFullExpression();
+        if (Value) initialize(std::move(Place), Value, L);
+        else initializeZero(std::move(Place), Element, L);
+        if (Cleanup) endFullExpression();
+      } else {
+        reject(L, "new array initializer", "A checked array construction, value, list or string initializer is required.");
+      }
+    }
+  }
+  Expression allocateArray(const CXXNewExpr *N) {
+    const auto L = N->getExprLoc();
+    const auto *F = A.allocationFunction(N->getOperatorNew(), true, L, true);
+    const auto Object = N->getAllocatedType();
+    const auto Count = A.arrayNewCount(N);
+    const auto Layout = A.arrayAllocationLayout(Object, N->doesUsualArrayDeleteWantSize(), L);
+    const uint64_t ObjectBytes = A.Context.getTypeSizeInChars(Object).getQuantity();
+    const auto Size = type(A.Context.getSizeType(), L);
+    discard(*N->getArraySize());
+    json::Array Args;
+    Args.push_back(quantity(Count * ObjectBytes + Layout.CookieBytes, Size, L));
+    unsigned Prefix = 1;
+    if (N->passAlignment()) {
+      Args.push_back(allocationExtent(Object, F->getParamDecl(1)->getType(), true, L));
+      ++Prefix;
+    }
+    for (unsigned I = 0; I < N->getNumPlacementArgs(); ++I)
+      Args.push_back(argument(N->getPlacementArg(I), F->getParamDecl(Prefix + I)->getType()));
+    auto Storage = temporary("ptr:void", L);
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(F)},
+                                {"args", std::move(Args)}, {"target", json::Object(Storage)},
+                                {"loc", A.loc(L)}});
+    auto Result = temporary(type(N->getType(), L), L);
+    assign(Result, A.zero(N->getType(), L), L);
+    std::string End;
+    if (N->shouldNullCheckAllocation()) {
+      auto Initialize = labelName();
+      End = labelName();
+      branch(cast(Storage, "bool", L), Initialize, End, L);
+      label(Initialize, L);
+    }
+    auto Bytes = allocationBytes(Storage, L);
+    if (Layout.CookieBytes) {
+      if (Layout.StoresElementSize)
+        assign(cookieSlot(Bytes, 0, L), quantity(Layout.ElementBytes, Size, L), L);
+      assign(cookieSlot(Bytes, Layout.CountOffset, L),
+             quantity(Count * (ObjectBytes / Layout.ElementBytes), Size, L), L);
+      Bytes = binary("+", std::move(Bytes), quantity(Layout.CookieBytes, Size, L), "ptr:u8", L);
+    }
+    assign(Result, cast(cast(std::move(Bytes), "ptr:void", L), type(N->getType(), L), L), L);
+    initializeNewArray(Result, Object, Count, N->getInitializer(), L);
+    if (!End.empty()) {
+      jump(End, L);
+      label(End, L);
+    }
+    return Result;
+  }
   Expression allocate(const CXXNewExpr *N) {
+    if (N->isArray())
+      return allocateArray(N);
     auto L = N->getExprLoc();
     const auto *F = A.allocationFunction(N->getOperatorNew(), true, L);
     auto Object = N->getAllocatedType();
@@ -762,7 +871,65 @@ class FunctionLowering {
     }
     return Result;
   }
+  void deallocateArray(const CXXDeleteExpr *Delete) {
+    const auto L = Delete->getExprLoc();
+    const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L, true);
+    const auto Layout = A.arrayAllocationLayout(Delete->getDestroyedType(),
+                                                Delete->doesUsualArrayDeleteWantSize(), L);
+    auto Pointer = snapshot(expression(Delete->getArgument()), L);
+    auto Destroy = labelName(), End = labelName();
+    branch(cast(Pointer, "bool", L), Destroy, End, L);
+    label(Destroy, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Bytes = allocationBytes(Pointer, L);
+    if (Layout.CookieBytes)
+      Bytes = binary("-", std::move(Bytes), quantity(Layout.CookieBytes, Size, L), "ptr:u8", L);
+    auto Raw = snapshot(std::move(Bytes), L);
+    auto Count = Layout.CookieBytes ? snapshot(cookieSlot(Raw, Layout.CountOffset, L), L)
+                                    : quantity(0, Size, L);
+    auto Total = snapshot(binary("+", binary("*", Count, quantity(Layout.ElementBytes, Size, L), Size, L),
+                                 quantity(Layout.CookieBytes, Size, L), Size, L), L);
+    if (needsDestruction(Layout.Element)) {
+      auto Remaining = snapshot(Count, L);
+      auto Check = labelName(), Element = labelName(), Complete = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Element, Complete, L);
+      label(Element, L);
+      assign(Remaining, binary("-", Remaining, quantity(1, Size, L), Size, L), L);
+      // Locate flattened base elements through the allocation's byte storage.
+      // Pointer-to-row arithmetic must not acquire a base-element stride.
+      auto Offset = binary("+", binary("*", Remaining, quantity(Layout.ElementBytes, Size, L), Size, L),
+                           quantity(Layout.CookieBytes, Size, L), Size, L);
+      auto Address = binary("+", Raw, std::move(Offset), "ptr:u8", L);
+      auto Receiver = cast(cast(std::move(Address), "ptr:void", L), "ptr:" + type(Layout.Element, L), L);
+      destroy(dereference(std::move(Receiver), L), Layout.Element, L);
+      jump(Check, L);
+      label(Complete, L);
+    }
+    json::Array Args;
+    Args.push_back(cast(Raw, type(F->getParamDecl(0)->getType(), L), L));
+    for (unsigned I = 1; I < F->getNumParams(); ++I) {
+      const auto Parameter = F->getParamDecl(I)->getType();
+      if (Parameter->isAlignValT())
+        Args.push_back(allocationExtent(Layout.Element, Parameter, true, L, true));
+      else {
+        if (!Layout.CookieBytes)
+          reject(L, "sized array delete", "The native array ABI supplies no count for this sized deallocation.");
+        Args.push_back(cast(Total, type(Parameter, L), L));
+      }
+    }
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(F)},
+                                {"args", std::move(Args)}, {"loc", A.loc(L)}});
+    jump(End, L);
+    label(End, L);
+  }
   void deallocate(const CXXDeleteExpr *Delete) {
+    if (Delete->isArrayForm()) {
+      deallocateArray(Delete);
+      return;
+    }
     auto L = Delete->getExprLoc();
     const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L);
     auto Object = Delete->getDestroyedType().getUnqualifiedType();

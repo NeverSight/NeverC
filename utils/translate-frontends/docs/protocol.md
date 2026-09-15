@@ -935,6 +935,20 @@ opaque operation is introduced. See the [defaulted lifecycle contract](cpp-core-
 
 ## Core v2 explicit lifetimes and memory aliases
 
+The optional core-v2 module property `array_cookie_abi` is one of the exact
+strings `itanium`, `apple-arm64` or `msvc`. Empty, unknown, nonstring and v1 values
+are rejected. It additionally requires `memory_lifetimes: true` and a matching
+independently constructed native target/size_t capability. Producer/consumer
+agreement must also match the requested target family. Saved NC checks size_t
+width/alignment/unsignedness and the Windows MSVC/GNU distinction. Existing OS
+and architecture guards distinguish Apple ARM64's two-word cookie from generic
+Itanium's right-justified count and MSVC's leading count. This metadata introduces
+no generic pointer casts, dynamic array type, allocation instruction, foreign
+symbol, or ownership authority. Array cookie stores, construction and reverse
+destruction loops use existing checked typed operations; metadata does not prove
+all of those operations semantically correct. See the
+[array allocation contract](cpp-core-v2.md#constant-array-allocation).
+
 The optional module property `memory_lifetimes` must be boolean `true` and requires
 `cpp-core-v2`. Absence defaults to false; an explicitly false/nonboolean property
 is rejected. The verifier independently rejects this flag in other profiles.

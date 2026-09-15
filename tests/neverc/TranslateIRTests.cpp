@@ -109,6 +109,7 @@ VerificationContext context(const Module &M) {
     C.ExpectedUIntPtrBits = 64;
     C.HasLockFreeIntAtomics = true;
     C.NativeStaticDestruction = StaticDestructionABI::CxaAtExit;
+    C.NativeArrayCookies = ArrayCookieABI::Itanium;
   }
   return C;
 }
@@ -3326,6 +3327,74 @@ TEST(TranslateIR, MemoryLifetimesRequireExplicitTrueCoreV2Evidence) {
       } else {
         EXPECT_EQ(Parsed.Frontend.Build, "unchanged");
       }
+    }
+  }
+}
+
+TEST(TranslateIR, ArrayCookiesRequireExactWireAndIndependentNativeEvidence) {
+  for (bool CoreV2 : {false, true}) {
+    for (const std::string Value : {"\"itanium\"", "\"apple-arm64\"", "\"msvc\"",
+                                    "\"\"", "\"arm\"", "true", "0", "null", "{}"}) {
+      auto JSON = wireModule(CoreV2);
+      JSON.insert(1, "\"array_cookie_abi\":" + Value + ",");
+      Module Parsed;
+      Parsed.Frontend.Build = "unchanged";
+      Diagnostics D;
+      const bool Valid = CoreV2 && (Value == "\"itanium\"" || Value == "\"apple-arm64\"" || Value == "\"msvc\"");
+      EXPECT_EQ(parseModule(JSON, Parsed, D), Valid) << Value;
+      if (!Valid) EXPECT_EQ(Parsed.Frontend.Build, "unchanged");
+    }
+  }
+  auto M = module(true);
+  M.ArrayCookies = ArrayCookieABI::Itanium;
+  invalid(M, "Array cookies");
+  M.MemoryLifetimes = true;
+  auto C = context(M);
+  EmittedSource Out;
+  Diagnostics D;
+  ASSERT_TRUE(emitNC(M, C, Out, D));
+  EXPECT_NE(Out.Text.find("translated array cookies require native size_t layout"), std::string::npos);
+  C.NativeArrayCookies = ArrayCookieABI::None;
+  D.clear();
+  EXPECT_FALSE(verifyModule(M, C, D));
+  C.NativeArrayCookies = ArrayCookieABI::Microsoft;
+  D.clear();
+  EXPECT_FALSE(verifyModule(M, C, D));
+  M.ArrayCookies = ArrayCookieABI::Microsoft;
+  D.clear();
+  EXPECT_FALSE(verifyModule(M, C, D)); // matching producer/consumer lie still contradicts target
+}
+
+TEST(TranslateIR, ArrayCookiesDistinguishAppleARM64AndWindowsABIs) {
+  for (const auto &[Target, ABI] : std::vector<std::pair<std::string, ArrayCookieABI>>{
+       {"x86_64-unknown-linux-gnu", ArrayCookieABI::Itanium},
+       {"aarch64-unknown-linux-gnu", ArrayCookieABI::Itanium},
+       {"x86_64-apple-macosx", ArrayCookieABI::Itanium},
+       {"aarch64-apple-macosx", ArrayCookieABI::AppleARM64},
+       {"x86_64-pc-windows-msvc", ArrayCookieABI::Microsoft},
+       {"aarch64-pc-windows-msvc", ArrayCookieABI::Microsoft},
+       {"x86_64-w64-windows-gnu", ArrayCookieABI::Itanium}}) {
+    SCOPED_TRACE(Target);
+    auto M = module(true);
+    M.Target.Triple = Target;
+    M.MemoryLifetimes = true;
+    M.ArrayCookies = ABI;
+    auto C = context(M);
+    C.NativeArrayCookies = ABI;
+    Diagnostics D;
+    EmittedSource Out;
+    ASSERT_TRUE(emitNC(M, C, Out, D));
+    if (Target.find("windows") != std::string::npos) {
+      EXPECT_NE(Out.Text.find("translated array cookies require the recorded Windows C++ ABI"), std::string::npos);
+      EXPECT_NE(Out.Text.find(ABI == ArrayCookieABI::Microsoft
+                                 ? "#if !defined(__NEVERC_WINDOWS_MSVC_ABI__)"
+                                 : "#if defined(__NEVERC_WINDOWS_MSVC_ABI__)"), std::string::npos);
+    }
+    for (auto Other : {ArrayCookieABI::Itanium, ArrayCookieABI::AppleARM64, ArrayCookieABI::Microsoft}) {
+      if (Other == ABI) continue;
+      M.ArrayCookies = Other;
+      D.clear();
+      EXPECT_FALSE(verifyModule(M, C, D));
     }
   }
 }

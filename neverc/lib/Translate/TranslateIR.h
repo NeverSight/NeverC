@@ -220,12 +220,15 @@ struct MappingSpec {
   const char *ID, *RuntimeSymbol, *RuntimeModule, *RequiredHeader;
 };
 const MappingSpec *findMappingSpec(llvm::StringRef ID);
+enum class ArrayCookieABI { None, Itanium, AppleARM64, Microsoft };
 struct Module {
   uint32_t Protocol = FrontendProtocolMajor;
   std::string Profile;
   // C++ storage reuse requires alias-permissive emitted object accesses. This
   // does not relax typed IR operations, layout evidence, or storage permissions.
   bool MemoryLifetimes = false;
+  // Native C++ array allocation headers used by lowered new[]/delete[].
+  ArrayCookieABI ArrayCookies = ArrayCookieABI::None;
   // Hosted native startup calls this checked internal void() definition.
   // Presence is distinct from an invalid empty function identifier.
   std::optional<std::string> Startup;
@@ -260,6 +263,8 @@ struct VerificationContext {
   bool HasLockFreeIntAtomics = false;
   // Independently selected hosted CRT ABI; never supplied by the producer.
   StaticDestructionABI NativeStaticDestruction = StaticDestructionABI::None;
+  // Independent target ABI with an unsigned pointer-width/aligned size_t.
+  ArrayCookieABI NativeArrayCookies = ArrayCookieABI::None;
 };
 struct SourceMapEntry {
   uint32_t BeginLine = 1;

@@ -5508,6 +5508,118 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         relocated = check("v2-dynamic-temporary-relocated", dt_source, root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == dt_module
 
+    array_allocation_positive = {
+        'scalar-list': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int f(){int*p=new int[4]{1,2};int n=p[1]+p[3];delete[]p;return n;}',
+        'scalar-default': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int f(){int*p=new int[2];p[0]=3;p[1]=4;int n=p[1];delete[]p;return n;}',
+        'scalar-value': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int f(){int*p=new int[3]();int n=p[2];delete[]p;return n;}',
+        'scalar-zero': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(){return new int[0]{};}',
+        'const-elements': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int f(){const int*p=new const int[3]{2,3};int n=p[1];delete[]p;return n;}',
+        'nested-array': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int f(){int(*p)[3]=new int[2][3]{{1,2},{3,4,5}};int n=p[1][2];delete[]p;return n;}',
+        'array-alias': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}using Row=int[3];int f(){Row*p=new Row[2]{};p[1][2]=4;int n=p[1][2];delete[]p;return n;}',
+        'whole-array-alias': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}using A=int[3];int*f(){return new A{};}',
+        'pointer-elements': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}using P=int*;P*f(){return new P[3]{nullptr};}',
+        'callback-elements': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int g(int n){return n;}using F=int(*)(int);F*f(){return new F[2]{g,nullptr};}',
+        'enum-elements': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}enum E{a,b};E*f(){return new E[3]{b};}',
+        'nullptr-elements': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}using N=decltype(nullptr);N*f(){return new N[2]{};}',
+        'floating-elements': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}double*f(){return new double[3]{1.0,2.5};}',
+        'string-elements': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}char*f(){return new char[8]{"abc"};}',
+        'record-default': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{int n;R():n(3){}~R(){}};R*f(){return new R[3];}void g(R*p){delete[]p;}',
+        'record-zero': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{int n;R():n(3){}~R(){}};R*f(){return new R[0];}void g(R*p){delete[]p;}',
+        'record-list': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{int n;R(int v=0):n(v){}~R(){}};R*f(){return new R[3]{R(1),R(2)};}void g(R*p){delete[]p;}',
+        'nested-record': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{int n;R():n(3){}~R(){}};using Row=R[2];Row*f(){return new R[3][2];}void g(Row*p){delete[]p;}',
+        'member-sized': 'using Size=decltype(sizeof(0));struct R{int n;R():n(3){}~R(){}static void*operator new[](Size){return nullptr;}static void operator delete[](void*,Size)noexcept{}};R*f(){return new R[3];}void g(R*p){delete[]p;}',
+        'member-unsized-preferred': 'using Size=decltype(sizeof(0));struct R{int n;static void*operator new[](Size){return nullptr;}static void operator delete[](void*)noexcept{}static void operator delete[](void*,Size)noexcept{}};R*f(){return new R[3]{};}void g(R*p){delete[]p;}',
+        'member-sized-new-only': 'using Size=decltype(sizeof(0));struct R{int n;static void*operator new[](Size){return nullptr;}static void operator delete[](void*,Size)noexcept{}};R*f(){return new R[3]{};}',
+        'global-qualified': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{int n;~R(){}static void*operator new[](Size)=delete;static void operator delete[](void*)=delete;};R*f(){return ::new R[3]{};}void g(R*p){::delete[]p;}',
+        'global-delete-sized-class': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{int n;~R(){}static void operator delete[](void*,Size)noexcept{}};R*f(){return new R[3]{};}void g(R*p){::delete[]p;}',
+        'member-placement': 'using Size=decltype(sizeof(0));struct R{int n;~R(){}static void*operator new[](Size,void*p){return p;}};R*f(void*p){return new(p)R[3]{};}',
+        'template-placement': 'using Size=decltype(sizeof(0));template<class T>void*operator new[](Size,T*p,int){return p;}int*f(int*p){return new(p,0)int[3]{1};}',
+        'template-elements': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}template<class T,int N>T*make(){return new T[N]{};}int*f(){return make<int,3>();}',
+        'class-template': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}template<class T>struct R{T value;~R(){}};R<int>*f(){return new R<int>[3]{};}void g(R<int>*p){delete[]p;}',
+        'constexpr-bound': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}constexpr int count(){return 3;}int*f(){return new int[count()]{};}',
+        'constexpr-conversion-bound': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct Count{constexpr operator int()const{return 3;}};int*f(){return new int[Count{}]{};}',
+        'explicit-unsigned-zero': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(){return new int[static_cast<Size>(0)]{};}',
+        'default-argument': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int f(int*p=new int[3]{1,2,3}){int n=p[2];delete[]p;return n;}int g(){return f();}',
+        'default-member': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{int*p=new int[3]{1,2,3};~R(){delete[]p;}};int f(){R r;return r.p[2];}',
+        'static-pointer': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(){static int*p=new int[3]{1,2,3};return p;}',
+        'null-allocator': 'using Size=decltype(sizeof(0));struct R{int n;R():n(3){}~R(){}static void*operator new[](Size)noexcept{return nullptr;}};R*f(){return new R[3];}',
+        'zero-default-source': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}};R*f(){return new R[0];}',
+        'reference-temporaries': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int drops=0;struct T{int n;~T(){++drops;}};struct R{const T&t;};R*f(){return new R[2]{{T{1}},{T{2}}};}void g(R*p){delete[]p;}',
+        'ctor-default-temporaries': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}};R*f(){return new R[3];}',
+        'explicit-ctor-temporaries': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}};R*f(){return new R[3]{{},{},{}};}',
+        'aggregate-default-temporaries': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct A{A(){}~A(){}};struct R{R(const A&a=A()){}~R(){}};struct G{R r;};G*f(){return new G[3]{};}',
+        'discarded-source': 'using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int f(){if constexpr(false){int*p=new int[3];delete[]p;}return 0;}',
+    }
+    for name, source in array_allocation_positive.items():
+        module = check("v2-array-allocation-"+name, source, profile="cpp-core-v2")
+        assert module["memory_lifetimes"] and module["array_cookie_abi"] in ("itanium", "apple-arm64", "msvc")
+    array_allocation_negative = {
+        'runtime-bound': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(int n){return new int[n]{};}', 'TR0201'),
+        'runtime-nothrow': ('using Size=decltype(sizeof(0));struct R{static void*operator new[](Size)noexcept{return nullptr;}};R*f(int n){return new R[n];}', 'TR0201'),
+        'missing-array-allocator': ('int*f(){return new int[3]{};}', 'TR0203'),
+        'missing-array-deallocator': ('void f(int*p){delete[]p;}', 'TR0203'),
+        'missing-record-destructor': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{~R();};R*f(){return new R[3];}', 'TR0203'),
+        'zero-missing-destructor': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{~R();};R*f(){return new R[0];}', 'TR0203'),
+        'zero-constructor-source': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{R(){long double n=0;}};R*f(){return new R[0];}', 'TR0201'),
+        'zero-default-source': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}struct R{R(int n=sizeof(long double)){}};R*f(){return new R[0];}', 'TR0201'),
+        'volatile-element': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}volatile int*f(){return new volatile int[3]{};}', 'TR0201'),
+        'extent-limit': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(){return new int[65537]{};}', 'TR0201'),
+        'nested-storage-limit': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}using Row=int[4];Row*f(){return new int[65536][4];}', 'TR0201'),
+        'written-type': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(){return new decltype(sizeof(long double),int())[3]{};}', 'TR0201'),
+        'bound-source': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int*f(){return new int[(sizeof(long double),3)]{};}', 'TR0201'),
+        'placement-source': ('using Size=decltype(sizeof(0));struct Tag{};void*operator new[](Size,Tag,void*p){return p;}int*f(void*p){return new(Tag{},(sizeof(long double),p))int[3]{};}', 'TR0201'),
+        'const-write': ('using Size=decltype(sizeof(0));struct Storage{unsigned long long alignment;unsigned char bytes[512];};Storage storage{};void*operator new[](Size){return storage.bytes;}void operator delete[](void*)noexcept{}int f(){const int*p=new const int[3]{};p[1]=4;return 0;}', 'TR0202'),
+    }
+    for name, (source, diagnostic) in array_allocation_negative.items():
+        check("v2-array-allocation-reject-"+name, source, diagnostic, profile="cpp-core-v2")
+
+    truncated_bound_prefix = ('using Size=decltype(sizeof(0));unsigned char bytes[8]{};'
+                              'void*operator new[](Size){return bytes;}')
+    check("v2-array-negative-before-size-conversion", truncated_bound_prefix +
+          'int*f(){return new int[-4294967296LL]{};}', "TR0201",
+          profile="cpp-core-v2", target="i686-pc-windows-msvc")
+    check("v2-array-explicit-unsigned-bound", truncated_bound_prefix +
+          'int*f(){return new int[static_cast<Size>(-4294967296LL)]{};}',
+          profile="cpp-core-v2", target="i686-pc-windows-msvc")
+    array_runtime_source = (repository / "tests/neverc/Inputs/translate/cpp/array-allocation.cpp").read_text()
+    array_runtime = check("v2-array-allocation-runtime", array_runtime_source, profile="cpp-core-v2")
+    assert array_runtime["memory_lifetimes"] and array_runtime["array_cookie_abi"]
+    with tempfile.TemporaryDirectory(prefix="neverc-array-allocation-relocated-") as temporary:
+        relocated = check("v2-array-allocation-relocated", array_runtime_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == array_runtime
+    cookie_source = ('using Size=decltype(sizeof(0));unsigned char storage[256]{};'
+                     'void*operator new[](Size){return storage;}void operator delete[](void*)noexcept{}'
+                     'struct R{int n;~R(){}};extern "C" void*make(){return new R[2][3]{};}')
+    sized_source = ('using Size=decltype(sizeof(0));struct R{int n;'
+                    'static void*operator new[](Size){return nullptr;}'
+                    'static void operator delete[](void*,Size)noexcept{}};'
+                    'R*f(){return new R[3]{};}void g(R*p){delete[]p;}')
+    for target, abi, cookie, count_offset in (
+        ("x86_64-unknown-linux-gnu", "itanium", 8, 0),
+        ("aarch64-unknown-linux-gnu", "itanium", 8, 0),
+        ("x86_64-apple-macosx", "itanium", 8, 0),
+        ("aarch64-apple-macosx", "apple-arm64", 16, 8),
+        ("x86_64-pc-windows-msvc", "msvc", 8, 0),
+        ("aarch64-pc-windows-msvc", "msvc", 8, 0),
+        ("i686-pc-windows-msvc", "msvc", 4, 0),
+        ("x86_64-w64-windows-gnu", "itanium", 8, 0)):
+        module = check("v2-array-cookie-"+target, cookie_source, profile="cpp-core-v2", target=target)
+        assert module["array_cookie_abi"] == abi
+        make = next(f for f in module["functions"] if f["c_export"])
+        calls = [i for i in make["body"] if i["op"] == "call"]
+        assert len(calls) == 1 and int(calls[0]["args"][0]["value"]) == 24 + cookie
+        stores = [i for i in make["body"] if i["op"] == "assign" and i["target"]["kind"] == "dereference"]
+        assert len(stores) == (2 if abi == "apple-arm64" else 1)
+        count_store = stores[-1]
+        assert int(count_store["value"]["value"]) == 6
+        byte_address = count_store["target"]["args"][0]["args"][0]["args"][0]
+        assert byte_address["operator"] == "+" and int(byte_address["args"][1]["value"]) == count_offset
+        if abi == "apple-arm64":
+            assert int(stores[0]["value"]["value"]) == 4
+        check("v2-array-sized-trivial-"+target, sized_source,
+              "TR0201" if abi == "msvc" else None, profile="cpp-core-v2", target=target)
+
     allocation_positive = {
         'aligned-delete-protocol': 'using Size=decltype(sizeof(0));\nnamespace std{enum class align_val_t:Size{};}\nstruct Aligned{int n;static void operator delete(void*p,std::align_val_t a)noexcept{}};\nstruct SizedAligned{int n;static void operator delete(void*p,Size n,std::align_val_t a)noexcept{}};\nvoid disposeAligned(Aligned*p){delete p;}\nvoid disposeSizedAligned(SizedAligned*p){delete p;}\n',
         'member-new-declaration': 'using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}};',
@@ -5572,9 +5684,9 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         'missing-placement': ('using Size=decltype(sizeof(0));void*operator new(Size,void*);int*f(void*p){return new(p)int(3);}', 'TR0203'),
         'reserved-placement-definition': ('using Size=decltype(sizeof(0));void*operator new(Size,void*p){return p;}', 'TR0203'),
         'reserved-placement-delete': ('void operator delete(void*,void*){}', 'TR0203'),
-        'array-new': ('int*f(){return new int[3]{};}', 'TR0201'),
-        'array-delete': ('void f(int*p){delete[]p;}', 'TR0201'),
-        'alias-array-new': ('using A=int[3];int*f(){return new A{};}', 'TR0201'),
+        'array-new': ('int*f(){return new int[3]{};}', 'TR0203'),
+        'array-delete': ('void f(int*p){delete[]p;}', 'TR0203'),
+        'alias-array-new': ('using A=int[3];int*f(){return new A{};}', 'TR0203'),
         'incomplete-new': ('struct R;R*f(){return new R;}', 'TR0202'),
         'void-delete': ('void f(void*p){delete p;}', 'TR0201'),
         'incomplete-delete': ('struct R;void f(R*p){delete p;}', 'TR0201'),

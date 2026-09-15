@@ -21,6 +21,7 @@ namespace clang {
 class CallExpr;
 class CastExpr;
 class CXXConstructExpr;
+class CXXNewExpr;
 class CXXDefaultArgExpr;
 class CXXForRangeStmt;
 class CXXPseudoDestructorExpr;
@@ -273,6 +274,11 @@ struct StaticDestruction {
   clang::QualType Type;
   clang::SourceLocation Location;
 };
+struct ArrayAllocationLayout {
+  clang::QualType Element;
+  uint64_t ElementBytes = 0, CookieBytes = 0, CountOffset = 0;
+  bool StoresElementSize = false;
+};
 class Adapter {
 public:
   State &S;
@@ -323,7 +329,11 @@ public:
                                   unsigned Depth = 0);
   bool functionAddressTarget(const clang::FunctionDecl *F, clang::SourceLocation L);
   const clang::FunctionDecl *allocationFunction(const clang::FunctionDecl *F,
-                                               bool Allocate, clang::SourceLocation L);
+                                               bool Allocate, clang::SourceLocation L,
+                                               bool Array = false);
+  ArrayAllocationLayout arrayAllocationLayout(clang::QualType Object,
+      bool UsualDeleteWantsSize, clang::SourceLocation L);
+  uint64_t arrayNewCount(const clang::CXXNewExpr *N);
   json::Object functionAddress(const clang::FunctionDecl *F, clang::SourceLocation L);
   std::size_t storageUnits(clang::QualType T, unsigned Depth = 0);
   void chargeExpansion(std::size_t Nodes, clang::SourceLocation L);

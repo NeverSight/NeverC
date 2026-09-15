@@ -119,6 +119,19 @@ bool expectedCarrierLayout(VerificationContext &Context, Diagnostics &D,
     Context.NativeStaticDestruction = StaticDestructionABI::CxaAtExit;
   else if (NativeTriple.isKnownWindowsMSVCEnvironment())
     Context.NativeStaticDestruction = StaticDestructionABI::CAtExit;
+  const auto Size = Target->getSizeType();
+  if (!neverc::TargetInfo::isTypeSigned(Size) &&
+      Target->getTypeWidth(Size) == Context.PointerBits &&
+      Target->getTypeAlign(Size) == Layout.Carriers[9].ABIAlignBits) {
+    if (NativeTriple.isKnownWindowsMSVCEnvironment())
+      Context.NativeArrayCookies = ArrayCookieABI::Microsoft;
+    else if (NativeTriple.isMacOSX() && NativeTriple.getArch() == llvm::Triple::aarch64)
+      Context.NativeArrayCookies = ArrayCookieABI::AppleARM64;
+    else if (NativeTriple.isMacOSX() ||
+             (NativeTriple.isOSLinux() && !NativeTriple.isAndroid()) ||
+             NativeTriple.isWindowsGNUEnvironment())
+      Context.NativeArrayCookies = ArrayCookieABI::Itanium;
+  }
   Context.ExpectedCarrierLayout = Layout;
   return true;
 }

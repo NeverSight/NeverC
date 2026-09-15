@@ -54,7 +54,7 @@ binary ABI or foreign-object identity.
 
 Unsupported operations remain errors even inside constant-evaluated assertions
 and enumerator initializers. A cast to `void` cannot hide an unsupported operand
-such as a `long double` expression or unsupported array allocation. Diagnostic assertion messages
+such as a `long double` expression or an unsupported runtime array-new bound. Diagnostic assertion messages
 remain separate from runtime string objects. String literals follow the storage
 contract below; `std::string` requires further library and lifetime support.
 
@@ -4049,7 +4049,7 @@ replacement functions, class-specific static functions, custom placement overloa
 and existing concrete function/class/member templates compose with supported
 scalar and complete record types. Allocation operator declarations and direct
 calls, including `operator new[]`/`operator delete[]`, follow ordinary checked
-function rules; array new/delete expressions are not yet implemented.
+function rules; array expressions follow the separate contract below.
 
 The selected allocator must return `void*` and start with the target `size_t`.
 Clang supplies allocation selection and converted placement arguments. An exact
@@ -4103,9 +4103,80 @@ order, null branching, lack of lexical new ownership and relocation. Twenty-seve
 runtime checkpoints at O0/O2 with strict aliasing and inlining disabled cover
 storage identity, failed allocation, temporary cleanup, placement reuse and saved
 deallocation addresses. Native validation requires CI of this implementation.
-Default/standard heap runtime, array allocation/cookies, extended-alignment source
+Default/standard heap runtime, runtime array-new bounds, extended-alignment source
 support, exceptions/unwinding, standard headers, inheritance and full C++/STL
 remain unfinished.
+
+## Constant array allocation
+
+Core v2 admits source-owned C++17 `new[]` with a nonnegative integer constant
+outer extent, including zero, and matching `delete[]` of valid escaped pointers.
+Scalar, pointer, callback, const and admitted record elements can have fixed inner
+array dimensions. Selected global/class/template allocation functions and custom
+placement arguments retain the single-object source-definition contract. The
+ordinary NeverC frontend remains C23. This is one step toward full C++/STL.
+
+The frontend uses the same strict integer constant-expression check as pinned
+Clang's semantic array initializer construction. It also checks a negative value
+before the final implicit size_t conversion. Written casts retain their source
+semantics. Outer extents are at most 65536, total initialization storage units at
+most 200000, and allocation bytes plus padding must fit target size_t. Runtime
+bounds still report `TR0201`: their invalid-length path must avoid calling the
+allocator and produce null or `bad_array_new_length` according to the selected
+allocator. No SIZE_MAX allocation request substitutes for this behavior.
+
+Only exact array-initializer wrappers belonging to the checked new-expression
+can bypass serialization as value types. In particular zero length emits no
+`array:0` type or dummy object. Bound source, constructors, destructors, defaults,
+explicit clauses and written types remain checked even when no element executes.
+Allocation still occurs for zero length. Nullable allocation branches before
+cookie stores, pointer adjustment or initialization; placement argument effects
+and their ordinary cleanup remain observable.
+
+Allocation size is outer-count times the complete allocated inner type size,
+plus the native cookie where required. Both new and delete use Clang's resolved
+`doesUsualArrayDeleteWantSize()` fact, which can differ from the signature of the
+finally selected function, including explicitly qualified global deletion.
+
+| Native family | Cookie condition | Cookie layout |
+| --- | --- | --- |
+| Generic Itanium: x86/x64 Linux/macOS, AArch64 Linux, admitted Windows GNU | Nontrivial element destruction or usual sized array deletion | max(sizeof(size_t), preferred element alignment) bytes; flattened count right-justified |
+| Apple ARM64 macOS | Same condition as Itanium | max(2*sizeof(size_t), element ABI alignment) bytes; base-element size at offset zero and flattened count at offset sizeof(size_t) |
+| Explicit MSVC Windows | Nontrivial element destruction | max(sizeof(size_t), element ABI alignment) bytes; flattened count at offset zero |
+
+Module `array_cookie_abi` metadata and independent native target/size_t capability
+must agree. Saved NC asserts size_t layout and rejects a mismatched Windows C++
+ABI; existing architecture/OS guards distinguish Apple ARM64. This checks the
+ABI contract, not the correctness of every producer-generated address expression.
+The typed IR, carrier/record layout and `memory_lifetimes` rules still apply.
+MSVC's cookie-free trivial elements cannot supply a count to a selected sized
+array delete in this profile; that delete expression reports `TR0201`. New-only
+uses and unsized deletion remain admitted. No private incompatible cookie is added.
+
+Initialization expands into actual element destinations. Direct omitted default
+constructor argument temporaries end before the next element; explicit clauses
+and aggregate field defaults keep their enclosing full-expression lifetime.
+Each occurrence gets its own temporary storage. String initialization writes its
+code units and zero-fills the remainder. Source result pointers retain cv and
+inner dimensions. Allocated arrays acquire no lexical cleanup owner.
+
+Delete captures its operand once and skips everything for null. Before invoking
+a destructor it captures the raw allocation pointer, cookie count and allocation
+bytes. A runtime loop visits base elements in reverse order through byte offsets
+from the raw storage, avoiding a C pointer stride across inner arrays. It then
+calls the selected deallocator once with the original allocation address and any
+selected size/alignment values. Destructors reseating the source pointer cannot
+change these saved values; reference-member temporaries already destroyed at the
+new-expression's end are not destroyed again by delete.
+
+Paired source/protocol cases, eight-target cookie/layout checks, forged metadata,
+relocation and a separate C client at O0/O2 with strict aliasing cover these rules.
+The native and pinned-upstream runtime checks run only in CI. Runtime new bounds,
+default heap/standard placement, extended-alignment source types, exception
+unwinding, standard headers and complete C++/STL remain unfinished. Language
+requirements follow [C++17 array new](https://timsong-cpp.github.io/cppwp/n4659/expr.new)
+and [C++17 delete](https://timsong-cpp.github.io/cppwp/n4659/expr.delete); native cookie
+layouts follow the pinned Clang20.1.8 ABI implementations.
 
 ## Explicit destruction
 
@@ -4578,7 +4649,7 @@ break and continue clean the appropriate scopes. Array construction needs no
 external helper or memory-copy call. Static lifetimes and reference fields follow
 their separate contracts. Thread-local storage, fresh reference returns,
 non-extended pointer-derived bindings,
-unsupported element types, array allocation, unwinding, other template forms
+unsupported element types, runtime array-new bounds, unwinding, other template forms
 and complete STL remain outside this increment. V1 and protocol major 1 are unchanged.
 
 O0/O2 no-inline fixtures cover real element addresses, reference calls, decay,
