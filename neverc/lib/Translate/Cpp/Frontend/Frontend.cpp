@@ -83,9 +83,10 @@ static bool supportedDeclarationAttributes(const Decl *D) {
   if (!D->hasAttrs())
     return true;
   const auto *F = dyn_cast<FunctionDecl>(D);
-  if (!F || (F->getOverloadedOperator() != OO_New &&
-             F->getOverloadedOperator() != OO_Array_New))
+  if (!F || !allocationOperatorKind(F->getOverloadedOperator()))
     return false;
+  const bool Allocate = F->getOverloadedOperator() == OO_New ||
+                        F->getOverloadedOperator() == OO_Array_New;
   std::optional<unsigned> AlignmentParameter;
   bool Nothrow = false;
   if (!F->isReplaceableGlobalAllocationFunction(&AlignmentParameter, &Nothrow))
@@ -94,6 +95,30 @@ static bool supportedDeclarationAttributes(const Decl *D) {
   // AddKnownFunctionAttributesForReplaceableGlobalAllocationFunction. Written
   // attributes never gain this exception and are not copied to emitted calls.
   for (const auto *Attribute : F->attrs()) {
+    // Sema's visibility merge reconstructs this inherited attribute without
+    // its implicit bit. Prove its origin in the exact prior implicit global
+    // allocation declaration; an absent source range alone is insufficient.
+    if (const auto *Visibility = dyn_cast<VisibilityAttr>(Attribute);
+        Visibility && Visibility->isInherited() &&
+        Visibility->getRange().getBegin().isInvalid() &&
+        Visibility->getRange().getEnd().isInvalid() &&
+        Visibility->getVisibility() == VisibilityAttr::Default) {
+      bool Generated = false;
+      for (const auto *Prior = F->getPreviousDecl(); Prior;
+           Prior = Prior->getPreviousDecl()) {
+        if (!Prior->isImplicit() || Prior->getLocation().isValid() ||
+            !Prior->isReplaceableGlobalAllocationFunction())
+          continue;
+        for (const auto *Original : Prior->specific_attrs<VisibilityAttr>())
+          Generated |= Original->isImplicit() && Original->getRange().getBegin().isInvalid() &&
+                       Original->getRange().getEnd().isInvalid() &&
+                       Original->getVisibility() == VisibilityAttr::Default;
+      }
+      if (Generated)
+        continue;
+    }
+    if (!Allocate)
+      return false;
     if (!Attribute->isImplicit())
       return false;
     if (isa<ReturnsNonNullAttr>(Attribute) && !Nothrow)

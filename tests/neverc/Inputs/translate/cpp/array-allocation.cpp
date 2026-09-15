@@ -137,7 +137,7 @@ extern "C" int array_lifetime_check() {
   Direct *noElements = new Direct[0];
   if (seenArguments || argumentDrops || liveArguments) return 23;
   delete[] noElements;
-  Failed *failed = new(Argument()) Failed[3];
+  Failed *failed = new(Argument{}) Failed[3];
   if (failed || initializerCalls || liveArguments || placementSeen != 1 || argumentDrops != 1) return 24;
   eventCount = 0;
   Reference *references = new Reference[2]{{Temporary{1}}, {Temporary{2}}};

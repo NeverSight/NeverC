@@ -5739,6 +5739,8 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
               "TR0201" if abi == "msvc" else None, profile="cpp-core-v2", target=target)
 
     allocation_positive = {
+        'inherited-global-visibility': 'using Size=decltype(sizeof(0));unsigned char bytes[64]{};void*operator new(Size);void*operator new(Size){return bytes;}void operator delete(void*)noexcept;void operator delete(void*)noexcept{}int*f(){return new int(3);}',
+        'inherited-array-visibility': 'using Size=decltype(sizeof(0));unsigned char bytes[64]{};void*operator new[](Size);void*operator new[](Size){return bytes;}void operator delete[](void*)noexcept;void operator delete[](void*)noexcept{}int*f(){return new int[2]{};}',
         'aligned-delete-protocol': 'using Size=decltype(sizeof(0));\nnamespace std{enum class align_val_t:Size{};}\nstruct Aligned{int n;static void operator delete(void*p,std::align_val_t a)noexcept{}};\nstruct SizedAligned{int n;static void operator delete(void*p,Size n,std::align_val_t a)noexcept{}};\nvoid disposeAligned(Aligned*p){delete p;}\nvoid disposeSizedAligned(SizedAligned*p){delete p;}\n',
         'member-new-declaration': 'using Size=decltype(sizeof(0));struct R{int n;static void*operator new(Size){return nullptr;}};',
         'member-delete-declaration': 'struct R{int n;static void operator delete(void*){}};',
@@ -5789,6 +5791,10 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     for name, source in allocation_positive.items():
         check("v2-allocation-"+name, source, profile="cpp-core-v2")
     allocation_negative = {
+        'written-new-visibility-default': ('using Size=decltype(sizeof(0));__attribute__((visibility("default"))) void*operator new(Size){return nullptr;}', 'TR0201'),
+        'written-delete-visibility-default': ('__attribute__((visibility("default"))) void operator delete(void*)noexcept{}', 'TR0201'),
+        'written-array-visibility-default': ('using Size=decltype(sizeof(0));__attribute__((visibility("default"))) void*operator new[](Size){return nullptr;}', 'TR0201'),
+        'written-visibility-inherited': ('using Size=decltype(sizeof(0));__attribute__((visibility("default"))) void*operator new(Size);void*operator new(Size){return nullptr;}', 'TR0201'),
         'discarded-void-new': ('void f(){static_cast<void>(new int(1));}', 'TR0203'),
         'discarded-new': ('int f(){if constexpr(false){int*p=new int(3);}return 0;}', 'TR0203'),
         'template-new': ('template<class T>T* f(){return new T{};}int main(){return *f<int>();}', 'TR0203'),

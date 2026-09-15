@@ -4090,8 +4090,10 @@ an unchecked host allocation call. Reserved global `operator new(size_t, void*)`
 and its matching delete cannot be defined as user functions here and also report
 `TR0203`. Use class-specific placement or a custom global overload with a distinct
 parameter list until SDK integration provides the standard forms. Only exact
-implicit allocation attributes synthesized by pinned Clang are admitted; written
-or unrelated attributes remain rejected. No exception-throwing path, construction
+allocation attributes synthesized by pinned Clang are admitted. Inherited default
+visibility must trace to the exact prior implicit global allocation declaration:
+pinned Sema's merge loses its implicit bit, but keeps the inherited flag and absent
+source range. Written or unrelated attributes remain rejected. No exception-throwing path, construction
 rollback or foreign ABI is newly admitted.
 
 Paired source/diagnostic fixtures check function/template selection, missing
