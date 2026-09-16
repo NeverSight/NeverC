@@ -193,10 +193,11 @@ compile-time metadata.
 
 The standalone authenticated closure contains 217 libc++/resource files on all
 eight supported targets and contains no platform headers. Generated programs do
-not call or link libc++ for these operations. Zero-length, nested and
-nontrivial record elements, record/nested-array comparisons, reverse iterators,
-dynamic or out-of-range `at`, function addresses, quoted `"array"`, user shadows
-and forged declarations remain outside this boundary.
+not call or link libc++ for these operations. Comparisons recursively preserve
+row-major lexicographic order when every leaf element is scalar. Zero-length and
+nontrivial record elements, record comparisons, reverse iterators, dynamic or
+out-of-range `at`, function addresses, quoted `"array"`, user shadows and forged
+declarations remain outside this boundary.
 
 ## Standard template parsing across targets
 

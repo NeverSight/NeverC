@@ -71,7 +71,7 @@ Utility directly lowers scalar `move`, `forward`, `move_if_noexcept`, `as_const`
 comparisons, `make_pair` and `get`; and `tuple_size`, `tuple_element` and
 integer-sequence size queries. Array directly lowers nonempty fixed scalar,
 trivial-record and nested-array storage, iterators, element access, fill, swap,
-scalar comparisons and tuple access.
+scalar and recursive nested-array comparisons and tuple access.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

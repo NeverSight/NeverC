@@ -1035,24 +1035,46 @@ class FunctionLowering {
       auto Left = dereference(std::move(LeftAddress), L);
       auto Right = dereference(std::move(RightAddress), L);
       auto SizeType = type(A.Context.getSizeType(), L);
-      auto Element = [&](const Expression &Base, uint64_t I) {
-        return ArrayElement(json::Object(Base), *Array,
-                            quantity(I, SizeType, L), Array->ElementType,
-                            true);
+      std::vector<std::pair<Expression, Expression>> Elements;
+      auto CollectElements =
+          [&](auto &&Collect, const Expression &First, const Expression &Second,
+              const UtilityArrayRecord &Current, unsigned Depth) -> void {
+        if (Depth > 64)
+          reject(L, "utility array comparison",
+                 "Nested std::array comparisons exceed the protocol limit.");
+        auto Nested = ArrayFor(Current.ElementType);
+        for (uint64_t I = 0; I < Current.Size; ++I) {
+          auto FirstElement =
+              ArrayElement(json::Object(First), Current,
+                           quantity(I, SizeType, L), Current.ElementType, true);
+          auto SecondElement =
+              ArrayElement(json::Object(Second), Current,
+                           quantity(I, SizeType, L), Current.ElementType, true);
+          if (Nested)
+            Collect(Collect, FirstElement, SecondElement, *Nested, Depth + 1);
+          else
+            Elements.emplace_back(std::move(FirstElement),
+                                  std::move(SecondElement));
+        }
       };
-      auto Equal = [&](const Expression &First, const Expression &Second) {
+      CollectElements(CollectElements, Left, Right, *Array, 0);
+      if (Elements.empty())
+        reject(L, "utility array comparison",
+               "The selected std::array has no comparable scalar elements.");
+      auto Equal = [&] {
         auto Result = temporary("bool", L);
         auto True = labelName(), False = labelName(), End = labelName();
         std::vector<std::string> Next;
-        Next.reserve(Array->Size - 1);
-        for (uint64_t I = 1; I < Array->Size; ++I)
+        Next.reserve(Elements.size() - 1);
+        for (std::size_t I = 1; I < Elements.size(); ++I)
           Next.push_back(labelName());
-        for (uint64_t I = 0; I < Array->Size; ++I) {
-          auto Success = I + 1 == Array->Size ? True : Next[I];
-          branch(binary("==", Element(First, I), Element(Second, I),
-                        "bool", L),
+        for (std::size_t I = 0; I < Elements.size(); ++I) {
+          auto Success = I + 1 == Elements.size() ? True : Next[I];
+          const auto &Pair = Elements[I];
+          branch(binary("==", json::Object(Pair.first),
+                        json::Object(Pair.second), "bool", L),
                  Success, False, L);
-          if (I + 1 != Array->Size)
+          if (I + 1 != Elements.size())
             label(Next[I], L);
         }
         label(True, L);
@@ -1064,18 +1086,20 @@ class FunctionLowering {
         label(End, L);
         return Result;
       };
-      auto Less = [&](const Expression &First, const Expression &Second) {
+      auto Less = [&](bool ReverseOrder) {
         auto Result = temporary("bool", L);
         auto True = labelName(), False = labelName(), End = labelName();
-        for (uint64_t I = 0; I < Array->Size; ++I) {
+        for (const auto &Pair : Elements) {
           auto Reverse = labelName();
           auto Next = labelName();
-          branch(binary("<", Element(First, I), Element(Second, I),
-                        "bool", L),
+          const auto &FirstElement = ReverseOrder ? Pair.second : Pair.first;
+          const auto &SecondElement = ReverseOrder ? Pair.first : Pair.second;
+          branch(binary("<", json::Object(FirstElement),
+                        json::Object(SecondElement), "bool", L),
                  True, Reverse, L);
           label(Reverse, L);
-          branch(binary("<", Element(Second, I), Element(First, I),
-                        "bool", L),
+          branch(binary("<", json::Object(SecondElement),
+                        json::Object(FirstElement), "bool", L),
                  False, Next, L);
           label(Next, L);
         }
@@ -1093,24 +1117,24 @@ class FunctionLowering {
       bool Negate = false;
       switch (Operation) {
       case UtilityOperation::ArrayEqual:
-        Result = Equal(Left, Right);
+        Result = Equal();
         break;
       case UtilityOperation::ArrayNotEqual:
-        Result = Equal(Left, Right);
+        Result = Equal();
         Negate = true;
         break;
       case UtilityOperation::ArrayLess:
-        Result = Less(Left, Right);
+        Result = Less(false);
         break;
       case UtilityOperation::ArrayGreater:
-        Result = Less(Right, Left);
+        Result = Less(true);
         break;
       case UtilityOperation::ArrayLessEqual:
-        Result = Less(Right, Left);
+        Result = Less(true);
         Negate = true;
         break;
       case UtilityOperation::ArrayGreaterEqual:
-        Result = Less(Left, Right);
+        Result = Less(false);
         Negate = true;
         break;
       default:

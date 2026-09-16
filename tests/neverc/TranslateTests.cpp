@@ -23495,7 +23495,17 @@ int main() {
       matrixView[1].front() != 5 || matrixView[1].back() != 9 ||
       other[1][0] != 11)
     return 4;
-  return sum == 49 ? 0 : 5;
+  std::array<Row, 2> smaller{{{{1, 9}}, {{7, 8}}}};
+  std::array<Row, 2> larger{{{{2, 0}}, {{0, 0}}}};
+  std::array<Row, 2> equal = smaller;
+  int comparison = (smaller == larger) + 2 * (smaller != larger) +
+                   4 * (smaller < larger) + 8 * (smaller > larger) +
+                   16 * (smaller <= larger) + 32 * (smaller >= larger);
+  if (comparison != 22 || !(smaller == equal) || smaller != equal ||
+      smaller < equal || smaller > equal || !(smaller <= equal) ||
+      !(smaller >= equal))
+    return 5;
+  return sum == 49 ? 0 : 6;
 }
 )cpp");
   auto Result = translate(
@@ -23525,20 +23535,22 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
        "TR0203"},
       {"nontrivial-element",
        "#include <array>\nstruct R{int n;~R(){}};int main(){"
-       "std::array<R,2>a{{{1},{2}}};return a[0].n;}", "TR0203"},
+       "std::array<R,2>a{{{1},{2}}};return a[0].n;}",
+       "TR0203"},
       {"record-comparison",
-       "#include <array>\nstruct R{int n;};bool operator==(const R&a,const R&b){"
+       "#include <array>\nstruct R{int n;};bool operator==(const R&a,const "
+       "R&b){"
        "return a.n==b.n;}int main(){"
-       "std::array<R,2>a{{{1},{2}}},b=a;return a==b;}", "TR0203"},
-      {"nested-comparison",
-       "#include <array>\nusing R=std::array<int,2>;int main(){"
-       "std::array<R,2>a{{{{1,2}},{{3,4}}}},b=a;return a<b;}", "TR0203"},
+       "std::array<R,2>a{{{1},{2}}},b=a;return a==b;}",
+       "TR0203"},
       {"dynamic-at",
        "#include <array>\nint f(int i){std::array<int,2>a{{1,2}};"
-       "return a.at(i);}", "TR0203"},
+       "return a.at(i);}",
+       "TR0203"},
       {"reverse-iterator",
        "#include <array>\nint main(){std::array<int,2>a{{1,2}};"
-       "return *a.rbegin();}", "TR0203"}};
+       "return *a.rbegin();}",
+       "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("array-") + Case.Name + ".cpp");

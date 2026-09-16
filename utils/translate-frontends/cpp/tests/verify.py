@@ -486,7 +486,15 @@ extern "C" int array_composition() {
   matrix.swap(other);
   std::swap(matrix, other);
   std::get<1>(std::get<0>(matrix)) = 9;
-  return sum + assigned[1].y + matrix[0][1];
+  std::array<Row, 2> smaller{{{{1, 9}}, {{7, 8}}}};
+  std::array<Row, 2> larger{{{{2, 0}}, {{0, 0}}}};
+  std::array<Row, 2> equal = smaller;
+  int comparison = (smaller == larger) + 2 * (smaller != larger) +
+                   4 * (smaller < larger) + 8 * (smaller > larger) +
+                   16 * (smaller <= larger) + 32 * (smaller >= larger);
+  return sum + assigned[1].y + matrix[0][1] + comparison +
+         (smaller == equal) + 2 * (smaller <= equal) +
+         4 * (smaller >= equal);
 }
 """
     array_composition = check("v2-array-composition", array_composition_source,
@@ -520,9 +528,6 @@ extern "C" int array_composition() {
          "TR0203"),
         ("record-comparison",
          '#include <array>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int main(){std::array<R,2>a{{{1},{2}}},b=a;return a==b;}',
-         "TR0203"),
-        ("nested-comparison",
-         '#include <array>\nusing R=std::array<int,2>;int main(){std::array<R,2>a{{{{1,2}},{{3,4}}}},b=a;return a<b;}',
          "TR0203"),
         ("dynamic-at",
          '#include <array>\nint f(int i){std::array<int,2>a{{1,2}};return a.at(i);}',

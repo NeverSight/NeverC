@@ -24,8 +24,8 @@ scalar `pair` construction, assignment, swaps, comparisons, `make_pair`, `get`,
 do not require a runtime libc++ link. The `<array>` surface has a 217-file
 libc++/resource closure and directly lowers nonempty fixed scalar,
 trivial-record and nested arrays, including capacity, pointer iterators, element
-access, fill, swap, scalar comparisons and index-based `get`, without a runtime
-libc++ link.
+access, fill, swap, scalar and recursive nested-array comparisons and index-based
+`get`, without a runtime libc++ link.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

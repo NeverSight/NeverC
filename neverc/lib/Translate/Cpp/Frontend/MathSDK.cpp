@@ -403,6 +403,21 @@ static bool utilityArrayTriviallyAssignable(const ASTContext &Context,
          Record->hasTrivialDestructor();
 }
 
+static bool utilityArrayComparable(const State &S, const SourceManager &SM,
+                                   const ASTContext &Context, QualType Type,
+                                   unsigned Depth = 0) {
+  if (Depth > 64 || Type.isNull() || Type.isVolatileQualified())
+    return false;
+  if (utilityScalar(Context, Type))
+    return true;
+  const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (!Record || !approvedUtilityArrayMetadata(S, SM, Record))
+    return false;
+  const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
+  return Array &&
+         utilityArrayComparable(S, SM, Context, Array->ElementType, Depth + 1);
+}
+
 bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
                                  const CXXRecordDecl *Record) {
   const auto *Specialization =
@@ -919,8 +934,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
     if (Operator && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
-        !Left->ElementType.isVolatileQualified() &&
-        utilityScalar(Context, Left->ElementType)) {
+        utilityArrayComparable(S, SM, Context, Left->ElementType)) {
       switch (Operator->getOperator()) {
       case OO_EqualEqual: return UtilityOperation::ArrayEqual;
       case OO_ExclaimEqual: return UtilityOperation::ArrayNotEqual;
