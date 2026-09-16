@@ -15,6 +15,7 @@ on:
       - tests/neverc/Inputs/translate/cpp/trivial-record-operation-traits.cpp
       - tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp
       - tests/neverc/Inputs/translate/cpp/array-type-queries.cpp
+      - tests/neverc/Inputs/translate/cpp/unary-type-transforms.cpp
       - tests/neverc/Inputs/translate/cpp/empty-base-chains.cpp
 
 permissions:
@@ -68,6 +69,11 @@ jobs:
         run: |
           "$RUNNER_TEMP/template-source" --source-file \
             tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp
+      - name: Inspect unary transform input and substituted source identities
+        if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
+        run: |
+          "$RUNNER_TEMP/template-source" --source-file \
+            tests/neverc/Inputs/translate/cpp/unary-type-transforms.cpp
       - name: Record upstream array-filler runtime identity and cleanup
         if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
         run: |
@@ -114,7 +120,7 @@ jobs:
         if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
         run: |
           status=0
-          for fixture in nullptr-template-values builtin-type-classification scalar-operation-traits trivial-record-operation-traits defined-operation-traits array-type-queries empty-base-chains runtime-aggregate-array; do
+          for fixture in nullptr-template-values builtin-type-classification scalar-operation-traits trivial-record-operation-traits defined-operation-traits array-type-queries unary-type-transforms empty-base-chains runtime-aggregate-array; do
             for optimization in 0 2; do
               if clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
                 "tests/neverc/Inputs/translate/cpp/$fixture.cpp" -o "$RUNNER_TEMP/$fixture"; then

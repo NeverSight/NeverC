@@ -54,6 +54,25 @@ class Inspect : public RecursiveASTVisitor<Inspect> {
 public:
   explicit Inspect(ASTContext &C) : Context(C) {}
   bool shouldVisitTemplateInstantiations() const { return true; }
+  bool VisitUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
+    const auto *Type = TL.getTypePtr();
+    const auto *Input = TL.getUnderlyingTInfo();
+    llvm::outs() << "unary-transform kind=" << Type->getUTTKind()
+                 << " type=" << TL.getType().getAsString()
+                 << " dependent=" << Type->isDependentType()
+                 << " instantiation-dependent=" << Type->isInstantiationDependentType()
+                 << " semantic-base=" << Type->getBaseType().getAsString()
+                 << " result=" << Type->getUnderlyingType().getAsString()
+                 << " operand-source=" << static_cast<const void *>(Input);
+    if (Input)
+      llvm::outs() << " written-base=" << Input->getType().getAsString()
+                   << " written-dependent=" << Input->getType()->isDependentType()
+                   << " written-instantiation-dependent="
+                   << Input->getType()->isInstantiationDependentType()
+                   << " exact-base=" << (Input->getType() == Type->getBaseType());
+    llvm::outs() << "\n";
+    return true;
+  }
   bool VisitFunctionDecl(FunctionDecl *D) {
     if (D->isImplicit())
       return true;

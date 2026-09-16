@@ -601,6 +601,29 @@ def fix_array_type_query_dimensions(source_root):
             path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
 
+def preserve_unary_transform_source(path):
+    before = 'template<typename Derived>\nQualType TreeTransform<Derived>::TransformUnaryTransformType(\n                                                            TypeLocBuilder &TLB,\n                                                     UnaryTransformTypeLoc TL) {\n  QualType Result = TL.getType();\n  if (Result->isDependentType()) {\n    const UnaryTransformType *T = TL.getTypePtr();\n\n    TypeSourceInfo *NewBaseTSI =\n        getDerived().TransformType(TL.getUnderlyingTInfo());\n    if (!NewBaseTSI)\n      return QualType();\n    QualType NewBase = NewBaseTSI->getType();\n\n    Result = getDerived().RebuildUnaryTransformType(NewBase,\n                                                    T->getUTTKind(),\n                                                    TL.getKWLoc());\n    if (Result.isNull())\n      return QualType();\n  }\n\n  UnaryTransformTypeLoc NewTL = TLB.push<UnaryTransformTypeLoc>(Result);\n  NewTL.setKWLoc(TL.getKWLoc());\n  NewTL.setParensRange(TL.getParensRange());\n  NewTL.setUnderlyingTInfo(TL.getUnderlyingTInfo());\n  return Result;\n}\n'
+    after = 'template<typename Derived>\nQualType TreeTransform<Derived>::TransformUnaryTransformType(\n                                                            TypeLocBuilder &TLB,\n                                                     UnaryTransformTypeLoc TL) {\n  QualType Result = TL.getType();\n  // NeverC unary transforms retain the actual substituted operand source.\n  TypeSourceInfo *NewBaseTSI = TL.getUnderlyingTInfo();\n  if (Result->isInstantiationDependentType()) {\n    const UnaryTransformType *T = TL.getTypePtr();\n\n    NewBaseTSI = getDerived().TransformType(NewBaseTSI);\n    if (!NewBaseTSI)\n      return QualType();\n    QualType NewBase = NewBaseTSI->getType();\n\n    Result = getDerived().RebuildUnaryTransformType(NewBase,\n                                                    T->getUTTKind(),\n                                                    TL.getKWLoc());\n    if (Result.isNull())\n      return QualType();\n  }\n\n  UnaryTransformTypeLoc NewTL = TLB.push<UnaryTransformTypeLoc>(Result);\n  NewTL.setKWLoc(TL.getKWLoc());\n  NewTL.setParensRange(TL.getParensRange());\n  NewTL.setUnderlyingTInfo(NewBaseTSI);\n  return Result;\n}\n'
+    error_message = "Unexpected pinned Clang unary-transform source in " + str(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(error_message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if ("NeverC unary transforms" in remainder or
+            "::TransformUnaryTransformType(" in remainder):
+        raise SystemExit(error_message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def preserve_operation_trait_source(source_root):
     # Explicit helper parameters keep nested trait queries independent. Retained
     # expressions never reference the helpers' temporary operand allocators.
@@ -1334,6 +1357,7 @@ fix_nested_friend_declaration_access(args.source)
 fix_imported_namespace_defaults(args.source)
 fix_member_class_instantiation_patterns(args.source / "clang/lib/AST/DeclCXX.cpp")
 fix_array_type_query_dimensions(args.source)
+preserve_unary_transform_source(args.source / "clang/lib/Sema/TreeTransform.h")
 preserve_operation_trait_source(args.source)
 fix_pseudo_destructor_exception_spec(args.source / "clang/lib/Sema/SemaExceptionSpec.cpp")
 fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")

@@ -5202,6 +5202,136 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesPreserveSubstitutionAndValues) {
   expectNoArtifacts(tmpFile("array-query-v1.nc"));
 }
 
+TEST_F(TranslateTest, CoreV2UnaryTransformsRetainOperandSources) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"unused-parameter-source", "template<class T,__remove_cv(T) N>int f(){return T::missing;}int g(){return 3;}"},
+      {"concrete-parameter-source", "template<class T,__remove_cv(T) N>int f(){return N;}int g(){return f<const int,3>();}"},
+      {"add_lvalue", "using R=__add_lvalue_reference(int);static_assert(__is_same(R,int&));"},
+      {"add_pointer", "using R=__add_pointer(const int&);static_assert(__is_same(R,const int*));"},
+      {"add_rvalue", "using R=__add_rvalue_reference(int);static_assert(__is_same(R,int&&));"},
+      {"decay", "using R=__decay(const int[3]);static_assert(__is_same(R,const int*));"},
+      {"make_signed", "using R=__make_signed(unsigned);static_assert(__is_same(R,int));"},
+      {"make_unsigned", "using R=__make_unsigned(int);static_assert(__is_same(R,unsigned));"},
+      {"remove_all_extents", "using R=__remove_all_extents(const int[][3]);static_assert(__is_same(R,const int));"},
+      {"remove_const", "using R=__remove_const(const int);static_assert(__is_same(R,int));"},
+      {"remove_cv", "using R=__remove_cv(const int);static_assert(__is_same(R,int));"},
+      {"remove_cvref", "using R=__remove_cvref(const int&);static_assert(__is_same(R,int));"},
+      {"remove_extent", "using R=__remove_extent(int[][3]);static_assert(__is_same(R,int[3]));"},
+      {"remove_pointer", "using R=__remove_pointer(const int*const);static_assert(__is_same(R,const int));"},
+      {"remove_reference", "using R=__remove_reference_t(const int&&);static_assert(__is_same(R,const int));"},
+      {"remove_restrict", "using R=__remove_restrict(int*);static_assert(__is_same(R,int*));"},
+      {"remove_volatile", "using R=__remove_volatile(const int);static_assert(__is_same(R,const int));"},
+      {"underlying", "enum class E:unsigned{one=1};using R=__underlying_type(E);static_assert(__is_same(R,unsigned));"},
+      {"reference-collapse", "static_assert(__is_same(__add_rvalue_reference(int&),int&));static_assert(__is_same(__add_lvalue_reference(int&&),int&));"},
+      {"void-reference", "static_assert(__is_same(__add_lvalue_reference(void),void)&&__is_same(__add_rvalue_reference(const void),const void));"},
+      {"bare-function", "using F=int(int);static_assert(__is_same(__decay(F),int(*)(int))&&__is_same(__add_pointer(F),int(*)(int)));"},
+      {"noexcept-function", "using F=int(int)noexcept;static_assert(__is_same(__decay(F),int(*)(int)noexcept));"},
+      {"qualified-transform", "using R=const __remove_cv(const int);static_assert(__is_same(R,const int));"},
+      {"incomplete", "struct R;static_assert(__is_same(__add_pointer(R),R*)&&__is_same(__remove_pointer(R*),R)&&__is_same(__remove_cv(const R),R));"},
+      {"unknown-array", "struct R;static_assert(__is_same(__remove_extent(R[][3]),R[3])&&__is_same(__decay(R[]),R*)&&__is_same(__remove_all_extents(R[][3]),R));"},
+      {"alias-template", "template<class T>using R=__remove_cvref(T);static_assert(__is_same(R<const int&>,int)&&__is_same(R<double&&>,double));"},
+      {"erased-alias", "template<class T>using I=int;template<class T>using R=__remove_cv(I<T>);static_assert(__is_same(R<double>,int));"},
+      {"nested-transform", "template<class T>using R=__add_pointer(__remove_cv(__remove_reference_t(T)));static_assert(__is_same(R<const int&>,int*));"},
+      {"class-member", "template<class T>struct R{using type=__remove_cvref(T);};static_assert(__is_same(R<const int&>::type,int));"},
+      {"member-alias", "template<class T>struct R{template<class U>using type=__remove_cvref(U);};static_assert(__is_same(R<int>::type<const double&>,double));"},
+      {"partial", "template<class T>struct R{using type=void;};template<class T>struct R<T*>{using type=__remove_const(T);};static_assert(__is_same(R<const int*>::type,int));"},
+      {"variable-template", "template<class T>constexpr bool value=__is_same(__remove_cvref(T),int);static_assert(value<const int&>&&!value<double>);"},
+      {"function-template", "template<class T>__remove_cvref(T) copy(T value){return value;}int f(){return copy<const int&>(3);}"},
+      {"function-default", "template<class T,class U=__remove_cvref(T)>U f(T value){return value;}int g(){return f<const int&>(3);}"},
+      {"class-default", "template<class T,class U=__remove_cvref(T)>struct R{U value;};int f(){R<const int&> r{3};return r.value;}"},
+      {"pack", "template<class...T>constexpr bool all(){return (__is_same(__remove_cvref(T),int)&&...);}static_assert(all<>()&&all<const int&,int&&>()&&!all<int,double>());"},
+      {"unused-pattern", "template<class T>using Bad=__remove_cv(typename T::missing);template<class T>int bad(){using R=__remove_cv(volatile T);return T::missing;}int f(){return 3;}"},
+      {"decltype-effects", "int effects;int effect(){return ++effects;}using R=__remove_cv(decltype(effect()));int main(){R value=3;return effects+value-3;}"},
+      {"enum-source", "struct Mid{int n;};enum E:decltype(noexcept(Mid())?int():int()){zero};using R=__make_unsigned(E);R f(){return 3;}"},
+      {"unused-pointee-layout", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct Value{char bytes[noexcept(Mid())?1:2];};using P=__add_pointer(Value);P f(P p){return p;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("unary-transform-positive-" + Name + ".cpp");
+    auto Output = tmpFile("unary-transform-positive-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    EXPECT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnaryTransformsCheckErasedSources) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"erased-parameter-source", "template<class T,__remove_volatile(T) N>int f(){return N;}int g(){return f<volatile int,3>();}"},
+      {"erased-volatile", "using R=__remove_cv(volatile int);R f(){return 0;}"},
+      {"erased-cvref-volatile", "using R=__remove_cvref(volatile int&);R f(){return 0;}"},
+      {"erased-remove-volatile", "using R=__remove_volatile(volatile int);R f(){return 0;}"},
+      {"erased-restrict", "using R=__remove_restrict(int*__restrict);R f(){return nullptr;}"},
+      {"decay-volatile", "using R=__decay(volatile int);R f(){return 0;}"},
+      {"nested-volatile", "using R=__remove_const(__remove_volatile(const volatile int));R f(){return 0;}"},
+      {"volatile-alias-template", "template<class T>using R=__remove_cv(T);R<volatile int> f(){return 0;}"},
+      {"volatile-default", "template<class T=__remove_volatile(volatile int)>struct R{T value;};R<> f(){return {0};}"},
+      {"wide", "using R=__remove_reference_t(long double&);bool f(){return sizeof(R)>0;}"},
+      {"wide-erased-bound", "using R=__remove_all_extents(int[sizeof(long double)]);R f(){return 0;}"},
+      {"wide-erased-decltype", "using R=__remove_cv(decltype(sizeof(long double)?int():int()));R f(){return 0;}"},
+      {"erased-alias-source", "template<class T>using I=int;template<class T>using R=__remove_cv(I<decltype(sizeof(long double)+sizeof(T))>);R<int> f(){return 0;}"},
+      {"erased-alias-default", "template<class T=decltype(sizeof(long double))>using I=int;using R=__remove_cv(I<>);R f(){return 0;}"},
+      {"function-reference-input", "using F=int(&)(int);using R=__remove_reference_t(F);"},
+      {"function-reference-output", "using R=__add_lvalue_reference(int(int));"},
+      {"function-variadic", "using R=__decay(int(int,...));"},
+      {"function-wide", "using R=__decay(long double(int));"},
+      {"member-pointer", "struct S{int value;};using R=__remove_pointer(int S::*);"},
+      {"union", "union U{int value;};using R=__add_pointer(U);"},
+      {"incomplete-runtime", "struct S;using R=__add_pointer(S);R f(){return nullptr;}"},
+      {"false-query", "bool f(){return __is_same(__remove_cv(volatile int),double);}"},
+      {"size-query", "int f(){return sizeof(__remove_cv(volatile int));}"},
+      {"noexcept-query", "bool f(){return noexcept(sizeof(__remove_cv(volatile int)));}"},
+      {"discarded-source", "int f(){if constexpr(false){using R=__remove_cv(volatile int);}return 0;}"},
+      {"hidden-enum-__make_signed", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};enum E:decltype(noexcept(Mid())?int():int()){zero};using R=__make_signed(E);R f(){return 0;}"},
+      {"hidden-enum-__make_unsigned", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};enum E:decltype(noexcept(Mid())?int():int()){zero};using R=__make_unsigned(E);R f(){return 0;}"},
+      {"hidden-enum-__underlying_type", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};enum E:decltype(noexcept(Mid())?int():int()){zero};using R=__underlying_type(E);R f(){return 0;}"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("unary-transform-negative-" + Name + ".cpp");
+    auto Output = tmpFile("unary-transform-negative-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnaryTransformsRejectInvalidCpp) {
+  const std::vector<std::pair<std::string, std::string>> Cases = {
+      {"signed-bool", "using R=__make_signed(bool);"},
+      {"unsigned-float", "using R=__make_unsigned(float);"},
+      {"underlying-nonenum", "using R=__underlying_type(int);"},
+      {"wrong-arity", "using R=__remove_cv(int,int);"},
+      {"missing-type", "using R=__remove_cv(Unknown);"},
+      {"failed-assertion", "static_assert(__is_same(__remove_cv(const int),double));"},
+  };
+  for (const auto &[Name, Code] : Cases) {
+    SCOPED_TRACE(Name);
+    auto Source = tmpFile("unary-transform-invalid-" + Name + ".cpp");
+    auto Output = tmpFile("unary-transform-invalid-" + Name + ".nc");
+    writeFile(Source, Code);
+    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, "TR0202");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnaryTransformsPreserveValuesAndStorage) {
+  auto Output = tmpFile("unary-type-transforms.nc");
+  auto Result = translate(fixture("unary-type-transforms.cpp"),
+                          {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    auto Executable = tmpFile("unary-type-transforms" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2BuiltinTypeClassificationRetainsSourceTypes) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"incomplete-identity-protocol", "struct R;struct S;template<class T>struct Lazy{typename T::missing value;};extern \"C\" bool incomplete_class(){return __is_class(R);}extern \"C\" bool incomplete_same(){return __is_same(R,S);}extern \"C\" bool incomplete_base(){return __is_base_of(R,const R);}extern \"C\" bool incomplete_reference(){return __is_trivially_destructible(R&);}extern \"C\" bool incomplete_array(){return __is_destructible(R[]);}extern \"C\" bool incomplete_lazy(){return __is_class(Lazy<int>);}extern \"C\" bool incomplete_const(){return __is_const(const R);}"},

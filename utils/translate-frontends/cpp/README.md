@@ -41,6 +41,11 @@ Clang/LLVM or C++ standard-library dependency.
 
 ## Scope and semantic handling
 
+Core v2 [unary type transforms](../docs/cpp-core-v2.md#unary-type-transforms)
+check the original input, exact substituted source and result, including erased
+aliases and consumed enum layout. Sixteen pinned kinds reuse existing type
+metadata and runtime carriers. Standard headers and full C++/STL remain unfinished.
+
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,
 bool and trivial aggregate operations, free functions, resolved namespaces and

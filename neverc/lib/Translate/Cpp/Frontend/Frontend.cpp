@@ -4156,6 +4156,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   OperationExpressionSources CheckedOperationExpressions;
   OperationTypeSources CheckedOperationTypes;
   std::set<const Expr *> TypeSourceQueries;
+  std::map<OperationTypeSourceKey, SourceLocation> TypeSourceTransforms;
   std::set<const Stmt *> OperationValueRoots;
   std::set<const Expr *> DecltypeCallResults;
   std::set<const Expr *> CheckedSemanticInitializers;
@@ -6930,6 +6931,10 @@ public:
     if (Root && OperationValueRoots.insert(Root).second)
       A.chargeExpansion(1, Root->getExprLoc());
     collectOperationTypeSource(TL.getType(), TL.getBeginLoc(), false);
+    if (RootLocation.getAs<UnaryTransformTypeLoc>() &&
+        !(TemplateParameterTypeSource && TL.getType()->isInstantiationDependentType()) &&
+        TypeSourceTransforms.emplace(operationTypeSourceKey(TL), TL.getBeginLoc()).second)
+      A.chargeExpansion(1, TL.getBeginLoc());
     // QualifiedTypeLoc's base traversal deliberately bypasses this override
     // for its unqualified inner location. The observed outer node covers it.
     const bool Result = RecursiveASTVisitor<Allowlist>::TraverseTypeLoc(TL);
@@ -9484,6 +9489,62 @@ public:
       A.reject(TL.getTemplateNameLoc(), "template type source", "A concrete template type requires its exact written substitution evidence.");
     return true;
   }
+  bool checkUnaryTransformType(const UnaryTransformType *Type, SourceLocation L) {
+    switch (Type->getUTTKind()) {
+    case UnaryTransformType::AddLvalueReference:
+    case UnaryTransformType::AddPointer:
+    case UnaryTransformType::AddRvalueReference:
+    case UnaryTransformType::Decay:
+    case UnaryTransformType::MakeSigned:
+    case UnaryTransformType::MakeUnsigned:
+    case UnaryTransformType::RemoveAllExtents:
+    case UnaryTransformType::RemoveConst:
+    case UnaryTransformType::RemoveCV:
+    case UnaryTransformType::RemoveCVRef:
+    case UnaryTransformType::RemoveExtent:
+    case UnaryTransformType::RemovePointer:
+    case UnaryTransformType::RemoveReference:
+    case UnaryTransformType::RemoveRestrict:
+    case UnaryTransformType::RemoveVolatile:
+    case UnaryTransformType::EnumUnderlyingType:
+      break;
+    default:
+      A.reject(L, "unary type transform", "An admitted pinned type transform is required.");
+      return false;
+    }
+    // A declaration's dependent non-type parameter source remains lazy. Its
+    // actual substitution is checked in the existing concrete argument frame.
+    if (TemplateParameterTypeSource && Type->isInstantiationDependentType())
+      return true;
+    // The result can erase unsupported input qualifiers or entire wrappers.
+    // Check both semantic types without re-evaluating Sema's transformation.
+    A.checkQueryType(Type->getBaseType(), L, true, true);
+    A.checkQueryType(Type->getUnderlyingType(), L, true, true);
+    return A.S.Diagnostics.empty();
+  }
+  bool TraverseUnaryTransformType(UnaryTransformType *Type) {
+    // Raw semantic traversal never creates or completes written type evidence.
+    if (A.S.coreV2() && !checkUnaryTransformType(Type,
+            CurrentDeclarator ? CurrentDeclarator->getLocation() : ImplicitInitializerOwner))
+      return false;
+    return RecursiveASTVisitor<Allowlist>::TraverseUnaryTransformType(Type);
+  }
+  bool TraverseUnaryTransformTypeLoc(UnaryTransformTypeLoc TL) {
+    if (!A.S.coreV2())
+      return RecursiveASTVisitor<Allowlist>::TraverseUnaryTransformTypeLoc(TL);
+    const auto *Type = TL.getTypePtr();
+    const auto *Input = TL.getUnderlyingTInfo();
+    if (!A.S.owns(A.Sources, TL.getKWLoc()) || !Input ||
+        !A.S.owns(A.Sources, Input->getTypeLoc().getBeginLoc()) ||
+        !A.S.owns(A.Sources, TL.getRParenLoc()) ||
+        Input->getType() != Type->getBaseType()) {
+      A.reject(TL.getBeginLoc(), "unary transform source",
+               "A type transform requires its exact owned substituted operand source.");
+      return false;
+    }
+    return checkUnaryTransformType(Type, TL.getKWLoc()) &&
+           RecursiveASTVisitor<Allowlist>::TraverseUnaryTransformTypeLoc(TL);
+  }
   bool TraverseSubstTemplateTypeParmTypeLoc(SubstTemplateTypeParmTypeLoc TL) {
     if (!A.S.coreV2())
       return RecursiveASTVisitor<Allowlist>::TraverseSubstTemplateTypeParmTypeLoc(TL);
@@ -10898,6 +10959,18 @@ public:
       if (!SourceCheck.requireExpression(Query) || !SourceCheck.finish(Query->getExprLoc())) {
         A.reject(Query->getExprLoc(), "query type source",
                  "Every consumed query type or dimension requires completed original source dependencies.");
+        return false;
+      }
+    }
+    // A transform consumes source even when no surrounding expression queries
+    // its result. Use only the exact TypeLoc roots reached by normal traversal.
+    for (const auto &[Type, Location] : TypeSourceTransforms) {
+      OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
+          &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
+          &CompletedQueryDestructorSignatures);
+      if (!SourceCheck.requireType(Type) || !SourceCheck.finish(Location)) {
+        A.reject(Location, "unary transform source",
+                 "Every consumed type transform requires completed original source dependencies.");
         return false;
       }
     }

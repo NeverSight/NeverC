@@ -1649,6 +1649,55 @@ destruction order and independent member storage are checked;
 relocation must preserve the protocol. Native results require implementing CI.
 Standard headers and complete C++/STL support remain unfinished.
 
+## Unary type transforms
+
+Core v2 checks the sixteen unary type transforms in the pinned frontend:
+`__add_lvalue_reference`, `__add_pointer`, `__add_rvalue_reference`, `__decay`,
+`__make_signed`, `__make_unsigned`, `__remove_all_extents`, `__remove_const`,
+`__remove_cv`, `__remove_cvref`, `__remove_extent`, `__remove_pointer`,
+`__remove_reference_t`, `__remove_restrict`, `__remove_volatile`, and
+`__underlying_type`. Both the original input and transformed result must be
+admitted type metadata. Removing qualifiers does not make a volatile/restrict
+input admissible; the corresponding transforms can still be used as no-ops over
+admitted inputs. C++ itself diagnoses invalid transforms, such as making `bool`
+signed or obtaining the underlying type of `int`.
+
+Type-only unknown-bound arrays and incomplete non-union record identities use
+their existing contracts. Ordinary bare function types can decay directly to
+admitted callback pointers. Function-reference inputs/results and bare functions
+as template arguments retain their existing restrictions. Runtime objects and
+signatures still require actual admitted storage; a transformed pointer to an
+incomplete record does not create a runtime carrier.
+
+The private `TreeTransform.h` repair retains the actual transformed operand's
+`TypeSourceInfo` and also substitutes inputs that are instantiation-dependent
+but already have a nondependent result, such as `Erased<T>` where `Erased` aliases
+`int`. The original and repaired pinned states are checked exactly, with
+idempotence and drift rejection. The adapter compares the operand's exact
+`QualType` identity with the semantic base, traverses its real source in the
+existing template frame, and checks input and result without recomputing Sema's
+answer. Dependent non-type template parameter declarations remain lazy; their
+actual substitutions require concrete source. Generic unused bodies remain lazy.
+
+Each consumed written transform is a final source-check root, including a plain
+alias without a surrounding query. Original bounds, defaults and `decltype`
+expressions cannot disappear behind a supported result. Signedness and enum
+underlying transforms retain the consumed enum layout source; forming a pointer
+does not newly consume the pointee's field layout. Raw semantic traversal never
+manufactures written source evidence.
+
+Paired cases cover all sixteen kinds, erased aliases, composition, template
+parameters/defaults/partials/packs and rejected hidden source. The runtime fixture
+contains twenty boolean exports, two native-size exports and thirty checkpoints
+for values, reference/array storage, copies and unevaluated effects. Eight ABI
+protocol checks and relocated output compare exact identities and native widths;
+O0/O2 execution requires the implementing revision's CI. This work adds no IR
+operation or runtime helper. Standard headers and complete C++/STL remain unfinished.
+
+Pinned source references: [transform kinds](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/include/clang/Basic/TransformTypeTraits.def),
+[operand substitution](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Sema/TreeTransform.h),
+and [type source layout](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/include/clang/AST/TypeLoc.h).
+
 ## Array type queries
 
 `__array_rank(T)` returns the number of array dimensions and

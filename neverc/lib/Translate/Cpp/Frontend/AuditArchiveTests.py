@@ -569,6 +569,47 @@ class ArrayQuerySourceTests(unittest.TestCase):
                 self.assertEqual(snapshot(), prior)
 
 
+UNARY_TRANSFORM_BEFORE = 'template<typename Derived>\nQualType TreeTransform<Derived>::TransformUnaryTransformType(\n                                                            TypeLocBuilder &TLB,\n                                                     UnaryTransformTypeLoc TL) {\n  QualType Result = TL.getType();\n  if (Result->isDependentType()) {\n    const UnaryTransformType *T = TL.getTypePtr();\n\n    TypeSourceInfo *NewBaseTSI =\n        getDerived().TransformType(TL.getUnderlyingTInfo());\n    if (!NewBaseTSI)\n      return QualType();\n    QualType NewBase = NewBaseTSI->getType();\n\n    Result = getDerived().RebuildUnaryTransformType(NewBase,\n                                                    T->getUTTKind(),\n                                                    TL.getKWLoc());\n    if (Result.isNull())\n      return QualType();\n  }\n\n  UnaryTransformTypeLoc NewTL = TLB.push<UnaryTransformTypeLoc>(Result);\n  NewTL.setKWLoc(TL.getKWLoc());\n  NewTL.setParensRange(TL.getParensRange());\n  NewTL.setUnderlyingTInfo(TL.getUnderlyingTInfo());\n  return Result;\n}\n'
+UNARY_TRANSFORM_AFTER = 'template<typename Derived>\nQualType TreeTransform<Derived>::TransformUnaryTransformType(\n                                                            TypeLocBuilder &TLB,\n                                                     UnaryTransformTypeLoc TL) {\n  QualType Result = TL.getType();\n  // NeverC unary transforms retain the actual substituted operand source.\n  TypeSourceInfo *NewBaseTSI = TL.getUnderlyingTInfo();\n  if (Result->isInstantiationDependentType()) {\n    const UnaryTransformType *T = TL.getTypePtr();\n\n    NewBaseTSI = getDerived().TransformType(NewBaseTSI);\n    if (!NewBaseTSI)\n      return QualType();\n    QualType NewBase = NewBaseTSI->getType();\n\n    Result = getDerived().RebuildUnaryTransformType(NewBase,\n                                                    T->getUTTKind(),\n                                                    TL.getKWLoc());\n    if (Result.isNull())\n      return QualType();\n  }\n\n  UnaryTransformTypeLoc NewTL = TLB.push<UnaryTransformTypeLoc>(Result);\n  NewTL.setKWLoc(TL.getKWLoc());\n  NewTL.setParensRange(TL.getParensRange());\n  NewTL.setUnderlyingTInfo(NewBaseTSI);\n  return Result;\n}\n'
+
+
+class UnaryTransformSourceTests(unittest.TestCase):
+    def test_substituted_operand_repair_checks_exact_source_states(self):
+        script = Path(__file__).resolve().with_name("IsolateSymbols.py")
+        function = next(node for node in ast.parse(script.read_text()).body
+                        if isinstance(node, ast.FunctionDef) and
+                        node.name == "preserve_unary_transform_source")
+        namespace = {}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(script), "exec"), namespace)
+        repair = namespace[function.name]
+        with tempfile.TemporaryDirectory(prefix="neverc-unary-transform-source-") as temporary:
+            path = Path(temporary) / "TreeTransform.h"
+            path.write_text(UNARY_TRANSFORM_BEFORE)
+            repair(path)
+            self.assertEqual(path.read_text(), UNARY_TRANSFORM_AFTER)
+            repair(path)
+            self.assertEqual(path.read_text(), UNARY_TRANSFORM_AFTER)
+            for name, contents in {
+                "missing": None, "empty": "",
+                "duplicate original": UNARY_TRANSFORM_BEFORE * 2,
+                "duplicate rewritten": UNARY_TRANSFORM_AFTER * 2,
+                "mixed": UNARY_TRANSFORM_BEFORE + UNARY_TRANSFORM_AFTER,
+                "drift original": UNARY_TRANSFORM_BEFORE.replace("getKWLoc", "getBeginLoc"),
+                "drift rewritten": UNARY_TRANSFORM_AFTER.replace("isInstantiationDependentType", "isDependentType"),
+                "stale operand": UNARY_TRANSFORM_AFTER.replace("setUnderlyingTInfo(NewBaseTSI)", "setUnderlyingTInfo(TL.getUnderlyingTInfo())"),
+                "orphan marker": UNARY_TRANSFORM_BEFORE + "// NeverC unary transforms",
+                "orphan method": UNARY_TRANSFORM_BEFORE + "::TransformUnaryTransformType(",
+            }.items():
+                with self.subTest(state=name):
+                    if contents is None:
+                        path.unlink()
+                    else:
+                        path.write_text(contents)
+                    with self.assertRaises(SystemExit):
+                        repair(path)
+                    self.assertEqual(path.read_text() if path.exists() else None, contents)
+
+
 class SetupGuidPolicyTests(unittest.TestCase):
     def test_exact_five_data_mapping(self):
         self.assertEqual(SetupGuidSymbols.GUID_RENAMES, dict(SETUP_GUID_PAIRS))
@@ -1370,7 +1411,8 @@ public:
         # following test varies the older callback-source group in the same file.
         call_expr_cxx_original += ARRAY_QUERY_PATCHES[0][2]
         call_expr_cxx_expected += ARRAY_QUERY_PATCHES[0][2]
-        files['clang/lib/Sema/TreeTransform.h'] = ARRAY_QUERY_PATCHES[1][2]
+        files['clang/lib/Sema/TreeTransform.h'] = (ARRAY_QUERY_PATCHES[1][2] +
+                                                 UNARY_TRANSFORM_AFTER)
         for relative, before, after in ARRAY_QUERY_PATCHES[2:]:
             files[relative] = after
         files['clang/lib/Sema/SemaExceptionSpec.cpp'] = PSEUDO_DESTRUCTOR_AFTER
