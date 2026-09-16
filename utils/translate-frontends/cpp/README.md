@@ -52,11 +52,13 @@ check the original input, exact substituted source and result, including erased
 aliases and consumed enum layout. Sixteen pinned kinds reuse existing type
 metadata and runtime carriers.
 
-Core v2 also admits an exact angle include of
-[`<type_traits>`](../docs/cpp-core-v2.md#compile-time-type_traits). The frontend
-uses the pinned embedded libc++/resource VFS and exposes only resolved aliases
-and integral/enum constant results. It records all 101 consumed header hashes;
-the driver authenticates that closure before emitting output. Standard-library
+Core v2 also admits exact angle includes of
+[`<type_traits>`](../docs/cpp-core-v2.md#compile-time-type_traits) and
+[`<cstdint>`](../docs/cpp-core-v2.md#fixed-width-integers-from-cstdint). The
+frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
+aliases plus integral/enum constant results. It records all consumed header
+hashes: 101 for the `<type_traits>` closure and nine for standalone `<cstdint>`.
+The driver authenticates that closure before emitting output. Standard-library
 runtime objects, calls and storage identities, other standard headers and full
 C++/STL remain unfinished.
 

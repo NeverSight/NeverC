@@ -158,6 +158,53 @@ extern "C" int traits() {
           "#include <type_traits>\nusing T=std::integral_constant<int,3>; const int*f(){return &T::value;}",
           "TR0201", profile="cpp-core-v2", sdk=True)
 
+    cstdint_source = """\
+#include <cstdint>
+static_assert(INT8_MAX == 127);
+static_assert(UINT16_MAX == 65535);
+static_assert(INT32_MAX == 2147483647);
+static_assert(UINT64_MAX == UINT64_C(18446744073709551615));
+static_assert(sizeof(std::int_least8_t) == 1);
+static_assert(sizeof(std::uint_fast16_t) >= 2);
+static_assert(sizeof(std::intptr_t) == sizeof(void *));
+static_assert(sizeof(std::uintptr_t) == sizeof(void *));
+static_assert(sizeof(std::intmax_t) >= 8);
+static_assert(sizeof(std::uintmax_t) >= 8);
+extern "C" std::uintmax_t exact(std::intptr_t n) {
+  return std::uintmax_t(n) + UINT64_C(1);
+}
+"""
+    cstdint = check("v2-cstdint", cstdint_source,
+                    profile="cpp-core-v2", sdk=True)
+    assert len(cstdint["sdk_dependencies"]) == 9, cstdint
+    assert any(dependency["path"] == "cstdint"
+               for dependency in cstdint["sdk_dependencies"]), cstdint
+    for target in sdk_targets:
+        check("v2-cstdint-" + target, cstdint_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, source in {
+        "type-traits-first": """\
+#include <type_traits>
+#include <cstdint>
+static_assert(std::is_same_v<std::remove_cv_t<const std::int32_t>,
+                             std::int32_t>);
+int main() { return INT32_C(42) == 42 ? 0 : 1; }
+""",
+        "cstdint-first": """\
+#include <cstdint>
+#include <type_traits>
+static_assert(std::is_same_v<std::uint64_t, decltype(UINT64_C(1))>);
+int main() { return 0; }
+""",
+    }.items():
+        combined = check("v2-standard-headers-" + name, source,
+                         profile="cpp-core-v2", sdk=True)
+        assert len(combined["sdk_dependencies"]) == 101, combined
+    check("v2-cstdint-quoted", '#include "cstdint"\nint f(){return 0;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check("v2-cstdint-c-header", "#include <stdint.h>\nint f(){return 0;}",
+          "TR0201", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

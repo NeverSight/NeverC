@@ -210,6 +210,8 @@ struct State {
   bool owns(const clang::SourceManager &SM, clang::SourceLocation L) const;
 };
 
+bool approvedSDKDeclaration(const State &S, const clang::SourceManager &SM,
+                            const clang::Decl *D);
 bool approvedStandardSDKDeclaration(const State &S,
                                     const clang::SourceManager &SM,
                                     const clang::Decl *D);

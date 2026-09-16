@@ -6615,7 +6615,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       }
       A.chargeExpansion(1, L);
       const auto *Raw = T.getTypePtr();
-      if (const auto *Alias = dyn_cast<TypedefType>(Raw))
+      if (const auto *Alias = dyn_cast<TypedefType>(Raw);
+          Alias && !approvedSDKDeclaration(A.S, A.Sources, Alias->getDecl()))
         operationTypeDependency(Alias->getDecl()->getTypeSourceInfo());
       if (const auto *Deduced = dyn_cast<DecltypeType>(Raw)) {
         registerDecltypeCallResult(Deduced->getUnderlyingExpr());
@@ -10266,7 +10267,7 @@ public:
     // user-owned references below retain and validate the concrete results
     // selected by Clang.
     if (A.S.coreV2() && D && !isa<TranslationUnitDecl>(D) && !owned(D) &&
-        A.S.sdkFile(A.Sources, D->getLocation()))
+        approvedSDKDeclaration(A.S, A.Sources, D))
       return true;
     registerOperationValueRoots(D);
     // A referenced function's signature/body is checked in its own context.
@@ -13393,8 +13394,8 @@ public:
       if (!Included || Included->Root == "platform") {
         if (S.owns(SM, L))
           reject(L, "include",
-                 "Only the approved embedded <type_traits> header is available "
-                 "in cpp-core-v2.");
+                 "Only approved embedded compile-time standard headers are "
+                 "available in cpp-core-v2.");
         else
           S.diagnose("TR0203", "SDK include",
                      !Included ? "A required SDK header is missing."
@@ -13403,10 +13404,11 @@ public:
                      "Restore the exact approved SDK header distribution.");
         return;
       }
-      if (S.owns(SM, L) && (!Angled || Name != "type_traits")) {
+      if (S.owns(SM, L) &&
+          (!Angled || (Name != "type_traits" && Name != "cstdint"))) {
         reject(L, "include",
-               "Only an exact #include <type_traits> entry is admitted in "
-               "cpp-core-v2.");
+               "Only exact #include <type_traits> and #include <cstdint> "
+               "entries are admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))

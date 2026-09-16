@@ -22971,6 +22971,83 @@ TEST_F(TranslateTest, CoreV2TypeTraitsKeepsTheHeaderBoundaryCompileTimeOnly) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CstdintAliasesAndMacrosRunAtBothOptimizations) {
+  const auto Source = tmpFile("cstdint.cpp");
+  const auto Output = tmpFile("cstdint.nc");
+  writeFile(Source, R"cpp(
+#include <cstdint>
+static_assert(INT8_MAX == 127);
+static_assert(UINT16_MAX == 65535);
+static_assert(INT32_MAX == 2147483647);
+static_assert(UINT64_MAX == UINT64_C(18446744073709551615));
+static_assert(sizeof(std::int_least8_t) == 1);
+static_assert(sizeof(std::uint_fast16_t) >= 2);
+static_assert(sizeof(std::intptr_t) == sizeof(void *));
+static_assert(sizeof(std::uintptr_t) == sizeof(void *));
+static_assert(sizeof(std::intmax_t) >= 8);
+static_assert(sizeof(std::uintmax_t) >= 8);
+int main() {
+  std::uint64_t wide = UINT64_C(4294967296);
+  std::int32_t answer = INT32_C(41);
+  std::int_least8_t narrow = INT8_C(7);
+  return wide == UINT64_C(4294967296) && answer + 1 == 42 && narrow == 7
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 9u);
+  bool FoundCstdint = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundCstdint |= Dependency->getString("root") == "libcxx" &&
+                    Dependency->getString("path") == "cstdint";
+  }
+  EXPECT_TRUE(FoundCstdint);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cstdint" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CstdintRequiresTheExactAngleHeader) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"quoted", "#include \"cstdint\"\nint main(){return 0;}"},
+      {"c-header", "#include <stdint.h>\nint main(){return 0;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("cstdint-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("cstdint-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
   struct Rejection {
     const char *Name;

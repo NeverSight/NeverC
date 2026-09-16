@@ -1449,11 +1449,12 @@ See the [floating contract](cpp-core-v2.md#binary-floating-point-values) for the
 default floating environment and remaining source restrictions. Older experimental
 v2 responses lacking the two carrier entries must be regenerated.
 
-## Core v2 `<type_traits>` SDK evidence
+## Core v2 standard-header SDK evidence
 
 A core v2 request may add the same two-field immutable SDK envelope used by the
 built-in driver: `distribution_id` and `catalog_sha256`. When present, the
-source may include exactly `<type_traits>`. A successful response adds
+source may include exact angle forms of `<type_traits>` and `<cstdint>`. A
+successful response adds
 `sdk_distribution_id`, `sdk_catalog_sha256` and `sdk_dependencies`. Core v2
 dependencies may use only the `libcxx` and `resource` roots; each normalized
 relative path must be unique and its lowercase SHA-256 must match the embedded

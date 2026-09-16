@@ -179,9 +179,14 @@ std::optional<SDKFile> State::sdkFile(const SourceManager &SM,
   return File ? sdkFile(*File) : std::nullopt;
 }
 
+bool approvedSDKDeclaration(const State &S, const SourceManager &SM,
+                            const Decl *D) {
+  return D && S.sdkFile(SM, D->getLocation()).has_value();
+}
+
 bool approvedStandardSDKDeclaration(const State &S, const SourceManager &SM,
                                     const Decl *D) {
-  if (!D || !S.sdkFile(SM, D->getLocation()))
+  if (!approvedSDKDeclaration(S, SM, D))
     return false;
   for (const DeclContext *Context = D->getDeclContext(); Context;
        Context = Context->getParent())

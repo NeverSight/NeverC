@@ -47,11 +47,38 @@ int main() {
 
 This surface is compile-time-only. Constructing a standard-library object,
 calling a standard-library function or taking the address/reference identity of
-a trait constant is rejected. Quoted `"type_traits"`, every other standard
-header, platform headers and user shadow headers remain outside this boundary.
+a trait constant is rejected. Quoted `"type_traits"`, unapproved standard
+headers, platform headers and user shadow headers remain outside this boundary.
 The same closure is checked on the supported macOS, Linux and Windows x86-32,
 x86-64 and AArch64 targets. Broader standard-library and STL support remains in
 development.
+
+## Fixed-width integers from `<cstdint>`
+
+Core v2 also accepts an exact top-level `#include <cstdint>` from the same
+immutable embedded VFS. The standard fixed-width, least-width, fast-width,
+pointer-width and maximum-width aliases are available whenever the target
+provides them, including `std::int32_t`, `std::uint64_t`, `std::intptr_t` and
+`std::uintmax_t`. The corresponding limit and constant macros, such as
+`INT32_MAX`, `UINT64_MAX`, `INT32_C` and `UINT64_C`, retain Clang's target
+specific C++17 types and values.
+
+```cpp
+#include <cstdint>
+static_assert(sizeof(std::intptr_t) == sizeof(void *));
+static_assert(INT32_MAX == 2147483647);
+
+int main() {
+  std::uint64_t wide = UINT64_C(4294967296);
+  std::int32_t answer = INT32_C(41);
+  return wide == UINT64_C(4294967296) && answer + 1 == 42 ? 0 : 1;
+}
+```
+
+The standalone closure contains nine authenticated libc++/resource files on
+each supported target. Including `<type_traits>` and `<cstdint>` together is
+order independent and records their deduplicated union. Quoted `"cstdint"`, the
+C header `<stdint.h>`, platform headers and user shadow headers are rejected.
 
 ## Standard template parsing across targets
 
